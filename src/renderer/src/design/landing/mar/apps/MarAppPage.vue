@@ -385,6 +385,29 @@ function back(): void {
              over it), centred in its frame; your takes under it -->
       <main class="mar-app-editor-stage" aria-label="Output">
         <div class="mar-app-editor-canvas">
+          <!-- Examples, on the top line of the picture's room: up to five
+               of what this app has made, to start from like templates.
+               Picking one fills the panel and shows its result; once you
+               run, they go. -->
+          <div
+            v-if="state === 'idle' && examples.length > 1"
+            class="mar-app-editor-dock is-examples"
+            role="group"
+            aria-label="Examples"
+          >
+            <button
+              v-for="x in examples.slice(0, 5)"
+              :key="x.id"
+              type="button"
+              :title="x.title"
+              :aria-label="x.title"
+              :aria-pressed="x.id === exId"
+              :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
+              @click="pickExample(x)"
+            >
+              <img :src="x.after" alt="" />
+            </button>
+          </div>
           <figure
             v-if="hasResult"
             :class="cn('mar-app-editor-pic', state === 'running' && 'is-running')"
@@ -417,29 +440,6 @@ function back(): void {
               <Badge variant="overlay" size="md" class="absolute bottom-3 left-3">Before</Badge>
               <Badge variant="overlay" size="md" class="absolute right-3 bottom-3">After</Badge>
             </template>
-            <!-- Examples, across the picture's top edge: up to five of what this app
-                     has made, to start from like templates. Picking one fills
-                     the panel and shows its result; once you run, they go. -->
-            <div
-              v-if="state === 'idle' && examples.length > 1"
-              class="mar-app-editor-dock is-examples"
-              role="group"
-              aria-label="Examples"
-            >
-              <span class="mar-app-editor-dock-label">Examples</span>
-              <button
-                v-for="x in examples.slice(0, 5)"
-                :key="x.id"
-                type="button"
-                :title="x.title"
-                :aria-label="x.title"
-                :aria-pressed="x.id === exId"
-                :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
-                @click="pickExample(x)"
-              >
-                <img :src="x.after" alt="" />
-              </button>
-            </div>
           </figure>
 
           <!-- Nothing yet -->
@@ -703,10 +703,16 @@ function back(): void {
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  padding: 32px 32px 16px;
+  /* Room for the examples across the top line, and a margin all round so
+     the picture never fills the panel. */
+  padding: 88px 72px 72px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-panel);
   background: var(--color-card-background);
+}
+/* With your takes under the picture, they take the bottom margin. */
+.mar-app-editor-stage:has(> .mar-app-editor-dock) {
+  padding-bottom: 24px;
 }
 .mar-app-editor-canvas {
   position: relative;
@@ -722,16 +728,12 @@ function back(): void {
 .mar-app-editor-pic {
   position: relative;
   margin: 0;
-  /* Not clipped, so the examples can sit across its top edge; the
-     pictures take its corners themselves. */
+  overflow: hidden;
   border-radius: var(--radius-card);
   box-shadow:
     0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
     0 16px 40px rgb(0 0 0 / 0.22);
   transition: filter 500ms;
-}
-.mar-app-editor-pic > img {
-  border-radius: inherit;
 }
 .mar-app-editor-pic > img:first-child {
   display: block;
@@ -864,15 +866,18 @@ function back(): void {
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   white-space: nowrap;
 }
-/* Examples: centred on the picture's top edge, on dark glass. */
+/* Examples: centred on the canvas's top line (the most the picture can
+   reach), on dark glass. */
 .mar-app-editor-dock.is-examples {
   position: absolute;
   top: 0;
   left: 50%;
   z-index: 2;
   height: 56px;
-  gap: 8px;
-  padding: 6px 6px 6px 18px;
+  gap: 6px;
+  padding: 6px;
+  /* Squarer: the thumbnails' corners plus the padding. */
+  border-radius: 16px;
   transform: translate(-50%, -50%);
   background: oklch(0.16 0.004 285 / 0.62);
   backdrop-filter: blur(16px) saturate(1.3);
