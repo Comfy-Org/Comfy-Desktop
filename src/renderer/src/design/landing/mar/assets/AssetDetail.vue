@@ -211,11 +211,15 @@ onBeforeUnmount(() => {
       >
         <section class="mad-stage" @pointerdown.self="!tab && emit('close')">
           <header class="mad-bar">
-            <span class="mad-file">{{ asset.name }}</span>
-            <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
+            <!-- Name and place live in Details; over the picture only while
+                 Details are folded away. -->
+            <template v-if="!side">
+              <span class="mad-file">{{ asset.name }}</span>
+              <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
+            </template>
             <button
               type="button"
-              class="mad-icon"
+              class="mad-icon mad-fold"
               :class="!side && 'is-label'"
               :aria-label="side ? 'Hide details' : 'Show details'"
               :title="side ? 'Hide details' : 'Show details'"
@@ -292,6 +296,7 @@ onBeforeUnmount(() => {
                 <h2 class="mad-name">{{ asset.name }}</h2>
                 <p class="mad-sub">{{ summary }}</p>
               </div>
+              <span class="mad-count mad-pos">{{ at + 1 }} / {{ list.length }}</span>
               <button
                 v-if="!editable"
                 type="button"
@@ -540,6 +545,13 @@ onBeforeUnmount(() => {
   color: var(--color-muted-foreground);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+.mad-pos {
+  flex: none;
+  padding-top: 2px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-fold {
+  margin-left: auto;
 }
 .mad-media {
   position: relative;
