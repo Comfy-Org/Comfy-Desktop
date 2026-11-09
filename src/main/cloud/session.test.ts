@@ -857,6 +857,37 @@ describe('CloudSession.switchWorkspace with no browser', () => {
       expect(session.currentWorkspaceId()).toBe('w3')
     })
 
+    it('the new account landing on the same workspace id does not get the old account token', async () => {
+      saveGrant(grantOn('w1'))
+      const session = new CloudSession()
+      await session.switchWorkspace('w2')
+      saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: Date.now() + 30_000 })
+      const late = deferred<void>()
+      const pendingSignIn = deferred<Awaited<ReturnType<typeof signIn>>>()
+      mocked(signIn).mockReturnValue(pendingSignIn.promise)
+      let w3Replies = 0
+      mintRequests = []
+      mintReply = async ({ workspaceId }) => {
+        if (workspaceId === 'w3') {
+          return w3Replies++ === 0 ? json(403, { code: 'sso_required' }) : json(404, {})
+        }
+        await late.promise
+        return json(429, {})
+      }
+
+      const switching = session.switchWorkspace('w3')
+      await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+      const read = session.getAccessToken()
+      await vi.waitFor(() => expect(mintRequests).toHaveLength(2))
+      pendingSignIn.resolve(signedInResult(grantOn('w2', { subject: 'user-2' })))
+      await switching
+      late.resolve()
+
+      await expect(read).resolves.toBeNull()
+      expect(session.currentSubject()).toBe('user-2')
+      expect(session.currentWorkspaceId()).toBe('w2')
+    })
+
     it('a refresh landing after the account changed returns null from both token reads', async () => {
       saveGrant(grantOn('w1', { expiresAt: Date.now() + 30_000 }))
       const session = new CloudSession()
