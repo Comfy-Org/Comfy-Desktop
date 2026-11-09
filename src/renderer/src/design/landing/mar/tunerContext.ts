@@ -200,7 +200,11 @@ export const TWEAKS = {
   exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
-  cover: one(cover, 'gradient'),
+  // The milestone picks the cover (cover.ts): the canvas, then the image.
+  cover: {
+    isDefault: () => cover.id === (can.value.projects ? 'output' : 'canvas'),
+    reset: () => (cover.id = can.value.projects ? 'output' : 'canvas')
+  },
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
