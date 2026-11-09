@@ -70,6 +70,10 @@ function isFresh(tokens: AuthTokens): boolean {
   return tokens.expiresAt - REFRESH_SKEW_MS > Date.now()
 }
 
+function isExpired(tokens: AuthTokens): boolean {
+  return tokens.expiresAt <= Date.now()
+}
+
 function isDefinitiveRefreshRefusal(error: unknown): boolean {
   return (
     error instanceof SignInFailure &&
@@ -204,7 +208,8 @@ export class CloudSession {
     if (!workspaceId || workspaceId === workspaceIdOf(grant.accessToken)) {
       if (isFresh(grant) || !grant.refreshToken) return grant.accessToken
       const refreshed = await this.refreshGrant(grant)
-      if (refreshed === 'unavailable' || generation !== this.authGeneration) return null
+      if (generation !== this.authGeneration) return null
+      if (refreshed === 'unavailable' && isExpired(grant)) return null
       return loadGrant()?.accessToken ?? null
     }
     const held = loadWorkspaceToken(workspaceId)
@@ -297,7 +302,8 @@ export class CloudSession {
       return { kind: 'reauthorize', reason: 'mint_scope_missing' }
     if (!isFresh(grant)) {
       const refreshed = await this.refreshGrant(grant)
-      if (refreshed !== 'refreshed') return refreshFailureOutcome(refreshed)
+      if (refreshed === 'ended' || (refreshed === 'unavailable' && isExpired(grant)))
+        return refreshFailureOutcome(refreshed)
     }
     const first = await this.postMint(workspaceId, generation)
     if (
@@ -389,6 +395,10 @@ export class CloudSession {
       const refreshed = await this.refreshGrant(grant)
       if (generation !== this.authGeneration) return this.status()
       if (refreshed === 'ended') return this.reauthorize(workspaceId, generation, 'grant_ended')
+      if (refreshed === 'unavailable' && isExpired(grant)) {
+        reportSwitch('retryable')
+        return this.stayed('retryable')
+      }
     }
     return this.activated(workspaceId, 'anchor')
   }

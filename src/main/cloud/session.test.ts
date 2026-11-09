@@ -864,14 +864,47 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w1' })
   })
 
-  it('switching to the anchor during a refresh outage activates with no browser', async () => {
+  it('switching to an expired anchor during a refresh outage stays put and reports retryable', async () => {
     saveGrant(grantOn('w1', { expiresAt: PAST }))
+    mocked(refresh).mockResolvedValueOnce(grantOn('w1', { expiresAt: PAST, revision: '-2' }))
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
     mocked(refresh).mockRejectedValue(refreshFailure('network'))
 
-    await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
-      workspaceId: 'w1'
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({
+      workspaceId: 'w2',
+      workspaceSwitchFailure: 'retryable'
     })
 
+    expect(session.currentWorkspaceId()).toBe('w2')
+    expect(signIn).not.toHaveBeenCalled()
+    expect(switchEvents().at(-1)).toEqual({ outcome: 'retryable' })
+  })
+
+  it('switching to a still valid anchor during a refresh outage works and its token is usable', async () => {
+    const grant = grantOn('w1', { expiresAt: Date.now() + 30_000 })
+    saveGrant(grant)
+    mocked(refresh).mockRejectedValue(refreshFailure('network'))
+    const session = new CloudSession()
+
+    const reply = await session.switchWorkspace('w1')
+
+    expect(reply).toMatchObject({ workspaceId: 'w1' })
+    expect(reply).not.toHaveProperty('workspaceSwitchFailure')
+    await expect(session.getAccessToken()).resolves.toBe(grant.accessToken)
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a still valid grant keeps minting during a refresh outage', async () => {
+    const grant = grantOn('w1', { expiresAt: Date.now() + 30_000 })
+    saveGrant(grant)
+    mocked(refresh).mockRejectedValue(refreshFailure('network'))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(mintRequests).toEqual([{ workspaceId: 'w2', bearer: grant.accessToken }])
     expect(signIn).not.toHaveBeenCalled()
   })
 
