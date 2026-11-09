@@ -19,8 +19,6 @@ import {
   History,
   Images,
   Keyboard,
-  Lock,
-  LockOpen,
   Map as MapIcon,
   Maximize,
   Minus,
@@ -31,6 +29,7 @@ import {
   Play,
   Plus,
   Redo2,
+  RedoDot,
   Search,
   Settings,
   CircleSlash,
@@ -1115,22 +1114,24 @@ function save(n: SNode): void {
   toastTimer = setTimeout(() => (toast.value = undefined), 3200)
 }
 
-// Another workflow in this tab: a fresh graph, nothing running.
+// Another workflow in this tab (the tab's own, one opened from Workflows,
+// or a template): a fresh graph, nothing running.
 watch(
   () => workflow,
-  () => {
-    engine.cancelAll()
-    const fresh = createCanvas()
-    sNodes.splice(0, sNodes.length, ...fresh.nodes)
-    links.splice(0, links.length, ...fresh.links)
-    groups.splice(0, groups.length, ...fresh.groups)
-    past.length = 0
-    future.length = 0
-    last = freeze()
-    canUndo.value = canRedo.value = false
-    nextTick(fit)
-  }
+  (w) => (shownWorkflow.value = w)
 )
+watch(shownWorkflow, () => {
+  engine.cancelAll()
+  const fresh = createCanvas()
+  sNodes.splice(0, sNodes.length, ...fresh.nodes)
+  links.splice(0, links.length, ...fresh.links)
+  groups.splice(0, groups.length, ...fresh.groups)
+  past.length = 0
+  future.length = 0
+  last = freeze()
+  canUndo.value = canRedo.value = false
+  nextTick(fit)
+})
 onBeforeUnmount(() => {
   offEngine()
   engine.dispose()
@@ -1310,15 +1311,18 @@ function addFromPanel(kind: NodeKind): void {
               aria-label="Group name"
               @change="commit()"
             />
-            <span v-if="gr.locked" class="mg-group-note">Skipped when the graph runs</span>
+            <!-- ComfyUI's Bypass (Ctrl+B, the redo-dot icon): its nodes are
+                 skipped when the graph runs. Locking in ComfyUI only pins. -->
+            <span v-if="gr.locked" class="mg-group-note">Bypassed</span>
             <button
               type="button"
               class="mg-group-btn"
-              :aria-label="gr.locked ? 'Unlock group' : 'Lock group'"
-              :title="gr.locked ? 'Unlock: runs again' : 'Lock: skip when running'"
+              :aria-pressed="gr.locked"
+              :aria-label="gr.locked ? 'Stop bypassing group' : 'Bypass group'"
+              :title="gr.locked ? 'Stop bypassing: runs again' : 'Bypass: skip when running'"
               @click="toggleLock(gr)"
             >
-              <Lock v-if="gr.locked" :size="12" /><LockOpen v-else :size="12" />
+              <RedoDot :size="12" />
             </button>
             <button
               type="button"
@@ -1515,7 +1519,11 @@ function addFromPanel(kind: NodeKind): void {
       @close="shortcuts = false"
       @manage="((shortcuts = false), openSettings('Keybinding'))"
     />
-    <TemplatesDialog v-if="dialog === 'templates'" @close="dialog = ''" @pick="dialog = ''" />
+    <TemplatesDialog
+      v-if="dialog === 'templates'"
+      @close="dialog = ''"
+      @pick="(t) => ((dialog = ''), (shownWorkflow = t.title))"
+    />
     <ModelBrowser v-else-if="dialog === 'models'" @close="dialog = ''" />
     <SettingsDialog
       v-else-if="dialog === 'settings'"
@@ -1666,7 +1674,13 @@ function addFromPanel(kind: NodeKind): void {
       <div v-if="toast" class="mg-toast" role="status">
         <img v-if="toast.image" :src="toast.image" alt="" />
         <span>{{ toast.text }}</span>
-        <button type="button" class="mg-toast-btn" @click="assets = true">View</button>
+        <button
+          type="button"
+          class="mg-toast-btn"
+          @click="((viewing = undefined), (assets = true))"
+        >
+          View
+        </button>
       </div>
     </Transition>
 
@@ -2316,11 +2330,12 @@ function addFromPanel(kind: NodeKind): void {
 }
 
 /* Save to Assets' toast: bottom centre, over the canvas. */
+/* Above the media viewer (z 8): saving from it confirms where you are. */
 .mg-toast {
   position: absolute;
   bottom: 16px;
   left: 50%;
-  z-index: 5;
+  z-index: 9;
   display: flex;
   height: 44px;
   align-items: center;

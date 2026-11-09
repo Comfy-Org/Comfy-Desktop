@@ -542,7 +542,8 @@ export function createCanvas(): { nodes: SNode[]; links: Link[]; groups: Group[]
   gen.chip = '4:5 · 1K'
   const pause = createNode('pause', 830, 60, 'pause')
   const relight = createNode('workflow', 1120, 60, 'relight')
-  relight.image = sun
+  // No preview of its own: the same portrait twice reads as a mistake, and
+  // its result is what Output shows.
   const out = createNode('output', 1540, 60, 'out')
   out.image = windowLight
   out.chip = 'Last run'

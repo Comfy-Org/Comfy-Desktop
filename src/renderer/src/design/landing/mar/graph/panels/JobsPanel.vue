@@ -203,7 +203,8 @@ const bare = (file: string): string => file.replace(/\.[a-z0-9]+$/i, '')
       </template>
 
       <template v-for="d in days" :key="d.day">
-        <p class="rp-section">{{ d.day }}</p>
+        <!-- Today's past runs follow the live ones under one heading. -->
+        <p v-if="!(d.day === 'Today' && live.length)" class="rp-section">{{ d.day }}</p>
         <div
           v-for="j in d.items"
           :key="j.id"
