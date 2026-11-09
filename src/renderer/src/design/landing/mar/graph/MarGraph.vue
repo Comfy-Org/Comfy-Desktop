@@ -50,7 +50,8 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { proto } from '../../useProto'
 import { graphStyle } from './graphStyle'
-import { assetTab } from './comfyLook'
+import { assetTab, comfyLook } from './comfyLook'
+import type { MarAsset } from '../pages/assetsStore'
 import AssetDetail from '../assets/AssetDetail.vue'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
@@ -876,6 +877,27 @@ const agent = ref(false)
 watch(panel, (id) => id && (agent.value = false))
 watch(agent, (on) => on && (panel.value = ''))
 const viewing = ref<string>()
+/** The redesign opens a result in the same asset view as Assets does; as
+ *  today it's ComfyUI's own result viewer (MediaViewer). */
+const viewNode = computed(() => (viewing.value ? sById.value[viewing.value] : undefined))
+const viewList = computed<MarAsset[]>(() => {
+  const n = viewNode.value
+  if (!n) return []
+  const video = !!n.video && !n.history.length
+  const items = n.history.length ? n.history : [{ src: n.image, run: 0 }]
+  const slug = n.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  return items.map((r, i) => ({
+    id: `${n.id}-r${i}`,
+    name: `${slug}${r.run ? `-run${r.run}` : ''}.${video ? 'mp4' : 'png'}`,
+    type: video ? 'video' : 'image',
+    source: 'local',
+    src: r.src,
+    size: '',
+    sizeMb: 0,
+    age: (items.length - i) * 4,
+    when: 'Just now'
+  }))
+})
 
 // ── Running. The UI only talks to the engine (runEngine.ts): today a mock
 // on timers, later ComfyUI's queue. The graph opens idle: nothing runs and
@@ -1835,8 +1857,19 @@ function addFromPanel(kind: NodeKind): void {
         @close="assetTab.asset = null"
       />
     </div>
+    <AssetDetail
+      v-if="viewNode && comfyLook.id !== 'production' && viewList.length"
+      :asset="viewList[Math.min(viewNode.pick, viewList.length - 1)]!"
+      :list="viewList"
+      build="Generated"
+      editable
+      saveable
+      @go="(a) => pick(viewNode!, viewList.indexOf(a))"
+      @save="save(viewNode!)"
+      @close="viewing = undefined"
+    />
     <MediaViewer
-      v-if="viewing && sById[viewing]"
+      v-else-if="viewing && sById[viewing]"
       :node="sById[viewing]!"
       @close="viewing = undefined"
       @pick="(index) => pick(sById[viewing!]!, index)"

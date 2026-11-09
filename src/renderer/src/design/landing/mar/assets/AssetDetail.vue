@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
-  ArrowLeft,
   Box,
   ChevronLeft,
   ChevronRight,
@@ -31,8 +30,9 @@ import { addTag, removeTag, tagsOf } from './assetTags'
  * tags, what's on record, and what could be read from the run, labelled
  * as inferred, never as fact. Arrows and the filmstrip step through the
  * list as it's filtered; Escape or Assets closes and hands focus back to
- * the tile. Zoom and a panel toggle sit in the bar, Download leads the
- * details (Alex Tov's media-assets proto).
+ * the tile. It opens as a framed window over the app, the same from the
+ * canvas and from Assets, Details open; zoom and the file's size sit along
+ * the bottom, Download leads the details (Alex Tov's media-assets proto).
  */
 const {
   asset,
@@ -40,7 +40,7 @@ const {
   build,
   editable = false,
   tab = false,
-  details = true
+  saveable = false
 } = defineProps<{
   asset: MarAsset
   list: MarAsset[]
@@ -51,11 +51,10 @@ const {
   /** ComfyUI in Production: the asset fills a tab beside the workflows,
    *  the tab's X closes it, no filmstrip or zoom. */
   tab?: boolean
-  /** Whether the details panel starts open. A double-click opens the view
-   *  for the picture, with Details a click away. */
-  details?: boolean
+  /** A canvas result, not saved yet: Save to Assets leads the actions. */
+  saveable?: boolean
 }>()
-const emit = defineEmits<{ close: []; go: [asset: MarAsset] }>()
+const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
 const facts = computed(() => factsFor(asset))
 const tags = computed(() => tagsOf(asset))
@@ -103,7 +102,7 @@ const setZoom = (z: number): void => {
   zoom.value = Math.min(300, Math.max(50, Math.round(z / ZOOM_STEP) * ZOOM_STEP))
 }
 /** The details panel folds away for the picture alone. */
-const side = ref(details)
+const side = ref(true)
 
 // The filmstrip keeps the current asset in view.
 const strip = ref<HTMLElement>()
@@ -184,238 +183,282 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body" :disabled="tab">
-    <div
-      ref="root"
-      class="proto-ui mad"
-      :class="[!side && 'no-side', tab && 'is-tab']"
-      :role="tab ? 'region' : 'dialog'"
-      :aria-modal="tab ? undefined : true"
-      :aria-label="asset.name"
-      tabindex="-1"
-    >
-      <section class="mad-stage" @pointerdown.self="!tab && emit('close')">
-        <header class="mad-bar">
-          <button v-if="!tab" type="button" class="mad-back" @click="emit('close')">
-            <ArrowLeft :size="14" />Assets
-          </button>
-          <span class="mad-file">{{ asset.name }}</span>
-          <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
-          <div v-if="!tab" class="mad-zoom" role="group" aria-label="Zoom">
+    <div :class="tab ? 'mad-host' : 'proto-ui mad-scrim'" @pointerdown.self="emit('close')">
+      <button v-if="!tab" type="button" class="mad-x" aria-label="Close" @click="emit('close')">
+        <X :size="18" />
+      </button>
+      <div
+        ref="root"
+        class="proto-ui mad"
+        :class="[!side && 'no-side', tab && 'is-tab']"
+        :role="tab ? 'region' : 'dialog'"
+        :aria-modal="tab ? undefined : true"
+        :aria-label="asset.name"
+        tabindex="-1"
+      >
+        <section class="mad-stage" @pointerdown.self="!tab && emit('close')">
+          <header class="mad-bar">
+            <span class="mad-file">{{ asset.name }}</span>
+            <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
             <button
-              type="button"
-              class="mad-icon is-sm"
-              aria-label="Zoom out"
-              :disabled="zoom <= 50"
-              @click="setZoom(zoom - ZOOM_STEP)"
-            >
-              <Minus :size="14" />
-            </button>
-            <input
-              type="range"
-              min="50"
-              max="300"
-              :step="ZOOM_STEP"
-              :value="zoom"
-              aria-label="Zoom"
-              @input="setZoom(+($event.target as HTMLInputElement).value)"
-            />
-            <button
-              type="button"
-              class="mad-icon is-sm"
-              aria-label="Zoom in"
-              :disabled="zoom >= 300"
-              @click="setZoom(zoom + ZOOM_STEP)"
-            >
-              <Plus :size="14" />
-            </button>
-            <button type="button" class="mad-zoom-pct" title="Reset to 100%" @click="zoom = 100">
-              {{ zoom }}%
-            </button>
-          </div>
-          <button
-            type="button"
-            class="mad-icon"
-            :class="!side && 'is-label'"
-            :aria-label="side ? 'Hide details' : 'Show details'"
-            :title="side ? 'Hide details' : 'Show details'"
-            :aria-pressed="side"
-            @click="side = !side"
-          >
-            <PanelRightClose v-if="side" :size="16" /><template v-else
-              ><PanelRightOpen :size="16" />Details</template
-            >
-          </button>
-        </header>
-        <button
-          type="button"
-          class="mad-arrow"
-          aria-label="Previous asset"
-          :disabled="!prev"
-          @click="prev && emit('go', prev)"
-        >
-          <ChevronLeft :size="18" />
-        </button>
-        <div class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
-          <img v-if="pic" :key="asset.id" :src="pic" alt="" />
-          <AssetCover v-else :name="asset.name" :type="asset.type" />
-          <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
-          <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
-        </div>
-        <button
-          type="button"
-          class="mad-arrow is-right"
-          aria-label="Next asset"
-          :disabled="!next"
-          @click="next && emit('go', next)"
-        >
-          <ChevronRight :size="18" />
-        </button>
-        <nav v-if="!tab" ref="strip" class="mad-strip" aria-label="Assets">
-          <button
-            v-for="a in list"
-            :key="a.id"
-            type="button"
-            class="mad-thumb"
-            :aria-current="a.id === asset.id"
-            :aria-label="a.name"
-            :title="a.name"
-            @click="emit('go', a)"
-          >
-            <img v-if="picOf(a)" :src="picOf(a)" alt="" loading="lazy" />
-            <AssetCover v-else :name="a.name" :type="a.type" />
-          </button>
-        </nav>
-      </section>
-
-      <aside v-if="side" class="mad-side" aria-label="Asset details">
-        <div class="mad-body">
-          <header class="mad-head">
-            <div class="mad-head-text">
-              <h2 class="mad-name">{{ asset.name }}</h2>
-              <p class="mad-sub">{{ summary }}</p>
-            </div>
-            <button
-              v-if="!editable"
               type="button"
               class="mad-icon"
-              aria-label="Show in Finder"
-              title="Show in Finder"
-              @click="toast(`Revealed ${asset.name}`)"
+              :class="!side && 'is-label'"
+              :aria-label="side ? 'Hide details' : 'Show details'"
+              :title="side ? 'Hide details' : 'Show details'"
+              :aria-pressed="side"
+              @click="side = !side"
             >
-              <FolderOpen :size="15" />
+              <PanelRightClose v-if="side" :size="16" /><template v-else
+                ><PanelRightOpen :size="16" />Details</template
+              >
             </button>
           </header>
-          <div class="mad-actions">
-            <button
-              type="button"
-              class="mad-btn is-primary"
-              @click="toast(`Downloading ${asset.name}`)"
-            >
-              <Download :size="14" /><span>Download</span>
-            </button>
-            <button
-              v-if="facts.workflow === 'available'"
-              type="button"
-              class="mad-btn"
-              :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
-              @click="
-                toast(
-                  editable
-                    ? `Opened ${asset.name} as a workflow`
-                    : `Opening the workflow in ${build}`
-                )
-              "
-            >
-              <Workflow :size="14" /><span>{{
-                editable ? 'Open as workflow' : 'Open workflow'
-              }}</span>
-            </button>
+          <button
+            type="button"
+            class="mad-arrow"
+            aria-label="Previous asset"
+            :disabled="!prev"
+            @click="prev && emit('go', prev)"
+          >
+            <ChevronLeft :size="18" />
+          </button>
+          <div class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
+            <img v-if="pic" :key="asset.id" :src="pic" alt="" />
+            <AssetCover v-else :name="asset.name" :type="asset.type" />
+            <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
+            <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
           </div>
-
-          <section class="mad-sec">
-            <dl class="mad-rows">
-              <div v-for="[k, v] in fileRows" :key="k" class="mad-row">
-                <dt>{{ k }}</dt>
-                <dd :title="v">{{ v }}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section class="mad-sec">
-            <h3 class="mad-label">
-              Tags
-              <span
-                v-if="!editable"
-                class="mad-tip"
-                tabindex="0"
-                role="note"
-                aria-label="Tags are edited in ComfyUI."
-                ><Info :size="12" /><span class="mad-tip-body is-short" aria-hidden="true"
-                  >Tags are edited in ComfyUI.</span
-                ></span
+          <button
+            type="button"
+            class="mad-arrow is-right"
+            aria-label="Next asset"
+            :disabled="!next"
+            @click="next && emit('go', next)"
+          >
+            <ChevronRight :size="18" />
+          </button>
+          <footer v-if="!tab" class="mad-foot">
+            <span class="mad-dims">{{ dims ?? facts.format }}</span>
+            <nav ref="strip" class="mad-strip" aria-label="Assets">
+              <button
+                v-for="a in list"
+                :key="a.id"
+                type="button"
+                class="mad-thumb"
+                :aria-current="a.id === asset.id"
+                :aria-label="a.name"
+                :title="a.name"
+                @click="emit('go', a)"
               >
-            </h3>
-            <div class="mad-tags">
-              <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
-                facts.imported ? 'input' : 'output'
-              }}</span>
-              <span v-for="t in tags" :key="t" class="mad-tag" :title="t"
-                ><span class="mad-tag-t">{{ t }}</span
-                ><button
-                  v-if="editable"
-                  type="button"
-                  class="mad-tag-x"
-                  :aria-label="`Remove ${t}`"
-                  @click="removeTag(asset, t)"
-                >
-                  <X :size="11" /></button
-              ></span>
-              <label v-if="editable" class="mad-tag-add">
-                <Plus :size="12" />
-                <input
-                  v-model="draft"
-                  placeholder="Add tag"
-                  aria-label="Add a tag"
-                  @keydown.enter.prevent="add"
-                />
-              </label>
+                <img v-if="picOf(a)" :src="picOf(a)" alt="" loading="lazy" />
+                <AssetCover v-else :name="a.name" :type="a.type" />
+              </button>
+            </nav>
+            <div class="mad-zoom" role="group" aria-label="Zoom">
+              <button
+                type="button"
+                class="mad-icon is-sm"
+                aria-label="Zoom out"
+                :disabled="zoom <= 50"
+                @click="setZoom(zoom - ZOOM_STEP)"
+              >
+                <Minus :size="14" />
+              </button>
+              <input
+                type="range"
+                min="50"
+                max="300"
+                :step="ZOOM_STEP"
+                :value="zoom"
+                aria-label="Zoom"
+                @input="setZoom(+($event.target as HTMLInputElement).value)"
+              />
+              <button
+                type="button"
+                class="mad-icon is-sm"
+                aria-label="Zoom in"
+                :disabled="zoom >= 300"
+                @click="setZoom(zoom + ZOOM_STEP)"
+              >
+                <Plus :size="14" />
+              </button>
+              <button type="button" class="mad-zoom-pct" title="Reset to 100%" @click="zoom = 100">
+                {{ zoom }}%
+              </button>
             </div>
-          </section>
+          </footer>
+        </section>
 
-          <section class="mad-sec">
-            <h3 class="mad-label">
-              Generation info
-              <span
-                class="mad-tip"
-                tabindex="0"
-                role="note"
-                aria-label="Inferred from the run’s data. A listed value may not have contributed to this output."
-                ><Info :size="12" /><span class="mad-tip-body" aria-hidden="true"
-                  >Inferred from the run’s data. A listed value may not have contributed to this
-                  output.</span
-                ></span
+        <aside v-if="side" class="mad-side" aria-label="Asset details">
+          <div class="mad-body">
+            <header class="mad-head">
+              <div class="mad-head-text">
+                <h2 class="mad-name">{{ asset.name }}</h2>
+                <p class="mad-sub">{{ summary }}</p>
+              </div>
+              <button
+                v-if="!editable"
+                type="button"
+                class="mad-icon"
+                aria-label="Show in Finder"
+                title="Show in Finder"
+                @click="toast(`Revealed ${asset.name}`)"
               >
-            </h3>
-            <GenerationInfo :facts="facts" :loading="loading" />
-          </section>
-        </div>
-      </aside>
+                <FolderOpen :size="15" />
+              </button>
+            </header>
+            <div class="mad-actions">
+              <button
+                v-if="saveable"
+                type="button"
+                class="mad-btn is-primary"
+                @click="emit('save')"
+              >
+                <Plus :size="14" /><span>Save to Assets</span>
+              </button>
+              <button
+                type="button"
+                class="mad-btn"
+                :class="!saveable && 'is-primary'"
+                @click="toast(`Downloading ${asset.name}`)"
+              >
+                <Download :size="14" /><span>Download</span>
+              </button>
+              <button
+                v-if="facts.workflow === 'available'"
+                type="button"
+                class="mad-btn"
+                :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
+                @click="
+                  toast(
+                    editable
+                      ? `Opened ${asset.name} as a workflow`
+                      : `Opening the workflow in ${build}`
+                  )
+                "
+              >
+                <Workflow :size="14" /><span>{{
+                  editable ? 'Open as workflow' : 'Open workflow'
+                }}</span>
+              </button>
+            </div>
+
+            <section class="mad-sec">
+              <dl class="mad-rows">
+                <div v-for="[k, v] in fileRows" :key="k" class="mad-row">
+                  <dt>{{ k }}</dt>
+                  <dd :title="v">{{ v }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="mad-sec">
+              <h3 class="mad-label">
+                Tags
+                <span
+                  v-if="!editable"
+                  class="mad-tip"
+                  tabindex="0"
+                  role="note"
+                  aria-label="Tags are edited in ComfyUI."
+                  ><Info :size="12" /><span class="mad-tip-body is-short" aria-hidden="true"
+                    >Tags are edited in ComfyUI.</span
+                  ></span
+                >
+              </h3>
+              <div class="mad-tags">
+                <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
+                  facts.imported ? 'input' : 'output'
+                }}</span>
+                <span v-for="t in tags" :key="t" class="mad-tag" :title="t"
+                  ><span class="mad-tag-t">{{ t }}</span
+                  ><button
+                    v-if="editable"
+                    type="button"
+                    class="mad-tag-x"
+                    :aria-label="`Remove ${t}`"
+                    @click="removeTag(asset, t)"
+                  >
+                    <X :size="11" /></button
+                ></span>
+                <label v-if="editable" class="mad-tag-add">
+                  <Plus :size="12" />
+                  <input
+                    v-model="draft"
+                    placeholder="Add tag"
+                    aria-label="Add a tag"
+                    @keydown.enter.prevent="add"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section class="mad-sec">
+              <h3 class="mad-label">
+                Generation info
+                <span
+                  class="mad-tip"
+                  tabindex="0"
+                  role="note"
+                  aria-label="Inferred from the run’s data. A listed value may not have contributed to this output."
+                  ><Info :size="12" /><span class="mad-tip-body" aria-hidden="true"
+                    >Inferred from the run’s data. A listed value may not have contributed to this
+                    output.</span
+                  ></span
+                >
+              </h3>
+              <GenerationInfo :facts="facts" :loading="loading" />
+            </section>
+          </div>
+        </aside>
+      </div>
     </div>
   </Teleport>
 </template>
 
 <style>
-.mad {
+/* A framed window over the app, its close outside the frame, top right. */
+.mad-scrim {
   position: fixed;
   inset: 0;
   z-index: 60;
+  background: rgb(0 0 0 / 0.6);
+  animation: mad-in 0.18s ease-out;
+}
+.mad-host {
+  display: contents;
+}
+.mad {
+  position: absolute;
+  inset: 20px 64px 20px 20px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(320px, 30vw, 400px);
-  background: color-mix(in oklch, var(--color-content-background) 94%, transparent);
-  backdrop-filter: blur(28px);
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 380px);
+  overflow: hidden;
+  border-radius: var(--radius-card, 16px);
+  background: var(--color-content-background);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 30px 80px -20px rgb(0 0 0 / 0.6);
   color: var(--color-base-foreground);
   outline: none;
-  animation: mad-in 0.18s ease-out;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-x {
+  position: absolute;
+  top: 20px;
+  right: 14px;
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-x:hover {
+  background: rgb(255 255 255 / 0.18);
 }
 .mad.no-side {
   grid-template-columns: minmax(0, 1fr);
@@ -423,6 +466,9 @@ onBeforeUnmount(() => {
 /* In a tab: it fills the canvas area, under ComfyUI's top bar. */
 .mad.is-tab {
   position: absolute;
+  inset: 0;
+  border-radius: 0;
+  box-shadow: none;
   z-index: 3;
   background: var(--color-content-background);
   backdrop-filter: none;
@@ -590,11 +636,35 @@ onBeforeUnmount(() => {
   opacity: 0.35;
 }
 /* Filmstrip: every asset in the list, the current one ringed. */
-.mad-strip {
+/* Along the bottom: the file's size, the filmstrip, the zoom. */
+.mad-foot {
   position: absolute;
   right: 16px;
-  bottom: 16px;
+  bottom: 14px;
   left: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.mad-dims {
+  justify-self: start;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mad-foot .mad-zoom {
+  justify-self: end;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.mad-strip {
+  min-width: 0;
   display: flex;
   justify-content: safe center;
   gap: 6px;
@@ -896,8 +966,19 @@ onBeforeUnmount(() => {
 /* Narrow windows: the details go under the picture. */
 @media (max-width: 820px) {
   .mad {
+    inset: 60px 8px 8px;
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 46vh);
+  }
+  .mad.is-tab {
+    inset: 0;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mad-x {
+    top: 12px;
+    right: 12px;
+  }
+  .mad-foot {
+    display: none;
   }
   .mad-side {
     border-top: 1px solid var(--mad-line);

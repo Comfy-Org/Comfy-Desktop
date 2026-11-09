@@ -5,10 +5,14 @@
  */
 
 const files = import.meta.glob('../../assets/*.jpg', { eager: true, import: 'default' })
-export const PICTURES = Object.entries(files).map(([path, src]) => ({
-  name: path.split('/').pop()!.replace('.jpg', ''),
-  src: src as string
-}))
+// Four of the portraits stay out, so the panel isn't a row of faces.
+const SKIP = ['portrait-garden', 'portrait-grass', 'portrait-seaside', 'portrait-smile']
+export const PICTURES = Object.entries(files)
+  .map(([path, src]) => ({
+    name: path.split('/').pop()!.replace('.jpg', ''),
+    src: src as string
+  }))
+  .filter((p) => !SKIP.includes(p.name))
 const pic = (i: number): string => PICTURES[i % PICTURES.length]?.src ?? ''
 
 // ── Job History: earlier runs, newest first. ──
