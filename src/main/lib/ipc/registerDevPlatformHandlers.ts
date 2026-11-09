@@ -142,10 +142,15 @@ export async function switchCloudWorkspace(workspaceId: string): Promise<Workspa
   const session = getCloudSession()
   const subjectBefore = session.currentSubject()
   clearVersionCache()
-  const reply = await session.switchWorkspace(workspaceId)
+  const switching = session.switchWorkspace(workspaceId)
+  const generation = session.currentAuthGeneration()
+  const reply = await switching
   clearVersionCache()
   const { workspaceSwitchFailure: _failure, ...status } = reply
-  if (session.currentSubject() !== subjectBefore) {
+  if (
+    session.currentAuthGeneration() === generation &&
+    session.currentSubject() !== subjectBefore
+  ) {
     getViewWorkspaceGrants().endAll()
     getViewWorkspaceGrants().allowDesktop(status.workspaceId)
   }

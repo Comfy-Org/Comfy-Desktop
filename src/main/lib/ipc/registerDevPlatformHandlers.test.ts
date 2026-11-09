@@ -132,7 +132,11 @@ import type { WebContents } from 'electron'
 
 import { CLOUD_CONFIG } from '../../cloud/config'
 import type * as ViewGrantsModule from '../viewWorkspaceGrants'
-import { registerDevPlatformHandlers, signInToCloud } from './registerDevPlatformHandlers'
+import {
+  registerDevPlatformHandlers,
+  signInToCloud,
+  switchCloudWorkspace
+} from './registerDevPlatformHandlers'
 import { comfyWindows, type ComfyWindowEntry } from '../../host/registry'
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown
@@ -629,6 +633,80 @@ describe('registerDevPlatformHandlers', () => {
 
       expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalledWith('w2')
     })
+  })
+
+  it('T-V27: an old switch finishing after another account took over changes no view permission', async () => {
+    const jwt = (claims: Record<string, unknown>): string => {
+      const b64 = (value: unknown): string =>
+        Buffer.from(JSON.stringify(value)).toString('base64url')
+      return `${b64({ alg: 'ES256' })}.${b64(claims)}.sig`
+    }
+    let active = 'w1'
+    let subject = 'user-1'
+    let generation = 1
+    const { ViewWorkspaceGrants } =
+      await vi.importActual<typeof ViewGrantsModule>('../viewWorkspaceGrants')
+    const grants = new ViewWorkspaceGrants(
+      {
+        currentWorkspaceId: () => active,
+        currentSubject: () => subject,
+        currentAuthGeneration: () => generation,
+        getGrantAccessToken: async () =>
+          jwt({ sub: subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope }),
+        isWorkspaceMintAllowed: async () => true
+      },
+      async (_grant, workspaceId) => ({
+        kind: 'minted',
+        token: jwt({ sub: subject, workspace_id: workspaceId }),
+        expiresAt: Date.now() + 900_000
+      })
+    )
+    grants.allowDesktop('w1')
+    mocks.endViewGrants.mockImplementation(() => grants.endAll())
+    mocks.allowDesktopWorkspace.mockImplementation((workspaceId) =>
+      grants.allowDesktop(workspaceId)
+    )
+    mocks.currentAuthGeneration.mockImplementation(() => generation)
+    mocks.currentSubject.mockImplementation(() => subject)
+    const viewV = { id: 'view-v' } as unknown as WebContents
+    const otherView = { id: 'other-view' } as unknown as WebContents
+    let finishOldSwitch: (status: Record<string, unknown>) => void = () => {}
+    mocks.switchWorkspace.mockImplementationOnce(() => {
+      generation += 1
+      return new Promise((resolve) => {
+        finishOldSwitch = resolve
+      })
+    })
+
+    const oldSwitch = switchCloudWorkspace('w2')
+
+    mocks.login.mockImplementationOnce(async () => {
+      generation += 1
+      subject = 'user-2'
+      active = 'u2-home'
+      return { signedIn: true, workspaceId: 'u2-home' }
+    })
+    await signInToCloud()
+
+    grants.allowView(viewV, 'X')
+    mocks.switchWorkspace.mockImplementationOnce(async () => {
+      generation += 1
+      active = 'X'
+      return { signedIn: true, workspaceId: 'X' }
+    })
+    await switchCloudWorkspace('X')
+
+    finishOldSwitch({ signedIn: true, workspaceId: 'X' })
+    await oldSwitch
+
+    await expect(grants.tokenFor(otherView, 'X')).resolves.toBeNull()
+    await expect(grants.tokenFor(viewV, 'X')).resolves.toBe(
+      jwt({ sub: 'user-2', workspace_id: 'X' })
+    )
+    mocks.endViewGrants.mockReset()
+    mocks.allowDesktopWorkspace.mockReset()
+    mocks.currentAuthGeneration.mockReset().mockReturnValue(1)
+    mocks.currentSubject.mockReset().mockReturnValue('user-1')
   })
 
   it('keeps a switch failure on the reply and off the broadcast', async () => {
