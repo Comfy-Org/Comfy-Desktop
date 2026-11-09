@@ -2,6 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   FileOutput,
@@ -68,22 +71,24 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 const tab = ref<Tab>('Generated')
 const query = ref('')
-const menu = ref<'' | 'view'>('')
+const menu = ref<'' | 'view' | 'sort'>('')
 const viewAnchor = ref<HTMLElement>()
 onClickOutside(viewAnchor, () => (menu.value = ''))
+// Masonry by default; a pick is remembered per viewer.
+const VIEW_KEY = 'Comfy.Assets.Sidebar.ViewMode.v2'
 const view = ref<View>(
   (() => {
     try {
-      return (localStorage.getItem('Comfy.Assets.Sidebar.ViewMode') as View) || 'large'
+      return (localStorage.getItem(VIEW_KEY) as View) || 'masonry'
     } catch {
-      return 'large'
+      return 'masonry'
     }
   })()
 )
 function setView(v: View): void {
   view.value = v
   try {
-    localStorage.setItem('Comfy.Assets.Sidebar.ViewMode', v)
+    localStorage.setItem(VIEW_KEY, v)
   } catch {
     // Storage blocked: the pick lasts for this window only.
   }
@@ -372,16 +377,18 @@ function upload(files: FileList | null | undefined): void {
           <button
             type="button"
             class="rp-icon is-field"
-            :class="menu === 'view' && 'is-on'"
+            :class="menu && 'is-on'"
             :title="cloud ? 'Sort and view' : 'View settings'"
             :aria-label="cloud ? 'Sort and view' : 'View settings'"
-            :aria-expanded="menu === 'view'"
-            @click="menu = menu === 'view' ? '' : 'view'"
+            :aria-expanded="!!menu"
+            @click="menu = menu ? '' : 'view'"
           >
             <SlidersHorizontal :size="15" />
           </button>
           <div v-if="menu === 'view'" class="rp-menu is-end ap-menu" role="menu">
-            <p class="rp-menu-label">View</p>
+            <p class="rp-menu-label ap-menu-head">
+              View<span>{{ VIEWS.find((v) => v.value === view)?.label }}</span>
+            </p>
             <div class="mar-pseg ap-views" role="radiogroup" aria-label="View">
               <button
                 v-for="v in VIEWS"
@@ -404,25 +411,41 @@ function upload(files: FileList | null | undefined): void {
               :key="d.label"
               type="button"
               role="menuitemcheckbox"
-              class="rp-row"
+              class="rp-row ap-check"
               :aria-checked="d.on.value"
-              :data-state="d.on.value ? 'checked' : 'unchecked'"
               @click="d.on.value = !d.on.value"
             >
-              {{ d.label }}
+              <span>{{ d.label }}</span
+              ><Check v-if="d.on.value" :size="14" />
             </button>
             <span class="rp-menu-sep" />
-            <p class="rp-menu-label">Sort by</p>
             <button
-              v-for="s in SORTS"
-              :key="s"
+              type="button"
+              role="menuitem"
+              class="rp-row ap-check"
+              aria-haspopup="menu"
+              @click="menu = 'sort'"
+            >
+              <span>Sort by</span><span class="ap-menu-val">{{ sort }}</span
+              ><ChevronRight :size="14" />
+            </button>
+          </div>
+          <div v-else-if="menu === 'sort'" class="rp-menu is-end ap-menu" role="menu">
+            <button type="button" class="rp-row ap-back" @click="menu = 'view'">
+              <ChevronLeft :size="14" /><span>Sort by</span>
+            </button>
+            <span class="rp-menu-sep" />
+            <button
+              v-for="o in SORTS"
+              :key="o"
               type="button"
               role="menuitemradio"
-              class="rp-row"
-              :data-state="sort === s ? 'checked' : 'unchecked'"
-              @click="((sort = s), (menu = ''))"
+              class="rp-row ap-check"
+              :aria-checked="sort === o"
+              @click="((sort = o), (menu = ''))"
             >
-              {{ s }}
+              <span>{{ o }}</span
+              ><Check v-if="sort === o" :size="14" />
             </button>
           </div>
         </span>
@@ -742,7 +765,52 @@ function upload(files: FileList | null | undefined): void {
   font-variant-numeric: tabular-nums;
 }
 .ap-menu {
-  min-width: 220px;
+  min-width: 240px;
+}
+/* View settings: the view named beside its label; each display option
+   says its state with a check on the right; Sort by drills into its own
+   list, so the menu stays short. */
+.ap-menu-head {
+  display: flex;
+  justify-content: space-between;
+}
+.ap-menu-head span {
+  color: var(--rp-text);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-check,
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-check:hover,
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-back:hover {
+  background: var(--rp-hover);
+}
+.ap-check > span:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.ap-check > svg,
+.ap-back > svg {
+  flex: none;
+  color: var(--rp-meta);
+}
+.ap-check > svg:last-child:not(:first-child) {
+  color: var(--rp-text);
+}
+.ap-menu-val {
+  overflow: hidden;
+  color: var(--rp-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-back {
+  font-weight: 500;
 }
 .ap-views {
   display: flex;

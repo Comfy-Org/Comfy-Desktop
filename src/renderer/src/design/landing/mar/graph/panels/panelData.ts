@@ -186,7 +186,6 @@ export const WORKFLOW_TREE: FileNode[] = [
   { name: 'qwen-multiple-angles' },
   { name: 'wan-i2v' }
 ]
-export const APPS: string[] = ['Product relight', 'Portrait retouch', 'Storyboard frames']
 
 // ── Keyboard Shortcuts: ComfyUI's defaults, in its columns. ──
 export interface ShortcutColumn {
