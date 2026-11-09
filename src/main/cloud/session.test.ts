@@ -684,6 +684,24 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     expect(mintRequests).toHaveLength(2)
   })
 
+  it('a late 429 from before logout does not throttle the same account signing back in', async () => {
+    saveGrant(grantOn('w1'))
+    const late = deferred<Response>()
+    mintReply = () => late.promise
+    const session = new CloudSession()
+    const stale = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+
+    session.logout()
+    saveGrant(grantOn('w1'))
+    late.resolve(json(429, {}, { 'Retry-After': '3600' }))
+    await stale
+    mintReply = ({ workspaceId }) => minted(workspaceId)
+
+    await expect(session.switchWorkspace('w3')).resolves.toMatchObject({ workspaceId: 'w3' })
+    expect(mintRequests).toHaveLength(2)
+  })
+
   it('a late 429 from a previous account in the same generation does not throttle the new one', async () => {
     saveGrant(grantOn('w1'))
     const held = new CloudSession()
@@ -1282,6 +1300,29 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
     expect(signIn).toHaveBeenCalledTimes(2)
     expect(mintRequests).toHaveLength(1)
+  })
+
+  it('a grant that can mint lifts the hold, so one that later narrows can ask again', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    mocked(signIn).mockResolvedValueOnce(
+      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
+    )
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    mocked(signIn).mockResolvedValueOnce(
+      signedInResult(grantOn('w1', { expiresAt: PAST, revision: '-scoped' }))
+    )
+    await session.login()
+    mocked(refresh).mockResolvedValue(
+      grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-narrow' })
+    )
+    mintReply = () => json(403, { code: 'insufficient_scope' })
+    await session.switchWorkspace('w2')
+    mocked(signIn).mockResolvedValueOnce(signedInResult(grantOn('w3')))
+
+    await expect(session.switchWorkspace('w3')).resolves.toMatchObject({ workspaceId: 'w3' })
+
+    expect(signIn).toHaveBeenCalledTimes(3)
   })
 
   it('an explicit sign-in that also returns no scope keeps ordinary switches off the browser', async () => {
