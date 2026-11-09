@@ -152,6 +152,7 @@ function clear(): void {
   project.value = 'all'
   query.value = ''
 }
+const stated = computed(() => shown.value.some((a) => a.status))
 
 const lib = useLibrary(assets, shown)
 // Its own view: masonry first, remembered per viewer.
@@ -539,10 +540,19 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         </template>
       </MarItem>
     </div>
-    <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 200px) 88px 120px">
+    <!-- State only while something is generating; otherwise it says nothing. -->
+    <div
+      v-else
+      class="mar-table is-items"
+      :style="{
+        '--mar-cols': 'minmax(0, 200px) 88px 120px',
+        '--mar-state': stated ? '128px' : '0px'
+      }"
+    >
       <div class="mar-table-head">
         <span>Name</span><span>Project</span><span class="is-num">Size</span><span>Made</span
-        ><span class="is-end">State</span><span />
+        ><span class="is-end">{{ stated ? 'State' : '' }}</span
+        ><span />
       </div>
       <MarItem
         v-for="a in shown"
