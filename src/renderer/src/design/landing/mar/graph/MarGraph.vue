@@ -50,7 +50,7 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { proto } from '../../useProto'
 import { graphStyle } from './graphStyle'
-import { assetTab, comfyLook } from './comfyLook'
+import { assetTab } from './comfyLook'
 import AssetDetail from '../assets/AssetDetail.vue'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
@@ -1821,7 +1821,7 @@ function addFromPanel(kind: NodeKind): void {
       </div>
     </div>
     <div
-      v-if="current && comfyLook.id === 'production' && assetTab.asset && assetTab.on"
+      v-if="current && assetTab.asset && assetTab.on"
       class="mg-asset-tab"
       :style="{ '--mg-panel-edge': `${panelEdge}px` }"
     >

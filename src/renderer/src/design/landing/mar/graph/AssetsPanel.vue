@@ -13,12 +13,12 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
-  PanelRight,
   AppWindow,
   Plus,
   ScanSearch,
   SearchX,
-  SlidersHorizontal,
+  Settings2,
+  Maximize2,
   Tag,
   TableOfContents,
   Trash2,
@@ -43,6 +43,7 @@ import AssetLightbox from './AssetLightbox.vue'
 import AssetSidePanel from './AssetSidePanel.vue'
 import BulkTagMenu from './BulkTagMenu.vue'
 import { assetTab, comfyLook } from './comfyLook'
+import { graphStyle } from './graphStyle'
 import { graphOpen } from './graphOpen'
 import { RAIL_DEFAULT, railWidth } from './panels/railWidth'
 import { factsFor } from '../assets/assetFacts'
@@ -322,30 +323,29 @@ const finished = computed(() => shown.value.filter((a) => !a.status))
 // A share link can open the first asset in Inspect asset (graphOpen.ts).
 if (graphOpen.inspect) {
   const first = finished.value[0]
-  if (first) inspect(first)
+  if (first) openFull(first)
   graphOpen.inspect = false
 }
 
-/** Inspect asset: over the window in the proposal; in Production the side
- *  panel, so the workflow stays in view (Phase 1, option A). */
-function inspect(a: PanelAsset): void {
-  if (prod.value) showSide(a)
+/** Phase 1, option A: double-click is ComfyUI's lightbox, a quick look;
+ *  Inspect asset opens the details in the side panel, so the workflow
+ *  stays in view; the full view is asked for. With workflow tabs (the
+ *  Current look) it opens in a tab beside them, otherwise over the window. */
+const lightbox = ref<PanelAsset | null>(null)
+const inspect = (a: PanelAsset): void => showSide(a)
+const tabs = computed(() => graphStyle.id === 'current')
+const fullLabel = computed(() => (tabs.value ? 'Open in new tab' : 'Open full view'))
+function openFull(a: PanelAsset): void {
+  if (tabs.value)
+    Object.assign(assetTab, { asset: a, list: finished.value, build: a.kind, on: true })
   else detail.value = a
 }
-/** Production: the full view in a tab beside the workflows, on request. */
-function openTab(a: PanelAsset): void {
-  Object.assign(assetTab, { asset: a, list: finished.value, build: a.kind, on: true })
-}
-/** Production: double-click opens ComfyUI's lightbox, a quick look. */
-const lightbox = ref<PanelAsset | null>(null)
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
 function lines(a: PanelAsset): MenuLine[] {
   return [
     { label: 'Inspect asset', icon: ScanSearch, run: () => inspect(a) },
-    prod.value
-      ? { label: 'Open in new tab', icon: AppWindow, run: () => openTab(a) }
-      : { label: 'Show details', icon: PanelRight, run: () => showSide(a) },
+    { label: fullLabel.value, icon: tabs.value ? AppWindow : Maximize2, run: () => openFull(a) },
     {
       label: 'Insert as node in workflow',
       icon: Plus,
@@ -473,7 +473,10 @@ function upload(files: FileList | null | undefined): void {
             :aria-expanded="!!menu"
             @click="menu = menu ? '' : 'view'"
           >
-            <SlidersHorizontal :size="15" />
+            <!-- As today it's ComfyUI's settings icon; the proposal shows the
+                 view you're in, so it doesn't read as a second filter. -->
+            <Settings2 v-if="prod" :size="15" />
+            <component :is="VIEWS.find((v) => v.value === view)?.icon" v-else :size="15" />
           </button>
           <div v-if="menu === 'view' && prod" class="rp-menu is-end ap-menu" role="menu">
             <button
@@ -622,7 +625,7 @@ function upload(files: FileList | null | undefined): void {
             class="ap-drag"
             draggable="true"
             @dragstart="drag(a, $event)"
-            @dblclick="prod && !a.status && (lightbox = a)"
+            @dblclick="!a.status && (lightbox = a)"
           >
             <MarItem
               :name="a.name.replace(/\.[^.]+$/, '')"
@@ -756,9 +759,9 @@ function upload(files: FileList | null | undefined): void {
   <AssetSidePanel
     v-if="sideOpen"
     :assets="sideAssets"
-    :tabbed="prod"
+    :open-label="fullLabel"
     @close="sideOpen = false"
-    @inspect="prod ? openTab($event as PanelAsset) : inspect($event as PanelAsset)"
+    @inspect="openFull($event as PanelAsset)"
   />
 </template>
 

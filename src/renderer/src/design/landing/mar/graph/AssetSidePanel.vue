@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { AppWindow, Download, Plus, ScanSearch, Workflow, X } from 'lucide-vue-next'
+import { AppWindow, Download, Maximize2, Plus, Workflow, X } from 'lucide-vue-next'
 import { toast } from '../../useProto'
 import GenerationInfo from '../assets/GenerationInfo.vue'
 import type { MarAsset } from '../pages/assetsStore'
@@ -15,11 +15,11 @@ import { addTag, removeTag, tagsOf } from '../assets/assetTags'
  * all share, added to or taken off all of them at once.
  */
 type SideAsset = MarAsset & { src: string; seconds: number; kind: string }
-const { assets, tabbed = false } = defineProps<{
+const { assets, openLabel = 'Open full view' } = defineProps<{
   assets: SideAsset[]
-  /** ComfyUI as today: this panel is Inspect asset, so its button opens the
-   *  full view in a new tab instead. */
-  tabbed?: boolean
+  /** This panel is Inspect asset; its button opens the full view, in a new
+   *  tab where ComfyUI shows workflow tabs. */
+  openLabel?: string
 }>()
 const emit = defineEmits<{ close: []; inspect: [asset: SideAsset] }>()
 
@@ -136,8 +136,10 @@ function drop(t: string): void {
     </div>
     <footer v-if="one" class="ap-side-foot">
       <button type="button" class="ap-side-btn is-main" @click="emit('inspect', one)">
-        <template v-if="tabbed"><AppWindow :size="14" />Open in new tab</template>
-        <template v-else><ScanSearch :size="14" />Inspect asset</template>
+        <AppWindow v-if="openLabel === 'Open in new tab'" :size="14" /><Maximize2
+          v-else
+          :size="14"
+        />{{ openLabel }}
       </button>
       <button
         v-if="facts?.workflow === 'available'"
