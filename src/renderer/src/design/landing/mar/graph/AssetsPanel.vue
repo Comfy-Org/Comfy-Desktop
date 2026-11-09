@@ -8,7 +8,6 @@ import {
   ImageOff,
   Layers,
   LayoutGrid,
-  ListFilter,
   Plus,
   ScanSearch,
   SearchX,
@@ -31,7 +30,7 @@ import MediaChip from '../MediaChip.vue'
 import type { MarAsset } from '../pages/assetsStore'
 import type { MenuLine } from '../pages/menu'
 import AssetDetail from '../assets/AssetDetail.vue'
-import AssetFilterFields from '../assets/AssetFilterFields.vue'
+import AssetFilterMenu from './AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
 
@@ -56,7 +55,7 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 const tab = ref<Tab>('Generated')
 const query = ref('')
-const menu = ref<'' | 'filter' | 'view'>('')
+const menu = ref<'' | 'view'>('')
 const view = ref<View>(
   (() => {
     try {
@@ -191,6 +190,36 @@ function remove(ids: string[]): void {
 
 const detail = ref<PanelAsset | null>(null)
 const finished = computed(() => shown.value.filter((a) => !a.status))
+/** What's filtered, as removable pills under the search (ComfyUI's
+ *  MediaAssetFilterBar), with Clear all. */
+const pills = computed(() => {
+  const f = filter.value
+  return [
+    ...f.types.map((t) => ({
+      key: `type-${t}`,
+      label: MEDIA.find((m) => m.value === t)?.label ?? t,
+      drop: () => (filter.value = { ...f, types: f.types.filter((x) => x !== t) })
+    })),
+    ...(f.from || f.to
+      ? [
+          {
+            key: 'date',
+            label: dateLabel(f.from),
+            drop: () => (filter.value = { ...f, from: '', to: '' })
+          }
+        ]
+      : []),
+    ...f.tags.map((t) => ({
+      key: `tag-${t}`,
+      label: `# ${t}`,
+      drop: () => (filter.value = { ...f, tags: f.tags.filter((x) => x !== t) })
+    }))
+  ]
+})
+function dateLabel(from: string): string {
+  const days = Math.round((Date.now() - new Date(from).getTime()) / 86400000)
+  return days < 1 ? 'Today' : days <= 7 ? 'Past week' : days <= 31 ? 'Past month' : 'This year'
+}
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
 function lines(a: PanelAsset): MenuLine[] {
@@ -293,34 +322,7 @@ function upload(files: FileList | null | undefined): void {
             (($event.target as HTMLInputElement).value = ''))
           "
         />
-        <span class="rp-anchor">
-          <button
-            type="button"
-            class="rp-icon is-field"
-            :class="menu === 'filter' && 'is-on'"
-            title="Filter"
-            aria-label="Filter"
-            :aria-expanded="menu === 'filter'"
-            @click="menu = menu === 'filter' ? '' : 'filter'"
-          >
-            <ListFilter :size="15" /><i v-if="activeFilters(filter)" class="rp-dot" />
-          </button>
-          <div
-            v-if="menu === 'filter'"
-            class="rp-menu is-end ap-menu ap-filter"
-            role="menu"
-            aria-label="Filter"
-          >
-            <AssetFilterFields
-              v-model="filter"
-              :types="[...MEDIA]"
-              types-label="Media type"
-              :source="false"
-              :tags="TAGS"
-              :count="finished.length"
-            />
-          </div>
-        </span>
+        <AssetFilterMenu v-model="filter" :types="MEDIA" :tags="TAGS" />
         <span class="rp-anchor">
           <button
             type="button"
@@ -366,6 +368,14 @@ function upload(files: FileList | null | undefined): void {
             </button>
           </div>
         </span>
+      </div>
+      <div v-if="pills.length" class="ap-pills">
+        <span v-for="p in pills" :key="p.key" class="ap-pill"
+          >{{ p.label
+          }}<button type="button" :aria-label="`Remove ${p.label}`" @click="p.drop()">
+            <X :size="12" /></button
+        ></span>
+        <button type="button" class="ap-clear" @click="filter = noFilter()">Clear all</button>
       </div>
     </template>
 
@@ -601,25 +611,43 @@ function upload(files: FileList | null | undefined): void {
 :root .proto-ui.proto-ui.proto-ui .ap-selbar .rp-icon {
   color: var(--color-content-background);
 }
-/* Lines up with the panel's right edge, past the view button. */
-.rp-menu.ap-filter {
-  right: -42px;
-  width: 288px;
-  max-height: min(520px, calc(100vh - 200px));
-  padding: 10px 12px;
-}
-.ap-filter .aff {
-  min-width: 0;
-}
-/* Six media types: the chips get their own line under the label. */
-.ap-filter .aff-row:first-child {
-  flex-direction: column;
-  align-items: flex-start;
+/* Applied filters under the search, as ComfyUI shows them. */
+.ap-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  margin-top: 8px;
 }
-.ap-filter .aff-row:first-child .aff-chips {
-  justify-content: flex-start;
-  margin-left: -9px;
+.ap-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-pill button {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .ap-pill button:hover {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .ap-clear {
+  height: 24px;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-clear:hover {
+  color: var(--color-base-foreground);
 }
 .ap-stack {
   position: absolute;
