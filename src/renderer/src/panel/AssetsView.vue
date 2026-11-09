@@ -20,7 +20,6 @@ import {
   ZoomIn
 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
-import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
@@ -60,7 +59,6 @@ const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 
 const assets = ref<GalleryAsset[]>([])
-const selectedIds = ref(new Set<string>())
 const detailIndex = ref<number | null>(null)
 const cardMenuOpenId = ref<string | null>(null)
 const loading = ref(false)
@@ -152,12 +150,6 @@ watch(visibleAssets, (list) => {
 function selectScope(id: string): void {
   scope.value = id
   scopeMenuOpen.value = false
-}
-
-function toggleSelected(id: string): void {
-  const next = new Set(selectedIds.value)
-  if (!next.delete(id)) next.add(id)
-  selectedIds.value = next
 }
 
 function openDetail(asset: GalleryAsset): void {
@@ -418,8 +410,6 @@ function extensionOf(name: string): string {
           v-for="asset in visibleAssets"
           :key="asset.id"
           class="group relative bg-secondary"
-          :class="selectedIds.has(asset.id) && 'outline-2 -outline-offset-2 outline-foreground'"
-          :aria-selected="selectedIds.has(asset.id)"
           :data-testid="`asset-${asset.id}`"
         >
           <button
@@ -478,16 +468,9 @@ function extensionOf(name: string): string {
           </button>
 
           <div
-            class="absolute inset-x-2 top-2 flex items-start justify-between opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
-            :class="(selectedIds.has(asset.id) || cardMenuOpenId === asset.id) && 'opacity-100'"
+            class="absolute top-2 right-2 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+            :class="cardMenuOpenId === asset.id && 'opacity-100'"
           >
-            <Checkbox
-              :model-value="selectedIds.has(asset.id)"
-              class="size-5 rounded-full border-foreground bg-media-overlay"
-              :aria-label="t('assets.select', { name: asset.name })"
-              :data-testid="`asset-select-${asset.id}`"
-              @update:model-value="toggleSelected(asset.id)"
-            />
             <div class="flex items-center rounded-md bg-media-overlay">
               <Button
                 type="button"

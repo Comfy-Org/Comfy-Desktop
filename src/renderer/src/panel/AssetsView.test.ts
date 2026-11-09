@@ -125,16 +125,6 @@ describe('AssetsView', () => {
     expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
   })
 
-  it('selects assets without opening them', async () => {
-    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-    const wrapper = await mountAssets([build('lab', 'Video Lab')])
-
-    await wrapper.get('[data-testid="asset-select-a"]').trigger('click')
-
-    expect(wrapper.get('[data-testid="asset-a"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
-  })
-
   it('opens an asset in the detail view, steps through assets and returns', async () => {
     listAssets.mockResolvedValue([
       asset('a', 'surfer.mp4', 'video'),
