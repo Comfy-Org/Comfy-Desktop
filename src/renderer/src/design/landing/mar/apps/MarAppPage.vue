@@ -244,8 +244,9 @@ const VIEWS = computed(() => [
 /** Inspiration's head: two rows of the app's pictures, each repeated so
  *  the drift loops. */
 const driftRow = (r: number): AppExample[] => {
-  const list = examples.value.filter((_, i) => i % 2 === r - 1)
-  return list.length >= 4 ? list.slice(0, 8) : examples.value.slice(0, 8)
+  const all = examples.value
+  // Eight each, the same length, so both rows loop at one width.
+  return Array.from({ length: 8 }, (_, i) => all[(i * 2 + r - 1) % all.length]!)
 }
 function openOutput(i: number): void {
   take.value = i
@@ -493,9 +494,12 @@ function back(): void {
         <div v-if="onGallery" class="mar-app-editor-grid">
           <!-- What the app does, beside its pictures drifting by. -->
           <header class="mar-app-editor-hero">
+            <!-- The example it opens on (the one picked in Inspiration, else
+                 its first), blurred behind. -->
             <img
+              :key="example?.id"
               class="mar-app-editor-hero-glow"
-              :src="examples[0]?.after"
+              :src="example?.after ?? examples[0]?.after"
               alt=""
               aria-hidden="true"
             />
@@ -509,18 +513,22 @@ function back(): void {
             </div>
             <!-- Its pictures, two tilted rows drifting past each other. -->
             <div class="mar-app-editor-hero-drift" aria-hidden="true">
-              <div
-                v-for="r in 2"
-                :key="r"
-                :class="['mar-app-editor-hero-row', r === 2 && 'is-back']"
-              >
-                <img
-                  v-for="(x, i) in [...driftRow(r), ...driftRow(r)]"
-                  :key="i"
-                  :src="x.after"
-                  alt=""
-                  loading="lazy"
-                />
+              <!-- One tilt for both rows, so they slide along it and keep
+                   the same distance apart. -->
+              <div class="mar-app-editor-hero-tilt">
+                <div
+                  v-for="r in 2"
+                  :key="r"
+                  :class="['mar-app-editor-hero-row', r === 2 && 'is-back']"
+                >
+                  <img
+                    v-for="(x, i) in [...driftRow(r), ...driftRow(r)]"
+                    :key="i"
+                    :src="x.after"
+                    alt=""
+                    loading="lazy"
+                  />
+                </div>
               </div>
             </div>
           </header>
@@ -1155,16 +1163,20 @@ function back(): void {
   flex: none;
   flex-direction: column;
   justify-content: center;
-  gap: 8px;
   margin: -20px -32px -20px 0;
   overflow: hidden;
   mask-image: linear-gradient(to right, transparent, #000 22%, #000 85%, transparent);
+}
+.mar-app-editor-hero-tilt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  rotate: -7deg;
 }
 .mar-app-editor-hero-row {
   display: flex;
   width: max-content;
   gap: 10px;
-  rotate: -7deg;
   animation: mar-hero-drift 48s linear infinite;
 }
 .mar-app-editor-hero-row.is-back {
