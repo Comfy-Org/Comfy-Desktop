@@ -127,6 +127,15 @@ At runtime the main process picks a git backend in priority order ([`src/main/li
 
 </details>
 
+### Run tests
+
+```bash
+pnpm run test:browser:install   # once per Playwright version: downloads headless Chromium
+pnpm test
+```
+
+Main, preload, and shared code is tested in Node. Renderer tests run in headless Chromium through [Vitest browser mode](https://vitest.dev/guide/browser/). To watch them in a visible browser, run `pnpm exec vitest --project browser --browser.headless=false`.
+
 ## Releasing
 
 > Production builds go through [ToDesktop](https://www.todesktop.com/) in CI — nothing is built locally. Any maintainer can cut a release; it's one workflow run plus a PR merge.
