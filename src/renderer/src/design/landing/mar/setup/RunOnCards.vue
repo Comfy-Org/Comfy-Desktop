@@ -1,27 +1,31 @@
 <script setup lang="ts">
-import { Check, Cloud, Laptop } from 'lucide-vue-next'
-import type { RunOnCards } from './setupFlow'
+import { Check } from 'lucide-vue-next'
+import SetupCloud from './SetupCloud.vue'
+import SetupLaptop from './SetupLaptop.vue'
+import { localSetup, type RunOnCards } from './setupFlow'
 
 /**
- * First screen's Cloud / Local pick as the Home's start cards: neutral
- * surface, icon tile, the pick ringed and checked. Copy is today's, word
- * for word. Two takes (UI Playground › Local setup › First screen cards):
- * cards side by side, or stacked rows.
+ * First screen's Cloud / Local pick as the Home's build cards: the machine
+ * drawn (the Home's cloud and laptop), lit in its own hue from the corner,
+ * the pick ringed and checked. Copy is today's, word for word. Two takes
+ * (UI Playground › Local setup › First screen cards): cards side by side,
+ * or stacked rows.
  */
 const { variant } = defineProps<{ variant: Exclude<RunOnCards, 'today'> }>()
 const model = defineModel<'cloud' | 'local'>({ required: true })
 
+// The Home's build hues: the cloud's blue, the first local build's warm light.
 const WAYS = [
   {
     id: 'cloud',
-    icon: Cloud,
+    hue: 210,
     label: 'Cloud',
     tagline: 'Full power. Instant setup.',
     description: 'Best for <b>powerful GPUs</b> and popular custom nodes, ready anywhere.'
   },
   {
     id: 'local',
-    icon: Laptop,
+    hue: 50,
     label: 'Local',
     tagline: 'Full control. Your hardware.',
     description:
@@ -45,10 +49,18 @@ const WAYS = [
       role="radio"
       class="mss-way"
       :class="`is-${w.id}`"
+      :style="{ '--h': w.hue }"
       :aria-checked="model === w.id"
       @click="model = w.id"
     >
-      <span class="mss-way-icon"><component :is="w.icon" :size="17" /></span>
+      <span class="mss-way-device">
+        <SetupCloud v-if="w.id === 'cloud'" :hue="w.hue" />
+        <template v-else>
+          <SetupLaptop :os="localSetup.os" />
+          <!-- The build's hue on its screen, as the Builds row lights it. -->
+          <span class="mss-way-screen" aria-hidden="true"></span>
+        </template>
+      </span>
       <span class="mss-way-text">
         <span class="mss-way-title">{{ w.label }}</span>
         <span class="mss-way-tag">{{ w.tagline }}</span>
@@ -68,10 +80,13 @@ const WAYS = [
   gap: 12px;
   margin-top: 32px;
 }
-/* The Home's start cards (MarStartOriginal.vue): the card surface over
- * the spotlight, a quiet icon tile, the pick ringed as the flow's radios. */
+/* The Home's build cards (MarBuildsRow.vue): the machine drawn, the card
+ * lit from its corner in the build's hue, the pick ringed as the flow's
+ * radios. */
 .mss-way {
   position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -80,7 +95,7 @@ const WAYS = [
   text-align: left;
   cursor: pointer;
   outline: none;
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  box-shadow: inset 0 0 0 1px oklch(0.8 0.06 var(--h, 0) / 0.12);
   transition:
     background-color 160ms ease,
     box-shadow 160ms ease;
@@ -89,26 +104,68 @@ const WAYS = [
   box-shadow: 0 0 0 2px var(--color-border-focus);
 }
 .mss-way[aria-checked='true'] {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 55%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 55%, transparent),
+    0 12px 32px -16px oklch(0.6 0.12 var(--h, 0) / 0.5);
 }
-.mss-way-light {
-  display: none;
+/* Lit from its corner in the build's own hue, as the Builds row; the
+ * pick glows a little more, the other card sits back. */
+.mss-way::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 60% 130% at 8% 0%,
+    oklch(0.7 0.15 var(--h, 0) / 0.26),
+    transparent 70%
+  );
+  content: '';
+  opacity: 0.5;
+  transform-origin: 8% 0%;
+  transition:
+    opacity 200ms ease,
+    transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.mss-way-icon {
-  display: inline-flex;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-muted-foreground);
-  transition: color 160ms ease;
+.mss-way:hover::before {
+  opacity: 1;
 }
-.mss-way:hover .mss-way-icon,
-.mss-way[aria-checked='true'] .mss-way-icon {
-  color: var(--color-base-foreground);
+.mss-way[aria-checked='true']::before {
+  opacity: 1;
+  transform: scale(1.6);
+}
+.mss-way-device {
+  position: relative;
+  display: block;
+  flex: none;
+}
+.mss-way .mss-laptop {
+  width: 116px;
+  height: 75px;
+  margin: -4px 0 -2px -6px;
+}
+/* Over the laptop's screen (its box in SetupLaptop's 160 × 104 drawing). */
+.mss-way-screen {
+  position: absolute;
+  top: 8.2%;
+  right: 14%;
+  bottom: 22.6%;
+  left: 14%;
+  border-radius: 2px;
+  background: radial-gradient(
+    ellipse 90% 90% at 30% 25%,
+    oklch(0.74 0.16 var(--h, 0) / 0.8),
+    oklch(0.55 0.14 var(--h, 0) / 0.3) 65%,
+    transparent
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+.mss-way:not([aria-checked='true']) .mss-way-device {
+  opacity: 0.8;
+  transition: opacity 160ms ease;
+}
+.mss-way:hover .mss-way-device {
+  opacity: 1;
 }
 .mss-way-text {
   display: flex;
@@ -125,7 +182,8 @@ const WAYS = [
   font-size: var(--text-ui);
 }
 .mss-way-desc {
-  margin-top: 8px;
+  margin-top: 10px;
+  max-width: 34ch;
   color: var(--color-subtle-foreground);
   font-size: var(--text-ui);
   line-height: var(--text-ui--line-height);
@@ -169,6 +227,10 @@ const WAYS = [
 .mss-ways.is-row .mss-way-desc {
   margin-top: 4px;
 }
+.mss-ways.is-row .mss-way .mss-laptop {
+  width: 88px;
+  height: 57px;
+}
 .mss-ways.is-row .mss-way-mark {
   top: 50%;
   margin-top: -10px;
@@ -184,7 +246,7 @@ const WAYS = [
 :root .proto-ui.proto-ui.proto-ui .mss-ways .mss-way {
   width: auto;
   height: auto;
-  padding: 18px;
+  padding: 20px 20px 22px;
   border-radius: 18px;
   background: color-mix(in oklch, var(--color-base-foreground) 3%, transparent);
 }
@@ -200,7 +262,8 @@ const WAYS = [
 
 @media (prefers-reduced-motion: reduce) {
   .mss-way,
-  .mss-way-icon,
+  .mss-way::before,
+  .mss-way-device,
   .mss-way-mark {
     transition: none;
   }
