@@ -56,7 +56,9 @@ import {
   setupOn,
   startInstall,
   unsupported,
-  type Starter
+  type Starter,
+  AFTER_INSTALLS,
+  ONBOARDINGS
 } from './setupFlow'
 import SetupLaptop from './SetupLaptop.vue'
 import './setup.css'
@@ -110,7 +112,7 @@ const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 
 // Set up › Continue: low space asks first, as today. M1 has no Home, so the
 // starter workflow stays a step here, as today. Once the Home exists it
-// offers them after the install instead (StarterShelf.vue).
+// offers the apps on the Home instead (setup/HomeInstall.vue).
 const workflowStep = computed(() => localSetup.scope === 'm1')
 function continueSetup(): void {
   if (lowSpace.value) flow.confirmLowDisk = true
@@ -361,6 +363,17 @@ function rowState(i: number): string {
         <div class="mss-first-frame">
           <div v-if="!failed" class="mss-ambient"></div>
           <ComfyWordmark class="mss-first-mark" />
+          <!-- Review only (not product): which version of the first launch
+               this is, switchable here as in UI Playground › Local setup. -->
+          <div
+            v-if="localSetup.scope === 'next'"
+            class="mss-version"
+            aria-label="Prototype version"
+          >
+            <span class="mss-version-label">Prototype</span>
+            <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" size="sm" />
+            <Select v-model="localSetup.after" :options="AFTER_INSTALLS" size="sm" />
+          </div>
           <SetupSteps
             v-if="!homeFirst || homeRunning"
             :now="1"

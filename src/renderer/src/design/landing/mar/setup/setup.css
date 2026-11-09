@@ -845,6 +845,28 @@
     height: 22px;
     color: var(--color-base-foreground);
   }
+  /* Review only: the version switcher, top right of the first screen. */
+  .mss-version {
+    position: absolute;
+    top: 14px;
+    right: 20px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.55;
+    transition: opacity 160ms ease;
+  }
+  .mss-version:hover,
+  .mss-version:focus-within {
+    opacity: 1;
+  }
+  .mss-version-label {
+    color: var(--color-subtle-foreground);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
   .mss-first-mark path {
     fill: currentColor;
   }

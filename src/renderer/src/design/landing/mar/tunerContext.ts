@@ -236,6 +236,7 @@ export const TWEAKS = {
         cards: 'glow',
         scope: 'm1',
         onboarding: 'install',
+        after: 'home',
         os: 'mac',
         gpu: 'nvidia'
       })

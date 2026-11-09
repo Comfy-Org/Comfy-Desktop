@@ -5,19 +5,17 @@ import Button from '../../ui/Button.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import SetupLaptop from './SetupLaptop.vue'
-import StarterShelf from './StarterShelf.vue'
 import ExampleShowcase from '../userStates/ExampleShowcase.vue'
-import { EXAMPLES } from '../userStates/examples'
-import { go } from '../../useProto'
-import { can } from '../../milestones'
 import {
   DETECTED,
   changeFromHome,
+  dismissReady,
   flow,
   homeOpen,
   installInBackground,
   localSetup,
   lowSpace,
+  openComfyUI,
   phaseIndex,
   phases,
   showInstall,
@@ -29,18 +27,20 @@ import {
  * lands on the Home, and the install waits here on one card: what was
  * detected, Install, and Change for the two things that can be wrong (where
  * it goes, which hardware). Once it runs, the card carries today's progress,
- * the logs and Cancel, and the wait is for picking the workflow to open
- * first; its models join the install as the last step, as in today's
- * Workflow step. The card is Set up's own: the computer drawn large, as the
+ * the logs and Cancel. The card is Set up's own: the computer drawn large, as the
  * subject. Under it, the apps: they run on Comfy Cloud, so they work before
  * ComfyUI is installed (Milestone 2).
  */
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
+// After install › Ready: the same card says ComfyUI is there, with the one
+// way in. Any Local setup flow ends here when that option is on.
+const ready = computed(() => flow.ready)
 const blocked = computed(() => lowSpace.value || unsupported.value)
 // The card's kicker says where it stands; what stops the install before it
 // starts keeps today's words (Set up).
 const state = computed(() => {
+  if (ready.value) return { label: 'Ready', icon: Check, bad: false }
   if (failed.value) return { label: 'Operation failed', icon: TriangleAlert, bad: true }
   if (installing.value) return { label: 'Installing ComfyUI', icon: LoaderCircle, bad: false }
   if (unsupported.value) return { label: 'Unsupported Hardware', icon: TriangleAlert, bad: true }
@@ -50,24 +50,24 @@ const state = computed(() => {
 const phase = computed(() => phases.value[Math.max(0, phaseIndex.value)]?.label ?? '')
 const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 const line = computed(() => {
+  if (ready.value)
+    return `ComfyUI ${DETECTED.version} installed · ${flow.movedDisk ? DETECTED.otherPath : DETECTED.path}`
   if (installing.value) return `${phase.value} · ${flow.percent}%`
   if (unsupported.value)
     return 'ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not supported.'
   if (lowSpace.value) return `${DETECTED.lowFreeGb} GB free · ~${REQUIRED_GB} GB required`
   return `${DETECTED.memGb} GB memory · ComfyUI ${DETECTED.version} · ${DETECTED.downloadGb} GB download`
 })
-// Pick to install: the workflows show before the install too, and picking a
-// local one starts it (StarterShelf.vue).
-const shelf = computed(
-  () => !failed.value && (installing.value || (homeOpen.value && !unsupported.value))
-)
 // No space: Change setup is where another disk is picked.
 const install = (): void => (blocked.value ? changeFromHome() : installInBackground())
 </script>
 
 <template>
   <section class="mt-8" aria-label="Local install">
-    <SectionHeader v-if="!installing" :title="`Install ComfyUI on ${DETECTED.noun}`" />
+    <SectionHeader
+      v-if="!installing"
+      :title="ready ? 'ComfyUI is ready' : `Install ComfyUI on ${DETECTED.noun}`"
+    />
     <div class="mss-machine is-hero mss-home-inst">
       <SetupLaptop :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">
@@ -86,7 +86,11 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         ></span>
       </span>
       <span class="flex shrink-0 items-center gap-2">
-        <template v-if="installing">
+        <template v-if="ready">
+          <Button variant="ghost" size="lg" @click="dismissReady">Not now</Button>
+          <Button variant="primary" size="lg" @click="openComfyUI()">Open ComfyUI</Button>
+        </template>
+        <template v-else-if="installing">
           <Button variant="ghost" @click="showInstall">View logs</Button>
           <Button v-if="failed" variant="secondary" @click="changeFromHome">Change</Button>
           <Button v-if="!failed" variant="secondary" @click="flow.confirmCancel = true"
@@ -102,33 +106,10 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
       </span>
     </div>
     <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
-         there, so they come first. The first-run Home's own block
-         (MarStartOriginal.vue), in the look UI Playground picks. With pick
-         to install the first-run Home itself follows, examples included. -->
-    <div v-if="!homeOpen" class="mt-10">
-      <SectionHeader
-        title="Run an example on Comfy Cloud"
-        :link="can.explore ? 'See all' : undefined"
-        @link="go('explore')"
-      >
-        <template #controls>
-          <span
-            class="inline-flex h-5 items-center rounded-full bg-secondary-background px-2 text-ui text-muted-foreground"
-            >{{ EXAMPLES.length }}</span
-          >
-        </template>
-      </SectionHeader>
+         there. The first-run Home's own examples (Milestone 2), in the look
+         UI Playground picks; with the Home open they are already there. -->
+    <div v-if="!homeOpen && !ready" class="mt-10">
       <ExampleShowcase />
-    </div>
-    <div v-if="shelf" class="mt-10">
-      <SectionHeader title="Start from a workflow">
-        <template v-if="installing" #controls>
-          <span class="text-ui text-subtle-foreground"
-            >Pick one; it opens when ComfyUI is ready</span
-          >
-        </template>
-      </SectionHeader>
-      <StarterShelf />
     </div>
     <!-- The install modal carries its own confirm while it is open. -->
     <SetupCancelConfirm v-if="!flow.open" />
