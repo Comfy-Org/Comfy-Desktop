@@ -27,13 +27,13 @@ const BY_EXT: Record<string, Kind> = {
   csv: 'table',
   tsv: 'table'
 }
-const KINDS: Record<Kind, { hue: number; chroma: number; icon: Component }> = {
-  doc: { hue: 255, chroma: 0.06, icon: FileText },
-  code: { hue: 300, chroma: 0.06, icon: Braces },
-  table: { hue: 155, chroma: 0.06, icon: Sheet },
-  audio: { hue: 45, chroma: 0.07, icon: AudioLines },
-  '3d': { hue: 205, chroma: 0.05, icon: Box },
-  file: { hue: 0, chroma: 0, icon: Binary }
+const KINDS: Record<Kind, { icon: Component }> = {
+  doc: { icon: FileText },
+  code: { icon: Braces },
+  table: { icon: Sheet },
+  audio: { icon: AudioLines },
+  '3d': { icon: Box },
+  file: { icon: Binary }
 }
 
 const ext = computed(() => (name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''))
@@ -44,8 +44,7 @@ const kind = computed<Kind>(
     'file'
 )
 const tint = computed(() => {
-  const k = KINDS[kind.value]
-  return { '--ac-hue': `oklch(0.64 ${k.chroma} ${k.hue})`, '--ac-grain': GRAIN }
+  return { '--ac-grain': GRAIN }
 })
 
 /** A repeatable number from 0 to 1 per name and use. */
@@ -123,14 +122,14 @@ const WAVE = computed(() =>
   height: 100%;
   align-items: center;
   justify-content: center;
-  /* A light wash over the card, mostly see-through: the type reads from
-     the hint and the extension, the colour only whispers it. */
+  /* A white wash over the card, like Home's covers: the type reads from
+     the hint and the extension, not from colour. */
   background: linear-gradient(
     160deg,
-    color-mix(in oklab, var(--ac-hue) 10%, transparent),
-    color-mix(in oklab, var(--color-base-foreground) 3%, transparent)
+    color-mix(in oklab, var(--color-base-foreground) 9%, transparent),
+    color-mix(in oklab, var(--color-base-foreground) 2%, transparent)
   );
-  color: color-mix(in oklab, var(--ac-hue) 45%, var(--color-muted-foreground));
+  color: var(--color-muted-foreground);
   container-type: size;
 }
 /* The shared grain, as on the Workflow gradient. */

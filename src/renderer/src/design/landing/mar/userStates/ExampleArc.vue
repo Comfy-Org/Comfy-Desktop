@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight } from 'lucide-vue-next'
+import { ArrowRight, PanelsTopLeft } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion, runExample } from './examples'
@@ -230,11 +230,14 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
           <span class="mar-arc-title">{{ x.label }}</span>
-          <span class="mar-arc-meta"><span class="mar-arc-badge">App</span>{{ x.kind }}</span>
+          <span class="mar-arc-meta">{{ x.kind }}</span>
         </span>
         <span class="mar-arc-does">{{ x.does }}</span>
         <span class="mar-arc-dim" />
-        <span class="mar-arc-go" aria-hidden="true">Run</span>
+        <span class="mar-arc-badge" title="App" aria-hidden="true"
+          ><PanelsTopLeft :size="13"
+        /></span>
+        <span class="mar-arc-go" aria-hidden="true">Run app</span>
       </button>
     </div>
 
@@ -307,7 +310,8 @@ function wheel(e: WheelEvent): void {
 .mar-arc-text {
   position: absolute;
   top: 16px;
-  right: 16px;
+  /* Clear of the App badge in the corner. */
+  right: 48px;
   left: 16px;
   display: flex;
   flex-direction: column;
@@ -348,22 +352,23 @@ function wheel(e: WheelEvent): void {
   transform: none;
 }
 .mar-arc-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  margin-top: 2px;
   color: rgb(255 255 255 / 0.78);
   font-size: 12px;
 }
 .mar-arc-badge {
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.18);
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.32);
   backdrop-filter: blur(8px);
   color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
 }
 /* Run at the bottom: a white button over a soft scrim, shown on the front
    card when you point at it (or focus it). */

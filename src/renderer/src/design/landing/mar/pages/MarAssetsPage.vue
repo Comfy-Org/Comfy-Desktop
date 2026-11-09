@@ -584,8 +584,6 @@ function lines(a: MarAsset): MenuLine[] {
   margin-inline: -16px;
   padding: 12px 16px;
   border-radius: 0 0 14px 14px;
-  background: color-mix(in oklch, var(--color-content-background) 82%, transparent);
-  backdrop-filter: blur(16px) saturate(1.2);
 }
 .mar-asset-tools {
   display: flex;

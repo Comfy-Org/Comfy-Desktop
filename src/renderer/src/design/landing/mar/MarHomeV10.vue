@@ -43,7 +43,7 @@ import {
   recentInstances
 } from '../useProto'
 import { can } from '../milestones'
-import { realAccount, shownName } from '../account'
+import { shownName } from '../account'
 import { TEMPLATES, thumb } from '../mock'
 import { mock } from './assets/mock'
 
@@ -56,11 +56,13 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // User and Local install). A returning user with no local install (on
 // Cloud) gets the returning Home; a first-time user with a fresh build
 // gets it too, with examples where their work will go.
-// The real account's first name when there is one; never a made-up name.
+// Signed in, Home greets the account by its first name (the real one when
+// there is one); signed out it stays generic.
 const greeting = computed(() => {
-  if (firstTime.value) return "Welcome to Comfy. Let's create"
-  const first = realAccount.value ? shownName.value?.split(' ')[0] : ''
-  return first ? `Hi ${first}. Let's create` : "Let's create"
+  const first = proto.signedIn ? shownName.value?.split(' ')[0] : ''
+  if (firstTime.value)
+    return first ? `Welcome, ${first}. Let's create` : "Welcome to Comfy. Let's create"
+  return first ? `Welcome back, ${first}. Let's create` : "Let's create"
 })
 const firstRun = computed(() => firstTime.value && noLocal.value)
 // Home first, Local picked and not installed yet: the install waits (or
