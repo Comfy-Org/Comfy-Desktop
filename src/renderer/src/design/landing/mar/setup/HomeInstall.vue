@@ -135,9 +135,9 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 }
 .mss-home-bar {
   display: block;
-  height: 5px;
-  max-width: 460px;
-  margin-top: 14px;
+  height: 4px;
+  max-width: 440px;
+  margin-top: 12px;
   overflow: hidden;
   border-radius: 2px;
   background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);

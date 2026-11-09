@@ -1675,30 +1675,20 @@
 .mss-machine.is-hero + .mss-summary {
   margin-top: 12px;
 }
-/* Home first: the card is the first build, drawn chunky, so the Home
- * already shows the thing to launch (the Builds row is its small form). */
+/* Home first: the card is the first build, so the Home already shows the
+ * thing to launch (the Builds row is its small form). */
 .mss-machine.is-hero.mss-home-inst {
-  gap: 32px;
-  padding: 32px 36px;
-  border-radius: 20px;
+  padding: 24px 28px;
   box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.09);
 }
 .mss-machine.is-hero.mss-home-inst .mss-laptop {
-  width: 204px;
-  height: 132px;
+  width: 148px;
+  height: 96px;
 }
 .mss-machine.is-hero.mss-home-inst .mss-machine-title {
-  font-size: 26px;
-  line-height: 32px;
-  letter-spacing: -0.02em;
-}
-.mss-machine.is-hero.mss-home-inst .mss-machine-kicker {
-  margin-bottom: 6px;
-  font-size: 13px;
-}
-.mss-machine.is-hero.mss-home-inst .mss-row-meta {
-  margin-top: 4px;
-  font-size: 13px;
+  font-size: 20px;
+  line-height: 26px;
+  letter-spacing: -0.015em;
 }
 .mss-foot-sum {
   margin-right: 8px;
