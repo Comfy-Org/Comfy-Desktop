@@ -36,7 +36,7 @@ const WAYS = [
     :class="`is-${variant}`"
     role="radiogroup"
     data-no-pill
-    aria-label="How do you want to run Comfy?"
+    aria-label="How do you want to run ComfyUI?"
   >
     <button
       v-for="w in WAYS"

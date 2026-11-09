@@ -356,7 +356,7 @@ function rowState(i: number): string {
           <SetupSteps v-if="!homeFirst" :now="1" :workflow="workflowStep" />
           <div class="mss-col">
             <div class="mss-first-hero">
-              <h1 id="mss-first-title" class="mss-first-title">How do you want to run Comfy?</h1>
+              <h1 id="mss-first-title" class="mss-first-title">How do you want to run ComfyUI?</h1>
               <p class="mss-first-lead">
                 Choose the setup that fits how you work. You can switch later.
               </p>
@@ -372,7 +372,7 @@ function rowState(i: number): string {
                 class="mss-first-cards"
                 role="radiogroup"
                 data-no-pill
-                aria-label="How do you want to run Comfy?"
+                aria-label="How do you want to run ComfyUI?"
               >
                 <ChoiceCard
                   selectable
@@ -431,13 +431,13 @@ function rowState(i: number): string {
                 <label class="mss-check">
                   <Checkbox v-model="usage" />
                   <span
-                    >Help improve Comfy by sharing anonymous usage data.
+                    >Help improve ComfyUI by sharing anonymous usage data.
                     <a href="#" class="mss-link" @click.prevent>Learn more</a></span
                   >
                 </label>
                 <label class="mss-check">
                   <Checkbox v-model="beta" :disabled="!usage" />
-                  <span>Opt in to beta features and help test what ships next</span>
+                  <span>Opt-in to beta features and help test what ships next</span>
                 </label>
               </div>
               <Button variant="primary" size="lg" @click="continueFirst">Continue</Button>

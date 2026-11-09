@@ -9,7 +9,7 @@ import { go, newInstanceHooks, proto, toast } from '../../useProto'
  * keeps today's "New build flow" toast.
  *
  * The flow starts where Desktop starts today, unchanged:
- *  0. First launch: "How do you want to run Comfy?", Cloud or Local, terms
+ *  0. First launch: "How do you want to run ComfyUI?", Cloud or Local, terms
  *     and usage data. Local is picked by default. Cloud opens Comfy Cloud.
  *  1. Set up: today's Configure, summed up as what was detected and
  *     checked; Change opens every field. Low space asks, as today.
