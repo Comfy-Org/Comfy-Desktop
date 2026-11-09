@@ -6,14 +6,19 @@ import {
   ChevronsLeftRight,
   Coins,
   Columns2,
-  Copy,
   Download,
+  Ellipsis,
+  Globe,
   Image as ImageIcon,
   ImageUp,
+  Link2,
   Loader2,
+  Plus,
   Share2
 } from 'lucide-vue-next'
-import { PopoverRoot, PopoverTrigger } from 'reka-ui'
+import { DropdownMenuRoot, DropdownMenuTrigger, PopoverRoot, PopoverTrigger } from 'reka-ui'
+import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
+import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import PopoverContent from '../../ui/PopoverContent.vue'
 import Switch from '../../ui/Switch.vue'
 import Badge from '../../ui/Badge.vue'
@@ -22,7 +27,7 @@ import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
-import { appsProto, libApp, type Field } from '../../appFlow'
+import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { EXAMPLES } from '../userStates/examples'
 
 /**
@@ -136,7 +141,8 @@ function run(): void {
 defineExpose({ run })
 
 // Share: the app's link, and once you've run it, your result with it.
-const slug = computed(() => libApp(appId)?.slug ?? name.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+const lib = computed(() => libApp(appId))
+const slug = computed(() => lib.value?.slug ?? name.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
 const withResult = ref(true)
 const link = computed(
   () => `comfy.org/a/${slug.value}${state.value === 'done' && withResult.value ? '?r=7f3k' : ''}`
@@ -189,26 +195,51 @@ function back(): void {
           <PopoverTrigger as-child>
             <Button variant="ghost" size="sm"><Share2 :size="14" />Share</Button>
           </PopoverTrigger>
-          <PopoverContent align="end" class="w-80 p-4">
-            <p class="text-ui font-semibold">Share {{ name }}</p>
-            <p class="mt-1 text-ui text-muted-foreground">
-              Anyone with the link opens the app and runs it with their own credits.
-            </p>
-            <div class="mar-app-editor-link">
-              <span class="min-w-0 flex-1 truncate">{{ link }}</span>
-              <Button size="sm" @click="copy"
-                ><Check v-if="copied" :size="13" /><Copy v-else :size="13" />{{
-                  copied ? 'Copied' : 'Copy'
+          <!-- Share: the app, its link to copy, and once you've run it,
+               whether your result goes with it. -->
+          <PopoverContent align="end" class="w-[340px] p-0">
+            <div class="flex items-center gap-3 px-4 pt-4">
+              <img
+                :src="input"
+                alt=""
+                class="size-9 shrink-0 rounded-control border border-border-default object-cover"
+              />
+              <div class="min-w-0">
+                <p class="truncate text-ui font-semibold">Share {{ name }}</p>
+                <p class="text-ui text-muted-foreground">Anyone with the link can run it.</p>
+              </div>
+            </div>
+            <div class="flex flex-col gap-3 px-4 pt-3 pb-4">
+              <input
+                :value="`https://${link}`"
+                readonly
+                tabindex="-1"
+                aria-label="Link"
+                class="h-8 w-full truncate rounded-control bg-secondary-background px-2.5 font-mono text-[11px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                @focus="($event.target as HTMLInputElement).select()"
+              />
+              <label v-if="state === 'done'" class="flex items-center justify-between gap-3">
+                <span class="min-w-0">
+                  <span class="block text-ui">Include your result</span>
+                  <span class="block text-ui text-subtle-foreground"
+                    >They see what you made before they run it.</span
+                  >
+                </span>
+                <Switch v-model="withResult" aria-label="Include your result" />
+              </label>
+            </div>
+            <div
+              class="flex items-center justify-between gap-2 border-t border-border-default px-4 py-3"
+            >
+              <span class="flex items-center gap-1.5 text-ui text-subtle-foreground"
+                ><Globe :size="13" />Runs on their credits</span
+              >
+              <Button variant="secondary" size="sm" @click="copy"
+                ><Check v-if="copied" :size="13" /><Link2 v-else :size="13" />{{
+                  copied ? 'Copied' : 'Copy link'
                 }}</Button
               >
             </div>
-            <label
-              v-if="state === 'done'"
-              class="mt-3 flex items-center justify-between gap-3 text-ui"
-            >
-              Include your result
-              <Switch v-model="withResult" aria-label="Include your result" />
-            </label>
           </PopoverContent>
         </PopoverRoot>
         <Button
@@ -218,6 +249,22 @@ function back(): void {
           @click="toast('Downloading…')"
           ><Download :size="13" />Download</Button
         >
+        <!-- More: what you'd do now and then, out of the way. -->
+        <DropdownMenuRoot>
+          <DropdownMenuTrigger as-child>
+            <Button variant="ghost" size="icon-sm" aria-label="More"
+              ><Ellipsis :size="16"
+            /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-52">
+            <DropdownMenuItem v-if="lib" @select="toggleAdded(lib)"
+              ><Check v-if="isAdded(appId)" :size="14" /><Plus v-else :size="14" />{{
+                isAdded(appId) ? 'In my apps' : 'Add to my apps'
+              }}</DropdownMenuItem
+            >
+            <DropdownMenuItem @select="copy"><Link2 :size="14" />Copy link</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuRoot>
       </div>
     </header>
 
@@ -382,7 +429,6 @@ function back(): void {
           <span v-else class="px-2 text-ui text-muted-foreground">{{ does }}</span>
         </div>
       </main>
-
     </div>
     <slot name="below" />
   </div>
@@ -586,20 +632,6 @@ function back(): void {
   font-size: var(--text-ui);
   line-height: var(--text-ui--line-height);
   color: var(--color-subtle-foreground);
-}
-
-/* Share */
-.mar-app-editor-link {
-  display: flex;
-  margin-top: 12px;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 4px 4px 12px;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-card);
-  background: var(--color-secondary-background);
-  font-size: var(--text-ui);
-  color: var(--color-muted-foreground);
 }
 
 /* Stage: a frame of its own, plain: apps don't wear the editor's dots. */
