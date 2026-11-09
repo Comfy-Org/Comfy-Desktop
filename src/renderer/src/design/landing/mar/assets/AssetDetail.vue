@@ -68,6 +68,8 @@ const MIME: Record<string, string> = {
   FLAC: 'audio/flac',
   GLB: 'model/gltf-binary',
   OBJ: 'model/obj',
+  TXT: 'text/plain',
+  ZIP: 'application/zip',
   MD: 'text/markdown',
   JSON: 'application/json',
   CSV: 'text/csv'

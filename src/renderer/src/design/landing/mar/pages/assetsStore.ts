@@ -81,7 +81,21 @@ const FILES: MarAsset[] = (
     ['notes.md', 'text', '16 B', 1, 4300],
     ['settings.json', 'text', '13 B', 1, 4320],
     ['palette.csv', 'text', '12 B', 1, 9000],
-    ['blob.bin', 'other', '512 B', 1, 4330]
+    ['blob.bin', 'other', '512 B', 1, 4330],
+    ['narration_intro.wav', 'audio', '5.1 MB', 5100, 180],
+    ['ambience_rain_loop.mp3', 'audio', '2.4 MB', 2400, 1500],
+    ['foley_steps_take2.wav', 'audio', '1.8 MB', 1800, 5200],
+    ['theme_sketch_v3.flac', 'audio', '11.6 MB', 11600, 8800],
+    ['pyramid_prop.glb', '3d', '7.9 MB', 7900, 2600],
+    ['lantern_lowpoly.glb', '3d', '1.2 MB', 1200, 6100],
+    ['car_wreck_scan.obj', '3d', '24.3 MB', 24300, 9600],
+    ['shot_list.md', 'text', '2 KB', 2, 300],
+    ['storyboard_notes.txt', 'text', '4 KB', 4, 2900],
+    ['color_grade.json', 'text', '1 KB', 1, 3800],
+    ['render_queue.csv', 'text', '3 KB', 3, 7400],
+    ['camera_path.json', 'text', '6 KB', 6, 10200],
+    ['lut_teal_orange.cube', 'other', '1.1 MB', 1100, 5600],
+    ['seed_grid.zip', 'other', '18.4 MB', 18400, 11800]
   ] as const
 ).flatMap(([name, type, size, sizeMb, age], i) =>
   ['local-1', 'local-video'].map((envId, j) => ({
@@ -93,7 +107,14 @@ const FILES: MarAsset[] = (
     size,
     sizeMb: sizeMb / 1000,
     age,
-    when: age < 5000 ? '3 days ago' : 'Last week'
+    when:
+      age < 1440
+        ? 'Today'
+        : age < 2880
+          ? 'Yesterday'
+          : age < 7200
+            ? `${Math.round(age / 1440)} days ago`
+            : 'Last week'
   }))
 )
 

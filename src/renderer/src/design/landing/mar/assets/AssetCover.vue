@@ -165,7 +165,7 @@ const WAVE = computed(() =>
   opacity: 0.7;
 }
 .ac-ext {
-  font-size: clamp(11px, 8cqmin, 26px);
+  font-size: clamp(11px, 6cqw, 26px);
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1;

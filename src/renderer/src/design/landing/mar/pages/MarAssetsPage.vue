@@ -575,6 +575,18 @@ function lines(a: MarAsset): MenuLine[] {
 </template>
 
 <style>
+/* The toolbar stays in reach while the wall scrolls. */
+.mar-page-bar:has(.mar-asset-tools) {
+  position: sticky;
+  /* The scroller's own top padding (pt-11), so nothing peeks above. */
+  top: -44px;
+  z-index: 5;
+  margin-inline: -16px;
+  padding: 12px 16px;
+  border-radius: 0 0 14px 14px;
+  background: color-mix(in oklch, var(--color-content-background) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
 .mar-asset-tools {
   display: flex;
   min-width: 0;
