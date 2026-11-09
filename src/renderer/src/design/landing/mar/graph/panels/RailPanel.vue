@@ -89,8 +89,9 @@ function nudge(e: KeyboardEvent): void {
     color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background)) 94%,
     transparent
   );
-  --rp-ring: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
-  --rp-line: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  /* Edge and dividers stay quiet: the shadow and surface carry the panel. */
+  --rp-ring: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  --rp-line: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   --rp-hover: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   --rp-chip: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   --rp-chip-on: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
@@ -103,8 +104,8 @@ function nudge(e: KeyboardEvent): void {
 }
 :root[data-ds-theme='light'] :is(.rp, .sp, .rp-dialog) {
   --rp-surface: color-mix(in oklch, var(--color-card-background) 97%, transparent);
-  --rp-ring: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  --rp-line: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  --rp-ring: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  --rp-line: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   --rp-hover: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
   --rp-chip: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
   --rp-chip-on: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
