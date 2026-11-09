@@ -241,6 +241,12 @@ const VIEWS = computed(() => [
   { value: 'history' as const, label: 'History', count: outputs.value.length || undefined },
   { value: 'gallery' as const, label: 'Inspiration', count: examples.value.length }
 ])
+/** Inspiration's head: two rows of the app's pictures, each repeated so
+ *  the drift loops. */
+const driftRow = (r: number): AppExample[] => {
+  const list = examples.value.filter((_, i) => i % 2 === r - 1)
+  return list.length >= 4 ? list.slice(0, 8) : examples.value.slice(0, 8)
+}
 function openOutput(i: number): void {
   take.value = i
   state.value = 'done'
@@ -485,8 +491,7 @@ function back(): void {
         <!-- Gallery: the app's examples, as Home shows them, in aligned
              rows; one fills the panel with what it ran with. -->
         <div v-if="onGallery" class="mar-app-editor-grid">
-          <!-- What the app does, beside three of its pictures fanned out
-               like Home's examples. -->
+          <!-- What the app does, beside its pictures drifting by. -->
           <header class="mar-app-editor-hero">
             <img
               class="mar-app-editor-hero-glow"
@@ -494,14 +499,29 @@ function back(): void {
               alt=""
               aria-hidden="true"
             />
+            <!-- The tab and the panel already name it: the head says what
+                 it does, and what these are for. -->
             <div class="mar-app-editor-hero-text">
-              <p class="mar-app-editor-hero-cap">Inspiration</p>
-              <h2>{{ name }}</h2>
-              <p v-if="lib?.blurb" class="mar-app-editor-hero-blurb">{{ lib.blurb }}</p>
-              <p class="mar-app-editor-hero-hint">Pick one to start from it, then make it yours.</p>
+              <h2>{{ lib?.blurb ?? name }}</h2>
+              <p class="mar-app-editor-hero-blurb">
+                {{ examples.length }} starting points. Use one, then change anything.
+              </p>
             </div>
-            <div class="mar-app-editor-hero-fan" aria-hidden="true">
-              <img v-for="x in examples.slice(0, 3)" :key="x.id" :src="x.after" alt="" />
+            <!-- Its pictures, two tilted rows drifting past each other. -->
+            <div class="mar-app-editor-hero-drift" aria-hidden="true">
+              <div
+                v-for="r in 2"
+                :key="r"
+                :class="['mar-app-editor-hero-row', r === 2 && 'is-back']"
+              >
+                <img
+                  v-for="(x, i) in [...driftRow(r), ...driftRow(r)]"
+                  :key="i"
+                  :src="x.after"
+                  alt=""
+                  loading="lazy"
+                />
+              </div>
             </div>
           </header>
           <ExampleTile
@@ -1089,12 +1109,12 @@ function back(): void {
   position: relative;
   grid-column: 1 / -1;
   display: flex;
-  min-height: 188px;
+  min-height: 128px;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   overflow: hidden;
-  padding: 28px 40px 28px 32px;
+  padding: 20px 32px 20px 28px;
   border-radius: var(--radius-card);
   background: var(--color-secondary-background);
 }
@@ -1114,59 +1134,65 @@ function back(): void {
   min-width: 0;
   max-width: 44ch;
 }
-.mar-app-editor-hero-cap {
-  color: var(--color-subtle-foreground);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 .mar-app-editor-hero h2 {
-  margin-top: 6px;
-  font-size: 28px;
+  font-size: 22px;
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.2;
   letter-spacing: -0.02em;
   text-wrap: balance;
 }
 .mar-app-editor-hero-blurb {
-  margin-top: 8px;
+  margin-top: 6px;
   color: var(--color-muted-foreground);
   font-size: 14px;
   line-height: 1.45;
 }
-.mar-app-editor-hero-hint {
-  margin-top: 14px;
-  color: var(--color-subtle-foreground);
-  font-size: 12.5px;
-}
-.mar-app-editor-hero-fan {
+.mar-app-editor-hero-drift {
   position: relative;
   display: flex;
+  width: min(46%, 440px);
+  height: 128px;
   flex: none;
-  padding-right: 8px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  margin: -20px -32px -20px 0;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 22%, #000 85%, transparent);
 }
-.mar-app-editor-hero-fan img {
-  width: 96px;
-  height: 124px;
-  border-radius: 12px;
+.mar-app-editor-hero-row {
+  display: flex;
+  width: max-content;
+  gap: 10px;
+  rotate: -7deg;
+  animation: mar-hero-drift 48s linear infinite;
+}
+.mar-app-editor-hero-row.is-back {
+  animation-direction: reverse;
+  animation-duration: 60s;
+}
+.mar-app-editor-hero-row img {
+  width: 84px;
+  height: 56px;
+  flex: none;
+  border-radius: 10px;
   object-fit: cover;
-  box-shadow: 0 14px 30px -10px rgb(0 0 0 / 0.6);
 }
-.mar-app-editor-hero-fan img:nth-child(1) {
-  rotate: -8deg;
-  translate: 14px 6px;
+@keyframes mar-hero-drift {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: calc(-50% - 5px) 0;
+  }
 }
-.mar-app-editor-hero-fan img:nth-child(2) {
-  z-index: 1;
-  translate: 0 -4px;
-}
-.mar-app-editor-hero-fan img:nth-child(3) {
-  rotate: 8deg;
-  translate: -14px 6px;
+@media (prefers-reduced-motion: reduce) {
+  .mar-app-editor-hero-row {
+    animation: none;
+  }
 }
 @container (max-width: 560px) {
-  .mar-app-editor-hero-fan {
+  .mar-app-editor-hero-drift {
     display: none;
   }
 }
