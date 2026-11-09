@@ -9,7 +9,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
-  SquareSplitHorizontal,
   Workflow,
   X
 } from 'lucide-vue-next'
@@ -276,16 +275,6 @@ onBeforeUnmount(() => {
             <div ref="zoomBox" class="mad-zoom" role="group" aria-label="Zoom">
               <button
                 type="button"
-                class="mad-icon is-sm"
-                :class="zoom === 100 && 'is-on'"
-                aria-label="Fit to screen"
-                title="Fit to screen"
-                @click="zoomTo()"
-              >
-                <SquareSplitHorizontal :size="15" />
-              </button>
-              <button
-                type="button"
                 class="mad-zoom-pct"
                 aria-haspopup="menu"
                 :aria-expanded="zoomMenu"
@@ -453,8 +442,12 @@ onBeforeUnmount(() => {
   inset: 13vh 14vw;
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 380px);
+  /* Details are a card inside the frame, set apart by its fill, not by
+   * lines. */
+  gap: 8px;
+  padding: 8px;
   overflow: hidden;
-  border-radius: var(--radius-card, 16px);
+  border-radius: 20px;
   background: var(--color-content-background);
   box-shadow:
     0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
@@ -619,7 +612,8 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-icon:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
 }
-/* Zoom: fit, then the real-size percentage opening its presets. */
+/* Zoom: the real-size percentage, opening Fit and the presets. (No
+ * compare icon: that only makes sense once an asset holds edits.) */
 .mad-zoom {
   position: relative;
   display: flex;
@@ -752,10 +746,21 @@ onBeforeUnmount(() => {
 }
 .mad-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 14px 20px 16px;
-  border-top: 1px solid var(--mad-line);
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+}
+/* Download on top, the rest under it as quieter rows. */
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn {
+  height: 36px;
+  flex: none;
+  justify-content: flex-start;
+  padding: 0 12px;
+  border-radius: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-primary {
+  order: -1;
+  justify-content: center;
 }
 .mad-side {
   --mad-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
@@ -765,8 +770,9 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  border-left: 1px solid var(--mad-line);
-  background: var(--color-content-background);
+  overflow: hidden;
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
 }
 .mad-body {
   min-height: 0;
@@ -806,8 +812,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   flex-direction: column;
   gap: 10px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--mad-line);
+  padding: 12px 20px;
 }
 .mad-label {
   display: flex;
@@ -1039,10 +1044,7 @@ onBeforeUnmount(() => {
   .mad-foot {
     display: none;
   }
-  .mad-side {
-    border-top: 1px solid var(--mad-line);
-    border-left: 0;
-  }
+
   .mad-view {
     inset: 56px 8px 12px;
   }
