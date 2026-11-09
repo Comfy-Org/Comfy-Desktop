@@ -14,9 +14,10 @@ export const COMFY_BG_LIGHT = '#f5f5f5'
 /** Default dark background for comfy windows (used at creation time before theme is known). */
 export const COMFY_BG = '#171717'
 
-/** Title bar background. Must stay in sync with `--titlebar-bg` in `src/renderer/src/assets/main.css`
- *  so the OS window-controls overlay matches the Vue `.title-bar` on every window. */
-export const TITLEBAR_BG = '#211927'
+/** Title bar background: the Void `--color-background`, oklch(0.19 0.003 285). Must stay in sync
+ *  with `--titlebar-bg` in `src/renderer/src/assets/palette-void.css` so the OS window-controls
+ *  overlay matches the Vue `.title-bar` on every window. */
+export const TITLEBAR_BG = '#141415'
 
 /** Window-control symbol color (`#dddddd` on dark backgrounds, `#333333` on light) chosen by the
  *  perceived luminance of `bg` so the min/max/close glyphs stay legible against any reported
@@ -55,7 +56,5 @@ export interface SplashTheme {
 export const SPLASH_DARK: SplashTheme = { bg: COMFY_BG_DARK, fg: '#ffffff', isDark: true }
 export const SPLASH_LIGHT: SplashTheme = { bg: COMFY_BG_LIGHT, fg: '#000000', isDark: false }
 
-/** Brand-purple splash — matches the app's `--titlebar-bg` / `--neutral-800`
- *  chrome color so the update splash reads as part of the desktop app rather
- *  than a generic grey window. */
-export const SPLASH_PURPLE: SplashTheme = { bg: TITLEBAR_BG, fg: '#ffffff', isDark: true }
+/** Desktop update splash follows the same palette as the launcher chrome. */
+export const SPLASH_DESKTOP: SplashTheme = { bg: TITLEBAR_BG, fg: '#ffffff', isDark: true }

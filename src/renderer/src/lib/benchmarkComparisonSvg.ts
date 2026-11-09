@@ -320,7 +320,7 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
   ${chartDescription}
   ${chartRows}
   <g role="img" aria-label="Comfy" transform="translate(${margin} ${height - 51}) scale(0.65)">
-    <path d="${COMFY_WORDMARK_PATH}" fill="#F2FF59" />
+    <path d="${COMFY_WORDMARK_PATH}" fill="#ffffff" />
   </g>
   ${text(width - margin, height - 28, data.exportDateTime, 'footer-date', 'end')}
 </svg>`
