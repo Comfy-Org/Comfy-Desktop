@@ -113,6 +113,13 @@ export class CloudSession {
    *  login, workspace switch, or logout chose. */
   private authGeneration = 0
 
+  /** The one mint policy: the grant's anchor always, any other workspace unless the ops flag killed it. */
+  async isWorkspaceMintAllowed(workspaceId: string): Promise<boolean> {
+    const grant = loadGrant()
+    if (grant && workspaceIdOf(grant.accessToken) === workspaceId) return true
+    return isWorkspaceMintSwitchEnabled()
+  }
+
   /** Called after a token read moved the active workspace back to the anchor. */
   setReturnedToAnchorHandler(handler: () => void): void {
     this.returnedToAnchorHandler = handler
@@ -296,7 +303,7 @@ export class CloudSession {
     workspaceId: string,
     generation: number
   ): Promise<SettledMintOutcome> {
-    if (!(await isWorkspaceMintSwitchEnabled())) {
+    if (!(await this.isWorkspaceMintAllowed(workspaceId))) {
       return { kind: 'reauthorize', reason: 'mint_disabled' }
     }
     const grant = loadGrant()

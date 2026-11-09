@@ -27,6 +27,7 @@ export interface GrantSession {
   currentSubject(): string | null
   currentAuthGeneration(): number
   getGrantAccessToken(): Promise<string | null>
+  isWorkspaceMintAllowed(workspaceId: string): Promise<boolean>
 }
 
 export type MintWorkspaceToken = (
@@ -131,6 +132,8 @@ export class ViewWorkspaceGrants {
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now())
       return { token: cached.token, subject }
 
+    const allowed = await this.session.isWorkspaceMintAllowed(workspaceId)
+    if (!allowed || !this.isCurrent(fence)) return null
     const result = await this.mintOnce(accessToken, key, workspaceId, fence)
     if (!this.isCurrent(fence) || this.session.currentSubject() !== subject) return null
     if (result.kind !== 'minted') return null

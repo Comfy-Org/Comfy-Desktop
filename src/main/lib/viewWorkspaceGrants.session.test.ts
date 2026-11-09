@@ -1,0 +1,174 @@
+// @vitest-environment node
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+
+import type { WebContents } from 'electron'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const electronState = vi.hoisted(() => ({ userData: '' }))
+
+vi.mock('electron', () => ({
+  app: { getPath: vi.fn(() => electronState.userData) },
+  safeStorage: {
+    isEncryptionAvailable: vi.fn(() => true),
+    encryptString: vi.fn((value: string) => Buffer.from(value, 'utf-8')),
+    decryptString: vi.fn((value: Buffer) => value.toString('utf-8'))
+  },
+  shell: { openExternal: vi.fn(() => Promise.resolve()) }
+}))
+vi.mock('../cloud/oauth', () => ({
+  signIn: vi.fn(),
+  refresh: vi.fn(),
+  openAuthorizePage: vi.fn(() => Promise.resolve())
+}))
+vi.mock('../devplatform/session', () => ({ getCloudSession: () => ({}) }))
+vi.mock('./telemetry', () => ({ emit: vi.fn() }))
+vi.mock('./workspaceMintSwitchFlag', () => ({
+  isWorkspaceMintSwitchEnabled: vi.fn(async () => true)
+}))
+
+import { CLOUD_CONFIG } from '../cloud/config'
+import { openAuthorizePage, signIn } from '../cloud/oauth'
+import { CloudSession } from '../cloud/session'
+import { _resetForTest, clearTokens, saveGrant } from '../cloud/tokenStore'
+import type { AuthTokens } from '../cloud/types'
+import { ViewWorkspaceGrants } from './viewWorkspaceGrants'
+import { isWorkspaceMintSwitchEnabled } from './workspaceMintSwitchFlag'
+
+const FUTURE = Date.now() + 3_600_000
+const view = { id: 'view' } as unknown as WebContents
+
+function jwt(claims: Record<string, unknown>): string {
+  const b64 = (value: unknown): string =>
+    Buffer.from(JSON.stringify(value), 'utf-8').toString('base64url')
+  return `${b64({ alg: 'RS256' })}.${b64(claims)}.sig`
+}
+
+const GRANT: AuthTokens = {
+  accessToken: jwt({ sub: 'user-1', workspace_id: 'w1', scope: CLOUD_CONFIG.scope }),
+  refreshToken: 'refresh-w1',
+  expiresAt: FUTURE
+}
+
+function mintedJwt(workspaceId: string): string {
+  return jwt({ sub: 'user-1', workspace_id: workspaceId })
+}
+
+let session: CloudSession
+let grants: ViewWorkspaceGrants
+let mintReply: (workspaceId: string) => Response
+let mintRequests: string[]
+
+function kill(): void {
+  vi.mocked(isWorkspaceMintSwitchEnabled).mockResolvedValue(false)
+}
+
+beforeEach(() => {
+  electronState.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'view-grants-session-'))
+  _resetForTest()
+  vi.mocked(isWorkspaceMintSwitchEnabled).mockResolvedValue(true)
+  mintRequests = []
+  mintReply = (workspaceId) =>
+    new Response(
+      JSON.stringify({
+        token: mintedJwt(workspaceId),
+        expires_at: new Date(FUTURE).toISOString()
+      }),
+      { status: 200 }
+    )
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      const workspaceId = (JSON.parse(String(init.body)) as { workspace_id: string }).workspace_id
+      mintRequests.push(workspaceId)
+      return mintReply(workspaceId)
+    })
+  )
+  saveGrant(GRANT)
+  session = new CloudSession()
+  grants = new ViewWorkspaceGrants(session)
+})
+
+afterEach(() => {
+  clearTokens()
+  _resetForTest()
+  fs.rmSync(electronState.userData, { recursive: true, force: true })
+  vi.unstubAllGlobals()
+  vi.clearAllMocks()
+})
+
+async function activeOnW2(): Promise<void> {
+  await session.switchWorkspace('w2')
+  grants.allowDesktop('w2')
+  mintRequests = []
+}
+
+describe('view token path through a real session', () => {
+  it('mints a non-anchor workspace while the mint switch is on', async () => {
+    await activeOnW2()
+
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBe(mintedJwt('w2'))
+
+    expect(mintRequests).toEqual(['w2'])
+  })
+
+  it('the ops flag off refuses a view mint for a non-anchor workspace, with no browser', async () => {
+    await activeOnW2()
+    kill()
+
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBeNull()
+
+    expect(mintRequests).toEqual([])
+    expect(signIn).not.toHaveBeenCalled()
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+  })
+
+  it('the ops flag off leaves a mint for the anchor working', async () => {
+    kill()
+
+    await expect(grants.tokenFor(view, 'w1')).resolves.toBe(mintedJwt('w1'))
+
+    expect(mintRequests).toEqual(['w1'])
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a token the view already holds keeps working through a kill until it expires', async () => {
+    await activeOnW2()
+    await grants.tokenFor(view, 'w2')
+    mintRequests = []
+    kill()
+
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBe(mintedJwt('w2'))
+
+    expect(mintRequests).toEqual([])
+  })
+
+  it('a server kill refuses a view mint with no browser', async () => {
+    await activeOnW2()
+    mintReply = () =>
+      new Response(JSON.stringify({ code: 'oauth_workspace_mint_disabled' }), { status: 503 })
+
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBeNull()
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+  })
+
+  it('a kill landing while the policy is read drops the request after a newer switch', async () => {
+    await activeOnW2()
+    let release: (enabled: boolean) => void = () => {}
+    vi.mocked(isWorkspaceMintSwitchEnabled).mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve
+      })
+    )
+    const pending = grants.tokenFor(view, 'w2')
+    await vi.waitFor(() => expect(isWorkspaceMintSwitchEnabled).toHaveBeenCalled())
+    await session.switchWorkspace('w1')
+    release(true)
+
+    await expect(pending).resolves.toBeNull()
+    expect(mintRequests).toEqual([])
+  })
+})

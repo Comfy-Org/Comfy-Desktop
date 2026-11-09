@@ -17,7 +17,8 @@ vi.mock('../devplatform/session', () => ({
     getGrantAccessToken: mocks.getGrantAccessToken,
     currentWorkspaceId: () => mocks.current,
     currentSubject: () => (mocks.current ? 'user-1' : null),
-    currentAuthGeneration: () => 0
+    currentAuthGeneration: () => 0,
+    isWorkspaceMintAllowed: async () => true
   })
 }))
 vi.mock('../cloud/workspaceToken', () => ({
