@@ -14,9 +14,8 @@ import ExampleArc from './userStates/ExampleArc.vue'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
-import StarterShelf from './setup/StarterShelf.vue'
 import HomeInstall from './setup/HomeInstall.vue'
-import { flow, homeFirst, homeOpen, localSetup, setupOn } from './setup/setupFlow'
+import { flow, homeFirst, homeOpen, setupOn } from './setup/setupFlow'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
@@ -140,17 +139,7 @@ const recent = computed(() =>
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). -->
-      <!-- Local setup proposal: after the first install, the starter
-           workflows live here, not in Set up (setup/StarterShelf.vue). In
-           its M1 scope there are no examples at all. -->
-      <section
-        v-if="firstTime && !recent.length && setupOn && localSetup.scope === 'next'"
-        class="mt-10"
-      >
-        <SectionHeader title="Start from a workflow" />
-        <StarterShelf />
-      </section>
-      <section v-else-if="firstTime && !recent.length && !setupOn" class="mt-10">
+      <section v-if="firstTime && !recent.length && !setupOn" class="mt-10">
         <SectionHeader
           title="Start from an example"
           :link="can.explore ? 'See all' : undefined"

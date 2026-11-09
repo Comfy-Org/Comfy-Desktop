@@ -1,6 +1,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { marUser, setUser } from '../userStates/userState'
-import { can, MILESTONES } from '../../milestones'
+import { can } from '../../milestones'
 import { go, newInstanceHooks, proto, toast } from '../../useProto'
 
 /**
@@ -47,16 +47,15 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  steps, ending in the install. The two Home first options make Run on the
  *  only step and land on the Home, where the install waits on a card
  *  (HomeInstall.vue); they differ in what the Home offers before a build
- *  exists. Install card: only the card, nothing that needs ComfyUI. Pick to
- *  install: the Home as it is, and picking something that runs locally
- *  starts the install with it queued. Off by default, and only where there
- *  is a Home. */
+ *  exists. Install card: only the card, nothing that needs ComfyUI. Home
+ *  open: the first-run Home stays around the card. Off by default, and
+ *  only where there is a Home. */
 export type Onboarding = 'install' | 'home-running' | 'home' | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'install', label: 'Install first (today)' },
   { value: 'home-running', label: 'Home first: install runs behind' },
   { value: 'home', label: 'Home first: install card only' },
-  { value: 'home-open', label: 'Home first: pick to install' }
+  { value: 'home-open', label: 'Home first: Home stays open' }
 ]
 export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing' | 'error'
 
@@ -164,7 +163,7 @@ export const setupOn = computed(() => can.value.design && localSetup.mode === 'o
 export const homeFirst = computed(
   () => setupOn.value && localSetup.scope === 'next' && localSetup.onboarding !== 'install'
 )
-/** Home first › Pick to install: the Home keeps its ways to start. */
+/** Home first › Home stays open: the first-run Home shows around the card. */
 export const homeOpen = computed(() => homeFirst.value && localSetup.onboarding === 'home-open')
 /** Home first › Install runs behind: Run on and Set up, then the Home with
  *  the install already going on its card; apps run on Comfy Cloud meanwhile. */
@@ -173,11 +172,12 @@ export const homeRunning = computed(
 )
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
-// landing; the next iterations are the latest one, with its Home.
+// landing; the next iterations land on Milestone 2 (Explore apps), the Home
+// that ships next, not on the furthest one.
 const M1_MILESTONE = 2
-const LATEST_MILESTONE = Number(MILESTONES.at(-1)!.value)
+const M2_MILESTONE = 4.5
 function showScope(): void {
-  const m = localSetup.scope === 'm1' ? M1_MILESTONE : LATEST_MILESTONE
+  const m = localSetup.scope === 'm1' ? M1_MILESTONE : M2_MILESTONE
   if (proto.milestone !== m) proto.milestone = m
 }
 

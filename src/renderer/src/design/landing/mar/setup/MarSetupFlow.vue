@@ -110,7 +110,7 @@ const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 
 // Set up › Continue: low space asks first, as today. M1 has no Home, so the
 // starter workflow stays a step here, as today. Once the Home exists it
-// offers them after the install instead (StarterShelf.vue).
+// offers the apps on the Home instead (setup/HomeInstall.vue).
 const workflowStep = computed(() => localSetup.scope === 'm1')
 function continueSetup(): void {
   if (lowSpace.value) flow.confirmLowDisk = true
