@@ -27,13 +27,13 @@ const BY_EXT: Record<string, Kind> = {
   csv: 'table',
   tsv: 'table'
 }
-const KINDS: Record<Kind, { icon: Component }> = {
-  doc: { icon: FileText },
-  code: { icon: Braces },
-  table: { icon: Sheet },
-  audio: { icon: AudioLines },
-  '3d': { icon: Box },
-  file: { icon: Binary }
+const KINDS: Record<Kind, { hue: number; chroma: number; icon: Component }> = {
+  doc: { hue: 255, chroma: 0.05, icon: FileText },
+  code: { hue: 300, chroma: 0.05, icon: Braces },
+  table: { hue: 155, chroma: 0.05, icon: Sheet },
+  audio: { hue: 45, chroma: 0.06, icon: AudioLines },
+  '3d': { hue: 205, chroma: 0.045, icon: Box },
+  file: { hue: 0, chroma: 0, icon: Binary }
 }
 
 const ext = computed(() => (name.includes('.') ? name.split('.').pop()!.toLowerCase() : ''))
@@ -44,7 +44,8 @@ const kind = computed<Kind>(
     'file'
 )
 const tint = computed(() => {
-  return { '--ac-grain': GRAIN }
+  const k = KINDS[kind.value]
+  return { '--ac-hue': `oklch(0.64 ${k.chroma} ${k.hue})`, '--ac-grain': GRAIN }
 })
 
 /** A repeatable number from 0 to 1 per name and use. */
@@ -122,14 +123,19 @@ const WAVE = computed(() =>
   height: 100%;
   align-items: center;
   justify-content: center;
-  /* A white wash over the card, like Home's covers: the type reads from
-     the hint and the extension, not from colour. */
+  /* A white wash over the card, like Home's covers, with a faint touch of
+     the kind's hue, so the type reads from the hint, the extension and,
+     quietly, the colour. */
   background: linear-gradient(
     160deg,
-    color-mix(in oklab, var(--color-base-foreground) 9%, transparent),
+    color-mix(
+      in oklab,
+      color-mix(in oklab, var(--ac-hue) 30%, var(--color-base-foreground)) 9%,
+      transparent
+    ),
     color-mix(in oklab, var(--color-base-foreground) 2%, transparent)
   );
-  color: var(--color-muted-foreground);
+  color: color-mix(in oklab, var(--ac-hue) 30%, var(--color-muted-foreground));
   container-type: size;
 }
 /* The shared grain, as on the Workflow gradient. */
@@ -146,10 +152,12 @@ const WAVE = computed(() =>
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(6px, 5cqmin, 18px);
+  /* The same size on every card, tall or short: a wall of files reads
+     even. Only small tiles scale it down. */
+  gap: clamp(6px, 5cqmin, 10px);
 }
 .ac-hint {
-  width: clamp(40px, 46cqmin, 200px);
+  width: clamp(40px, 46cqmin, 64px);
   height: auto;
   overflow: visible;
 }
@@ -161,12 +169,12 @@ const WAVE = computed(() =>
   opacity: 0.55;
 }
 .ac-glyph {
-  width: clamp(28px, 30cqmin, 120px);
+  width: clamp(28px, 30cqmin, 40px);
   height: auto;
   opacity: 0.7;
 }
 .ac-ext {
-  font-size: clamp(11px, 6cqw, 26px);
+  font-size: clamp(11px, 6cqw, 14px);
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1;

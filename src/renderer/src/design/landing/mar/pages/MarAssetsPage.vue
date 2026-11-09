@@ -336,6 +336,20 @@ function lines(a: MarAsset): MenuLine[] {
     { label: 'Delete', icon: Trash2, danger: true, hint: '⌫', run: () => assets.remove([a.id]) }
   ]
 }
+
+// The sticky toolbar takes a background only once it's stuck at the top,
+// so it sits clear at the start of the page and stays readable over the
+// grid when you scroll.
+function markStuck(): void {
+  const bar = document.querySelector<HTMLElement>('.mar-page-bar:has(.mar-asset-tools)')
+  const scroller = bar?.closest<HTMLElement>('.proto-main')
+  if (!bar || !scroller) return
+  const stuck =
+    scroller.scrollTop > 0 &&
+    bar.getBoundingClientRect().top <= scroller.getBoundingClientRect().top + 1
+  bar.classList.toggle('is-stuck', stuck)
+}
+useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 </script>
 
 <template>
@@ -597,6 +611,13 @@ function lines(a: MarAsset): MenuLine[] {
   margin-inline: -16px;
   padding: 12px 16px;
   border-radius: 0 0 14px 14px;
+  transition:
+    background-color 160ms ease,
+    backdrop-filter 160ms ease;
+}
+.mar-page-bar.is-stuck:has(.mar-asset-tools) {
+  background-color: color-mix(in oklch, var(--color-content-background) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.2);
 }
 .mar-asset-tools {
   display: flex;
