@@ -478,6 +478,12 @@ function installMockApi(initial?: {
   return state
 }
 
+function dataTransferWith(file: File): DataTransfer {
+  const dataTransfer = new DataTransfer()
+  dataTransfer.items.add(file)
+  return dataTransfer
+}
+
 function mountPanel() {
   return mount(PanelApp, {
     attachTo: document.body,
@@ -898,7 +904,7 @@ describe('PanelApp', () => {
     })
     const droppedFile = new File(['{}'], 'dropped.json', { type: 'application/json' })
     await wrapper.get('.performance-test__drop-zone').trigger('drop', {
-      dataTransfer: { files: [droppedFile] }
+      dataTransfer: dataTransferWith(droppedFile)
     })
     await flushPromises()
     expect(api.getPathForFile).toHaveBeenCalledWith(droppedFile)
@@ -1922,9 +1928,9 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
     await wrapper.get('.performance-test__drop-content').trigger('click')
     await wrapper.get('.performance-test__drop-zone').trigger('drop', {
-      dataTransfer: {
-        files: [new File(['{}'], 'replacement.json', { type: 'application/json' })]
-      }
+      dataTransfer: dataTransferWith(
+        new File(['{}'], 'replacement.json', { type: 'application/json' })
+      )
     })
     expect(api.importPerformanceTestWorkflow).toHaveBeenCalledTimes(workflowImportCalls)
     expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)

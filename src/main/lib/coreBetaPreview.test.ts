@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CoreBetaGrant } from './coreBetaGrants'
 import type { CoreCheckout } from './version'

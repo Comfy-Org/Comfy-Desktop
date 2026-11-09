@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { execFile, type ExecFileException } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 

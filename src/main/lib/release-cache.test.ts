@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type * as FsModule from 'fs'
 import fs from 'fs'

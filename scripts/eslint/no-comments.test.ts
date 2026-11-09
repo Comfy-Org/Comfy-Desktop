@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { Linter } from 'eslint'
 import { describe, expect, it } from 'vitest'
 import { parser as tsParser } from 'typescript-eslint'

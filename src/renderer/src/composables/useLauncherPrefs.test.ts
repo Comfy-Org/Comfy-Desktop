@@ -1,16 +1,14 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.stubGlobal('window', {
-  ...window,
-  api: {
-    getInstallations: vi.fn().mockResolvedValue([]),
-    onInstallationsChanged: vi.fn(),
-    onInstallationsVersionsUpdated: vi.fn(),
-    getSetting: vi.fn().mockResolvedValue(undefined),
-    setSetting: vi.fn().mockResolvedValue(undefined)
-  }
+stubWindowApi({
+  getInstallations: vi.fn().mockResolvedValue([]),
+  onInstallationsChanged: vi.fn(),
+  onInstallationsVersionsUpdated: vi.fn(),
+  getSetting: vi.fn().mockResolvedValue(undefined),
+  setSetting: vi.fn().mockResolvedValue(undefined)
 })
 
 import { useLauncherPrefs, __resetLauncherPrefsForTest } from './useLauncherPrefs'

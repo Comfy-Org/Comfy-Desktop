@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { execFile } from 'child_process'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { readGitHead } from './git'

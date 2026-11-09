@@ -419,12 +419,7 @@ describe('BenchmarksView', () => {
 
     expect(columnIds()).toEqual(['13', '12', '11'])
 
-    const dataTransfer = {
-      effectAllowed: 'none',
-      dropEffect: 'none',
-      setData: vi.fn(),
-      getData: vi.fn(() => '13')
-    }
+    const dataTransfer = new DataTransfer()
     await wrapper
       .get('[data-testid="benchmark-comparison-column-title-13"] .benchmarks__column-grip')
       .trigger('dragstart', { dataTransfer })

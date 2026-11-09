@@ -47,7 +47,10 @@ describe('MoreMenu', () => {
     await trigger.trigger('click')
     await flushPromises()
     expect(page().find('.more-menu').exists()).toBe(true)
-    await trigger.trigger('pointerdown', { button: 0, pointerType: 'mouse' })
+    trigger.element.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' })
+    )
+    await flushPromises()
     await trigger.trigger('click')
     await flushPromises()
     expect(page().find('.more-menu').exists()).toBe(false)
