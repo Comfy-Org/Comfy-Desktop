@@ -271,7 +271,7 @@ const SETTINGS: Setting[] = [
     name: 'Signed in as',
     hint: USER.email,
     kind: 'button',
-    action: 'Sign out'
+    action: 'Log out'
   },
   {
     id: 'credits',
@@ -279,7 +279,7 @@ const SETTINGS: Setting[] = [
     name: 'Credits',
     hint: `${USER.credits} left`,
     kind: 'button',
-    action: 'Top up'
+    action: 'Add credits'
   },
   {
     id: 'apinodes',

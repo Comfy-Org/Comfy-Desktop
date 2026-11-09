@@ -536,7 +536,9 @@
 
 /* Space cards: the who's-in line fits on one line, a size down. */
 :root[data-mar-ui='on'] .mar-space-meta {
+  overflow: hidden;
   font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1615,4 +1617,20 @@
 }
 :root[data-mar-nav='panels'] {
   --mar-side-bg: var(--mar-panels-side);
+}
+
+/* The + beside a sidebar group's name (Projects, Spaces): a small button. */
+:root .proto-ui.proto-ui.proto-ui .mar-side-add {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  margin-right: -5px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-side-add:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
 }

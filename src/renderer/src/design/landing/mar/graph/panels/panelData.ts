@@ -232,7 +232,7 @@ export const SHORTCUTS: Record<'Essential' | 'View Controls', ShortcutColumn[]> 
         ['Zoom Out', ['Alt', '-']],
         ['Fit view to selected nodes', ['.']],
         ['Toggle Focus Mode', ['F']],
-        ['Toggle Minimap', ['Alt', 'M']]
+        ['Toggle Minimap', ['Alt', 'Shift', 'M']]
       ]
     },
     {

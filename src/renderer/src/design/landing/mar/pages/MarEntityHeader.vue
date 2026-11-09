@@ -29,7 +29,7 @@ const emit = defineEmits<{ back: []; status: [] }>()
     </button>
     <section class="mar-eh-head">
       <span v-if="$slots.cover" class="mar-eh-cover"><slot name="cover" /></span>
-      <div class="min-w-0 flex-1">
+      <div class="mar-eh-text">
         <div class="flex min-w-0 items-center gap-2">
           <slot name="title">
             <h1 class="mar-eh-title">{{ title }}</h1>
@@ -69,11 +69,18 @@ const emit = defineEmits<{ back: []; status: [] }>()
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-base-foreground);
 }
+/* On a narrow window the actions wrap under the title rather than squeeze
+   it to a few letters or sit over the meta line. */
 .mar-eh-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  gap: 14px 18px;
   padding-bottom: 28px;
+}
+.mar-eh-text {
+  min-width: 0;
+  flex: 1 1 320px;
 }
 /* The way back moves up, so the title's centre lands on the tabs' line. */
 :root .proto-ui.proto-ui.proto-ui .mar-eh.is-on-tabs .mar-eh-crumb {
@@ -119,6 +126,11 @@ const emit = defineEmits<{ back: []; status: [] }>()
   color: var(--color-muted-foreground);
   font-size: 13px;
   white-space: nowrap;
+  /* Clips at the edge instead of running under the actions; the inset
+     keeps the links' hover fill whole. */
+  overflow: hidden;
+  margin-inline: -4px;
+  padding-inline: 4px;
 }
 /* Between meta items: a small dot. */
 .mar-eh-dot {

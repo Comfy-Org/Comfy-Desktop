@@ -467,8 +467,8 @@ function finish(): void {
   }
   // M1 has no Home: the install lands on All builds, in M1's own shell.
   showScope()
+  // No toast: the page changes, and the launch itself says it is opening.
   go(localSetup.scope === 'm1' ? 'environments' : 'overview')
-  toast(flow.picked ? `Opening ComfyUI with ${flow.picked.title}` : 'Opening ComfyUI')
 }
 
 /** Entry: the first launch, then every New Instance button. */

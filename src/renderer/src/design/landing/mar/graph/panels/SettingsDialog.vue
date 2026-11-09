@@ -19,6 +19,7 @@ import type { Component } from 'vue'
 import GraphDialog from './GraphDialog.vue'
 import MarSearchField from '../../pages/MarSearchField.vue'
 import { SHORTCUTS } from './panelData'
+import { USER } from '../../../mock'
 
 /**
  * Settings (ComfyUI's SettingDialog, rail › Settings): search, then the
@@ -27,6 +28,8 @@ import { SHORTCUTS } from './panelData'
  */
 const { cloud, start } = defineProps<{ cloud: boolean; start?: string }>()
 const emit = defineEmits<{ close: [] }>()
+// The signed-in mock account first (the one the rest of the app shows).
+const MEMBERS = [USER.name, 'Alex', 'Sam']
 
 type Setting =
   | { name: string; kind: 'toggle'; value: boolean }
@@ -201,12 +204,12 @@ const keybindings = computed(() =>
 
     <template v-else-if="nav === 'Members'">
       <h2 class="rp-title-lg">Members</h2>
-      <div v-for="m in ['Mar', 'Pablo', 'Alex']" :key="m" class="sd-row">
+      <div v-for="(m, i) in MEMBERS" :key="m" class="sd-row">
         <span class="sd-member"
           ><i>{{ m[0] }}</i
           >{{ m }}</span
         >
-        <span class="sd-muted">{{ m === 'Mar' ? 'Owner' : 'Member' }}</span>
+        <span class="sd-muted">{{ i === 0 ? 'Owner' : 'Member' }}</span>
       </div>
     </template>
 
@@ -214,7 +217,11 @@ const keybindings = computed(() =>
       <h2 class="rp-title-lg">User</h2>
       <div class="sd-card">
         <span class="sd-member"
-          ><i>M</i><span><strong>Mar</strong><small>Signed in</small></span></span
+          ><i>{{ USER.name.charAt(0) }}</i
+          ><span
+            ><strong>{{ USER.name }}</strong
+            ><small>Signed in</small></span
+          ></span
         >
         <button type="button" class="rp-btn">Log Out</button>
       </div>

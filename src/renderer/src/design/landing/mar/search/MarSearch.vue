@@ -134,10 +134,13 @@ function ago(when: string): string {
 }
 const dot = (...parts: (string | undefined)[]): string => parts.filter(Boolean).join(' · ')
 
-function inCloud(what: string, then: () => void): () => void {
+// Run on Cloud opens Comfy Cloud itself; with no cloud build yet, the
+// item's detail, which offers it.
+function inCloud(then: () => void): () => void {
   return () => {
-    toast(`Opening ${what} in Comfy Cloud`)
-    then()
+    const c = cloudInstance()
+    if (c) hostActions.launch(c)
+    else then()
   }
 }
 
@@ -149,7 +152,7 @@ const templateItem = (t: Template): Item => ({
   image: thumb(t.id),
   icon: t.kind === 'app' ? PanelsTopLeft : ComfyTemplate,
   open: () => openDetail('template', t.id),
-  cloud: t.runs === 'local' ? undefined : inCloud(t.title, () => openDetail('template', t.id))
+  cloud: t.runs === 'local' ? undefined : inCloud(() => openDetail('template', t.id))
 })
 const templates = computed(() => TEMPLATES.map(templateItem))
 
@@ -165,7 +168,7 @@ const workflows = computed<Item[]>(() =>
       image: thumb(w.thumbId),
       icon: ComfyWorkflow,
       open: () => openDetail('workflow', w.name),
-      cloud: on?.kind === 'cloud' ? undefined : inCloud(name, () => openDetail('workflow', w.name))
+      cloud: on?.kind === 'cloud' ? undefined : inCloud(() => openDetail('workflow', w.name))
     }
   })
 )
@@ -230,13 +233,13 @@ const assets = computed<Item[]>(() =>
 function toggleTheme(): void {
   look.theme = look.theme === 'light' ? 'dark' : 'light'
 }
+// No key hints: none of these has a binding in the prototype yet.
 const actions = computed<Item[]>(() => [
   {
     key: 'x:new-workflow',
     kind: 'action',
     label: 'New workflow',
     icon: Plus,
-    shortcut: ['⌘', 'N'],
     open: () => {
       const on = activeInstance.value
       if (on) hostActions.launch(on)
@@ -247,7 +250,6 @@ const actions = computed<Item[]>(() => [
     kind: 'action',
     label: 'New project',
     icon: FolderPlus,
-    shortcut: ['⇧', '⌘', 'P'],
     open: () => go(`project:${newProject().id}` as Page)
   },
   {
@@ -255,7 +257,6 @@ const actions = computed<Item[]>(() => [
     kind: 'action',
     label: 'Open Comfy Cloud',
     icon: Cloud,
-    shortcut: ['⇧', '⌘', 'C'],
     open: () => {
       const c = cloudInstance()
       if (c) hostActions.launch(c)
@@ -266,7 +267,6 @@ const actions = computed<Item[]>(() => [
     kind: 'action',
     label: 'Go to Settings',
     icon: Settings2,
-    shortcut: ['⌘', ','],
     open: () => go('settings' as Page)
   },
   {
@@ -274,7 +274,6 @@ const actions = computed<Item[]>(() => [
     kind: 'action',
     label: look.theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme',
     icon: look.theme === 'light' ? Moon : Sun,
-    shortcut: ['⇧', '⌘', 'L'],
     open: toggleTheme
   }
 ])
