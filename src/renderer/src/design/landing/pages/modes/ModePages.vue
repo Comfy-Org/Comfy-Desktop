@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AppDetail from '../AppDetail.vue'
-import AppTab from '../../parts/apps/AppTab.vue'
-import { onHubPage } from '../../mar/apps/appPage'
 import { libApp } from '../../appFlow'
 import AdminPages from './AdminPages.vue'
 import MarAgent from '../../mar/agent/MarAgent.vue'
@@ -44,12 +42,6 @@ const ADMIN = ['usage', 'billing', 'limits', 'people', 'provider-keys']
 <template>
   <MarPages v-if="marOwns(proto.page)" />
   <MarHomeV10 v-else-if="proto.page === 'overview' && can.home" />
-  <AppTab
-    v-else-if="app && can.exploreApps && onHubPage(app)"
-    :id="app.id"
-    :key="app.id"
-    in-shell
-  />
   <AppDetail v-else-if="app && can.exploreApps" :id="app.id" :key="app.id" />
   <MarAgent v-else-if="proto.page === 'agent'" />
   <MarBuildSettingsPage v-else-if="env && onBuildSettings" :key="`${env.id}-settings`" :env />

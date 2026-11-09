@@ -175,7 +175,7 @@ function back(): void {
         <Button variant="ghost" size="icon-sm" aria-label="Back to Explore" @click="back"
           ><ChevronLeft :size="16"
         /></Button>
-        <h1 class="shrink-0 text-ui font-semibold">{{ name }}</h1>
+        <h1 class="shrink-0 text-heading font-semibold">{{ name }}</h1>
         <span class="mar-app-editor-sep" aria-hidden="true" />
         <p class="min-w-0 truncate text-ui text-muted-foreground">{{ does }}</p>
       </div>
@@ -443,7 +443,7 @@ function back(): void {
   min-height: 560px;
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--edge);
-  padding: 8px var(--edge) var(--edge);
+  padding: 0 var(--edge) var(--edge);
   overflow: hidden;
   background: var(--color-app-background);
 }
@@ -451,7 +451,8 @@ function back(): void {
 /* Header */
 .mar-app-editor-bar {
   display: flex;
-  height: 36px;
+  height: 56px;
+  padding: 0 4px;
   align-items: center;
   gap: 8px;
 }
@@ -644,7 +645,7 @@ function back(): void {
   padding: 32px 32px 16px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-panel);
-  background: var(--color-secondary-background);
+  background: var(--color-card-background);
 }
 .mar-app-editor-canvas {
   position: relative;
@@ -761,7 +762,7 @@ function back(): void {
   padding: 4px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-card);
-  background: var(--color-card-background);
+  background: var(--color-secondary-background);
   white-space: nowrap;
 }
 .mar-app-editor-rule {
