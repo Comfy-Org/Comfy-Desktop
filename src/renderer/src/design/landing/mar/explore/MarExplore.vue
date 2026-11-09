@@ -1,6 +1,16 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Box, Check, Clock, Image, ListFilter, Play, Video, X } from 'lucide-vue-next'
+import { computed, ref, watch, type Component } from 'vue'
+import {
+  Box,
+  Check,
+  Clock,
+  Image,
+  ListFilter,
+  PanelsTopLeft,
+  Play,
+  Video,
+  X
+} from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
@@ -18,6 +28,7 @@ import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import ExampleTile from '../apps/ExampleTile.vue'
+import StarsGlyph from '../apps/StarsGlyph.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
 
@@ -40,10 +51,10 @@ const type = ref('all')
 const query = ref('')
 
 const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
-const TABS: { value: Tab; label: string; count: number }[] = asApps
+const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = asApps
   ? [
-      { value: 'examples', label: 'Inspiration', count: APP_EXAMPLES.length },
-      { value: 'apps', label: 'All apps', count: APPS_COUNT }
+      { value: 'examples', label: 'Inspiration', count: APP_EXAMPLES.length, icon: StarsGlyph },
+      { value: 'apps', label: 'All apps', count: APPS_COUNT, icon: PanelsTopLeft }
     ]
   : [
       {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Play, Video } from 'lucide-vue-next'
+import { Video } from 'lucide-vue-next'
 import type { AppExample } from './appExamples'
 import ImageGlyph from './ImageGlyph.vue'
 
@@ -74,9 +74,7 @@ function play(e: MouseEvent, on: boolean): void {
           <span class="block truncate text-ui font-medium text-white">{{ x.title }}</span>
         </span>
         <!-- The same white action as Home's examples. -->
-        <span class="mar-ex-tile-go" aria-hidden="true"
-          ><Play v-if="!titled" :size="13" />{{ go }}</span
-        >
+        <span class="mar-ex-tile-go" aria-hidden="true">{{ go }}</span>
       </span>
     </span>
   </div>
@@ -173,7 +171,7 @@ function play(e: MouseEvent, on: boolean): void {
   align-items: center;
   flex: none;
   gap: 6px;
-  padding: 0 13px 0 11px;
+  padding: 0 14px;
   border-radius: var(--radius-control);
   background: #fff;
   box-shadow:

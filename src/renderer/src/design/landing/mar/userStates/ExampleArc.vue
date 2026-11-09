@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, Play } from 'lucide-vue-next'
+import { ArrowRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion, runExample } from './examples'
@@ -254,7 +254,7 @@ function wheel(e: WheelEvent): void {
              on the right, one row over the fade. -->
         <span class="mar-arc-bar">
           <span class="mar-arc-does">{{ x.does }}</span>
-          <span class="mar-arc-go" aria-hidden="true"><Play :size="13" />Run</span>
+          <span class="mar-arc-go" aria-hidden="true">Run</span>
         </span>
       </button>
     </div>
@@ -413,7 +413,7 @@ function wheel(e: WheelEvent): void {
   flex: none;
   align-items: center;
   gap: 6px;
-  padding: 0 13px 0 11px;
+  padding: 0 14px;
   border-radius: var(--radius-control);
   background: #fff;
   box-shadow:

@@ -1,9 +1,10 @@
 <script setup lang="ts" generic="T extends string">
+import type { Component } from 'vue'
 /** Segmented tabs (Mar's pages): radius 10 outside, 7 inside, following
- *  the Corners tweak; an optional count after each label. On a picture
+ *  the Corners tweak; an optional icon before and count after each label. On a picture
  *  (onMedia) the row is dark glass, light-on-dark in both themes. */
 const { options, label, onMedia } = defineProps<{
-  options: { value: T; label: string; count?: number; dot?: boolean }[]
+  options: { value: T; label: string; count?: number; dot?: boolean; icon?: Component }[]
   label: string
   onMedia?: boolean
 }>()
@@ -21,7 +22,8 @@ const model = defineModel<T>({ required: true })
       class="mar-pseg-btn"
       @click="model = o.value"
     >
-      {{ o.label }}<span v-if="o.count !== undefined" class="mar-pseg-count">{{ o.count }}</span
+      <component :is="o.icon" v-if="o.icon" :size="14" class="mar-pseg-icon" />{{ o.label
+      }}<span v-if="o.count !== undefined" class="mar-pseg-count">{{ o.count }}</span
       ><i v-if="o.dot" class="mar-pseg-dot" aria-label="Update available" />
     </button>
   </div>
@@ -47,6 +49,11 @@ const model = defineModel<T>({ required: true })
   transition:
     background-color 140ms ease,
     color 140ms ease;
+}
+.mar-pseg-icon {
+  display: inline-block;
+  margin: -2px 6px 0 -1px;
+  vertical-align: middle;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-pseg-btn:hover {
   color: var(--color-base-foreground);

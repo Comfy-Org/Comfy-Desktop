@@ -3,6 +3,7 @@ import { appExamplesAt } from './appPage'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { onClickOutside, useResizeObserver } from '@vueuse/core'
 import {
+  Folder,
   ArrowRight,
   Check,
   ChevronLeft,
@@ -32,6 +33,7 @@ import Select from '../../ui/Select.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import ExampleTile from './ExampleTile.vue'
 import ImageGlyph from './ImageGlyph.vue'
+import StarsGlyph from './StarsGlyph.vue'
 import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
@@ -250,8 +252,18 @@ const onHistoryGrid = computed(
 /** The one picture, large: always without tabs, and in History once one is open. */
 const showCanvas = computed(() => !onTabs.value || (stageView.value === 'history' && focused.value))
 const VIEWS = computed(() => [
-  { value: 'history' as const, label: 'History', count: outputs.value.length || undefined },
-  { value: 'gallery' as const, label: 'Inspiration', count: examples.value.length }
+  {
+    value: 'history' as const,
+    label: 'History',
+    count: outputs.value.length || undefined,
+    icon: Folder
+  },
+  {
+    value: 'gallery' as const,
+    label: 'Inspiration',
+    count: examples.value.length,
+    icon: StarsGlyph
+  }
 ])
 /** Inspiration's head: the name, its last word apart. */
 // The Inspiration banner's head: what the app is for, in one short line,
