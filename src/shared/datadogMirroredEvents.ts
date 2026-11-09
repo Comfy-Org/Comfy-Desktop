@@ -31,6 +31,8 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   // Minting a view's workspace token failed. The grant stays in main, so a
   // refusal or outage here leaves the hosted view without a token.
   'comfy.desktop.auth.view_token_mint_failed',
+  'comfy.desktop.auth.workspace_switch_browser',
+  'comfy.desktop.auth.workspace_returned_to_anchor',
   // ComfyUI execution failures — alert on execution error rate per release
   // and per gpu_tier.
   'comfy.desktop.execution.error',

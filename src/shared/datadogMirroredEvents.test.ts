@@ -23,6 +23,12 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.auth.view_token_minted')).toBe(false)
   })
 
+  it('mirrors workspace_switch_browser but not workspace_switch', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch_browser')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_returned_to_anchor')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch')).toBe(false)
+  })
+
   // The onboarding→install handoff (#1224) splits the same way: install.not_started
   // is the abort/failure signal ops alerts on; install.dispatched is the paired
   // funnel success gate (PostHog only).
