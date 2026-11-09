@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch, type Component } from 'vue'
 import { Check, Star, Users } from 'lucide-vue-next'
+import AssetCover from '../assets/AssetCover.vue'
 import FavoriteStar from '../FavoriteStar.vue'
 import type { FavoriteKind } from '../favorites'
 import MarItemMenu from './MarItemMenu.vue'
+import type { MarAsset } from './assetsStore'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
 import type { MenuLine } from './menu'
 import '../table/table.css'
@@ -25,6 +27,7 @@ const {
   name,
   thumb,
   icon,
+  cover,
   meta,
   status,
   statusLabel,
@@ -45,6 +48,8 @@ const {
   name: string
   thumb?: string
   icon?: Component
+  /** An asset with no picture: its type's cover instead of the icon. */
+  cover?: Pick<MarAsset, 'name' | 'type'>
   meta?: string
   status?: ItemStatus
   statusLabel?: string
@@ -143,6 +148,7 @@ function click(e: MouseEvent): void {
           loading="lazy"
           :class="fit === 'contain' && 'is-contain'"
         />
+        <AssetCover v-else-if="cover" :name="cover.name" :type="cover.type" />
         <span v-else class="mar-item-glyph"
           ><component :is="icon" :size="layout === 'grid' ? 28 : 18"
         /></span>

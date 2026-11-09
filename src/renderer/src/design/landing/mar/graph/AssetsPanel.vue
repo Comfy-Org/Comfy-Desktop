@@ -395,6 +395,7 @@ function upload(files: FileList | null | undefined): void {
           <MarItem
             :name="a.name.replace(/\.[^.]+$/, '')"
             :thumb="a.src || undefined"
+            :cover="a"
             :meta="view === 'small' ? undefined : meta(a)"
             :layout="view === 'list' ? 'list' : 'grid'"
             ratio="1 / 1"

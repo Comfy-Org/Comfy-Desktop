@@ -11,12 +11,9 @@ import {
   CircleSlash,
   Copy,
   Download,
-  File as FileIcon,
-  FileText,
   FolderOpen,
   Info,
   Plus,
-  Music,
   Workflow,
   X
 } from 'lucide-vue-next'
@@ -24,6 +21,7 @@ import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import type { MarAsset } from '../pages/assetsStore'
 import { factsFor, type Availability } from './assetFacts'
+import AssetCover from './AssetCover.vue'
 import { addTag, removeTag, tagsOf } from './assetTags'
 
 /**
@@ -58,9 +56,6 @@ function add(): void {
   draft.value = ''
 }
 const pic = computed(() => asset.src ?? (asset.thumbId ? thumb(asset.thumbId) : undefined))
-const glyph = computed(
-  () => ({ audio: Music, '3d': Box, text: FileText })[asset.type as string] ?? FileIcon
-)
 const MIME: Record<string, string> = {
   PNG: 'image/png',
   JPG: 'image/jpeg',
@@ -222,7 +217,7 @@ onBeforeUnmount(() => {
         </button>
         <div class="mad-media" :style="{ '--r': facts.ratio }">
           <img v-if="pic" :key="asset.id" :src="pic" alt="" />
-          <span v-else class="mad-glyph"><component :is="glyph" :size="36" /></span>
+          <AssetCover v-else :name="asset.name" :type="asset.type" />
           <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
           <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
         </div>
@@ -513,13 +508,6 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-.mad-glyph {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-muted-foreground);
 }
 .mad-play {
   position: absolute;
