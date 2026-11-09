@@ -348,17 +348,18 @@ if (graphOpen.inspect) {
   graphOpen.inspect = false
 }
 
-/** Double-click opens the asset large: ComfyUI's lightbox as today; in the
- *  proposal our asset view, framed over the app, as from the canvas;
- *  Inspect asset opens the details in the side panel, so the workflow
- *  stays in view; the full view is asked for. With workflow tabs (the
- *  Current look) it opens in a tab beside them, otherwise over the window. */
+/** Today a click checks and a double-click opens ComfyUI's lightbox. In the
+ *  proposal, as in a photo library: a click opens the asset large (our
+ *  asset view, framed over the app, with its details); the check on hover
+ *  selects, and once something is selected a click selects too.
+ *  Inspect asset opens that same view; no second panel. With workflow tabs
+ *  (the Current look) it can also open in a tab beside them. */
 const lightbox = ref<PanelAsset | null>(null)
 function look(a: PanelAsset): void {
   if (prod.value) lightbox.value = a
   else detail.value = a
 }
-const inspect = (a: PanelAsset): void => showSide(a)
+const inspect = (a: PanelAsset): void => (prod.value ? showSide(a) : look(a))
 const tabs = computed(() => graphStyle.id === 'current')
 const fullLabel = computed(() => (tabs.value ? 'Open in new tab' : 'Open full view'))
 function openFull(a: PanelAsset): void {
@@ -371,7 +372,15 @@ function openFull(a: PanelAsset): void {
 function lines(a: PanelAsset): MenuLine[] {
   return [
     { label: 'Inspect asset', icon: ScanSearch, run: () => inspect(a) },
-    { label: fullLabel.value, icon: tabs.value ? AppWindow : Maximize2, run: () => openFull(a) },
+    ...(prod.value || tabs.value
+      ? [
+          {
+            label: fullLabel.value,
+            icon: tabs.value ? AppWindow : Maximize2,
+            run: () => openFull(a)
+          }
+        ]
+      : []),
     {
       label: 'Insert as node in workflow',
       icon: Plus,
@@ -679,7 +688,7 @@ function upload(files: FileList | null | undefined): void {
             class="ap-drag"
             draggable="true"
             @dragstart="drag(a, $event)"
-            @dblclick="!a.status && look(a)"
+            @dblclick="prod && !a.status && look(a)"
           >
             <MarItem
               :name="a.name.replace(/\.[^.]+$/, '')"
@@ -696,7 +705,7 @@ function upload(files: FileList | null | undefined): void {
               context-menu
               menu-align="start"
               :title="`${a.name} · drag onto the canvas`"
-              @open="toggle(a)"
+              @open="prod || a.status ? toggle(a) : look(a)"
               @select="toggle(a)"
             >
               <template v-if="(a.outputs > 1 && a.kind === 'Generated') || a.preview" #overlay>

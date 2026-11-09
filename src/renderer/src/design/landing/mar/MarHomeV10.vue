@@ -70,8 +70,8 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 const greeting = computed(() => {
   const first = proto.signedIn ? shownName.value?.split(' ')[0] : ''
   if (firstTime.value)
-    return first ? `Welcome, ${first}. Let's create` : "Welcome to Comfy. Let's create"
-  return first ? `Welcome back, ${first}. Let's create` : "Let's create"
+    return first ? `Welcome, ${first}. Let's create!` : "Welcome to Comfy. Let's create!"
+  return first ? `Welcome back, ${first}. Let's create!` : "Let's create!"
 })
 const firstRun = computed(() => firstTime.value && noLocal.value)
 // Home first, Local picked and not installed yet: the install waits (or
