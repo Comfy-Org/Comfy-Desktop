@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Plus, ScanSearch, X } from 'lucide-vue-next'
+import { Download, Plus, ScanSearch, Workflow, X } from 'lucide-vue-next'
+import { toast } from '../../useProto'
+import GenerationInfo from '../assets/GenerationInfo.vue'
 import type { MarAsset } from '../pages/assetsStore'
 import { factsFor } from '../assets/assetFacts'
 import { addTag, removeTag, tagsOf } from '../assets/assetTags'
@@ -8,7 +10,8 @@ import { addTag, removeTag, tagsOf } from '../assets/assetTags'
 /**
  * Asset details on the right of the canvas (Media Assets › Show details),
  * so the graph stays in view. One asset: its picture, file facts, tags
- * you can edit and how it was made. Several: how many, and the tags they
+ * you can edit, how it was made (GenerationInfo, as in Desktop's asset
+ * view) and what to do with it. Several: how many, and the tags they
  * all share, added to or taken off all of them at once.
  */
 type SideAsset = MarAsset & { src: string; seconds: number; kind: string }
@@ -16,7 +19,25 @@ const { assets } = defineProps<{ assets: SideAsset[] }>()
 const emit = defineEmits<{ close: []; inspect: [asset: SideAsset] }>()
 
 const one = computed(() => (assets.length === 1 ? assets[0]! : null))
-const facts = computed(() => (one.value ? factsFor(one.value) : null))
+/** An imported file carries no run, whatever its name suggests. */
+const facts = computed(() => {
+  const a = one.value
+  if (!a) return null
+  const f = factsFor(a)
+  return a.kind === 'Generated'
+    ? f
+    : {
+        ...f,
+        imported: true,
+        workflow: 'missing' as const,
+        history: 'missing' as const,
+        prompt: undefined,
+        negative: undefined,
+        params: undefined,
+        models: [],
+        json: undefined
+      }
+})
 const rows = computed(() => {
   const a = one.value
   const f = facts.value
@@ -102,19 +123,34 @@ function drop(t: string): void {
           </div>
           <p v-if="!one && !shared.length" class="ap-side-hint">No tag is on all of them yet.</p>
         </div>
-        <div v-if="one && one.kind === 'Generated' && facts" class="ap-side-sec">
-          <p class="rp-menu-label">Generation details</p>
-          <p v-if="facts.prompt" class="ap-side-prompt">{{ facts.prompt }}</p>
-          <p v-for="m in facts.models" :key="m" class="ap-side-model">{{ m }}</p>
-          <p v-if="!facts.prompt && !facts.models.length" class="ap-side-hint">
-            No run data in this file.
-          </p>
+        <div v-if="one && facts" class="ap-side-sec">
+          <p class="rp-menu-label">Generation info</p>
+          <GenerationInfo :facts="facts" />
         </div>
       </template>
     </div>
     <footer v-if="one" class="ap-side-foot">
-      <button type="button" class="ap-side-btn" @click="emit('inspect', one)">
+      <button type="button" class="ap-side-btn is-main" @click="emit('inspect', one)">
         <ScanSearch :size="14" />Inspect asset
+      </button>
+      <button
+        v-if="facts?.workflow === 'available'"
+        type="button"
+        class="ap-side-btn is-icon"
+        aria-label="Open as workflow in new tab"
+        title="Open as workflow in new tab"
+        @click="toast(`Opened ${one.name} as a workflow`)"
+      >
+        <Workflow :size="14" />
+      </button>
+      <button
+        type="button"
+        class="ap-side-btn is-icon"
+        aria-label="Download"
+        title="Download"
+        @click="toast(`Downloading ${one.name}`)"
+      >
+        <Download :size="14" />
       </button>
     </footer>
   </aside>
@@ -244,22 +280,9 @@ function drop(t: string): void {
   color: var(--rp-meta);
   font-size: 12px;
 }
-.ap-side-prompt {
-  max-height: 8.5em;
-  overflow-y: auto;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.ap-side-model {
-  overflow: hidden;
-  color: var(--rp-meta);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .ap-side-foot {
   display: flex;
+  gap: 6px;
   padding: 10px 12px;
   border-top: 1px solid var(--rp-line);
 }
@@ -274,6 +297,10 @@ function drop(t: string): void {
   background: var(--rp-chip);
   color: var(--rp-text);
   font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-side-btn.is-icon {
+  width: 32px;
+  flex: none;
 }
 :root .proto-ui.proto-ui.proto-ui .ap-side-btn:hover {
   background: var(--rp-chip-on);

@@ -26,6 +26,9 @@ export interface AssetFacts {
   models: string[]
   /** Node the prompt was found in. */
   promptNode?: string
+  negative?: string
+  /** The sampler's settings, when the run recorded them. */
+  params?: { seed: number; steps: number; cfg: number; sampler: string }
   seconds?: number
   json?: string
 }
@@ -73,6 +76,15 @@ const PROMPTS: [RegExp, string][] = [
   [/banner/, 'flowing abstract silk in pastel light, macro, soft gradients']
 ]
 
+/** What a model file does in the run, from its name: a guess, like the rest. */
+export function modelRole(file: string): string {
+  if (/lora/i.test(file)) return 'LoRA'
+  if (/qwen_3|mistral|t5|clip|umt5/i.test(file)) return 'Text encoder'
+  if (/vae/i.test(file)) return 'VAE'
+  if (/seedvr|upscale|esrgan/i.test(file)) return 'Upscaler'
+  return 'Model'
+}
+
 /** "12 min ago" and "Yesterday" kept their run; older runs lost it on a restart. */
 const recent = (when: string): boolean => /min|hour|now|yesterday/i.test(when)
 
@@ -113,6 +125,17 @@ export function factsFor(a: MarAsset): AssetFacts {
   const models = MODELS[template] ?? (prompt ? MODELS.image_z_image_turbo! : [])
   const seconds = 6 + (h % 70) / 2
   const node = a.type === 'video' ? 'WanImageToVideo' : 'CLIPTextEncode'
+  const negative =
+    prompt && h % 3 === 0 ? 'blurry, low quality, watermark, extra fingers' : undefined
+  const params =
+    prompt && (a.type === 'image' || a.type === 'video')
+      ? {
+          seed: h % 1000000000,
+          steps: [8, 20, 28, 30][h % 4]!,
+          cfg: [1, 3.5, 4, 7][h % 4]!,
+          sampler: ['euler', 'res_multistep', 'dpmpp_2m', 'euler_ancestral'][h % 4]!
+        }
+      : undefined
   return {
     width,
     height,
@@ -126,6 +149,8 @@ export function factsFor(a: MarAsset): AssetFacts {
     metadata: 'available',
     prompt: kept ? prompt : undefined,
     promptNode: kept && prompt ? node : undefined,
+    negative: kept ? negative : undefined,
+    params: kept ? params : undefined,
     models: kept ? models : [],
     seconds: kept ? seconds : undefined,
     json: kept
@@ -137,7 +162,9 @@ export function factsFor(a: MarAsset): AssetFacts {
             outputs: { '9': { images: [{ filename: a.name, type: 'output' }] } },
             nodes: {
               '4': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: models[0] } },
-              '6': { class_type: node, inputs: { text: prompt } }
+              '3': { class_type: 'KSampler', inputs: params ?? {} },
+              '6': { class_type: node, inputs: { text: prompt } },
+              ...(negative ? { '7': { class_type: node, inputs: { text: negative } } } : {})
             }
           },
           null,
