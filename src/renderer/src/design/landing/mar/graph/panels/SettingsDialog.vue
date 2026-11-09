@@ -217,9 +217,9 @@ const keybindings = computed(() =>
       <h2 class="rp-title-lg">User</h2>
       <div class="sd-card">
         <span class="sd-member"
-          ><i>{{ MEMBERS[0][0] }}</i
+          ><i>{{ USER.name.charAt(0) }}</i
           ><span
-            ><strong>{{ MEMBERS[0] }}</strong
+            ><strong>{{ USER.name }}</strong
             ><small>Signed in</small></span
           ></span
         >
