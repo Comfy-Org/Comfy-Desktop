@@ -595,6 +595,30 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     expect(signIn).not.toHaveBeenCalled()
   })
 
+  it('refuses a real JWT whose deadline passed in transit: nothing is stored or activated', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    saveGrant(grantOn('w1', { expiresAt: Date.now() + 3_600_000 }))
+    mintReply = ({ workspaceId }) => {
+      const now = Math.floor(Date.now() / 1000)
+      const reply = json(200, {
+        token: jwt({ sub: 'user-1', workspace_id: workspaceId, iat: now, exp: now + 30 }),
+        expires_at: new Date(Date.now() + 30_000).toISOString()
+      })
+      vi.setSystemTime(Date.now() + 60_000)
+      return reply
+    }
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(session.currentWorkspaceId()).toBe('w1')
+    expect(vaultOnDisk().workspaceTokens).toEqual({})
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
   it('re-mints an expired minted token on the next switch, with no browser', async () => {
     saveGrant(grantOn('w1'))
     const session = new CloudSession()

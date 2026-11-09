@@ -154,6 +154,30 @@ describe('view token path through a real session', () => {
     expect(mintRequests).toEqual(['w2', 'w2'])
   })
 
+  it('refuses to deliver or cache a real JWT whose deadline passed in transit', async () => {
+    await activeOnW2()
+    const good = mintReply
+    vi.useFakeTimers({ toFake: ['Date'] })
+    mintReply = (workspaceId) => {
+      const now = Math.floor(Date.now() / 1000)
+      const reply = new Response(
+        JSON.stringify({
+          token: jwt({ sub: 'user-1', workspace_id: workspaceId, iat: now, exp: now + 30 }),
+          expires_at: new Date(Date.now() + 30_000).toISOString()
+        }),
+        { status: 200 }
+      )
+      vi.setSystemTime(Date.now() + 60_000)
+      return reply
+    }
+
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBeNull()
+
+    mintReply = good
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBe(mintedJwt('w2'))
+    expect(mintRequests).toEqual(['w2', 'w2'])
+  })
+
   it('a clock an hour ahead of the server still delivers a view token, with one mint', async () => {
     await activeOnW2()
     vi.useFakeTimers({ toFake: ['Date'] })

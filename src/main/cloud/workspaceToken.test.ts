@@ -190,6 +190,51 @@ describe('mintWorkspaceToken and the local clock', () => {
     })
   })
 
+  it('rejects a zero lifetime even when the clock steps back during the request', async () => {
+    vi.setSystemTime(SERVER_NOW_MS)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        vi.setSystemTime(SERVER_NOW_MS - 60_000)
+        return new Response(
+          JSON.stringify({
+            token: jwt({ iat: SERVER_NOW, exp: SERVER_NOW }),
+            expires_at: new Date(SERVER_NOW_MS).toISOString()
+          }),
+          { status: 200 }
+        )
+      })
+    )
+
+    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toEqual({
+      kind: 'failed',
+      status: 200
+    })
+  })
+
+  it('rejects a positive lifetime whose deadline passed before the reply arrived', async () => {
+    const clientStart = SERVER_NOW_MS + HOUR_MS
+    vi.setSystemTime(clientStart)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        vi.setSystemTime(clientStart + 30_000)
+        return new Response(
+          JSON.stringify({
+            token: jwt({ iat: SERVER_NOW, exp: SERVER_NOW + 30 }),
+            expires_at: new Date(SERVER_NOW_MS + 30_000).toISOString()
+          }),
+          { status: 200 }
+        )
+      })
+    )
+
+    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toEqual({
+      kind: 'failed',
+      status: 200
+    })
+  })
+
   it.each<[string, Record<string, unknown>]>([
     ['no iat', { exp: SERVER_NOW + 900 }],
     ['no exp', { iat: SERVER_NOW }],

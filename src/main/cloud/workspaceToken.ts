@@ -72,8 +72,9 @@ function mintedFrom(body: unknown, requestedAt: number): WorkspaceTokenMint | nu
   if (typeof token !== 'string' || token === '') return null
   const lifetimeSeconds = lifetimeSecondsOf(token)
   if (lifetimeSeconds !== null) {
-    return lifetimeSeconds > 0
-      ? { kind: 'minted', token, expiresAt: requestedAt + lifetimeSeconds * 1000 }
+    const deadline = requestedAt + lifetimeSeconds * 1000
+    return lifetimeSeconds > 0 && deadline > Date.now()
+      ? { kind: 'minted', token, expiresAt: deadline }
       : null
   }
   if (typeof expiresAt !== 'string') return null
