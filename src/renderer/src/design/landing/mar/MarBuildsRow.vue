@@ -8,7 +8,7 @@ import { envStatus } from '../parts/env/env'
 import { go, hostActions, recentInstances } from '../useProto'
 import { can } from '../milestones'
 import SetupLaptop from './setup/SetupLaptop.vue'
-import SetupServer from './setup/SetupServer.vue'
+import SetupCloud from './setup/SetupCloud.vue'
 import { localSetup } from './setup/setupFlow'
 import './setup/setup.css'
 
@@ -49,7 +49,7 @@ const holds = (i: (typeof shown.value)[number]): string =>
           @click="hostActions.launch(i)"
         >
           <span class="mbr-device">
-            <SetupServer v-if="i.kind === 'cloud'" :hue="i.hue" :live="envStatus(i).live" />
+            <SetupCloud v-if="i.kind === 'cloud'" :hue="i.hue" />
             <template v-else>
               <SetupLaptop :os="localSetup.os" />
               <!-- The build's hue on its screen. -->
@@ -97,6 +97,9 @@ const holds = (i: (typeof shown.value)[number]): string =>
 /* The install card (HomeInstall.vue), small: a surface with a soft light
  * at its corner, the machine drawn on the left. */
 :root .proto-ui.proto-ui.proto-ui .mbr-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   min-width: 0;
   align-items: center;
@@ -111,8 +114,27 @@ const holds = (i: (typeof shown.value)[number]): string =>
   text-align: left;
   transition: background-color 0.15s;
 }
-:root .proto-ui.proto-ui.proto-ui .mbr-card:hover {
-  background-color: oklch(0.6 0 0 / 0.1);
+/* On hover the hue spreads from the lit corner across the card. */
+.mbr-card::before {
+  position: absolute;
+  z-index: -1;
+  background: linear-gradient(
+    120deg,
+    oklch(0.7 0.15 var(--h, 0) / 0.26),
+    oklch(0.7 0.15 var(--h, 0) / 0.1)
+  );
+  clip-path: circle(0% at 0 0);
+  content: '';
+  inset: 0;
+  transition: clip-path 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mbr-card:hover::before {
+  clip-path: circle(150% at 0 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mbr-card::before {
+    transition-duration: 0s;
+  }
 }
 .mbr-card .mss-laptop {
   width: 88px;
