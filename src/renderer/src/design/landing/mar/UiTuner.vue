@@ -32,6 +32,7 @@ import {
   flow,
   localSetup,
   showHome,
+  showNodes,
   showScreen,
   type Screen
 } from './setup/setupFlow'
@@ -243,7 +244,12 @@ const linkSays = computed(() => {
             </Row>
             <!-- DESK-243: where a new user gets the recommended node packs. -->
             <Row label="Custom nodes">
-              <Select v-model="localSetup.nodes" :options="NODES_AT" class="w-full" />
+              <Select
+                :model-value="localSetup.nodes"
+                :options="NODES_AT"
+                class="w-full"
+                @update:model-value="(v) => v && showNodes(v)"
+              />
             </Row>
             <Row label="Jump to">
               <Select

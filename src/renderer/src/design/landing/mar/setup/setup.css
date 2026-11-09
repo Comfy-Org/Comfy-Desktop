@@ -1913,3 +1913,10 @@
 :root[data-ds-theme='light'] .proto-ui:has(+ .mss-confirm) {
   background-color: rgb(20 20 30 / 0.22);
 }
+
+/* The first launch takes the window at z 70, over the 50 every menu opens
+ * at: while it shows, menus open above it, so UI Playground's selects (at
+ * 80) and the setup modal's own work there too. */
+body:has(.mss-first) [data-reka-popper-content-wrapper] {
+  z-index: 90 !important;
+}

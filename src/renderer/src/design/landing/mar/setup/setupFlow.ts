@@ -812,6 +812,22 @@ if (linkFirst) {
   openSetup()
 }
 
+/** UI Playground › Custom nodes: the pick, then the screen it shows on, since
+ *  neither place is part of the first launch. New build (and Both): the
+ *  step itself. Home: the first install's card, which needs the Home. */
+export function showNodes(v: NodesAt): void {
+  localSetup.nodes = v
+  if (v === 'build' || v === 'both') showScreen('nodes')
+  else if (v === 'home') {
+    stop()
+    localSetup.mode = 'on'
+    localSetup.scope = 'next'
+    if (localSetup.onboarding === 'install') localSetup.onboarding = 'home'
+    marUser.local = 'none'
+    landHomeLocal()
+  }
+}
+
 /** Every screen of the flow, as the Figma comparison lists them, so a
  *  review can land on one without walking the flow. */
 export type Screen =
