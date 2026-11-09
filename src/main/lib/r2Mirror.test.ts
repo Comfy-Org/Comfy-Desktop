@@ -16,7 +16,7 @@ describe('r2MirrorUrl', () => {
   })
 
   it('does not collide R2 prefix with a longer matching subpath', () => {
-    expect(r2MirrorUrl(`${R2_BASE_URL}-evil/foo`)?.startsWith(R2_MIRROR_BASE_URL)).toBe(true)
+    expect(r2MirrorUrl(`${R2_BASE_URL}-evil/foo`)).toBeUndefined()
   })
 })
 

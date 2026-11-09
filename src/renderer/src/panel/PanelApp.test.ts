@@ -2618,14 +2618,19 @@ describe('PanelApp', () => {
     })
   })
 
-  it('ignores install-update events whose installationId does not match the host', async () => {
-    const wrapper = mountPanel()
+  it('ignores install-update events for another known installation', async () => {
+    mockState.installations = [
+      SAMPLE_INSTALL,
+      { ...SAMPLE_INSTALL, id: 'someone-else', name: 'Other Install' }
+    ]
+    mountPanel()
     await flushPromises()
+    const api = (window as unknown as { api: { openInstancePicker: ReturnType<typeof vi.fn> } }).api
     mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
       cb({ kind: 'install-update', installationId: 'someone-else' })
     )
     await flushPromises()
-    expect(wrapper.find('[data-testid="detail-modal"]').exists()).toBe(false)
+    expect(api.openInstancePicker).not.toHaveBeenCalled()
   })
 
   describe('telemetry', () => {
