@@ -17,6 +17,8 @@ export interface MarAsset {
   age: number
   when: string
   fav?: boolean
+  /** The build (instance id) whose catalog holds it. */
+  envId?: string
   status?: ItemStatus
   statusLabel?: string
 }
@@ -31,6 +33,7 @@ const RUNS: MarAsset[] = [
     source: 'local',
     thumbId: 'image_z_image_turbo',
     project: 'Hero shots',
+    envId: 'local-1',
     size: '—',
     sizeMb: 0,
     age: -3,
@@ -45,6 +48,7 @@ const RUNS: MarAsset[] = [
     source: 'cloud',
     thumbId: 'video_wan2_2_14B_i2v',
     project: 'My first project',
+    envId: 'cloud',
     size: '—',
     sizeMb: 0,
     age: -2,
@@ -59,6 +63,7 @@ const RUNS: MarAsset[] = [
     source: 'local',
     thumbId: 'image_flux2',
     project: 'Flux tests',
+    envId: 'local-flux',
     size: '—',
     sizeMb: 0,
     age: -1,

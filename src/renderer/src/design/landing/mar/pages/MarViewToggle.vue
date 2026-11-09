@@ -1,12 +1,15 @@
-<script setup lang="ts">
-import { LayoutGrid, List } from 'lucide-vue-next'
+<script setup lang="ts" generic="T extends 'grid' | 'list' | 'masonry'">
+import { LayoutDashboard, LayoutGrid, List } from 'lucide-vue-next'
 
-/** Grid or list (Mar's pages), two icons in one segmented pill. */
-const model = defineModel<'grid' | 'list'>({ required: true })
+/** Grid or list (Mar's pages), two icons in one segmented pill. Assets
+ *  adds a third first, masonry: each picture in its own shape. */
+const { masonry = false } = defineProps<{ masonry?: boolean }>()
+const model = defineModel<T>({ required: true })
 const VIEWS = [
+  ...(masonry ? [{ value: 'masonry', label: 'Masonry', icon: LayoutDashboard }] : []),
   { value: 'grid', label: 'Grid', icon: LayoutGrid },
   { value: 'list', label: 'List', icon: List }
-] as const
+] as { value: T; label: string; icon: typeof List }[]
 </script>
 
 <template>
