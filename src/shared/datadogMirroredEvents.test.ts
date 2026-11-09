@@ -26,6 +26,7 @@ describe('isDatadogMirroredEvent', () => {
   it('mirrors workspace_switch_browser but not workspace_switch', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch_browser')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_returned_to_anchor')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.mint_scope_not_granted')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch')).toBe(false)
   })
 

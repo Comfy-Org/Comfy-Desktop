@@ -45,6 +45,8 @@ const REFRESH_SKEW_MS = 60_000
 export const WORKSPACE_SWITCH_EVENT = 'comfy.desktop.auth.workspace_switch'
 /** Mirrored to Datadog: every browser trip a workspace switch causes. */
 export const WORKSPACE_SWITCH_BROWSER_EVENT = 'comfy.desktop.auth.workspace_switch_browser'
+/** Mirrored to Datadog: a browser sign-in returned a grant without the mint scope. */
+export const MINT_SCOPE_NOT_GRANTED_EVENT = 'comfy.desktop.auth.mint_scope_not_granted'
 /** Mirrored to Datadog: a token read could not renew the active workspace, so it went back to the anchor. */
 export const WORKSPACE_RETURNED_TO_ANCHOR_EVENT = 'comfy.desktop.auth.workspace_returned_to_anchor'
 
@@ -162,7 +164,9 @@ export class CloudSession {
 
   private storeSignedInGrant(tokens: AuthTokens): void {
     this.mintBlockedUntil = 0
-    saveGrant(tokens, { mintScopeWithheld: !canMintWorkspaceTokens(tokens.accessToken) })
+    const mintScopeWithheld = !canMintWorkspaceTokens(tokens.accessToken)
+    saveGrant(tokens, { mintScopeWithheld })
+    if (mintScopeWithheld) mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
   }
 
   private clearPendingLogin(): void {

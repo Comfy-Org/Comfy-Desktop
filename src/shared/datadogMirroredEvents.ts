@@ -33,6 +33,7 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   'comfy.desktop.auth.view_token_mint_failed',
   'comfy.desktop.auth.workspace_switch_browser',
   'comfy.desktop.auth.workspace_returned_to_anchor',
+  'comfy.desktop.auth.mint_scope_not_granted',
   // ComfyUI execution failures — alert on execution error rate per release
   // and per gpu_tier.
   'comfy.desktop.execution.error',

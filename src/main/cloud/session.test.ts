@@ -45,6 +45,7 @@ import { CLOUD_CONFIG } from './config'
 import { openAuthorizePage, refresh, signIn } from './oauth'
 import {
   CloudSession,
+  MINT_SCOPE_NOT_GRANTED_EVENT,
   WORKSPACE_RETURNED_TO_ANCHOR_EVENT,
   WORKSPACE_SWITCH_BROWSER_EVENT,
   WORKSPACE_SWITCH_EVENT
@@ -155,6 +156,12 @@ function switchEvents(): unknown[] {
   return mocked(mainTelemetry.emit)
     .mock.calls.filter(([event]) => event === WORKSPACE_SWITCH_EVENT)
     .map(([, context]) => context)
+}
+
+function mintScopeNotGrantedEvents(): unknown[] {
+  return mocked(mainTelemetry.emit).mock.calls.filter(
+    ([event]) => event === MINT_SCOPE_NOT_GRANTED_EVENT
+  )
 }
 
 function browserEvents(): unknown[] {
@@ -1639,6 +1646,47 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     await new CloudSession().login()
 
     expect(signIn).toHaveBeenCalledTimes(2)
+  })
+
+  it('emits one mint_scope_not_granted for a switch sign-in, and none for the later held switches', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    browserSignInReturns(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-b' })))
+    const session = new CloudSession()
+
+    await session.switchWorkspace('w2')
+    await session.switchWorkspace('w3')
+
+    expect(mintScopeNotGrantedEvents()).toHaveLength(1)
+  })
+
+  it('emits one mint_scope_not_granted for an explicit sign-in with no scope', async () => {
+    browserSignInReturns(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE })))
+
+    await new CloudSession().login()
+
+    expect(mintScopeNotGrantedEvents()).toHaveLength(1)
+  })
+
+  it('emits no mint_scope_not_granted when a sign-in returns the scope', async () => {
+    browserSignInReturns(signedInResult(grantOn('w1')))
+    const session = new CloudSession()
+
+    await session.login()
+
+    expect(mintScopeNotGrantedEvents()).toEqual([])
+  })
+
+  it('emits none for a scopeless sign-in dropped after logout', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const session = new CloudSession()
+
+    const login = session.login()
+    session.logout()
+    pending.resolve(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE })))
+    await login
+
+    expect(mintScopeNotGrantedEvents()).toEqual([])
   })
 
   it('reports scope_not_granted when an sso sign-in narrows a grant that could mint', async () => {
