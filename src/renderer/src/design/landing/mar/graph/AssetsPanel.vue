@@ -13,6 +13,7 @@ import {
   Layers,
   LayoutDashboard,
   LayoutGrid,
+  Minus,
   AppWindow,
   Plus,
   ScanSearch,
@@ -103,6 +104,13 @@ const view = ref<View>(
     }
   })()
 )
+/** Size: how big the cards are, 1 (smallest) to 3. Fewer columns as it
+ *  grows; the list has no size. */
+const SIZES = 3
+const size = ref(2)
+const setSize = (n: number): void => {
+  size.value = Math.min(SIZES, Math.max(1, n))
+}
 function setView(v: View): void {
   view.value = v
   try {
@@ -114,8 +122,8 @@ function setView(v: View): void {
 // Masonry first, the default, as in Desktop's view toggle.
 const ALL_VIEWS = [
   { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
-  { value: 'large', label: 'Grid (large)', icon: LayoutGrid },
-  { value: 'list', label: 'List view', icon: TableOfContents }
+  { value: 'large', label: 'Grid', icon: LayoutGrid },
+  { value: 'list', label: 'List', icon: TableOfContents }
 ] as const
 /** Production (UI Playground › ComfyUI): ComfyUI as it ships plus Better
  *  Assets Phase 1. Generated and Imported are tabs, the view is Grid or
@@ -265,7 +273,9 @@ const SORTS = computed(() => [
  *  cards rather than bigger ones (two at the default 320). */
 const cols = computed(() => {
   const n = Math.max(2, Math.floor(((railWidth['Media Assets'] ?? RAIL_DEFAULT) - 20) / 150))
-  return view.value === 'small' ? n + 1 : view.value === 'list' ? 1 : n
+  if (view.value === 'list') return 1
+  if (view.value === 'small') return n + 1
+  return prod.value ? n : Math.max(1, n + 2 - size.value)
 })
 /** The cards in columns: one run for the grids and the list, balanced
  *  columns for Masonry (each card to the shortest one). */
@@ -489,10 +499,10 @@ function upload(files: FileList | null | undefined): void {
             :aria-expanded="!!menu"
             @click="menu = menu ? '' : 'view'"
           >
-            <!-- As today it's ComfyUI's settings icon; the proposal shows the
-                 view you're in, so it doesn't read as a second filter. -->
+            <!-- As today it's ComfyUI's settings icon; the proposal's is
+                 Layout, the same whatever the view. -->
             <Settings2 v-if="prod" :size="15" />
-            <component :is="VIEWS.find((v) => v.value === view)?.icon" v-else :size="15" />
+            <LayoutGrid v-else :size="15" />
           </button>
           <div v-if="menu === 'view' && prod" class="rp-menu is-end ap-menu" role="menu">
             <button
@@ -524,9 +534,7 @@ function upload(files: FileList | null | undefined): void {
             </template>
           </div>
           <div v-else-if="menu === 'view'" class="rp-menu is-end ap-menu" role="menu">
-            <p class="rp-menu-label ap-menu-head">
-              View<span>{{ VIEWS.find((v) => v.value === view)?.label }}</span>
-            </p>
+            <p class="rp-menu-label ap-menu-head">Layout</p>
             <div
               class="mar-pseg ap-views"
               role="radiogroup"
@@ -538,14 +546,44 @@ function upload(files: FileList | null | undefined): void {
                 :key="v.value"
                 type="button"
                 role="radio"
-                class="mar-pseg-btn is-icon"
+                class="mar-pseg-btn ap-view"
                 :aria-checked="view === v.value"
                 :aria-selected="view === v.value"
-                :aria-label="v.label"
-                :title="v.label"
                 @click="setView(v.value)"
               >
-                <component :is="v.icon" :size="14" />
+                <component :is="v.icon" :size="16" /><span>{{ v.label }}</span>
+              </button>
+            </div>
+            <div v-if="view !== 'list'" class="ap-size" @mouseenter="sortOpen = false">
+              <span>Size</span>
+              <button
+                type="button"
+                class="ap-size-btn"
+                aria-label="Smaller"
+                :disabled="size <= 1"
+                @click="setSize(size - 1)"
+              >
+                <Minus :size="13" />
+              </button>
+              <div class="ap-size-bar" role="group" aria-label="Size">
+                <button
+                  v-for="n in SIZES"
+                  :key="n"
+                  type="button"
+                  :class="n <= size && 'is-on'"
+                  :aria-label="`Size ${n}`"
+                  :aria-pressed="n === size"
+                  @click="setSize(n)"
+                />
+              </div>
+              <button
+                type="button"
+                class="ap-size-btn"
+                aria-label="Bigger"
+                :disabled="size >= SIZES"
+                @click="setSize(size + 1)"
+              >
+                <Plus :size="13" />
               </button>
             </div>
             <button
@@ -1017,6 +1055,62 @@ function upload(files: FileList | null | undefined): void {
 }
 :root .proto-ui.proto-ui.proto-ui .ap-views .mar-pseg-btn {
   flex: 1;
+}
+/* Each view: its icon over its name. */
+:root .proto-ui.proto-ui.proto-ui .ap-views .ap-view {
+  height: auto;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px 7px;
+  font-size: 12px;
+}
+/* Size: − a stepped bar +. */
+.ap-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 4px;
+  font-size: 13px;
+}
+.ap-size > span {
+  flex: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-size-btn {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .ap-size-btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .ap-size-btn:disabled {
+  opacity: 0.35;
+}
+.ap-size-bar {
+  display: flex;
+  width: 96px;
+  height: 18px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .ap-size-bar button {
+  flex: 1;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-size-bar button + button {
+  box-shadow: inset 1px 0 0 color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .ap-size-bar button.is-on {
+  background: color-mix(in oklch, var(--color-base-foreground) 38%, transparent);
 }
 .ap-skel {
   display: grid;
