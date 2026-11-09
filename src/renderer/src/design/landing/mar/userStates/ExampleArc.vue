@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, PanelsTopLeft, Play } from 'lucide-vue-next'
+import { ArrowRight, Play } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion, runExample } from './examples'
@@ -240,10 +240,8 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
-          <span class="mar-arc-title"
-            ><PanelsTopLeft class="mar-arc-app" :size="15" aria-label="App" />{{ x.label }}</span
-          >
-          <span class="mar-arc-meta">{{ x.kind }}</span>
+          <span class="mar-arc-title">{{ x.label }}</span>
+          <span class="mar-arc-meta"><span class="mar-arc-app">App</span> · {{ x.kind }}</span>
         </span>
         <span class="mar-arc-does">{{ x.does }}</span>
         <span class="mar-arc-dim" />
@@ -341,9 +339,6 @@ function wheel(e: WheelEvent): void {
   text-align: left;
 }
 .mar-arc-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
   color: #fff;
   font-size: 15px;
   font-weight: 600;
@@ -352,11 +347,11 @@ function wheel(e: WheelEvent): void {
   text-wrap: balance;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
-/* Marks the example as an app, on the title's first line. */
+/* Marks the example as an app, ahead of what it makes. */
 .mar-arc-app {
-  flex: none;
-  margin-top: 1px;
-  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.3));
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 /* What the app does: shown with Run, over the scrim, on the front card. */
 .mar-arc-does {
