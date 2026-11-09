@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useScroll } from '@vueuse/core'
 import {
@@ -57,7 +57,8 @@ const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 
 const assets = ref<GalleryAsset[]>([])
 const detailIndex = ref<number | null>(null)
-const cardMenuOpenId = ref<string | null>(null)
+const cardMenuOpenKey = ref<string | null>(null)
+const lastOpenedKey = ref<string | null>(null)
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
@@ -93,6 +94,14 @@ const sortOptions = computed(() => [
   { value: 'oldest' as const, label: t('assets.sort.oldest') }
 ])
 
+function createdMs(asset: AssetSummary): number {
+  return asset.createdAt ? Date.parse(asset.createdAt) || 0 : 0
+}
+
+function cardKey(asset: GalleryAsset): string {
+  return `${asset.installationId}:${asset.id}`
+}
+
 const visibleAssets = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   const filtered = assets.value.filter(
@@ -101,9 +110,17 @@ const visibleAssets = computed(() => {
       (!query || asset.name.toLowerCase().includes(query))
   )
   const direction = sortOrder.value === 'newest' ? -1 : 1
-  return filtered.toSorted(
-    (a, b) => direction * (a.createdAt ?? '').localeCompare(b.createdAt ?? '')
-  )
+  return filtered.toSorted((a, b) => direction * (createdMs(a) - createdMs(b)))
+})
+
+const emptyState = computed(() => {
+  if (failed.value) return { title: t('assets.loadFailed'), body: t('assets.emptyBody') }
+  if (assets.value.length > 0)
+    return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
+  return {
+    title: t('assets.emptyTitle'),
+    body: reachableBuildIds.value.length === 0 ? t('assets.noRunningBuilds') : t('assets.emptyBody')
+  }
 })
 
 let requestId = 0
@@ -113,25 +130,25 @@ async function loadAssets(): Promise<void> {
   failed.value = false
   try {
     const ids = reachableBuildIds.value
-    const results = await Promise.all(ids.map((id) => window.api.listAssets(id)))
-    if (current === requestId) {
-      assets.value = results.flatMap((list, i) => {
-        const installationId = ids[i]!
-        const buildName = installationStore.getById(installationId)?.name ?? ''
-        return list.map((asset) => ({ ...asset, installationId, buildName }))
-      })
-    }
-  } catch {
-    if (current === requestId) {
-      assets.value = []
-      failed.value = true
-    }
+    const results = await Promise.allSettled(ids.map((id) => window.api.listAssets(id)))
+    if (current !== requestId) return
+    assets.value = results.flatMap((result, i) => {
+      if (result.status === 'rejected') return []
+      const installationId = ids[i]!
+      const buildName = installationStore.getById(installationId)?.name ?? ''
+      return result.value.map((asset) => ({ ...asset, installationId, buildName }))
+    })
+    failed.value = results.length > 0 && results.every((r) => r.status === 'rejected')
   } finally {
     if (current === requestId) loading.value = false
   }
 }
 
-watch(() => reachableBuildIds.value.join('\n'), loadAssets, { immediate: true })
+watch(
+  () => [...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
+  loadAssets,
+  { immediate: true }
+)
 watch(visibleAssets, (list) => {
   if (detailIndex.value !== null && detailIndex.value >= list.length) detailIndex.value = null
 })
@@ -149,7 +166,16 @@ function coolNameTooltips(): void {
 onBeforeUnmount(() => clearTimeout(warmTimer))
 
 function openDetail(asset: GalleryAsset): void {
+  lastOpenedKey.value = cardKey(asset)
   detailIndex.value = visibleAssets.value.indexOf(asset)
+}
+
+async function closeDetail(): Promise<void> {
+  detailIndex.value = null
+  await nextTick()
+  scroller.value
+    ?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(lastOpenedKey.value ?? '')}"]`)
+    ?.focus()
 }
 
 async function download(asset: GalleryAsset): Promise<void> {
@@ -180,11 +206,11 @@ function extensionOf(name: string): string {
     v-if="detailIndex !== null && visibleAssets.length > 0"
     v-model:index="detailIndex"
     :assets="visibleAssets"
-    @close="detailIndex = null"
+    @close="closeDetail"
     @download="download"
   />
   <div
-    v-else
+    v-show="detailIndex === null"
     ref="scroller"
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
     :class="PAGE_SPOTLIGHT_CLASS"
@@ -319,21 +345,20 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <ul
-        v-if="loading && assets.length === 0"
-        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5 p-0"
-        role="status"
-        :aria-label="t('common.loading')"
-        data-testid="assets-skeleton"
-      >
-        <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
-          <Skeleton class="aspect-video w-full rounded-none" />
-          <div class="flex flex-col gap-2 px-3 py-3">
-            <Skeleton class="h-2.5 w-3/4 rounded-full" />
-            <Skeleton class="h-2 w-2/5 rounded-full" />
-          </div>
-        </li>
-      </ul>
+      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
+        <ul
+          class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5 p-0"
+          data-testid="assets-skeleton"
+        >
+          <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
+            <Skeleton class="aspect-video w-full rounded-none" />
+            <div class="flex flex-col gap-2 px-3 py-3">
+              <Skeleton class="h-2.5 w-3/4 rounded-full" />
+              <Skeleton class="h-2 w-2/5 rounded-full" />
+            </div>
+          </li>
+        </ul>
+      </div>
 
       <section
         v-else-if="failed || visibleAssets.length === 0"
@@ -341,11 +366,9 @@ function extensionOf(name: string): string {
         data-testid="assets-empty"
       >
         <h2 class="m-0 text-heading font-semibold text-foreground">
-          {{ failed ? t('assets.loadFailed') : t('assets.emptyTitle') }}
+          {{ emptyState.title }}
         </h2>
-        <p class="m-0 text-ui text-muted-foreground">
-          {{ reachableBuildIds.length === 0 ? t('assets.noRunningBuilds') : t('assets.emptyBody') }}
-        </p>
+        <p class="m-0 text-ui text-muted-foreground">{{ emptyState.body }}</p>
       </section>
 
       <ul
@@ -362,7 +385,7 @@ function extensionOf(name: string): string {
       >
         <li
           v-for="asset in visibleAssets"
-          :key="asset.id"
+          :key="cardKey(asset)"
           class="group relative bg-secondary"
           :data-testid="`asset-${asset.id}`"
         >
@@ -377,6 +400,7 @@ function extensionOf(name: string): string {
               class="block w-full cursor-pointer text-left"
               :aria-label="t('assets.inspect', { name: asset.name })"
               :data-testid="`asset-open-${asset.id}`"
+              :data-card-key="cardKey(asset)"
               @click="openDetail(asset)"
             >
               <span
@@ -433,7 +457,7 @@ function extensionOf(name: string): string {
 
           <div
             class="absolute top-2 right-2 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
-            :class="cardMenuOpenId === asset.id && 'opacity-100'"
+            :class="cardMenuOpenKey === cardKey(asset) && 'opacity-100'"
           >
             <div class="flex items-center rounded-md bg-media-overlay">
               <Button
@@ -448,12 +472,12 @@ function extensionOf(name: string): string {
                 <Download :size="14" aria-hidden="true" />
               </Button>
               <Menu
-                :open="cardMenuOpenId === asset.id"
+                :open="cardMenuOpenKey === cardKey(asset)"
                 :modal="false"
                 align="end"
                 class="z-20 min-w-[180px]"
                 :aria-label="t('assets.moreActions')"
-                @update:open="cardMenuOpenId = $event ? asset.id : null"
+                @update:open="cardMenuOpenKey = $event ? cardKey(asset) : null"
               >
                 <template #trigger>
                   <Button

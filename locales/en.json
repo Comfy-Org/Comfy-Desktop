@@ -78,8 +78,11 @@
       "tagsHint": "Tags are edited in ComfyUI.",
       "togglePanel": "Toggle details panel",
       "previous": "Previous asset",
-      "next": "Next asset"
-    }
+      "next": "Next asset",
+      "position": "{build} · {index} / {total}"
+    },
+    "noMatches": "No matching assets",
+    "noMatchesHint": "Try another type or search."
   },
   "installType": {
     "standalone": "Standalone",

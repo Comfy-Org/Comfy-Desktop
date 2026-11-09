@@ -34,7 +34,7 @@ const emit = defineEmits<{
   download: [asset: GalleryAsset]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const panelOpen = ref(true)
@@ -65,7 +65,9 @@ const properties = computed(() =>
     { label: t('assets.detail.duration'), value: duration.value },
     {
       label: t('assets.detail.created'),
-      value: asset.value.createdAt ? new Date(asset.value.createdAt).toLocaleString() : null
+      value: asset.value.createdAt
+        ? new Date(asset.value.createdAt).toLocaleString(locale.value)
+        : null
     }
   ].filter((row) => row.value)
 )
@@ -103,7 +105,17 @@ function step(delta: number): void {
   index.value = (index.value + delta + assets.length) % assets.length
 }
 
+function ownsKey(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented) return false
+  const target = event.target
+  if (!(target instanceof Element)) return true
+  return !target.closest(
+    'input, textarea, select, video, audio, [role="dialog"], [role="alertdialog"], [role="menu"]'
+  )
+}
+
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (!ownsKey(event)) return
   if (event.key === 'Escape') emit('close')
   else if (event.key === 'ArrowLeft') step(-1)
   else if (event.key === 'ArrowRight') step(1)
@@ -127,7 +139,13 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </Button>
         <span class="min-w-0 truncate text-ui font-medium text-foreground">{{ asset.name }}</span>
         <span class="ml-auto shrink-0 text-ui text-subtle-foreground tabular-nums">
-          {{ asset.buildName }} · {{ index + 1 }} / {{ assets.length }}
+          {{
+            t('assets.detail.position', {
+              build: asset.buildName,
+              index: index + 1,
+              total: assets.length
+            })
+          }}
         </span>
         <Button
           type="button"

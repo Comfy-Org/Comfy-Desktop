@@ -1,3 +1,4 @@
+import { Writable } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getInstallation = vi.fn()
@@ -5,7 +6,20 @@ const getAccessToken = vi.fn()
 const runningSessions = new Map<string, { port?: number }>()
 
 const showSaveDialog = vi.fn()
-const writeFile = vi.fn()
+const written = new Map<string, string>()
+const createWriteStream = vi.fn((filePath: string) => {
+  const chunks: Buffer[] = []
+  return new Writable({
+    write(chunk: Buffer, _encoding, done) {
+      chunks.push(chunk)
+      done()
+    },
+    final(done) {
+      written.set(filePath, Buffer.concat(chunks).toString())
+      done()
+    }
+  })
+})
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/downloads' },
@@ -14,7 +28,7 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
 }))
 vi.mock('fs', () => ({
-  default: { promises: { writeFile: (...a: unknown[]) => writeFile(...a) } }
+  default: { createWriteStream: (filePath: string) => createWriteStream(filePath) }
 }))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
@@ -22,7 +36,11 @@ vi.mock('../devplatform/session', () => ({
 }))
 vi.mock('./ipc/shared', () => ({
   _runningSessions: runningSessions,
-  sourceMap: { cloud: { category: 'cloud' }, standalone: { category: 'local' } }
+  sourceMap: {
+    cloud: { category: 'cloud' },
+    standalone: { category: 'local' },
+    remote: { category: 'remote' }
+  }
 }))
 
 const { assetKind, downloadAsset, listAssets, signedStorageUrl } = await import('./assets')
@@ -39,6 +57,7 @@ function jsonResponse(body: unknown): Response {
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   runningSessions.clear()
+  written.clear()
 })
 
 afterEach(() => {
@@ -108,6 +127,30 @@ describe('listAssets', () => {
     ])
   })
 
+  it('skips remote builds instead of asking this machine', async () => {
+    getInstallation.mockResolvedValue({ id: 'remote-1', sourceId: 'remote' })
+    runningSessions.set('remote-1', { port: 8188 })
+
+    expect(await listAssets('remote-1')).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('serves local previews only from the build itself', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'still.png', preview_url: 'http://127.0.0.1:9999/evil.png' }]
+      })
+    )
+
+    const [summary] = await listAssets('local-1')
+
+    expect(summary!.previewUrl).toBe(
+      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
+    )
+  })
+
   it('returns nothing for a local build that is not running', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
 
@@ -164,7 +207,7 @@ describe('downloadAsset', () => {
     expect(fetchMock.mock.calls[0]![0]).toBe(
       'http://127.0.0.1:8188/api/assets/a1/content?disposition=attachment'
     )
-    expect(writeFile.mock.calls[0]![0]).toBe('/picked/still.png')
+    expect(written.get('/picked/still.png')).toBe('bytes')
   })
 
   it('fails without writing a file when the build cannot serve the asset', async () => {
@@ -174,7 +217,7 @@ describe('downloadAsset', () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 503 }))
 
     await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow('HTTP 503')
-    expect(writeFile).not.toHaveBeenCalled()
+    expect(createWriteStream).not.toHaveBeenCalled()
   })
 
   it('writes nothing when the save dialog is cancelled', async () => {
@@ -184,6 +227,6 @@ describe('downloadAsset', () => {
 
     expect(await downloadAsset(win, 'local-1', 'a1', 'still.png')).toBe(false)
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(writeFile).not.toHaveBeenCalled()
+    expect(createWriteStream).not.toHaveBeenCalled()
   })
 })

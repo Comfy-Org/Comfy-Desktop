@@ -78,8 +78,11 @@
       "tagsHint": "标签在 ComfyUI 中编辑。",
       "togglePanel": "切换详情面板",
       "previous": "上一个资产",
-      "next": "下一个资产"
-    }
+      "next": "下一个资产",
+      "position": "{build} · {index} / {total}"
+    },
+    "noMatches": "没有匹配的资产",
+    "noMatchesHint": "试试其他类型或搜索词。"
   },
   "installType": {
     "standalone": "独立版",

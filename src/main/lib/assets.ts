@@ -1,5 +1,8 @@
 import fs from 'fs'
 import path from 'path'
+import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
+import type { ReadableStream as WebReadableStream } from 'stream/web'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
@@ -85,9 +88,9 @@ export function signedStorageUrl(location: string | null): string | null {
   if (!location) return null
   try {
     const url = new URL(location)
-    const host = url.hostname.toLowerCase()
-    const trusted = host === SIGNED_STORAGE_HOST || host.endsWith(`.${SIGNED_STORAGE_HOST}`)
-    return url.protocol === 'https:' && trusted ? url.toString() : null
+    return url.protocol === 'https:' && url.hostname.toLowerCase() === SIGNED_STORAGE_HOST
+      ? url.toString()
+      : null
   } catch {
     return null
   }
@@ -117,10 +120,12 @@ async function resolveCloudContentUrl(
 async function resolveSource(installationId: string): Promise<AssetSource | null> {
   const inst = await installations.get(installationId)
   if (!inst) return null
-  if (sourceMap[inst.sourceId]?.category === 'cloud') {
+  const category = sourceMap[inst.sourceId]?.category
+  if (category === 'cloud') {
     const accessToken = await getCloudSession().getAccessToken()
     return accessToken ? { kind: 'cloud', accessToken } : null
   }
+  if (category !== 'local') return null
   const port = _runningSessions.get(installationId)?.port
   return port ? { kind: 'local', origin: `http://127.0.0.1:${port}` } : null
 }
@@ -138,11 +143,16 @@ async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
   return summaries
 }
 
+function localPreviewUrl(row: AssetRow, origin: string): string {
+  const fallback = new URL(contentPath(row.id, 'inline'), origin)
+  if (!row.preview_url) return fallback.toString()
+  const preview = new URL(row.preview_url, origin)
+  return (preview.origin === origin ? preview : fallback).toString()
+}
+
 async function listLocalAssets(origin: string): Promise<AssetSummary[]> {
   const rows = await fetchAssetRows(`${origin}/api/assets?${LIST_QUERY}`, {})
-  return rows.map((row) =>
-    toSummary(row, new URL(row.preview_url ?? contentPath(row.id, 'inline'), origin).toString())
-  )
+  return rows.map((row) => toSummary(row, localPreviewUrl(row, origin)))
 }
 
 export async function listAssets(installationId: string): Promise<AssetSummary[]> {
@@ -159,6 +169,11 @@ async function downloadUrl(source: AssetSource, assetId: string): Promise<string
     : `${source.origin}${contentPath(assetId, 'attachment')}`
 }
 
+function safeFileName(fileName: string, assetId: string): string {
+  const base = path.basename(fileName)
+  return base === '' || base === '.' || base === '..' ? assetId : base
+}
+
 export async function downloadAsset(
   win: BrowserWindow,
   installationId: string,
@@ -168,14 +183,14 @@ export async function downloadAsset(
   const source = await resolveSource(installationId)
   if (!source) throw new Error('This build is not running.')
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
-    defaultPath: path.join(app.getPath('downloads'), path.basename(fileName))
+    defaultPath: path.join(app.getPath('downloads'), safeFileName(fileName, assetId))
   })
   if (canceled || !filePath) return false
   const url = await downloadUrl(source, assetId)
   if (!url) throw new Error('The asset has no download link.')
-  const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 15) })
-  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`)
-  await fs.promises.writeFile(filePath, Buffer.from(await res.arrayBuffer()))
+  const res = await fetch(url)
+  if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+  await pipeline(Readable.fromWeb(res.body as WebReadableStream), fs.createWriteStream(filePath))
   return true
 }
 

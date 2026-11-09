@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import AssetsView from './AssetsView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AssetSummary, Installation } from '../types/ipc'
@@ -33,7 +34,11 @@ function build(id: string, name: string): Installation {
   return { id, name, sourceLabel: 'Standalone', sourceCategory: 'local' }
 }
 
-async function mountAssets(running: Installation[], stopped: Installation[] = []) {
+async function mountAssets(
+  running: Installation[],
+  stopped: Installation[] = [],
+  options: { attachTo?: HTMLElement } = {}
+) {
   useInstallationStore().installations = [...running, ...stopped]
   const sessions = useSessionStore()
   for (const inst of running) {
@@ -43,7 +48,7 @@ async function mountAssets(running: Installation[], stopped: Installation[] = []
       mode: 'app'
     })
   }
-  const wrapper = mount(AssetsView)
+  const wrapper = mount(AssetsView, options)
   await flushPromises()
   return wrapper
 }
@@ -71,7 +76,7 @@ beforeEach(() => {
 })
 
 describe('AssetsView', () => {
-  it('starts in masonry, newest first, with file names and details hidden', async () => {
+  it('starts in masonry with file names and details hidden', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
@@ -221,6 +226,49 @@ describe('AssetsView', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('keeps the assets of builds that answered when another build fails', async () => {
+    listAssets.mockImplementation(async (id: string) => {
+      if (id === 'old') throw new Error('assets API disabled')
+      return [asset('a', 'forest.png', 'image')]
+    })
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab'), build('old', 'Old Build')])
+
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
+  })
+
+  it('reloads when the signed-in workspace changes', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    await mountAssets([build('lab', 'Video Lab')])
+
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
+    await flushPromises()
+
+    expect(listAssets).toHaveBeenCalledTimes(2)
+  })
+
+  it('says nothing matches when a search hides every asset', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    await wrapper.get('input').setValue('zzz')
+
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
+  })
+
+  it('returns focus to the opened card when the detail view closes', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], { attachTo: document.body })
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-detail-back"]').trigger('click')
+    await flushPromises()
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="asset-open-a"]').element)
+    wrapper.unmount()
   })
 
   it('reports a failed load', async () => {
