@@ -117,7 +117,9 @@ function back(): void {
 
 <template>
   <div class="mar-app-editor mar-app-page bg-app-background text-base-foreground">
-    <!-- The thin bar: Back, the name and what it does; Download once there's a result -->
+    <!-- The thin bar: Back, the name and what it does; Download once there's a
+         result. No account: the title bar already says who you are, and Run
+         asks you to sign in. -->
     <header class="flex h-12 shrink-0 items-center gap-2 px-3">
       <Button variant="ghost" size="icon-sm" aria-label="Back to Explore" @click="back"
         ><ChevronLeft :size="15"
@@ -128,7 +130,6 @@ function back(): void {
       <Button v-if="state === 'done'" size="sm" @click="toast('Downloading…')"
         ><Download :size="12" />Download</Button
       >
-      <slot name="account" />
     </header>
 
     <div class="mar-app-editor-body">
