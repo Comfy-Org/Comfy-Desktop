@@ -22,6 +22,7 @@ import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import RunOnCards from './RunOnCards.vue'
 import SetupCanvas from './SetupCanvas.vue'
 import SetupCancelConfirm from './SetupCancelConfirm.vue'
+import SetupNodes from './SetupNodes.vue'
 import SetupSteps from './SetupSteps.vue'
 import ComfyWordmark from '../../../../components/icons/ComfyWordmark.vue'
 import Button from '../../ui/Button.vue'
@@ -50,6 +51,8 @@ import {
   landHomeLocal,
   localSetup,
   lowSpace,
+  nodesInBuild,
+  packsMb,
   phaseIndex,
   phases,
   retryInstall,
@@ -118,8 +121,21 @@ function continueSetup(): void {
   if (lowSpace.value) flow.confirmLowDisk = true
   else toTemplates()
 }
+// A new build, not the first install: its custom nodes come after Set up
+// (UI Playground › Start › Custom nodes).
+const nodesStep = computed(() => nodesInBuild.value && !flow.takeover && !flow.homeCard)
+// The Home card's Edit packs: the same list, Done goes back to the card.
+const nodesFromHome = computed(() => flow.homeCard && !flow.takeover)
 function toTemplates(): void {
   flow.confirmLowDisk = false
+  if (nodesStep.value) flow.step = 'nodes'
+  else afterNodes()
+}
+function skipNodes(): void {
+  flow.packs = []
+  afterNodes()
+}
+function afterNodes(): void {
   if (workflowStep.value) flow.step = 'template'
   // Home first › Install runs behind: Install lands on the Home, installing.
   else if (homeRunning.value && flow.takeover) landHomeInstalling()
@@ -602,7 +618,7 @@ function rowState(i: number): string {
             >
             <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
             <Button v-else variant="primary" size="lg" @click="continueSetup">{{
-              workflowStep ? 'Continue' : 'Install'
+              workflowStep || nodesStep ? 'Continue' : 'Install'
             }}</Button>
           </template>
         </footer>
@@ -768,6 +784,39 @@ function rowState(i: number): string {
         </footer>
       </template>
 
+      <!-- Custom nodes (DESK-243): a new build's recommended packs, ticked,
+           with the registry a search away. Skip installs plain ComfyUI. -->
+      <template v-else-if="flow.step === 'nodes'">
+        <div :key="flow.step" class="mar-wizard-body mss-body">
+          <DialogTitle as="h3" class="text-title font-semibold">Add custom nodes</DialogTitle>
+          <DialogDescription
+            >The most used node packs, tested on {{ DETECTED.noun }}, are picked. Add more now or
+            later from the Manager.</DialogDescription
+          >
+          <SetupNodes />
+        </div>
+        <footer class="mar-wizard-foot mss-foot">
+          <Button v-if="!nodesFromHome" variant="ghost" size="lg" @click="flow.step = 'setup'"
+            ><ArrowLeft :size="14" />Back</Button
+          >
+          <span class="flex-1"></span>
+          <span class="mss-foot-sum tabular-nums">{{
+            flow.packs.length
+              ? `${flow.packs.length} node pack${flow.packs.length === 1 ? '' : 's'} · ${packsMb} MB`
+              : 'Plain ComfyUI'
+          }}</span>
+          <Button v-if="nodesFromHome" variant="primary" size="lg" @click="flow.open = false"
+            >Done</Button
+          >
+          <template v-else>
+            <Button size="lg" @click="skipNodes">Skip</Button>
+            <Button variant="primary" size="lg" @click="afterNodes">{{
+              workflowStep ? 'Continue' : 'Install'
+            }}</Button>
+          </template>
+        </footer>
+      </template>
+
       <!-- Template: today's starter-workflow step, after Set up. -->
       <template v-else-if="flow.step === 'template'">
         <div :key="flow.step" class="mar-wizard-body mss-body">
@@ -821,7 +870,7 @@ function rowState(i: number): string {
           >
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button variant="ghost" size="lg" @click="flow.step = 'setup'"
+          <Button variant="ghost" size="lg" @click="flow.step = nodesStep ? 'nodes' : 'setup'"
             ><ArrowLeft :size="14" />Back</Button
           >
           <!-- Today's block: the picked workflow's models don't fit. -->

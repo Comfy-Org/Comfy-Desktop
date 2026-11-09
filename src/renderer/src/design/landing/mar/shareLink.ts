@@ -31,7 +31,7 @@ import {
   MACHINES,
   AFTER_INSTALLS,
   ONBOARDINGS,
-  RUN_ON_CARDS,
+  NODES_AT,
   SETUP_GPUS,
   SETUP_OSES,
   SETUP_SCOPES,
@@ -154,10 +154,10 @@ const PARTS: Part[] = [
   field('setup.scope', localSetup, 'scope', 'm1', SETUP_SCOPES),
   field('setup.onboarding', localSetup, 'onboarding', 'install', ONBOARDINGS),
   field('setup.after', localSetup, 'after', 'home', AFTER_INSTALLS),
-  field('setup.cards', localSetup, 'cards', 'glow', RUN_ON_CARDS),
   field('setup.os', localSetup, 'os', 'mac', SETUP_OSES),
   field('setup.gpu', localSetup, 'gpu', 'nvidia', SETUP_GPUS),
   field('setup.machine', localSetup, 'machine', 'ready', MACHINES),
+  field('setup.nodes', localSetup, 'nodes', 'off', NODES_AT),
   // More: the screen simulator and the token knobs.
   field('screen', screen, 'id', 'fit', SCREENS),
   {

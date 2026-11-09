@@ -23,13 +23,12 @@ import { FIRST_RUNS, firstRun } from './firstRun'
 import {
   ONBOARDINGS,
   AFTER_INSTALLS,
+  NODES_AT,
   SETUP_SCOPES,
   MACHINES,
   SETUP_GPUS,
   SETUP_OSES,
   SETUP_SCREENS,
-  canvas,
-  RUN_ON_CARDS,
   flow,
   localSetup,
   showHome,
@@ -242,6 +241,10 @@ const linkSays = computed(() => {
             <Row v-if="localSetup.scope === 'next'" label="After install">
               <Select v-model="localSetup.after" :options="AFTER_INSTALLS" class="w-full" />
             </Row>
+            <!-- DESK-243: where a new user gets the recommended node packs. -->
+            <Row label="Custom nodes">
+              <Select v-model="localSetup.nodes" :options="NODES_AT" class="w-full" />
+            </Row>
             <Row label="Jump to">
               <Select
                 :model-value="setupScreen ?? 'first'"
@@ -249,12 +252,6 @@ const linkSays = computed(() => {
                 class="w-full"
                 @update:model-value="(v) => v && showScreen((setupScreen = v))"
               />
-            </Row>
-            <Row label="First screen cards">
-              <Select v-model="localSetup.cards" :options="RUN_ON_CARDS" class="w-full" />
-              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="canvas = true"
-                >Compare cards</Button
-              >
             </Row>
             <Row label="Operating system">
               <Select v-model="localSetup.os" :options="SETUP_OSES" class="w-full" />

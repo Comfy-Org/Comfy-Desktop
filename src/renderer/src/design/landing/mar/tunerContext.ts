@@ -228,7 +228,8 @@ export const TWEAKS = {
       localSetup.scope === 'm1' &&
       localSetup.onboarding === 'install' &&
       localSetup.os === 'mac' &&
-      localSetup.gpu === 'nvidia',
+      localSetup.gpu === 'nvidia' &&
+      localSetup.nodes === 'off',
     reset: () =>
       Object.assign(localSetup, {
         mode: 'off',
@@ -238,7 +239,8 @@ export const TWEAKS = {
         onboarding: 'install',
         after: 'home',
         os: 'mac',
-        gpu: 'nvidia'
+        gpu: 'nvidia',
+        nodes: 'off'
       })
   },
   look: one(marLook, 'current'),

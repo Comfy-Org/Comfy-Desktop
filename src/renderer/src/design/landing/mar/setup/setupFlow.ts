@@ -57,7 +57,19 @@ export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'home', label: 'Home first: install card only' },
   { value: 'home-open', label: 'Home first: Home stays open' }
 ]
-export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing' | 'error'
+export type SetupStep = 'first' | 'setup' | 'change' | 'nodes' | 'template' | 'installing' | 'error'
+/** Custom nodes with the install (DESK-243): where a new user gets the
+ *  recommended node packs, if anywhere, while it is decided. New build: a
+ *  step after Set up, every new build but the first. Home: the first
+ *  install's card on the Home offers a Recommended build next to plain
+ *  ComfyUI. Both: the two. Always optional. */
+export type NodesAt = 'off' | 'build' | 'home' | 'both'
+export const NODES_AT: { value: NodesAt; label: string }[] = [
+  { value: 'off', label: 'Off (today)' },
+  { value: 'build', label: 'New build step' },
+  { value: 'home', label: 'Home: Recommended build' },
+  { value: 'both', label: 'Both' }
+]
 /** Where the first install ends, once the Home exists. Home: the Home, with
  *  a toast, as the prototype had it. Ready: the Home, with the install card
  *  saying ComfyUI is ready and an Open ComfyUI. ComfyUI: straight into the
@@ -105,18 +117,21 @@ function load(): {
   after: AfterInstall
   os: SetupOs
   gpu: SetupGpu
+  nodes: NodesAt
 } {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? '{}')
     return {
       mode: v.mode === 'on' ? 'on' : 'off',
       machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
-      cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow',
+      // Decided: the first screen uses Cards.
+      cards: 'glow',
       scope: v.scope === 'next' ? 'next' : 'm1',
       onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'install',
       after: AFTER_INSTALLS.some((a) => a.value === v.after) ? v.after : 'home',
       os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac',
-      gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia'
+      gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia',
+      nodes: NODES_AT.some((n) => n.value === v.nodes) ? v.nodes : 'off'
     }
   } catch {
     return {
@@ -127,7 +142,8 @@ function load(): {
       onboarding: 'install',
       after: 'home',
       os: 'mac',
-      gpu: 'nvidia'
+      gpu: 'nvidia',
+      nodes: 'off'
     }
   }
 }
@@ -386,6 +402,120 @@ export const STARTERS: Record<'image' | 'video' | '3d' | 'audio', Starter[]> = {
   ]
 }
 
+export interface NodePack {
+  id: string
+  name: string
+  author: string
+  /** What it adds, in a line. */
+  adds: string
+  mb: number
+  /** Picked for a new user: popular and tested on every system it lists. */
+  recommended?: boolean
+  /** The systems it is tested on; missing means all three. */
+  os?: SetupOs[]
+}
+
+/** Node packs to offer (mock, from the registry's most installed). The
+ *  recommended five are the ones a new user starts with; the real list
+ *  comes from install data, tested per system before it ships. */
+export const NODE_PACKS: NodePack[] = [
+  {
+    id: 'rgthree',
+    name: 'rgthree-comfy',
+    author: 'rgthree',
+    adds: 'Groups, bypass, seeds and a cleaner graph',
+    mb: 4,
+    recommended: true
+  },
+  {
+    id: 'kj',
+    name: 'ComfyUI-KJNodes',
+    author: 'kijai',
+    adds: 'Masks, batches, resizing and everyday utilities',
+    mb: 12,
+    recommended: true
+  },
+  {
+    id: 'vhs',
+    name: 'ComfyUI-VideoHelperSuite',
+    author: 'Kosinkadink',
+    adds: 'Load and save video, frames and audio',
+    mb: 9,
+    recommended: true
+  },
+  {
+    id: 'cnaux',
+    name: 'comfyui_controlnet_aux',
+    author: 'Fannovel16',
+    adds: 'Depth, pose, line art and edge maps for ControlNet',
+    mb: 38,
+    recommended: true
+  },
+  {
+    id: 'essentials',
+    name: 'ComfyUI_essentials',
+    author: 'cubiq',
+    adds: 'Image, mask and text basics ComfyUI leaves out',
+    mb: 6,
+    recommended: true
+  },
+  {
+    id: 'impact',
+    name: 'ComfyUI-Impact-Pack',
+    author: 'ltdrdata',
+    adds: 'Face and detail fixes, detectors and segmenting',
+    mb: 64
+  },
+  {
+    id: 'ipadapter',
+    name: 'ComfyUI_IPAdapter_plus',
+    author: 'cubiq',
+    adds: 'Use an image as a style or subject reference',
+    mb: 3
+  },
+  {
+    id: 'gguf',
+    name: 'ComfyUI-GGUF',
+    author: 'city96',
+    adds: 'Run quantized models in less memory',
+    mb: 2
+  },
+  {
+    id: 'easyuse',
+    name: 'ComfyUI-Easy-Use',
+    author: 'yolain',
+    adds: 'Simpler all-in-one loaders and samplers',
+    mb: 21
+  },
+  {
+    id: 'florence',
+    name: 'ComfyUI-Florence2',
+    author: 'kijai',
+    adds: 'Caption, detect and ground images',
+    mb: 5
+  },
+  {
+    id: 'sage',
+    name: 'ComfyUI-SageAttention',
+    author: 'thu-ml',
+    adds: 'Faster attention on NVIDIA cards',
+    mb: 15,
+    os: ['windows', 'linux']
+  }
+]
+/** Whether a pack is tested on the computer the checks found. */
+export const packFits = (p: NodePack): boolean => !p.os || p.os.includes(localSetup.os)
+/** The recommended packs this computer can take. */
+export const recommendedPacks = (): string[] =>
+  NODE_PACKS.filter((p) => p.recommended && packFits(p)).map((p) => p.id)
+/** Where custom nodes are offered (UI Playground › Start › Custom nodes). */
+export const nodesInBuild = computed(
+  () => setupOn.value && (localSetup.nodes === 'build' || localSetup.nodes === 'both')
+)
+export const nodesOnHome = computed(
+  () => setupOn.value && (localSetup.nodes === 'home' || localSetup.nodes === 'both')
+)
+
 export const flow = reactive({
   open: false,
   step: 'setup' as SetupStep,
@@ -414,8 +544,12 @@ export const flow = reactive({
   homeCard: false,
   /** After install › Ready: the card stays, saying ComfyUI is ready, until
    *  Open ComfyUI or Not now. */
-  ready: false
+  ready: false,
+  /** The node packs this install adds, by id. Empty: plain ComfyUI. */
+  packs: [] as string[]
 })
+export const pickedPacks = computed(() => NODE_PACKS.filter((p) => flow.packs.includes(p.id)))
+export const packsMb = computed(() => pickedPacks.value.reduce((n, p) => n + p.mb, 0))
 /** Home first, Local picked and not installed yet: the install waits (or
  *  runs) on the Home's card. */
 export const installPending = computed(
@@ -438,15 +572,24 @@ const PHASES = [
   { until: 92, label: 'Clean up environment' },
   { until: 100, label: 'Update to latest stable' }
 ] as const
-// A picked starter workflow adds its models as a last step, as today.
-export const phases = computed<{ until: number; label: string }[]>(() =>
-  flow.picked && !flow.picked.credits
-    ? [
-        ...PHASES.map((p) => ({ ...p, until: Math.round(p.until * 0.8) })),
-        { until: 100, label: `Download ${flow.picked.title} models` }
-      ]
-    : [...PHASES]
-)
+// Picked node packs install after the environment, then a picked starter
+// workflow adds its models as a last step, as today.
+export const phases = computed<{ until: number; label: string }[]>(() => {
+  const extra: string[] = []
+  if (flow.packs.length)
+    extra.push(`Install ${flow.packs.length} node pack${flow.packs.length === 1 ? '' : 's'}`)
+  if (flow.picked && !flow.picked.credits) extra.push(`Download ${flow.picked.title} models`)
+  if (!extra.length) return [...PHASES]
+  const base = extra.length === 2 ? 0.7 : 0.8
+  const rest = (100 - Math.round(100 * base)) / extra.length
+  return [
+    ...PHASES.map((p) => ({ ...p, until: Math.round(p.until * base) })),
+    ...extra.map((label, i) => ({
+      label,
+      until: i === extra.length - 1 ? 100 : Math.round(100 * base + rest * (i + 1))
+    }))
+  ]
+})
 export const phaseIndex = computed(() => phases.value.findIndex((p) => flow.percent < p.until))
 
 let timer: ReturnType<typeof setInterval> | undefined
@@ -521,6 +664,8 @@ export function openSetup(): boolean {
   flow.takeover = flow.step === 'first'
   flow.percent = 0
   flow.picked = null
+  // A new build starts on the recommended packs, where they are offered.
+  flow.packs = nodesInBuild.value && flow.step === 'setup' ? recommendedPacks() : []
   flow.movedDisk = false
   flow.confirmCancel = false
   flow.confirmLowDisk = false
@@ -551,6 +696,8 @@ export function landHomeLocal(): void {
   flow.open = false
   flow.takeover = false
   flow.picked = null
+  // The Home offers the Recommended build first, where it is on.
+  flow.packs = nodesOnHome.value ? recommendedPacks() : []
   flow.homeCard = true
   showScope()
   go('overview')
@@ -585,6 +732,13 @@ export function installInBackground(): void {
 /** The Home card › View logs: today's install screen, over the Home. */
 export function showInstall(): void {
   flow.logs = true
+  flow.open = true
+}
+
+/** The Home card › Edit packs: the node packs, on their own sheet. */
+export function packsFromHome(): void {
+  flow.takeover = false
+  flow.step = 'nodes'
   flow.open = true
 }
 
@@ -671,6 +825,7 @@ export type Screen =
   | 'lowdisk'
   | 'intel'
   | 'builds'
+  | 'nodes'
 export const SETUP_SCREENS: { value: Screen; label: string }[] = [
   { value: 'first', label: 'First launch' },
   { value: 'setup', label: 'Set up' },
@@ -681,7 +836,8 @@ export const SETUP_SCREENS: { value: Screen; label: string }[] = [
   { value: 'error', label: 'Operation failed' },
   { value: 'lowdisk', label: 'Low Disk Space' },
   { value: 'intel', label: 'Unsupported Hardware' },
-  { value: 'builds', label: 'Has builds' }
+  { value: 'builds', label: 'Has builds' },
+  { value: 'nodes', label: 'New build: custom nodes' }
 ]
 
 export function showScreen(s: Screen): void {
@@ -694,10 +850,14 @@ export function showScreen(s: Screen): void {
   }
   localSetup.mode = 'on'
   localSetup.machine = machine[s] ?? (localSetup.machine === 'legacy' ? 'legacy' : 'ready')
-  marUser.local = s === 'builds' ? 'one' : 'none'
+  const later = s === 'builds' || s === 'nodes'
+  marUser.local = later ? 'one' : 'none'
+  // The custom nodes step is a new build's: it shows with the tweak on.
+  if (s === 'nodes' && !nodesInBuild.value) localSetup.nodes = 'both'
   Object.assign(flow, {
     open: true,
-    takeover: s !== 'builds',
+    takeover: !later,
+    packs: s === 'nodes' ? recommendedPacks() : [],
     percent: 0,
     picked: null,
     movedDisk: false,
@@ -716,7 +876,8 @@ export function showScreen(s: Screen): void {
     error: 'error',
     lowdisk: 'setup',
     intel: 'setup',
-    builds: 'setup'
+    builds: 'setup',
+    nodes: 'nodes'
   }
   flow.step = step[s]
   if (s === 'error') flow.percent = 46
