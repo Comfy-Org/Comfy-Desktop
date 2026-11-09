@@ -149,6 +149,10 @@ function killMintSwitch(): void {
   mocked(isWorkspaceMintSwitchEnabled).mockResolvedValue(false)
 }
 
+function refreshRefused(oauthError = 'invalid_grant', httpStatus = 400): SignInFailure {
+  return new SignInFailure('refresh refused', 'server_error', { httpStatus, oauthError })
+}
+
 function refreshFailure(kind: 'network' | 'timeout' | 'http', httpStatus?: number): SignInFailure {
   if (kind === 'http') {
     return new SignInFailure('refresh failed', 'server_error', { httpStatus })
@@ -269,7 +273,7 @@ describe('CloudSession access tokens', () => {
   it('returns the stale grant token after a definitive refusal so the 401 ends the session', async () => {
     const stale = grantOn('w1', { expiresAt: PAST })
     saveGrant(stale)
-    mocked(refresh).mockRejectedValue(refreshFailure('http', 400))
+    mocked(refresh).mockRejectedValue(refreshRefused())
 
     await expect(new CloudSession().getAccessToken()).resolves.toBe(stale.accessToken)
   })
@@ -352,7 +356,7 @@ describe('CloudSession background token reads never open the browser', () => {
     const onReturned = vi.fn()
     session.setReturnedToAnchorHandler(onReturned)
     mintReply = () => json(401, { code: 'oauth_grant_ended' })
-    mocked(refresh).mockRejectedValue(refreshFailure('http', 400))
+    mocked(refresh).mockRejectedValue(refreshRefused())
 
     await expect(session.getAccessToken()).resolves.toBeNull()
 
@@ -362,6 +366,19 @@ describe('CloudSession background token reads never open the browser', () => {
     const onSignedOut = vi.fn()
     session.asTokenProvider(onSignedOut).onUnauthorized?.(grantOn('w1').accessToken)
     expect(onSignedOut).toHaveBeenCalledOnce()
+  })
+
+  it('a plain second 401 on a token read stays on B', async () => {
+    const session = await activeOnMintedToken()
+    const onReturned = vi.fn()
+    session.setReturnedToAnchorHandler(onReturned)
+    mintReply = () => json(401, {})
+    mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
+
+    await expect(session.getAccessToken()).resolves.toBeNull()
+
+    expect(onReturned).not.toHaveBeenCalled()
+    expect(session.currentWorkspaceId()).toBe('w2')
   })
 
   it.each<[string, () => Response]>([
@@ -707,7 +724,7 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
       replies++ === 0
         ? json(401, { message: 'workspace membership not found' })
         : minted(workspaceId)
-    mocked(refresh).mockRejectedValue(refreshFailure('http', 401))
+    mocked(refresh).mockRejectedValue(refreshRefused('invalid_client'))
     mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
     const session = new CloudSession()
 
@@ -734,7 +751,7 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     expect(signIn).not.toHaveBeenCalled()
   })
 
-  it('a second 401 after a good refresh is reauthorize', async () => {
+  it('a second oauth_grant_ended 401 after a good refresh is reauthorize', async () => {
     saveGrant(grantOn('w1'))
     mintReply = () => json(401, { code: 'oauth_grant_ended' })
     mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
@@ -753,7 +770,11 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     ['timeout', refreshFailure('timeout')],
     ['HTTP 500', refreshFailure('http', 500)],
     ['HTTP 503', refreshFailure('http', 503)],
-    ['HTTP 429', refreshFailure('http', 429)]
+    ['HTTP 429', refreshFailure('http', 429)],
+    ['plain HTTP 400', refreshFailure('http', 400)],
+    ['plain HTTP 401', refreshFailure('http', 401)],
+    ['HTTP 400 with another OAuth error', refreshRefused('invalid_request')],
+    ['HTTP 500 carrying invalid_grant', refreshRefused('invalid_grant', 500)]
   ])('a %s refresh failure after a 401 reports retryable with no browser', async (_name, error) => {
     saveGrant(grantOn('w1'))
     mintReply = () => json(401, {})
@@ -786,11 +807,11 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     }
   )
 
-  it.each<[number]>([[400], [401]])(
-    'an HTTP %i refresh refusal on an expired grant opens one browser',
-    async (httpStatus) => {
+  it.each<[string]>([['invalid_grant'], ['invalid_client']])(
+    'a %s refresh refusal on an expired grant opens one browser',
+    async (oauthError) => {
       saveGrant(grantOn('w1', { expiresAt: PAST }))
-      mocked(refresh).mockRejectedValue(refreshFailure('http', httpStatus))
+      mocked(refresh).mockRejectedValue(refreshRefused(oauthError))
       mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
 
       await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
@@ -801,9 +822,39 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     }
   )
 
+  it('a plain second 401 after a good refresh reports retryable with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(401, { message: 'workspace membership not found' })
+    mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(mintRequests).toHaveLength(2)
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a first oauth_grant_ended 401 still refreshes once before deciding', async () => {
+    saveGrant(grantOn('w1'))
+    let replies = 0
+    mintReply = ({ workspaceId }) =>
+      replies++ === 0 ? json(401, { code: 'oauth_grant_ended' }) : minted(workspaceId)
+    mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
   it('switching to the anchor with a refused refresh opens one browser', async () => {
     saveGrant(grantOn('w1', { expiresAt: PAST }))
-    mocked(refresh).mockRejectedValue(refreshFailure('http', 400))
+    mocked(refresh).mockRejectedValue(refreshRefused())
     mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1', { revision: '-new' })))
 
     await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({

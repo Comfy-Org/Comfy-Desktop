@@ -59,6 +59,22 @@ describe('oauth.refresh', () => {
     expect((await refresh('old', { tokenUrl: 'https://c/oauth/token' })).refreshToken).toBe('new')
   })
 
+  it.each<[string, number, unknown, string | undefined]>([
+    ['invalid_grant', 400, { error: 'invalid_grant', error_description: 'x' }, 'invalid_grant'],
+    ['invalid_client', 400, { error: 'invalid_client' }, 'invalid_client'],
+    ['a body with no error', 400, { message: 'nope' }, undefined],
+    ['a non-string error', 400, { error: 7 }, undefined],
+    ['a non-object body', 401, 'nope', undefined]
+  ])('keeps the OAuth error code from %s', async (_name, status, body, oauthError) => {
+    stub(status, body)
+
+    await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toMatchObject({
+      name: 'SignInFailure',
+      httpStatus: status,
+      oauthError
+    })
+  })
+
   it('rejects a response missing access_token', async () => {
     stub(200, { expires_in: 3600 })
     await expect(refresh('r', { tokenUrl: 'https://c/oauth/token' })).rejects.toThrow(

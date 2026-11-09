@@ -60,21 +60,26 @@ type BrowserReason = ReauthorizeReason | 'scope_not_granted'
 
 type GrantRefresh = 'refreshed' | 'ended' | 'unavailable'
 
-const RETRYABLE: WorkspaceMintOutcome = { kind: 'retryable' }
+type SettledMintOutcome = Exclude<WorkspaceMintOutcome, { kind: 'unauthorized' }>
+
+const RETRYABLE: SettledMintOutcome = { kind: 'retryable' }
+
+const ENDED_GRANT_OAUTH_ERRORS: ReadonlySet<string> = new Set(['invalid_grant', 'invalid_client'])
 
 function isFresh(tokens: AuthTokens): boolean {
   return tokens.expiresAt - REFRESH_SKEW_MS > Date.now()
 }
 
-function isGrantRejected(outcome: WorkspaceMintOutcome): boolean {
-  return outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended'
-}
-
 function isDefinitiveRefreshRefusal(error: unknown): boolean {
-  return error instanceof SignInFailure && (error.httpStatus === 400 || error.httpStatus === 401)
+  return (
+    error instanceof SignInFailure &&
+    (error.httpStatus === 400 || error.httpStatus === 401) &&
+    error.oauthError !== undefined &&
+    ENDED_GRANT_OAUTH_ERRORS.has(error.oauthError)
+  )
 }
 
-function refreshFailureOutcome(refreshed: GrantRefresh): WorkspaceMintOutcome {
+function refreshFailureOutcome(refreshed: GrantRefresh): SettledMintOutcome {
   return refreshed === 'ended' ? { kind: 'reauthorize', reason: 'grant_ended' } : RETRYABLE
 }
 
@@ -92,7 +97,7 @@ function reportBrowser(outcome: WorkspaceSwitchOutcome, reason: BrowserReason): 
 
 export class CloudSession {
   private readonly refreshing = new Map<string, Promise<GrantRefresh>>()
-  private readonly minting = new Map<string, Promise<WorkspaceMintOutcome>>()
+  private readonly minting = new Map<string, Promise<SettledMintOutcome>>()
   private switching: { workspaceId: string; result: Promise<WorkspaceSwitchStatus> } | null = null
   private mintBlockedUntil = 0
   private loginInFlight: Promise<AuthStatus> | null = null
@@ -215,7 +220,7 @@ export class CloudSession {
 
   private returnToAnchor(
     workspaceId: string,
-    outcome: Exclude<WorkspaceMintOutcome, { kind: 'minted' | 'retryable' }>
+    outcome: Exclude<SettledMintOutcome, { kind: 'minted' | 'retryable' }>
   ): void {
     const grant = loadGrant()
     const anchor = grant && workspaceIdOf(grant.accessToken)
@@ -248,7 +253,7 @@ export class CloudSession {
     }
   }
 
-  private mintForWorkspace(workspaceId: string, generation: number): Promise<WorkspaceMintOutcome> {
+  private mintForWorkspace(workspaceId: string, generation: number): Promise<SettledMintOutcome> {
     const key = JSON.stringify([generation, workspaceId])
     const inFlight = this.minting.get(key)
     if (inFlight) return inFlight
@@ -264,8 +269,8 @@ export class CloudSession {
   private storeMinted(
     workspaceId: string,
     generation: number,
-    outcome: WorkspaceMintOutcome
-  ): WorkspaceMintOutcome {
+    outcome: SettledMintOutcome
+  ): SettledMintOutcome {
     if (outcome.kind !== 'minted' || generation !== this.authGeneration) return outcome
     const grant = loadGrant()
     if (
@@ -282,7 +287,7 @@ export class CloudSession {
   private async mintWithGrant(
     workspaceId: string,
     generation: number
-  ): Promise<WorkspaceMintOutcome> {
+  ): Promise<SettledMintOutcome> {
     if (!(await isWorkspaceMintSwitchEnabled())) {
       return { kind: 'reauthorize', reason: 'mint_disabled' }
     }
@@ -295,12 +300,17 @@ export class CloudSession {
       if (refreshed !== 'refreshed') return refreshFailureOutcome(refreshed)
     }
     const first = await this.postMint(workspaceId, generation)
-    if (!isGrantRejected(first)) return first
+    if (
+      first.kind !== 'unauthorized' &&
+      !(first.kind === 'reauthorize' && first.reason === 'grant_ended')
+    )
+      return first
     const current = loadGrant()
     if (!current) return RETRYABLE
     const refreshed = await this.refreshGrant(current)
     if (refreshed !== 'refreshed') return refreshFailureOutcome(refreshed)
-    return this.postMint(workspaceId, generation)
+    const second = await this.postMint(workspaceId, generation)
+    return second.kind === 'unauthorized' ? RETRYABLE : second
   }
 
   private async postMint(workspaceId: string, generation: number): Promise<WorkspaceMintOutcome> {

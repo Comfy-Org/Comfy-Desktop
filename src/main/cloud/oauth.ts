@@ -63,6 +63,17 @@ function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
   }
 }
 
+function oauthErrorOf(body: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body)
+    const error =
+      parsed && typeof parsed === 'object' ? (parsed as { error?: unknown }).error : null
+    return typeof error === 'string' ? error : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
   const controller = new AbortController()
   // Keep the abort armed until the body is fully read, so a slow/unbounded body
@@ -86,7 +97,7 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       throw new SignInFailure(
         `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
         'server_error',
-        { httpStatus: resp.status }
+        { httpStatus: resp.status, oauthError: oauthErrorOf(detail) }
       )
     }
     const data = (await resp.json().catch((cause: unknown) => {

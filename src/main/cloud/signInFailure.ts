@@ -11,15 +11,18 @@ export class SignInFailure extends Error {
   override readonly name = 'SignInFailure'
   readonly reason: SignInFailureReason
   readonly httpStatus: number | undefined
+  /** The token endpoint's RFC 6749 `error` code, for decisions only: never report it. */
+  readonly oauthError: string | undefined
 
   constructor(
     message: string,
     reason: SignInFailureReason,
-    options: { httpStatus?: number; cause?: unknown } = {}
+    options: { httpStatus?: number; oauthError?: string; cause?: unknown } = {}
   ) {
     super(message, { cause: options.cause })
     this.reason = reason
     this.httpStatus = options.httpStatus
+    this.oauthError = options.oauthError
   }
 }
 

@@ -137,7 +137,7 @@ describe('classifyMint', () => {
       failed(401, 'oauth_grant_ended'),
       { kind: 'reauthorize', reason: 'grant_ended' }
     ],
-    ['plain 401', failed(401), { kind: 'reauthorize', reason: 'grant_ended' }],
+    ['plain 401', failed(401), { kind: 'unauthorized' }],
     [
       '503 oauth_workspace_mint_disabled',
       failed(503, 'oauth_workspace_mint_disabled'),

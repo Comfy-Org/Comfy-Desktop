@@ -15,11 +15,13 @@ export type ReauthorizeReason =
   | 'mint_disabled'
 
 const MINT_DISABLED_CODE = 'oauth_workspace_mint_disabled'
+const GRANT_ENDED_CODE = 'oauth_grant_ended'
 
-/** What a mint reply means for the caller. `grant_ended` is every 401, including an expired access token. */
+/** What a mint reply means for the caller. `unauthorized` is a 401 that does not say the grant ended. */
 export type WorkspaceMintOutcome =
   | { kind: 'minted'; token: string; expiresAt: number }
   | { kind: 'unavailable' }
+  | { kind: 'unauthorized' }
   | { kind: 'reauthorize'; reason: ReauthorizeReason }
   | { kind: 'refused' }
   | { kind: 'retryable'; retryAfterSeconds?: number }
@@ -35,7 +37,11 @@ export function classifyMint(mint: WorkspaceTokenMint): WorkspaceMintOutcome {
       ? { kind: 'retryable' }
       : { kind: 'retryable', retryAfterSeconds }
   }
-  if (status === 401) return { kind: 'reauthorize', reason: 'grant_ended' }
+  if (status === 401) {
+    return code === GRANT_ENDED_CODE
+      ? { kind: 'reauthorize', reason: 'grant_ended' }
+      : { kind: 'unauthorized' }
+  }
   if (status === 404) return { kind: 'unavailable' }
   if (status === 403 && code === 'sso_required')
     return { kind: 'reauthorize', reason: 'sso_required' }
