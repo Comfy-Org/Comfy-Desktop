@@ -28,7 +28,6 @@ import { toast } from '../../useProto'
 import RailPanel from './panels/RailPanel.vue'
 import { PICTURES } from './panels/panelData'
 import { savedAssets } from './savedAssets'
-import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 import MarItem from '../pages/MarItem.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
@@ -65,11 +64,6 @@ const emit = defineEmits<{ close: []; insert: [asset: { src: string; name: strin
 
 type View = 'list' | 'small' | 'large' | 'masonry'
 type Tab = 'Generated' | 'Imported'
-const TABS: { value: Tab; label: string }[] = [
-  { value: 'Generated', label: 'Generated' },
-  { value: 'Imported', label: 'Imported' }
-]
-const tab = ref<Tab>('Generated')
 const query = ref('')
 const menu = ref<'' | 'view'>('')
 /** View settings › Sort by: its options open to the right, level with the row,
@@ -189,17 +183,22 @@ const ALL = computed<PanelAsset[]>(() => [
     }
   })
 ])
-const inTab = computed(() => ALL.value.filter((a) => a.kind === tab.value && !a.status))
+/** Generated or Imported is a filter (Source), not tabs: All by default,
+ *  so one search reaches every file. */
+const inSource = (a: PanelAsset): boolean =>
+  filter.value.source === 'all' ||
+  (filter.value.source === 'generated') === (a.kind === 'Generated')
+const inTab = computed(() => ALL.value.filter((a) => !a.status))
 const TAGS = computed(() => tagsIn(inTab.value))
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
   const list = ALL.value.filter(
     (a) =>
-      a.kind === tab.value &&
+      inSource(a) &&
       !deleted.value.has(a.id) &&
       (showPreviews.value || !a.preview) &&
       (!filter.value.types.length || filter.value.types.includes(a.type)) &&
-      passes(a, filter.value) &&
+      passes(a, { ...filter.value, source: 'all' }) &&
       (!q || a.name.toLowerCase().includes(q))
   )
   if (sort.value === 'Oldest first') return [...list].reverse()
@@ -218,7 +217,7 @@ const SORTS = computed(() => [
   'Oldest first',
   'Name (A → Z)',
   'Name (Z → A)',
-  ...(tab.value === 'Generated'
+  ...(filter.value.source !== 'imported'
     ? ['Generation time (longest first)', 'Generation time (fastest first)']
     : [])
 ])
@@ -335,7 +334,7 @@ function upload(files: FileList | null | undefined): void {
   dropping.value = false
   const list = [...(files ?? [])]
   if (!list.length) return
-  tab.value = 'Imported'
+  if (filter.value.source === 'generated') filter.value = { ...filter.value, source: 'all' }
   const added = list.map((file) => {
     const n = ++uploads
     return {
@@ -371,20 +370,20 @@ function upload(files: FileList | null | undefined): void {
 
 <template>
   <RailPanel title="Media Assets" @close="$emit('close')">
+    <template #tools>
+      <button
+        type="button"
+        class="rp-icon"
+        title="Upload files"
+        aria-label="Upload files"
+        @click="picker?.click()"
+      >
+        <Upload :size="15" />
+      </button>
+    </template>
     <template #header>
-      <MarSeg v-model="tab" :options="TABS" label="Assets" />
       <div class="rp-top">
         <MarSearchField v-model="query" placeholder="Search Assets..." />
-        <button
-          v-if="tab === 'Imported'"
-          type="button"
-          class="rp-icon is-field"
-          title="Upload files"
-          aria-label="Upload files"
-          @click="picker?.click()"
-        >
-          <Upload :size="15" />
-        </button>
         <input
           ref="picker"
           type="file"
@@ -395,7 +394,7 @@ function upload(files: FileList | null | undefined): void {
             (($event.target as HTMLInputElement).value = ''))
           "
         />
-        <AssetFilterMenu v-model="filter" :types="MEDIA" :tags="TAGS" />
+        <AssetFilterMenu v-model="filter" :types="MEDIA" :tags="TAGS" source />
         <span ref="viewAnchor" class="rp-anchor">
           <button
             type="button"
@@ -497,7 +496,7 @@ function upload(files: FileList | null | undefined): void {
         class="ap-items"
         :class="[`is-${view}`, !showName && 'no-name', !showDetails && 'no-meta']"
         :style="{ '--ap-cols': cols }"
-        :aria-label="`${tab} assets`"
+        :aria-label="`${filter.source === 'all' ? 'All' : filter.source === 'generated' ? 'Generated' : 'Imported'} assets`"
         @click.self="selected = new Set()"
       >
         <div v-for="(col, ci) in groups" :key="ci" class="ap-col">
@@ -526,9 +525,9 @@ function upload(files: FileList | null | undefined): void {
               @open="toggle(a)"
               @select="toggle(a)"
             >
-              <template v-if="(a.outputs > 1 && tab === 'Generated') || a.preview" #overlay>
+              <template v-if="(a.outputs > 1 && a.kind === 'Generated') || a.preview" #overlay>
                 <span
-                  v-if="a.outputs > 1 && tab === 'Generated'"
+                  v-if="a.outputs > 1 && a.kind === 'Generated'"
                   class="ap-stack"
                   :aria-label="`${a.outputs} outputs`"
                 >
@@ -536,7 +535,7 @@ function upload(files: FileList | null | undefined): void {
                 </span>
                 <span v-if="a.preview" class="ap-prev" title="Preview asset, not saved">Prev</span>
               </template>
-              <template v-if="view === 'list' && a.outputs > 1 && tab === 'Generated'" #cols>
+              <template v-if="view === 'list' && a.outputs > 1 && a.kind === 'Generated'" #cols>
                 <span class="ap-stack-row" :aria-label="`${a.outputs} outputs`"
                   ><Layers :size="12" />{{ a.outputs }}</span
                 >
@@ -550,7 +549,11 @@ function upload(files: FileList | null | undefined): void {
         compact
         :icon="SearchX"
         title="No results"
-        :text="`Nothing in ${tab} matches.`"
+        :text="
+          filter.source === 'all'
+            ? 'Nothing matches.'
+            : `Nothing in ${filter.source === 'generated' ? 'Generated' : 'Imported'} matches.`
+        "
         action="Clear filters"
         @action="((query = ''), (filter = noFilter()))"
       />
@@ -558,7 +561,13 @@ function upload(files: FileList | null | undefined): void {
         v-else
         compact
         :icon="ImageOff"
-        :title="tab === 'Generated' ? 'No generated files found' : 'No imported files found'"
+        :title="
+          filter.source === 'imported'
+            ? 'No imported files found'
+            : filter.source === 'generated'
+              ? 'No generated files found'
+              : 'No files yet'
+        "
         text="Upload files or generate content to see them here"
         :pics="PICTURES.slice(0, 3).map((p) => p.src)"
       />
@@ -613,7 +622,7 @@ function upload(files: FileList | null | undefined): void {
       v-if="detail"
       :asset="detail"
       :list="finished"
-      :build="tab"
+      :build="detail.kind"
       editable
       @go="detail = $event as PanelAsset"
       @close="detail = null"

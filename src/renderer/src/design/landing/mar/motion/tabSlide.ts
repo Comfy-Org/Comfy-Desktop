@@ -60,9 +60,18 @@ function place(group: HTMLElement): void {
   }
 }
 
+// A group that changes size on its own (a rail panel dragged wider)
+// moves its options without a window resize: place the pill again.
+let sized: ResizeObserver | undefined
+const seen = new WeakSet<HTMLElement>()
+
 function scan(root: ParentNode = document): void {
   root.querySelectorAll<HTMLElement>(GROUPS).forEach((g) => {
     g.dataset.marTabs = 'on'
+    if (sized && !seen.has(g)) {
+      seen.add(g)
+      sized.observe(g)
+    }
     place(g)
   })
 }
@@ -75,6 +84,16 @@ watch(
   () => can.value.design,
   (on) => {
     if (on && !observer) {
+      sized = new ResizeObserver((all) =>
+        all.forEach((e) => {
+          const pill = (e.target as HTMLElement).querySelector<HTMLElement>(
+            ':scope > .mar-tab-pill'
+          )
+          // Follow the resize at once, no slide.
+          if (pill) pill.style.transition = 'none'
+          place(e.target as HTMLElement)
+        })
+      )
       observer = new MutationObserver(() => requestAnimationFrame(() => scan()))
       observer.observe(document.body, {
         subtree: true,
@@ -87,6 +106,8 @@ watch(
     } else if (!on && observer) {
       observer.disconnect()
       observer = undefined
+      sized?.disconnect()
+      sized = undefined
       window.removeEventListener('resize', onResize)
       document.querySelectorAll('.mar-tab-pill').forEach((p) => p.remove())
       document.querySelectorAll<HTMLElement>('[data-mar-tabs]').forEach((g) => {
