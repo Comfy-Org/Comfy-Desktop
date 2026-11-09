@@ -13,7 +13,7 @@ import { menuItem } from '../../ui/menu.styles'
  * The Assets page's Layout menu, the same as the graph's Assets panel
  * (AssetsPanel.vue): LAYOUT as three views, icon over name; Size as − a
  * stepped bar +; Sort by as a submenu; then SHOW, what a card carries.
- * Section titles are uppercase; Size and Sort by stay sentence case.
+ * Every title (Layout, Size, Sort by, Show) is the uppercase label.
  */
 export type AssetView = 'masonry' | 'grid' | 'list'
 const view = defineModel<AssetView>('view', { required: true })
@@ -62,7 +62,7 @@ const SHOW = [
         </button>
       </div>
       <div v-if="view !== 'list'" class="alm-size">
-        <span>Size</span>
+        <span class="alm-cap">Size</span>
         <button
           type="button"
           class="alm-size-btn"
@@ -95,7 +95,7 @@ const SHOW = [
       </div>
       <DropdownMenuSub>
         <DropdownMenuSubTrigger class="alm-row"
-          ><span class="flex-1">Sort by</span
+          ><span class="alm-cap flex-1">Sort by</span
           ><span class="text-subtle-foreground">{{ sortLabel }}</span></DropdownMenuSubTrigger
         >
         <DropdownMenuSubContent>
@@ -188,7 +188,7 @@ const SHOW = [
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px 4px;
+  padding: 8px 10px 6px;
   font-size: 13px;
 }
 .alm-size > span {
@@ -233,10 +233,20 @@ const SHOW = [
 }
 :root .alm.alm.proto-ui.proto-ui .alm-row {
   background: transparent;
+  box-shadow: none;
   font-size: 13px;
+}
+/* Size and Sort by read as the section labels. */
+:root .alm.alm.proto-ui.proto-ui .alm-cap {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 :root .alm.alm.proto-ui.proto-ui .alm-row[data-highlighted],
 :root .alm.alm.proto-ui.proto-ui .alm-row[data-state='open'] {
   background: var(--color-secondary-background);
+  box-shadow: none;
 }
 </style>

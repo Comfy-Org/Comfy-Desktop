@@ -32,6 +32,7 @@ import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import { floatingSurface, menuItem } from '../../ui/menu.styles'
 import { PORTAL_TO } from '../../ui/portal'
+import RangeCalendar from './RangeCalendar.vue'
 import { activeFilters, noFilter, type AssetFilter, type AssetType } from '../assets/assetFilters'
 
 /**
@@ -278,22 +279,12 @@ const searching = computed(() => !!q.value.trim())
                 <template v-if="range">
                   <DropdownMenuSeparator class="afm-sep" />
                   <DropdownMenuLabel class="afm-label">Custom range</DropdownMenuLabel>
-                  <div class="afm-range" @keydown.stop>
-                    <label
-                      >From<input
-                        type="date"
-                        :value="f.from"
-                        :max="f.to || undefined"
-                        @input="f = { ...f, from: ($event.target as HTMLInputElement).value }"
-                    /></label>
-                    <label
-                      >To<input
-                        type="date"
-                        :value="f.to"
-                        :min="f.from || undefined"
-                        @input="f = { ...f, to: ($event.target as HTMLInputElement).value }"
-                    /></label>
-                  </div>
+                  <RangeCalendar
+                    :from="f.from"
+                    :to="f.to"
+                    @update:from="(v) => (f = { ...f, from: v })"
+                    @update:to="(v) => (f = { ...f, to: v })"
+                  />
                 </template>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
@@ -413,28 +404,6 @@ const searching = computed(() => !!q.value.trim())
 .afm .afm-item.is-muted {
   color: var(--color-muted-foreground);
 }
-.afm-range {
-  display: grid;
-  gap: 6px;
-  padding: 2px 12px 8px;
-}
-.afm-range label {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  align-items: center;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .afm-range input {
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font-size: 12px;
-  color-scheme: dark light;
-}
 .aff-badge {
   display: inline-flex;
   min-width: 18px;
@@ -467,8 +436,7 @@ const searching = computed(() => !!q.value.trim())
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.afm.is-ds .afm-label,
-.afm.is-ds .afm-range {
+.afm.is-ds .afm-label {
   padding-inline: 10px;
 }
 .afm.is-ds .afm-item svg {
