@@ -1,6 +1,8 @@
 import { reactive } from 'vue'
 import { EXAMPLES } from '../userStates/examples'
 import { mock } from '../assets/mock'
+import reshootClip from '../assets/examples/reshoot-a-video.mp4'
+import jutsuClip from '../assets/examples/openjutsu.mp4'
 
 /**
  * Every example of every app, from Milestone 2: what went in, what came out
@@ -18,6 +20,15 @@ export interface AppExample {
   after: string
   /** The words it ran with, filled into the app's text input. */
   prompt?: string
+  /** A video's clip, played on hover, and its length. */
+  video?: string
+  duration?: string
+}
+
+// The video examples' clips (what Re-shoot a video and Openjutsu made).
+const CLIPS: Record<string, { video: string; duration: string }> = {
+  's-reshoot': { video: reshootClip, duration: '0:06' },
+  's-jutsu': { video: jutsuClip, duration: '0:06' }
 }
 
 const own = (id: string, app: string, title: string, prompt: string): AppExample => ({
@@ -39,7 +50,8 @@ export const APP_EXAMPLES: AppExample[] = [
     src: x.src,
     after: x.after,
     prompt:
-      x.app === 's-cine' ? 'A woman on a rooftop at night, city lights, slow push in' : undefined
+      x.app === 's-cine' ? 'A woman on a rooftop at night, city lights, slow push in' : undefined,
+    ...CLIPS[x.app]
   })),
   own('ex-cine-diner', 's-cine', 'Night diner, neon noir', 'Neon noir, rain on the window, 35 mm'),
   own(

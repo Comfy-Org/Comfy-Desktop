@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Clock, ListFilter, Play, X } from 'lucide-vue-next'
+import { Box, Check, Clock, Image, ListFilter, Play, Video, X } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
-import DropdownMenuCheckboxItem from '../../ui/DropdownMenuCheckboxItem.vue'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import DropdownMenuLabel from '../../ui/DropdownMenuLabel.vue'
@@ -122,6 +121,7 @@ const USES = computed(() =>
 // app that made it (Examples) or its use case (Apps). Picked ones show as
 // chips under the line; no Sort, the gallery keeps its curated order.
 const VIDEO_APPS = ['s-reshoot', 's-jutsu', 'x-i2v', 'x-h3', 'x-wan', 'e-video']
+const KIND_ICON: Record<string, typeof Image> = { Image, Video, '3D': Box }
 const appKind = (id: string): string =>
   VIDEO_APPS.includes(id) ? 'Video' : id === 'x-3d' ? '3D' : 'Image'
 const kinds = ref<string[]>([])
@@ -164,7 +164,9 @@ const FILTER = computed(() => {
       items: (ex ? ['Image', 'Video'] : ['Image', 'Video', '3D']).map((k) => ({
         value: k,
         label: k,
-        count: kindOf(k)
+        count: kindOf(k),
+        icon: KIND_ICON[k],
+        thumb: undefined as string | undefined
       }))
     },
     ex
@@ -174,13 +176,22 @@ const FILTER = computed(() => {
           items: EXAMPLE_APPS.map((id) => ({
             value: id,
             label: appName(id),
-            count: searchedExamples.value.filter((x) => x.app === id).length
+            count: searchedExamples.value.filter((x) => x.app === id).length,
+            icon: undefined,
+            // Each app by its own picture, the one its card has.
+            thumb: libApp(id) ? thumb(libApp(id)!.thumbId) : undefined
           }))
         }
       : {
           title: 'Category',
           list: uses,
-          items: USES.value.map((u) => ({ value: u.value, label: u.value, count: u.count }))
+          items: USES.value.map((u) => ({
+            value: u.value,
+            label: u.value,
+            count: u.count,
+            icon: undefined,
+            thumb: undefined as string | undefined
+          }))
         }
   ]
 })
@@ -191,6 +202,15 @@ const picked = computed(() =>
 )
 // The wall's rhythm: each picture at its own shape, so no two rows line up.
 const SHAPES = ['4 / 5', '1 / 1', '3 / 4', '4 / 3', '2 / 3', '5 / 4', '3 / 4', '16 / 11']
+function play(e: MouseEvent, on: boolean): void {
+  const v = (e.currentTarget as HTMLElement).querySelector('video')
+  if (!v) return
+  if (on && !matchMedia('(prefers-reduced-motion: reduce)').matches) void v.play().catch(() => {})
+  else {
+    v.pause()
+    v.currentTime = 0
+  }
+}
 // An example opens its app on itself, ready to run or change.
 function useExample(x: AppExample): void {
   openOn[x.app] = x.id
@@ -248,18 +268,28 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
               <template v-for="(g, gi) in FILTER" :key="g.title">
                 <DropdownMenuSeparator v-if="gi" class="mar-ex-filter-sep" />
                 <DropdownMenuLabel class="mar-ex-filter-label">{{ g.title }}</DropdownMenuLabel>
-                <DropdownMenuCheckboxItem
+                <!-- Each choice leads with what it is: a type by its icon, an
+                     app by its picture; picked, a check on the right. -->
+                <DropdownMenuItem
                   v-for="i in g.items"
                   :key="i.value"
-                  :model-value="g.list.value.includes(i.value)"
-                  @select.prevent
-                  @update:model-value="
-                    (v: boolean) => (g.list.value = toggle(g.list.value, i.value, v))
+                  role="menuitemcheckbox"
+                  :aria-checked="g.list.value.includes(i.value)"
+                  class="mar-ex-filter-row"
+                  @select.prevent="
+                    g.list.value = toggle(g.list.value, i.value, !g.list.value.includes(i.value))
                   "
                 >
-                  <span class="flex-1">{{ i.label }}</span>
-                  <span class="text-subtle-foreground tabular-nums">{{ i.count }}</span>
-                </DropdownMenuCheckboxItem>
+                  <img v-if="i.thumb" :src="i.thumb" alt="" class="mar-ex-filter-thumb" />
+                  <component :is="i.icon" v-else-if="i.icon" :size="15" />
+                  <span class="min-w-0 flex-1 truncate">{{ i.label }}</span>
+                  <Check
+                    v-if="g.list.value.includes(i.value)"
+                    :size="14"
+                    class="mar-ex-filter-on"
+                  />
+                  <span v-else class="text-subtle-foreground tabular-nums">{{ i.count }}</span>
+                </DropdownMenuItem>
               </template>
               <template v-if="picked.length">
                 <DropdownMenuSeparator class="mar-ex-filter-sep" />
@@ -308,20 +338,32 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         :aria-label="`Use ${x.title} in ${appName(x.app)}`"
         @click="useExample(x)"
         @keydown.enter="useExample(x)"
+        @mouseenter="play($event, true)"
+        @mouseleave="play($event, false)"
       >
         <span class="mar-ex-tile-media" :style="{ aspectRatio: SHAPES[i % SHAPES.length] }">
           <img :src="x.after" alt="" loading="lazy" />
-          <span v-if="x.kind === 'Video'" class="mar-ex-tile-kind"
-            ><Play :size="10" fill="currentColor" />Video</span
+          <!-- A video plays while the pointer is on it. -->
+          <video
+            v-if="x.video"
+            :src="x.video"
+            muted
+            loop
+            playsinline
+            preload="none"
+            class="mar-ex-tile-video"
+          />
+          <span v-if="x.kind === 'Video'" class="mar-ex-tile-kind" aria-label="Video"
+            ><Video :size="13" />{{ x.duration }}</span
           >
-          <span class="mar-ex-tile-try">Try this</span>
+          <!-- What it is and which app made it, over a fade, on hover. -->
+          <span class="mar-ex-tile-text">
+            <span class="block truncate text-ui font-medium text-white">{{ x.title }}</span>
+            <span class="block truncate text-ui text-white/70">{{ appName(x.app) }}</span>
+            <!-- The same Run app as Home's examples. -->
+            <span class="mar-ex-tile-go" aria-hidden="true"><Play :size="13" />Run app</span>
+          </span>
         </span>
-        <span class="block truncate px-0.5 pt-2 text-ui font-medium text-base-foreground">{{
-          x.title
-        }}</span>
-        <span class="block truncate px-0.5 text-ui text-subtle-foreground">{{
-          appName(x.app)
-        }}</span>
       </div>
     </div>
 
@@ -409,7 +451,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 }
 .mar-ex-tile {
   display: block;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   break-inside: avoid;
   cursor: pointer;
   outline: none;
@@ -435,39 +477,83 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 }
 .mar-ex-tile-kind {
   position: absolute;
+  z-index: 1;
   top: 10px;
   left: 10px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
+  gap: 6px;
+  padding: 4px 9px;
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.45);
+  background: rgb(0 0 0 / 0.5);
   backdrop-filter: blur(8px);
   color: #fff;
-  font-size: 11px;
-  font-weight: 500;
-}
-.mar-ex-tile-try {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: #fff;
-  color: #000;
   font-size: 12px;
   font-weight: 500;
-  opacity: 0;
-  translate: 0 4px;
-  transition:
-    opacity 200ms ease,
-    translate 300ms cubic-bezier(0.19, 1, 0.22, 1);
+  font-variant-numeric: tabular-nums;
 }
-.mar-ex-tile:hover .mar-ex-tile-try,
-.mar-ex-tile:focus-visible .mar-ex-tile-try {
+.mar-ex-tile-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+.mar-ex-tile:hover .mar-ex-tile-video {
   opacity: 1;
-  translate: 0 0;
+}
+.mar-ex-tile-text {
+  position: absolute;
+  z-index: 1;
+  inset: auto 0 0;
+  padding: 48px 14px 14px;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.4) 55%, transparent);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+.mar-ex-tile:is(:hover, :focus-visible) .mar-ex-tile-text {
+  opacity: 1;
+}
+.mar-ex-tile-go {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 0 13px 0 11px;
+  border-radius: var(--radius-control);
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.06),
+    0 8px 20px -6px rgb(0 0 0 / 0.5);
+  color: #111;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.mar-ex-tile-go:hover {
+  background: rgb(255 255 255 / 0.9);
+}
+/* Filter: icon or picture, name, then the count or a check. */
+.mar-ex-filter-thumb {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 5px;
+  object-fit: cover;
+}
+:root .mar-ex-filter .mar-ex-filter-on {
+  color: var(--color-base-foreground);
+}
+:root .mar-ex-filter .mar-ex-filter-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:root .mar-ex-filter .mar-ex-filter-sep {
+  margin-inline: -4px;
 }
 .mar-ex-grid {
   display: grid;

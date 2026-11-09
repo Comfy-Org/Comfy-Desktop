@@ -246,7 +246,7 @@ function wheel(e: WheelEvent): void {
         </span>
         <span class="mar-arc-does">{{ x.does }}</span>
         <span class="mar-arc-dim" />
-        <span class="mar-arc-go" aria-hidden="true"><Play :size="14" />Run app</span>
+        <span class="mar-arc-go" aria-hidden="true"><Play :size="13" />Run app</span>
       </button>
     </div>
 
@@ -350,7 +350,7 @@ function wheel(e: WheelEvent): void {
 .mar-arc-does {
   position: absolute;
   right: 14px;
-  bottom: 60px;
+  bottom: 54px;
   left: 14px;
   color: #fff;
   font-size: 13px;
@@ -387,22 +387,21 @@ function wheel(e: WheelEvent): void {
 }
 .mar-arc-go {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
+  bottom: 14px;
+  left: 14px;
   display: flex;
-  height: 38px;
+  height: 30px;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 0 20px;
+  padding: 0 13px 0 11px;
   border-radius: var(--radius-control);
   background: #fff;
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.06),
     0 8px 20px -6px rgb(0 0 0 / 0.5);
   color: #111;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: -0.005em;
   cursor: pointer;

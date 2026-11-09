@@ -68,7 +68,7 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   >
     <!-- A page about one thing (a project, a space) brings its own header. -->
     <slot v-if="!embedded" name="header" :state="shown">
-      <header class="mar-page-head" :class="can.breadcrumb && 'is-on-tabs'">
+      <header class="mar-page-head" :class="can.builder && 'is-on-tabs'">
         <div class="min-w-0">
           <div class="flex items-center gap-3">
             <slot name="lead" />
@@ -193,7 +193,7 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   gap: 24px;
   padding: 8px 0 24px;
 }
-/* Past Builds the sidebar has the Create/Build tabs: the title and its
+/* From Builder on the sidebar has the Create/Build tabs: the title and its
    actions centre on their line, whatever size the title scales to. */
 .mar-page-head.is-on-tabs {
   align-items: center;
