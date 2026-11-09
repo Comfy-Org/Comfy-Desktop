@@ -141,6 +141,41 @@ export const canvas = ref(new URLSearchParams(location.search).get('canvas') ===
 // `?setup=first` links straight to the proposed flow, on first launch.
 const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'
 if (linkFirst) localSetup.mode = 'on'
+// The readable form: `?setup=first&tweaks=onboarding:home-running,after:ready,os:windows`.
+// Each key is a Local setup pick; the older one-param-each links still work below.
+const TWEAK_KEYS: Record<string, { value: string }[]> = {
+  scope: SETUP_SCOPES,
+  onboarding: ONBOARDINGS,
+  after: AFTER_INSTALLS,
+  os: SETUP_OSES,
+  gpu: SETUP_GPUS,
+  machine: MACHINES,
+  cards: RUN_ON_CARDS
+}
+/** The link that opens the flow as it is set now, in the readable form. */
+export const setupLink = computed(() => {
+  const d = {
+    scope: 'm1',
+    onboarding: 'install',
+    after: 'home',
+    os: 'mac',
+    gpu: 'nvidia',
+    machine: 'ready',
+    cards: 'glow'
+  }
+  const t = (Object.keys(TWEAK_KEYS) as (keyof typeof d)[])
+    .filter((k) => (localSetup as unknown as Record<string, string>)[k] !== d[k])
+    // onboarding and after imply the next scope; say it only when it stands alone
+    .filter(
+      (k) => k !== 'scope' || (localSetup.onboarding === 'install' && localSetup.after === 'home')
+    )
+    .map((k) => `${k}:${(localSetup as unknown as Record<string, string>)[k]}`)
+  const u = new URL(location.href)
+  u.search = ''
+  u.searchParams.set('setup', 'first')
+  if (t.length) u.searchParams.set('tweaks', t.join(','))
+  return decodeURIComponent(u.toString())
+})
 // A link can pick the scope: `&scope=m1` or `&scope=next`.
 const linkScope = new URLSearchParams(location.search).get('scope')
 if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
@@ -165,6 +200,14 @@ if (linkOs === 'mac' || linkOs === 'windows' || linkOs === 'linux') localSetup.o
 // And its graphics: `&gpu=amd`, `&gpu=intel` or `&gpu=cpu`.
 const linkGpu = new URLSearchParams(location.search).get('gpu')
 if (SETUP_GPUS.some((g) => g.value === linkGpu)) localSetup.gpu = linkGpu as SetupGpu
+// The readable form wins over the one-param-each links above.
+for (const pair of (new URLSearchParams(location.search).get('tweaks') ?? '').split(',')) {
+  const [k, v] = pair.split(':')
+  if (k && v && TWEAK_KEYS[k]?.some((o) => o.value === v)) {
+    ;(localSetup as unknown as Record<string, string>)[k] = v
+    if (k === 'onboarding' || k === 'after') localSetup.scope = 'next'
+  }
+}
 
 watch(
   () => ({ ...localSetup }),
