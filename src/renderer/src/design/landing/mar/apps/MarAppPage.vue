@@ -27,8 +27,7 @@ import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
-import { go, toast } from '../../useProto'
-import { can } from '../../milestones'
+import { toast } from '../../useProto'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
 
@@ -197,11 +196,10 @@ function copy(): void {
 // sponsor, or this computer.
 const payerNote = computed(() => (/from your credits/i.test(payer) ? '' : payer))
 
-// Back lands where apps are listed: Explore from Explore & Learn on,
-// before that the Apps page (Milestone 2 has no Explore).
+// Back returns to the page the app opened from (Apps, Home, Explore),
+// still under its tab.
 function back(): void {
   appsProto.front = ''
-  go(can.value.explore ? 'explore' : 'apps')
 }
 </script>
 
@@ -383,32 +381,9 @@ function back(): void {
           <p v-if="payerNote" class="mar-app-editor-payer">{{ payerNote }}</p>
         </footer>
       </aside>
-      <!-- Stage: the examples on top, then the result (the example's until
-             you run it), centred in its frame; your takes under it -->
+      <!-- Stage: the result, the example's until you run it (its examples
+             over it), centred in its frame; your takes under it -->
       <main class="mar-app-editor-stage" aria-label="Output">
-        <!-- Examples, over the stage: what this app has made (its Gallery
-             pictures), to start from like templates. Picking one fills the
-             panel and shows its result. -->
-        <div
-          v-if="examples.length"
-          class="mar-app-editor-dock is-examples"
-          role="group"
-          aria-label="Examples"
-        >
-          <span class="mar-app-editor-dock-label">Examples</span>
-          <button
-            v-for="x in examples"
-            :key="x.id"
-            type="button"
-            :title="x.title"
-            :aria-label="x.title"
-            :aria-pressed="x.id === exId"
-            :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
-            @click="pickExample(x)"
-          >
-            <img :src="x.after" alt="" />
-          </button>
-        </div>
         <div class="mar-app-editor-canvas">
           <figure
             v-if="hasResult"
@@ -449,6 +424,29 @@ function back(): void {
               class="absolute top-3 left-3"
               >Example</Badge
             >
+            <!-- Examples, over the picture: up to five of what this app
+                     has made, to start from like templates. Picking one fills
+                     the panel and shows its result; once you run, they go. -->
+            <div
+              v-if="state === 'idle' && examples.length > 1"
+              class="mar-app-editor-dock is-examples"
+              role="group"
+              aria-label="Examples"
+            >
+              <span class="mar-app-editor-dock-label">Examples</span>
+              <button
+                v-for="x in examples.slice(0, 5)"
+                :key="x.id"
+                type="button"
+                :title="x.title"
+                :aria-label="x.title"
+                :aria-pressed="x.id === exId"
+                :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
+                @click="pickExample(x)"
+              >
+                <img :src="x.after" alt="" />
+              </button>
+            </div>
           </figure>
 
           <!-- Nothing yet -->
@@ -712,7 +710,7 @@ function back(): void {
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  padding: 16px 32px;
+  padding: 32px 32px 16px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-panel);
   background: var(--color-card-background);
@@ -869,11 +867,19 @@ function back(): void {
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   white-space: nowrap;
 }
-/* Examples scroll inside the dock when an app has many. */
+/* Examples: over the top of the picture, on dark glass. */
 .mar-app-editor-dock.is-examples {
-  overflow-x: auto;
-  scrollbar-width: none;
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 2;
   padding-inline: 14px 4px;
+  transform: translateX(-50%);
+  background: oklch(0.16 0.004 285 / 0.62);
+  backdrop-filter: blur(16px) saturate(1.3);
+}
+.mar-app-editor-dock.is-examples .mar-app-editor-dock-label {
+  color: oklch(1 0 0 / 0.75);
 }
 .mar-app-editor-dock-label {
   flex-shrink: 0;

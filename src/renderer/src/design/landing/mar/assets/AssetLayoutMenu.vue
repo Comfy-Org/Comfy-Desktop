@@ -64,7 +64,7 @@ const SHOW = computed(() =>
             :class="cn('alm-view', view === v.value && 'is-on')"
             @click="view = v.value"
           >
-            <component :is="v.icon" :size="15" /><span v-if="view === v.value">{{ v.label }}</span>
+            <component :is="v.icon" :size="15" /><span class="mar-tab-grow">{{ v.label }}</span>
           </button>
         </div>
       </div>
@@ -184,7 +184,6 @@ const SHOW = computed(() =>
   height: 24px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   padding: 0 8px;
   font-size: 12px;
   font-weight: 400;

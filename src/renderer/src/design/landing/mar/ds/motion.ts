@@ -53,6 +53,31 @@ export const MOTIONS: Motion[] = [
     ]
   },
   {
+    id: 'tab-grow',
+    name: 'Icon tabs: the picked one shows its name',
+    trigger:
+      'Icon tab groups (Masonry / Grid in every Layout menu). Rule: an icon tab group always uses this, never a name that pops in. Put the name in a `.mar-tab-grow` span after the icon.',
+    duration: '280ms (opacity 180ms)',
+    easing: 'var(--mar-ease)',
+    props: 'max-width, margin-left, opacity; the pill glides with it frame by frame',
+    reduced: 'Jumps (transition: none).',
+    src: [
+      ['mar/motion/motion.css', '.mar-tab-grow {'],
+      ['mar/motion/tabSlide.ts', 'function glide(']
+    ]
+  },
+  {
+    id: 'tool-swap',
+    name: 'Toolbar tools swap with the tab',
+    trigger:
+      'A page tab changes which tools sit on its toolbar (Apps: Gallery has Layout, Catalog has Sort). Rule: tools that stay slide to their new place, the ones that change fade; wrap them in a TransitionGroup, each tool keyed.',
+    duration: '220ms move, 160ms fade',
+    easing: 'cubic-bezier(0.2, 0, 0, 1)',
+    props: 'transform, opacity',
+    reduced: 'Jumps (transition: none).',
+    src: [['mar/explore/MarExplore.vue', '.mar-ex-tool-move,']]
+  },
+  {
     id: 'menu',
     name: 'Menu and popover enter',
     trigger: 'A menu, select or popover opens; it grows from its trigger.',

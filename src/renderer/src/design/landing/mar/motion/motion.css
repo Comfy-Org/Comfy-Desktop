@@ -161,3 +161,29 @@
     transform: none;
   }
 }
+
+/* Icon tabs: only the picked option shows its name. The name opens and
+   closes with the pill (tabSlide.ts glides it along), never a jump. */
+.mar-tab-grow {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  margin-left: 0;
+  opacity: 0;
+  white-space: nowrap;
+  vertical-align: middle;
+  transition:
+    max-width 280ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    margin-left 280ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity 180ms ease;
+}
+:is([aria-checked='true'], [aria-selected='true'], [aria-pressed='true'], .is-on) > .mar-tab-grow {
+  max-width: 96px;
+  margin-left: 6px;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-tab-grow {
+    transition: none;
+  }
+}

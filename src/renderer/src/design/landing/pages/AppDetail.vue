@@ -29,7 +29,6 @@ import SectionHeader from '../ui/SectionHeader.vue'
 import AppRunPanel from '../parts/apps/AppRunPanel.vue'
 import PreviewAsMenu from '../parts/apps/PreviewAsMenu.vue'
 import { thumb } from '../mock'
-import { can } from '../milestones'
 import { go, hostActions, instanceById, toast } from '../useProto'
 import {
   accessLabel,
@@ -52,12 +51,8 @@ const { id } = defineProps<{ id: string }>()
 // The store's record (ModePages keys this page by id).
 const app: LibApp = libApp(id)!
 const yours = computed(() => app.group === 'yours')
-// Before the Agent, only Explore leads here (Apps at Milestone 2, with no Explore).
-const back = computed(() =>
-  can.value.agent || !can.value.explore
-    ? { page: 'apps' as const, label: 'Apps' }
-    : { page: 'explore' as const, label: 'Explore' }
-)
+// Your own app's page goes back to Apps, where it is listed.
+const back = computed(() => ({ page: 'apps' as const, label: 'Apps' }))
 type Tab = 'run' | 'activity' | 'access' | 'versions' | 'api'
 const tab = ref<Tab>('run')
 

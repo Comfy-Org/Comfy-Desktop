@@ -253,9 +253,17 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
          tools sit beside the title instead of on a line of their own. -->
     <template #[toolsAt]>
       <MarSeg v-if="tabbed" v-model="tab" :options="TABS" :label="asApps ? 'Apps' : 'Explore'" />
-      <div class="flex items-center gap-2" :class="tabbed && 'ml-auto'">
-        <!-- Apps and Examples: one Filter menu, and Sort for the apps. -->
-        <template v-if="tab === 'apps' || tab === 'examples'">
+      <!-- Switching tabs, the tools that stay slide to their new place and
+           the ones that change fade, instead of jumping. -->
+      <TransitionGroup
+        tag="div"
+        name="mar-ex-tool"
+        class="relative flex items-center gap-2"
+        :class="tabbed && 'ml-auto'"
+      >
+        <!-- Apps and Examples: one Filter menu; Sort for the apps and
+             Layout for the examples, last, in the same place. -->
+        <span v-if="tab === 'apps' || tab === 'examples'" key="filter" class="inline-flex">
           <DropdownMenuRoot :modal="false">
             <DropdownMenuTrigger
               :class="
@@ -302,19 +310,21 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
               </template>
             </DropdownMenuContent>
           </DropdownMenuRoot>
-          <Select
-            v-if="tab === 'apps'"
-            v-model="appSort"
-            :options="APP_SORTS"
-            label="Sort"
-            class="w-40"
-          />
-        </template>
+        </span>
         <!-- Keyed by tab, so its label follows the tab (All types, All topics). -->
-        <Select v-else :key="tab" v-model="type" :options="TYPES[tab]" class="w-36" />
-        <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab]" />
-        <AssetLayoutMenu v-if="tab === 'examples'" v-model:view="view" v-model:size="size" />
-      </div>
+        <span v-else :key="`type-${tab}`" class="inline-flex">
+          <Select v-model="type" :options="TYPES[tab]" class="w-36" />
+        </span>
+        <span key="search" class="inline-flex">
+          <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab]" />
+        </span>
+        <span v-if="tab === 'apps'" key="sort" class="inline-flex">
+          <Select v-model="appSort" :options="APP_SORTS" label="Sort" class="w-40" />
+        </span>
+        <span v-if="tab === 'examples'" key="layout" class="inline-flex">
+          <AssetLayoutMenu v-model:view="view" v-model:size="size" />
+        </span>
+      </TransitionGroup>
     </template>
 
     <!-- The filters picked, as chips, over Examples and Apps. -->
@@ -371,9 +381,23 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           <span v-if="x.kind === 'Video'" class="mar-ex-tile-kind" aria-label="Video"
             ><Video :size="13" />{{ x.duration }}</span
           >
+          <!-- A landscape photo: an outlined frame, wider than tall, with a
+               filled sun and hills inside. -->
           <span v-else class="mar-ex-tile-kind is-icon" aria-label="Image"
-            ><Image :size="13"
-          /></span>
+            ><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <rect
+                x="2.75"
+                y="4.75"
+                width="18.5"
+                height="14.5"
+                rx="2.25"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+              />
+              <circle cx="8.5" cy="9.5" r="1.75" fill="currentColor" />
+              <path d="M5 17.5 9.5 12.5l3 3 3.5-4.5 3 6.5Z" fill="currentColor" /></svg
+          ></span>
           <!-- What it is and which app made it, over a fade, on hover. -->
           <span class="mar-ex-tile-text">
             <span class="min-w-0 flex-1">
@@ -464,6 +488,31 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 </template>
 
 <style scoped>
+/* Tab switch: the tools move to their new place; the changing one fades
+   (out of the flow, so it doesn't hold its old room while it goes). */
+.mar-ex-tool-move,
+.mar-ex-tool-enter-active,
+.mar-ex-tool-leave-active {
+  transition:
+    transform 220ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 160ms ease;
+}
+.mar-ex-tool-enter-from,
+.mar-ex-tool-leave-to {
+  opacity: 0;
+  transform: scale(0.96);
+}
+.mar-ex-tool-leave-active {
+  position: absolute;
+  right: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-ex-tool-move,
+  .mar-ex-tool-enter-active,
+  .mar-ex-tool-leave-active {
+    transition: none;
+  }
+}
 /* Examples: a masonry wall, picture first. */
 .mar-ex-wall {
   columns: 6 var(--tile, 220px);
@@ -522,7 +571,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   font-variant-numeric: tabular-nums;
 }
 .mar-ex-tile-kind.is-icon {
-  padding: 7px;
+  padding: 5px;
 }
 .mar-ex-tile-video {
   position: absolute;

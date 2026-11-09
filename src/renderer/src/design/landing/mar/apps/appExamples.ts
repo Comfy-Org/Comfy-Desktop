@@ -4,6 +4,13 @@ import { mock } from '../assets/mock'
 import reshootClip from '../assets/examples/reshoot-a-video.mp4'
 import jutsuClip from '../assets/examples/openjutsu.mp4'
 
+// Stock clips for the video apps' Gallery examples (gv-*.mp4, poster gv-*.webp).
+const CLIP_FILES = import.meta.glob<string>('../assets/examples/gv-*.mp4', {
+  eager: true,
+  import: 'default'
+})
+const clip = (slot: string): string => CLIP_FILES[`../assets/examples/gv-${slot}.mp4`] ?? ''
+
 /**
  * Every example of every app, from Milestone 2: what went in, what came out
  * and the words it ran with. Apps › Examples lists them all, whatever app
@@ -208,6 +215,55 @@ const GALLERY: [string, string, string, string, string][] = [
   ['image-16', 's-image', 'Mountain lake', 'Purple mountain lake, mirror water', '960 / 1404']
 ]
 
+// The video apps' Gallery clips: slot (gv-*), app, title, prompt, shape.
+const VIDEOS: [string, string, string, string, string][] = [
+  ['waves', 'x-wan', 'Golden hour surf', 'Waves at golden hour, soft rack focus', '16 / 9'],
+  ['horse', 'x-h3', 'Black mane in the wind', 'A horse tail swaying, hazy teal backdrop', '16 / 9'],
+  [
+    'stone',
+    'x-i2v',
+    'Standing stone at dawn',
+    'Fog rolling past a lone stone, slow push in',
+    '9 / 16'
+  ],
+  ['barrel', 'x-i2v', 'Barreling wave', 'Green wave curling, sun through the mist', '16 / 9'],
+  ['reeds', 'x-wan', 'Reeds at sunset', 'Tall grass swaying in warm backlight', '16 / 9'],
+  ['boxing', 'x-h3', 'Shadow boxing', 'Close on fists and eyes, moody gym light', '16 / 9'],
+  ['smoke', 'x-wan', 'Dry ice clouds', 'Smoke rolling slowly over a dark stage', '16 / 9'],
+  ['dove', 'x-i2v', 'Dove over the Andes', 'A dove crossing the frame, clouds behind', '16 / 9'],
+  ['lake', 'x-wan', 'Light on the lake', 'Soft clouds reflected on rippling water', '16 / 9'],
+  ['dunes', 'x-i2v', 'Dune shadows', 'Aerial over sand ridges, long shadows', '16 / 9']
+]
+/** The Gallery's pictures with a clip every few, so images and videos mix. */
+function mixed(): AppExample[] {
+  const images: AppExample[] = GALLERY.map(([slot, app, title, prompt, ratio]) => ({
+    id: `gx-${slot}`,
+    app,
+    title,
+    kind: 'Image',
+    src: mock(`gx-${slot}`),
+    after: mock(`gx-${slot}`),
+    prompt,
+    ratio
+  }))
+  const videos: AppExample[] = VIDEOS.map(([slot, app, title, prompt, ratio]) => ({
+    id: `gv-${slot}`,
+    app,
+    title,
+    kind: 'Video',
+    src: mock(`gv-${slot}`),
+    after: mock(`gv-${slot}`),
+    prompt,
+    ratio,
+    video: clip(slot),
+    duration: '0:05'
+  }))
+  const step = Math.ceil(images.length / (videos.length + 1))
+  return images
+    .flatMap((x, i) => ((i + 1) % step === 0 && videos.length ? [x, videos.shift()!] : [x]))
+    .concat(videos)
+}
+
 export const APP_EXAMPLES: AppExample[] = [
   ...EXAMPLES.map((x) => ({
     id: `home-${x.app}`,
@@ -251,16 +307,7 @@ export const APP_EXAMPLES: AppExample[] = [
     'Perfume with peonies',
     'Marble pedestal, peonies, morning light'
   ),
-  ...GALLERY.map(([slot, app, title, prompt, ratio]) => ({
-    id: `gx-${slot}`,
-    app,
-    title,
-    kind: 'Image' as const,
-    src: mock(`gx-${slot}`),
-    after: mock(`gx-${slot}`),
-    prompt,
-    ratio
-  }))
+  ...mixed()
 ]
 
 export const examplesOf = (app: string): AppExample[] => APP_EXAMPLES.filter((x) => x.app === app)

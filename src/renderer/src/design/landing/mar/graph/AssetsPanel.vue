@@ -563,7 +563,7 @@ function upload(files: FileList | null | undefined): void {
                   :title="v.label"
                   @click="setView(v.value)"
                 >
-                  <component :is="v.icon" :size="15" /><span v-if="view === v.value">{{
+                  <component :is="v.icon" :size="15" /><span class="mar-tab-grow">{{
                     v.label
                   }}</span>
                 </button>
@@ -1082,7 +1082,6 @@ function upload(files: FileList | null | undefined): void {
   height: 24px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
   padding: 0 8px;
   font-size: 12px;
 }

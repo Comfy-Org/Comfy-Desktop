@@ -29,7 +29,36 @@ const GROUPS = [
 const PICKED =
   "button[data-state='on'], button[aria-pressed='true'], button[aria-selected='true'], button[aria-checked='true']"
 
+// Tabs whose picked option shows its name (icon tabs, `.mar-tab-grow`
+// labels) change width as the name opens: the pill glides from where it
+// was to the option as it grows, frame by frame, instead of sliding to a
+// width that's still changing.
+const GLIDE_MS = 280
+const gliding = new WeakSet<HTMLElement>()
+function glide(group: HTMLElement, pill: HTMLElement): void {
+  const from = { x: pill.offsetLeft + new DOMMatrix(pill.style.transform).m41, w: pill.offsetWidth }
+  const t0 = performance.now()
+  gliding.add(group)
+  pill.style.transition = 'none'
+  const step = (now: number): void => {
+    const picked = group.querySelector<HTMLElement>(`:scope > :is(${PICKED})`)
+    if (!picked) return void gliding.delete(group)
+    const p = Math.min(1, (now - t0) / GLIDE_MS)
+    const e = 1 - (1 - p) ** 4
+    pill.style.width = `${from.w + (picked.offsetWidth - from.w) * e}px`
+    pill.style.height = `${picked.offsetHeight}px`
+    pill.style.transform = `translate(${from.x + (picked.offsetLeft - from.x) * e}px, ${picked.offsetTop}px)`
+    if (p < 1) requestAnimationFrame(step)
+    else {
+      gliding.delete(group)
+      pill.style.transition = ''
+    }
+  }
+  requestAnimationFrame(step)
+}
+
 function place(group: HTMLElement): void {
+  if (gliding.has(group)) return
   let pill = group.querySelector<HTMLElement>(':scope > .mar-tab-pill')
   const all = group.querySelectorAll<HTMLElement>(`:scope > :is(${PICKED})`)
   // None picked, or several (a multi-select row): no pill to slide.
@@ -45,6 +74,10 @@ function place(group: HTMLElement): void {
     group.prepend(pill)
     // First placement: no slide from the corner.
     pill.style.transition = 'none'
+  }
+  if (pill.style.transition !== 'none' && picked.querySelector('.mar-tab-grow')) {
+    const at = new DOMMatrix(pill.style.transform).m41
+    if (Math.abs(at - picked.offsetLeft) > 1) return glide(group, pill)
   }
   pill.style.width = `${picked.offsetWidth}px`
   pill.style.height = `${picked.offsetHeight}px`
