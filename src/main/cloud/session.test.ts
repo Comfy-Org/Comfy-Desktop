@@ -656,6 +656,52 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     expect(mintRequests).toHaveLength(1)
   })
 
+  it('a late 429 from before logout does not throttle the next account', async () => {
+    saveGrant(grantOn('w1'))
+    const late = deferred<Response>()
+    mintReply = () => late.promise
+    const session = new CloudSession()
+    const stale = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+
+    session.logout()
+    saveGrant(grantOn('w5', { subject: 'user-2' }))
+    late.resolve(json(429, {}, { 'Retry-After': '3600' }))
+    await stale
+    mintReply = () => json(404, {})
+    await session.switchWorkspace('w6')
+
+    expect(mintRequests).toHaveLength(2)
+  })
+
+  it('a late 429 from a previous account in the same generation does not throttle the new one', async () => {
+    saveGrant(grantOn('w1'))
+    const held = new CloudSession()
+    mintReply = ({ workspaceId }) => minted(workspaceId, PAST)
+    await held.switchWorkspace('w2')
+    const late = deferred<Response>()
+    const pendingSignIn = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pendingSignIn.promise)
+    mintRequests = []
+    mintReply = ({ workspaceId }) =>
+      workspaceId === 'w3' ? json(403, { code: 'sso_required' }) : late.promise
+
+    const switching = held.switchWorkspace('w3')
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    const read = held.getAccessToken()
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(2))
+    pendingSignIn.resolve(signedInResult(grantOn('w3', { subject: 'user-2' })))
+    await switching
+    late.resolve(json(429, {}, { 'Retry-After': '3600' }))
+    await read
+    mintRequests = []
+    mintReply = () => json(404, {})
+
+    await held.switchWorkspace('w6')
+
+    expect(mintRequests).toHaveLength(1)
+  })
+
   it('rejects a minted token for another workspace or account', async () => {
     saveGrant(grantOn('w1'))
     mintReply = () =>

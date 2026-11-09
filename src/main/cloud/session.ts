@@ -324,8 +324,14 @@ export class CloudSession {
     if (!grant || generation !== this.authGeneration || Date.now() < this.mintBlockedUntil)
       return RETRYABLE
     const outcome = classifyMint(await mintWorkspaceToken(grant.accessToken, workspaceId))
-    if (outcome.kind === 'retryable' && outcome.retryAfterSeconds !== undefined)
+    if (
+      outcome.kind === 'retryable' &&
+      outcome.retryAfterSeconds !== undefined &&
+      generation === this.authGeneration &&
+      subjectOf(grant.accessToken) === this.currentSubject()
+    ) {
       this.mintBlockedUntil = Date.now() + outcome.retryAfterSeconds * 1000
+    }
     return outcome
   }
 
