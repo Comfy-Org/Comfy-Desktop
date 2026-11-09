@@ -227,7 +227,7 @@ function done(): void {
 </script>
 
 <template>
-  <div class="relative flex min-h-0 flex-1 flex-col bg-app-background">
+  <div class="relative flex min-h-0 flex-1 flex-col bg-app-background" :class="inShell && 'h-full'">
     <!-- Preview as: the one bit of chrome, so the creator knows -->
     <div
       v-if="as"

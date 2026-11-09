@@ -3,13 +3,13 @@ import { can } from '../../milestones'
 import type { LibApp } from '../../appFlow'
 
 /** How an app's page looks once it opens (UI Playground › App page): the
- *  Hub's layout (what it does, what you give it, Run and the result side by
- *  side), or today's pages (the themed app in its tab, the app's page in
- *  Explore). */
+ *  Hub's full-screen editor (a panel with what you give it and Run, the
+ *  result on the stage, Compare), or today's pages (the themed app in its
+ *  tab, the app's page in Explore). */
 export type AppPageLook = 'hub' | 'themed'
 
 export const APP_PAGE_LOOKS: { value: AppPageLook; label: string }[] = [
-  { value: 'hub', label: 'Hub · input, Run and output side by side' },
+  { value: 'hub', label: 'Hub editor · panel, stage and Compare' },
   { value: 'themed', label: "Today's · the themed app, Explore's app page" }
 ]
 
@@ -37,7 +37,7 @@ watch(
   }
 )
 
-/** Explore opens an app that isn't yours on the Hub's page, inside the
+/** Explore opens an app that isn't yours in the Hub's editor, inside the
  *  shell. Your own apps keep their page with Access, Versions and API. */
 export const onHubPage = (a: LibApp): boolean =>
   can.value.design && appPage.id === 'hub' && a.group !== 'yours'
