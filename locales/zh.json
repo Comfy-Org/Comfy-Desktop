@@ -19,11 +19,50 @@
     "builds": "构建",
     "navigation": "导航",
     "home": "主页",
+    "apps": "应用",
+    "assets": "资产",
+    "comingSoon": "即将推出",
     "tools": "工具",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "signInTitle": "登录 Comfy",
     "signInBody": "同步你的作品，并在 Comfy Cloud 上运行。"
+  },
+  "assets": {
+    "browseAssetsOf": "浏览以下构建的资产",
+    "everywhere": "全部",
+    "runningBuilds": "运行中的构建",
+    "running": "运行中",
+    "stopped": "已停止",
+    "kindLabel": "资产类型",
+    "kind": {
+      "all": "全部",
+      "image": "图片",
+      "video": "视频",
+      "3d": "3D",
+      "audio": "音频"
+    },
+    "refresh": "刷新资产",
+    "search": "按名称搜索...",
+    "viewOptions": "视图选项",
+    "layoutLabel": "布局",
+    "layout": {
+      "masonry": "瀑布流",
+      "grid": "网格",
+      "list": "列表"
+    },
+    "sortLabel": "排序方式",
+    "sort": {
+      "newest": "最新优先",
+      "oldest": "最早优先"
+    },
+    "showLabel": "显示",
+    "showName": "文件名",
+    "showDetails": "文件详情",
+    "emptyTitle": "暂无资产",
+    "emptyBody": "运行中构建的输出会显示在这里。",
+    "noRunningBuilds": "启动一个构建以浏览其资产。",
+    "loadFailed": "无法加载资产"
   },
   "installType": {
     "standalone": "独立版",

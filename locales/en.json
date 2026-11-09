@@ -19,11 +19,50 @@
     "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
+    "apps": "Apps",
+    "assets": "Assets",
+    "comingSoon": "Coming soon",
     "tools": "Tools",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
     "signInBody": "Sync your work and run it on Comfy Cloud."
+  },
+  "assets": {
+    "browseAssetsOf": "Browse the assets of",
+    "everywhere": "Everywhere",
+    "runningBuilds": "Running builds",
+    "running": "Running",
+    "stopped": "Stopped",
+    "kindLabel": "Asset type",
+    "kind": {
+      "all": "All",
+      "image": "Images",
+      "video": "Videos",
+      "3d": "3D",
+      "audio": "Audio"
+    },
+    "refresh": "Refresh assets",
+    "search": "Search by name...",
+    "viewOptions": "View options",
+    "layoutLabel": "Layout",
+    "layout": {
+      "masonry": "Masonry",
+      "grid": "Grid",
+      "list": "List"
+    },
+    "sortLabel": "Sort by",
+    "sort": {
+      "newest": "Newest first",
+      "oldest": "Oldest first"
+    },
+    "showLabel": "Show",
+    "showName": "File name",
+    "showDetails": "File details",
+    "emptyTitle": "No assets yet",
+    "emptyBody": "Outputs from your running builds show up here.",
+    "noRunningBuilds": "Start a build to browse its assets.",
+    "loadFailed": "Couldn't load assets"
   },
   "installType": {
     "standalone": "Standalone",
