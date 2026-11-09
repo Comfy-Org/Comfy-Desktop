@@ -384,38 +384,42 @@ function lines(a: MarAsset): MenuLine[] {
     </template>
 
     <template #toolbar>
-      <AssetBuildPicker v-if="!fixedProject" v-model="build" />
-      <MarSeg
-        v-if="!fixedProject && browsable"
-        v-model="kind"
-        :options="KINDS"
-        label="Type"
-        class="ml-2"
-      />
-      <div v-if="browsable" class="ml-auto flex items-center gap-2">
-        <Select
-          v-if="fixedProject"
+      <div class="mar-asset-tools">
+        <AssetBuildPicker v-if="!fixedProject" v-model="build" />
+        <MarSeg
+          v-if="!fixedProject && browsable"
           v-model="kind"
-          :options="
-            KINDS.map((k) => ({ value: k.value, label: k.value === 'all' ? 'All types' : k.label }))
-          "
-          class="w-32"
+          class="mar-asset-seg"
+          :options="KINDS"
+          label="Type"
         />
-        <Select v-if="fixedProject" v-model="where" :options="WHERE" class="w-36" />
-        <button
-          v-if="!fixedProject"
-          type="button"
-          class="mar-asset-refresh"
-          aria-label="Refresh"
-          title="Refresh"
-          @click="refresh"
-        >
-          <RefreshCw :size="14" :class="refreshing && 'animate-spin'" />
-        </button>
-        <AssetFilters v-model="filter" :tags="TAGS" :count="finished.length" />
-        <Select v-model="sort" :options="SORTS" label="Sort" class="w-34" />
-        <MarSearchField v-model="query" placeholder="Search assets" />
-        <MarViewToggle v-model="view" masonry />
+        <div v-if="browsable" class="mar-asset-tools-end">
+          <Select
+            v-model="kind"
+            :class="['w-32', !fixedProject && 'mar-asset-kind']"
+            :options="
+              KINDS.map((k) => ({
+                value: k.value,
+                label: k.value === 'all' ? 'All types' : k.label
+              }))
+            "
+          />
+          <Select v-if="fixedProject" v-model="where" :options="WHERE" class="w-36" />
+          <button
+            v-if="!fixedProject"
+            type="button"
+            class="mar-asset-refresh"
+            aria-label="Refresh"
+            title="Refresh"
+            @click="refresh"
+          >
+            <RefreshCw :size="14" :class="refreshing && 'animate-spin'" />
+          </button>
+          <AssetFilters v-model="filter" :tags="TAGS" :count="finished.length" />
+          <Select v-model="sort" :options="SORTS" label="Sort" class="mar-asset-sort w-34" />
+          <MarSearchField v-model="query" placeholder="Search assets" />
+          <MarViewToggle v-model="view" masonry />
+        </div>
       </div>
     </template>
 
@@ -568,6 +572,63 @@ function lines(a: MarAsset): MenuLine[] {
 </template>
 
 <style>
+.mar-asset-tools {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  container-type: inline-size;
+}
+.mar-asset-tools-end {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-kind {
+  display: none;
+}
+/* Narrower windows: the toolbar sheds words, never controls. */
+@container (max-width: 1000px) {
+  :root
+    .proto-ui.proto-ui.proto-ui
+    .mar-asset-tools
+    .mar-pfind:not(:focus-within):has(input:placeholder-shown) {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .mar-asset-tools .mar-pfind:not(:focus-within):has(input:placeholder-shown) input {
+    width: 0;
+    flex: 0;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .mar-pfind {
+    width: 180px;
+  }
+}
+@container (max-width: 860px) {
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .aff-label,
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .aff-chev,
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-sort > span:not([aria-hidden]),
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-sort > svg:last-child {
+    display: none;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-sort {
+    width: auto;
+    padding-right: 10px;
+  }
+}
+@container (max-width: 720px) {
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-seg {
+    display: none;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-kind {
+    display: flex;
+  }
+}
 .mar-asset-drop {
   display: flex;
   min-height: 320px;

@@ -266,7 +266,19 @@ onBeforeUnmount(() => {
           </section>
 
           <section class="mad-sec">
-            <h3 class="mad-label">Tags</h3>
+            <h3 class="mad-label">
+              Tags
+              <span
+                v-if="!editable"
+                class="mad-tip"
+                tabindex="0"
+                role="note"
+                aria-label="Tags are edited in ComfyUI."
+                ><Info :size="12" /><span class="mad-tip-body is-short" aria-hidden="true"
+                  >Tags are edited in ComfyUI.</span
+                ></span
+              >
+            </h3>
             <div class="mad-tags">
               <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
                 facts.imported ? 'input' : 'output'
@@ -292,22 +304,21 @@ onBeforeUnmount(() => {
                 />
               </label>
             </div>
-            <p v-if="!editable" class="mad-hint">Tags are edited in ComfyUI.</p>
           </section>
 
           <section class="mad-sec">
             <h3 class="mad-label">
               Generation info
-              <Info
-                :size="12"
-                class="mad-info"
+              <span
+                class="mad-tip"
+                tabindex="0"
+                role="note"
                 aria-label="Inferred from the run’s data. A listed value may not have contributed to this output."
+                ><Info :size="12" /><span class="mad-tip-body" aria-hidden="true"
+                  >Inferred from the run’s data. A listed value may not have contributed to this
+                  output.</span
+                ></span
               >
-                <title>
-                  Inferred from the run’s data. A listed value may not have contributed to this
-                  output.
-                </title>
-              </Info>
             </h3>
             <div v-if="loading" class="mad-skel" aria-label="Loading">
               <i style="width: 90%" /><i style="width: 70%" /><i style="width: 50%" />
@@ -720,10 +731,51 @@ onBeforeUnmount(() => {
 .mad-quiet {
   font-size: 13px;
 }
-.mad-info {
-  flex: none;
+.mad-tip {
+  position: relative;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 999px;
+  color: var(--color-muted-foreground);
   cursor: help;
-  opacity: 0.7;
+  outline: none;
+}
+.mad-tip:hover,
+.mad-tip:focus-visible {
+  color: var(--color-base-foreground);
+}
+.mad-tip:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
+}
+.mad-tip-body {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -8px;
+  z-index: 2;
+  width: 240px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-base-foreground);
+  color: var(--color-content-background);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+.mad-tip-body.is-short {
+  width: max-content;
+}
+.mad-tip:hover .mad-tip-body,
+.mad-tip:focus-visible .mad-tip-body {
+  opacity: 1;
+  transform: none;
 }
 .mad-src {
   display: flex;

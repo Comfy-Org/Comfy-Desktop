@@ -27,9 +27,9 @@ const f = defineModel<AssetFilter>({ required: true })
         "
       >
         <ListFilter :size="14" class="shrink-0 text-subtle-foreground" />
-        <span>Filters</span>
+        <span class="aff-label">Filters</span>
         <span v-if="activeFilters(f)" class="aff-badge">{{ activeFilters(f) }}</span>
-        <ChevronDown :size="13" class="ml-1 shrink-0 text-subtle-foreground" />
+        <ChevronDown :size="13" class="aff-chev ml-1 shrink-0 text-subtle-foreground" />
       </button>
     </PopoverTrigger>
     <PopoverPortal :to="PORTAL_TO">
