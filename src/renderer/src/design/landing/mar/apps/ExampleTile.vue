@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Play, Video } from 'lucide-vue-next'
 import type { AppExample } from './appExamples'
+import ImageGlyph from './ImageGlyph.vue'
 
 /**
  * One example, as Home and the Explore Gallery show them: the picture (a
@@ -64,20 +65,8 @@ function play(e: MouseEvent, on: boolean): void {
       <!-- A landscape photo: an outlined frame, wider than tall, with a
            filled sun and hills inside. -->
       <span v-else-if="badge" class="mar-ex-tile-kind is-icon" aria-label="Image"
-        ><svg width="14" height="10" viewBox="0 0 24 17" aria-hidden="true">
-          <rect
-            x="1"
-            y="1"
-            width="22"
-            height="15"
-            rx="2.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.9"
-          />
-          <circle cx="7" cy="5.75" r="1.75" fill="currentColor" />
-          <path d="M1.8 15.2V13L8 7.5l3.25 3 4.25-4.75 6.7 7.4v2.05Z" fill="currentColor" /></svg
-      ></span>
+        ><ImageGlyph :size="14"
+      /></span>
       <!-- What it is (and which app made it), over a fade, on hover. -->
       <span class="mar-ex-tile-text">
         <span class="min-w-0 flex-1">

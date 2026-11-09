@@ -228,6 +228,10 @@ watch(
 // Home's light. Milestone 1's dashboard is its stand-in, before there is a Home.
 const lit = computed(() => proto.page === 'overview' || !can.value.builds)
 
+/** Off Home (Builds, Explore, Assets, a tool) the light is quieter: it
+ *  frames the content instead of greeting you. */
+export const quietLight = computed(() => !lit.value)
+
 /** Latent bloom is on screen: Home, bloom picked. */
 export const bloomOn = computed(() => lit.value && homeBackground.id === 'bloom')
 

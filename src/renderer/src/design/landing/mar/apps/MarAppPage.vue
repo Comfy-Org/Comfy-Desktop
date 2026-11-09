@@ -29,6 +29,7 @@ import Badge from '../../ui/Badge.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import ExampleTile from './ExampleTile.vue'
+import ImageGlyph from './ImageGlyph.vue'
 import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
@@ -243,8 +244,22 @@ const VIEWS = computed(() => [
   { value: 'gallery' as const, label: 'Inspiration', count: examples.value.length }
 ])
 /** Inspiration's head: the name, its last word apart. */
-const nameHead = computed(() => name.slice(0, name.lastIndexOf(' ') + 1))
-const nameTail = computed(() => name.slice(name.lastIndexOf(' ') + 1))
+// The Inspiration banner's head: what the app is for, in a line or two,
+// never its name (the panel says that).
+const HOOKS: Record<string, string> = {
+  's-cine': 'Every frame lit like the last scene of a film.',
+  's-image': 'Pictures of places that only exist in your head.',
+  'x-relight': 'Your product, under the light it deserves.',
+  'x-reshoot': 'Same product, a new place every time.',
+  'x-poster': 'Design it once. It fits everywhere.',
+  'x-i2v': 'Stills that start moving on their own.',
+  'x-h3': 'Your character, finally on the move.',
+  'x-wan': 'Moments that never stop moving.',
+  'x-angles': 'Meet your character from every side.',
+  'x-3d': 'Hold a photo in your hands, in 3D.',
+  'x-upscale': 'The detail was always there. Bring it out.'
+}
+const hook = computed(() => HOOKS[appId] ?? lib.value?.blurb ?? 'Start from something that works.')
 /** Inspiration's head: two rows of the app's pictures, each repeated so
  *  the drift loops. */
 const driftRow = (r: number): AppExample[] => {
@@ -510,17 +525,8 @@ function back(): void {
             <!-- The tab and the panel already name it: the head says what
                  it does, and what these are for. -->
             <div class="mar-app-editor-hero-text">
-              <!-- The app's name, its last word filled with the picture
-                   behind. -->
-              <h2>
-                {{ nameHead
-                }}<span
-                  class="mar-app-editor-hero-pic"
-                  :style="{ backgroundImage: `url(${example?.after ?? examples[0]?.after})` }"
-                  >{{ nameTail }}</span
-                >
-              </h2>
-              <p v-if="lib?.blurb" class="mar-app-editor-hero-blurb">{{ lib.blurb }}</p>
+              <!-- A hook on what the app does; the panel already names it. -->
+              <h2>{{ hook }}</h2>
               <p class="mar-app-editor-hero-count">
                 {{ examples.length }} starting points. Use one, then change anything.
               </p>
@@ -591,7 +597,7 @@ function back(): void {
         <MarEmpty
           v-else-if="onHistoryGrid"
           class="mar-app-editor-none"
-          :icon="ImageIcon"
+          :icon="ImageGlyph"
           title="Nothing made here yet"
           text="Start from one in Inspiration, or fill in the panel and Run."
           action="Browse Inspiration"
@@ -1165,17 +1171,9 @@ function back(): void {
   font-size: 30px;
   font-weight: 650;
   line-height: 1.05;
-  letter-spacing: -0.035em;
-  letter-spacing: -0.02em;
+  max-width: 19ch;
+  letter-spacing: -0.03em;
   text-wrap: balance;
-}
-.mar-app-editor-hero-pic {
-  background-position: center;
-  background-size: cover;
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  filter: saturate(1.5) brightness(1.35);
 }
 .mar-app-editor-hero-count {
   margin-top: 8px;

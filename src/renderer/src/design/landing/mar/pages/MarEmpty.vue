@@ -106,9 +106,7 @@ const emit = defineEmits<{ action: []; second: [] }>()
   height: 112px;
   border-radius: var(--radius-card, 12px);
   object-fit: cover;
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
-    0 12px 32px rgb(0 0 0 / 0.32);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.32);
   transition: transform 400ms cubic-bezier(0.19, 1, 0.22, 1);
 }
 .is-compact .mar-empty-pic {
@@ -150,8 +148,6 @@ const emit = defineEmits<{ action: []; second: [] }>()
     var(--color-base-foreground) 12%,
     var(--color-content-background)
   );
-  /* The page's colour as a ring: the badge is cut out of the fan. */
-  box-shadow: 0 0 0 4px var(--color-content-background);
   color: var(--color-base-foreground);
   transform: translateX(-50%);
 }
@@ -159,7 +155,6 @@ const emit = defineEmits<{ action: []; second: [] }>()
   bottom: 0;
   width: 48px;
   height: 48px;
-  box-shadow: none;
 }
 .mar-empty.is-error .mar-empty-badge {
   background: var(--color-card-background);

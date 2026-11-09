@@ -841,6 +841,34 @@
     var(--color-content-background);
   background-attachment: local;
 }
+/* Off Home the same light, much quieter: a soft glow at the top and a
+   faint wash down the page, so the content leads. */
+:root[data-mar-ui='on'] .mar-backdrop.is-spotlight.is-quiet .mar-bg {
+  opacity: 0.45;
+}
+:root[data-mar-ui='on'] .proto-main:has(> .mar-backdrop.is-spotlight.is-quiet) {
+  background:
+    radial-gradient(
+      ellipse 62% 100% at 50% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 3%, transparent),
+      color-mix(in oklch, var(--color-base-foreground) 1%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--color-content-background);
+  background-attachment: local;
+}
+:root[data-mar-ui='on'][data-ds-theme='light']
+  .proto-main:has(> .mar-backdrop.is-spotlight.is-quiet) {
+  background:
+    radial-gradient(
+      ellipse 62% 100% at 50% 0%,
+      oklch(0.9 0.04 290 / 0.14),
+      oklch(0.94 0.02 290 / 0.04) 60%,
+      transparent 100%
+    ),
+    var(--color-content-background);
+  background-attachment: local;
+}
 /* Aurora: slow, wide bands of muted light drifting sideways. */
 :root[data-mar-ui='on'] .mar-backdrop.is-aurora .mar-bg {
   inset: -20%;

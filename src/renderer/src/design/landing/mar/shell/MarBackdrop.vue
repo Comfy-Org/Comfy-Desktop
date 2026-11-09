@@ -17,6 +17,7 @@ import {
   altBackground,
   bloomOn,
   heroImage,
+  quietLight,
   marDockOn,
   marNav,
   marSideOn,
@@ -47,7 +48,7 @@ import '../motion/pageTransition'
   <div
     v-else-if="altBackground"
     class="mar-backdrop is-bloom is-alt"
-    :class="`is-${altBackground}`"
+    :class="[`is-${altBackground}`, quietLight && 'is-quiet']"
     aria-hidden="true"
   >
     <img v-if="altBackground === 'output'" :src="lastOutput" alt="" class="mar-bg-output" />
