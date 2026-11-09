@@ -32,6 +32,7 @@ export function useInstallContextMenu(
   opts: {
     onManage?: (inst: Installation, options?: ManageOpenOptions) => void
     onShowProgress?: (showOpts: ShowProgressOpts) => void
+    onUpdate?: (inst: Installation) => Promise<void>
     canPromoteToWorkspace?: (inst: Installation) => boolean
   } = {}
 ) {
@@ -242,7 +243,8 @@ export function useInstallContextMenu(
     if (id === 'manage') {
       opts.onManage?.(inst)
     } else if (id === 'update') {
-      opts.onManage?.(inst, { initialTab: 'update', autoAction: 'update-comfyui' })
+      if (opts.onUpdate) await opts.onUpdate(inst)
+      else opts.onManage?.(inst, { initialTab: 'update', autoAction: 'update-comfyui' })
     } else if (id === 'migrate') {
       opts.onManage?.(inst, { autoAction: 'migrate-to-standalone' })
     } else if (id === 'restore-snapshot') {

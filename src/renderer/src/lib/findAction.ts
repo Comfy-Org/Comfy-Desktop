@@ -26,3 +26,10 @@ export function findActionById(
   }
   return firstMatch
 }
+
+export function currentChannelValue(sections: DetailSection[]): string | null {
+  const channelField = sections
+    .flatMap((s) => s.fields ?? [])
+    .find((f) => f.editType === 'channel-cards')
+  return typeof channelField?.value === 'string' ? channelField.value : null
+}

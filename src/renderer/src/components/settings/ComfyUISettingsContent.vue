@@ -40,7 +40,7 @@ import { useComfyUISettings } from '../../composables/useComfyUISettings'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'
 import { decideNavigation, type NavDecision } from '../../../../shared/navigation/navDecision'
 import type { Category, ViewKind } from '../../../../shared/viewKind'
-import { findActionById } from '../../lib/findAction'
+import { currentChannelValue, findActionById } from '../../lib/findAction'
 import MoreMenu, { type MenuAction } from '../../views/comfyUISettings/MoreMenu.vue'
 import ArgsBuilderPage from '../../views/comfyUISettings/ArgsBuilderPage.vue'
 import SnapshotsView from '../../views/comfyUISettings/SnapshotsView.vue'
@@ -185,11 +185,7 @@ watch(
     const autoAction = props.autoAction
     if (!autoAction) return
 
-    const channelField = sections.value
-      .flatMap((s) => s.fields ?? [])
-      .find((f) => f.editType === 'channel-cards')
-    const currentChannel = typeof channelField?.value === 'string' ? channelField.value : null
-    const action = findActionById(sections.value, autoAction, currentChannel)
+    const action = findActionById(sections.value, autoAction, currentChannelValue(sections.value))
     if (!action) return
 
     consumedAutoActionKey.value = key
