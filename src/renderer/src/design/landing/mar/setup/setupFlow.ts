@@ -138,75 +138,14 @@ export const localSetup = reactive(load())
  *  UI Playground › Local setup or `?canvas=first`. */
 export const canvas = ref(new URLSearchParams(location.search).get('canvas') === 'first')
 
-// `?setup=first` links straight to the proposed flow, on first launch.
+// `?setup=first` links straight to the proposed flow, on first launch: the
+// first release, where the install lands on Builds. Every other pick travels
+// in the Playground's share link (shareLink.ts): `?share&m=4.5&step=first
+// &setup=on&setup.scope=next&setup.onboarding=home-running&setup.after=ready`.
 const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'
-if (linkFirst) localSetup.mode = 'on'
-// The readable form: `?setup=first&tweaks=onboarding:home-running,after:ready,os:windows`.
-// Each key is a Local setup pick; the older one-param-each links still work below.
-const TWEAK_KEYS: Record<string, { value: string }[]> = {
-  scope: SETUP_SCOPES,
-  onboarding: ONBOARDINGS,
-  after: AFTER_INSTALLS,
-  os: SETUP_OSES,
-  gpu: SETUP_GPUS,
-  machine: MACHINES,
-  cards: RUN_ON_CARDS
-}
-/** The link that opens the flow as it is set now, in the readable form. */
-export const setupLink = computed(() => {
-  const d = {
-    scope: 'm1',
-    onboarding: 'install',
-    after: 'home',
-    os: 'mac',
-    gpu: 'nvidia',
-    machine: 'ready',
-    cards: 'glow'
-  }
-  const t = (Object.keys(TWEAK_KEYS) as (keyof typeof d)[])
-    .filter((k) => (localSetup as unknown as Record<string, string>)[k] !== d[k])
-    // onboarding and after imply the next scope; say it only when it stands alone
-    .filter(
-      (k) => k !== 'scope' || (localSetup.onboarding === 'install' && localSetup.after === 'home')
-    )
-    .map((k) => `${k}:${(localSetup as unknown as Record<string, string>)[k]}`)
-  const u = new URL(location.href)
-  u.search = ''
-  u.searchParams.set('setup', 'first')
-  if (t.length) u.searchParams.set('tweaks', t.join(','))
-  return decodeURIComponent(u.toString())
-})
-// A link can pick the scope: `&scope=m1` or `&scope=next`.
-const linkScope = new URLSearchParams(location.search).get('scope')
-if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
-// Without one, the shared link shows the first release: the install lands on Builds.
-else if (linkFirst) localSetup.scope = 'm1'
-// And a Home first onboarding, which needs the Home: `&onboarding=home`,
-// `&onboarding=home-running` or `&onboarding=home-open`.
-const linkOnboarding = new URLSearchParams(location.search).get('onboarding')
-if (ONBOARDINGS.some((o) => o.value === linkOnboarding && o.value !== 'install')) {
-  localSetup.onboarding = linkOnboarding as Onboarding
-  localSetup.scope = 'next'
-}
-// And where the install ends: `&after=ready` or `&after=comfyui`.
-const linkAfter = new URLSearchParams(location.search).get('after')
-if (AFTER_INSTALLS.some((a) => a.value === linkAfter)) {
-  localSetup.after = linkAfter as AfterInstall
-  localSetup.scope = 'next'
-}
-// And the computer: `&os=windows` or `&os=linux`.
-const linkOs = new URLSearchParams(location.search).get('os')
-if (linkOs === 'mac' || linkOs === 'windows' || linkOs === 'linux') localSetup.os = linkOs
-// And its graphics: `&gpu=amd`, `&gpu=intel` or `&gpu=cpu`.
-const linkGpu = new URLSearchParams(location.search).get('gpu')
-if (SETUP_GPUS.some((g) => g.value === linkGpu)) localSetup.gpu = linkGpu as SetupGpu
-// The readable form wins over the one-param-each links above.
-for (const pair of (new URLSearchParams(location.search).get('tweaks') ?? '').split(',')) {
-  const [k, v] = pair.split(':')
-  if (k && v && TWEAK_KEYS[k]?.some((o) => o.value === v)) {
-    ;(localSetup as unknown as Record<string, string>)[k] = v
-    if (k === 'onboarding' || k === 'after') localSetup.scope = 'next'
-  }
+if (linkFirst) {
+  localSetup.mode = 'on'
+  localSetup.scope = 'm1'
 }
 
 watch(
