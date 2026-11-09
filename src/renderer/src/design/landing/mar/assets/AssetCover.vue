@@ -28,11 +28,11 @@ const BY_EXT: Record<string, Kind> = {
   tsv: 'table'
 }
 const KINDS: Record<Kind, { hue: number; chroma: number; icon: Component }> = {
-  doc: { hue: 255, chroma: 0.12, icon: FileText },
-  code: { hue: 300, chroma: 0.12, icon: Braces },
-  table: { hue: 155, chroma: 0.12, icon: Sheet },
-  audio: { hue: 45, chroma: 0.13, icon: AudioLines },
-  '3d': { hue: 205, chroma: 0.1, icon: Box },
+  doc: { hue: 255, chroma: 0.06, icon: FileText },
+  code: { hue: 300, chroma: 0.06, icon: Braces },
+  table: { hue: 155, chroma: 0.06, icon: Sheet },
+  audio: { hue: 45, chroma: 0.07, icon: AudioLines },
+  '3d': { hue: 205, chroma: 0.05, icon: Box },
   file: { hue: 0, chroma: 0, icon: Binary }
 }
 
@@ -123,12 +123,14 @@ const WAVE = computed(() =>
   height: 100%;
   align-items: center;
   justify-content: center;
+  /* A light wash over the card, mostly see-through: the type reads from
+     the hint and the extension, the colour only whispers it. */
   background: linear-gradient(
     160deg,
-    color-mix(in oklab, var(--ac-hue) 24%, var(--color-card-background)),
-    color-mix(in oklab, var(--ac-hue) 10%, var(--color-card-background))
+    color-mix(in oklab, var(--ac-hue) 10%, transparent),
+    color-mix(in oklab, var(--color-base-foreground) 3%, transparent)
   );
-  color: color-mix(in oklab, var(--ac-hue) 70%, var(--color-base-foreground));
+  color: color-mix(in oklab, var(--ac-hue) 45%, var(--color-muted-foreground));
   container-type: size;
 }
 /* The shared grain, as on the Workflow gradient. */
