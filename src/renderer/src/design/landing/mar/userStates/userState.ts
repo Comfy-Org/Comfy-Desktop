@@ -45,7 +45,22 @@ export const MAR_LOCALS: { value: MarLocal; label: string }[] = [
 const KEY = 'comfy.design.mar.user'
 const STASH_KEY = 'comfy.design.mar.user.favorites'
 
+/** Straight from the link (no onboarding, no shared state), a new tab
+ *  starts as a returning user; the onboarding's links make it first-time. */
+const TAB_KEY = 'comfy.design.mar.user.tab'
+function freshFromLink(): boolean {
+  try {
+    if (sessionStorage.getItem(TAB_KEY)) return false
+    sessionStorage.setItem(TAB_KEY, '1')
+    const q = new URLSearchParams(location.search)
+    return !q.has('setup') && !q.has('share')
+  } catch {
+    return false
+  }
+}
+
 function load(): { user: MarUser; local: MarLocal } {
+  if (freshFromLink()) return { user: 'returning', local: 'several' }
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? '{}')
     return {
