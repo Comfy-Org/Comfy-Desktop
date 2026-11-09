@@ -129,10 +129,11 @@ const VIEWS = computed(() => (prod.value ? PROD_VIEWS : ALL_VIEWS))
 const showPreviews = ref(false)
 const showName = ref(true)
 const showDetails = ref(true)
+// Under Show: what a card carries, the everyday ones first.
 const DISPLAY = [
-  { label: 'Show preview assets', on: showPreviews },
-  { label: 'Show file name', on: showName },
-  { label: 'Show file details', on: showDetails }
+  { label: 'File name', on: showName },
+  { label: 'File details', on: showDetails },
+  { label: 'Preview assets', on: showPreviews }
 ]
 const sort = ref('Newest first')
 const filter = ref(noFilter())
@@ -467,7 +468,12 @@ function upload(files: FileList | null | undefined): void {
             <p class="rp-menu-label ap-menu-head">
               View<span>{{ VIEWS.find((v) => v.value === view)?.label }}</span>
             </p>
-            <div class="mar-pseg ap-views" role="radiogroup" aria-label="View">
+            <div
+              class="mar-pseg ap-views"
+              role="radiogroup"
+              aria-label="View"
+              @mouseenter="sortOpen = false"
+            >
               <button
                 v-for="v in VIEWS"
                 :key="v.value"
@@ -484,20 +490,6 @@ function upload(files: FileList | null | undefined): void {
               </button>
             </div>
             <button
-              v-for="d in DISPLAY"
-              :key="d.label"
-              type="button"
-              role="menuitemcheckbox"
-              class="rp-row ap-check"
-              :aria-checked="d.on.value"
-              @click="d.on.value = !d.on.value"
-              @mouseenter="sortOpen = false"
-            >
-              <span>{{ d.label }}</span
-              ><Check v-if="d.on.value" :size="14" />
-            </button>
-            <span class="rp-menu-sep" />
-            <button
               ref="sortRow"
               type="button"
               role="menuitem"
@@ -510,6 +502,21 @@ function upload(files: FileList | null | undefined): void {
             >
               <span>Sort by</span><span class="ap-menu-val">{{ sort }}</span
               ><ChevronRight :size="14" />
+            </button>
+            <span class="rp-menu-sep" />
+            <p class="rp-menu-label">Show</p>
+            <button
+              v-for="d in DISPLAY"
+              :key="d.label"
+              type="button"
+              role="menuitemcheckbox"
+              class="rp-row ap-check"
+              :aria-checked="d.on.value"
+              @click="d.on.value = !d.on.value"
+              @mouseenter="sortOpen = false"
+            >
+              <span>{{ d.label }}</span
+              ><Check v-if="d.on.value" :size="14" />
             </button>
           </div>
           <!-- Sort by opens beside the menu, to the right, as a submenu. -->
