@@ -51,7 +51,11 @@ function jwt(claims: Record<string, unknown>): string {
 }
 
 const ACCESS = jwt({ sub: 'user-1', email: 'a@example.com', workspace_id: 'ws-1' })
-const MINTED = jwt({ sub: 'user-1', workspace_id: 'ws-1', auth_method: 'cloud' })
+function mintedFor(workspaceId: string): string {
+  return jwt({ sub: 'user-1', workspace_id: workspaceId, auth_method: 'cloud' })
+}
+
+const MINTED = mintedFor('ws-1')
 
 interface ViewOptions {
   frameUrl?: string
@@ -82,9 +86,11 @@ beforeEach(() => {
   mocks.enabled = true
   mocks.entries = []
   mocks.getGrantAccessToken.mockReset().mockResolvedValue(ACCESS)
-  mocks.mint
-    .mockReset()
-    .mockResolvedValue({ kind: 'minted', token: MINTED, expiresAt: Date.now() + 900_000 })
+  mocks.mint.mockReset().mockImplementation(async (_grant: string, workspaceId: string) => ({
+    kind: 'minted',
+    token: mintedFor(workspaceId),
+    expiresAt: Date.now() + 900_000
+  }))
   mocks.current = 'ws-1'
   resetViewGrants()
 })
@@ -159,7 +165,7 @@ describe('embeddedSession', () => {
 
     await switchWorkspaceForSender(switcher.event, 'ws-2', switchWorkspace)
 
-    await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBe(MINTED)
+    await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBe(mintedFor('ws-2'))
     await expect(workspaceTokenForSender(bystander.event, 'ws-2')).resolves.toBeNull()
   })
 

@@ -1,6 +1,6 @@
 import type { WebContents } from 'electron'
 
-import { canMintWorkspaceTokens, subjectOf } from '../cloud/claims'
+import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from '../cloud/claims'
 import { mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import { getCloudSession } from '../devplatform/session'
@@ -137,6 +137,8 @@ export class ViewWorkspaceGrants {
     const result = await this.mintOnce(accessToken, key, workspaceId, fence)
     if (!this.isCurrent(fence) || this.session.currentSubject() !== subject) return null
     if (result.kind !== 'minted') return null
+    if (workspaceIdOf(result.token) !== workspaceId || subjectOf(result.token) !== subject)
+      return null
     this.minted.set(key, { token: result.token, expiresAt: result.expiresAt })
     return { token: result.token, subject }
   }

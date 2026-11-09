@@ -25,10 +25,18 @@ function accessToken(workspaceId: string, scope: string = CLOUD_CONFIG.scope): s
   return jwt({ sub: user, workspace_id: workspaceId, scope })
 }
 
+function mintedToken(workspaceId: string): string {
+  return jwt({ sub: user, workspace_id: workspaceId })
+}
+
+function staleToken(workspaceId: string): string {
+  return jwt({ sub: user, workspace_id: workspaceId, stale: true })
+}
+
 function minted(workspaceId: string): WorkspaceTokenMint {
   return {
     kind: 'minted',
-    token: `minted-${workspaceId}`,
+    token: mintedToken(workspaceId),
     expiresAt: Date.now() + 15 * 60_000
   }
 }
@@ -103,7 +111,7 @@ describe('ViewWorkspaceGrants', () => {
   it('hands a view the minted token for the workspace Desktop started in, never the access token', async () => {
     const token = await grants.tokenFor(viewA, 'ws-1')
 
-    expect(token).toBe('minted-ws-1')
+    expect(token).toBe(mintedToken('ws-1'))
     expect(mint).toHaveBeenCalledWith(accessToken('ws-1'), 'ws-1')
   })
 
@@ -111,8 +119,21 @@ describe('ViewWorkspaceGrants', () => {
     grants.allowView(viewA, 'ws-2')
     signInAt('ws-2')
 
-    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBe('minted-ws-2')
+    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBe(mintedToken('ws-2'))
     expect(mint).toHaveBeenCalledExactlyOnceWith(accessToken('ws-1'), 'ws-2')
+  })
+
+  it.each<[string, () => string]>([
+    ['another workspace', () => jwt({ sub: user, workspace_id: 'ws-9' })],
+    ['another account', () => jwt({ sub: 'user-9', workspace_id: 'ws-1' })],
+    ['a token with no claims', () => 'opaque-token']
+  ])('refuses and does not cache a minted token for %s', async (_name, token) => {
+    mint.mockResolvedValueOnce({ kind: 'minted', token: token(), expiresAt: Date.now() + 900_000 })
+
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
+
+    expect(mint).toHaveBeenCalledTimes(2)
   })
 
   it('reuses a minted token until it nears expiry', async () => {
@@ -128,7 +149,7 @@ describe('ViewWorkspaceGrants', () => {
       grants.tokenFor(viewA, 'ws-1')
     ])
 
-    expect(tokens).toEqual(['minted-ws-1', 'minted-ws-1'])
+    expect(tokens).toEqual([mintedToken('ws-1'), mintedToken('ws-1')])
     expect(mint).toHaveBeenCalledOnce()
   })
 
@@ -141,7 +162,7 @@ describe('ViewWorkspaceGrants', () => {
     grants.allowView(viewA, 'ws-2')
     signInAt('ws-2')
 
-    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBe('minted-ws-2')
+    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBe(mintedToken('ws-2'))
     await expect(grants.tokenFor(viewB, 'ws-2')).resolves.toBeNull()
   })
 
@@ -149,8 +170,8 @@ describe('ViewWorkspaceGrants', () => {
     grants.allowDesktop('ws-2')
     signInAt('ws-2')
 
-    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBe('minted-ws-2')
-    await expect(grants.tokenFor(viewB, 'ws-2')).resolves.toBe('minted-ws-2')
+    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBe(mintedToken('ws-2'))
+    await expect(grants.tokenFor(viewB, 'ws-2')).resolves.toBe(mintedToken('ws-2'))
   })
 
   it('stops handing out a workspace once the view moved on', async () => {
@@ -182,10 +203,14 @@ describe('ViewWorkspaceGrants', () => {
     await vi.waitFor(() => expect(mint).toHaveBeenCalledOnce())
     signInAt('ws-2')
     signInAt('ws-1')
-    stale.resolve({ kind: 'minted', token: 'stale-ws-1', expiresAt: Date.now() + 15 * 60_000 })
+    stale.resolve({
+      kind: 'minted',
+      token: staleToken('ws-1'),
+      expiresAt: Date.now() + 15 * 60_000
+    })
 
     await expect(pending).resolves.toBeNull()
-    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
     expect(mint).toHaveBeenCalledTimes(2)
   })
 
@@ -197,11 +222,15 @@ describe('ViewWorkspaceGrants', () => {
     signInAt('ws-2')
     signInAt('ws-1')
 
-    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
-    stale.resolve({ kind: 'minted', token: 'stale-ws-1', expiresAt: Date.now() + 15 * 60_000 })
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
+    stale.resolve({
+      kind: 'minted',
+      token: staleToken('ws-1'),
+      expiresAt: Date.now() + 15 * 60_000
+    })
 
     await expect(older).resolves.toBeNull()
-    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
     expect(mint).toHaveBeenCalledTimes(2)
   })
 
@@ -271,7 +300,7 @@ describe('ViewWorkspaceGrants', () => {
     await grants.tokenFor(viewA, 'ws-1')
     user = 'user-2'
 
-    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
     expect(mint).toHaveBeenCalledTimes(2)
     expect(mint).toHaveBeenLastCalledWith(accessToken('ws-1'), 'ws-1')
   })
@@ -291,7 +320,7 @@ describe('ViewWorkspaceGrants', () => {
     before.resolve(firstUserToken)
 
     await expect(stale).resolves.toBeNull()
-    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
     expect(mint).toHaveBeenCalledOnce()
     expect(mint).toHaveBeenCalledWith(accessToken('ws-1'), 'ws-1')
   })
