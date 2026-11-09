@@ -9,39 +9,25 @@ import {
   type Ref
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useModal } from './useModal'
 import { useDialogs } from './useDialogs'
 import { useStopAction } from './useStopAction'
 import { useActionGuard } from './useActionGuard'
-import { useMigrateAction } from './useMigrateAction'
 import { useSessionStore } from '../stores/sessionStore'
 import { emitTelemetryAction, toErrorBucket } from '../lib/telemetry'
-import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
-import {
-  REQUIRES_STOPPED,
-  type ActionDef,
-  type ActionResult,
-  type DetailField,
-  type DetailSection,
-  type DiskSpaceInfo,
-  type Installation,
-  type ShowProgressOpts
+import type {
+  ActionDef,
+  ActionResult,
+  DetailField,
+  DetailSection,
+  DiskSpaceInfo,
+  Installation,
+  ShowProgressOpts
 } from '../types/ipc'
 import { shareLatestSnapshot } from '../lib/snapshots'
-import {
-  IN_PLACE_RELAUNCH,
-  augmentActionWithStopWarning,
-  stopAndWaitForExit
-} from '../lib/stopWarning'
+import { stopAndWaitForExit } from '../lib/stopWarning'
 import { sleepRemainder } from '../lib/uiTiming'
 import type { SectionTab } from '../lib/pickerTabs'
-import {
-  runConfirmChain,
-  runDiskSpaceCheck,
-  runFieldSelectsChain,
-  runPromptChain,
-  runSelectChain
-} from './actionShoppingList'
+import { useDetailActionPreflight } from './useDetailActionPreflight'
 
 export interface UseComfyUISettingsOpts {
   installation: MaybeRefOrGetter<Installation | null>
@@ -102,14 +88,13 @@ function formatBytes(bytes: number): string {
 
 export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISettingsApi {
   const { t } = useI18n()
-  const modal = useModal()
   const dialogs = useDialogs()
   const { confirmAndStop } = useStopAction({
     confirm: (o) => dialogs.confirm({ ...o, tone: 'danger' }),
     alert: (o) => dialogs.alert(o)
   })
   const actionGuard = useActionGuard()
-  const { confirmMigration } = useMigrateAction()
+  const { prepareDetailAction, showDetailActionProgress } = useDetailActionPreflight()
   const sessionStore = useSessionStore()
 
   const sections = ref<DetailSection[]>([])
@@ -408,94 +393,14 @@ export function useComfyUISettings(opts: UseComfyUISettingsOpts): UseComfyUISett
 
     const telemetryContext = { action_id: action.id }
 
-    const ownsPreflight = action.id === 'migrate-to-standalone'
-    const requiresStoppedGuard = REQUIRES_STOPPED.has(action.id)
-    const wasRunning = sessionStore.isRunning(inst.id)
-    if (requiresStoppedGuard && !ownsPreflight) {
-      const proceed = await actionGuard.checkBeforeAction(inst.id, action.label)
-      if (!proceed) return
-    }
-
-    let mutableAction: ActionDef = { ...action }
-
-    if (mutableAction.id === 'migrate-to-standalone') {
-      const migrateResult = await confirmMigration(inst, mutableAction.confirm)
-      if (!migrateResult) return
-      mutableAction = {
-        ...mutableAction,
-        data: { ...mutableAction.data, ...migrateResult }
-      }
-    }
-
-    if (requiresStoppedGuard && wasRunning && !ownsPreflight) {
-      mutableAction = augmentActionWithStopWarning(
-        mutableAction,
-        t('errors.willStopRunning', { name: inst?.name || 'ComfyUI' })
-      )
-    }
-
-    const afterFieldSelects = await runFieldSelectsChain(mutableAction, dialogs, t)
-    if (!afterFieldSelects) return
-    mutableAction = afterFieldSelects
-
-    const afterSelect = await runSelectChain(mutableAction, inst.id, dialogs, t)
-    if (!afterSelect) return
-    mutableAction = afterSelect
-
-    const afterPrompt = await runPromptChain(mutableAction, dialogs)
-    if (!afterPrompt) return
-    mutableAction = afterPrompt
-
-    if (mutableAction.id !== 'migrate-to-standalone') {
-      const afterConfirm = await runConfirmChain(mutableAction, modal, dialogs)
-      if (!afterConfirm) return
-      mutableAction = afterConfirm
-    }
-
-    if (!(await runDiskSpaceCheck(mutableAction, inst, modal, t, null, dialogs))) return
+    const prepared = await prepareDetailAction(inst, action)
+    if (!prepared) return
+    const { action: mutableAction, wasRunning, requiresStoppedGuard } = prepared
 
     if (mutableAction.showProgress) {
-      const rawTitle = (mutableAction.progressTitle || mutableAction.label).replace(
-        /\{(\w+)\}/g,
-        (_, k: string) => String((mutableAction.data as Record<string, unknown>)?.[k] ?? k)
-      )
-      const title = `${rawTitle} — ${inst.name}`
-      const isRestart = mutableAction.id === 'restart'
-      const needsSelfStop = wasRunning && requiresStoppedGuard && !isRestart
-      const wantsRelaunch = needsSelfStop && IN_PLACE_RELAUNCH.has(mutableAction.id)
-      const isRunning = (): boolean => sessionStore.isRunning(inst.id)
-      const apiCall = isRestart
-        ? async (): Promise<ReturnType<typeof window.api.runAction>> => {
-            await stopAndWaitForExit(inst.id, isRunning)
-            return window.api.runAction(inst.id, 'launch')
-          }
-        : needsSelfStop
-          ? async (): Promise<ReturnType<typeof window.api.runAction>> => {
-              await stopAndWaitForExit(inst.id, isRunning)
-              const result = await window.api.runAction(
-                inst.id,
-                mutableAction.id,
-                mutableAction.data
-              )
-              if (wantsRelaunch && result?.ok !== false) {
-                await window.api.runAction(inst.id, 'launch')
-              }
-              return result
-            }
-          : (): ReturnType<typeof window.api.runAction> =>
-              window.api.runAction(inst.id, mutableAction.id, mutableAction.data)
-      emitTelemetryAction('comfy.desktop.action.invoked', telemetryContext)
-      opts.onShowProgress({
-        installationId: inst.id,
-        title,
-        apiCall,
-        cancellable: !!mutableAction.cancellable,
+      showDetailActionProgress(inst, prepared, {
         returnTo: 'detail',
-        triggersInstanceStart: mutableAction.id === 'launch' || isRestart || wantsRelaunch,
-        opKind: isRestart ? 'launch' : progressOpKindForActionId(mutableAction.id),
-        destroysInstance: destroysInstanceForActionId(mutableAction.id),
-        actionId: mutableAction.id,
-        actionData: mutableAction.data
+        onShowProgress: opts.onShowProgress
       })
       return
     }

@@ -307,13 +307,14 @@ function mountHarnessWithManage(
   onManage: (
     inst: Installation,
     options?: { initialTab?: string; autoAction?: string | null }
-  ) => void
+  ) => void,
+  onUpdate?: (inst: Installation) => Promise<void>
 ): { menu: ReturnType<typeof useInstallContextMenu> } {
   const pinia = createPinia()
   setActivePinia(pinia)
   let menu!: ReturnType<typeof useInstallContextMenu>
   _harnessSetup = () => {
-    menu = useInstallContextMenu({ onManage })
+    menu = useInstallContextMenu({ onManage, onUpdate })
   }
   mount(HarnessComponent, { global: { plugins: [pinia] } })
   _harnessSetup = null
@@ -372,6 +373,18 @@ describe('useInstallContextMenu - copy-install routing', () => {
       initialTab: 'update',
       autoAction: 'update-comfyui'
     })
+  })
+
+  it('update runs in place through onUpdate without opening the build manager', async () => {
+    const onManage = vi.fn()
+    const onUpdate = vi.fn<(inst: Installation) => Promise<void>>().mockResolvedValue()
+    const inst = makeInstall()
+    const { menu } = mountHarnessWithManage(onManage, onUpdate)
+
+    await menu.triggerAction('update', inst)
+
+    expect(onUpdate).toHaveBeenCalledWith(inst)
+    expect(onManage).not.toHaveBeenCalled()
   })
 })
 

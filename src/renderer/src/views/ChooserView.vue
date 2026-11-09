@@ -10,6 +10,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
+import { useQuickUpdate } from '../composables/useQuickUpdate'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
@@ -169,6 +170,11 @@ function canPromoteToWorkspace(inst: Installation): boolean {
   )
 }
 
+const { runQuickUpdate } = useQuickUpdate({
+  onShowProgress: (showOpts) => emit('show-progress', showOpts),
+  onUnavailable: (inst) => openInstallManager(inst, { initialTab: 'update' })
+})
+
 const {
   ctxMenu,
   ctxMenuItems,
@@ -185,6 +191,7 @@ const {
   onManage: (inst, options) =>
     options ? openInstallManager(inst, options) : emit('open-details', inst),
   onShowProgress: (showOpts) => emit('show-progress', showOpts),
+  onUpdate: runQuickUpdate,
   canPromoteToWorkspace
 })
 

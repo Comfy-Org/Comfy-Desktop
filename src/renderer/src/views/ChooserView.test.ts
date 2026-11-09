@@ -28,6 +28,16 @@ vi.mock('../composables/useModal', () => ({
   useModal: () => mockModal
 }))
 
+const mockDialogs = {
+  alert: vi.fn().mockResolvedValue(undefined),
+  confirm: vi.fn().mockResolvedValue('primary'),
+  prompt: vi.fn(),
+  actionSheet: vi.fn()
+}
+vi.mock('../composables/useDialogs', () => ({
+  useDialogs: () => mockDialogs
+}))
+
 interface MockApi {
   getInstallations: ReturnType<typeof vi.fn>
   onInstallationsChanged: ReturnType<typeof vi.fn>
@@ -42,6 +52,8 @@ interface MockApi {
   getCloudFreeRunsEnabled: ReturnType<typeof vi.fn>
   getCloudUserTier: ReturnType<typeof vi.fn>
   getListActions: ReturnType<typeof vi.fn>
+  getDetailSections: ReturnType<typeof vi.fn>
+  openInstancePicker: ReturnType<typeof vi.fn>
 }
 
 function installMockApi(initial: Installation[]): MockApi {
@@ -68,7 +80,9 @@ function installMockApi(initial: Installation[]): MockApi {
     },
     getCloudFreeRunsEnabled: vi.fn().mockResolvedValue(false),
     getCloudUserTier: vi.fn().mockResolvedValue('unknown'),
-    getListActions: vi.fn().mockResolvedValue([{ id: 'launch', style: 'primary' }])
+    getListActions: vi.fn().mockResolvedValue([{ id: 'launch', style: 'primary' }]),
+    getDetailSections: vi.fn().mockResolvedValue([]),
+    openInstancePicker: vi.fn()
   }
   ;(window as unknown as { api: MockApi }).api = api
   return api
@@ -496,6 +510,54 @@ describe('ChooserView', () => {
     expect(pill.exists()).toBe(true)
     expect(pill.text().trim()).toBe('Update')
     expect(tile.find('.chooser-tile-meta-line').text()).toContain('v0.22.3')
+  })
+
+  it('confirms an update over the Builds page from the tile pill, without opening the build manager', async () => {
+    const api = installMockApi([
+      makeInstall({
+        id: 'u',
+        name: 'Updatable',
+        status: 'installed',
+        statusTag: { style: 'update', label: 'Update v0.44.2', version: 'v0.44.2' }
+      })
+    ])
+    api.getDetailSections.mockResolvedValue([
+      {
+        tab: 'update',
+        title: 'Updates',
+        actions: [
+          {
+            id: 'update-comfyui',
+            label: 'Update to v0.44.2',
+            style: 'primary',
+            enabled: true,
+            showProgress: true,
+            progressTitle: 'Updating to v0.44.2',
+            data: { version: '0.44.2' },
+            confirm: { title: 'Update ComfyUI', message: 'Update from v0.38.0 to v0.44.2?' }
+          }
+        ]
+      }
+    ])
+    mockDialogs.confirm.mockClear()
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
+    await tile.get('.chooser-tile-pill-update').trigger('click')
+    await flushPromises()
+
+    expect(mockDialogs.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Update ComfyUI' })
+    )
+    expect(api.openInstancePicker).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-details')).toBeUndefined()
+    expect(wrapper.emitted('show-progress')?.[0]?.[0]).toMatchObject({
+      installationId: 'u',
+      title: 'Updating to v0.44.2 — Updatable',
+      returnTo: 'list',
+      actionId: 'update-comfyui'
+    })
   })
 
   it('keeps the action pill present even when the name is very long', async () => {
