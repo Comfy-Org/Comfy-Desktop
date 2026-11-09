@@ -141,12 +141,14 @@ async function switchAndAnnounce(
   clearVersionCache()
   const switching = session.switchWorkspace(workspaceId)
   const generation = session.currentAuthGeneration()
-  const reply = await switching
+  const { reachedThroughConsent, ...reply } = await switching
   clearVersionCache()
   const { workspaceSwitchFailure: _failure, ...status } = reply
   const superseded = session.currentAuthGeneration() !== generation
   if (!superseded && session.currentSubject() !== subjectBefore) {
     getViewWorkspaceGrants().endAll()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  } else if (reachedThroughConsent) {
     getViewWorkspaceGrants().allowDesktop(status.workspaceId)
   }
   broadcastAuthChanged(status)
