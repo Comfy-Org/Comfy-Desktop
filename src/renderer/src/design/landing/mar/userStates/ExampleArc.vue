@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, PanelsTopLeft } from 'lucide-vue-next'
+import { ArrowRight, PanelsTopLeft, Play } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion, runExample } from './examples'
@@ -237,7 +237,7 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-badge" title="App" aria-hidden="true"
           ><PanelsTopLeft :size="13"
         /></span>
-        <span class="mar-arc-go" aria-hidden="true">Run app</span>
+        <span class="mar-arc-go" aria-hidden="true"><Play :size="14" />Run app</span>
       </button>
     </div>
 
@@ -389,6 +389,7 @@ function wheel(e: WheelEvent): void {
   height: 38px;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   padding: 0 20px;
   border-radius: var(--radius-control);
   background: #fff;
