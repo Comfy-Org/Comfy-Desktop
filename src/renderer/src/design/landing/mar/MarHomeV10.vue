@@ -43,6 +43,7 @@ import {
   recentInstances
 } from '../useProto'
 import { can } from '../milestones'
+import { shownName } from '../account'
 import { TEMPLATES, thumb } from '../mock'
 import { mock } from './assets/mock'
 
@@ -55,6 +56,14 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // User and Local install). A returning user with no local install (on
 // Cloud) gets the returning Home; a first-time user with a fresh build
 // gets it too, with examples where their work will go.
+// Signed in, Home greets the account by its first name (the real one when
+// there is one); signed out it stays generic.
+const greeting = computed(() => {
+  const first = proto.signedIn ? shownName.value?.split(' ')[0] : ''
+  if (firstTime.value)
+    return first ? `Welcome, ${first}. Let's create` : "Welcome to Comfy. Let's create"
+  return first ? `Welcome back, ${first}. Let's create` : "Let's create"
+})
 const firstRun = computed(() => firstTime.value && noLocal.value)
 // Home first, Local picked and not installed yet: the install waits (or
 // runs) on its card, with the apps under it (setup/HomeInstall.vue). Open
@@ -103,10 +112,7 @@ const recent = computed(() =>
          sit where a returning user finds them. -->
     <section :class="['flex flex-col', tight ? 'pt-14 pb-4' : 'pt-12 pb-4']">
       <div :class="['flex flex-1 flex-col', !tight ? 'justify-center pt-10' : '']">
-        <Greeting
-          :text="firstTime ? `Welcome, Mar. Let's create` : `Hi Mar. Let's create`"
-          :class="['mar-greeting', tight ? 'mb-4! pt-0!' : '']"
-        />
+        <Greeting :text="greeting" :class="['mar-greeting', tight ? 'mb-4! pt-0!' : '']" />
         <!-- One line tall; while you type it grows over what's below. -->
         <div v-if="can.agent && !gated" class="mar-prompt-slot">
           <PromptBox target class="mar-prompt" />
@@ -153,7 +159,7 @@ const recent = computed(() =>
       <section v-else-if="firstTime && !recent.length && !setupOn" class="mt-10">
         <SectionHeader
           title="Start from an example"
-          :link="can.explore ? 'See all' : undefined"
+          :link="can.explore ? 'All examples' : undefined"
           @link="go('explore')"
         >
           <template #controls>
@@ -168,7 +174,7 @@ const recent = computed(() =>
       <section v-if="parts.examples === 'mar'" class="mx-auto mt-8 w-full max-w-180">
         <SectionHeader
           title="Example workflows"
-          :link="can.explore ? 'Explore all' : undefined"
+          :link="can.explore ? 'All examples' : undefined"
           @link="go('explore')"
         >
           <template #controls>
@@ -184,7 +190,7 @@ const recent = computed(() =>
       <section v-if="recent.length" class="mt-10">
         <SectionHeader
           title="Recently used"
-          :link="can.projects ? 'See all' : undefined"
+          :link="can.projects ? 'All workflows' : undefined"
           @link="go('workflows')"
         />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
@@ -205,7 +211,7 @@ const recent = computed(() =>
       <section v-if="parts.examples === 'rows'" class="mt-10">
         <SectionHeader
           title="Example workflows"
-          :link="can.explore ? 'Explore all' : undefined"
+          :link="can.explore ? 'All examples' : undefined"
           @link="go('explore')"
         >
           <template #controls>

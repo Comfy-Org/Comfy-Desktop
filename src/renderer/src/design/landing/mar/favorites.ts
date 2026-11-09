@@ -4,6 +4,10 @@ import { reactive, watch } from 'vue'
  *  star a template, an app or an asset from its card; it sits under
  *  Favorites in the sidebar and on the Favorites page, and starred
  *  templates lead the ⌘K search. One list, newest last. */
+/** Favorites won't ship for now: stars, menu items and the sidebar group
+ *  stay hidden while this is false. */
+export const FAVORITES_ON = false
+
 export type FavoriteKind = 'template' | 'app' | 'asset'
 
 const KEY = 'comfy.design.mar.favorites.v2'

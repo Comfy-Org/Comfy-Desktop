@@ -104,7 +104,7 @@ function signOut(): void {
             <span
               ><span class="font-medium text-base-foreground tabular-nums">{{ shownCredits }}</span>
               credits left</span
-            ><span class="text-base-foreground">Top up</span>
+            ><span class="text-base-foreground">Add credits</span>
           </span>
           <span class="mar-ws-bar"><span /></span>
         </button>

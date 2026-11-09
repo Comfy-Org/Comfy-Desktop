@@ -194,7 +194,11 @@ const LATER_TABS = computed(() => [
 const TABS = computed(() => (mvp.value ? MVP_TABS.value : LATER_TABS.value))
 // A tab asked for (Builds' ⋯ menu), else Build opens on Versions where
 // there are any; everything else on its first tab.
-const asked = nextBuildTab.value
+// Desktop's tabs have no Settings: there, its settings are Startup Args.
+const asked =
+  nextBuildTab.value === 'settings' && !TABS.value.some((t) => t.value === 'settings')
+    ? 'args'
+    : nextBuildTab.value
 nextBuildTab.value = ''
 const tab = ref<Tab>(
   asked && TABS.value.some((t) => t.value === asked)

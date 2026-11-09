@@ -8,7 +8,6 @@ import {
   ImageOff,
   Layers,
   LayoutGrid,
-  ListFilter,
   Plus,
   ScanSearch,
   SearchX,
@@ -31,7 +30,7 @@ import MediaChip from '../MediaChip.vue'
 import type { MarAsset } from '../pages/assetsStore'
 import type { MenuLine } from '../pages/menu'
 import AssetDetail from '../assets/AssetDetail.vue'
-import AssetFilterFields from '../assets/AssetFilterFields.vue'
+import AssetFilterMenu from './AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
 
@@ -56,7 +55,7 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 const tab = ref<Tab>('Generated')
 const query = ref('')
-const menu = ref<'' | 'filter' | 'view'>('')
+const menu = ref<'' | 'view'>('')
 const view = ref<View>(
   (() => {
     try {
@@ -293,34 +292,7 @@ function upload(files: FileList | null | undefined): void {
             (($event.target as HTMLInputElement).value = ''))
           "
         />
-        <span class="rp-anchor">
-          <button
-            type="button"
-            class="rp-icon is-field"
-            :class="menu === 'filter' && 'is-on'"
-            title="Filter"
-            aria-label="Filter"
-            :aria-expanded="menu === 'filter'"
-            @click="menu = menu === 'filter' ? '' : 'filter'"
-          >
-            <ListFilter :size="15" /><i v-if="activeFilters(filter)" class="rp-dot" />
-          </button>
-          <div
-            v-if="menu === 'filter'"
-            class="rp-menu is-end ap-menu ap-filter"
-            role="menu"
-            aria-label="Filter"
-          >
-            <AssetFilterFields
-              v-model="filter"
-              :types="[...MEDIA]"
-              types-label="Media type"
-              :source="false"
-              :tags="TAGS"
-              :count="finished.length"
-            />
-          </div>
-        </span>
+        <AssetFilterMenu v-model="filter" :types="MEDIA" :tags="TAGS" />
         <span class="rp-anchor">
           <button
             type="button"
@@ -600,26 +572,6 @@ function upload(files: FileList | null | undefined): void {
 }
 :root .proto-ui.proto-ui.proto-ui .ap-selbar .rp-icon {
   color: var(--color-content-background);
-}
-/* Lines up with the panel's right edge, past the view button. */
-.rp-menu.ap-filter {
-  right: -42px;
-  width: 288px;
-  max-height: min(520px, calc(100vh - 200px));
-  padding: 10px 12px;
-}
-.ap-filter .aff {
-  min-width: 0;
-}
-/* Six media types: the chips get their own line under the label. */
-.ap-filter .aff-row:first-child {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-.ap-filter .aff-row:first-child .aff-chips {
-  justify-content: flex-start;
-  margin-left: -9px;
 }
 .ap-stack {
   position: absolute;

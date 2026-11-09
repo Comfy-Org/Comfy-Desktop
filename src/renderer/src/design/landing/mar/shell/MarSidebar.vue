@@ -40,7 +40,7 @@ import { agent, resetAgent } from '../../agent'
 import { flow, resetFlow } from '../../appFlow'
 import { can, landingPage } from '../../milestones'
 import { PROJECTS, TEMPLATES, thumb } from '../../mock'
-import { favorites } from '../favorites'
+import { FAVORITES_ON, favorites } from '../favorites'
 import { creditsShort, creditsStyle, creditsTotal } from '../credits'
 import MarWorkspaceMenu from '../MarWorkspaceMenu.vue'
 import MarModeSeg from '../modes/MarModeSeg.vue'
@@ -53,6 +53,7 @@ import { marNav } from './marShell'
 import { marTabsOn } from './titleTabs'
 import { search } from '../search/search'
 import { PROJECT_ART } from '../assets/mock'
+import { newProject } from '../pages/projectsStore'
 import { firstRunKeeps, firstRunLabel, ports } from '../navOptions'
 import MarSignIn from './MarSignIn.vue'
 import { goModeHome } from '../modes/home'
@@ -285,7 +286,7 @@ function newChat(): void {
 
       <!-- Favorites: what you starred, one click away, right under the
            libraries they come from. -->
-      <template v-if="proto.mode === 'create' && favs.length">
+      <template v-if="FAVORITES_ON && proto.mode === 'create' && favs.length">
         <div class="mar-side-label">
           <span v-if="open">Favorites</span><span v-else class="mar-side-sep" />
         </div>
@@ -309,7 +310,14 @@ function newChat(): void {
         <div class="mar-side-label">
           <template v-if="open"
             ><span class="flex-1">Projects</span
-            ><Plus :size="14" class="text-subtle-foreground" /></template
+            ><button
+              type="button"
+              class="mar-side-add"
+              aria-label="New project"
+              title="New project"
+              @click="go(`project:${newProject().id}` as Page)"
+            >
+              <Plus :size="14" /></button></template
           ><span v-else class="mar-side-sep" />
         </div>
         <button v-if="open" type="button" class="mar-side-row" @click="go('projects')">
@@ -335,11 +343,16 @@ function newChat(): void {
         <div class="mar-side-label">
           <template v-if="open"
             ><span class="flex-1">Spaces</span
-            ><!-- None yet: the invitation below is the one way to add. --><Plus
+            ><!-- None yet: the invitation below is the one way to add. --><button
               v-if="SPACES.length"
-              :size="14"
-              class="text-subtle-foreground"
-          /></template>
+              type="button"
+              class="mar-side-add"
+              aria-label="New space"
+              title="New space"
+              @click="proto.creatingSpace = true"
+            >
+              <Plus :size="14" /></button
+          ></template>
           <span v-else class="mar-side-sep" />
         </div>
         <MarSpacesInvite v-if="open && !SPACES.length" />
@@ -386,7 +399,7 @@ function newChat(): void {
         <button type="button" class="mar-side-meter">
           <span class="flex items-center justify-between">
             <span>{{ creditsTotal }} credits</span
-            ><span class="text-subtle-foreground">Top up</span>
+            ><span class="text-subtle-foreground">Add credits</span>
           </span>
           <span class="mar-side-bar"><span :style="{ width: '62%' }" /></span>
         </button>

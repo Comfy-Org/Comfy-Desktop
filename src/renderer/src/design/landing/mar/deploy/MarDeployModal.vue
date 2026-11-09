@@ -344,8 +344,8 @@ function topUp(): void {
   account.balance = 50
   toast('Added $50 in credits')
 }
-function goDeployments(what: string): void {
-  toast(`Opens ${what} for ${dep.draft?.name}`)
+// No toast: Deployments opens, and a toast after a redirect is noise.
+function goDeployments(): void {
   open.value = false
   goIn('build', 'deployments')
 }
@@ -908,13 +908,13 @@ watch(
             </section>
 
             <nav class="mar-dep-links">
-              <button type="button" @click="goDeployments('logs')">
+              <button type="button" @click="goDeployments()">
                 Logs<ArrowUpRight :size="13" />
               </button>
-              <button type="button" @click="goDeployments('usage')">
+              <button type="button" @click="goDeployments()">
                 Usage<ArrowUpRight :size="13" />
               </button>
-              <button type="button" @click="goDeployments('scaling')">
+              <button type="button" @click="goDeployments()">
                 Scaling<ArrowUpRight :size="13" />
               </button>
             </nav>

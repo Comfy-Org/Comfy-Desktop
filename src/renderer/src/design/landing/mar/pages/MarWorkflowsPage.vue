@@ -32,6 +32,7 @@ import { workflows, type MarWorkflow } from './workflowsStore'
 import { notify } from './undo'
 import { shownState } from './pageState'
 import type { MenuLine } from './menu'
+import { FAVORITES_ON } from '../favorites'
 
 /**
  * Workflows (Mar's proposal): every workflow, on this computer and in
@@ -144,11 +145,15 @@ function lines(w: MarWorkflow): MenuLine[] {
     { label: 'Rename', icon: Pencil, hint: 'F2', run: () => (lib.renaming.value = w.id) },
     { label: 'Duplicate', icon: Copy, hint: '⌘D', run: () => workflows.duplicate(w.id) },
     lib.moveLine(() => [w.id], w.project),
-    {
-      label: w.fav ? 'Remove from favorites' : 'Add to favorites',
-      icon: Star,
-      run: () => workflows.star(w.id)
-    },
+    ...(FAVORITES_ON
+      ? [
+          {
+            label: w.fav ? 'Remove from favorites' : 'Add to favorites',
+            icon: Star,
+            run: () => workflows.star(w.id)
+          }
+        ]
+      : []),
     'sep',
     { label: 'Export', icon: Download, run: () => toast(`Exported ${w.name}.json`) },
     ...(w.source === 'cloud'

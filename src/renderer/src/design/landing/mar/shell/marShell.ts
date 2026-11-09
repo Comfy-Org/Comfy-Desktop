@@ -231,10 +231,13 @@ const lit = computed(() => proto.page === 'overview' || !can.value.builds)
 /** Latent bloom is on screen: Home, bloom picked. */
 export const bloomOn = computed(() => lit.value && homeBackground.id === 'bloom')
 
-/** One of the quieter Home backgrounds (CSS only, MarBackdrop.vue). Builds
- *  and their pages always take the neutral light, whatever Home picked. */
+/** Pages that take Home's neutral white light instead of a photo. */
+const NEUTRAL = ['environments', 'explore', 'assets']
+
+/** One of the quieter Home backgrounds (CSS only, MarBackdrop.vue). Builds,
+ *  Explore and Assets always take the neutral light, whatever Home picked. */
 export const altBackground = computed(() => {
-  if (proto.page === 'environments' || proto.page.startsWith('tool:')) return 'spotlight'
+  if (NEUTRAL.includes(proto.page) || proto.page.startsWith('tool:')) return 'spotlight'
   return lit.value && !['bloom', 'photo'].includes(homeBackground.id)
     ? homeBackground.id
     : undefined

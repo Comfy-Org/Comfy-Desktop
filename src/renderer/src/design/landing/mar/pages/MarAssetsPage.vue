@@ -26,7 +26,7 @@ import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import AssetDetail from '../assets/AssetDetail.vue'
-import AssetFilters from '../assets/AssetFilters.vue'
+import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
 import { noFilter, passes, tagsIn } from '../assets/assetFilters'
 import { assetBuilds, buildStatus, defaultBuild, startBuild } from '../assets/assetBuilds'
@@ -102,6 +102,11 @@ const WHERE = [
   { value: 'cloud', label: 'Cloud' }
 ]
 const TAGS = computed(() => tagsIn(base.value))
+/** Type's tabs cover the main kinds; Filters adds the rest. */
+const MORE_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'other', label: 'Other' }
+] as const
 const SORTS = [
   { value: 'newest', label: 'Newest' },
   { value: 'oldest', label: 'Oldest' },
@@ -331,6 +336,20 @@ function lines(a: MarAsset): MenuLine[] {
     { label: 'Delete', icon: Trash2, danger: true, hint: '⌫', run: () => assets.remove([a.id]) }
   ]
 }
+
+// The sticky toolbar takes a background only once it's stuck at the top,
+// so it sits clear at the start of the page and stays readable over the
+// grid when you scroll.
+function markStuck(): void {
+  const bar = document.querySelector<HTMLElement>('.mar-page-bar:has(.mar-asset-tools)')
+  const scroller = bar?.closest<HTMLElement>('.proto-main')
+  if (!bar || !scroller) return
+  const stuck =
+    scroller.scrollTop > 0 &&
+    bar.getBoundingClientRect().top <= scroller.getBoundingClientRect().top + 1
+  bar.classList.toggle('is-stuck', stuck)
+}
+useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 </script>
 
 <template>
@@ -415,7 +434,15 @@ function lines(a: MarAsset): MenuLine[] {
           >
             <RefreshCw :size="14" :class="refreshing && 'animate-spin'" />
           </button>
-          <AssetFilters v-model="filter" :tags="TAGS" :count="finished.length" />
+          <AssetFilterMenu
+            v-model="filter"
+            field
+            source
+            range
+            types-label="More types"
+            :types="MORE_TYPES"
+            :tags="TAGS"
+          />
           <Select v-model="sort" :options="SORTS" label="Sort" class="mar-asset-sort w-34" />
           <MarSearchField v-model="query" placeholder="Search assets" />
           <MarViewToggle v-model="view" masonry />
@@ -584,7 +611,12 @@ function lines(a: MarAsset): MenuLine[] {
   margin-inline: -16px;
   padding: 12px 16px;
   border-radius: 0 0 14px 14px;
-  background: color-mix(in oklch, var(--color-content-background) 82%, transparent);
+  transition:
+    background-color 160ms ease,
+    backdrop-filter 160ms ease;
+}
+.mar-page-bar.is-stuck:has(.mar-asset-tools) {
+  background-color: color-mix(in oklch, var(--color-content-background) 82%, transparent);
   backdrop-filter: blur(16px) saturate(1.2);
 }
 .mar-asset-tools {

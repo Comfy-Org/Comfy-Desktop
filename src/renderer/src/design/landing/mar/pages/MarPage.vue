@@ -206,13 +206,20 @@ const rows = computed(() => (skeleton === 'grid' ? 8 : skeleton === 'cards' ? 6 
   font-weight: 600;
   letter-spacing: -0.01em;
 }
+/* On a narrow window the controls wrap to a second line, right-aligned,
+   instead of running past the page's edge. */
 .mar-page-bar {
   display: flex;
   min-height: 32px;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 20px;
   transition: opacity 200ms ease;
+}
+.mar-page-bar > div {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .mar-page-bar.is-docked {
   margin: 0;

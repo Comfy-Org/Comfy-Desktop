@@ -297,7 +297,7 @@ const LINKS = [
               <template v-else>
                 <p class="mar-bs-step-title">Queue a workflow</p>
                 <p class="mar-bs-step-body">
-                  Export any workflow with Workflow › Export (API), then run the script. It posts to
+                  Export any workflow with File › Export (API), then run the script. It posts to
                   <code class="mar-bs-inline">{{ HOST.replace('http://', '') }}</code
                   >.
                 </p>

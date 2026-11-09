@@ -18,7 +18,7 @@ import Stage from '../kit/Stage.vue'
   </Section>
   <Section
     title="Workspace"
-    note="From the sidebar's foot, upwards. The summary (workspace, credits, Top up) is a raised panel at the top."
+    note="From the sidebar's foot, upwards. The summary (workspace, credits, Add credits) is a raised panel at the top."
   >
     <Cells :min="300">
       <Stage id="workspace-menu" label="open" />

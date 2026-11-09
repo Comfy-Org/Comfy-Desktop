@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Star } from 'lucide-vue-next'
-import { isFavorite, toggleFavorite, type FavoriteKind } from './favorites'
+import { FAVORITES_ON, isFavorite, toggleFavorite, type FavoriteKind } from './favorites'
 import { can } from '../milestones'
 
 /** The star in a card's corner: shows on hover, stays once starred.
@@ -10,7 +10,7 @@ const { id, kind = 'template' } = defineProps<{ id: string; kind?: FavoriteKind 
 
 <template>
   <button
-    v-if="can.exploreApps"
+    v-if="FAVORITES_ON && can.exploreApps"
     type="button"
     class="mar-star"
     :class="isFavorite(id, kind) && 'is-on'"
