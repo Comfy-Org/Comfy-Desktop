@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ComfyBuilderApiError, ComfyBuilderClient } from './client'
 import type { TokenProvider } from './types'

@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { createHash, randomUUID } from 'crypto'
 import fs from 'fs'
 import os from 'os'

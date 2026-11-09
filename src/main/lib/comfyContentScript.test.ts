@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /// <reference lib="dom" />
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getModelDownloadContentScript } from './comfyContentScript'
