@@ -43,7 +43,9 @@ async function mountAssets(running: Installation[], stopped: Installation[] = []
 }
 
 function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] {
-  return wrapper.findAll('[data-testid^="asset-"] .truncate.font-medium').map((n) => n.text())
+  return wrapper
+    .findAll('[data-testid^="asset-open-"]')
+    .map((card) => card.attributes('aria-label')!.replace('Open ', ''))
 }
 
 beforeEach(() => {
@@ -63,6 +65,26 @@ beforeEach(() => {
 })
 
 describe('AssetsView', () => {
+  it('starts in masonry, newest first, with file names and details hidden', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(wrapper.get('[data-testid="assets-grid"]').classes()).toContain('columns-[200px]')
+    expect(wrapper.get('[data-testid="asset-a"]').text()).not.toContain('forest.png')
+  })
+
+  it('opens with the view setup the user saved last time', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.layout', 'grid')
+    window.localStorage.setItem('comfy.desktop.assets.showName', 'true')
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(wrapper.get('[data-testid="assets-grid"]').classes()).toContain('grid')
+    expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('forest.png')
+  })
+
   it('shows the assets of every running build and skips stopped ones', async () => {
     listAssets.mockImplementation(async (id: string) =>
       id === 'lab' ? [asset('a', 'surfer.mp4', 'video')] : [asset('b', 'forest.png', 'image')]
