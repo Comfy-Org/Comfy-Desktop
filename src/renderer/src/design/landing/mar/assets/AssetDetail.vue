@@ -2,9 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   Box,
-  ChevronLeft,
   ChevronDown,
-  ChevronRight,
   Download,
   FolderOpen,
   Info,
@@ -216,27 +214,6 @@ onBeforeUnmount(() => {
       <button v-if="!tab" type="button" class="mad-x" aria-label="Close" @click="emit('close')">
         <X :size="18" />
       </button>
-      <!-- Over the app, the arrows sit outside the frame, beside it. -->
-      <template v-if="!tab">
-        <button
-          type="button"
-          class="mad-arrow is-out"
-          aria-label="Previous asset"
-          :disabled="!prev"
-          @click="prev && emit('go', prev)"
-        >
-          <ChevronLeft :size="20" />
-        </button>
-        <button
-          type="button"
-          class="mad-arrow is-out is-right"
-          aria-label="Next asset"
-          :disabled="!next"
-          @click="next && emit('go', next)"
-        >
-          <ChevronRight :size="20" />
-        </button>
-      </template>
       <div
         ref="root"
         class="proto-ui mad"
@@ -264,15 +241,6 @@ onBeforeUnmount(() => {
               >
             </button>
           </header>
-          <button
-            type="button"
-            class="mad-arrow"
-            aria-label="Previous asset"
-            :disabled="!prev"
-            @click="prev && emit('go', prev)"
-          >
-            <ChevronLeft :size="18" />
-          </button>
           <!-- The picture is clipped to its own area: zoomed in, it never
                runs under the bar or the filmstrip. -->
           <div class="mad-view">
@@ -283,15 +251,6 @@ onBeforeUnmount(() => {
               <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
             </div>
           </div>
-          <button
-            type="button"
-            class="mad-arrow is-right"
-            aria-label="Next asset"
-            :disabled="!next"
-            @click="next && emit('go', next)"
-          >
-            <ChevronRight :size="18" />
-          </button>
           <footer v-if="!tab" class="mad-foot">
             <nav
               ref="strip"
@@ -474,7 +433,8 @@ onBeforeUnmount(() => {
 
 <style>
 /* A framed window over the app, blurred behind so the app reads as
- * still there; its close and arrows outside the frame. */
+ * still there; its close outside the frame. Steps go through the
+ * filmstrip and the keyboard arrows. */
 .mad-scrim {
   position: fixed;
   inset: 0;
@@ -565,7 +525,6 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 0 56px;
   /* The picture fits this area, not the window. */
   container-type: size;
 }
@@ -637,8 +596,7 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-icon,
-:root .proto-ui.proto-ui.proto-ui .mad-arrow {
+:root .proto-ui.proto-ui.proto-ui .mad-icon {
   display: inline-flex;
   width: 32px;
   height: 32px;
@@ -650,21 +608,6 @@ onBeforeUnmount(() => {
   background: transparent;
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-arrow {
-  /* Pinned to the stage's edges: they stay put whatever the asset's width. */
-  position: absolute;
-  top: 50%;
-  left: 16px;
-  z-index: 1;
-  width: 40px;
-  height: 40px;
-  translate: 0 -50%;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-right {
-  right: 16px;
-  left: auto;
-}
 :root .proto-ui.proto-ui.proto-ui .mad-icon.is-label {
   width: auto;
   gap: 6px;
@@ -673,36 +616,9 @@ onBeforeUnmount(() => {
   font-size: 13px;
   font-weight: 500;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-icon:hover,
-:root .proto-ui.proto-ui.proto-ui .mad-arrow:hover:not(:disabled) {
+:root .proto-ui.proto-ui.proto-ui .mad-icon:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-arrow:disabled {
-  opacity: 0.3;
-}
-/* Over the app the stage's own arrows give way to the ones outside. */
-:root .proto-ui.proto-ui.proto-ui .mad:not(.is-tab) .mad-stage > .mad-arrow {
-  display: none;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out {
-  /* Right beside the frame's sides, in the margin around it. */
-  --mad-side: 14vw;
-  left: calc(var(--mad-side) - 52px);
-  background: rgb(255 255 255 / 0.1);
-  color: #fff;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out.is-right {
-  right: calc(var(--mad-side) - 52px);
-  left: auto;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out:hover:not(:disabled) {
-  background: rgb(255 255 255 / 0.18);
-}
-:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out:disabled {
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* Zoom: fit, then the real-size percentage opening its presets. */
 .mad-zoom {
   position: relative;
@@ -1101,9 +1017,6 @@ onBeforeUnmount(() => {
   .mad:not(.is-tab) {
     inset: 24px 64px;
   }
-  :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out {
-    --mad-side: 64px;
-  }
   :root .proto-ui.proto-ui.proto-ui .mad-x {
     top: 24px;
     right: 16px;
@@ -1126,27 +1039,12 @@ onBeforeUnmount(() => {
   .mad-foot {
     display: none;
   }
-  /* Narrow: no room beside the frame, the arrows go back inside. */
-  :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out {
-    display: none;
-  }
-  :root .proto-ui.proto-ui.proto-ui .mad:not(.is-tab) .mad-stage > .mad-arrow {
-    display: inline-flex;
-  }
   .mad-side {
     border-top: 1px solid var(--mad-line);
     border-left: 0;
   }
   .mad-view {
     inset: 56px 8px 12px;
-    padding: 0 44px;
-  }
-  :root .proto-ui.proto-ui.proto-ui .mad-arrow {
-    left: 8px;
-  }
-  :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-right {
-    right: 8px;
-    left: auto;
   }
 }
 </style>
