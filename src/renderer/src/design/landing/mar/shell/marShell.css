@@ -297,6 +297,21 @@
   font-size: 40px;
   letter-spacing: -0.035em;
 }
+/* Scrolling Home, the greeting fades and lifts away before it reaches the
+   top, so it is never cut at the edge. */
+@supports (animation-timeline: view()) {
+  :root[data-mar-ui='on'] .mar-home h1.mar-greeting {
+    animation: mar-greeting-out linear both;
+    animation-timeline: view();
+    animation-range: exit -40px exit 45%;
+  }
+}
+@keyframes mar-greeting-out {
+  to {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
 
 /* Menus, popovers and selects (audited together): one family. A smoked,
    blurred surface a step lighter than the page with a hairline edge;
