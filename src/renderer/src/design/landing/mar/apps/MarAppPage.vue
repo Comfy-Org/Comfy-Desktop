@@ -512,7 +512,6 @@ function back(): void {
             go="Use"
             :badge="false"
             titled
-            :picked="x.id === exId"
             role="button"
             tabindex="0"
             :aria-label="`Start from ${x.title}`"
