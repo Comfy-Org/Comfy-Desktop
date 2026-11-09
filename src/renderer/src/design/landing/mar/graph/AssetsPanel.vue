@@ -559,14 +559,18 @@ function upload(files: FileList | null | undefined): void {
                   class="mar-pseg-btn ap-view"
                   :aria-checked="view === v.value"
                   :aria-selected="view === v.value"
+                  :aria-label="v.label"
+                  :title="v.label"
                   @click="setView(v.value)"
                 >
-                  {{ v.label }}
+                  <component :is="v.icon" :size="15" /><span v-if="view === v.value">{{
+                    v.label
+                  }}</span>
                 </button>
               </div>
             </div>
             <div v-if="view !== 'list'" class="ap-size" @mouseenter="sortOpen = false">
-              <span>Size</span>
+              <span class="ap-cap">Size</span>
               <button
                 type="button"
                 class="ap-size-btn"
@@ -608,7 +612,7 @@ function upload(files: FileList | null | undefined): void {
               @click="openSort"
               @mouseenter="openSort"
             >
-              <span>Sort by</span><span class="ap-menu-val">{{ sort }}</span
+              <span class="ap-cap">Sort by</span><span class="ap-menu-val">{{ sort }}</span
               ><ChevronRight :size="14" />
             </button>
             <span class="rp-menu-sep" />
@@ -1060,7 +1064,8 @@ function upload(files: FileList | null | undefined): void {
 .ap-back {
   font-weight: 500;
 }
-/* LAYOUT, then its views as tabs on the same line. */
+/* LAYOUT, then its views as icon tabs on the same line (the picked one
+   with its name). */
 .ap-layout-head {
   display: flex;
   align-items: center;
@@ -1072,9 +1077,22 @@ function upload(files: FileList | null | undefined): void {
   display: flex;
 }
 :root .proto-ui.proto-ui.proto-ui .ap-views .ap-view {
+  display: inline-flex;
+  min-width: 30px;
   height: 24px;
-  padding: 0 9px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
   font-size: 12px;
+}
+/* Size and Sort by read as the section labels, like Assets' Layout menu. */
+:root .proto-ui.proto-ui.proto-ui .ap-cap {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 /* Size: − a stepped bar +. */
 .ap-size {

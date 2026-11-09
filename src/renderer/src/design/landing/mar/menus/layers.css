@@ -1,6 +1,6 @@
 /* Menu layers (Mar's proposal): how every dropdown and popover is built,
    from the workspace menu. Three levels:
-   1. The glass: the menu itself, translucent and heavily blurred so what
+   1. The glass: the menu itself, dark-tinted and heavily blurred so what
       is behind it reads as colour, not detail (overrides the family's
       surface in mar/shell/marShell.css; this file loads after it).
    2. The raised panel (.mar-menu-panel): a menu's summary or header (who
@@ -15,12 +15,14 @@
   :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
   --mar-menu-radius: 14px;
   --mar-menu-pad: 6px;
+  /* Tinted dark, like polarised glass, so a bright picture behind it
+     never washes it out; the blur stays. */
   background-color: color-mix(
     in oklch,
-    color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background)) 74%,
+    color-mix(in oklch, var(--color-card-background) 80%, black) 86%,
     transparent
   );
-  backdrop-filter: blur(32px) saturate(1.8);
+  backdrop-filter: blur(32px) saturate(1.2);
 }
 :root[data-mar-ui='on'][data-ds-theme='light']
   :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {

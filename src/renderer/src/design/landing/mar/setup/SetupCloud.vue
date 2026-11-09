@@ -2,9 +2,10 @@
 /**
  * A cloud build's machine, drawn in SetupLaptop's style: one soft cloud in
  * brushed metal, lit from inside in the build's hue. Sized by its
- * `.mss-laptop` box, like the laptop it stands in for.
+ * `.mss-laptop` box, like the laptop it stands in for. `mono` leaves the
+ * glow out (the Builds list's rows).
  */
-const { hue = 210 } = defineProps<{ hue?: number }>()
+const { hue = 210, mono = false } = defineProps<{ hue?: number; mono?: boolean }>()
 const CLOUD =
   'M48 82 H116 A17 17 0 0 0 118 48 A28 28 0 0 0 66 38 A20 20 0 0 0 44 50 A16 16 0 0 0 48 82 Z'
 </script>
@@ -28,7 +29,7 @@ const CLOUD =
     </defs>
     <ellipse cx="82" cy="94" rx="46" ry="5" fill="url(#mss-cl-shadow)" />
     <path :d="CLOUD" fill="url(#mss-cl-face)" />
-    <path :d="CLOUD" fill="url(#mss-cl-glow)" />
+    <path v-if="!mono" :d="CLOUD" fill="url(#mss-cl-glow)" />
     <path :d="CLOUD" stroke="#fff" stroke-opacity="0.18" />
   </svg>
 </template>

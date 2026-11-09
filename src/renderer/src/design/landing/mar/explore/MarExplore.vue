@@ -18,6 +18,7 @@ import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
+import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
 
 /**
  * Explore. One line holds everything that narrows the page: what you're
@@ -193,13 +194,18 @@ const FILTER = computed(() => {
             thumb: undefined as string | undefined
           }))
         }
-  ]
+    // The Milestone 2 Catalog is a few apps: Type is enough.
+  ].filter((g) => !(asApps && !ex && g.title === 'Category'))
 })
 const picked = computed(() =>
   FILTER.value.flatMap((g) =>
     g.items.filter((i) => g.list.value.includes(i.value)).map((i) => ({ ...i, group: g }))
   )
 )
+// Examples' Layout, like Assets': masonry or grid, at three sizes.
+const view = ref<AssetView>('masonry')
+const size = ref(2)
+const TILE = [0, 170, 220, 300]
 // The wall's rhythm: each picture at its own shape, so no two rows line up.
 const SHAPES = ['4 / 5', '1 / 1', '3 / 4', '4 / 3', '2 / 3', '5 / 4', '3 / 4', '16 / 11']
 function play(e: MouseEvent, on: boolean): void {
@@ -248,10 +254,9 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     <template #[toolsAt]>
       <MarSeg v-if="tabbed" v-model="tab" :options="TABS" :label="asApps ? 'Apps' : 'Explore'" />
       <div class="flex items-center gap-2" :class="tabbed && 'ml-auto'">
-        <!-- Apps and Examples: one Filter menu (and Sort in Explore). At
-             Milestone 2 the few apps need only search; examples filter. -->
+        <!-- Apps and Examples: one Filter menu, and Sort for the apps. -->
         <template v-if="tab === 'apps' || tab === 'examples'">
-          <DropdownMenuRoot v-if="!(asApps && tab === 'apps')" :modal="false">
+          <DropdownMenuRoot :modal="false">
             <DropdownMenuTrigger
               :class="
                 cn(
@@ -298,7 +303,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
             </DropdownMenuContent>
           </DropdownMenuRoot>
           <Select
-            v-if="tab === 'apps' && !asApps"
+            v-if="tab === 'apps'"
             v-model="appSort"
             :options="APP_SORTS"
             label="Sort"
@@ -308,6 +313,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         <!-- Keyed by tab, so its label follows the tab (All types, All topics). -->
         <Select v-else :key="tab" v-model="type" :options="TYPES[tab]" class="w-36" />
         <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab]" />
+        <AssetLayoutMenu v-if="tab === 'examples'" v-model:view="view" v-model:size="size" />
       </div>
     </template>
 
@@ -328,7 +334,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     <!-- Examples: what the apps made, as a masonry wall: each picture at
          its own height, its line under it, no card around it (Apps keeps
          the cards). One opens its app on it, like a template. -->
-    <div v-if="tab === 'examples'" class="mar-ex-wall">
+    <div
+      v-if="tab === 'examples'"
+      :class="cn('mar-ex-wall', view === 'grid' && 'is-grid')"
+      :style="{ '--tile': `${TILE[size]}px` }"
+    >
       <div
         v-for="(x, i) in examples"
         :key="x.id"
@@ -343,7 +353,9 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
       >
         <span
           class="mar-ex-tile-media"
-          :style="{ aspectRatio: x.ratio ?? SHAPES[i % SHAPES.length] }"
+          :style="{
+            aspectRatio: view === 'grid' ? '1 / 1' : (x.ratio ?? SHAPES[i % SHAPES.length])
+          }"
         >
           <img :src="x.after" alt="" loading="lazy" />
           <!-- A video plays while the pointer is on it. -->
@@ -454,8 +466,17 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 <style scoped>
 /* Examples: a masonry wall, picture first. */
 .mar-ex-wall {
-  columns: 4 220px;
+  columns: 6 var(--tile, 220px);
   column-gap: 14px;
+}
+/* Grid: the same tiles, square, in rows. */
+.mar-ex-wall.is-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--tile, 220px), 1fr));
+  gap: 14px;
+}
+.mar-ex-wall.is-grid .mar-ex-tile {
+  margin-bottom: 0;
 }
 .mar-ex-tile {
   display: block;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, LayoutGrid, Minus, Plus } from 'lucide-vue-next'
+import { Check, LayoutDashboard, LayoutGrid, Minus, Plus } from 'lucide-vue-next'
 import { DropdownMenuItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
@@ -10,33 +10,36 @@ import { cn } from '../../ui/cn'
 import { menuItem } from '../../ui/menu.styles'
 
 /**
- * The Assets page's Layout menu, the same as the graph's Assets panel
- * (AssetsPanel.vue): LAYOUT with its views as tabs beside it; Size as − a
- * stepped bar +; Sort by as a submenu; then SHOW, what a card carries.
- * Every title (Layout, Size, Sort by, Show) is the uppercase label.
+ * The Layout menu of the Assets page and the Apps page: LAYOUT with
+ * Masonry and Grid as icon tabs beside it (the picked one with its name); Size as − a stepped bar +; then,
+ * where the page has them (Assets), Sort by as a submenu and SHOW, what a
+ * card carries. Every title is the uppercase label.
  */
-export type AssetView = 'masonry' | 'grid' | 'list'
+export type AssetView = 'masonry' | 'grid'
 const view = defineModel<AssetView>('view', { required: true })
 const size = defineModel<number>('size', { required: true })
-const sort = defineModel<string>('sort', { required: true })
-const showName = defineModel<boolean>('showName', { required: true })
-const showDetails = defineModel<boolean>('showDetails', { required: true })
-const { sorts } = defineProps<{ sorts: { value: string; label: string }[] }>()
+const sort = defineModel<string>('sort')
+const showName = defineModel<boolean>('showName')
+const showDetails = defineModel<boolean>('showDetails')
+const { sorts = [] } = defineProps<{ sorts?: { value: string; label: string }[] }>()
 
 const SIZES = 3
 const VIEWS = [
-  { value: 'masonry', label: 'Masonry' },
-  { value: 'grid', label: 'Grid' },
-  { value: 'list', label: 'List' }
+  { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
+  { value: 'grid', label: 'Grid', icon: LayoutGrid }
 ] as const
 const sortLabel = computed(() => sorts.find((s) => s.value === sort.value)?.label ?? '')
 const setSize = (n: number): void => {
   size.value = Math.min(SIZES, Math.max(1, n))
 }
-const SHOW = [
-  { label: 'File name', on: showName },
-  { label: 'File details', on: showDetails }
-]
+const SHOW = computed(() =>
+  showName.value === undefined
+    ? []
+    : [
+        { label: 'File name', on: showName },
+        { label: 'File details', on: showDetails }
+      ]
+)
 </script>
 
 <template>
@@ -56,14 +59,16 @@ const SHOW = [
             type="button"
             role="radio"
             :aria-checked="view === v.value"
+            :aria-label="v.label"
+            :title="v.label"
             :class="cn('alm-view', view === v.value && 'is-on')"
             @click="view = v.value"
           >
-            {{ v.label }}
+            <component :is="v.icon" :size="15" /><span v-if="view === v.value">{{ v.label }}</span>
           </button>
         </div>
       </div>
-      <div v-if="view !== 'list'" class="alm-size">
+      <div class="alm-size">
         <span class="alm-cap">Size</span>
         <button
           type="button"
@@ -95,7 +100,7 @@ const SHOW = [
           <Plus :size="13" />
         </button>
       </div>
-      <DropdownMenuSub>
+      <DropdownMenuSub v-if="sorts.length">
         <DropdownMenuSubTrigger class="alm-row"
           ><span class="alm-cap flex-1">Sort by</span
           ><span class="text-subtle-foreground">{{ sortLabel }}</span></DropdownMenuSubTrigger
@@ -112,17 +117,19 @@ const SHOW = [
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      <DropdownMenuSeparator class="alm-sep" />
-      <p class="alm-label">Show</p>
-      <DropdownMenuItem
-        v-for="d in SHOW"
-        :key="d.label"
-        :class="cn(menuItem, 'alm-row')"
-        @select.prevent="d.on.value = !d.on.value"
-      >
-        <span class="flex-1">{{ d.label }}</span
-        ><Check v-if="d.on.value" :size="14" />
-      </DropdownMenuItem>
+      <template v-if="SHOW.length">
+        <DropdownMenuSeparator class="alm-sep" />
+        <p class="alm-label">Show</p>
+        <DropdownMenuItem
+          v-for="d in SHOW"
+          :key="d.label"
+          :class="cn(menuItem, 'alm-row')"
+          @select.prevent="d.on.value = !d.on.value"
+        >
+          <span class="flex-1">{{ d.label }}</span
+          ><Check v-if="d.on.value" :size="14" />
+        </DropdownMenuItem>
+      </template>
     </DropdownMenuContent>
   </DropdownMenuRoot>
 </template>
@@ -173,14 +180,17 @@ const SHOW = [
 }
 :root .alm.alm.proto-ui.proto-ui .alm-view {
   display: inline-flex;
+  min-width: 30px;
   height: 24px;
   align-items: center;
-  padding: 0 9px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 400;
   border-radius: 6px;
   background: transparent;
   color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 400;
 }
 :root .alm.alm.proto-ui.proto-ui .alm-view:hover {
   color: var(--color-base-foreground);

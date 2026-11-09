@@ -52,9 +52,9 @@ const { id } = defineProps<{ id: string }>()
 // The store's record (ModePages keys this page by id).
 const app: LibApp = libApp(id)!
 const yours = computed(() => app.group === 'yours')
-// Before the Agent, only Explore leads here.
+// Before the Agent, only Explore leads here (Apps at Milestone 2, with no Explore).
 const back = computed(() =>
-  can.value.agent
+  can.value.agent || !can.value.explore
     ? { page: 'apps' as const, label: 'Apps' }
     : { page: 'explore' as const, label: 'Explore' }
 )

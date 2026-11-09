@@ -360,9 +360,10 @@ const searching = computed(() => !!q.value.trim())
 .afm-search input::placeholder {
   color: var(--color-muted-foreground);
 }
+/* Edge to edge, out over the menu's padding, like Home's menus. */
 .afm-sep {
   height: 1px;
-  margin: 4px 0;
+  margin: 4px calc(var(--mar-menu-pad, 4px) * -1);
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 .afm-label {

@@ -123,12 +123,13 @@ function step(d: number): void {
   flex-direction: column;
   padding: 6px 18px;
   border-radius: 18px;
+  /* The menus' dark-tinted glass (mar/menus/layers.css). */
   background: color-mix(
     in oklch,
-    color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background)) 90%,
+    color-mix(in oklch, var(--color-card-background) 80%, black) 86%,
     transparent
   );
-  backdrop-filter: blur(28px) saturate(1.3);
+  backdrop-filter: blur(28px) saturate(1.2);
   box-shadow:
     inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
     0 24px 64px -20px rgb(0 0 0 / 0.6);

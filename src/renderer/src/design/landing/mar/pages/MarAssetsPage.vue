@@ -168,16 +168,17 @@ function clear(): void {
   project.value = 'all'
   query.value = ''
 }
-const stated = computed(() => shown.value.some((a) => a.status))
 
 const lib = useLibrary(assets, shown)
 // Its own view: masonry first, remembered per viewer.
-type View = 'masonry' | 'grid' | 'list'
+type View = 'masonry' | 'grid'
 const VIEW_KEY = 'comfy.design.mar.assetsPageView'
 const view = ref<View>(
   (() => {
     try {
-      return (localStorage.getItem(VIEW_KEY) as View | null) ?? 'masonry'
+      // List is gone from the menu: a remembered List opens as masonry.
+      const v = localStorage.getItem(VIEW_KEY) as View | null
+      return v === 'grid' ? 'grid' : 'masonry'
     } catch {
       return 'masonry'
     }
@@ -386,7 +387,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 <template>
   <MarPage
     title="Assets"
-    :skeleton="view === 'list' ? 'list' : 'grid'"
+    skeleton="grid"
     :no-results="browsable && shown.length === 0 && filtered"
     :embedded="!!fixedProject"
     :toolbar-to="fixedProject ? '#mar-proj-tools' : undefined"
@@ -561,7 +562,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       </div>
     </div>
     <div
-      v-else-if="view === 'grid'"
+      v-else
       :class="['mar-grid', !showName && 'no-name', !showDetails && 'no-details']"
       :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${CARD[size]! + 36}px, 1fr))` }"
     >
@@ -591,50 +592,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       >
         <template v-if="a.status === 'running'" #overlay>
           <span class="mar-asset-progress"><i style="width: 62%" /></span>
-        </template>
-      </MarItem>
-    </div>
-    <!-- State only while something is generating; otherwise it says nothing. -->
-    <div
-      v-else
-      class="mar-table is-items"
-      :style="{
-        '--mar-cols': 'minmax(0, 200px) 88px 120px',
-        '--mar-state': stated ? '128px' : '0px'
-      }"
-    >
-      <div class="mar-table-head">
-        <span>Name</span><span>Project</span><span class="is-num">Size</span><span>Made</span
-        ><span class="is-end">{{ stated ? 'State' : '' }}</span
-        ><span />
-      </div>
-      <MarItem
-        v-for="a in shown"
-        :key="a.id"
-        layout="list"
-        :name="a.name"
-        :thumb="picOf(a)"
-        :icon="iconOf(a)"
-        :cover="a"
-        :meta="a.source === 'cloud' ? 'Cloud' : 'This computer'"
-        :status="a.status"
-        :status-label="a.statusLabel"
-        :fav-id="a.status ? undefined : a.id"
-        fav-kind="asset"
-        :lines="lines(a)"
-        :selected="lib.sel.has(a.id)"
-        :selecting="lib.sel.ids.value.size > 0"
-        :renaming="lib.renaming.value === a.id"
-        @open="open(a)"
-        @select="lib.pick(a.id, $event)"
-        @start-rename="lib.renaming.value = a.id"
-        @rename="lib.rename(a.id, $event)"
-        @cancel-rename="lib.renaming.value = ''"
-      >
-        <template #cols>
-          <span class="mar-item-col">{{ a.project ?? '—' }}</span>
-          <span class="mar-item-col is-num">{{ a.size }}</span>
-          <span class="mar-item-col">{{ a.when }}</span>
         </template>
       </MarItem>
     </div>
@@ -672,9 +629,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   /* The scroller's own top padding (pt-11), so nothing peeks above. */
   top: -44px;
   z-index: 5;
-  margin-inline: -16px;
-  padding: 12px 16px;
-  border-radius: 0 0 14px 14px;
+  /* Edge to edge: out over the page's own side padding (px-11). */
+  margin-inline: -44px;
+  padding: 12px 44px;
   transition:
     background-color 160ms ease,
     backdrop-filter 160ms ease;
