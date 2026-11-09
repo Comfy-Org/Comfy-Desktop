@@ -272,7 +272,7 @@ const gridHandlers = {
   >
     <div class="mx-auto w-full max-w-300 px-10 pb-24">
       <header class="chooser-header flex items-end justify-between gap-6 pt-9 pb-6">
-        <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
+        <h1 class="m-0 font-display text-display font-semibold text-foreground">
           {{ t('chooser.buildsTitle') }}
         </h1>
         <div class="flex shrink-0">

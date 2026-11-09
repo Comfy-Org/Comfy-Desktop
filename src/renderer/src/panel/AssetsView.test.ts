@@ -8,9 +8,19 @@ import { useSessionStore } from '../stores/sessionStore'
 import type { AssetSummary, Installation } from '../types/ipc'
 
 const listAssets = vi.fn()
+const downloadAsset = vi.fn()
 
 function asset(id: string, name: string, kind: AssetSummary['kind']): AssetSummary {
-  return { id, name, kind, sizeBytes: 1024, createdAt: null, previewUrl: null }
+  return {
+    id,
+    name,
+    kind,
+    sizeBytes: 1024,
+    createdAt: null,
+    mimeType: null,
+    tags: ['output'],
+    previewUrl: null
+  }
 }
 
 function build(id: string, name: string): Installation {
@@ -41,6 +51,7 @@ beforeEach(() => {
   window.localStorage.clear()
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
+    downloadAsset,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -104,6 +115,47 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain(
       'Start a build to browse its assets.'
     )
+  })
+
+  it('shows a skeleton card per slot while the first load is pending', async () => {
+    listAssets.mockReturnValue(new Promise(() => {}))
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
+  })
+
+  it('selects assets without opening them', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    await wrapper.get('[data-testid="asset-select-a"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="asset-a"]').attributes('aria-selected')).toBe('true')
+    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
+  })
+
+  it('opens an asset in the detail view, steps through assets and returns', async () => {
+    listAssets.mockResolvedValue([
+      asset('a', 'surfer.mp4', 'video'),
+      asset('b', 'forest.png', 'image')
+    ])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    const detail = wrapper.get('[data-testid="asset-detail"]')
+    expect(detail.text()).toContain('Video Lab · 1 / 2')
+
+    await wrapper.get('[data-testid="asset-detail-next"]').trigger('click')
+    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('forest.png')
+
+    await wrapper.get('[data-testid="asset-detail-download"]').trigger('click')
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('lab', 'b', 'forest.png')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
+    expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
   })
 
   it('reports a failed load', async () => {

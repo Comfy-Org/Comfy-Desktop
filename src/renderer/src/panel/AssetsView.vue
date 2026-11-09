@@ -8,22 +8,28 @@ import {
   Check,
   ChevronDown,
   Cloud,
+  Download,
+  Ellipsis,
   Layers,
   LayoutGrid,
   LayoutDashboard,
-  List,
   Monitor,
   Play,
   RefreshCw,
-  Search
+  Search,
+  ZoomIn
 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
+import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
+import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import StatusChip from '../components/ui/StatusChip.vue'
+import AssetDetailView from './AssetDetailView.vue'
+import type { GalleryAsset } from './AssetDetailView.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -32,10 +38,11 @@ import { formatRelativeFromMs } from '../lib/datetime'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
 
 type KindFilter = 'all' | AssetKind
-type Layout = 'masonry' | 'grid' | 'list'
+type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
 
 const EVERYWHERE = 'everywhere'
+const SKELETON_COUNT = 8
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -52,7 +59,10 @@ const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newes
 const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 
-const assets = ref<AssetSummary[]>([])
+const assets = ref<GalleryAsset[]>([])
+const selectedIds = ref(new Set<string>())
+const detailIndex = ref<number | null>(null)
+const cardMenuOpenId = ref<string | null>(null)
 const loading = ref(false)
 const failed = ref(false)
 
@@ -89,8 +99,7 @@ const kindOptions = computed(() => [
 ])
 const layoutOptions = computed(() => [
   { value: 'masonry' as const, label: t('assets.layout.masonry'), icon: LayoutDashboard },
-  { value: 'grid' as const, label: t('assets.layout.grid'), icon: LayoutGrid },
-  { value: 'list' as const, label: t('assets.layout.list'), icon: List }
+  { value: 'grid' as const, label: t('assets.layout.grid'), icon: LayoutGrid }
 ])
 const sortOptions = computed(() => [
   { value: 'newest' as const, label: t('assets.sort.newest') },
@@ -116,8 +125,15 @@ async function loadAssets(): Promise<void> {
   loading.value = true
   failed.value = false
   try {
-    const results = await Promise.all(scopedBuildIds.value.map((id) => window.api.listAssets(id)))
-    if (current === requestId) assets.value = results.flat()
+    const ids = scopedBuildIds.value
+    const results = await Promise.all(ids.map((id) => window.api.listAssets(id)))
+    if (current === requestId) {
+      assets.value = results.flatMap((list, i) => {
+        const installationId = ids[i]!
+        const buildName = installationStore.getById(installationId)?.name ?? ''
+        return list.map((asset) => ({ ...asset, installationId, buildName }))
+      })
+    }
   } catch {
     if (current === requestId) {
       assets.value = []
@@ -129,10 +145,27 @@ async function loadAssets(): Promise<void> {
 }
 
 watch(scopedBuildIds, loadAssets, { immediate: true })
+watch(visibleAssets, (list) => {
+  if (detailIndex.value !== null && detailIndex.value >= list.length) detailIndex.value = null
+})
 
 function selectScope(id: string): void {
   scope.value = id
   scopeMenuOpen.value = false
+}
+
+function toggleSelected(id: string): void {
+  const next = new Set(selectedIds.value)
+  if (!next.delete(id)) next.add(id)
+  selectedIds.value = next
+}
+
+function openDetail(asset: GalleryAsset): void {
+  detailIndex.value = visibleAssets.value.indexOf(asset)
+}
+
+function download(asset: GalleryAsset): void {
+  void window.api.downloadAsset(asset.installationId, asset.id, asset.name)
 }
 
 function assetDetails(asset: AssetSummary): string {
@@ -151,8 +184,19 @@ function extensionOf(name: string): string {
 </script>
 
 <template>
-  <div class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto" data-testid="assets-view">
-    <div class="w-full px-10 pb-24">
+  <AssetDetailView
+    v-if="detailIndex !== null && visibleAssets.length > 0"
+    v-model:index="detailIndex"
+    :assets="visibleAssets"
+    @close="detailIndex = null"
+    @download="download"
+  />
+  <div
+    v-else
+    class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
+    data-testid="assets-view"
+  >
+    <div class="mx-auto w-full max-w-300 px-10 pb-24">
       <header class="pt-9 pb-6">
         <h1 class="m-0 font-display text-display font-semibold text-foreground">
           {{ t('sidebar.assets') }}
@@ -172,7 +216,7 @@ function extensionOf(name: string): string {
               type="button"
               variant="secondary"
               size="md"
-              class="gap-2 px-3 text-ui"
+              class="gap-2 px-3 text-[13px]/5"
               data-testid="assets-scope-trigger"
             >
               <component :is="scopeIcon" :size="15" aria-hidden="true" />
@@ -331,13 +375,21 @@ function extensionOf(name: string): string {
         </div>
       </div>
 
-      <div
+      <ul
         v-if="loading && assets.length === 0"
-        class="flex items-center justify-center p-6 text-ui text-muted-foreground"
+        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5 p-0"
         role="status"
+        :aria-label="t('common.loading')"
+        data-testid="assets-skeleton"
       >
-        {{ t('common.loading') }}
-      </div>
+        <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
+          <Skeleton class="aspect-video w-full rounded-none" />
+          <div class="flex flex-col gap-2 px-3 py-3">
+            <Skeleton class="h-2.5 w-3/4 rounded-full" />
+            <Skeleton class="h-2 w-2/5 rounded-full" />
+          </div>
+        </li>
+      </ul>
 
       <section
         v-else-if="failed || visibleAssets.length === 0"
@@ -355,71 +407,140 @@ function extensionOf(name: string): string {
       <ul
         v-else
         class="m-0 list-none p-0"
-        :class="{
-          'columns-[200px] gap-4 [&>li]:mb-4 [&>li]:break-inside-avoid': layout === 'masonry',
-          'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4': layout === 'grid',
-          'flex flex-col gap-1': layout === 'list'
-        }"
+        :class="
+          layout === 'masonry'
+            ? 'columns-[200px] gap-4 [&>li]:mb-4 [&>li]:break-inside-avoid'
+            : 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5'
+        "
         data-testid="assets-grid"
       >
         <li
           v-for="asset in visibleAssets"
           :key="asset.id"
-          class="overflow-hidden rounded-xl bg-secondary"
-          :class="layout === 'list' && 'flex items-center gap-3 rounded-lg p-1.5'"
+          class="group relative bg-secondary"
+          :class="selectedIds.has(asset.id) && 'outline-2 -outline-offset-2 outline-foreground'"
+          :aria-selected="selectedIds.has(asset.id)"
           :data-testid="`asset-${asset.id}`"
         >
-          <div
-            class="relative overflow-hidden bg-secondary"
-            :class="
-              layout === 'list'
-                ? 'size-10 shrink-0 rounded-md'
-                : layout === 'grid' || !asset.previewUrl || asset.kind !== 'image'
+          <button
+            type="button"
+            class="block w-full cursor-pointer text-left"
+            :aria-label="t('assets.inspect', { name: asset.name })"
+            :data-testid="`asset-open-${asset.id}`"
+            @click="openDetail(asset)"
+          >
+            <span
+              class="relative block overflow-hidden"
+              :class="
+                layout === 'grid' || !asset.previewUrl || asset.kind !== 'image'
                   ? 'aspect-video'
                   : ''
-            "
-          >
-            <img
-              v-if="asset.previewUrl && asset.kind === 'image'"
-              :src="asset.previewUrl"
-              :alt="asset.name"
-              loading="lazy"
-              class="block w-full object-cover"
-              :class="layout !== 'masonry' && 'h-full'"
-            />
-            <video
-              v-else-if="asset.previewUrl && asset.kind === 'video'"
-              :src="asset.previewUrl"
-              preload="metadata"
-              muted
-              class="block size-full object-cover"
-            />
-            <div
-              v-else
-              class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground"
+              "
             >
-              <AudioLines v-if="asset.kind === 'audio'" :size="layout === 'list' ? 16 : 28" />
-              <Box v-else :size="layout === 'list' ? 16 : 28" />
-              <span v-if="layout !== 'list'" class="text-ui">{{ extensionOf(asset.name) }}</span>
-            </div>
-            <span
-              v-if="asset.kind === 'video' && layout !== 'list'"
-              class="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-md bg-media-overlay text-foreground"
-            >
-              <Play :size="12" aria-hidden="true" />
+              <img
+                v-if="asset.previewUrl && asset.kind === 'image'"
+                :src="asset.previewUrl"
+                :alt="asset.name"
+                loading="lazy"
+                class="block w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+                :class="layout === 'grid' && 'h-full'"
+              />
+              <video
+                v-else-if="asset.previewUrl && asset.kind === 'video'"
+                :src="asset.previewUrl"
+                preload="metadata"
+                muted
+                class="block size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+              />
+              <span
+                v-else
+                class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none"
+              >
+                <AudioLines v-if="asset.kind === 'audio'" :size="28" aria-hidden="true" />
+                <Box v-else :size="28" aria-hidden="true" />
+                <span class="text-ui">{{ extensionOf(asset.name) }}</span>
+              </span>
+              <span
+                v-if="asset.kind === 'video'"
+                class="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-md bg-media-overlay text-foreground"
+              >
+                <Play :size="12" aria-hidden="true" />
+              </span>
             </span>
-          </div>
+            <span v-if="showName || showDetails" class="flex min-w-0 flex-col gap-0.5 px-3 py-2.5">
+              <span v-if="showName" class="truncate text-ui font-medium text-foreground">{{
+                asset.name
+              }}</span>
+              <span v-if="showDetails" class="truncate text-ui text-subtle-foreground">{{
+                assetDetails(asset)
+              }}</span>
+            </span>
+          </button>
+
           <div
-            v-if="showName || showDetails"
-            class="flex min-w-0 flex-col gap-0.5"
-            :class="layout === 'list' ? 'flex-1' : 'px-3 py-2.5'"
+            class="absolute inset-x-2 top-2 flex items-start justify-between opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+            :class="(selectedIds.has(asset.id) || cardMenuOpenId === asset.id) && 'opacity-100'"
           >
-            <span v-if="showName" class="truncate text-ui font-medium text-foreground">{{
-              asset.name
-            }}</span>
-            <span v-if="showDetails" class="truncate text-ui text-subtle-foreground">{{
-              assetDetails(asset)
-            }}</span>
+            <Checkbox
+              :model-value="selectedIds.has(asset.id)"
+              class="size-5 rounded-full border-foreground bg-media-overlay"
+              :aria-label="t('assets.select', { name: asset.name })"
+              :data-testid="`asset-select-${asset.id}`"
+              @update:model-value="toggleSelected(asset.id)"
+            />
+            <div class="flex items-center rounded-md bg-media-overlay">
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="icon"
+                class="text-foreground"
+                :aria-label="t('assets.download')"
+                :title="t('assets.download')"
+                @click="download(asset)"
+              >
+                <Download :size="14" aria-hidden="true" />
+              </Button>
+              <Menu
+                :open="cardMenuOpenId === asset.id"
+                :modal="false"
+                align="end"
+                class="z-20 min-w-[180px]"
+                :aria-label="t('assets.moreActions')"
+                @update:open="cardMenuOpenId = $event ? asset.id : null"
+              >
+                <template #trigger>
+                  <Button
+                    type="button"
+                    variant="muted-textonly"
+                    size="icon"
+                    class="text-foreground"
+                    :aria-label="t('assets.moreActions')"
+                    :title="t('assets.moreActions')"
+                    :data-testid="`asset-menu-${asset.id}`"
+                  >
+                    <Ellipsis :size="14" aria-hidden="true" />
+                  </Button>
+                </template>
+                <MenuItem
+                  as="button"
+                  type="button"
+                  class="w-full gap-2.5"
+                  @select="openDetail(asset)"
+                >
+                  <ZoomIn :size="15" aria-hidden="true" />
+                  {{ t('assets.inspectAsset') }}
+                </MenuItem>
+                <MenuItem
+                  as="button"
+                  type="button"
+                  class="w-full gap-2.5"
+                  @select="download(asset)"
+                >
+                  <Download :size="15" aria-hidden="true" />
+                  {{ t('assets.download') }}
+                </MenuItem>
+              </Menu>
+            </div>
           </div>
         </li>
       </ul>

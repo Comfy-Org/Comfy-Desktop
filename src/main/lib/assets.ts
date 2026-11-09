@@ -1,4 +1,6 @@
-import { ipcMain } from 'electron'
+import fs from 'fs'
+import path from 'path'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import * as installations from '../installations'
@@ -7,6 +9,7 @@ import { runPool } from '../sources/standalone/templateDownloadCore'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
 
 export const ASSETS_LIST_CHANNEL = 'assets:list'
+export const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 
 const LIST_QUERY = 'tags_any=output&sort=created_at&order=desc&limit=100'
 const REQUEST_TIMEOUT_MS = 20_000
@@ -31,7 +34,11 @@ interface AssetRow {
   mime_type?: string
   created_at?: string
   preview_url?: string
+  tags?: unknown
 }
+
+type AssetSource = { kind: 'cloud'; accessToken: string } | { kind: 'local'; origin: string }
+type ContentDisposition = 'inline' | 'attachment'
 
 function isAssetRow(value: unknown): value is AssetRow {
   if (!value || typeof value !== 'object') return false
@@ -54,6 +61,10 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
     kind: assetKind(row.name, row.mime_type),
     sizeBytes: row.size ? row.size : null,
     createdAt: row.created_at ?? null,
+    mimeType: row.mime_type ?? null,
+    tags: Array.isArray(row.tags)
+      ? row.tags.filter((tag): tag is string => typeof tag === 'string')
+      : [],
     previewUrl
   }
 }
@@ -82,13 +93,17 @@ export function signedStorageUrl(location: string | null): string | null {
   }
 }
 
+function contentPath(assetId: string, disposition: ContentDisposition): string {
+  return `/api/assets/${encodeURIComponent(assetId)}/content?disposition=${disposition}`
+}
+
 async function resolveCloudContentUrl(
   assetId: string,
-  accessToken: string
+  accessToken: string,
+  disposition: ContentDisposition
 ): Promise<string | null> {
-  const url = `${CLOUD_CONFIG.apiBase}/assets/${encodeURIComponent(assetId)}/content?disposition=inline`
   try {
-    const res = await fetch(url, {
+    const res = await fetch(`${CLOUD_CONFIG.issuer}${contentPath(assetId, disposition)}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       redirect: 'manual',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
@@ -99,41 +114,86 @@ async function resolveCloudContentUrl(
   }
 }
 
-async function listCloudAssets(): Promise<AssetSummary[]> {
-  const accessToken = await getCloudSession().getAccessToken()
-  if (!accessToken) return []
+async function resolveSource(installationId: string): Promise<AssetSource | null> {
+  const inst = await installations.get(installationId)
+  if (!inst) return null
+  if (sourceMap[inst.sourceId]?.category === 'cloud') {
+    const accessToken = await getCloudSession().getAccessToken()
+    return accessToken ? { kind: 'cloud', accessToken } : null
+  }
+  const port = _runningSessions.get(installationId)?.port
+  return port ? { kind: 'local', origin: `http://127.0.0.1:${port}` } : null
+}
+
+async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
   const rows = await fetchAssetRows(
     `${CLOUD_CONFIG.apiBase}/assets?${LIST_QUERY}&include_public=false`,
     { Authorization: `Bearer ${accessToken}` }
   )
   const summaries = rows.map((row) => toSummary(row, null))
   await runPool(summaries, SIGNED_URL_CONCURRENCY, async (summary) => {
-    if (summary.kind !== 'image' && summary.kind !== 'video') return
-    summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken)
+    if (summary.kind === null || summary.kind === '3d') return
+    summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline')
   })
   return summaries
 }
 
-async function listLocalAssets(port: number): Promise<AssetSummary[]> {
-  const origin = `http://127.0.0.1:${port}`
+async function listLocalAssets(origin: string): Promise<AssetSummary[]> {
   const rows = await fetchAssetRows(`${origin}/api/assets?${LIST_QUERY}`, {})
-  return rows.map((row) => {
-    const path =
-      row.preview_url ?? `/api/assets/${encodeURIComponent(row.id)}/content?disposition=inline`
-    return toSummary(row, new URL(path, origin).toString())
-  })
+  return rows.map((row) =>
+    toSummary(row, new URL(row.preview_url ?? contentPath(row.id, 'inline'), origin).toString())
+  )
 }
 
 export async function listAssets(installationId: string): Promise<AssetSummary[]> {
-  const inst = await installations.get(installationId)
-  if (!inst) return []
-  if (sourceMap[inst.sourceId]?.category === 'cloud') return listCloudAssets()
-  const port = _runningSessions.get(installationId)?.port
-  return port ? listLocalAssets(port) : []
+  const source = await resolveSource(installationId)
+  if (!source) return []
+  return source.kind === 'cloud'
+    ? listCloudAssets(source.accessToken)
+    : listLocalAssets(source.origin)
+}
+
+async function downloadUrl(source: AssetSource, assetId: string): Promise<string | null> {
+  return source.kind === 'cloud'
+    ? resolveCloudContentUrl(assetId, source.accessToken, 'attachment')
+    : `${source.origin}${contentPath(assetId, 'attachment')}`
+}
+
+export async function downloadAsset(
+  win: BrowserWindow,
+  installationId: string,
+  assetId: string,
+  fileName: string
+): Promise<boolean> {
+  const source = await resolveSource(installationId)
+  if (!source) return false
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: path.join(app.getPath('downloads'), path.basename(fileName))
+  })
+  if (canceled || !filePath) return false
+  const url = await downloadUrl(source, assetId)
+  if (!url) return false
+  const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 15) })
+  if (!res.ok) return false
+  await fs.promises.writeFile(filePath, Buffer.from(await res.arrayBuffer()))
+  return true
 }
 
 export function registerAssetsHandlers(): void {
   ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown) =>
     typeof installationId === 'string' ? listAssets(installationId) : []
+  )
+  ipcMain.handle(
+    ASSETS_DOWNLOAD_CHANNEL,
+    (event, installationId: unknown, assetId: unknown, fileName: unknown) => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow()
+      if (!win || typeof installationId !== 'string' || typeof assetId !== 'string') return false
+      return downloadAsset(
+        win,
+        installationId,
+        assetId,
+        typeof fileName === 'string' ? fileName : assetId
+      )
+    }
   )
 }

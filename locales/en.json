@@ -48,8 +48,7 @@
     "layoutLabel": "Layout",
     "layout": {
       "masonry": "Masonry",
-      "grid": "Grid",
-      "list": "List"
+      "grid": "Grid"
     },
     "sortLabel": "Sort by",
     "sort": {
@@ -62,7 +61,30 @@
     "emptyTitle": "No assets yet",
     "emptyBody": "Outputs from your running builds show up here.",
     "noRunningBuilds": "Start a build to browse its assets.",
-    "loadFailed": "Couldn't load assets"
+    "loadFailed": "Couldn't load assets",
+    "download": "Download",
+    "moreActions": "More actions",
+    "inspectAsset": "Inspect asset",
+    "inspect": "Open {name}",
+    "select": "Select {name}",
+    "kindSingular": {
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio",
+      "3d": "3D",
+      "file": "File"
+    },
+    "detail": {
+      "type": "Type",
+      "dimensions": "Dimensions",
+      "duration": "Duration",
+      "created": "Created",
+      "tags": "Tags",
+      "tagsHint": "Tags are edited in ComfyUI.",
+      "togglePanel": "Toggle details panel",
+      "previous": "Previous asset",
+      "next": "Next asset"
+    }
   },
   "installType": {
     "standalone": "Standalone",

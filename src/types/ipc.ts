@@ -124,6 +124,8 @@ export interface AssetSummary {
   kind: AssetKind | null
   sizeBytes: number | null
   createdAt: string | null
+  mimeType: string | null
+  tags: string[]
   previewUrl: string | null
 }
 
@@ -1113,6 +1115,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
+  downloadAsset(installationId: string, assetId: string, fileName: string): Promise<boolean>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

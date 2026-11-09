@@ -4,7 +4,18 @@ const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
 const runningSessions = new Map<string, { port?: number }>()
 
-vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }))
+const showSaveDialog = vi.fn()
+const writeFile = vi.fn()
+
+vi.mock('electron', () => ({
+  app: { getPath: () => '/downloads' },
+  BrowserWindow: {},
+  dialog: { showSaveDialog: (...args: unknown[]) => showSaveDialog(...args) },
+  ipcMain: { handle: vi.fn() }
+}))
+vi.mock('fs', () => ({
+  default: { promises: { writeFile: (...a: unknown[]) => writeFile(...a) } }
+}))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({ getAccessToken })
@@ -14,7 +25,7 @@ vi.mock('./ipc/shared', () => ({
   sourceMap: { cloud: { category: 'cloud' }, standalone: { category: 'local' } }
 }))
 
-const { assetKind, listAssets, signedStorageUrl } = await import('./assets')
+const { assetKind, downloadAsset, listAssets, signedStorageUrl } = await import('./assets')
 
 const fetchMock = vi.fn()
 
@@ -69,6 +80,8 @@ describe('listAssets', () => {
             id: 'a1',
             name: 'still.png',
             size: 2048,
+            mime_type: 'image/png',
+            tags: ['output'],
             created_at: '2026-11-09T10:00:00Z',
             preview_url: '/api/view?type=output&filename=still.png'
           }
@@ -88,6 +101,8 @@ describe('listAssets', () => {
         kind: 'image',
         sizeBytes: 2048,
         createdAt: '2026-11-09T10:00:00Z',
+        mimeType: 'image/png',
+        tags: ['output'],
         previewUrl: 'http://127.0.0.1:8188/api/view?type=output&filename=still.png'
       }
     ])
@@ -100,7 +115,7 @@ describe('listAssets', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('lists the signed-in cloud workspace and resolves signed media links', async () => {
+  it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
     fetchMock
@@ -108,24 +123,57 @@ describe('listAssets', () => {
         jsonResponse({
           assets: [
             { id: 'v1', name: 'clip.mp4', created_at: '2026-11-09T10:00:00Z' },
-            { id: 's1', name: 'audio/voice.wav', created_at: '2026-11-09T09:00:00Z' }
+            { id: 's1', name: 'audio/voice.wav', created_at: '2026-11-09T09:00:00Z' },
+            { id: 'm1', name: 'mesh.glb', created_at: '2026-11-09T08:00:00Z' }
           ]
         })
       )
-      .mockResolvedValueOnce(
-        new Response(null, {
-          status: 302,
-          headers: { Location: 'https://storage.googleapis.com/bucket/clip.mp4?sig=1' }
-        })
+      .mockImplementation(
+        async (url: string) =>
+          new Response(null, {
+            status: 302,
+            headers: {
+              Location: `https://storage.googleapis.com/bucket/${url.split('/')[5]}?sig=1`
+            }
+          })
       )
 
     const assets = await listAssets('cloud-1')
 
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe('Bearer token')
     expect(assets.map((a) => [a.name, a.kind, a.previewUrl])).toEqual([
-      ['clip.mp4', 'video', 'https://storage.googleapis.com/bucket/clip.mp4?sig=1'],
-      ['voice.wav', 'audio', null]
+      ['clip.mp4', 'video', 'https://storage.googleapis.com/bucket/v1?sig=1'],
+      ['voice.wav', 'audio', 'https://storage.googleapis.com/bucket/s1?sig=1'],
+      ['mesh.glb', '3d', null]
     ])
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('downloadAsset', () => {
+  const win = {} as Parameters<typeof downloadAsset>[0]
+
+  it('saves a local build asset where the user picks', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    fetchMock.mockResolvedValue(new Response('bytes'))
+
+    expect(await downloadAsset(win, 'local-1', 'a1', '../still.png')).toBe(true)
+    expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/still.png')
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      'http://127.0.0.1:8188/api/assets/a1/content?disposition=attachment'
+    )
+    expect(writeFile.mock.calls[0]![0]).toBe('/picked/still.png')
+  })
+
+  it('writes nothing when the save dialog is cancelled', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: true })
+
+    expect(await downloadAsset(win, 'local-1', 'a1', 'still.png')).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(writeFile).not.toHaveBeenCalled()
   })
 })
