@@ -118,10 +118,11 @@ const holds = (i: (typeof shown.value)[number]): string =>
 .mbr-card::before {
   position: absolute;
   z-index: -1;
-  background: linear-gradient(
-    120deg,
-    oklch(0.7 0.15 var(--h, 0) / 0.26),
-    oklch(0.7 0.15 var(--h, 0) / 0.1)
+  background: radial-gradient(
+    ellipse 130% 170% at 0 0,
+    oklch(0.7 0.15 var(--h, 0) / 0.4),
+    oklch(0.6 0.13 var(--h, 0) / 0.14) 50%,
+    transparent 85%
   );
   clip-path: circle(0% at 0 0);
   content: '';
