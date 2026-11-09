@@ -513,7 +513,7 @@ onBeforeUnmount(() => {
 }
 .mad-view {
   position: absolute;
-  inset: 60px 16px 84px;
+  inset: 64px 32px 92px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -523,9 +523,9 @@ onBeforeUnmount(() => {
 }
 .mad-bar {
   position: absolute;
-  top: 14px;
-  right: 16px;
-  left: 16px;
+  top: 18px;
+  right: 24px;
+  left: 32px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -675,9 +675,9 @@ onBeforeUnmount(() => {
  * The resolution lives in Details. */
 .mad-foot {
   position: absolute;
-  right: 16px;
-  bottom: 14px;
-  left: 16px;
+  right: 32px;
+  bottom: 20px;
+  left: 32px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
