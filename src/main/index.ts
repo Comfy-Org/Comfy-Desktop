@@ -174,6 +174,7 @@ import {
   destroyPanelView,
   ensurePanelView,
   focusActiveBody,
+  openAnnouncement,
   prewarmAttachedPanel,
   refreshComfyTabBody,
   registerPanelViewIpc,
@@ -758,18 +759,10 @@ ipcMain.on('comfy-window:click-feedback', (event) => {
   triggerOpenFeedback(found.entry.windowKey, 'titlebar')
 })
 
-function triggerOpenAnnouncement(entryId: number): void {
-  const parentEntry = comfyWindows.get(entryId)
-  if (!parentEntry || parentEntry.window.isDestroyed()) return
-  const panelView = parentEntry.panelView ?? ensurePanelView(entryId, parentEntry, 'announcement')
-  setActivePanel(entryId, 'announcement')
-  sendToPanelDeferred(panelView, 'comfy-panel:open-announcement', {})
-}
-
 ipcMain.on('comfy-window:click-announcement', (event) => {
   const found = findEntryByTitleBarSender(event.sender)
   if (!found) return
-  triggerOpenAnnouncement(found.entry.windowKey)
+  openAnnouncement(found.entry.windowKey)
 })
 
 ipcMain.on('comfy-window:new-chooser-window', () => {

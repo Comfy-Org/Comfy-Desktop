@@ -95,6 +95,7 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
+    closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),

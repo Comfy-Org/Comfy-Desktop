@@ -1098,6 +1098,7 @@ export interface ElectronApi {
   closeHostWindow(): Promise<boolean>
   returnToDashboard(): Promise<boolean>
   closeCurrentPanel(): void
+  closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
