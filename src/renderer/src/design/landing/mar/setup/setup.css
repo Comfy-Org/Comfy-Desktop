@@ -853,19 +853,21 @@
     z-index: 2;
     display: flex;
     align-items: center;
-    gap: 6px;
-    opacity: 0.55;
-    transition: opacity 160ms ease;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--color-subtle-foreground);
+    opacity: 0.45;
+    transition:
+      opacity 160ms ease,
+      background 160ms ease;
   }
   .mss-version:hover,
-  .mss-version:focus-within {
+  .mss-version:focus-visible,
+  .mss-version[data-state='open'] {
+    background: var(--mss-soft);
     opacity: 1;
-  }
-  .mss-version-label {
-    color: var(--color-subtle-foreground);
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
   .mss-first-mark path {
     fill: currentColor;
@@ -1912,4 +1914,11 @@
 }
 :root[data-ds-theme='light'] .proto-ui:has(+ .mss-confirm) {
   background-color: rgb(20 20 30 / 0.22);
+}
+
+/* The Prototype version menu, portaled to body: above the first-launch
+ * takeover (z 70), past the surface's own `z-50` utility (not layered). */
+.proto-ui.mss-version-menu {
+  z-index: 80;
+  min-width: 240px;
 }

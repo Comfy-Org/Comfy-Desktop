@@ -65,7 +65,7 @@ export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing'
  *  second launch. */
 export type AfterInstall = 'home' | 'ready' | 'comfyui'
 export const AFTER_INSTALLS: { value: AfterInstall; label: string }[] = [
-  { value: 'home', label: 'Home (prototype so far)' },
+  { value: 'home', label: 'Home, no message' },
   { value: 'ready', label: 'Home: ComfyUI is ready card' },
   { value: 'comfyui', label: 'Open ComfyUI (as today)' }
 ]
