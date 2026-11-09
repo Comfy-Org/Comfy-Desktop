@@ -122,7 +122,7 @@ async function key(e: KeyboardEvent): Promise<void> {
         Run on Comfy Cloud<ArrowRight :size="14" />
       </button>
       <button v-else-if="can.exploreApps" type="button" class="mar-fan2-all" @click="go('explore')">
-        See all examples<ArrowRight :size="14" />
+        See all apps<ArrowRight :size="14" />
       </button>
     </div>
   </div>

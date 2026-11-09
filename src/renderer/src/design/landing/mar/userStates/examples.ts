@@ -13,6 +13,8 @@ import { mock } from '../assets/mock'
  */
 export interface Example {
   label: string
+  /** What the app does, in a few words, under its name. */
+  does: string
   kind: 'Image' | 'Video'
   runs: string
   /** What goes in. */
@@ -30,6 +32,7 @@ export interface Example {
 export const EXAMPLES: Example[] = [
   {
     label: 'Re-shoot a video',
+    does: 'Film the same scene from a new angle',
     app: 's-reshoot',
     kind: 'Video',
     runs: '~1 min',
@@ -39,6 +42,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Relight a scene',
+    does: 'Change the light and time of day',
     app: 'e-relight',
     kind: 'Image',
     runs: '~20 s',
@@ -48,6 +52,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Cinematic Studio',
+    does: 'Turn a photo into a film still',
     app: 's-cine',
     kind: 'Image',
     runs: '~20 s',
@@ -56,6 +61,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Reshoot your product',
+    does: 'Shoot your product from a new angle',
     app: 'e-reshoot',
     kind: 'Image',
     runs: '~20 s',
@@ -64,6 +70,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Openjutsu',
+    does: 'Replace anyone in a video',
     app: 's-jutsu',
     kind: 'Video',
     runs: '~1 min',

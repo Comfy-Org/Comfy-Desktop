@@ -151,7 +151,7 @@ function wheel(e: WheelEvent): void {
 
     <div class="mar-ff-action">
       <button v-if="can.exploreApps" type="button" class="mar-ff-all" @click="goTo('explore')">
-        See all examples<ArrowRight :size="14" />
+        See all apps<ArrowRight :size="14" />
       </button>
     </div>
   </div>
@@ -313,7 +313,7 @@ function wheel(e: WheelEvent): void {
 </style>
 
 <style>
-/* The covers carry their own names and See all examples sits under them,
+/* The covers carry their own names and See all apps sits under them,
    so the section's left-aligned header steps aside. */
 :root .proto-ui section:has(> .mar-ff) > :first-child:not(.mar-ff) {
   display: none;

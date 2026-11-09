@@ -22,7 +22,7 @@ const N = EXAMPLES.length
 const ANGLE = 24 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
-const HOLD = 3000 // ms each side of the front card stays up
+const HOLD = 1800 // ms each side of the front card stays up
 
 // `pos` is where the arc is (in cards, unbounded); `target` where it's going.
 const pos = ref(Math.floor(N / 2))
@@ -206,7 +206,9 @@ function wheel(e: WheelEvent): void {
         :tabindex="i === active ? 0 : -1"
         :aria-current="i === active ? 'true' : undefined"
         :aria-label="
-          i === active ? `Run ${x.label}, ${x.kind}, ${x.runs}` : `${x.label}, ${x.kind}, ${x.runs}`
+          i === active
+            ? `Run ${x.label}: ${x.does}. ${x.kind} app, ${x.runs}`
+            : `${x.label}: ${x.does}. ${x.kind} app, ${x.runs}`
         "
         @click="pick(i)"
       >
@@ -228,7 +230,8 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
           <span class="mar-arc-title">{{ x.label }}</span>
-          <span class="mar-arc-meta">{{ x.kind }} · {{ x.runs }}</span>
+          <span class="mar-arc-does">{{ x.does }}</span>
+          <span class="mar-arc-meta">App · {{ x.kind }} · {{ x.runs }}</span>
         </span>
         <span class="mar-arc-dim" />
         <span class="mar-arc-go" aria-hidden="true">Run</span>
@@ -237,7 +240,7 @@ function wheel(e: WheelEvent): void {
 
     <div class="mar-arc-actions">
       <button v-if="can.exploreApps" type="button" class="mar-arc-all" @click="go('explore')">
-        See all examples<ArrowRight :size="14" />
+        See all apps<ArrowRight :size="14" />
       </button>
     </div>
   </div>
@@ -281,7 +284,7 @@ function wheel(e: WheelEvent): void {
     #000 calc(var(--arc-sweep) - 35%),
     transparent calc(var(--arc-sweep) + 35%)
   );
-  transition: --arc-sweep 1500ms cubic-bezier(0.645, 0.045, 0.355, 1);
+  transition: --arc-sweep 900ms cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 .mar-arc-card .mar-arc-after.is-on {
   --arc-sweep: 140%;
@@ -317,6 +320,13 @@ function wheel(e: WheelEvent): void {
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.2;
+  text-wrap: balance;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+.mar-arc-does {
+  color: rgb(255 255 255 / 0.9);
+  font-size: 13px;
+  line-height: 1.3;
   text-wrap: balance;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
