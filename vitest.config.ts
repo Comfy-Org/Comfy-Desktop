@@ -34,6 +34,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'node',
+          sequence: { groupOrder: 0 },
           environment: 'node',
           include: [
             'src/main/**/*.test.ts',
@@ -52,6 +53,7 @@ export default defineConfig({
         },
         test: {
           name: 'browser',
+          sequence: { groupOrder: 1 },
           include: ['src/renderer/**/*.test.ts', ...INJECTED_PAGE_SCRIPT_TESTS],
           exclude: [INTEGRATION_TESTS, 'node_modules', ...RENDERER_TESTS_THAT_READ_FILES],
           setupFiles: ['./vitest.setup.ts'],
