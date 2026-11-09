@@ -5,6 +5,7 @@ import { toast } from '../../useProto'
 import GenerationInfo from '../assets/GenerationInfo.vue'
 import type { MarAsset } from '../pages/assetsStore'
 import { factsFor } from '../assets/assetFacts'
+import { saveFile } from '../assets/saveFile'
 import { addTag, removeTag, tagsOf } from '../assets/assetTags'
 
 /**
@@ -156,7 +157,7 @@ function drop(t: string): void {
         class="ap-side-btn is-icon"
         aria-label="Download"
         title="Download"
-        @click="toast(`Downloading ${one.name}`)"
+        @click="saveFile(one.src, one.name)"
       >
         <Download :size="14" />
       </button>

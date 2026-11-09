@@ -18,6 +18,7 @@ import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import type { MarAsset } from '../pages/assetsStore'
 import { factsFor } from './assetFacts'
+import { saveFile } from './saveFile'
 import AssetCover from './AssetCover.vue'
 import GenerationInfo from './GenerationInfo.vue'
 import { addTag, removeTag, tagsOf } from './assetTags'
@@ -51,7 +52,7 @@ const {
   /** ComfyUI in Production: the asset fills a tab beside the workflows,
    *  the tab's X closes it, no filmstrip or zoom. */
   tab?: boolean
-  /** A canvas result, not saved yet: Save to Assets leads the actions. */
+  /** A canvas result, not saved yet: it can be saved to Assets. */
   saveable?: boolean
 }>()
 const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
@@ -104,8 +105,18 @@ const setZoom = (z: number): void => {
 /** The details panel folds away for the picture alone. */
 const side = ref(true)
 
-// The filmstrip keeps the current asset in view.
+// The filmstrip keeps the current asset in view, and fades at an edge
+// where more thumbnails sit past it, so none runs into the zoom.
 const strip = ref<HTMLElement>()
+const edges = ref({ start: false, end: false })
+function measure(): void {
+  const el = strip.value
+  if (!el) return
+  edges.value = {
+    start: el.scrollLeft > 1,
+    end: el.scrollLeft + el.clientWidth < el.scrollWidth - 1
+  }
+}
 watch(
   () => asset.id,
   async () => {
@@ -114,6 +125,7 @@ watch(
     strip.value
       ?.querySelector<HTMLElement>('[aria-current="true"]')
       ?.scrollIntoView({ block: 'nearest', inline: 'center' })
+    requestAnimationFrame(measure)
   },
   { immediate: true }
 )
@@ -239,8 +251,13 @@ onBeforeUnmount(() => {
             <ChevronRight :size="18" />
           </button>
           <footer v-if="!tab" class="mad-foot">
-            <span class="mad-dims">{{ dims ?? facts.format }}</span>
-            <nav ref="strip" class="mad-strip" aria-label="Assets">
+            <nav
+              ref="strip"
+              class="mad-strip"
+              :class="{ 'is-fade-start': edges.start, 'is-fade-end': edges.end }"
+              aria-label="Assets"
+              @scroll.passive="measure"
+            >
               <button
                 v-for="a in list"
                 :key="a.id"
@@ -308,28 +325,28 @@ onBeforeUnmount(() => {
                 <FolderOpen :size="15" />
               </button>
             </header>
+            <!-- Download leads, in color. The rest are icons that keep their
+                 place: a missing workflow shows disabled, Save comes last. -->
             <div class="mad-actions">
               <button
-                v-if="saveable"
                 type="button"
                 class="mad-btn is-primary"
-                @click="emit('save')"
-              >
-                <Plus :size="14" /><span>Save to Assets</span>
-              </button>
-              <button
-                type="button"
-                class="mad-btn"
-                :class="!saveable && 'is-primary'"
-                @click="toast(`Downloading ${asset.name}`)"
+                @click="saveFile(picOf(asset), asset.name)"
               >
                 <Download :size="14" /><span>Download</span>
               </button>
               <button
-                v-if="facts.workflow === 'available'"
                 type="button"
-                class="mad-btn"
-                :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
+                class="mad-btn is-icon"
+                :disabled="facts.workflow !== 'available'"
+                :aria-label="editable ? 'Open as workflow' : 'Open workflow'"
+                :title="
+                  facts.workflow !== 'available'
+                    ? 'No workflow in this file'
+                    : editable
+                      ? 'Open as workflow in new tab'
+                      : `Open the workflow in ${build}`
+                "
                 @click="
                   toast(
                     editable
@@ -338,9 +355,17 @@ onBeforeUnmount(() => {
                   )
                 "
               >
-                <Workflow :size="14" /><span>{{
-                  editable ? 'Open as workflow' : 'Open workflow'
-                }}</span>
+                <Workflow :size="15" />
+              </button>
+              <button
+                v-if="saveable"
+                type="button"
+                class="mad-btn is-icon"
+                aria-label="Save to Assets"
+                title="Save to Assets"
+                @click="emit('save')"
+              >
+                <Plus :size="15" />
               </button>
             </div>
 
@@ -635,27 +660,17 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-icon:disabled {
   opacity: 0.35;
 }
-/* Filmstrip: every asset in the list, the current one ringed. */
-/* Along the bottom: the file's size, the filmstrip, the zoom. */
+/* Along the bottom: the filmstrip from the left, the zoom on the right.
+ * The resolution lives in Details. */
 .mad-foot {
   position: absolute;
   right: 16px;
   bottom: 14px;
   left: 16px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-}
-.mad-dims {
-  justify-self: start;
-  padding: 5px 9px;
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  gap: 16px;
 }
 .mad-foot .mad-zoom {
   justify-self: end;
@@ -666,11 +681,25 @@ onBeforeUnmount(() => {
 .mad-strip {
   min-width: 0;
   display: flex;
-  justify-content: safe center;
   gap: 6px;
   overflow-x: auto;
   padding: 4px;
   scrollbar-width: none;
+  --fade-start: #000;
+  --fade-end: #000;
+  mask-image: linear-gradient(
+    to right,
+    var(--fade-start),
+    #000 48px,
+    #000 calc(100% - 48px),
+    var(--fade-end)
+  );
+}
+.mad-strip.is-fade-start {
+  --fade-start: transparent;
+}
+.mad-strip.is-fade-end {
+  --fade-end: transparent;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-thumb {
   position: relative;
@@ -947,11 +976,21 @@ onBeforeUnmount(() => {
   background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-btn.is-primary {
-  background: var(--color-base-foreground);
-  color: var(--color-content-background);
+  background: var(--color-primary-background, #0b8ce9);
+  color: #fff;
+  font-weight: 500;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-btn.is-primary:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 88%, transparent);
+  background: color-mix(in oklch, var(--color-primary-background, #0b8ce9) 86%, #fff);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-btn.is-icon {
+  width: 32px;
+  flex: none;
+  padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
 }
 .mad-btn svg {
   flex: none;

@@ -41,6 +41,7 @@ import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from './AssetFilterMenu.vue'
 import AssetLightbox from './AssetLightbox.vue'
 import AssetSidePanel from './AssetSidePanel.vue'
+import { saveFile } from '../assets/saveFile'
 import BulkTagMenu from './BulkTagMenu.vue'
 import { assetTab, comfyLook } from './comfyLook'
 import { graphStyle } from './graphStyle'
@@ -283,6 +284,11 @@ function meta(a: PanelAsset): string {
 
 // A click selects; several at once, like the product's panel.
 const selected = ref(new Set<string>())
+/** Download each picked file through the browser, then clear the pick. */
+function downloadSelected(): void {
+  finished.value.filter((a) => selected.value.has(a.id)).forEach((a) => saveFile(a.src, a.name))
+  selected.value = new Set()
+}
 function toggle(a: PanelAsset): void {
   const next = new Set(selected.value)
   if (next.has(a.id)) next.delete(a.id)
@@ -356,7 +362,7 @@ function lines(a: PanelAsset): MenuLine[] {
       icon: Plus,
       run: () => emit('insert', { src: a.src, name: a.name })
     },
-    { label: 'Download', icon: Download, run: () => toast(`Downloading ${a.name}`) },
+    { label: 'Download', icon: Download, run: () => saveFile(a.src, a.name) },
     'sep',
     // Only a run that kept its workflow offers it; it opens in a new tab,
     // so the graph you're on is never replaced.
@@ -712,7 +718,7 @@ function upload(files: FileList | null | undefined): void {
         class="rp-icon"
         aria-label="Download"
         title="Download"
-        @click="(toast(`Downloading ${selected.size} assets`), (selected = new Set()))"
+        @click="downloadSelected"
       >
         <Download :size="14" />
       </button>
