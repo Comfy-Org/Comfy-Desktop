@@ -1863,8 +1863,10 @@
 /* It has to read as a layer over the setup: a lifted surface with a border
    and the popover shadow, over the step modal's scrim. This dialog only. */
 :root .proto-ui.mss-confirm {
-  /* Mar's borders setting can blank the border tokens; her edge line stays. */
-  border: 1px solid var(--mar-edge-line, var(--color-border-strong));
+  /* Surfaces draw no borders in the New UI, so the border tokens are blank:
+     this dialog mixes its own hairline from the foreground. */
+  --mss-confirm-line: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  border: 1px solid var(--mss-confirm-line);
   background-color: color-mix(
     in oklch,
     var(--color-base-foreground) 9%,
@@ -1878,7 +1880,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid var(--mar-edge-line, var(--color-border-strong));
+  border-top: 1px solid var(--mss-confirm-line);
 }
 :root .proto-ui:has(+ .mss-confirm) {
   background-color: rgb(0 0 0 / 0.5);
