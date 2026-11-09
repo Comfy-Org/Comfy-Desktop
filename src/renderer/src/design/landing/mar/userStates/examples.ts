@@ -31,14 +31,13 @@ export interface Example {
 
 export const EXAMPLES: Example[] = [
   {
-    label: 'Re-shoot a video',
-    does: 'Film the same scene from a new angle',
-    app: 's-reshoot',
-    kind: 'Video',
-    runs: '~1 min',
-    src: mock('app-reshoot-a-video'),
-    after: mock('app-reshoot-a-video-after'),
-    focus: ['50%', '85%']
+    label: 'Reshoot your product',
+    does: 'Shoot your product from a new angle',
+    app: 'e-reshoot',
+    kind: 'Image',
+    runs: '~20 s',
+    src: mock('app-reshoot-your-product'),
+    after: mock('app-reshoot-your-product-after')
   },
   {
     label: 'Relight a scene',
@@ -60,13 +59,14 @@ export const EXAMPLES: Example[] = [
     after: mock('app-cinematic-studio-after')
   },
   {
-    label: 'Reshoot your product',
-    does: 'Shoot your product from a new angle',
-    app: 'e-reshoot',
-    kind: 'Image',
-    runs: '~20 s',
-    src: mock('app-reshoot-your-product'),
-    after: mock('app-reshoot-your-product-after')
+    label: 'Re-shoot a video',
+    does: 'Film the same scene from a new angle',
+    app: 's-reshoot',
+    kind: 'Video',
+    runs: '~1 min',
+    src: mock('app-reshoot-a-video'),
+    after: mock('app-reshoot-a-video-after'),
+    focus: ['50%', '85%']
   },
   {
     label: 'Openjutsu',

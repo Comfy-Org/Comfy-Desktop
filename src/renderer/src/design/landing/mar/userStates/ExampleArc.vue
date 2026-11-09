@@ -251,7 +251,12 @@ function wheel(e: WheelEvent): void {
     </div>
 
     <div class="mar-arc-actions">
-      <button v-if="can.exploreApps" type="button" class="mar-arc-all" @click="go('explore')">
+      <button
+        v-if="can.exploreApps"
+        type="button"
+        class="mar-arc-all"
+        @click="go(can.explore ? 'explore' : 'apps')"
+      >
         See all apps<ArrowRight :size="14" />
       </button>
     </div>
@@ -297,19 +302,6 @@ function wheel(e: WheelEvent): void {
     transparent calc(var(--arc-sweep) + 18%)
   );
   transition: --arc-sweep 800ms cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-/* The front card also drifts slowly, so it reads as moving footage (over
-   the images' load fade in motion.css). */
-:root .proto-main .mar-arc-card.is-front img {
-  animation: mar-arc-drift 5s ease-in-out infinite alternate;
-}
-@keyframes mar-arc-drift {
-  from {
-    scale: 1;
-  }
-  to {
-    scale: 1.07;
-  }
 }
 .mar-arc-card .mar-arc-after.is-on {
   --arc-sweep: 140%;

@@ -47,7 +47,8 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
   // builds move here (the sidebar group lists projects instead).
   create: [
     { page: 'overview', label: 'Home', icon: Home },
-    ...(can.value.exploreApps
+    // Explore comes with Explore & Learn; at Milestone 2 apps live in Apps.
+    ...(can.value.explore
       ? [
           {
             page: 'explore' as Page,

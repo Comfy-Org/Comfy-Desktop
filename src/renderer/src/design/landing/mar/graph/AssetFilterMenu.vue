@@ -448,9 +448,24 @@ const searching = computed(() => !!q.value.trim())
   font-variant-numeric: tabular-nums;
 }
 /* Desktop: the design system's insets and icon size, as in Select. */
-.afm.is-ds .afm-search,
 .afm.is-ds .afm-none {
   padding-inline: 10px;
+}
+/* The field's icon lines up with the items' icons; the rule under it runs
+   edge to edge; group titles are the uppercase section label. */
+:root .afm.is-ds label.afm-search {
+  padding-inline: 10px;
+}
+:root .afm.is-ds .afm-sep {
+  margin: 4px -6px;
+}
+:root .afm.is-ds .afm-label {
+  padding: 8px 10px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .afm.is-ds .afm-label,
 .afm.is-ds .afm-range {

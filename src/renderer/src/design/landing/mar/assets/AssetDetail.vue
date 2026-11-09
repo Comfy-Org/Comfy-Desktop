@@ -1,17 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  Box,
-  ChevronDown,
-  Download,
-  FolderOpen,
-  Info,
-  PanelRightClose,
-  PanelRightOpen,
-  Plus,
-  Workflow,
-  X
-} from 'lucide-vue-next'
+import { Box, ChevronDown, Download, FolderOpen, Info, Plus, Workflow, X } from 'lucide-vue-next'
 import { onClickOutside, useResizeObserver } from '@vueuse/core'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
@@ -210,27 +199,7 @@ onBeforeUnmount(() => {
         tabindex="-1"
       >
         <section class="mad-stage" @pointerdown.self="!tab && emit('close')">
-          <header class="mad-bar">
-            <!-- Name and place live in Details; over the picture only while
-                 Details are folded away. -->
-            <template v-if="!side">
-              <span class="mad-file">{{ asset.name }}</span>
-              <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
-            </template>
-            <button
-              type="button"
-              class="mad-icon mad-fold"
-              :class="!side && 'is-label'"
-              :aria-label="side ? 'Hide details' : 'Show details'"
-              :title="side ? 'Hide details' : 'Show details'"
-              :aria-pressed="side"
-              @click="side = !side"
-            >
-              <PanelRightClose v-if="side" :size="16" /><template v-else
-                ><PanelRightOpen :size="16" />Details</template
-              >
-            </button>
-          </header>
+          <header class="mad-bar"></header>
           <!-- The picture is clipped to its own area: zoomed in, it never
                runs under the bar or the filmstrip. -->
           <div class="mad-view">

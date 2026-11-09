@@ -44,7 +44,7 @@ import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
 import AssetSearch from '../assets/AssetSearch.vue'
 import MarSelectBar from './MarSelectBar.vue'
-import MarViewToggle from './MarViewToggle.vue'
+import AssetLayoutMenu from '../assets/AssetLayoutMenu.vue'
 import { assets, type MarAsset } from './assetsStore'
 import { useLibrary } from './library'
 import { pageState } from './pageState'
@@ -118,11 +118,17 @@ const MORE_TYPES = [
   { value: 'other', label: 'Other' }
 ] as const
 const SORTS = [
-  { value: 'newest', label: 'Newest' },
-  { value: 'oldest', label: 'Oldest' },
-  { value: 'largest', label: 'Largest' },
-  { value: 'name', label: 'Name' }
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'largest', label: 'Largest first' },
+  { value: 'name', label: 'Name (A → Z)' }
 ]
+// Layout (AssetLayoutMenu): how big the cards are, and what they carry.
+const size = ref(2)
+const showName = ref(true)
+const showDetails = ref(true)
+/** The narrowest a card gets at each size. */
+const CARD = [0, 200, 264, 340]
 
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -190,7 +196,7 @@ watch(view, (v) => {
 const wall = ref<HTMLElement>()
 const { width: wallWidth } = useElementSize(wall)
 const columns = computed(() => {
-  const n = Math.max(1, Math.floor((wallWidth.value + 14) / (264 + 14)))
+  const n = Math.max(1, Math.floor((wallWidth.value + 14) / (CARD[size.value]! + 14)))
   const cols = Array.from({ length: n }, () => ({ h: 0, items: [] as MarAsset[] }))
   for (const a of shown.value) {
     const col = cols.reduce((low, c) => (c.h < low.h ? c : low))
@@ -468,9 +474,15 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :types="MORE_TYPES"
             :tags="TAGS"
           />
-          <Select v-model="sort" :options="SORTS" label="Sort" class="mar-asset-sort w-34" />
           <AssetSearch v-model:query="query" />
-          <MarViewToggle v-model="view" masonry />
+          <AssetLayoutMenu
+            v-model:view="view"
+            v-model:size="size"
+            v-model:sort="sort"
+            v-model:show-name="showName"
+            v-model:show-details="showDetails"
+            :sorts="SORTS"
+          />
         </div>
       </div>
     </template>
@@ -507,7 +519,11 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         uploadable ? `Add to ${current?.name ?? fixedProject} inputs` : uploadTitle
       }}
     </div>
-    <div v-else-if="view === 'masonry'" ref="wall" class="mar-masonry">
+    <div
+      v-else-if="view === 'masonry'"
+      ref="wall"
+      :class="['mar-masonry', !showName && 'no-name', !showDetails && 'no-details']"
+    >
       <div v-for="(col, i) in columns" :key="i" class="mar-masonry-col">
         <MarItem
           v-for="a in col.items"
@@ -544,7 +560,11 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         </MarItem>
       </div>
     </div>
-    <div v-else-if="view === 'grid'" class="mar-grid is-wide">
+    <div
+      v-else-if="view === 'grid'"
+      :class="['mar-grid', !showName && 'no-name', !showDetails && 'no-details']"
+      :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${CARD[size]! + 36}px, 1fr))` }"
+    >
       <MarItem
         v-for="a in shown"
         :key="a.id"
@@ -691,14 +711,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 }
 @container (max-width: 860px) {
   :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .aff-label,
-  :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .aff-chev,
-  :root .proto-ui.proto-ui.proto-ui .mar-asset-sort > span:not([aria-hidden]),
-  :root .proto-ui.proto-ui.proto-ui .mar-asset-sort > svg:last-child {
+  :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .aff-chev {
     display: none;
-  }
-  :root .proto-ui.proto-ui.proto-ui .mar-asset-sort {
-    width: auto;
-    padding-right: 10px;
   }
 }
 @container (max-width: 720px) {
@@ -734,6 +748,14 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 :root .proto-ui.proto-ui.proto-ui .mar-asset-refresh:hover {
   background: var(--color-secondary-background);
   color: var(--color-base-foreground);
+}
+/* Layout › Show: a card without its name or its details. */
+:is(.mar-masonry, .mar-grid).no-name .mar-item-name,
+:is(.mar-masonry, .mar-grid).no-details .mar-item-meta {
+  display: none;
+}
+:is(.mar-masonry, .mar-grid).no-name.no-details .mar-item-text {
+  display: none;
 }
 .mar-masonry {
   display: flex;

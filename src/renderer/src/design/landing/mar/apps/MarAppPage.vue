@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
+  ArrowRight,
   Check,
   ChevronLeft,
   ChevronsLeftRight,
@@ -28,7 +29,7 @@ import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
-import { EXAMPLES } from '../userStates/examples'
+import { examplesOf, openOn, type AppExample } from './appExamples'
 
 /**
  * An app opens straight into its editor, as in the Hub's full-screen apps
@@ -44,7 +45,6 @@ import { EXAMPLES } from '../userStates/examples'
 const {
   appId,
   name,
-  blurb,
   thumbId,
   fields,
   cost,
@@ -54,7 +54,6 @@ const {
 } = defineProps<{
   appId: string
   name: string
-  blurb: string
   thumbId: string
   fields: Field[]
   cost: number
@@ -67,8 +66,12 @@ const emit = defineEmits<{ done: [] }>()
 // apply here.
 defineOptions({ inheritAttrs: false })
 
-const example = computed(() => EXAMPLES.find((x) => x.app === appId))
-const does = computed(() => example.value?.does ?? blurb)
+// Its examples, to start from like templates: the one picked in Apps ›
+// Examples, else its first. Picking one loads its picture, its words and
+// its result.
+const examples = computed(() => examplesOf(appId))
+const exId = ref(openOn[appId] ?? examples.value[0]?.id)
+const example = computed(() => examples.value.find((x) => x.id === exId.value))
 const kind = computed(() => example.value?.kind ?? (output === 'video' ? 'Video' : 'Image'))
 const made = computed(() => kind.value.toLowerCase())
 /** What goes in: the example's own picture, or the app's cover. */
@@ -88,6 +91,18 @@ const shown = computed<Field[]>(() => {
 // for yours.
 const firstImage = computed(() => shown.value.find((f) => f.kind === 'image')?.id)
 const values = reactive<Record<string, string>>({})
+const firstText = computed(() => shown.value.find((f) => f.kind === 'text')?.id)
+function load(x: AppExample | undefined): void {
+  if (firstText.value) values[firstText.value] = x?.prompt ?? ''
+}
+load(example.value)
+function pickExample(x: AppExample): void {
+  if (state.value === 'running') return
+  exId.value = x.id
+  state.value = 'idle'
+  comparing.value = false
+  load(x)
+}
 const pick = (f: Field): string => values[f.id] ?? f.options?.[0] ?? ''
 const count = computed(() =>
   Number(pick(fields.find((f) => f.kind === 'count') ?? ({} as Field)) || 1)
@@ -120,6 +135,24 @@ const credits = computed(() =>
 const comparing = ref(false)
 const split = ref(50)
 
+// While it runs: how far along, and for how long.
+const RUN_MS = 250 + (STEPS.length + 1) * 650
+const pct = ref(0)
+const secs = ref(0)
+let clock: ReturnType<typeof setInterval> | undefined
+onBeforeUnmount(() => clearInterval(clock))
+function startClock(): void {
+  const t0 = performance.now()
+  clearInterval(clock)
+  clock = setInterval(() => {
+    const ms = performance.now() - t0
+    pct.value = Math.min(99, Math.round((ms / RUN_MS) * 100))
+    secs.value = Math.floor(ms / 1000)
+    if (state.value !== 'running') clearInterval(clock)
+  }, 80)
+}
+const stepNow = computed(() => STEPS[Math.max(0, progress.value - 1)])
+
 function run(): void {
   if (state.value === 'running') return
   if (gate && !gate()) return
@@ -127,6 +160,9 @@ function run(): void {
   take.value = 0
   state.value = 'running'
   progress.value = 0
+  pct.value = 0
+  secs.value = 0
+  startClock()
   const tick = (): void => {
     if (progress.value < STEPS.length) {
       progress.value++
@@ -176,24 +212,31 @@ function back(): void {
           ><ChevronLeft :size="16"
         /></Button>
         <h1 class="shrink-0 text-heading font-semibold">{{ name }}</h1>
-        <span class="mar-app-editor-sep" aria-hidden="true" />
-        <p class="min-w-0 truncate text-ui text-muted-foreground">{{ does }}</p>
       </div>
       <span class="flex-1" />
       <div class="mar-app-editor-actions">
+        <!-- Compare and Share: icons alone, white on no fill. -->
         <Button
-          v-if="hasResult"
+          v-if="hasResult && state !== 'running'"
           variant="ghost"
-          size="sm"
+          size="icon-sm"
+          aria-label="Compare before and after"
+          title="Compare"
           :aria-pressed="comparing"
-          :disabled="state === 'running'"
-          :class="comparing && 'bg-secondary-background text-base-foreground'"
+          :class="cn('mar-app-editor-icon', comparing && 'is-on')"
           @click="comparing = !comparing"
-          ><Columns2 :size="14" />Compare</Button
-        >
+          ><Columns2 :size="16"
+        /></Button>
         <PopoverRoot>
           <PopoverTrigger as-child>
-            <Button variant="ghost" size="sm"><Share2 :size="14" />Share</Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Share"
+              title="Share"
+              class="mar-app-editor-icon"
+              ><Share2 :size="16"
+            /></Button>
           </PopoverTrigger>
           <!-- Share: the app, its link to copy, and once you've run it,
                whether your result goes with it. -->
@@ -242,10 +285,12 @@ function back(): void {
             </div>
           </PopoverContent>
         </PopoverRoot>
+        <!-- Download only once there is something of yours to download. -->
         <Button
+          v-if="state === 'done'"
           variant="primary"
           size="sm"
-          :disabled="state !== 'done'"
+          class="ml-1"
           @click="toast('Downloading…')"
           ><Download :size="13" />Download</Button
         >
@@ -272,6 +317,26 @@ function back(): void {
       <!-- Panel: what you give it, and Run at its foot -->
       <aside class="mar-app-editor-panel" aria-label="Input">
         <div class="mar-app-editor-fields">
+          <!-- Examples: start from one, like a template; it fills the
+               panel and shows its result. -->
+          <section v-if="examples.length > 1" class="mar-app-editor-field">
+            <h2 class="mar-app-editor-label">Start from an example</h2>
+            <div class="mar-app-ex">
+              <button
+                v-for="x in examples"
+                :key="x.id"
+                type="button"
+                :title="x.title"
+                :aria-label="x.title"
+                :aria-pressed="x.id === exId"
+                :class="cn('mar-app-ex-pick', x.id === exId && 'is-on')"
+                @click="pickExample(x)"
+              >
+                <img :src="x.after" alt="" />
+              </button>
+            </div>
+            <p class="truncate text-ui text-muted-foreground">{{ example?.title }}</p>
+          </section>
           <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
             <h2 class="mar-app-editor-label">{{ f.label }}</h2>
             <button
@@ -388,21 +453,29 @@ function back(): void {
           </div>
 
           <!-- Running: the steps over the blurred picture -->
-          <ul v-if="state === 'running'" class="mar-app-editor-steps">
-            <li
-              v-for="(s, i) in STEPS"
-              :key="s"
-              :class="i < progress ? 'text-base-foreground' : 'text-subtle-foreground'"
+          <!-- Running: a light sweeps the picture; one card says what's
+               happening, for how long, and how far along. -->
+          <span
+            v-if="state === 'running' && hasResult"
+            class="mar-app-editor-sweep"
+            aria-hidden="true"
+          />
+          <div v-if="state === 'running'" class="mar-app-editor-gen" role="status">
+            <span class="flex items-center justify-between gap-6">
+              <span class="flex items-center gap-2 font-medium"
+                ><Loader2 :size="14" class="animate-spin" />{{ stepNow }}</span
+              >
+              <span class="text-subtle-foreground tabular-nums">{{ secs }} s</span>
+            </span>
+            <span class="mar-app-editor-bar-track"><span :style="{ width: `${pct}%` }" /></span>
+            <span class="text-[12px] text-subtle-foreground tabular-nums"
+              >{{ pct }}% · {{ count }} {{ count === 1 ? made : `${made}s` }}</span
             >
-              <Check v-if="i < progress - 1" :size="14" class="text-status-running" />
-              <Loader2 v-else-if="i === progress - 1" :size="14" class="animate-spin" />
-              <span v-else class="size-3.5" />{{ s }}
-            </li>
-          </ul>
+          </div>
         </div>
 
         <!-- Dock: your takes once you've run it. Before that the picture's
-             tag says it's an example and the header says what it does. -->
+             tag says it's an example. -->
         <div v-if="state === 'done'" class="mar-app-editor-dock">
           <template v-if="takes.length > 1">
             <button
@@ -418,10 +491,13 @@ function back(): void {
             </button>
             <span class="mar-app-editor-rule" aria-hidden="true" />
           </template>
-          <span class="px-2 text-ui text-muted-foreground"
-            >{{ takes.length }} {{ takes.length === 1 ? made : `${made}s` }} · 18 s</span
+          <span class="mar-app-editor-done"
+            ><Check :size="14" />{{ takes.length }} {{ takes.length === 1 ? made : `${made}s` }} in
+            18 s</span
           >
-          <slot name="saved" />
+          <span v-if="$slots.saved" class="mar-app-editor-saved"
+            ><slot name="saved" /><ArrowRight :size="13"
+          /></span>
         </div>
       </main>
     </div>
@@ -437,7 +513,7 @@ function back(): void {
   height: 100%;
   min-height: 560px;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: var(--edge);
+  /* No gap under the header: its 56 px centre the title on its own. */
   padding: 0 var(--edge) var(--edge);
   overflow: hidden;
   background: var(--color-app-background);
@@ -467,13 +543,7 @@ function back(): void {
 }
 .mar-app-editor-actions {
   flex-shrink: 0;
-  gap: 4px;
-}
-.mar-app-editor-sep {
-  width: 1px;
-  height: 14px;
-  margin: 0 4px;
-  background: var(--color-border-strong);
+  gap: 10px;
 }
 
 /* Panel */
@@ -727,38 +797,133 @@ function back(): void {
   background: var(--color-secondary-background);
   color: var(--color-muted-foreground);
 }
-.mar-app-editor-steps {
+/* Running: one card over the blurred picture. */
+.mar-app-editor-gen {
   position: absolute;
   top: 50%;
   left: 50%;
   display: flex;
+  width: 280px;
   translate: -50% -50%;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 18px;
-  border-radius: var(--radius-card);
-  background: var(--color-media-overlay);
-  backdrop-filter: blur(8px);
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: oklch(0.2 0 0 / 0.62);
+  backdrop-filter: blur(16px);
   font-size: var(--text-ui);
 }
-.mar-app-editor-steps li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: color 200ms;
+.mar-app-editor-bar-track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.12);
 }
+.mar-app-editor-bar-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-base-foreground);
+  transition: width 120ms linear;
+}
+/* A soft band of light that crosses the picture, top to bottom. */
+.mar-app-editor-sweep {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    oklch(1 0 0 / 0.07) 45%,
+    oklch(1 0 0 / 0.14) 50%,
+    oklch(1 0 0 / 0.07) 55%,
+    transparent 100%
+  );
+  background-size: 100% 220%;
+  animation: mar-app-editor-sweep 1.8s ease-in-out infinite;
+}
+@keyframes mar-app-editor-sweep {
+  from {
+    background-position: 0 100%;
+  }
+  to {
+    background-position: 0 -120%;
+  }
+}
+/* Done: the takes, then what it made and where it went, as one quiet pill. */
 .mar-app-editor-dock {
   display: flex;
   max-width: 100%;
-  height: 40px;
+  height: 38px;
   flex-shrink: 0;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-card);
-  background: var(--color-secondary-background);
+  gap: 6px;
+  padding: 4px 6px 4px 4px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   white-space: nowrap;
+}
+.mar-app-editor-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+}
+.mar-app-editor-done > svg {
+  color: var(--color-status-running, #3ccf7a);
+}
+.mar-app-editor-saved {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 10px 0 2px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+}
+.mar-app-editor-saved :deep(button) {
+  height: 30px;
+  padding-inline: 10px 4px;
+  color: inherit;
+  text-decoration: none;
+}
+/* Header icons: white, never a fill; hover dims them. */
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-icon {
+  background: transparent;
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-icon:hover {
+  background: transparent;
+  opacity: 0.7;
+}
+/* Start from an example: the results, small and square. */
+.mar-app-ex {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-ex-pick {
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 8px;
+  opacity: 0.6;
+  transition: opacity 150ms;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-ex-pick:hover {
+  opacity: 0.9;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-ex-pick.is-on {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--color-base-foreground);
+}
+.mar-app-ex-pick img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .mar-app-editor-rule {
   width: 1px;
@@ -798,6 +963,9 @@ function back(): void {
   }
   .mar-app-editor-pic {
     transition: none;
+  }
+  .mar-app-editor-sweep {
+    animation: none;
   }
 }
 </style>

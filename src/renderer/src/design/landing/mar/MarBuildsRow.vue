@@ -18,17 +18,11 @@ import './setup/setup.css'
 const shown = computed(() => recentInstances.value.slice(0, 3))
 /** From Milestone 2 on, each build is the install card made small:
  *  the machine drawn, its state, its name, what it runs on. Each one is
- *  its own: lit in the build's hue, and saying what it holds. */
+ *  its own, lit in the build's hue. */
 const machine = computed(() => can.value.exploreApps)
 // The drawing says where it runs; the line says on what.
 const detail = (i: (typeof shown.value)[number]): string =>
   [i.gpu, i.version].filter(Boolean).join(' · ')
-const holds = (i: (typeof shown.value)[number]): string =>
-  i.models
-    ? `${i.models} models · ${i.nodes ?? 0} node packs`
-    : i.kind === 'cloud'
-      ? 'Every model, ready'
-      : 'Fresh build'
 </script>
 
 <template>
@@ -62,7 +56,6 @@ const holds = (i: (typeof shown.value)[number]): string =>
             >
             <span class="mbr-name">{{ i.name }}</span>
             <span class="mbr-meta">{{ detail(i) }}</span>
-            <span class="mbr-holds">{{ holds(i) }}</span>
           </span>
         </button>
       </template>
@@ -168,12 +161,6 @@ const holds = (i: (typeof shown.value)[number]): string =>
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.mbr-holds {
-  margin-top: 6px;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
 }
 .mbr-meta {
   overflow: hidden;

@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { proto } from '../../useProto'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAppsPage from './MarAppsPage.vue'
+import MarExplore from '../explore/MarExplore.vue'
+import { can } from '../../milestones'
 import MarAssetsPage from './MarAssetsPage.vue'
 import MarBuildsPage from './MarBuildsPage.vue'
 import MarProjectsPage from './MarProjectsPage.vue'
@@ -26,6 +28,9 @@ const page = computed<string>(() => proto.page)
 
 <template>
   <MarWorkflowsPage v-if="page === 'workflows'" />
+  <!-- Milestone 2: Apps is where apps are found (Examples and Apps); the
+       library of your own comes with Explore. -->
+  <MarExplore v-else-if="page === 'apps' && can.exploreApps && !can.explore" as-apps />
   <MarAppsPage v-else-if="page === 'apps'" />
   <MarAssetsPage v-else-if="page === 'assets'" />
   <MarBuildsPage v-else-if="page === 'environments' || page === 'instances'" />

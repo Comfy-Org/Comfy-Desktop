@@ -147,9 +147,9 @@ const recent = computed(() =>
     <template v-if="gated"></template>
     <MarStart v-else-if="firstRun" />
     <div v-else>
-      <!-- The Apps stage: the examples arc leads for everyone. Once Explore
-           & Learn arrive, apps live in Explore only. -->
-      <ExampleArc v-if="can.exploreApps && !can.explore" class="mt-6" />
+      <!-- The Apps stage: the examples arc leads for everyone, from
+           Milestone 2 on. -->
+      <ExampleArc v-if="can.exploreApps" class="mt-6" />
       <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
@@ -185,7 +185,9 @@ const recent = computed(() =>
         <StarterCards />
       </section>
 
-      <section v-if="recent.length" class="mt-10">
+      <!-- Milestone 2 is apps only: Recently used comes back with Explore &
+           Learn. -->
+      <section v-if="recent.length && (can.explore || !can.exploreApps)" class="mt-10">
         <SectionHeader
           title="Recently used"
           :link="can.projects ? 'All workflows' : undefined"
@@ -234,7 +236,8 @@ const recent = computed(() =>
       </section>
     </div>
 
-    <template v-if="can.explore">
+    <!-- What's new waits for the Builder: at Explore & Learn the apps lead. -->
+    <template v-if="can.builder">
       <SpotlightCarousel v-if="p20.news === 'spotlight'" />
       <WhatsNew v-else-if="parts.news === 'mar'" />
       <LaunchBanner v-else-if="parts.news === 'banner'" />

@@ -73,7 +73,9 @@ hostActions.launch = (inst, what) => {
     if (can.value.breadcrumb) return void openInNewWindow(inst.id)
     return emit('pick', inst.source as Installation)
   }
-  toast(can.value.breadcrumb ? `${inst.name} opens in its own window` : `${inst.name} opens`)
+  // The prototype has no second window: the build opens in a tab here, so
+  // a click always lands in ComfyUI.
+  openHere(inst, what)
 }
 
 function relative(ms?: number): string {

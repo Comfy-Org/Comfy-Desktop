@@ -58,7 +58,11 @@ function pick(id: string): void {
         role="listbox"
         aria-label="Builds"
       >
-        <p class="px-2.5 pt-1.5 pb-1 text-ui text-subtle-foreground">Browse the assets of</p>
+        <p
+          class="px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-[0.08em] text-subtle-foreground uppercase"
+        >
+          Browse the assets of
+        </p>
         <button
           type="button"
           role="option"

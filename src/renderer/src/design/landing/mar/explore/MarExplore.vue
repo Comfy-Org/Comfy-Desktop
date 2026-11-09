@@ -12,7 +12,8 @@ import { fieldVariants } from '../../ui/field.variants'
 import Select from '../../ui/Select.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
 import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
-import { EXPLORE, STARTER_APPS, openAppPage } from '../../appFlow'
+import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
+import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { goIn, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
@@ -29,21 +30,33 @@ import MarSearchField from '../pages/MarSearchField.vue'
  * its own tab, as its user. The frame (title, toolbar, Loading, Error,
  * Nothing matches) is MarPage; the catalogue is never empty.
  */
-type Tab = 'apps' | 'templates' | 'models' | 'tutorials'
-const tab = ref<Tab>('apps')
+/** At Milestone 2 this is the Apps page: Examples (everything the apps
+ *  have made, whatever app made it) and Apps (the apps themselves). */
+const { asApps = false } = defineProps<{ asApps?: boolean }>()
+type Tab = 'examples' | 'apps' | 'templates' | 'models' | 'tutorials'
+const tab = ref<Tab>(asApps ? 'examples' : 'apps')
 const type = ref('all')
 const query = ref('')
 
-const TABS: { value: Tab; label: string; count: number }[] = [
-  {
-    value: 'apps',
-    label: 'Apps',
-    count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
-  },
-  { value: 'templates', label: 'Templates', count: TEMPLATES.length },
-  { value: 'models', label: 'Models', count: ROUTER_MODELS.length },
-  { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length }
-]
+const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
+const TABS: { value: Tab; label: string; count: number }[] = asApps
+  ? [
+      { value: 'examples', label: 'Gallery', count: APP_EXAMPLES.length },
+      { value: 'apps', label: 'Apps', count: APPS_COUNT }
+    ]
+  : [
+      {
+        value: 'apps',
+        label: 'Apps',
+        count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
+      },
+      { value: 'templates', label: 'Templates', count: TEMPLATES.length },
+      { value: 'models', label: 'Models', count: ROUTER_MODELS.length },
+      { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length }
+    ]
+// Examples narrow by the app that made them.
+const appName = (id: string): string => libApp(id)?.name ?? ''
+const EXAMPLE_APPS = [...new Set(APP_EXAMPLES.map((x) => x.app))]
 const TYPES: Record<Tab, { value: string; label: string }[]> = {
   templates: [
     { value: 'all', label: 'All types' },
@@ -57,6 +70,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
     { value: 'video', label: 'Video' }
   ],
   apps: [],
+  examples: [],
   tutorials: [
     { value: 'all', label: 'All topics' },
     { value: 'Basics', label: 'Basics' },
@@ -65,15 +79,12 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
     { value: 'Ads', label: 'Ads' }
   ]
 }
-watch(tab, () => {
-  type.value = 'all'
-  query.value = ''
-  uses.value = []
-})
+watch(tab, clearFilters)
 const PLACEHOLDER: Record<Tab, string> = {
   templates: 'Search templates',
   models: 'Search models or providers',
   apps: 'Search apps',
+  examples: 'Search the gallery',
   tutorials: 'Search tutorials'
 }
 
@@ -107,15 +118,84 @@ const USES = computed(() =>
     count: searched.value.filter((c) => c.use === s.title).length
   }))
 )
-function pickUse(use: string, on: boolean): void {
-  uses.value = on ? [...uses.value, use] : uses.value.filter((u) => u !== use)
+// MVP filters, one Filter menu per tab: what it makes (Type), then the
+// app that made it (Examples) or its use case (Apps). Picked ones show as
+// chips under the line; no Sort, the gallery keeps its curated order.
+const VIDEO_APPS = ['s-reshoot', 's-jutsu', 'x-i2v', 'x-h3', 'x-wan', 'e-video']
+const appKind = (id: string): string =>
+  VIDEO_APPS.includes(id) ? 'Video' : id === 'x-3d' ? '3D' : 'Image'
+const kinds = ref<string[]>([])
+const fromApps = ref<string[]>([])
+const toggle = (list: string[], v: string, on: boolean): string[] =>
+  on ? [...list, v] : list.filter((x) => x !== v)
+function clearFilters(): void {
+  type.value = 'all'
+  query.value = ''
+  uses.value = []
+  kinds.value = []
+  fromApps.value = []
 }
 const apps = computed(() => {
   const list = searched.value
     .filter((c) => !uses.value.length || uses.value.includes(c.use))
+    .filter((c) => !kinds.value.length || kinds.value.includes(appKind(c.app.id)))
     .map((c) => c.app)
   return appSort.value === 'az' ? [...list].sort((a, b) => a.name.localeCompare(b.name)) : list
 })
+const searchedExamples = computed(() =>
+  APP_EXAMPLES.filter((x) => has(`${x.title} ${appName(x.app)}`))
+)
+const examples = computed(() =>
+  searchedExamples.value
+    .filter((x) => !kinds.value.length || kinds.value.includes(x.kind))
+    .filter((x) => !fromApps.value.length || fromApps.value.includes(x.app))
+)
+// What the Filter menu offers on this tab, with how many each would show.
+const FILTER = computed(() => {
+  const ex = tab.value === 'examples'
+  const kindOf = (k: string): number =>
+    ex
+      ? searchedExamples.value.filter((x) => x.kind === k).length
+      : searched.value.filter((c) => appKind(c.app.id) === k).length
+  return [
+    {
+      title: 'Type',
+      list: kinds,
+      items: (ex ? ['Image', 'Video'] : ['Image', 'Video', '3D']).map((k) => ({
+        value: k,
+        label: k,
+        count: kindOf(k)
+      }))
+    },
+    ex
+      ? {
+          title: 'App',
+          list: fromApps,
+          items: EXAMPLE_APPS.map((id) => ({
+            value: id,
+            label: appName(id),
+            count: searchedExamples.value.filter((x) => x.app === id).length
+          }))
+        }
+      : {
+          title: 'Category',
+          list: uses,
+          items: USES.value.map((u) => ({ value: u.value, label: u.value, count: u.count }))
+        }
+  ]
+})
+const picked = computed(() =>
+  FILTER.value.flatMap((g) =>
+    g.items.filter((i) => g.list.value.includes(i.value)).map((i) => ({ ...i, group: g }))
+  )
+)
+// The wall's rhythm: each picture at its own shape, so no two rows line up.
+const SHAPES = ['4 / 5', '1 / 1', '3 / 4', '4 / 3', '2 / 3', '5 / 4', '3 / 4', '16 / 11']
+// An example opens its app on itself, ready to run or change.
+function useExample(x: AppExample): void {
+  openOn[x.app] = x.id
+  openAppPage(x.app)
+}
 const tutorials = computed(() =>
   TUTORIALS.filter((t) => type.value === 'all' || t.category === type.value).filter((t) =>
     has(`${t.title} ${t.blurb}`)
@@ -127,28 +207,31 @@ const empty = computed(
       templates: templates.value,
       models: models.value,
       apps: apps.value,
+      examples: examples.value,
       tutorials: tutorials.value
     })[tab.value].length === 0
 )
-const toolsAt = computed(() => (can.value.explore ? 'toolbar' : 'actions'))
+const tabbed = computed(() => asApps || can.value.explore)
+const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 </script>
 
 <template>
   <MarPage
-    title="Explore"
+    :title="asApps ? 'Apps' : 'Explore'"
     :no-results="empty"
-    error-title="Can't load Explore"
+    :error-title="asApps ? `Can't load Apps` : `Can't load Explore`"
     error-text="Templates, models and tutorials come from the internet. Your own workflows are still in Workflows."
-    @clear="((type = 'all'), (query = ''), (uses = []))"
+    @clear="clearFilters"
   >
     <!-- One line: what, which kind, search. With no tabs to pick, the
          tools sit beside the title instead of on a line of their own. -->
     <template #[toolsAt]>
-      <MarSeg v-if="can.explore" v-model="tab" :options="TABS" label="Explore" />
-      <div class="flex items-center gap-2" :class="can.explore && 'ml-auto'">
-        <!-- Apps: Filter by use case and Sort, as on the hub. -->
-        <template v-if="tab === 'apps'">
-          <DropdownMenuRoot :modal="false">
+      <MarSeg v-if="tabbed" v-model="tab" :options="TABS" :label="asApps ? 'Apps' : 'Explore'" />
+      <div class="flex items-center gap-2" :class="tabbed && 'ml-auto'">
+        <!-- Apps and Examples: one Filter menu (and Sort in Explore). At
+             Milestone 2 the few apps need only search; examples filter. -->
+        <template v-if="tab === 'apps' || tab === 'examples'">
+          <DropdownMenuRoot v-if="!(asApps && tab === 'apps')" :modal="false">
             <DropdownMenuTrigger
               :class="
                 cn(
@@ -159,26 +242,38 @@ const toolsAt = computed(() => (can.value.explore ? 'toolbar' : 'actions'))
             >
               <ListFilter :size="14" class="text-subtle-foreground" />
               Filter
-              <span v-if="uses.length" class="mar-ex-badge">{{ uses.length }}</span>
+              <span v-if="picked.length" class="mar-ex-badge">{{ picked.length }}</span>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="w-60">
-              <DropdownMenuLabel>Categories</DropdownMenuLabel>
-              <DropdownMenuCheckboxItem
-                v-for="u in USES"
-                :key="u.value"
-                :model-value="uses.includes(u.value)"
-                @update:model-value="(v: boolean) => pickUse(u.value, v)"
-              >
-                <span class="flex-1">{{ u.value }}</span>
-                <span class="text-subtle-foreground tabular-nums">{{ u.count }}</span>
-              </DropdownMenuCheckboxItem>
-              <template v-if="uses.length">
-                <DropdownMenuSeparator />
-                <DropdownMenuItem @select="uses = []">Clear filters</DropdownMenuItem>
+            <DropdownMenuContent align="end" class="mar-ex-filter w-60">
+              <template v-for="(g, gi) in FILTER" :key="g.title">
+                <DropdownMenuSeparator v-if="gi" class="mar-ex-filter-sep" />
+                <DropdownMenuLabel class="mar-ex-filter-label">{{ g.title }}</DropdownMenuLabel>
+                <DropdownMenuCheckboxItem
+                  v-for="i in g.items"
+                  :key="i.value"
+                  :model-value="g.list.value.includes(i.value)"
+                  @select.prevent
+                  @update:model-value="
+                    (v: boolean) => (g.list.value = toggle(g.list.value, i.value, v))
+                  "
+                >
+                  <span class="flex-1">{{ i.label }}</span>
+                  <span class="text-subtle-foreground tabular-nums">{{ i.count }}</span>
+                </DropdownMenuCheckboxItem>
+              </template>
+              <template v-if="picked.length">
+                <DropdownMenuSeparator class="mar-ex-filter-sep" />
+                <DropdownMenuItem @select="clearFilters">Clear filters</DropdownMenuItem>
               </template>
             </DropdownMenuContent>
           </DropdownMenuRoot>
-          <Select v-model="appSort" :options="APP_SORTS" label="Sort" class="w-40" />
+          <Select
+            v-if="tab === 'apps' && !asApps"
+            v-model="appSort"
+            :options="APP_SORTS"
+            label="Sort"
+            class="w-40"
+          />
         </template>
         <!-- Keyed by tab, so its label follows the tab (All types, All topics). -->
         <Select v-else :key="tab" v-model="type" :options="TYPES[tab]" class="w-36" />
@@ -186,21 +281,52 @@ const toolsAt = computed(() => (can.value.explore ? 'toolbar' : 'actions'))
       </div>
     </template>
 
-    <!-- Apps: the use cases picked, as chips; then one grid. -->
-    <template v-if="tab === 'apps'">
-      <div v-if="uses.length" class="mar-ex-chips">
-        <button
-          v-for="u in uses"
-          :key="u"
-          type="button"
-          class="mar-ex-chip"
-          :aria-label="`Remove ${u}`"
-          @click="pickUse(u, false)"
-        >
-          {{ u }}<X :size="12" />
-        </button>
-        <button type="button" class="mar-ex-clear" @click="uses = []">Clear</button>
+    <!-- The filters picked, as chips, over Examples and Apps. -->
+    <div v-if="picked.length && (tab === 'apps' || tab === 'examples')" class="mar-ex-chips">
+      <button
+        v-for="c in picked"
+        :key="`${c.group.title}-${c.value}`"
+        type="button"
+        class="mar-ex-chip"
+        :aria-label="`Remove ${c.label}`"
+        @click="c.group.list.value = toggle(c.group.list.value, c.value, false)"
+      >
+        {{ c.label }}<X :size="12" />
+      </button>
+      <button type="button" class="mar-ex-clear" @click="clearFilters">Clear</button>
+    </div>
+    <!-- Examples: what the apps made, as a masonry wall: each picture at
+         its own height, its line under it, no card around it (Apps keeps
+         the cards). One opens its app on it, like a template. -->
+    <div v-if="tab === 'examples'" class="mar-ex-wall">
+      <div
+        v-for="(x, i) in examples"
+        :key="x.id"
+        role="button"
+        tabindex="0"
+        class="mar-ex-tile group"
+        :aria-label="`Use ${x.title} in ${appName(x.app)}`"
+        @click="useExample(x)"
+        @keydown.enter="useExample(x)"
+      >
+        <span class="mar-ex-tile-media" :style="{ aspectRatio: SHAPES[i % SHAPES.length] }">
+          <img :src="x.after" alt="" loading="lazy" />
+          <span v-if="x.kind === 'Video'" class="mar-ex-tile-kind"
+            ><Play :size="10" fill="currentColor" />Video</span
+          >
+          <span class="mar-ex-tile-try">Try this</span>
+        </span>
+        <span class="block truncate px-0.5 pt-2 text-ui font-medium text-base-foreground">{{
+          x.title
+        }}</span>
+        <span class="block truncate px-0.5 text-ui text-subtle-foreground">{{
+          appName(x.app)
+        }}</span>
       </div>
+    </div>
+
+    <!-- Apps: one grid. -->
+    <template v-else-if="tab === 'apps'">
       <div class="mar-ex-grid is-apps">
         <div
           v-for="a in apps"
@@ -276,6 +402,73 @@ const toolsAt = computed(() => (can.value.explore ? 'toolbar' : 'actions'))
 </template>
 
 <style scoped>
+/* Examples: a masonry wall, picture first. */
+.mar-ex-wall {
+  columns: 4 220px;
+  column-gap: 14px;
+}
+.mar-ex-tile {
+  display: block;
+  margin-bottom: 18px;
+  break-inside: avoid;
+  cursor: pointer;
+  outline: none;
+}
+.mar-ex-tile-media {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--color-secondary-background);
+}
+.mar-ex-tile-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: scale 500ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+.mar-ex-tile:hover .mar-ex-tile-media img {
+  scale: 1.03;
+}
+.mar-ex-tile:focus-visible .mar-ex-tile-media {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.mar-ex-tile-kind {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+}
+.mar-ex-tile-try {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #fff;
+  color: #000;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0;
+  translate: 0 4px;
+  transition:
+    opacity 200ms ease,
+    translate 300ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+.mar-ex-tile:hover .mar-ex-tile-try,
+.mar-ex-tile:focus-visible .mar-ex-tile-try {
+  opacity: 1;
+  translate: 0 0;
+}
 .mar-ex-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
