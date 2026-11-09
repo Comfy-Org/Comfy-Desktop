@@ -153,9 +153,10 @@ function open(i: Item): void {
   <nav class="flex flex-col gap-px" :aria-label="mode === 'create' ? 'Create' : 'Build'">
     <template v-for="(i, idx) in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
       <!-- The global search (⌘K) right under the first place (Home), by
-           default. Search finds Create things: not in Build. -->
+           default. Search finds Create things: not in Build, and not before
+           Explore & Learn (Milestone 2 ships without it). -->
       <Button
-        v-if="idx === 1 && mode !== 'build'"
+        v-if="idx === 1 && mode !== 'build' && can.explore"
         variant="ghost"
         class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
         @click="search.open = true"
