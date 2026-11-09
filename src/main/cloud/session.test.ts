@@ -1,217 +1,442 @@
 // @vitest-environment node
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const electronState = vi.hoisted(() => ({ userData: '' }))
+
+vi.mock('electron', () => ({
+  app: { getPath: vi.fn(() => electronState.userData) },
+  safeStorage: {
+    isEncryptionAvailable: vi.fn(() => true),
+    encryptString: vi.fn((value: string) => Buffer.from(value, 'utf-8')),
+    decryptString: vi.fn((value: Buffer) => value.toString('utf-8'))
+  },
+  shell: { openExternal: vi.fn(() => Promise.resolve()) }
+}))
 vi.mock('./oauth', () => ({
   signIn: vi.fn(),
   refresh: vi.fn(),
   openAuthorizePage: vi.fn(() => Promise.resolve())
 }))
-vi.mock('./tokenStore', () => ({
-  activateWorkspace: vi.fn(),
-  clearTokens: vi.fn(),
-  getAuthStatus: vi.fn(),
-  loadTokens: vi.fn(),
-  loadWorkspaceTokens: vi.fn(),
-  replaceWorkspaceTokens: vi.fn(),
-  saveTokens: vi.fn(),
-  saveWorkspaceNames: vi.fn()
-}))
 vi.mock('./workspaces', () => ({
-  listWorkspaces: vi.fn(async () => [{ id: 'w-1' }]),
+  listWorkspaces: vi.fn(async () => [{ id: 'w-1', name: 'One', type: 'team', role: 'member' }]),
   listWorkspaceMembers: vi.fn(async () => [{ id: 'user-1', name: 'One' }])
 }))
+vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
+vi.mock('../lib/workspaceMintSwitchFlag', () => ({
+  isWorkspaceMintSwitchEnabled: vi.fn(async () => true)
+}))
 
-import { statusFromAccessToken, workspaceIdOf } from './claims'
+import * as mainTelemetry from '../lib/telemetry'
+import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
+import { statusFromAccessToken } from './claims'
+import { CLOUD_CONFIG } from './config'
 import { openAuthorizePage, refresh, signIn } from './oauth'
-import { CloudSession } from './session'
 import {
-  activateWorkspace,
-  clearTokens,
-  getAuthStatus,
-  loadTokens,
-  loadWorkspaceTokens,
-  replaceWorkspaceTokens,
-  saveTokens,
-  saveWorkspaceNames
-} from './tokenStore'
+  CloudSession,
+  WORKSPACE_RETURNED_TO_ANCHOR_EVENT,
+  WORKSPACE_SWITCH_BROWSER_EVENT,
+  WORKSPACE_SWITCH_EVENT
+} from './session'
+import { SignInFailure } from './signInFailure'
+import { _resetForTest, clearTokens, saveGrant } from './tokenStore'
 import type { AuthTokens } from './types'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
 const mocked = vi.mocked
-const future = Date.now() + 3_600_000
-const past = Date.now() - 1_000
+const FUTURE = Date.now() + 3_600_000
+const PAST = Date.now() - 1_000
+const READ_ONLY_SCOPE = 'comfy-cloud:user:read'
 
-let active: AuthTokens | null
-let bundles: Map<string, AuthTokens>
-
-function jwt(workspaceId: string, suffix = ''): string {
+function jwt(claims: Record<string, unknown>): string {
   const b64 = (value: unknown): string =>
     Buffer.from(JSON.stringify(value), 'utf-8').toString('base64url')
-  return `${b64({ alg: 'RS256' })}.${b64({ sub: 'user-1', workspace_id: workspaceId })}.sig${suffix}`
+  return `${b64({ alg: 'RS256' })}.${b64(claims)}.sig`
 }
 
-function makeTokens(workspaceId: string, expiresAt = future, suffix = ''): AuthTokens {
+interface GrantOptions {
+  expiresAt?: number
+  scope?: string
+  revision?: string
+  subject?: string
+}
+
+function grantOn(workspaceId: string, options: GrantOptions = {}): AuthTokens {
+  const {
+    expiresAt = FUTURE,
+    scope = CLOUD_CONFIG.scope,
+    revision = '',
+    subject = 'user-1'
+  } = options
   return {
-    accessToken: jwt(workspaceId, suffix),
-    refreshToken: `refresh-${workspaceId}${suffix}`,
+    accessToken: jwt({
+      sub: subject,
+      email: `${subject}@example.com`,
+      workspace_id: workspaceId,
+      workspace_type: 'team',
+      role: 'owner',
+      scope,
+      revision
+    }),
+    refreshToken: `refresh-${workspaceId}${revision}`,
     expiresAt
   }
 }
 
-function cache(tokens: AuthTokens, makeActive = false): void {
-  const workspaceId = workspaceIdOf(tokens.accessToken)
-  if (workspaceId) bundles.set(workspaceId, tokens)
-  if (makeActive) active = tokens
+function mintedJwt(workspaceId: string, subject = 'user-1'): string {
+  return jwt({
+    sub: subject,
+    email: `${subject}@example.com`,
+    workspace_id: workspaceId,
+    workspace_type: 'team',
+    role: 'member'
+  })
+}
+
+function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers })
+}
+
+function minted(workspaceId: string, expiresAt = FUTURE): Response {
+  return json(200, {
+    token: mintedJwt(workspaceId),
+    expires_at: new Date(expiresAt).toISOString()
+  })
+}
+
+interface MintRequest {
+  workspaceId: string
+  bearer: string
+}
+
+type MintReply = (request: MintRequest) => Response | Promise<Response>
+
+let mintReply: MintReply
+let mintRequests: MintRequest[]
+
+function signedInResult(tokens: AuthTokens): Awaited<ReturnType<typeof signIn>> {
+  return { tokens, status: statusFromAccessToken(tokens.accessToken) }
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
+function switchEvents(): unknown[] {
+  return mocked(mainTelemetry.emit)
+    .mock.calls.filter(([event]) => event === WORKSPACE_SWITCH_EVENT)
+    .map(([, context]) => context)
+}
+
+function browserEvents(): unknown[] {
+  return mocked(mainTelemetry.emit)
+    .mock.calls.filter(([event]) => event === WORKSPACE_SWITCH_BROWSER_EVENT)
+    .map(([, context]) => context)
+}
+
+function mintDisabled(): Response {
+  return json(503, { code: 'oauth_workspace_mint_disabled' })
+}
+
+function killMintSwitch(): void {
+  mocked(isWorkspaceMintSwitchEnabled).mockResolvedValue(false)
+}
+
+function refreshFailure(kind: 'network' | 'timeout' | 'http', httpStatus?: number): SignInFailure {
+  if (kind === 'http') {
+    return new SignInFailure('refresh failed', 'server_error', { httpStatus })
+  }
+  return new SignInFailure('refresh failed', kind)
+}
+
+function vaultOnDisk(): Record<string, unknown> {
+  return JSON.parse(
+    fs.readFileSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'), 'utf-8')
+  ) as Record<string, unknown>
 }
 
 beforeEach(() => {
-  active = null
-  bundles = new Map()
-  mocked(loadTokens).mockImplementation(() => active)
-  mocked(loadWorkspaceTokens).mockImplementation((workspaceId) =>
-    workspaceId ? (bundles.get(workspaceId) ?? null) : null
-  )
-  mocked(activateWorkspace).mockImplementation((workspaceId) => {
-    const tokens = bundles.get(workspaceId) ?? null
-    if (tokens) active = tokens
-    return tokens
-  })
-  mocked(saveTokens).mockImplementation((tokens) => cache(tokens, true))
-  mocked(replaceWorkspaceTokens).mockImplementation(
-    (workspaceId, expectedAccessToken, expectedRefreshToken, tokens) => {
-      if (!workspaceId) return false
-      const current = bundles.get(workspaceId)
-      if (
-        !current ||
-        current.accessToken !== expectedAccessToken ||
-        current.refreshToken !== expectedRefreshToken
-      ) {
-        return false
+  electronState.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'comfy-cloud-session-'))
+  _resetForTest()
+  mintRequests = []
+  mintReply = ({ workspaceId }) => minted(workspaceId)
+  mocked(isWorkspaceMintSwitchEnabled).mockResolvedValue(true)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      const request = {
+        workspaceId: (JSON.parse(String(init.body)) as { workspace_id: string }).workspace_id,
+        bearer: new Headers(init.headers).get('Authorization')?.replace('Bearer ', '') ?? ''
       }
-      bundles.set(workspaceId, tokens)
-      if (active?.accessToken === expectedAccessToken) active = tokens
-      return true
-    }
-  )
-  mocked(clearTokens).mockImplementation(() => {
-    active = null
-    bundles.clear()
-  })
-  mocked(getAuthStatus).mockImplementation(() =>
-    active ? statusFromAccessToken(active.accessToken) : { signedIn: false }
+      mintRequests.push(request)
+      return mintReply(request)
+    })
   )
 })
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  clearTokens()
+  _resetForTest()
+  fs.rmSync(electronState.userData, { recursive: true, force: true })
+  vi.unstubAllGlobals()
+  vi.clearAllMocks()
+  mocked(signIn).mockReset()
+  mocked(refresh).mockReset()
+})
 
 describe('CloudSession access tokens', () => {
-  it('returns null when signed out and an unexpired token without refreshing', async () => {
+  it('returns null when signed out and the grant token while active on the anchor', async () => {
     const session = new CloudSession()
     await expect(session.getAccessToken()).resolves.toBeNull()
 
-    const tokens = makeTokens('w1')
-    cache(tokens, true)
-    await expect(session.getAccessToken()).resolves.toBe(tokens.accessToken)
+    const grant = grantOn('w1')
+    saveGrant(grant)
+
+    await expect(session.getAccessToken()).resolves.toBe(grant.accessToken)
     expect(refresh).not.toHaveBeenCalled()
+    expect(mintRequests).toEqual([])
   })
 
-  it('single-flights and persists a refresh rotation', async () => {
-    const stale = makeTokens('w1', past)
-    const fresh = makeTokens('w1', future, '-fresh')
-    cache(stale, true)
-    let finishRefresh!: (tokens: AuthTokens) => void
-    mocked(refresh).mockReturnValue(
-      new Promise((resolve) => {
-        finishRefresh = resolve
-      })
-    )
+  it('single-flights and persists a grant refresh rotation', async () => {
+    const stale = grantOn('w1', { expiresAt: PAST })
+    const fresh = grantOn('w1', { revision: '-fresh' })
+    saveGrant(stale)
+    const rotation = deferred<AuthTokens>()
+    mocked(refresh).mockReturnValue(rotation.promise)
     const session = new CloudSession()
 
-    const calls = [session.getAccessToken(), session.getAccessToken(), session.getAccessToken()]
-    finishRefresh(fresh)
+    const calls = [
+      session.getAccessToken(),
+      session.getAccessToken(),
+      session.getGrantAccessToken()
+    ]
+    rotation.resolve(fresh)
 
     await expect(Promise.all(calls)).resolves.toEqual([
       fresh.accessToken,
       fresh.accessToken,
       fresh.accessToken
     ])
-    expect(refresh).toHaveBeenCalledOnce()
-    expect(replaceWorkspaceTokens).toHaveBeenCalledExactlyOnceWith(
-      'w1',
-      stale.accessToken,
-      stale.refreshToken,
-      fresh
-    )
-  })
-
-  it('isolates concurrent refresh rotations for different workspaces', async () => {
-    const staleOne = makeTokens('w1', past)
-    const freshOne = makeTokens('w1', future, '-fresh')
-    const staleTwo = makeTokens('w2', past)
-    const freshTwo = makeTokens('w2', future, '-fresh')
-    cache(staleOne, true)
-    cache(staleTwo)
-    const refreshes = new Map<string, (tokens: AuthTokens) => void>()
-    mocked(refresh).mockImplementation(
-      (refreshToken) =>
-        new Promise((resolve) => {
-          refreshes.set(refreshToken, resolve)
-        })
-    )
-    const session = new CloudSession()
-
-    const oldRequest = session.getAccessToken()
-    const switching = session.switchWorkspace('w2')
-    expect(refresh).toHaveBeenCalledTimes(2)
-    refreshes.get(staleTwo.refreshToken!)!(freshTwo)
-    await expect(switching).resolves.toMatchObject({ workspaceId: 'w2' })
-    refreshes.get(staleOne.refreshToken!)!(freshOne)
-
-    await expect(oldRequest).resolves.toBeNull()
-    expect(active).toEqual(freshTwo)
-    expect(bundles.get('w1')).toEqual(freshOne)
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(stale.refreshToken)
+    expect(vaultOnDisk().grant).toEqual(fresh)
   })
 
   it('does not let a refresh completion restore credentials after logout', async () => {
-    const stale = makeTokens('w1', past)
-    const fresh = makeTokens('w1', future, '-fresh')
-    cache(stale, true)
-    let finishRefresh!: (tokens: AuthTokens) => void
-    mocked(refresh).mockReturnValue(
-      new Promise((resolve) => {
-        finishRefresh = resolve
-      })
-    )
+    saveGrant(grantOn('w1', { expiresAt: PAST }))
+    const rotation = deferred<AuthTokens>()
+    mocked(refresh).mockReturnValue(rotation.promise)
     const session = new CloudSession()
 
     const request = session.getAccessToken()
     session.logout()
-    finishRefresh(fresh)
+    rotation.resolve(grantOn('w1', { revision: '-fresh' }))
 
     await expect(request).resolves.toBeNull()
-    expect(active).toBeNull()
-    expect(replaceWorkspaceTokens).toHaveReturnedWith(false)
+    expect(session.isSignedIn()).toBe(false)
+  })
+
+  it('keeps a grant rotation that lands after a switch but activates nothing', async () => {
+    saveGrant(grantOn('w1', { expiresAt: PAST }))
+    const fresh = grantOn('w1', { revision: '-fresh' })
+    const rotation = deferred<AuthTokens>()
+    mocked(refresh).mockReturnValue(rotation.promise)
+    const session = new CloudSession()
+
+    const oldRequest = session.getAccessToken()
+    const switching = session.switchWorkspace('w2')
+    rotation.resolve(fresh)
+
+    await expect(switching).resolves.toMatchObject({ workspaceId: 'w2' })
+    await expect(oldRequest).resolves.toBeNull()
+    expect(session.currentWorkspaceId()).toBe('w2')
+    expect(vaultOnDisk().grant).toEqual(fresh)
+  })
+
+  it('returns no token for API calls while a refresh fails for a transient reason', async () => {
+    saveGrant(grantOn('w1', { expiresAt: PAST }))
+    mocked(refresh).mockRejectedValue(refreshFailure('network'))
+
+    await expect(new CloudSession().getAccessToken()).resolves.toBeNull()
+  })
+
+  it('returns the stale grant token after a definitive refusal so the 401 ends the session', async () => {
+    const stale = grantOn('w1', { expiresAt: PAST })
+    saveGrant(stale)
+    mocked(refresh).mockRejectedValue(refreshFailure('http', 400))
+
+    await expect(new CloudSession().getAccessToken()).resolves.toBe(stale.accessToken)
+  })
+
+  it('re-mints a minted token near expiry once for concurrent callers, with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) => minted(workspaceId, Date.now() + 30_000)
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    mintRequests = []
+    mintReply = ({ workspaceId }) => minted(workspaceId)
+
+    const tokens = await Promise.all([session.getAccessToken(), session.getAccessToken()])
+
+    expect(tokens).toEqual([mintedJwt('w2'), mintedJwt('w2')])
+    expect(mintRequests).toHaveLength(1)
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('keeps a still valid minted token when its re-mint fails', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) => minted(workspaceId, Date.now() + 30_000)
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    mintReply = () => json(500, {})
+
+    await expect(session.getAccessToken()).resolves.toBe(mintedJwt('w2'))
+    expect(signIn).not.toHaveBeenCalled()
   })
 })
 
-describe('CloudSession browser auth', () => {
+describe('CloudSession background token reads never open the browser', () => {
+  async function activeOnMintedToken(expiresAt = PAST): Promise<CloudSession> {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) => minted(workspaceId, expiresAt)
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    mintRequests = []
+    return session
+  }
+
+  function returnedToAnchorEvents(): unknown[] {
+    return mocked(mainTelemetry.emit)
+      .mock.calls.filter(([event]) => event === WORKSPACE_RETURNED_TO_ANCHOR_EVENT)
+      .map(([, context]) => context)
+  }
+
+  it.each<[string, () => void, string]>([
+    ['the server kill switch', () => (mintReply = mintDisabled), 'mint_disabled'],
+    ['the Desktop ops flag', killMintSwitch, 'mint_disabled'],
+    ['a lost membership', () => (mintReply = () => json(404, {})), 'unavailable'],
+    [
+      'a refused mint',
+      () => (mintReply = () => json(403, { code: 'workspace_access_denied' })),
+      'refused'
+    ],
+    ['an SSO policy', () => (mintReply = () => json(403, { code: 'sso_required' })), 'sso_required']
+  ])('%s returns active B to the anchor and announces it, once', async (_name, arrange, reason) => {
+    const session = await activeOnMintedToken()
+    const onReturned = vi.fn()
+    session.setReturnedToAnchorHandler(onReturned)
+    arrange()
+    const grant = grantOn('w1')
+
+    await expect(
+      Promise.all([session.getAccessToken(), session.getAccessToken()])
+    ).resolves.toEqual([null, null])
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+    expect(onReturned).toHaveBeenCalledOnce()
+    expect(session.currentWorkspaceId()).toBe('w1')
+    expect(session.status()).toMatchObject({ workspaceId: 'w1' })
+    expect(returnedToAnchorEvents()).toEqual([{ reason }])
+    await expect(session.getAccessToken()).resolves.toBe(grant.accessToken)
+  })
+
+  it('an ended grant returns to the anchor, whose 401 then ends the session as today', async () => {
+    const session = await activeOnMintedToken()
+    const onReturned = vi.fn()
+    session.setReturnedToAnchorHandler(onReturned)
+    mintReply = () => json(401, { code: 'oauth_grant_ended' })
+    mocked(refresh).mockRejectedValue(refreshFailure('http', 400))
+
+    await expect(session.getAccessToken()).resolves.toBeNull()
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(onReturned).toHaveBeenCalledOnce()
+    expect(session.currentWorkspaceId()).toBe('w1')
+    const onSignedOut = vi.fn()
+    session.asTokenProvider(onSignedOut).onUnauthorized?.(grantOn('w1').accessToken)
+    expect(onSignedOut).toHaveBeenCalledOnce()
+  })
+
+  it.each<[string, () => Response]>([
+    ['a rate limit', () => json(429, {})],
+    ['an outage', () => json(500, {})],
+    ['a 503 of another kind', () => json(503, { code: 'maintenance' })]
+  ])('%s stays on B with no token, no browser and no announcement', async (_name, reply) => {
+    const session = await activeOnMintedToken()
+    const onReturned = vi.fn()
+    session.setReturnedToAnchorHandler(onReturned)
+    mintReply = reply
+
+    await expect(session.getAccessToken()).resolves.toBeNull()
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(onReturned).not.toHaveBeenCalled()
+    expect(session.currentWorkspaceId()).toBe('w2')
+  })
+
+  it('keeps using a still valid token through a kill, then returns once it expires', async () => {
+    const session = await activeOnMintedToken(Date.now() + 30_000)
+    const onReturned = vi.fn()
+    session.setReturnedToAnchorHandler(onReturned)
+    killMintSwitch()
+
+    await expect(session.getAccessToken()).resolves.toBe(mintedJwt('w2'))
+
+    expect(onReturned).not.toHaveBeenCalled()
+    expect(session.currentWorkspaceId()).toBe('w2')
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a re-mint that lands after a newer switch does not move the active workspace', async () => {
+    const session = await activeOnMintedToken()
+    const onReturned = vi.fn()
+    session.setReturnedToAnchorHandler(onReturned)
+    const slow = deferred<Response>()
+    mintReply = () => slow.promise
+
+    const request = session.getAccessToken()
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    mintReply = ({ workspaceId }) => minted(workspaceId)
+    await session.switchWorkspace('w3')
+    slow.resolve(mintDisabled())
+
+    await expect(request).resolves.toBeNull()
+    expect(onReturned).not.toHaveBeenCalled()
+    expect(session.currentWorkspaceId()).toBe('w3')
+  })
+})
+
+describe('CloudSession browser sign-in', () => {
   it('single-flights repeated login requests', async () => {
-    let finishLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
-    mocked(signIn).mockReturnValue(
-      new Promise((resolve) => {
-        finishLogin = resolve
-      })
-    )
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
     const session = new CloudSession()
 
     const first = session.login()
     const second = session.login()
-    const tokens = makeTokens('w1')
-    finishLogin({ tokens, status: statusFromAccessToken(tokens.accessToken) })
+    pending.resolve(signedInResult(grantOn('w1')))
 
     await expect(Promise.all([first, second])).resolves.toHaveLength(2)
     expect(signIn).toHaveBeenCalledOnce()
-    expect(saveTokens).toHaveBeenCalledExactlyOnceWith(tokens)
+    expect(session.currentWorkspaceId()).toBe('w1')
+  })
+
+  it('moves to the consented workspace on a fresh login', async () => {
+    saveGrant(grantOn('w1'))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+
+    await session.login()
+
+    expect(session.currentWorkspaceId()).toBe('w3')
   })
 
   it('reopens the pending sign-in page when login is requested again', async () => {
@@ -248,133 +473,822 @@ describe('CloudSession browser auth', () => {
   })
 
   it('does not persist browser auth that finishes after logout', async () => {
-    let finishLogin!: (value: Awaited<ReturnType<typeof signIn>>) => void
-    mocked(signIn).mockReturnValue(
-      new Promise((resolve) => {
-        finishLogin = resolve
-      })
-    )
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
     const session = new CloudSession()
 
     const login = session.login()
     session.logout()
-    const tokens = makeTokens('w1')
-    finishLogin({ tokens, status: statusFromAccessToken(tokens.accessToken) })
+    pending.resolve(signedInResult(grantOn('w1')))
 
     await expect(login).resolves.toEqual({ signedIn: false })
-    expect(saveTokens).not.toHaveBeenCalled()
+    expect(session.isSignedIn()).toBe(false)
   })
 })
 
-describe('CloudSession workspaces', () => {
-  it('switches A to B to A from cache without browser auth', async () => {
-    const workspaceOne = makeTokens('w1')
-    const workspaceTwo = makeTokens('w2')
-    cache(workspaceOne, true)
-    cache(workspaceTwo)
+describe('CloudSession.switchWorkspace with no browser', () => {
+  it('T-V1: A to B to C to A signs in once and each new workspace is one mint', async () => {
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('wA')))
+    const session = new CloudSession()
+    await session.login()
+
+    await expect(session.switchWorkspace('wB')).resolves.toMatchObject({ workspaceId: 'wB' })
+    await expect(session.switchWorkspace('wC')).resolves.toMatchObject({ workspaceId: 'wC' })
+    await expect(session.switchWorkspace('wA')).resolves.toMatchObject({ workspaceId: 'wA' })
+    await expect(session.switchWorkspace('wB')).resolves.toMatchObject({ workspaceId: 'wB' })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+    expect(mintRequests.map(({ workspaceId }) => workspaceId)).toEqual(['wB', 'wC'])
+    expect(switchEvents()).toEqual([
+      { outcome: 'minted' },
+      { outcome: 'minted' },
+      { outcome: 'anchor' },
+      { outcome: 'cached' }
+    ])
+    expect(browserEvents()).toEqual([])
+  })
+
+  it('stores minted tokens without a refresh token and API calls use them', async () => {
+    const grant = grantOn('w1')
+    saveGrant(grant)
     const session = new CloudSession()
 
-    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
-    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ workspaceId: 'w1' })
+    await session.switchWorkspace('w2')
 
-    expect(activateWorkspace).toHaveBeenNthCalledWith(1, 'w2')
-    expect(activateWorkspace).toHaveBeenNthCalledWith(2, 'w1')
+    expect(mintRequests).toEqual([{ workspaceId: 'w2', bearer: grant.accessToken }])
+    await expect(session.getAccessToken()).resolves.toBe(mintedJwt('w2'))
+    await expect(session.getGrantAccessToken()).resolves.toBe(grant.accessToken)
+    expect(session.currentSubject()).toBe('user-1')
+    expect(vaultOnDisk()).toMatchObject({
+      version: 2,
+      activeWorkspaceId: 'w2',
+      grant,
+      workspaceTokens: { w2: { accessToken: mintedJwt('w2') } }
+    })
+    expect((vaultOnDisk().workspaceTokens as Record<string, AuthTokens>).w2).not.toHaveProperty(
+      'refreshToken'
+    )
+  })
+
+  it('re-mints an expired minted token on the next switch, with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) => minted(workspaceId, PAST)
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    await session.switchWorkspace('w1')
+    mintReply = ({ workspaceId }) => minted(workspaceId)
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+
+    expect(mintRequests).toHaveLength(2)
     expect(signIn).not.toHaveBeenCalled()
   })
 
-  it('refreshes an expired cached workspace independently before activating it', async () => {
-    const workspaceOne = makeTokens('w1')
-    const staleTwo = makeTokens('w2', past)
-    const freshTwo = makeTokens('w2', future, '-fresh')
-    cache(workspaceOne, true)
-    cache(staleTwo)
-    mocked(refresh).mockResolvedValue(freshTwo)
+  it('refreshes an expired grant before minting', async () => {
+    const stale = grantOn('w1', { expiresAt: PAST })
+    const fresh = grantOn('w1', { revision: '-fresh' })
+    saveGrant(stale)
+    mocked(refresh).mockResolvedValue(fresh)
 
     await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
       workspaceId: 'w2'
     })
 
-    expect(refresh).toHaveBeenCalledExactlyOnceWith(staleTwo.refreshToken)
-    expect(activateWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(mintRequests).toEqual([{ workspaceId: 'w2', bearer: fresh.accessToken }])
     expect(signIn).not.toHaveBeenCalled()
   })
 
-  it('uses browser auth when the active workspace can no longer refresh', async () => {
-    const stale = makeTokens('w1', past)
-    const authorized = makeTokens('w1', future, '-authorized')
-    cache(stale, true)
-    mocked(refresh).mockRejectedValue(new Error('revoked'))
-    mocked(signIn).mockResolvedValue({
-      tokens: authorized,
-      status: statusFromAccessToken(authorized.accessToken)
+  it('shares one flight between concurrent switches to the same workspace', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+    const session = new CloudSession()
+
+    await Promise.all([session.switchWorkspace('w2'), session.switchWorkspace('w2')])
+
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it.each<[string, () => Response, string, string]>([
+    ['T-V2: non-member 404', () => json(404, { code: 'NOT_FOUND' }), 'unavailable', 'unavailable'],
+    [
+      'account_outside_organization',
+      () => json(403, { code: 'account_outside_organization' }),
+      'refused',
+      'unavailable'
+    ],
+    [
+      'personal_workspace_disabled',
+      () => json(403, { code: 'personal_workspace_disabled' }),
+      'refused',
+      'unavailable'
+    ],
+    [
+      'insufficient_scope',
+      () => json(403, { code: 'insufficient_scope' }),
+      'refused',
+      'unavailable'
+    ],
+    ['a rate limit', () => json(429, {}, { 'Retry-After': '60' }), 'retryable', 'retryable'],
+    ['a server error', () => json(500, {}), 'retryable', 'retryable'],
+    ['a malformed 200', () => json(200, { token: '' }), 'retryable', 'retryable']
+  ])(
+    '%s stays on the current workspace with no browser',
+    async (_name, reply, outcome, failure) => {
+      saveGrant(grantOn('w1'))
+      mintReply = reply
+      const session = new CloudSession()
+
+      await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+        workspaceId: 'w1',
+        workspaceSwitchFailure: failure
+      })
+
+      expect(signIn).not.toHaveBeenCalled()
+      expect(openAuthorizePage).not.toHaveBeenCalled()
+      expect(session.currentWorkspaceId()).toBe('w1')
+      expect(switchEvents()).toEqual([{ outcome }])
+      expect(browserEvents()).toEqual([])
+    }
+  )
+
+  it('a network failure stays on the current workspace with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => {
+      throw new TypeError('offline')
+    }
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
     })
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('respects Retry-After instead of asking Cloud again', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(429, {}, { 'Retry-After': '60' })
+    const session = new CloudSession()
+
+    await session.switchWorkspace('w2')
+    await expect(session.switchWorkspace('w3')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(mintRequests).toHaveLength(1)
+  })
+
+  it('rejects a minted token for another workspace or account', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () =>
+      json(200, { token: mintedJwt('w9'), expires_at: new Date(FUTURE).toISOString() })
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    mintReply = () =>
+      json(200, { token: mintedJwt('w2', 'user-2'), expires_at: new Date(FUTURE).toISOString() })
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+  })
+
+  it('does not attach a failure to a successful switch', async () => {
+    saveGrant(grantOn('w1'))
+
+    const reply = await new CloudSession().switchWorkspace('w2')
+
+    expect(reply).not.toHaveProperty('workspaceSwitchFailure')
+  })
+})
+
+describe('CloudSession.switchWorkspace reauthorize', () => {
+  it('T-V4: sso_required opens one browser carrying B and then succeeds', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    const sso = grantOn('w2', { revision: '-sso' })
+    mocked(signIn).mockResolvedValue(signedInResult(sso))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+
+    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(vaultOnDisk().grant).toEqual(sso)
+    expect(switchEvents()).toEqual([{ outcome: 'browser', reauthorize_reason: 'sso_required' }])
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'sso_required' }])
+  })
+
+  it('consent picking another workspace still ends on B with one mint', async () => {
+    saveGrant(grantOn('w1'))
+    let replies = 0
+    mintReply = ({ workspaceId }) =>
+      replies++ === 0 ? json(403, { code: 'sso_required' }) : minted(workspaceId)
+    const consented = grantOn('w3')
+    mocked(signIn).mockResolvedValue(signedInResult(consented))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(mintRequests).toHaveLength(2)
+    expect(mintRequests[1]).toEqual({ workspaceId: 'w2', bearer: consented.accessToken })
+    expect(vaultOnDisk().grant).toEqual(consented)
+  })
+
+  it('T-V9: 401 with refresh refused runs one reauthorize, then switching works', async () => {
+    saveGrant(grantOn('w1'))
+    let replies = 0
+    mintReply = ({ workspaceId }) =>
+      replies++ === 0
+        ? json(401, { message: 'workspace membership not found' })
+        : minted(workspaceId)
+    mocked(refresh).mockRejectedValue(refreshFailure('http', 401))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+    await expect(session.switchWorkspace('w4')).resolves.toMatchObject({ workspaceId: 'w4' })
+
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'grant_ended' }])
+  })
+
+  it('401 with a good refresh retries the mint once with no browser', async () => {
+    const fresh = grantOn('w1', { revision: '-fresh' })
+    saveGrant(grantOn('w1'))
+    let replies = 0
+    mintReply = ({ workspaceId }) => (replies++ === 0 ? json(401, {}) : minted(workspaceId))
+    mocked(refresh).mockResolvedValue(fresh)
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(mintRequests[1]).toMatchObject({ bearer: fresh.accessToken })
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a second 401 after a good refresh is reauthorize', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(401, { code: 'oauth_grant_ended' })
+    mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(mintRequests).toHaveLength(2)
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it.each<[string, SignInFailure]>([
+    ['network', refreshFailure('network')],
+    ['timeout', refreshFailure('timeout')],
+    ['HTTP 500', refreshFailure('http', 500)],
+    ['HTTP 503', refreshFailure('http', 503)],
+    ['HTTP 429', refreshFailure('http', 429)]
+  ])('a %s refresh failure after a 401 reports retryable with no browser', async (_name, error) => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(401, {})
+    mocked(refresh).mockRejectedValue(error)
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(switchEvents()).toEqual([{ outcome: 'retryable' }])
+  })
+
+  it.each<[string, SignInFailure]>([
+    ['network', refreshFailure('network')],
+    ['HTTP 500', refreshFailure('http', 500)]
+  ])(
+    'a %s refresh failure on an expired grant never mints or opens the browser',
+    async (_name, error) => {
+      saveGrant(grantOn('w1', { expiresAt: PAST }))
+      mocked(refresh).mockRejectedValue(error)
+
+      await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+        workspaceSwitchFailure: 'retryable'
+      })
+
+      expect(mintRequests).toEqual([])
+      expect(signIn).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each<[number]>([[400], [401]])(
+    'an HTTP %i refresh refusal on an expired grant opens one browser',
+    async (httpStatus) => {
+      saveGrant(grantOn('w1', { expiresAt: PAST }))
+      mocked(refresh).mockRejectedValue(refreshFailure('http', httpStatus))
+      mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+
+      await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+        workspaceId: 'w2'
+      })
+
+      expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    }
+  )
+
+  it('switching to the anchor with a refused refresh opens one browser', async () => {
+    saveGrant(grantOn('w1', { expiresAt: PAST }))
+    mocked(refresh).mockRejectedValue(refreshFailure('http', 400))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1', { revision: '-new' })))
 
     await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
       workspaceId: 'w1'
     })
 
-    expect(refresh).toHaveBeenCalledExactlyOnceWith(stale.refreshToken)
     expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w1' })
-    expect(saveTokens).toHaveBeenCalledExactlyOnceWith(authorized)
   })
 
-  it('uses browser auth for an uncached workspace and rejects a different selection', async () => {
-    const workspaceOne = makeTokens('w1')
-    cache(workspaceOne, true)
-    mocked(signIn).mockResolvedValue({
-      tokens: workspaceOne,
-      status: statusFromAccessToken(workspaceOne.accessToken)
-    })
+  it('switching to the anchor during a refresh outage activates with no browser', async () => {
+    saveGrant(grantOn('w1', { expiresAt: PAST }))
+    mocked(refresh).mockRejectedValue(refreshFailure('network'))
 
-    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+    await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
       workspaceId: 'w1'
     })
 
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
-    expect(saveTokens).not.toHaveBeenCalled()
+    expect(signIn).not.toHaveBeenCalled()
   })
 
-  it('stores first-time workspace authorization for later silent activation', async () => {
-    const workspaceOne = makeTokens('w1')
-    const workspaceTwo = makeTokens('w2')
-    cache(workspaceOne, true)
-    mocked(signIn).mockResolvedValue({
-      tokens: workspaceTwo,
-      status: statusFromAccessToken(workspaceTwo.accessToken)
+  it('a second refusal after the browser trip does not open another', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'retryable'
     })
+
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('a workspace refused after the browser trip reports unavailable', async () => {
+    saveGrant(grantOn('w1'))
+    let replies = 0
+    mintReply = () => (replies++ === 0 ? json(403, { code: 'sso_required' }) : json(404, {}))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'unavailable'
+    })
+  })
+
+  it('a cancelled browser trip stays put and reports retryable', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    mocked(signIn).mockRejectedValue(new SignInFailure('access_denied', 'cancelled'))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+  })
+
+  it('a different account in the browser replaces the vault', async () => {
+    saveGrant(grantOn('w1'))
+    const held = new CloudSession()
+    await held.switchWorkspace('w2')
+    mintRequests = []
+    mintReply = () => json(403, { code: 'sso_required' })
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w9', { subject: 'user-2' })))
+
+    await held.switchWorkspace('w3')
+
+    expect(held.currentSubject()).toBe('user-2')
+    expect(held.currentWorkspaceId()).toBe('w9')
+    expect(vaultOnDisk().workspaceTokens).toEqual({})
+  })
+})
+
+describe('CloudSession mint kill switches', () => {
+  it('a server 503 disabled opens one browser carrying B, which activates with no further mint', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = mintDisabled
+    const consented = grantOn('w2')
+    mocked(signIn).mockResolvedValue(signedInResult(consented))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+
+    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(mintRequests).toHaveLength(1)
+    expect(vaultOnDisk().grant).toEqual(consented)
+    expect(switchEvents()).toEqual([{ outcome: 'browser', reauthorize_reason: 'mint_disabled' }])
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_disabled' }])
+  })
+
+  it('a 503 of any other kind stays retryable with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(503, { code: 'maintenance' })
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('no loop: consent on another workspace and a second 503 stays on the current one', async () => {
+    const original = grantOn('w1')
+    saveGrant(original)
+    mintReply = mintDisabled
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(mintRequests).toHaveLength(2)
+    await expect(session.getAccessToken()).resolves.toBe(original.accessToken)
+  })
+
+  it('the ops flag off skips the mint and opens one browser carrying B', async () => {
+    saveGrant(grantOn('w1'))
+    killMintSwitch()
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+
+    expect(mintRequests).toEqual([])
+    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_disabled' }])
+  })
+
+  it('no loop: the ops flag off and consent on another workspace opens no second browser', async () => {
+    saveGrant(grantOn('w1'))
+    killMintSwitch()
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(mintRequests).toEqual([])
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('the ops flag off still activates a valid minted token and the anchor with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    await session.switchWorkspace('w1')
+    mintRequests = []
+    killMintSwitch()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ workspaceId: 'w1' })
+
+    expect(mintRequests).toEqual([])
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('degraded mode: each workspace is one browser, and the previous anchor stays reachable', async () => {
+    saveGrant(grantOn('w1'))
+    killMintSwitch()
+    mocked(signIn).mockImplementation(async (options) =>
+      signedInResult(grantOn(options?.workspaceId ?? 'w1'))
+    )
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
     await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ workspaceId: 'w1' })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(mintRequests).toEqual([])
+  })
+})
+
+describe('CloudSession regressions', () => {
+  it('a version 1 vault on first launch is a scopeless grant: one browser, then it mints', async () => {
+    const legacy = grantOn('w1', { scope: READ_ONLY_SCOPE })
+    fs.writeFileSync(
+      path.join(electronState.userData, 'comfy-cloud-auth.bin'),
+      JSON.stringify({
+        version: 1,
+        activeKey: 'workspace:w1',
+        subject: 'user-1',
+        bundles: {
+          'workspace:w1': legacy,
+          'workspace:w2': grantOn('w2', { scope: READ_ONLY_SCOPE })
+        }
+      })
+    )
+    _resetForTest()
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    const session = new CloudSession()
+
+    expect(session.status()).toMatchObject({ signedIn: true, workspaceId: 'w1' })
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
 
     expect(signIn).toHaveBeenCalledOnce()
-    expect(saveTokens).toHaveBeenCalledExactlyOnceWith(workspaceTwo)
+    expect(vaultOnDisk().version).toBe(2)
   })
 
-  it('listWorkspaces and the provider use only the active token', async () => {
-    const tokens = makeTokens('w1')
-    cache(tokens, true)
+  it('sign-out during a mint leaves nothing behind and opens no browser', async () => {
+    saveGrant(grantOn('w1'))
+    const reply = deferred<Response>()
+    mintReply = () => reply.promise
     const session = new CloudSession()
-    await session.listWorkspaces()
-    expect(listWorkspaces).toHaveBeenCalledWith(tokens.accessToken)
-    expect(saveWorkspaceNames).toHaveBeenCalledExactlyOnceWith(tokens.accessToken, [{ id: 'w-1' }])
 
+    const switching = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    session.logout()
+    reply.resolve(mintDisabled())
+
+    await expect(switching).resolves.toEqual({ signedIn: false })
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('sign-out then a new switch does not join the signed-out flight', async () => {
+    saveGrant(grantOn('w1'))
+    const reply = deferred<Response>()
+    mintReply = () => reply.promise
+    const session = new CloudSession()
+
+    const stale = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    session.logout()
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) => minted(workspaceId)
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+    reply.resolve(minted('w2'))
+    await stale
+
+    expect(mintRequests).toHaveLength(2)
+  })
+})
+
+describe('CloudSession grants without the mint scope (T-V29)', () => {
+  it('opens exactly one browser, asks Cloud nothing first, and then mints', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+
+    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(mintRequests).toHaveLength(1)
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_scope_missing' }])
+  })
+
+  it('needs no browser to reach its own anchor', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+
+    await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
+      workspaceId: 'w1'
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('cannot loop: a sign-in that returns no scope stays put, reports retryable and is telemetered', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    mocked(signIn).mockResolvedValue(
+      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
+    )
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(mintRequests).toEqual([])
+    expect(switchEvents()).toEqual([
+      { outcome: 'browser', reauthorize_reason: 'mint_scope_missing' },
+      { outcome: 'retryable', reauthorize_reason: 'scope_not_granted' }
+    ])
+    expect(browserEvents()).toEqual([
+      { reauthorize_reason: 'mint_scope_missing' },
+      { reauthorize_reason: 'scope_not_granted' }
+    ])
+  })
+
+  it('reports scope_not_granted when an sso sign-in narrows a grant that could mint', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE })))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(browserEvents()).toContainEqual({ reauthorize_reason: 'scope_not_granted' })
+  })
+
+  it('a scopeless grant consented on B activates B, since an anchor needs no mint', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
+
+    const reply = await new CloudSession().switchWorkspace('w2')
+
+    expect(reply).toMatchObject({ workspaceId: 'w2' })
+    expect(reply).not.toHaveProperty('workspaceSwitchFailure')
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(browserEvents()).toContainEqual({ reauthorize_reason: 'scope_not_granted' })
+  })
+})
+
+describe('CloudSession fencing (T-V27)', () => {
+  it('drops a mint reply that lands after logout', async () => {
+    saveGrant(grantOn('w1'))
+    const reply = deferred<Response>()
+    mintReply = () => reply.promise
+    const session = new CloudSession()
+
+    const switching = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    session.logout()
+    reply.resolve(minted('w2'))
+
+    await expect(switching).resolves.toEqual({ signedIn: false })
+    expect(session.isSignedIn()).toBe(false)
+    expect(fs.existsSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'))).toBe(false)
+  })
+
+  it('drops a mint reply that lands after a newer switch, activating and storing nothing', async () => {
+    saveGrant(grantOn('w1'))
+    const slow = deferred<Response>()
+    mintReply = ({ workspaceId }) => (workspaceId === 'w2' ? slow.promise : minted(workspaceId))
+    const session = new CloudSession()
+
+    const older = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    await session.switchWorkspace('w3')
+    slow.resolve(minted('w2'))
+    await older
+
+    expect(session.currentWorkspaceId()).toBe('w3')
+    expect(Object.keys(vaultOnDisk().workspaceTokens as object)).toEqual(['w3'])
+    expect(switchEvents()).toEqual([{ outcome: 'minted' }])
+  })
+
+  it('a mint from before A to B to A does not satisfy the later switch to the same workspace', async () => {
+    saveGrant(grantOn('w1'))
+    const slow = deferred<Response>()
+    const replies = [slow.promise]
+    mintReply = ({ workspaceId }) => replies.shift() ?? minted(workspaceId)
+    const session = new CloudSession()
+
+    const first = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    await session.switchWorkspace('w1')
+    const second = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(2))
+    await second
+    slow.resolve(json(500, {}))
+    await first
+
+    expect(session.currentWorkspaceId()).toBe('w2')
+  })
+
+  it('drops a sign-in that finishes after a newer switch', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) =>
+      workspaceId === 'w2' ? json(403, { code: 'sso_required' }) : minted(workspaceId)
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const original = grantOn('w1')
+    const session = new CloudSession()
+
+    const older = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    await session.switchWorkspace('w3')
+    pending.resolve(signedInResult(grantOn('w2', { revision: '-late' })))
+    await older
+
+    expect(session.currentWorkspaceId()).toBe('w3')
+    expect(vaultOnDisk().grant).toEqual(original)
+  })
+
+  it('drops a sign-in that finishes after logout', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const session = new CloudSession()
+
+    const switching = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    session.logout()
+    pending.resolve(signedInResult(grantOn('w2')))
+
+    await expect(switching).resolves.toEqual({ signedIn: false })
+    expect(session.isSignedIn()).toBe(false)
+  })
+
+  it('does not let a re-mint from before logout reach the next account', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) => minted(workspaceId, Date.now() + 30_000)
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    const slow = deferred<Response>()
+    mintReply = () => slow.promise
+
+    const request = session.getAccessToken()
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(2))
+    session.logout()
+    saveGrant(grantOn('w1', { subject: 'user-2' }))
+    slow.resolve(minted('w2'))
+
+    await expect(request).resolves.toBeNull()
+    expect(vaultOnDisk().workspaceTokens).toEqual({})
+  })
+})
+
+describe('CloudSession status and catalog', () => {
+  it('reports the active workspace from the minted token, stale claims included', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) => minted(workspaceId, Date.now() + 1)
+    const session = new CloudSession()
+
+    await session.switchWorkspace('w2')
+
+    expect(session.status()).toMatchObject({
+      signedIn: true,
+      workspaceId: 'w2',
+      workspaceType: 'team',
+      role: 'member',
+      email: 'user-1@example.com'
+    })
+    expect(session.currentWorkspaceId()).toBe('w2')
+  })
+
+  it('lists workspaces with the grant and members with the active token', async () => {
+    const grant = grantOn('w1')
+    saveGrant(grant)
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+
+    await session.listWorkspaces()
+    await session.listWorkspaceMembers()
+
+    expect(listWorkspaces).toHaveBeenCalledExactlyOnceWith(grant.accessToken)
+    expect(listWorkspaceMembers).toHaveBeenCalledExactlyOnceWith(mintedJwt('w2'))
+  })
+})
+
+describe('CloudSession token provider', () => {
+  it('logs out when the grant token is rejected', () => {
+    const grant = grantOn('w1')
+    saveGrant(grant)
+    const session = new CloudSession()
     const onSignedOut = vi.fn()
-    const provider = session.asTokenProvider(onSignedOut)
-    await expect(provider.getAccessToken()).resolves.toBe(tokens.accessToken)
-    provider.onUnauthorized?.(tokens.accessToken)
-    expect(clearTokens).toHaveBeenCalledOnce()
+
+    session.asTokenProvider(onSignedOut).onUnauthorized?.(grant.accessToken)
+
+    expect(session.isSignedIn()).toBe(false)
     expect(onSignedOut).toHaveBeenCalledOnce()
   })
 
-  it('lists members using only the active workspace token', async () => {
-    const tokens = makeTokens('w1')
-    cache(tokens, true)
+  it('drops only a rejected minted token, stays signed in, and re-mints with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    const onSignedOut = vi.fn()
+    const provider = session.asTokenProvider(onSignedOut)
 
-    await expect(new CloudSession().listWorkspaceMembers()).resolves.toEqual([
-      { id: 'user-1', name: 'One' }
-    ])
-    expect(listWorkspaceMembers).toHaveBeenCalledExactlyOnceWith(tokens.accessToken)
+    provider.onUnauthorized?.(mintedJwt('w2'))
+
+    expect(onSignedOut).not.toHaveBeenCalled()
+    expect(session.status()).toMatchObject({ signedIn: true, workspaceId: 'w2' })
+    await expect(provider.getAccessToken()).resolves.toBe(mintedJwt('w2'))
+    expect(mintRequests).toHaveLength(2)
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('ignores a rejected token it no longer holds', () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    const onSignedOut = vi.fn()
+
+    session.asTokenProvider(onSignedOut).onUnauthorized?.('older-token')
+
+    expect(session.isSignedIn()).toBe(true)
+    expect(onSignedOut).not.toHaveBeenCalled()
   })
 })

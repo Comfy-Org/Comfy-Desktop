@@ -8,8 +8,13 @@ export type { FirstUseMode }
 // Dev-platform (cloud auth + comfy-builder) renderer-safe types. Re-exported
 // from the cloud library so the renderer imports them from one place; tokens
 // are never part of these shapes.
-import type { AuthStatus, Workspace } from '../main/cloud/types'
-export type { AuthStatus, Workspace }
+import type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchStatus
+} from '../main/cloud/types'
+export type { AuthStatus, Workspace, WorkspaceSwitchFailure, WorkspaceSwitchStatus }
 
 // One Core beta activation card, as main resolves it for the title bar. Re-exported from its
 // producer rather than restated here: this file's header forbids duplicating types, and an
@@ -1718,7 +1723,7 @@ export interface ElectronApi {
     getAuthStatus(): Promise<AuthStatus>
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
     listWorkspaces(): Promise<Workspace[]>
-    switchWorkspace(workspaceId: string): Promise<AuthStatus>
+    switchWorkspace(workspaceId: string): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>

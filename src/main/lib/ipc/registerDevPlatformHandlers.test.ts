@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   listWorkspaceMembers: vi.fn(),
   switchWorkspace: vi.fn(),
   setUnauthorizedHandler: vi.fn(),
+  setReturnedToAnchorHandler: vi.fn(),
+  currentSubject: vi.fn(() => 'user-1' as string | null),
   clearVersionCache: vi.fn(),
   getVersionCacheGeneration: vi.fn(() => 3),
   // client + policy
@@ -72,6 +74,8 @@ vi.mock('../../devplatform/session', () => ({
   getCloudSession: () => ({
     login: mocks.login,
     currentAuthGeneration: mocks.currentAuthGeneration,
+    currentSubject: mocks.currentSubject,
+    setReturnedToAnchorHandler: mocks.setReturnedToAnchorHandler,
     logout: mocks.logout,
     status: mocks.status,
     isSignedIn: mocks.isSignedIn,
@@ -497,6 +501,56 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2')
     expect(status).toMatchObject({ workspaceId: 'w2' })
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
+  })
+
+  it('forgets view allowlists when a switch signs in as a different account', async () => {
+    mocks.currentSubject.mockReturnValueOnce('user-1').mockReturnValueOnce('user-2')
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w9' })
+    mocks.endViewGrants.mockClear()
+    mocks.allowDesktopWorkspace.mockClear()
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.endViewGrants).toHaveBeenCalledOnce()
+    expect(mocks.allowDesktopWorkspace).toHaveBeenLastCalledWith('w9')
+  })
+
+  it('keeps view allowlists when a switch stays on the same account', async () => {
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+    mocks.endViewGrants.mockClear()
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.endViewGrants).not.toHaveBeenCalled()
+  })
+
+  it('announces a token read returning to the anchor and lets views hold it', () => {
+    const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
+    mocks.getAllWindows.mockReturnValue([win])
+    const status = { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }
+    mocks.status.mockReturnValue(status)
+    const onReturned = mocks.setReturnedToAnchorHandler.mock.calls.at(-1)![0] as () => void
+    mocks.clearVersionCache.mockClear()
+
+    onReturned()
+
+    expect(mocks.allowDesktopWorkspace).toHaveBeenLastCalledWith('w1')
+    expect(mocks.clearVersionCache).toHaveBeenCalledOnce()
+    expect(win.webContents.send).toHaveBeenCalledExactlyOnceWith('comfybuilder:authChanged', status)
+  })
+
+  it('keeps a switch failure on the reply and off the broadcast', async () => {
+    const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
+    mocks.getAllWindows.mockReturnValue([win])
+    const status = { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }
+    mocks.switchWorkspace.mockResolvedValue({ ...status, workspaceSwitchFailure: 'unavailable' })
+
+    await expect(handler('comfybuilder:switchWorkspace')({}, 'w2')).resolves.toEqual({
+      ...status,
+      workspaceSwitchFailure: 'unavailable'
+    })
+
+    expect(win.webContents.send).toHaveBeenCalledExactlyOnceWith('comfybuilder:authChanged', status)
   })
 
   it('captures fresh state, creates a draft, and opens the validated Platform URL', async () => {

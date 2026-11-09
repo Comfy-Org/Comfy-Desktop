@@ -26,6 +26,13 @@ export interface AuthStatus {
   role?: string
 }
 
+export type WorkspaceSwitchFailure = 'unavailable' | 'retryable'
+
+/** The reply to a workspace switch: the resulting status, plus why it stayed put when it did. */
+export interface WorkspaceSwitchStatus extends AuthStatus {
+  workspaceSwitchFailure?: WorkspaceSwitchFailure
+}
+
 /** One workspace the signed-in user belongs to (GET /api/workspaces). */
 export interface Workspace {
   id: string

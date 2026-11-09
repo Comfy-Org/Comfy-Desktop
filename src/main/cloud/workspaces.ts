@@ -2,9 +2,9 @@
  * Workspace client: list the workspaces a signed-in user belongs to.
  *
  * `GET {apiBase}/workspaces` (the ingest service) returns the caller's
- * workspaces. Switching the ACTIVE workspace is a re-auth, not a call here (a
- * PKCE cloud token is scoped at consent time and cannot be silently re-scoped);
- * `CloudSession.switchWorkspace` drives that. This module is read-only listing.
+ * workspaces. Switching the ACTIVE workspace mints that workspace's token from
+ * the OAuth grant, with no browser; `CloudSession.switchWorkspace` drives that.
+ * This module is read-only listing.
  */
 import { CLOUD_CONFIG } from './config'
 import type { Workspace, WorkspaceMember } from './types'

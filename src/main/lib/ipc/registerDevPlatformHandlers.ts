@@ -34,7 +34,7 @@ import {
 } from '../../devplatform/builds'
 import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
-import type { AuthStatus, Workspace } from '../../cloud'
+import type { AuthStatus, Workspace, WorkspaceSwitchStatus } from '../../cloud'
 import {
   installations,
   defaultInstallDir,
@@ -134,17 +134,23 @@ export async function signInToCloud(): Promise<AuthStatus> {
 }
 
 /**
- * Activate `workspaceId`'s credentials and announce the result. Cached
- * credentials activate silently; first access or expired, unusable ones run
- * browser auth because cloud tokens are scoped at consent time. Shared by the
- * chooser and the hosted ComfyUI view.
+ * Activate `workspaceId` and announce the result; `CloudSession` decides whether a browser is
+ * needed. A failure stays on this reply and off the broadcast. Shared by the chooser and the
+ * hosted ComfyUI view.
  */
-export async function switchCloudWorkspace(workspaceId: string): Promise<AuthStatus> {
+export async function switchCloudWorkspace(workspaceId: string): Promise<WorkspaceSwitchStatus> {
+  const session = getCloudSession()
+  const subjectBefore = session.currentSubject()
   clearVersionCache()
-  const status = await getCloudSession().switchWorkspace(workspaceId)
+  const reply = await session.switchWorkspace(workspaceId)
   clearVersionCache()
+  const { workspaceSwitchFailure: _failure, ...status } = reply
+  if (session.currentSubject() !== subjectBefore) {
+    getViewWorkspaceGrants().endAll()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  }
   broadcastAuthChanged(status)
-  return status
+  return reply
 }
 
 /**
@@ -214,6 +220,12 @@ export function registerDevPlatformHandlers(): void {
     getViewWorkspaceGrants().endAll()
     clearVersionCache()
     broadcastAuthChanged(SIGNED_OUT)
+  })
+  session.setReturnedToAnchorHandler(() => {
+    const status = session.status()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+    clearVersionCache()
+    broadcastAuthChanged(status)
   })
 
   // Build ids whose install-kickoff is mid-flight, so a double-click cannot
@@ -285,10 +297,7 @@ export function registerDevPlatformHandlers(): void {
         }
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
-          clearVersionCache()
-          const switched = await session.switchWorkspace(workspaceId)
-          clearVersionCache()
-          broadcastAuthChanged(switched)
+          const switched = await switchCloudWorkspace(workspaceId)
           if (!switched.signedIn || switched.workspaceId !== workspaceId) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   enabled: true,
-  getAccessToken: vi.fn<() => Promise<string | null>>(),
+  getGrantAccessToken: vi.fn<() => Promise<string | null>>(),
   mint: vi.fn(),
   current: 'ws-1',
   entries: [] as unknown[]
@@ -14,9 +14,10 @@ vi.mock('./embeddedSessionFlag', () => ({
 }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({
-    getAccessToken: mocks.getAccessToken,
+    getGrantAccessToken: mocks.getGrantAccessToken,
     currentWorkspaceId: () => mocks.current,
-    currentSubject: () => (mocks.current ? 'user-1' : null)
+    currentSubject: () => (mocks.current ? 'user-1' : null),
+    currentAuthGeneration: () => 0
   })
 }))
 vi.mock('../cloud/workspaceToken', () => ({
@@ -79,7 +80,7 @@ function view(comfyUrl: string, options: ViewOptions = {}) {
 beforeEach(() => {
   mocks.enabled = true
   mocks.entries = []
-  mocks.getAccessToken.mockReset().mockResolvedValue(ACCESS)
+  mocks.getGrantAccessToken.mockReset().mockResolvedValue(ACCESS)
   mocks.mint
     .mockReset()
     .mockResolvedValue({ kind: 'minted', token: MINTED, expiresAt: Date.now() + 900_000 })
@@ -115,7 +116,7 @@ describe('embeddedSession', () => {
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
-    expect(mocks.getAccessToken).not.toHaveBeenCalled()
+    expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -136,9 +137,7 @@ describe('embeddedSession', () => {
   it('switches a signed-in view to the workspace it names and returns the new state', async () => {
     const { event } = view('http://127.0.0.1:8000')
     const switchWorkspace = vi.fn(async () => {
-      mocks.getAccessToken.mockResolvedValue(
-        jwt({ sub: 'user-1', email: 'a@example.com', workspace_id: 'ws-2' })
-      )
+      mocks.current = 'ws-2'
     })
 
     await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
@@ -155,7 +154,6 @@ describe('embeddedSession', () => {
     const bystander = view('http://127.0.0.1:8001')
     const switchWorkspace = vi.fn(async () => {
       mocks.current = 'ws-2'
-      mocks.getAccessToken.mockResolvedValue(jwt({ sub: 'user-1', workspace_id: 'ws-2' }))
     })
 
     await switchWorkspaceForSender(switcher.event, 'ws-2', switchWorkspace)
@@ -170,7 +168,7 @@ describe('embeddedSession', () => {
     ['an empty workspace', 'http://127.0.0.1:8000', '', ACCESS, undefined],
     ['a non-string workspace', 'http://127.0.0.1:8000', 42, ACCESS, undefined]
   ])('does not switch for %s', async (_name, comfyUrl, workspaceId, token, expected) => {
-    mocks.getAccessToken.mockResolvedValue(token)
+    mocks.getGrantAccessToken.mockResolvedValue(token)
     const { event } = view(comfyUrl)
     const switchWorkspace = vi.fn(async () => undefined)
 
@@ -208,11 +206,11 @@ describe('embeddedSession', () => {
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
-    expect(mocks.getAccessToken).not.toHaveBeenCalled()
+    expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
   })
 
   it('asks a view to sign in again, and hands it nothing, while the grant predates the mint scope', async () => {
-    mocks.getAccessToken.mockResolvedValue(
+    mocks.getGrantAccessToken.mockResolvedValue(
       jwt({ sub: 'user-1', workspace_id: 'ws-1', scope: 'comfy-cloud:user:read' })
     )
     const { event } = view('http://127.0.0.1:8000')
@@ -222,8 +220,20 @@ describe('embeddedSession', () => {
     expect(mocks.mint).not.toHaveBeenCalled()
   })
 
+  it('reports the active workspace, not the workspace the grant is anchored on', async () => {
+    mocks.current = 'ws-2'
+    const { event } = view('http://127.0.0.1:8000')
+
+    await expect(stateForSender(event)).resolves.toEqual({
+      status: 'signed_in',
+      userId: 'user-1',
+      email: 'a@example.com',
+      workspaceId: 'ws-2'
+    })
+  })
+
   it('reads signed_out when Desktop has no session', async () => {
-    mocks.getAccessToken.mockResolvedValue(null)
+    mocks.getGrantAccessToken.mockResolvedValue(null)
     const { event } = view('http://127.0.0.1:8000')
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'signed_out' })
@@ -256,13 +266,14 @@ describe('embeddedSession', () => {
   it('drops an older broadcast that finishes after a newer one', async () => {
     const local = view('http://127.0.0.1:8000')
     let finishOlder: (token: string | null) => void = () => {}
-    mocks.getAccessToken.mockReturnValueOnce(
+    mocks.getGrantAccessToken.mockReturnValueOnce(
       new Promise((resolve) => {
         finishOlder = resolve
       })
     )
-    const newer = jwt({ sub: 'user-1', workspace_id: 'ws-2' })
-    mocks.getAccessToken.mockResolvedValueOnce(newer)
+    const newer = jwt({ sub: 'user-1', workspace_id: 'ws-1' })
+    mocks.getGrantAccessToken.mockResolvedValueOnce(newer)
+    mocks.current = 'ws-2'
 
     const older = broadcastEmbeddedSessionChanged()
     await broadcastEmbeddedSessionChanged()

@@ -10,7 +10,7 @@
  * const session = new CloudSession()
  * await session.login()                                   // system-browser PKCE
  * const workspaces = await session.listWorkspaces()       // choose workspace
- * await session.switchWorkspace(chosen.id)                // activate scoped credentials
+ * await session.switchWorkspace(chosen.id)                // mint and activate its token
  * const client = new ComfyBuilderClient({ auth: session.asTokenProvider() })
  * const builds = await client.listBuilds()                // scoped to that workspace
  * ```
@@ -18,10 +18,17 @@
 export { CloudSession } from './session'
 export { signIn, refresh } from './oauth'
 export { listWorkspaceMembers, listWorkspaces } from './workspaces'
-// Raw token accessors (`loadTokens`/`saveTokens`) stay off this barrel:
+// Raw token accessors (`loadGrant`/`saveGrant`) stay off this barrel:
 // direct reads/writes would bypass CloudSession's single-flight refresh and
 // auth-generation guards. Callers go through CloudSession.
 export { getAuthStatus, clearTokens } from './tokenStore'
 export { statusFromAccessToken, workspaceIdOf } from './claims'
 export { CLOUD_CONFIG, CLOUD_ISSUER } from './config'
-export type { AuthStatus, AuthTokens, Workspace, WorkspaceMember } from './types'
+export type {
+  AuthStatus,
+  AuthTokens,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchStatus
+} from './types'

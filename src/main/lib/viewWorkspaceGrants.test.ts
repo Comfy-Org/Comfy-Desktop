@@ -46,6 +46,7 @@ const viewB = { id: 'b' } as unknown as WebContents
 
 let current: string | null
 let user: string
+let generation: number
 let mint: ReturnType<
   typeof vi.fn<(token: string, workspaceId: string) => Promise<WorkspaceTokenMint>>
 >
@@ -53,19 +54,28 @@ let grants: ViewWorkspaceGrants
 
 function signInAt(workspaceId: string | null): void {
   current = workspaceId
+  generation += 1
+}
+
+function grantSession(
+  getGrantAccessToken: () => Promise<string | null>
+): ConstructorParameters<typeof ViewWorkspaceGrants>[0] {
+  return {
+    currentWorkspaceId: () => current,
+    currentSubject: () => (current ? user : null),
+    currentAuthGeneration: () => generation,
+    getGrantAccessToken
+  }
 }
 
 beforeEach(() => {
   vi.mocked(mainTelemetry.emit).mockClear()
   user = 'user-1'
+  generation = 0
   signInAt('ws-1')
   mint = vi.fn(async (_token: string, workspaceId: string) => minted(workspaceId))
   grants = new ViewWorkspaceGrants(
-    {
-      currentWorkspaceId: () => current,
-      currentSubject: () => (current ? user : null),
-      getAccessToken: async () => (current ? accessToken(current) : null)
-    },
+    grantSession(async () => (current ? accessToken('ws-1') : null)),
     mint
   )
 })
@@ -94,6 +104,14 @@ describe('ViewWorkspaceGrants', () => {
 
     expect(token).toBe('minted-ws-1')
     expect(mint).toHaveBeenCalledWith(accessToken('ws-1'), 'ws-1')
+  })
+
+  it('mints a workspace other than the grant anchor from the grant token', async () => {
+    grants.allowView(viewA, 'ws-2')
+    signInAt('ws-2')
+
+    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBe('minted-ws-2')
+    expect(mint).toHaveBeenCalledExactlyOnceWith(accessToken('ws-1'), 'ws-2')
   })
 
   it('reuses a minted token until it nears expiry', async () => {
@@ -155,6 +173,52 @@ describe('ViewWorkspaceGrants', () => {
     await expect(pending).resolves.toBeNull()
   })
 
+  it('T-V27: drops a mint reply for A that lands after A to B to A, and does not cache it', async () => {
+    grants.allowView(viewA, 'ws-2')
+    const stale = deferred<WorkspaceTokenMint>()
+    mint.mockReturnValueOnce(stale.promise)
+    const pending = grants.tokenFor(viewA, 'ws-1')
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledOnce())
+    signInAt('ws-2')
+    signInAt('ws-1')
+    stale.resolve({ kind: 'minted', token: 'stale-ws-1', expiresAt: Date.now() + 15 * 60_000 })
+
+    await expect(pending).resolves.toBeNull()
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    expect(mint).toHaveBeenCalledTimes(2)
+  })
+
+  it('T-V27: a request after A to B to A does not join the mint from before the switch', async () => {
+    const stale = deferred<WorkspaceTokenMint>()
+    mint.mockReturnValueOnce(stale.promise)
+    const older = grants.tokenFor(viewA, 'ws-1')
+    await vi.waitFor(() => expect(mint).toHaveBeenCalledOnce())
+    signInAt('ws-2')
+    signInAt('ws-1')
+
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    stale.resolve({ kind: 'minted', token: 'stale-ws-1', expiresAt: Date.now() + 15 * 60_000 })
+
+    await expect(older).resolves.toBeNull()
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe('minted-ws-1')
+    expect(mint).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops a grant read that lands after A to B to A', async () => {
+    const slowRead = deferred<string | null>()
+    grants = new ViewWorkspaceGrants(
+      grantSession(() => slowRead.promise),
+      mint
+    )
+    const pending = grants.tokenFor(viewA, 'ws-1')
+    signInAt('ws-2')
+    signInAt('ws-1')
+    slowRead.resolve(accessToken('ws-1'))
+
+    await expect(pending).resolves.toBeNull()
+    expect(mint).not.toHaveBeenCalled()
+  })
+
   it('drops a mint reply that lands after sign-out, and forgets its token', async () => {
     const reply = deferred<WorkspaceTokenMint>()
     mint.mockReturnValueOnce(reply.promise)
@@ -194,11 +258,7 @@ describe('ViewWorkspaceGrants', () => {
 
   it('hands out nothing, and does not ask Cloud, for a grant without the mint scope', async () => {
     grants = new ViewWorkspaceGrants(
-      {
-        currentWorkspaceId: () => 'ws-1',
-        currentSubject: () => user,
-        getAccessToken: async () => accessToken('ws-1', 'comfy-cloud:user:read')
-      },
+      grantSession(async () => accessToken('ws-1', 'comfy-cloud:user:read')),
       mint
     )
 
@@ -219,12 +279,7 @@ describe('ViewWorkspaceGrants', () => {
     const before = deferred<string | null>()
     let reads = 0
     grants = new ViewWorkspaceGrants(
-      {
-        currentWorkspaceId: () => current,
-        currentSubject: () => (current ? user : null),
-        getAccessToken: () =>
-          reads++ === 0 ? before.promise : Promise.resolve(accessToken('ws-1'))
-      },
+      grantSession(() => (reads++ === 0 ? before.promise : Promise.resolve(accessToken('ws-1')))),
       mint
     )
     const stale = grants.tokenFor(viewA, 'ws-1')
@@ -258,11 +313,7 @@ describe('ViewWorkspaceGrants', () => {
     const slowRead = deferred<string | null>()
     let reads = 0
     grants = new ViewWorkspaceGrants(
-      {
-        currentWorkspaceId: () => current,
-        currentSubject: () => (current ? user : null),
-        getAccessToken: () => (reads++ === 0 ? Promise.resolve(firstUserToken) : slowRead.promise)
-      },
+      grantSession(() => (reads++ === 0 ? Promise.resolve(firstUserToken) : slowRead.promise)),
       mint
     )
     await grants.tokenFor(viewA, 'ws-1')

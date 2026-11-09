@@ -4,7 +4,7 @@
  * there and run partner nodes.
  *
  * Only a workspace token minted for the view's allowed workspace and the
- * identity read from Desktop's access token cross to the renderer; the OAuth
+ * identity read from Desktop's grant cross to the renderer; the OAuth
  * grant stays in main. Only the main frame of a
  * registered comfyView, still on the loopback ComfyUI Desktop loaded into it,
  * is served. Remote and LAN servers never receive the token.
@@ -74,9 +74,18 @@ export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender):
 
 async function sessionState(): Promise<ComfyDesktop2AuthState> {
   if (!(await isEmbeddedSessionEnabled())) return DISABLED
-  const token = await getCloudSession().getAccessToken()
-  const identity = token && canMintWorkspaceTokens(token) ? identityOf(token) : null
-  return identity ? { status: 'signed_in', ...identity } : { status: 'signed_out' }
+  const session = getCloudSession()
+  const grant = await session.getGrantAccessToken()
+  const identity = grant && canMintWorkspaceTokens(grant) ? identityOf(grant) : null
+  if (!identity) return { status: 'signed_out' }
+  const { userId, email } = identity
+  const workspaceId = session.currentWorkspaceId()
+  return {
+    status: 'signed_in',
+    userId,
+    ...(email ? { email } : {}),
+    ...(workspaceId ? { workspaceId } : {})
+  }
 }
 
 export async function stateForSender(
