@@ -417,14 +417,7 @@ function back(): void {
               <Badge variant="overlay" size="md" class="absolute bottom-3 left-3">Before</Badge>
               <Badge variant="overlay" size="md" class="absolute right-3 bottom-3">After</Badge>
             </template>
-            <Badge
-              v-else-if="state === 'idle'"
-              variant="overlay"
-              size="md"
-              class="absolute top-3 left-3"
-              >Example</Badge
-            >
-            <!-- Examples, over the picture: up to five of what this app
+            <!-- Examples, across the picture's top edge: up to five of what this app
                      has made, to start from like templates. Picking one fills
                      the panel and shows its result; once you run, they go. -->
             <div
@@ -729,12 +722,16 @@ function back(): void {
 .mar-app-editor-pic {
   position: relative;
   margin: 0;
-  overflow: hidden;
+  /* Not clipped, so the examples can sit across its top edge; the
+     pictures take its corners themselves. */
   border-radius: var(--radius-card);
   box-shadow:
     0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
     0 16px 40px rgb(0 0 0 / 0.22);
   transition: filter 500ms;
+}
+.mar-app-editor-pic > img {
+  border-radius: inherit;
 }
 .mar-app-editor-pic > img:first-child {
   display: block;
@@ -867,16 +864,23 @@ function back(): void {
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   white-space: nowrap;
 }
-/* Examples: over the top of the picture, on dark glass. */
+/* Examples: centred on the picture's top edge, on dark glass. */
 .mar-app-editor-dock.is-examples {
   position: absolute;
-  top: 12px;
+  top: 0;
   left: 50%;
   z-index: 2;
-  padding-inline: 14px 4px;
-  transform: translateX(-50%);
+  height: 56px;
+  gap: 8px;
+  padding: 6px 6px 6px 18px;
+  transform: translate(-50%, -50%);
   background: oklch(0.16 0.004 285 / 0.62);
   backdrop-filter: blur(16px) saturate(1.3);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-dock.is-examples .mar-app-editor-take {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
 }
 .mar-app-editor-dock.is-examples .mar-app-editor-dock-label {
   color: oklch(1 0 0 / 0.75);
