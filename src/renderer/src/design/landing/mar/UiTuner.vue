@@ -21,7 +21,6 @@ import { CREDITS_STATES, creditsState } from './credits'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
-  LOCAL_SETUPS,
   ONBOARDINGS,
   SETUP_SCOPES,
   MACHINES,
@@ -30,8 +29,9 @@ import {
   SETUP_SCREENS,
   canvas,
   RUN_ON_CARDS,
+  flow,
   localSetup,
-  openSetup,
+  showHome,
   showScreen,
   type Screen
 } from './setup/setupFlow'
@@ -79,6 +79,16 @@ const SURFACE_OPTIONS = SURFACES.map((sf) => ({
   value: sf.value,
   label: sf.value === 'desktop' ? 'Desktop' : 'Cloud'
 }))
+/** Desktop's start point: the onboarding (its first screen) or the Home. */
+const START_AT = [
+  { value: 'onboarding', label: 'Onboarding' },
+  { value: 'home', label: 'Home' }
+] as const
+const startAt = computed({
+  get: () => (flow.open && flow.takeover ? 'onboarding' : 'home'),
+  set: (v: 'onboarding' | 'home') =>
+    v === 'onboarding' ? showScreen((setupScreen.value = 'first')) : showHome()
+})
 const DEPLOY_STATES = SCENARIOS.map((s) => ({ value: s.id, label: s.label }))
 const deployState = computed({
   get: () => dep.scenario,
@@ -103,7 +113,7 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['surface', 'brandMotif']
+const GLOBAL: TweakId[] = ['brandMotif']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
@@ -202,21 +212,26 @@ const linkSays = computed(() => {
         class="mar-tuner-body flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4"
         @scroll.passive="onScroll"
       >
-        <!-- Local setup (mar/setup): the proposed install flow behind New
-             Instance and "This computer", on Desktop. Still being defined. -->
-        <section v-if="can.design && !onCloud" aria-label="Local setup" class="mb-6 flex flex-col">
+        <!-- Start: where, then (on Desktop) where it opens. The rest
+             of the panel follows from here. -->
+        <section aria-label="Start" class="mb-6 flex flex-col">
           <GroupHead
-            title="Local setup"
-            note="New Instance"
-            :changed="dirty(['localSetup'])"
-            @reset="resetGroup(['localSetup'])"
+            title="Start"
+            :changed="dirty(['surface', 'localSetup'])"
+            @reset="resetGroup(['surface', 'localSetup'])"
           />
-          <Row label="Flow">
-            <Seg v-model="localSetup.mode" label="Flow" :options="LOCAL_SETUPS" />
+          <!-- Cloud's first screen is Home: before it, only the desktop app. -->
+          <Row v-if="can.home" label="Surface">
+            <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
           </Row>
-          <template v-if="localSetup.mode === 'on'">
+          <Row v-if="can.design && !onCloud" label="Start at" stack>
+            <Seg v-model="startAt" label="Start at" :options="START_AT" />
+          </Row>
+          <!-- The proposed onboarding (mar/setup), on Desktop: its options
+               show while it's on screen. -->
+          <template v-if="can.design && !onCloud && startAt === 'onboarding'">
             <!-- M1 ships Builds only: no Home, no example workflows. -->
-            <Row label="Scope">
+            <Row label="Scope" stack>
               <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
             </Row>
             <!-- Home first needs the Home, so it is offered past M1 only. -->
@@ -246,31 +261,12 @@ const linkSays = computed(() => {
             <Row label="This computer">
               <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
             </Row>
-            <Row>
-              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="openSetup()"
-                >Open the flow</Button
-              >
-            </Row>
           </template>
         </section>
 
-        <!-- Global: where, and the brand motif. Applies everywhere. -->
-        <section aria-label="Global" class="flex flex-col">
+        <!-- Global: the brand motif. Applies everywhere. -->
+        <section aria-label="Global" class="mb-6 flex flex-col">
           <GroupHead title="Global" :changed="dirty(GLOBAL)" @reset="resetGroup(GLOBAL)" />
-          <!-- Cloud's first screen is Home: before it, only the desktop app. -->
-          <Row v-if="can.home" label="Surface">
-            <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
-          </Row>
-          <!-- Desktop only: the proposed first launch, from its first screen. -->
-          <Row v-if="can.design && !onCloud" label="Onboarding">
-            <Button
-              variant="secondary"
-              size="sm"
-              class="w-full"
-              @click="showScreen((setupScreen = 'first'))"
-              >Start onboarding</Button
-            >
-          </Row>
           <!-- The trio in empty states, step progress and loaders. -->
           <Row label="Brand motif">
             <Seg v-model="brandMotif.id" label="Brand motif" :options="BRAND_MOTIFS" />
@@ -280,7 +276,7 @@ const linkSays = computed(() => {
         <!-- States: the situation on screen (who, what's installed, signed
              in, how the page and the credits are doing). Each one shows
              only where it applies. -->
-        <section aria-label="States" class="mt-6 flex flex-col">
+        <section aria-label="States" class="flex flex-col">
           <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
           <!-- The Deploy as API modal's states, first while it's open. -->
           <Row :show="shows('deployState')" label="Deploy state">

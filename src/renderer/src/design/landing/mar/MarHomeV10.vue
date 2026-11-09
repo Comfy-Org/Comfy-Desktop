@@ -43,8 +43,19 @@ import {
 } from '../useProto'
 import { can } from '../milestones'
 import { shownName } from '../account'
-import { TEMPLATES, thumb } from '../mock'
+import { TEMPLATES, thumb, type ProtoInstance } from '../mock'
 import { mock } from './assets/mock'
+
+/** A recent workflow opens in ComfyUI's graph, in this window, at any
+ *  milestone: each one is a graph of nodes, so that's where it lands. */
+function openRecent(env: ProtoInstance, workflow: string): void {
+  if (can.value.oneWindow) return hostActions.launch(env, workflow)
+  proto.detail = null
+  proto.activeInstanceId = env.id
+  const id = `tab-${Date.now()}`
+  proto.tabs = [{ id, title: env.name, instanceId: env.id, workflow }]
+  proto.activeTab = id
+}
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -202,7 +213,7 @@ const recent = computed(() =>
             :title="r.title"
             :meta="r.env?.name ?? ''"
             :right="r.w.modified"
-            @open="r.env && hostActions.launch(r.env, r.w.name)"
+            @open="r.env && openRecent(r.env, r.w.name)"
           />
         </ScrollRow>
       </section>

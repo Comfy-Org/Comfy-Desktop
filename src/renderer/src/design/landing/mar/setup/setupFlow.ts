@@ -591,6 +591,14 @@ export function cancelInstall(): void {
   flow.percent = 0
 }
 
+/** UI Playground › Start at Home: out of the onboarding, onto the Home. */
+export function showHome(): void {
+  stop()
+  flow.open = false
+  proto.activeTab = 'home'
+  go('overview')
+}
+
 export function closeSetup(): void {
   // Closing while it installs is Return to Dashboard: it asks first.
   // Home first: the install carries on behind the Home.
