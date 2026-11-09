@@ -60,7 +60,7 @@ function getLogText(): string {
         class="brand-progress__stack relative z-2 flex w-[min(85%,880px)] max-w-[calc(100vw-48px)] flex-col items-center gap-[clamp(1rem,3vh,2rem)] overflow-hidden text-center before:pointer-events-none before:absolute before:top-1/2 before:left-1/2 before:-z-1 before:h-[160%] before:w-[130%] before:rounded-[50%] before:bg-[radial-gradient(ellipse_at_center,color-mix(in_srgb,var(--neutral-800)_60%,transparent)_0%,color-mix(in_srgb,var(--neutral-800)_40%,transparent)_35%,transparent_60%)] before:content-[''] before:[transform:translate(-50%,-50%)]"
       >
         <ComfyWordmark
-          class="brand-progress__wordmark h-auto w-[clamp(140px,9.7vw,240px)] text-comfy-yellow [anchor-name:--brand-beam-target]"
+          class="brand-progress__wordmark h-auto w-[clamp(140px,9.7vw,240px)] text-comfy-yellow"
         />
         <div
           class="brand-progress__banner inline-flex min-h-[1.5em] items-center gap-2.5 text-[length:var(--takeover-fs-body)] tracking-[0.01em] [&_svg]:flex-none"

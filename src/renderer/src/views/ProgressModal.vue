@@ -576,10 +576,6 @@ defineExpose({ startOperation, showOperation })
     <div
       class="brand-progress relative flex w-full flex-auto items-center justify-center self-stretch pb-[clamp(88px,12vh,148px)] before:pointer-events-none before:absolute before:top-1/2 before:left-1/2 before:z-1 before:size-[clamp(340px,48vw,760px)] before:rounded-[50%] before:bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--neutral-950)_58%,transparent)_0%,color-mix(in_srgb,var(--neutral-950)_28%,transparent)_32%,color-mix(in_srgb,var(--neutral-950)_9%,transparent)_56%,transparent_76%)] before:content-[''] before:[filter:blur(40px)] before:[transform:translate(-50%,-50%)]"
     >
-      <div
-        class="brand-progress__beam-anchor pointer-events-none absolute top-1/2 left-1/2 size-0 [anchor-name:--brand-beam-target]"
-        aria-hidden="true"
-      />
       <BrandProgressGlyph
         class="brand-progress__glyph pointer-events-none absolute top-1/2 left-[60%] z-0 h-screen w-auto opacity-90 [transform:translate(-50%,-50%)]"
         aria-hidden="true"

@@ -483,7 +483,6 @@ defineExpose({ open, resetContinue })
 <template>
   <BrandTakeoverLayout
     v-if="isBrandStep"
-    :vignette="step === 'start'"
     :aria-label="$t(step === 'localBranch' ? 'firstUse.localBranchTitle' : 'firstUse.pickTitle')"
   >
     <div
@@ -510,7 +509,7 @@ defineExpose({ open, resetContinue })
           @keydown="onStartCardsKeydown"
         >
           <ChoiceCard
-            class="start-card-cloud [anchor-name:--brand-beam-target]"
+            class="start-card-cloud"
             :class="{
               'start-card-cloud--reco-dimmed [&_.start-cloud-reco]:opacity-70':
                 hardwareRecommendsCloud && pickedChoice === 'local'
