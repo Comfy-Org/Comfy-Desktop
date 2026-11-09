@@ -40,7 +40,7 @@ import { agent, resetAgent } from '../../agent'
 import { flow, resetFlow } from '../../appFlow'
 import { can, landingPage } from '../../milestones'
 import { PROJECTS, TEMPLATES, thumb } from '../../mock'
-import { favorites } from '../favorites'
+import { FAVORITES_ON, favorites } from '../favorites'
 import { creditsShort, creditsStyle, creditsTotal } from '../credits'
 import MarWorkspaceMenu from '../MarWorkspaceMenu.vue'
 import MarModeSeg from '../modes/MarModeSeg.vue'
@@ -285,7 +285,7 @@ function newChat(): void {
 
       <!-- Favorites: what you starred, one click away, right under the
            libraries they come from. -->
-      <template v-if="proto.mode === 'create' && favs.length">
+      <template v-if="FAVORITES_ON && proto.mode === 'create' && favs.length">
         <div class="mar-side-label">
           <span v-if="open">Favorites</span><span v-else class="mar-side-sep" />
         </div>

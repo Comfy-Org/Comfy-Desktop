@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch, type Component } from 'vue'
 import { Check, Star, Users } from 'lucide-vue-next'
 import AssetCover from '../assets/AssetCover.vue'
 import FavoriteStar from '../FavoriteStar.vue'
-import type { FavoriteKind } from '../favorites'
+import { FAVORITES_ON, type FavoriteKind } from '../favorites'
 import MarItemMenu from './MarItemMenu.vue'
 import type { MarAsset } from './assetsStore'
 import MarStatus, { type ItemStatus } from './MarStatus.vue'
@@ -160,7 +160,7 @@ function click(e: MouseEvent): void {
         <span class="mar-item-tools">
           <FavoriteStar v-if="favId && favKind" :id="favId" :kind="favKind" />
           <button
-            v-else-if="fav !== undefined"
+            v-else-if="FAVORITES_ON && fav !== undefined"
             type="button"
             class="mar-star"
             :class="fav && 'is-on'"
@@ -227,7 +227,7 @@ function click(e: MouseEvent): void {
         <slot name="actions" />
         <FavoriteStar v-if="favId && favKind" :id="favId" :kind="favKind" />
         <button
-          v-else-if="fav !== undefined"
+          v-else-if="FAVORITES_ON && fav !== undefined"
           type="button"
           class="mar-star"
           :class="fav && 'is-on'"

@@ -24,6 +24,7 @@ import MarBackdrop from '../mar/shell/MarBackdrop.vue'
 import MarSidebarToggle from '../mar/shell/MarSidebarToggle.vue'
 import MarPanelsHead from '../mar/shell/MarPanelsHead.vue'
 import MarFavoritesGroup from '../mar/shell/MarFavoritesGroup.vue'
+import { FAVORITES_ON } from '../mar/favorites'
 import MarBuildsNav from '../mar/shell/MarBuildsNav.vue'
 import { marSidebarClosed } from '../mar/shell/marShell'
 import MarModeSeg from '../mar/modes/MarModeSeg.vue'
@@ -90,7 +91,7 @@ const MODES = computed(() => [
         <!-- The builds (or projects). New users have none yet (Home walks them
            through). -->
         <!-- Stars arrive with Explore: the first thing there is to star. -->
-        <MarFavoritesGroup v-if="proto.mode === 'create' && can.exploreApps && !proto.fresh" />
+        <MarFavoritesGroup v-if="FAVORITES_ON && proto.mode === 'create' && can.exploreApps && !proto.fresh" />
         <!-- Kept for a new user, each with an empty state, and the builds
              show even with no local install. -->
         <!-- Before Home: Builds and Tools, as Desktop has them today. -->
