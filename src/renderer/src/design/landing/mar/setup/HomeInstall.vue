@@ -6,7 +6,8 @@ import SectionHeader from '../../ui/SectionHeader.vue'
 import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import SetupLaptop from './SetupLaptop.vue'
 import StarterShelf from './StarterShelf.vue'
-import ExampleRow from '../userStates/ExampleRow.vue'
+import ExampleShowcase from '../userStates/ExampleShowcase.vue'
+import { EXAMPLES } from '../userStates/examples'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import {
@@ -87,8 +88,8 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
       <span class="flex shrink-0 items-center gap-2">
         <template v-if="installing">
           <Button variant="ghost" @click="showInstall">View logs</Button>
-          <Button v-if="failed" variant="ghost" @click="changeFromHome">Change</Button>
-          <Button v-if="!failed" variant="ghost" @click="flow.confirmCancel = true"
+          <Button v-if="failed" variant="secondary" @click="changeFromHome">Change</Button>
+          <Button v-if="!failed" variant="secondary" @click="flow.confirmCancel = true"
             >Cancel install</Button
           >
         </template>
@@ -101,18 +102,22 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
       </span>
     </div>
     <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
-         there, so they come first. -->
+         there, so they come first. The first-run Home's own block
+         (MarStartOriginal.vue), in the look UI Playground picks. -->
     <div class="mt-10">
       <SectionHeader
-        title="Apps"
-        :link="can.exploreApps ? 'See all' : undefined"
-        @link="go(can.explore ? 'explore' : 'overview')"
+        title="Run an example on Comfy Cloud"
+        :link="can.explore ? 'See all' : undefined"
+        @link="go('explore')"
       >
         <template #controls>
-          <span class="text-ui text-subtle-foreground">Run on Comfy Cloud, no install needed</span>
+          <span
+            class="inline-flex h-5 items-center rounded-full bg-secondary-background px-2 text-ui text-muted-foreground"
+            >{{ EXAMPLES.length }}</span
+          >
         </template>
       </SectionHeader>
-      <ExampleRow />
+      <ExampleShowcase />
     </div>
     <div v-if="shelf" class="mt-10">
       <SectionHeader title="Start from a workflow">
