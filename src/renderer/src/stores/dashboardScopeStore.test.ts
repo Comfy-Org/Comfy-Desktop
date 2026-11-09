@@ -277,6 +277,22 @@ describe('useDashboardScopeStore', () => {
       expect(store.takeChosenSelection()).toBe(false)
     })
 
+    it('does not count a selection another window brought back to the old pick', async () => {
+      const store = await readyStore()
+      store.selectWorkspace('w2')
+      await flushPromises()
+
+      api.getSetting.mockResolvedValue('w1')
+      settingsChanged({ key: 'dashboardWorkspaceId' })
+      await flushPromises()
+      api.getSetting.mockResolvedValue('w2')
+      settingsChanged({ key: 'dashboardWorkspaceId' })
+      await flushPromises()
+
+      expect(store.selectedWorkspaceId).toBe('w2')
+      expect(store.takeChosenSelection()).toBe(false)
+    })
+
     it('keeps a pick that the membership check confirms', async () => {
       const store = await readyStore()
       store.selectWorkspace('w2')

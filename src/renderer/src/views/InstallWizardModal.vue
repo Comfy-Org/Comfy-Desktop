@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
 import type {
   InstallBuildResult,
@@ -686,6 +687,7 @@ async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Pro
     let status = authStore.status
     if (status.workspaceId !== targetWorkspaceId) {
       authorizingWorkspace.value = true
+      useDashboardScopeStore().takeChosenSelection()
       try {
         status = await authStore.switchWorkspace(targetWorkspaceId)
       } finally {

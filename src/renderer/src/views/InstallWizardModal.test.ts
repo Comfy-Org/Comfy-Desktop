@@ -10,6 +10,7 @@ import BrandVariantList from '../components/BrandVariantList.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
 function makeI18n() {
   return createI18n({ legacy: false, locale: 'en', messages: { en } })
@@ -41,6 +42,7 @@ beforeEach(() => {
     getFieldOptions: vi.fn().mockResolvedValue([]),
     validateHardware: vi.fn().mockResolvedValue({ supported: true }),
     getSetting: vi.fn().mockResolvedValue(false),
+    onSettingsChanged: vi.fn(() => () => {}),
     getInstallationsSummary: vi.fn().mockResolvedValue({ localCount: 0 }),
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
@@ -660,6 +662,28 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
+  })
+
+  it('retires a pending workspace pick once it attempts the switch itself', async () => {
+    signInToWorkspace([])
+    ;(window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team',
+      workspaceSwitchFailure: 'retryable'
+    })
+    const wrapper = mountModal()
+    await flushPromises()
+    const scope = useDashboardScopeStore()
+    scope.selectWorkspace('w2')
+
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w2' })
+    await flushPromises()
+
+    expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledWith('w2', 'chosen')
+    expect(scope.takeChosenSelection()).toBe(false)
   })
 
   it('activates the selected workspace before loading its Builds', async () => {
