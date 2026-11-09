@@ -27,6 +27,8 @@ import PopoverContent from '../../ui/PopoverContent.vue'
 import Switch from '../../ui/Switch.vue'
 import Badge from '../../ui/Badge.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import MarSearchField from '../pages/MarSearchField.vue'
+import Select from '../../ui/Select.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import ExampleTile from './ExampleTile.vue'
 import ImageGlyph from './ImageGlyph.vue'
@@ -79,6 +81,9 @@ defineOptions({ inheritAttrs: false })
 const examples = computed(() => examplesOf(appId))
 const exId = ref(openOn[appId] ?? examples.value[0]?.id)
 const example = computed(() => examples.value.find((x) => x.id === exId.value))
+/** Inspiration's wash: the example it opened on (picked in Inspiration or
+ *  Home), else its first. Picking another only fills the panel. */
+const heroPic = (example.value ?? examples.value[0])?.after
 const kind = computed(() => example.value?.kind ?? (output === 'video' ? 'Video' : 'Image'))
 const made = computed(() => kind.value.toLowerCase())
 /** What goes in: the example's own picture, or the app's cover. */
@@ -130,7 +135,7 @@ const LOOKS = [
 const takes = computed(() => LOOKS.slice(0, count.value))
 /** Everything you've made here, newest first: each run adds its takes,
  *  so earlier ones stay along the bottom to go back to. */
-const outputs = ref<{ src: string; filter: string }[]>([])
+const outputs = ref<{ src: string; filter: string; title: string; at: number }[]>([])
 let runs = 0
 const take = ref(0)
 const result = computed(
@@ -212,7 +217,12 @@ function run(): void {
     } else {
       const src = sample.value ?? input.value
       outputs.value = [
-        ...takes.value.map((_, i) => ({ src, filter: LOOKS[(runs + i) % LOOKS.length] ?? 'none' })),
+        ...takes.value.map((_, i) => ({
+          src,
+          filter: LOOKS[(runs + i) % LOOKS.length] ?? 'none',
+          title: example.value?.title ?? name,
+          at: Date.now()
+        })),
         ...outputs.value
       ]
       runs += takes.value.length
@@ -244,20 +254,20 @@ const VIEWS = computed(() => [
   { value: 'gallery' as const, label: 'Inspiration', count: examples.value.length }
 ])
 /** Inspiration's head: the name, its last word apart. */
-// The Inspiration banner's head: what the app is for, in a line or two,
+// The Inspiration banner's head: what the app is for, in one short line,
 // never its name (the panel says that).
 const HOOKS: Record<string, string> = {
-  's-cine': 'Every frame lit like the last scene of a film.',
-  's-image': 'Pictures of places that only exist in your head.',
-  'x-relight': 'Your product, under the light it deserves.',
-  'x-reshoot': 'Same product, a new place every time.',
-  'x-poster': 'Design it once. It fits everywhere.',
-  'x-i2v': 'Stills that start moving on their own.',
-  'x-h3': 'Your character, finally on the move.',
-  'x-wan': 'Moments that never stop moving.',
-  'x-angles': 'Meet your character from every side.',
-  'x-3d': 'Hold a photo in your hands, in 3D.',
-  'x-upscale': 'The detail was always there. Bring it out.'
+  's-cine': 'Every frame, a film still.',
+  's-image': 'Places only you can see.',
+  'x-relight': 'Light it like a studio.',
+  'x-reshoot': 'Same product, new place.',
+  'x-poster': 'Design once, fit everywhere.',
+  'x-i2v': 'Stills that start to move.',
+  'x-h3': 'Your character, on the move.',
+  'x-wan': 'Moments that keep moving.',
+  'x-angles': 'Every side of your character.',
+  'x-3d': 'From a photo to 3D.',
+  'x-upscale': 'Bring out every detail.'
 }
 const hook = computed(() => HOOKS[appId] ?? lib.value?.blurb ?? 'Start from something that works.')
 /** Inspiration's head: two rows of the app's pictures, each repeated so
@@ -267,6 +277,34 @@ const driftRow = (r: number): AppExample[] => {
   // Eight each, the same length, so both rows loop at one width.
   return Array.from({ length: 8 }, (_, i) => all[(i * 2 + r - 1) % all.length]!)
 }
+// History's tools: search by what you started from, newest or oldest
+// first, grouped by month as Assets does.
+const histQuery = ref('')
+const histSort = ref('new')
+const HIST_SORTS = [
+  { value: 'new', label: 'Newest first' },
+  { value: 'old', label: 'Oldest first' }
+]
+const month = (t: number): string =>
+  new Date(t).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+const histGroups = computed(() => {
+  const q = histQuery.value.trim().toLowerCase()
+  const items = outputs.value
+    .map((o, i) => ({ o, i }))
+    .filter(({ o }) => !q || o.title.toLowerCase().includes(q))
+  if (histSort.value === 'old') items.reverse()
+  const groups: { label: string; items: typeof items }[] = []
+  for (const it of items) {
+    const label = month(it.o.at)
+    const g = groups.at(-1)
+    if (g?.label === label) g.items.push(it)
+    else groups.push({ label, items: [it] })
+  }
+  // The run in progress leads this month's group.
+  if (state.value === 'running' && groups[0]?.label !== month(Date.now()))
+    groups.unshift({ label: month(Date.now()), items: [] })
+  return groups
+})
 function openOutput(i: number): void {
   take.value = i
   state.value = 'done'
@@ -423,6 +461,12 @@ function back(): void {
           /></Button>
           <MarSeg v-if="onTabs" v-model="stageView" :options="VIEWS" label="Stage" />
           <span class="flex-1" />
+          <!-- History's own tools, as on the other library pages: search
+               what you made, newest or oldest first. -->
+          <template v-if="onHistoryGrid && outputs.length">
+            <MarSearchField v-model="histQuery" placeholder="Search history" />
+            <Select v-model="histSort" :options="HIST_SORTS" label="Sort" class="w-40" />
+          </template>
           <div class="mar-app-editor-actions">
             <!-- Compare and Share: icons alone, white on no fill. -->
             <Button
@@ -510,18 +554,12 @@ function back(): void {
         </div>
         <!-- Gallery: the app's examples, as Home shows them, in aligned
              rows; one fills the panel with what it ran with. -->
-        <div v-if="onGallery" class="mar-app-editor-grid">
+        <div v-if="onGallery" class="mar-app-editor-grid is-gallery">
           <!-- What the app does, beside its pictures drifting by. -->
           <header class="mar-app-editor-hero">
             <!-- The example it opens on (the one picked in Inspiration, else
                  its first), blurred behind. -->
-            <img
-              :key="example?.id"
-              class="mar-app-editor-hero-glow"
-              :src="example?.after ?? examples[0]?.after"
-              alt=""
-              aria-hidden="true"
-            />
+            <img class="mar-app-editor-hero-glow" :src="heroPic" alt="" aria-hidden="true" />
             <!-- The tab and the panel already name it: the head says what
                  it does, and what these are for. -->
             <div class="mar-app-editor-hero-text">
@@ -573,24 +611,34 @@ function back(): void {
           v-else-if="onHistoryGrid && (outputs.length || state === 'running')"
           class="mar-app-editor-grid"
         >
-          <div v-if="state === 'running'" class="mar-app-editor-out is-running" role="status">
-            <img :src="input" alt="" />
-            <span class="mar-app-editor-sweep" aria-hidden="true" />
-            <span class="mar-app-editor-out-run"
-              ><Loader2 :size="14" class="animate-spin" />{{ stepNow
-              }}<span class="ml-auto tabular-nums">{{ pct }}%</span></span
+          <template v-for="(g, gi) in histGroups" :key="g.label">
+            <p class="mar-app-editor-when">{{ g.label }}</p>
+            <div
+              v-if="gi === 0 && state === 'running'"
+              class="mar-app-editor-out is-running"
+              role="status"
             >
-          </div>
-          <button
-            v-for="(o, i) in outputs"
-            :key="outputs.length - i"
-            type="button"
-            class="mar-app-editor-out"
-            :aria-label="`Open output ${outputs.length - i}`"
-            @click="openOutput(i)"
-          >
-            <img :src="o.src" alt="" :style="{ filter: o.filter }" />
-          </button>
+              <img :src="input" alt="" />
+              <span class="mar-app-editor-sweep" aria-hidden="true" />
+              <span class="mar-app-editor-out-run"
+                ><Loader2 :size="14" class="animate-spin" />{{ stepNow
+                }}<span class="ml-auto tabular-nums">{{ pct }}%</span></span
+              >
+            </div>
+            <button
+              v-for="{ o, i } in g.items"
+              :key="outputs.length - i"
+              type="button"
+              class="mar-app-editor-out"
+              :aria-label="`Open ${o.title}`"
+              @click="openOutput(i)"
+            >
+              <img :src="o.src" alt="" :style="{ filter: o.filter }" />
+            </button>
+          </template>
+          <p v-if="!histGroups.length" class="mar-app-editor-nohits">
+            Nothing matches “{{ histQuery }}”.
+          </p>
         </div>
         <!-- Nothing made yet: the empty state every page uses, its fan
              of three from this app's own examples. -->
@@ -1094,6 +1142,28 @@ function back(): void {
   margin: -4px;
   scrollbar-width: none;
 }
+/* Inspiration: fewer, bigger pictures. */
+.mar-app-editor-grid.is-gallery {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+/* History's month, over its outputs, as Assets dates them. */
+.mar-app-editor-when {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  font-weight: 500;
+}
+.mar-app-editor-when:not(:first-child) {
+  margin-top: 18px;
+}
+.mar-app-editor-nohits {
+  grid-column: 1 / -1;
+  padding: 48px 0;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  text-align: center;
+}
 .mar-app-editor-grid > .mar-ex-tile {
   margin-bottom: 0;
 }
@@ -1165,13 +1235,12 @@ function back(): void {
 .mar-app-editor-hero-text {
   position: relative;
   min-width: 0;
-  max-width: 44ch;
+  flex: 1;
 }
 .mar-app-editor-hero h2 {
   font-size: 30px;
   font-weight: 650;
   line-height: 1.05;
-  max-width: 19ch;
   letter-spacing: -0.03em;
   text-wrap: balance;
 }

@@ -13,7 +13,7 @@ const {
   x,
   ratio,
   app,
-  go = 'Run app',
+  go = 'Run',
   picked = false,
   badge = true,
   titled = false
@@ -136,7 +136,9 @@ function play(e: MouseEvent, on: boolean): void {
 }
 /* Slim, like a caption: the picture leads. */
 .mar-ex-tile-kind.is-icon {
-  padding: 0 7px;
+  width: 22px;
+  justify-content: center;
+  padding: 0;
 }
 .mar-ex-tile-video {
   position: absolute;

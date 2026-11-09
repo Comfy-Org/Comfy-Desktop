@@ -19,7 +19,7 @@ import { EXAMPLES, reducedMotion, runExample } from './examples'
  * Cloud.
  */
 const N = EXAMPLES.length
-const ANGLE = 27 // degrees between neighbours on the cylinder
+const ANGLE = 25 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
 const HOLD = 1600 // ms each side of the front card stays up
@@ -254,7 +254,7 @@ function wheel(e: WheelEvent): void {
              on the right, one row over the fade. -->
         <span class="mar-arc-bar">
           <span class="mar-arc-does">{{ x.does }}</span>
-          <span class="mar-arc-go" aria-hidden="true"><Play :size="13" />Run app</span>
+          <span class="mar-arc-go" aria-hidden="true"><Play :size="13" />Run</span>
         </span>
       </button>
     </div>
