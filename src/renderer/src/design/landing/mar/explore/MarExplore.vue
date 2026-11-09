@@ -56,7 +56,6 @@ const TABS: { value: Tab; label: string; count: number }[] = asApps
     ]
 // Examples narrow by the app that made them.
 const appName = (id: string): string => libApp(id)?.name ?? ''
-const EXAMPLE_APPS = [...new Set(APP_EXAMPLES.map((x) => x.app))]
 const TYPES: Record<Tab, { value: string; label: string }[]> = {
   templates: [
     { value: 'all', label: 'All types' },
@@ -126,7 +125,6 @@ const KIND_ICON: Record<string, typeof Image> = { Image, Video, '3D': Box }
 const appKind = (id: string): string =>
   VIDEO_APPS.includes(id) ? 'Video' : id === 'x-3d' ? '3D' : 'Image'
 const kinds = ref<string[]>([])
-const fromApps = ref<string[]>([])
 const toggle = (list: string[], v: string, on: boolean): string[] =>
   on ? [...list, v] : list.filter((x) => x !== v)
 function clearFilters(): void {
@@ -134,7 +132,6 @@ function clearFilters(): void {
   query.value = ''
   uses.value = []
   kinds.value = []
-  fromApps.value = []
 }
 const apps = computed(() => {
   const list = searched.value
@@ -147,9 +144,7 @@ const searchedExamples = computed(() =>
   APP_EXAMPLES.filter((x) => has(`${x.title} ${appName(x.app)}`))
 )
 const examples = computed(() =>
-  searchedExamples.value
-    .filter((x) => !kinds.value.length || kinds.value.includes(x.kind))
-    .filter((x) => !fromApps.value.length || fromApps.value.includes(x.app))
+  searchedExamples.value.filter((x) => !kinds.value.length || kinds.value.includes(x.kind))
 )
 // What the Filter menu offers on this tab, with how many each would show.
 const FILTER = computed(() => {
@@ -158,7 +153,7 @@ const FILTER = computed(() => {
     ex
       ? searchedExamples.value.filter((x) => x.kind === k).length
       : searched.value.filter((c) => appKind(c.app.id) === k).length
-  return [
+  const groups = [
     {
       title: 'Type',
       list: kinds,
@@ -169,33 +164,23 @@ const FILTER = computed(() => {
         icon: KIND_ICON[k],
         thumb: undefined as string | undefined
       }))
-    },
-    ex
-      ? {
-          title: 'App',
-          list: fromApps,
-          items: EXAMPLE_APPS.map((id) => ({
-            value: id,
-            label: appName(id),
-            count: searchedExamples.value.filter((x) => x.app === id).length,
-            icon: undefined,
-            // Each app by its own picture, the one its card has.
-            thumb: libApp(id) ? thumb(libApp(id)!.thumbId) : undefined
-          }))
-        }
-      : {
-          title: 'Category',
-          list: uses,
-          items: USES.value.map((u) => ({
-            value: u.value,
-            label: u.value,
-            count: u.count,
-            icon: undefined,
-            thumb: undefined as string | undefined
-          }))
-        }
-    // The Milestone 2 Catalog is a few apps: Type is enough.
-  ].filter((g) => !(asApps && !ex && g.title === 'Category'))
+    }
+  ]
+  // The Gallery and the Milestone 2 Catalog filter by Type only: an app is
+  // found from the search.
+  if (!ex && !asApps)
+    groups.push({
+      title: 'Category',
+      list: uses,
+      items: USES.value.map((u) => ({
+        value: u.value,
+        label: u.value,
+        count: u.count,
+        icon: undefined,
+        thumb: undefined as string | undefined
+      }))
+    })
+  return groups
 })
 const picked = computed(() =>
   FILTER.value.flatMap((g) =>
@@ -384,7 +369,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           <!-- A landscape photo: an outlined frame, wider than tall, with a
                filled sun and hills inside. -->
           <span v-else class="mar-ex-tile-kind is-icon" aria-label="Image"
-            ><svg width="18" height="13" viewBox="0 0 24 17" aria-hidden="true">
+            ><svg width="14" height="10" viewBox="0 0 24 17" aria-hidden="true">
               <rect
                 x="1"
                 y="1"
@@ -393,10 +378,13 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
                 rx="2.5"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="1.6"
+                stroke-width="1.9"
               />
               <circle cx="7" cy="5.75" r="1.75" fill="currentColor" />
-              <path d="M3.5 13.5 9 8.5l3 2.75 4-4.75 4.5 7Z" fill="currentColor" /></svg
+              <path
+                d="M1.8 15.2V13L8 7.5l3.25 3 4.25-4.75 6.7 7.4v2.05Z"
+                fill="currentColor"
+              /></svg
           ></span>
           <!-- What it is and which app made it, over a fade, on hover. -->
           <span class="mar-ex-tile-text">
@@ -571,7 +559,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   font-variant-numeric: tabular-nums;
 }
 .mar-ex-tile-kind.is-icon {
-  padding: 5px 7px;
+  padding: 9.4px 10px;
 }
 .mar-ex-tile-video {
   position: absolute;
