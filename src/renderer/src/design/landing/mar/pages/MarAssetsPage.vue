@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useElementSize } from '@vueuse/core'
+import { useElementSize, useEventListener } from '@vueuse/core'
 import {
+  Box,
   Copy,
   Download,
+  File as FileIcon,
+  FileText,
   ExternalLink,
   FolderOpen,
   ImagePlus,
   Music,
   Play,
+  RefreshCw,
   RotateCw,
   Trash2,
   Upload,
@@ -22,7 +26,9 @@ import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import AssetDetail from '../assets/AssetDetail.vue'
+import AssetFilters from '../assets/AssetFilters.vue'
 import { factsFor } from '../assets/assetFacts'
+import { noFilter, passes, tagsIn } from '../assets/assetFilters'
 import { assetBuilds, buildStatus, defaultBuild, startBuild } from '../assets/assetBuilds'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
@@ -55,16 +61,27 @@ type Kind = 'all' | MarAsset['type']
 const kind = ref<Kind>('all')
 const where = ref('all')
 const build = ref(defaultBuild())
-const date = ref('any')
-const tag = ref('all')
+const filter = ref(noFilter())
 const project = ref('all')
 const sort = ref('newest')
 const query = ref('')
 
+// Everywhere reads every running build at once; each card names its own.
+const running = computed(() =>
+  assetBuilds.value.filter((b) => buildStatus(b) === 'running').map((b) => b.id)
+)
 const base = computed(() =>
-  assets.items.filter((a) => (fixedProject ? a.project === fixedProject : a.envId === build.value))
+  assets.items.filter((a) =>
+    fixedProject
+      ? a.project === fixedProject
+      : build.value === 'all'
+        ? running.value.includes(a.envId ?? '')
+        : a.envId === build.value
+  )
 )
 const current = computed(() => assetBuilds.value.find((b) => b.id === build.value))
+const buildName = (a: MarAsset): string =>
+  assetBuilds.value.find((b) => b.id === a.envId)?.name ?? ''
 const status = computed(() => (current.value ? buildStatus(current.value) : 'running'))
 const browsable = computed(() => !!fixedProject || status.value === 'running')
 const count = (k: Kind): number => base.value.filter((a) => k === 'all' || a.type === k).length
@@ -84,19 +101,7 @@ const WHERE = [
   { value: 'local', label: 'This computer' },
   { value: 'cloud', label: 'Cloud' }
 ]
-const DATES = [
-  { value: 'any', label: 'Any time' },
-  { value: 'today', label: 'Today' },
-  { value: 'week', label: 'Last 7 days' },
-  { value: 'month', label: 'Last 30 days' }
-]
-const WITHIN: Record<string, number> = { any: Infinity, today: 1440, week: 10080, month: 43200 }
-const TAGS = computed(() => [
-  { value: 'all', label: 'All tags' },
-  ...[...new Set(base.value.filter((a) => !a.status).flatMap((a) => factsFor(a).tags))]
-    .sort()
-    .map((t) => ({ value: t, label: t }))
-])
+const TAGS = computed(() => tagsIn(base.value))
 const SORTS = [
   { value: 'newest', label: 'Newest' },
   { value: 'oldest', label: 'Oldest' },
@@ -108,10 +113,12 @@ const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
   const list = base.value.filter(
     (a) =>
-      (kind.value === 'all' || a.type === kind.value) &&
+      // The type tabs and More types add up: either may match.
+      ((kind.value === 'all' && !filter.value.types.length) ||
+        a.type === kind.value ||
+        filter.value.types.includes(a.type)) &&
       (!fixedProject || where.value === 'all' || a.source === where.value) &&
-      a.age <= WITHIN[date.value]! &&
-      (tag.value === 'all' || (!a.status && factsFor(a).tags.includes(tag.value))) &&
+      passes(a, filter.value) &&
       (fixedProject ||
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
@@ -129,16 +136,14 @@ const filtered = computed(
   () =>
     kind.value !== 'all' ||
     where.value !== 'all' ||
-    date.value !== 'any' ||
-    tag.value !== 'all' ||
+    JSON.stringify(filter.value) !== JSON.stringify(noFilter()) ||
     project.value !== 'all' ||
     !!query.value
 )
 function clear(): void {
   kind.value = 'all'
   where.value = 'all'
-  date.value = 'any'
-  tag.value = 'all'
+  filter.value = noFilter()
   project.value = 'all'
   query.value = ''
 }
@@ -183,7 +188,7 @@ const columns = computed(() => {
 const detail = ref<MarAsset | null>(null)
 watch(build, () => {
   detail.value = null
-  tag.value = 'all'
+  filter.value = { ...filter.value, tags: [] }
   lib.sel.clear()
 })
 const finished = computed(() => shown.value.filter((a) => !a.status))
@@ -193,7 +198,90 @@ const meta = (a: MarAsset): string =>
     ? [a.source === 'cloud' ? 'Cloud' : 'This computer', !fixedProject && a.project]
         .filter(Boolean)
         .join(' · ')
-    : [a.when, a.size, !fixedProject && a.project].filter((x) => x && x !== '—').join(' · ')
+    : [a.when, a.size, build.value === 'all' ? buildName(a) : !fixedProject && a.project]
+        .filter((x) => x && x !== '—')
+        .join(' · ')
+const iconOf = (a: MarAsset) =>
+  ({ audio: Music, '3d': Box, text: FileText, other: FileIcon })[a.type as string] ?? ImagePlus
+const picOf = (a: MarAsset): string | undefined =>
+  a.src ?? (a.thumbId ? thumb(a.thumbId) : undefined)
+
+// Refresh re-reads the build: a beat of the spinner, nothing else moves.
+const refreshing = ref(false)
+function refresh(): void {
+  refreshing.value = true
+  setTimeout(() => (refreshing.value = false), 700)
+}
+
+/** Upload: into the picked build's inputs, through that build. Only a
+ *  local build that's running takes files; nothing starts on its own. */
+const uploadable = computed(
+  () =>
+    !!fixedProject ||
+    (!!current.value && current.value.kind !== 'cloud' && status.value === 'running')
+)
+const uploadTitle = computed(() =>
+  fixedProject || uploadable.value
+    ? `Add files to ${fixedProject ?? current.value?.name} inputs`
+    : build.value === 'all'
+      ? 'Pick a build to add files to'
+      : current.value?.kind === 'cloud'
+        ? 'Upload to Comfy Cloud from Comfy Cloud'
+        : `Start ${current.value?.name} to add files`
+)
+const picker = ref<HTMLInputElement>()
+const dropping = ref(false)
+let uploads = 0
+function upload(files: FileList | null | undefined): void {
+  dropping.value = false
+  if (!files?.length || !uploadable.value) return
+  const added = [...files].map((file) => {
+    const n = ++uploads
+    const type: MarAsset['type'] = file.type.startsWith('image')
+      ? 'image'
+      : file.type.startsWith('video')
+        ? 'video'
+        : file.type.startsWith('audio')
+          ? 'audio'
+          : /\.(md|txt|json|csv)$/i.test(file.name)
+            ? 'text'
+            : 'other'
+    const a: MarAsset = {
+      id: `up-${n}-in-${n}`,
+      name: file.name,
+      type,
+      source: 'local',
+      src: type === 'image' ? URL.createObjectURL(file) : undefined,
+      envId: current.value?.id,
+      project: fixedProject,
+      size:
+        file.size > 1e6 ? `${(file.size / 1e6).toFixed(1)} MB` : `${Math.ceil(file.size / 1e3)} KB`,
+      sizeMb: file.size / 1e6,
+      age: -5,
+      when: 'Just now',
+      status: 'running',
+      statusLabel: 'Uploading'
+    }
+    assets.items.unshift(a)
+    return a
+  })
+  setTimeout(() => {
+    for (const a of added) {
+      const live = assets.items.find((x) => x.id === a.id)
+      if (live) Object.assign(live, { status: undefined, statusLabel: undefined, age: 0 })
+    }
+    const hidden = added.filter((a) => !shown.value.some((s) => s.id === a.id)).length
+    const n = added.length
+    toast(`${n} file${n === 1 ? '' : 's'} added${hidden ? `, ${hidden} hidden by filters` : ''}`)
+  }, 1200)
+}
+useEventListener(window, 'dragenter', (e: DragEvent) => {
+  if (e.dataTransfer?.types.includes('Files')) dropping.value = true
+})
+useEventListener(window, 'dragend', () => (dropping.value = false))
+function pick(): void {
+  if (uploadable.value) picker.value?.click()
+}
 
 function open(a: MarAsset): void {
   if (a.status === 'running' || a.status === 'queued')
@@ -257,7 +345,7 @@ function lines(a: MarAsset): MenuLine[] {
       icon: ComfyAssets,
       title: fixedProject
         ? 'No assets in this project yet'
-        : `Nothing made on ${current?.name ?? 'this build'} yet`,
+        : `Nothing made on ${current?.name ?? 'your running builds'} yet`,
       text: fixedProject
         ? 'What this project’s workflows make lands here. Run one, or upload references to work from.'
         : 'Every image, video and sound your runs make lands here, with the workflow that made it. Run a template to see your first one.',
@@ -270,17 +358,29 @@ function lines(a: MarAsset): MenuLine[] {
         ? 'Cloud assets are out of reach. The ones on this computer are all here.'
         : `${current?.name ?? 'This build'} stopped answering. Start it again, or pick another build.`
     "
-    @action="fixedProject ? toast('Pick files to upload') : go('explore')"
-    @second="toast('Pick files to upload')"
+    @action="fixedProject ? pick() : go('explore')"
+    @second="pick()"
     @clear="clear"
   >
     <template #actions="{ state }">
       <Button
         v-if="state === 'live' || state === 'loading'"
         variant="primary"
-        @click="toast('Pick files to upload')"
+        :disabled="!uploadable"
+        :title="uploadTitle"
+        @click="pick()"
         ><Upload :size="15" />Upload</Button
       >
+      <input
+        ref="picker"
+        type="file"
+        multiple
+        hidden
+        @change="
+          (upload(($event.target as HTMLInputElement).files),
+          (($event.target as HTMLInputElement).value = ''))
+        "
+      />
     </template>
 
     <template #toolbar>
@@ -302,13 +402,17 @@ function lines(a: MarAsset): MenuLine[] {
           class="w-32"
         />
         <Select v-if="fixedProject" v-model="where" :options="WHERE" class="w-36" />
-        <Select v-else v-model="date" :options="DATES" class="w-34" />
-        <Select
-          v-if="!fixedProject && TAGS.length > 1"
-          v-model="tag"
-          :options="TAGS"
-          class="w-32"
-        />
+        <button
+          v-if="!fixedProject"
+          type="button"
+          class="mar-asset-refresh"
+          aria-label="Refresh"
+          title="Refresh"
+          @click="refresh"
+        >
+          <RefreshCw :size="14" :class="refreshing && 'animate-spin'" />
+        </button>
+        <AssetFilters v-model="filter" :tags="TAGS" :count="finished.length" />
         <Select v-model="sort" :options="SORTS" label="Sort" class="w-34" />
         <MarSearchField v-model="query" placeholder="Search assets" />
         <MarViewToggle v-model="view" masonry />
@@ -326,14 +430,25 @@ function lines(a: MarAsset): MenuLine[] {
       compact
       @action="startBuild(current.id)"
     />
+    <div
+      v-else-if="dropping"
+      class="mar-asset-drop"
+      @dragleave.self="dropping = false"
+      @dragover.prevent
+      @drop.prevent="upload($event.dataTransfer?.files)"
+    >
+      <Upload :size="20" />{{
+        uploadable ? `Add to ${current?.name ?? fixedProject} inputs` : uploadTitle
+      }}
+    </div>
     <div v-else-if="view === 'masonry'" ref="wall" class="mar-masonry">
       <div v-for="(col, i) in columns" :key="i" class="mar-masonry-col">
         <MarItem
           v-for="a in col.items"
           :key="a.id"
           :name="a.name"
-          :thumb="a.thumbId ? thumb(a.thumbId) : undefined"
-          :icon="a.type === 'audio' ? Music : ImagePlus"
+          :thumb="picOf(a)"
+          :icon="iconOf(a)"
           :ratio="String(factsFor(a).ratio)"
           :meta="meta(a)"
           :status="a.status"
@@ -367,8 +482,8 @@ function lines(a: MarAsset): MenuLine[] {
         v-for="a in shown"
         :key="a.id"
         :name="a.name"
-        :thumb="a.thumbId ? thumb(a.thumbId) : undefined"
-        :icon="a.type === 'audio' ? Music : ImagePlus"
+        :thumb="picOf(a)"
+        :icon="iconOf(a)"
         ratio="4 / 3"
         :meta="meta(a)"
         :status="a.status"
@@ -401,8 +516,8 @@ function lines(a: MarAsset): MenuLine[] {
         :key="a.id"
         layout="list"
         :name="a.name"
-        :thumb="a.thumbId ? thumb(a.thumbId) : undefined"
-        :icon="a.type === 'audio' ? Music : ImagePlus"
+        :thumb="picOf(a)"
+        :icon="iconOf(a)"
         :meta="a.source === 'cloud' ? 'Cloud' : 'This computer'"
         :status="a.status"
         :status-label="a.statusLabel"
@@ -445,7 +560,7 @@ function lines(a: MarAsset): MenuLine[] {
       v-if="detail"
       :asset="detail"
       :list="finished"
-      :build="fixedProject ? fixedProject : (current?.name ?? '')"
+      :build="fixedProject ? fixedProject : buildName(detail)"
       @go="detail = $event"
       @close="detail = null"
     />
@@ -453,6 +568,32 @@ function lines(a: MarAsset): MenuLine[] {
 </template>
 
 <style>
+.mar-asset-drop {
+  display: flex;
+  min-height: 320px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1.5px dashed color-mix(in oklch, var(--color-base-foreground) 24%, transparent);
+  border-radius: 14px;
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-refresh {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-refresh:hover {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
 .mar-masonry {
   display: flex;
   align-items: flex-start;

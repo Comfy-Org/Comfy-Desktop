@@ -737,6 +737,31 @@ function onDragOver(e: DragEvent): void {
 function onDragLeave(e: DragEvent): void {
   if (!canvas.value?.contains(e.relatedTarget as Node | null)) dropping.value = false
 }
+/** The dot grid stays calm at any zoom: zoomed out, every other dot
+ *  drops so the spacing on screen never closes under 16px, and the dots
+ *  dim with the zoom instead of piling up into a texture. */
+const dotGrid = computed(() => {
+  let gs = (current.value ? 20 : 24) * view.k
+  while (gs < 16) gs *= 2
+  return {
+    '--mg-gs': `${gs}px`,
+    '--mg-dot-k': String(Math.min(1, Math.max(0.35, view.k)))
+  }
+})
+
+/** Insert as node in workflow (the assets panel): an Image node in the
+ *  middle of the view, as a drop there would make. */
+function insertAsset(a: { src: string; name: string }): void {
+  const r = canvas.value!.getBoundingClientRect()
+  const at = toWorld({ x: r.width / 2 / screenScale, y: r.height / 2 / screenScale })
+  const n = createNode('image', at.x - 125, at.y - 140)
+  n.image = a.src
+  n.chip = a.name
+  sNodes.push(n)
+  selection.value = [n.id]
+  commit()
+}
+
 function onDrop(e: DragEvent): void {
   dropping.value = false
   const dt = e.dataTransfer
@@ -1245,7 +1270,7 @@ function addFromPanel(kind: NodeKind): void {
       :style="{
         '--mg-gx': `${view.x}px`,
         '--mg-gy': `${view.y}px`,
-        '--mg-gs': `${(current ? 20 : 24) * view.k}px`
+        ...dotGrid
       }"
       @wheel="onWheel"
       @pointerdown="onDown"
@@ -1464,7 +1489,12 @@ function addFromPanel(kind: NodeKind): void {
       @clear-queue="engine.clearQueue()"
       @view="panel = 'assets'"
     />
-    <AssetsPanel v-else-if="panel === 'assets'" :cloud="onCloud" @close="panel = ''" />
+    <AssetsPanel
+      v-else-if="panel === 'assets'"
+      :cloud="onCloud"
+      @close="panel = ''"
+      @insert="insertAsset"
+    />
     <NodesPanel
       v-else-if="panel === 'nodes'"
       :cloud="onCloud"
@@ -1742,7 +1772,11 @@ function addFromPanel(kind: NodeKind): void {
 /* ── Tokens. Glass reads the Void palette; Current uses ComfyUI's own. ── */
 .mg {
   --mg-canvas: var(--color-content-background);
-  --mg-dot: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+  --mg-dot: color-mix(
+    in oklch,
+    var(--color-base-foreground) calc(8% * var(--mg-dot-k, 1)),
+    transparent
+  );
   --mg-node: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   --mg-node-on: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   --mg-well: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
@@ -1769,7 +1803,7 @@ function addFromPanel(kind: NodeKind): void {
 }
 :root[data-ds-theme='light'] .mg {
   --mg-canvas: oklch(0.955 0.003 285);
-  --mg-dot: oklch(0 0 0 / 0.13);
+  --mg-dot: oklch(0 0 0 / calc(0.1 * var(--mg-dot-k, 1)));
   --mg-node: oklch(1 0 0 / 0.72);
   --mg-node-on: oklch(1 0 0 / 0.92);
   --mg-well: oklch(0 0 0 / 0.04);

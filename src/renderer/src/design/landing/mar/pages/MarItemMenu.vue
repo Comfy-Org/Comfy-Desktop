@@ -15,12 +15,15 @@ const {
   lines,
   label = 'More actions',
   onMedia,
-  side = 'bottom'
+  side = 'bottom',
+  align = 'end'
 } = defineProps<{
   lines: MenuLine[]
   label?: string
   onMedia?: boolean
   side?: 'top' | 'bottom'
+  /** Start where the item sits at the left edge of a panel. */
+  align?: 'start' | 'end'
 }>()
 const open = defineModel<boolean>('open', { default: false })
 </script>
@@ -40,7 +43,7 @@ const open = defineModel<boolean>('open', { default: false })
           <MoreHorizontal :size="15" /></button
       ></slot>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" :side="side" :side-offset="6" class="w-56">
+    <DropdownMenuContent :align="align" :side="side" :side-offset="6" class="min-w-56">
       <template v-for="(l, i) in lines" :key="i">
         <DropdownMenuSeparator v-if="l === 'sep'" />
         <p v-else-if="'note' in l" class="mar-menu-note">{{ l.note }}</p>

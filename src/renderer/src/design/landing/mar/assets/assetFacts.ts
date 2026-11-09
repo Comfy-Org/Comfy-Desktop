@@ -67,7 +67,10 @@ const PROMPTS: [RegExp, string][] = [
   [/wan_portrait/, 'girl in a white dress reading in a meadow, gentle wind, golden light'],
   [/flux_portrait/, 'profile portrait, braided hair, gold hoop earrings, teal sweater'],
   [/upscale_4k/, 'jaguar resting in a jungle clearing, upscaled to 4K'],
-  [/^hero_shot/, 'portrait of a woman by a window, golden hour, shallow depth of field']
+  [/^hero_shot/, 'portrait of a woman by a window, golden hour, shallow depth of field'],
+  [/fog/, 'low fog over a quiet valley at dawn, muted film tones, wide shot'],
+  [/portrait/, 'natural light portrait outdoors, soft focus background, 85mm'],
+  [/banner/, 'flowing abstract silk in pastel light, macro, soft gradients']
 ]
 
 /** "12 min ago" and "Yesterday" kept their run; older runs lost it on a restart. */
@@ -87,8 +90,8 @@ export function factsFor(a: MarAsset): AssetFacts {
     ;[width, height] = VIDEO_SIZES[h % VIDEO_SIZES.length]!
     duration = `0:0${4 + (h % 6)}`
   } else if (a.type === '3d') [width, height] = [1024, 1024]
-  else duration = `0:${String(18 + (h % 40)).padStart(2, '0')}`
-  const ratio = width && height ? width / height : 16 / 9
+  else if (a.type === 'audio') duration = `0:${String(18 + (h % 40)).padStart(2, '0')}`
+  const ratio = width && height ? width / height : a.type === 'audio' ? 16 / 9 : 4 / 3
 
   if (imported)
     return {
@@ -101,13 +104,13 @@ export function factsFor(a: MarAsset): AssetFacts {
       tags: h % 2 ? ['reference'] : [],
       workflow: 'missing',
       history: 'missing',
-      metadata: 'available',
+      metadata: a.type === 'text' || a.type === 'other' ? 'missing' : 'available',
       models: []
     }
 
   const kept = recent(a.when)
   const prompt = PROMPTS.find(([re]) => re.test(a.name))?.[1]
-  const models = MODELS[template] ?? []
+  const models = MODELS[template] ?? (prompt ? MODELS.image_z_image_turbo! : [])
   const seconds = 6 + (h % 70) / 2
   const node = a.type === 'video' ? 'WanImageToVideo' : 'CLIPTextEncode'
   return {

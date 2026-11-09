@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  ArrowLeft,
   Box,
   ChevronDown,
   ChevronLeft,
@@ -9,6 +10,8 @@ import {
   CircleDashed,
   CircleSlash,
   Download,
+  File as FileIcon,
+  FileText,
   FolderOpen,
   Music,
   Workflow,
@@ -18,24 +21,68 @@ import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import type { MarAsset } from '../pages/assetsStore'
 import { factsFor, type Availability } from './assetFacts'
+import { addTag, removeTag, tagsOf } from './assetTags'
 
 /**
- * One asset, large (Better Asset Management PRD, Phase 2: Desktop). The
+ * One asset, large (Better Asset Management PRD). One view for both
+ * surfaces: ComfyUI opens it from Inspect asset with tags you can edit
+ * (Phase 1), Desktop from its gallery with tags read-only (Phase 2). The
  * picture fills the window, the details sit on the right: the file, its
- * tags (read-only here, they're edited in ComfyUI), and what could be
- * read from the run that made it, labelled as found, never as fact.
- * Arrows step through the gallery as it's filtered; Escape closes and
- * hands focus back to the tile.
+ * tags, what's on record, and what could be read from the run, labelled
+ * as inferred, never as fact. Arrows step through the list as it's
+ * filtered; Escape closes and hands focus back to the tile.
  */
-const { asset, list, build } = defineProps<{
+const {
+  asset,
+  list,
+  build,
+  editable = false
+} = defineProps<{
   asset: MarAsset
   list: MarAsset[]
   /** The build whose catalog this is. */
   build: string
+  /** ComfyUI: tags are edited here. */
+  editable?: boolean
 }>()
 const emit = defineEmits<{ close: []; go: [asset: MarAsset] }>()
 
 const facts = computed(() => factsFor(asset))
+const tags = computed(() => tagsOf(asset))
+const draft = ref('')
+function add(): void {
+  addTag(asset, draft.value)
+  draft.value = ''
+}
+const pic = computed(() => asset.src ?? (asset.thumbId ? thumb(asset.thumbId) : undefined))
+const glyph = computed(
+  () => ({ audio: Music, '3d': Box, text: FileText })[asset.type as string] ?? FileIcon
+)
+const MIME: Record<string, string> = {
+  PNG: 'image/png',
+  JPG: 'image/jpeg',
+  JPEG: 'image/jpeg',
+  WEBP: 'image/webp',
+  MP4: 'video/mp4',
+  WEBM: 'video/webm',
+  WAV: 'audio/wav',
+  MP3: 'audio/mpeg',
+  FLAC: 'audio/flac',
+  GLB: 'model/gltf-binary',
+  OBJ: 'model/obj',
+  MD: 'text/markdown',
+  JSON: 'application/json',
+  CSV: 'text/csv'
+}
+const added = computed(() =>
+  new Date(Date.now() - Math.max(0, asset.age) * 60000).toLocaleString('en-US', {
+    month: 'numeric',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit'
+  })
+)
 const at = computed(() => list.findIndex((a) => a.id === asset.id))
 const prev = computed(() => list[at.value - 1])
 const next = computed(() => list[at.value + 1])
@@ -58,11 +105,11 @@ const dims = computed(() =>
 )
 const fileRows = computed(() =>
   [
-    ['Type', `${facts.value.format} ${asset.type === '3d' ? 'model' : asset.type}`],
-    ['Size', asset.size],
+    ['Added to library', added.value],
+    ['Type', MIME[facts.value.format] ?? 'application/octet-stream'],
+    ['File size', asset.size],
     ['Dimensions', dims.value],
     ['Duration', facts.value.duration],
-    [facts.value.imported ? 'Added' : 'Made', asset.when],
     ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined]
   ].filter((r): r is [string, string] => !!r[1])
 )
@@ -73,13 +120,13 @@ const STATE: Record<Availability, { label: string; icon: typeof CircleCheck }> =
   lost: { label: 'Not kept after a restart', icon: CircleDashed }
 }
 const sources = computed(() => [
+  { name: 'File metadata', state: facts.value.metadata },
   { name: 'Embedded workflow', state: facts.value.workflow },
   {
-    name: 'Run history',
+    name: 'Execution history',
     state: facts.value.imported ? ('missing' as const) : facts.value.history,
-    note: facts.value.imported ? 'Imported' : undefined
-  },
-  { name: 'File metadata', state: facts.value.metadata }
+    note: facts.value.imported ? 'None, imported' : undefined
+  }
 ])
 
 const json = ref(false)
@@ -91,6 +138,7 @@ watch(
 const root = ref<HTMLElement>()
 const opener = document.activeElement as HTMLElement | null
 function key(e: KeyboardEvent): void {
+  if (e.target instanceof HTMLInputElement && e.key !== 'Escape') return
   if (e.key === 'Escape') emit('close')
   else if (e.key === 'ArrowLeft' && prev.value) emit('go', prev.value)
   else if (e.key === 'ArrowRight' && next.value) emit('go', next.value)
@@ -122,7 +170,11 @@ onBeforeUnmount(() => {
     >
       <section class="mad-stage" @pointerdown.self="emit('close')">
         <header class="mad-bar">
-          <span class="mad-count">{{ at + 1 }} of {{ list.length }}</span>
+          <button type="button" class="mad-back" @click="emit('close')">
+            <ArrowLeft :size="14" />Assets
+          </button>
+          <span class="mad-file">{{ asset.name }}</span>
+          <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
           <button type="button" class="mad-icon" aria-label="Close" @click="emit('close')">
             <X :size="16" />
           </button>
@@ -137,8 +189,8 @@ onBeforeUnmount(() => {
           <ChevronLeft :size="18" />
         </button>
         <div class="mad-media" :style="{ '--r': facts.ratio }">
-          <img v-if="asset.thumbId" :key="asset.id" :src="thumb(asset.thumbId)" alt="" />
-          <span v-else class="mad-glyph"><Music :size="36" /></span>
+          <img v-if="pic" :key="asset.id" :src="pic" alt="" />
+          <span v-else class="mad-glyph"><component :is="glyph" :size="36" /></span>
           <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
           <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
         </div>
@@ -156,41 +208,9 @@ onBeforeUnmount(() => {
       <aside class="mad-side" aria-label="Asset details">
         <div class="mad-head">
           <h2 class="mad-name">{{ asset.name }}</h2>
-          <p class="mad-sub">{{ build }} · {{ asset.when }}</p>
-        </div>
-
-        <div class="mad-actions">
-          <button
-            type="button"
-            class="mad-btn is-primary"
-            @click="toast(`Downloading ${asset.name}`)"
-          >
-            <Download :size="14" />Download
-          </button>
-          <button type="button" class="mad-btn" @click="toast(`Revealed ${asset.name}`)">
-            <FolderOpen :size="14" />Show in Finder
-          </button>
-          <button
-            v-if="facts.workflow === 'available'"
-            type="button"
-            class="mad-btn"
-            @click="toast(`Opening the workflow in ${build}`)"
-          >
-            <Workflow :size="14" />Open workflow
-          </button>
         </div>
 
         <section class="mad-sec">
-          <p class="mad-label">Tags</p>
-          <div v-if="facts.tags.length" class="mad-tags">
-            <span v-for="t in facts.tags" :key="t" class="mad-tag">{{ t }}</span>
-          </div>
-          <p v-else class="mad-quiet">No tags</p>
-          <p class="mad-hint">Tags are added in ComfyUI.</p>
-        </section>
-
-        <section class="mad-sec">
-          <p class="mad-label">File</p>
           <dl class="mad-rows">
             <template v-for="[k, v] in fileRows" :key="k">
               <dt>{{ k }}</dt>
@@ -200,31 +220,35 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="mad-sec">
-          <p class="mad-label">From the run</p>
-          <div v-if="loading" class="mad-skel" aria-label="Loading">
-            <i style="width: 90%" /><i style="width: 70%" /><i style="width: 50%" />
+          <p class="mad-label">Tags</p>
+          <div v-if="tags.length" class="mad-tags">
+            <span v-for="t in tags" :key="t" class="mad-tag"
+              >{{ t
+              }}<button
+                v-if="editable"
+                type="button"
+                class="mad-tag-x"
+                :aria-label="`Remove ${t}`"
+                @click="removeTag(asset, t)"
+              >
+                <X :size="11" /></button
+            ></span>
           </div>
-          <template v-else-if="facts.prompt || facts.models.length">
-            <div v-if="facts.prompt" class="mad-found">
-              <p class="mad-found-k">
-                Prompt <span>Found in {{ facts.promptNode }}</span>
-              </p>
-              <p class="mad-prompt">{{ facts.prompt }}</p>
-            </div>
-            <div class="mad-found">
-              <p class="mad-found-k">Models <span>Referenced in the run</span></p>
-              <p v-for="m in facts.models" :key="m" class="mad-model">{{ m }}</p>
-              <p v-if="!facts.models.length" class="mad-quiet">Not identified</p>
-            </div>
-          </template>
-          <p v-else class="mad-quiet">
-            {{
-              facts.imported
-                ? 'Imported files carry no run.'
-                : 'Not identified. The run’s data wasn’t kept.'
-            }}
-          </p>
+          <p v-else class="mad-quiet">No tags yet</p>
+          <input
+            v-if="editable"
+            v-model="draft"
+            class="mad-tag-input"
+            placeholder="Add a tag"
+            aria-label="Add a tag"
+            @keydown.enter.prevent="add"
+          />
+          <p v-else class="mad-hint">Tags are edited in ComfyUI.</p>
+          <p class="mad-hint">System tags: {{ facts.imported ? 'input' : 'output' }}</p>
+        </section>
 
+        <section class="mad-sec">
+          <p class="mad-label">Available information</p>
           <dl class="mad-avail">
             <template v-for="s in sources" :key="s.name">
               <dt>{{ s.name }}</dt>
@@ -235,6 +259,38 @@ onBeforeUnmount(() => {
               </dd>
             </template>
           </dl>
+        </section>
+
+        <section class="mad-sec">
+          <p class="mad-label">Generation info</p>
+          <p v-if="facts.prompt || facts.models.length" class="mad-hint">
+            Inferred from the run’s data. A listed value may not have contributed to this output.
+          </p>
+          <div v-if="loading" class="mad-skel" aria-label="Loading">
+            <i style="width: 90%" /><i style="width: 70%" /><i style="width: 50%" />
+          </div>
+          <template v-else-if="facts.prompt || facts.models.length">
+            <div v-if="facts.prompt" class="mad-found">
+              <p class="mad-found-k">
+                Prompt <span>{{ facts.promptNode }} #6</span>
+              </p>
+              <p class="mad-prompt">{{ facts.prompt }}</p>
+            </div>
+            <div class="mad-found">
+              <p class="mad-found-k">Models <span>CheckpointLoaderSimple #4</span></p>
+              <p v-for="m in facts.models" :key="m" class="mad-model">{{ m }}</p>
+              <p v-if="!facts.models.length" class="mad-quiet">Not identified</p>
+            </div>
+          </template>
+          <p v-else class="mad-quiet">
+            {{
+              facts.imported
+                ? 'Imported files carry no run.'
+                : facts.history === 'available'
+                  ? 'Not identified in the run’s data.'
+                  : 'Not identified. The run’s data wasn’t kept.'
+            }}
+          </p>
 
           <div v-if="facts.json && !loading" class="mad-json">
             <button
@@ -248,6 +304,38 @@ onBeforeUnmount(() => {
             <pre v-if="json">{{ facts.json }}</pre>
           </div>
         </section>
+        <footer class="mad-foot">
+          <template v-if="editable">
+            <button
+              v-if="facts.workflow === 'available'"
+              type="button"
+              class="mad-btn"
+              @click="toast(`Opened ${asset.name} as a workflow`)"
+            >
+              <Workflow :size="14" />Open as workflow in new tab
+            </button>
+          </template>
+          <template v-else>
+            <button type="button" class="mad-btn" @click="toast(`Revealed ${asset.name}`)">
+              <FolderOpen :size="14" />Show in Finder
+            </button>
+            <button
+              v-if="facts.workflow === 'available'"
+              type="button"
+              class="mad-btn"
+              @click="toast(`Opening the workflow in ${build}`)"
+            >
+              <Workflow :size="14" />Open workflow
+            </button>
+          </template>
+          <button
+            type="button"
+            class="mad-btn is-primary"
+            @click="toast(`Downloading ${asset.name}`)"
+          >
+            <Download :size="14" />Download
+          </button>
+        </footer>
       </aside>
     </div>
   </Teleport>
@@ -287,12 +375,70 @@ onBeforeUnmount(() => {
 }
 .mad-bar {
   position: absolute;
-  top: 16px;
+  top: 14px;
   right: 16px;
-  left: 24px;
+  left: 16px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-back {
+  display: inline-flex;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-back:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+.mad-file {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mad-foot {
+  position: sticky;
+  bottom: -32px;
+  display: flex;
+  gap: 8px;
+  margin: auto -24px -32px;
+  padding: 14px 24px;
+  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  background: var(--color-content-background);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-tag-x {
+  display: inline-flex;
+  margin: 0 -3px 0 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  vertical-align: -1px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-tag-x:hover {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-tag-input {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  outline: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-tag-input:focus {
+  border-color: color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
 }
 .mad-count {
   color: var(--color-muted-foreground);
@@ -401,6 +547,15 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-btn:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
 }
+.mad-btn svg {
+  flex: none;
+}
+.mad-foot .mad-btn {
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: center;
+  white-space: nowrap;
+}
 :root .proto-ui.proto-ui.proto-ui .mad-btn.is-primary {
   background: var(--color-base-foreground);
   color: var(--color-content-background);
@@ -449,11 +604,7 @@ onBeforeUnmount(() => {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.mad-avail {
-  margin-top: 4px;
-  padding-top: 12px;
-  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-}
+
 .mad-avail dd {
   display: inline-flex;
   align-items: center;

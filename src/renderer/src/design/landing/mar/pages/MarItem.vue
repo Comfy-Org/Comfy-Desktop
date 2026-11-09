@@ -39,7 +39,8 @@ const {
   lines,
   ratio = '16 / 10',
   fit = 'cover',
-  contextMenu = false
+  contextMenu = false,
+  menuAlign = 'end'
 } = defineProps<{
   name: string
   thumb?: string
@@ -64,6 +65,8 @@ const {
   fit?: 'cover' | 'contain'
   /** Right-click opens the ⋯ menu (Builds). */
   contextMenu?: boolean
+  /** Where the ⋯ menu lines up with its button. */
+  menuAlign?: 'start' | 'end'
 }>()
 const emit = defineEmits<{
   open: []
@@ -161,7 +164,7 @@ function click(e: MouseEvent): void {
           >
             <Star :size="13" :fill="fav ? 'currentColor' : 'none'" />
           </button>
-          <MarItemMenu v-model:open="menuOpen" :lines on-media />
+          <MarItemMenu v-model:open="menuOpen" :lines :align="menuAlign" on-media />
         </span>
         <slot name="overlay" />
       </template>
@@ -228,7 +231,7 @@ function click(e: MouseEvent): void {
         >
           <Star :size="13" :fill="fav ? 'currentColor' : 'none'" />
         </button>
-        <MarItemMenu v-model:open="menuOpen" :lines />
+        <MarItemMenu v-model:open="menuOpen" :lines :align="menuAlign" />
       </span>
     </template>
   </div>

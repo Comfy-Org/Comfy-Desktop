@@ -8,9 +8,11 @@ import type { ItemStatus } from './MarStatus.vue'
 export interface MarAsset {
   id: string
   name: string
-  type: 'image' | 'video' | '3d' | 'audio'
+  type: 'image' | 'video' | '3d' | 'audio' | 'text' | 'other'
   source: 'local' | 'cloud'
   thumbId?: string
+  /** A picture of its own (a file just uploaded), over the mock's. */
+  src?: string
   project?: string
   size: string
   sizeMb: number
@@ -73,7 +75,33 @@ const RUNS: MarAsset[] = [
   }
 ]
 
-const seed = (): MarAsset[] => [...RUNS, ...allAssets.value.map((a) => ({ ...a }))]
+// Files people brought in that aren't media: inputs a build keeps too.
+const FILES: MarAsset[] = (
+  [
+    ['notes.md', 'text', '16 B', 1, 4300],
+    ['settings.json', 'text', '13 B', 1, 4320],
+    ['palette.csv', 'text', '12 B', 1, 9000],
+    ['blob.bin', 'other', '512 B', 1, 4330]
+  ] as const
+).flatMap(([name, type, size, sizeMb, age], i) =>
+  ['local-1', 'local-video'].map((envId, j) => ({
+    id: `file-${i}-${j}-in-${i}`,
+    name,
+    type,
+    source: 'local' as const,
+    envId,
+    size,
+    sizeMb: sizeMb / 1000,
+    age,
+    when: age < 5000 ? '3 days ago' : 'Last week'
+  }))
+)
+
+const seed = (): MarAsset[] => [
+  ...RUNS,
+  ...allAssets.value.map((a) => ({ ...a })),
+  ...(allAssets.value.length ? FILES.map((a) => ({ ...a })) : [])
+]
 export const assets = collection<MarAsset>(seed(), 'asset')
 
 // Follows the simulated user, like workflowsStore.ts.
