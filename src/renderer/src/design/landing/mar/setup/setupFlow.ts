@@ -51,9 +51,10 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  install: the Home as it is, and picking something that runs locally
  *  starts the install with it queued. Off by default, and only where there
  *  is a Home. */
-export type Onboarding = 'install' | 'home' | 'home-open'
+export type Onboarding = 'install' | 'home-running' | 'home' | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
-  { value: 'install', label: 'Install first' },
+  { value: 'install', label: 'Install first (today)' },
+  { value: 'home-running', label: 'Home first: install runs behind' },
   { value: 'home', label: 'Home first: install card only' },
   { value: 'home-open', label: 'Home first: pick to install' }
 ]
@@ -132,11 +133,11 @@ const linkScope = new URLSearchParams(location.search).get('scope')
 if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
 // Without one, the shared link shows the first release: the install lands on Builds.
 else if (linkFirst) localSetup.scope = 'm1'
-// And a Home first onboarding, which needs the Home: `&onboarding=home` or
-// `&onboarding=home-open`.
+// And a Home first onboarding, which needs the Home: `&onboarding=home`,
+// `&onboarding=home-running` or `&onboarding=home-open`.
 const linkOnboarding = new URLSearchParams(location.search).get('onboarding')
-if (linkOnboarding === 'home' || linkOnboarding === 'home-open') {
-  localSetup.onboarding = linkOnboarding
+if (ONBOARDINGS.some((o) => o.value === linkOnboarding && o.value !== 'install')) {
+  localSetup.onboarding = linkOnboarding as Onboarding
   localSetup.scope = 'next'
 }
 // And the computer: `&os=windows` or `&os=linux`.
@@ -165,6 +166,11 @@ export const homeFirst = computed(
 )
 /** Home first › Pick to install: the Home keeps its ways to start. */
 export const homeOpen = computed(() => homeFirst.value && localSetup.onboarding === 'home-open')
+/** Home first › Install runs behind: Run on and Set up, then the Home with
+ *  the install already going on its card; apps run on Comfy Cloud meanwhile. */
+export const homeRunning = computed(
+  () => homeFirst.value && localSetup.onboarding === 'home-running'
+)
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
 // landing; the next iterations are the latest one, with its Home.
@@ -515,6 +521,15 @@ export function landHomeCloud(): void {
   showScope()
   go('overview')
   chooseCloud()
+}
+
+/** Home first › Install runs behind: Set up › Install lands on the Home
+ *  with the install already running on its card. */
+export function landHomeInstalling(): void {
+  flow.homeCard = true
+  showScope()
+  go('overview')
+  installInBackground()
 }
 
 export function installInBackground(): void {

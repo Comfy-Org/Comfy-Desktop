@@ -6,6 +6,9 @@ import SectionHeader from '../../ui/SectionHeader.vue'
 import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import SetupLaptop from './SetupLaptop.vue'
 import StarterShelf from './StarterShelf.vue'
+import ExampleRow from '../userStates/ExampleRow.vue'
+import { go } from '../../useProto'
+import { can } from '../../milestones'
 import {
   DETECTED,
   changeFromHome,
@@ -28,7 +31,8 @@ import {
  * the logs and Cancel, and the wait is for picking the workflow to open
  * first; its models join the install as the last step, as in today's
  * Workflow step. The card is Set up's own: the computer drawn large, as the
- * subject.
+ * subject. Under it, the apps: they run on Comfy Cloud, so they work before
+ * ComfyUI is installed (Milestone 2).
  */
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
@@ -96,8 +100,28 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         </template>
       </span>
     </div>
+    <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
+         there, so they come first. -->
+    <div class="mt-10">
+      <SectionHeader
+        title="Apps"
+        :link="can.exploreApps ? 'See all' : undefined"
+        @link="go(can.explore ? 'explore' : 'overview')"
+      >
+        <template #controls>
+          <span class="text-ui text-subtle-foreground">Run on Comfy Cloud, no install needed</span>
+        </template>
+      </SectionHeader>
+      <ExampleRow />
+    </div>
     <div v-if="shelf" class="mt-10">
-      <SectionHeader title="Start from a workflow" />
+      <SectionHeader title="Start from a workflow">
+        <template v-if="installing" #controls>
+          <span class="text-ui text-subtle-foreground"
+            >Pick one; it opens when ComfyUI is ready</span
+          >
+        </template>
+      </SectionHeader>
       <StarterShelf />
     </div>
     <!-- The install modal carries its own confirm while it is open. -->

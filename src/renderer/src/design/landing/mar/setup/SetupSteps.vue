@@ -5,12 +5,20 @@ import { Check } from 'lucide-vue-next'
 /**
  * The takeover's step indicator, top centre on every screen of the first
  * launch: Run on, Set up, Install, with Workflow before Install while the
- * starter workflow is a step (M1). `now` is the current one, from 1.
+ * starter workflow is a step (M1), or only Run on and Set up when the
+ * install runs behind the Home. `now` is the current one, from 1.
  */
-const { now, workflow } = defineProps<{ now: number; workflow?: boolean }>()
-const STEPS = computed(() =>
-  workflow ? ['Run on', 'Set up', 'Workflow', 'Install'] : ['Run on', 'Set up', 'Install']
-)
+const { now, workflow, short } = defineProps<{
+  now: number
+  workflow?: boolean
+  /** Home first › Install runs behind: the install is not a step here, it
+   *  runs on the Home. */
+  short?: boolean
+}>()
+const STEPS = computed(() => {
+  if (short) return ['Run on', 'Set up']
+  return workflow ? ['Run on', 'Set up', 'Workflow', 'Install'] : ['Run on', 'Set up', 'Install']
+})
 </script>
 
 <template>

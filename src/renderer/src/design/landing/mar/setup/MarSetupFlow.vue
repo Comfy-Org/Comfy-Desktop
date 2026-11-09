@@ -43,8 +43,10 @@ import {
   closeSetup,
   flow,
   homeFirst,
+  homeRunning,
   installInBackground,
   landHomeCloud,
+  landHomeInstalling,
   landHomeLocal,
   localSetup,
   lowSpace,
@@ -93,8 +95,12 @@ const beta = ref(true)
 const termsAsk = ref(false)
 function continueFirst(): void {
   if (!terms.value) termsAsk.value = true
-  // Home first: Run on is the only step, and Local starts the install.
-  else if (homeFirst.value) (runOn.value === 'cloud' ? landHomeCloud : landHomeLocal)()
+  // Home first: Run on is the only step, and Local lands on the Home with
+  // the install waiting on its card; with the install running behind, Set up
+  // still comes first.
+  else if (homeFirst.value && !homeRunning.value)
+    (runOn.value === 'cloud' ? landHomeCloud : landHomeLocal)()
+  else if (homeFirst.value && runOn.value === 'cloud') landHomeCloud()
   else if (runOn.value === 'cloud') chooseCloud()
   else chooseLocal()
 }
@@ -113,6 +119,8 @@ function continueSetup(): void {
 function toTemplates(): void {
   flow.confirmLowDisk = false
   if (workflowStep.value) flow.step = 'template'
+  // Home first › Install runs behind: Install lands on the Home, installing.
+  else if (homeRunning.value && flow.takeover) landHomeInstalling()
   else installWith(null)
 }
 const stepNow = computed(() => {
@@ -353,7 +361,12 @@ function rowState(i: number): string {
         <div class="mss-first-frame">
           <div v-if="!failed" class="mss-ambient"></div>
           <ComfyWordmark class="mss-first-mark" />
-          <SetupSteps v-if="!homeFirst" :now="1" :workflow="workflowStep" />
+          <SetupSteps
+            v-if="!homeFirst || homeRunning"
+            :now="1"
+            :workflow="workflowStep"
+            :short="homeRunning"
+          />
           <div class="mss-col">
             <div class="mss-first-hero">
               <h1 id="mss-first-title" class="mss-first-title">How do you want to run ComfyUI?</h1>
@@ -455,7 +468,7 @@ function rowState(i: number): string {
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
         <ComfyWordmark class="mss-first-mark" />
-        <SetupSteps :now="stepNow" :workflow="workflowStep" />
+        <SetupSteps :now="stepNow" :workflow="workflowStep" :short="homeRunning" />
       </div>
     </div>
   </Teleport>

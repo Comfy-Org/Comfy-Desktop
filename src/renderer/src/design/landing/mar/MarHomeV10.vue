@@ -56,10 +56,11 @@ const noLocal = computed(() => !instances.value.some((i) => i.kind === 'local'))
 // Cloud) gets the returning Home; a first-time user with a fresh build
 // gets it too, with examples where their work will go.
 const firstRun = computed(() => firstTime.value && noLocal.value)
-// Home first, Local picked and not installed yet: the install waits on its
-// card. Open ComfyUI never shows before there is one. With the card only,
-// the rest that needs ComfyUI waits too: the prompt, which could only run on
-// Comfy Cloud, and the first-run examples. With pick to install they stay.
+// Home first, Local picked and not installed yet: the install waits (or
+// runs) on its card, with the apps under it (setup/HomeInstall.vue). Open
+// ComfyUI never shows before there is one. With the card only, the rest
+// that needs ComfyUI waits: the prompt, which could only run on Comfy
+// Cloud, and the first-run examples. With pick to install they stay.
 const installPending = computed(() => homeFirst.value && flow.homeCard && noLocal.value)
 const gated = computed(() => installPending.value && !homeOpen.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
