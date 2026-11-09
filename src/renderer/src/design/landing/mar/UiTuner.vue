@@ -22,6 +22,8 @@ import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
   ONBOARDINGS,
+  AFTER_INSTALLS,
+  setupLink,
   SETUP_SCOPES,
   MACHINES,
   SETUP_GPUS,
@@ -41,7 +43,7 @@ import { MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
 import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
-import { proto } from '../useProto'
+import { proto, toast } from '../useProto'
 import { can } from '../milestones'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
 import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
@@ -183,6 +185,18 @@ const linkSays = computed(() => {
     all: [milestone, ...changes].join('\n')
   }
 })
+
+// Copy link: the clipboard where allowed; the box is select-all otherwise.
+const linkCopied = ref(false)
+async function copySetupLink(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(setupLink.value)
+    linkCopied.value = true
+    setTimeout(() => (linkCopied.value = false), 1600)
+  } catch {
+    toast('Select the link and copy it')
+  }
+}
 </script>
 
 <template>
@@ -238,6 +252,9 @@ const linkSays = computed(() => {
             <Row v-if="localSetup.scope === 'next'" label="Onboarding">
               <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" class="w-full" />
             </Row>
+            <Row v-if="localSetup.scope === 'next'" label="After install">
+              <Select v-model="localSetup.after" :options="AFTER_INSTALLS" class="w-full" />
+            </Row>
             <Row label="Jump to">
               <Select
                 :model-value="setupScreen ?? 'first'"
@@ -260,6 +277,17 @@ const linkSays = computed(() => {
             </Row>
             <Row label="This computer">
               <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
+            </Row>
+            <!-- The link to this exact setup, in the readable form:
+                 ?setup=first&tweaks=key:value,… -->
+            <Row label="Link">
+              <code
+                class="block rounded-control bg-secondary-background px-2.5 py-2 font-mono text-[11px] leading-4 break-all text-muted-foreground select-all"
+                >{{ setupLink }}</code
+              >
+              <Button variant="secondary" size="sm" class="self-start" @click="copySetupLink"
+                ><Link :size="13" />{{ linkCopied ? 'Copied' : 'Copy link' }}</Button
+              >
             </Row>
           </template>
         </section>

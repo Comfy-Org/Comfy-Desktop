@@ -29,6 +29,7 @@ import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import {
   LOCAL_SETUPS,
   MACHINES,
+  AFTER_INSTALLS,
   ONBOARDINGS,
   RUN_ON_CARDS,
   SETUP_GPUS,
@@ -152,6 +153,7 @@ const PARTS: Part[] = [
   field('setup', localSetup, 'mode', 'off', LOCAL_SETUPS),
   field('setup.scope', localSetup, 'scope', 'm1', SETUP_SCOPES),
   field('setup.onboarding', localSetup, 'onboarding', 'install', ONBOARDINGS),
+  field('setup.after', localSetup, 'after', 'home', AFTER_INSTALLS),
   field('setup.cards', localSetup, 'cards', 'glow', RUN_ON_CARDS),
   field('setup.os', localSetup, 'os', 'mac', SETUP_OSES),
   field('setup.gpu', localSetup, 'gpu', 'nvidia', SETUP_GPUS),
