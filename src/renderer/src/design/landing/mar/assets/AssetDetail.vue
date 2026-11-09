@@ -8,6 +8,9 @@ import {
   Download,
   FolderOpen,
   Info,
+  Minus,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Workflow,
   X
@@ -26,8 +29,10 @@ import { addTag, removeTag, tagsOf } from './assetTags'
  * (Phase 1), Desktop from its gallery with tags read-only (Phase 2). The
  * picture fills the window, the details sit on the right: the file, its
  * tags, what's on record, and what could be read from the run, labelled
- * as inferred, never as fact. Arrows step through the list as it's
- * filtered; Escape closes and hands focus back to the tile.
+ * as inferred, never as fact. Arrows and the filmstrip step through the
+ * list as it's filtered; Escape or Assets closes and hands focus back to
+ * the tile. Zoom and a panel toggle sit in the bar, Download leads the
+ * details (Alex Tov's media-assets proto).
  */
 const {
   asset,
@@ -80,6 +85,31 @@ const added = computed(() =>
   })
 )
 const at = computed(() => list.findIndex((a) => a.id === asset.id))
+const picOf = (a: MarAsset): string | undefined =>
+  a.src ?? (a.thumbId ? thumb(a.thumbId) : undefined)
+
+/** Zoom: 50 to 300%, back to 100 on every asset. */
+const zoom = ref(100)
+const ZOOM_STEP = 25
+const setZoom = (z: number): void => {
+  zoom.value = Math.min(300, Math.max(50, Math.round(z / ZOOM_STEP) * ZOOM_STEP))
+}
+/** The details panel folds away for the picture alone. */
+const side = ref(true)
+
+// The filmstrip keeps the current asset in view.
+const strip = ref<HTMLElement>()
+watch(
+  () => asset.id,
+  async () => {
+    zoom.value = 100
+    await nextTick()
+    strip.value
+      ?.querySelector<HTMLElement>('[aria-current="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  },
+  { immediate: true }
+)
 const prev = computed(() => list[at.value - 1])
 const next = computed(() => list[at.value + 1])
 
@@ -149,6 +179,7 @@ onBeforeUnmount(() => {
     <div
       ref="root"
       class="proto-ui mad"
+      :class="!side && 'no-side'"
       role="dialog"
       aria-modal="true"
       :aria-label="asset.name"
@@ -161,8 +192,47 @@ onBeforeUnmount(() => {
           </button>
           <span class="mad-file">{{ asset.name }}</span>
           <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
-          <button type="button" class="mad-icon" aria-label="Close" @click="emit('close')">
-            <X :size="16" />
+          <div class="mad-zoom" role="group" aria-label="Zoom">
+            <button
+              type="button"
+              class="mad-icon is-sm"
+              aria-label="Zoom out"
+              :disabled="zoom <= 50"
+              @click="setZoom(zoom - ZOOM_STEP)"
+            >
+              <Minus :size="14" />
+            </button>
+            <input
+              type="range"
+              min="50"
+              max="300"
+              :step="ZOOM_STEP"
+              :value="zoom"
+              aria-label="Zoom"
+              @input="setZoom(+($event.target as HTMLInputElement).value)"
+            />
+            <button
+              type="button"
+              class="mad-icon is-sm"
+              aria-label="Zoom in"
+              :disabled="zoom >= 300"
+              @click="setZoom(zoom + ZOOM_STEP)"
+            >
+              <Plus :size="14" />
+            </button>
+            <button type="button" class="mad-zoom-pct" title="Reset to 100%" @click="zoom = 100">
+              {{ zoom }}%
+            </button>
+          </div>
+          <button
+            type="button"
+            class="mad-icon"
+            :aria-label="side ? 'Hide details' : 'Show details'"
+            :title="side ? 'Hide details' : 'Show details'"
+            :aria-pressed="side"
+            @click="side = !side"
+          >
+            <PanelRightClose v-if="side" :size="16" /><PanelRightOpen v-else :size="16" />
           </button>
         </header>
         <button
@@ -174,7 +244,7 @@ onBeforeUnmount(() => {
         >
           <ChevronLeft :size="18" />
         </button>
-        <div class="mad-media" :style="{ '--r': facts.ratio }">
+        <div class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
           <img v-if="pic" :key="asset.id" :src="pic" alt="" />
           <AssetCover v-else :name="asset.name" :type="asset.type" />
           <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
@@ -189,9 +259,24 @@ onBeforeUnmount(() => {
         >
           <ChevronRight :size="18" />
         </button>
+        <nav ref="strip" class="mad-strip" aria-label="Assets">
+          <button
+            v-for="a in list"
+            :key="a.id"
+            type="button"
+            class="mad-thumb"
+            :aria-current="a.id === asset.id"
+            :aria-label="a.name"
+            :title="a.name"
+            @click="emit('go', a)"
+          >
+            <img v-if="picOf(a)" :src="picOf(a)" alt="" loading="lazy" />
+            <AssetCover v-else :name="a.name" :type="a.type" />
+          </button>
+        </nav>
       </section>
 
-      <aside class="mad-side" aria-label="Asset details">
+      <aside v-if="side" class="mad-side" aria-label="Asset details">
         <div class="mad-body">
           <header class="mad-head">
             <div class="mad-head-text">
@@ -209,6 +294,32 @@ onBeforeUnmount(() => {
               <FolderOpen :size="15" />
             </button>
           </header>
+          <div class="mad-actions">
+            <button
+              type="button"
+              class="mad-btn is-primary"
+              @click="toast(`Downloading ${asset.name}`)"
+            >
+              <Download :size="14" /><span>Download</span>
+            </button>
+            <button
+              v-if="facts.workflow === 'available'"
+              type="button"
+              class="mad-btn"
+              :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
+              @click="
+                toast(
+                  editable
+                    ? `Opened ${asset.name} as a workflow`
+                    : `Opening the workflow in ${build}`
+                )
+              "
+            >
+              <Workflow :size="14" /><span>{{
+                editable ? 'Open as workflow' : 'Open workflow'
+              }}</span>
+            </button>
+          </div>
 
           <section class="mad-sec">
             <dl class="mad-rows">
@@ -277,31 +388,6 @@ onBeforeUnmount(() => {
             <GenerationInfo :facts="facts" :loading="loading" />
           </section>
         </div>
-
-        <footer class="mad-foot">
-          <button
-            v-if="facts.workflow === 'available'"
-            type="button"
-            class="mad-btn"
-            :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
-            @click="
-              toast(
-                editable ? `Opened ${asset.name} as a workflow` : `Opening the workflow in ${build}`
-              )
-            "
-          >
-            <Workflow :size="14" /><span>{{
-              editable ? 'Open as workflow' : 'Open workflow'
-            }}</span>
-          </button>
-          <button
-            type="button"
-            class="mad-btn is-primary"
-            @click="toast(`Downloading ${asset.name}`)"
-          >
-            <Download :size="14" /><span>Download</span>
-          </button>
-        </footer>
       </aside>
     </div>
   </Teleport>
@@ -320,6 +406,9 @@ onBeforeUnmount(() => {
   outline: none;
   animation: mad-in 0.18s ease-out;
 }
+.mad.no-side {
+  grid-template-columns: minmax(0, 1fr);
+}
 @keyframes mad-in {
   from {
     opacity: 0;
@@ -336,7 +425,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   align-items: center;
   justify-content: center;
-  padding: 64px 72px 32px;
+  overflow: hidden;
+  padding: 64px 72px 104px;
 }
 .mad-bar {
   position: absolute;
@@ -378,6 +468,7 @@ onBeforeUnmount(() => {
 }
 .mad-media {
   position: relative;
+  transition: scale 0.16s ease-out;
   width: min(100%, calc(78vh * var(--r)));
   min-width: 0;
   flex: 0 1 auto;
@@ -441,6 +532,83 @@ onBeforeUnmount(() => {
   opacity: 0.3;
 }
 
+/* Zoom: − slider + and the percentage, which resets to 100. */
+.mad-zoom {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-zoom input {
+  width: 88px;
+  margin: 0 4px;
+  accent-color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct {
+  width: 44px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct:hover {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-icon:disabled {
+  opacity: 0.35;
+}
+/* Filmstrip: every asset in the list, the current one ringed. */
+.mad-strip {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  justify-content: safe center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px;
+  scrollbar-width: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-thumb {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 8px;
+  background: var(--color-secondary-background);
+  opacity: 0.55;
+  transition:
+    opacity 0.12s ease,
+    box-shadow 0.12s ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-thumb:hover {
+  opacity: 0.9;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-thumb[aria-current='true'] {
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-base-foreground);
+  opacity: 1;
+}
+.mad-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mad-thumb .ac {
+  position: absolute;
+  inset: 0;
+}
+.mad-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 16px;
+}
 .mad-side {
   --mad-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   --mad-fill: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
@@ -660,13 +828,6 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-head .mad-icon {
   margin-top: -4px;
   color: var(--color-muted-foreground);
-}
-.mad-foot {
-  display: flex;
-  flex: none;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--mad-line);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-btn {
   display: inline-flex;
