@@ -62,7 +62,7 @@ type WorkspaceSwitchOutcome =
   | 'retryable'
   | 'refused'
 
-type BrowserReason = ReauthorizeReason | 'scope_not_granted'
+type SwitchReason = ReauthorizeReason | 'scope_not_granted'
 
 type GrantRefresh = 'refreshed' | 'ended' | 'unavailable'
 
@@ -93,15 +93,15 @@ function refreshFailureOutcome(refreshed: GrantRefresh): SettledMintOutcome {
   return refreshed === 'ended' ? { kind: 'reauthorize', reason: 'grant_ended' } : RETRYABLE
 }
 
-function reportSwitch(outcome: WorkspaceSwitchOutcome, reason?: BrowserReason): void {
+function reportSwitch(outcome: WorkspaceSwitchOutcome, reason?: SwitchReason): void {
   mainTelemetry.emit(
     WORKSPACE_SWITCH_EVENT,
     reason ? { outcome, reauthorize_reason: reason } : { outcome }
   )
 }
 
-function reportBrowser(outcome: WorkspaceSwitchOutcome, reason: BrowserReason): void {
-  reportSwitch(outcome, reason)
+function reportBrowser(reason: ReauthorizeReason): void {
+  reportSwitch('browser', reason)
   mainTelemetry.emit(WORKSPACE_SWITCH_BROWSER_EVENT, { reauthorize_reason: reason })
 }
 
@@ -441,7 +441,7 @@ export class CloudSession {
     generation: number,
     reason: ReauthorizeReason
   ): Promise<SessionSwitchReply> {
-    reportBrowser('browser', reason)
+    reportBrowser(reason)
     let tokens: AuthTokens
     try {
       ;({ tokens } = await signIn({ workspaceId }))
@@ -453,7 +453,7 @@ export class CloudSession {
 
     const canMint = canMintWorkspaceTokens(tokens.accessToken)
     const isAnchor = workspaceId === workspaceIdOf(tokens.accessToken)
-    if (!canMint) reportBrowser(isAnchor ? 'anchor' : 'retryable', 'scope_not_granted')
+    if (!canMint) reportSwitch(isAnchor ? 'anchor' : 'retryable', 'scope_not_granted')
     if (isAnchor) {
       activateWorkspace(workspaceId)
       return this.afterConsent(this.status(), tokens)

@@ -1301,10 +1301,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
       { outcome: 'browser', reauthorize_reason: 'mint_scope_missing' },
       { outcome: 'retryable', reauthorize_reason: 'scope_not_granted' }
     ])
-    expect(browserEvents()).toEqual([
-      { reauthorize_reason: 'mint_scope_missing' },
-      { reauthorize_reason: 'scope_not_granted' }
-    ])
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_scope_missing' }])
   })
 
   it('a second and third switch after a scopeless sign-in stay put with no browser', async () => {
@@ -1500,7 +1497,11 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     })
 
     expect(signIn).toHaveBeenCalledOnce()
-    expect(browserEvents()).toContainEqual({ reauthorize_reason: 'scope_not_granted' })
+    expect(switchEvents()).toContainEqual({
+      outcome: 'retryable',
+      reauthorize_reason: 'scope_not_granted'
+    })
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'sso_required' }])
   })
 
   it('a scopeless grant consented on B activates B, since an anchor needs no mint', async () => {
@@ -1512,7 +1513,11 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(reply).toMatchObject({ workspaceId: 'w2' })
     expect(reply).not.toHaveProperty('workspaceSwitchFailure')
     expect(signIn).toHaveBeenCalledOnce()
-    expect(browserEvents()).toContainEqual({ reauthorize_reason: 'scope_not_granted' })
+    expect(switchEvents()).toContainEqual({
+      outcome: 'anchor',
+      reauthorize_reason: 'scope_not_granted'
+    })
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_scope_missing' }])
   })
 })
 
