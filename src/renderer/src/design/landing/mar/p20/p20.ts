@@ -58,18 +58,9 @@ const DEFAULTS: P20State = {
 
 const KEY = 'comfy.design.mar.p20'
 
+/** The explorations left the Playground: each stays on its default. */
 function load(): P20State {
-  try {
-    const v = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<P20State>
-    const out = { ...DEFAULTS }
-    for (const k of Object.keys(DEFAULTS) as Knob[]) {
-      const ok = (P20[k] as readonly { value: string }[]).some((o) => o.value === v[k])
-      if (ok) (out as Record<string, string>)[k] = v[k] as string
-    }
-    return out
-  } catch {
-    return { ...DEFAULTS }
-  }
+  return { ...DEFAULTS }
 }
 
 export const p20 = reactive<P20State>(load())

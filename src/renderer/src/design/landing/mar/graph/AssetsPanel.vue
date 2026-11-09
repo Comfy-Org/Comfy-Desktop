@@ -31,6 +31,7 @@ import type { MarAsset } from '../pages/assetsStore'
 import type { MenuLine } from '../pages/menu'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from './AssetFilterMenu.vue'
+import { graphOpen } from './graphOpen'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
 
@@ -190,6 +191,11 @@ function remove(ids: string[]): void {
 
 const detail = ref<PanelAsset | null>(null)
 const finished = computed(() => shown.value.filter((a) => !a.status))
+// A share link can open the first asset in Inspect asset (graphOpen.ts).
+if (graphOpen.inspect) {
+  detail.value = finished.value[0] ?? null
+  graphOpen.inspect = false
+}
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
 function lines(a: PanelAsset): MenuLine[] {

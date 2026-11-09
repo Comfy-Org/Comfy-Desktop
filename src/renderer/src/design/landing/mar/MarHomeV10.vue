@@ -9,7 +9,6 @@ import MarStart from './MarStart.vue'
 import StarterCards from '../parts/StarterCards.vue'
 import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
-import { homeBuilds } from './homeBuilds'
 import ExampleArc from './userStates/ExampleArc.vue'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
@@ -142,7 +141,7 @@ const recent = computed(() =>
       <!-- The Apps stage: the examples arc leads for everyone. Once Explore
            & Learn arrive, apps live in Explore only. -->
       <ExampleArc v-if="can.exploreApps && !can.explore" class="mt-6" />
-      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
+      <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). -->

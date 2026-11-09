@@ -53,6 +53,7 @@ import { graphStyle } from './graphStyle'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
+import { graphOpen } from './graphOpen'
 import AssetsPanel from './AssetsPanel.vue'
 import JobsPanel from './panels/JobsPanel.vue'
 import NodesPanel from './panels/NodesPanel.vue'
@@ -836,7 +837,9 @@ watch(
 // beside the rail; Templates, Settings and Cloud's Model Library open as
 // dialogs; Shortcuts as a panel along the bottom. ──
 type RailPanelId = '' | 'queue' | 'assets' | 'nodes' | 'models' | 'workflows' | 'apps'
-const panel = ref<RailPanelId>('')
+// A share link can open it on Media Assets (graphOpen.ts).
+const panel = ref<RailPanelId>(graphOpen.assets ? 'assets' : '')
+graphOpen.assets = false
 const dialog = ref<'' | 'templates' | 'settings' | 'models'>('')
 const settingsAt = ref<string>()
 const shortcuts = ref(false)

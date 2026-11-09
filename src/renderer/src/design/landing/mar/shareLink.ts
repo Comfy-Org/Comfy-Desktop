@@ -2,13 +2,13 @@ import { nextTick } from 'vue'
 import { appsProto, openAppUrl } from '../appFlow'
 import { look } from '../look'
 import { MILESTONES, can } from '../milestones'
-import { go, proto } from '../useProto'
+import { go, hostActions, instances, proto } from '../useProto'
+import { graphOpen } from './graph/graphOpen'
 import { TWEAKS, type TweakId } from './tunerContext'
 import { tuning, KNOBS } from './uiTuner'
 import { SURFACES, surface } from './shell/surface'
 import { homeBackground } from './shell/marShell'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
-import { HOME_BUILDS, homeBuilds } from './homeBuilds'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_PAGE_LOOKS, appPage } from './apps/appPage'
 import { FIRST_RUNS, firstRun } from './firstRun'
@@ -24,7 +24,6 @@ import { CREDITS_STATES, creditsState } from './credits'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { LOOKS, marLook } from './looks/looks'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
-import { P20, p20 } from './p20/p20'
 import { PORTS, ports } from './navOptions'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import {
@@ -124,7 +123,6 @@ const PARTS: Part[] = [
   one('surface', surface, 'desktop', SURFACES),
   one('brandMotif', brandMotif, 'off', BRAND_MOTIFS),
   one('homeBackground', homeBackground, 'spotlight', BACKGROUNDS),
-  one('homeBuilds', homeBuilds, 'on', HOME_BUILDS),
   one('appsStage', appsStage, 'm1', APPS_STAGES),
   one('appPage', appPage, 'hub', APP_PAGE_LOOKS),
   one('firstRun', firstRun, 'original', FIRST_RUNS),
@@ -158,7 +156,7 @@ const PARTS: Part[] = [
   field('setup.os', localSetup, 'os', 'mac', SETUP_OSES),
   field('setup.gpu', localSetup, 'gpu', 'nvidia', SETUP_GPUS),
   field('setup.machine', localSetup, 'machine', 'ready', MACHINES),
-  // More: the screen simulator, the token knobs, the Figma explorations.
+  // More: the screen simulator and the token knobs.
   field('screen', screen, 'id', 'fit', SCREENS),
   {
     key: 'zoom',
@@ -168,11 +166,8 @@ const PARTS: Part[] = [
     ok: ZOOMS.map(String)
   },
   field('colour', screen, 'display', 'true', DISPLAYS),
-  // Both knobs default to 'default'; each Figma exploration to its first.
-  ...KNOBS.map((k) => field(`ui.${k.key}`, tuning, k.key, 'default', k.options)),
-  ...(Object.keys(P20) as (keyof typeof P20)[]).map((k) =>
-    field(`p20.${k}`, p20, k, P20[k][0]!.value, P20[k])
-  )
+  // Both knobs default to 'default'.
+  ...KNOBS.map((k) => field(`ui.${k.key}`, tuning, k.key, 'default', k.options))
 ]
 
 /** The onboarding step on screen, as UI Playground › Jump to names it. */
@@ -186,7 +181,7 @@ function onboardingStep(): Screen | '' {
 }
 
 // Parameters that aren't the link's own: kept as they are.
-const SCREEN_KEYS = ['share', 'm', 'page', 'app', 'step', 'theme']
+const SCREEN_KEYS = ['share', 'm', 'page', 'app', 'step', 'theme', 'comfy']
 const OWN = new Set([...SCREEN_KEYS, ...PARTS.map((p) => p.key)])
 
 /** The link to what's on screen now. */
@@ -239,6 +234,18 @@ async function openShared(): Promise<void> {
     appsProto.tabs = []
     openAppUrl(app)
   } else if (page) go(page as typeof proto.page)
+  // ComfyUI on a workflow, on its Media Assets panel (and the first asset
+  // in Inspect asset): ?comfy=assets | inspect. Needs a milestone that
+  // opens builds in this window.
+  const comfy = q.get('comfy')
+  if (comfy === 'assets' || comfy === 'inspect') {
+    const inst = instances.value.find((i) => i.kind === 'local') ?? instances.value[0]
+    if (inst) {
+      graphOpen.assets = true
+      graphOpen.inspect = comfy === 'inspect'
+      hostActions.launch(inst, 'hero-shot-v4')
+    }
+  }
   const step = q.get('step')
   if (step && SETUP_SCREENS.some((s) => s.value === step)) showScreen(step as Screen)
   // Off the address, so a reload keeps what's changed after.
