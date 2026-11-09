@@ -14,7 +14,7 @@ const query = defineModel<string>('query', { required: true })
     <input
       v-model="query"
       type="search"
-      placeholder="Search by name…"
+      placeholder="Search"
       aria-label="Search assets by name"
       @keydown.esc="query = ''"
     />

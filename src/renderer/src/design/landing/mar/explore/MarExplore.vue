@@ -341,7 +341,10 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         @mouseenter="play($event, true)"
         @mouseleave="play($event, false)"
       >
-        <span class="mar-ex-tile-media" :style="{ aspectRatio: SHAPES[i % SHAPES.length] }">
+        <span
+          class="mar-ex-tile-media"
+          :style="{ aspectRatio: x.ratio ?? SHAPES[i % SHAPES.length] }"
+        >
           <img :src="x.after" alt="" loading="lazy" />
           <!-- A video plays while the pointer is on it. -->
           <video
@@ -490,8 +493,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   gap: 6px;
   padding: 6px 12px 6px 11px;
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.5);
-  backdrop-filter: blur(8px);
+  background: rgb(120 120 120 / 0.45);
+  backdrop-filter: blur(12px) saturate(1.3);
   color: #fff;
   font-size: 12px;
   font-weight: 500;

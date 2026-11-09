@@ -543,25 +543,27 @@ function upload(files: FileList | null | undefined): void {
             </template>
           </div>
           <div v-else-if="menu === 'view'" class="rp-menu is-end ap-menu" role="menu">
-            <p class="rp-menu-label ap-menu-head">Layout</p>
-            <div
-              class="mar-pseg ap-views"
-              role="radiogroup"
-              aria-label="View"
-              @mouseenter="sortOpen = false"
-            >
-              <button
-                v-for="v in VIEWS"
-                :key="v.value"
-                type="button"
-                role="radio"
-                class="mar-pseg-btn ap-view"
-                :aria-checked="view === v.value"
-                :aria-selected="view === v.value"
-                @click="setView(v.value)"
+            <div class="ap-layout-head">
+              <p class="rp-menu-label">Layout</p>
+              <div
+                class="mar-pseg ap-views"
+                role="radiogroup"
+                aria-label="View"
+                @mouseenter="sortOpen = false"
               >
-                <component :is="v.icon" :size="16" /><span>{{ v.label }}</span>
-              </button>
+                <button
+                  v-for="v in VIEWS"
+                  :key="v.value"
+                  type="button"
+                  role="radio"
+                  class="mar-pseg-btn ap-view"
+                  :aria-checked="view === v.value"
+                  :aria-selected="view === v.value"
+                  @click="setView(v.value)"
+                >
+                  {{ v.label }}
+                </button>
+              </div>
             </div>
             <div v-if="view !== 'list'" class="ap-size" @mouseenter="sortOpen = false">
               <span>Size</span>
@@ -1058,22 +1060,20 @@ function upload(files: FileList | null | undefined): void {
 .ap-back {
   font-weight: 500;
 }
+/* LAYOUT, then its views as tabs on the same line. */
+.ap-layout-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 4px;
+}
 .ap-views {
   display: flex;
-  margin: 2px 0 4px;
 }
-:root .proto-ui.proto-ui.proto-ui .ap-views .mar-pseg-btn {
-  flex: 1;
-}
-/* Each view: its icon over its name. */
 :root .proto-ui.proto-ui.proto-ui .ap-views .ap-view {
-  display: flex;
-  height: auto;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px 4px 7px;
+  height: 24px;
+  padding: 0 9px;
   font-size: 12px;
 }
 /* Size: − a stepped bar +. */

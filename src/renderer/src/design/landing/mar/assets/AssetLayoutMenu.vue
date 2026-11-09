@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, LayoutDashboard, LayoutGrid, Minus, Plus, TableOfContents } from 'lucide-vue-next'
+import { Check, LayoutGrid, Minus, Plus } from 'lucide-vue-next'
 import { DropdownMenuItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
@@ -11,7 +11,7 @@ import { menuItem } from '../../ui/menu.styles'
 
 /**
  * The Assets page's Layout menu, the same as the graph's Assets panel
- * (AssetsPanel.vue): LAYOUT as three views, icon over name; Size as − a
+ * (AssetsPanel.vue): LAYOUT with its views as tabs beside it; Size as − a
  * stepped bar +; Sort by as a submenu; then SHOW, what a card carries.
  * Every title (Layout, Size, Sort by, Show) is the uppercase label.
  */
@@ -25,9 +25,9 @@ const { sorts } = defineProps<{ sorts: { value: string; label: string }[] }>()
 
 const SIZES = 3
 const VIEWS = [
-  { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
-  { value: 'grid', label: 'Grid', icon: LayoutGrid },
-  { value: 'list', label: 'List', icon: TableOfContents }
+  { value: 'masonry', label: 'Masonry' },
+  { value: 'grid', label: 'Grid' },
+  { value: 'list', label: 'List' }
 ] as const
 const sortLabel = computed(() => sorts.find((s) => s.value === sort.value)?.label ?? '')
 const setSize = (n: number): void => {
@@ -47,19 +47,21 @@ const SHOW = [
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" class="alm w-64">
-      <p class="alm-label">Layout</p>
-      <div class="alm-views" role="radiogroup" aria-label="View">
-        <button
-          v-for="v in VIEWS"
-          :key="v.value"
-          type="button"
-          role="radio"
-          :aria-checked="view === v.value"
-          :class="cn('alm-view', view === v.value && 'is-on')"
-          @click="view = v.value"
-        >
-          <component :is="v.icon" :size="16" /><span>{{ v.label }}</span>
-        </button>
+      <div class="alm-head">
+        <p class="alm-label">Layout</p>
+        <div class="alm-views" role="radiogroup" aria-label="View">
+          <button
+            v-for="v in VIEWS"
+            :key="v.value"
+            type="button"
+            role="radio"
+            :aria-checked="view === v.value"
+            :class="cn('alm-view', view === v.value && 'is-on')"
+            @click="view = v.value"
+          >
+            {{ v.label }}
+          </button>
+        </div>
       </div>
       <div v-if="view !== 'list'" class="alm-size">
         <span class="alm-cap">Size</span>
@@ -152,35 +154,39 @@ const SHOW = [
 :root .alm.alm.proto-ui.proto-ui .alm-sep {
   margin: 6px -6px;
 }
+/* LAYOUT, then its views as tabs on the same line. */
+.alm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 0;
+}
+:root .alm.alm.proto-ui.proto-ui .alm-head .alm-label {
+  padding-block: 0;
+}
 .alm-views {
   display: flex;
-  margin: 2px 0 4px;
-  padding: 3px;
-  border-radius: 10px;
+  padding: 2px;
+  border-radius: 8px;
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
-/* Each view: its icon over its name. */
 :root .alm.alm.proto-ui.proto-ui .alm-view {
-  display: flex;
-  height: auto;
-  line-height: 1.2;
-  font-weight: 400;
-  flex: 1;
-  flex-direction: column;
+  display: inline-flex;
+  height: 24px;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 8px 4px 7px;
-  border-radius: 8px;
+  padding: 0 9px;
+  border-radius: 6px;
   background: transparent;
   color: var(--color-muted-foreground);
   font-size: 12px;
+  font-weight: 400;
 }
 :root .alm.alm.proto-ui.proto-ui .alm-view:hover {
   color: var(--color-base-foreground);
 }
 :root .alm.alm.proto-ui.proto-ui .alm-view.is-on {
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
   color: var(--color-base-foreground);
 }
 /* Size: − a stepped bar +. */
