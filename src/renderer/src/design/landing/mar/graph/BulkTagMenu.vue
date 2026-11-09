@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Check, Minus, Plus, Search, Tag } from 'lucide-vue-next'
 import type { MarAsset } from '../pages/assetsStore'
 import { addTag, removeTag, tagsOf } from '../assets/assetTags'
@@ -14,6 +14,8 @@ const { selected, pool } = defineProps<{ selected: MarAsset[]; pool: MarAsset[] 
 const emit = defineEmits<{ close: [] }>()
 
 const query = ref('')
+const input = ref<HTMLInputElement>()
+onMounted(() => input.value?.focus())
 const tags = computed(() => {
   const names = new Set([...pool, ...selected].flatMap((a) => tagsOf(a)))
   const q = query.value.trim().toLowerCase()
@@ -50,10 +52,10 @@ function create(): void {
     <label class="ap-tagmenu-search">
       <Search :size="13" />
       <input
+        ref="input"
         v-model="query"
         placeholder="Search or create a new tag…"
         aria-label="Search or create a tag"
-        autofocus
         @keydown.enter.prevent="create"
       />
     </label>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { Calendar, Clock, FolderInput, Search, Sparkles, Tag, X } from 'lucide-vue-next'
 import type { AssetFilter } from './assetFilters'
@@ -9,7 +9,8 @@ import type { AssetFilter } from './assetFilters'
  * offers recent searches and the filters people reach for; typed into,
  * it searches the names and offers every filter that matches the words
  * ("hero" → Tag · hero). A filter picked here lands in the Filters menu,
- * so the two never disagree.
+ * so the two never disagree. The names are searched on Enter, so the
+ * grid holds still while you type.
  */
 const { tags } = defineProps<{ tags: string[] }>()
 const query = defineModel<string>('query', { required: true })
@@ -50,9 +51,11 @@ const all = computed<Pick[]>(() => [
 ])
 
 const open = ref(false)
+const draft = ref(query.value)
+watch(query, (v) => (draft.value = v))
 const box = ref<HTMLElement>()
 onClickOutside(box, () => (open.value = false))
-const typed = computed(() => query.value.trim().toLowerCase())
+const typed = computed(() => draft.value.trim().toLowerCase())
 const matches = computed(() =>
   typed.value
     ? all.value.filter((p) => `${p.group} ${p.label}`.toLowerCase().includes(typed.value))
@@ -64,21 +67,27 @@ const recent = ref<string[]>([])
 function remember(s: string): void {
   recent.value = [s, ...recent.value.filter((x) => x !== s)].slice(0, 4)
 }
+function clear(): void {
+  query.value = ''
+  draft.value = ''
+}
 function search(): void {
-  if (typed.value) remember(query.value.trim())
+  query.value = draft.value.trim()
+  if (query.value) remember(query.value)
   open.value = false
 }
 function pick(p: Pick): void {
   p.apply()
   remember(`${p.group} · ${p.label}`)
   query.value = ''
+  draft.value = ''
   open.value = false
 }
 function again(s: string): void {
   const p = all.value.find((x) => `${x.group} · ${x.label}` === s)
   if (p) pick(p)
   else {
-    query.value = s
+    query.value = draft.value = s
     open.value = false
   }
 }
@@ -89,7 +98,7 @@ function again(s: string): void {
     <label class="mar-pfind asr-field">
       <Search :size="14" />
       <input
-        v-model="query"
+        v-model="draft"
         type="search"
         placeholder="Search or filter…"
         aria-label="Search or filter assets"
@@ -97,14 +106,14 @@ function again(s: string): void {
         @focus="open = true"
         @input="open = true"
         @keydown.enter.prevent="search"
-        @keydown.esc="open ? (open = false) : (query = '')"
+        @keydown.esc="open ? (open = false) : clear()"
       />
       <button
-        v-if="query"
+        v-if="draft"
         type="button"
         class="mar-pfind-x"
         aria-label="Clear search"
-        @click="query = ''"
+        @click="clear"
       >
         <X :size="13" />
       </button>
@@ -112,7 +121,7 @@ function again(s: string): void {
     <div v-if="open" class="asr-pop" role="listbox" aria-label="Search or filter">
       <button v-if="typed" type="button" class="asr-row is-first" @click="search">
         <Search :size="14" /><span
-          >Search for “<b>{{ query.trim() }}</b
+          >Search for “<b>{{ draft.trim() }}</b
           >”</span
         >
       </button>
