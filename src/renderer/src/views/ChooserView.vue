@@ -22,6 +22,7 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { openInstallManager } from '../lib/openInstallManager'
+import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
 import { PERSONAL_WORKSPACE_ID, isInstallationInWorkspace } from '../../../shared/workspaces'
@@ -259,7 +260,8 @@ const gridHandlers = {
 <template>
   <div
     v-show="props.visible"
-    class="chooser-view chooser-view--workspace flex min-h-0 w-full flex-auto flex-col overflow-y-auto bg-[radial-gradient(62%_100%_at_50%_0%,oklch(1_0_0/0.06),oklch(1_0_0/0.025)_50%,transparent_100%)]"
+    class="chooser-view chooser-view--workspace flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
+    :class="PAGE_SPOTLIGHT_CLASS"
   >
     <div class="mx-auto w-full max-w-300 px-10 pb-24">
       <header class="chooser-header flex items-end justify-between gap-6 pt-9 pb-6">

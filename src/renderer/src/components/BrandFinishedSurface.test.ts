@@ -6,7 +6,7 @@ import BrandFinishedSurface from './BrandFinishedSurface.vue'
 
 const brandTakeoverStub = {
   name: 'BrandTakeoverLayout',
-  props: ['theme', 'vignette', 'ariaLabel'],
+  props: ['theme', 'ariaLabel'],
   template: '<div class="brand-takeover-stub"><slot /><slot name="footer" /></div>'
 }
 
