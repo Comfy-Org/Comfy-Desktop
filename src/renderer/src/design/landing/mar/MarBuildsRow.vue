@@ -16,10 +16,10 @@ import './setup/setup.css'
  *  Pablo's Home shows (three recent builds, their state, click to launch
  *  ComfyUI on one), as one row of cards like Spaces. */
 const shown = computed(() => recentInstances.value.slice(0, 3))
-/** From Agent (future) on, each build is the install card made small:
+/** From Milestone 2 on, each build is the install card made small:
  *  the machine drawn, its state, its name, what it runs on. Each one is
  *  its own: lit in the build's hue, and saying what it holds. */
-const machine = computed(() => can.value.agent)
+const machine = computed(() => can.value.exploreApps)
 // The drawing says where it runs; the line says on what.
 const detail = (i: (typeof shown.value)[number]): string =>
   [i.gpu, i.version].filter(Boolean).join(' · ')

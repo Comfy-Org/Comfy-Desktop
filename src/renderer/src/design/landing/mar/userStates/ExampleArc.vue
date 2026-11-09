@@ -19,7 +19,7 @@ import { EXAMPLES, reducedMotion, runExample } from './examples'
  * Cloud.
  */
 const N = EXAMPLES.length
-const ANGLE = 24 // degrees between neighbours on the cylinder
+const ANGLE = 27 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
 const HOLD = 1600 // ms each side of the front card stays up
@@ -263,7 +263,7 @@ function wheel(e: WheelEvent): void {
 }
 .mar-arc-stage {
   position: relative;
-  height: 340px;
+  height: 300px;
   overflow-x: clip;
   perspective: 1400px;
   perspective-origin: 50% 45%;
@@ -469,9 +469,9 @@ function wheel(e: WheelEvent): void {
   position: absolute;
   top: 12px;
   left: 50%;
-  width: 216px;
-  height: 312px;
-  margin-left: -108px;
+  width: 256px;
+  height: 272px;
+  margin-left: -128px;
   overflow: hidden;
   padding: 0;
   border-radius: 18px;
