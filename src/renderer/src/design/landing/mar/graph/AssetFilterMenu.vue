@@ -30,6 +30,7 @@ import {
 } from 'reka-ui'
 import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
+import { floatingSurface, menuItem } from '../../ui/menu.styles'
 import { PORTAL_TO } from '../../ui/portal'
 import { activeFilters, noFilter, type AssetFilter, type AssetType } from '../assets/assetFilters'
 
@@ -43,7 +44,8 @@ import { activeFilters, noFilter, type AssetFilter, type AssetType } from '../as
  *
  * Desktop's Filters uses the same menu behind a labelled field with a
  * count, adds Source (no tabs split it there) and a custom date range,
- * and names its types "More types" since Type sits in the toolbar.
+ * and names its types "More types" since Type sits in the toolbar. There
+ * it wears the design system's menu, like Sort and Type beside it.
  */
 const {
   types,
@@ -62,6 +64,8 @@ const {
   typesLabel?: string
 }>()
 const f = defineModel<AssetFilter>({ required: true })
+const surface = computed(() => (field ? cn(floatingSurface, 'afm is-ds min-w-48') : 'proto-ui afm'))
+const item = computed(() => (field ? cn(menuItem, 'afm-item') : 'afm-item'))
 
 const DATES = [
   { value: 'today', label: 'Today', days: 0 },
@@ -131,7 +135,7 @@ const searching = computed(() => !!q.value.trim())
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuPortal :to="PORTAL_TO">
-      <DropdownMenuContent align="end" :side-offset="6" class="proto-ui afm">
+      <DropdownMenuContent :align="field ? 'start' : 'end'" :side-offset="6" :class="surface">
         <label class="afm-search">
           <Search :size="14" />
           <input v-model="q" placeholder="Filter by..." aria-label="Filter by" @keydown.stop />
@@ -145,7 +149,7 @@ const searching = computed(() => !!q.value.trim())
               <DropdownMenuRadioItem
                 v-for="x in found.sources"
                 :key="x.value"
-                class="afm-item"
+                :class="item"
                 :value="x.value"
                 @select.prevent="setSource(x.value)"
               >
@@ -159,7 +163,7 @@ const searching = computed(() => !!q.value.trim())
             <DropdownMenuCheckboxItem
               v-for="t in found.types"
               :key="t.value"
-              class="afm-item"
+              :class="item"
               :model-value="f.types.includes(t.value)"
               @select.prevent="f = { ...f, types: toggle(f.types, t.value) }"
             >
@@ -173,7 +177,7 @@ const searching = computed(() => !!q.value.trim())
               <DropdownMenuRadioItem
                 v-for="d in found.dates"
                 :key="d.value"
-                class="afm-item"
+                :class="item"
                 :value="d.value"
                 @select.prevent="setDate(d.value)"
               >
@@ -187,7 +191,7 @@ const searching = computed(() => !!q.value.trim())
             <DropdownMenuCheckboxItem
               v-for="t in found.tags"
               :key="t"
-              class="afm-item"
+              :class="item"
               :model-value="f.tags.includes(t)"
               @select.prevent="f = { ...f, tags: toggle(f.tags, t) }"
             >
@@ -211,17 +215,17 @@ const searching = computed(() => !!q.value.trim())
         <template v-else>
           <DropdownMenuLabel class="afm-label">Attribute</DropdownMenuLabel>
           <DropdownMenuSub v-if="source">
-            <DropdownMenuSubTrigger class="afm-item">
+            <DropdownMenuSubTrigger :class="item">
               <FolderInput :size="16" class="afm-icon" /><span class="afm-grow">Source</span
               ><ChevronRight :size="16" class="afm-icon" />
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" class="proto-ui afm">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
                 <DropdownMenuRadioGroup :model-value="f.source">
                   <DropdownMenuRadioItem
                     v-for="x in SOURCES"
                     :key="x.value"
-                    class="afm-item"
+                    :class="item"
                     :value="x.value"
                     @select.prevent="setSource(x.value)"
                   >
@@ -233,16 +237,16 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuPortal>
           </DropdownMenuSub>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger class="afm-item">
+            <DropdownMenuSubTrigger :class="item">
               <Image :size="16" class="afm-icon" /><span class="afm-grow">{{ typesLabel }}</span
               ><ChevronRight :size="16" class="afm-icon" />
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" class="proto-ui afm">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
                 <DropdownMenuCheckboxItem
                   v-for="t in types"
                   :key="t.value"
-                  class="afm-item"
+                  :class="item"
                   :model-value="f.types.includes(t.value)"
                   @select.prevent="f = { ...f, types: toggle(f.types, t.value) }"
                 >
@@ -253,17 +257,17 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuPortal>
           </DropdownMenuSub>
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger class="afm-item">
+            <DropdownMenuSubTrigger :class="item">
               <Calendar :size="16" class="afm-icon" /><span class="afm-grow">Date</span
               ><ChevronRight :size="16" class="afm-icon" />
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" class="proto-ui afm">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
                 <DropdownMenuRadioGroup :model-value="date">
                   <DropdownMenuRadioItem
                     v-for="d in DATES"
                     :key="d.value"
-                    class="afm-item"
+                    :class="item"
                     :value="d.value"
                     @select.prevent="setDate(d.value)"
                   >
@@ -295,16 +299,16 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuPortal>
           </DropdownMenuSub>
           <DropdownMenuSub v-if="tags.length">
-            <DropdownMenuSubTrigger class="afm-item">
+            <DropdownMenuSubTrigger :class="item">
               <Tag :size="16" class="afm-icon" /><span class="afm-grow">Tag</span
               ><ChevronRight :size="16" class="afm-icon" />
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" class="proto-ui afm">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
                 <DropdownMenuCheckboxItem
                   v-for="t in tags"
                   :key="t"
-                  class="afm-item"
+                  :class="item"
                   :model-value="f.tags.includes(t)"
                   @select.prevent="f = { ...f, tags: toggle(f.tags, t) }"
                 >
@@ -317,7 +321,7 @@ const searching = computed(() => !!q.value.trim())
         </template>
         <template v-if="activeFilters(f)">
           <DropdownMenuSeparator class="afm-sep" />
-          <DropdownMenuItem class="afm-item is-muted" @select.prevent="f = noFilter()">
+          <DropdownMenuItem :class="[item, 'is-muted']" @select.prevent="f = noFilter()">
             <X :size="16" class="afm-icon" /><span class="afm-grow">Clear filters</span>
           </DropdownMenuItem>
         </template>
@@ -330,8 +334,8 @@ const searching = computed(() => !!q.value.trim())
 /* The design system's menu (menuStyles.ts): the page's own background,
    solid, with a border and a large shadow, so it stands off the panel. */
 /* Doubled class: it has to outrank the glass menus in layers.css. */
-:root[data-mar-ui='on'] .afm.afm[role='menu'],
-.afm[role='menu'] {
+:root[data-mar-ui='on'] .afm.afm:not(.is-ds)[role='menu'],
+.afm:not(.is-ds)[role='menu'] {
   z-index: 60;
   min-width: 192px;
   padding: 4px;
@@ -376,8 +380,8 @@ const searching = computed(() => !!q.value.trim())
   font-size: 12px;
   font-weight: 600;
 }
-:root[data-mar-ui='on'] .afm .afm-item,
-.afm .afm-item {
+:root[data-mar-ui='on'] .afm:not(.is-ds) .afm-item,
+.afm:not(.is-ds) .afm-item {
   display: flex;
   min-height: 32px;
   align-items: center;
@@ -391,8 +395,8 @@ const searching = computed(() => !!q.value.trim())
   background-color: transparent;
   box-shadow: none;
 }
-:root[data-mar-ui='on'] .afm .afm-item[data-highlighted],
-:root[data-mar-ui='on'] .afm .afm-item[data-state='open'] {
+:root[data-mar-ui='on'] .afm:not(.is-ds) .afm-item[data-highlighted],
+:root[data-mar-ui='on'] .afm:not(.is-ds) .afm-item[data-state='open'] {
   background-color: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   box-shadow: none;
 }
@@ -440,6 +444,22 @@ const searching = computed(() => !!q.value.trim())
   background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+/* Desktop: the design system's insets and icon size, as in Select. */
+.afm.is-ds .afm-search,
+.afm.is-ds .afm-none {
+  padding-inline: 10px;
+}
+.afm.is-ds .afm-label,
+.afm.is-ds .afm-range {
+  padding-inline: 10px;
+}
+.afm.is-ds .afm-item svg {
+  width: 14px;
+  height: 14px;
+}
+.afm.is-ds .afm-item[data-state='open'] {
+  background: var(--color-secondary-background);
 }
 .afm-none {
   padding: 6px 12px;
