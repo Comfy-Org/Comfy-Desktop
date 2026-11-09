@@ -27,6 +27,7 @@ import PopoverContent from '../../ui/PopoverContent.vue'
 import Switch from '../../ui/Switch.vue'
 import Badge from '../../ui/Badge.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import MarEmpty from '../pages/MarEmpty.vue'
 import ExampleTile from './ExampleTile.vue'
 import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
@@ -241,6 +242,9 @@ const VIEWS = computed(() => [
   { value: 'history' as const, label: 'History', count: outputs.value.length || undefined },
   { value: 'gallery' as const, label: 'Inspiration', count: examples.value.length }
 ])
+/** Inspiration's head: the name, its last word apart. */
+const nameHead = computed(() => name.slice(0, name.lastIndexOf(' ') + 1))
+const nameTail = computed(() => name.slice(name.lastIndexOf(' ') + 1))
 /** Inspiration's head: two rows of the app's pictures, each repeated so
  *  the drift loops. */
 const driftRow = (r: number): AppExample[] => {
@@ -506,8 +510,18 @@ function back(): void {
             <!-- The tab and the panel already name it: the head says what
                  it does, and what these are for. -->
             <div class="mar-app-editor-hero-text">
-              <h2>{{ lib?.blurb ?? name }}</h2>
-              <p class="mar-app-editor-hero-blurb">
+              <!-- The app's name, its last word filled with the picture
+                   behind. -->
+              <h2>
+                {{ nameHead
+                }}<span
+                  class="mar-app-editor-hero-pic"
+                  :style="{ backgroundImage: `url(${example?.after ?? examples[0]?.after})` }"
+                  >{{ nameTail }}</span
+                >
+              </h2>
+              <p v-if="lib?.blurb" class="mar-app-editor-hero-blurb">{{ lib.blurb }}</p>
+              <p class="mar-app-editor-hero-count">
                 {{ examples.length }} starting points. Use one, then change anything.
               </p>
             </div>
@@ -572,13 +586,18 @@ function back(): void {
             <img :src="o.src" alt="" :style="{ filter: o.filter }" />
           </button>
         </div>
-        <div v-else-if="onHistoryGrid" class="mar-app-editor-empty is-history">
-          <span><ImageIcon :size="18" /></span>
-          <p class="text-heading font-medium">Your creations appear here</p>
-          <p class="text-ui text-muted-foreground">
-            Start from Inspiration, or fill in the panel, then Run.
-          </p>
-        </div>
+        <!-- Nothing made yet: the empty state every page uses, its fan
+             of three from this app's own examples. -->
+        <MarEmpty
+          v-else-if="onHistoryGrid"
+          class="mar-app-editor-none"
+          :icon="ImageIcon"
+          title="Nothing made here yet"
+          text="Start from one in Inspiration, or fill in the panel and Run."
+          action="Browse Inspiration"
+          :pics="examples.slice(0, 3).map((x) => x.after)"
+          @action="stageView = 'gallery'"
+        />
         <div v-show="showCanvas" class="mar-app-editor-canvas">
           <!-- Examples, on the top line of the picture's room: up to five
                of what this app has made, to start from like templates.
@@ -1143,11 +1162,25 @@ function back(): void {
   max-width: 44ch;
 }
 .mar-app-editor-hero h2 {
-  font-size: 22px;
-  font-weight: 600;
-  line-height: 1.2;
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
   letter-spacing: -0.02em;
   text-wrap: balance;
+}
+.mar-app-editor-hero-pic {
+  background-position: center;
+  background-size: cover;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  filter: saturate(1.5) brightness(1.35);
+}
+.mar-app-editor-hero-count {
+  margin-top: 8px;
+  color: var(--color-subtle-foreground);
+  font-size: 12.5px;
 }
 .mar-app-editor-hero-blurb {
   margin-top: 6px;
@@ -1208,10 +1241,9 @@ function back(): void {
     display: none;
   }
 }
-/* History with nothing yet: the message, centred in the stage. */
-.mar-app-editor-empty.is-history {
-  flex: 1;
-  justify-content: center;
+/* History with nothing yet: the empty state, centred in the stage. */
+.mar-app-editor-none {
+  margin: auto;
 }
 /* Along the bottom, as in the asset modal. */
 .mar-app-editor-outbar {
