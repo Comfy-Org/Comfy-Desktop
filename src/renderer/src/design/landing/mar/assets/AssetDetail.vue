@@ -64,24 +64,6 @@ function add(): void {
   draft.value = ''
 }
 const pic = computed(() => asset.src ?? (asset.thumbId ? thumb(asset.thumbId) : undefined))
-const MIME: Record<string, string> = {
-  PNG: 'image/png',
-  JPG: 'image/jpeg',
-  JPEG: 'image/jpeg',
-  WEBP: 'image/webp',
-  MP4: 'video/mp4',
-  WEBM: 'video/webm',
-  WAV: 'audio/wav',
-  MP3: 'audio/mpeg',
-  FLAC: 'audio/flac',
-  GLB: 'model/gltf-binary',
-  OBJ: 'model/obj',
-  TXT: 'text/plain',
-  ZIP: 'application/zip',
-  MD: 'text/markdown',
-  JSON: 'application/json',
-  CSV: 'text/csv'
-}
 const added = computed(() =>
   new Date(Date.now() - Math.max(0, asset.age) * 60000).toLocaleString('en-US', {
     month: 'numeric',
@@ -162,15 +144,16 @@ watch(
 const dims = computed(() =>
   facts.value.width ? `${facts.value.width} × ${facts.value.height}` : undefined
 )
-const fileRows = computed(() =>
+/** What the file is, as chips: format, size on screen, length, how long
+ *  the run took, size on disk. */
+const chips = computed(() =>
   [
-    ['Type', MIME[facts.value.format] ?? 'application/octet-stream'],
-    ['Dimensions', dims.value],
-    ['Duration', facts.value.duration],
-    ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined],
-    // When the file came to be: made by a run, or brought in.
-    [facts.value.imported ? 'Imported' : 'Created', added.value]
-  ].filter((r): r is [string, string] => !!r[1])
+    facts.value.format,
+    dims.value,
+    facts.value.duration,
+    facts.value.seconds ? `Generated in ${facts.value.seconds.toFixed(1)}s` : undefined,
+    asset.size
+  ].filter((c): c is string => !!c)
 )
 
 const KIND: Record<string, string> = {
@@ -181,8 +164,12 @@ const KIND: Record<string, string> = {
   text: 'Text',
   other: 'File'
 }
+// When the file came to be: made by a run, or brought in.
 const summary = computed(() =>
-  [KIND[asset.type] ?? 'File', facts.value.format, asset.size].filter(Boolean).join(' · ')
+  [
+    KIND[asset.type] ?? 'File',
+    `${facts.value.imported ? 'Imported' : 'Created'} ${added.value}`
+  ].join(' · ')
 )
 const root = ref<HTMLElement>()
 const opener = document.activeElement as HTMLElement | null
@@ -317,14 +304,9 @@ onBeforeUnmount(() => {
               </button>
             </header>
 
-            <section class="mad-sec">
-              <dl class="mad-rows">
-                <div v-for="[k, v] in fileRows" :key="k" class="mad-row">
-                  <dt>{{ k }}</dt>
-                  <dd :title="v">{{ v }}</dd>
-                </div>
-              </dl>
-            </section>
+            <ul class="mad-chips" aria-label="File">
+              <li v-for="c in chips" :key="c">{{ c }}</li>
+            </ul>
 
             <section class="mad-sec">
               <h3 class="mad-label">
@@ -748,7 +730,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 0 10px 10px;
+  margin: 0 16px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--mad-line);
 }
 /* Download on top, the rest under it as quieter rows. */
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn {
@@ -757,6 +741,11 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
   padding: 0 12px;
   border-radius: 10px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--mad-line);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn:not(.is-primary):hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-primary {
   order: -1;
@@ -775,14 +764,13 @@ onBeforeUnmount(() => {
   background: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
 }
 .mad-body {
-  /* The name on top, then each section in its own block: grouped by
-   * fill and space, not by lines. */
+  /* Name, chips, tags, how it was made: spaced, no lines or blocks. */
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
-  padding: 0 10px 10px;
+  gap: 6px;
+  padding-bottom: 12px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -791,7 +779,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 14px 6px 6px 14px;
+  padding: 20px 14px 8px 20px;
 }
 .mad-head-text {
   min-width: 0;
@@ -819,9 +807,7 @@ onBeforeUnmount(() => {
   flex: none;
   flex-direction: column;
   gap: 10px;
-  padding: 14px;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  padding: 10px 20px;
 }
 .mad-label {
   display: flex;
@@ -833,29 +819,19 @@ onBeforeUnmount(() => {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.mad-rows {
+.mad-chips {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 13px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 20px 6px;
 }
-.mad-row {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-}
-.mad-row dt {
-  flex: none;
-  color: var(--color-muted-foreground);
-}
-.mad-row dd {
-  min-width: 0;
-  overflow: hidden;
+.mad-chips li {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  font-size: 12px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  text-align: right;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .mad-tags {
