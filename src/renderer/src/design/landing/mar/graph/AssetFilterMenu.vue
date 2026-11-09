@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   Calendar,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   FolderInput,
   Image,
@@ -23,9 +24,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuRoot,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger
 } from 'reka-ui'
 import { cn } from '../../ui/cn'
@@ -38,7 +36,8 @@ import { activeFilters, noFilter, type AssetFilter, type AssetType } from '../as
  * Media Assets' filter menu, as ComfyUI ships it (MediaAssetFilterMenu,
  * ComfyUI_frontend#14196): a "Filter by…" field, then Attribute with Media
  * type and Date nested, Date as presets. Tags join them (Better Asset
- * Management Phase 1). A solid menu, the design system's, so it never
+ * Management Phase 1). Each attribute opens in place, not in a menu
+ * at the side (Alex Tov's media-assets proto). A solid menu, the design system's, so it never
  * blends into the panel behind it. No pills: the trigger says a filter is
  * on, and Clear filters closes the menu.
  *
@@ -96,17 +95,41 @@ const toggle = <T,>(list: T[], v: T): T[] =>
 
 const q = ref('')
 const match = (s: string): boolean => s.toLowerCase().includes(q.value.trim().toLowerCase())
-const found = computed(() => ({
-  sources: source ? SOURCES.filter((x) => match(x.label)) : [],
-  types: types.filter((t) => match(t.label)),
-  dates: DATES.filter((d) => match(d.label)),
-  tags: tags.filter(match)
+
+/** An attribute opens in place, as in Alex's media-assets proto: the field
+ *  takes its name as a chip and the list becomes its values. Back, or
+ *  Backspace in an empty field, returns to the attributes. */
+type Group = 'sources' | 'types' | 'dates' | 'tags'
+const drill = ref<Group | ''>('')
+const GROUPS = computed(() => ({
+  sources: { label: 'Source', icon: FolderInput },
+  types: { label: typesLabel, icon: Image },
+  dates: { label: 'Date', icon: Calendar },
+  tags: { label: 'Tag', icon: Tag }
 }))
-const searching = computed(() => !!q.value.trim())
+const input = ref<HTMLInputElement>()
+function open(g: Group): void {
+  drill.value = g
+  q.value = ''
+  void nextTick(() => input.value?.focus())
+}
+function back(): void {
+  drill.value = ''
+  q.value = ''
+  void nextTick(() => input.value?.focus())
+}
+const on = (g: Group): boolean => !drill.value || drill.value === g
+const found = computed(() => ({
+  sources: source && on('sources') ? SOURCES.filter((x) => match(x.label)) : [],
+  types: on('types') ? types.filter((t) => match(t.label)) : [],
+  dates: on('dates') ? DATES.filter((d) => match(d.label)) : [],
+  tags: on('tags') ? tags.filter(match) : []
+}))
+const searching = computed(() => !!q.value.trim() || !!drill.value)
 </script>
 
 <template>
-  <DropdownMenuRoot :modal="false" @update:open="(o) => !o && (q = '')">
+  <DropdownMenuRoot :modal="false" @update:open="(o) => !o && ((q = ''), (drill = ''))">
     <DropdownMenuTrigger as-child>
       <button
         v-if="field"
@@ -138,13 +161,26 @@ const searching = computed(() => !!q.value.trim())
       <DropdownMenuContent :align="field ? 'start' : 'end'" :side-offset="6" :class="surface">
         <label class="afm-search">
           <Search :size="14" />
-          <input v-model="q" placeholder="Filter by..." aria-label="Filter by" @keydown.stop />
+          <span v-if="drill" class="afm-chip"
+            ><component :is="GROUPS[drill].icon" :size="12" />{{ GROUPS[drill].label }}</span
+          >
+          <input
+            ref="input"
+            v-model="q"
+            :placeholder="drill ? `Search ${GROUPS[drill].label.toLowerCase()}…` : 'Filter by...'"
+            :aria-label="drill ? `Search ${GROUPS[drill].label.toLowerCase()}` : 'Filter by'"
+            @keydown.stop
+            @keydown.backspace="drill && !q && back()"
+          />
+          <button v-if="drill" type="button" class="afm-back" @click="back">
+            <ChevronLeft :size="13" />Back
+          </button>
         </label>
         <DropdownMenuSeparator class="afm-sep" />
 
         <template v-if="searching">
           <template v-if="found.sources.length">
-            <DropdownMenuLabel class="afm-label">Source</DropdownMenuLabel>
+            <DropdownMenuLabel v-if="!drill" class="afm-label">Source</DropdownMenuLabel>
             <DropdownMenuRadioGroup :model-value="f.source">
               <DropdownMenuRadioItem
                 v-for="x in found.sources"
@@ -159,7 +195,7 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuRadioGroup>
           </template>
           <template v-if="found.types.length">
-            <DropdownMenuLabel class="afm-label">{{ typesLabel }}</DropdownMenuLabel>
+            <DropdownMenuLabel v-if="!drill" class="afm-label">{{ typesLabel }}</DropdownMenuLabel>
             <DropdownMenuCheckboxItem
               v-for="t in found.types"
               :key="t.value"
@@ -172,7 +208,7 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuCheckboxItem>
           </template>
           <template v-if="found.dates.length">
-            <DropdownMenuLabel class="afm-label">Date</DropdownMenuLabel>
+            <DropdownMenuLabel v-if="!drill" class="afm-label">Date</DropdownMenuLabel>
             <DropdownMenuRadioGroup :model-value="date">
               <DropdownMenuRadioItem
                 v-for="d in found.dates"
@@ -187,7 +223,7 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuRadioGroup>
           </template>
           <template v-if="found.tags.length">
-            <DropdownMenuLabel class="afm-label">Tag</DropdownMenuLabel>
+            <DropdownMenuLabel v-if="!drill" class="afm-label">Tag</DropdownMenuLabel>
             <DropdownMenuCheckboxItem
               v-for="t in found.tags"
               :key="t"
@@ -198,6 +234,26 @@ const searching = computed(() => !!q.value.trim())
               <span class="afm-grow">{{ t }}</span>
               <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
             </DropdownMenuCheckboxItem>
+          </template>
+          <template v-if="drill === 'dates' && range && !q.trim()">
+            <DropdownMenuSeparator class="afm-sep" />
+            <DropdownMenuLabel class="afm-label">Custom range</DropdownMenuLabel>
+            <div class="afm-range" @keydown.stop>
+              <label
+                >From<input
+                  type="date"
+                  :value="f.from"
+                  :max="f.to || undefined"
+                  @input="f = { ...f, from: ($event.target as HTMLInputElement).value }"
+              /></label>
+              <label
+                >To<input
+                  type="date"
+                  :value="f.to"
+                  :min="f.from || undefined"
+                  @input="f = { ...f, to: ($event.target as HTMLInputElement).value }"
+              /></label>
+            </div>
           </template>
           <p
             v-if="
@@ -214,110 +270,19 @@ const searching = computed(() => !!q.value.trim())
 
         <template v-else>
           <DropdownMenuLabel class="afm-label">Attribute</DropdownMenuLabel>
-          <DropdownMenuSub v-if="source">
-            <DropdownMenuSubTrigger :class="item">
-              <FolderInput :size="16" class="afm-icon" /><span class="afm-grow">Source</span
-              ><ChevronRight :size="16" class="afm-icon" />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
-                <DropdownMenuRadioGroup :model-value="f.source">
-                  <DropdownMenuRadioItem
-                    v-for="x in SOURCES"
-                    :key="x.value"
-                    :class="item"
-                    :value="x.value"
-                    @select.prevent="setSource(x.value)"
-                  >
-                    <span class="afm-grow">{{ x.label }}</span>
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger :class="item">
-              <Image :size="16" class="afm-icon" /><span class="afm-grow">{{ typesLabel }}</span
-              ><ChevronRight :size="16" class="afm-icon" />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
-                <DropdownMenuCheckboxItem
-                  v-for="t in types"
-                  :key="t.value"
-                  :class="item"
-                  :model-value="f.types.includes(t.value)"
-                  @select.prevent="f = { ...f, types: toggle(f.types, t.value) }"
-                >
-                  <span class="afm-grow">{{ t.label }}</span>
-                  <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger :class="item">
-              <Calendar :size="16" class="afm-icon" /><span class="afm-grow">Date</span
-              ><ChevronRight :size="16" class="afm-icon" />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
-                <DropdownMenuRadioGroup :model-value="date">
-                  <DropdownMenuRadioItem
-                    v-for="d in DATES"
-                    :key="d.value"
-                    :class="item"
-                    :value="d.value"
-                    @select.prevent="setDate(d.value)"
-                  >
-                    <span class="afm-grow">{{ d.label }}</span>
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-                <template v-if="range">
-                  <DropdownMenuSeparator class="afm-sep" />
-                  <DropdownMenuLabel class="afm-label">Custom range</DropdownMenuLabel>
-                  <div class="afm-range" @keydown.stop>
-                    <label
-                      >From<input
-                        type="date"
-                        :value="f.from"
-                        :max="f.to || undefined"
-                        @input="f = { ...f, from: ($event.target as HTMLInputElement).value }"
-                    /></label>
-                    <label
-                      >To<input
-                        type="date"
-                        :value="f.to"
-                        :min="f.from || undefined"
-                        @input="f = { ...f, to: ($event.target as HTMLInputElement).value }"
-                    /></label>
-                  </div>
-                </template>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
-          <DropdownMenuSub v-if="tags.length">
-            <DropdownMenuSubTrigger :class="item">
-              <Tag :size="16" class="afm-icon" /><span class="afm-grow">Tag</span
-              ><ChevronRight :size="16" class="afm-icon" />
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal :to="PORTAL_TO">
-              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
-                <DropdownMenuCheckboxItem
-                  v-for="t in tags"
-                  :key="t"
-                  :class="item"
-                  :model-value="f.tags.includes(t)"
-                  @select.prevent="f = { ...f, tags: toggle(f.tags, t) }"
-                >
-                  <span class="afm-grow">{{ t }}</span>
-                  <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
-                </DropdownMenuCheckboxItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
+          <DropdownMenuItem
+            v-for="g in (['sources', 'types', 'dates', 'tags'] as const).filter(
+              (g) => (g !== 'sources' || source) && (g !== 'tags' || tags.length)
+            )"
+            :key="g"
+            :class="item"
+            @select.prevent="open(g)"
+          >
+            <component :is="GROUPS[g].icon" :size="16" class="afm-icon" /><span class="afm-grow">{{
+              GROUPS[g].label
+            }}</span
+            ><ChevronRight :size="16" class="afm-icon" />
+          </DropdownMenuItem>
         </template>
         <template v-if="activeFilters(f)">
           <DropdownMenuSeparator class="afm-sep" />
@@ -368,6 +333,32 @@ const searching = computed(() => !!q.value.trim())
 }
 .afm-search input::placeholder {
   color: var(--color-muted-foreground);
+}
+.afm-chip {
+  display: inline-flex;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .afm-back {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  border-radius: 5px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .afm-back:hover {
+  color: var(--color-base-foreground);
 }
 .afm-sep {
   height: 1px;
