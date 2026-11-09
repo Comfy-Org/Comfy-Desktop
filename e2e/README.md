@@ -113,6 +113,7 @@ Snapshot of `e2e/` as of 2026-07. "Meets zero-mock bar" applies the policy above
 | `title-bar-hover-gate.test.ts` | platform | n/a | Hover-gate state machine. |
 | `update-pills.test.ts` | platform | n/a | Injects update states via `setAppUpdateState` / `setInstallUpdate`. |
 | `window-visible.spec.ts` | platform | n/a | Launch smoke test. |
+| `workspace-switch-no-browser.test.ts` | `@macos` `@windows` | n/a | Real selector clicks against a fake Cloud on 127.0.0.1; a fake browser plays the authorize step from the openExternal hook; temporary userData with a mock keychain. |
 
 Thirteen specs formerly tagged `@lifecycle` were retagged to the platform projects: they
 inject synthetic runtime state or assert dispatch instead of real side effects, which
