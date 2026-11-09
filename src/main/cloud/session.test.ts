@@ -50,7 +50,7 @@ import {
   WORKSPACE_SWITCH_EVENT
 } from './session'
 import { SignInFailure } from './signInFailure'
-import { _resetForTest, clearTokens, saveGrant } from './tokenStore'
+import { _resetForTest, clearTokens, saveGrant, saveWorkspaceToken } from './tokenStore'
 import type { AuthTokens } from './types'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
@@ -318,9 +318,9 @@ describe('CloudSession access tokens', () => {
 describe('CloudSession background token reads never open the browser', () => {
   async function activeOnMintedToken(expiresAt = PAST): Promise<CloudSession> {
     saveGrant(grantOn('w1'))
-    mintReply = ({ workspaceId }) => minted(workspaceId, expiresAt)
     const session = new CloudSession()
     await session.switchWorkspace('w2')
+    saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt })
     mintRequests = []
     return session
   }
@@ -558,13 +558,27 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     )
   })
 
-  it('re-mints an expired minted token on the next switch, with no browser', async () => {
+  it('refuses a mint reply that is already expired: nothing is stored or activated', async () => {
     saveGrant(grantOn('w1'))
     mintReply = ({ workspaceId }) => minted(workspaceId, PAST)
     const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(session.currentWorkspaceId()).toBe('w1')
+    expect(vaultOnDisk().workspaceTokens).toEqual({})
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('re-mints an expired minted token on the next switch, with no browser', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
     await session.switchWorkspace('w2')
     await session.switchWorkspace('w1')
-    mintReply = ({ workspaceId }) => minted(workspaceId)
+    saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: PAST })
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
 
@@ -705,8 +719,8 @@ describe('CloudSession.switchWorkspace with no browser', () => {
   it('a late 429 from a previous account in the same generation does not throttle the new one', async () => {
     saveGrant(grantOn('w1'))
     const held = new CloudSession()
-    mintReply = ({ workspaceId }) => minted(workspaceId, PAST)
     await held.switchWorkspace('w2')
+    saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: PAST })
     const late = deferred<Response>()
     const pendingSignIn = deferred<Awaited<ReturnType<typeof signIn>>>()
     mocked(signIn).mockReturnValue(pendingSignIn.promise)
@@ -1566,10 +1580,10 @@ describe('CloudSession fencing (T-V27)', () => {
 describe('CloudSession status and catalog', () => {
   it('reports the active workspace from the minted token, stale claims included', async () => {
     saveGrant(grantOn('w1'))
-    mintReply = ({ workspaceId }) => minted(workspaceId, Date.now() + 1)
     const session = new CloudSession()
 
     await session.switchWorkspace('w2')
+    saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: PAST })
 
     expect(session.status()).toMatchObject({
       signedIn: true,

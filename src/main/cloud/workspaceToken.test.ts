@@ -17,14 +17,15 @@ afterEach(() => {
 
 describe('mintWorkspaceToken', () => {
   it('posts the workspace with the access token as Bearer', async () => {
-    respond(200, { token: 'cloud-jwt', expires_at: '2026-11-07T12:15:00Z' })
+    const expiresAt = new Date(Date.now() + 900_000).toISOString()
+    respond(200, { token: 'cloud-jwt', expires_at: expiresAt })
 
     await expect(
       mintWorkspaceToken('oauth-access', 'ws-2', { apiBase: 'https://cloud.test/api/' })
     ).resolves.toEqual({
       kind: 'minted',
       token: 'cloud-jwt',
-      expiresAt: Date.parse('2026-11-07T12:15:00Z')
+      expiresAt: Date.parse(expiresAt)
     })
     expect(fetch).toHaveBeenCalledWith(
       'https://cloud.test/api/auth/token',
@@ -50,7 +51,13 @@ describe('mintWorkspaceToken', () => {
     ],
     ['a non-string code', 403, { code: 7 }, undefined],
     ['a body without a token', 200, { expires_at: '2026-11-07T12:15:00Z' }, undefined],
-    ['an unreadable expiry', 200, { token: 'cloud-jwt', expires_at: 'soon' }, undefined]
+    ['an unreadable expiry', 200, { token: 'cloud-jwt', expires_at: 'soon' }, undefined],
+    [
+      'an expiry already past',
+      200,
+      { token: 'cloud-jwt', expires_at: new Date(Date.now() - 1000).toISOString() },
+      undefined
+    ]
   ])('reports %s as failed with its error code', async (_name, status, body, code) => {
     respond(status, body)
 

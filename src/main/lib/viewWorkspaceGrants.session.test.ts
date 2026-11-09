@@ -133,6 +133,26 @@ describe('view token path through a real session', () => {
     expect(signIn).not.toHaveBeenCalled()
   })
 
+  it('refuses to deliver or cache a token that is already expired', async () => {
+    const expired = (workspaceId: string): Response =>
+      new Response(
+        JSON.stringify({
+          token: mintedJwt(workspaceId),
+          expires_at: new Date(Date.now() - 1000).toISOString()
+        }),
+        { status: 200 }
+      )
+    const good = mintReply
+    await activeOnW2()
+    mintReply = expired
+
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBeNull()
+
+    mintReply = good
+    await expect(grants.tokenFor(view, 'w2')).resolves.toBe(mintedJwt('w2'))
+    expect(mintRequests).toEqual(['w2', 'w2'])
+  })
+
   it('a token the view already holds keeps working through a kill until it expires', async () => {
     await activeOnW2()
     await grants.tokenFor(view, 'w2')

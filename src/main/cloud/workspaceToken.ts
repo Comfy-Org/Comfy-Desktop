@@ -70,7 +70,7 @@ function mintedFrom(body: unknown): WorkspaceTokenMint | null {
   const { token, expires_at: expiresAt } = body as { token?: unknown; expires_at?: unknown }
   if (typeof token !== 'string' || token === '' || typeof expiresAt !== 'string') return null
   const expiresAtMs = Date.parse(expiresAt)
-  return Number.isFinite(expiresAtMs) ? { kind: 'minted', token, expiresAt: expiresAtMs } : null
+  return expiresAtMs > Date.now() ? { kind: 'minted', token, expiresAt: expiresAtMs } : null
 }
 
 export async function mintWorkspaceToken(
