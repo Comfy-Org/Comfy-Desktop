@@ -1,6 +1,8 @@
 import { computed, reactive, watch } from 'vue'
 import { go, goIn, proto, requireLogin, toast } from './useProto'
 import { APPS } from './mock'
+import { can } from './milestones'
+import { onHubPage } from './mar/apps/appPage'
 import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './appTheme'
 
 /**
@@ -1182,6 +1184,9 @@ export function openApp(id: string): void {
 }
 /** An app's page: what it does and Run, with Open app for its own tab. */
 export function openAppPage(id: string): void {
+  // The Hub editor (mar/apps/appPage.ts) opens in a tab of its own.
+  const a = libApp(id)
+  if (a && can.value.exploreApps && onHubPage(a)) return openAppUrl(id)
   goIn('create', `app:${id}`)
 }
 
