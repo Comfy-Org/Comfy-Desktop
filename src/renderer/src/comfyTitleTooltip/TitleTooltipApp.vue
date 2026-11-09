@@ -32,9 +32,9 @@ const cmDismissLabel = ref<string>('Got it')
 const cmActionLabel = ref<string>('')
 const cmBeakFraction = ref<number>(0.5)
 const cmCardCentre = ref<number | null>(null)
-const themeBg = ref<string>('#f0f0f1')
-const themeText = ref<string>('#141415')
-const themeBorder = ref<string>('#f0f0f1')
+const themeBg = ref<string>('rgba(42, 42, 42, 0.94)')
+const themeText = ref<string>('#f0f0f0')
+const themeBorder = ref<string>('rgba(241, 241, 241, 0.07)')
 const themeAccent = ref<string>('#f0f0f1')
 const coachmarkBorder = 'rgba(255, 255, 255, 0.22)'
 let currentConfigToken = ''
@@ -181,7 +181,7 @@ onUnmounted(() => {
   <span
     v-else-if="text"
     ref="bubble"
-    class="bubble pointer-events-none box-border inline-block w-max max-w-[260px] select-none rounded-md border border-solid px-2.5 py-1.5 font-sans text-[12px] leading-[1.4] font-normal tracking-normal whitespace-normal [box-shadow:0_4px_12px_rgba(0,0,0,0.35)]"
+    class="bubble pointer-events-none box-border inline-block w-max max-w-[256px] select-none rounded-control border border-solid px-[9px] py-[5px] font-sans text-[12px] leading-[16.2px] font-medium tracking-normal whitespace-normal [box-shadow:0_8px_12px_rgba(0,0,0,0.5)]"
     :style="{
       background: themeBg,
       color: themeText,

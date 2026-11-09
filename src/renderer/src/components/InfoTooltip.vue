@@ -45,7 +45,7 @@ function openLink(): void {
       <span class="info-tooltip-content flex flex-col gap-1.5">
         <span>{{ props.text }}</span>
         <a
-          class="info-tooltip-link w-fit font-semibold text-[var(--action)] no-underline hover:text-accent-hover hover:underline focus-visible:text-accent-hover focus-visible:underline"
+          class="info-tooltip-link w-fit font-semibold text-inherit underline underline-offset-2 hover:opacity-80 focus-visible:opacity-80"
           :href="props.linkUrl"
           @click.prevent.stop="openLink"
         >

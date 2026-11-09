@@ -38,7 +38,7 @@ export function getTitleTooltipForParent(parentId: number): TitleTooltipPopupEnt
 }
 
 function resolveTooltipTheme(): { bg: string; text: string; border: string } {
-  return { bg: '#f0f0f1', text: '#141415', border: '#f0f0f1' }
+  return { bg: 'rgba(42, 42, 42, 0.94)', text: '#f0f0f0', border: 'rgba(241, 241, 241, 0.07)' }
 }
 
 function ensureTitleTooltipPopup(parent: BrowserWindow): TitleTooltipPopupEntry {

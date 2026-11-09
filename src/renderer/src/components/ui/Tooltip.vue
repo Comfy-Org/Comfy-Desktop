@@ -80,7 +80,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', close))
         </span>
       </TooltipTrigger>
       <TooltipContent
-        class="tooltip-bubble z-[10001] max-w-[260px] bg-foreground text-background [&_svg]:fill-foreground"
+        class="tooltip-bubble z-[10001] max-w-[256px] rounded-[var(--radius-control)] border-[var(--tooltip-border)] bg-[var(--tooltip-bg)] px-[9px] py-[5px] text-[12px]/[16.2px] font-medium text-[var(--tooltip-fg)] shadow-[0_8px_12px_rgb(0_0_0/0.5)] backdrop-blur-[10px] [&>span:has(>svg)]:hidden"
         :class="
           interactive ? 'tooltip-bubble--interactive pointer-events-auto' : 'pointer-events-none'
         "
