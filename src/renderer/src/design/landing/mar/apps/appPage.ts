@@ -49,7 +49,7 @@ export const onHubPage = (a: LibApp): boolean =>
 export type AppExamplesAt = 'tabs' | 'stage' | 'panel'
 
 export const APP_EXAMPLES_AT: { value: AppExamplesAt; label: string }[] = [
-  { value: 'tabs', label: 'Tabs · Creations and Gallery over the stage' },
+  { value: 'tabs', label: 'Tabs · History and Inspiration over the stage' },
   { value: 'stage', label: 'Stage · on the top line of the picture' },
   { value: 'panel', label: 'Panel · at the top, before the fields' }
 ]

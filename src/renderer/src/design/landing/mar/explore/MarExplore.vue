@@ -17,6 +17,7 @@ import { goIn, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import ExampleTile from '../apps/ExampleTile.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
 
@@ -41,8 +42,8 @@ const query = ref('')
 const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
 const TABS: { value: Tab; label: string; count: number }[] = asApps
   ? [
-      { value: 'examples', label: 'Gallery', count: APP_EXAMPLES.length },
-      { value: 'apps', label: 'Catalog', count: APPS_COUNT }
+      { value: 'examples', label: 'Inspiration', count: APP_EXAMPLES.length },
+      { value: 'apps', label: 'All apps', count: APPS_COUNT }
     ]
   : [
       {
@@ -193,15 +194,6 @@ const size = ref(2)
 const TILE = [0, 170, 220, 300]
 // The wall's rhythm: each picture at its own shape, so no two rows line up.
 const SHAPES = ['4 / 5', '1 / 1', '3 / 4', '4 / 3', '2 / 3', '5 / 4', '3 / 4', '16 / 11']
-function play(e: MouseEvent, on: boolean): void {
-  const v = (e.currentTarget as HTMLElement).querySelector('video')
-  if (!v) return
-  if (on && !matchMedia('(prefers-reduced-motion: reduce)').matches) void v.play().catch(() => {})
-  else {
-    v.pause()
-    v.currentTime = 0
-  }
-}
 // An example opens its app on itself, ready to run or change.
 function useExample(x: AppExample): void {
   openOn[x.app] = x.id
@@ -334,69 +326,18 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
       :class="cn('mar-ex-wall', view === 'grid' && 'is-grid')"
       :style="{ '--tile': `${TILE[size]}px` }"
     >
-      <div
+      <ExampleTile
         v-for="(x, i) in examples"
         :key="x.id"
+        :x="x"
+        :app="appName(x.app)"
+        :ratio="view === 'grid' ? '1 / 1' : (x.ratio ?? SHAPES[i % SHAPES.length])"
         role="button"
         tabindex="0"
-        class="mar-ex-tile group"
         :aria-label="`Use ${x.title} in ${appName(x.app)}`"
         @click="useExample(x)"
         @keydown.enter="useExample(x)"
-        @mouseenter="play($event, true)"
-        @mouseleave="play($event, false)"
-      >
-        <span
-          class="mar-ex-tile-media"
-          :style="{
-            aspectRatio: view === 'grid' ? '1 / 1' : (x.ratio ?? SHAPES[i % SHAPES.length])
-          }"
-        >
-          <img :src="x.after" alt="" loading="lazy" />
-          <!-- A video plays while the pointer is on it. -->
-          <video
-            v-if="x.video"
-            :src="x.video"
-            muted
-            loop
-            playsinline
-            preload="none"
-            class="mar-ex-tile-video"
-          />
-          <span v-if="x.kind === 'Video'" class="mar-ex-tile-kind" aria-label="Video"
-            ><Video :size="13" />{{ x.duration }}</span
-          >
-          <!-- A landscape photo: an outlined frame, wider than tall, with a
-               filled sun and hills inside. -->
-          <span v-else class="mar-ex-tile-kind is-icon" aria-label="Image"
-            ><svg width="14" height="10" viewBox="0 0 24 17" aria-hidden="true">
-              <rect
-                x="1"
-                y="1"
-                width="22"
-                height="15"
-                rx="2.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.9"
-              />
-              <circle cx="7" cy="5.75" r="1.75" fill="currentColor" />
-              <path
-                d="M1.8 15.2V13L8 7.5l3.25 3 4.25-4.75 6.7 7.4v2.05Z"
-                fill="currentColor"
-              /></svg
-          ></span>
-          <!-- What it is and which app made it, over a fade, on hover. -->
-          <span class="mar-ex-tile-text">
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-ui text-white/70">{{ appName(x.app) }}</span>
-              <span class="block truncate text-ui font-medium text-white">{{ x.title }}</span>
-            </span>
-            <!-- The same Run app as Home's examples. -->
-            <span class="mar-ex-tile-go" aria-hidden="true"><Play :size="13" />Run app</span>
-          </span>
-        </span>
-      </div>
+      />
     </div>
 
     <!-- Apps: one grid. -->
@@ -514,99 +455,6 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 }
 .mar-ex-wall.is-grid .mar-ex-tile {
   margin-bottom: 0;
-}
-.mar-ex-tile {
-  display: block;
-  margin-bottom: 14px;
-  break-inside: avoid;
-  cursor: pointer;
-  outline: none;
-}
-.mar-ex-tile-media {
-  position: relative;
-  display: block;
-  overflow: hidden;
-  border-radius: var(--radius-card);
-  background: var(--color-secondary-background);
-}
-.mar-ex-tile-media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: scale 500ms cubic-bezier(0.19, 1, 0.22, 1);
-}
-.mar-ex-tile:hover .mar-ex-tile-media img {
-  scale: 1.03;
-}
-.mar-ex-tile:focus-visible .mar-ex-tile-media {
-  box-shadow: 0 0 0 2px var(--color-border-focus);
-}
-.mar-ex-tile-kind {
-  position: absolute;
-  z-index: 1;
-  top: 10px;
-  left: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px 6px 11px;
-  border-radius: 999px;
-  background: rgb(120 120 120 / 0.45);
-  backdrop-filter: blur(12px) saturate(1.3);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.mar-ex-tile-kind.is-icon {
-  padding: 6px 8px;
-}
-.mar-ex-tile-video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 250ms ease;
-}
-.mar-ex-tile:hover .mar-ex-tile-video {
-  opacity: 1;
-}
-.mar-ex-tile-text {
-  position: absolute;
-  z-index: 1;
-  inset: auto 0 0;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 48px 14px 14px;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.4) 55%, transparent);
-  opacity: 0;
-  transition: opacity 200ms ease;
-}
-.mar-ex-tile:is(:hover, :focus-visible) .mar-ex-tile-text {
-  opacity: 1;
-}
-.mar-ex-tile-go {
-  display: inline-flex;
-  height: 30px;
-  align-items: center;
-  flex: none;
-  gap: 6px;
-  padding: 0 13px 0 11px;
-  border-radius: var(--radius-control);
-  background: #fff;
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.06),
-    0 8px 20px -6px rgb(0 0 0 / 0.5);
-  color: #111;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-}
-.mar-ex-tile-go:hover {
-  background: rgb(255 255 255 / 0.9);
 }
 /* Filter: icon or picture, name, then the count or a check. */
 .mar-ex-filter-thumb {

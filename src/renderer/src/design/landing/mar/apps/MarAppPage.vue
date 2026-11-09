@@ -18,8 +18,7 @@ import {
   Link2,
   Loader2,
   Plus,
-  Share2,
-  Video as VideoIcon
+  Share2
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
@@ -28,6 +27,7 @@ import PopoverContent from '../../ui/PopoverContent.vue'
 import Switch from '../../ui/Switch.vue'
 import Badge from '../../ui/Badge.vue'
 import MarSeg from '../pages/MarSeg.vue'
+import ExampleTile from './ExampleTile.vue'
 import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
@@ -109,7 +109,8 @@ function pickExample(x: AppExample): void {
   state.value = 'idle'
   comparing.value = false
   load(x)
-  stageView.value = 'creations'
+  stageView.value = 'history'
+  focused.value = false
 }
 const pick = (f: Field): string => values[f.id] ?? f.options?.[0] ?? ''
 const count = computed(() =>
@@ -197,7 +198,8 @@ function run(): void {
   if (gate && !gate()) return
   comparing.value = false
   take.value = 0
-  stageView.value = 'creations'
+  stageView.value = 'history'
+  focused.value = false
   state.value = 'running'
   progress.value = 0
   pct.value = 0
@@ -223,24 +225,28 @@ function run(): void {
 }
 defineExpose({ run })
 
-// UI Playground › App examples › Tabs: over the stage, your Creations and
-// the app's Gallery. It opens on the Gallery unless it came from an
-// example; picking one fills the panel and goes back to Creations.
+// UI Playground › App examples › Tabs: over the stage, your History (all
+// you've made here, as a grid; one opens large) and the app's Gallery. It
+// opens on the Gallery unless it came from an example; picking one fills
+// the panel and goes to History.
 const onTabs = computed(() => appExamplesAt.id === 'tabs' && examples.value.length > 1)
-const stageView = ref<'creations' | 'gallery'>(openOn[appId] ? 'creations' : 'gallery')
+const stageView = ref<'history' | 'gallery'>(openOn[appId] ? 'history' : 'gallery')
+const focused = ref(false)
+watch(stageView, () => (focused.value = false))
 const onGallery = computed(() => onTabs.value && stageView.value === 'gallery')
+const onHistoryGrid = computed(
+  () => onTabs.value && stageView.value === 'history' && !focused.value
+)
+/** The one picture, large: always without tabs, and in History once one is open. */
+const showCanvas = computed(() => !onTabs.value || (stageView.value === 'history' && focused.value))
 const VIEWS = computed(() => [
-  { value: 'creations' as const, label: 'Creations', count: outputs.value.length || undefined },
-  { value: 'gallery' as const, label: 'Gallery', count: examples.value.length }
+  { value: 'history' as const, label: 'History', count: outputs.value.length || undefined },
+  { value: 'gallery' as const, label: 'Inspiration', count: examples.value.length }
 ])
-function playTpl(e: MouseEvent, on: boolean): void {
-  const v = (e.currentTarget as HTMLElement).querySelector('video')
-  if (!v) return
-  if (on && !matchMedia('(prefers-reduced-motion: reduce)').matches) void v.play().catch(() => {})
-  else {
-    v.pause()
-    v.currentTime = 0
-  }
+function openOutput(i: number): void {
+  take.value = i
+  state.value = 'done'
+  focused.value = true
 }
 
 // Share: the app's link, and once you've run it, your result with it.
@@ -381,12 +387,22 @@ function back(): void {
         <!-- Over the stage, one line: Creations and Gallery, then the
              actions on the right. -->
         <div class="mar-app-editor-stagebar">
+          <Button
+            v-if="onTabs && focused"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Back to History"
+            title="Back to History"
+            class="mar-app-editor-icon"
+            @click="focused = false"
+            ><ChevronLeft :size="16"
+          /></Button>
           <MarSeg v-if="onTabs" v-model="stageView" :options="VIEWS" label="Stage" />
           <span class="flex-1" />
           <div class="mar-app-editor-actions">
             <!-- Compare and Share: icons alone, white on no fill. -->
             <Button
-              v-if="hasResult && state !== 'running'"
+              v-if="hasResult && state !== 'running' && showCanvas"
               variant="ghost"
               size="icon-sm"
               aria-label="Compare before and after"
@@ -468,33 +484,56 @@ function back(): void {
             </DropdownMenuRoot>
           </div>
         </div>
-        <!-- Gallery: the app's examples, to start from; one fills the
-             panel with what it ran with. -->
-        <div v-if="onGallery" class="mar-app-editor-tpls" role="list">
-          <button
+        <!-- Gallery: the app's examples, as Home shows them, in aligned
+             rows; one fills the panel with what it ran with. -->
+        <div v-if="onGallery" class="mar-app-editor-grid">
+          <ExampleTile
             v-for="x in examples"
             :key="x.id"
-            type="button"
-            role="listitem"
-            :aria-label="x.title"
-            :aria-pressed="x.id === exId"
-            class="mar-app-editor-tpl"
+            :x="x"
+            ratio="4 / 5"
+            go="Use this"
+            :picked="x.id === exId"
+            role="button"
+            tabindex="0"
+            :aria-label="`Start from ${x.title}`"
             @click="pickExample(x)"
-            @mouseenter="playTpl($event, true)"
-            @mouseleave="playTpl($event, false)"
+            @keydown.enter="pickExample(x)"
+          />
+        </div>
+        <!-- History: everything you've made here, newest first, the run
+             in progress leading; one opens large. -->
+        <div
+          v-else-if="onHistoryGrid && (outputs.length || state === 'running')"
+          class="mar-app-editor-grid"
+        >
+          <div v-if="state === 'running'" class="mar-app-editor-out is-running" role="status">
+            <img :src="input" alt="" />
+            <span class="mar-app-editor-sweep" aria-hidden="true" />
+            <span class="mar-app-editor-out-run"
+              ><Loader2 :size="14" class="animate-spin" />{{ stepNow
+              }}<span class="ml-auto tabular-nums">{{ pct }}%</span></span
+            >
+          </div>
+          <button
+            v-for="(o, i) in outputs"
+            :key="outputs.length - i"
+            type="button"
+            class="mar-app-editor-out"
+            :aria-label="`Open output ${outputs.length - i}`"
+            @click="openOutput(i)"
           >
-            <img :src="x.after" alt="" loading="lazy" />
-            <video v-if="x.video" :src="x.video" muted loop playsinline preload="none" />
-            <span v-if="x.kind === 'Video'" class="mar-app-editor-tpl-kind"
-              ><VideoIcon :size="12" />{{ x.duration }}</span
-            >
-            <span class="mar-app-editor-tpl-text"
-              ><span class="truncate">{{ x.title }}</span
-              ><span class="text-white/70">Start from this</span></span
-            >
+            <img :src="o.src" alt="" :style="{ filter: o.filter }" />
           </button>
         </div>
-        <div v-show="!onGallery" class="mar-app-editor-canvas">
+        <div v-else-if="onHistoryGrid" class="mar-app-editor-empty is-history">
+          <span><ImageIcon :size="18" /></span>
+          <p class="text-heading font-medium">Your creations appear here</p>
+          <p class="text-ui text-muted-foreground">
+            Start from Inspiration, or fill in the panel, then Run.
+          </p>
+        </div>
+        <div v-show="showCanvas" class="mar-app-editor-canvas">
           <!-- Examples, on the top line of the picture's room: up to five
                of what this app has made, to start from like templates.
                Picking one fills the panel and shows its result; once you
@@ -595,7 +634,7 @@ function back(): void {
         <!-- Once you've run it, along the bottom as in the asset modal:
              your takes from the left, how it went in the middle, the zoom
              on the right. -->
-        <div v-if="state === 'done' && !onGallery" class="mar-app-editor-outbar">
+        <div v-if="state === 'done' && showCanvas" class="mar-app-editor-outbar">
           <nav class="mar-app-editor-takes" aria-label="Your takes">
             <template v-if="outputs.length > 1">
               <button
@@ -971,89 +1010,65 @@ function back(): void {
   flex: none;
   padding: 0 16px 0 10px;
 }
-.mar-app-editor-tpls {
+/* Gallery and History: the same aligned grid, under the tabs. */
+.mar-app-editor-grid {
   position: absolute;
-  inset: 60px 20px 20px;
+  inset: 64px 20px 20px 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   align-content: start;
-  gap: 10px;
+  gap: 14px;
   overflow-y: auto;
   padding: 4px;
+  margin: -4px;
   scrollbar-width: none;
 }
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-tpl {
+.mar-app-editor-grid > .mar-ex-tile {
+  margin-bottom: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-out {
   position: relative;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 4 / 5;
   overflow: hidden;
   padding: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--color-secondary-background);
   outline: none;
-  transition: box-shadow 0.12s ease;
 }
-.mar-app-editor-tpl img,
-.mar-app-editor-tpl video {
+.mar-app-editor-out img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: scale 500ms cubic-bezier(0.19, 1, 0.22, 1);
 }
-.mar-app-editor-tpl video {
-  opacity: 0;
-  transition: opacity 0.2s ease;
+.mar-app-editor-out:hover img {
+  scale: 1.03;
 }
-.mar-app-editor-tpl:hover video {
-  opacity: 1;
+.mar-app-editor-out:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-tpl[aria-pressed='true'],
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-tpl:focus-visible {
-  box-shadow:
-    0 0 0 2px var(--color-card-background),
-    0 0 0 4px var(--color-base-foreground);
+/* The run in progress: your picture, blurred, a light crossing it. */
+.mar-app-editor-out.is-running img {
+  filter: blur(18px) brightness(0.6);
+  scale: 1.15;
 }
-.mar-app-editor-tpl-kind {
+.mar-app-editor-out-run {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: rgb(120 120 120 / 0.45);
-  backdrop-filter: blur(12px) saturate(1.3);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-/* What it is, and Start from this, over a fade on hover. */
-.mar-app-editor-tpl-text {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  inset: auto 14px 14px;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 28px 12px 10px;
-  background: linear-gradient(to top, rgb(0 0 0 / 0.7), transparent);
+  align-items: center;
+  gap: 8px;
   color: #fff;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
-  text-align: left;
-  opacity: 0;
-  transition: opacity 0.16s ease;
+  white-space: nowrap;
 }
-.mar-app-editor-tpl-text > span:last-child {
-  font-size: 12px;
-  font-weight: 400;
-}
-.mar-app-editor-tpl:hover .mar-app-editor-tpl-text,
-.mar-app-editor-tpl:focus-visible .mar-app-editor-tpl-text {
-  opacity: 1;
+/* History with nothing yet: the message, centred in the stage. */
+.mar-app-editor-empty.is-history {
+  flex: 1;
+  justify-content: center;
 }
 /* Along the bottom, as in the asset modal. */
 .mar-app-editor-outbar {
