@@ -14,6 +14,8 @@ import {
   File as FileIcon,
   FileText,
   FolderOpen,
+  Info,
+  Plus,
   Music,
   Workflow,
   X
@@ -106,12 +108,11 @@ const dims = computed(() =>
 )
 const fileRows = computed(() =>
   [
-    ['Added to library', added.value],
     ['Type', MIME[facts.value.format] ?? 'application/octet-stream'],
-    ['File size', asset.size],
     ['Dimensions', dims.value],
     ['Duration', facts.value.duration],
-    ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined]
+    ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined],
+    ['Added', added.value]
   ].filter((r): r is [string, string] => !!r[1])
 )
 
@@ -121,14 +122,20 @@ const STATE: Record<Availability, { label: string; icon: typeof CircleCheck }> =
   lost: { label: 'Not kept after a restart', icon: CircleDashed }
 }
 const sources = computed(() => [
-  { name: 'File metadata', state: facts.value.metadata },
-  { name: 'Embedded workflow', state: facts.value.workflow },
+  { name: 'Metadata', long: 'File metadata', state: facts.value.metadata },
+  { name: 'Workflow', long: 'Embedded workflow', state: facts.value.workflow },
   {
-    name: 'Execution history',
+    name: 'History',
+    long: 'Execution history',
     state: facts.value.imported ? ('missing' as const) : facts.value.history,
     note: facts.value.imported ? 'None, imported' : undefined
   }
 ])
+const gaps = computed(() =>
+  sources.value
+    .filter((s) => s.state !== 'available')
+    .map((s) => `${s.long}: ${(s.note ?? STATE[s.state].label).toLowerCase()}.`)
+)
 
 const KIND: Record<string, string> = {
   image: 'Image',
@@ -139,9 +146,7 @@ const KIND: Record<string, string> = {
   other: 'File'
 }
 const summary = computed(() =>
-  [KIND[asset.type] ?? 'File', facts.value.format, dims.value, facts.value.duration]
-    .filter(Boolean)
-    .join(' · ')
+  [KIND[asset.type] ?? 'File', facts.value.format, asset.size].filter(Boolean).join(' · ')
 )
 /** The node a model was loaded by, as the run records it. */
 const loader = computed(() => (asset.type === 'video' ? 'UNETLoader' : 'CheckpointLoaderSimple'))
@@ -263,6 +268,9 @@ onBeforeUnmount(() => {
           <section class="mad-sec">
             <h3 class="mad-label">Tags</h3>
             <div class="mad-tags">
+              <span class="mad-tag is-system" title="System tag, set by ComfyUI">{{
+                facts.imported ? 'input' : 'output'
+              }}</span>
               <span v-for="t in tags" :key="t" class="mad-tag" :title="t"
                 ><span class="mad-tag-t">{{ t }}</span
                 ><button
@@ -274,46 +282,37 @@ onBeforeUnmount(() => {
                 >
                   <X :size="11" /></button
               ></span>
-              <input
-                v-if="editable"
-                v-model="draft"
-                class="mad-tag-input"
-                placeholder="Add a tag"
-                aria-label="Add a tag"
-                @keydown.enter.prevent="add"
-              />
-              <span v-else-if="!tags.length" class="mad-quiet">No tags</span>
+              <label v-if="editable" class="mad-tag-add">
+                <Plus :size="12" />
+                <input
+                  v-model="draft"
+                  placeholder="Add tag"
+                  aria-label="Add a tag"
+                  @keydown.enter.prevent="add"
+                />
+              </label>
             </div>
-            <p class="mad-hint">
-              {{ editable ? 'Press Enter to add.' : 'Tags are edited in ComfyUI.' }} System tag:
-              <span class="mad-chip">{{ facts.imported ? 'input' : 'output' }}</span>
-            </p>
+            <p v-if="!editable" class="mad-hint">Tags are edited in ComfyUI.</p>
           </section>
 
           <section class="mad-sec">
-            <h3 class="mad-label">Available information</h3>
-            <ul class="mad-avail">
-              <li v-for="s in sources" :key="s.name" :class="`is-${s.state}`">
-                <span class="mad-avail-k">{{ s.name }}</span>
-                <span class="mad-avail-v"
-                  ><component :is="STATE[s.state].icon" :size="13" />{{
-                    s.note ?? STATE[s.state].label
-                  }}</span
-                >
-              </li>
-            </ul>
-          </section>
-
-          <section class="mad-sec">
-            <h3 class="mad-label">Generation info</h3>
+            <h3 class="mad-label">
+              Generation info
+              <Info
+                :size="12"
+                class="mad-info"
+                aria-label="Inferred from the run’s data. A listed value may not have contributed to this output."
+              >
+                <title>
+                  Inferred from the run’s data. A listed value may not have contributed to this
+                  output.
+                </title>
+              </Info>
+            </h3>
             <div v-if="loading" class="mad-skel" aria-label="Loading">
               <i style="width: 90%" /><i style="width: 70%" /><i style="width: 50%" />
             </div>
             <template v-else-if="facts.prompt || facts.models.length">
-              <p class="mad-hint">
-                Inferred from the run’s data. A listed value may not have contributed to this
-                output.
-              </p>
               <div v-if="facts.prompt" class="mad-card">
                 <div class="mad-card-head">
                   <span class="mad-card-k">Prompt</span>
@@ -372,6 +371,21 @@ onBeforeUnmount(() => {
               </div>
               <pre v-if="json">{{ facts.json }}</pre>
             </div>
+          </section>
+
+          <section class="mad-sec">
+            <h3 class="mad-label">Available information</h3>
+            <ul class="mad-src">
+              <li
+                v-for="s in sources"
+                :key="s.name"
+                :class="`is-${s.state}`"
+                :title="`${s.long}: ${s.note ?? STATE[s.state].label}`"
+              >
+                <component :is="STATE[s.state].icon" :size="12" />{{ s.name }}
+              </li>
+            </ul>
+            <p v-for="g in gaps" :key="g" class="mad-hint">{{ g }}</p>
           </section>
         </div>
 
@@ -589,6 +603,9 @@ onBeforeUnmount(() => {
   border-top: 1px solid var(--mad-line);
 }
 .mad-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   color: var(--color-muted-foreground);
   font-size: 11px;
   font-weight: 500;
@@ -601,16 +618,14 @@ onBeforeUnmount(() => {
   gap: 8px;
   font-size: 13px;
 }
-.mad-row,
-.mad-avail li {
+.mad-row {
   display: flex;
   min-width: 0;
   align-items: baseline;
   justify-content: space-between;
   gap: 16px;
 }
-.mad-row dt,
-.mad-avail-k {
+.mad-row dt {
   flex: none;
   color: var(--color-muted-foreground);
 }
@@ -657,30 +672,44 @@ onBeforeUnmount(() => {
   background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-tag-input {
-  width: 96px;
-  min-width: 0;
+:root .proto-ui.proto-ui.proto-ui .mad-tag.is-system {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--mad-line);
+  color: var(--color-muted-foreground);
+}
+.mad-tag-add {
+  display: inline-flex;
   height: 24px;
-  flex: 1 0 96px;
+  flex: 0 1 112px;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
   padding: 0 9px;
-  border: 1px dashed color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
   border-radius: 999px;
+  color: var(--color-muted-foreground);
+  cursor: text;
+}
+.mad-tag-add:hover,
+.mad-tag-add:focus-within {
+  background: var(--mad-fill);
+  color: var(--color-base-foreground);
+}
+.mad-tag-add svg {
+  flex: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-tag-add input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
   background: transparent;
   color: var(--color-base-foreground);
   font-size: 12px;
   outline: none;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-tag-input:focus {
-  border-style: solid;
-  border-color: color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
-}
-.mad-chip {
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--mad-fill);
+:root .proto-ui.proto-ui.proto-ui .mad-tag-add input::placeholder {
   color: var(--color-muted-foreground);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11px;
 }
 .mad-hint,
 .mad-quiet {
@@ -691,27 +720,31 @@ onBeforeUnmount(() => {
 .mad-quiet {
   font-size: 13px;
 }
-.mad-avail {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 13px;
+.mad-info {
+  flex: none;
+  cursor: help;
+  opacity: 0.7;
 }
-.mad-avail-v {
+.mad-src {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mad-src li {
   display: inline-flex;
-  min-width: 0;
+  height: 24px;
   align-items: center;
   gap: 5px;
+  padding: 0 9px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--mad-line);
   color: var(--color-muted-foreground);
-  text-align: right;
+  font-size: 12px;
 }
-.mad-avail-v svg {
-  flex: none;
-}
-.mad-avail .is-available .mad-avail-v {
+.mad-src li.is-available {
   color: var(--color-base-foreground);
 }
-.mad-avail .is-available svg {
+.mad-src li.is-available svg {
   color: var(--mad-ok);
 }
 .mad-card {
