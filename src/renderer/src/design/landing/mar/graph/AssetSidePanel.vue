@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Download, Plus, ScanSearch, Workflow, X } from 'lucide-vue-next'
+import { AppWindow, Download, Plus, ScanSearch, Workflow, X } from 'lucide-vue-next'
 import { toast } from '../../useProto'
 import GenerationInfo from '../assets/GenerationInfo.vue'
 import type { MarAsset } from '../pages/assetsStore'
@@ -15,7 +15,12 @@ import { addTag, removeTag, tagsOf } from '../assets/assetTags'
  * all share, added to or taken off all of them at once.
  */
 type SideAsset = MarAsset & { src: string; seconds: number; kind: string }
-const { assets } = defineProps<{ assets: SideAsset[] }>()
+const { assets, tabbed = false } = defineProps<{
+  assets: SideAsset[]
+  /** ComfyUI as today: this panel is Inspect asset, so its button opens the
+   *  full view in a new tab instead. */
+  tabbed?: boolean
+}>()
 const emit = defineEmits<{ close: []; inspect: [asset: SideAsset] }>()
 
 const one = computed(() => (assets.length === 1 ? assets[0]! : null))
@@ -131,7 +136,8 @@ function drop(t: string): void {
     </div>
     <footer v-if="one" class="ap-side-foot">
       <button type="button" class="ap-side-btn is-main" @click="emit('inspect', one)">
-        <ScanSearch :size="14" />Inspect asset
+        <template v-if="tabbed"><AppWindow :size="14" />Open in new tab</template>
+        <template v-else><ScanSearch :size="14" />Inspect asset</template>
       </button>
       <button
         v-if="facts?.workflow === 'available'"
@@ -163,6 +169,10 @@ function drop(t: string): void {
   right: 16px;
   left: auto;
   width: 300px;
+}
+/* Current look: the Run bar sits lower, under ComfyUI's top bar. */
+:root .proto-ui.proto-ui.proto-ui .mg.is-current > .rp.ap-side {
+  top: calc(var(--mg-top) + 38px + 64px);
 }
 .ap-side-empty {
   padding: 24px 16px;

@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   PanelRight,
+  AppWindow,
   Plus,
   ScanSearch,
   SearchX,
@@ -38,6 +39,7 @@ import type { MarAsset } from '../pages/assetsStore'
 import type { MenuLine } from '../pages/menu'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from './AssetFilterMenu.vue'
+import AssetLightbox from './AssetLightbox.vue'
 import AssetSidePanel from './AssetSidePanel.vue'
 import BulkTagMenu from './BulkTagMenu.vue'
 import { assetTab, comfyLook } from './comfyLook'
@@ -324,20 +326,26 @@ if (graphOpen.inspect) {
   graphOpen.inspect = false
 }
 
-/** Inspect asset: over the window in the proposal, in a tab in Production. */
+/** Inspect asset: over the window in the proposal; in Production the side
+ *  panel, so the workflow stays in view (Phase 1, option A). */
 function inspect(a: PanelAsset): void {
-  if (!prod.value) {
-    detail.value = a
-    return
-  }
+  if (prod.value) showSide(a)
+  else detail.value = a
+}
+/** Production: the full view in a tab beside the workflows, on request. */
+function openTab(a: PanelAsset): void {
   Object.assign(assetTab, { asset: a, list: finished.value, build: a.kind, on: true })
 }
+/** Production: double-click opens ComfyUI's lightbox, a quick look. */
+const lightbox = ref<PanelAsset | null>(null)
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
 function lines(a: PanelAsset): MenuLine[] {
   return [
     { label: 'Inspect asset', icon: ScanSearch, run: () => inspect(a) },
-    { label: 'Show details', icon: PanelRight, run: () => showSide(a) },
+    prod.value
+      ? { label: 'Open in new tab', icon: AppWindow, run: () => openTab(a) }
+      : { label: 'Show details', icon: PanelRight, run: () => showSide(a) },
     {
       label: 'Insert as node in workflow',
       icon: Plus,
@@ -614,7 +622,7 @@ function upload(files: FileList | null | undefined): void {
             class="ap-drag"
             draggable="true"
             @dragstart="drag(a, $event)"
-            @dblclick="prod && !a.status && inspect(a)"
+            @dblclick="prod && !a.status && (lightbox = a)"
           >
             <MarItem
               :name="a.name.replace(/\.[^.]+$/, '')"
@@ -736,13 +744,21 @@ function upload(files: FileList | null | undefined): void {
       @go="detail = $event as PanelAsset"
       @close="detail = null"
     />
+    <AssetLightbox
+      v-if="lightbox"
+      :asset="lightbox"
+      :list="finished"
+      @go="lightbox = $event as PanelAsset"
+      @close="lightbox = null"
+    />
   </RailPanel>
   <!-- Show details: on the right of the canvas, outside the panel. -->
   <AssetSidePanel
     v-if="sideOpen"
     :assets="sideAssets"
+    :tabbed="prod"
     @close="sideOpen = false"
-    @inspect="inspect($event as PanelAsset)"
+    @inspect="prod ? openTab($event as PanelAsset) : inspect($event as PanelAsset)"
   />
 </template>
 
