@@ -21,6 +21,7 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
   let preferenceRevision = 0
   let pendingWrite: { workspaceId: string } | undefined
   let disposed = false
+  let chosenWorkspaceId: string | undefined
 
   const membershipKnown = computed(
     () => authStore.workspacesLoaded && !authStore.loadingWorkspaces && !authStore.workspacesError
@@ -42,6 +43,7 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
   }
 
   function applySelection(workspaceId: string): void {
+    if (workspaceId !== chosenWorkspaceId) chosenWorkspaceId = undefined
     selectedWorkspaceId.value = workspaceId
     if (
       !initialized.value ||
@@ -71,7 +73,9 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
   function selectWorkspace(workspaceId: string): void {
     selectionChanged = true
     preferenceRevision += 1
-    applySelection(resolveWorkspaceId(workspaceId))
+    const resolved = resolveWorkspaceId(workspaceId)
+    if (resolved !== selectedWorkspaceId.value) chosenWorkspaceId = resolved
+    applySelection(resolved)
   }
 
   function savedWorkspaceId(): string | undefined {
@@ -141,6 +145,7 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
     (next, previous) => {
       if (!initialized.value || !next.loaded) return
       if (!next.signedIn) {
+        chosenWorkspaceId = undefined
         applySelection(PERSONAL_WORKSPACE_ID)
         return
       }
@@ -168,5 +173,13 @@ export const useDashboardScopeStore = defineStore('dashboardScope', () => {
     }
   })
 
-  return { selectedWorkspaceId, initialized, initialize, selectWorkspace }
+  /** Whether a person picked the current selection since the last call, rather than a launch,
+   *  another window or a membership check setting it. */
+  function takeChosenSelection(): boolean {
+    const chosen = chosenWorkspaceId === selectedWorkspaceId.value
+    chosenWorkspaceId = undefined
+    return chosen
+  }
+
+  return { selectedWorkspaceId, initialized, initialize, selectWorkspace, takeChosenSelection }
 })

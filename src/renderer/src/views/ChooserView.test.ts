@@ -1033,6 +1033,28 @@ describe('ChooserView', () => {
     expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('p1', 'chosen')
   })
 
+  it('counts a pick made in another surface as a person choosing it', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+    api.comfybuilder.switchWorkspace.mockResolvedValue({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'w2'
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+    wrapper.unmount()
+    useDashboardScopeStore().selectWorkspace('w2')
+
+    mount(ChooserView, { global: { plugins: [createTestI18n()] } })
+    await flushPromises()
+
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
+  })
+
   it('restores a saved selection at launch without asking for a browser', async () => {
     const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
     api.comfybuilder.listWorkspaces.mockResolvedValue([

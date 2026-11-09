@@ -96,14 +96,9 @@ defineExpose({ activeFilter })
 
 // --- Dashboard scope ---
 
-let personChoseWorkspace = false
-
 const selectedWorkspaceModel = computed({
   get: () => dashboardScope.selectedWorkspaceId,
-  set: (workspaceId: string) => {
-    personChoseWorkspace = workspaceId !== dashboardScope.selectedWorkspaceId
-    dashboardScope.selectWorkspace(workspaceId)
-  }
+  set: dashboardScope.selectWorkspace
 })
 
 /** Server workspace whose Builds belong to the selected dashboard scope. */
@@ -125,10 +120,8 @@ watch(
   [() => authStore.isSignedIn, selectedManagedWorkspaceId],
   async ([signedIn, workspaceId]) => {
     const generation = ++buildPrefetchGeneration
-    if (!signedIn) personChoseWorkspace = false
     if (!signedIn || !workspaceId) return
-    const intent = personChoseWorkspace ? 'chosen' : 'restored'
-    personChoseWorkspace = false
+    const intent = dashboardScope.takeChosenSelection() ? 'chosen' : 'restored'
     try {
       if (authStore.status.workspaceId !== workspaceId) {
         await authStore.switchWorkspace(workspaceId, intent)
