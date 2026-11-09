@@ -105,7 +105,8 @@ const fileRows = computed(() =>
     ['Dimensions', dims.value],
     ['Duration', facts.value.duration],
     ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined],
-    ['Added', added.value]
+    // When the file came to be: made by a run, or brought in.
+    [facts.value.imported ? 'Imported' : 'Created', added.value]
   ].filter((r): r is [string, string] => !!r[1])
 )
 

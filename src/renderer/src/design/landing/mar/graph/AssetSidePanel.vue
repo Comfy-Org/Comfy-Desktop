@@ -47,7 +47,7 @@ const rows = computed(() => {
     ['Dimensions', f.width ? `${f.width} × ${f.height}` : f.duration],
     ['Size', a.size],
     a.kind === 'Generated' ? ['Run time', `${a.seconds.toFixed(1)}s`] : null,
-    ['Added', a.when]
+    [a.kind === 'Generated' ? 'Created' : 'Imported', a.when]
   ].filter((r): r is [string, string] => !!r && !!r[1])
 })
 /** The tags every asset in view has; one asset shows all of its own. */
