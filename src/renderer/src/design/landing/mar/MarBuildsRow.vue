@@ -106,31 +106,28 @@ const holds = (i: (typeof shown.value)[number]): string =>
   gap: 18px;
   padding: 20px 20px 20px 18px;
   border-radius: 16px;
-  /* Lit from its corner in the build's own hue. */
-  background:
-    radial-gradient(ellipse 60% 130% at 8% 0%, oklch(0.7 0.15 var(--h, 0) / 0.3), transparent 70%),
-    oklch(0.6 0 0 / 0.05);
+  background: oklch(0.6 0 0 / 0.05);
   box-shadow: inset 0 0 0 1px oklch(0.8 0.06 var(--h, 0) / 0.1);
   text-align: left;
   transition: background-color 0.15s;
 }
-/* On hover the hue spreads from the lit corner across the card. */
+/* Lit from its corner in the build's own hue; on hover that same light
+ * grows from where it sits until it fills the card. */
 .mbr-card::before {
   position: absolute;
   z-index: -1;
   background: radial-gradient(
-    ellipse 130% 170% at 0 0,
-    oklch(0.7 0.15 var(--h, 0) / 0.4),
-    oklch(0.6 0.13 var(--h, 0) / 0.14) 50%,
-    transparent 85%
+    ellipse 60% 130% at 8% 0%,
+    oklch(0.7 0.15 var(--h, 0) / 0.3),
+    transparent 70%
   );
-  clip-path: circle(0% at 0 0);
   content: '';
   inset: 0;
-  transition: clip-path 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 8% 0%;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .mbr-card:hover::before {
-  clip-path: circle(150% at 0 0);
+  transform: scale(2.6);
 }
 @media (prefers-reduced-motion: reduce) {
   .mbr-card::before {
