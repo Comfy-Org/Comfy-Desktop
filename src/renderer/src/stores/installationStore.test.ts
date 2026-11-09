@@ -1,4 +1,5 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,13 +21,10 @@ const mockInstallations: Installation[] = [
   } as Installation
 ]
 
-vi.stubGlobal('window', {
-  ...window,
-  api: {
-    getInstallations: vi.fn(),
-    onInstallationsChanged: vi.fn(),
-    onInstallationsVersionsUpdated: vi.fn()
-  }
+stubWindowApi({
+  getInstallations: vi.fn(),
+  onInstallationsChanged: vi.fn(),
+  onInstallationsVersionsUpdated: vi.fn()
 })
 
 describe('useInstallationStore', () => {

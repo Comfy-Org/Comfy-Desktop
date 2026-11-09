@@ -1,4 +1,5 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
@@ -10,6 +11,7 @@ import { useFirstUseChain, type FirstUseChainApi } from './useFirstUseChain'
 
 vi.mock('../lib/telemetry', () => ({
   emitTelemetryAction: vi.fn(),
+  toErrorBucket: vi.fn(),
   toVariantBucket: (id?: string) => (id ? id.replace(/^(win|mac|linux)-/, '') : 'unknown')
 }))
 
@@ -141,7 +143,7 @@ describe('useFirstUseChain — Express Install', () => {
   beforeEach(() => {
     setActivePinia(createTestingPinia({ stubActions: false }))
     testApi = buildApi()
-    vi.stubGlobal('window', { ...window, api: testApi })
+    stubWindowApi(testApi)
     vi.clearAllMocks()
   })
 
@@ -206,7 +208,7 @@ describe('useFirstUseChain — Express Install', () => {
 
   it('falls back to Configure when hardware validation reports unsupported', async () => {
     testApi.validateHardware = vi.fn().mockResolvedValue({ supported: false, error: 'No GPU' })
-    vi.stubGlobal('window', { ...window, api: testApi })
+    stubWindowApi(testApi)
 
     const chain = mountChain()
     await chain.api!.handleFirstUseChainLocal({ express: true })
@@ -218,7 +220,7 @@ describe('useFirstUseChain — Express Install', () => {
 
   it('falls back to Configure when addInstallation rejects', async () => {
     testApi.addInstallation = vi.fn().mockResolvedValue({ ok: false, message: 'path conflict' })
-    vi.stubGlobal('window', { ...window, api: testApi })
+    stubWindowApi(testApi)
 
     const chain = mountChain()
     await chain.api!.handleFirstUseChainLocal({ express: true })
@@ -251,7 +253,7 @@ describe('useFirstUseChain — chainSpan stamping', () => {
   beforeEach(() => {
     setActivePinia(createTestingPinia({ stubActions: false }))
     testApi = buildApi()
-    vi.stubGlobal('window', { ...window, api: testApi })
+    stubWindowApi(testApi)
     vi.clearAllMocks()
   })
 

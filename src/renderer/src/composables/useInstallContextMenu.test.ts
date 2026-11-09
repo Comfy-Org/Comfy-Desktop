@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
@@ -21,7 +22,7 @@ import type { Installation, ShowProgressOpts } from '../types/ipc'
 import type { ContextMenuItem } from '../types/context-menu'
 
 const apiMock = {
-  platform: 'darwin',
+  platform: 'darwin' as const,
   runAction: vi.fn().mockResolvedValue({ ok: true }),
   getDetailSections: vi.fn().mockResolvedValue([]),
   onErrorDetail: vi.fn(() => () => {}),
@@ -32,10 +33,7 @@ const apiMock = {
     promoteLocalInstance: vi.fn().mockResolvedValue({ ok: true })
   }
 }
-vi.stubGlobal('window', {
-  ...window,
-  api: apiMock
-})
+stubWindowApi(apiMock)
 
 function makeInstall(overrides: Partial<Installation> = {}): Installation {
   return {

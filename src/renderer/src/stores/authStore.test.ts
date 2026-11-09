@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { useAuthStore } from './authStore'
 
 const api = {
@@ -35,11 +36,11 @@ describe('useAuthStore', () => {
       return () => {}
     })
     api.getAuthStatus.mockResolvedValue({ signedIn: false })
-    ;(globalThis as unknown as { window: unknown }).window = { api: { comfybuilder: api } }
+    stubWindowApi({ comfybuilder: api })
   })
 
   afterEach(() => {
-    delete (globalThis as unknown as { window?: unknown }).window
+    vi.unstubAllGlobals()
   })
 
   it('hydrates status from the persisted session on creation', async () => {

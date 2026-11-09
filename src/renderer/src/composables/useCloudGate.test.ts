@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { createPinia, setActivePinia } from 'pinia'
 import { effectScope } from 'vue'
 import { useCloudGate } from './useCloudGate'
@@ -40,7 +41,7 @@ function stubApi(over: Partial<Record<keyof ApiStub, unknown>> = {}): void {
     },
     has: () => true
   })
-  vi.stubGlobal('window', { api: withListeners })
+  stubWindowApi(withListeners)
 }
 
 let stops: Array<() => void> = []

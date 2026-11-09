@@ -1,4 +1,5 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,23 +17,20 @@ vi.mock('../lib/telemetry', async (importOriginal) => ({
   emitTelemetryAction: vi.fn()
 }))
 
-vi.stubGlobal('window', {
-  ...window,
-  api: {
-    getInstallations: vi.fn().mockResolvedValue([]),
-    onInstallationsChanged: vi.fn(),
-    onInstallationsVersionsUpdated: vi.fn(),
-    onInstallProgress: vi.fn(() => vi.fn()),
-    onComfyOutput: vi.fn(() => vi.fn()),
-    logsSnapshot: vi.fn().mockResolvedValue(''),
-    cancelOperation: vi.fn(),
-    stopComfyUI: vi.fn(),
-    getRunningInstances: vi.fn().mockResolvedValue([]),
-    onInstanceStarted: vi.fn(() => vi.fn()),
-    onInstanceStopped: vi.fn(() => vi.fn()),
-    onComfyExited: vi.fn(() => vi.fn()),
-    onErrorDetail: vi.fn(() => vi.fn())
-  }
+stubWindowApi({
+  getInstallations: vi.fn().mockResolvedValue([]),
+  onInstallationsChanged: vi.fn(),
+  onInstallationsVersionsUpdated: vi.fn(),
+  onInstallProgress: vi.fn(() => vi.fn()),
+  onComfyOutput: vi.fn(() => vi.fn()),
+  logsSnapshot: vi.fn().mockResolvedValue(''),
+  cancelOperation: vi.fn(),
+  stopComfyUI: vi.fn(),
+  getRunningInstances: vi.fn().mockResolvedValue([]),
+  onInstanceStarted: vi.fn(() => vi.fn()),
+  onInstanceStopped: vi.fn(() => vi.fn()),
+  onComfyExited: vi.fn(() => vi.fn()),
+  onErrorDetail: vi.fn(() => vi.fn())
 })
 
 describe('useProgressStore', () => {

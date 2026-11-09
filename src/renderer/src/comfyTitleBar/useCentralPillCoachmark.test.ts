@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { ref, shallowRef, type ShallowRef } from 'vue'
 
 import { useCentralPillCoachmark, CENTRAL_PILL_HINT_SEEN_KEY } from './useCentralPillCoachmark'
@@ -35,13 +36,10 @@ describe('useCentralPillCoachmark', () => {
   beforeEach(() => {
     getSetting = vi.fn().mockResolvedValue(undefined)
     setSetting = vi.fn().mockResolvedValue(undefined)
-    vi.stubGlobal('window', {
-      ...window,
-      api: { getSetting, setSetting },
-      requestAnimationFrame: (cb: FrameRequestCallback) => {
-        cb(0)
-        return 0
-      }
+    stubWindowApi({ getSetting, setSetting })
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0)
+      return 0
     })
   })
 

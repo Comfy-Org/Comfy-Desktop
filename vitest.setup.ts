@@ -1,6 +1,5 @@
-import { afterEach } from 'vitest'
+import { afterEach, beforeAll } from 'vitest'
 import { config, enableAutoUnmount } from '@vue/test-utils'
-import { createAppI18n } from './src/renderer/src/lib/i18nFactory'
 
 const localStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
 if (!localStorageDescriptor || 'get' in localStorageDescriptor) {
@@ -30,6 +29,11 @@ if (!localStorageDescriptor || 'get' in localStorageDescriptor) {
   })
 }
 
-config.global.plugins = [...(config.global.plugins ?? []), createAppI18n()]
+async function installAppI18nAfterTestFileMocksRegister(): Promise<void> {
+  const { createAppI18n } = await import('./src/renderer/src/lib/i18nFactory')
+  config.global.plugins = [...(config.global.plugins ?? []), createAppI18n()]
+}
+
+beforeAll(installAppI18nAfterTestFileMocksRegister)
 
 enableAutoUnmount(afterEach)

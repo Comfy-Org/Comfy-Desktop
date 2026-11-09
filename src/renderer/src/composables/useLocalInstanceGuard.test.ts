@@ -1,4 +1,5 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -13,16 +14,13 @@ vi.mock('./useDialogs', () => ({
   })
 }))
 
-vi.stubGlobal('window', {
-  ...window,
-  api: {
-    getInstallations: vi.fn().mockResolvedValue([]),
-    onInstallationsChanged: vi.fn(),
-    onInstallationsVersionsUpdated: vi.fn(),
-    getSetting: vi.fn().mockResolvedValue(undefined),
-    stopComfyUI: vi.fn().mockResolvedValue(undefined),
-    closeComfyWindow: vi.fn().mockResolvedValue(true)
-  }
+stubWindowApi({
+  getInstallations: vi.fn().mockResolvedValue([]),
+  onInstallationsChanged: vi.fn(),
+  onInstallationsVersionsUpdated: vi.fn(),
+  getSetting: vi.fn().mockResolvedValue(undefined),
+  stopComfyUI: vi.fn().mockResolvedValue(undefined),
+  closeComfyWindow: vi.fn().mockResolvedValue(true)
 })
 
 import { useLocalInstanceGuard } from './useLocalInstanceGuard'
