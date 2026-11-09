@@ -58,6 +58,7 @@
     "noRunningBuilds": "启动一个构建以浏览其资产。",
     "loadFailed": "无法加载资产",
     "download": "下载",
+    "downloadFailed": "无法下载资产",
     "moreActions": "更多操作",
     "inspectAsset": "查看资产",
     "inspect": "打开 {name}",

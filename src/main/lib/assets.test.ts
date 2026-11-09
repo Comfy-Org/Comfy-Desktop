@@ -167,6 +167,16 @@ describe('downloadAsset', () => {
     expect(writeFile.mock.calls[0]![0]).toBe('/picked/still.png')
   })
 
+  it('fails without writing a file when the build cannot serve the asset', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    fetchMock.mockResolvedValue(new Response(null, { status: 503 }))
+
+    await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow('HTTP 503')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
   it('writes nothing when the save dialog is cancelled', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
     runningSessions.set('local-1', { port: 8188 })

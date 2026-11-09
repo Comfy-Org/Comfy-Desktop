@@ -58,6 +58,7 @@
     "noRunningBuilds": "Start a build to browse its assets.",
     "loadFailed": "Couldn't load assets",
     "download": "Download",
+    "downloadFailed": "Couldn't download asset",
     "moreActions": "More actions",
     "inspectAsset": "Inspect asset",
     "inspect": "Open {name}",

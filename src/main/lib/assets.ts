@@ -8,8 +8,8 @@ import { _runningSessions, sourceMap } from './ipc/shared'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
 
-export const ASSETS_LIST_CHANNEL = 'assets:list'
-export const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
+const ASSETS_LIST_CHANNEL = 'assets:list'
+const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 
 const LIST_QUERY = 'tags_any=output&sort=created_at&order=desc&limit=100'
 const REQUEST_TIMEOUT_MS = 20_000
@@ -166,15 +166,15 @@ export async function downloadAsset(
   fileName: string
 ): Promise<boolean> {
   const source = await resolveSource(installationId)
-  if (!source) return false
+  if (!source) throw new Error('This build is not running.')
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     defaultPath: path.join(app.getPath('downloads'), path.basename(fileName))
   })
   if (canceled || !filePath) return false
   const url = await downloadUrl(source, assetId)
-  if (!url) return false
+  if (!url) throw new Error('The asset has no download link.')
   const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 15) })
-  if (!res.ok) return false
+  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`)
   await fs.promises.writeFile(filePath, Buffer.from(await res.arrayBuffer()))
   return true
 }

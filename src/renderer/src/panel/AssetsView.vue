@@ -24,6 +24,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import AssetDetailView from './AssetDetailView.vue'
 import type { GalleryAsset } from './AssetDetailView.vue'
+import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -38,6 +39,7 @@ type SortOrder = 'newest' | 'oldest'
 const SKELETON_COUNT = 8
 
 const { t } = useI18n()
+const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
@@ -122,7 +124,7 @@ async function loadAssets(): Promise<void> {
   }
 }
 
-watch(reachableBuildIds, loadAssets, { immediate: true })
+watch(() => reachableBuildIds.value.join('\n'), loadAssets, { immediate: true })
 watch(visibleAssets, (list) => {
   if (detailIndex.value !== null && detailIndex.value >= list.length) detailIndex.value = null
 })
@@ -131,8 +133,12 @@ function openDetail(asset: GalleryAsset): void {
   detailIndex.value = visibleAssets.value.indexOf(asset)
 }
 
-function download(asset: GalleryAsset): void {
-  void window.api.downloadAsset(asset.installationId, asset.id, asset.name)
+async function download(asset: GalleryAsset): Promise<void> {
+  try {
+    await window.api.downloadAsset(asset.installationId, asset.id, asset.name)
+  } catch {
+    await modal.alert({ title: t('assets.downloadFailed'), message: asset.name })
+  }
 }
 
 function assetDetails(asset: AssetSummary): string {

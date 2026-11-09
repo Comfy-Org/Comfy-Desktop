@@ -9,6 +9,11 @@ import type { AssetSummary, Installation } from '../types/ipc'
 
 const listAssets = vi.fn()
 const downloadAsset = vi.fn()
+const alert = vi.fn()
+
+vi.mock('../composables/useModal', () => ({
+  useModal: () => ({ alert })
+}))
 
 function asset(id: string, name: string, kind: AssetSummary['kind']): AssetSummary {
   return {
@@ -168,6 +173,31 @@ describe('AssetsView', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
     expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
+  })
+
+  it('tells the user when a download fails', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    downloadAsset.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await wrapper.get('[data-testid="asset-detail-download"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't download asset",
+      message: 'forest.png'
+    })
+  })
+
+  it('does not reload when the running builds stay the same', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    await mountAssets([build('lab', 'Video Lab')])
+
+    useInstallationStore().installations = [{ ...build('lab', 'Video Lab Renamed') }]
+    await flushPromises()
+
+    expect(listAssets).toHaveBeenCalledOnce()
   })
 
   it('reports a failed load', async () => {
