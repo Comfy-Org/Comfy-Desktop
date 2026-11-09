@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { X } from 'lucide-vue-next'
+import { Check, Link, X } from 'lucide-vue-next'
 import Button from '../ui/Button.vue'
 import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
@@ -15,6 +15,7 @@ import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { homeBuilds } from './homeBuilds'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
+import { APP_PAGE_LOOKS, appPage } from './apps/appPage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -45,6 +46,7 @@ import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData
 import { proto } from '../useProto'
 import { can } from '../milestones'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
+import { copyShareUrl, shareSummary } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
@@ -135,6 +137,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBackground', show: () => when.homeBackground.value },
   { id: 'firstRun', show: () => when.firstRun.value },
   { id: 'exampleLook', show: () => when.exampleLook.value },
+  { id: 'appPage', show: () => when.appPage.value },
   { id: 'editorEntry', show: () => when.editorEntry.value },
   { id: 'templates', show: () => when.templates.value },
   { id: 'buildCard', show: () => when.buildCard.value },
@@ -165,6 +168,27 @@ watch(body, (el) => el && requestAnimationFrame(() => (el.scrollTop = scrolled))
 function onScroll(e: Event): void {
   scrolled = (e.target as HTMLElement).scrollTop
 }
+
+// Copy link: this screen and every tweak off its default, in one URL.
+const copied = ref(false)
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+async function copyLink(): Promise<void> {
+  if (!(await copyShareUrl())) return
+  copied.value = true
+  clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => (copied.value = false), 1600)
+}
+// What the link opens, in a line: the milestone, then what it changes.
+const linkSays = computed(() => {
+  const [milestone = '', ...changes] = shareSummary()
+  const m = `M${milestone.split(' · ')[0]}`
+  return {
+    line: changes.length
+      ? `${m} · ${changes.length} ${changes.length === 1 ? 'change' : 'changes'}`
+      : `${m} · defaults`,
+    all: [milestone, ...changes].join('\n')
+  }
+})
 </script>
 
 <template>
@@ -283,6 +307,9 @@ function onScroll(e: Event): void {
           </Row>
           <Row :show="shows('exampleLook')" label="Examples">
             <Select v-model="exampleLook.id" :options="EXAMPLE_LOOKS" class="w-full" />
+          </Row>
+          <Row :show="shows('appPage')" label="App page">
+            <Select v-model="appPage.id" :options="APP_PAGE_LOOKS" class="w-full" />
           </Row>
           <Row :show="shows('editorEntry')" label="Node editor entry">
             <Select v-model="editorEntry.id" :options="EDITOR_ENTRIES" class="w-full" />
@@ -441,11 +468,23 @@ function onScroll(e: Event): void {
             </Row>
           </div>
         </details>
-
-        <Button variant="ghost" size="sm" class="mt-5 -ml-2 self-start" @click="resetAll"
-          >Reset all</Button
-        >
       </div>
+
+      <!-- Share: a link that opens this screen with these tweaks, for
+           anyone (mar/shareLink.ts). -->
+      <footer class="shrink-0 border-t border-border-default px-4 pt-3 pb-4">
+        <p class="mb-2.5 truncate text-ui text-subtle-foreground" :title="linkSays.all">
+          Link opens {{ pageName }} · {{ linkSays.line }}
+        </p>
+        <div class="flex items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" class="-ml-2" @click="resetAll">Reset all</Button>
+          <Button variant="secondary" size="sm" @click="copyLink">
+            <Check v-if="copied" :size="13" />
+            <Link v-else :size="13" />
+            {{ copied ? 'Copied' : 'Copy link' }}
+          </Button>
+        </div>
+      </footer>
     </aside>
   </Teleport>
 </template>
