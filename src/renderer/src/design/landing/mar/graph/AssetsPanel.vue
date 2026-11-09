@@ -106,11 +106,12 @@ function setView(v: View): void {
     // Storage blocked: the pick lasts for this window only.
   }
 }
+// Masonry first, the default, as in Desktop's view toggle.
 const VIEWS = [
-  { value: 'list', label: 'List view', icon: TableOfContents },
-  { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
+  { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
   { value: 'large', label: 'Grid (large)', icon: LayoutGrid },
-  { value: 'masonry', label: 'Masonry', icon: LayoutDashboard }
+  { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
+  { value: 'list', label: 'List view', icon: TableOfContents }
 ] as const
 // What a card shows: preview assets are off by default, so the panel
 // lists what was saved.
