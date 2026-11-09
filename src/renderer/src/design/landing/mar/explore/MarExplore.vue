@@ -559,7 +559,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   font-variant-numeric: tabular-nums;
 }
 .mar-ex-tile-kind.is-icon {
-  padding: 9.4px 10px;
+  padding: 6px 8px;
 }
 .mar-ex-tile-video {
   position: absolute;

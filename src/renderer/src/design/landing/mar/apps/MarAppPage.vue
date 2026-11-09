@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { appExamplesAt } from './appPage'
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { onClickOutside, useResizeObserver } from '@vueuse/core'
 import {
   ArrowRight,
   Check,
   ChevronLeft,
+  ChevronDown,
   ChevronsLeftRight,
   Coins,
   Columns2,
@@ -126,6 +128,26 @@ const take = ref(0)
 const result = computed(() => sample.value ?? input.value)
 /** What the stage shows: your take once you've run it, else the example's. */
 const shownFilter = computed(() => (state.value === 'done' ? takes.value[take.value] : 'none'))
+/** Zoom, as in the asset modal: `zoom` scales the fitted picture (100 =
+ *  fit); the control reads in real size. */
+const zoom = ref(100)
+const pic = ref<HTMLImageElement>()
+const fit = ref(1)
+function measure(): void {
+  const el = pic.value
+  if (el?.naturalWidth) fit.value = el.clientWidth / el.naturalWidth
+}
+const shownPct = computed(() => Math.round(fit.value * zoom.value))
+const ZOOMS = [50, 100, 200]
+const zoomMenu = ref(false)
+const zoomBox = ref<HTMLElement>()
+onClickOutside(zoomBox, () => (zoomMenu.value = false))
+function zoomTo(pct?: number): void {
+  zoom.value = pct ? Math.min(800, Math.max(10, pct / fit.value)) : 100
+  zoomMenu.value = false
+}
+useResizeObserver(pic, measure)
+watch(take, () => (zoom.value = 100))
 const hasResult = computed(() => state.value === 'done' || Boolean(sample.value))
 
 // Comfy credits: 211 to the dollar. A run on this computer is free.
@@ -395,7 +417,7 @@ function back(): void {
           >
             <span class="flex items-center gap-2">
               <Loader2 v-if="state === 'running'" :size="15" class="animate-spin" />
-              {{ state === 'running' ? 'Running' : state === 'done' ? 'Run again' : 'Run' }}
+              {{ state === 'running' ? 'Running' : 'Run' }}
             </span>
             <span class="mar-app-editor-cost">
               <template v-if="credits"><Coins :size="14" />{{ credits }}</template>
@@ -440,11 +462,13 @@ function back(): void {
             :class="cn('mar-app-editor-pic', state === 'running' && 'is-running')"
           >
             <img
+              ref="pic"
               :key="state === 'done' ? `take-${take}` : 'example'"
               :src="result"
               alt=""
               :class="state === 'done' && 'mar-app-editor-rise'"
-              :style="{ filter: shownFilter }"
+              :style="{ filter: shownFilter, scale: state === 'done' ? zoom / 100 : 1 }"
+              @load="measure"
             />
             <template v-if="comparing && state !== 'running'">
               <img
@@ -507,29 +531,51 @@ function back(): void {
           </div>
         </div>
 
-        <!-- Dock: once you've run it, your takes. -->
-        <div v-if="state === 'done'" class="mar-app-editor-dock">
-          <template v-if="takes.length > 1">
-            <button
-              v-for="(filter, i) in takes"
-              :key="filter"
-              type="button"
-              :aria-label="`Take ${i + 1}`"
-              :aria-pressed="take === i"
-              :class="cn('mar-app-editor-take', take === i && 'is-on')"
-              @click="take = i"
+        <!-- Once you've run it, along the bottom as in the asset modal:
+             your takes from the left, how it went in the middle, the zoom
+             on the right. -->
+        <div v-if="state === 'done'" class="mar-app-editor-outbar">
+          <nav class="mar-app-editor-takes" aria-label="Your takes">
+            <template v-if="takes.length > 1">
+              <button
+                v-for="(filter, i) in takes"
+                :key="filter"
+                type="button"
+                :aria-label="`Take ${i + 1}`"
+                :aria-current="take === i"
+                class="mar-app-editor-thumb"
+                @click="take = i"
+              >
+                <img :src="result" alt="" :style="{ filter }" />
+              </button>
+            </template>
+          </nav>
+          <div class="mar-app-editor-dock">
+            <span class="mar-app-editor-done"
+              ><Check :size="14" />{{ takes.length }}
+              {{ takes.length === 1 ? made : `${made}s` }} in 18 s</span
             >
-              <img :src="result" alt="" :style="{ filter }" />
+            <span v-if="$slots.saved" class="mar-app-editor-saved"
+              ><slot name="saved" /><ArrowRight :size="13"
+            /></span>
+          </div>
+          <div ref="zoomBox" class="mar-app-editor-zoom" role="group" aria-label="Zoom">
+            <button
+              type="button"
+              class="mar-app-editor-zoom-pct"
+              aria-haspopup="menu"
+              :aria-expanded="zoomMenu"
+              @click="zoomMenu = !zoomMenu"
+            >
+              <span>{{ shownPct }}%</span><ChevronDown :size="13" />
             </button>
-            <span class="mar-app-editor-rule" aria-hidden="true" />
-          </template>
-          <span class="mar-app-editor-done"
-            ><Check :size="14" />{{ takes.length }} {{ takes.length === 1 ? made : `${made}s` }} in
-            18 s</span
-          >
-          <span v-if="$slots.saved" class="mar-app-editor-saved"
-            ><slot name="saved" /><ArrowRight :size="13"
-          /></span>
+            <div v-if="zoomMenu" class="mar-app-editor-zoom-menu" role="menu">
+              <button type="button" role="menuitem" @click="zoomTo()">Fit to screen</button>
+              <button v-for="z in ZOOMS" :key="z" type="button" role="menuitem" @click="zoomTo(z)">
+                {{ z }}%
+              </button>
+            </div>
+          </div>
         </div>
       </main>
     </div>
@@ -734,6 +780,7 @@ function back(): void {
 
 /* Stage: a frame of its own, plain: apps don't wear the editor's dots. */
 .mar-app-editor-stage {
+  position: relative;
   display: flex;
   min-height: 0;
   flex-direction: column;
@@ -769,8 +816,104 @@ function back(): void {
   padding-block: 72px;
 }
 /* With your takes under the picture, they share the bottom margin. */
-.mar-app-editor-stage:has(> .mar-app-editor-dock) {
-  padding-bottom: 34px;
+/* Along the bottom, as in the asset modal. */
+.mar-app-editor-outbar {
+  position: absolute;
+  right: 24px;
+  bottom: 18px;
+  left: 24px;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+.mar-app-editor-takes {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px;
+  scrollbar-width: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-thumb {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 8px;
+  background: var(--color-secondary-background);
+  opacity: 0.55;
+  transition:
+    opacity 0.12s ease,
+    box-shadow 0.12s ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-thumb:hover {
+  opacity: 0.9;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-thumb[aria-current='true'] {
+  box-shadow:
+    0 0 0 2px var(--color-content-background),
+    0 0 0 4px var(--color-base-foreground);
+  opacity: 1;
+}
+.mar-app-editor-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mar-app-editor-zoom {
+  position: relative;
+  display: flex;
+  justify-self: end;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct span {
+  min-width: 34px;
+  text-align: center;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+.mar-app-editor-zoom-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: grid;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--color-secondary-background);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-menu button {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  text-align: left;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-menu button:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 .mar-app-editor-canvas {
   position: relative;
