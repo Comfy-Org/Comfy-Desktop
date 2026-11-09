@@ -5,6 +5,7 @@
  */
 import { shell } from 'electron'
 
+import { recordShellOpenExternal } from '../lib/e2eOverrides'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
@@ -122,8 +123,12 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
   }
 }
 
-/** System browser only (RFC 8252): never an embedded window/webview. */
+/** System browser only (RFC 8252): never an embedded window/webview. E2E runs record it instead. */
 export function openAuthorizePage(authorizeUrl: string): Promise<void> {
+  if (process.env['E2E'] === '1') {
+    recordShellOpenExternal(authorizeUrl)
+    return Promise.resolve()
+  }
   return shell.openExternal(authorizeUrl)
 }
 

@@ -11,7 +11,8 @@ import { get } from 'node:http'
 import { shell } from 'electron'
 import { startLoopbackListener } from './loopback'
 import type * as LoopbackModule from './loopback'
-import { refresh, signIn } from './oauth'
+import { getShellOpenExternalCalls, resetShellOpenExternalCalls } from '../lib/e2eOverrides'
+import { openAuthorizePage, refresh, signIn } from './oauth'
 
 function stub(status: number, body: unknown): void {
   vi.stubGlobal(
@@ -132,6 +133,28 @@ describe('oauth.signIn', () => {
     scope: 'openid',
     resource: 'https://c/api'
   }
+
+  it('records the authorize page instead of opening a browser in an E2E run', async () => {
+    vi.stubEnv('E2E', '1')
+    resetShellOpenExternalCalls()
+    vi.mocked(shell.openExternal).mockClear()
+
+    await openAuthorizePage('https://cloud.test/authorize')
+
+    expect(getShellOpenExternalCalls()).toEqual(['https://cloud.test/authorize'])
+    expect(shell.openExternal).not.toHaveBeenCalled()
+    vi.unstubAllEnvs()
+  })
+
+  it('opens the system browser outside an E2E run', async () => {
+    vi.stubEnv('E2E', '')
+    vi.mocked(shell.openExternal).mockClear()
+
+    await openAuthorizePage('https://cloud.test/authorize')
+
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://cloud.test/authorize')
+    vi.unstubAllEnvs()
+  })
 
   it('announces no authorize URL and opens no browser when the listener cannot start', async () => {
     vi.mocked(startLoopbackListener).mockRejectedValueOnce(new Error('address in use'))

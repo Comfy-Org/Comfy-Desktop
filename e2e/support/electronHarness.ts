@@ -43,6 +43,9 @@ export interface SeedOptions {
    *  while a process from the previous launch still holds the default: a child Desktop spawned
    *  inherits Electron's listening socket, so an orphan outlives the app holding it. */
   cdpPort?: number
+  /** Run against this Electron userData dir. The only way to keep a macOS run off the developer's
+   *  real Application Support, and to relaunch the same profile there. The caller owns the dir. */
+  userDataDir?: string
 }
 
 export interface SeedInstallation {
@@ -248,6 +251,10 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
 
   // Linux CI runners lack the SUID sandbox binary; disable it the same way linux-dev.sh does.
   const args = ['.', `--remote-debugging-port=${cdpPort}`]
+  if (options?.userDataDir) {
+    args.push(`--user-data-dir=${options.userDataDir}`)
+    if (process.platform === 'darwin') args.push('--use-mock-keychain')
+  }
   if (process.platform === 'linux') {
     args.push('--no-sandbox')
     // Ozone picks its backend from the session, and on a Wayland desktop it picks Wayland
