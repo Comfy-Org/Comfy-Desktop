@@ -127,7 +127,7 @@ const PARTS: Part[] = [
   one('homeBackground', homeBackground, 'spotlight', BACKGROUNDS),
   one('appsStage', appsStage, 'm1', APPS_STAGES),
   one('appPage', appPage, 'hub', APP_PAGE_LOOKS),
-  one('appExamplesAt', appExamplesAt, 'stage', APP_EXAMPLES_AT),
+  one('appExamplesAt', appExamplesAt, 'tabs', APP_EXAMPLES_AT),
   one('firstRun', firstRun, 'original', FIRST_RUNS),
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),

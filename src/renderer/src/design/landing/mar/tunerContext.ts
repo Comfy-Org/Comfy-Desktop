@@ -196,7 +196,7 @@ export const TWEAKS = {
   homeBackground: one(homeBackground, 'spotlight'),
   appsStage: one(appsStage, 'm1'),
   appPage: one(appPage, 'hub'),
-  appExamplesAt: one(appExamplesAt, 'stage'),
+  appExamplesAt: one(appExamplesAt, 'tabs'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),

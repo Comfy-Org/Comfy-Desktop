@@ -18,7 +18,8 @@ import {
   Link2,
   Loader2,
   Plus,
-  Share2
+  Share2,
+  Video as VideoIcon
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
@@ -26,6 +27,7 @@ import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import PopoverContent from '../../ui/PopoverContent.vue'
 import Switch from '../../ui/Switch.vue'
 import Badge from '../../ui/Badge.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
@@ -107,6 +109,7 @@ function pickExample(x: AppExample): void {
   state.value = 'idle'
   comparing.value = false
   load(x)
+  stageView.value = 'creations'
 }
 const pick = (f: Field): string => values[f.id] ?? f.options?.[0] ?? ''
 const count = computed(() =>
@@ -194,6 +197,7 @@ function run(): void {
   if (gate && !gate()) return
   comparing.value = false
   take.value = 0
+  stageView.value = 'creations'
   state.value = 'running'
   progress.value = 0
   pct.value = 0
@@ -218,6 +222,26 @@ function run(): void {
   setTimeout(tick, 250)
 }
 defineExpose({ run })
+
+// UI Playground › App examples › Tabs: over the stage, your Creations and
+// the app's Templates. It opens on Templates unless it came from an
+// example; picking one fills the panel and goes back to Creations.
+const onTabs = computed(() => appExamplesAt.id === 'tabs' && examples.value.length > 1)
+const stageView = ref<'creations' | 'templates'>(openOn[appId] ? 'creations' : 'templates')
+const onTemplates = computed(() => onTabs.value && stageView.value === 'templates')
+const VIEWS = computed(() => [
+  { value: 'creations' as const, label: 'Creations', count: outputs.value.length || undefined },
+  { value: 'templates' as const, label: 'Templates', count: examples.value.length }
+])
+function playTpl(e: MouseEvent, on: boolean): void {
+  const v = (e.currentTarget as HTMLElement).querySelector('video')
+  if (!v) return
+  if (on && !matchMedia('(prefers-reduced-motion: reduce)').matches) void v.play().catch(() => {})
+  else {
+    v.pause()
+    v.currentTime = 0
+  }
+}
 
 // Share: the app's link, and once you've run it, your result with it.
 const lib = computed(() => libApp(appId))
@@ -440,7 +464,40 @@ function back(): void {
         :class="cn('mar-app-editor-stage', appExamplesAt.id === 'panel' && 'is-examples-in-panel')"
         aria-label="Output"
       >
-        <div class="mar-app-editor-canvas">
+        <MarSeg
+          v-if="onTabs"
+          v-model="stageView"
+          :options="VIEWS"
+          label="Stage"
+          class="mar-app-editor-views"
+        />
+        <!-- Templates: the app's examples, to start from; one fills the
+             panel with what it ran with. -->
+        <div v-if="onTemplates" class="mar-app-editor-tpls" role="list">
+          <button
+            v-for="x in examples"
+            :key="x.id"
+            type="button"
+            role="listitem"
+            :aria-label="x.title"
+            :aria-pressed="x.id === exId"
+            class="mar-app-editor-tpl"
+            @click="pickExample(x)"
+            @mouseenter="playTpl($event, true)"
+            @mouseleave="playTpl($event, false)"
+          >
+            <img :src="x.after" alt="" loading="lazy" />
+            <video v-if="x.video" :src="x.video" muted loop playsinline preload="none" />
+            <span v-if="x.kind === 'Video'" class="mar-app-editor-tpl-kind"
+              ><VideoIcon :size="12" />{{ x.duration }}</span
+            >
+            <span class="mar-app-editor-tpl-text"
+              ><span class="truncate">{{ x.title }}</span
+              ><span class="text-white/70">Use template</span></span
+            >
+          </button>
+        </div>
+        <div v-show="!onTemplates" class="mar-app-editor-canvas">
           <!-- Examples, on the top line of the picture's room: up to five
                of what this app has made, to start from like templates.
                Picking one fills the panel and shows its result; once you
@@ -541,7 +598,7 @@ function back(): void {
         <!-- Once you've run it, along the bottom as in the asset modal:
              your takes from the left, how it went in the middle, the zoom
              on the right. -->
-        <div v-if="state === 'done'" class="mar-app-editor-outbar">
+        <div v-if="state === 'done' && !onTemplates" class="mar-app-editor-outbar">
           <nav class="mar-app-editor-takes" aria-label="Your takes">
             <template v-if="outputs.length > 1">
               <button
@@ -905,6 +962,97 @@ function back(): void {
 }
 .mar-app-share-copy {
   flex: none;
+}
+/* Tabs over the stage: Creations and Templates, top left. */
+:root .proto-ui.proto-ui.proto-ui .mar-pseg.mar-app-editor-views {
+  position: absolute;
+  top: 16px;
+  left: 24px;
+  z-index: 3;
+}
+.mar-app-editor-tpls {
+  position: absolute;
+  inset: 60px 20px 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  align-content: start;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-width: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-tpl {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 12px;
+  background: var(--color-secondary-background);
+  outline: none;
+  transition: box-shadow 0.12s ease;
+}
+.mar-app-editor-tpl img,
+.mar-app-editor-tpl video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.mar-app-editor-tpl video {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.mar-app-editor-tpl:hover video {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-tpl[aria-pressed='true'],
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-tpl:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--color-card-background),
+    0 0 0 4px var(--color-base-foreground);
+}
+.mar-app-editor-tpl-kind {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgb(120 120 120 / 0.45);
+  backdrop-filter: blur(12px) saturate(1.3);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+/* What it is, and Use template, over a fade on hover. */
+.mar-app-editor-tpl-text {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 28px 12px 10px;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.7), transparent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+.mar-app-editor-tpl-text > span:last-child {
+  font-size: 12px;
+  font-weight: 400;
+}
+.mar-app-editor-tpl:hover .mar-app-editor-tpl-text,
+.mar-app-editor-tpl:focus-visible .mar-app-editor-tpl-text {
+  opacity: 1;
 }
 /* Along the bottom, as in the asset modal. */
 .mar-app-editor-outbar {

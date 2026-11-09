@@ -43,11 +43,13 @@ export const onHubPage = (a: LibApp): boolean =>
   can.value.design && appPage.id === 'hub' && a.group !== 'yours'
 
 /** Where an app's examples sit on its page (UI Playground › App examples):
- *  on the top line of the stage, over the picture's room, or at the top of
- *  the panel, before what you give it. */
-export type AppExamplesAt = 'stage' | 'panel'
+ *  as Templates, a tab beside your Creations over the stage; on the top
+ *  line of the stage, over the picture's room; or at the top of the panel,
+ *  before what you give it. */
+export type AppExamplesAt = 'tabs' | 'stage' | 'panel'
 
 export const APP_EXAMPLES_AT: { value: AppExamplesAt; label: string }[] = [
+  { value: 'tabs', label: 'Tabs · Creations and Templates over the stage' },
   { value: 'stage', label: 'Stage · on the top line of the picture' },
   { value: 'panel', label: 'Panel · at the top, before the fields' }
 ]
@@ -58,9 +60,9 @@ export const appExamplesAt = reactive<{ id: AppExamplesAt }>({
   id: (() => {
     try {
       const v = localStorage.getItem(AT_KEY)
-      return APP_EXAMPLES_AT.some((l) => l.value === v) ? (v as AppExamplesAt) : 'stage'
+      return APP_EXAMPLES_AT.some((l) => l.value === v) ? (v as AppExamplesAt) : 'tabs'
     } catch {
-      return 'stage'
+      return 'tabs'
     }
   })()
 })
