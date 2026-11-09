@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { AppWindow, Bookmark, ChevronDown, Folder, Plus, RefreshCw, SearchX } from 'lucide-vue-next'
 import RailPanel from './RailPanel.vue'
-import { APPS, WORKFLOW_TREE, type FileNode } from './panelData'
+import { WORKFLOW_TREE, type FileNode } from './panelData'
+import { LIB, addedApps } from '../../../appFlow'
 import { ComfyWorkflow } from '../../icons/comfyIcons'
 import MarSearchField from '../../pages/MarSearchField.vue'
 import MarEmpty from '../../pages/MarEmpty.vue'
@@ -41,7 +42,11 @@ function mark(name: string): void {
 const count = (n: FileNode): number =>
   n.children ? n.children.reduce((s, c) => s + count(c), 0) : 1
 const tree = computed<FileNode[]>(() => {
-  const base: FileNode[] = apps.value ? APPS.map((name) => ({ name })) : WORKFLOW_TREE
+  // Apps lists the same apps as Desktop's Apps page: yours, your team's,
+  // shared with you, and the ones added from Explore.
+  const base: FileNode[] = apps.value
+    ? [...LIB, ...addedApps.value].map((a) => ({ name: a.name }))
+    : WORKFLOW_TREE
   const q = query.value.trim().toLowerCase()
   if (!q) return [...base].sort((a, b) => Number(!a.children) - Number(!b.children))
   const leaves: FileNode[] = []

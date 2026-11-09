@@ -53,6 +53,7 @@ import { graphStyle } from './graphStyle'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
+import { graphOpen } from './graphOpen'
 import AssetsPanel from './AssetsPanel.vue'
 import JobsPanel from './panels/JobsPanel.vue'
 import NodesPanel from './panels/NodesPanel.vue'
@@ -820,10 +821,13 @@ onMounted(async () => {
   })
   ro.observe(host.value!)
   window.addEventListener('keydown', onKey)
+  // ComfyUI has no glass: menus opened from here go solid (see the style).
+  document.documentElement.dataset.marGraph = 'on'
 })
 onBeforeUnmount(() => {
   ro?.disconnect()
   window.removeEventListener('keydown', onKey)
+  delete document.documentElement.dataset.marGraph
 })
 
 // Switching look changes the geometry and the layout; switching surface
@@ -836,7 +840,9 @@ watch(
 // beside the rail; Templates, Settings and Cloud's Model Library open as
 // dialogs; Shortcuts as a panel along the bottom. ──
 type RailPanelId = '' | 'queue' | 'assets' | 'nodes' | 'models' | 'workflows' | 'apps'
-const panel = ref<RailPanelId>('')
+// A share link can open it on Media Assets (graphOpen.ts).
+const panel = ref<RailPanelId>(graphOpen.assets ? 'assets' : '')
+graphOpen.assets = false
 const dialog = ref<'' | 'templates' | 'settings' | 'models'>('')
 const settingsAt = ref<string>()
 const shortcuts = ref(false)
@@ -2813,5 +2819,42 @@ function addFromPanel(kind: NodeKind): void {
 }
 :root .proto-ui.proto-ui.proto-ui .is-current .mg-tool {
   border-radius: var(--mar-tab-item-radius);
+}
+
+/* ComfyUI has no glass. Every floating surface takes its solid
+   counterpart from the same DS tokens: the tone the glass showed, over
+   the canvas colour instead of over the blur. Menus teleported out of
+   the graph follow through data-mar-graph. */
+.mg {
+  --mg-float: color-mix(in oklch, var(--color-base-foreground) 8%, var(--color-content-background));
+}
+:root[data-ds-theme='light'] .mg {
+  --mg-float: var(--color-card-background);
+}
+.mg :is(.rp, .sp, .rp-dialog) {
+  --rp-surface: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background));
+}
+:root[data-ds-theme='light'] .mg :is(.rp, .sp, .rp-dialog) {
+  --rp-surface: var(--color-card-background);
+}
+.mg .mg-runmenu {
+  background: var(--color-content-background);
+}
+.mg,
+.mg * {
+  backdrop-filter: none !important;
+}
+:root[data-mar-ui='on'][data-mar-graph='on']
+  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) 6%,
+    var(--color-card-background)
+  );
+  backdrop-filter: none;
+}
+:root[data-mar-ui='on'][data-ds-theme='light'][data-mar-graph='on']
+  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
+  background-color: var(--color-card-background);
 }
 </style>

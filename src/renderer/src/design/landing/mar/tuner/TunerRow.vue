@@ -1,13 +1,22 @@
 <script setup lang="ts">
-/** UI Playground: one tweak, its label over its control. It comes and
- *  goes by its height, so the rows under it slide instead of jumping. */
-const { show = true, label } = defineProps<{ show?: boolean; label?: string }>()
+/** UI Playground: one tweak, its label beside its control (over it with
+ *  `stack`, for wide controls). It comes and goes by its height, so the
+ *  rows under it slide instead of jumping. */
+const {
+  show = true,
+  label,
+  stack
+} = defineProps<{ show?: boolean; label?: string; stack?: boolean }>()
 </script>
 
 <template>
   <Transition name="tw">
     <div v-if="show" class="tw-row">
-      <div class="tw-in flex flex-col gap-1.5">
+      <div v-if="label && !stack" class="tw-in flex items-center gap-3">
+        <span class="w-18 shrink-0 text-ui leading-tight text-subtle-foreground">{{ label }}</span>
+        <div class="flex min-w-0 flex-1 flex-col gap-1.5"><slot /></div>
+      </div>
+      <div v-else class="tw-in flex flex-col gap-1.5">
         <span v-if="label" class="truncate text-ui text-subtle-foreground">{{ label }}</span>
         <slot />
       </div>

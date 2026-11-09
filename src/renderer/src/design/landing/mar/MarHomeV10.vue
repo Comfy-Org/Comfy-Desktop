@@ -9,14 +9,12 @@ import MarStart from './MarStart.vue'
 import StarterCards from '../parts/StarterCards.vue'
 import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
-import { homeBuilds } from './homeBuilds'
 import ExampleArc from './userStates/ExampleArc.vue'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
-import StarterShelf from './setup/StarterShelf.vue'
 import HomeInstall from './setup/HomeInstall.vue'
-import { flow, homeFirst, homeOpen, localSetup, setupOn } from './setup/setupFlow'
+import { flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
@@ -44,8 +42,19 @@ import {
 } from '../useProto'
 import { can } from '../milestones'
 import { shownName } from '../account'
-import { TEMPLATES, thumb } from '../mock'
+import { TEMPLATES, thumb, type ProtoInstance } from '../mock'
 import { mock } from './assets/mock'
+
+/** A recent workflow opens in ComfyUI's graph, in this window, at any
+ *  milestone: each one is a graph of nodes, so that's where it lands. */
+function openRecent(env: ProtoInstance, workflow: string): void {
+  if (can.value.oneWindow) return hostActions.launch(env, workflow)
+  proto.detail = null
+  proto.activeInstanceId = env.id
+  const id = `tab-${Date.now()}`
+  proto.tabs = [{ id, title: env.name, instanceId: env.id, workflow }]
+  proto.activeTab = id
+}
 
 /**
  * Home: which version of each section shows is picked in marParts.ts. What
@@ -70,7 +79,6 @@ const firstRun = computed(() => firstTime.value && noLocal.value)
 // ComfyUI never shows before there is one. With the card only, the rest
 // that needs ComfyUI waits: the prompt, which could only run on Comfy
 // Cloud, and the first-run examples. With pick to install they stay.
-const installPending = computed(() => homeFirst.value && flow.homeCard && noLocal.value)
 const gated = computed(() => installPending.value && !homeOpen.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
 const tight = computed(() => parts.value.top === 'tight')
@@ -105,7 +113,7 @@ const recent = computed(() =>
 
 <template>
   <div class="mar-top-actions absolute top-3.5 right-4 z-10 flex items-center gap-2">
-    <CreateMenu v-if="!installPending" />
+    <CreateMenu v-if="!installPending && !flow.ready" />
   </div>
   <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
@@ -135,28 +143,18 @@ const recent = computed(() =>
     <!-- First run: the same sections, filled with ways to start instead of
          your work (UI Playground › First run). -->
     <!-- Home first: Local was picked on Run on, so the install waits here. -->
-    <HomeInstall v-if="installPending" />
+    <HomeInstall v-if="installPending || flow.ready" />
     <template v-if="gated"></template>
     <MarStart v-else-if="firstRun" />
     <div v-else>
       <!-- The Apps stage: the examples arc leads for everyone. Once Explore
            & Learn arrive, apps live in Explore only. -->
       <ExampleArc v-if="can.exploreApps && !can.explore" class="mt-6" />
-      <MarBuildsRow v-if="homeBuilds.id === 'on' && !onCloud" />
+      <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
            examples). -->
-      <!-- Local setup proposal: after the first install, the starter
-           workflows live here, not in Set up (setup/StarterShelf.vue). In
-           its M1 scope there are no examples at all. -->
-      <section
-        v-if="firstTime && !recent.length && setupOn && localSetup.scope === 'next'"
-        class="mt-10"
-      >
-        <SectionHeader title="Start from a workflow" />
-        <StarterShelf />
-      </section>
-      <section v-else-if="firstTime && !recent.length && !setupOn" class="mt-10">
+      <section v-if="firstTime && !recent.length && !setupOn" class="mt-10">
         <SectionHeader
           title="Start from an example"
           :link="can.explore ? 'All examples' : undefined"
@@ -203,7 +201,7 @@ const recent = computed(() =>
             :title="r.title"
             :meta="r.env?.name ?? ''"
             :right="r.w.modified"
-            @open="r.env && hostActions.launch(r.env, r.w.name)"
+            @open="r.env && openRecent(r.env, r.w.name)"
           />
         </ScrollRow>
       </section>

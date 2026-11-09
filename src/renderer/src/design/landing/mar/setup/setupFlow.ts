@@ -1,7 +1,7 @@
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { marUser, setUser } from '../userStates/userState'
-import { can, MILESTONES } from '../../milestones'
-import { go, newInstanceHooks, proto, toast } from '../../useProto'
+import { can } from '../../milestones'
+import { go, hostActions, instances, newInstanceHooks, proto, toast } from '../../useProto'
 
 /**
  * Local setup (UI Playground › Local setup): the proposed first install of
@@ -47,18 +47,28 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  steps, ending in the install. The two Home first options make Run on the
  *  only step and land on the Home, where the install waits on a card
  *  (HomeInstall.vue); they differ in what the Home offers before a build
- *  exists. Install card: only the card, nothing that needs ComfyUI. Pick to
- *  install: the Home as it is, and picking something that runs locally
- *  starts the install with it queued. Off by default, and only where there
- *  is a Home. */
+ *  exists. Install card: only the card, nothing that needs ComfyUI. Home
+ *  open: the first-run Home stays around the card. Off by default, and
+ *  only where there is a Home. */
 export type Onboarding = 'install' | 'home-running' | 'home' | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'install', label: 'Install first (today)' },
   { value: 'home-running', label: 'Home first: install runs behind' },
   { value: 'home', label: 'Home first: install card only' },
-  { value: 'home-open', label: 'Home first: pick to install' }
+  { value: 'home-open', label: 'Home first: Home stays open' }
 ]
 export type SetupStep = 'first' | 'setup' | 'change' | 'template' | 'installing' | 'error'
+/** Where the first install ends, once the Home exists. Home: the Home, with
+ *  a toast, as the prototype had it. Ready: the Home, with the install card
+ *  saying ComfyUI is ready and an Open ComfyUI. ComfyUI: straight into the
+ *  build, templates and all, as Desktop does today; the Home waits for the
+ *  second launch. */
+export type AfterInstall = 'home' | 'ready' | 'comfyui'
+export const AFTER_INSTALLS: { value: AfterInstall; label: string }[] = [
+  { value: 'home', label: 'Home, no message' },
+  { value: 'ready', label: 'Home: ComfyUI is ready card' },
+  { value: 'comfyui', label: 'Open ComfyUI (as today)' }
+]
 
 export const LOCAL_SETUPS: { value: LocalSetup; label: string }[] = [
   { value: 'off', label: 'Today' },
@@ -92,6 +102,7 @@ function load(): {
   cards: RunOnCards
   scope: SetupScope
   onboarding: Onboarding
+  after: AfterInstall
   os: SetupOs
   gpu: SetupGpu
 } {
@@ -103,6 +114,7 @@ function load(): {
       cards: RUN_ON_CARDS.some((c) => c.value === v.cards) ? v.cards : 'glow',
       scope: v.scope === 'next' ? 'next' : 'm1',
       onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'install',
+      after: AFTER_INSTALLS.some((a) => a.value === v.after) ? v.after : 'home',
       os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac',
       gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia'
     }
@@ -113,6 +125,7 @@ function load(): {
       cards: 'glow',
       scope: 'm1',
       onboarding: 'install',
+      after: 'home',
       os: 'mac',
       gpu: 'nvidia'
     }
@@ -128,6 +141,41 @@ export const canvas = ref(new URLSearchParams(location.search).get('canvas') ===
 // `?setup=first` links straight to the proposed flow, on first launch.
 const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'
 if (linkFirst) localSetup.mode = 'on'
+// The readable form: `?setup=first&tweaks=onboarding:home-running,after:ready,os:windows`.
+// Each key is a Local setup pick; the older one-param-each links still work below.
+const TWEAK_KEYS: Record<string, { value: string }[]> = {
+  scope: SETUP_SCOPES,
+  onboarding: ONBOARDINGS,
+  after: AFTER_INSTALLS,
+  os: SETUP_OSES,
+  gpu: SETUP_GPUS,
+  machine: MACHINES,
+  cards: RUN_ON_CARDS
+}
+/** The link that opens the flow as it is set now, in the readable form. */
+export const setupLink = computed(() => {
+  const d = {
+    scope: 'm1',
+    onboarding: 'install',
+    after: 'home',
+    os: 'mac',
+    gpu: 'nvidia',
+    machine: 'ready',
+    cards: 'glow'
+  }
+  const t = (Object.keys(TWEAK_KEYS) as (keyof typeof d)[])
+    .filter((k) => (localSetup as unknown as Record<string, string>)[k] !== d[k])
+    // onboarding and after imply the next scope; say it only when it stands alone
+    .filter(
+      (k) => k !== 'scope' || (localSetup.onboarding === 'install' && localSetup.after === 'home')
+    )
+    .map((k) => `${k}:${(localSetup as unknown as Record<string, string>)[k]}`)
+  const u = new URL(location.href)
+  u.search = ''
+  u.searchParams.set('setup', 'first')
+  if (t.length) u.searchParams.set('tweaks', t.join(','))
+  return decodeURIComponent(u.toString())
+})
 // A link can pick the scope: `&scope=m1` or `&scope=next`.
 const linkScope = new URLSearchParams(location.search).get('scope')
 if (linkScope === 'm1' || linkScope === 'next') localSetup.scope = linkScope
@@ -140,12 +188,26 @@ if (ONBOARDINGS.some((o) => o.value === linkOnboarding && o.value !== 'install')
   localSetup.onboarding = linkOnboarding as Onboarding
   localSetup.scope = 'next'
 }
+// And where the install ends: `&after=ready` or `&after=comfyui`.
+const linkAfter = new URLSearchParams(location.search).get('after')
+if (AFTER_INSTALLS.some((a) => a.value === linkAfter)) {
+  localSetup.after = linkAfter as AfterInstall
+  localSetup.scope = 'next'
+}
 // And the computer: `&os=windows` or `&os=linux`.
 const linkOs = new URLSearchParams(location.search).get('os')
 if (linkOs === 'mac' || linkOs === 'windows' || linkOs === 'linux') localSetup.os = linkOs
 // And its graphics: `&gpu=amd`, `&gpu=intel` or `&gpu=cpu`.
 const linkGpu = new URLSearchParams(location.search).get('gpu')
 if (SETUP_GPUS.some((g) => g.value === linkGpu)) localSetup.gpu = linkGpu as SetupGpu
+// The readable form wins over the one-param-each links above.
+for (const pair of (new URLSearchParams(location.search).get('tweaks') ?? '').split(',')) {
+  const [k, v] = pair.split(':')
+  if (k && v && TWEAK_KEYS[k]?.some((o) => o.value === v)) {
+    ;(localSetup as unknown as Record<string, string>)[k] = v
+    if (k === 'onboarding' || k === 'after') localSetup.scope = 'next'
+  }
+}
 
 watch(
   () => ({ ...localSetup }),
@@ -164,7 +226,7 @@ export const setupOn = computed(() => can.value.design && localSetup.mode === 'o
 export const homeFirst = computed(
   () => setupOn.value && localSetup.scope === 'next' && localSetup.onboarding !== 'install'
 )
-/** Home first › Pick to install: the Home keeps its ways to start. */
+/** Home first › Home stays open: the first-run Home shows around the card. */
 export const homeOpen = computed(() => homeFirst.value && localSetup.onboarding === 'home-open')
 /** Home first › Install runs behind: Run on and Set up, then the Home with
  *  the install already going on its card; apps run on Comfy Cloud meanwhile. */
@@ -173,11 +235,12 @@ export const homeRunning = computed(
 )
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
-// landing; the next iterations are the latest one, with its Home.
+// landing; the next iterations land on Milestone 2 (Explore apps), the Home
+// that ships next, not on the furthest one.
 const M1_MILESTONE = 2
-const LATEST_MILESTONE = Number(MILESTONES.at(-1)!.value)
+const M2_MILESTONE = 4.5
 function showScope(): void {
-  const m = localSetup.scope === 'm1' ? M1_MILESTONE : LATEST_MILESTONE
+  const m = localSetup.scope === 'm1' ? M1_MILESTONE : M2_MILESTONE
   if (proto.milestone !== m) proto.milestone = m
 }
 
@@ -409,8 +472,20 @@ export const flow = reactive({
    *  install modal then only hides it. */
   background: false,
   /** Home first: Local was picked, so the Home shows the install card. */
-  homeCard: false
+  homeCard: false,
+  /** After install › Ready: the card stays, saying ComfyUI is ready, until
+   *  Open ComfyUI or Not now. */
+  ready: false
 })
+/** Home first, Local picked and not installed yet: the install waits (or
+ *  runs) on the Home's card. */
+export const installPending = computed(
+  () => homeFirst.value && flow.homeCard && !instances.value.some((i) => i.kind === 'local')
+)
+/** The install runs (or failed) behind the Home: the sidebar's Builds show it. */
+export const installingBehind = computed(
+  () => flow.background && (flow.running || flow.step === 'error')
+)
 
 export const lowSpace = computed(() => localSetup.machine === 'lowdisk' && !flow.movedDisk)
 // Only a Mac can be an Intel Mac.
@@ -458,17 +533,45 @@ function finish(): void {
   stop()
   marUser.local = 'one'
   flow.open = false
-  // Home first: the person is already on the Home; the build just turns up.
-  if (flow.background) {
-    flow.background = false
-    flow.homeCard = false
-    if (flow.picked) toast(`Opening ComfyUI with ${flow.picked.title}`)
+  const picked = flow.picked
+  const m1 = localSetup.scope === 'm1'
+  flow.background = false
+  flow.homeCard = false
+  // M1 has no Home: the install lands on All builds, in M1's own shell.
+  if (m1) {
+    showScope()
+    go('environments')
     return
   }
-  // M1 has no Home: the install lands on All builds, in M1's own shell.
   showScope()
-  // No toast: the page changes, and the launch itself says it is opening.
-  go(localSetup.scope === 'm1' ? 'environments' : 'overview')
+  // Where the first install ends (UI Playground › Local setup › After install).
+  if (localSetup.after === 'comfyui') {
+    go('overview')
+    // The new build joins the list on the next tick.
+    void nextTick(() => openComfyUI(picked?.title))
+    return
+  }
+  go('overview')
+  // Home: no toast, the page changes and the new build shows in the sidebar.
+  if (localSetup.after === 'ready') {
+    flow.homeCard = true
+    flow.ready = true
+  }
+}
+
+/** Opens the new local build, as Desktop opens ComfyUI today. */
+export function openComfyUI(what?: string): void {
+  flow.ready = false
+  flow.homeCard = false
+  const inst = instances.value.find((i) => i.kind === 'local')
+  if (inst) hostActions.launch(inst, what)
+  else toast('Opening ComfyUI')
+}
+
+/** After install › Ready › Not now: the card goes; the Home stays. */
+export function dismissReady(): void {
+  flow.ready = false
+  flow.homeCard = false
 }
 
 /** Entry: the first launch, then every New Instance button. */
@@ -484,6 +587,7 @@ export function openSetup(): boolean {
   flow.confirmLowDisk = false
   flow.logs = false
   flow.background = false
+  flow.ready = false
   flow.open = true
   return true
 }
@@ -589,6 +693,14 @@ export function cancelInstall(): void {
   flow.background = false
   flow.confirmCancel = false
   flow.percent = 0
+}
+
+/** UI Playground › Start at Home: out of the onboarding, onto the Home. */
+export function showHome(): void {
+  stop()
+  flow.open = false
+  proto.activeTab = 'home'
+  go('overview')
 }
 
 export function closeSetup(): void {

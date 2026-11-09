@@ -1,17 +1,24 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   FileOutput,
   Grid3x3,
   ImageOff,
   Layers,
+  LayoutDashboard,
   LayoutGrid,
+  PanelRight,
   Plus,
   ScanSearch,
   SearchX,
   SlidersHorizontal,
+  Tag,
   TableOfContents,
   Trash2,
   Upload,
@@ -31,6 +38,9 @@ import type { MarAsset } from '../pages/assetsStore'
 import type { MenuLine } from '../pages/menu'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from './AssetFilterMenu.vue'
+import AssetSidePanel from './AssetSidePanel.vue'
+import BulkTagMenu from './BulkTagMenu.vue'
+import { graphOpen } from './graphOpen'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
 
@@ -43,11 +53,17 @@ import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
  * its details on the right and tags you can edit, the same view Desktop
  * shows read-only. Imported takes uploads, from the button or a drop on
  * the panel. An asset drags onto the canvas as an Image node.
+ *
+ * From the Media Assets designs: Masonry beside the grids; View settings
+ * that show preview assets (hidden by default, marked PREV), file names
+ * and file details; Show details, which opens the asset's details on the
+ * right of the canvas and follows the selection; and the selection bar's
+ * Tag, which tags every selected asset at once.
  */
 const { cloud } = defineProps<{ cloud: boolean }>()
 const emit = defineEmits<{ close: []; insert: [asset: { src: string; name: string }] }>()
 
-type View = 'list' | 'small' | 'large'
+type View = 'list' | 'small' | 'large' | 'masonry'
 type Tab = 'Generated' | 'Imported'
 const TABS: { value: Tab; label: string }[] = [
   { value: 'Generated', label: 'Generated' },
@@ -55,20 +71,24 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 const tab = ref<Tab>('Generated')
 const query = ref('')
-const menu = ref<'' | 'view'>('')
+const menu = ref<'' | 'view' | 'sort'>('')
+const viewAnchor = ref<HTMLElement>()
+onClickOutside(viewAnchor, () => (menu.value = ''))
+// Masonry by default; a pick is remembered per viewer.
+const VIEW_KEY = 'Comfy.Assets.Sidebar.ViewMode.v2'
 const view = ref<View>(
   (() => {
     try {
-      return (localStorage.getItem('Comfy.Assets.Sidebar.ViewMode') as View) || 'large'
+      return (localStorage.getItem(VIEW_KEY) as View) || 'masonry'
     } catch {
-      return 'large'
+      return 'masonry'
     }
   })()
 )
 function setView(v: View): void {
   view.value = v
   try {
-    localStorage.setItem('Comfy.Assets.Sidebar.ViewMode', v)
+    localStorage.setItem(VIEW_KEY, v)
   } catch {
     // Storage blocked: the pick lasts for this window only.
   }
@@ -76,8 +96,19 @@ function setView(v: View): void {
 const VIEWS = [
   { value: 'list', label: 'List view', icon: TableOfContents },
   { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
-  { value: 'large', label: 'Grid (large)', icon: LayoutGrid }
+  { value: 'large', label: 'Grid (large)', icon: LayoutGrid },
+  { value: 'masonry', label: 'Masonry', icon: LayoutDashboard }
 ] as const
+// What a card shows: preview assets are off by default, so the panel
+// lists what was saved.
+const showPreviews = ref(false)
+const showName = ref(true)
+const showDetails = ref(true)
+const DISPLAY = [
+  { label: 'Show preview assets', on: showPreviews },
+  { label: 'Show file name', on: showName },
+  { label: 'Show file details', on: showDetails }
+]
 const sort = ref('Newest first')
 const filter = ref(noFilter())
 const MEDIA = [
@@ -90,7 +121,13 @@ const MEDIA = [
 
 /** The panel's pictures as assets, so the details and filters read them
  *  the way Desktop does. Imported ones carry the "-in-" id. */
-type PanelAsset = MarAsset & { kind: Tab; seconds: number; outputs: number; src: string }
+type PanelAsset = MarAsset & {
+  kind: Tab
+  seconds: number
+  outputs: number
+  src: string
+  preview?: boolean
+}
 const WHEN: [string, number][] = [
   ['12 min ago', 12],
   ['1 hour ago', 60],
@@ -130,7 +167,8 @@ const ALL = computed<PanelAsset[]>(() => [
       when,
       kind,
       seconds: 6 + ((i * 7.3) % 24),
-      outputs: i % 4 === 1 ? 4 : 1
+      outputs: i % 4 === 1 ? 4 : 1,
+      preview: kind === 'Generated' && i % 5 === 2
     }
   })
 ])
@@ -142,6 +180,7 @@ const shown = computed(() => {
     (a) =>
       a.kind === tab.value &&
       !deleted.value.has(a.id) &&
+      (showPreviews.value || !a.preview) &&
       (!filter.value.types.length || filter.value.types.includes(a.type)) &&
       passes(a, filter.value) &&
       (!q || a.name.toLowerCase().includes(q))
@@ -166,6 +205,19 @@ const SORTS = computed(() => [
     ? ['Generation time (longest first)', 'Generation time (fastest first)']
     : [])
 ])
+/** The cards in columns: one run for the grids and the list, two
+ *  balanced columns for Masonry (each card to the shorter one). */
+const groups = computed<PanelAsset[][]>(() => {
+  if (view.value !== 'masonry') return [shown.value]
+  const cols: PanelAsset[][] = [[], []]
+  const h = [0, 0]
+  for (const a of shown.value) {
+    const i = h[0]! <= h[1]! ? 0 : 1
+    cols[i]!.push(a)
+    h[i]! += 1 / factsFor(a).ratio + 0.25
+  }
+  return cols
+})
 /** "PNG 512×768": the format and the size, as ComfyUI labels a file. */
 function meta(a: PanelAsset): string {
   if (a.status) return a.statusLabel ?? ''
@@ -189,12 +241,40 @@ function remove(ids: string[]): void {
 }
 
 const detail = ref<PanelAsset | null>(null)
+// Show details: the right panel follows the selection, or the asset it
+// was opened on when nothing is selected.
+const side = ref<PanelAsset | null>(null)
+const sideOpen = ref(false)
+const sideAssets = computed(() =>
+  selected.value.size
+    ? ALL.value.filter((a) => selected.value.has(a.id))
+    : side.value
+      ? [side.value]
+      : []
+)
+function showSide(a: PanelAsset): void {
+  side.value = a
+  selected.value = new Set([a.id])
+  sideOpen.value = true
+}
+const tagging = ref(false)
+const selectedAssets = computed(() => ALL.value.filter((a) => selected.value.has(a.id)))
+watch(
+  () => selected.value.size,
+  (n) => n || (tagging.value = false)
+)
 const finished = computed(() => shown.value.filter((a) => !a.status))
+// A share link can open the first asset in Inspect asset (graphOpen.ts).
+if (graphOpen.inspect) {
+  detail.value = finished.value[0] ?? null
+  graphOpen.inspect = false
+}
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
 function lines(a: PanelAsset): MenuLine[] {
   return [
     { label: 'Inspect asset', icon: ScanSearch, run: () => (detail.value = a) },
+    { label: 'Show details', icon: PanelRight, run: () => showSide(a) },
     {
       label: 'Insert as node in workflow',
       icon: Plus,
@@ -293,20 +373,22 @@ function upload(files: FileList | null | undefined): void {
           "
         />
         <AssetFilterMenu v-model="filter" :types="MEDIA" :tags="TAGS" />
-        <span class="rp-anchor">
+        <span ref="viewAnchor" class="rp-anchor">
           <button
             type="button"
             class="rp-icon is-field"
-            :class="menu === 'view' && 'is-on'"
+            :class="menu && 'is-on'"
             :title="cloud ? 'Sort and view' : 'View settings'"
             :aria-label="cloud ? 'Sort and view' : 'View settings'"
-            :aria-expanded="menu === 'view'"
-            @click="menu = menu === 'view' ? '' : 'view'"
+            :aria-expanded="!!menu"
+            @click="menu = menu ? '' : 'view'"
           >
             <SlidersHorizontal :size="15" />
           </button>
           <div v-if="menu === 'view'" class="rp-menu is-end ap-menu" role="menu">
-            <p class="rp-menu-label">View</p>
+            <p class="rp-menu-label ap-menu-head">
+              View<span>{{ VIEWS.find((v) => v.value === view)?.label }}</span>
+            </p>
             <div class="mar-pseg ap-views" role="radiogroup" aria-label="View">
               <button
                 v-for="v in VIEWS"
@@ -324,17 +406,46 @@ function upload(files: FileList | null | undefined): void {
               </button>
             </div>
             <span class="rp-menu-sep" />
-            <p class="rp-menu-label">Sort by</p>
             <button
-              v-for="s in SORTS"
-              :key="s"
+              v-for="d in DISPLAY"
+              :key="d.label"
+              type="button"
+              role="menuitemcheckbox"
+              class="rp-row ap-check"
+              :aria-checked="d.on.value"
+              @click="d.on.value = !d.on.value"
+            >
+              <span>{{ d.label }}</span
+              ><Check v-if="d.on.value" :size="14" />
+            </button>
+            <span class="rp-menu-sep" />
+            <button
+              type="button"
+              role="menuitem"
+              class="rp-row ap-check"
+              aria-haspopup="menu"
+              @click="menu = 'sort'"
+            >
+              <span>Sort by</span><span class="ap-menu-val">{{ sort }}</span
+              ><ChevronRight :size="14" />
+            </button>
+          </div>
+          <div v-else-if="menu === 'sort'" class="rp-menu is-end ap-menu" role="menu">
+            <button type="button" class="rp-row ap-back" @click="menu = 'view'">
+              <ChevronLeft :size="14" /><span>Sort by</span>
+            </button>
+            <span class="rp-menu-sep" />
+            <button
+              v-for="o in SORTS"
+              :key="o"
               type="button"
               role="menuitemradio"
-              class="rp-row"
-              :data-state="sort === s ? 'checked' : 'unchecked'"
-              @click="((sort = s), (menu = ''))"
+              class="rp-row ap-check"
+              :aria-checked="sort === o"
+              @click="((sort = o), (menu = ''))"
             >
-              {{ s }}
+              <span>{{ o }}</span
+              ><Check v-if="sort === o" :size="14" />
             </button>
           </div>
         </span>
@@ -353,46 +464,53 @@ function upload(files: FileList | null | undefined): void {
       <div
         v-if="shown.length"
         class="ap-items"
-        :class="`is-${view}`"
+        :class="[`is-${view}`, !showName && 'no-name', !showDetails && 'no-meta']"
         :aria-label="`${tab} assets`"
         @click.self="selected = new Set()"
       >
-        <div
-          v-for="a in shown"
-          :key="a.id"
-          class="ap-drag"
-          draggable="true"
-          @dragstart="drag(a, $event)"
-        >
-          <MarItem
-            :name="a.name.replace(/\.[^.]+$/, '')"
-            :thumb="a.src || undefined"
-            :cover="a"
-            :meta="view === 'small' ? undefined : meta(a)"
-            :layout="view === 'list' ? 'list' : 'grid'"
-            ratio="1 / 1"
-            :status="a.status"
-            :status-label="a.statusLabel"
-            :selected="selected.has(a.id)"
-            :selecting="selected.size > 0"
-            :lines="lines(a)"
-            context-menu
-            menu-align="start"
-            :title="`${a.name} · drag onto the canvas`"
-            @open="toggle(a)"
-            @select="toggle(a)"
+        <div v-for="(col, ci) in groups" :key="ci" class="ap-col">
+          <div
+            v-for="a in col"
+            :key="a.id"
+            class="ap-drag"
+            draggable="true"
+            @dragstart="drag(a, $event)"
           >
-            <template v-if="a.outputs > 1 && tab === 'Generated'" #overlay>
-              <span class="ap-stack" :aria-label="`${a.outputs} outputs`">
-                <MediaChip :icon="Layers">{{ a.outputs }}</MediaChip>
-              </span>
-            </template>
-            <template v-if="view === 'list' && a.outputs > 1 && tab === 'Generated'" #cols>
-              <span class="ap-stack-row" :aria-label="`${a.outputs} outputs`"
-                ><Layers :size="12" />{{ a.outputs }}</span
-              >
-            </template>
-          </MarItem>
+            <MarItem
+              :name="a.name.replace(/\.[^.]+$/, '')"
+              :thumb="a.src || undefined"
+              :cover="a"
+              :meta="view === 'small' ? undefined : meta(a)"
+              :layout="view === 'list' ? 'list' : 'grid'"
+              :ratio="view === 'masonry' ? String(factsFor(a).ratio) : '1 / 1'"
+              :status="a.status"
+              :status-label="a.statusLabel"
+              :selected="selected.has(a.id)"
+              :selecting="selected.size > 0"
+              :lines="lines(a)"
+              context-menu
+              menu-align="start"
+              :title="`${a.name} · drag onto the canvas`"
+              @open="toggle(a)"
+              @select="toggle(a)"
+            >
+              <template v-if="(a.outputs > 1 && tab === 'Generated') || a.preview" #overlay>
+                <span
+                  v-if="a.outputs > 1 && tab === 'Generated'"
+                  class="ap-stack"
+                  :aria-label="`${a.outputs} outputs`"
+                >
+                  <MediaChip :icon="Layers">{{ a.outputs }}</MediaChip>
+                </span>
+                <span v-if="a.preview" class="ap-prev" title="Preview asset, not saved">Prev</span>
+              </template>
+              <template v-if="view === 'list' && a.outputs > 1 && tab === 'Generated'" #cols>
+                <span class="ap-stack-row" :aria-label="`${a.outputs} outputs`"
+                  ><Layers :size="12" />{{ a.outputs }}</span
+                >
+              </template>
+            </MarItem>
+          </div>
         </div>
       </div>
       <MarEmpty
@@ -435,12 +553,29 @@ function upload(files: FileList | null | undefined): void {
       <button
         type="button"
         class="rp-icon"
+        :class="tagging && 'is-on'"
+        aria-label="Tag"
+        title="Tag"
+        :aria-expanded="tagging"
+        @click="tagging = !tagging"
+      >
+        <Tag :size="14" />
+      </button>
+      <button
+        type="button"
+        class="rp-icon"
         aria-label="Delete"
         title="Delete"
         @click="remove([...selected])"
       >
         <Trash2 :size="14" />
       </button>
+      <BulkTagMenu
+        v-if="tagging"
+        :selected="selectedAssets"
+        :pool="inTab"
+        @close="tagging = false"
+      />
     </div>
     <AssetDetail
       v-if="detail"
@@ -452,6 +587,13 @@ function upload(files: FileList | null | undefined): void {
       @close="detail = null"
     />
   </RailPanel>
+  <!-- Show details: on the right of the canvas, outside the panel. -->
+  <AssetSidePanel
+    v-if="sideOpen"
+    :assets="sideAssets"
+    @close="sideOpen = false"
+    @inspect="detail = $event as PanelAsset"
+  />
 </template>
 
 <style>
@@ -469,6 +611,40 @@ function upload(files: FileList | null | undefined): void {
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   padding: 6px 8px 12px;
+}
+.ap-col {
+  display: contents;
+}
+.ap-items.is-masonry {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+.ap-items.is-masonry .ap-col {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+.ap-items.no-name .mar-item-name,
+.ap-items.no-meta .mar-item-meta {
+  display: none;
+}
+:root .proto-ui.proto-ui.proto-ui .rp .ap-items.no-name.no-meta .mar-item-text {
+  display: none;
+}
+.ap-prev {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--color-base-foreground);
+  color: var(--color-content-background);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+  text-transform: uppercase;
 }
 .ap-drag {
   min-width: 0;
@@ -589,7 +765,52 @@ function upload(files: FileList | null | undefined): void {
   font-variant-numeric: tabular-nums;
 }
 .ap-menu {
-  min-width: 220px;
+  min-width: 240px;
+}
+/* View settings: the view named beside its label; each display option
+   says its state with a check on the right; Sort by drills into its own
+   list, so the menu stays short. */
+.ap-menu-head {
+  display: flex;
+  justify-content: space-between;
+}
+.ap-menu-head span {
+  color: var(--rp-text);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-check,
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-check:hover,
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-back:hover {
+  background: var(--rp-hover);
+}
+.ap-check > span:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.ap-check > svg,
+.ap-back > svg {
+  flex: none;
+  color: var(--rp-meta);
+}
+.ap-check > svg:last-child:not(:first-child) {
+  color: var(--rp-text);
+}
+.ap-menu-val {
+  overflow: hidden;
+  color: var(--rp-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-back {
+  font-weight: 500;
 }
 .ap-views {
   display: flex;

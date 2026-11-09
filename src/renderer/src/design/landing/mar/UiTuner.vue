@@ -13,18 +13,17 @@ import { COVERS, cover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
-import { homeBuilds } from './homeBuilds'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_PAGE_LOOKS, appPage } from './apps/appPage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
-import { P20, p20 } from './p20/p20'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
-  LOCAL_SETUPS,
   ONBOARDINGS,
+  AFTER_INSTALLS,
+  setupLink,
   SETUP_SCOPES,
   MACHINES,
   SETUP_GPUS,
@@ -32,21 +31,22 @@ import {
   SETUP_SCREENS,
   canvas,
   RUN_ON_CARDS,
+  flow,
   localSetup,
-  openSetup,
+  showHome,
   showScreen,
   type Screen
 } from './setup/setupFlow'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
-import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
+import { MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
 import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
-import { proto } from '../useProto'
+import { proto, toast } from '../useProto'
 import { can } from '../milestones'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
-import { copyShareUrl, shareSummary } from './shareLink'
+import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
 import NavOptionsTuner from './NavOptionsTuner.vue'
 import Seg from './tuner/TunerSeg.vue'
 import Row from './tuner/TunerRow.vue'
@@ -69,10 +69,6 @@ const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
   { value: 'wires', label: 'Wires · a graph traced in light' },
   { value: 'grade', label: 'Latent grade · latest output, duotone' }
 ]
-const HOME_BUILD_OPTIONS = [
-  { value: 'off', label: 'Off' },
-  { value: 'on', label: 'On' }
-] as const
 const ACCOUNTS = [
   { value: 'in', label: 'Signed in' },
   { value: 'out', label: 'Signed out' }
@@ -85,22 +81,21 @@ const SURFACE_OPTIONS = SURFACES.map((sf) => ({
   value: sf.value,
   label: sf.value === 'desktop' ? 'Desktop' : 'Cloud'
 }))
+/** Desktop's start point: the onboarding (its first screen) or the Home. */
+const START_AT = [
+  { value: 'onboarding', label: 'Onboarding' },
+  { value: 'home', label: 'Home' }
+] as const
+const startAt = computed({
+  get: () => (flow.open && flow.takeover ? 'onboarding' : 'home'),
+  set: (v: 'onboarding' | 'home') =>
+    v === 'onboarding' ? showScreen((setupScreen.value = 'first')) : showHome()
+})
 const DEPLOY_STATES = SCENARIOS.map((s) => ({ value: s.id, label: s.label }))
 const deployState = computed({
   get: () => dep.scenario,
   set: (s: Scenario) => (scenarioPick.want = s)
 })
-
-const P20_ROWS: { key: keyof typeof P20; label: string }[] = [
-  { key: 'recent', label: 'Recently used' },
-  { key: 'news', label: "What's new" },
-  { key: 'spaces', label: 'Spaces' },
-  { key: 'builds', label: 'Builds' },
-  { key: 'panel', label: 'Right panel' },
-  { key: 'density', label: 'Density' },
-  { key: 'rail', label: 'Collapsed rail' }
-]
-const p20Options = (k: keyof typeof P20): { value: string; label: string }[] => [...P20[k]]
 
 const zoomOptions = ZOOMS.map((z) => ({ value: String(z), label: `${Math.round(z * 100)}%` }))
 const zoomPick = computed({
@@ -120,13 +115,12 @@ function set(key: keyof Tuning, value: string): void {
 
 // Which tweaks each group holds. This page lists only the ones whose
 // predicate holds now; Reset and the dot follow what's listed.
-const GLOBAL: TweakId[] = ['surface', 'brandMotif']
+const GLOBAL: TweakId[] = ['brandMotif']
 // States: the situation being simulated (who, what's installed, signed in,
 // how a page or the credits are doing), apart from the design options.
 const STATES: { id: TweakId; show: () => boolean }[] = [
   // First run lives on Home.
   { id: 'user', show: () => can.value.home },
-  { id: 'homeBuilds', show: () => when.homeBuilds.value },
   { id: 'appsStage', show: () => when.appsStage.value },
   { id: 'account', show: () => true },
   { id: 'pageState', show: () => when.pageState.value },
@@ -147,7 +141,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
-const MORE: TweakId[] = ['screen', 'look', 'knobs', 'p20']
+const MORE: TweakId[] = ['screen', 'look', 'knobs']
 const pageIds = computed(() => PAGE.filter((p) => p.show()).map((p) => p.id))
 const stateIds = computed(() => STATES.filter((p) => p.show()).map((p) => p.id))
 const shows = (id: TweakId): boolean => pageIds.value.includes(id) || stateIds.value.includes(id)
@@ -178,6 +172,8 @@ async function copyLink(): Promise<void> {
   clearTimeout(copiedTimer)
   copiedTimer = setTimeout(() => (copied.value = false), 1600)
 }
+// The link itself, shown as it will be copied.
+const linkUrl = computed(() => shareUrl())
 // What the link opens, in a line: the milestone, then what it changes.
 const linkSays = computed(() => {
   const [milestone = '', ...changes] = shareSummary()
@@ -189,6 +185,18 @@ const linkSays = computed(() => {
     all: [milestone, ...changes].join('\n')
   }
 })
+
+// Copy link: the clipboard where allowed; the box is select-all otherwise.
+const linkCopied = ref(false)
+async function copySetupLink(): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(setupLink.value)
+    linkCopied.value = true
+    setTimeout(() => (linkCopied.value = false), 1600)
+  } catch {
+    toast('Select the link and copy it')
+  }
+}
 </script>
 
 <template>
@@ -218,23 +226,75 @@ const linkSays = computed(() => {
         class="mar-tuner-body flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4"
         @scroll.passive="onScroll"
       >
-        <!-- Global: where, and the brand motif. Applies everywhere. -->
-        <section aria-label="Global" class="flex flex-col">
-          <GroupHead title="Global" :changed="dirty(GLOBAL)" @reset="resetGroup(GLOBAL)" />
+        <!-- Start: where, then (on Desktop) where it opens. The rest
+             of the panel follows from here. -->
+        <section aria-label="Start" class="mb-6 flex flex-col">
+          <GroupHead
+            title="Start"
+            :changed="dirty(['surface', 'localSetup'])"
+            @reset="resetGroup(['surface', 'localSetup'])"
+          />
           <!-- Cloud's first screen is Home: before it, only the desktop app. -->
           <Row v-if="can.home" label="Surface">
             <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
           </Row>
-          <!-- Desktop only: the proposed first launch, from its first screen. -->
-          <Row v-if="can.design && !onCloud" label="Onboarding">
-            <Button
-              variant="secondary"
-              size="sm"
-              class="w-full"
-              @click="showScreen((setupScreen = 'first'))"
-              >Start onboarding</Button
-            >
+          <Row v-if="can.design && !onCloud" label="Start at" stack>
+            <Seg v-model="startAt" label="Start at" :options="START_AT" />
           </Row>
+          <!-- The proposed onboarding (mar/setup), on Desktop: its options
+               show while it's on screen. -->
+          <template v-if="can.design && !onCloud && startAt === 'onboarding'">
+            <!-- M1 ships Builds only: no Home, no example workflows. -->
+            <Row label="Scope" stack>
+              <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
+            </Row>
+            <!-- Home first needs the Home, so it is offered past M1 only. -->
+            <Row v-if="localSetup.scope === 'next'" label="Onboarding">
+              <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" class="w-full" />
+            </Row>
+            <Row v-if="localSetup.scope === 'next'" label="After install">
+              <Select v-model="localSetup.after" :options="AFTER_INSTALLS" class="w-full" />
+            </Row>
+            <Row label="Jump to">
+              <Select
+                :model-value="setupScreen ?? 'first'"
+                :options="SETUP_SCREENS"
+                class="w-full"
+                @update:model-value="(v) => v && showScreen((setupScreen = v))"
+              />
+            </Row>
+            <Row label="First screen cards">
+              <Select v-model="localSetup.cards" :options="RUN_ON_CARDS" class="w-full" />
+              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="canvas = true"
+                >Compare cards</Button
+              >
+            </Row>
+            <Row label="Operating system">
+              <Select v-model="localSetup.os" :options="SETUP_OSES" class="w-full" />
+            </Row>
+            <Row v-if="localSetup.os !== 'mac'" label="Graphics">
+              <Select v-model="localSetup.gpu" :options="SETUP_GPUS" class="w-full" />
+            </Row>
+            <Row label="This computer">
+              <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
+            </Row>
+            <!-- The link to this exact setup, in the readable form:
+                 ?setup=first&tweaks=key:value,… -->
+            <Row label="Link">
+              <code
+                class="block rounded-control bg-secondary-background px-2.5 py-2 font-mono text-[11px] leading-4 break-all text-muted-foreground select-all"
+                >{{ setupLink }}</code
+              >
+              <Button variant="secondary" size="sm" class="self-start" @click="copySetupLink"
+                ><Link :size="13" />{{ linkCopied ? 'Copied' : 'Copy link' }}</Button
+              >
+            </Row>
+          </template>
+        </section>
+
+        <!-- Global: the brand motif. Applies everywhere. -->
+        <section aria-label="Global" class="mb-6 flex flex-col">
+          <GroupHead title="Global" :changed="dirty(GLOBAL)" @reset="resetGroup(GLOBAL)" />
           <!-- The trio in empty states, step progress and loaders. -->
           <Row label="Brand motif">
             <Seg v-model="brandMotif.id" label="Brand motif" :options="BRAND_MOTIFS" />
@@ -244,7 +304,7 @@ const linkSays = computed(() => {
         <!-- States: the situation on screen (who, what's installed, signed
              in, how the page and the credits are doing). Each one shows
              only where it applies. -->
-        <section aria-label="States" class="mt-6 flex flex-col">
+        <section aria-label="States" class="flex flex-col">
           <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
           <!-- The Deploy as API modal's states, first while it's open. -->
           <Row :show="shows('deployState')" label="Deploy state">
@@ -260,19 +320,6 @@ const linkSays = computed(() => {
               :model-value="marUser.user"
               @update:model-value="setUser"
             />
-          </Row>
-          <!-- Local builds: what's on this computer, and on Home whether
-               it shows a Builds row. On Cloud (a browser) there is none. -->
-          <Row :label="onCloud ? 'Local builds · none in a browser' : 'Local builds'">
-            <Seg
-              v-model="marUser.local"
-              label="Local install"
-              :options="MAR_LOCALS"
-              :class="onCloud && 'pointer-events-none opacity-50'"
-            />
-          </Row>
-          <Row :show="shows('homeBuilds')" label="Builds row on Home">
-            <Seg v-model="homeBuilds.id" label="Builds row on Home" :options="HOME_BUILD_OPTIONS" />
           </Row>
           <Row :show="shows('appsStage')" label="Apps stage">
             <Seg v-model="appsStage.id" label="Apps stage" :options="APPS_STAGES" />
@@ -336,69 +383,17 @@ const linkSays = computed(() => {
               >Adds what Builds already has: Settings, build problems and Remote.</span
             >
           </Row>
-          <Row :show="shows('cover')" label="Workflow cover">
+          <Row :show="shows('cover')" label="Workflow cover" stack>
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
           </Row>
-          <Row :show="shows('graph')" label="Graph look">
+          <Row :show="shows('graph')" label="Graph look" stack>
             <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
           </Row>
           <Row :show="shows('ports')"><NavOptionsTuner /></Row>
         </section>
 
-        <!-- Local setup (mar/setup): the proposed install flow behind New
-             Instance and "This computer", on Desktop. Still being defined. -->
-        <section v-if="can.design && !onCloud" aria-label="Local setup" class="mt-6 flex flex-col">
-          <GroupHead
-            title="Local setup"
-            note="New Instance"
-            :changed="dirty(['localSetup'])"
-            @reset="resetGroup(['localSetup'])"
-          />
-          <Row label="Flow">
-            <Seg v-model="localSetup.mode" label="Flow" :options="LOCAL_SETUPS" />
-          </Row>
-          <template v-if="localSetup.mode === 'on'">
-            <!-- M1 ships Builds only: no Home, no example workflows. -->
-            <Row label="Scope">
-              <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
-            </Row>
-            <!-- Home first needs the Home, so it is offered past M1 only. -->
-            <Row v-if="localSetup.scope === 'next'" label="Onboarding">
-              <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" class="w-full" />
-            </Row>
-            <Row label="Jump to">
-              <Select
-                :model-value="setupScreen ?? 'first'"
-                :options="SETUP_SCREENS"
-                class="w-full"
-                @update:model-value="(v) => v && showScreen((setupScreen = v))"
-              />
-            </Row>
-            <Row label="First screen cards">
-              <Select v-model="localSetup.cards" :options="RUN_ON_CARDS" class="w-full" />
-              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="canvas = true"
-                >Compare cards</Button
-              >
-            </Row>
-            <Row label="Operating system">
-              <Select v-model="localSetup.os" :options="SETUP_OSES" class="w-full" />
-            </Row>
-            <Row v-if="localSetup.os !== 'mac'" label="Graphics">
-              <Select v-model="localSetup.gpu" :options="SETUP_GPUS" class="w-full" />
-            </Row>
-            <Row label="This computer">
-              <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
-            </Row>
-            <Row>
-              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="openSetup()"
-                >Open the flow</Button
-              >
-            </Row>
-          </template>
-        </section>
-
         <!-- More: the screen simulator, the token knobs and the Figma
-             explorations (p20/). Not the direction; only for reference. -->
+             Not the direction; only for reference. -->
         <details
           class="mar-tuner-more mt-6"
           :open="moreOpen"
@@ -408,7 +403,7 @@ const linkSays = computed(() => {
             class="flex h-6 cursor-pointer list-none items-center gap-1.5 rounded-[5px] text-ui font-medium text-base-foreground outline-none focus-visible:ring-2 focus-visible:ring-border-focus [&::-webkit-details-marker]:hidden"
           >
             <span>More</span>
-            <span class="font-normal text-subtle-foreground">· screen, surfaces, Figma</span>
+            <span class="font-normal text-subtle-foreground">· screen, surfaces</span>
             <span
               v-if="dirty(MORE)"
               class="size-1.5 shrink-0 rounded-full bg-muted-foreground"
@@ -426,7 +421,7 @@ const linkSays = computed(() => {
             </button>
           </summary>
           <div class="flex flex-col pt-1">
-            <Row label="Screen">
+            <Row label="Screen" stack>
               <div class="flex gap-1.5">
                 <Select v-model="screen.id" :options="screenOptions" class="min-w-0 flex-1" />
                 <Select v-model="zoomPick" :options="zoomOptions" class="w-22 shrink-0" />
@@ -449,23 +444,6 @@ const linkSays = computed(() => {
                 @update:model-value="(v) => set(k.key, v)"
               />
             </Row>
-            <Row label="Figma explorations">
-              <div class="flex flex-col gap-2">
-                <label v-for="r in P20_ROWS" :key="r.key" class="flex items-center gap-2">
-                  <span class="w-24 shrink-0 truncate text-ui text-subtle-foreground">{{
-                    r.label
-                  }}</span>
-                  <Select
-                    :model-value="p20[r.key]"
-                    :options="p20Options(r.key)"
-                    class="min-w-0 flex-1"
-                    @update:model-value="
-                      (v: string) => ((p20 as Record<string, string>)[r.key] = v)
-                    "
-                  />
-                </label>
-              </div>
-            </Row>
           </div>
         </details>
       </div>
@@ -473,9 +451,16 @@ const linkSays = computed(() => {
       <!-- Share: a link that opens this screen with these tweaks, for
            anyone (mar/shareLink.ts). -->
       <footer class="shrink-0 border-t border-border-default px-4 pt-3 pb-4">
-        <p class="mb-2.5 truncate text-ui text-subtle-foreground" :title="linkSays.all">
+        <p class="mb-1.5 truncate text-ui text-subtle-foreground" :title="linkSays.all">
           Link opens {{ pageName }} · {{ linkSays.line }}
         </p>
+        <input
+          :value="linkUrl"
+          readonly
+          aria-label="Share link"
+          class="mb-2.5 h-7 w-full truncate rounded-[7px] bg-secondary-background px-2 font-mono text-[11px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
         <div class="flex items-center justify-between gap-2">
           <Button variant="ghost" size="sm" class="-ml-2" @click="resetAll">Reset all</Button>
           <Button variant="secondary" size="sm" @click="copyLink">

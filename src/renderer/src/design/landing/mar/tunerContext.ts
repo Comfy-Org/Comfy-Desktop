@@ -3,7 +3,7 @@ import { building, appsProto } from '../appFlow'
 import { shownCredits } from '../account'
 import { instances, isNewUser, proto } from '../useProto'
 import { resetTuning, tuning } from './uiTuner'
-import { surface, onCloud } from './shell/surface'
+import { surface } from './shell/surface'
 import { homeBackground, marNav, marSideOn, marSidebarClosed } from './shell/marShell'
 import { screen } from './screen'
 // Graphite is applied on load.
@@ -13,7 +13,6 @@ import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { can } from '../milestones'
-import { homeBuilds } from './homeBuilds'
 import { appsStage } from './apps/appsStage'
 import { appPage } from './apps/appPage'
 import { templateStyle } from './brand/templateStyle'
@@ -57,7 +56,6 @@ const LIBRARY = ['explore', 'workflows', 'apps', 'assets', 'projects', 'spaces',
 /** The predicates, one per tweak that depends on the screen. */
 export const when = {
   homeBackground: onHome,
-  homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
   // What an app can do by stage: only on the app's own screen.
   appsStage: computed(() => can.value.exploreApps && !!appsProto.front),
   // How an app's page looks: on the app's own screen too.
@@ -193,7 +191,6 @@ export const TWEAKS = {
   surface: one(surface, 'desktop'),
   brandMotif: one(brandMotif, 'off'),
   homeBackground: one(homeBackground, 'spotlight'),
-  homeBuilds: one(homeBuilds, 'on'),
   appsStage: one(appsStage, 'm1'),
   appPage: one(appPage, 'hub'),
   firstRun: one(firstRun, 'original'),
@@ -239,6 +236,7 @@ export const TWEAKS = {
         cards: 'glow',
         scope: 'm1',
         onboarding: 'install',
+        after: 'home',
         os: 'mac',
         gpu: 'nvidia'
       })
