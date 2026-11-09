@@ -40,6 +40,7 @@ import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from './AssetFilterMenu.vue'
 import AssetSidePanel from './AssetSidePanel.vue'
 import BulkTagMenu from './BulkTagMenu.vue'
+import { assetTab, comfyLook } from './comfyLook'
 import { graphOpen } from './graphOpen'
 import { RAIL_DEFAULT, railWidth } from './panels/railWidth'
 import { factsFor } from '../assets/assetFacts'
@@ -107,12 +108,22 @@ function setView(v: View): void {
   }
 }
 // Masonry first, the default, as in Desktop's view toggle.
-const VIEWS = [
+const ALL_VIEWS = [
   { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
   { value: 'large', label: 'Grid (large)', icon: LayoutGrid },
   { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
   { value: 'list', label: 'List view', icon: TableOfContents }
 ] as const
+/** Production (UI Playground › ComfyUI): ComfyUI as it ships plus Better
+ *  Assets Phase 1. Generated and Imported are tabs, the view is Grid or
+ *  List, and Inspect asset opens the file in a tab beside the workflows. */
+const prod = computed(() => comfyLook.id === 'production')
+const tab = ref<Tab>('Generated')
+const PROD_VIEWS = [
+  { value: 'large', label: 'Grid view', icon: LayoutGrid },
+  { value: 'list', label: 'List view', icon: TableOfContents }
+] as const
+const VIEWS = computed(() => (prod.value ? PROD_VIEWS : ALL_VIEWS))
 // What a card shows: preview assets are off by default, so the panel
 // lists what was saved.
 const showPreviews = ref(false)
@@ -189,8 +200,21 @@ const ALL = computed<PanelAsset[]>(() => [
 /** Generated or Imported is a filter (Source), not tabs: All by default,
  *  so one search reaches every file. */
 const inSource = (a: PanelAsset): boolean =>
-  filter.value.source === 'all' ||
-  (filter.value.source === 'generated') === (a.kind === 'Generated')
+  prod.value
+    ? a.kind === tab.value
+    : filter.value.source === 'all' ||
+      (filter.value.source === 'generated') === (a.kind === 'Generated')
+/** Which files the list holds: the tab in Production, Source otherwise. */
+const source = computed(() => (prod.value ? tab.value.toLowerCase() : filter.value.source))
+watch(
+  prod,
+  (on) => {
+    if (!on) return
+    filter.value = { ...filter.value, source: 'all' }
+    if (view.value === 'masonry' || view.value === 'small') view.value = 'large'
+  },
+  { immediate: true }
+)
 const inTab = computed(() => ALL.value.filter((a) => !a.status))
 const TAGS = computed(() => tagsIn(inTab.value))
 const shown = computed(() => {
@@ -291,14 +315,24 @@ watch(
 const finished = computed(() => shown.value.filter((a) => !a.status))
 // A share link can open the first asset in Inspect asset (graphOpen.ts).
 if (graphOpen.inspect) {
-  detail.value = finished.value[0] ?? null
+  const first = finished.value[0]
+  if (first) inspect(first)
   graphOpen.inspect = false
+}
+
+/** Inspect asset: over the window in the proposal, in a tab in Production. */
+function inspect(a: PanelAsset): void {
+  if (!prod.value) {
+    detail.value = a
+    return
+  }
+  Object.assign(assetTab, { asset: a, list: finished.value, build: a.kind, on: true })
 }
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
 function lines(a: PanelAsset): MenuLine[] {
   return [
-    { label: 'Inspect asset', icon: ScanSearch, run: () => (detail.value = a) },
+    { label: 'Inspect asset', icon: ScanSearch, run: () => inspect(a) },
     { label: 'Show details', icon: PanelRight, run: () => showSide(a) },
     {
       label: 'Insert as node in workflow',
@@ -391,6 +425,19 @@ function upload(files: FileList | null | undefined): void {
       </button>
     </template>
     <template #header>
+      <div v-if="prod" class="mar-pseg ap-tabs" role="tablist" aria-label="Assets">
+        <button
+          v-for="t in ['Generated', 'Imported'] as const"
+          :key="t"
+          type="button"
+          role="tab"
+          class="mar-pseg-btn"
+          :aria-selected="tab === t"
+          @click="((tab = t), (selected = new Set()))"
+        >
+          {{ t }}
+        </button>
+      </div>
       <div class="rp-top">
         <MarSearchField v-model="query" placeholder="Search Assets..." />
         <input
@@ -403,7 +450,7 @@ function upload(files: FileList | null | undefined): void {
             (($event.target as HTMLInputElement).value = ''))
           "
         />
-        <AssetFilterMenu v-model="filter" :types="MEDIA" :tags="TAGS" source />
+        <AssetFilterMenu v-model="filter" :types="MEDIA" :tags="TAGS" :source="!prod" />
         <span ref="viewAnchor" class="rp-anchor">
           <button
             type="button"
@@ -518,7 +565,7 @@ function upload(files: FileList | null | undefined): void {
         class="ap-items"
         :class="[`is-${view}`, !showName && 'no-name', !showDetails && 'no-meta']"
         :style="{ '--ap-cols': cols }"
-        :aria-label="`${filter.source === 'all' ? 'All' : filter.source === 'generated' ? 'Generated' : 'Imported'} assets`"
+        :aria-label="`${source === 'all' ? 'All' : source === 'generated' ? 'Generated' : 'Imported'} assets`"
         @click.self="selected = new Set()"
       >
         <div v-for="(col, ci) in groups" :key="ci" class="ap-col">
@@ -528,6 +575,7 @@ function upload(files: FileList | null | undefined): void {
             class="ap-drag"
             draggable="true"
             @dragstart="drag(a, $event)"
+            @dblclick="prod && !a.status && inspect(a)"
           >
             <MarItem
               :name="a.name.replace(/\.[^.]+$/, '')"
@@ -572,9 +620,9 @@ function upload(files: FileList | null | undefined): void {
         :icon="SearchX"
         title="No results"
         :text="
-          filter.source === 'all'
+          source === 'all'
             ? 'Nothing matches.'
-            : `Nothing in ${filter.source === 'generated' ? 'Generated' : 'Imported'} matches.`
+            : `Nothing in ${source === 'generated' ? 'Generated' : 'Imported'} matches.`
         "
         action="Clear filters"
         @action="((query = ''), (filter = noFilter()))"
@@ -584,9 +632,9 @@ function upload(files: FileList | null | undefined): void {
         compact
         :icon="ImageOff"
         :title="
-          filter.source === 'imported'
+          source === 'imported'
             ? 'No imported files found'
-            : filter.source === 'generated'
+            : source === 'generated'
               ? 'No generated files found'
               : 'No files yet'
         "
@@ -655,11 +703,19 @@ function upload(files: FileList | null | undefined): void {
     v-if="sideOpen"
     :assets="sideAssets"
     @close="sideOpen = false"
-    @inspect="detail = $event as PanelAsset"
+    @inspect="inspect($event as PanelAsset)"
   />
 </template>
 
 <style>
+/* Production: Generated and Imported as ComfyUI's tabs, above the search. */
+.ap-tabs {
+  display: flex;
+  margin: 0 12px 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-tabs .mar-pseg-btn {
+  flex: 1;
+}
 .ap-items {
   display: grid;
   grid-template-columns: repeat(var(--ap-cols, 2), minmax(0, 1fr));

@@ -50,6 +50,8 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { proto } from '../../useProto'
 import { graphStyle } from './graphStyle'
+import { assetTab, comfyLook } from './comfyLook'
+import AssetDetail from '../assets/AssetDetail.vue'
 import { brandMotif } from '../brand/brandMotif'
 import MarTrio from '../brand/MarTrio.vue'
 import CanvasNode from './CanvasNode.vue'
@@ -843,6 +845,20 @@ type RailPanelId = '' | 'queue' | 'assets' | 'nodes' | 'models' | 'workflows' | 
 // A share link can open it on Media Assets (graphOpen.ts).
 const panel = ref<RailPanelId>(graphOpen.assets ? 'assets' : '')
 graphOpen.assets = false
+/** Production: an open rail panel floats over the canvas, so the asset's
+ *  tab starts past it; measured, as the panel's edge drags. */
+const panelEdge = ref(0)
+let panelSize: ResizeObserver | undefined
+watch([panel, () => !!assetTab.asset && assetTab.on], async () => {
+  panelSize?.disconnect()
+  panelEdge.value = 0
+  await nextTick()
+  const rp = host.value?.querySelector<HTMLElement>(':scope > .rp')
+  if (!rp || !assetTab.asset || !assetTab.on) return
+  panelSize = new ResizeObserver(() => (panelEdge.value = rp.offsetLeft + rp.offsetWidth))
+  panelSize.observe(rp)
+})
+onBeforeUnmount(() => panelSize?.disconnect())
 const dialog = ref<'' | 'templates' | 'settings' | 'models'>('')
 const settingsAt = ref<string>()
 const shortcuts = ref(false)
@@ -1205,8 +1221,36 @@ function addFromPanel(kind: NodeKind): void {
           <ComfyCLogo class="mg-logo-mark" />
         </button>
       </Tooltip>
-      <span class="mg-tab is-on">{{ shownWorkflow }}<X :size="12" /></span>
+      <!-- Production: an inspected asset opens in a preview tab after the
+           workflows (italic, the next one takes its place). -->
+      <span
+        class="mg-tab"
+        :class="!(assetTab.asset && assetTab.on) && 'is-on'"
+        role="button"
+        tabindex="0"
+        @click="assetTab.on = false"
+        >{{ shownWorkflow }}<X :size="12"
+      /></span>
       <span class="mg-tab">Untitled<X :size="12" /></span>
+      <span
+        v-if="assetTab.asset"
+        class="mg-tab is-asset"
+        :class="assetTab.on && 'is-on'"
+        :title="assetTab.asset.name"
+        role="button"
+        tabindex="0"
+        @click="assetTab.on = true"
+        ><ComfyAssets class="mg-tab-icon" /><span class="mg-tab-name">{{
+          assetTab.asset.name
+        }}</span
+        ><button
+          type="button"
+          class="mg-tab-x"
+          aria-label="Close tab"
+          @click.stop="assetTab.asset = null"
+        >
+          <X :size="12" /></button
+      ></span>
       <Plus :size="14" class="mg-tab-add" />
     </div>
 
@@ -1775,6 +1819,21 @@ function addFromPanel(kind: NodeKind): void {
           <MapIcon :size="14" />
         </button>
       </div>
+    </div>
+    <div
+      v-if="current && comfyLook.id === 'production' && assetTab.asset && assetTab.on"
+      class="mg-asset-tab"
+      :style="{ '--mg-panel-edge': `${panelEdge}px` }"
+    >
+      <AssetDetail
+        tab
+        editable
+        :asset="assetTab.asset"
+        :list="assetTab.list"
+        :build="assetTab.build"
+        @go="assetTab.asset = $event"
+        @close="assetTab.asset = null"
+      />
     </div>
     <MediaViewer
       v-if="viewing && sById[viewing]"
@@ -2759,6 +2818,37 @@ function addFromPanel(kind: NodeKind): void {
 .mg-tab.is-on {
   background: var(--mg-chrome-2);
   color: var(--mg-text);
+}
+.mg-tab.is-asset {
+  max-width: 220px;
+  gap: 6px;
+  font-style: italic;
+}
+.mg-tab-icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.mg-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .mg-tab-x {
+  display: inline-flex;
+  margin-left: 4px;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+/* The asset's tab takes the canvas area, beside the rail and its panel. */
+.mg-asset-tab {
+  position: relative;
+  z-index: 4;
+  grid-row: 2;
+  grid-column: 2;
+  min-width: 0;
+  margin-left: max(0px, calc(var(--mg-panel-edge, 0px) - 52px));
 }
 .mg-tab-add {
   margin: 0 0 9px 6px;

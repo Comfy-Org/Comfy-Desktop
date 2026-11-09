@@ -19,6 +19,7 @@ import { templateStyle } from './brand/templateStyle'
 import { brandMotif } from './brand/brandMotif'
 import { creditsState } from './credits'
 import { p20 } from './p20/p20'
+import { comfyLook } from './graph/comfyLook'
 import { graphStyle } from './graph/graphStyle'
 import { firstRun } from './firstRun'
 import { exampleLook } from './userStates/exampleLook'
@@ -214,6 +215,7 @@ export const TWEAKS = {
       if (proto.deploying) scenarioPick.want = 'configure'
     }
   },
+  comfyLook: one(comfyLook, 'proposal'),
   graph: one(graphStyle, 'glass'),
   ports: {
     isDefault: () => PORTS.every((p) => !ports[p.key]),

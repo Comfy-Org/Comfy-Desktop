@@ -38,7 +38,8 @@ const {
   asset,
   list,
   build,
-  editable = false
+  editable = false,
+  tab = false
 } = defineProps<{
   asset: MarAsset
   list: MarAsset[]
@@ -46,6 +47,9 @@ const {
   build: string
   /** ComfyUI: tags are edited here. */
   editable?: boolean
+  /** ComfyUI in Production: the asset fills a tab beside the workflows,
+   *  the tab's X closes it, no filmstrip or zoom. */
+  tab?: boolean
 }>()
 const emit = defineEmits<{ close: []; go: [asset: MarAsset] }>()
 
@@ -155,7 +159,7 @@ const root = ref<HTMLElement>()
 const opener = document.activeElement as HTMLElement | null
 function key(e: KeyboardEvent): void {
   if (e.target instanceof HTMLInputElement && e.key !== 'Escape') return
-  if (e.key === 'Escape') emit('close')
+  if (e.key === 'Escape' && !tab) emit('close')
   else if (e.key === 'ArrowLeft' && prev.value) emit('go', prev.value)
   else if (e.key === 'ArrowRight' && next.value) emit('go', next.value)
   else return
@@ -165,34 +169,34 @@ function key(e: KeyboardEvent): void {
 onMounted(async () => {
   window.addEventListener('keydown', key, true)
   await nextTick()
-  root.value?.focus()
+  if (!tab) root.value?.focus()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', key, true)
   clearTimeout(timer)
-  opener?.focus?.()
+  if (!tab) opener?.focus?.()
 })
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="tab">
     <div
       ref="root"
       class="proto-ui mad"
-      :class="!side && 'no-side'"
-      role="dialog"
-      aria-modal="true"
+      :class="[!side && 'no-side', tab && 'is-tab']"
+      :role="tab ? 'region' : 'dialog'"
+      :aria-modal="tab ? undefined : true"
       :aria-label="asset.name"
       tabindex="-1"
     >
-      <section class="mad-stage" @pointerdown.self="emit('close')">
+      <section class="mad-stage" @pointerdown.self="!tab && emit('close')">
         <header class="mad-bar">
-          <button type="button" class="mad-back" @click="emit('close')">
+          <button v-if="!tab" type="button" class="mad-back" @click="emit('close')">
             <ArrowLeft :size="14" />Assets
           </button>
           <span class="mad-file">{{ asset.name }}</span>
           <span class="mad-count">{{ build }} · {{ at + 1 }} / {{ list.length }}</span>
-          <div class="mad-zoom" role="group" aria-label="Zoom">
+          <div v-if="!tab" class="mad-zoom" role="group" aria-label="Zoom">
             <button
               type="button"
               class="mad-icon is-sm"
@@ -259,7 +263,7 @@ onBeforeUnmount(() => {
         >
           <ChevronRight :size="18" />
         </button>
-        <nav ref="strip" class="mad-strip" aria-label="Assets">
+        <nav v-if="!tab" ref="strip" class="mad-strip" aria-label="Assets">
           <button
             v-for="a in list"
             :key="a.id"
@@ -408,6 +412,17 @@ onBeforeUnmount(() => {
 }
 .mad.no-side {
   grid-template-columns: minmax(0, 1fr);
+}
+/* In a tab: it fills the canvas area, under ComfyUI's top bar. */
+.mad.is-tab {
+  position: absolute;
+  z-index: 3;
+  background: var(--color-content-background);
+  backdrop-filter: none;
+  animation: none;
+}
+.mad.is-tab .mad-stage {
+  padding: 56px 56px 32px;
 }
 @keyframes mad-in {
   from {

@@ -18,6 +18,7 @@ import { APP_PAGE_LOOKS, appPage } from './apps/appPage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
+import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
@@ -137,6 +138,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'buildPage', show: () => when.buildPage.value },
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'cover', show: () => when.cover.value },
+  { id: 'comfyLook', show: () => when.graph.value },
   { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
@@ -365,7 +367,15 @@ const linkSays = computed(() => {
           <Row :show="shows('cover')" label="Workflow cover" stack>
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
           </Row>
-          <Row :show="shows('graph')" label="Graph look" stack>
+          <Row :show="shows('comfyLook')" label="ComfyUI" stack>
+            <Seg v-model="comfyLook.id" label="ComfyUI" :options="COMFY_LOOKS" />
+            <span class="text-ui text-subtle-foreground">{{
+              comfyLook.id === 'production'
+                ? 'As it ships, plus Better Assets Phase 1. Inspect asset opens a tab.'
+                : 'Our take on the new structure.'
+            }}</span>
+          </Row>
+          <Row :show="shows('graph') && comfyLook.id === 'proposal'" label="Graph look" stack>
             <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
           </Row>
           <Row :show="shows('ports')"><NavOptionsTuner /></Row>
