@@ -234,8 +234,11 @@ async function openShared(): Promise<void> {
   await nextTick()
   const app = q.get('app')
   const page = q.get('page')
-  if (app) openAppUrl(app)
-  else if (page) go(page as typeof proto.page)
+  // An app opens on its own, as the person who sent it saw it.
+  if (app) {
+    appsProto.tabs = []
+    openAppUrl(app)
+  } else if (page) go(page as typeof proto.page)
   const step = q.get('step')
   if (step && SETUP_SCREENS.some((s) => s.value === step)) showScreen(step as Screen)
   // Off the address, so a reload keeps what's changed after.

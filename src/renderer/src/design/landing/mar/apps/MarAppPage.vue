@@ -6,28 +6,34 @@ import {
   ChevronsLeftRight,
   Coins,
   Columns2,
+  Copy,
   Download,
   Image as ImageIcon,
   ImageUp,
-  Loader2
+  Loader2,
+  Share2
 } from 'lucide-vue-next'
+import { PopoverRoot, PopoverTrigger } from 'reka-ui'
+import PopoverContent from '../../ui/PopoverContent.vue'
+import Switch from '../../ui/Switch.vue'
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
-import { appsProto, type Field } from '../../appFlow'
+import { appsProto, libApp, type Field } from '../../appFlow'
 import { EXAMPLES } from '../userStates/examples'
 
 /**
  * An app opens straight into its editor, as in the Hub's full-screen apps
- * (the shared editor kit, ComfyUI_frontend #20630, and Re-shoot and
- * Cinematic Studio on it, #20637 / #20638): a thin bar with Back, the
- * name and what it does; a floating panel with what you give it and Run
- * at its foot; and the stage, which shows the result, with Compare in a
- * dock under it. An example opens loaded: its picture in the panel, its
- * result on the stage, so you see what the app does before you run it.
+ * (the shared editor kit, ComfyUI_frontend #20630, previewed with every app
+ * in #20663): the result fills a dotted canvas; the header floats over it
+ * with Back and the name, and Compare, Share and Download on the right; a
+ * glass panel on the left holds what you give it, as tall as that, with
+ * Run and its credits at its foot; a dock at the bottom holds your takes.
+ * An example opens loaded: its picture in the panel, its result on the
+ * canvas, so you see what the app does before you run it.
  */
 const {
   appId,
@@ -128,6 +134,25 @@ function run(): void {
 }
 defineExpose({ run })
 
+// Share: the app's link, and once you've run it, your result with it.
+const slug = computed(() => libApp(appId)?.slug ?? name.toLowerCase().replace(/[^a-z0-9]+/g, '-'))
+const withResult = ref(true)
+const link = computed(
+  () => `comfy.org/a/${slug.value}${state.value === 'done' && withResult.value ? '?r=7f3k' : ''}`
+)
+const copied = ref(false)
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+function copy(): void {
+  void navigator.clipboard?.writeText(`https://${link.value}`).catch(() => {})
+  copied.value = true
+  clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => (copied.value = false), 1600)
+}
+
+// Who pays shows only when it isn't you at the price on Run: a team, a
+// sponsor, or this computer.
+const payerNote = computed(() => (/from your credits/i.test(payer) ? '' : payer))
+
 function back(): void {
   appsProto.front = ''
   go('explore')
@@ -135,228 +160,295 @@ function back(): void {
 </script>
 
 <template>
-  <div class="mar-app-editor mar-app-page bg-app-background text-base-foreground">
-    <!-- The thin bar: Back, the name and what it does; Download once there's
-         a result. No account: the title bar already says who you are, and
-         Run asks you to sign in. -->
+  <div class="mar-app-editor mar-app-page text-base-foreground">
+    <!-- Canvas: the result, the example's until you run it -->
+    <main class="mar-app-editor-stage" aria-label="Output">
+      <div class="mar-app-editor-canvas">
+        <figure
+          v-if="hasResult"
+          :class="cn('mar-app-editor-pic', state === 'running' && 'is-running')"
+        >
+          <img
+            :key="state === 'done' ? `take-${take}` : 'example'"
+            :src="result"
+            alt=""
+            :class="state === 'done' && 'mar-app-editor-rise'"
+            :style="{ filter: shownFilter }"
+          />
+          <template v-if="comparing && state !== 'running'">
+            <img
+              :src="input"
+              alt=""
+              class="mar-app-editor-before"
+              :style="{ clipPath: `inset(0 ${100 - split}% 0 0)` }"
+            />
+            <span class="mar-app-editor-handle" :style="{ left: `${split}%` }">
+              <span><ChevronsLeftRight :size="14" /></span>
+            </span>
+            <input
+              v-model.number="split"
+              type="range"
+              min="0"
+              max="100"
+              aria-label="Before and after"
+              class="mar-app-editor-split"
+            />
+            <Badge variant="overlay" size="md" class="absolute bottom-3 left-3">Before</Badge>
+            <Badge variant="overlay" size="md" class="absolute right-3 bottom-3">After</Badge>
+          </template>
+          <Badge
+            v-else-if="state === 'idle'"
+            variant="overlay"
+            size="md"
+            class="absolute top-3 left-3"
+            >Example</Badge
+          >
+        </figure>
+
+        <!-- Nothing yet -->
+        <div v-else-if="state === 'idle'" class="mar-app-editor-empty">
+          <span><ImageIcon :size="18" /></span>
+          <p class="text-heading font-medium">Your {{ made }} appears here</p>
+          <p class="text-ui text-muted-foreground">Fill in the panel, then Run.</p>
+        </div>
+
+        <!-- Running: the steps over the blurred picture -->
+        <ul v-if="state === 'running'" class="mar-app-editor-steps">
+          <li
+            v-for="(s, i) in STEPS"
+            :key="s"
+            :class="i < progress ? 'text-base-foreground' : 'text-subtle-foreground'"
+          >
+            <Check v-if="i < progress - 1" :size="14" class="text-status-running" />
+            <Loader2 v-else-if="i === progress - 1" :size="14" class="animate-spin" />
+            <span v-else class="size-3.5" />{{ s }}
+          </li>
+        </ul>
+      </div>
+
+      <!-- Dock: what's on the canvas, and your takes once you've run it -->
+      <div v-if="state !== 'running'" class="mar-app-editor-dock">
+        <template v-if="state === 'done'">
+          <template v-if="takes.length > 1">
+            <button
+              v-for="(filter, i) in takes"
+              :key="filter"
+              type="button"
+              :aria-label="`Take ${i + 1}`"
+              :aria-pressed="take === i"
+              :class="cn('mar-app-editor-take', take === i && 'is-on')"
+              @click="take = i"
+            >
+              <img :src="result" alt="" :style="{ filter }" />
+            </button>
+            <span class="mar-app-editor-rule" aria-hidden="true" />
+          </template>
+          <span class="px-2 text-ui text-muted-foreground"
+            >{{ takes.length }} {{ takes.length === 1 ? made : `${made}s` }} · 18 s</span
+          >
+          <slot name="saved" />
+        </template>
+        <span v-else-if="sample" class="px-2 text-ui text-muted-foreground"
+          >An example of what it makes · Run to make yours</span
+        >
+        <span v-else class="px-2 text-ui text-muted-foreground">{{ does }}</span>
+      </div>
+    </main>
+
+    <!-- Header, over the canvas: Back and the name; Compare, Share and
+         Download on the right. No account: the title bar has it. -->
     <header class="mar-app-editor-bar">
-      <Button variant="ghost" size="icon-sm" aria-label="Back to Explore" @click="back"
-        ><ChevronLeft :size="16"
-      /></Button>
-      <h1 class="shrink-0 text-ui font-semibold">{{ name }}</h1>
-      <span aria-hidden="true" class="text-subtle-foreground">·</span>
-      <p class="min-w-0 truncate text-ui text-muted-foreground">{{ does }}</p>
+      <div class="mar-app-editor-title">
+        <Button variant="ghost" size="icon-sm" aria-label="Back to Explore" @click="back"
+          ><ChevronLeft :size="16"
+        /></Button>
+        <h1 class="shrink-0 text-ui font-semibold">{{ name }}</h1>
+        <span class="mar-app-editor-sep" aria-hidden="true" />
+        <p class="min-w-0 truncate text-ui text-muted-foreground">{{ does }}</p>
+      </div>
       <span class="flex-1" />
-      <Button v-if="state === 'done'" size="sm" @click="toast('Downloading…')"
-        ><Download :size="13" />Download</Button
-      >
+      <div class="mar-app-editor-actions">
+        <Button
+          v-if="hasResult"
+          variant="ghost"
+          size="sm"
+          :aria-pressed="comparing"
+          :disabled="state === 'running'"
+          :class="comparing && 'bg-secondary-background text-base-foreground'"
+          @click="comparing = !comparing"
+          ><Columns2 :size="14" />Compare</Button
+        >
+        <PopoverRoot>
+          <PopoverTrigger as-child>
+            <Button variant="ghost" size="sm"><Share2 :size="14" />Share</Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" class="w-80 p-4">
+            <p class="text-ui font-semibold">Share {{ name }}</p>
+            <p class="mt-1 text-ui text-muted-foreground">
+              Anyone with the link opens the app and runs it with their own credits.
+            </p>
+            <div class="mar-app-editor-link">
+              <span class="min-w-0 flex-1 truncate">{{ link }}</span>
+              <Button size="sm" @click="copy"
+                ><Check v-if="copied" :size="13" /><Copy v-else :size="13" />{{
+                  copied ? 'Copied' : 'Copy'
+                }}</Button
+              >
+            </div>
+            <label
+              v-if="state === 'done'"
+              class="mt-3 flex items-center justify-between gap-3 text-ui"
+            >
+              Include your result
+              <Switch v-model="withResult" aria-label="Include your result" />
+            </label>
+          </PopoverContent>
+        </PopoverRoot>
+        <Button
+          variant="primary"
+          size="sm"
+          :disabled="state !== 'done'"
+          @click="toast('Downloading…')"
+          ><Download :size="13" />Download</Button
+        >
+      </div>
     </header>
 
-    <div class="mar-app-editor-body">
-      <!-- Floating panel: what you give it, and Run -->
-      <aside class="mar-app-editor-panel" aria-label="Input">
-        <div class="mar-app-editor-fields">
-          <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
-            <h2 class="mar-app-editor-label">{{ f.label }}</h2>
-            <button
-              v-if="f.kind === 'image' && f.id === firstImage"
-              type="button"
-              class="mar-app-editor-source group"
-              :aria-label="`Replace ${f.label.toLowerCase()}`"
-              @click="toast('Pick an image')"
-            >
-              <img :src="input" alt="" class="size-full object-cover" />
-              <span class="mar-app-editor-replace"><ImageUp :size="14" />Replace</span>
-            </button>
-            <button
-              v-else-if="f.kind === 'image'"
-              type="button"
-              class="mar-app-editor-drop"
-              @click="toast('Pick an image')"
-            >
-              <ImageUp :size="16" />
-              <span>Add {{ f.label.toLowerCase() }}</span>
-            </button>
-            <textarea
-              v-else-if="f.kind === 'text'"
-              :value="values[f.id] ?? ''"
-              :placeholder="f.placeholder ?? ''"
-              rows="3"
-              class="mar-app-editor-text"
-              @input="values[f.id] = ($event.target as HTMLTextAreaElement).value"
-            />
-            <SegmentedControl
-              v-else
-              :model-value="pick(f)"
-              variant="contained"
-              size="sm"
-              class="self-start"
-              :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
-              @update:model-value="(v: string) => (values[f.id] = v)"
-            />
-          </section>
-          <slot name="place" />
-        </div>
-
-        <!-- Run: the label, and what a run costs in credits -->
-        <footer class="mar-app-editor-foot">
+    <!-- Glass panel: what you give it, and Run -->
+    <aside class="mar-app-editor-panel" aria-label="Input">
+      <div class="mar-app-editor-fields">
+        <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
+          <h2 class="mar-app-editor-label">{{ f.label }}</h2>
           <button
+            v-if="f.kind === 'image' && f.id === firstImage"
             type="button"
-            class="mar-app-editor-run"
-            :disabled="state === 'running'"
-            @click="run"
+            class="mar-app-editor-source group"
+            :aria-label="`Replace ${f.label.toLowerCase()}`"
+            @click="toast('Pick an image')"
           >
-            <span class="flex items-center gap-2">
-              <Loader2 v-if="state === 'running'" :size="15" class="animate-spin" />
-              {{ state === 'running' ? 'Running' : state === 'done' ? 'Run again' : 'Run' }}
-            </span>
-            <span class="mar-app-editor-cost">
-              <template v-if="credits"><Coins :size="14" />{{ credits }}</template>
-              <template v-else>Free</template>
-            </span>
+            <img :src="input" alt="" class="size-full object-cover" />
+            <span class="mar-app-editor-replace"><ImageUp :size="14" />Replace</span>
           </button>
-          <p class="mar-app-editor-payer">{{ payer }}</p>
-        </footer>
-      </aside>
-
-      <!-- Stage: the result, the example's until you run it -->
-      <main class="mar-app-editor-stage" aria-label="Output">
-        <div class="mar-app-editor-canvas">
-          <figure
-            v-if="hasResult"
-            :class="cn('mar-app-editor-pic', state === 'running' && 'is-running')"
+          <button
+            v-else-if="f.kind === 'image'"
+            type="button"
+            class="mar-app-editor-drop"
+            @click="toast('Pick an image')"
           >
-            <img
-              :key="state === 'done' ? `take-${take}` : 'example'"
-              :src="result"
-              alt=""
-              :class="state === 'done' && 'mar-app-editor-rise'"
-              :style="{ filter: shownFilter }"
-            />
-            <template v-if="comparing && state !== 'running'">
-              <img
-                :src="input"
-                alt=""
-                class="mar-app-editor-before"
-                :style="{ clipPath: `inset(0 ${100 - split}% 0 0)` }"
-              />
-              <span class="mar-app-editor-handle" :style="{ left: `${split}%` }">
-                <span><ChevronsLeftRight :size="14" /></span>
-              </span>
-              <input
-                v-model.number="split"
-                type="range"
-                min="0"
-                max="100"
-                aria-label="Before and after"
-                class="mar-app-editor-split"
-              />
-              <Badge variant="overlay" size="md" class="absolute bottom-3 left-3">Before</Badge>
-              <Badge variant="overlay" size="md" class="absolute right-3 bottom-3">After</Badge>
-            </template>
-            <Badge
-              v-else-if="state === 'idle'"
-              variant="overlay"
-              size="md"
-              class="absolute top-3 left-3"
-              >Example</Badge
-            >
-          </figure>
-
-          <!-- Nothing yet -->
-          <div v-else-if="state === 'idle'" class="mar-app-editor-empty">
-            <span><ImageIcon :size="18" /></span>
-            <p class="text-heading font-medium">Your {{ made }} appears here</p>
-            <p class="text-ui text-muted-foreground">Fill in the panel, then Run.</p>
-          </div>
-
-          <!-- Running: the steps over the blurred picture -->
-          <ul v-if="state === 'running'" class="mar-app-editor-steps">
-            <li
-              v-for="(s, i) in STEPS"
-              :key="s"
-              :class="i < progress ? 'text-base-foreground' : 'text-subtle-foreground'"
-            >
-              <Check v-if="i < progress - 1" :size="14" class="text-status-running" />
-              <Loader2 v-else-if="i === progress - 1" :size="14" class="animate-spin" />
-              <span v-else class="size-3.5" />{{ s }}
-            </li>
-          </ul>
-        </div>
-
-        <!-- Dock: Compare, and your takes once you've run it -->
-        <div v-if="hasResult && state !== 'running'" class="mar-app-editor-dock">
-          <Button
-            variant="ghost"
+            <ImageUp :size="16" />
+            <span>Add {{ f.label.toLowerCase() }}</span>
+          </button>
+          <textarea
+            v-else-if="f.kind === 'text'"
+            :value="values[f.id] ?? ''"
+            :placeholder="f.placeholder ?? ''"
+            rows="3"
+            class="mar-app-editor-text"
+            @input="values[f.id] = ($event.target as HTMLTextAreaElement).value"
+          />
+          <SegmentedControl
+            v-else
+            :model-value="pick(f)"
+            variant="contained"
             size="sm"
-            :aria-pressed="comparing"
-            :class="comparing && 'bg-secondary-background text-base-foreground'"
-            @click="comparing = !comparing"
-            ><Columns2 :size="14" />Compare</Button
-          >
-          <template v-if="state === 'done'">
-            <span class="mar-app-editor-rule" aria-hidden="true" />
-            <template v-if="takes.length > 1">
-              <button
-                v-for="(filter, i) in takes"
-                :key="filter"
-                type="button"
-                :aria-label="`Take ${i + 1}`"
-                :aria-pressed="take === i"
-                :class="cn('mar-app-editor-take', take === i && 'is-on')"
-                @click="take = i"
-              >
-                <img :src="result" alt="" :style="{ filter }" />
-              </button>
-              <span class="mar-app-editor-rule" aria-hidden="true" />
-            </template>
-            <span class="px-1.5 text-ui text-subtle-foreground"
-              >{{ takes.length }} {{ takes.length === 1 ? made : `${made}s` }} · 18 s</span
-            >
-            <slot name="saved" />
-          </template>
-        </div>
-      </main>
-    </div>
+            class="self-start"
+            :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
+            @update:model-value="(v: string) => (values[f.id] = v)"
+          />
+        </section>
+        <slot name="place" />
+      </div>
+
+      <!-- Run: the label, and what a run costs in credits -->
+      <footer class="mar-app-editor-foot">
+        <button
+          type="button"
+          class="mar-app-editor-run"
+          :disabled="state === 'running'"
+          :title="payer"
+          @click="run"
+        >
+          <span class="flex items-center gap-2">
+            <Loader2 v-if="state === 'running'" :size="15" class="animate-spin" />
+            {{ state === 'running' ? 'Running' : state === 'done' ? 'Run again' : 'Run' }}
+          </span>
+          <span class="mar-app-editor-cost">
+            <template v-if="credits"><Coins :size="14" />{{ credits }}</template>
+            <template v-else>Free</template>
+          </span>
+        </button>
+        <p v-if="payerNote" class="mar-app-editor-payer">{{ payerNote }}</p>
+      </footer>
+    </aside>
     <slot name="below" />
   </div>
 </template>
 
 <style scoped>
 .mar-app-editor {
-  display: flex;
+  --panel: clamp(248px, 26vw, 296px);
+  --edge: 12px;
+  position: relative;
   height: 100%;
   min-height: 560px;
-  flex-direction: column;
+  overflow: hidden;
+  /* The canvas: the editor's dot grid, as in the Hub. */
+  background-color: var(--color-app-background);
+  background-image: radial-gradient(
+    color-mix(in oklch, var(--color-base-foreground) 14%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
 }
+
+/* Header */
 .mar-app-editor-bar {
+  pointer-events: none;
+  position: absolute;
+  top: var(--edge);
+  right: var(--edge);
+  left: var(--edge);
+  z-index: 30;
   display: flex;
-  height: 48px;
-  flex-shrink: 0;
+  height: 36px;
   align-items: center;
   gap: 8px;
-  padding: 0 14px 0 10px;
 }
-.mar-app-editor-body {
+.mar-app-editor-title,
+.mar-app-editor-actions {
+  pointer-events: auto;
   display: flex;
-  min-height: 0;
-  flex: 1;
-  gap: 10px;
-  padding: 0 10px 10px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.mar-app-editor-actions {
+  flex-shrink: 0;
+  gap: 4px;
+}
+.mar-app-editor-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: var(--color-border-strong);
 }
 
 /* Panel */
 .mar-app-editor-panel {
+  position: absolute;
+  top: 60px;
+  left: var(--edge);
+  z-index: 20;
   display: flex;
-  /* 280 like the Hub's panel; it gives way first on a narrow window. */
-  width: clamp(240px, 30%, 288px);
-  min-height: 0;
-  flex-shrink: 0;
+  width: var(--panel);
+  max-height: calc(100% - 60px - var(--edge));
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-panel);
-  background: var(--color-card-background);
+  background: color-mix(in oklch, var(--color-card-background) 86%, transparent);
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(20px) saturate(1.2);
 }
 .mar-app-editor-fields {
   display: flex;
@@ -364,12 +456,13 @@ function back(): void {
   flex: 1;
   flex-direction: column;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .mar-app-editor-field {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 14px 14px 12px;
 }
 .mar-app-editor-field + .mar-app-editor-field {
   border-top: 1px solid var(--color-border-default);
@@ -378,11 +471,12 @@ function back(): void {
   font-size: var(--text-ui);
   line-height: var(--text-ui--line-height);
   font-weight: 500;
+  color: var(--color-muted-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-source {
   position: relative;
   display: block;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 10;
   overflow: hidden;
   border-radius: var(--radius-card);
   background: var(--color-secondary-background);
@@ -411,7 +505,7 @@ function back(): void {
 }
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-drop {
   display: flex;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 10;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -452,10 +546,10 @@ function back(): void {
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-run {
   display: flex;
   width: 100%;
-  height: 44px;
+  height: 40px;
   align-items: center;
   justify-content: space-between;
-  padding: 0 6px 0 16px;
+  padding: 0 5px 0 14px;
   border-radius: var(--radius-card);
   background: var(--color-inverted-background);
   color: var(--color-inverted-foreground);
@@ -481,7 +575,7 @@ function back(): void {
 }
 .mar-app-editor-cost {
   display: inline-flex;
-  height: 32px;
+  height: 30px;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
@@ -499,16 +593,27 @@ function back(): void {
   color: var(--color-subtle-foreground);
 }
 
-/* Stage */
-.mar-app-editor-stage {
-  position: relative;
+/* Share */
+.mar-app-editor-link {
   display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
+  margin-top: 12px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-card);
+  background: var(--color-secondary-background);
+  font-size: var(--text-ui);
+  color: var(--color-muted-foreground);
+}
+
+/* Canvas */
+.mar-app-editor-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
   flex-direction: column;
-  border-radius: var(--radius-panel);
-  background: color-mix(in oklch, var(--color-base-foreground) 3%, transparent);
+  padding: 60px calc(var(--edge) + 16px) 72px calc(var(--edge) * 2 + var(--panel) + 16px);
 }
 .mar-app-editor-canvas {
   position: relative;
@@ -517,7 +622,6 @@ function back(): void {
   flex: 1;
   align-items: center;
   justify-content: center;
-  margin: 28px 28px 76px;
   container-type: size;
 }
 /* The picture sizes the frame, so tags and Compare sit on the picture. */
@@ -526,7 +630,9 @@ function back(): void {
   margin: 0;
   overflow: hidden;
   border-radius: var(--radius-card);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.28);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
+    0 24px 60px rgb(0 0 0 / 0.3);
   transition: filter 500ms;
 }
 .mar-app-editor-pic > img:first-child {
@@ -616,16 +722,20 @@ function back(): void {
 .mar-app-editor-dock {
   position: absolute;
   bottom: 16px;
-  left: 50%;
+  left: calc(var(--edge) * 2 + var(--panel) + 16px);
+  right: calc(var(--edge) + 16px);
   display: flex;
-  translate: -50% 0;
+  width: fit-content;
+  height: 40px;
+  margin-inline: auto;
   align-items: center;
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-card);
-  background: var(--color-card-background);
+  background: color-mix(in oklch, var(--color-card-background) 86%, transparent);
   box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(20px);
   white-space: nowrap;
 }
 .mar-app-editor-rule {
@@ -635,11 +745,11 @@ function back(): void {
   background: var(--color-border-default);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-take {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   overflow: hidden;
   border-radius: var(--radius-min);
-  opacity: 0.6;
+  opacity: 0.55;
   transition: opacity 150ms;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-take.is-on {
