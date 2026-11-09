@@ -188,11 +188,13 @@ const ALL = computed<PanelAsset[]>(() => [
   ...PICTURES.map((p, i) => {
     const kind = i % 3 === 0 ? ('Imported' as const) : ('Generated' as const)
     const [when, age] = WHEN[i % WHEN.length]!
+    // A video's name ends in .mp4, a picture's in .png: type and name agree.
+    const video = i % 7 === 3
     return {
       id: kind === 'Imported' ? `pic-${i}-in-${i}` : `pic-${i}`,
-      name: `${p.name}.png`,
+      name: `${p.name}.${video ? 'mp4' : 'png'}`,
       src: p.src,
-      type: i % 7 === 3 ? ('video' as const) : ('image' as const),
+      type: video ? ('video' as const) : ('image' as const),
       source: 'local' as const,
       size: `${(0.8 + ((i * 0.37) % 3)).toFixed(1)} MB`,
       sizeMb: 1,

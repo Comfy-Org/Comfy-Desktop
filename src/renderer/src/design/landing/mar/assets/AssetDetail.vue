@@ -15,7 +15,7 @@ import {
   Workflow,
   X
 } from 'lucide-vue-next'
-import { onClickOutside } from '@vueuse/core'
+import { onClickOutside, useResizeObserver } from '@vueuse/core'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import type { MarAsset } from '../pages/assetsStore'
@@ -119,8 +119,8 @@ function zoomTo(pct?: number): void {
 }
 /** The details panel folds away for the picture alone. */
 const side = ref(true)
-// Folding Details resizes the stage, so the fit changes.
-watch(side, () => nextTick(measure))
+// The fit changes with the stage: the window, or Details folding.
+useResizeObserver(media, measure)
 
 // The filmstrip keeps the current asset in view, and fades at an edge
 // where more thumbnails sit past it, so none runs into the zoom.
@@ -200,13 +200,11 @@ function key(e: KeyboardEvent): void {
 }
 onMounted(async () => {
   window.addEventListener('keydown', key, true)
-  window.addEventListener('resize', measure)
   await nextTick()
   if (!tab) root.value?.focus()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', key, true)
-  window.removeEventListener('resize', measure)
   clearTimeout(timer)
   if (!tab) opener?.focus?.()
 })
@@ -275,11 +273,15 @@ onBeforeUnmount(() => {
           >
             <ChevronLeft :size="18" />
           </button>
-          <div ref="media" class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
-            <img v-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
-            <AssetCover v-else :name="asset.name" :type="asset.type" />
-            <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
-            <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
+          <!-- The picture is clipped to its own area: zoomed in, it never
+               runs under the bar or the filmstrip. -->
+          <div class="mad-view">
+            <div ref="media" class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
+              <img v-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
+              <AssetCover v-else :name="asset.name" :type="asset.type" />
+              <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
+              <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
+            </div>
           </div>
           <button
             type="button"
@@ -487,7 +489,8 @@ onBeforeUnmount(() => {
 }
 .mad {
   position: absolute;
-  inset: 20px 64px;
+  /* About 14% of the window around it, so the app shows behind. */
+  inset: 13vh 14vw;
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 380px);
   overflow: hidden;
@@ -500,9 +503,10 @@ onBeforeUnmount(() => {
   outline: none;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-x {
+  /* Just outside the frame's top-right corner. */
   position: absolute;
-  top: 20px;
-  right: 14px;
+  top: 13vh;
+  right: calc(14vw - 48px);
   display: inline-flex;
   width: 36px;
   height: 36px;
@@ -550,7 +554,20 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 64px 72px 104px;
+}
+.mad.is-tab .mad-view {
+  bottom: 16px;
+}
+.mad-view {
+  position: absolute;
+  inset: 60px 16px 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 56px;
+  /* The picture fits this area, not the window. */
+  container-type: size;
 }
 .mad-bar {
   position: absolute;
@@ -593,7 +610,7 @@ onBeforeUnmount(() => {
 .mad-media {
   position: relative;
   transition: scale 0.16s ease-out;
-  width: min(100%, calc(78vh * var(--r)));
+  width: min(100%, calc(100cqh * var(--r)));
   min-width: 0;
   flex: 0 1 auto;
   aspect-ratio: var(--r);
@@ -668,12 +685,14 @@ onBeforeUnmount(() => {
   display: none;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out {
-  left: 12px;
+  /* Right beside the frame's sides, in the margin around it. */
+  --mad-side: 14vw;
+  left: calc(var(--mad-side) - 52px);
   background: rgb(255 255 255 / 0.1);
   color: #fff;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out.is-right {
-  right: 12px;
+  right: calc(var(--mad-side) - 52px);
   left: auto;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out:hover:not(:disabled) {
@@ -1077,6 +1096,19 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+/* Smaller windows: the frame takes more of them. */
+@media (max-width: 1280px), (max-height: 760px) {
+  .mad:not(.is-tab) {
+    inset: 24px 64px;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-out {
+    --mad-side: 64px;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mad-x {
+    top: 24px;
+    right: 16px;
+  }
+}
 /* Narrow windows: the details go under the picture. */
 @media (max-width: 820px) {
   .mad {
@@ -1105,11 +1137,9 @@ onBeforeUnmount(() => {
     border-top: 1px solid var(--mad-line);
     border-left: 0;
   }
-  .mad-stage {
-    padding: 60px 56px 16px;
-  }
-  .mad-media {
-    width: min(100%, calc((54vh - 80px) * var(--r)));
+  .mad-view {
+    inset: 56px 8px 12px;
+    padding: 0 44px;
   }
   :root .proto-ui.proto-ui.proto-ui .mad-arrow {
     left: 8px;
