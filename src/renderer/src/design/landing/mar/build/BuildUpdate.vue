@@ -47,12 +47,11 @@ function changeTorch(v: string, copy: boolean): void {
     <div class="flex flex-col gap-2">
       <Card v-for="t in TORCH" :key="t.v" class="mar-bt-row" :class="t.on && 'is-on'">
         <div class="min-w-0 flex-1">
-          <p class="mar-bt-title flex items-center gap-2">
-            PyTorch {{ t.v }}<span v-if="t.on" class="mar-tag">Selected</span>
-          </p>
+          <p class="mar-bt-title">PyTorch {{ t.v }}</p>
           <p class="mar-bt-sub">{{ t.on ? facts.torch : t.note }}</p>
         </div>
-        <template v-if="!t.on">
+        <span v-if="t.on" class="mar-tag">Selected</span>
+        <template v-else>
           <Button variant="ghost" size="sm" @click="changeTorch(t.v, true)"
             ><CopyPlus :size="13" />Copy & Change</Button
           >

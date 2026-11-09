@@ -32,6 +32,7 @@ import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import { can } from '../../milestones'
+import { buildsAsM1 } from '../build/buildsAsM1'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
 import { TEMPLATES, thumb, type ProtoInstance } from '../../mock'
 import { allAssets } from '../../gallery'
@@ -89,7 +90,7 @@ const SYNCED = (): ProtoInstance[] => M1_BUILDS.filter((b) => !extraOf(b.id).mig
 // A fresh install (the local setup's first build) lists none of them.
 const extras = (): ProtoInstance[] => {
   if (proto.oneLocal || proto.fresh) return []
-  if (proto.milestone < 3) return M1_BUILDS
+  if (buildsAsM1.value) return M1_BUILDS
   return syncing.value ? SYNCED() : []
 }
 const seed = (): Build[] =>
@@ -131,7 +132,7 @@ const building = computed(() => proto.mode === 'build')
 const view = ref<'grid' | 'list'>(building.value ? 'list' : 'grid')
 // One-line rows: all Milestone 1 has, and the default after it
 // (UI Playground › Builds view).
-const rowsOnly = computed(() => (proto.milestone < 3 || buildCard.id === 'rows') && !building.value)
+const rowsOnly = computed(() => (buildsAsM1.value || buildCard.id === 'rows') && !building.value)
 
 // Cloud and Remote show only when there are builds there (ChooserView).
 const countWhere = (w: BuildWhere): number => builds.items.filter((b) => whereOf(b) === w).length
@@ -383,7 +384,7 @@ function m1Lines(b: Build): MenuLine[] {
       ? [
           { label: 'Export Snapshot', icon: Download, run: () => toast('Snapshot exported.') },
           // Snapshots live on the build's page in Builds, on Settings after it.
-          ...(proto.milestone < 3 || syncing.value
+          ...(buildsAsM1.value || syncing.value
             ? [
                 {
                   label: 'Restore Snapshot',
@@ -444,7 +445,7 @@ function open(b: Build): void {
 function lines(b: Build): MenuLine[] {
   if (rowsOnly.value) return m1Lines(b)
   // A build's own tabs, where its page has them (the Builds milestone).
-  const own = b.id !== 'cloud' && !can.value.breadcrumb
+  const own = b.id !== 'cloud' && buildsAsM1.value
   return [
     ...(own
       ? [

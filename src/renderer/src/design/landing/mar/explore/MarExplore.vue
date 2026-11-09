@@ -41,7 +41,7 @@ const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
 const TABS: { value: Tab; label: string; count: number }[] = asApps
   ? [
       { value: 'examples', label: 'Gallery', count: APP_EXAMPLES.length },
-      { value: 'apps', label: 'Apps', count: APPS_COUNT }
+      { value: 'apps', label: 'Catalog', count: APPS_COUNT }
     ]
   : [
       {
@@ -82,7 +82,7 @@ watch(tab, clearFilters)
 const PLACEHOLDER: Record<Tab, string> = {
   templates: 'Search templates',
   models: 'Search models or providers',
-  apps: 'Search apps',
+  apps: 'Search',
   examples: 'Search',
   tutorials: 'Search tutorials'
 }
@@ -356,10 +356,15 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           <span v-if="x.kind === 'Video'" class="mar-ex-tile-kind" aria-label="Video"
             ><Video :size="13" />{{ x.duration }}</span
           >
+          <span v-else class="mar-ex-tile-kind is-icon" aria-label="Image"
+            ><Image :size="13"
+          /></span>
           <!-- What it is and which app made it, over a fade, on hover. -->
           <span class="mar-ex-tile-text">
-            <span class="block truncate text-ui font-medium text-white">{{ x.title }}</span>
-            <span class="block truncate text-ui text-white/70">{{ appName(x.app) }}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-ui text-white/70">{{ appName(x.app) }}</span>
+              <span class="block truncate text-ui font-medium text-white">{{ x.title }}</span>
+            </span>
             <!-- The same Run app as Home's examples. -->
             <span class="mar-ex-tile-go" aria-hidden="true"><Play :size="13" />Run app</span>
           </span>
@@ -483,7 +488,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 9px;
+  padding: 6px 12px 6px 11px;
   border-radius: 999px;
   background: rgb(0 0 0 / 0.5);
   backdrop-filter: blur(8px);
@@ -491,6 +496,9 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   font-size: 12px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+.mar-ex-tile-kind.is-icon {
+  padding: 7px;
 }
 .mar-ex-tile-video {
   position: absolute;
@@ -508,6 +516,9 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   position: absolute;
   z-index: 1;
   inset: auto 0 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
   padding: 48px 14px 14px;
   background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.4) 55%, transparent);
   opacity: 0;
@@ -520,8 +531,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   display: inline-flex;
   height: 30px;
   align-items: center;
+  flex: none;
   gap: 6px;
-  margin-top: 10px;
   padding: 0 13px 0 11px;
   border-radius: var(--radius-control);
   background: #fff;

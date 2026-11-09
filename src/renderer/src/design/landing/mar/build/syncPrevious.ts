@@ -1,5 +1,5 @@
 import { computed, reactive, watch } from 'vue'
-import { can } from '../../milestones'
+import { buildsAsM1 } from './buildsAsM1'
 
 /** UI Playground › Sync with previous versions. Off by default. On, the
  *  versions after Builds keep what the Builds milestone can do: a Settings
@@ -31,4 +31,4 @@ watch(
 )
 
 /** On, and past the Builds milestone. */
-export const syncing = computed(() => syncPrevious.id === 'on' && can.value.breadcrumb)
+export const syncing = computed(() => syncPrevious.id === 'on' && !buildsAsM1.value)

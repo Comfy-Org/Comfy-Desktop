@@ -56,6 +56,7 @@ import {
 import { allWorkflows } from '../../gallery'
 import { deployEnv, go, goIn, proto, toast, type Page } from '../../useProto'
 import { can } from '../../milestones'
+import { buildsAsM1 } from './buildsAsM1'
 import { PROJECTS, type ProtoInstance } from '../../mock'
 import MarEntityHeader from '../pages/MarEntityHeader.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
@@ -128,7 +129,7 @@ type Tab =
   | 'terminal'
 
 // The Builds milestone: production's tabs (or Overview first).
-const mvp = computed(() => !can.value.breadcrumb)
+const mvp = computed(() => buildsAsM1.value)
 const state = stateOf(env)
 const snaps = snapshotsOf(env)
 const pending = computed(() => pendingOf(env))

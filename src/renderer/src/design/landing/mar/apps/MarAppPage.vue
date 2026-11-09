@@ -28,6 +28,7 @@ import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
+import { can } from '../../milestones'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
 
@@ -196,9 +197,11 @@ function copy(): void {
 // sponsor, or this computer.
 const payerNote = computed(() => (/from your credits/i.test(payer) ? '' : payer))
 
+// Back lands where apps are listed: Explore from Explore & Learn on,
+// before that the Apps page (Milestone 2 has no Explore).
 function back(): void {
   appsProto.front = ''
-  go('explore')
+  go(can.value.explore ? 'explore' : 'apps')
 }
 </script>
 
@@ -317,26 +320,6 @@ function back(): void {
       <!-- Panel: what you give it, and Run at its foot -->
       <aside class="mar-app-editor-panel" aria-label="Input">
         <div class="mar-app-editor-fields">
-          <!-- Examples: start from one, like a template; it fills the
-               panel and shows its result. -->
-          <section v-if="examples.length > 1" class="mar-app-editor-field">
-            <h2 class="mar-app-editor-label">Start from an example</h2>
-            <div class="mar-app-ex">
-              <button
-                v-for="x in examples"
-                :key="x.id"
-                type="button"
-                :title="x.title"
-                :aria-label="x.title"
-                :aria-pressed="x.id === exId"
-                :class="cn('mar-app-ex-pick', x.id === exId && 'is-on')"
-                @click="pickExample(x)"
-              >
-                <img :src="x.after" alt="" />
-              </button>
-            </div>
-            <p class="truncate text-ui text-muted-foreground">{{ example?.title }}</p>
-          </section>
           <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
             <h2 class="mar-app-editor-label">{{ f.label }}</h2>
             <button
@@ -474,9 +457,30 @@ function back(): void {
           </div>
         </div>
 
-        <!-- Dock: your takes once you've run it. Before that the picture's
-             tag says it's an example. -->
-        <div v-if="state === 'done'" class="mar-app-editor-dock">
+        <!-- Dock: before a run, the app's examples to start from, like
+             templates (picking one fills the panel and shows its result);
+             once you've run it, your takes. -->
+        <div
+          v-if="state === 'idle' && examples.length > 1"
+          class="mar-app-editor-dock is-examples"
+          role="group"
+          aria-label="Examples"
+        >
+          <span class="mar-app-editor-dock-label">Examples</span>
+          <button
+            v-for="x in examples"
+            :key="x.id"
+            type="button"
+            :title="x.title"
+            :aria-label="x.title"
+            :aria-pressed="x.id === exId"
+            :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
+            @click="pickExample(x)"
+          >
+            <img :src="x.after" alt="" />
+          </button>
+        </div>
+        <div v-else-if="state === 'done'" class="mar-app-editor-dock">
           <template v-if="takes.length > 1">
             <button
               v-for="(filter, i) in takes"
@@ -507,7 +511,7 @@ function back(): void {
 
 <style scoped>
 .mar-app-editor {
-  --panel: clamp(256px, 26vw, 304px);
+  --panel: clamp(300px, 30vw, 360px);
   --edge: 12px;
   display: grid;
   height: 100%;
@@ -568,7 +572,7 @@ function back(): void {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 14px 14px 12px;
+  padding: 16px 20px 14px;
 }
 .mar-app-editor-field + .mar-app-editor-field {
   border-top: 1px solid var(--color-border-default);
@@ -646,7 +650,7 @@ function back(): void {
 .mar-app-editor-foot {
   flex-shrink: 0;
   margin-top: auto;
-  padding: 12px;
+  padding: 12px 20px 20px;
   border-top: 1px solid var(--color-border-default);
 }
 /* Run: the one white button, its label left and the cost right. */
@@ -864,6 +868,18 @@ function back(): void {
   background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
   white-space: nowrap;
 }
+/* Examples scroll inside the dock when an app has many. */
+.mar-app-editor-dock.is-examples {
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-inline: 14px 4px;
+}
+.mar-app-editor-dock-label {
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+}
 .mar-app-editor-done {
   display: inline-flex;
   align-items: center;
@@ -900,31 +916,6 @@ function back(): void {
   background: transparent;
   opacity: 0.7;
 }
-/* Start from an example: the results, small and square. */
-.mar-app-ex {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-ex-pick {
-  aspect-ratio: 1;
-  overflow: hidden;
-  border-radius: 8px;
-  opacity: 0.6;
-  transition: opacity 150ms;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-ex-pick:hover {
-  opacity: 0.9;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-ex-pick.is-on {
-  opacity: 1;
-  box-shadow: 0 0 0 2px var(--color-base-foreground);
-}
-.mar-app-ex-pick img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
 .mar-app-editor-rule {
   width: 1px;
   height: 16px;
@@ -934,6 +925,7 @@ function back(): void {
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-take {
   width: 30px;
   height: 30px;
+  flex-shrink: 0;
   overflow: hidden;
   border-radius: var(--radius-min);
   opacity: 0.55;
