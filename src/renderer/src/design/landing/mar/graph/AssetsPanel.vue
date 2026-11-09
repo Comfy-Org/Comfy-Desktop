@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
   Check,
-  ChevronLeft,
   ChevronRight,
   Copy,
   Download,
@@ -71,7 +70,24 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 const tab = ref<Tab>('Generated')
 const query = ref('')
-const menu = ref<'' | 'view' | 'sort'>('')
+const menu = ref<'' | 'view'>('')
+/** View settings › Sort by: its options open to the right, level with the row,
+ *  past the panel's edge. */
+const sortOpen = ref(false)
+const sortRow = ref<HTMLElement>()
+const sortTop = ref(0)
+const sortLeft = ref(0)
+function openSort(): void {
+  // Fixed, in window coordinates: the panel clips what crosses its edge.
+  const row = sortRow.value
+  const menuBox = row?.closest('.rp-menu')?.getBoundingClientRect()
+  if (row && menuBox) {
+    sortTop.value = row.getBoundingClientRect().top - 5
+    sortLeft.value = menuBox.right + 4
+  }
+  sortOpen.value = true
+}
+watch(menu, () => (sortOpen.value = false))
 const viewAnchor = ref<HTMLElement>()
 onClickOutside(viewAnchor, () => (menu.value = ''))
 // Masonry by default; a pick is remembered per viewer.
@@ -414,27 +430,35 @@ function upload(files: FileList | null | undefined): void {
               class="rp-row ap-check"
               :aria-checked="d.on.value"
               @click="d.on.value = !d.on.value"
+              @mouseenter="sortOpen = false"
             >
               <span>{{ d.label }}</span
               ><Check v-if="d.on.value" :size="14" />
             </button>
             <span class="rp-menu-sep" />
             <button
+              ref="sortRow"
               type="button"
               role="menuitem"
               class="rp-row ap-check"
+              :class="sortOpen && 'is-open'"
               aria-haspopup="menu"
-              @click="menu = 'sort'"
+              :aria-expanded="sortOpen"
+              @click="openSort"
+              @mouseenter="openSort"
             >
               <span>Sort by</span><span class="ap-menu-val">{{ sort }}</span
               ><ChevronRight :size="14" />
             </button>
           </div>
-          <div v-else-if="menu === 'sort'" class="rp-menu is-end ap-menu" role="menu">
-            <button type="button" class="rp-row ap-back" @click="menu = 'view'">
-              <ChevronLeft :size="14" /><span>Sort by</span>
-            </button>
-            <span class="rp-menu-sep" />
+          <!-- Sort by opens beside the menu, to the right, as a submenu. -->
+          <div
+            v-if="menu === 'view' && sortOpen"
+            class="rp-menu ap-menu ap-sub"
+            role="menu"
+            aria-label="Sort by"
+            :style="{ top: `${sortTop}px`, left: `${sortLeft}px` }"
+          >
             <button
               v-for="o in SORTS"
               :key="o"
@@ -767,9 +791,16 @@ function upload(files: FileList | null | undefined): void {
 .ap-menu {
   min-width: 240px;
 }
+.rp-menu.ap-sub {
+  position: fixed;
+  min-width: 180px;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-check.is-open {
+  background: var(--rp-hover);
+}
 /* View settings: the view named beside its label; each display option
    says its state with a check on the right; Sort by drills into its own
-   list, so the menu stays short. */
+   list beside it, to the right. */
 .ap-menu-head {
   display: flex;
   justify-content: space-between;

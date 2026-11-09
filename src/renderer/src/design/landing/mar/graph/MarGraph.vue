@@ -1838,8 +1838,20 @@ function addFromPanel(kind: NodeKind): void {
   inset: 0;
   overflow: hidden;
   touch-action: none;
+}
+/* The dots hold the middle of the canvas and fade out toward its edges,
+   so the panels and bars around it sit on a calm ground. */
+.mg-canvas::before {
+  position: absolute;
+  inset: 0;
   background: radial-gradient(circle at 1px 1px, var(--mg-dot) 1px, transparent 1.4px) var(--mg-gx)
     var(--mg-gy) / var(--mg-gs) var(--mg-gs);
+  content: '';
+  mask-image: radial-gradient(ellipse 62% 70% at 50% 50%, #000 30%, transparent 100%);
+  pointer-events: none;
+}
+.is-current .mg-canvas::before {
+  content: none;
 }
 .mg-drop {
   position: absolute;
@@ -2822,9 +2834,16 @@ function addFromPanel(kind: NodeKind): void {
 }
 
 /* ComfyUI has no glass. Every floating surface takes its solid
-   counterpart from the same DS tokens: the tone the glass showed, over
-   the canvas colour instead of over the blur. Menus teleported out of
-   the graph follow through data-mar-graph. */
+   counterpart from the same DS tokens: panels sit on the card colour,
+   and what opens from them (menus, submenus, popovers) a step lighter,
+   so it reads as raised above the panel. Menus teleported out of the
+   graph follow through data-mar-graph. */
+:root {
+  --mg-menu: color-mix(in oklch, var(--color-base-foreground) 9%, var(--color-card-background));
+}
+:root[data-ds-theme='light'] {
+  --mg-menu: var(--color-card-background);
+}
 .mg {
   --mg-float: color-mix(in oklch, var(--color-base-foreground) 8%, var(--color-content-background));
 }
@@ -2832,29 +2851,60 @@ function addFromPanel(kind: NodeKind): void {
   --mg-float: var(--color-card-background);
 }
 .mg :is(.rp, .sp, .rp-dialog) {
-  --rp-surface: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-card-background));
-}
-:root[data-ds-theme='light'] .mg :is(.rp, .sp, .rp-dialog) {
   --rp-surface: var(--color-card-background);
 }
 .mg .mg-runmenu {
-  background: var(--color-content-background);
+  background: var(--mg-menu);
 }
 .mg,
 .mg * {
   backdrop-filter: none !important;
 }
 :root[data-mar-ui='on'][data-mar-graph='on']
-  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
-  background-color: color-mix(
-    in oklch,
-    var(--color-base-foreground) 6%,
-    var(--color-card-background)
-  );
+  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']),
+:root[data-mar-graph='on'] .afm.afm.afm[role='menu'],
+:root[data-mar-graph='on'] .mg .ap-tagmenu {
+  background: var(--mg-menu);
   backdrop-filter: none;
 }
-:root[data-mar-ui='on'][data-ds-theme='light'][data-mar-graph='on']
-  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
-  background-color: var(--color-card-background);
+
+/* Every menu opened from ComfyUI is built like the Home's (layers.css):
+   radius 14 with 6 of padding, rows of 33 with 10 of inset and radius 8,
+   group titles as the sidebar's labels. Only the glass stays out. */
+:root[data-mar-graph='on'] :is(.mg .rp-menu, .afm.afm.afm[role='menu'], .mg .ap-tagmenu) {
+  padding: 6px;
+  border: 0;
+  border-radius: 14px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.2),
+    0 18px 48px -16px rgb(0 0 0 / 0.65);
+  font-size: 13px;
+}
+:root[data-ds-theme='light'][data-mar-graph='on']
+  :is(.mg .rp-menu, .afm.afm.afm[role='menu'], .mg .ap-tagmenu) {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 18px 44px -14px rgb(0 0 0 / 0.24);
+}
+:root[data-mar-graph='on']
+  .proto-ui.proto-ui
+  :is(.mg .rp-menu .rp-row, .afm .afm-item.afm-item, .mg .ap-tagmenu-row) {
+  min-height: 33px;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+:root[data-mar-graph='on'] :is(.mg .rp-menu .rp-menu-label, .afm .afm-label) {
+  padding: 8px 10px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:root[data-mar-graph='on'] .afm .afm-search {
+  padding: 0 10px;
 }
 </style>

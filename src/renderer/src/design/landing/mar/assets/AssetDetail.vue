@@ -455,8 +455,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   align-items: center;
   justify-content: center;
-  gap: 20px;
-  padding: 64px 24px 32px;
+  padding: 64px 72px 32px;
 }
 .mad-bar {
   position: absolute;
@@ -539,9 +538,19 @@ onBeforeUnmount(() => {
   color: var(--color-base-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-arrow {
+  /* Pinned to the stage's edges: they stay put whatever the asset's width. */
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  z-index: 1;
   width: 40px;
   height: 40px;
+  translate: 0 -50%;
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-arrow.is-right {
+  right: 16px;
+  left: auto;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-icon:hover,
 :root .proto-ui.proto-ui.proto-ui .mad-arrow:hover:not(:disabled) {
@@ -949,11 +958,17 @@ onBeforeUnmount(() => {
     border-left: 0;
   }
   .mad-stage {
-    padding: 60px 12px 16px;
-    gap: 8px;
+    padding: 60px 56px 16px;
   }
   .mad-media {
     width: min(100%, calc((54vh - 80px) * var(--r)));
+  }
+  :root .proto-ui.proto-ui.proto-ui .mad-arrow {
+    left: 8px;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-right {
+    right: 8px;
+    left: auto;
   }
 }
 </style>
