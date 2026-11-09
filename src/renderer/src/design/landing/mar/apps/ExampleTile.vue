@@ -60,7 +60,7 @@ function play(e: MouseEvent, on: boolean): void {
         class="mar-ex-tile-video"
       />
       <span v-if="badge && x.kind === 'Video'" class="mar-ex-tile-kind" aria-label="Video"
-        ><Video :size="13" />{{ x.duration }}</span
+        ><Video :size="12" />{{ x.duration }}</span
       >
       <!-- A landscape photo: an outlined frame, wider than tall, with a
            filled sun and hills inside. -->
@@ -118,23 +118,25 @@ function play(e: MouseEvent, on: boolean): void {
 .mar-ex-tile-kind {
   position: absolute;
   z-index: 1;
-  top: 10px;
-  left: 10px;
+  top: 8px;
+  left: 8px;
   display: inline-flex;
+  height: 22px;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px 6px 11px;
+  gap: 5px;
+  padding: 0 8px 0 7px;
   border-radius: 999px;
   /* Dark glass, so it reads on any picture, bright or dark. */
   background: rgb(14 14 16 / 0.5);
   backdrop-filter: blur(16px) saturate(1.6);
   color: #fff;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+/* Slim, like a caption: the picture leads. */
 .mar-ex-tile-kind.is-icon {
-  padding: 6px 8px;
+  padding: 0 7px;
 }
 .mar-ex-tile-video {
   position: absolute;

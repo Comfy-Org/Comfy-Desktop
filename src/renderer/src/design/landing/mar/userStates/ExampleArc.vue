@@ -244,9 +244,13 @@ function wheel(e: WheelEvent): void {
           <span class="mar-arc-title">{{ x.label }}</span>
           <span class="mar-arc-meta"><span class="mar-arc-app">App</span> · {{ x.kind }}</span>
         </span>
-        <span class="mar-arc-does">{{ x.does }}</span>
         <span class="mar-arc-dim" />
-        <span class="mar-arc-go" aria-hidden="true"><Play :size="13" />Run app</span>
+        <!-- As on the app cards: what it does on the left, the white Run
+             on the right, one row over the fade. -->
+        <span class="mar-arc-bar">
+          <span class="mar-arc-does">{{ x.does }}</span>
+          <span class="mar-arc-go" aria-hidden="true"><Play :size="13" />Run app</span>
+        </span>
       </button>
     </div>
 
@@ -346,18 +350,16 @@ function wheel(e: WheelEvent): void {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-/* What the app does: shown with Run, over the scrim, on the front card. */
-.mar-arc-does {
+/* What the app does and Run, one row at the bottom of the front card,
+   shown when you point at it (or focus it): the app cards' layout. */
+.mar-arc-bar {
   position: absolute;
   right: 14px;
-  bottom: 54px;
+  bottom: 14px;
   left: 14px;
-  color: #fff;
-  font-size: 13px;
-  line-height: 1.35;
-  text-align: left;
-  text-wrap: balance;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  display: flex;
+  align-items: center;
+  gap: 10px;
   opacity: 0;
   pointer-events: none;
   transform: translateY(6px);
@@ -365,10 +367,21 @@ function wheel(e: WheelEvent): void {
     opacity 200ms ease,
     transform 300ms cubic-bezier(0.19, 1, 0.22, 1);
 }
-.mar-arc-card.is-front:hover .mar-arc-does,
-.mar-arc-card.is-front:focus-visible .mar-arc-does {
+.mar-arc-card.is-front:hover .mar-arc-bar,
+.mar-arc-card.is-front:focus-visible .mar-arc-bar {
   opacity: 1;
+  pointer-events: auto;
   transform: none;
+}
+.mar-arc-does {
+  min-width: 0;
+  flex: 1;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  text-wrap: balance;
 }
 .mar-arc-meta {
   margin-top: 2px;
@@ -380,19 +393,16 @@ function wheel(e: WheelEvent): void {
 .mar-arc-scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 45%, rgb(0 0 0 / 0.65));
+  background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.4) 30%, transparent 55%);
   opacity: 0;
   pointer-events: none;
   transition: opacity 250ms ease;
 }
 .mar-arc-go {
-  position: absolute;
-  bottom: 14px;
-  left: 14px;
-  display: flex;
+  display: inline-flex;
   height: 30px;
+  flex: none;
   align-items: center;
-  justify-content: center;
   gap: 6px;
   padding: 0 13px 0 11px;
   border-radius: var(--radius-control);
@@ -405,25 +415,13 @@ function wheel(e: WheelEvent): void {
   font-weight: 600;
   letter-spacing: -0.005em;
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(6px) scale(0.98);
-  transition:
-    opacity 200ms ease,
-    transform 300ms cubic-bezier(0.19, 1, 0.22, 1),
-    background-color 160ms ease;
-}
-.mar-arc-card.is-front:hover .mar-arc-go,
-.mar-arc-card.is-front:focus-visible .mar-arc-go {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
+  transition: background-color 160ms ease;
 }
 .mar-arc-card .mar-arc-go:hover {
   background: rgb(255 255 255 / 0.9);
 }
 .mar-arc-card .mar-arc-go:active {
-  transform: translateY(0) scale(0.98);
+  scale: 0.98;
 }
 .mar-arc-card.is-front:hover .mar-arc-scrim,
 .mar-arc-card.is-front:focus-visible .mar-arc-scrim {
@@ -439,7 +437,7 @@ function wheel(e: WheelEvent): void {
 }
 @media (prefers-reduced-motion: reduce) {
   .mar-arc-card .mar-arc-after,
-  .mar-arc-does,
+  .mar-arc-bar,
   .mar-arc-go,
   .mar-arc-scrim {
     transition: none;
@@ -475,23 +473,18 @@ function wheel(e: WheelEvent): void {
   will-change: transform;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-arc-card.is-front {
-  box-shadow:
-    0 0 0 1.5px rgb(255 255 255 / 0.9),
-    0 28px 56px -26px rgb(0 0 0 / 0.8);
+  box-shadow: 0 28px 56px -26px rgb(0 0 0 / 0.8);
   cursor: pointer;
 }
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-arc-card {
   box-shadow: 0 24px 44px -24px rgb(0 0 0 / 0.4);
 }
 :root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-arc-card.is-front {
-  box-shadow:
-    0 0 0 1.5px rgb(0 0 0 / 0.85),
-    0 24px 44px -24px rgb(0 0 0 / 0.4);
+  box-shadow: 0 24px 44px -24px rgb(0 0 0 / 0.4);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-arc-card.is-front:focus-visible {
   box-shadow:
-    0 0 0 1.5px rgb(255 255 255 / 0.9),
-    0 0 0 4px var(--color-border-focus),
+    0 0 0 2px var(--color-border-focus),
     0 28px 56px -26px rgb(0 0 0 / 0.8);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-arc-all {
