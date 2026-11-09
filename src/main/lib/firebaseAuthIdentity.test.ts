@@ -48,6 +48,7 @@ import {
   bindMainVerifiedFirebaseUser,
   deactivateFirebaseAuthReporter,
   getFirebaseIdentityConsensus,
+  getUnverifiedLocalFirebaseSignInReport,
   observeFirebaseIdentityConsensus,
   PENDING_CONSENSUS_DEADLINE_MS,
   reportFirebaseAuthState as recordFirebaseAuthState,
@@ -202,6 +203,33 @@ describe('firebaseAuthIdentity consensus', () => {
     telemetry.markAnonymousEpochUnmergeable.mockReturnValue(true)
     verifiedLocalUsers.clear()
     verifiedLocalPersistence.succeeds = true
+  })
+
+  it('keeps unverified Local reports out of consensus and expires them on sign-out or navigation', () => {
+    const local = new FakeWebContents('http://127.0.0.1:8188/')
+    const contents = local.asWebContents()
+    const signedIn = { status: 'signed_in', userId: 'F' } as const
+    activate(local)
+    reportFirebaseAuthState(contents, signedIn)
+    const initialReport = getUnverifiedLocalFirebaseSignInReport(contents)!
+    expect(initialReport.userId).toBe('F')
+    expect(viewsReportingFirebaseUser('F')).toEqual([])
+    expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
+
+    reportFirebaseAuthState(contents, { status: 'signed_out' })
+    expect(getUnverifiedLocalFirebaseSignInReport(contents)).toBeNull()
+    reportFirebaseAuthState(contents, signedIn)
+    const currentReport = getUnverifiedLocalFirebaseSignInReport(contents)!
+    expect(currentReport).not.toBe(initialReport)
+
+    local.navigate(local.getURL())
+    expect(getUnverifiedLocalFirebaseSignInReport(contents)).toBeNull()
+    reportFirebaseAuthState(contents, signedIn)
+    expect(getUnverifiedLocalFirebaseSignInReport(contents)).not.toBe(currentReport)
+    expect(viewsReportingFirebaseUser('F')).toEqual([])
+    expect(telemetry.applyFirebaseUserConsensus).not.toHaveBeenCalled()
+    expect(telemetry.bindUserId).not.toHaveBeenCalled()
+    expect(verifiedLocalUsers.size).toBe(0)
   })
 
   it('waits for every live trusted reporter before binding one agreed user', () => {

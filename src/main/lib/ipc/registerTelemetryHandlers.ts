@@ -2,7 +2,7 @@
 // identity, consent, and dedup live in one place. Capture messages are
 // fire-and-forget (ipcMain.on).
 import { ipcMain, type IpcMainEvent, type WebContents, type WebFrameMain } from 'electron'
-import { findEntryByComfySender } from '../../host/registry'
+import { comfyWindows, findEntryByComfySender, type ComfyWindowEntry } from '../../host/registry'
 import * as mainTelemetry from '../telemetry'
 import {
   getFlagAsync as getExperimentFlagAsync,
@@ -10,10 +10,23 @@ import {
   type ExperimentExposureSource
 } from '../experiments'
 import { normalizeExceptionContext } from '../../../shared/piiScrub'
-import { reportFirebaseAuthState, viewsReportingFirebaseUser } from '../firebaseAuthIdentity'
+import {
+  getFirebaseIdentityConsensus,
+  getUnverifiedLocalFirebaseSignInReport,
+  observeFirebaseIdentityConsensus,
+  reportFirebaseAuthState,
+  viewsReportingFirebaseUser
+} from '../firebaseAuthIdentity'
 import { parseProactiveGreetingAttribution } from '../proactiveGreetingTelemetry'
-import type { ComfyDesktop2FirebaseAuthState } from '../../../types/comfyDesktopBridge'
+import type {
+  ComfyDesktop2FirebaseAuthState,
+  ComfyDesktop2ProactiveGreetingAdmission
+} from '../../../types/comfyDesktopBridge'
 import { normalizePostHogUserId } from '../opaqueIdentifier'
+import { isTrustedCloudUrl } from '../trustedCloudUrl'
+import { isLoopbackOrigin } from '../verifiedLocalFirebaseAuth'
+import { lookupAccount } from '../../auth/desktopLoginCode/customTokenSignIn'
+import { getFirebaseConfig } from '../../auth/firebaseBridge/config'
 
 interface CapturePayload {
   event?: unknown
@@ -194,23 +207,160 @@ function withPlatformAxes(
   return properties
 }
 
+function isProactiveGreetingHost(entry: ComfyWindowEntry, url: string): boolean {
+  if (!entry.installationId) return false
+  if (entry.sourceCategory === 'cloud') return isTrustedCloudUrl(url)
+  if (entry.sourceCategory !== 'local' || entry.sourceId !== 'standalone') return false
+  const origin = URL.parse(url)?.origin
+  return !!origin && isLoopbackOrigin(origin) && URL.parse(entry.comfyUrl)?.origin === origin
+}
+
 function isProactiveGreetingSender(event: HostedSenderEvent, userId: string): boolean {
-  return Boolean(
-    event &&
-    firebaseAuthReporterFrame(event) &&
-    findEntryByComfySender(event.sender) &&
+  const frame = event && firebaseAuthReporterFrame(event)
+  if (!frame) return false
+  const entry = findEntryByComfySender(event.sender)
+  return (
+    !!entry &&
+    isProactiveGreetingHost(entry, frame.url) &&
     viewsReportingFirebaseUser(userId).includes(event.sender)
   )
 }
 
+const verifyingLocalViews = new WeakSet<WebContents>()
+const verifiedLocalReports = new WeakSet<object>()
+
+function canUseLocalGreetingProof(userId: string): boolean {
+  const consensus = getFirebaseIdentityConsensus()
+  return (
+    consensus.status !== 'pending' &&
+    consensus.status !== 'conflicted' &&
+    (consensus.status !== 'signed_in' || consensus.userId === userId) &&
+    mainTelemetry.canCaptureVerifiedProactiveGreeting(userId)
+  )
+}
+
+function hasLocalGreetingProof(event: HostedSenderEvent, userId: string): boolean {
+  const frame = event && firebaseAuthReporterFrame(event)
+  if (!frame) return false
+  const entry = findEntryByComfySender(event.sender)
+  if (!entry || entry.sourceId !== 'standalone' || !isProactiveGreetingHost(entry, frame.url))
+    return false
+  const report = getUnverifiedLocalFirebaseSignInReport(event.sender)
+  return (
+    report?.userId === userId &&
+    verifiedLocalReports.has(report) &&
+    canUseLocalGreetingProof(userId)
+  )
+}
+
+async function getProactiveGreetingAdmission(
+  event: HostedSenderEvent,
+  value: unknown,
+  token: unknown
+): Promise<ComfyDesktop2ProactiveGreetingAdmission> {
+  const userId = normalizePostHogUserId(value)
+  if (!userId || userId !== value) return 'denied'
+  const frame = firebaseAuthReporterFrame(event)
+  const entry = findEntryByComfySender(event.sender)
+  if (!frame || !entry || !isProactiveGreetingHost(entry, frame.url)) return 'denied'
+  if (
+    mainTelemetry.canEnrollProactiveGreeting(userId) &&
+    viewsReportingFirebaseUser(userId).includes(event.sender)
+  )
+    return 'allowed'
+  if (entry.sourceId !== 'standalone' || entry.sourceCategory !== 'local') return 'denied'
+
+  const revision = mainTelemetry.getProactiveGreetingConsentRevision()
+  const report = getUnverifiedLocalFirebaseSignInReport(event.sender)
+  if (revision === null || report?.userId !== userId || !canUseLocalGreetingProof(userId))
+    return 'denied'
+  if (verifiedLocalReports.has(report)) return 'allowed'
+  if (token === undefined) return 'verify-firebase'
+  if (typeof token !== 'string' || !token.length || token.length > 16_384) return 'denied'
+  if (verifyingLocalViews.has(event.sender)) return 'denied'
+
+  const { processId, routingId } = frame
+  const { installationId } = entry
+  verifyingLocalViews.add(event.sender)
+  try {
+    const account = await lookupAccount(getFirebaseConfig('prod').apiKey, token)
+    if (
+      account.localId !== userId ||
+      event.sender.isDestroyed() ||
+      mainTelemetry.getProactiveGreetingConsentRevision() !== revision ||
+      getUnverifiedLocalFirebaseSignInReport(event.sender) !== report ||
+      !canUseLocalGreetingProof(userId)
+    )
+      return 'denied'
+    const currentFrame = event.sender.mainFrame
+    if (
+      currentFrame.processId !== processId ||
+      currentFrame.routingId !== routingId ||
+      URL.parse(currentFrame.url)?.origin !== report.origin ||
+      findEntryByComfySender(event.sender) !== entry ||
+      entry.installationId !== installationId ||
+      entry.sourceId !== 'standalone' ||
+      !isProactiveGreetingHost(entry, currentFrame.url)
+    )
+      return 'denied'
+    verifiedLocalReports.add(report)
+    notifyProactiveGreetingAdmissionChanged(event.sender)
+    return 'allowed'
+  } catch {
+    // The request and response can contain credentials. Reject without logging.
+    return 'denied'
+  } finally {
+    verifyingLocalViews.delete(event.sender)
+    const currentReport = getUnverifiedLocalFirebaseSignInReport(event.sender)
+    const currentEntry = findEntryByComfySender(event.sender)
+    if (
+      currentReport &&
+      currentEntry &&
+      isProactiveGreetingHost(currentEntry, currentReport.origin) &&
+      (currentReport !== report || mainTelemetry.getProactiveGreetingConsentRevision() !== revision)
+    )
+      notifyProactiveGreetingAdmissionChanged(event.sender)
+  }
+}
+
+function notifyProactiveGreetingAdmissionChanged(contents: WebContents): void {
+  if (contents.isDestroyed()) return
+  try {
+    contents.send('telemetry:proactive-greeting-admission-changed')
+  } catch {
+    // The hosted view can close before the notification is sent.
+  }
+}
+
 export function registerTelemetryHandlers(): void {
-  ipcMain.handle('telemetry:can-enroll-proactive-greeting', (event, value: unknown) => {
-    const userId = normalizePostHogUserId(value)
+  let admissionChangeScheduled = false
+  function scheduleAdmissionChange(): void {
+    if (admissionChangeScheduled) return
+    admissionChangeScheduled = true
+    queueMicrotask(() => {
+      admissionChangeScheduled = false
+      for (const entry of comfyWindows.values()) {
+        const contents = entry.comfyView.webContents
+        if (contents.isDestroyed() || !isProactiveGreetingHost(entry, contents.getURL())) continue
+        notifyProactiveGreetingAdmissionChanged(contents)
+      }
+    })
+  }
+  mainTelemetry.observeProactiveGreetingAdmissionChanged(scheduleAdmissionChange)
+  observeFirebaseIdentityConsensus(scheduleAdmissionChange)
+
+  ipcMain.handle('telemetry:get-proactive-greeting-admission', getProactiveGreetingAdmission)
+
+  ipcMain.handle('telemetry:enroll-proactive-greeting', (event, payload: unknown) => {
+    const properties = asProps(payload)
+    const attribution = parseProactiveGreetingAttribution('$experiment_exposure', properties)
+    if (!attribution) return false
+    const eventProperties = withPlatformAxes(properties, event.sender)
+    if (isProactiveGreetingSender(event, attribution.userId))
+      return mainTelemetry.enrollProactiveGreeting(eventProperties)
     return (
-      userId !== null &&
-      userId === value &&
-      isProactiveGreetingSender(event, userId) &&
-      mainTelemetry.canEnrollProactiveGreeting(userId)
+      hasLocalGreetingProof(event, attribution.userId) &&
+      mainTelemetry.enrollProactiveGreeting(eventProperties, attribution.userId)
     )
   })
 
@@ -220,8 +370,17 @@ export function registerTelemetryHandlers(): void {
     const properties = asProps(payload.properties)
     const attribution = parseProactiveGreetingAttribution(eventName, properties)
     if (attribution === null) return
-    if (attribution && !isProactiveGreetingSender(event, attribution.userId)) return
-    mainTelemetry.emit(eventName, withPlatformAxes(properties, event?.sender))
+    const eventProperties = withPlatformAxes(properties, event?.sender)
+    if (attribution && !isProactiveGreetingSender(event, attribution.userId)) {
+      if (hasLocalGreetingProof(event, attribution.userId))
+        mainTelemetry.captureVerifiedProactiveGreeting(
+          eventName,
+          eventProperties,
+          attribution.userId
+        )
+      return
+    }
+    mainTelemetry.emit(eventName, eventProperties)
   })
 
   ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
@@ -246,11 +405,24 @@ export function registerTelemetryHandlers(): void {
     if (!frame) return
     const state = asFirebaseAuthState(payload)
     if (!state) return
+    const actor = mainTelemetry.getProactiveGreetingActor()
+    const wasAdmitted = actor !== null && isProactiveGreetingSender(event, actor)
+    const entry = findEntryByComfySender(event.sender)
+    const canVerify =
+      !!entry && entry.sourceId === 'standalone' && isProactiveGreetingHost(entry, frame.url)
+    const previousReport = canVerify ? getUnverifiedLocalFirebaseSignInReport(event.sender) : null
     reportFirebaseAuthState(
       event.sender,
       { processId: frame.processId, routingId: frame.routingId },
       state
     )
+    // This view can join or leave the admitted actor without changing process consensus.
+    const canVerifyChanged =
+      canVerify && getUnverifiedLocalFirebaseSignInReport(event.sender) !== previousReport
+    const actorChanged = actor !== null && isProactiveGreetingSender(event, actor) !== wasAdmitted
+    if (!admissionChangeScheduled && (canVerifyChanged || actorChanged)) {
+      notifyProactiveGreetingAdmissionChanged(event.sender)
+    }
   })
 
   // Flag lookup for renderer A/B branches; awaits the boot fetch so a query

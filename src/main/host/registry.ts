@@ -108,6 +108,8 @@ export interface ComfyWindowEntry {
    *  `_installCleanup` clears it — that invariant is what makes attachInstall's
    *  already-attached guard work. */
   installationId: string | null
+  /** Source of the attached installation, never the chooser's preview. */
+  sourceId?: string
   /** Partition the comfyView was constructed with (pinned; Electron can't
    *  change it without rebuilding). A chooser-pick claim must reject any install
    *  whose partition differs, else session data leaks across partition buckets. */

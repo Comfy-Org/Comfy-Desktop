@@ -432,6 +432,92 @@ describe('proactive greeting pair attribution', () => {
     expect(captured.filter((call) => call.event === 'app:agent_message_sent')).toHaveLength(2)
   })
 
+  it('acknowledges an exposure only after handoff and rechecks consent on duplicates', () => {
+    signIn()
+    posthogClientMock.failNextCaptures = 1
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+    expect(exposures()).toHaveLength(1)
+
+    telemetry.setConsentState('denied')
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    telemetry.setConsentState('granted')
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+    telemetry.applyFirebaseUserConsensus('other-user')
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    expect(exposures()).toHaveLength(1)
+  })
+
+  it('rejects rather than queues enrollment during pending identity consensus', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(exposures()).toHaveLength(0)
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+  })
+
+  it('reports admission changes on binding, consent changes and quarantine', () => {
+    setupTelemetry()
+    const observed: boolean[] = []
+    const unsubscribe = telemetry.observeProactiveGreetingAdmissionChanged(() =>
+      observed.push(telemetry.canEnrollProactiveGreeting('firebase-user'))
+    )
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    bindTestAnonymous('replacement-anonymous-id')
+    unsubscribe()
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(observed).toEqual([true, false, true, false, true, false])
+  })
+
+  it('notifies consent transitions without a bound user and changes proof revision on regrant', () => {
+    setupTelemetry({ consent: 'denied' })
+    const changes = vi.fn()
+    const unsubscribe = telemetry.observeProactiveGreetingAdmissionChanged(changes)
+    expect(telemetry.getProactiveGreetingConsentRevision()).toBeNull()
+    telemetry.setConsentState('granted')
+    const revision = telemetry.getProactiveGreetingConsentRevision()
+    expect(revision).not.toBeNull()
+    telemetry.setConsentState('denied')
+    expect(telemetry.getProactiveGreetingConsentRevision()).toBeNull()
+    telemetry.setConsentState('granted')
+    expect(telemetry.getProactiveGreetingConsentRevision()).not.toBe(revision)
+    expect(changes).toHaveBeenCalledTimes(3)
+    unsubscribe()
+  })
+
+  it('attributes a verified Local experiment without binding or identifying ordinary telemetry', () => {
+    setupTelemetry()
+    captured.length = 0
+    const treatment = { ...pair(), proactive_greeting_variant: 'generic', copy_locale: 'en' }
+    expect(telemetry.enrollProactiveGreeting(treatment, 'firebase-user')).toBe(true)
+    expect(
+      telemetry.captureVerifiedProactiveGreeting(
+        'app:agent_message_sent',
+        treatment,
+        'firebase-user'
+      )
+    ).toBe(true)
+    expect(telemetry.capture('ordinary:event')).toBe(true)
+    expect(captured.map((call) => call.distinctId)).toEqual([
+      'firebase-user',
+      'firebase-user',
+      'test-distinct-id'
+    ])
+    expect(exposures()[0]).toMatchObject({
+      groups: { user_workspace: '["firebase-user","workspace-a"]' },
+      properties: { copy_locale: 'en' }
+    })
+    expect(identifies).toHaveLength(0)
+    expect(telemetry.getProactiveGreetingActor()).toBeNull()
+  })
+
   it.each(['denied', 'undecided'] as const)(
     'does not consume exposure while consent is %s',
     (consent) => {

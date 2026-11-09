@@ -11,6 +11,10 @@ export interface ProactiveGreetingAttribution {
   variant: string
 }
 
+export function proactiveGreetingExposureKey(attribution: ProactiveGreetingAttribution): string {
+  return JSON.stringify([attribution.groupKey, attribution.variant])
+}
+
 /** undefined is unrelated telemetry; null is a malformed experiment event. */
 export function parseProactiveGreetingAttribution(
   event: string,
