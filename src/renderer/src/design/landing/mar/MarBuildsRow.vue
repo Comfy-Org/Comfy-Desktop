@@ -41,7 +41,7 @@ const detail = (i: (typeof shown.value)[number]): string =>
           @click="hostActions.launch(i)"
         >
           <span v-if="i.kind === 'cloud'" class="mbr-cloud" aria-hidden="true"
-            ><Cloud :size="20" :stroke-width="1.6"
+            ><Cloud :size="24" :stroke-width="1.6"
           /></span>
           <SetupLaptop v-else :os="localSetup.os" />
           <span class="grid min-w-0 flex-1">
@@ -87,9 +87,9 @@ const detail = (i: (typeof shown.value)[number]): string =>
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 14px;
-  padding: 14px 16px 14px 14px;
-  border-radius: 14px;
+  gap: 18px;
+  padding: 20px 20px 20px 18px;
+  border-radius: 16px;
   background:
     radial-gradient(
       ellipse 70% 120% at 12% 0%,
@@ -105,17 +105,17 @@ const detail = (i: (typeof shown.value)[number]): string =>
   background-color: oklch(0.6 0 0 / 0.1);
 }
 .mbr-card .mss-laptop {
-  width: 64px;
-  height: 42px;
+  width: 88px;
+  height: 57px;
 }
 /* A cloud build has no machine of its own: a screen with the cloud. */
 .mbr-cloud {
   display: grid;
-  width: 64px;
-  height: 42px;
+  width: 88px;
+  height: 57px;
   flex: none;
   place-items: center;
-  border-radius: 6px;
+  border-radius: 8px;
   background: linear-gradient(135deg, #3a3a3e, #1f1f22 55%, #0e0e10);
   box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
   color: #d8d8dc;
@@ -123,7 +123,8 @@ const detail = (i: (typeof shown.value)[number]): string =>
 .mbr-name {
   overflow: hidden;
   color: var(--color-base-foreground);
-  font-size: 14px;
+  margin-bottom: 2px;
+  font-size: 15px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
