@@ -401,32 +401,27 @@ function back(): void {
           </ul>
         </div>
 
-        <!-- Dock: what's on the canvas, and your takes once you've run it -->
-        <div v-if="state !== 'running'" class="mar-app-editor-dock">
-          <template v-if="state === 'done'">
-            <template v-if="takes.length > 1">
-              <button
-                v-for="(filter, i) in takes"
-                :key="filter"
-                type="button"
-                :aria-label="`Take ${i + 1}`"
-                :aria-pressed="take === i"
-                :class="cn('mar-app-editor-take', take === i && 'is-on')"
-                @click="take = i"
-              >
-                <img :src="result" alt="" :style="{ filter }" />
-              </button>
-              <span class="mar-app-editor-rule" aria-hidden="true" />
-            </template>
-            <span class="px-2 text-ui text-muted-foreground"
-              >{{ takes.length }} {{ takes.length === 1 ? made : `${made}s` }} · 18 s</span
+        <!-- Dock: your takes once you've run it. Before that the picture's
+             tag says it's an example and the header says what it does. -->
+        <div v-if="state === 'done'" class="mar-app-editor-dock">
+          <template v-if="takes.length > 1">
+            <button
+              v-for="(filter, i) in takes"
+              :key="filter"
+              type="button"
+              :aria-label="`Take ${i + 1}`"
+              :aria-pressed="take === i"
+              :class="cn('mar-app-editor-take', take === i && 'is-on')"
+              @click="take = i"
             >
-            <slot name="saved" />
+              <img :src="result" alt="" :style="{ filter }" />
+            </button>
+            <span class="mar-app-editor-rule" aria-hidden="true" />
           </template>
-          <span v-else-if="sample" class="px-2 text-ui text-muted-foreground"
-            >An example of what it makes · Run to make yours</span
+          <span class="px-2 text-ui text-muted-foreground"
+            >{{ takes.length }} {{ takes.length === 1 ? made : `${made}s` }} · 18 s</span
           >
-          <span v-else class="px-2 text-ui text-muted-foreground">{{ does }}</span>
+          <slot name="saved" />
         </div>
       </main>
     </div>
