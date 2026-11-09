@@ -436,7 +436,6 @@ function upload(files: FileList | null | undefined): void {
                 <component :is="v.icon" :size="14" />
               </button>
             </div>
-            <span class="rp-menu-sep" />
             <button
               v-for="d in DISPLAY"
               :key="d.label"
