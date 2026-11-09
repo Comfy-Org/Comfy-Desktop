@@ -15,6 +15,7 @@ import { syncPrevious } from './build/syncPrevious'
 import { can } from '../milestones'
 import { homeBuilds } from './homeBuilds'
 import { appsStage } from './apps/appsStage'
+import { appPage } from './apps/appPage'
 import { templateStyle } from './brand/templateStyle'
 import { brandMotif } from './brand/brandMotif'
 import { creditsState } from './credits'
@@ -59,6 +60,10 @@ export const when = {
   homeBuilds: computed(() => onHome.value && !onFirstRun.value && !onCloud.value),
   // What an app can do by stage: only on the app's own screen.
   appsStage: computed(() => can.value.exploreApps && !!appsProto.front),
+  // How an app's page looks: on the app's own screen too.
+  appPage: computed(
+    () => can.value.exploreApps && (!!appsProto.front || proto.page.startsWith('app:'))
+  ),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
@@ -190,6 +195,7 @@ export const TWEAKS = {
   homeBackground: one(homeBackground, 'spotlight'),
   homeBuilds: one(homeBuilds, 'on'),
   appsStage: one(appsStage, 'm1'),
+  appPage: one(appPage, 'hub'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),

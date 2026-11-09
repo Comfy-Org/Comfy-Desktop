@@ -17,6 +17,9 @@ import SegmentedControl from '../../ui/SegmentedControl.vue'
 import MemberAvatar from '../MemberAvatar.vue'
 import AppThemeFrame from './AppThemeFrame.vue'
 import AppRunPlace from '../../mar/apps/AppRunPlace.vue'
+import MarAppPage from '../../mar/apps/MarAppPage.vue'
+import { appPage } from '../../mar/apps/appPage'
+import { can } from '../../milestones'
 import { APP_RUNS, appsStage, downloaded } from '../../mar/apps/appsStage'
 import { assets } from '../../mar/pages/assetsStore'
 import { go, isNewUser, proto, toast } from '../../useProto'
@@ -46,7 +49,11 @@ import {
  * A starter app is for a new Desktop user: it runs on their own account, so
  * Run asks them to sign in and add credits, and the result lands in Assets.
  */
-const { id } = defineProps<{ id: string }>()
+const { id, inShell = false } = defineProps<{
+  id: string
+  /** Opened from Explore inside the shell, which already shows the account. */
+  inShell?: boolean
+}>()
 const app = computed(() => libApp(id)!)
 const as = computed<PreviewAs | undefined>(() => appsProto.preview[id])
 const starter = computed(() => isStarter(id))
@@ -131,7 +138,9 @@ function reset(): void {
 reset()
 watch(() => [id, as.value], reset)
 
-const panel = ref<InstanceType<typeof AppThemeFrame>>()
+const panel = ref<{ run: () => void }>()
+// UI Playground › App page: the Hub's layout, or the themed page.
+const hubPage = computed(() => can.value.design && appPage.id === 'hub')
 const sheet = ref<'' | 'signin' | 'credits'>('')
 const topUp = ref('10')
 const email = ref('')
@@ -296,10 +305,12 @@ function done(): void {
         </template>
       </div>
 
-      <AppThemeFrame
+      <component
+        :is="hubPage ? MarAppPage : AppThemeFrame"
         v-else
         ref="panel"
         class="min-h-full"
+        :app-id="id"
         :name="app.name"
         :blurb="app.blurb"
         :author
@@ -317,7 +328,7 @@ function done(): void {
         <template v-if="starter" #saved>
           <Button variant="link" size="sm" @click="viewAssets">Saved to Assets</Button>
         </template>
-        <template #account>
+        <template v-if="!inShell" #account>
           <span class="flex items-center gap-3">
             <Button
               v-if="iterate"
@@ -340,7 +351,7 @@ function done(): void {
             </button>
           </p>
         </template>
-      </AppThemeFrame>
+      </component>
     </div>
 
     <!-- Sign in at Run -->
