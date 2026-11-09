@@ -75,6 +75,8 @@ const messages = {
         currentFallback: 'Current workspace',
         instanceCountLabel: 'INSTANCES',
         loadError: "Couldn't load workspaces. Retry",
+        switchUnavailable: 'This workspace is unavailable.',
+        switchRetryable: "Couldn't switch workspace. Try again.",
         refresh: 'Refresh workspaces',
         promoteToWorkspace: 'Create Build',
         promoteToWorkspaceHint: 'Create a Build from this instance in Comfy Developer Platform.',
@@ -865,6 +867,107 @@ describe('ChooserView', () => {
 
     expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['unavailable', 'This workspace is unavailable.'],
+    ['retryable', "Couldn't switch workspace. Try again."]
+  ])(
+    'shows a %s switch failure inline, opens no modal, and fetches no Builds for the wrong workspace',
+    async (failure, message) => {
+      const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+      api.comfybuilder.listWorkspaces.mockResolvedValue([
+        { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+        { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+      ])
+      api.comfybuilder.switchWorkspace.mockResolvedValue({
+        signedIn: true,
+        workspaceType: 'team',
+        workspaceId: 'w1',
+        workspaceSwitchFailure: failure
+      })
+      const wrapper = mountChooser()
+      await flushPromises()
+      api.comfybuilder.listBuilds.mockClear()
+      expect(wrapper.find('[data-testid="chooser-workspace-switch-failure"]').exists()).toBe(false)
+
+      await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+      await wrapper.get('[data-testid="devplatform-workspace-w2"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="chooser-workspace-switch-failure"]').text()).toBe(message)
+      expect(mockModal.alert).not.toHaveBeenCalled()
+      expect(api.comfybuilder.listBuilds).not.toHaveBeenCalled()
+    }
+  )
+
+  it('follows main back to the anchor: selection and status converge with no new switch', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+    api.comfybuilder.switchWorkspace.mockImplementation(async (workspaceId: string) => ({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId
+    }))
+    let authChanged: (status: unknown) => void = () => {}
+    api.comfybuilder.onAuthChanged.mockImplementation(((callback: (status: unknown) => void) => {
+      authChanged = callback
+      return () => {}
+    }) as never)
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-w2"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="devplatform-workspace-selector"]').text()).toContain(
+      'Workspace B'
+    )
+    api.comfybuilder.switchWorkspace.mockClear()
+    api.comfybuilder.listBuilds.mockClear()
+
+    authChanged({ signedIn: true, workspaceType: 'team', workspaceId: 'w1' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="devplatform-workspace-selector"]').text()).toContain(
+      'Workspace A'
+    )
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w1')
+    expect(api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
+    expect(api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
+  })
+
+  it('retries a failed switch from the refresh button and clears the failure', async () => {
+    const api = installMockApiSignedIn([], [], { id: 'w1', name: 'Workspace A' })
+    api.comfybuilder.listWorkspaces.mockResolvedValue([
+      { id: 'w1', name: 'Workspace A', type: 'team', role: 'admin' },
+      { id: 'w2', name: 'Workspace B', type: 'team', role: 'admin' }
+    ])
+    api.comfybuilder.switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+    const wrapper = mountChooser()
+    await flushPromises()
+    await wrapper.get('[data-testid="devplatform-workspace-selector"]').trigger('click')
+    await wrapper.get('[data-testid="devplatform-workspace-w2"]').trigger('click')
+    await flushPromises()
+    api.comfybuilder.switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceType: 'team',
+      workspaceId: 'w2'
+    })
+
+    await wrapper.find('[data-testid="chooser-workspace-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenCalledTimes(2)
+    expect(api.comfybuilder.switchWorkspace).toHaveBeenLastCalledWith('w2')
+    expect(wrapper.find('[data-testid="chooser-workspace-switch-failure"]').exists()).toBe(false)
   })
 
   it('refreshes workspace membership and Builds', async () => {

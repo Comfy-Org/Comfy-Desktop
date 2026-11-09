@@ -1352,6 +1352,8 @@
       "personalLabel": "个人",
       "switchLabel": "工作区",
       "currentFallback": "当前工作区",
+      "switchUnavailable": "此工作区不可用。",
+      "switchRetryable": "无法切换工作区。请检查网络连接后重试。",
       "instanceCountLabel": "实例",
       "loadError": "无法加载工作区，请重试",
       "refresh": "刷新工作区",

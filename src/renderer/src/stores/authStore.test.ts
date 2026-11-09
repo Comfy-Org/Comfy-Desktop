@@ -192,6 +192,56 @@ describe('useAuthStore', () => {
     expect(store.loadingBuilds).toBe(false)
   })
 
+  it('keeps a switch failure out of status until the next switch or status change', async () => {
+    api.getAuthStatus.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+    const store = useAuthStore()
+    await store.whenReady()
+    api.switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'unavailable'
+    })
+
+    await store.switchWorkspace('w2')
+
+    expect(store.workspaceSwitchFailure).toBe('unavailable')
+    expect(store.status).toEqual({ signedIn: true, workspaceId: 'w1' })
+
+    const nextSwitch = deferred<{ signedIn: boolean; workspaceId: string }>()
+    api.switchWorkspace.mockReturnValueOnce(nextSwitch.promise)
+    const switching = store.switchWorkspace('w3')
+    expect(store.workspaceSwitchFailure).toBeUndefined()
+    nextSwitch.resolve({ signedIn: true, workspaceId: 'w3' })
+    await switching
+
+    api.switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceId: 'w3',
+      workspaceSwitchFailure: 'retryable'
+    })
+    await store.switchWorkspace('w2')
+    expect(store.workspaceSwitchFailure).toBe('retryable')
+
+    authChangedCb?.({ signedIn: true, workspaceId: 'w4' })
+    expect(store.workspaceSwitchFailure).toBeUndefined()
+  })
+
+  it('does not let an older switch failure overwrite a newer switch', async () => {
+    api.getAuthStatus.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
+    const store = useAuthStore()
+    await store.whenReady()
+    const older = deferred<Record<string, unknown>>()
+    api.switchWorkspace.mockReturnValueOnce(older.promise)
+    api.switchWorkspace.mockResolvedValueOnce({ signedIn: true, workspaceId: 'w3' })
+
+    const first = store.switchWorkspace('w2')
+    await store.switchWorkspace('w3')
+    older.resolve({ signedIn: true, workspaceId: 'w3', workspaceSwitchFailure: 'retryable' })
+    await first
+
+    expect(store.workspaceSwitchFailure).toBeUndefined()
+  })
+
   it('switchWorkspace adopts the new status and drops the stale build cache', async () => {
     api.signIn.mockResolvedValue({ signedIn: true, workspaceId: 'w1' })
     const store = useAuthStore()

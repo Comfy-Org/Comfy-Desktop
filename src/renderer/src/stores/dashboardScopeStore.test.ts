@@ -189,6 +189,19 @@ describe('useDashboardScopeStore', () => {
     expect(scope.selectedWorkspaceId).toBe('w3')
   })
 
+  it('follows a return to a personal anchor', async () => {
+    const scope = useDashboardScopeStore()
+    await scope.initialize()
+    authChanged({ ...signedIn, workspaceId: 'w2' })
+    await flushPromises()
+    expect(scope.selectedWorkspaceId).toBe('w2')
+
+    authChanged({ signedIn: true, workspaceId: 'p1', workspaceType: 'personal' })
+    await flushPromises()
+
+    expect(scope.selectedWorkspaceId).toBe('personal')
+  })
+
   it('follows authenticated switches only while viewing the old active scope', async () => {
     const scope = useDashboardScopeStore()
     await scope.initialize()

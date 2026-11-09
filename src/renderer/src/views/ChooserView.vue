@@ -127,7 +127,8 @@ watch(
       }
       if (
         generation !== buildPrefetchGeneration ||
-        selectedManagedWorkspaceId.value !== workspaceId
+        selectedManagedWorkspaceId.value !== workspaceId ||
+        authStore.status.workspaceId !== workspaceId
       )
         return
       await authStore.fetchBuilds()
@@ -161,6 +162,10 @@ const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authSt
 
 async function refreshWorkspace(): Promise<void> {
   emitTelemetryAction('comfy.desktop.workspace.refresh', {})
+  const selected = selectedManagedWorkspaceId.value
+  if (selected && authStore.status.workspaceId !== selected) {
+    await authStore.switchWorkspace(selected).catch(() => {})
+  }
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
@@ -340,6 +345,19 @@ const gridHandlers = {
             <span>{{ t('devPlatform.workspace.instanceCountLabel') }}</span>
             <strong>{{ scopedInstallCount }}</strong>
           </div>
+        </div>
+        <div v-if="authStore.workspaceSwitchFailure" class="chooser-workspace-bar">
+          <p
+            class="chooser-workspace-switch-failure"
+            role="status"
+            data-testid="chooser-workspace-switch-failure"
+          >
+            {{
+              authStore.workspaceSwitchFailure === 'unavailable'
+                ? t('devPlatform.workspace.switchUnavailable')
+                : t('devPlatform.workspace.switchRetryable')
+            }}
+          </p>
         </div>
       </div>
 
@@ -661,6 +679,11 @@ const gridHandlers = {
   align-items: baseline;
   gap: 4px;
   margin-left: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.chooser-workspace-switch-failure {
+  margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 12px;
 }

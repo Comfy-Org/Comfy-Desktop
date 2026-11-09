@@ -1,7 +1,7 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
+import type { AuthStatus, ElectronApi, Workspace, WorkspaceSwitchFailure } from '../../../types/ipc'
 import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
@@ -33,6 +33,8 @@ export const useAuthStore = defineStore('auth', () => {
   // workspace (both otherwise leave the arrays empty).
   const workspacesError = ref(false)
   const buildsError = ref(false)
+  const workspaceSwitchFailure = ref<WorkspaceSwitchFailure>()
+  let latestSwitch = 0
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
 
   /** Bumped on every authoritative status change (push, sign-in, switch,
@@ -63,6 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
     loadingBuilds.value = false
     workspacesError.value = false
     buildsError.value = false
+    workspaceSwitchFailure.value = undefined
   }
 
   /** The session identity the scoped caches are keyed on. */
@@ -159,11 +162,16 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Activate the workspace for remote operations. Main uses cached credentials
-   *  when available and opens browser auth only when authorization is needed. */
+  /** Activate the workspace for remote operations. Main mints its token with no
+   *  browser unless the server requires a new sign-in, and stays on the current
+   *  workspace when it cannot; `workspaceSwitchFailure` then says why. */
   async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
-    const next = await comfybuilderApi.switchWorkspace(workspaceId)
+    const thisSwitch = ++latestSwitch
+    workspaceSwitchFailure.value = undefined
+    const { workspaceSwitchFailure: failure, ...next } =
+      await comfybuilderApi.switchWorkspace(workspaceId)
     applyAuthoritativeStatus(next)
+    if (thisSwitch === latestSwitch) workspaceSwitchFailure.value = failure
     return next
   }
 
@@ -220,6 +228,7 @@ export const useAuthStore = defineStore('auth', () => {
     buildsLoaded,
     workspacesError,
     buildsError,
+    workspaceSwitchFailure,
     isSignedIn,
     personalWorkspace,
     initializeWorkspaceContext,
