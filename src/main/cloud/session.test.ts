@@ -11,8 +11,14 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => electronState.userData) },
   safeStorage: {
     isEncryptionAvailable: vi.fn(() => true),
-    encryptString: vi.fn((value: string) => Buffer.from(value, 'utf-8')),
-    decryptString: vi.fn((value: Buffer) => value.toString('utf-8'))
+    encryptString: vi.fn((value: string) =>
+      Buffer.from(`enc:${Buffer.from(value, 'utf-8').toString('base64')}`, 'utf-8')
+    ),
+    decryptString: vi.fn((value: Buffer) => {
+      const text = value.toString('utf-8')
+      if (!text.startsWith('enc:')) throw new Error('not encrypted')
+      return Buffer.from(text.slice(4), 'base64').toString('utf-8')
+    })
   },
   shell: { openExternal: vi.fn(() => Promise.resolve()) }
 }))
@@ -29,6 +35,8 @@ vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
 vi.mock('../lib/workspaceMintSwitchFlag', () => ({
   isWorkspaceMintSwitchEnabled: vi.fn(async () => true)
 }))
+
+import { safeStorage } from 'electron'
 
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
@@ -162,7 +170,9 @@ function refreshFailure(kind: 'network' | 'timeout' | 'http', httpStatus?: numbe
 
 function vaultOnDisk(): Record<string, unknown> {
   return JSON.parse(
-    fs.readFileSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'), 'utf-8')
+    safeStorage.decryptString(
+      fs.readFileSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'))
+    )
   ) as Record<string, unknown>
 }
 
@@ -1114,15 +1124,17 @@ describe('CloudSession regressions', () => {
     const legacy = grantOn('w1', { scope: READ_ONLY_SCOPE })
     fs.writeFileSync(
       path.join(electronState.userData, 'comfy-cloud-auth.bin'),
-      JSON.stringify({
-        version: 1,
-        activeKey: 'workspace:w1',
-        subject: 'user-1',
-        bundles: {
-          'workspace:w1': legacy,
-          'workspace:w2': grantOn('w2', { scope: READ_ONLY_SCOPE })
-        }
-      })
+      safeStorage.encryptString(
+        JSON.stringify({
+          version: 1,
+          activeKey: 'workspace:w1',
+          subject: 'user-1',
+          bundles: {
+            'workspace:w1': legacy,
+            'workspace:w2': grantOn('w2', { scope: READ_ONLY_SCOPE })
+          }
+        })
+      )
     )
     _resetForTest()
     mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))

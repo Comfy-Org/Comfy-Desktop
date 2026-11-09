@@ -10,10 +10,18 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => electronState.userData) },
   safeStorage: {
     isEncryptionAvailable: vi.fn(() => electronState.encryptionAvailable),
-    encryptString: vi.fn((value: string) => Buffer.from(value, 'utf-8')),
-    decryptString: vi.fn((value: Buffer) => value.toString('utf-8'))
+    encryptString: vi.fn((value: string) =>
+      Buffer.from(`enc:${Buffer.from(value, 'utf-8').toString('base64')}`, 'utf-8')
+    ),
+    decryptString: vi.fn((value: Buffer) => {
+      const text = value.toString('utf-8')
+      if (!text.startsWith('enc:')) throw new Error('not encrypted')
+      return Buffer.from(text.slice(4), 'base64').toString('utf-8')
+    })
   }
 }))
+
+import { safeStorage } from 'electron'
 
 import {
   _resetForTest,
@@ -61,11 +69,14 @@ function vaultPath(): string {
 }
 
 function writeVault(payload: unknown): void {
-  fs.writeFileSync(vaultPath(), Buffer.from(JSON.stringify(payload), 'utf-8'))
+  fs.writeFileSync(vaultPath(), safeStorage.encryptString(JSON.stringify(payload)))
 }
 
 function readVault(): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(vaultPath(), 'utf-8')) as Record<string, unknown>
+  return JSON.parse(safeStorage.decryptString(fs.readFileSync(vaultPath()))) as Record<
+    string,
+    unknown
+  >
 }
 
 describe('grant vault', () => {
@@ -101,6 +112,35 @@ describe('grant vault', () => {
     expect(loadGrant()).toEqual(grant)
     expect(loadActiveWorkspaceId()).toBe('w2')
     expect(loadWorkspaceToken('w2')).toEqual(minted)
+  })
+
+  it('writes the grant and minted tokens only through safeStorage', () => {
+    const grant = tokens('user-1', 'w1')
+    const minted = mintedToken('user-1', 'w2')
+    saveGrant(grant)
+    saveWorkspaceToken('w2', minted)
+
+    const onDisk = fs.readFileSync(vaultPath(), 'utf-8')
+
+    expect(onDisk.startsWith('enc:')).toBe(true)
+    expect(onDisk).not.toContain(grant.accessToken)
+    expect(onDisk).not.toContain(grant.refreshToken)
+    expect(onDisk).not.toContain(minted.accessToken)
+  })
+
+  it('reads an unencrypted vault as signed out', () => {
+    fs.writeFileSync(
+      vaultPath(),
+      JSON.stringify({
+        version: 2,
+        grant: tokens('user-1', 'w1'),
+        activeWorkspaceId: 'w1',
+        workspaceTokens: {}
+      })
+    )
+
+    expect(loadGrant()).toBeNull()
+    expect(getAuthStatus()).toEqual({ signedIn: false })
   })
 
   it('activates only the anchor or a workspace with a held token', () => {
