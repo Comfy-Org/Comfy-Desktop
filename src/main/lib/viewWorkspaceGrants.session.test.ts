@@ -155,7 +155,7 @@ describe('view token path through a real session', () => {
     expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
-  it('a kill landing while the policy is read drops the request after a newer switch', async () => {
+  it('a newer switch while the policy is read drops the view request', async () => {
     await activeOnW2()
     let release: (enabled: boolean) => void = () => {}
     vi.mocked(isWorkspaceMintSwitchEnabled).mockReturnValueOnce(

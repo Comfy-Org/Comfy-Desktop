@@ -301,6 +301,7 @@ export function registerDevPlatformHandlers(): void {
           if (!switched.signedIn || switched.workspaceId !== workspaceId) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
+          getViewWorkspaceGrants().allowDesktop(workspaceId)
         }
 
         const filename = await saveSnapshot(inst.installPath, inst, 'manual')
