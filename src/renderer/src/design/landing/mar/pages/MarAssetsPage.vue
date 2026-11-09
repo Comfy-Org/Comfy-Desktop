@@ -26,7 +26,7 @@ import { thumb } from '../../mock'
 import { go, toast } from '../../useProto'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import AssetDetail from '../assets/AssetDetail.vue'
-import AssetFilters from '../assets/AssetFilters.vue'
+import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
 import { noFilter, passes, tagsIn } from '../assets/assetFilters'
 import { assetBuilds, buildStatus, defaultBuild, startBuild } from '../assets/assetBuilds'
@@ -102,6 +102,11 @@ const WHERE = [
   { value: 'cloud', label: 'Cloud' }
 ]
 const TAGS = computed(() => tagsIn(base.value))
+/** Type's tabs cover the main kinds; Filters adds the rest. */
+const MORE_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'other', label: 'Other' }
+] as const
 const SORTS = [
   { value: 'newest', label: 'Newest' },
   { value: 'oldest', label: 'Oldest' },
@@ -415,7 +420,15 @@ function lines(a: MarAsset): MenuLine[] {
           >
             <RefreshCw :size="14" :class="refreshing && 'animate-spin'" />
           </button>
-          <AssetFilters v-model="filter" :tags="TAGS" :count="finished.length" />
+          <AssetFilterMenu
+            v-model="filter"
+            field
+            source
+            range
+            types-label="More types"
+            :types="MORE_TYPES"
+            :tags="TAGS"
+          />
           <Select v-model="sort" :options="SORTS" label="Sort" class="mar-asset-sort w-34" />
           <MarSearchField v-model="query" placeholder="Search assets" />
           <MarViewToggle v-model="view" masonry />

@@ -190,36 +190,6 @@ function remove(ids: string[]): void {
 
 const detail = ref<PanelAsset | null>(null)
 const finished = computed(() => shown.value.filter((a) => !a.status))
-/** What's filtered, as removable pills under the search (ComfyUI's
- *  MediaAssetFilterBar), with Clear all. */
-const pills = computed(() => {
-  const f = filter.value
-  return [
-    ...f.types.map((t) => ({
-      key: `type-${t}`,
-      label: MEDIA.find((m) => m.value === t)?.label ?? t,
-      drop: () => (filter.value = { ...f, types: f.types.filter((x) => x !== t) })
-    })),
-    ...(f.from || f.to
-      ? [
-          {
-            key: 'date',
-            label: dateLabel(f.from),
-            drop: () => (filter.value = { ...f, from: '', to: '' })
-          }
-        ]
-      : []),
-    ...f.tags.map((t) => ({
-      key: `tag-${t}`,
-      label: `# ${t}`,
-      drop: () => (filter.value = { ...f, tags: f.tags.filter((x) => x !== t) })
-    }))
-  ]
-})
-function dateLabel(from: string): string {
-  const days = Math.round((Date.now() - new Date(from).getTime()) / 86400000)
-  return days < 1 ? 'Today' : days <= 7 ? 'Past week' : days <= 31 ? 'Past month' : 'This year'
-}
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
 function lines(a: PanelAsset): MenuLine[] {
@@ -368,14 +338,6 @@ function upload(files: FileList | null | undefined): void {
             </button>
           </div>
         </span>
-      </div>
-      <div v-if="pills.length" class="ap-pills">
-        <span v-for="p in pills" :key="p.key" class="ap-pill"
-          >{{ p.label
-          }}<button type="button" :aria-label="`Remove ${p.label}`" @click="p.drop()">
-            <X :size="12" /></button
-        ></span>
-        <button type="button" class="ap-clear" @click="filter = noFilter()">Clear all</button>
       </div>
     </template>
 
@@ -610,44 +572,6 @@ function upload(files: FileList | null | undefined): void {
 }
 :root .proto-ui.proto-ui.proto-ui .ap-selbar .rp-icon {
   color: var(--color-content-background);
-}
-/* Applied filters under the search, as ComfyUI shows them. */
-.ap-pills {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-}
-.ap-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 4px 3px 8px;
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  font-size: 12px;
-  white-space: nowrap;
-}
-:root .proto-ui.proto-ui.proto-ui .ap-pill button {
-  display: inline-flex;
-  padding: 2px;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .ap-pill button:hover {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .ap-clear {
-  height: 24px;
-  padding: 0 6px;
-  background: transparent;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .ap-clear:hover {
-  color: var(--color-base-foreground);
 }
 .ap-stack {
   position: absolute;
