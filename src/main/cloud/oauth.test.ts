@@ -2,9 +2,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
+vi.mock('./loopback', async (importOriginal) => {
+  const actual = await importOriginal<typeof LoopbackModule>()
+  return { ...actual, startLoopbackListener: vi.fn(actual.startLoopbackListener) }
+})
 
 import { get } from 'node:http'
 import { shell } from 'electron'
+import { startLoopbackListener } from './loopback'
+import type * as LoopbackModule from './loopback'
 import { refresh, signIn } from './oauth'
 
 function stub(status: number, body: unknown): void {
@@ -126,6 +132,17 @@ describe('oauth.signIn', () => {
     scope: 'openid',
     resource: 'https://c/api'
   }
+
+  it('announces no authorize URL and opens no browser when the listener cannot start', async () => {
+    vi.mocked(startLoopbackListener).mockRejectedValueOnce(new Error('address in use'))
+    vi.mocked(shell.openExternal).mockClear()
+    const onAuthorizeUrl = vi.fn()
+
+    await expect(signIn({ onAuthorizeUrl })).rejects.toThrow('address in use')
+
+    expect(onAuthorizeUrl).not.toHaveBeenCalled()
+    expect(shell.openExternal).not.toHaveBeenCalled()
+  })
 
   it('completes the flow when the browser opens and calls back', async () => {
     stub(200, { access_token: 'tok', refresh_token: 'r1', expires_in: 3600 })

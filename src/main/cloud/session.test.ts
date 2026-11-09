@@ -129,6 +129,20 @@ function signedInResult(tokens: AuthTokens): Awaited<ReturnType<typeof signIn>> 
   return { tokens, status: statusFromAccessToken(tokens.accessToken) }
 }
 
+function browserSignInReturns(result: Awaited<ReturnType<typeof signIn>>): void {
+  mocked(signIn).mockImplementation(async (options) => {
+    options?.onAuthorizeUrl?.('https://cloud.test/authorize')
+    return result
+  })
+}
+
+function browserSignInReturnsOnce(result: Awaited<ReturnType<typeof signIn>>): void {
+  mocked(signIn).mockImplementationOnce(async (options) => {
+    options?.onAuthorizeUrl?.('https://cloud.test/authorize')
+    return result
+  })
+}
+
 function deferred<T>() {
   let resolve: (value: T) => void = () => {}
   const promise = new Promise<T>((r) => {
@@ -458,7 +472,7 @@ describe('CloudSession browser sign-in', () => {
 
   it('moves to the consented workspace on a fresh login', async () => {
     saveGrant(grantOn('w1'))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
     const session = new CloudSession()
     await session.switchWorkspace('w2')
 
@@ -516,7 +530,7 @@ describe('CloudSession browser sign-in', () => {
 
 describe('CloudSession.switchWorkspace with no browser', () => {
   it('T-V1: A to B to C to A signs in once and each new workspace is one mint', async () => {
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('wA')))
+    browserSignInReturns(signedInResult(grantOn('wA')))
     const session = new CloudSession()
     await session.login()
 
@@ -648,7 +662,7 @@ describe('CloudSession.switchWorkspace with no browser', () => {
 
   it('shares one flight between concurrent switches to the same workspace', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+    browserSignInReturns(signedInResult(grantOn('w2')))
     const session = new CloudSession()
 
     await Promise.all([session.switchWorkspace('w2'), session.switchWorkspace('w2')])
@@ -935,12 +949,12 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     saveGrant(grantOn('w1'))
     mintReply = () => json(403, { code: 'sso_required' })
     const sso = grantOn('w2', { revision: '-sso' })
-    mocked(signIn).mockResolvedValue(signedInResult(sso))
+    browserSignInReturns(signedInResult(sso))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
 
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
     expect(vaultOnDisk().grant).toEqual(sso)
     expect(switchEvents()).toEqual([{ outcome: 'browser', reauthorize_reason: 'sso_required' }])
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'sso_required' }])
@@ -952,7 +966,7 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     mintReply = ({ workspaceId }) =>
       replies++ === 0 ? json(403, { code: 'sso_required' }) : minted(workspaceId)
     const consented = grantOn('w3')
-    mocked(signIn).mockResolvedValue(signedInResult(consented))
+    browserSignInReturns(signedInResult(consented))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
@@ -971,14 +985,14 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
         ? json(401, { message: 'workspace membership not found' })
         : minted(workspaceId)
     mocked(refresh).mockRejectedValue(refreshRefused('invalid_client'))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
     await expect(session.switchWorkspace('w4')).resolves.toMatchObject({ workspaceId: 'w4' })
 
     expect(refresh).toHaveBeenCalledOnce()
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'grant_ended' }])
   })
 
@@ -1001,7 +1015,7 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     saveGrant(grantOn('w1'))
     mintReply = () => json(401, { code: 'oauth_grant_ended' })
     mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+    browserSignInReturns(signedInResult(grantOn('w2')))
 
     await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
       workspaceId: 'w2'
@@ -1058,13 +1072,13 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     async (oauthError) => {
       saveGrant(grantOn('w1', { expiresAt: PAST }))
       mocked(refresh).mockRejectedValue(refreshRefused(oauthError))
-      mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+      browserSignInReturns(signedInResult(grantOn('w2')))
 
       await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
         workspaceId: 'w2'
       })
 
-      expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+      expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
     }
   )
 
@@ -1101,13 +1115,13 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
   it('switching to the anchor with a refused refresh opens one browser', async () => {
     saveGrant(grantOn('w1', { expiresAt: PAST }))
     mocked(refresh).mockRejectedValue(refreshRefused())
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1', { revision: '-new' })))
+    browserSignInReturns(signedInResult(grantOn('w1', { revision: '-new' })))
 
     await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
       workspaceId: 'w1'
     })
 
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w1' })
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w1' }))
   })
 
   it('switching to an expired anchor during a refresh outage stays put and reports retryable', async () => {
@@ -1157,7 +1171,7 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
   it('a second refusal after the browser trip does not open another', async () => {
     saveGrant(grantOn('w1'))
     mintReply = () => json(403, { code: 'sso_required' })
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
 
     await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
       workspaceSwitchFailure: 'retryable'
@@ -1170,11 +1184,39 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     saveGrant(grantOn('w1'))
     let replies = 0
     mintReply = () => (replies++ === 0 ? json(403, { code: 'sso_required' }) : json(404, {}))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
 
     await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
       workspaceSwitchFailure: 'unavailable'
     })
+  })
+
+  it('a sign-in that fails before the browser opens reports no browser trip', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    mocked(signIn).mockRejectedValue(new SignInFailure('address in use', 'network'))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(browserEvents()).toEqual([])
+    expect(switchEvents()).toEqual([{ outcome: 'retryable', reauthorize_reason: 'sso_required' }])
+  })
+
+  it('a sign-in cancelled after the browser opened counts as one browser trip', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    mocked(signIn).mockImplementation(async (options) => {
+      options?.onAuthorizeUrl?.('https://cloud.test/authorize')
+      throw new SignInFailure('access_denied', 'cancelled')
+    })
+
+    await new CloudSession().switchWorkspace('w2')
+
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'sso_required' }])
+    expect(switchEvents()).toEqual([{ outcome: 'browser', reauthorize_reason: 'sso_required' }])
   })
 
   it('a cancelled browser trip stays put and reports retryable', async () => {
@@ -1194,7 +1236,7 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     await held.switchWorkspace('w2')
     mintRequests = []
     mintReply = () => json(403, { code: 'sso_required' })
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w9', { subject: 'user-2' })))
+    browserSignInReturns(signedInResult(grantOn('w9', { subject: 'user-2' })))
 
     await held.switchWorkspace('w3')
 
@@ -1209,12 +1251,12 @@ describe('CloudSession mint kill switches', () => {
     saveGrant(grantOn('w1'))
     mintReply = mintDisabled
     const consented = grantOn('w2')
-    mocked(signIn).mockResolvedValue(signedInResult(consented))
+    browserSignInReturns(signedInResult(consented))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
 
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
     expect(mintRequests).toHaveLength(1)
     expect(vaultOnDisk().grant).toEqual(consented)
     expect(switchEvents()).toEqual([{ outcome: 'browser', reauthorize_reason: 'mint_disabled' }])
@@ -1237,7 +1279,7 @@ describe('CloudSession mint kill switches', () => {
     const original = grantOn('w1')
     saveGrant(original)
     mintReply = mintDisabled
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
@@ -1253,20 +1295,20 @@ describe('CloudSession mint kill switches', () => {
   it('the ops flag off skips the mint and opens one browser carrying B', async () => {
     saveGrant(grantOn('w1'))
     killMintSwitch()
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2')))
+    browserSignInReturns(signedInResult(grantOn('w2')))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
 
     expect(mintRequests).toEqual([])
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_disabled' }])
   })
 
   it('no loop: the ops flag off and consent on another workspace opens no second browser', async () => {
     saveGrant(grantOn('w1'))
     killMintSwitch()
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
@@ -1327,7 +1369,7 @@ describe('CloudSession regressions', () => {
       )
     )
     _resetForTest()
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
     const session = new CloudSession()
 
     expect(session.status()).toMatchObject({ signedIn: true, workspaceId: 'w1' })
@@ -1375,12 +1417,12 @@ describe('CloudSession regressions', () => {
 describe('CloudSession grants without the mint scope (T-V29)', () => {
   it('opens exactly one browser, asks Cloud nothing first, and then mints', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w3')))
+    browserSignInReturns(signedInResult(grantOn('w3')))
     const session = new CloudSession()
 
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
 
-    expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
     expect(mintRequests).toHaveLength(1)
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_scope_missing' }])
   })
@@ -1397,7 +1439,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('cannot loop: a sign-in that returns no scope stays put, reports retryable and is telemetered', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(
+    browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
@@ -1418,7 +1460,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('a second and third switch after a scopeless sign-in stay put with no browser', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(
+    browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
@@ -1443,7 +1485,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('a scopeless grant on B reaches its anchor and asks no browser for the next workspace', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
+    browserSignInReturns(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
     const session = new CloudSession()
     await session.switchWorkspace('w2')
 
@@ -1457,12 +1499,12 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('an explicit sign-in with the scope lifts the hold and switching mints again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValueOnce(
+    browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
     await session.switchWorkspace('w2')
-    mocked(signIn).mockResolvedValueOnce(signedInResult(grantOn('w1', { revision: '-scoped' })))
+    browserSignInReturnsOnce(signedInResult(grantOn('w1', { revision: '-scoped' })))
 
     await session.login()
     await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
@@ -1473,12 +1515,12 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('a grant that can mint lifts the hold, so one that later narrows can ask again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValueOnce(
+    browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
     await session.switchWorkspace('w2')
-    mocked(signIn).mockResolvedValueOnce(
+    browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { expiresAt: PAST, revision: '-scoped' }))
     )
     await session.login()
@@ -1487,7 +1529,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     )
     mintReply = () => json(403, { code: 'insufficient_scope' })
     await session.switchWorkspace('w2')
-    mocked(signIn).mockResolvedValueOnce(signedInResult(grantOn('w3')))
+    browserSignInReturnsOnce(signedInResult(grantOn('w3')))
 
     await expect(session.switchWorkspace('w3')).resolves.toMatchObject({ workspaceId: 'w3' })
 
@@ -1496,7 +1538,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('an explicit sign-in that also returns no scope keeps ordinary switches off the browser', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(
+    browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
@@ -1511,7 +1553,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('logout resets the hold', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(
+    browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
@@ -1526,7 +1568,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('a restart keeps the hold: no second browser across sessions', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(
+    browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     await new CloudSession().switchWorkspace('w2')
@@ -1554,7 +1596,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
       )
     )
     _resetForTest()
-    mocked(signIn).mockResolvedValue(
+    browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     expect(vaultOnDisk().mintScopeWithheld).toBeUndefined()
@@ -1569,12 +1611,12 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('a restart with a scoped sign-in in between mints: the grant that can mint cleared the hold', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValueOnce(
+    browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
     await session.switchWorkspace('w2')
-    mocked(signIn).mockResolvedValueOnce(signedInResult(grantOn('w1', { revision: '-scoped' })))
+    browserSignInReturnsOnce(signedInResult(grantOn('w1', { revision: '-scoped' })))
     await session.login()
     _resetForTest()
 
@@ -1588,7 +1630,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('an explicit sign-in can still try after a restart', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(
+    browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     await new CloudSession().switchWorkspace('w2')
@@ -1602,7 +1644,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
   it('reports scope_not_granted when an sso sign-in narrows a grant that could mint', async () => {
     saveGrant(grantOn('w1'))
     mintReply = () => json(403, { code: 'sso_required' })
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE })))
+    browserSignInReturns(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE })))
 
     await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
       workspaceSwitchFailure: 'retryable'
@@ -1618,7 +1660,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
 
   it('a scopeless grant consented on B activates B, since an anchor needs no mint', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
+    browserSignInReturns(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
 
     const reply = await new CloudSession().switchWorkspace('w2')
 

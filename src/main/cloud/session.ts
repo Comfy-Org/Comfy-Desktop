@@ -458,11 +458,18 @@ export class CloudSession {
     generation: number,
     reason: ReauthorizeReason
   ): Promise<SessionSwitchReply> {
-    reportBrowser(reason)
+    let browserOpened = false
     let tokens: AuthTokens
     try {
-      ;({ tokens } = await signIn({ workspaceId }))
+      ;({ tokens } = await signIn({
+        workspaceId,
+        onAuthorizeUrl: () => {
+          browserOpened = true
+          reportBrowser(reason)
+        }
+      }))
     } catch {
+      if (!browserOpened) reportSwitch('retryable', reason)
       return generation === this.authGeneration ? this.stayed('retryable') : this.status()
     }
     if (generation !== this.authGeneration) return this.status()
