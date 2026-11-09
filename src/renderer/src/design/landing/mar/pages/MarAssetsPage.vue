@@ -595,21 +595,10 @@ function lines(a: MarAsset): MenuLine[] {
 }
 /* Narrower windows: the toolbar sheds words, never controls. */
 @container (max-width: 1000px) {
-  :root
-    .proto-ui.proto-ui.proto-ui
-    .mar-asset-tools
-    .mar-pfind:not(:focus-within):has(input:placeholder-shown) {
-    width: 32px;
-    padding: 0;
-    justify-content: center;
-    cursor: pointer;
-  }
-  .mar-asset-tools .mar-pfind:not(:focus-within):has(input:placeholder-shown) input {
-    width: 0;
-    flex: 0;
-  }
   :root .proto-ui.proto-ui.proto-ui .mar-asset-tools .mar-pfind {
-    width: 180px;
+    width: 150px;
+    flex: 0 1 150px;
+    min-width: 96px;
   }
 }
 @container (max-width: 860px) {
