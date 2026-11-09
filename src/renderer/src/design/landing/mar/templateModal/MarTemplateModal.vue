@@ -6,10 +6,9 @@ import {
   BookOpen,
   Check,
   Coins,
-  Copy,
-  Heart,
   Link2,
   Plug,
+  Star,
   TriangleAlert,
   X
 } from 'lucide-vue-next'
@@ -29,6 +28,7 @@ import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import { templateById } from '../../fit'
+import { isFavorite, toggleFavorite } from '../favorites'
 import { ComfyModel, ComfyTemplate, ComfyWorkflow } from '../icons/comfyIcons'
 import {
   MACHINE,
@@ -86,7 +86,6 @@ const reason = computed(() =>
 const selectedId = ref<string>()
 const selected = computed(() => targets.value.find((x) => x.inst.id === selectedId.value))
 const view = ref<'result' | 'graph'>('result')
-const liked = ref(false)
 const phase = ref<'idle' | 'busy'>('idle')
 const progress = ref(0)
 let timer: ReturnType<typeof setInterval> | undefined
@@ -96,7 +95,6 @@ watch(
   () => {
     selectedId.value = (best.value ?? targets.value.find((x) => !x.disabled))?.inst.id
     view.value = 'result'
-    liked.value = false
     stop()
   },
   { immediate: true }
@@ -153,17 +151,11 @@ function confirm(): void {
   }, 40)
 }
 
-function like(): void {
-  liked.value = !liked.value
-}
 function share(): void {
   void navigator.clipboard
     ?.writeText(`https://comfy.org/templates/${template.value?.id}`)
     .catch(() => {})
   toast('Link copied')
-}
-function duplicate(): void {
-  toast('Saved a copy to Workflows')
 }
 
 const content = ref<{ $el: HTMLElement }>()
@@ -261,22 +253,23 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
 
         <aside class="mar-tpl-side">
           <div class="mar-tpl-social">
+            <!-- Keep it: the app's one way to keep a template (Favorites).
+                 Templates have no likes or copies in the product. -->
             <button
+              v-if="template"
               type="button"
               class="mar-tpl-chip"
               data-tpl-like
-              :aria-pressed="liked"
-              @click="like"
+              :aria-pressed="isFavorite(template.id, 'template')"
+              @click="toggleFavorite(template.id, 'template')"
             >
-              <Heart :size="14" :fill="liked ? 'currentColor' : 'none'" />{{
-                info.likes + (liked ? 1 : 0)
-              }}
+              <Star
+                :size="14"
+                :fill="isFavorite(template.id, 'template') ? 'currentColor' : 'none'"
+              />{{ isFavorite(template.id, 'template') ? 'Favorited' : 'Favorite' }}
             </button>
             <button type="button" class="mar-tpl-chip" @click="share">
               <Link2 :size="14" />Share
-            </button>
-            <button type="button" class="mar-tpl-chip" @click="duplicate">
-              <Copy :size="13" />Duplicate
             </button>
           </div>
 

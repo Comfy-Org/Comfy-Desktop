@@ -14,7 +14,8 @@ import MarCreditsFlyout from './MarCreditsFlyout.vue'
   <MarCreditsFlyout v-if="shownCredits && creditsStyle.id === 'meter'">
     <button type="button" class="mar-credits-meter">
       <span class="flex items-center justify-between">
-        <span>{{ creditsTotal }} credits</span><span class="text-subtle-foreground">Top up</span>
+        <span>{{ creditsTotal }} credits</span
+        ><span class="text-subtle-foreground">Add credits</span>
       </span>
       <span class="mar-credits-bar"><span /></span>
     </button>

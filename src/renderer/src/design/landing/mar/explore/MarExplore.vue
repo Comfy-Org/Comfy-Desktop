@@ -4,10 +4,11 @@ import { Check, Clock, Play, Plus } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import Select from '../../ui/Select.vue'
+import Tooltip from '../../ui/Tooltip.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
 import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
 import { EXPLORE, STARTER_APPS, isAdded, openAppPage, toggleAdded } from '../../appFlow'
-import { go, toast } from '../../useProto'
+import { goIn, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
@@ -117,7 +118,8 @@ const empty = computed(
     <template #toolbar>
       <MarSeg v-if="can.explore" v-model="tab" :options="TABS" label="Explore" />
       <div class="ml-auto flex items-center gap-2">
-        <Select v-model="type" :options="TYPES[tab]" class="w-36" />
+        <!-- Keyed by tab, so its label follows the tab (All apps, All types). -->
+        <Select :key="tab" v-model="type" :options="TYPES[tab]" class="w-36" />
         <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab]" />
       </div>
     </template>
@@ -141,29 +143,33 @@ const empty = computed(
             @click="openAppPage(a.id)"
             @keydown.enter="openAppPage(a.id)"
           >
-            <span class="mar-ex-media"
-              ><img :src="thumb(a.thumbId)" alt="" loading="lazy" />
-              <!-- No library yet at Explore apps, so nothing to add to. -->
-              <span v-if="can.explore" class="mar-ex-star">
+            <span class="mar-ex-media"><img :src="thumb(a.thumbId)" alt="" loading="lazy" /></span>
+            <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
+              <span class="block min-w-0 flex-1">
+                <span class="block truncate text-ui font-medium text-base-foreground">{{
+                  a.name
+                }}</span>
+                <span class="block truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
+              </span>
+              <!-- Add to my apps: beside the name, never over the picture,
+                   so it reads on any image. No library yet at Explore apps. -->
+              <Tooltip
+                v-if="can.explore"
+                :content="isAdded(a.id) ? 'In my apps' : 'Add to my apps'"
+              >
                 <Button
-                  variant="overlay"
-                  size="sm"
+                  variant="ghost"
+                  size="icon-sm"
+                  class="mar-ex-add"
+                  :class="isAdded(a.id) && 'is-added'"
                   :aria-pressed="isAdded(a.id)"
                   :aria-label="`${isAdded(a.id) ? 'Remove' : 'Add'} ${a.name} ${isAdded(a.id) ? 'from' : 'to'} my apps`"
                   @click.stop="toggleAdded(a)"
                   @keydown.enter.stop
                 >
-                  <Check v-if="isAdded(a.id)" :size="12" /><Plus v-else :size="12" />{{
-                    isAdded(a.id) ? 'Added' : 'Add'
-                  }}
+                  <Check v-if="isAdded(a.id)" :size="15" /><Plus v-else :size="15" />
                 </Button>
-              </span></span
-            >
-            <span class="block min-w-0 px-1.5 pt-2.5 pb-1.5 text-left">
-              <span class="block truncate text-ui font-medium text-base-foreground">{{
-                a.name
-              }}</span>
-              <span class="block truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
+              </Tooltip>
             </span>
           </div>
         </div>
@@ -182,7 +188,7 @@ const empty = computed(
         :key="m.model"
         type="button"
         class="mar-ex-model"
-        @click="go('router')"
+        @click="goIn('build', 'router')"
       >
         <span class="mar-ex-mark">{{ m.provider.charAt(0) }}</span>
         <span class="flex min-w-0 flex-1 flex-col text-left">
@@ -233,6 +239,12 @@ const empty = computed(
 .mar-ex-grid.is-apps {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
+/* Narrow windows: three across, so names and lines still read. */
+@media (max-width: 1100px) {
+  .mar-ex-grid.is-apps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 .mar-ex-grid.is-apps .mar-ex-media {
   aspect-ratio: 16 / 10;
 }
@@ -264,10 +276,17 @@ const empty = computed(
   object-fit: cover;
   transition: transform 500ms ease;
 }
-.mar-ex-star {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+/* Add to my apps: quiet until the card is hovered or it is added. */
+.mar-ex-add {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.mar-ex-card:is(:hover, :focus-within) .mar-ex-add,
+.mar-ex-add.is-added {
+  opacity: 1;
+}
+.mar-ex-add.is-added {
+  color: var(--color-base-foreground);
 }
 .mar-ex-play,
 .mar-ex-time {

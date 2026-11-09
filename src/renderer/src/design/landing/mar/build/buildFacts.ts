@@ -211,7 +211,7 @@ export function deleteSnapshot(b: ProtoInstance, id: string): void {
 export type LaunchMode = 'window' | 'console'
 export type Partition = 'shared' | 'unique'
 export type PortConflict = 'ask' | 'auto'
-export type SecurityLevel = 'strong' | 'normal' | 'weak'
+export type SecurityLevel = 'strong' | 'normal' | 'normal-' | 'weak'
 export type NetworkMode = 'public' | 'private' | 'offline' | 'personal_cloud'
 
 export interface BuildSettings {
@@ -242,21 +242,27 @@ export const PORT_CONFLICT = [
   { value: 'ask' as const, label: 'Ask what to do' },
   { value: 'auto' as const, label: 'Use next available port' }
 ]
+// Desktop's four levels and their hints (locales/en.json, managerSecurityLevel_*).
 export const SECURITY = [
   {
     value: 'strong' as const,
     label: 'Strict',
-    hint: 'Blocks all node pack installs, updates and uninstalls.'
+    hint: 'Blocks all node pack installs, updates, and uninstalls. Manager is read-only, with or without --listen.'
   },
   {
     value: 'normal' as const,
     label: 'Standard (recommended)',
-    hint: 'Allows registered node packs. Blocks installs from unregistered sources.'
+    hint: 'Allows installing, updating, and removing registered node packs. Blocks installs from unregistered sources (e.g. arbitrary git URLs), even without --listen.'
+  },
+  {
+    value: 'normal-' as const,
+    label: 'Relaxed',
+    hint: 'Like Standard, but also allows unregistered-source installs while ComfyUI is reachable only from this machine. Launching with --listen blocks them again.'
   },
   {
     value: 'weak' as const,
     label: 'Permissive',
-    hint: 'Allows every risk tier, including unregistered sources.'
+    hint: 'Allows every risk tier, including unregistered-source installs. While ComfyUI is exposed with --listen, node pack installs still additionally require the Personal cloud network mode.'
   }
 ]
 export const NETWORK = [

@@ -315,7 +315,8 @@
   background: var(--tpl-well-2);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-tpl-chip[aria-pressed='true'] {
-  color: oklch(0.72 0.19 15);
+  /* Favorited: full ink, as the star on cards; no colour of its own. */
+  color: var(--color-base-foreground);
 }
 .mar-tpl-chip[aria-pressed='true'] svg {
   animation: mar-tpl-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1);

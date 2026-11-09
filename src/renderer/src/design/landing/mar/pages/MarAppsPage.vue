@@ -67,6 +67,19 @@ const query = ref('')
 const view = ref<'grid' | 'list'>('grid')
 
 const mine = (a: LibApp): boolean => a.group === 'yours'
+// A copy of someone else's app is yours: a draft under My apps, its own link.
+function duplicateToMine(a: LibApp): void {
+  const copy = apps.duplicate(a.id)
+  if (copy)
+    Object.assign(copy, {
+      group: 'yours',
+      owner: 'You',
+      state: 'draft',
+      slug: `${a.slug}-copy`,
+      unpublished: false,
+      runs: 0
+    })
+}
 // Apps added from Explore sit in My apps, but you stay their user.
 const inMine = (a: LibApp): boolean => mine(a) || isAdded(a.id)
 const all = computed<LibApp[]>(() => [...LIB, ...addedApps.value])
@@ -153,7 +166,7 @@ function lines(a: LibApp): MenuLine[] {
     return [
       { label: 'Open', icon: ExternalLink, run: () => openApp(a.id) },
       { label: 'Copy link', icon: Link2, run: () => toast('Link copied') },
-      { label: 'Duplicate to my apps', icon: Copy, run: () => apps.duplicate(a.id) },
+      { label: 'Duplicate to my apps', icon: Copy, run: () => duplicateToMine(a) },
       'sep',
       { label: 'Remove from my list', icon: LogOut, danger: true, run: () => apps.remove([a.id]) }
     ]

@@ -276,7 +276,7 @@ function second(
   if (b.state === 'update')
     return {
       label: 'Update',
-      hint: 'Update, then start',
+      hint: 'Update to the latest version',
       icon: ArrowUpCircle,
       run: () => update(b)
     }
@@ -295,8 +295,9 @@ const isRemote = (b: Build): boolean => whereOf(b) === 'remote'
 const busy = (b: Build): boolean =>
   stopping.has(b.id) || creating.has(b.id) || updating.has(b.id) || b.state === 'launching'
 // Start, or Open where there is nothing to start (running, Cloud, Remote).
+// A build that failed to start is stopped: it starts again, so it says Start.
 function launch(b: Build): { label: string; icon: Component; run: () => void } {
-  if (b.state === 'running' || b.state === 'error' || b.kind === 'cloud')
+  if (b.state === 'running' || b.kind === 'cloud')
     return {
       label: 'Open',
       icon: ExternalLink,
@@ -641,7 +642,9 @@ const newLabel = computed(() =>
             title="Update to v0.37.6"
             @click.stop="update(b)"
           >
-            <ArrowUpCircle :size="12" aria-hidden="true" />Update available
+            <ArrowUpCircle :size="12" aria-hidden="true" />Update<span class="mar-bc-long"
+              >&nbsp;available</span
+            >
           </button>
           <template v-else-if="b.id === 'cloud' && !proto.signedIn">
             <span class="mar-bc-free">Try free</span>
@@ -1088,6 +1091,13 @@ const newLabel = computed(() =>
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Narrow windows: the specs give way, so the chip after them (Update
+   available, Error) stays whole instead of both cut to a few letters. */
+@media (max-width: 1100px) {
+  .mar-bc-row :is(.mar-bc-specs-text, .mar-bc-long) {
+    display: none;
+  }
 }
 /* An update is about the version, not the state: a small badge after it. */
 :root .proto-ui.proto-ui.proto-ui .mar-bc-update {
