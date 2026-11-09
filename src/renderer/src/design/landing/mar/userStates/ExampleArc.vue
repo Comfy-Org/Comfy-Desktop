@@ -245,9 +245,9 @@ function wheel(e: WheelEvent): void {
         />
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
-        <!-- What it is, up top; its name and what it does, below. -->
+        <!-- App, up top; its name and what it does, below. -->
         <span class="mar-arc-text">
-          <span class="mar-arc-meta"><span class="mar-arc-app">App</span> · {{ x.kind }}</span>
+          <span class="mar-arc-meta"><span class="mar-arc-app">App</span></span>
         </span>
         <span class="mar-arc-dim" />
         <!-- As on the app cards: the name and what it does on the left,
