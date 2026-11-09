@@ -631,7 +631,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   z-index: 5;
   /* Edge to edge: out over the page's own side padding (px-11). */
   margin-inline: -44px;
-  padding: 12px 44px;
+  padding: 12px 44px 0;
+  /* Its top padding pulled back, so the tools sit where Apps' do. */
+  margin-top: -12px;
   transition:
     background-color 160ms ease,
     backdrop-filter 160ms ease;

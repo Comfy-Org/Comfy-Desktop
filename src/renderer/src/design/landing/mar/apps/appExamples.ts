@@ -310,7 +310,22 @@ export const APP_EXAMPLES: AppExample[] = [
   ...mixed()
 ]
 
-export const examplesOf = (app: string): AppExample[] => APP_EXAMPLES.filter((x) => x.app === app)
+/** Home's apps have one example of their own; they borrow the rest from
+ *  the app that does the same thing, so each opens on a full Inspiration. */
+const BORROW: Record<string, string[]> = {
+  'e-reshoot': ['x-reshoot'],
+  'e-relight': ['x-relight'],
+  's-reshoot': ['x-wan', 'x-i2v'],
+  's-jutsu': ['x-h3', 'x-i2v', 'x-wan']
+}
+export const examplesOf = (app: string): AppExample[] => [
+  ...APP_EXAMPLES.filter((x) => x.app === app),
+  ...APP_EXAMPLES.filter((x) => BORROW[app]?.includes(x.app)).map((x) => ({
+    ...x,
+    id: `${app}~${x.id}`,
+    app
+  }))
+]
 
 /** Which example an app opens on: the one picked in Apps › Examples, else
  *  its lead one. */

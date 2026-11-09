@@ -279,7 +279,11 @@ const HOOKS: Record<string, string> = {
   'x-wan': 'Moments that keep moving.',
   'x-angles': 'Every side of your character.',
   'x-3d': 'From a photo to 3D.',
-  'x-upscale': 'Bring out every detail.'
+  'x-upscale': 'Bring out every detail.',
+  'e-reshoot': 'Same product, new place.',
+  'e-relight': 'New light, new hour.',
+  's-reshoot': 'Same scene, a new angle.',
+  's-jutsu': 'Anyone, into any scene.'
 }
 const hook = computed(() => HOOKS[appId] ?? lib.value?.blurb ?? 'Start from something that works.')
 /** Inspiration's head: two rows of the app's pictures, each repeated so

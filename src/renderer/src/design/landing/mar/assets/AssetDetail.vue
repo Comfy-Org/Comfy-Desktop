@@ -700,20 +700,22 @@ onBeforeUnmount(() => {
   gap: 6px;
   margin: 0 16px;
   padding: 14px 0 16px;
-  border-top: 1px solid var(--mad-line);
 }
-/* Download on top, the rest under it as quieter rows. */
+/* Download on top, the rest under it as quieter rows: a soft fill, no
+   line, no divider above. */
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn {
   height: 36px;
   flex: none;
   justify-content: flex-start;
   padding: 0 12px;
   border-radius: 10px;
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--mad-line);
+  box-shadow: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn:not(.is-primary) {
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn:not(.is-primary):hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-primary {
   order: -1;
