@@ -1,0 +1,1893 @@
+/* Mar's proposed local setup (MarSetupFlow.vue), inside her step-modal
+ * surface (`.mar-wizard` in shell/marShell.css): soft panels and hairlines
+ * drawn from the theme's ink, so light and dark both hold. Progress is
+ * drawn in the same ink, no accent colour.
+ *
+ * In a layer: the prototype's control reset (ui/tokens.css) reverts to
+ * layered styles, so buttons, labels and inputs here keep theirs. */
+@layer components {
+  .mss,
+  .mss-first,
+  .mss,
+  .mss-first {
+    --wiz-ink: var(--color-base-foreground);
+    --mss-soft: color-mix(in oklch, var(--wiz-ink) 4%, transparent);
+    --mss-soft-hover: color-mix(in oklch, var(--wiz-ink) 7%, transparent);
+    --mss-line: color-mix(in oklch, var(--wiz-ink) 8%, transparent);
+    --mss-line-strong: color-mix(in oklch, var(--wiz-ink) 16%, transparent);
+    /* Surfaces inside take their ring from UI Playground › Borders (None by
+     * default, as on every New UI surface); fills tell them apart. */
+    --mss-danger-soft: color-mix(in oklch, var(--color-status-danger) 10%, transparent);
+    --mss-danger-line: color-mix(in oklch, var(--color-status-danger) 32%, transparent);
+  }
+
+  /* Body: scrolls on short windows, the footer stays put. Blocks sit 20
+   * apart; the description hugs its title (marShell.css). */
+  .mss-body {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow-y: auto;
+    animation: mss-step 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .mss-body > * + * {
+    margin-top: 20px;
+  }
+  @keyframes mss-step {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  /* Footer bar: actions on the right, the way out on the left. */
+  .mss-foot {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Row options (New Instance, Intel): Mar's row cards, 72 tall, a 40 icon
+   * tile, the title and one line, a chevron at the end. */
+  .mss-opts {
+    display: grid;
+    gap: 8px;
+  }
+  .mss-opt {
+    display: flex;
+    width: 100%;
+    min-height: 72px;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-radius: 16px;
+    background-color: var(--mss-soft);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
+    text-align: left;
+    outline: none;
+    transition:
+      background-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+  .mss-opt:hover {
+    background-color: var(--mss-soft-hover);
+    box-shadow: inset 0 0 0 1px var(--mss-line-strong);
+  }
+  .mss-opt:focus-visible {
+    box-shadow: 0 0 0 2px var(--color-border-focus);
+  }
+  .mss-opt-icon {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background-color: var(--mss-soft-hover);
+    color: var(--color-muted-foreground);
+  }
+  /* Same tile as Cloud on the first-run Home (MarStartWhere.vue). */
+  .mss-opt-icon.is-cloud {
+    background: linear-gradient(135deg, #f9d7e6, #d9d4fb 50%, #c9f0e1);
+    color: #3b2f55;
+  }
+  /* Install ComfyUI wears the bloom's colours: the same stage it opens. */
+  .mss-opt-icon.is-bloom {
+    background:
+      radial-gradient(circle at 25% 70%, oklch(0.62 0.1 305) 0, transparent 60%),
+      radial-gradient(circle at 80% 40%, oklch(0.72 0.07 60) 0, transparent 60%),
+      radial-gradient(circle at 55% 10%, oklch(0.88 0.12 110) 0, transparent 50%),
+      oklch(0.22 0.01 300);
+    color: oklch(1 0 0);
+  }
+  .mss-opt-text {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+  }
+  /* Picked option (Intel): the ring and a filled radio at the end. */
+  .mss-opt[data-state='checked'] {
+    background-color: var(--mss-soft-hover);
+    box-shadow: inset 0 0 0 1.5px var(--color-base-foreground);
+  }
+  .mss-opt-radio {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1.5px var(--mss-line-strong);
+    transition: box-shadow 160ms ease;
+  }
+  .mss-opt[data-state='checked'] .mss-opt-radio {
+    box-shadow: inset 0 0 0 5px var(--color-base-foreground);
+  }
+  .mss-opt-arrow {
+    flex-shrink: 0;
+    color: var(--color-subtle-foreground);
+    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .mss-opt:hover .mss-opt-arrow {
+    transform: translateX(2px);
+    color: var(--color-muted-foreground);
+  }
+
+  /* Stage: the bloom as a picture, dark in both themes like the template
+   * modal's canvas, so the glass chips and white type over it hold. Modal
+   * 20 → stage 16 → chips 8. */
+  .mss-stage {
+    position: relative;
+    height: 168px;
+    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: 16px;
+    background-color: oklch(0.17 0.006 300);
+    color: oklch(1 0 0);
+    isolation: isolate;
+  }
+  .mss-stage.is-short {
+    height: 96px;
+  }
+  .mss-stage.is-tall {
+    height: 212px;
+  }
+  .mss-stage > canvas {
+    position: absolute;
+    inset: 0;
+  }
+  /* Install wait: today's showcase clips float on the modal, no box behind
+   * them, staggered with the tall one in front. The column narrows on short
+   * windows so the clips, the progress and the steps fit without scrolling. */
+  .mss-prog.is-wait {
+    width: min(100%, calc((100vh - 360px) * 736 / 356));
+    margin-inline: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mss-scene {
+    position: relative;
+    aspect-ratio: 736 / 356;
+    margin-block: 8px;
+  }
+  .mss-clip {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    width: var(--w);
+    height: var(--h);
+    border-radius: 14px;
+    object-fit: cover;
+    background-color: oklch(0.2 0.006 285);
+    box-shadow:
+      0 0 0 1px oklch(1 0 0 / 0.08),
+      0 18px 40px -8px oklch(0 0 0 / 0.45);
+    transform: rotate(var(--r));
+    animation: mss-clip-float 7s ease-in-out infinite alternate;
+  }
+  .mss-clip.is-eye {
+    --x: 3.3%;
+    --y: 10.1%;
+    --w: 28.3%;
+    --h: 42.7%;
+    --r: -3deg;
+  }
+  .mss-clip.is-clouds {
+    --x: 12.5%;
+    --y: 60.1%;
+    --w: 31.5%;
+    --h: 34.8%;
+    --r: 2deg;
+    animation-delay: -2s;
+  }
+  .mss-clip.is-mountains {
+    --x: 67.9%;
+    --y: 25.8%;
+    --w: 28.8%;
+    --h: 47.2%;
+    --r: 3deg;
+    animation-delay: -4s;
+  }
+  .mss-clip.is-flower {
+    --x: 36.4%;
+    --y: 2.2%;
+    --w: 26.6%;
+    --h: 95.5%;
+    --r: 0deg;
+    z-index: 1;
+    animation-delay: -5.5s;
+  }
+  @keyframes mss-clip-float {
+    to {
+      transform: translateY(-6px) rotate(var(--r));
+    }
+  }
+  /* The Cloud pitch rotates above the scene, the CTA at the row's end. */
+  .mss-pitch {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .mss-pitch-line {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: var(--text-ui);
+    line-height: 20px;
+    color: var(--color-muted-foreground);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mss-pitch-sep::before {
+    content: '·';
+    margin-inline: 6px;
+    color: var(--color-subtle-foreground);
+  }
+  /* Hairline and a soft floor so the type at the bottom always reads. */
+  .mss-stage::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(to top, oklch(0.12 0.006 300 / 0.55), transparent 55%);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+    pointer-events: none;
+  }
+  .mss-stage-ui {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    height: 100%;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 12px;
+  }
+  .mss-stage.is-short .mss-stage-ui {
+    justify-content: center;
+  }
+  .mss-stage-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .mss-stage-subject {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 4px 4px;
+  }
+  .mss-stage-glyph {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: oklch(1 0 0 / 0.12);
+    backdrop-filter: blur(16px) saturate(1.4);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14);
+  }
+  .mss-stage-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+    letter-spacing: -0.015em;
+    text-shadow: 0 1px 12px oklch(0 0 0 / 0.3);
+  }
+  .mss-stage-title.is-big {
+    font-size: 17px;
+    line-height: 22px;
+    letter-spacing: -0.02em;
+  }
+  .mss-stage-sub {
+    color: oklch(1 0 0 / 0.72);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+  }
+  .mss-stage-foot {
+    display: grid;
+    gap: 10px;
+    padding: 0 4px 4px;
+  }
+
+  /* Glass chips over the stage: dark, blurred, as on the template modal. */
+  .mss-chip {
+    display: inline-flex;
+    height: 26px;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 0 10px;
+    background: oklch(0.16 0.004 285 / 0.55);
+    backdrop-filter: blur(16px) saturate(1.3);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
+    color: oklch(1 0 0 / 0.92);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .mss-chip.is-ok svg {
+    color: oklch(0.82 0.16 150);
+  }
+  .mss-chip.is-bad svg {
+    color: oklch(0.78 0.15 30);
+  }
+  .mss-chip.is-btn {
+    border-radius: var(--radius-control, 8px);
+    outline: none;
+    transition:
+      background-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+  .mss-chip.is-btn:hover {
+    background: oklch(0.16 0.004 285 / 0.75);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.2);
+  }
+  .mss-chip.is-btn:focus-visible {
+    box-shadow:
+      inset 0 0 0 1px oklch(1 0 0 / 0.2),
+      0 0 0 2px var(--color-border-focus);
+  }
+
+  /* What the checks found: two tiles, the fix spans both. */
+  /* Set up summary: a grouped list, label column then value and its meta. */
+  .mss-summary {
+    display: grid;
+    margin-top: 12px;
+    border-radius: 12px;
+    background: oklch(0.6 0 0 / 0.06);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.07);
+  }
+  .mss-row {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+  }
+  .mss-row + .mss-row {
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06);
+  }
+  .mss-row dt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-subtle-foreground);
+  }
+  .mss-row dd {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 0;
+  }
+  .mss-row-meta {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-subtle-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+  .mss-row.is-bad .mss-row-meta {
+    color: var(--color-status-danger);
+  }
+  .mss-tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .mss-tile {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 16px;
+    align-items: start;
+    gap: 12px;
+    padding: 12px 14px 12px 12px;
+    border-radius: 14px;
+    background-color: var(--mss-soft);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
+  }
+  .mss-tile.is-wide {
+    grid-column: 1 / -1;
+  }
+  .mss-tile.is-bad ~ .mss-tile {
+    grid-column: 1 / -1;
+  }
+  .mss-tile.is-bad {
+    grid-column: 1 / -1;
+    background-color: var(--mss-danger-soft);
+    box-shadow: inset 0 0 0 1px var(--mss-danger-line);
+  }
+  .mss-tile-icon {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    background-color: var(--mss-soft-hover);
+    color: var(--color-muted-foreground);
+  }
+  .mss-tile.is-bad .mss-tile-icon,
+  .mss-callout.is-err .mss-tile-icon {
+    background-color: var(--mss-danger-soft);
+    color: var(--color-status-danger);
+  }
+  .mss-sum-key {
+    color: var(--color-subtle-foreground);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .mss-sum-val {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    color: var(--color-base-foreground);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+  }
+  .mss-ok,
+  .mss-bad {
+    margin-top: 8px;
+  }
+  .mss-ok {
+    color: var(--color-status-running);
+  }
+  .mss-bad {
+    color: var(--color-status-danger);
+  }
+  .mss-fix {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  /* Callouts: an earlier install (info) or a failed step (error). */
+  .mss-callout {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    padding: 12px 16px 14px 12px;
+    border-radius: 14px;
+    background-color: var(--mss-soft);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
+  }
+  .mss-callout > .grid {
+    padding-top: 6px;
+  }
+  .mss-callout.is-err {
+    background-color: var(--mss-danger-soft);
+    box-shadow: inset 0 0 0 1px var(--mss-danger-line);
+  }
+
+  /* Consent: the box and its sentence on one line, links underlined. */
+  .mss-consent {
+    display: grid;
+    gap: 10px;
+  }
+  .mss-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-muted-foreground);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+    cursor: pointer;
+  }
+  .mss-link {
+    color: var(--color-base-foreground);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in oklch, currentColor 40%, transparent);
+    text-underline-offset: 3px;
+    transition: text-decoration-color 160ms ease;
+  }
+  .mss-link:hover {
+    text-decoration-color: currentColor;
+  }
+
+  /* Change setup */
+  .mss-fields {
+    display: grid;
+    gap: 20px;
+  }
+  .mss-field {
+    display: grid;
+    gap: 8px;
+  }
+  .mss-field .mar-pseg {
+    justify-self: start;
+  }
+  /* Switching method swaps fields; the block keeps Public Builds' height
+   * so the screen doesn't jump. */
+  .mss-fields.is-change {
+    min-height: 408px;
+    align-content: start;
+  }
+  .mss-radio {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background-color: var(--mss-soft);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
+    text-align: left;
+    outline: none;
+    transition:
+      background-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+  .mss-radio:hover {
+    background-color: var(--mss-soft-hover);
+  }
+  /* Picked: the first screen's quieter ring, not a full-ink stroke. */
+  .mss-radio[data-state='checked'] {
+    background-color: color-mix(in oklch, var(--wiz-ink) 10%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--wiz-ink) 32%, transparent);
+  }
+  .mss-radio:focus-visible {
+    box-shadow: 0 0 0 2px var(--color-border-focus);
+  }
+
+  /* Progress */
+  .mss-prog {
+    display: grid;
+    gap: 14px;
+  }
+  .mss-prog-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  /* The reel: today's install steps, the running one on the middle line.
+   * There's no overall percent: the whole install can't be timed, so the
+   * steps carry the progress, and only the download shows size and time. */
+  .mss-reel {
+    height: 120px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+  }
+  .mss-reel-track {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .mss-reel-row {
+    display: flex;
+    height: 40px;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-subtle-foreground);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+    opacity: 0.4;
+    transition:
+      opacity 300ms ease,
+      color 300ms ease;
+  }
+  .mss-reel-row.is-now,
+  .mss-reel-row.is-fail {
+    color: var(--color-base-foreground);
+    opacity: 1;
+  }
+  .mss-reel-row.is-fail {
+    color: var(--color-status-danger);
+  }
+  .mss-reel-icon {
+    display: inline-flex;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+  }
+  .mss-reel-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background-color: currentColor;
+  }
+  .mss-reel-detail {
+    margin-left: auto;
+    color: var(--color-subtle-foreground);
+  }
+  .mss-fade-enter-active,
+  .mss-fade-leave-active {
+    transition: opacity 160ms ease;
+  }
+  .mss-fade-enter-from,
+  .mss-fade-leave-to {
+    opacity: 0;
+  }
+  .mss-spin {
+    animation: mss-spin 900ms linear infinite;
+  }
+  @keyframes mss-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  .mss-logs-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    margin-left: -4px;
+    padding: 2px 4px;
+    border-radius: 6px;
+    color: var(--color-subtle-foreground);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+    outline: none;
+  }
+  .mss-logs-toggle:hover {
+    color: var(--color-base-foreground);
+  }
+  .mss-logs-toggle:focus-visible {
+    box-shadow: 0 0 0 2px var(--color-border-focus);
+  }
+  .mss-logs-toggle svg {
+    transition: transform 200ms ease;
+  }
+  .mss-logs {
+    max-height: 144px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: 10px;
+    background-color: color-mix(in oklch, var(--wiz-ink) 5%, transparent);
+    box-shadow: inset 0 0 0 1px var(--color-border-default);
+    color: var(--color-muted-foreground);
+    font:
+      12px/1.6 ui-monospace,
+      Menlo,
+      monospace;
+    white-space: pre-wrap;
+  }
+  .mss-logs .e {
+    color: var(--color-status-danger);
+  }
+
+  /* The pick */
+  .mss-pick {
+    display: grid;
+    gap: 16px;
+  }
+  .mss-pick-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 2px;
+  }
+  .mss-pick-lead {
+    grid-column: 1 / -1;
+  }
+  .mss-pick-tabs {
+    justify-self: start;
+  }
+  .mss-cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .mss-card {
+    min-width: 0;
+  }
+  .mss-card.is-nofit {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .mss-card.is-nofit img {
+    filter: grayscale(0.6);
+  }
+  /* The pick's check: Mar's card check (pages/MarItem.vue), filled. */
+  .mss-card-check {
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background-color: var(--color-inverted-background);
+    color: var(--color-inverted-foreground);
+    animation: mss-pop 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .mss-card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .mss-card-chip {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    display: flex;
+  }
+  @keyframes mss-pop {
+    from {
+      transform: scale(0.6);
+      opacity: 0;
+    }
+  }
+
+  /* Background pill: the step modal's smoked glass, small. */
+
+  /* First launch: today's "How do you want to run Comfy?" takeover, the
+   * whole window before the app opens, after BrandTakeoverLayout: a dark
+   * frame inset in a darker edge, the C mark top left, two cards whose
+   * selection is a quieter border (no radio, no accent). */
+  /* Tokens ChoiceCard (components/ChoiceCard.vue) reads from the app's
+   * main.css, which the prototype doesn't load; values as in its dark set. */
+  .mss-first {
+    --text: #ffffff;
+    --neutral-100: #c2bfb9;
+    --focus-ring: var(--neutral-100);
+    --brand-surface-bg-hover: rgba(137, 137, 137, 0.09);
+    --brand-surface-border: rgba(255, 255, 255, 0.09);
+    --brand-surface-border-hover: rgba(255, 255, 255, 0.18);
+    --brand-surface-blur: 75px;
+    /* The Home's scale: 13px body, 15px card title (mar-arc-title). */
+    --takeover-fs-body: var(--text-ui);
+    --takeover-fs-lead: 15px;
+    --neutral-300: #8a8688;
+  }
+  /* The prototype's control reset (ui/tokens.css) reverts a button's box
+   * properties to layered styles, so ChoiceCard's scoped values are
+   * restated here, unchanged, for the ones it reverts. */
+  .mss-first .choice-card {
+    width: auto;
+    padding: 0;
+    border: 1px solid var(--brand-surface-border);
+    border-radius: 10px;
+    background: var(--brand-surface-bg-hover);
+    color: var(--neutral-100);
+    cursor: pointer;
+  }
+  .mss-first .choice-card:hover:not(:disabled) {
+    border-color: var(--brand-surface-border-hover);
+    background: rgba(137, 137, 137, 0.13);
+  }
+  .mss-first .choice-card:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .mss-first .choice-card--selected {
+    border-color: color-mix(in oklab, var(--neutral-100) 60%, transparent);
+    background: color-mix(in oklab, var(--neutral-100) 6%, var(--brand-surface-bg-hover));
+  }
+  .mss-first .choice-card--selected:hover:not(:disabled) {
+    border-color: color-mix(in oklab, var(--neutral-100) 75%, transparent);
+    background: color-mix(in oklab, var(--neutral-100) 9%, rgba(137, 137, 137, 0.13));
+  }
+  .mss-first .choice-card__tagline {
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+  .mss-first .choice-card__body {
+    padding: 14px 16px 16px;
+  }
+  .mss-first .choice-card__label-text {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .mss-first {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: flex;
+    padding: 8px;
+    background: oklch(0.12 0.003 285);
+    color: var(--color-muted-foreground);
+  }
+  .mss-first-frame {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    overflow-y: auto;
+    padding: 72px 32px 28px;
+    border-radius: 10px;
+    /* The Home's Spotlight (shell/marShell.css): one soft light from above
+     * with a fine film grain, kept fainter here so the page stays dark. */
+    background:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+      radial-gradient(
+        ellipse 45% 60% at 50% -15%,
+        color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+        transparent 70%
+      ),
+      oklch(0.16 0.003 285);
+  }
+  /* The full wordmark, as the app's sidebar; the steps are centred on the
+   * frame, so its width doesn't move them. */
+  .mss-first-mark {
+    position: absolute;
+    top: 18px;
+    left: 20px;
+    width: auto;
+    height: 22px;
+    color: var(--color-base-foreground);
+  }
+  .mss-first-mark path {
+    fill: currentColor;
+  }
+  .mss-first-hero {
+    display: flex;
+    width: 100%;
+    max-width: 640px;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-block: auto;
+    text-align: left;
+  }
+  /* The Home pages' title (pages/MarPage.vue): 24px semibold, left. */
+  .mss-first-title {
+    color: var(--color-base-foreground);
+    font-size: var(--text-title, 24px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .mss-first-lead {
+    margin-top: 6px;
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+  }
+  .mss-first-cards {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    gap: 12px;
+    margin-top: 32px;
+  }
+  .mss-first-mods {
+    display: grid;
+    align-self: stretch;
+    gap: 10px;
+    margin-top: 24px;
+    text-align: left;
+  }
+  .mss-first-mods .mss-check {
+    align-items: flex-start;
+  }
+  .mss-first-hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--color-subtle-foreground);
+  }
+  .mss-first-hint.is-off {
+    visibility: hidden;
+  }
+  .mss-first-mods.is-off {
+    visibility: hidden;
+  }
+  .mss-first-hint b {
+    color: var(--color-muted-foreground);
+    font-weight: 400;
+  }
+  /* Consent: one quiet block under a hairline, smaller than the choice
+   * above it; Continue sits level with it on the right. */
+  .mss-first-bottom {
+    display: flex;
+    width: 100%;
+    max-width: 640px;
+    margin-top: 48px;
+    padding-top: 20px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  }
+  .mss-first-consent {
+    display: grid;
+    gap: 10px;
+  }
+  .mss-first-consent .mss-check {
+    gap: 10px;
+    color: var(--color-subtle-foreground);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .mss-first-consent .mss-link {
+    color: var(--color-muted-foreground);
+  }
+  .mss-first-actions {
+    display: flex;
+    gap: 8px;
+  }
+  /* The Home's Spotlight (shell/homeBackgrounds.css): a neutral light from
+   * the top centre, the same on every step. */
+  .mss-ambient {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(
+      ellipse 55% 85% at 50% -15%,
+      color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+      transparent 70%
+    );
+    pointer-events: none;
+  }
+
+  /* Every screen comes in: its blocks rise and fade in, one after another. */
+  .mss-first-hero > *,
+  .mss-first-bottom,
+  .mss-body > * {
+    animation: mss-rise 560ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  }
+  .mss-first-hero > :nth-child(2),
+  .mss-body > :nth-child(2) {
+    animation-delay: 50ms;
+  }
+  .mss-first-hero > :nth-child(3),
+  .mss-body > :nth-child(3) {
+    animation-delay: 110ms;
+  }
+  .mss-first-hero > :nth-child(4),
+  .mss-body > :nth-child(4) {
+    animation-delay: 170ms;
+  }
+  .mss-first-hero > :nth-child(n + 5),
+  .mss-body > :nth-child(n + 5),
+  .mss-first-bottom {
+    animation-delay: 230ms;
+  }
+  @keyframes mss-rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  }
+
+  .mss-first-enter-active,
+  .mss-first-leave-active {
+    transition:
+      opacity 240ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .mss-first-enter-from,
+  .mss-first-leave-to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  @media (max-width: 760px) {
+    .mss-cards {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .mss-pick-head {
+      grid-template-columns: minmax(0, 1fr);
+      justify-items: start;
+    }
+    .mss-tiles {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mss-body,
+    .mss-card-check,
+    .mss-spin,
+    .mss-first-hero > *,
+    .mss-first-bottom,
+    .mss-body > *,
+    .mss-clip {
+      animation: none;
+    }
+    .mss-opt-arrow,
+    .mss-reel-track,
+    .mss-first-enter-active,
+    .mss-first-leave-active {
+      transition: none;
+    }
+  }
+}
+
+/* Chips on imagery stay dark in both themes, as on Mar's app page. Outside
+ * the layer so it wins over the Badge's overlay utility. */
+.mss-card .bg-media-overlay {
+  background-color: oklch(0 0 0 / 0.5);
+  color: oklch(1 0 0 / 0.9);
+}
+
+/* First launch: Set up and the install read as the next screen of the
+ * takeover, not a modal over the app. No box, the takeover's type scale
+ * centred, and tiles in the first screen's card style. Outside the layer
+ * to win over the step-modal surface (shell/marShell.css). */
+.mss-first.is-backdrop {
+  z-index: 70;
+}
+:root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
+  /* The first screen's column, so the takeover keeps one width. */
+  width: min(704px, calc(100vw - 48px));
+  max-width: none;
+  max-height: calc(100vh - 32px);
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  box-shadow: none;
+  animation: none;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body {
+  padding: 8px 32px 24px;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body > h3 {
+  padding-right: 0;
+  color: var(--color-base-foreground);
+  font-size: var(--text-title, 24px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body > h3 + :is(p, [id]) {
+  margin-top: 6px;
+  margin-bottom: 24px;
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  text-align: left;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-foot {
+  padding: 12px 32px 8px;
+  box-shadow: none;
+}
+.mss-in-takeover .mss-stage {
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+}
+.mss-in-takeover .mss-tile:not(.is-bad) {
+  border-radius: 12px;
+  background: oklch(0.6 0 0 / 0.08);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.08);
+}
+/* Icon and check centred on the three-line text; Back's label lines up
+ * with the tiles' left edge, Install with their right. */
+.mss-in-takeover .mss-tile {
+  align-items: center;
+  padding: 14px 16px 14px 14px;
+}
+.mss-in-takeover .mar-wizard-foot > button:first-child {
+  margin-left: -16px;
+}
+
+/* Picked card: the first screen's quieter ring, not a full-ink stroke. */
+.mss .mss-card.ring-2 {
+  --tw-ring-color: color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
+  --tw-ring-shadow: 0 0 0 1px var(--tw-ring-color);
+}
+
+/* Checkboxes on the takeover: an open ring when off, so they read as boxes
+ * on the dark page; smaller in the consent block. Outside the layer to win
+ * over the Checkbox's utility classes. */
+.mss-first .mss-check [role='checkbox']:not([data-state='checked']) {
+  border-color: color-mix(in oklch, var(--color-base-foreground) 28%, transparent);
+  background: transparent;
+}
+
+/* Set up's machine: a compact card with a drawn laptop (Set up option 4 in
+ * the canvas), in place of the bloom stage. */
+.mss-machine {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 20px;
+  padding: 16px 16px 16px 18px;
+  border-radius: 14px;
+  background: oklch(0.6 0 0 / 0.06);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.07);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.mss-machine-title {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mss-laptop {
+  width: 72px;
+  height: 47px;
+  flex-shrink: 0;
+}
+.mss-laptop.is-bad .mss-laptop-screen {
+  fill: #141416;
+}
+.mss-laptop.is-bad .mss-laptop-glow {
+  display: none;
+}
+.mss-laptop.is-bad .mss-laptop-ring {
+  stroke: var(--color-status-danger);
+  stroke-opacity: 0.8;
+}
+/* Rows with their own Change: value over meta, the button at the end. */
+.mss-row.is-change {
+  grid-template-columns: 132px minmax(0, 1fr) auto;
+  padding-block: 10px;
+}
+.mss-row.is-change dd {
+  display: grid;
+  gap: 0;
+}
+.mss-row.is-change .mss-row-meta {
+  font-size: 12px;
+}
+
+/* ── Fixed frame (audit) ─────────────────────────────────────────────
+ * Every takeover screen shares one column: same width, same height, the
+ * same top for the title and the same line for the action bar. The step
+ * indicator sits top centre. */
+:root {
+  --mss-col-w: min(704px, calc(100vw - 48px));
+  --mss-col-h: min(600px, calc(100vh - 120px));
+}
+.mss-steps {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  list-style: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.mss-steps-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.mss-steps-item i {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 18%, transparent);
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mss-steps-item.is-now {
+  color: var(--color-base-foreground);
+}
+.mss-steps-item.is-now i {
+  background: var(--color-base-foreground);
+  box-shadow: none;
+  color: var(--color-base-background, #111);
+  font-weight: 600;
+}
+.mss-steps-item.is-done {
+  color: var(--color-muted-foreground);
+}
+.mss-steps-item.is-done i {
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+  box-shadow: none;
+  color: var(--color-base-foreground);
+}
+.mss-steps-sep {
+  width: 24px;
+  height: 1px;
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+}
+
+/* The first screen in the same column as the dialog screens. */
+.mss-col {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: var(--mss-col-w);
+  height: var(--mss-col-h);
+  flex-direction: column;
+  transform: translate(-50%, -50%);
+}
+.mss-col .mss-first-hero {
+  max-width: none;
+  flex: 1;
+  margin: 0;
+  padding: 8px 32px 0;
+  overflow-y: auto;
+}
+.mss-col .mss-first-bottom {
+  max-width: none;
+  min-height: 64px;
+  margin: 0;
+  padding: 12px 32px 8px;
+  flex-wrap: nowrap;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+/* Consent sits in the action bar, one compact group facing Continue. */
+.mss-col .mss-first-consent {
+  gap: 8px;
+  padding: 10px 0 6px;
+}
+.mss-col .mss-first-consent .mss-check {
+  gap: 10px;
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.mss-col .mss-first-consent .mss-check [role='checkbox'] {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  flex: none;
+}
+.mss-col .mss-first-consent .mss-check [role='checkbox'] svg {
+  width: 12px;
+  height: 12px;
+}
+.mss-terms {
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+.mss-terms .mss-link {
+  color: var(--color-base-foreground);
+}
+.mss-terms-ask {
+  color: var(--color-status-warning, oklch(0.8 0.15 80));
+  font-size: 12px;
+  line-height: 16px;
+}
+.mss-terms.is-ask [role='checkbox'] {
+  box-shadow: 0 0 0 3px
+    color-mix(in oklch, var(--color-status-warning, oklch(0.8 0.15 80)) 35%, transparent);
+  animation: mss-nudge 360ms cubic-bezier(0.36, 0, 0.66, 1);
+}
+@keyframes mss-nudge {
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+:root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
+  width: var(--mss-col-w);
+  height: var(--mss-col-h);
+  max-height: none;
+}
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* The bar's hairline ends where the content does, as on the first screen. */
+:root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-foot {
+  min-height: 64px;
+  margin-inline: 32px;
+  padding-inline: 0;
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mss-in-takeover .mar-wizard-foot > button:first-child {
+  margin-left: 0;
+}
+
+/* ── Change setup: a settings sheet ──────────────────────────────── */
+.mss-form {
+  display: grid;
+}
+.mss-form-row {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding-block: 12px;
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.mss-form-row:first-child {
+  padding-top: 0;
+}
+.mss-form-row:has(.mss-opts) {
+  align-items: start;
+}
+.mss-form-row:has(.mss-opts) .mss-form-label {
+  padding-top: 14px;
+}
+.mss-form-label {
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.mss-form-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+}
+.mss-form-aside {
+  margin: 20px 0 16px;
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+}
+.mss-form-aside .mss-link {
+  color: var(--color-base-foreground);
+}
+.mss-opts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 12px 12px;
+  border-radius: 12px;
+  background: oklch(0.6 0 0 / 0.05);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  text-align: left;
+  outline: none;
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt:hover {
+  background: oklch(0.6 0 0 / 0.09);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt[data-state='checked'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.mss-opt-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+}
+.mss-opt[data-state='checked'] .mss-opt-icon {
+  color: var(--color-base-foreground);
+}
+.mss-opt-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.mss-opt-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  line-height: 20px;
+  white-space: nowrap;
+}
+.mss-opt-meta {
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The pick is a bare check: the card's fill already says it's picked. It
+ * switches at once. */
+.mss-opt-check {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  color: var(--color-base-foreground);
+  visibility: hidden;
+}
+.mss-opt[data-state='checked'] .mss-opt-check {
+  visibility: visible;
+}
+
+/* ── Install: one-line Cloud pitch in the bar ───────────────────── */
+.mss-foot .mss-pitch {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+}
+.mss-foot .mss-pitch b {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.mss-foot .mss-pitch .mss-link {
+  flex-shrink: 0;
+  color: var(--color-base-foreground);
+}
+/* The card swaps as production's does: a short fade and a 3px rise. */
+.mss-pitch-swap-enter-active,
+.mss-pitch-swap-leave-active {
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.mss-pitch-swap-enter-from {
+  opacity: 0;
+  transform: translateY(3px);
+}
+.mss-pitch-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mss-pitch-swap-enter-active,
+  .mss-pitch-swap-leave-active {
+    transition: none;
+  }
+}
+
+/* ── Install: steps on the left, one showcase panel on the right ──── */
+.mss-inst {
+  display: grid;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) 272px;
+  align-items: center;
+  gap: 40px;
+}
+.mss-inst.is-err {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.mss-inst-main {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+}
+.mss-inst-steps {
+  display: grid;
+  margin: 20px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.mss-inst-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 12px;
+  padding-bottom: 14px;
+  color: var(--color-subtle-foreground);
+  font-size: var(--text-ui);
+  line-height: 22px;
+  transition: color 300ms ease;
+}
+/* The rail between one step's mark and the next. */
+.mss-inst-step:not(:last-child)::before {
+  position: absolute;
+  top: 24px;
+  bottom: 2px;
+  left: 10.5px;
+  width: 1px;
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  content: '';
+}
+.mss-inst-step.is-done::before {
+  background: color-mix(in oklch, var(--color-base-foreground) 32%, transparent);
+}
+.mss-inst-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+  transition:
+    background-color 300ms ease,
+    box-shadow 300ms ease;
+}
+.mss-inst-step.is-done {
+  color: var(--color-muted-foreground);
+}
+.mss-inst-step.is-done .mss-inst-icon {
+  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
+  box-shadow: none;
+  color: var(--color-base-foreground);
+}
+.mss-inst-step.is-now,
+.mss-inst-step.is-fail {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.mss-inst-step.is-now .mss-inst-icon {
+  box-shadow: none;
+}
+.mss-inst-step.is-fail .mss-inst-icon {
+  box-shadow: none;
+  color: var(--color-status-danger);
+}
+.mss-inst-text {
+  display: grid;
+  min-width: 0;
+}
+.mss-inst-pct {
+  margin-left: 8px;
+  color: var(--color-muted-foreground);
+  font-weight: 400;
+}
+.mss-inst-detail {
+  margin-top: 2px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+.mss-inst-media {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+  border-radius: 18px;
+  background: oklch(0.2 0.006 285);
+  box-shadow:
+    0 0 0 1px oklch(1 0 0 / 0.08),
+    0 24px 48px -16px oklch(0 0 0 / 0.5);
+}
+.mss-inst-media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  animation: mss-inst-show 24s linear infinite;
+}
+@keyframes mss-inst-show {
+  0%,
+  29% {
+    opacity: 0;
+  }
+  4%,
+  25% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mss-inst-media video {
+    animation: none;
+  }
+  .mss-inst-media video:first-child {
+    opacity: 1;
+  }
+}
+
+/* ── Set up: the machine as the screen's subject ─────────────────── */
+.mss-machine.is-hero {
+  position: relative;
+  gap: 28px;
+  margin-top: 0;
+  padding: 28px 32px;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      ellipse 70% 120% at 12% 0%,
+      color-mix(in oklch, var(--color-base-foreground) 9%, transparent),
+      transparent 70%
+    ),
+    oklch(0.6 0 0 / 0.05);
+}
+.mss-machine.is-hero .mss-laptop {
+  width: 168px;
+  height: 109px;
+}
+.mss-machine.is-hero .mss-machine-title {
+  font-size: 22px;
+  line-height: 28px;
+}
+/* The one Change, on the computer it changes. */
+:root .proto-ui.proto-ui.proto-ui .mss-machine.is-hero .mss-machine-change {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+}
+.mss-machine-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.mss-machine.is-hero + .mss-summary {
+  margin-top: 12px;
+}
+.mss-foot-sum {
+  margin-right: 8px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+/* The steps keep the panel's height, so the title doesn't move as the
+ * download's bar comes and goes. */
+.mss-inst:not(.is-err) .mss-inst-main {
+  min-height: 340px;
+}
+/* Install's title sits where every other screen's does; the steps and the
+   panel take the room under it. */
+.mar-wizard-body.mss-body-inst {
+  display: flex;
+  flex-direction: column;
+}
+.mss-body-inst .mss-inst {
+  flex: 0 0 auto;
+  height: auto;
+  margin-top: 24px;
+  align-items: start;
+}
+.mss-body-inst .mss-inst-steps {
+  margin-top: 0;
+}
+.mss-foot .mss-pitch {
+  justify-content: flex-start;
+  gap: 10px;
+}
+/* The text takes the room, so the link holds its place beside the exit
+ * while the lines rotate; the icon sits on the title's line. */
+.mss-foot .mss-pitch .mss-pitch-line {
+  flex: 1 1 0;
+}
+.mss-foot .mss-pitch > svg {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+/* Two lines, title over body: production's cards are too long for one. */
+.mss-foot .mss-pitch .mss-pitch-line {
+  display: flex;
+  flex-direction: column;
+  line-height: 18px;
+}
+.mss-foot .mss-pitch .mss-pitch-sep {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mss-foot .mss-pitch .mss-pitch-sep::before {
+  content: none;
+}
+
+/* Three across, at the size Explore's app cards have on the Home. */
+.mss-pick .mss-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+/* Workflow step: Explore's card (explore/MarExplore.vue), as a pick. A flat
+ * surface, the picture, then the name over its task and download. */
+:root .proto-ui.proto-ui.proto-ui .mss-wf {
+  display: flex;
+  width: auto;
+  min-width: 0;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: var(--radius-card);
+  background: oklch(0.6 0 0 / 0.07);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  text-align: left;
+  outline: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-wf:hover {
+  background: oklch(0.6 0 0 / 0.12);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-wf[aria-checked='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 13%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-wf:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.mss-wf-media {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  aspect-ratio: 16 / 10;
+}
+.mss-wf-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 500ms ease;
+}
+.mss-wf:hover .mss-wf-media img {
+  transform: scale(1.04);
+}
+.mss-wf-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--color-media-overlay);
+  backdrop-filter: blur(12px);
+  color: rgb(255 255 255 / 0.92);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+/* Requires credits: production's gold on a dark chip, with its crown. */
+.mss-wf-badge.is-credits {
+  background: oklch(0.2 0 0 / 0.86);
+  color: #e9c422;
+  font-weight: 600;
+}
+/* Picked: the flow's bare check, beside the name. */
+.mss-wf-check {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  display: none;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-base-foreground);
+}
+.mss-wf[aria-checked='true'] .mss-wf-check {
+  display: inline-flex;
+}
+.mss-wf-text {
+  display: grid;
+  min-width: 0;
+  position: relative;
+  padding: 10px 32px 8px 8px;
+  font-size: var(--text-ui);
+  line-height: 20px;
+}
+.mss-wf-name {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mss-wf-task {
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mss-wf-badge.is-size {
+  top: auto;
+  right: 8px;
+  bottom: 8px;
+  left: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mss-wf-media img {
+    transition: none;
+  }
+}
+
+/* The first screen's title and lead match every other step's. */
+.mss-col .mss-first-title {
+  line-height: 24px;
+}
+.mss-col .mss-ways,
+.mss-col .mss-first-cards {
+  margin-top: 28px;
+}
+
+/* Change setup: production's Recommended tag, and its other ways in. */
+.mss-opt-tag {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: oklch(0.6 0 0 / 0.16);
+  color: var(--color-muted-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+.mss-opts > .mss-opt.is-wide {
+  grid-column: 1 / -1;
+}
+/* Hardware: a list, as today's, so each line reads whole. */
+.mss-opts.is-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mss-form-aside.is-more {
+  margin-top: -8px;
+}
+
+/* The cancel confirmation sits over the takeover, which is itself above the
+   usual dialog layer; its scrim is the sibling just before it. */
+.proto-ui.mss-confirm,
+.proto-ui:has(+ .mss-confirm) {
+  z-index: 80;
+}
+/* It has to read as a layer over the setup: a lifted surface with a border
+   and the popover shadow, over the step modal's scrim. This dialog only. */
+:root .proto-ui.mss-confirm {
+  /* Surfaces draw no borders in the New UI, so the border tokens are blank:
+     this dialog mixes its own hairline from the foreground. */
+  --mss-confirm-line: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+  border: 1px solid var(--mss-confirm-line);
+  background-color: color-mix(
+    in oklch,
+    var(--color-base-foreground) 9%,
+    var(--color-card-background)
+  );
+  box-shadow: var(--shadow-popover);
+}
+/* The actions sit in a footer band under a hairline, edge to edge. */
+.mss-confirm-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--mss-confirm-line);
+}
+:root .proto-ui:has(+ .mss-confirm) {
+  background-color: rgb(0 0 0 / 0.5);
+}
+:root[data-ds-theme='light'] .proto-ui.mss-confirm {
+  background-color: var(--color-card-background);
+}
+:root[data-ds-theme='light'] .proto-ui:has(+ .mss-confirm) {
+  background-color: rgb(20 20 30 / 0.22);
+}

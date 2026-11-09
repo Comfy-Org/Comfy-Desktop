@@ -82,11 +82,15 @@ watch(
 
 // Which local builds exist.
 watch(
-  [firstTime, () => marUser.local, onCloud, () => can.value.home],
-  ([first, local, cloud, home]) => {
+  [firstTime, () => marUser.local, onCloud, () => can.value.home, () => marUser.user],
+  ([first, local, cloud, home, user]) => {
     proto.newUser = first
-    proto.fresh = home && (cloud || local === 'none')
-    proto.oneLocal = home && local === 'one'
+    // Before there is a Home, only the local setup's first launch starts
+    // with nothing installed.
+    proto.fresh = (home || user === 'first') && (cloud || local === 'none')
+    // Before there is a Home, only someone who just ran the local setup
+    // has a single build: Builds lists it alone.
+    proto.oneLocal = local === 'one' && (home || user === 'first')
   },
   { immediate: true }
 )

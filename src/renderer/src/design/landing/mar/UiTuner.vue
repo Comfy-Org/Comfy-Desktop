@@ -21,6 +21,21 @@ import { CREDITS_STATES, creditsState } from './credits'
 import { P20, p20 } from './p20/p20'
 import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
+import {
+  LOCAL_SETUPS,
+  ONBOARDINGS,
+  SETUP_SCOPES,
+  MACHINES,
+  SETUP_GPUS,
+  SETUP_OSES,
+  SETUP_SCREENS,
+  canvas,
+  RUN_ON_CARDS,
+  localSetup,
+  openSetup,
+  showScreen,
+  type Screen
+} from './setup/setupFlow'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
@@ -41,6 +56,9 @@ import GroupHead from './tuner/TunerGroupHead.vue'
  *  and More, folded (rare and exploratory). States and
  *  This page list only what changes the screen now (tunerContext.ts says
  *  when); a hidden tweak keeps its value. */
+/** Local setup › Jump to: the last screen picked. */
+const setupScreen = ref<Screen | null>(null)
+
 const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
   { value: 'spotlight', label: 'Spotlight · soft light' },
   { value: 'bloom', label: 'Latent bloom · colour out of grain' },
@@ -156,7 +174,7 @@ function onScroll(e: Event): void {
     <aside
       v-if="tuner.open"
       aria-label="UI tuner"
-      class="proto-ui fixed top-14 right-4 bottom-4 z-50 flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
+      class="proto-ui fixed top-14 right-4 bottom-4 z-[80] flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
     >
       <header class="flex shrink-0 items-center justify-between px-4 pt-4 pb-2">
         <h2 class="text-ui font-semibold">
@@ -182,6 +200,16 @@ function onScroll(e: Event): void {
           <!-- Cloud's first screen is Home: before it, only the desktop app. -->
           <Row v-if="can.home" label="Surface">
             <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
+          </Row>
+          <!-- Desktop only: the proposed first launch, from its first screen. -->
+          <Row v-if="can.design && !onCloud" label="Onboarding">
+            <Button
+              variant="secondary"
+              size="sm"
+              class="w-full"
+              @click="showScreen((setupScreen = 'first'))"
+              >Start onboarding</Button
+            >
           </Row>
           <!-- The trio in empty states, step progress and loaders. -->
           <Row label="Brand motif">
@@ -288,6 +316,58 @@ function onScroll(e: Event): void {
             <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
           </Row>
           <Row :show="shows('ports')"><NavOptionsTuner /></Row>
+        </section>
+
+        <!-- Local setup (mar/setup): the proposed install flow behind New
+             Instance and "This computer", on Desktop. Still being defined. -->
+        <section v-if="can.design && !onCloud" aria-label="Local setup" class="mt-6 flex flex-col">
+          <GroupHead
+            title="Local setup"
+            note="New Instance"
+            :changed="dirty(['localSetup'])"
+            @reset="resetGroup(['localSetup'])"
+          />
+          <Row label="Flow">
+            <Seg v-model="localSetup.mode" label="Flow" :options="LOCAL_SETUPS" />
+          </Row>
+          <template v-if="localSetup.mode === 'on'">
+            <!-- M1 ships Builds only: no Home, no example workflows. -->
+            <Row label="Scope">
+              <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
+            </Row>
+            <!-- Home first needs the Home, so it is offered past M1 only. -->
+            <Row v-if="localSetup.scope === 'next'" label="Onboarding">
+              <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" class="w-full" />
+            </Row>
+            <Row label="Jump to">
+              <Select
+                :model-value="setupScreen ?? 'first'"
+                :options="SETUP_SCREENS"
+                class="w-full"
+                @update:model-value="(v) => v && showScreen((setupScreen = v))"
+              />
+            </Row>
+            <Row label="First screen cards">
+              <Select v-model="localSetup.cards" :options="RUN_ON_CARDS" class="w-full" />
+              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="canvas = true"
+                >Compare cards</Button
+              >
+            </Row>
+            <Row label="Operating system">
+              <Select v-model="localSetup.os" :options="SETUP_OSES" class="w-full" />
+            </Row>
+            <Row v-if="localSetup.os !== 'mac'" label="Graphics">
+              <Select v-model="localSetup.gpu" :options="SETUP_GPUS" class="w-full" />
+            </Row>
+            <Row label="This computer">
+              <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
+            </Row>
+            <Row>
+              <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="openSetup()"
+                >Open the flow</Button
+              >
+            </Row>
+          </template>
         </section>
 
         <!-- More: the screen simulator, the token knobs and the Figma

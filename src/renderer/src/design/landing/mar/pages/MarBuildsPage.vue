@@ -59,7 +59,7 @@ import MarSearchField from './MarSearchField.vue'
 import MarViewToggle from './MarViewToggle.vue'
 import { collection } from './collection'
 import { useLibrary } from './library'
-import { shownState } from './pageState'
+import { pageState, shownState, type PageState } from './pageState'
 import { notify } from './undo'
 import type { MenuLine } from './menu'
 import type { ItemStatus } from './MarStatus.vue'
@@ -86,16 +86,34 @@ type Build = ProtoInstance & { project?: string; fav?: boolean; error?: string }
 // Later versions take them with Sync with previous versions, all but the
 // one to migrate.
 const SYNCED = (): ProtoInstance[] => M1_BUILDS.filter((b) => !extraOf(b.id).migrate)
-const builds = collection<Build>(
-  [...instances.value, ...(proto.milestone < 3 ? M1_BUILDS : syncing.value ? SYNCED() : [])].map(
-    (i) => (errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i })
-  ),
-  'build'
+// A fresh install (the local setup's first build) lists none of them.
+const extras = (): ProtoInstance[] => {
+  if (proto.oneLocal || proto.fresh) return []
+  if (proto.milestone < 3) return M1_BUILDS
+  return syncing.value ? SYNCED() : []
+}
+const seed = (): Build[] =>
+  [...instances.value, ...extras()].map((i) =>
+    errorOf(i.id) ? { ...i, state: 'error' as const, error: errorOf(i.id) } : { ...i }
+  )
+const builds = collection<Build>(seed(), 'build')
+// The local setup finishes with this page already open behind it.
+watch(
+  () => [proto.oneLocal, proto.fresh],
+  () => builds.items.splice(0, builds.items.length, ...seed())
 )
 if (leaving.value) {
   builds.remove([leaving.value], true)
   leaving.value = undefined
 }
+
+// A first-time user's libraries are empty, but not Builds once they have
+// installed one (the local setup lands here in its M1 scope).
+const buildsState = computed<PageState | undefined>(() => {
+  if (shownState.value === 'live' && builds.items.length === 0) return 'empty'
+  if (pageState.id === 'live' && !proto.fresh && builds.items.length) return 'live'
+  return undefined
+})
 
 type Where = 'all' | BuildWhere
 const where = ref<Where>('all')
@@ -519,7 +537,7 @@ const newLabel = computed(() =>
     title="Builds"
     :skeleton="view === 'grid' && !rowsOnly ? 'cards' : 'list'"
     :no-results="shown.length === 0 && filtered"
-    :state="shownState === 'live' && builds.items.length === 0 ? 'empty' : undefined"
+    :state="buildsState"
     :empty="{
       icon: Server,
       title: 'Set up where your work runs',

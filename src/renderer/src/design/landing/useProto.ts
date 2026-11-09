@@ -248,6 +248,9 @@ export function toast(message: string): void {
   toastTimer = setTimeout(() => (proto.toast = ''), 2200)
 }
 
+/** A proposal can take New Instance over (mar/setup): each returns true when it did. */
+export const newInstanceHooks: (() => boolean)[] = []
+
 /** Host hooks - LandingPrototypes swaps these for real actions in-app. */
 export const hostActions = {
   launch(inst: ProtoInstance, what?: string): void {
@@ -275,6 +278,7 @@ export const hostActions = {
     proto.activeTab = id
   },
   newInstance(): void {
+    if (newInstanceHooks.some((take) => take())) return
     toast('New build flow')
   },
   signIn(): void {

@@ -12,8 +12,9 @@ import ViewToggle from './parts/space/ViewToggle.vue'
 import AppTab from './parts/apps/AppTab.vue'
 import MarUndoToast from './mar/pages/MarUndoToast.vue'
 import UiTuner from './mar/UiTuner.vue'
+import MarSetupFlow from './mar/setup/MarSetupFlow.vue'
 import { appsProto } from './appFlow'
-import { hostActions, proto, toast } from './useProto'
+import { hostActions, newInstanceHooks, proto, toast } from './useProto'
 import { can } from './milestones'
 import { usePrototypeShortcuts } from './prototypeShortcuts'
 import { connectAccount, realAccount, realSignIn } from './account'
@@ -130,7 +131,11 @@ onMounted(() => {
   const mockSignIn = hostActions.signIn
   hostActions.signIn = () => (realAccount.value ? void realSignIn() : mockSignIn())
   const mockNew = hostActions.newInstance
-  hostActions.newInstance = () => (proto.live ? emit('show-new-install') : mockNew())
+  hostActions.newInstance = () => {
+    if (newInstanceHooks.some((take) => take())) return
+    if (proto.live) emit('show-new-install')
+    else mockNew()
+  }
 })
 
 watch(
@@ -174,6 +179,8 @@ watch(
       />
       <!-- UI tuner (mar/): knobs on top of the UI. -->
       <UiTuner />
+      <!-- Mar's proposed local setup (UI Playground › Local setup). -->
+      <MarSetupFlow />
       <!-- The breadcrumb's build switcher, just under the stand-in bar. -->
       <SwitcherMenu v-if="standalone && can.breadcrumb" :top="44" />
       <Toaster />
