@@ -22,7 +22,8 @@ const N = EXAMPLES.length
 const ANGLE = 24 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
-const HOLD = 1800 // ms each side of the front card stays up
+const HOLD = 1600 // ms each side of the front card stays up
+const LAND = 350 // ms after a card reaches the front before it first sweeps
 
 // `pos` is where the arc is (in cards, unbounded); `target` where it's going.
 const pos = ref(Math.floor(N / 2))
@@ -33,15 +34,25 @@ const active = computed(() => mod(Math.round(target.value), N))
 
 // The front card's sweep: each new front card starts from what goes in.
 const after = ref(false)
+// It sweeps as soon as it lands, so the motion reads right away.
 let sweep: ReturnType<typeof setInterval> | undefined
-function play(): void {
+let first: ReturnType<typeof setTimeout> | undefined
+function stop(): void {
+  clearTimeout(first)
   clearInterval(sweep)
+}
+function play(): void {
+  stop()
   after.value = false
-  if (!reducedMotion()) sweep = setInterval(() => (after.value = !after.value), HOLD)
+  if (reducedMotion()) return
+  first = setTimeout(() => {
+    after.value = true
+    sweep = setInterval(() => (after.value = !after.value), HOLD)
+  }, LAND)
 }
 onMounted(play)
 watch(active, play)
-onBeforeUnmount(() => clearInterval(sweep))
+onBeforeUnmount(stop)
 
 function mod(a: number, n: number): number {
   return ((a % n) + n) % n
@@ -283,10 +294,23 @@ function wheel(e: WheelEvent): void {
   --arc-sweep: -40%;
   mask-image: linear-gradient(
     100deg,
-    #000 calc(var(--arc-sweep) - 35%),
-    transparent calc(var(--arc-sweep) + 35%)
+    #000 calc(var(--arc-sweep) - 18%),
+    transparent calc(var(--arc-sweep) + 18%)
   );
-  transition: --arc-sweep 900ms cubic-bezier(0.645, 0.045, 0.355, 1);
+  transition: --arc-sweep 800ms cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+/* The front card also drifts slowly, so it reads as moving footage (over
+   the images' load fade in motion.css). */
+:root .proto-main .mar-arc-card.is-front img {
+  animation: mar-arc-drift 5s ease-in-out infinite alternate;
+}
+@keyframes mar-arc-drift {
+  from {
+    scale: 1;
+  }
+  to {
+    scale: 1.07;
+  }
 }
 .mar-arc-card .mar-arc-after.is-on {
   --arc-sweep: 140%;
@@ -432,6 +456,9 @@ function wheel(e: WheelEvent): void {
   .mar-arc-go,
   .mar-arc-scrim {
     transition: none;
+  }
+  :root .proto-main .mar-arc-card.is-front img {
+    animation: none;
   }
 }
 </style>
