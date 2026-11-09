@@ -35,7 +35,7 @@ import { EMPTY_PICS } from './emptyArt'
 import MarEmpty from './MarEmpty.vue'
 import MarItem from './MarItem.vue'
 import MarSeg from './MarSeg.vue'
-import MarSearchField from './MarSearchField.vue'
+import AssetSearch from '../assets/AssetSearch.vue'
 import MarSelectBar from './MarSelectBar.vue'
 import MarViewToggle from './MarViewToggle.vue'
 import { assets, type MarAsset } from './assetsStore'
@@ -444,7 +444,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :tags="TAGS"
           />
           <Select v-model="sort" :options="SORTS" label="Sort" class="mar-asset-sort w-34" />
-          <MarSearchField v-model="query" placeholder="Search assets" />
+          <AssetSearch v-model:query="query" v-model:filter="filter" :tags="TAGS" />
           <MarViewToggle v-model="view" masonry />
         </div>
       </div>
