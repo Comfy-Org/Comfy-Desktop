@@ -382,8 +382,10 @@ const searching = computed(() => !!q.value.trim() || !!drill.value)
   outline: none;
   cursor: default;
 }
-:root[data-mar-ui='on'] .afm .afm-item[data-state='checked'] {
-  background-color: transparent;
+/* Picked: the row's fill as well as the check, as in every menu. */
+:root[data-mar-ui='on'] .afm .afm-item[data-state='checked'],
+.afm .afm-item[data-state='checked'] {
+  background-color: var(--color-secondary-background);
   box-shadow: none;
 }
 :root[data-mar-ui='on'] .afm:not(.is-ds) .afm-item[data-highlighted],

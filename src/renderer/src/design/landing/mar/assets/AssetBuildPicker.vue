@@ -62,7 +62,13 @@ function pick(id: string): void {
           type="button"
           role="option"
           :aria-selected="model === 'all'"
-          :class="cn(menuItem, 'w-full text-left hover:bg-secondary-background')"
+          :class="
+            cn(
+              menuItem,
+              'w-full text-left hover:bg-secondary-background',
+              model === 'all' && 'bg-secondary-background'
+            )
+          "
           @click="pick('all')"
         >
           <Layers :size="14" />
@@ -78,7 +84,13 @@ function pick(id: string): void {
           type="button"
           role="option"
           :aria-selected="b.id === model"
-          :class="cn(menuItem, 'w-full text-left hover:bg-secondary-background')"
+          :class="
+            cn(
+              menuItem,
+              'w-full text-left hover:bg-secondary-background',
+              b.id === model && 'bg-secondary-background'
+            )
+          "
           @click="pick(b.id)"
         >
           <LocationIcon :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="14" />
