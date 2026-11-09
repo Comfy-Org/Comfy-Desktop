@@ -692,6 +692,100 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
   })
 
+  describe('after Desktop returned to the anchor workspace', () => {
+    const readyBuild = { id: 'ready', name: 'Workspace Two Build', state: 'installable' }
+
+    async function openOnW2ThenReturnToAnchor() {
+      signInToWorkspace([])
+      let authChanged: (status: unknown) => void = () => {}
+      ;(window.api.comfybuilder.onAuthChanged as ReturnType<typeof vi.fn>).mockImplementation(
+        (callback: (status: unknown) => void) => {
+          authChanged = callback
+          return () => {}
+        }
+      )
+      const switchWorkspace = window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>
+      const listBuilds = window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>
+      switchWorkspace.mockResolvedValue({
+        signedIn: true,
+        workspaceId: 'w2',
+        workspaceType: 'team'
+      })
+      listBuilds.mockResolvedValue([readyBuild])
+      const wrapper = mountModal()
+      await flushPromises()
+      await (
+        wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+      ).open({ workspaceId: 'w2' })
+      await flushPromises()
+      expect(wrapper.getComponent(BaseSelect).props('options')).toHaveLength(1)
+      authChanged({ signedIn: true, workspaceId: 'w1', workspaceType: 'team' })
+      await flushPromises()
+      expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([])
+      switchWorkspace.mockClear()
+      listBuilds.mockClear()
+      return { wrapper, switchWorkspace, listBuilds }
+    }
+
+    it('Refresh re-establishes the target workspace before fetching its Builds', async () => {
+      const { wrapper, switchWorkspace, listBuilds } = await openOnW2ThenReturnToAnchor()
+
+      await wrapper.get('.workspace-build-refresh').trigger('click')
+      await flushPromises()
+
+      expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+      expect(listBuilds).toHaveBeenCalledOnce()
+      expect(switchWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+        listBuilds.mock.invocationCallOrder[0]!
+      )
+      expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+        { value: 'ready', label: 'Workspace Two Build' }
+      ])
+    })
+
+    it('Refresh fetches nothing for the anchor when the target cannot be re-established', async () => {
+      const { wrapper, switchWorkspace, listBuilds } = await openOnW2ThenReturnToAnchor()
+      switchWorkspace.mockResolvedValue({
+        signedIn: true,
+        workspaceId: 'w1',
+        workspaceType: 'team',
+        workspaceSwitchFailure: 'retryable'
+      })
+
+      await wrapper.get('.workspace-build-refresh').trigger('click')
+      await flushPromises()
+
+      expect(listBuilds).not.toHaveBeenCalled()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+    })
+  })
+
+  it('Refresh on the target workspace only fetches and keeps the selected Build', async () => {
+    signInToWorkspace([])
+    const switchWorkspace = window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>
+    switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+    const listBuilds = window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>
+    listBuilds.mockResolvedValue([
+      { id: 'first', name: 'First', state: 'installable' },
+      { id: 'second', name: 'Second', state: 'installable' }
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w2' })
+    await flushPromises()
+    wrapper.getComponent(BaseSelect).vm.$emit('update:modelValue', 'second')
+    await flushPromises()
+    switchWorkspace.mockClear()
+
+    await wrapper.get('.workspace-build-refresh').trigger('click')
+    await flushPromises()
+
+    expect(switchWorkspace).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(BaseSelect).props('modelValue')).toBe('second')
+  })
+
   it('explains that a workspace switch may be waiting on browser authorization', async () => {
     signInToWorkspace([])
     let finishAuthorization!: (status: {

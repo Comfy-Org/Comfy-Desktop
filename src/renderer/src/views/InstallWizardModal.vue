@@ -706,6 +706,11 @@ async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Pro
   }
 }
 
+async function refreshManagedBuilds(): Promise<void> {
+  if (authStore.status.workspaceId === managedWorkspaceId.value) await authStore.fetchBuilds()
+  else await initializeManagedBuilds(modeGeneration, true)
+}
+
 async function initializeLocalInstall(gen: number, requestedSource?: Source): Promise<void> {
   void window.api
     .getUniqueName(DEFAULT_INSTALL_NAME)
@@ -1382,7 +1387,7 @@ defineExpose({ open })
                   :title="$t('newInstall.refreshWorkspaceBuilds')"
                   :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
                   :disabled="authStore.loadingBuilds"
-                  @click="authStore.fetchBuilds()"
+                  @click="refreshManagedBuilds"
                 >
                   <RefreshCw
                     :size="14"
@@ -1406,7 +1411,7 @@ defineExpose({ open })
               type="button"
               class="wizard-error wizard-build-retry"
               :disabled="authStore.loadingBuilds"
-              @click="authStore.fetchBuilds()"
+              @click="refreshManagedBuilds"
             >
               {{ $t('devPlatform.build.loadError') }}
             </button>
