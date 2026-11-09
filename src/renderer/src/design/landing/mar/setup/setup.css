@@ -853,19 +853,21 @@
     z-index: 2;
     display: flex;
     align-items: center;
-    gap: 6px;
-    opacity: 0.55;
-    transition: opacity 160ms ease;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--color-subtle-foreground);
+    opacity: 0.45;
+    transition:
+      opacity 160ms ease,
+      background 160ms ease;
   }
   .mss-version:hover,
-  .mss-version:focus-within {
+  .mss-version:focus-visible,
+  .mss-version[data-state='open'] {
+    background: var(--mss-soft);
     opacity: 1;
-  }
-  .mss-version-label {
-    color: var(--color-subtle-foreground);
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
   .mss-first-mark path {
     fill: currentColor;
@@ -1919,4 +1921,7 @@
  * 80) and the setup modal's own work there too. */
 body:has(.mss-first) [data-reka-popper-content-wrapper] {
   z-index: 90 !important;
+}
+.proto-ui.mss-version-menu {
+  min-width: 240px;
 }
