@@ -748,7 +748,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 12px;
+  padding: 0 10px 10px;
 }
 /* Download on top, the rest under it as quieter rows. */
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn {
@@ -775,8 +775,14 @@ onBeforeUnmount(() => {
   background: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
 }
 .mad-body {
+  /* The name on top, then each section in its own block: grouped by
+   * fill and space, not by lines. */
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px 10px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -785,7 +791,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 20px 16px 16px 20px;
+  padding: 14px 6px 6px 14px;
 }
 .mad-head-text {
   min-width: 0;
@@ -810,9 +816,12 @@ onBeforeUnmount(() => {
 .mad-sec {
   display: flex;
   min-width: 0;
+  flex: none;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 20px;
+  padding: 14px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
 }
 .mad-label {
   display: flex;
