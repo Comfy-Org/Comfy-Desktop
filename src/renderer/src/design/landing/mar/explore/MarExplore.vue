@@ -384,19 +384,19 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           <!-- A landscape photo: an outlined frame, wider than tall, with a
                filled sun and hills inside. -->
           <span v-else class="mar-ex-tile-kind is-icon" aria-label="Image"
-            ><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            ><svg width="18" height="13" viewBox="0 0 24 17" aria-hidden="true">
               <rect
-                x="2.75"
-                y="4.75"
-                width="18.5"
-                height="14.5"
-                rx="2.25"
+                x="1"
+                y="1"
+                width="22"
+                height="15"
+                rx="2.5"
                 fill="none"
                 stroke="currentColor"
-                stroke-width="1.5"
+                stroke-width="1.6"
               />
-              <circle cx="8.5" cy="9.5" r="1.75" fill="currentColor" />
-              <path d="M5 17.5 9.5 12.5l3 3 3.5-4.5 3 6.5Z" fill="currentColor" /></svg
+              <circle cx="7" cy="5.75" r="1.75" fill="currentColor" />
+              <path d="M3.5 13.5 9 8.5l3 2.75 4-4.75 4.5 7Z" fill="currentColor" /></svg
           ></span>
           <!-- What it is and which app made it, over a fade, on hover. -->
           <span class="mar-ex-tile-text">
@@ -571,7 +571,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   font-variant-numeric: tabular-nums;
 }
 .mar-ex-tile-kind.is-icon {
-  padding: 5px;
+  padding: 5px 7px;
 }
 .mar-ex-tile-video {
   position: absolute;
