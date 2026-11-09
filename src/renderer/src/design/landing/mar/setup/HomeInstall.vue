@@ -9,11 +9,13 @@ import ExampleShowcase from '../userStates/ExampleShowcase.vue'
 import {
   DETECTED,
   changeFromHome,
+  dismissReady,
   flow,
   homeOpen,
   installInBackground,
   localSetup,
   lowSpace,
+  openComfyUI,
   phaseIndex,
   phases,
   showInstall,
@@ -31,10 +33,14 @@ import {
  */
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
+// After install › Ready: the same card says ComfyUI is there, with the one
+// way in. Any Local setup flow ends here when that option is on.
+const ready = computed(() => flow.ready)
 const blocked = computed(() => lowSpace.value || unsupported.value)
 // The card's kicker says where it stands; what stops the install before it
 // starts keeps today's words (Set up).
 const state = computed(() => {
+  if (ready.value) return { label: 'Ready', icon: Check, bad: false }
   if (failed.value) return { label: 'Operation failed', icon: TriangleAlert, bad: true }
   if (installing.value) return { label: 'Installing ComfyUI', icon: LoaderCircle, bad: false }
   if (unsupported.value) return { label: 'Unsupported Hardware', icon: TriangleAlert, bad: true }
@@ -44,6 +50,8 @@ const state = computed(() => {
 const phase = computed(() => phases.value[Math.max(0, phaseIndex.value)]?.label ?? '')
 const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 const line = computed(() => {
+  if (ready.value)
+    return `ComfyUI ${DETECTED.version} installed · ${flow.movedDisk ? DETECTED.otherPath : DETECTED.path}`
   if (installing.value) return `${phase.value} · ${flow.percent}%`
   if (unsupported.value)
     return 'ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not supported.'
@@ -56,7 +64,10 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 
 <template>
   <section class="mt-8" aria-label="Local install">
-    <SectionHeader v-if="!installing" :title="`Install ComfyUI on ${DETECTED.noun}`" />
+    <SectionHeader
+      v-if="!installing"
+      :title="ready ? 'ComfyUI is ready' : `Install ComfyUI on ${DETECTED.noun}`"
+    />
     <div class="mss-machine is-hero mss-home-inst">
       <SetupLaptop :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">
@@ -75,7 +86,11 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         ></span>
       </span>
       <span class="flex shrink-0 items-center gap-2">
-        <template v-if="installing">
+        <template v-if="ready">
+          <Button variant="ghost" size="lg" @click="dismissReady">Not now</Button>
+          <Button variant="primary" size="lg" @click="openComfyUI()">Open ComfyUI</Button>
+        </template>
+        <template v-else-if="installing">
           <Button variant="ghost" @click="showInstall">View logs</Button>
           <Button v-if="failed" variant="secondary" @click="changeFromHome">Change</Button>
           <Button v-if="!failed" variant="secondary" @click="flow.confirmCancel = true"
@@ -93,7 +108,7 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
     <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
          there. The first-run Home's own examples (Milestone 2), in the look
          UI Playground picks; with the Home open they are already there. -->
-    <div v-if="!homeOpen" class="mt-10">
+    <div v-if="!homeOpen && !ready" class="mt-10">
       <ExampleShowcase />
     </div>
     <!-- The install modal carries its own confirm while it is open. -->

@@ -15,7 +15,7 @@ import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
 import HomeInstall from './setup/HomeInstall.vue'
-import { flow, homeFirst, homeOpen, setupOn } from './setup/setupFlow'
+import { flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
@@ -60,7 +60,6 @@ const firstRun = computed(() => firstTime.value && noLocal.value)
 // ComfyUI never shows before there is one. With the card only, the rest
 // that needs ComfyUI waits: the prompt, which could only run on Comfy
 // Cloud, and the first-run examples. With pick to install they stay.
-const installPending = computed(() => homeFirst.value && flow.homeCard && noLocal.value)
 const gated = computed(() => installPending.value && !homeOpen.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
 const tight = computed(() => parts.value.top === 'tight')
@@ -95,7 +94,7 @@ const recent = computed(() =>
 
 <template>
   <div class="mar-top-actions absolute top-3.5 right-4 z-10 flex items-center gap-2">
-    <CreateMenu v-if="!installPending" />
+    <CreateMenu v-if="!installPending && !flow.ready" />
   </div>
   <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
@@ -128,7 +127,7 @@ const recent = computed(() =>
     <!-- First run: the same sections, filled with ways to start instead of
          your work (UI Playground › First run). -->
     <!-- Home first: Local was picked on Run on, so the install waits here. -->
-    <HomeInstall v-if="installPending" />
+    <HomeInstall v-if="installPending || flow.ready" />
     <template v-if="gated"></template>
     <MarStart v-else-if="firstRun" />
     <div v-else>

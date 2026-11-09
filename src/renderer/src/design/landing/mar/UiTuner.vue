@@ -24,6 +24,7 @@ import { FIRST_RUNS, firstRun } from './firstRun'
 import {
   LOCAL_SETUPS,
   ONBOARDINGS,
+  AFTER_INSTALLS,
   SETUP_SCOPES,
   MACHINES,
   SETUP_GPUS,
@@ -338,6 +339,9 @@ function onScroll(e: Event): void {
             <!-- Home first needs the Home, so it is offered past M1 only. -->
             <Row v-if="localSetup.scope === 'next'" label="Onboarding">
               <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" class="w-full" />
+            </Row>
+            <Row v-if="localSetup.scope === 'next'" label="After install">
+              <Select v-model="localSetup.after" :options="AFTER_INSTALLS" class="w-full" />
             </Row>
             <Row label="Jump to">
               <Select

@@ -6,6 +6,7 @@ import { onCloud } from './shell/surface'
 import { can } from '../milestones'
 import SectionHeader from '../ui/SectionHeader.vue'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
+import { installPending } from './setup/setupFlow'
 import { EXAMPLES } from './userStates/examples'
 import EditorEntry from './userStates/EditorEntry.vue'
 import { editorEntry } from './userStates/editorEntry'
@@ -52,7 +53,13 @@ function openCloud(): void {
         </span>
         <ArrowRight :size="15" class="mar-start-go" />
       </button>
-      <button type="button" class="mar-start-way" @click="hostActions.newInstance()">
+      <!-- Home first: the install card above already is this computer. -->
+      <button
+        v-if="!installPending"
+        type="button"
+        class="mar-start-way"
+        @click="hostActions.newInstance()"
+      >
         <span class="mar-start-icon"><Laptop :size="17" /></span>
         <span class="flex min-w-0 flex-1 flex-col text-left">
           <span class="text-ui font-medium text-base-foreground">This computer</span>

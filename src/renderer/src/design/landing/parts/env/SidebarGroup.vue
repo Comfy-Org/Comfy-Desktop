@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Folder, Plus } from 'lucide-vue-next'
+import { Folder, LoaderCircle, Plus, TriangleAlert } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
@@ -12,6 +12,8 @@ import { PROJECTS } from '../../mock'
 import { can } from '../../milestones'
 import { errorOf } from '../../mar/build/buildErrors'
 import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
+// Local setup › Home first: the first install runs behind the Home (mar/setup).
+import { flow, installingBehind, installPending } from '../../mar/setup/setupFlow'
 
 /**
  * The organising list under Create.
@@ -48,7 +50,9 @@ const rows = computed<Row[]>(() =>
         failed: errorOf(i.id)
       }))
 )
-const show = computed(() => proto.signedIn || instances.value.some((i) => i.kind === 'local'))
+const show = computed(
+  () => proto.signedIn || instances.value.some((i) => i.kind === 'local') || installPending.value
+)
 const title = computed(() => (proto.projects ? 'Projects' : 'Builds'))
 const overviewPage = computed<Page>(() => (proto.projects ? 'projects' : 'environments'))
 const overviewActive = computed(() => proto.page === overviewPage.value)
@@ -68,6 +72,7 @@ const itemClass = (page: Page): string =>
           variant="ghost"
           size="icon-xs"
           :aria-label="proto.projects ? 'New project' : 'New build'"
+          :disabled="installingBehind"
           @click="
             proto.projects ? toast('New project - pick its build') : hostActions.newInstance()
           "
@@ -76,9 +81,25 @@ const itemClass = (page: Page): string =>
         </Button>
       </Tooltip>
     </div>
+    <!-- Local setup › Home first: the build being installed, in grey, with its
+         progress; it opens the Home, where the card is. -->
+    <Button
+      v-if="installingBehind"
+      variant="ghost"
+      :class="itemClass('overview')"
+      class="text-subtle-foreground"
+      @click="go('overview')"
+    >
+      <TriangleAlert v-if="flow.step === 'error'" :size="15" />
+      <LoaderCircle v-else :size="15" class="mar-side-spin" />
+      <span class="sidebar-label text-left">ComfyUI</span>
+      <span class="text-ui text-subtle-foreground tabular-nums">{{
+        flow.step === 'error' ? 'Failed' : `${flow.percent}%`
+      }}</span>
+    </Button>
     <!-- None yet (a first-time user): say what goes here. -->
     <p
-      v-if="!rows.length"
+      v-if="!rows.length && !installingBehind"
       class="flex h-8 items-center gap-2.5 px-3 text-ui text-subtle-foreground"
     >
       <Folder :size="15" />{{ proto.projects ? 'Group work by client' : 'No builds yet' }}
@@ -118,3 +139,19 @@ const itemClass = (page: Page): string =>
     </Button>
   </div>
 </template>
+
+<style scoped>
+.mar-side-spin {
+  animation: mar-side-spin 1s linear infinite;
+}
+@keyframes mar-side-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-side-spin {
+    animation: none;
+  }
+}
+</style>
