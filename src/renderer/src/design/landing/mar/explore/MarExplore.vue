@@ -83,7 +83,7 @@ const PLACEHOLDER: Record<Tab, string> = {
   templates: 'Search templates',
   models: 'Search models or providers',
   apps: 'Search apps',
-  examples: 'Search the gallery',
+  examples: 'Search',
   tutorials: 'Search tutorials'
 }
 
