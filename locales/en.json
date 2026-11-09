@@ -382,7 +382,7 @@
   "newInstall": {
     "title": "Install a New Build",
     "grandTitle": "Install a New Build",
-    "grandSubtitle": "Set up a fresh ComfyUI instance. Pick a source, name it, and configure it.",
+    "grandSubtitle": "Setup a fresh ComfyUI install. Pick a source, name it, and configure it.",
     "installMethod": "Install Method",
     "installLocation": "Install location",
     "addInstallation": "Add Instance",
