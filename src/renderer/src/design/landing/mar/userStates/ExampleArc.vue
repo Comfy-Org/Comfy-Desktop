@@ -207,8 +207,8 @@ function wheel(e: WheelEvent): void {
         :aria-current="i === active ? 'true' : undefined"
         :aria-label="
           i === active
-            ? `Run ${x.label}: ${x.does}. ${x.kind} app, ${x.runs}`
-            : `${x.label}: ${x.does}. ${x.kind} app, ${x.runs}`
+            ? `Run ${x.label}: ${x.does}. ${x.kind} app`
+            : `${x.label}: ${x.does}. ${x.kind} app`
         "
         @click="pick(i)"
       >
@@ -230,9 +230,9 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-scrim" />
         <span class="mar-arc-text">
           <span class="mar-arc-title">{{ x.label }}</span>
-          <span class="mar-arc-does">{{ x.does }}</span>
-          <span class="mar-arc-meta">App · {{ x.kind }} · {{ x.runs }}</span>
+          <span class="mar-arc-meta"><span class="mar-arc-badge">App</span>{{ x.kind }}</span>
         </span>
+        <span class="mar-arc-does">{{ x.does }}</span>
         <span class="mar-arc-dim" />
         <span class="mar-arc-go" aria-hidden="true">Run</span>
       </button>
@@ -323,24 +323,54 @@ function wheel(e: WheelEvent): void {
   text-wrap: balance;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
+/* What the app does: shown with Run, over the scrim, on the front card. */
 .mar-arc-does {
-  color: rgb(255 255 255 / 0.9);
+  position: absolute;
+  right: 14px;
+  bottom: 60px;
+  left: 14px;
+  color: #fff;
   font-size: 13px;
-  line-height: 1.3;
+  line-height: 1.35;
+  text-align: left;
   text-wrap: balance;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition:
+    opacity 200ms ease,
+    transform 300ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+.mar-arc-card.is-front:hover .mar-arc-does,
+.mar-arc-card.is-front:focus-visible .mar-arc-does {
+  opacity: 1;
+  transform: none;
 }
 .mar-arc-meta {
-  color: rgb(255 255 255 / 0.72);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: rgb(255 255 255 / 0.78);
   font-size: 12px;
-  font-variant-numeric: tabular-nums;
+}
+.mar-arc-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.18);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 /* Run at the bottom: a white button over a soft scrim, shown on the front
    card when you point at it (or focus it). */
 .mar-arc-scrim {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 55%, rgb(0 0 0 / 0.55));
+  background: linear-gradient(180deg, transparent 45%, rgb(0 0 0 / 0.65));
   opacity: 0;
   pointer-events: none;
   transition: opacity 250ms ease;
@@ -399,6 +429,7 @@ function wheel(e: WheelEvent): void {
 }
 @media (prefers-reduced-motion: reduce) {
   .mar-arc-card .mar-arc-after,
+  .mar-arc-does,
   .mar-arc-go,
   .mar-arc-scrim {
     transition: none;
