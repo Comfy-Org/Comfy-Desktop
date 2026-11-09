@@ -189,6 +189,8 @@
   overscroll-behavior: contain;
   padding: 4px var(--s-pad) var(--s-pad);
   border: 0;
+  /* A divider between the field and what it found, edge to edge. */
+  border-top: 1px solid var(--color-border-default);
   border-radius: 0;
   outline: none;
   background: transparent;
@@ -205,9 +207,11 @@
   height: 30px;
   align-items: center;
   padding: 0 0 0 calc(var(--s-edge) - var(--s-pad));
-  color: var(--color-muted-foreground);
-  font-size: 12px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
   font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* Rows: picture, name, type · where; the shortcut or ↵ on the right. The
