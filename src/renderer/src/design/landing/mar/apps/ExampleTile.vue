@@ -65,7 +65,7 @@ function play(e: MouseEvent, on: boolean): void {
       <!-- A landscape photo: an outlined frame, wider than tall, with a
            filled sun and hills inside. -->
       <span v-else-if="badge" class="mar-ex-tile-kind is-icon" aria-label="Image"
-        ><ImageGlyph :size="14"
+        ><ImageGlyph :size="11"
       /></span>
       <!-- What it is (and which app made it), over a fade, on hover. -->
       <span class="mar-ex-tile-text">
