@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
   Check,
+  ChevronRight,
   Copy,
   Download,
   FileOutput,
@@ -70,6 +71,21 @@ const query = ref('')
 const menu = ref<'' | 'view'>('')
 /** View settings › Sort by: its options open to the right, level with the row,
  *  past the panel's edge. */
+const sortOpen = ref(false)
+const sortRow = ref<HTMLElement>()
+const sortTop = ref(0)
+const sortLeft = ref(0)
+function openSort(): void {
+  // Fixed, in window coordinates: the panel clips what crosses its edge.
+  const row = sortRow.value
+  const menuBox = row?.closest('.rp-menu')?.getBoundingClientRect()
+  if (row && menuBox) {
+    sortTop.value = row.getBoundingClientRect().top - 5
+    sortLeft.value = menuBox.right + 4
+  }
+  sortOpen.value = true
+}
+watch(menu, () => (sortOpen.value = false))
 const viewAnchor = ref<HTMLElement>()
 onClickOutside(viewAnchor, () => (menu.value = ''))
 // Masonry by default; a pick is remembered per viewer.
@@ -91,33 +107,36 @@ function setView(v: View): void {
     // Storage blocked: the pick lasts for this window only.
   }
 }
+// Masonry first, the default, as in Desktop's view toggle.
+const ALL_VIEWS = [
+  { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
+  { value: 'large', label: 'Grid (large)', icon: LayoutGrid },
+  { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
+  { value: 'list', label: 'List view', icon: TableOfContents }
+] as const
 /** Production (UI Playground › ComfyUI): ComfyUI as it ships plus Better
- *  Assets Phase 1. Generated and Imported are tabs, and Inspect asset opens
- *  the file in a tab beside the workflows. */
+ *  Assets Phase 1. Generated and Imported are tabs, the view is Grid or
+ *  List, and Inspect asset opens the file in a tab beside the workflows. */
 const prod = computed(() => comfyLook.id === 'production')
 const tab = ref<Tab>('Generated')
-// View settings as ComfyUI ships it (MediaAssetSettingsMenu): List, Grid
-// (small), Grid (large), then the sorts. The proposal adds Masonry first,
-// its default.
-const VIEWS = computed(
-  () =>
-    [
-      ...(prod.value ? [] : [{ value: 'masonry', label: 'Masonry', icon: LayoutDashboard }]),
-      { value: 'list', label: 'List view', icon: TableOfContents },
-      { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
-      { value: 'large', label: 'Grid (large)', icon: LayoutGrid }
-    ] as { value: View; label: string; icon: Component }[]
-)
+// As today, View settings is ComfyUI's own (MediaAssetSettingsMenu): one
+// flat list, List, Grid (small), Grid (large), then the sorts on cloud.
+const PROD_VIEWS = [
+  { value: 'list', label: 'List view', icon: TableOfContents },
+  { value: 'small', label: 'Grid (small)', icon: Grid3x3 },
+  { value: 'large', label: 'Grid (large)', icon: LayoutGrid }
+] as const
+const VIEWS = computed(() => (prod.value ? PROD_VIEWS : ALL_VIEWS))
 // What a card shows: preview assets are off by default, so the panel
 // lists what was saved.
 const showPreviews = ref(false)
 const showName = ref(true)
 const showDetails = ref(true)
-// The proposal's card toggles, after the sorts.
+// Under Show: what a card carries, the everyday ones first.
 const DISPLAY = [
-  { label: 'Show file name', on: showName },
-  { label: 'Show file details', on: showDetails },
-  { label: 'Show preview assets', on: showPreviews }
+  { label: 'File name', on: showName },
+  { label: 'File details', on: showDetails },
+  { label: 'Preview assets', on: showPreviews }
 ]
 const sort = ref('Newest first')
 const filter = ref(noFilter())
@@ -448,9 +467,9 @@ function upload(files: FileList | null | undefined): void {
           >
             <SlidersHorizontal :size="15" />
           </button>
-          <div v-if="menu === 'view'" class="rp-menu is-end ap-menu" role="menu">
+          <div v-if="menu === 'view' && prod" class="rp-menu is-end ap-menu" role="menu">
             <button
-              v-for="v in VIEWS"
+              v-for="v in PROD_VIEWS"
               :key="v.value"
               type="button"
               role="menuitemradio"
@@ -461,7 +480,7 @@ function upload(files: FileList | null | undefined): void {
               <component :is="v.icon" :size="14" /><span>{{ v.label }}</span
               ><Check :size="14" :class="view !== v.value && 'opacity-0'" />
             </button>
-            <template v-if="cloud || !prod">
+            <template v-if="cloud">
               <span class="rp-menu-sep" />
               <button
                 v-for="o in SORTS"
@@ -476,21 +495,82 @@ function upload(files: FileList | null | undefined): void {
                 ><Check :size="14" :class="sort !== o && 'opacity-0'" />
               </button>
             </template>
-            <template v-if="!prod">
-              <span class="rp-menu-sep" />
+          </div>
+          <div v-else-if="menu === 'view'" class="rp-menu is-end ap-menu" role="menu">
+            <p class="rp-menu-label ap-menu-head">
+              View<span>{{ VIEWS.find((v) => v.value === view)?.label }}</span>
+            </p>
+            <div
+              class="mar-pseg ap-views"
+              role="radiogroup"
+              aria-label="View"
+              @mouseenter="sortOpen = false"
+            >
               <button
-                v-for="d in DISPLAY"
-                :key="d.label"
+                v-for="v in VIEWS"
+                :key="v.value"
                 type="button"
-                role="menuitemcheckbox"
-                class="rp-row ap-check"
-                :aria-checked="d.on.value"
-                @click="d.on.value = !d.on.value"
+                role="radio"
+                class="mar-pseg-btn is-icon"
+                :aria-checked="view === v.value"
+                :aria-selected="view === v.value"
+                :aria-label="v.label"
+                :title="v.label"
+                @click="setView(v.value)"
               >
-                <span>{{ d.label }}</span
-                ><Check :size="14" :class="!d.on.value && 'opacity-0'" />
+                <component :is="v.icon" :size="14" />
               </button>
-            </template>
+            </div>
+            <button
+              ref="sortRow"
+              type="button"
+              role="menuitem"
+              class="rp-row ap-check"
+              :class="sortOpen && 'is-open'"
+              aria-haspopup="menu"
+              :aria-expanded="sortOpen"
+              @click="openSort"
+              @mouseenter="openSort"
+            >
+              <span>Sort by</span><span class="ap-menu-val">{{ sort }}</span
+              ><ChevronRight :size="14" />
+            </button>
+            <span class="rp-menu-sep" />
+            <p class="rp-menu-label">Show</p>
+            <button
+              v-for="d in DISPLAY"
+              :key="d.label"
+              type="button"
+              role="menuitemcheckbox"
+              class="rp-row ap-check"
+              :aria-checked="d.on.value"
+              @click="d.on.value = !d.on.value"
+              @mouseenter="sortOpen = false"
+            >
+              <span>{{ d.label }}</span
+              ><Check v-if="d.on.value" :size="14" />
+            </button>
+          </div>
+          <!-- Sort by opens beside the menu, to the right, as a submenu. -->
+          <div
+            v-if="menu === 'view' && !prod && sortOpen"
+            class="rp-menu ap-menu ap-sub"
+            role="menu"
+            aria-label="Sort by"
+            :style="{ top: `${sortTop}px`, left: `${sortLeft}px` }"
+          >
+            <button
+              v-for="o in SORTS"
+              :key="o"
+              type="button"
+              role="menuitemradio"
+              class="rp-row ap-check"
+              :aria-checked="sort === o"
+              @click="((sort = o), (menu = ''))"
+            >
+              <span>{{ o }}</span
+              ><Check v-if="sort === o" :size="14" />
+            </button>
           </div>
         </span>
       </div>
@@ -843,13 +923,26 @@ function upload(files: FileList | null | undefined): void {
 .ap-menu {
   min-width: 240px;
 }
-/* The whole list shows at once, as in ComfyUI; it only scrolls on a short
-   window. */
-:root .proto-ui.proto-ui.proto-ui .rp-menu.ap-menu {
-  max-height: calc(100vh - 140px);
+.rp-menu.ap-sub {
+  position: fixed;
+  min-width: 180px;
 }
-/* View settings, as ComfyUI ships it: one flat list, an icon before each
-   view, a check on the right of what's picked. */
+:root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-check.is-open {
+  background: var(--rp-hover);
+}
+/* View settings: the view named beside its label; each display option
+   says its state with a check on the right; Sort by drills into its own
+   list beside it, to the right. */
+.ap-menu-head {
+  display: flex;
+  justify-content: space-between;
+}
+.ap-menu-head span {
+  color: var(--rp-text);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
 :root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-check,
 :root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-back {
   display: flex;
@@ -861,7 +954,8 @@ function upload(files: FileList | null | undefined): void {
 :root .proto-ui.proto-ui.proto-ui .rp-menu .rp-row.ap-back:hover {
   background: var(--rp-hover);
 }
-.ap-check > span {
+.ap-check > span:first-child,
+.ap-check > svg:first-child + span {
   min-width: 0;
   flex: 1;
 }
@@ -873,8 +967,21 @@ function upload(files: FileList | null | undefined): void {
 .ap-check > svg:last-child:not(:first-child) {
   color: var(--rp-text);
 }
+.ap-menu-val {
+  overflow: hidden;
+  color: var(--rp-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ap-back {
   font-weight: 500;
+}
+.ap-views {
+  display: flex;
+  margin: 2px 4px 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .ap-views .mar-pseg-btn {
+  flex: 1;
 }
 .ap-skel {
   display: grid;
