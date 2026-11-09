@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Cloud } from 'lucide-vue-next'
 import Card from '../ui/Card.vue'
 import SectionHeader from '../ui/SectionHeader.vue'
 import StatusDot from '../ui/StatusDot.vue'
@@ -9,6 +8,7 @@ import { envStatus } from '../parts/env/env'
 import { go, hostActions, recentInstances } from '../useProto'
 import { can } from '../milestones'
 import SetupLaptop from './setup/SetupLaptop.vue'
+import SetupServer from './setup/SetupServer.vue'
 import { localSetup } from './setup/setupFlow'
 import './setup/setup.css'
 
@@ -17,11 +17,18 @@ import './setup/setup.css'
  *  ComfyUI on one), as one row of cards like Spaces. */
 const shown = computed(() => recentInstances.value.slice(0, 3))
 /** From Agent (future) on, each build is the install card made small:
- *  the machine drawn, its state, its name, what it runs on. */
+ *  the machine drawn, its state, its name, what it runs on. Each one is
+ *  its own: lit in the build's hue, and saying what it holds. */
 const machine = computed(() => can.value.agent)
 // The drawing says where it runs; the line says on what.
 const detail = (i: (typeof shown.value)[number]): string =>
   [i.gpu, i.version].filter(Boolean).join(' · ')
+const holds = (i: (typeof shown.value)[number]): string =>
+  i.models
+    ? `${i.models} models · ${i.nodes ?? 0} node packs`
+    : i.kind === 'cloud'
+      ? 'Every model, ready'
+      : 'Fresh build'
 </script>
 
 <template>
@@ -38,18 +45,24 @@ const detail = (i: (typeof shown.value)[number]): string =>
           :key="i.id"
           type="button"
           class="mbr-card"
+          :style="{ '--h': i.hue }"
           @click="hostActions.launch(i)"
         >
-          <span v-if="i.kind === 'cloud'" class="mbr-cloud" aria-hidden="true"
-            ><Cloud :size="24" :stroke-width="1.6"
-          /></span>
-          <SetupLaptop v-else :os="localSetup.os" />
+          <span class="mbr-device">
+            <SetupServer v-if="i.kind === 'cloud'" :hue="i.hue" :live="envStatus(i).live" />
+            <template v-else>
+              <SetupLaptop :os="localSetup.os" />
+              <!-- The build's hue on its screen. -->
+              <span class="mbr-screen" aria-hidden="true"></span>
+            </template>
+          </span>
           <span class="grid min-w-0 flex-1">
             <span class="mss-machine-kicker"
               ><StatusDot v-if="envStatus(i).live" status="running" />{{ envStatus(i).label }}</span
             >
             <span class="mbr-name">{{ i.name }}</span>
             <span class="mbr-meta">{{ detail(i) }}</span>
+            <span class="mbr-holds">{{ holds(i) }}</span>
           </span>
         </button>
       </template>
@@ -90,14 +103,11 @@ const detail = (i: (typeof shown.value)[number]): string =>
   gap: 18px;
   padding: 20px 20px 20px 18px;
   border-radius: 16px;
+  /* Lit from its corner in the build's own hue. */
   background:
-    radial-gradient(
-      ellipse 70% 120% at 12% 0%,
-      color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
-      transparent 70%
-    ),
+    radial-gradient(ellipse 60% 130% at 8% 0%, oklch(0.7 0.15 var(--h, 0) / 0.3), transparent 70%),
     oklch(0.6 0 0 / 0.05);
-  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.07);
+  box-shadow: inset 0 0 0 1px oklch(0.8 0.06 var(--h, 0) / 0.1);
   text-align: left;
   transition: background-color 0.15s;
 }
@@ -108,17 +118,27 @@ const detail = (i: (typeof shown.value)[number]): string =>
   width: 88px;
   height: 57px;
 }
-/* A cloud build has no machine of its own: a screen with the cloud. */
-.mbr-cloud {
-  display: grid;
-  width: 88px;
-  height: 57px;
+.mbr-device {
+  position: relative;
+  display: block;
   flex: none;
-  place-items: center;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #3a3a3e, #1f1f22 55%, #0e0e10);
-  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.12);
-  color: #d8d8dc;
+}
+/* Over the laptop's screen (its box in SetupLaptop's 160 × 104 drawing). */
+.mbr-screen {
+  position: absolute;
+  top: 8.2%;
+  right: 14%;
+  bottom: 22.6%;
+  left: 14%;
+  border-radius: 2px;
+  background: radial-gradient(
+    ellipse 90% 90% at 30% 25%,
+    oklch(0.74 0.16 var(--h, 0) / 0.8),
+    oklch(0.55 0.14 var(--h, 0) / 0.3) 65%,
+    transparent
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
 }
 .mbr-name {
   overflow: hidden;
@@ -128,6 +148,12 @@ const detail = (i: (typeof shown.value)[number]): string =>
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.mbr-holds {
+  margin-top: 6px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .mbr-meta {
   overflow: hidden;
