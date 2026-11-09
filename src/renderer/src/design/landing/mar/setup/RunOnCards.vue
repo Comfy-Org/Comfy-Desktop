@@ -6,26 +6,23 @@ import { localSetup, type RunOnCards } from './setupFlow'
 
 /**
  * First screen's Cloud / Local pick as the Home's build cards: the machine
- * drawn (the Home's cloud and laptop), lit in its own hue from the corner,
- * the pick ringed and checked. Copy is today's, word for word. Two takes
+ * drawn (the Home's cloud and laptop) in bare metal, no build hue yet since
+ * nothing exists; the pick ringed and checked. Copy is today's, word for word. Two takes
  * (UI Playground › Local setup › First screen cards): cards side by side,
  * or stacked rows.
  */
 const { variant } = defineProps<{ variant: Exclude<RunOnCards, 'today'> }>()
 const model = defineModel<'cloud' | 'local'>({ required: true })
 
-// The Home's build hues: the cloud's blue, the first local build's warm light.
 const WAYS = [
   {
     id: 'cloud',
-    hue: 210,
     label: 'Cloud',
     tagline: 'Full power. Instant setup.',
     description: 'Best for <b>powerful GPUs</b> and popular custom nodes, ready anywhere.'
   },
   {
     id: 'local',
-    hue: 50,
     label: 'Local',
     tagline: 'Full control. Your hardware.',
     description:
@@ -49,17 +46,12 @@ const WAYS = [
       role="radio"
       class="mss-way"
       :class="`is-${w.id}`"
-      :style="{ '--h': w.hue }"
       :aria-checked="model === w.id"
       @click="model = w.id"
     >
       <span class="mss-way-device">
-        <SetupCloud v-if="w.id === 'cloud'" :hue="w.hue" />
-        <template v-else>
-          <SetupLaptop :os="localSetup.os" />
-          <!-- The build's hue on its screen, as the Builds row lights it. -->
-          <span class="mss-way-screen" aria-hidden="true"></span>
-        </template>
+        <SetupCloud v-if="w.id === 'cloud'" mono />
+        <SetupLaptop v-else :os="localSetup.os" />
       </span>
       <span class="mss-way-text">
         <span class="mss-way-title">{{ w.label }}</span>
@@ -80,13 +72,10 @@ const WAYS = [
   gap: 12px;
   margin-top: 32px;
 }
-/* The Home's build cards (MarBuildsRow.vue): the machine drawn, the card
- * lit from its corner in the build's hue, the pick ringed as the flow's
- * radios. */
+/* The Home's build cards (MarBuildsRow.vue) before any build exists: the
+ * machine drawn, a quiet surface, the pick ringed as the flow's radios. */
 .mss-way {
   position: relative;
-  isolation: isolate;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -95,7 +84,7 @@ const WAYS = [
   text-align: left;
   cursor: pointer;
   outline: none;
-  box-shadow: inset 0 0 0 1px oklch(0.8 0.06 var(--h, 0) / 0.12);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   transition:
     background-color 160ms ease,
     box-shadow 160ms ease;
@@ -104,61 +93,25 @@ const WAYS = [
   box-shadow: 0 0 0 2px var(--color-border-focus);
 }
 .mss-way[aria-checked='true'] {
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 55%, transparent),
-    0 12px 32px -16px oklch(0.6 0.12 var(--h, 0) / 0.5);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 55%, transparent);
 }
-/* Lit from its corner in the build's own hue, as the Builds row; the
- * pick glows a little more, the other card sits back. */
-.mss-way::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  background: radial-gradient(
-    ellipse 60% 130% at 8% 0%,
-    oklch(0.7 0.15 var(--h, 0) / 0.26),
-    transparent 70%
-  );
-  content: '';
-  opacity: 0.5;
-  transform-origin: 8% 0%;
-  transition:
-    opacity 200ms ease,
-    transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.mss-way:hover::before {
-  opacity: 1;
-}
-.mss-way[aria-checked='true']::before {
-  opacity: 1;
-  transform: scale(1.6);
-}
+/* Both machines stand on the same floor, flush with the text's left edge:
+ * the laptop fills its box, the cloud (drawn smaller, inset) is scaled up
+ * from that corner to match. */
 .mss-way-device {
-  position: relative;
-  display: block;
+  display: flex;
+  height: 72px;
   flex: none;
+  align-items: flex-end;
 }
 .mss-way .mss-laptop {
-  width: 116px;
-  height: 75px;
-  margin: -4px 0 -2px -6px;
+  width: 112px;
+  height: 73px;
+  margin-left: -6px;
 }
-/* Over the laptop's screen (its box in SetupLaptop's 160 × 104 drawing). */
-.mss-way-screen {
-  position: absolute;
-  top: 8.2%;
-  right: 14%;
-  bottom: 22.6%;
-  left: 14%;
-  border-radius: 2px;
-  background: radial-gradient(
-    ellipse 90% 90% at 30% 25%,
-    oklch(0.74 0.16 var(--h, 0) / 0.8),
-    oklch(0.55 0.14 var(--h, 0) / 0.3) 65%,
-    transparent
-  );
-  mix-blend-mode: screen;
-  pointer-events: none;
+.mss-way .mss-cloud {
+  transform: translate(-16px, 2px) scale(1.2);
+  transform-origin: left bottom;
 }
 .mss-way:not([aria-checked='true']) .mss-way-device {
   opacity: 0.8;
@@ -262,7 +215,6 @@ const WAYS = [
 
 @media (prefers-reduced-motion: reduce) {
   .mss-way,
-  .mss-way::before,
   .mss-way-device,
   .mss-way-mark {
     transition: none;
