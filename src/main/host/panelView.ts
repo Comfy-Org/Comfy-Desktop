@@ -170,6 +170,21 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   focusActiveBody(entry)
 }
 
+export function openAnnouncement(windowKey: number): void {
+  const entry = comfyWindows.get(windowKey)
+  if (!entry || entry.window.isDestroyed()) return
+  const mode = computeBodyMode(entry)
+  const overCanvas = mode === 'comfy'
+  const panelView =
+    entry.panelView ?? ensurePanelView(windowKey, entry, overCanvas ? 'announcement' : mode)
+  if (overCanvas) {
+    setActivePanel(windowKey, 'announcement')
+  } else {
+    focusActiveBody(entry)
+  }
+  sendToPanelDeferred(panelView, 'comfy-panel:open-announcement', {})
+}
+
 export function prewarmAttachedPanel(entry: ComfyWindowEntry): void {
   setActivePanel(entry.windowKey, 'comfy')
   ensurePanelView(entry.windowKey, entry, computeBodyMode(entry))
@@ -231,6 +246,15 @@ export function registerPanelViewIpc(): void {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents === event.sender) {
         setActivePanel(id, 'comfy')
+        return
+      }
+    }
+  })
+
+  ipcMain.on('comfy-window:close-announcement', (event) => {
+    for (const [id, entry] of comfyWindows) {
+      if (entry.panelView?.webContents === event.sender) {
+        if (entry.activePanel === 'announcement') setActivePanel(id, 'comfy')
         return
       }
     }

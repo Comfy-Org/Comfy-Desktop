@@ -11,7 +11,7 @@ export function useAnnouncement(): UseAnnouncementApi {
 
   function closeAnnouncement(): void {
     announcementOpen.value = false
-    void window.api.closeCurrentPanel()
+    window.api.closeAnnouncement()
   }
 
   onMounted(() => {
