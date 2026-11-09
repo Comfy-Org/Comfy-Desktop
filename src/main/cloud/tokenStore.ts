@@ -8,7 +8,7 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import { canMintWorkspaceTokens, statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
@@ -18,6 +18,7 @@ interface TokenVault {
   version: typeof VAULT_VERSION
   subject?: string
   grant: AuthTokens
+  mintScopeWithheld?: true
   activeWorkspaceId: string | null
   workspaceTokens: Record<string, AuthTokens>
   workspaceNames?: Record<string, string>
@@ -82,6 +83,7 @@ function isVault(v: unknown): v is TokenVault {
   if (!isRecord(v) || v.version !== VAULT_VERSION) return false
   return (
     isTokens(v.grant) &&
+    (v.mintScopeWithheld === undefined || v.mintScopeWithheld === true) &&
     (v.activeWorkspaceId === null || typeof v.activeWorkspaceId === 'string') &&
     (v.subject === undefined || typeof v.subject === 'string') &&
     isRecord(v.workspaceTokens) &&
@@ -171,13 +173,16 @@ function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
 
 /** Store the grant from a browser sign-in. A changed account replaces the vault. The old access
  *  token stays held for its old anchor; an active workspace with no held token moves to the new one. */
-export function saveGrant(grant: AuthTokens): void {
+export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: boolean } = {}): void {
+  const withheld = options.mintScopeWithheld ? ({ mintScopeWithheld: true } as const) : {}
   const current = loadVault()
   const subject = subjectOf(grant.accessToken)
   if (!current || !subject || current.subject !== subject) {
-    persistVault(vaultFor(grant))
+    persistVault({ ...vaultFor(grant), ...withheld })
     return
   }
+  delete current.mintScopeWithheld
+  Object.assign(current, withheld)
   const previous = current.grant
   const previousAnchor = workspaceIdOf(previous.accessToken)
   if (
@@ -194,6 +199,11 @@ export function saveGrant(grant: AuthTokens): void {
   if (!holdsToken(current, current.activeWorkspaceId))
     current.activeWorkspaceId = workspaceIdOf(grant.accessToken)
   persistVault(current)
+}
+
+/** A browser sign-in returned this grant without the mint scope, so another trip would not help. */
+export function isMintScopeWithheld(): boolean {
+  return loadVault()?.mintScopeWithheld === true
 }
 
 /** The OAuth grant bundle, the only one carrying a refresh token. */
@@ -274,6 +284,7 @@ export function replaceGrant(
     return false
   }
   vault.grant = grant
+  if (canMintWorkspaceTokens(grant.accessToken)) delete vault.mintScopeWithheld
   persistVault(vault)
   return true
 }

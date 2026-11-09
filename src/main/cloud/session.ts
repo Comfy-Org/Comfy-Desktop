@@ -17,6 +17,7 @@ import {
   clearTokens,
   dropWorkspaceToken,
   getAuthStatus,
+  isMintScopeWithheld,
   loadActiveWorkspaceId,
   loadGrant,
   loadWorkspaceToken,
@@ -104,7 +105,6 @@ export class CloudSession {
   private readonly minting = new Map<string, Promise<SettledMintOutcome>>()
   private switching: { workspaceId: string; result: Promise<WorkspaceSwitchStatus> } | null = null
   private mintBlockedUntil = 0
-  private browserReturnedNoMintScope = false
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
   private returnedToAnchorHandler: (() => void) | null = null
@@ -157,8 +157,7 @@ export class CloudSession {
 
   private storeSignedInGrant(tokens: AuthTokens): void {
     this.mintBlockedUntil = 0
-    this.browserReturnedNoMintScope = !canMintWorkspaceTokens(tokens.accessToken)
-    saveGrant(tokens)
+    saveGrant(tokens, { mintScopeWithheld: !canMintWorkspaceTokens(tokens.accessToken) })
   }
 
   private clearPendingLogin(): void {
@@ -171,7 +170,6 @@ export class CloudSession {
     this.authGeneration += 1
     this.switching = null
     this.mintBlockedUntil = 0
-    this.browserReturnedNoMintScope = false
     this.clearPendingLogin()
     clearTokens()
   }
@@ -398,7 +396,7 @@ export class CloudSession {
         reportSwitch('retryable')
         return this.stayed('retryable')
       case 'reauthorize':
-        if (outcome.reason === 'mint_scope_missing' && this.browserReturnedNoMintScope) {
+        if (outcome.reason === 'mint_scope_missing' && isMintScopeWithheld()) {
           reportSwitch('retryable', 'scope_not_granted')
           return this.stayed('retryable')
         }

@@ -1355,14 +1355,77 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(signIn).toHaveBeenCalledTimes(2)
   })
 
-  it('a restart may ask once more, since the hold lives in the session', async () => {
+  it('a restart keeps the hold: no second browser across sessions', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     mocked(signIn).mockResolvedValue(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     await new CloudSession().switchWorkspace('w2')
+    _resetForTest()
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    expect(vaultOnDisk().mintScopeWithheld).toBe(true)
+  })
+
+  it('a pre-upgrade grant gets its one trip on first launch, then the hold survives restarts', async () => {
+    fs.writeFileSync(
+      path.join(electronState.userData, 'comfy-cloud-auth.bin'),
+      safeStorage.encryptString(
+        JSON.stringify({
+          version: 1,
+          activeKey: 'workspace:w1',
+          subject: 'user-1',
+          bundles: { 'workspace:w1': grantOn('w1', { scope: READ_ONLY_SCOPE }) }
+        })
+      )
+    )
+    _resetForTest()
+    mocked(signIn).mockResolvedValue(
+      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
+    )
+    expect(vaultOnDisk().mintScopeWithheld).toBeUndefined()
 
     await new CloudSession().switchWorkspace('w2')
+    expect(signIn).toHaveBeenCalledOnce()
+    _resetForTest()
+    await new CloudSession().switchWorkspace('w2')
+
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('a restart with a scoped sign-in in between mints: the grant that can mint cleared the hold', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    mocked(signIn).mockResolvedValueOnce(
+      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
+    )
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    mocked(signIn).mockResolvedValueOnce(signedInResult(grantOn('w1', { revision: '-scoped' })))
+    await session.login()
+    _resetForTest()
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(signIn).toHaveBeenCalledTimes(2)
+    expect(vaultOnDisk()).not.toHaveProperty('mintScopeWithheld')
+  })
+
+  it('an explicit sign-in can still try after a restart', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    mocked(signIn).mockResolvedValue(
+      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
+    )
+    await new CloudSession().switchWorkspace('w2')
+    _resetForTest()
+
+    await new CloudSession().login()
 
     expect(signIn).toHaveBeenCalledTimes(2)
   })
