@@ -9,6 +9,7 @@ import {
   Copy,
   Cpu,
   Crown,
+  Ellipsis,
   FolderArchive,
   HardDrive,
   LoaderCircle,
@@ -17,7 +18,15 @@ import {
   Users,
   Zap
 } from 'lucide-vue-next'
-import { DialogDescription, DialogRoot, DialogTitle, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
+import {
+  DialogDescription,
+  DialogRoot,
+  DialogTitle,
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+  RadioGroupItem,
+  RadioGroupRoot
+} from 'reka-ui'
 import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import RunOnCards from './RunOnCards.vue'
 import SetupCanvas from './SetupCanvas.vue'
@@ -28,6 +37,10 @@ import ComfyWordmark from '../../../../components/icons/ComfyWordmark.vue'
 import Button from '../../ui/Button.vue'
 import Checkbox from '../../ui/Checkbox.vue'
 import DialogContent from '../../ui/DialogContent.vue'
+import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
+import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
+import DropdownMenuLabel from '../../ui/DropdownMenuLabel.vue'
+import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
 import Input from '../../ui/Input.vue'
 import Select from '../../ui/Select.vue'
 import MarSeg from '../pages/MarSeg.vue'
@@ -380,16 +393,36 @@ function rowState(i: number): string {
           <div v-if="!failed" class="mss-ambient"></div>
           <ComfyWordmark class="mss-first-mark" />
           <!-- Review only (not product): which version of the first launch
-               this is, switchable here as in UI Playground › Local setup. -->
-          <div
-            v-if="localSetup.scope === 'next'"
-            class="mss-version"
-            aria-label="Prototype version"
-          >
-            <span class="mss-version-label">Prototype</span>
-            <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" size="sm" />
-            <Select v-model="localSetup.after" :options="AFTER_INSTALLS" size="sm" />
-          </div>
+               this is, switchable here as in UI Playground › Local setup.
+               Folded behind a dots button so the preview stays clean. -->
+          <DropdownMenuRoot v-if="localSetup.scope === 'next'" :modal="false">
+            <DropdownMenuTrigger as-child>
+              <button type="button" class="mss-version" aria-label="Prototype version">
+                <Ellipsis :size="16" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end" class="mss-version-menu">
+              <DropdownMenuLabel>Onboarding</DropdownMenuLabel>
+              <DropdownMenuItem
+                v-for="o in ONBOARDINGS"
+                :key="o.value"
+                @select="localSetup.onboarding = o.value"
+              >
+                <span class="flex-1">{{ o.label }}</span>
+                <Check v-if="localSetup.onboarding === o.value" :size="14" />
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>After the install</DropdownMenuLabel>
+              <DropdownMenuItem
+                v-for="a in AFTER_INSTALLS"
+                :key="a.value"
+                @select="localSetup.after = a.value"
+              >
+                <span class="flex-1">{{ a.label }}</span>
+                <Check v-if="localSetup.after === a.value" :size="14" />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenuRoot>
           <SetupSteps
             v-if="!homeFirst || homeRunning"
             :now="1"
