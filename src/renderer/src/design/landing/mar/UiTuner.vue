@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Link, X } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 import Button from '../ui/Button.vue'
 import { DIRECTIONS, look } from '../look'
 import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
@@ -25,7 +25,6 @@ import {
   LOCAL_SETUPS,
   ONBOARDINGS,
   AFTER_INSTALLS,
-  setupLink,
   SETUP_SCOPES,
   MACHINES,
   SETUP_GPUS,
@@ -44,7 +43,7 @@ import { MAR_LOCALS, MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { LOOKS, marLook } from './looks/looks'
 import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
-import { proto, toast } from '../useProto'
+import { proto } from '../useProto'
 import { can } from '../milestones'
 import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
 import NavOptionsTuner from './NavOptionsTuner.vue'
@@ -166,18 +165,6 @@ watch(body, (el) => el && requestAnimationFrame(() => (el.scrollTop = scrolled))
 })
 function onScroll(e: Event): void {
   scrolled = (e.target as HTMLElement).scrollTop
-}
-
-// Copy link: the clipboard where allowed; the box is select-all otherwise.
-const linkCopied = ref(false)
-async function copySetupLink(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(setupLink.value)
-    linkCopied.value = true
-    setTimeout(() => (linkCopied.value = false), 1600)
-  } catch {
-    toast('Select the link and copy it')
-  }
 }
 </script>
 
@@ -382,17 +369,6 @@ async function copySetupLink(): Promise<void> {
             <Row>
               <Button variant="ghost" size="sm" class="-ml-2 self-start" @click="openSetup()"
                 >Open the flow</Button
-              >
-            </Row>
-            <!-- The link to this exact setup, in the readable form:
-                 ?setup=first&tweaks=key:value,… -->
-            <Row label="Link">
-              <code
-                class="block rounded-control bg-secondary-background px-2.5 py-2 font-mono text-[11px] leading-4 break-all text-muted-foreground select-all"
-                >{{ setupLink }}</code
-              >
-              <Button variant="secondary" size="sm" class="self-start" @click="copySetupLink"
-                ><Link :size="13" />{{ linkCopied ? 'Copied' : 'Copy link' }}</Button
               >
             </Row>
           </template>
