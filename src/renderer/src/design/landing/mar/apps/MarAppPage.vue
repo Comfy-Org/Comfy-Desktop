@@ -330,27 +330,29 @@ function back(): void {
       <!-- Panel: what you give it, and Run at its foot -->
       <aside class="mar-app-editor-panel" aria-label="Input">
         <div class="mar-app-editor-fields">
-          <!-- UI Playground › App examples › Panel: the same strip, at the
-               top of the panel, before what you give it. -->
-          <div
+          <!-- UI Playground › App examples › Panel: a field of its own at the
+               top, like the ones under it: up to five, square, sharing the
+               width. -->
+          <section
             v-if="appExamplesAt.id === 'panel' && state === 'idle' && examples.length > 1"
-            class="mar-app-editor-dock is-examples is-in-panel"
-            role="group"
-            aria-label="Examples"
+            class="mar-app-editor-field"
           >
-            <button
-              v-for="x in examples.slice(0, 5)"
-              :key="x.id"
-              type="button"
-              :title="x.title"
-              :aria-label="x.title"
-              :aria-pressed="x.id === exId"
-              :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
-              @click="pickExample(x)"
-            >
-              <img :src="x.after" alt="" />
-            </button>
-          </div>
+            <h2 class="mar-app-editor-label">Examples</h2>
+            <div class="mar-app-editor-exs" role="group" aria-label="Examples">
+              <button
+                v-for="x in examples.slice(0, 5)"
+                :key="x.id"
+                type="button"
+                :title="x.title"
+                :aria-label="x.title"
+                :aria-pressed="x.id === exId"
+                class="mar-app-editor-ex"
+                @click="pickExample(x)"
+              >
+                <img :src="x.after" alt="" />
+              </button>
+            </div>
+          </section>
           <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
             <h2 class="mar-app-editor-label">{{ f.label }}</h2>
             <button
@@ -780,23 +782,39 @@ function back(): void {
   border-radius: var(--radius-panel);
   background: var(--color-card-background);
 }
-/* In the panel: in the flow, the panel's width, the thumbnails sharing it. */
-.mar-app-editor-dock.is-examples.is-in-panel {
-  position: static;
-  width: 100%;
-  height: auto;
-  justify-content: flex-start;
-  transform: none;
+/* In the panel: five square slots across the field, however many the
+   app has; the picked one ringed, as in the asset modal's filmstrip. */
+.mar-app-editor-exs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
-:root
-  .proto-ui.proto-ui.proto-ui
-  .mar-app-editor-dock.is-examples.is-in-panel
-  .mar-app-editor-take {
-  width: auto;
-  height: auto;
-  /* Five slots, square, however many the app has. */
-  flex: 0 0 calc((100% - 24px) / 5);
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-ex {
   aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 10px;
+  background: var(--color-secondary-background);
+  opacity: 0.6;
+  outline: none;
+  transition:
+    opacity 0.12s ease,
+    box-shadow 0.12s ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-ex:hover {
+  opacity: 0.9;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-ex[aria-pressed='true'],
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-ex:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--color-card-background),
+    0 0 0 4px var(--color-base-foreground);
+  opacity: 1;
+}
+.mar-app-editor-ex img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 /* No strip over the stage: the same margin all round. */
 .mar-app-editor-stage.is-examples-in-panel {
