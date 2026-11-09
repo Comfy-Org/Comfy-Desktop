@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { classifyMint, mintWorkspaceToken } from './workspaceToken'
 import type { WorkspaceTokenMint } from './workspaceToken'
@@ -95,6 +95,120 @@ describe('mintWorkspaceToken', () => {
     await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toEqual({
       kind: 'failed',
       status: null
+    })
+  })
+})
+
+describe('mintWorkspaceToken and the local clock', () => {
+  const SERVER_NOW_MS = Date.parse('2026-11-08T12:00:00Z')
+  const SERVER_NOW = SERVER_NOW_MS / 1000
+  const HOUR_MS = 3_600_000
+  const LIFETIME_MS = 900_000
+
+  function jwt(claims: Record<string, unknown>): string {
+    const b64 = (value: unknown): string =>
+      Buffer.from(JSON.stringify(value), 'utf-8').toString('base64url')
+    return `${b64({ alg: 'RS256' })}.${b64(claims)}.sig`
+  }
+
+  function serverReply(claims: Record<string, unknown>, expiresAtMs: number): void {
+    respond(200, { token: jwt(claims), expires_at: new Date(expiresAtMs).toISOString() })
+  }
+
+  function fifteenMinuteToken(): Record<string, number> {
+    return { iat: SERVER_NOW, exp: SERVER_NOW + LIFETIME_MS / 1000 }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it.each<[string, number]>([
+    ['an hour ahead of', HOUR_MS],
+    ['a day ahead of', 24 * HOUR_MS],
+    ['an hour behind', -HOUR_MS],
+    ['matching', 0]
+  ])('a clock %s the server gets the token its real lifetime', async (_name, skewMs) => {
+    const clientNow = SERVER_NOW_MS + skewMs
+    vi.setSystemTime(clientNow)
+    serverReply(fifteenMinuteToken(), SERVER_NOW_MS + LIFETIME_MS)
+
+    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toMatchObject({
+      kind: 'minted',
+      expiresAt: clientNow + LIFETIME_MS
+    })
+  })
+
+  it('a slow clock with transit time never stretches the token past its real validity', async () => {
+    const skewMs = -HOUR_MS
+    const clientStart = SERVER_NOW_MS + skewMs - 2_000
+    vi.setSystemTime(clientStart)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        vi.setSystemTime(clientStart + 5_000)
+        return new Response(
+          JSON.stringify({
+            token: jwt(fifteenMinuteToken()),
+            expires_at: new Date(SERVER_NOW_MS + LIFETIME_MS).toISOString()
+          }),
+          { status: 200 }
+        )
+      })
+    )
+    const realExpiryOnClientClock = SERVER_NOW_MS + LIFETIME_MS + skewMs
+
+    const mint = await mintWorkspaceToken('oauth-access', 'ws-1')
+
+    expect(mint).toMatchObject({ kind: 'minted', expiresAt: clientStart + LIFETIME_MS })
+    expect(mint.kind === 'minted' && mint.expiresAt).toBeLessThanOrEqual(realExpiryOnClientClock)
+  })
+
+  it('a parent-capped token keeps only its short lifetime', async () => {
+    vi.setSystemTime(SERVER_NOW_MS + HOUR_MS)
+    serverReply({ iat: SERVER_NOW, exp: SERVER_NOW + 30 }, SERVER_NOW_MS + 30_000)
+
+    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toMatchObject({
+      expiresAt: SERVER_NOW_MS + HOUR_MS + 30_000
+    })
+  })
+
+  it.each<[string, Record<string, number>]>([
+    ['a zero', { iat: SERVER_NOW, exp: SERVER_NOW }],
+    ['a negative', { iat: SERVER_NOW, exp: SERVER_NOW - 5 }]
+  ])('rejects %s lifetime even with a later expires_at', async (_name, claims) => {
+    vi.setSystemTime(SERVER_NOW_MS)
+    serverReply(claims, SERVER_NOW_MS + LIFETIME_MS)
+
+    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toEqual({
+      kind: 'failed',
+      status: 200
+    })
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    ['no iat', { exp: SERVER_NOW + 900 }],
+    ['no exp', { iat: SERVER_NOW }],
+    ['a non-numeric iat', { iat: 'now', exp: SERVER_NOW + 900 }],
+    ['no time claims', {}]
+  ])('a token with %s falls back to expires_at', async (_name, claims) => {
+    vi.setSystemTime(SERVER_NOW_MS)
+    const expiresAt = SERVER_NOW_MS + 120_000
+    serverReply(claims, expiresAt)
+
+    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toMatchObject({
+      kind: 'minted',
+      expiresAt
+    })
+
+    serverReply(claims, SERVER_NOW_MS - 1)
+    await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toEqual({
+      kind: 'failed',
+      status: 200
     })
   })
 })

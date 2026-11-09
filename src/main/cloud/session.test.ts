@@ -196,6 +196,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   clearTokens()
   _resetForTest()
   fs.rmSync(electronState.userData, { recursive: true, force: true })
@@ -570,6 +571,27 @@ describe('CloudSession.switchWorkspace with no browser', () => {
 
     expect(session.currentWorkspaceId()).toBe('w1')
     expect(vaultOnDisk().workspaceTokens).toEqual({})
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a clock an hour ahead of the server still switches and keeps the token, with one mint', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const serverNow = Date.now()
+    vi.setSystemTime(serverNow + 3_600_000)
+    saveGrant(grantOn('w1', { expiresAt: Date.now() + 3_600_000 }))
+    const token = jwt({
+      sub: 'user-1',
+      workspace_id: 'w2',
+      iat: Math.floor(serverNow / 1000),
+      exp: Math.floor(serverNow / 1000) + 900
+    })
+    mintReply = () => json(200, { token, expires_at: new Date(serverNow + 900_000).toISOString() })
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+    await expect(session.getAccessToken()).resolves.toBe(token)
+
+    expect(mintRequests).toHaveLength(1)
     expect(signIn).not.toHaveBeenCalled()
   })
 

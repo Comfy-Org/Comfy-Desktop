@@ -11,6 +11,8 @@ interface AccessTokenClaims {
   workspace_type?: string
   role?: string
   scope?: string
+  iat?: unknown
+  exp?: unknown
 }
 
 function decodeJwtPayload(token: string): AccessTokenClaims | null {
@@ -54,6 +56,14 @@ export function workspaceIdOf(accessToken: string): string | null {
 export function canMintWorkspaceTokens(accessToken: string): boolean {
   const scope = decodeJwtPayload(accessToken)?.scope
   return typeof scope === 'string' && scope.split(' ').includes(WORKSPACE_MINT_SCOPE)
+}
+
+/** How long a token was issued for, in seconds, independent of any clock; null without usable claims. */
+export function lifetimeSecondsOf(accessToken: string): number | null {
+  const { iat, exp } = decodeJwtPayload(accessToken) ?? {}
+  if (typeof iat !== 'number' || typeof exp !== 'number') return null
+  const lifetime = exp - iat
+  return Number.isFinite(lifetime) ? lifetime : null
 }
 
 /** The account subject a token belongs to, or null for malformed/legacy tokens. */

@@ -1,4 +1,5 @@
 /** Mints a workspace token at `POST {apiBase}/auth/token` with Desktop's OAuth access token. */
+import { lifetimeSecondsOf } from './claims'
 import { CLOUD_CONFIG } from './config'
 
 const DEFAULT_TIMEOUT_MS = 20_000
@@ -65,10 +66,17 @@ function retryAfterSecondsOf(res: Response): number | undefined {
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined
 }
 
-function mintedFrom(body: unknown): WorkspaceTokenMint | null {
+function mintedFrom(body: unknown, requestedAt: number): WorkspaceTokenMint | null {
   if (!body || typeof body !== 'object') return null
   const { token, expires_at: expiresAt } = body as { token?: unknown; expires_at?: unknown }
-  if (typeof token !== 'string' || token === '' || typeof expiresAt !== 'string') return null
+  if (typeof token !== 'string' || token === '') return null
+  const lifetimeSeconds = lifetimeSecondsOf(token)
+  if (lifetimeSeconds !== null) {
+    return lifetimeSeconds > 0
+      ? { kind: 'minted', token, expiresAt: requestedAt + lifetimeSeconds * 1000 }
+      : null
+  }
+  if (typeof expiresAt !== 'string') return null
   const expiresAtMs = Date.parse(expiresAt)
   return expiresAtMs > Date.now() ? { kind: 'minted', token, expiresAt: expiresAtMs } : null
 }
@@ -79,6 +87,7 @@ export async function mintWorkspaceToken(
   options: MintWorkspaceTokenOptions = {}
 ): Promise<WorkspaceTokenMint> {
   const base = (options.apiBase ?? CLOUD_CONFIG.apiBase).replace(/\/+$/, '')
+  const requestedAt = Date.now()
   let res: Response
   try {
     res = await fetch(`${base}/auth/token`, {
@@ -95,7 +104,7 @@ export async function mintWorkspaceToken(
     return { kind: 'failed', status: null }
   }
   const body: unknown = await res.json().catch(() => null)
-  if (res.ok) return mintedFrom(body) ?? { kind: 'failed', status: res.status }
+  if (res.ok) return mintedFrom(body, requestedAt) ?? { kind: 'failed', status: res.status }
   const code = errorCodeOf(body)
   const retryAfterSeconds = retryAfterSecondsOf(res)
   return {
