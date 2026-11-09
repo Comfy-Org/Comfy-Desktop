@@ -245,15 +245,18 @@ function wheel(e: WheelEvent): void {
         />
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
+        <!-- What it is, up top; its name and what it does, below. -->
         <span class="mar-arc-text">
-          <span class="mar-arc-title">{{ x.label }}</span>
           <span class="mar-arc-meta"><span class="mar-arc-app">App</span> · {{ x.kind }}</span>
         </span>
         <span class="mar-arc-dim" />
-        <!-- As on the app cards: what it does on the left, the white Run
-             on the right, one row over the fade. -->
+        <!-- As on the app cards: the name and what it does on the left,
+             the white Run on the right on hover, one row over the fade. -->
         <span class="mar-arc-bar">
-          <span class="mar-arc-does">{{ x.does }}</span>
+          <span class="mar-arc-name">
+            <span class="mar-arc-title">{{ x.label }}</span>
+            <span class="mar-arc-does">{{ x.does }}</span>
+          </span>
           <span class="mar-arc-go" aria-hidden="true">Run</span>
         </span>
       </button>
@@ -342,8 +345,8 @@ function wheel(e: WheelEvent): void {
 }
 .mar-arc-title {
   color: #fff;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   letter-spacing: -0.01em;
   line-height: 1.2;
   text-wrap: balance;
@@ -355,8 +358,9 @@ function wheel(e: WheelEvent): void {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-/* What the app does and Run, one row at the bottom of the front card,
-   shown when you point at it (or focus it): the app cards' layout. */
+/* The name and what it does, one row at the bottom of every card, as
+   on the app cards; Run joins it on the front card when you point at it
+   (or focus it). */
 .mar-arc-bar {
   position: absolute;
   right: 14px;
@@ -365,32 +369,25 @@ function wheel(e: WheelEvent): void {
   display: flex;
   align-items: center;
   gap: 10px;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(6px);
-  transition:
-    opacity 200ms ease,
-    transform 300ms cubic-bezier(0.19, 1, 0.22, 1);
 }
-.mar-arc-card.is-front:hover .mar-arc-bar,
-.mar-arc-card.is-front:focus-visible .mar-arc-bar {
-  opacity: 1;
-  pointer-events: auto;
-  transform: none;
-}
-.mar-arc-does {
-  display: -webkit-box;
+.mar-arc-name {
+  display: flex;
   min-width: 0;
   flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+.mar-arc-name > span {
   overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  color: #fff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-arc-does {
+  color: rgb(255 255 255 / 0.7);
   font-size: 13px;
   font-weight: 400;
   line-height: 1.35;
-  text-align: left;
-  text-wrap: balance;
 }
 .mar-arc-meta {
   margin-top: 2px;
@@ -403,7 +400,6 @@ function wheel(e: WheelEvent): void {
   position: absolute;
   inset: 0;
   background: linear-gradient(to top, rgb(0 0 0 / 0.75), rgb(0 0 0 / 0.4) 30%, transparent 55%);
-  opacity: 0;
   pointer-events: none;
   transition: opacity 250ms ease;
 }
@@ -424,17 +420,25 @@ function wheel(e: WheelEvent): void {
   font-weight: 600;
   letter-spacing: -0.005em;
   cursor: pointer;
-  transition: background-color 160ms ease;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition:
+    opacity 200ms ease,
+    transform 300ms cubic-bezier(0.19, 1, 0.22, 1),
+    background-color 160ms ease;
+}
+.mar-arc-card.is-front:hover .mar-arc-go,
+.mar-arc-card.is-front:focus-visible .mar-arc-go {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
 }
 .mar-arc-card .mar-arc-go:hover {
   background: rgb(255 255 255 / 0.9);
 }
 .mar-arc-card .mar-arc-go:active {
   scale: 0.98;
-}
-.mar-arc-card.is-front:hover .mar-arc-scrim,
-.mar-arc-card.is-front:focus-visible .mar-arc-scrim {
-  opacity: 1;
 }
 .mar-arc-actions {
   display: flex;
@@ -446,7 +450,6 @@ function wheel(e: WheelEvent): void {
 }
 @media (prefers-reduced-motion: reduce) {
   .mar-arc-card .mar-arc-after,
-  .mar-arc-bar,
   .mar-arc-go,
   .mar-arc-scrim {
     transition: none;
