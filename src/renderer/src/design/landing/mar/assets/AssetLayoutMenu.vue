@@ -17,7 +17,7 @@ import { menuItem } from '../../ui/menu.styles'
  */
 export type AssetView = 'masonry' | 'grid'
 const view = defineModel<AssetView>('view', { required: true })
-const size = defineModel<number>('size', { required: true })
+const size = defineModel<number>('size')
 const sort = defineModel<string>('sort')
 const showName = defineModel<boolean>('showName')
 const showDetails = defineModel<boolean>('showDetails')
@@ -68,14 +68,14 @@ const SHOW = computed(() =>
           </button>
         </div>
       </div>
-      <div class="alm-size">
+      <div v-if="size !== undefined" class="alm-size">
         <span class="alm-cap">Size</span>
         <button
           type="button"
           class="alm-size-btn"
           aria-label="Smaller"
-          :disabled="size <= 1"
-          @click="setSize(size - 1)"
+          :disabled="size! <= 1"
+          @click="setSize(size! - 1)"
         >
           <Minus :size="13" />
         </button>
@@ -84,7 +84,7 @@ const SHOW = computed(() =>
             v-for="n in SIZES"
             :key="n"
             type="button"
-            :class="n <= size && 'is-on'"
+            :class="n <= size! && 'is-on'"
             :aria-label="`Size ${n}`"
             :aria-pressed="n === size"
             @click="setSize(n)"
@@ -94,8 +94,8 @@ const SHOW = computed(() =>
           type="button"
           class="alm-size-btn"
           aria-label="Bigger"
-          :disabled="size >= SIZES"
-          @click="setSize(size + 1)"
+          :disabled="size! >= SIZES"
+          @click="setSize(size! + 1)"
         >
           <Plus :size="13" />
         </button>

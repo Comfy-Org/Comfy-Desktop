@@ -26,7 +26,12 @@ const HOLD = 1600 // ms each side of the front card stays up
 const LAND = 350 // ms after a card reaches the front before it first sweeps
 
 // `pos` is where the arc is (in cards, unbounded); `target` where it's going.
-const pos = ref(Math.floor(N / 2))
+// It opens on Re-shoot a video, with Cinematic Studio and Openjutsu beside.
+const START = Math.max(
+  0,
+  EXAMPLES.findIndex((x) => x.label === 'Re-shoot a video')
+)
+const pos = ref(START)
 const target = ref(pos.value)
 const dragging = ref(false)
 const cards = ref<HTMLElement[]>([])

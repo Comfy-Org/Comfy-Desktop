@@ -188,7 +188,7 @@ const picked = computed(() =>
     g.items.filter((i) => g.list.value.includes(i.value)).map((i) => ({ ...i, group: g }))
   )
 )
-// Examples' Layout, like Assets': masonry or grid, at three sizes.
+// Inspiration's Layout: masonry or grid, at one size (no Size here).
 const view = ref<AssetView>('masonry')
 const size = ref(2)
 const TILE = [0, 170, 220, 300]
@@ -299,7 +299,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           <Select v-model="appSort" :options="APP_SORTS" label="Sort" class="w-40" />
         </span>
         <span v-if="tab === 'examples'" key="layout" class="inline-flex">
-          <AssetLayoutMenu v-model:view="view" v-model:size="size" />
+          <AssetLayoutMenu v-model:view="view" />
         </span>
       </TransitionGroup>
     </template>
