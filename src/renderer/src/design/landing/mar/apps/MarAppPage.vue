@@ -383,9 +383,32 @@ function back(): void {
           <p v-if="payerNote" class="mar-app-editor-payer">{{ payerNote }}</p>
         </footer>
       </aside>
-      <!-- Stage: the result, the example's until you run it, centred in its
-             frame; the dock under it -->
+      <!-- Stage: the examples on top, then the result (the example's until
+             you run it), centred in its frame; your takes under it -->
       <main class="mar-app-editor-stage" aria-label="Output">
+        <!-- Examples, over the stage: what this app has made (its Gallery
+             pictures), to start from like templates. Picking one fills the
+             panel and shows its result. -->
+        <div
+          v-if="examples.length"
+          class="mar-app-editor-dock is-examples"
+          role="group"
+          aria-label="Examples"
+        >
+          <span class="mar-app-editor-dock-label">Examples</span>
+          <button
+            v-for="x in examples"
+            :key="x.id"
+            type="button"
+            :title="x.title"
+            :aria-label="x.title"
+            :aria-pressed="x.id === exId"
+            :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
+            @click="pickExample(x)"
+          >
+            <img :src="x.after" alt="" />
+          </button>
+        </div>
         <div class="mar-app-editor-canvas">
           <figure
             v-if="hasResult"
@@ -457,30 +480,8 @@ function back(): void {
           </div>
         </div>
 
-        <!-- Dock: before a run, the app's examples to start from, like
-             templates (picking one fills the panel and shows its result);
-             once you've run it, your takes. -->
-        <div
-          v-if="state === 'idle' && examples.length > 1"
-          class="mar-app-editor-dock is-examples"
-          role="group"
-          aria-label="Examples"
-        >
-          <span class="mar-app-editor-dock-label">Examples</span>
-          <button
-            v-for="x in examples"
-            :key="x.id"
-            type="button"
-            :title="x.title"
-            :aria-label="x.title"
-            :aria-pressed="x.id === exId"
-            :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
-            @click="pickExample(x)"
-          >
-            <img :src="x.after" alt="" />
-          </button>
-        </div>
-        <div v-else-if="state === 'done'" class="mar-app-editor-dock">
+        <!-- Dock: once you've run it, your takes. -->
+        <div v-if="state === 'done'" class="mar-app-editor-dock">
           <template v-if="takes.length > 1">
             <button
               v-for="(filter, i) in takes"
@@ -711,7 +712,7 @@ function back(): void {
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  padding: 32px 32px 16px;
+  padding: 16px 32px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-panel);
   background: var(--color-card-background);
