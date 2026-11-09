@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Check, LoaderCircle, TriangleAlert } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
+import Checkbox from '../../ui/Checkbox.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import SetupLaptop from './SetupLaptop.vue'
@@ -95,6 +96,18 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         >
         <span class="mss-machine-title">{{ DETECTED.chip }}</span>
         <span class="mss-row-meta tabular-nums">{{ line }}</span>
+        <!-- Custom nodes (DESK-243): one quiet line in the card, ticked for a
+             new user. Unticked installs plain ComfyUI. -->
+        <span v-if="packsOn" class="mss-home-packs">
+          <label class="mss-home-packs-pick">
+            <Checkbox :model-value="recommended" @update:model-value="choose" />
+            <span class="text-base-foreground">Add recommended node packs</span>
+            <span class="mss-row-meta tabular-nums">{{
+              recommended ? `${flow.packs.length} packs · ${packsMb} MB` : 'Plain ComfyUI'
+            }}</span>
+          </label>
+          <button type="button" class="mss-home-packs-edit" @click="packsFromHome">Edit</button>
+        </span>
         <span v-if="installing && !failed" class="mss-home-bar" aria-hidden="true"
           ><span :style="{ width: `${flow.percent}%` }"></span
         ></span>
@@ -119,47 +132,6 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         </template>
       </span>
     </div>
-    <div
-      v-if="packsOn"
-      class="mss-home-builds"
-      role="radiogroup"
-      aria-label="What to install"
-      data-no-pill
-    >
-      <button
-        type="button"
-        role="radio"
-        :aria-checked="recommended"
-        class="mss-home-build"
-        @click="choose(true)"
-      >
-        <span class="mss-home-build-dot" aria-hidden="true"></span>
-        <span class="grid min-w-0">
-          <span class="mss-home-build-title"
-            >Recommended build<span class="mss-home-build-tag">For new users</span></span
-          >
-          <span class="mss-row-meta tabular-nums">{{
-            recommended
-              ? `ComfyUI + ${flow.packs.length} popular node packs · ${packsMb} MB`
-              : 'ComfyUI + the most used node packs'
-          }}</span>
-        </span>
-      </button>
-      <button
-        type="button"
-        role="radio"
-        :aria-checked="!recommended"
-        class="mss-home-build"
-        @click="choose(false)"
-      >
-        <span class="mss-home-build-dot" aria-hidden="true"></span>
-        <span class="grid min-w-0">
-          <span class="mss-home-build-title">Plain ComfyUI</span>
-          <span class="mss-row-meta">Nothing added. Add node packs later from the Manager.</span>
-        </span>
-      </button>
-      <button type="button" class="mss-home-build-edit" @click="packsFromHome">Edit packs</button>
-    </div>
     <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
          there. The first-run Home's own examples (Milestone 2), in the look
          UI Playground picks; with the Home open they are already there. -->
@@ -179,66 +151,36 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
   gap: 8px;
   margin-top: 8px;
 }
-:root .proto-ui.proto-ui.proto-ui .mss-home-build {
+.mss-home-packs {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  border-radius: 12px;
-  background: transparent;
-  text-align: left;
-  transition:
-    border-color 0.15s,
-    background-color 0.15s;
-}
-:root .proto-ui.proto-ui.proto-ui .mss-home-build:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mss-home-build[aria-checked='true'] {
-  border-color: var(--color-base-foreground);
-}
-.mss-home-build-dot {
-  width: 14px;
-  height: 14px;
-  flex: none;
-  margin-top: 2px;
-  border: 1.5px solid color-mix(in oklch, var(--color-base-foreground) 35%, transparent);
-  border-radius: 999px;
-}
-.mss-home-build[aria-checked='true'] .mss-home-build-dot {
-  border: 4px solid var(--color-base-foreground);
-}
-.mss-home-build-title {
-  color: var(--color-base-foreground);
+  align-items: center;
+  gap: 4px;
+  margin-top: 14px;
   font-size: 13px;
-  font-weight: 500;
 }
-.mss-home-build-tag {
-  margin-left: 8px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  color: var(--color-subtle-foreground);
-  font-size: 11px;
-  font-weight: 500;
+.mss-home-packs-pick {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }
-:root .proto-ui.proto-ui.proto-ui .mss-home-build-edit {
-  align-self: center;
-  padding: 6px 10px;
-  border-radius: 8px;
+:root .proto-ui.proto-ui.proto-ui .mss-home-packs-edit {
+  padding: 2px 6px;
+  border-radius: 6px;
   background: transparent;
   color: var(--color-subtle-foreground);
   font-size: 13px;
-  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
-:root .proto-ui.proto-ui.proto-ui .mss-home-build-edit:hover {
+:root .proto-ui.proto-ui.proto-ui .mss-home-packs-edit:hover {
   color: var(--color-base-foreground);
 }
-@media (max-width: 720px) {
-  .mss-home-builds {
-    grid-template-columns: 1fr;
-  }
+:root .proto-ui.proto-ui.proto-ui .mss-home-packs [role='checkbox'][data-state='checked'] {
+  border-color: var(--color-inverted-background);
+  background: var(--color-inverted-background);
+  color: var(--color-inverted-foreground);
 }
 .mss-machine-kicker.is-bad {
   color: var(--color-status-danger);
