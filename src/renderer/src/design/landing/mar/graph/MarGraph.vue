@@ -1853,6 +1853,32 @@ function addFromPanel(kind: NodeKind): void {
 .is-current .mg-canvas::before {
   content: none;
 }
+/* Where the canvas ends: it sits a shade lighter than the title bar
+   above it and a hairline closes its top, so the infinite canvas reads
+   as a framed surface rather than running into the bar. */
+.mg:not(.is-current) {
+  --mg-canvas: color-mix(in oklch, var(--color-content-background), #fff 2.5%);
+}
+.mg {
+  --mg-frame: color-mix(in oklch, var(--mg-canvas), #000 45%);
+  --mg-frame-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+:root[data-ds-theme='light'] .mg {
+  --mg-frame: oklch(0.925 0.003 285);
+  --mg-frame-line: oklch(0 0 0 / 0.08);
+}
+.mg-canvas::after {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--mg-top);
+  background: var(--mg-frame);
+  box-shadow: 0 1px 0 var(--mg-frame-line);
+  content: '';
+  pointer-events: none;
+}
+.is-current .mg-canvas::after {
+  content: none;
+}
 .mg-drop {
   position: absolute;
   inset: 10px;
