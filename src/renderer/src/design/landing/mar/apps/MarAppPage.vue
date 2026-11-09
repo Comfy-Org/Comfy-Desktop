@@ -109,8 +109,6 @@ function pickExample(x: AppExample): void {
   state.value = 'idle'
   comparing.value = false
   load(x)
-  stageView.value = 'history'
-  focused.value = false
 }
 const pick = (f: Field): string => values[f.id] ?? f.options?.[0] ?? ''
 const count = computed(() =>
@@ -226,11 +224,11 @@ function run(): void {
 defineExpose({ run })
 
 // UI Playground › App examples › Tabs: over the stage, your History (all
-// you've made here, as a grid; one opens large) and the app's Gallery. It
-// opens on the Gallery unless it came from an example; picking one fills
-// the panel and goes to History.
+// you've made here, as a grid; one opens large) and its Inspiration. It
+// opens on Inspiration until you've made something; picking one fills the
+// panel and stays there.
 const onTabs = computed(() => appExamplesAt.id === 'tabs' && examples.value.length > 1)
-const stageView = ref<'history' | 'gallery'>(openOn[appId] ? 'history' : 'gallery')
+const stageView = ref<'history' | 'gallery'>(outputs.value.length ? 'history' : 'gallery')
 const focused = ref(false)
 watch(stageView, () => (focused.value = false))
 const onGallery = computed(() => onTabs.value && stageView.value === 'gallery')
@@ -487,12 +485,33 @@ function back(): void {
         <!-- Gallery: the app's examples, as Home shows them, in aligned
              rows; one fills the panel with what it ran with. -->
         <div v-if="onGallery" class="mar-app-editor-grid">
+          <!-- What the app does, beside three of its pictures fanned out
+               like Home's examples. -->
+          <header class="mar-app-editor-hero">
+            <img
+              class="mar-app-editor-hero-glow"
+              :src="examples[0]?.after"
+              alt=""
+              aria-hidden="true"
+            />
+            <div class="mar-app-editor-hero-text">
+              <p class="mar-app-editor-hero-cap">Inspiration</p>
+              <h2>{{ name }}</h2>
+              <p v-if="lib?.blurb" class="mar-app-editor-hero-blurb">{{ lib.blurb }}</p>
+              <p class="mar-app-editor-hero-hint">Pick one to start from it, then make it yours.</p>
+            </div>
+            <div class="mar-app-editor-hero-fan" aria-hidden="true">
+              <img v-for="x in examples.slice(0, 3)" :key="x.id" :src="x.after" alt="" />
+            </div>
+          </header>
           <ExampleTile
             v-for="x in examples"
             :key="x.id"
             :x="x"
             ratio="4 / 5"
-            go="Use this"
+            go="Use"
+            :badge="false"
+            titled
             :picked="x.id === exId"
             role="button"
             tabindex="0"
@@ -1064,6 +1083,93 @@ function back(): void {
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
+}
+/* Inspiration's head: the app and what it does, three of its pictures
+   fanned on the right, over a soft wash of its first picture. */
+.mar-app-editor-hero {
+  position: relative;
+  grid-column: 1 / -1;
+  display: flex;
+  min-height: 188px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  overflow: hidden;
+  padding: 28px 40px 28px 32px;
+  border-radius: var(--radius-card);
+  background: var(--color-secondary-background);
+}
+.mar-app-editor-hero-glow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+  filter: blur(60px) saturate(1.4);
+  scale: 1.3;
+  pointer-events: none;
+}
+.mar-app-editor-hero-text {
+  position: relative;
+  min-width: 0;
+  max-width: 44ch;
+}
+.mar-app-editor-hero-cap {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mar-app-editor-hero h2 {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.mar-app-editor-hero-blurb {
+  margin-top: 8px;
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.mar-app-editor-hero-hint {
+  margin-top: 14px;
+  color: var(--color-subtle-foreground);
+  font-size: 12.5px;
+}
+.mar-app-editor-hero-fan {
+  position: relative;
+  display: flex;
+  flex: none;
+  padding-right: 8px;
+}
+.mar-app-editor-hero-fan img {
+  width: 96px;
+  height: 124px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 14px 30px -10px rgb(0 0 0 / 0.6);
+}
+.mar-app-editor-hero-fan img:nth-child(1) {
+  rotate: -8deg;
+  translate: 14px 6px;
+}
+.mar-app-editor-hero-fan img:nth-child(2) {
+  z-index: 1;
+  translate: 0 -4px;
+}
+.mar-app-editor-hero-fan img:nth-child(3) {
+  rotate: 8deg;
+  translate: -14px 6px;
+}
+@container (max-width: 560px) {
+  .mar-app-editor-hero-fan {
+    display: none;
+  }
 }
 /* History with nothing yet: the message, centred in the stage. */
 .mar-app-editor-empty.is-history {

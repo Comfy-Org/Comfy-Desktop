@@ -13,7 +13,9 @@ const {
   ratio,
   app,
   go = 'Run app',
-  picked = false
+  picked = false,
+  badge = true,
+  titled = false
 } = defineProps<{
   x: AppExample
   ratio?: string
@@ -21,6 +23,11 @@ const {
   app?: string
   go?: string
   picked?: boolean
+  /** What it is (Image, or a video's length) in the corner; off where
+   *  every one is the same kind. */
+  badge?: boolean
+  /** Its name always shown, the action only on hover (the app's page). */
+  titled?: boolean
 }>()
 
 function play(e: MouseEvent, on: boolean): void {
@@ -36,7 +43,7 @@ function play(e: MouseEvent, on: boolean): void {
 
 <template>
   <div
-    :class="['mar-ex-tile group', picked && 'is-picked']"
+    :class="['mar-ex-tile group', picked && 'is-picked', titled && 'is-titled']"
     @mouseenter="play($event, true)"
     @mouseleave="play($event, false)"
   >
@@ -51,12 +58,12 @@ function play(e: MouseEvent, on: boolean): void {
         preload="none"
         class="mar-ex-tile-video"
       />
-      <span v-if="x.kind === 'Video'" class="mar-ex-tile-kind" aria-label="Video"
+      <span v-if="badge && x.kind === 'Video'" class="mar-ex-tile-kind" aria-label="Video"
         ><Video :size="13" />{{ x.duration }}</span
       >
       <!-- A landscape photo: an outlined frame, wider than tall, with a
            filled sun and hills inside. -->
-      <span v-else class="mar-ex-tile-kind is-icon" aria-label="Image"
+      <span v-else-if="badge" class="mar-ex-tile-kind is-icon" aria-label="Image"
         ><svg width="14" height="10" viewBox="0 0 24 17" aria-hidden="true">
           <rect
             x="1"
@@ -78,7 +85,9 @@ function play(e: MouseEvent, on: boolean): void {
           <span class="block truncate text-ui font-medium text-white">{{ x.title }}</span>
         </span>
         <!-- The same white action as Home's examples. -->
-        <span class="mar-ex-tile-go" aria-hidden="true"><Play :size="13" />{{ go }}</span>
+        <span class="mar-ex-tile-go" aria-hidden="true"
+          ><Play v-if="!titled" :size="13" />{{ go }}</span
+        >
       </span>
     </span>
   </div>
@@ -184,5 +193,19 @@ function play(e: MouseEvent, on: boolean): void {
 }
 .mar-ex-tile-go:hover {
   background: rgb(255 255 255 / 0.9);
+}
+/* Titled: the name always over the fade, the action only on hover. */
+.mar-ex-tile.is-titled .mar-ex-tile-text {
+  align-items: center;
+  padding-top: 40px;
+  opacity: 1;
+}
+.mar-ex-tile.is-titled .mar-ex-tile-go {
+  padding: 0 14px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.mar-ex-tile.is-titled:is(:hover, :focus-visible) .mar-ex-tile-go {
+  opacity: 1;
 }
 </style>
