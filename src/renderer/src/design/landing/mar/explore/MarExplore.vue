@@ -132,6 +132,7 @@ const empty = computed(
       tutorials: tutorials.value
     })[tab.value].length === 0
 )
+const toolsAt = computed(() => (can.value.explore ? 'toolbar' : 'actions'))
 </script>
 
 <template>
@@ -142,10 +143,11 @@ const empty = computed(
     error-text="Templates, models and tutorials come from the internet. Your own workflows are still in Workflows."
     @clear="((type = 'all'), (query = ''), (uses = []))"
   >
-    <!-- One line: what, which kind, search. -->
-    <template #toolbar>
+    <!-- One line: what, which kind, search. With no tabs to pick, the
+         tools sit beside the title instead of on a line of their own. -->
+    <template #[toolsAt]>
       <MarSeg v-if="can.explore" v-model="tab" :options="TABS" label="Explore" />
-      <div class="ml-auto flex items-center gap-2">
+      <div class="flex items-center gap-2" :class="can.explore && 'ml-auto'">
         <!-- Apps: Filter by use case and Sort, as on the hub. -->
         <template v-if="tab === 'apps'">
           <DropdownMenuRoot :modal="false">
