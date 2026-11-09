@@ -11,7 +11,8 @@ import MarStatus from '../pages/MarStatus.vue'
 import { assetBuilds, buildStatus, type AssetBuild } from './assetBuilds'
 
 /** Whose assets (Assets, Phase 2): one build at a time, each with its
- *  state, or Everywhere (every running build at once). A stopped build
+ *  state, or Everywhere (every running build at once). Nothing is picked
+ *  until you pick it; then Assets remembers it. A stopped build
  *  stays on the list; picking it shows a page that offers to start it,
  *  nothing starts on its own. */
 const model = defineModel<string>({ required: true })

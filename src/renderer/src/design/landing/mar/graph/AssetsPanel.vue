@@ -305,7 +305,9 @@ function lines(a: PanelAsset): MenuLine[] {
     },
     { label: 'Download', icon: Download, run: () => toast(`Downloading ${a.name}`) },
     'sep',
-    ...(a.kind === 'Generated'
+    // Only a run that kept its workflow offers it; it opens in a new tab,
+    // so the graph you're on is never replaced.
+    ...(a.kind === 'Generated' && factsFor(a).workflow === 'available'
       ? ([
           {
             label: 'Open as workflow in new tab',
@@ -313,7 +315,11 @@ function lines(a: PanelAsset): MenuLine[] {
             run: () => toast(`Opened ${a.name} as a workflow`)
           },
           { label: 'Export workflow', icon: FileOutput, run: () => toast('Workflow exported') },
-          'sep',
+          'sep'
+        ] as MenuLine[])
+      : []),
+    ...(a.kind === 'Generated'
+      ? ([
           { label: 'Copy job ID', icon: Copy, run: () => toast('Job ID copied') },
           'sep'
         ] as MenuLine[])

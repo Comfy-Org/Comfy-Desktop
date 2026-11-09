@@ -29,7 +29,14 @@ import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
 import { noFilter, passes, tagsIn } from '../assets/assetFilters'
-import { assetBuilds, buildStatus, defaultBuild, startBuild } from '../assets/assetBuilds'
+import {
+  assetBuilds,
+  buildStatus,
+  defaultBuild,
+  rememberBuild,
+  startBuild,
+  suggestedBuild
+} from '../assets/assetBuilds'
 import MarPage from './MarPage.vue'
 import { EMPTY_PICS } from './emptyArt'
 import MarEmpty from './MarEmpty.vue'
@@ -83,7 +90,10 @@ const current = computed(() => assetBuilds.value.find((b) => b.id === build.valu
 const buildName = (a: MarAsset): string =>
   assetBuilds.value.find((b) => b.id === a.envId)?.name ?? ''
 const status = computed(() => (current.value ? buildStatus(current.value) : 'running'))
-const browsable = computed(() => !!fixedProject || status.value === 'running')
+const browsable = computed(
+  () => !!fixedProject || (build.value !== '' && status.value === 'running')
+)
+const unpicked = computed(() => !fixedProject && build.value === '')
 const count = (k: Kind): number => base.value.filter((a) => k === 'all' || a.type === k).length
 const KINDS = computed(() =>
   (
@@ -190,13 +200,18 @@ const columns = computed(() => {
   return cols
 })
 
-// Another build is another catalog: nothing of the last one stays.
+// Another build is another catalog: nothing of the last one stays, not
+// the search or the filters either.
 const detail = ref<MarAsset | null>(null)
-watch(build, () => {
+watch(build, (id) => {
+  rememberBuild(id)
   detail.value = null
-  filter.value = { ...filter.value, tags: [] }
+  filter.value = noFilter()
+  query.value = ''
+  kind.value = 'all'
   lib.sel.clear()
 })
+const suggested = computed(() => suggestedBuild())
 const finished = computed(() => shown.value.filter((a) => !a.status))
 
 const meta = (a: MarAsset): string =>
@@ -229,7 +244,7 @@ const uploadable = computed(
 const uploadTitle = computed(() =>
   fixedProject || uploadable.value
     ? `Add files to ${fixedProject ?? current.value?.name} inputs`
-    : build.value === 'all'
+    : build.value === 'all' || build.value === ''
       ? 'Pick a build to add files to'
       : current.value?.kind === 'cloud'
         ? 'Upload to Comfy Cloud from Comfy Cloud'
@@ -330,7 +345,16 @@ function lines(a: MarAsset): MenuLine[] {
     a.source === 'cloud'
       ? { label: 'Download', icon: Download, run: () => toast(`Downloading ${a.name}`) }
       : { label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${a.name}`) },
-    { label: 'Open its workflow', icon: Workflow, run: () => go('workflows') },
+    // Only when the file kept its workflow: an import or a sound has none.
+    ...(factsFor(a).workflow === 'available'
+      ? [
+          {
+            label: 'Open its workflow',
+            icon: Workflow,
+            run: () => toast(`Opening the workflow in ${buildName(a)}`)
+          }
+        ]
+      : []),
     { label: 'Copy', icon: Copy, hint: '⌘C', run: () => toast('Copied to the clipboard') },
     lib.moveLine(() => [a.id], a.project),
     'sep',
@@ -451,8 +475,18 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       </div>
     </template>
 
+    <!-- No build picked yet: ask, with the most recent running one a click away. -->
     <MarEmpty
-      v-if="!browsable && current"
+      v-if="unpicked"
+      :icon="ComfyAssets"
+      title="Pick a build to browse"
+      text="Assets are read from one build at a time, through its own ComfyUI. Pick one above, or open the one you used last."
+      :action="suggested ? `Browse ${suggested.name}` : undefined"
+      compact
+      @action="suggested && (build = suggested.id)"
+    />
+    <MarEmpty
+      v-else-if="!browsable && current"
       :icon="ComfyAssets"
       :title="
         status === 'launching' ? `Starting ${current.name}…` : `${current.name} isn’t running`
