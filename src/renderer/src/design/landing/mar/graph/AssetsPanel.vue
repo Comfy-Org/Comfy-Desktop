@@ -40,6 +40,7 @@ import AssetFilterMenu from './AssetFilterMenu.vue'
 import AssetSidePanel from './AssetSidePanel.vue'
 import BulkTagMenu from './BulkTagMenu.vue'
 import { graphOpen } from './graphOpen'
+import { RAIL_DEFAULT, railWidth } from './panels/railWidth'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
 
@@ -221,18 +222,24 @@ const SORTS = computed(() => [
     ? ['Generation time (longest first)', 'Generation time (fastest first)']
     : [])
 ])
-/** The cards in columns: one run for the grids and the list, two
- *  balanced columns for Masonry (each card to the shorter one). */
+/** Columns follow the panel's width: dragged wider, it shows more
+ *  cards rather than bigger ones (two at the default 320). */
+const cols = computed(() => {
+  const n = Math.max(2, Math.floor(((railWidth['Media Assets'] ?? RAIL_DEFAULT) - 20) / 150))
+  return view.value === 'small' ? n + 1 : view.value === 'list' ? 1 : n
+})
+/** The cards in columns: one run for the grids and the list, balanced
+ *  columns for Masonry (each card to the shortest one). */
 const groups = computed<PanelAsset[][]>(() => {
   if (view.value !== 'masonry') return [shown.value]
-  const cols: PanelAsset[][] = [[], []]
-  const h = [0, 0]
+  const out: PanelAsset[][] = Array.from({ length: cols.value }, () => [])
+  const h = out.map(() => 0)
   for (const a of shown.value) {
-    const i = h[0]! <= h[1]! ? 0 : 1
-    cols[i]!.push(a)
+    const i = h.indexOf(Math.min(...h))
+    out[i]!.push(a)
     h[i]! += 1 / factsFor(a).ratio + 0.25
   }
-  return cols
+  return out
 })
 /** "PNG 512×768": the format and the size, as ComfyUI labels a file. */
 function meta(a: PanelAsset): string {
@@ -489,6 +496,7 @@ function upload(files: FileList | null | undefined): void {
         v-if="shown.length"
         class="ap-items"
         :class="[`is-${view}`, !showName && 'no-name', !showDetails && 'no-meta']"
+        :style="{ '--ap-cols': cols }"
         :aria-label="`${tab} assets`"
         @click.self="selected = new Set()"
       >
@@ -623,12 +631,11 @@ function upload(files: FileList | null | undefined): void {
 <style>
 .ap-items {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--ap-cols, 2), minmax(0, 1fr));
   gap: 8px 6px;
   padding: 10px 10px 16px;
 }
 .ap-items.is-small {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 .ap-items.is-list {
@@ -640,7 +647,6 @@ function upload(files: FileList | null | undefined): void {
   display: contents;
 }
 .ap-items.is-masonry {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
 }
 .ap-items.is-masonry .ap-col {

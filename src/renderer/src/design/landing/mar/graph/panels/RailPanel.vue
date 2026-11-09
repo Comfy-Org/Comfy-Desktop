@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { X } from 'lucide-vue-next'
+import { RAIL_DEFAULT, railWidth, setRailWidth } from './railWidth'
 
 /**
  * The chrome every rail panel shares (ComfyUI's SidebarTabTemplate, in
@@ -7,13 +9,53 @@ import { X } from 'lucide-vue-next'
  * the panel's controls (segmented tabs, search and its filter) closed by
  * a hairline, then the scrolling body and an optional footer. Actions
  * stay in view: tools that wait for the pointer are hard to find.
+ * The right edge drags the width; a double-click puts it back.
  */
-defineProps<{ title: string; label?: string }>()
+const props = defineProps<{ title: string; label?: string }>()
 defineEmits<{ close: [] }>()
+
+const width = computed(() => railWidth[props.title] ?? RAIL_DEFAULT)
+const dragging = ref(false)
+function drag(e: PointerEvent): void {
+  const el = (e.currentTarget as HTMLElement).parentElement!
+  const left = el.getBoundingClientRect().left
+  dragging.value = true
+  const move = (m: PointerEvent): void => setRailWidth(props.title, m.clientX - left)
+  const up = (): void => {
+    dragging.value = false
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+}
+function nudge(e: KeyboardEvent): void {
+  const step = e.key === 'ArrowRight' ? 24 : e.key === 'ArrowLeft' ? -24 : 0
+  if (step) setRailWidth(props.title, width.value + step)
+}
 </script>
 
 <template>
-  <aside class="rp" :aria-label="label ?? title" @pointerdown.stop @wheel.stop>
+  <aside
+    class="rp"
+    :class="dragging && 'is-resizing'"
+    :style="{ width: `${width}px` }"
+    :aria-label="label ?? title"
+    @pointerdown.stop
+    @wheel.stop
+  >
+    <div
+      class="rp-resize"
+      role="separator"
+      aria-orientation="vertical"
+      :aria-valuenow="width"
+      aria-label="Resize panel"
+      title="Drag to resize · Double-click to reset"
+      tabindex="0"
+      @pointerdown.prevent="drag"
+      @dblclick="setRailWidth(title, null)"
+      @keydown="nudge"
+    />
     <header class="rp-head">
       <h2 class="rp-title">{{ title }}<slot name="alt-title" /></h2>
       <span class="rp-tools"><slot name="tools" /></span>
@@ -100,6 +142,39 @@ defineEmits<{ close: [] }>()
     var(--rp-shadow);
   color: var(--rp-text);
   font-size: 13px;
+}
+/* The right edge drags the width: a 6px strip, a hairline on hover. */
+.rp-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  width: 6px;
+  cursor: col-resize;
+  outline: none;
+}
+.rp-resize::after {
+  position: absolute;
+  top: 12px;
+  right: 0;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--color-primary-background, #0b8ce9);
+  content: '';
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.rp-resize:hover::after,
+.rp-resize:focus-visible::after,
+.rp.is-resizing .rp-resize::after {
+  opacity: 1;
+}
+.rp.is-resizing,
+.rp.is-resizing * {
+  cursor: col-resize;
+  user-select: none;
 }
 .mg.is-current .rp {
   top: calc(var(--mg-top) + 38px);
