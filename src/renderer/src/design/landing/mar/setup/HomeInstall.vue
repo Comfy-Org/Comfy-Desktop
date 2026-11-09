@@ -7,6 +7,7 @@ import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import SetupLaptop from './SetupLaptop.vue'
 import ExampleShowcase from '../userStates/ExampleShowcase.vue'
 import {
+  BUILD_NAME,
   DETECTED,
   changeFromHome,
   dismissReady,
@@ -51,12 +52,13 @@ const phase = computed(() => phases.value[Math.max(0, phaseIndex.value)]?.label 
 const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 const line = computed(() => {
   if (ready.value)
-    return `ComfyUI ${DETECTED.version} installed · ${flow.movedDisk ? DETECTED.otherPath : DETECTED.path}`
+    return `ComfyUI ${DETECTED.version} · ${flow.movedDisk ? DETECTED.otherPath : DETECTED.path}`
   if (installing.value) return `${phase.value} · ${flow.percent}%`
   if (unsupported.value)
     return 'ComfyUI requires Apple Silicon (M1/M2/M3) Mac. Intel-based Macs are not supported.'
-  if (lowSpace.value) return `${DETECTED.lowFreeGb} GB free · ~${REQUIRED_GB} GB required`
-  return `${DETECTED.memGb} GB memory · ComfyUI ${DETECTED.version} · ${DETECTED.downloadGb} GB download`
+  if (lowSpace.value)
+    return `${DETECTED.chip} · ${DETECTED.lowFreeGb} GB free · ~${REQUIRED_GB} GB required`
+  return `${DETECTED.chip} · ${DETECTED.memGb} GB memory · ComfyUI ${DETECTED.version} · ${DETECTED.downloadGb} GB download`
 })
 // No space: Change setup is where another disk is picked.
 const install = (): void => (blocked.value ? changeFromHome() : installInBackground())
@@ -64,10 +66,9 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 
 <template>
   <section class="mt-8" aria-label="Local install">
-    <SectionHeader
-      v-if="!installing"
-      :title="ready ? 'ComfyUI is ready' : `Install ComfyUI on ${DETECTED.noun}`"
-    />
+    <!-- The section is Builds from the first launch: the card under it is
+         the first build, waiting to be installed. -->
+    <SectionHeader :title="ready ? 'ComfyUI is ready' : 'Builds'" />
     <div class="mss-machine is-hero mss-home-inst">
       <SetupLaptop :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">
@@ -79,7 +80,9 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
             :class="installing && !failed && 'mss-home-spin'"
           />{{ state.label }}</span
         >
-        <span class="mss-machine-title">{{ DETECTED.chip }}</span>
+        <!-- Named as Builds will list it: the Home already shows the thing
+             to launch; the computer is its detail. -->
+        <span class="mss-machine-title">{{ BUILD_NAME }}</span>
         <span class="mss-row-meta tabular-nums">{{ line }}</span>
         <span v-if="installing && !failed" class="mss-home-bar" aria-hidden="true"
           ><span :style="{ width: `${flow.percent}%` }"></span
@@ -91,9 +94,11 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
           <Button variant="primary" size="lg" @click="openComfyUI()">Open ComfyUI</Button>
         </template>
         <template v-else-if="installing">
-          <Button variant="ghost" @click="showInstall">View logs</Button>
-          <Button v-if="failed" variant="secondary" @click="changeFromHome">Change</Button>
-          <Button v-if="!failed" variant="secondary" @click="flow.confirmCancel = true"
+          <Button variant="ghost" size="lg" @click="showInstall">View logs</Button>
+          <Button v-if="failed" variant="secondary" size="lg" @click="changeFromHome"
+            >Change</Button
+          >
+          <Button v-if="!failed" variant="secondary" size="lg" @click="flow.confirmCancel = true"
             >Cancel install</Button
           >
         </template>
@@ -130,9 +135,9 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 }
 .mss-home-bar {
   display: block;
-  height: 3px;
-  max-width: 420px;
-  margin-top: 10px;
+  height: 5px;
+  max-width: 460px;
+  margin-top: 14px;
   overflow: hidden;
   border-radius: 2px;
   background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);

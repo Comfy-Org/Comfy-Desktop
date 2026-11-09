@@ -13,7 +13,7 @@ import { can } from '../../milestones'
 import { errorOf } from '../../mar/build/buildErrors'
 import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 // Local setup › Home first: the first install runs behind the Home (mar/setup).
-import { flow, installingBehind, installPending } from '../../mar/setup/setupFlow'
+import { BUILD_NAME, flow, installingBehind, installPending } from '../../mar/setup/setupFlow'
 
 /**
  * The organising list under Create.
@@ -92,7 +92,7 @@ const itemClass = (page: Page): string =>
     >
       <TriangleAlert v-if="flow.step === 'error'" :size="15" />
       <LoaderCircle v-else :size="15" class="mar-side-spin" />
-      <span class="sidebar-label text-left">ComfyUI</span>
+      <span class="sidebar-label text-left">{{ BUILD_NAME }}</span>
       <span class="text-ui text-subtle-foreground tabular-nums">{{
         flow.step === 'error' ? 'Failed' : `${flow.percent}%`
       }}</span>
