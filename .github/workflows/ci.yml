@@ -38,7 +38,7 @@ jobs:
 
   checks:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.needs_browser && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -51,6 +51,7 @@ jobs:
             command: pnpm run typecheck && pnpm run bridge-types:check
           - name: Test
             command: pnpm run test
+            needs_browser: true
           - name: Test (integration)
             command: pnpm run test:integration
 
@@ -69,6 +70,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for browser tests
+        if: matrix.needs_browser
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}

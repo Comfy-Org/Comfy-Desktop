@@ -1,4 +1,3 @@
-// @vitest-environment-options {"settings":{"navigation":{"disableChildFrameNavigation":true}}}
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import type { ExampleWorkflowDownload, RunPerformanceTestWorkflowResult } from '../types/ipc'
