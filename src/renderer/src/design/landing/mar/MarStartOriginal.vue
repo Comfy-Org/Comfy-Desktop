@@ -10,6 +10,10 @@ import { installPending } from './setup/setupFlow'
 import { EXAMPLES } from './userStates/examples'
 import EditorEntry from './userStates/EditorEntry.vue'
 import { editorEntry } from './userStates/editorEntry'
+import SetupCloud from './setup/SetupCloud.vue'
+import SetupLaptop from './setup/SetupLaptop.vue'
+import { localSetup } from './setup/setupFlow'
+import './setup/setup.css'
 
 /**
  * First run · Original (UI Playground › First run): the same Home a
@@ -44,6 +48,37 @@ function openCloud(): void {
   <section class="mt-10">
     <SectionHeader v-if="editorEntry.id !== 'banner'" title="For ComfyUI users" />
     <EditorEntry v-if="editorEntry.id !== 'rows'" />
+    <!-- From Milestone 2, the same cards as a returning Home's Builds
+         (MarBuildsRow.vue): the machine drawn, where it stands, its name,
+         what it gives you. -->
+    <div v-else-if="can.exploreApps" class="grid grid-cols-2 gap-3.5">
+      <button type="button" class="mbr-card" style="--h: 210" @click="openCloud">
+        <span class="mbr-device"><SetupCloud :hue="210" /></span>
+        <span class="grid min-w-0 flex-1">
+          <span class="mss-machine-kicker">{{ proto.signedIn ? 'Ready' : 'Sign in' }}</span>
+          <span class="mbr-name">Comfy Cloud</span>
+          <span class="mbr-meta">Fast GPUs, every model ready</span>
+        </span>
+      </button>
+      <button
+        v-if="!installPending"
+        type="button"
+        class="mbr-card"
+        style="--h: 150"
+        @click="hostActions.newInstance()"
+      >
+        <span class="mbr-device"><SetupLaptop :os="localSetup.os" /></span>
+        <span class="grid min-w-0 flex-1">
+          <span class="mss-machine-kicker">{{ onCloud ? 'Get the app' : 'Set up' }}</span>
+          <span class="mbr-name">This computer</span>
+          <span class="mbr-meta">{{
+            onCloud
+              ? 'Install the Desktop app, runs on your GPU'
+              : 'Runs on your GPU, works offline'
+          }}</span>
+        </span>
+      </button>
+    </div>
     <div v-else class="mar-start-ways">
       <button type="button" class="mar-start-way" @click="openCloud">
         <span class="mar-start-icon"><Cloud :size="17" /></span>
