@@ -374,6 +374,8 @@ test('T-V1: sign in once, switch A to B to C to A with no further browser, and r
       return (JSON.parse(raw) as { dashboardWorkspaceId?: string }).dashboardWorkspaceId
     })
     .toBe('B')
+  expect(browserOpens, 'returning to a cached workspace takes no browser').toHaveLength(1)
+  expect(cloud.authorizeUrls, 'returning to a cached workspace takes no consent').toHaveLength(1)
   await quit()
 
   const vault = path.join(userDataDir, AUTH_VAULT)

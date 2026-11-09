@@ -3,7 +3,7 @@
  * system browser at the authorize URL, wait for the callback code, exchange it
  * for tokens. `signIn` optionally pre-selects a workspace (the switch path).
  */
-import { shell } from 'electron'
+import { app, shell } from 'electron'
 
 import { recordShellOpenExternal } from '../lib/e2eOverrides'
 import { statusFromAccessToken } from './claims'
@@ -123,9 +123,9 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
   }
 }
 
-/** System browser only (RFC 8252): never an embedded window/webview. E2E runs record it instead. */
+/** System browser only (RFC 8252): never an embedded window/webview. Unpackaged E2E runs record it instead. */
 export function openAuthorizePage(authorizeUrl: string): Promise<void> {
-  if (process.env['E2E'] === '1') {
+  if (process.env['E2E'] === '1' && !app.isPackaged) {
     recordShellOpenExternal(authorizeUrl)
     return Promise.resolve()
   }

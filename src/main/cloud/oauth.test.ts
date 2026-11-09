@@ -1,14 +1,17 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ shell: { openExternal: vi.fn(async () => {}) } }))
+vi.mock('electron', () => ({
+  app: { isPackaged: false },
+  shell: { openExternal: vi.fn(async () => {}) }
+}))
 vi.mock('./loopback', async (importOriginal) => {
   const actual = await importOriginal<typeof LoopbackModule>()
   return { ...actual, startLoopbackListener: vi.fn(actual.startLoopbackListener) }
 })
 
 import { get } from 'node:http'
-import { shell } from 'electron'
+import { app, shell } from 'electron'
 import { startLoopbackListener } from './loopback'
 import type * as LoopbackModule from './loopback'
 import { getShellOpenExternalCalls, resetShellOpenExternalCalls } from '../lib/e2eOverrides'
@@ -143,6 +146,20 @@ describe('oauth.signIn', () => {
 
     expect(getShellOpenExternalCalls()).toEqual(['https://cloud.test/authorize'])
     expect(shell.openExternal).not.toHaveBeenCalled()
+    vi.unstubAllEnvs()
+  })
+
+  it('opens the system browser in a packaged app even with E2E set', async () => {
+    vi.stubEnv('E2E', '1')
+    resetShellOpenExternalCalls()
+    vi.mocked(shell.openExternal).mockClear()
+    Object.defineProperty(app, 'isPackaged', { value: true, configurable: true })
+
+    await openAuthorizePage('https://cloud.test/authorize')
+
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://cloud.test/authorize')
+    expect(getShellOpenExternalCalls()).toEqual([])
+    Object.defineProperty(app, 'isPackaged', { value: false, configurable: true })
     vi.unstubAllEnvs()
   })
 
