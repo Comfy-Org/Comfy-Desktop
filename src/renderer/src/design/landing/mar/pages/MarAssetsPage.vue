@@ -445,7 +445,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :tags="TAGS"
           />
           <Select v-model="sort" :options="SORTS" label="Sort" class="mar-asset-sort w-34" />
-          <AssetSearch v-model:query="query" v-model:filter="filter" :tags="TAGS" />
+          <AssetSearch v-model:query="query" />
           <MarViewToggle v-model="view" masonry />
         </div>
       </div>
