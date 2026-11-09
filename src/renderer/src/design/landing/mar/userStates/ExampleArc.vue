@@ -69,8 +69,9 @@ function pose(i: number): Record<string, string> {
   const rad = (d * ANGLE * Math.PI) / 180
   const x = RADIUS * Math.sin(rad)
   const z = RADIUS * (Math.cos(rad) - 1)
-  // Fully there up to one card out, gone by the seam at the back.
-  const fade = Math.max(0, Math.min(1, (N / 2 - a) / (N / 2 - 1)))
+  // Fully there at the front, see-through to the sides so the arc melts
+  // into the page; gone by the seam at the back.
+  const fade = Math.max(0, Math.min(1, (N / 2 - a) / (N / 2 - 1))) * (1 - Math.min(a, 2) * 0.24)
   return {
     transform: `translateX(${x}px) translateZ(${z}px) rotateY(${d * ANGLE}deg)`,
     zIndex: String(100 - Math.round(a * 10)),
