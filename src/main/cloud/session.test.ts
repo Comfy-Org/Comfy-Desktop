@@ -790,6 +790,118 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     expect(mintRequests).toHaveLength(1)
   })
 
+  describe('a token read pending while a consent changes the account in the same generation', () => {
+    async function readPendingWhileAccountChanges(lateReply: () => Response | Promise<Response>) {
+      saveGrant(grantOn('w1'))
+      const session = new CloudSession()
+      await session.switchWorkspace('w2')
+      saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: Date.now() + 30_000 })
+      const late = deferred<void>()
+      const pendingSignIn = deferred<Awaited<ReturnType<typeof signIn>>>()
+      mocked(signIn).mockReturnValue(pendingSignIn.promise)
+      mintRequests = []
+      mintReply = async ({ workspaceId }) => {
+        if (workspaceId === 'w3') return json(403, { code: 'sso_required' })
+        await late.promise
+        return lateReply()
+      }
+
+      const switching = session.switchWorkspace('w3')
+      await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+      const read = session.getAccessToken()
+      await vi.waitFor(() => expect(mintRequests).toHaveLength(2))
+      pendingSignIn.resolve(signedInResult(grantOn('w3', { subject: 'user-2' })))
+      await switching
+      late.resolve()
+      return { session, read }
+    }
+
+    it.each<[string, () => Response]>([
+      ['a 429', () => json(429, {})],
+      ['a 500', () => json(500, {})],
+      [
+        'a network failure',
+        () => {
+          throw new TypeError('offline')
+        }
+      ],
+      ['a refusal', () => json(404, {})],
+      ['a mint for the old account', () => minted('w2')]
+    ])('%s does not hand back the old account token', async (_name, reply) => {
+      const { session, read } = await readPendingWhileAccountChanges(reply)
+
+      await expect(read).resolves.toBeNull()
+
+      expect(session.currentSubject()).toBe('user-2')
+      expect(session.currentWorkspaceId()).toBe('w3')
+    })
+
+    it('a refresh landing after the account changed returns null from both token reads', async () => {
+      saveGrant(grantOn('w1', { expiresAt: Date.now() + 30_000 }))
+      const session = new CloudSession()
+      const rotation = deferred<AuthTokens>()
+      mocked(refresh).mockReturnValue(rotation.promise)
+
+      const anchorRead = session.getAccessToken()
+      const grantRead = session.getGrantAccessToken()
+      saveGrant(grantOn('w3', { subject: 'user-2' }))
+      rotation.resolve(grantOn('w1', { revision: '-fresh' }))
+
+      await expect(anchorRead).resolves.toBeNull()
+      await expect(grantRead).resolves.toBeNull()
+    })
+
+    it('a mint flight waiting on the policy never posts with the new account grant', async () => {
+      saveGrant(grantOn('w1'))
+      const session = new CloudSession()
+      await session.switchWorkspace('w2')
+      saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: PAST })
+      const pendingSignIn = deferred<Awaited<ReturnType<typeof signIn>>>()
+      mocked(signIn).mockReturnValue(pendingSignIn.promise)
+      mintRequests = []
+      mintReply = ({ workspaceId }) =>
+        workspaceId === 'w3' ? json(403, { code: 'sso_required' }) : minted(workspaceId)
+      const switching = session.switchWorkspace('w3')
+      await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+      const policy = deferred<boolean>()
+      mocked(isWorkspaceMintSwitchEnabled).mockReturnValueOnce(policy.promise)
+
+      const read = session.getAccessToken()
+      const newAccount = grantOn('w3', { subject: 'user-2' })
+      pendingSignIn.resolve(signedInResult(newAccount))
+      await switching
+      policy.resolve(true)
+
+      await expect(read).resolves.toBeNull()
+      expect(mintRequests).not.toContainEqual({
+        workspaceId: 'w2',
+        bearer: newAccount.accessToken
+      })
+    })
+  })
+
+  it('a token read does not return the old workspace token after the same account moved on', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+    saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: Date.now() + 30_000 })
+    const slowB = deferred<Response>()
+    const slowC = deferred<Response>()
+    mintRequests = []
+    mintReply = ({ workspaceId }) => (workspaceId === 'w2' ? slowB.promise : slowC.promise)
+
+    const switching = session.switchWorkspace('w3')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    const read = session.getAccessToken()
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(2))
+    slowC.resolve(minted('w3'))
+    await switching
+    slowB.resolve(json(429, {}))
+
+    await expect(read).resolves.toBeNull()
+    expect(session.currentWorkspaceId()).toBe('w3')
+  })
+
   it('rejects a minted token for another workspace or account', async () => {
     saveGrant(grantOn('w1'))
     mintReply = () =>

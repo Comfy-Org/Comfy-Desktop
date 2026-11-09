@@ -207,8 +207,10 @@ export class CloudSession {
   async getGrantAccessToken(): Promise<string | null> {
     const grant = loadGrant()
     if (!grant) return null
-    if (!isFresh(grant) && grant.refreshToken) await this.refreshGrant(grant)
-    return loadGrant()?.accessToken ?? null
+    if (isFresh(grant) || !grant.refreshToken) return grant.accessToken
+    const subject = subjectOf(grant.accessToken)
+    await this.refreshGrant(grant)
+    return this.currentSubject() === subject ? (loadGrant()?.accessToken ?? null) : null
   }
 
   /** The token for API calls in the active workspace, null when it cannot get one.
@@ -217,11 +219,16 @@ export class CloudSession {
     const grant = loadGrant()
     if (!grant) return null
     const generation = this.authGeneration
+    const subject = subjectOf(grant.accessToken)
     const workspaceId = loadActiveWorkspaceId()
+    const unchanged = (): boolean =>
+      generation === this.authGeneration &&
+      subject === this.currentSubject() &&
+      workspaceId === loadActiveWorkspaceId()
     if (!workspaceId || workspaceId === workspaceIdOf(grant.accessToken)) {
       if (isFresh(grant) || !grant.refreshToken) return grant.accessToken
       const refreshed = await this.refreshGrant(grant)
-      if (generation !== this.authGeneration) return null
+      if (!unchanged()) return null
       if (refreshed === 'unavailable' && isExpired(grant)) return null
       return loadGrant()?.accessToken ?? null
     }
@@ -229,7 +236,7 @@ export class CloudSession {
     if (held && isFresh(held)) return held.accessToken
 
     const outcome = await this.mintForWorkspace(workspaceId, generation)
-    if (generation !== this.authGeneration) return null
+    if (!unchanged()) return null
     if (outcome.kind === 'minted') return outcome.token
     if (held && held.expiresAt > Date.now()) return held.accessToken
     if (outcome.kind !== 'retryable') this.returnToAnchor(workspaceId, outcome)
@@ -306,6 +313,7 @@ export class CloudSession {
     workspaceId: string,
     generation: number
   ): Promise<SettledMintOutcome> {
+    const subject = this.currentSubject()
     if (!(await this.isWorkspaceMintAllowed(workspaceId))) {
       return { kind: 'reauthorize', reason: 'mint_disabled' }
     }
@@ -318,7 +326,7 @@ export class CloudSession {
       if (refreshed === 'ended' || (refreshed === 'unavailable' && isExpired(grant)))
         return refreshFailureOutcome(refreshed)
     }
-    const first = await this.postMint(workspaceId, generation)
+    const first = await this.postMint(workspaceId, generation, subject)
     if (
       first.kind !== 'unauthorized' &&
       !(first.kind === 'reauthorize' && first.reason === 'grant_ended')
@@ -328,13 +336,22 @@ export class CloudSession {
     if (!current) return RETRYABLE
     const refreshed = await this.refreshGrant(current)
     if (refreshed !== 'refreshed') return refreshFailureOutcome(refreshed)
-    const second = await this.postMint(workspaceId, generation)
+    const second = await this.postMint(workspaceId, generation, subject)
     return second.kind === 'unauthorized' ? RETRYABLE : second
   }
 
-  private async postMint(workspaceId: string, generation: number): Promise<WorkspaceMintOutcome> {
+  private async postMint(
+    workspaceId: string,
+    generation: number,
+    subject: string | null
+  ): Promise<WorkspaceMintOutcome> {
     const grant = loadGrant()
-    if (!grant || generation !== this.authGeneration || Date.now() < this.mintBlockedUntil)
+    if (
+      !grant ||
+      generation !== this.authGeneration ||
+      subject !== subjectOf(grant.accessToken) ||
+      Date.now() < this.mintBlockedUntil
+    )
       return RETRYABLE
     const outcome = classifyMint(await mintWorkspaceToken(grant.accessToken, workspaceId))
     if (
