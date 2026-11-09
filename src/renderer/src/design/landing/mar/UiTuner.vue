@@ -258,7 +258,7 @@ function onScroll(e: Event): void {
             <Seg v-model="account" label="Account" :options="ACCOUNTS" />
           </Row>
           <Row :show="shows('pageState')" label="Page state">
-            <Seg v-model="pageState.id" label="Page state" :options="PAGE_STATES" />
+            <Select v-model="pageState.id" :options="PAGE_STATES" class="w-full" />
           </Row>
           <Row :show="shows('credits')" label="Credits state">
             <Select v-model="creditsState.id" :options="CREDITS_STATES" class="w-full" />
