@@ -8,6 +8,7 @@ import {
   Download,
   FileOutput,
   Grid3x3,
+  CloudOff,
   ImageOff,
   Layers,
   LayoutDashboard,
@@ -32,6 +33,7 @@ import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 import MarItem from '../pages/MarItem.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
+import { pageState } from '../pages/pageState'
 import MediaChip from '../MediaChip.vue'
 import type { MarAsset } from '../pages/assetsStore'
 import type { MenuLine } from '../pages/menu'
@@ -498,8 +500,22 @@ function upload(files: FileList | null | undefined): void {
       @drop.prevent="upload($event.dataTransfer?.files)"
     >
       <div v-if="dropping" class="ap-drop"><Upload :size="18" />Drop to add to Imported</div>
+      <!-- Page state (UI Playground): reading the assets, or the server
+           not answering, with Try again (PRD P1-02). -->
+      <div v-if="pageState.id === 'loading'" class="ap-skel" aria-label="Loading assets">
+        <i v-for="n in 8" :key="n" />
+      </div>
+      <MarEmpty
+        v-else-if="pageState.id === 'error'"
+        compact
+        :icon="CloudOff"
+        title="Couldn’t load assets"
+        text="ComfyUI didn’t answer. Your files are safe."
+        action="Try again"
+        @action="pageState.id = 'live'"
+      />
       <div
-        v-if="shown.length"
+        v-else-if="shown.length"
         class="ap-items"
         :class="[`is-${view}`, !showName && 'no-name', !showDetails && 'no-meta']"
         :style="{ '--ap-cols': cols }"
@@ -861,5 +877,27 @@ function upload(files: FileList | null | undefined): void {
 }
 :root .proto-ui.proto-ui.proto-ui .ap-views .mar-pseg-btn {
   flex: 1;
+}
+.ap-skel {
+  display: grid;
+  grid-template-columns: repeat(var(--ap-cols, 2), minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+.ap-skel i {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  animation: ap-skel 1.4s ease-in-out infinite;
+}
+@keyframes ap-skel {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ap-skel i {
+    animation: none;
+  }
 }
 </style>
