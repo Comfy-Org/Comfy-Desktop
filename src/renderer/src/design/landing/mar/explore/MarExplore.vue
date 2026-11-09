@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Check, Clock, ListFilter, Play, Plus, X } from 'lucide-vue-next'
+import { Clock, ListFilter, Play, X } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
-import Button from '../../ui/Button.vue'
 import DropdownMenuCheckboxItem from '../../ui/DropdownMenuCheckboxItem.vue'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
@@ -11,10 +10,9 @@ import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
 import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import Select from '../../ui/Select.vue'
-import Tooltip from '../../ui/Tooltip.vue'
 import TemplateCard from '../../parts/TemplateCard.vue'
 import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
-import { EXPLORE, STARTER_APPS, isAdded, openAppPage, toggleAdded } from '../../appFlow'
+import { EXPLORE, STARTER_APPS, openAppPage } from '../../appFlow'
 import { goIn, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
@@ -222,22 +220,6 @@ const toolsAt = computed(() => (can.value.explore ? 'toolbar' : 'actions'))
               }}</span>
               <span class="block truncate text-ui text-subtle-foreground">{{ a.blurb }}</span>
             </span>
-            <!-- Add to my apps: beside the name, never over the picture,
-                 so it reads on any image. No library yet at Explore apps. -->
-            <Tooltip v-if="can.explore" :content="isAdded(a.id) ? 'In my apps' : 'Add to my apps'">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                class="mar-ex-add"
-                :class="isAdded(a.id) && 'is-added'"
-                :aria-pressed="isAdded(a.id)"
-                :aria-label="`${isAdded(a.id) ? 'Remove' : 'Add'} ${a.name} ${isAdded(a.id) ? 'from' : 'to'} my apps`"
-                @click.stop="toggleAdded(a)"
-                @keydown.enter.stop
-              >
-                <Check v-if="isAdded(a.id)" :size="15" /><Plus v-else :size="15" />
-              </Button>
-            </Tooltip>
           </span>
         </div>
       </div>
@@ -361,18 +343,6 @@ const toolsAt = computed(() => (can.value.explore ? 'toolbar' : 'actions'))
   height: 100%;
   object-fit: cover;
   transition: transform 500ms ease;
-}
-/* Add to my apps: quiet until the card is hovered or it is added. */
-.mar-ex-add {
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-.mar-ex-card:is(:hover, :focus-within) .mar-ex-add,
-.mar-ex-add.is-added {
-  opacity: 1;
-}
-.mar-ex-add.is-added {
-  color: var(--color-base-foreground);
 }
 .mar-ex-play,
 .mar-ex-time {
