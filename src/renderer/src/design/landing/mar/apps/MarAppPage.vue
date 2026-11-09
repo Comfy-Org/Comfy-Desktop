@@ -264,48 +264,35 @@ function back(): void {
               ><Share2 :size="16"
             /></Button>
           </PopoverTrigger>
-          <!-- Share: the app, its link to copy, and once you've run it,
-               whether your result goes with it. -->
-          <PopoverContent align="end" class="w-[340px] p-0">
-            <div class="flex items-center gap-3 px-4 pt-4">
-              <img
-                :src="input"
-                alt=""
-                class="size-9 shrink-0 rounded-control border border-border-default object-cover"
-              />
+          <!-- Share: the app and its link, copied in one click; once you've
+               run it, whether your result goes with it. -->
+          <PopoverContent align="end" class="mar-app-share w-[320px] border-0 p-0">
+            <div class="mar-app-share-head">
+              <img :src="thumb(thumbId)" alt="" />
               <div class="min-w-0">
-                <p class="truncate text-ui font-semibold">Share {{ name }}</p>
-                <p class="text-ui text-muted-foreground">Anyone with the link can run it.</p>
+                <p class="truncate text-ui font-semibold">{{ name }}</p>
+                <p class="text-[12px] text-balance text-muted-foreground">
+                  Anyone with the link can run it, on their credits.
+                </p>
               </div>
             </div>
-            <div class="flex flex-col gap-3 px-4 pt-3 pb-4">
-              <input
-                :value="`https://${link}`"
-                readonly
-                tabindex="-1"
-                aria-label="Link"
-                class="h-8 w-full truncate rounded-control bg-secondary-background px-2.5 font-mono text-[11px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
-                @focus="($event.target as HTMLInputElement).select()"
-              />
-              <label v-if="state === 'done'" class="flex items-center justify-between gap-3">
-                <span class="min-w-0">
-                  <span class="block text-ui">Include your result</span>
-                  <span class="block text-ui text-subtle-foreground"
-                    >They see what you made before they run it.</span
-                  >
-                </span>
-                <Switch v-model="withResult" aria-label="Include your result" />
-              </label>
-            </div>
-            <div
-              class="flex items-center justify-between gap-2 border-t border-border-default px-4 py-3"
-            >
-              <span class="flex items-center gap-1.5 text-ui text-subtle-foreground"
-                ><Globe :size="13" />Runs on their credits</span
-              >
-              <Button variant="secondary" size="sm" @click="copy"
+            <label v-if="state === 'done'" class="mar-app-share-opt">
+              <img :src="result" alt="" :style="{ filter: shownFilter }" />
+              <span class="min-w-0 flex-1">
+                <span class="block text-ui">Include your result</span>
+                <span class="block text-[12px] text-subtle-foreground"
+                  >They see it before they run.</span
+                >
+              </span>
+              <Switch v-model="withResult" aria-label="Include your result" />
+            </label>
+            <div class="mar-app-share-link">
+              <button type="button" class="mar-app-share-url" title="Copy link" @click="copy">
+                <Globe :size="13" /><span>{{ link }}</span>
+              </button>
+              <Button variant="primary" size="sm" class="mar-app-share-copy" @click="copy"
                 ><Check v-if="copied" :size="13" /><Link2 v-else :size="13" />{{
-                  copied ? 'Copied' : 'Copy link'
+                  copied ? 'Copied' : 'Copy'
                 }}</Button
               >
             </div>
@@ -816,6 +803,73 @@ function back(): void {
   padding-block: 72px;
 }
 /* With your takes under the picture, they share the bottom margin. */
+/* Share: the app, then its link with Copy beside it; no rules. */
+:root .proto-ui .mar-app-share.mar-app-share {
+  border: 0;
+  padding: 6px;
+  border-radius: 14px;
+}
+.mar-app-share-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 12px;
+}
+.mar-app-share-head img {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.mar-app-share-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  cursor: pointer;
+}
+.mar-app-share-opt img {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.mar-app-share-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-share-url {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  text-align: left;
+}
+.mar-app-share-url span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-share-url:hover {
+  color: var(--color-base-foreground);
+}
+.mar-app-share-copy {
+  flex: none;
+}
 /* Along the bottom, as in the asset modal. */
 .mar-app-editor-outbar {
   position: absolute;

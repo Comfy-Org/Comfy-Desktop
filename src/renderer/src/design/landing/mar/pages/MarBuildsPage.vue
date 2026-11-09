@@ -30,9 +30,6 @@ import Tooltip from '../../ui/Tooltip.vue'
 import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
-import SetupCloud from '../setup/SetupCloud.vue'
-import SetupLaptop from '../setup/SetupLaptop.vue'
-import { localSetup } from '../setup/setupFlow'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import { can } from '../../milestones'
 import { buildsAsM1 } from '../build/buildsAsM1'
@@ -602,12 +599,9 @@ const newLabel = computed(() =>
         :class="stopping.has(b.id) && 'is-stopping'"
         @open="!stopping.has(b.id) && open(b)"
       >
-        <!-- Home's machines, without the build's colour. -->
         <template #media>
-          <span class="mar-bc-device">
-            <SetupCloud v-if="b.kind === 'cloud'" mono />
-            <SetupLaptop v-else :os="localSetup.os" />
-          </span>
+          <Server v-if="whereOf(b) === 'remote'" :size="16" />
+          <LocationIcon v-else :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />
         </template>
         <template #meta
           ><span class="mar-bc-specs-text">{{ specs(b) }}</span
@@ -1278,14 +1272,5 @@ const newLabel = computed(() =>
   margin: 12px 8px 4px;
   padding-top: 12px;
   border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
-}
-.mar-bc-device {
-  display: block;
-  flex: none;
-}
-.mar-bc-device .mss-laptop {
-  display: block;
-  width: 34px;
-  height: 22px;
 }
 </style>
