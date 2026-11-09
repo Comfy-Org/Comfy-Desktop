@@ -39,7 +39,8 @@ const {
   list,
   build,
   editable = false,
-  tab = false
+  tab = false,
+  details = true
 } = defineProps<{
   asset: MarAsset
   list: MarAsset[]
@@ -50,6 +51,9 @@ const {
   /** ComfyUI in Production: the asset fills a tab beside the workflows,
    *  the tab's X closes it, no filmstrip or zoom. */
   tab?: boolean
+  /** Whether the details panel starts open. A double-click opens the view
+   *  for the picture, with Details a click away. */
+  details?: boolean
 }>()
 const emit = defineEmits<{ close: []; go: [asset: MarAsset] }>()
 
@@ -99,7 +103,7 @@ const setZoom = (z: number): void => {
   zoom.value = Math.min(300, Math.max(50, Math.round(z / ZOOM_STEP) * ZOOM_STEP))
 }
 /** The details panel folds away for the picture alone. */
-const side = ref(true)
+const side = ref(details)
 
 // The filmstrip keeps the current asset in view.
 const strip = ref<HTMLElement>()
@@ -231,12 +235,15 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="mad-icon"
+            :class="!side && 'is-label'"
             :aria-label="side ? 'Hide details' : 'Show details'"
             :title="side ? 'Hide details' : 'Show details'"
             :aria-pressed="side"
             @click="side = !side"
           >
-            <PanelRightClose v-if="side" :size="16" /><PanelRightOpen v-else :size="16" />
+            <PanelRightClose v-if="side" :size="16" /><template v-else
+              ><PanelRightOpen :size="16" />Details</template
+            >
           </button>
         </header>
         <button
@@ -538,6 +545,14 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-arrow.is-right {
   right: 16px;
   left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-icon.is-label {
+  width: auto;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  font-size: 13px;
+  font-weight: 500;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-icon:hover,
 :root .proto-ui.proto-ui.proto-ui .mad-arrow:hover:not(:disabled) {

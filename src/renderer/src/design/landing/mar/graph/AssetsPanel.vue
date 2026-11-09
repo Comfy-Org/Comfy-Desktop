@@ -327,18 +327,30 @@ if (graphOpen.inspect) {
   graphOpen.inspect = false
 }
 
-/** Phase 1, option A: double-click is ComfyUI's lightbox, a quick look;
+/** Phase 1, option A: double-click is a quick look: ComfyUI's lightbox as
+ *  today, our asset view with Details folded away in the proposal;
  *  Inspect asset opens the details in the side panel, so the workflow
  *  stays in view; the full view is asked for. With workflow tabs (the
  *  Current look) it opens in a tab beside them, otherwise over the window. */
 const lightbox = ref<PanelAsset | null>(null)
+const detailOpen = ref(true)
+function look(a: PanelAsset): void {
+  if (prod.value) lightbox.value = a
+  else {
+    detailOpen.value = false
+    detail.value = a
+  }
+}
 const inspect = (a: PanelAsset): void => showSide(a)
 const tabs = computed(() => graphStyle.id === 'current')
 const fullLabel = computed(() => (tabs.value ? 'Open in new tab' : 'Open full view'))
 function openFull(a: PanelAsset): void {
   if (tabs.value)
     Object.assign(assetTab, { asset: a, list: finished.value, build: a.kind, on: true })
-  else detail.value = a
+  else {
+    detailOpen.value = true
+    detail.value = a
+  }
 }
 
 // The product's asset menu (MediaAssetContextMenu), Inspect asset first.
@@ -625,7 +637,7 @@ function upload(files: FileList | null | undefined): void {
             class="ap-drag"
             draggable="true"
             @dragstart="drag(a, $event)"
-            @dblclick="!a.status && (lightbox = a)"
+            @dblclick="!a.status && look(a)"
           >
             <MarItem
               :name="a.name.replace(/\.[^.]+$/, '')"
@@ -743,6 +755,7 @@ function upload(files: FileList | null | undefined): void {
       :asset="detail"
       :list="finished"
       :build="detail.kind"
+      :details="detailOpen"
       editable
       @go="detail = $event as PanelAsset"
       @close="detail = null"
