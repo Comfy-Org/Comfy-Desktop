@@ -374,11 +374,15 @@ function wheel(e: WheelEvent): void {
   transform: none;
 }
 .mar-arc-does {
+  display: -webkit-box;
   min-width: 0;
   flex: 1;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: #fff;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.35;
   text-align: left;
   text-wrap: balance;

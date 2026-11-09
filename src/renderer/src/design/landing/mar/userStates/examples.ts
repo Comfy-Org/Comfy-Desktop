@@ -32,7 +32,7 @@ export interface Example {
 export const EXAMPLES: Example[] = [
   {
     label: 'Reshoot your product',
-    does: 'Shoot your product from a new angle',
+    does: 'Your product, new angle',
     app: 'e-reshoot',
     kind: 'Image',
     runs: '~20 s',
@@ -41,7 +41,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Relight a scene',
-    does: 'Change the light and time of day',
+    does: 'New light, new hour',
     app: 'e-relight',
     kind: 'Image',
     runs: '~20 s',
@@ -51,7 +51,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Cinematic Studio',
-    does: 'Turn a photo into a film still',
+    does: 'Photo to film still',
     app: 's-cine',
     kind: 'Image',
     runs: '~20 s',
@@ -60,7 +60,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Re-shoot a video',
-    does: 'Film the same scene from a new angle',
+    does: 'Same scene, new angle',
     app: 's-reshoot',
     kind: 'Video',
     runs: '~1 min',
@@ -70,7 +70,7 @@ export const EXAMPLES: Example[] = [
   },
   {
     label: 'Openjutsu',
-    does: 'Replace anyone in a video',
+    does: 'Swap anyone in a video',
     app: 's-jutsu',
     kind: 'Video',
     runs: '~1 min',
