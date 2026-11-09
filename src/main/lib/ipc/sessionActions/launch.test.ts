@@ -1550,7 +1550,7 @@ describe('core beta report placement', () => {
     }
     const OLDER_CORE: FeatureFlagRegistry = {}
     const injectedFeatureFlags = (args: string[]): string[] =>
-      args.flatMap((arg, i) => (arg === '--feature-flag' ? [args[i + 1]!] : []))
+      args.filter((_, i) => i > 0 && args[i - 1] === '--feature-flag')
 
     beforeEach(() => {
       launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag', 'list-feature-flags']
