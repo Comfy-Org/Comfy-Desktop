@@ -376,8 +376,8 @@
     "confirmInstall": "安装 ComfyUI"
   },
   "loadSnapshot": {
-    "grandTitle": "从快照恢复",
-    "grandSubtitle": "加载已保存的快照文件，以在此重新创建该构建。"
+    "grandTitle": "加载快照",
+    "grandSubtitle": "加载快照文件以安装构建。"
   },
   "newInstall": {
     "title": "安装新构建",

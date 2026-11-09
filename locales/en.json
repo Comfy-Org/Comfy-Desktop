@@ -376,8 +376,8 @@
     "confirmInstall": "Install ComfyUI"
   },
   "loadSnapshot": {
-    "grandTitle": "Restore From Snapshot",
-    "grandSubtitle": "Load a saved snapshot file to recreate that build here."
+    "grandTitle": "Load Snapshot",
+    "grandSubtitle": "Load a snapshot file to install a build."
   },
   "newInstall": {
     "title": "Install a New Build",
