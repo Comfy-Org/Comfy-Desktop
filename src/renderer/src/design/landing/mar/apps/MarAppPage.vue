@@ -28,7 +28,7 @@ import { EXAMPLES } from '../userStates/examples'
 /**
  * An app opens straight into its editor, as in the Hub's full-screen apps
  * (the shared editor kit, ComfyUI_frontend #20630, previewed with every app
- * in #20663): the result fills a dotted canvas; the header floats over it
+ * in #20663): the result fills a plain canvas; the header floats over it
  * with Back and the name, and Compare, Share and Download on the right; a
  * glass panel on the left holds what you give it, as tall as that, with
  * Run and its credits at its foot; a dock at the bottom holds your takes.
@@ -392,13 +392,8 @@ function back(): void {
   height: 100%;
   min-height: 560px;
   overflow: hidden;
-  /* The canvas: the editor's dot grid, as in the Hub. */
+  /* A plain canvas: an app is not a graph, so no dot grid. */
   background-color: var(--color-app-background);
-  background-image: radial-gradient(
-    color-mix(in oklch, var(--color-base-foreground) 14%, transparent) 1px,
-    transparent 1px
-  );
-  background-size: 24px 24px;
 }
 
 /* Header */
