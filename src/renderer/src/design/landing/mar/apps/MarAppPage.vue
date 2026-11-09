@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { appExamplesAt } from './appPage'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
   ArrowRight,
@@ -96,6 +97,8 @@ function load(x: AppExample | undefined): void {
   if (firstText.value) values[firstText.value] = x?.prompt ?? ''
 }
 load(example.value)
+// The examples strip over the stage (UI Playground › App examples).
+const onStage = computed(() => appExamplesAt.id === 'stage' && examples.value.length > 1)
 function pickExample(x: AppExample): void {
   if (state.value === 'running') return
   exId.value = x.id
@@ -318,6 +321,27 @@ function back(): void {
       <!-- Panel: what you give it, and Run at its foot -->
       <aside class="mar-app-editor-panel" aria-label="Input">
         <div class="mar-app-editor-fields">
+          <!-- UI Playground › App examples › Panel: the same strip, at the
+               top of the panel, before what you give it. -->
+          <div
+            v-if="appExamplesAt.id === 'panel' && state === 'idle' && examples.length > 1"
+            class="mar-app-editor-dock is-examples is-in-panel"
+            role="group"
+            aria-label="Examples"
+          >
+            <button
+              v-for="x in examples.slice(0, 5)"
+              :key="x.id"
+              type="button"
+              :title="x.title"
+              :aria-label="x.title"
+              :aria-pressed="x.id === exId"
+              :class="cn('mar-app-editor-take', x.id === exId && 'is-on')"
+              @click="pickExample(x)"
+            >
+              <img :src="x.after" alt="" />
+            </button>
+          </div>
           <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
             <h2 class="mar-app-editor-label">{{ f.label }}</h2>
             <button
@@ -383,14 +407,17 @@ function back(): void {
       </aside>
       <!-- Stage: the result, the example's until you run it (its examples
              over it), centred in its frame; your takes under it -->
-      <main class="mar-app-editor-stage" aria-label="Output">
+      <main
+        :class="cn('mar-app-editor-stage', appExamplesAt.id === 'panel' && 'is-examples-in-panel')"
+        aria-label="Output"
+      >
         <div class="mar-app-editor-canvas">
           <!-- Examples, on the top line of the picture's room: up to five
                of what this app has made, to start from like templates.
                Picking one fills the panel and shows its result; once you
                run, they go. -->
           <div
-            v-if="state === 'idle' && examples.length > 1"
+            v-if="state === 'idle' && onStage"
             class="mar-app-editor-dock is-examples"
             role="group"
             aria-label="Examples"
@@ -440,6 +467,15 @@ function back(): void {
               <Badge variant="overlay" size="md" class="absolute bottom-3 left-3">Before</Badge>
               <Badge variant="overlay" size="md" class="absolute right-3 bottom-3">After</Badge>
             </template>
+            <!-- No examples over it (one example, or they're in the panel):
+                 the picture says it's an example. -->
+            <Badge
+              v-if="state === 'idle' && !onStage"
+              variant="overlay"
+              size="md"
+              class="absolute top-3 left-3"
+              >Example</Badge
+            >
           </figure>
 
           <!-- Nothing yet -->
@@ -705,14 +741,36 @@ function back(): void {
   gap: 16px;
   /* Room for the examples across the top line, and a margin all round so
      the picture never fills the panel. */
-  padding: 88px 72px 72px;
+  padding: 88px 72px;
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-panel);
   background: var(--color-card-background);
 }
-/* With your takes under the picture, they take the bottom margin. */
+/* In the panel: in the flow, the panel's width, the thumbnails sharing it. */
+.mar-app-editor-dock.is-examples.is-in-panel {
+  position: static;
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  transform: none;
+}
+:root
+  .proto-ui.proto-ui.proto-ui
+  .mar-app-editor-dock.is-examples.is-in-panel
+  .mar-app-editor-take {
+  width: auto;
+  height: auto;
+  /* Five slots, square, however many the app has. */
+  flex: 0 0 calc((100% - 24px) / 5);
+  aspect-ratio: 1;
+}
+/* No strip over the stage: the same margin all round. */
+.mar-app-editor-stage.is-examples-in-panel {
+  padding-block: 72px;
+}
+/* With your takes under the picture, they share the bottom margin. */
 .mar-app-editor-stage:has(> .mar-app-editor-dock) {
-  padding-bottom: 24px;
+  padding-bottom: 34px;
 }
 .mar-app-editor-canvas {
   position: relative;

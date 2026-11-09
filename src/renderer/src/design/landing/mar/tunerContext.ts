@@ -14,7 +14,7 @@ import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
-import { appPage } from './apps/appPage'
+import { appExamplesAt, appPage } from './apps/appPage'
 import { templateStyle } from './brand/templateStyle'
 import { brandMotif } from './brand/brandMotif'
 import { creditsState } from './credits'
@@ -63,6 +63,8 @@ export const when = {
   appPage: computed(
     () => can.value.exploreApps && (!!appsProto.front || proto.page.startsWith('app:'))
   ),
+  // Where its examples sit: on the app's own screen, in the Hub editor.
+  appExamplesAt: computed(() => can.value.exploreApps && !!appsProto.front),
   firstRun: onFirstRun,
   // Examples show in the Original first run and on a first-time Home with
   // a build, in Recently used's place.
@@ -194,6 +196,7 @@ export const TWEAKS = {
   homeBackground: one(homeBackground, 'spotlight'),
   appsStage: one(appsStage, 'm1'),
   appPage: one(appPage, 'hub'),
+  appExamplesAt: one(appExamplesAt, 'stage'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
   editorEntry: one(editorEntry, 'rows'),

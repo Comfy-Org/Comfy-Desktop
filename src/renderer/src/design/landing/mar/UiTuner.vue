@@ -14,7 +14,7 @@ import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
-import { APP_PAGE_LOOKS, appPage } from './apps/appPage'
+import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
@@ -132,6 +132,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'firstRun', show: () => when.firstRun.value },
   { id: 'exampleLook', show: () => when.exampleLook.value },
   { id: 'appPage', show: () => when.appPage.value },
+  { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
   { id: 'editorEntry', show: () => when.editorEntry.value },
   { id: 'templates', show: () => when.templates.value },
   { id: 'buildCard', show: () => when.buildCard.value },
@@ -338,6 +339,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('appPage')" label="App page">
             <Select v-model="appPage.id" :options="APP_PAGE_LOOKS" class="w-full" />
+          </Row>
+          <Row :show="shows('appExamplesAt')" label="App examples">
+            <Select v-model="appExamplesAt.id" :options="APP_EXAMPLES_AT" class="w-full" />
           </Row>
           <Row :show="shows('editorEntry')" label="Node editor entry">
             <Select v-model="editorEntry.id" :options="EDITOR_ENTRIES" class="w-full" />

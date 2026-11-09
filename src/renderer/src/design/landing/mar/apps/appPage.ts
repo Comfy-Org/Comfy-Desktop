@@ -41,3 +41,37 @@ watch(
  *  shell. Your own apps keep their page with Access, Versions and API. */
 export const onHubPage = (a: LibApp): boolean =>
   can.value.design && appPage.id === 'hub' && a.group !== 'yours'
+
+/** Where an app's examples sit on its page (UI Playground › App examples):
+ *  on the top line of the stage, over the picture's room, or at the top of
+ *  the panel, before what you give it. */
+export type AppExamplesAt = 'stage' | 'panel'
+
+export const APP_EXAMPLES_AT: { value: AppExamplesAt; label: string }[] = [
+  { value: 'stage', label: 'Stage · on the top line of the picture' },
+  { value: 'panel', label: 'Panel · at the top, before the fields' }
+]
+
+const AT_KEY = 'comfy.design.mar.appExamplesAt'
+
+export const appExamplesAt = reactive<{ id: AppExamplesAt }>({
+  id: (() => {
+    try {
+      const v = localStorage.getItem(AT_KEY)
+      return APP_EXAMPLES_AT.some((l) => l.value === v) ? (v as AppExamplesAt) : 'stage'
+    } catch {
+      return 'stage'
+    }
+  })()
+})
+
+watch(
+  () => appExamplesAt.id,
+  (id) => {
+    try {
+      localStorage.setItem(AT_KEY, id)
+    } catch {
+      // Storage blocked: the pick lasts for this window only.
+    }
+  }
+)

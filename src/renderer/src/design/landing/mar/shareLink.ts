@@ -10,7 +10,7 @@ import { SURFACES, surface } from './shell/surface'
 import { homeBackground } from './shell/marShell'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
-import { APP_PAGE_LOOKS, appPage } from './apps/appPage'
+import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
@@ -127,6 +127,7 @@ const PARTS: Part[] = [
   one('homeBackground', homeBackground, 'spotlight', BACKGROUNDS),
   one('appsStage', appsStage, 'm1', APPS_STAGES),
   one('appPage', appPage, 'hub', APP_PAGE_LOOKS),
+  one('appExamplesAt', appExamplesAt, 'stage', APP_EXAMPLES_AT),
   one('firstRun', firstRun, 'original', FIRST_RUNS),
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
