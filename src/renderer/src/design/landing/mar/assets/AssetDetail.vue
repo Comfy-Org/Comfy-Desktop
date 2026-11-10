@@ -1,6 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Box, ChevronDown, Download, FolderOpen, Info, Plus, Workflow, X } from 'lucide-vue-next'
+import {
+  AppWindow,
+  Box,
+  ChevronDown,
+  Download,
+  FolderOpen,
+  Info,
+  Plus,
+  Workflow,
+  X
+} from 'lucide-vue-next'
 import { onClickOutside, useResizeObserver } from '@vueuse/core'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
@@ -30,7 +40,8 @@ const {
   editable = false,
   tab = false,
   saveable = false,
-  onWorkflow
+  onWorkflow,
+  onTab
 } = defineProps<{
   asset: MarAsset
   list: MarAsset[]
@@ -46,6 +57,9 @@ const {
   /** Desktop's Assets: Open workflow goes to ComfyUI with the asset
    *  selected (bound as @workflow); else a toast stands in. */
   onWorkflow?: (a: MarAsset) => void
+  /** ComfyUI with workflow tabs: the quick look can move to its own tab
+   *  (bound as @tab), the full view with its details. */
+  onTab?: (a: MarAsset) => void
 }>()
 const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
@@ -363,6 +377,9 @@ onBeforeUnmount(() => {
               <Workflow :size="14" /><span>{{
                 editable ? 'Open as workflow' : 'Open workflow'
               }}</span>
+            </button>
+            <button v-if="onTab && !tab" type="button" class="mad-btn" @click="onTab(asset)">
+              <AppWindow :size="14" /><span>Open in new tab</span>
             </button>
             <button v-if="saveable" type="button" class="mad-btn" @click="emit('save')">
               <Plus :size="14" /><span>Save to Assets</span>
@@ -704,7 +721,7 @@ onBeforeUnmount(() => {
 .mad-actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
   margin: 0 16px;
   padding: 14px 0 16px;
 }

@@ -839,6 +839,7 @@ function upload(files: FileList | null | undefined): void {
       :list="finished"
       :build="detail.kind"
       editable
+      :on-tab="tabs ? (a: MarAsset) => ((detail = null), openFull(a as PanelAsset)) : undefined"
       @go="detail = $event as PanelAsset"
       @close="detail = null"
     />
