@@ -90,7 +90,7 @@ import type { LaunchProgressTracker } from '../../launchProgress'
 import { clearCrash, recordCrash } from '../../crashBuffer'
 import type { ComfyExitedData } from '../../../../types/ipc'
 import * as telemetry from '../../telemetry'
-import { buildErrorFields, errorTail } from '../../../../shared/errorEvent'
+import { buildErrorFields, errorTail, findExceptionLine } from '../../../../shared/errorEvent'
 import {
   startBootPhases,
   recordBootPhase,
@@ -615,7 +615,10 @@ async function vcRuntimeHint(): Promise<string> {
 async function describeExitCode(code: number | null, stderr: string): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
-  if (!decoded) return isDllLoadFailure(stderr) ? `${code}${await vcRuntimeHint()}` : String(code)
+  if (!decoded) {
+    const dllFailure = isDllLoadFailure(findExceptionLine(stderr) ?? '')
+    return dllFailure ? `${code}${await vcRuntimeHint()}` : String(code)
+  }
   let out = `${decoded.code} / ${decoded.hex}`
   if (decoded.kind === 'access-violation') {
     out += ' (memory access violation — usually a faulty or missing native library)'

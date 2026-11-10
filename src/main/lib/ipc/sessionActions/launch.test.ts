@@ -243,11 +243,14 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
-const vcRuntime = vi.hoisted(() => ({ missing: [] as string[] }))
+const vcRuntime = vi.hoisted(() => ({ missing: [] as string[], auditThrows: false }))
 
 vi.mock('../../vcRuntimeAudit', async (importOriginal) => ({
   ...(await importOriginal<typeof VcRuntimeAuditModule>()),
-  auditVcRuntime: async () => vcRuntime.missing
+  auditVcRuntime: async () => {
+    if (vcRuntime.auditThrows) throw new Error('System32 unreadable')
+    return vcRuntime.missing
+  }
 }))
 
 vi.mock('../../comfy-args', async (importOriginal) => {
@@ -5215,11 +5218,11 @@ describe('prior ComfyUI process handling at launch', () => {
     )
   })
 
-  const failBootWith = (stderr: string): void => {
+  const failBootWith = (stderr: string, exitCode = 1): void => {
     launchHarness.waitForPort = async () => {
       const first = children[0]!
       first.stderr.emit('data', Buffer.from(stderr))
-      first.emit('close', 1, null)
+      first.emit('close', exitCode, null)
       return new Promise<void>(() => {})
     }
   }
@@ -5293,6 +5296,7 @@ describe('prior ComfyUI process handling at launch', () => {
 
     afterEach(() => {
       vcRuntime.missing = []
+      vcRuntime.auditThrows = false
     })
 
     it('adds the VC++ runtime hint when the runtime is missing', async () => {
@@ -5323,6 +5327,55 @@ describe('prior ComfyUI process handling at launch', () => {
 
       expect(res.message).toBe(
         'Process exited with code 1\n\nTraceback (most recent call last):\nRuntimeError: CUDA error'
+      )
+    })
+
+    it('ignores a DLL failure the start survived when another error ends it', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      const stderr =
+        'ImportError: DLL load failed while importing _ext: module not found.\n' +
+        'Cannot import custom_nodes/some_node module for custom nodes\n' +
+        'Traceback (most recent call last):\nRuntimeError: CUDA error\n'
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-survived'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${stderr.trim()}`)
+    })
+
+    it('leaves the message alone when the runtime check fails', async () => {
+      setArgs()
+      vcRuntime.auditThrows = true
+      failBootWith(C10_NOT_FOUND)
+
+      const res = await handleLaunch(ctxFor('dll-audit-throws'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${C10_NOT_FOUND.trim()}`)
+    })
+
+    it('keeps the hint on an access-violation exit', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140.dll']
+      failBootWith('Fatal Python error: Segmentation fault\n', 0xc0000005)
+
+      const res = await handleLaunch(ctxFor('dll-access-violation'))
+
+      expect(res.message).toBe(
+        'Process exited with code 3221225477 / 0xC0000005 (memory access violation — usually a ' +
+          `faulty or missing native library)${HINT}\n\nFatal Python error: Segmentation fault`
+      )
+    })
+
+    it('adds no DLL hint to a native crash code that is not an access violation', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140.dll']
+      failBootWith(C10_NOT_FOUND, 0xc0000409)
+
+      const res = await handleLaunch(ctxFor('dll-stack-overrun'))
+
+      expect(res.message).toBe(
+        `Process exited with code 3221226505 / 0xC0000409\n\n${C10_NOT_FOUND.trim()}`
       )
     })
   })
