@@ -106,6 +106,21 @@ export interface Field {
   on: boolean
   options?: string[]
   placeholder?: string
+  /** How the editor shows it when a plain field won't do, as in the hub
+   *  apps' own panels: a list, a number with its unit, on or off, a seed. */
+  control?: 'select' | 'number' | 'switch' | 'seed'
+  /** Where it starts, when that isn't the first option. */
+  value?: string
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  /** A line under it: what a clip should be, say. */
+  hint?: string
+  /** A picture, or a clip. */
+  accept?: 'image' | 'video'
+  /** The panel section it sits under, as on the hub. */
+  group?: string
 }
 
 export interface Person {
@@ -541,6 +556,295 @@ export const EXAMPLE_APPS: LibApp[] = [
   )
 ]
 
+const select = (
+  id: string,
+  label: string,
+  node: string,
+  options: string[],
+  value: string,
+  group?: string
+): Field => ({
+  id,
+  label,
+  kind: 'choice',
+  node,
+  on: true,
+  control: 'select',
+  options,
+  value,
+  group
+})
+const seedField = (node: string): Field => ({
+  id: 'seed',
+  label: 'Seed',
+  kind: 'count',
+  node,
+  on: true,
+  control: 'seed',
+  group: 'Advanced'
+})
+const DIRECTION = 'Direction'
+
+/** What each starter asks for: the settings of its panel on the hub
+ *  (comfy.org/hub/apps), in the same order, with the same choices and
+ *  where they start. */
+const CINEMATIC_FIELDS: Field[] = [
+  {
+    id: 'mode',
+    label: 'Make',
+    kind: 'choice',
+    node: 'Mode #1',
+    on: true,
+    options: ['Image', 'Video']
+  },
+  select(
+    'model',
+    'Model',
+    'Model #2',
+    ['Seedream 5.0 Pro', 'Nano Banana Pro', 'GPT Image 2'],
+    'Seedream 5.0 Pro'
+  ),
+  {
+    id: 'scene',
+    label: 'Scene',
+    kind: 'text',
+    node: 'Prompt #3',
+    on: true,
+    placeholder: 'Describe the moment. Who, where, what is happening.'
+  },
+  {
+    id: 'character',
+    label: 'Character reference',
+    kind: 'image',
+    node: 'Load Image #4',
+    on: true,
+    hint: 'Optional'
+  },
+  {
+    id: 'enhance',
+    label: 'AI prompt',
+    kind: 'choice',
+    node: 'Prompt enhancer #5',
+    on: true,
+    control: 'switch',
+    options: ['On', 'Off']
+  },
+  select(
+    'camera',
+    'Camera',
+    'Direction #6',
+    ['Auto', 'Digital cinema', 'Large format', 'Super 35', '35mm film', '16mm film', 'Handheld'],
+    'Large format',
+    DIRECTION
+  ),
+  select(
+    'lens',
+    'Lens',
+    'Direction #6',
+    ['Auto', 'Spherical', 'Anamorphic', 'Vintage', 'Macro', 'Tilt-shift'],
+    'Anamorphic',
+    DIRECTION
+  ),
+  select(
+    'framing',
+    'Framing',
+    'Direction #6',
+    [
+      'Auto',
+      'Extreme wide',
+      'Wide',
+      'Medium',
+      'Close-up',
+      'Extreme close-up',
+      'Over the shoulder',
+      'Low angle'
+    ],
+    'Medium',
+    DIRECTION
+  ),
+  select(
+    'light',
+    'Light',
+    'Direction #6',
+    [
+      'Auto',
+      'Golden hour',
+      'Overcast',
+      'Blue hour',
+      'Practical night',
+      'Neon',
+      'Low key',
+      'Silhouette'
+    ],
+    'Practical night',
+    DIRECTION
+  ),
+  select(
+    'film',
+    'Film',
+    'Direction #6',
+    [
+      'Auto',
+      'Digital clean',
+      'Tungsten 500T',
+      'Daylight 250D',
+      'Black & white 400',
+      'Reversal slide',
+      'Expired film',
+      'Bleach bypass'
+    ],
+    'Tungsten 500T',
+    DIRECTION
+  ),
+  select(
+    'look',
+    'Look',
+    'Direction #6',
+    [
+      'Auto',
+      'Neo-noir',
+      'Western',
+      'Science fiction',
+      'Period drama',
+      'Thriller',
+      'Documentary',
+      'Road movie'
+    ],
+    'Neo-noir',
+    DIRECTION
+  ),
+  select(
+    'grade',
+    'Grade',
+    'Direction #6',
+    ['Auto', 'Teal and orange', 'Noir', 'Kodachrome', 'Neon night', 'Desert dust', 'Nordic cold'],
+    'Teal and orange',
+    DIRECTION
+  ),
+  select(
+    'aspect',
+    'Aspect ratio',
+    'Format #7',
+    ['21:9', '16:9', '4:3', '3:2', '2:3', '1:1', '9:16'],
+    '16:9',
+    'Format'
+  ),
+  {
+    ...select('size', 'Resolution', 'Format #7', ['1K', '2K'], '2K', 'Format'),
+    control: undefined
+  },
+  {
+    id: 'count',
+    label: 'Takes',
+    kind: 'count',
+    node: 'Batch size #8',
+    on: true,
+    options: ['1', '2', '3', '4'],
+    group: 'Format'
+  }
+]
+
+const axis = (
+  id: string,
+  label: string,
+  value: number,
+  min: number,
+  max: number,
+  step: number,
+  unit?: string
+): Field => ({
+  id,
+  label,
+  kind: 'count',
+  node: 'Camera #2',
+  on: true,
+  control: 'number',
+  value: String(value),
+  min,
+  max,
+  step,
+  unit,
+  group: 'New camera'
+})
+const RESHOOT_FIELDS: Field[] = [
+  {
+    id: 'clip',
+    label: 'Your clip',
+    kind: 'image',
+    node: 'Load Video #1',
+    on: true,
+    accept: 'video',
+    hint: '5–15 seconds, clear subject, no black bars'
+  },
+  axis('rotation', 'Rotation', -30, -180, 180, 5, '°'),
+  axis('tilt', 'Tilt', 15, -45, 45, 5, '°'),
+  axis('distance', 'Distance', 1, 0.5, 2, 0.05),
+  axis('lens', 'Lens', 50, 20, 120, 5, '°'),
+  axis('height', 'Height', 0, -1, 1, 0.05),
+  {
+    id: 'aim',
+    label: "Keep the source camera's aim",
+    kind: 'choice',
+    node: 'Camera #2',
+    on: true,
+    control: 'switch',
+    options: ['Off', 'On'],
+    group: 'New camera'
+  },
+  {
+    id: 'reveal',
+    label: 'What the new view reveals',
+    kind: 'text',
+    node: 'Prompt #3',
+    on: true,
+    placeholder: 'Optional, e.g. a stone wall behind her, more wheat to the left'
+  },
+  select(
+    'aspect',
+    'Aspect ratio',
+    'Format #4',
+    ['Match source', '16:9', '9:16', '1:1'],
+    'Match source',
+    'Format'
+  ),
+  {
+    ...select('size', 'Output size', 'Format #4', ['480p', '768p'], '480p', 'Format'),
+    control: undefined
+  },
+  select('sound', 'Sound', 'Audio #5', ['Generated', 'Original audio'], 'Generated', 'Format'),
+  seedField('Sampler #6')
+]
+
+const OPENJUTSU_FIELDS: Field[] = [
+  {
+    id: 'clip',
+    label: 'Video',
+    kind: 'image',
+    node: 'Load Video #1',
+    on: true,
+    accept: 'video',
+    hint: 'MP4 or MOV · up to 15 s is used'
+  },
+  { id: 'photo', label: 'Character image', kind: 'image', node: 'Load Image #2', on: true },
+  {
+    id: 'direction',
+    label: 'Extra direction',
+    kind: 'text',
+    node: 'Prompt #3',
+    on: true,
+    placeholder:
+      'Optional: add character details or fix the last take, e.g. darker jacket, keep the glasses, less smiling.'
+  },
+  select(
+    'quality',
+    'Quality',
+    'Resolution #4',
+    ['768p · Sharper', '480p · Faster'],
+    '768p · Sharper'
+  ),
+  seedField('Sampler #5')
+]
+
 /** The starter apps, first in Explore: the apps on comfy.org, plus Image
  *  Generator as the fourth. Costs are samples. */
 export const STARTER_APPS: LibApp[] = [
@@ -553,7 +857,7 @@ export const STARTER_APPS: LibApp[] = [
       'Comfy',
       0.31
     ),
-    fields: [describeField('A woman on a rooftop at golden hour, slow push in')]
+    fields: CINEMATIC_FIELDS
   },
   {
     ...hub(
@@ -564,7 +868,7 @@ export const STARTER_APPS: LibApp[] = [
       'Comfy',
       0.31
     ),
-    fields: [{ id: 'clip', label: 'Your clip', kind: 'image', node: 'Load Video #1', on: true }]
+    fields: RESHOOT_FIELDS
   },
   {
     ...hub(
@@ -575,11 +879,7 @@ export const STARTER_APPS: LibApp[] = [
       'Comfy',
       0.31
     ),
-    fields: [
-      { id: 'clip', label: 'Video', kind: 'image', node: 'Load Video #1', on: true },
-      { id: 'photo', label: 'Character image', kind: 'image', node: 'Load Image #2', on: true },
-      describeField('Optional: add character details')
-    ]
+    fields: OPENJUTSU_FIELDS
   },
   {
     ...hub(
