@@ -383,9 +383,10 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgb(0 0 0 / 0.35);
-  -webkit-backdrop-filter: blur(16px) saturate(0.9);
-  backdrop-filter: blur(16px) saturate(0.9);
+  /* Dim and quiet, so the picture in the modal is the only color. */
+  background: rgb(0 0 0 / 0.62);
+  -webkit-backdrop-filter: blur(20px) saturate(0.45);
+  backdrop-filter: blur(20px) saturate(0.45);
   animation: mad-in 0.18s ease-out;
 }
 .mad-host {
