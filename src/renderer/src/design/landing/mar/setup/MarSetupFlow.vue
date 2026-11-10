@@ -494,11 +494,14 @@ function rowState(i: number): string {
               <div class="mss-first-consent">
                 <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
                   <Checkbox v-model="terms" />
-                  <span class="grid"
-                    ><span
-                      >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
-                      <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.</span
-                    ><span v-if="termsAsk && !terms" class="mss-terms-ask" role="alert"
+                  <!-- The nudge sits on the same line, so nothing on the
+                     screen moves when it appears. -->
+                  <span
+                    >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
+                    <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.<span
+                      v-if="termsAsk && !terms"
+                      class="mss-terms-ask"
+                      role="alert"
                       >Agree to continue.</span
                     ></span
                   >
