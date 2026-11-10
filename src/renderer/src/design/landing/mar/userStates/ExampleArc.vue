@@ -369,6 +369,11 @@ function wheel(e: WheelEvent): void {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  transition: opacity 200ms ease-out;
+}
+/* Only the front card wears it: on the turned side cards it squeezes. */
+.mar-arc-card:not(.is-front) .mar-arc-app {
+  opacity: 0;
 }
 /* The name and what it does, one row at the bottom of every card, as
    on the app cards; Run joins it on the front card when you point at it

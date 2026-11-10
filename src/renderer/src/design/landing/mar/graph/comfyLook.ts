@@ -37,8 +37,9 @@ export const assetTab = reactive<{
 }>({ asset: null, list: [], build: '', on: false })
 
 /** Proposal: Assets expanded from its panel to a whole tab (the
- *  library, as on Desktop's Assets page); `on` while it's the tab shown. */
-export const assetsTab = reactive({ open: false, on: false })
+ *  library, as on Desktop's Assets page); `on` while it's the tab shown,
+ *  `workflow` the one open beside it, named in the title bar. */
+export const assetsTab = reactive({ open: false, on: false, workflow: '' })
 /** The files the tab browses: the panel's own, handed over on expand. */
 export const graphLibrary = collection<MarAsset>([], 'asset')
 

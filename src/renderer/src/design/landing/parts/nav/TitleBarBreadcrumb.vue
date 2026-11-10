@@ -120,6 +120,7 @@ const crumb = (active: boolean): string =>
         v-if="state.assets"
         :front="state.assets.front"
         :crumb="crumb(state.assets.front)"
+        :crumb-off="crumb(!state.assets.front)"
         @command="emit('command', $event)"
       />
       <div

@@ -1217,6 +1217,8 @@ onBeforeUnmount(() => {
   clearTimeout(toastTimer)
   clearTimeout(textTimer)
 })
+// The title bar names it on its tab beside Assets.
+watch(shownWorkflow, (w) => (assetsTab.workflow = w), { immediate: true })
 
 // The rail as ComfyUI's SideToolbar orders it; shortcuts are its defaults
 // (platform/keybindings/defaults.ts).
