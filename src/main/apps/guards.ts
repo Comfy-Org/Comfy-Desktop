@@ -268,6 +268,7 @@ export function textAnswer(status: number, text: string): LocalAnswer {
 
 export type LocalRequest =
   | { kind: 'get'; path: string }
+  | { kind: 'queue'; path: '/queue' }
   | { kind: 'prompt'; path: '/prompt'; json: string }
   | { kind: 'json'; path: '/interrupt' | '/queue'; json: string }
   | { kind: 'upload'; path: '/upload/image'; bytes: Uint8Array; fileName: string }
@@ -324,6 +325,125 @@ export function queueJson(body: unknown): string | null {
   return JSON.stringify({ delete: ids })
 }
 
+export interface RunSeen {
+  startedAt: number
+  done?: number
+  of?: number
+}
+
+const MAX_RUNS_SEEN = 50
+const RUN_END_TYPES = ['execution_success', 'execution_error', 'execution_interrupted']
+
+export function noteRun(
+  seen: Map<string, RunSeen>,
+  msg: { type: string; data: unknown },
+  now: number
+): void {
+  const data = (msg.data ?? {}) as { prompt_id?: unknown; value?: unknown; max?: unknown }
+  const id = data.prompt_id
+  if (!isRunId(id)) return
+  if (msg.type === 'execution_start') {
+    seen.delete(id)
+    seen.set(id, { startedAt: now })
+    for (const old of seen.keys()) {
+      if (seen.size <= MAX_RUNS_SEEN) break
+      seen.delete(old)
+    }
+    return
+  }
+  if (msg.type === 'progress') {
+    const run = seen.get(id)
+    const { value, max } = data
+    if (!run || typeof value !== 'number' || typeof max !== 'number') return
+    if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) return
+    run.done = Math.max(0, Math.min(value, max))
+    run.of = max
+    return
+  }
+  if (RUN_END_TYPES.includes(msg.type)) seen.delete(id)
+}
+
+export interface QueueRun {
+  id: string
+  app: string | null
+  seconds: number | null
+  startedAt?: number
+  done?: number
+  of?: number
+}
+
+export interface QueueView {
+  running: QueueRun[]
+  pending: QueueRun[]
+}
+
+const MAX_QUEUE_RUNS = 100
+const APP_TAG_NAME = /^[A-Za-z0-9 .,()&'-]{1,40}$/
+
+function appTag(extra: unknown): { app: string | null; seconds: number | null } {
+  const tag = (extra as { comfy_app?: unknown } | null)?.comfy_app
+  if (!tag || typeof tag !== 'object') return { app: null, seconds: null }
+  const { name, seconds } = tag as { name?: unknown; seconds?: unknown }
+  return {
+    app: typeof name === 'string' && APP_TAG_NAME.test(name) ? name : null,
+    seconds:
+      typeof seconds === 'number' && Number.isFinite(seconds) && seconds > 0 && seconds <= 86_400
+        ? Math.round(seconds)
+        : null
+  }
+}
+
+function queueRuns(list: unknown, seen: ReadonlyMap<string, RunSeen>): QueueRun[] {
+  if (!Array.isArray(list)) return []
+  const runs: Array<{ n: number; run: QueueRun }> = []
+  for (const item of list) {
+    if (!Array.isArray(item)) continue
+    const n = typeof item[0] === 'number' && Number.isFinite(item[0]) ? item[0] : 0
+    const id = isRunId(item[1]) ? item[1] : ''
+    const s = id ? seen.get(id) : undefined
+    runs.push({
+      n,
+      run: {
+        id,
+        ...appTag(item[3]),
+        ...(s ? { startedAt: s.startedAt } : {}),
+        ...(s?.of ? { done: s.done ?? 0, of: s.of } : {})
+      }
+    })
+  }
+  return runs
+    .sort((a, b) => a.n - b.n)
+    .slice(0, MAX_QUEUE_RUNS)
+    .map((r) => r.run)
+}
+
+export function queueView(raw: unknown, seen: ReadonlyMap<string, RunSeen> = new Map()): QueueView {
+  const q = (raw && typeof raw === 'object' ? raw : {}) as {
+    queue_running?: unknown
+    queue_pending?: unknown
+  }
+  return { running: queueRuns(q.queue_running, seen), pending: queueRuns(q.queue_pending, seen) }
+}
+
+export function queueAnswer(
+  status: number,
+  body: Uint8Array,
+  seen: ReadonlyMap<string, RunSeen>
+): LocalAnswer {
+  if (status < 200 || status >= 300) return textAnswer(status, 'ComfyUI did not show its queue.')
+  let raw: unknown
+  try {
+    raw = JSON.parse(new TextDecoder().decode(body))
+  } catch {
+    return textAnswer(502, 'ComfyUI sent a queue Desktop could not read.')
+  }
+  return {
+    status: 200,
+    contentType: 'application/json',
+    body: new TextEncoder().encode(JSON.stringify(queueView(raw, seen)))
+  }
+}
+
 function promptJson(body: unknown): string | null {
   let value = body
   if (typeof body === 'string') {
@@ -357,6 +477,7 @@ export function localRequest(input: unknown): LocalRequest | LocalRefusal {
   const query = url.search !== ''
   if (method === 'GET') {
     if (p === '/system_stats' && !query) return { kind: 'get', path: p }
+    if (p === '/queue' && !query) return { kind: 'queue', path: p }
     if (/^\/object_info\/[A-Za-z0-9_]{1,200}$/.test(p) && !query) return { kind: 'get', path: p }
     if (/^\/history\/[A-Za-z0-9-]{1,64}$/.test(p) && !query) return { kind: 'get', path: p }
     if (p === '/view') {
@@ -491,7 +612,9 @@ export const DOWNLOAD_FOLDERS = [
   'text_encoders',
   'diffusion_models',
   'model_patches',
-  'background_removal'
+  'background_removal',
+  'frame_interpolation',
+  'geometry_estimation'
 ]
 
 export interface DownloadRequest {

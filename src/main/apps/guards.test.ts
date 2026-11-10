@@ -24,13 +24,17 @@ import {
   localEvent,
   localInstalls,
   localRequest,
+  noteRun,
   openRequest,
   openWorkflowScript,
   outputKind,
+  queueAnswer,
   queueJson,
+  queueView,
   readable,
   readCapped,
   reconnectDelay,
+  type RunSeen,
   safeUploadName,
   saveExt,
   savedFileName,
@@ -249,7 +253,7 @@ describe('localRequest', () => {
   it('refuses other paths, methods and hosts with a 4xx', () => {
     const refused = [
       { method: 'GET', path: '/prompt' },
-      { method: 'GET', path: '/queue' },
+      { method: 'GET', path: '/queue?x=1' },
       { method: 'GET', path: '/object_info' },
       { method: 'GET', path: '/userdata/workflows%2Fa.json' },
       { method: 'GET', path: '/system_stats/' },
@@ -475,7 +479,9 @@ describe('downloadRequest', () => {
       'clip_vision',
       'text_encoders',
       'model_patches',
-      'background_removal'
+      'background_removal',
+      'frame_interpolation',
+      'geometry_estimation'
     ]) {
       expect(downloadRequest({ ...ok, folder })).not.toHaveProperty('error')
     }
@@ -739,5 +745,137 @@ describe('opening a workflow in ComfyUI', () => {
     expect(isComfyPage('http://127.0.0.1:8189/', 'http://127.0.0.1:8188')).toBe(false)
     expect(isComfyPage('https://cloud.comfy.org.evil.com/', 'https://cloud.comfy.org/')).toBe(false)
     expect(isComfyPage('not a url', 'http://127.0.0.1:8188')).toBe(false)
+  })
+})
+
+describe('reading the local queue', () => {
+  const graph = { '1': { class_type: 'SaveImage', inputs: { filename_prefix: 'secret' } } }
+  const item = (n: number, id: unknown, extra: unknown) => [
+    n,
+    id,
+    graph,
+    extra,
+    ['1'],
+    { auth_token_comfy_org: 'k' }
+  ]
+
+  it('passes GET /queue with no query', () => {
+    expect(localRequest({ method: 'GET', path: '/queue' })).toEqual({
+      kind: 'queue',
+      path: '/queue'
+    })
+  })
+
+  it('keeps only run ids, their order and the app tag, never graphs or extra data', () => {
+    const raw = {
+      queue_running: [
+        item(3, 'run-a', {
+          client_id: 'c',
+          comfy_app: { name: 'Rotoscope', seconds: 420.4 },
+          extra_pnginfo: { workflow: graph }
+        })
+      ],
+      queue_pending: [
+        item(9, 'run-c', { comfy_app: { name: 'Doodle to image', seconds: 30 } }),
+        item(5, 'run-b', { client_id: 'other' })
+      ]
+    }
+    const view = queueView(raw)
+    expect(view).toEqual({
+      running: [{ id: 'run-a', app: 'Rotoscope', seconds: 420 }],
+      pending: [
+        { id: 'run-b', app: null, seconds: null },
+        { id: 'run-c', app: 'Doodle to image', seconds: 30 }
+      ]
+    })
+    const text = JSON.stringify(view)
+    for (const leak of [
+      'secret',
+      'SaveImage',
+      'client_id',
+      'extra_pnginfo',
+      'auth_token',
+      'other'
+    ]) {
+      expect(text, leak).not.toContain(leak)
+    }
+  })
+
+  it('drops app tags that are not a short plain name or a sane number of seconds', () => {
+    for (const comfy_app of [
+      { name: '<b>x</b>', seconds: -1 },
+      { name: 'a'.repeat(41), seconds: 86_401 },
+      { name: 7, seconds: '60' },
+      'Rotoscope',
+      null
+    ]) {
+      const view = queueView({ queue_running: [item(1, 'r', { comfy_app })] })
+      expect(view.running[0], JSON.stringify(comfy_app)).toEqual({
+        id: 'r',
+        app: null,
+        seconds: null
+      })
+    }
+  })
+
+  it('counts runs with odd ids without naming them, and reads a broken queue as empty', () => {
+    const view = queueView({ queue_running: [], queue_pending: [item(1, 'a b', {}), 'x'] })
+    expect(view.pending).toEqual([{ id: '', app: null, seconds: null }])
+    expect(queueView(null)).toEqual({ running: [], pending: [] })
+    expect(queueView({ queue_running: 'x' })).toEqual({ running: [], pending: [] })
+  })
+
+  it('caps each list at 100 runs', () => {
+    const many = Array.from({ length: 150 }, (_, i) => item(i, `r${i}`, {}))
+    expect(queueView({ queue_pending: many }).pending).toHaveLength(100)
+  })
+
+  it('adds when a run started and its progress, from the socket', () => {
+    const seen = new Map<string, RunSeen>()
+    noteRun(seen, { type: 'execution_start', data: { prompt_id: 'run-a' } }, 1000)
+    noteRun(seen, { type: 'progress', data: { prompt_id: 'run-a', value: 12, max: 30 } }, 2000)
+    const view = queueView({ queue_running: [item(1, 'run-a', {})] }, seen)
+    expect(view.running[0]).toEqual({
+      id: 'run-a',
+      app: null,
+      seconds: null,
+      startedAt: 1000,
+      done: 12,
+      of: 30
+    })
+  })
+
+  it('forgets a run when it ends, ignores progress for runs it did not see start, and keeps 50', () => {
+    const seen = new Map<string, RunSeen>()
+    noteRun(seen, { type: 'progress', data: { prompt_id: 'x', value: 1, max: 2 } }, 1)
+    expect(seen.size).toBe(0)
+    noteRun(seen, { type: 'execution_start', data: { prompt_id: 'x' } }, 1)
+    noteRun(seen, { type: 'progress', data: { prompt_id: 'x', value: 'a', max: 0 } }, 2)
+    expect(seen.get('x')).toEqual({ startedAt: 1 })
+    noteRun(seen, { type: 'execution_success', data: { prompt_id: 'x' } }, 3)
+    expect(seen.size).toBe(0)
+    for (let i = 0; i < 60; i++)
+      noteRun(seen, { type: 'execution_start', data: { prompt_id: `r${i}` } }, i)
+    expect(seen.size).toBe(50)
+    expect(seen.has('r0')).toBe(false)
+    expect(seen.has('r59')).toBe(true)
+    noteRun(seen, { type: 'execution_start', data: { prompt_id: 'a b' } }, 1)
+    expect(seen.has('a b')).toBe(false)
+  })
+
+  it('answers the cut-down queue as JSON, and refuses what ComfyUI did not answer well', () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ queue_running: [item(1, 'r', {})], queue_pending: [] })
+    )
+    const ok = queueAnswer(200, bytes, new Map())
+    expect(ok.status).toBe(200)
+    expect(ok.contentType).toBe('application/json')
+    expect(JSON.parse(new TextDecoder().decode(ok.body))).toEqual({
+      running: [{ id: 'r', app: null, seconds: null }],
+      pending: []
+    })
+    expect(queueAnswer(500, bytes, new Map()).status).toBe(500)
+    expect(queueAnswer(500, bytes, new Map()).body).not.toEqual(bytes)
+    expect(queueAnswer(200, new TextEncoder().encode('not json'), new Map()).status).toBe(502)
   })
 })
