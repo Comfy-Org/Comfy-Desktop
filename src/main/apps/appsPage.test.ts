@@ -1,13 +1,14 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { appsPageUrl, isAppsListUrl, isAppsPath } from './appsPage'
+import { appsPageUrl, examplePage, isAppsListUrl, isAppsPath } from './appsPage'
 
 describe('isAppsPath', () => {
   it.each([
     '/apps/doodle-to-image/desktop.html',
     '/apps/#/make-image',
-    '/apps/genjutsu-studio/desktop.html?example=duel'
+    '/apps/genjutsu-studio/desktop.html?example=duel',
+    '/apps/#/make-image?example=cover'
   ])('accepts %s', (page) => {
     expect(isAppsPath(page)).toBe(true)
   })
@@ -26,6 +27,11 @@ describe('isAppsPath', () => {
     ['a newline', '/apps/a\nb.html'],
     ['a javascript address', 'javascript:alert(1)'],
     ['a very long path', `/apps/${'a'.repeat(400)}`],
+    ['a query other than an example', '/apps/x/desktop.html?debug=1'],
+    ['a second setting after the example', '/apps/x/desktop.html?example=duel&debug=1'],
+    ['an example id with capitals', '/apps/x/desktop.html?example=Duel'],
+    ['an empty example id', '/apps/x/desktop.html?example='],
+    ['a hash route query other than an example', '/apps/#/make-image?next=https://evil.example'],
     ['a number', 42],
     ['nothing', undefined]
   ])('refuses %s', (_label, page) => {
@@ -52,6 +58,37 @@ describe('appsPageUrl', () => {
 
   it('refuses a page that fails the path check', () => {
     expect(appsPageUrl('https://apps.comfy.org', '//evil.example/apps/')).toBeNull()
+  })
+})
+
+describe('examplePage', () => {
+  it('asks a page app for the example in its query', () => {
+    expect(examplePage('/apps/animate-photo/desktop.html', 'coast')).toBe(
+      '/apps/animate-photo/desktop.html?example=coast'
+    )
+  })
+
+  it('asks a steps app for the example inside its hash route', () => {
+    expect(examplePage('/apps/#/make-image', 'cover')).toBe('/apps/#/make-image?example=cover')
+  })
+
+  it.each([
+    ['an id with a slash', 'a/b'],
+    ['an id with an ampersand', 'a&debug=1'],
+    ['an id with capitals', 'Coast'],
+    ['an id that is too long', 'a'.repeat(81)],
+    ['no id', undefined],
+    ['a number', 7]
+  ])('refuses %s', (_label, id) => {
+    expect(examplePage('/apps/animate-photo/desktop.html', id)).toBeNull()
+  })
+
+  it('refuses a page that already asks for something', () => {
+    expect(examplePage('/apps/x/desktop.html?example=duel', 'coast')).toBeNull()
+  })
+
+  it('refuses a page outside the apps folder', () => {
+    expect(examplePage('//evil.example/apps/', 'coast')).toBeNull()
   })
 })
 

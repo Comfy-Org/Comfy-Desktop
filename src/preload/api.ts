@@ -101,6 +101,7 @@ export function buildElectronApi(): ElectronApi {
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
     listApps: () => ipcRenderer.invoke('comfy-apps:list'),
     getAppCover: (appId) => ipcRenderer.invoke('comfy-apps:cover', appId),
+    getAppExampleThumb: (key) => ipcRenderer.invoke('comfy-apps:example-thumb', key),
     showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),
     hideApps: () => ipcRenderer.send('comfy-apps:hide'),
     onAppsLoadFailed: (callback) => {

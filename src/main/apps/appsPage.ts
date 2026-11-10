@@ -1,5 +1,22 @@
 const MAX_PAGE_LENGTH = 300
 const LIST_HASHES = new Set(['', '#', '#/'])
+const EXAMPLE_ID = /^[a-z0-9][a-z0-9-]{0,79}$/
+const EXAMPLE_QUERY = /^example=[a-z0-9][a-z0-9-]{0,79}$/
+
+export function isExampleId(value: unknown): value is string {
+  return typeof value === 'string' && EXAMPLE_ID.test(value)
+}
+
+function hasOnlyExampleQuery(part: string): boolean {
+  const at = part.indexOf('?')
+  return at < 0 || EXAMPLE_QUERY.test(part.slice(at + 1))
+}
+
+function asksOnlyForAnExample(page: string): boolean {
+  const hashAt = page.indexOf('#')
+  if (hashAt < 0) return hasOnlyExampleQuery(page)
+  return hasOnlyExampleQuery(page.slice(0, hashAt)) && hasOnlyExampleQuery(page.slice(hashAt + 1))
+}
 
 export function isAppsPath(page: unknown): page is string {
   return (
@@ -10,8 +27,15 @@ export function isAppsPath(page: unknown): page is string {
     !page.includes('\\') &&
     !page.split(/[/?#]/).includes('..') &&
     !/%2e|%2f|%5c/i.test(page) &&
-    ![...page].some(isControlOrSpace)
+    ![...page].some(isControlOrSpace) &&
+    asksOnlyForAnExample(page)
   )
+}
+
+export function examplePage(page: string, exampleId: unknown): string | null {
+  if (!isAppsPath(page) || page.includes('?') || !isExampleId(exampleId)) return null
+  const withExample = `${page}?example=${exampleId}`
+  return isAppsPath(withExample) ? withExample : null
 }
 
 function isControlOrSpace(char: string): boolean {

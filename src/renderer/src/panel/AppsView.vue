@@ -35,7 +35,14 @@ import { useSessionStore } from '../stores/sessionStore'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type { AppCard, AppRunsOn, AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type {
+  AppCard,
+  AppExample,
+  AppRunsOn,
+  AssetKind,
+  AssetSummary,
+  Installation
+} from '../types/ipc'
 
 interface GalleryAsset extends AssetSummary {
   installationId: string
@@ -50,6 +57,8 @@ type SortOrder = 'newest' | 'oldest'
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
 const APPS_GRID_CLASS = 'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4'
+const EXAMPLES_GRID_CLASS = 'grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4'
+const EXAMPLE_PRELOAD_MARGIN = '400px 0px'
 const RUNS_ON = {
   cloud: { label: 'apps.runsOn.cloud', icon: Cloud },
   local: { label: 'apps.runsOn.local', icon: Monitor }
@@ -64,6 +73,8 @@ const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
 const appsLoadFailedUrl = ref<string | null>(null)
 const appCards = ref<AppCard[]>([])
 const appCovers = ref<Record<string, string>>({})
+const appExamples = ref<AppExample[]>([])
+const exampleThumbs = ref<Record<string, string>>({})
 const appsLoading = ref(false)
 const appsListFailed = ref(false)
 const openApp = ref<AppCard | null>(null)
@@ -92,6 +103,7 @@ async function loadApps(): Promise<void> {
     const listing = await window.api.listApps()
     if (current !== appsRequestId) return
     appCards.value = listing.apps
+    appExamples.value = listing.examples
     appsListFailed.value = listing.apps.length === 0
     loadCovers(listing.apps)
   } catch {
@@ -111,6 +123,49 @@ function loadCovers(cards: AppCard[]): void {
       })
       .catch(() => {})
   }
+}
+
+let exampleObserver: IntersectionObserver | null = null
+const watchedExamples = new Map<string, Element>()
+
+function loadExampleThumb(key: string): void {
+  if (exampleThumbs.value[key]) return
+  window.api
+    .getAppExampleThumb(key)
+    .then((url) => {
+      if (url) exampleThumbs.value[key] = url
+    })
+    .catch(() => {})
+}
+
+function seeExamples(entries: IntersectionObserverEntry[]): void {
+  for (const entry of entries) {
+    if (!entry.isIntersecting) continue
+    exampleObserver?.unobserve(entry.target)
+    const key = entry.target.getAttribute('data-example-key')
+    if (key) loadExampleThumb(key)
+  }
+}
+
+function watchExample(el: unknown, key: string): void {
+  const before = watchedExamples.get(key)
+  if (before === el) return
+  if (before) exampleObserver?.unobserve(before)
+  watchedExamples.delete(key)
+  if (!(el instanceof Element)) return
+  exampleObserver ??= new IntersectionObserver(seeExamples, {
+    root: scroller.value,
+    rootMargin: EXAMPLE_PRELOAD_MARGIN
+  })
+  watchedExamples.set(key, el)
+  exampleObserver.observe(el)
+}
+
+function openExample(example: AppExample): void {
+  const card = appCards.value.find((app) => app.id === example.appId)
+  if (!card) return
+  appsLoadFailedUrl.value = null
+  openApp.value = { ...card, page: example.page }
 }
 
 watch(
@@ -265,7 +320,11 @@ function coolNameTooltips(): void {
   nameTooltipsWarm.value = false
 }
 
-onBeforeUnmount(() => clearTimeout(warmTimer))
+onBeforeUnmount(() => {
+  clearTimeout(warmTimer)
+  exampleObserver?.disconnect()
+  watchedExamples.clear()
+})
 
 async function signIn(): Promise<void> {
   if (signingIn.value) return
@@ -538,61 +597,119 @@ function extensionOf(name: string): string {
             {{ t('common.retry') }}
           </Button>
         </section>
-        <ul
-          v-else
-          class="m-0 list-none p-0"
-          :class="APPS_GRID_CLASS"
-          data-testid="apps-grid"
-          @pointerenter="warmNameTooltips"
-          @pointerleave="coolNameTooltips"
-        >
-          <li v-for="card in appCards" :key="card.id" class="group" :data-testid="`app-${card.id}`">
-            <Tooltip
-              :text="card.description"
-              side="bottom"
-              :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
-              class="w-full align-top"
+        <template v-else>
+          <ul
+            class="m-0 list-none p-0"
+            :class="APPS_GRID_CLASS"
+            data-testid="apps-grid"
+            @pointerenter="warmNameTooltips"
+            @pointerleave="coolNameTooltips"
+          >
+            <li
+              v-for="card in appCards"
+              :key="card.id"
+              class="group"
+              :data-testid="`app-${card.id}`"
             >
-              <button
-                type="button"
-                class="flex w-full cursor-pointer flex-col overflow-hidden rounded-lg bg-secondary text-left"
-                :aria-label="t('apps.open', { name: card.title })"
-                :data-testid="`app-open-${card.id}`"
-                @click="openAppPage(card)"
+              <Tooltip
+                :text="card.description"
+                side="bottom"
+                :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
+                class="w-full align-top"
               >
-                <span
-                  class="relative block aspect-video overflow-hidden bg-secondary bg-[linear-gradient(135deg,var(--app-accent-a),var(--app-accent-b))]"
-                  :style="coverStyle(card)"
-                  data-testid="app-cover"
+                <button
+                  type="button"
+                  class="flex w-full cursor-pointer flex-col overflow-hidden rounded-lg bg-secondary text-left"
+                  :aria-label="t('apps.open', { name: card.title })"
+                  :data-testid="`app-open-${card.id}`"
+                  @click="openAppPage(card)"
                 >
-                  <img
-                    v-if="appCovers[card.id]"
-                    :src="appCovers[card.id]"
-                    alt=""
-                    class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  />
-                </span>
-                <span class="flex min-w-0 flex-col gap-1 px-3 py-2.5">
-                  <span class="truncate text-ui font-medium text-foreground">{{ card.title }}</span>
                   <span
-                    v-if="card.description"
-                    class="truncate text-ui text-muted-foreground"
-                    data-testid="app-description"
-                    >{{ card.description }}</span
+                    class="relative block aspect-video overflow-hidden bg-secondary bg-[linear-gradient(135deg,var(--app-accent-a),var(--app-accent-b))]"
+                    :style="coverStyle(card)"
+                    data-testid="app-cover"
                   >
-                  <span class="flex flex-wrap gap-1 pt-1" data-testid="app-runs-on">
-                    <StatusChip v-for="where in card.runsOn" :key="where" tone="quiet">
-                      <template #icon>
-                        <component :is="RUNS_ON[where].icon" :size="11" aria-hidden="true" />
-                      </template>
-                      {{ t(RUNS_ON[where].label) }}
-                    </StatusChip>
+                    <img
+                      v-if="appCovers[card.id]"
+                      :src="appCovers[card.id]"
+                      alt=""
+                      class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                    />
                   </span>
-                </span>
-              </button>
-            </Tooltip>
-          </li>
-        </ul>
+                  <span class="flex min-w-0 flex-col gap-1 px-3 py-2.5">
+                    <span class="truncate text-ui font-medium text-foreground">{{
+                      card.title
+                    }}</span>
+                    <span
+                      v-if="card.description"
+                      class="truncate text-ui text-muted-foreground"
+                      data-testid="app-description"
+                      >{{ card.description }}</span
+                    >
+                    <span class="flex flex-wrap gap-1 pt-1" data-testid="app-runs-on">
+                      <StatusChip v-for="where in card.runsOn" :key="where" tone="quiet">
+                        <template #icon>
+                          <component :is="RUNS_ON[where].icon" :size="11" aria-hidden="true" />
+                        </template>
+                        {{ t(RUNS_ON[where].label) }}
+                      </StatusChip>
+                    </span>
+                  </span>
+                </button>
+              </Tooltip>
+            </li>
+          </ul>
+          <section v-if="appExamples.length" class="mt-12" data-testid="apps-examples">
+            <h2 class="m-0 text-heading font-semibold text-foreground">
+              {{ t('apps.examples.title') }}
+            </h2>
+            <p class="m-0 mt-1 mb-4 text-ui text-muted-foreground">{{ t('apps.examples.hint') }}</p>
+            <ul class="m-0 list-none p-0" :class="EXAMPLES_GRID_CLASS">
+              <li
+                v-for="example in appExamples"
+                :key="example.key"
+                :ref="(el) => watchExample(el, example.key)"
+                class="group"
+                :data-example-key="example.key"
+                :data-testid="`app-example-${example.key}`"
+              >
+                <button
+                  type="button"
+                  class="flex w-full cursor-pointer flex-col overflow-hidden rounded-lg bg-secondary text-left"
+                  :aria-label="
+                    t('apps.examples.open', { name: example.title, app: example.appTitle })
+                  "
+                  :data-testid="`app-example-open-${example.key}`"
+                  @click="openExample(example)"
+                >
+                  <span class="relative block aspect-video overflow-hidden bg-secondary">
+                    <img
+                      v-if="exampleThumbs[example.key]"
+                      :src="exampleThumbs[example.key]"
+                      alt=""
+                      class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                    />
+                    <span
+                      v-if="example.kind !== 'image'"
+                      class="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-md bg-media-overlay text-foreground"
+                    >
+                      <AudioLines v-if="example.kind === 'audio'" :size="12" aria-hidden="true" />
+                      <Play v-else :size="12" aria-hidden="true" />
+                    </span>
+                  </span>
+                  <span class="flex min-w-0 flex-col gap-0.5 px-3 py-2.5">
+                    <span class="truncate text-ui font-medium text-foreground">{{
+                      example.title
+                    }}</span>
+                    <span class="truncate text-ui text-muted-foreground">{{
+                      example.appTitle
+                    }}</span>
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </section>
+        </template>
       </template>
       <div
         v-else-if="loading && assets.length === 0"

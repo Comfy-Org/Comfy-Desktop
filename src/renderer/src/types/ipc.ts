@@ -3,6 +3,7 @@ export type {
   AssetKind,
   AssetSummary,
   AppCard,
+  AppExample,
   AppRunsOn,
   Unsubscribe,
   BetaActivationNotice,

@@ -73,6 +73,11 @@
       "local": "此电脑"
     },
     "tabsLabel": "应用视图",
+    "examples": {
+      "title": "示例",
+      "hint": "用这些应用做的作品。打开一个，从它的设置开始。",
+      "open": "用「{name}」的设置打开 {app}"
+    },
     "tabs": {
       "all": "所有应用",
       "files": "生成的文件"

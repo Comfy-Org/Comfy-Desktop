@@ -129,9 +129,21 @@ export interface AppCard {
   hasCover: boolean
 }
 
+export type AppExampleKind = 'image' | 'video' | 'audio'
+
+export interface AppExample {
+  key: string
+  appId: string
+  appTitle: string
+  title: string
+  kind: AppExampleKind
+  page: string
+}
+
 export interface AppsListing {
   source: 'catalog' | 'website'
   apps: AppCard[]
+  examples: AppExample[]
 }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
@@ -1135,6 +1147,7 @@ export interface ElectronApi {
   listAssets(installationId: string): Promise<AssetSummary[]>
   listApps(): Promise<AppsListing>
   getAppCover(appId: string): Promise<string | null>
+  getAppExampleThumb(key: string): Promise<string | null>
   showApps(rect: {
     x: number
     y: number

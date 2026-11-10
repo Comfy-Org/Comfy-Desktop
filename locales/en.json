@@ -73,6 +73,11 @@
       "local": "This computer"
     },
     "tabsLabel": "Apps view",
+    "examples": {
+      "title": "Examples",
+      "hint": "Made with these apps. Open one to start from its settings.",
+      "open": "Open {app} with the settings of {name}"
+    },
     "tabs": {
       "all": "All apps",
       "files": "Generated Files"

@@ -2,12 +2,20 @@ import { net } from 'electron'
 
 import { CLOUD_ISSUER } from '../cloud/config'
 import { fetchJSON } from '../lib/fetch'
-import type { AppCard, AppRunsOn, AppsListing } from '../../types/ipc'
-import { isAppsPath } from './appsPage'
+import type { AppCard, AppExample, AppExampleKind, AppRunsOn, AppsListing } from '../../types/ipc'
+import { examplePage, isAppsPath, isExampleId } from './appsPage'
 import { appsOrigin, appsUrl } from './guards'
+
+export interface CatalogExample {
+  id: string
+  title: string
+  kind: AppExampleKind
+  thumbUrl: string
+}
 
 export interface CatalogApp extends Omit<AppCard, 'hasCover'> {
   coverUrl: string | null
+  examples: CatalogExample[]
 }
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,79}$/
@@ -21,8 +29,13 @@ const LAST_SORT_ORDER = 999
 const FETCH_TIMEOUT_MS = 8000
 const COVER_TIMEOUT_MS = 15_000
 const MAX_COVER_BYTES = 4 * 1024 * 1024
+const MAX_EXAMPLE_THUMB_BYTES = 2 * 1024 * 1024
+const MAX_EXAMPLE_TITLE = 300
+const MAX_EXAMPLES_PER_APP = 100
+const MAX_GALLERY_EXAMPLES = 1000
 const COVER_TYPES = new Set(['image/webp', 'image/jpeg', 'image/png', 'image/gif', 'image/avif'])
 const RUNS_ON: readonly AppRunsOn[] = ['cloud', 'local']
+const EXAMPLE_KINDS: readonly AppExampleKind[] = ['image', 'video', 'audio']
 
 type Json = Record<string, unknown>
 
@@ -63,17 +76,80 @@ function mediaUrl(origin: string, ref: unknown): string | null {
   return `${origin}/api/v1/catalog/media/${id}/${version}`
 }
 
+function isImageType(type: unknown): boolean {
+  return typeof type === 'string' && type.startsWith('image/')
+}
+
 function catalogCover(origin: string, data: Json): string | null {
   const heroType = record(data.website_media_types)?.['$.hero']
-  const heroIsImage = typeof heroType === 'string' && heroType.startsWith('image/')
   return (
     mediaUrl(origin, data.static_thumb) ??
     mediaUrl(origin, data.hero_poster) ??
-    (heroIsImage ? mediaUrl(origin, data.hero) : null)
+    (isImageType(heroType) ? mediaUrl(origin, data.hero) : null)
   )
 }
 
-export type DesktopFields = Pick<CatalogApp, 'page' | 'runsOn' | 'accent'>
+function exampleKind(value: unknown): AppExampleKind {
+  return EXAMPLE_KINDS.find((kind) => kind === value) ?? 'image'
+}
+
+function kindOfType(type: unknown): AppExampleKind | null {
+  if (typeof type !== 'string') return null
+  return EXAMPLE_KINDS.find((kind) => type.startsWith(`${kind}/`)) ?? null
+}
+
+function examplesOf(
+  value: unknown,
+  read: (example: unknown, index: number) => CatalogExample | null
+): CatalogExample[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const kept: CatalogExample[] = []
+  for (const [index, example] of value.slice(0, MAX_EXAMPLES_PER_APP).entries()) {
+    const found = read(example, index)
+    if (!found || seen.has(found.id)) continue
+    seen.add(found.id)
+    kept.push(found)
+  }
+  return kept
+}
+
+function catalogExample(
+  origin: string,
+  data: Json,
+  value: unknown,
+  index: number
+): CatalogExample | null {
+  const example = record(value)
+  const id = record(example?.values)?.id
+  if (!example || !isExampleId(id)) return null
+  const title = text(example.title, MAX_EXAMPLE_TITLE) ?? text(example.name, MAX_EXAMPLE_TITLE)
+  const mediaType = record(data.website_media_types)?.[`$.examples[${index}].media`]
+  const thumbUrl =
+    mediaUrl(origin, example.static_thumb) ??
+    (isImageType(mediaType) ? mediaUrl(origin, example.media) : null)
+  if (!title || !thumbUrl) return null
+  const shown = record(example.presentation)?.kind
+  return { id, title, kind: kindOfType(mediaType) ?? exampleKind(shown), thumbUrl }
+}
+
+function isFromAnotherService(example: Json): boolean {
+  return typeof example.source === 'string' && example.source.trim() !== ''
+}
+
+function websiteExample(origin: string, value: unknown): CatalogExample | null {
+  const example = record(value)
+  const id = example?.id
+  if (!example || !isExampleId(id) || isFromAnotherService(example)) return null
+  const title = text(example.title, MAX_EXAMPLE_TITLE)
+  const kind = exampleKind(example.kind)
+  const poster = isAppsPath(example.poster) ? example.poster : null
+  const picture = poster ?? (kind === 'image' ? example.src : null)
+  if (!title || !isAppsPath(picture)) return null
+  return { id, title, kind, thumbUrl: `${origin}${picture}` }
+}
+
+export type DesktopFields = Pick<CatalogApp, 'page' | 'runsOn' | 'accent' | 'examples'>
 
 function catalogApp(
   origin: string,
@@ -86,18 +162,28 @@ function catalogApp(
   const id = typeof data.slug === 'string' && SLUG.test(data.slug) ? data.slug : null
   const title = text(data.title, MAX_TITLE)
   if (!id || !title) return null
+  const fromWebsite = known.get(id)
   const fields: DesktopFields | null =
     desktop && isAppsPath(desktop.page)
-      ? { page: desktop.page, runsOn: runsOn(desktop.runs_on), accent: accent(desktop.accent) }
-      : (known.get(id) ?? null)
+      ? {
+          page: desktop.page,
+          runsOn: runsOn(desktop.runs_on),
+          accent: accent(desktop.accent),
+          examples: fromWebsite?.examples ?? []
+        }
+      : (fromWebsite ?? null)
   if (!fields) return null
+  const own = examplesOf(data.examples, (example, index) =>
+    catalogExample(origin, data, example, index)
+  )
   return {
     id,
     title,
     description: text(data.description, MAX_DESCRIPTION) ?? '',
     ...fields,
     sortOrder: sortOrder(data.sort_order),
-    coverUrl: catalogCover(origin, data)
+    coverUrl: catalogCover(origin, data),
+    examples: own.length ? own : fields.examples
   }
 }
 
@@ -121,7 +207,8 @@ function websiteApp(origin: string, value: unknown): CatalogApp | null {
     runsOn: runsOn(app.runs_on),
     accent: accent(app.accent),
     sortOrder: sortOrder(app.order),
-    coverUrl: isAppsPath(app.cover) ? `${origin}${app.cover}` : null
+    coverUrl: isAppsPath(app.cover) ? `${origin}${app.cover}` : null,
+    examples: examplesOf(app.examples, (example) => websiteExample(origin, example))
   }
 }
 
@@ -150,7 +237,10 @@ export function catalogApps(
 
 export function desktopFields(apps: readonly CatalogApp[]): Map<string, DesktopFields> {
   return new Map(
-    apps.map((app) => [app.id, { page: app.page, runsOn: app.runsOn, accent: app.accent }])
+    apps.map((app) => [
+      app.id,
+      { page: app.page, runsOn: app.runsOn, accent: app.accent, examples: app.examples }
+    ])
   )
 }
 
@@ -222,7 +312,8 @@ export async function loadApps(
 }
 
 const coverUrls = new Map<string, string>()
-const covers = new Map<string, Promise<string | null>>()
+const exampleThumbUrls = new Map<string, string>()
+const images = new Map<string, Promise<string | null>>()
 
 function toCard(app: CatalogApp): AppCard {
   return {
@@ -237,46 +328,98 @@ function toCard(app: CatalogApp): AppCard {
   }
 }
 
+interface GalleryEntry {
+  example: AppExample
+  thumbUrl: string
+}
+
+function appGallery(app: CatalogApp): GalleryEntry[] {
+  return app.examples.flatMap((found) => {
+    const page = examplePage(app.page, found.id)
+    if (!page) return []
+    const example: AppExample = {
+      key: `${app.id}/${found.id}`,
+      appId: app.id,
+      appTitle: app.title,
+      title: found.title,
+      kind: found.kind,
+      page
+    }
+    return [{ example, thumbUrl: found.thumbUrl }]
+  })
+}
+
+function gallery(apps: readonly CatalogApp[]): GalleryEntry[] {
+  const lists = apps.map(appGallery)
+  const longest = Math.max(0, ...lists.map((list) => list.length))
+  const mixed: GalleryEntry[] = []
+  for (let round = 0; round < longest; round++) {
+    for (const list of lists) {
+      const entry = list[round]
+      if (entry && mixed.length < MAX_GALLERY_EXAMPLES) mixed.push(entry)
+    }
+  }
+  return mixed
+}
+
 export function toListing(loaded: {
   source: AppsListing['source']
   apps: CatalogApp[]
 }): AppsListing {
   coverUrls.clear()
+  exampleThumbUrls.clear()
   for (const app of loaded.apps) if (app.coverUrl) coverUrls.set(app.id, app.coverUrl)
-  return { source: loaded.source, apps: loaded.apps.map(toCard) }
+  const examples = gallery(loaded.apps)
+  for (const { example, thumbUrl } of examples) exampleThumbUrls.set(example.key, thumbUrl)
+  return {
+    source: loaded.source,
+    apps: loaded.apps.map(toCard),
+    examples: examples.map((entry) => entry.example)
+  }
 }
 
 export async function listApps(): Promise<AppsListing> {
   return toListing(await loadApps())
 }
 
-async function readCover(url: string): Promise<string | null> {
+async function readImage(url: string, maxBytes: number): Promise<string | null> {
   const res = await withTimeout(net.fetch(url), COVER_TIMEOUT_MS)
   const type = res.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? ''
-  if (!res.ok || !COVER_TYPES.has(type)) {
+  const announced = Number(res.headers.get('content-length'))
+  if (!res.ok || !COVER_TYPES.has(type) || announced > maxBytes) {
     await res.body?.cancel().catch(() => {})
     return null
   }
   const bytes = Buffer.from(await res.arrayBuffer())
-  if (bytes.byteLength > MAX_COVER_BYTES) return null
+  if (bytes.byteLength > maxBytes) return null
   return `data:${type};base64,${bytes.toString('base64')}`
+}
+
+function cachedImage(url: string | undefined, maxBytes: number): Promise<string | null> {
+  if (!url) return Promise.resolve(null)
+  let image = images.get(url)
+  if (!image) {
+    image = readImage(url, maxBytes).catch(() => null)
+    images.set(url, image)
+    void image.then((found) => {
+      if (!found) images.delete(url)
+    })
+  }
+  return image
 }
 
 export function appCover(appId: unknown): Promise<string | null> {
   const url = typeof appId === 'string' ? coverUrls.get(appId) : undefined
-  if (!url) return Promise.resolve(null)
-  let cover = covers.get(url)
-  if (!cover) {
-    cover = readCover(url).catch(() => null)
-    covers.set(url, cover)
-    void cover.then((found) => {
-      if (!found) covers.delete(url)
-    })
-  }
-  return cover
+  return cachedImage(url, MAX_COVER_BYTES)
+}
+
+export function appExampleThumb(key: unknown): Promise<string | null> {
+  const url = typeof key === 'string' ? exampleThumbUrls.get(key) : undefined
+  return cachedImage(url, MAX_EXAMPLE_THUMB_BYTES)
 }
 
 export function _resetAppsCatalogForTest(): void {
   coverUrls.clear()
-  covers.clear()
+  exampleThumbUrls.clear()
+  images.clear()
 }

@@ -40,7 +40,7 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
-import { appCover, listApps } from './appsCatalog'
+import { appCover, appExampleThumb, listApps } from './appsCatalog'
 import { appsPageUrl, isAppsListUrl } from './appsPage'
 
 const APPS_URL = appsUrl()
@@ -496,6 +496,7 @@ export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:hide', hideApps)
   handleFromPanel('comfy-apps:list', listApps)
   handleFromPanel('comfy-apps:cover', appCover)
+  handleFromPanel('comfy-apps:example-thumb', appExampleThumb)
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)

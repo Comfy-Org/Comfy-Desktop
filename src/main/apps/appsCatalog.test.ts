@@ -10,8 +10,10 @@ vi.mock('../lib/fetch', () => ({ fetchJSON: (...args: unknown[]) => fetchJSON(..
 import {
   _resetAppsCatalogForTest,
   appCover,
+  appExampleThumb,
   catalogApps,
   catalogListUrl,
+  desktopFields,
   loadApps,
   toListing,
   websiteApps
@@ -71,7 +73,36 @@ const doodle = {
   description: 'Draw the shapes, say what it is, and get a finished picture.',
   page: '/apps/doodle-to-image/desktop.html',
   accent: ['#f472b6', '#d7fd52'],
-  sortOrder: 17
+  sortOrder: 17,
+  examples: []
+}
+
+const STILL = {
+  src: 'media',
+  id: '0b6f3c56-5f4e-4a43-9a0e-3b1f4f6c2d11',
+  file_version_uid: '9d2f6a7e-1c3b-4e5f-8a9b-0c1d2e3f4a5b'
+}
+const CLIP = {
+  src: 'media',
+  id: '5a1e2b3c-4d5e-4f60-8172-839405162738',
+  file_version_uid: 'a9b8c7d6-e5f4-4a3b-9c2d-1e0f9a8b7c6d'
+}
+
+function mediaAt(ref: { id: string; file_version_uid: string }): string {
+  return `${CLOUD}/api/v1/catalog/media/${ref.id}/${ref.file_version_uid}`
+}
+
+function websiteExample(example: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'coast',
+    title: 'Waves on a rocky coast',
+    kind: 'video',
+    src: '/apps/examples/animate-photo/coast.mp4',
+    poster: '/apps/examples/animate-photo/coast.jpg',
+    made: 'Comfy Cloud, Wan 2.2 14B, Best',
+    remix: { file: '/apps/examples/animate-photo/coast.jpg', prompt: 'Waves', quality: 'best' },
+    ...example
+  }
 }
 
 beforeEach(() => {
@@ -193,6 +224,61 @@ describe('catalogApps', () => {
     expect(catalogApps({ generation: 1 }, CLOUD)).toEqual([])
     expect(catalogApps(null, CLOUD)).toEqual([])
   })
+
+  it('reads catalog examples by their values id, with the still or an image as the picture', () => {
+    const [app] = catalogApps(
+      {
+        items: [
+          catalogItem({
+            examples: [
+              {
+                title: 'A clip',
+                values: { id: 'clip', prompt: 'Waves' },
+                media: CLIP,
+                static_thumb: STILL
+              },
+              { title: 'A picture', values: { id: 'picture' }, media: STILL },
+              { title: 'A clip with no still', values: { id: 'no-still' }, media: CLIP },
+              { title: 'No id', values: { prompt: 'x' }, media: STILL },
+              { title: 'A bad id', values: { id: '../x' }, media: STILL },
+              { values: { id: 'no-title' }, media: STILL }
+            ],
+            website_media_types: {
+              '$.examples[0].media': 'video/mp4',
+              '$.examples[1].media': 'image/jpeg',
+              '$.examples[2].media': 'video/mp4',
+              '$.examples[3].media': 'image/jpeg',
+              '$.examples[4].media': 'image/jpeg',
+              '$.examples[5].media': 'image/jpeg'
+            }
+          })
+        ]
+      },
+      CLOUD
+    )
+
+    expect(app!.examples).toEqual([
+      { id: 'clip', title: 'A clip', kind: 'video', thumbUrl: mediaAt(STILL) },
+      { id: 'picture', title: 'A picture', kind: 'image', thumbUrl: mediaAt(STILL) }
+    ])
+  })
+
+  it('keeps the website examples of an app whose catalog item has none', () => {
+    const known = desktopFields(websiteApps([websiteApp({ examples: [websiteExample()] })], SITE))
+
+    const [app] = catalogApps({ items: [catalogItem()] }, CLOUD, known)
+
+    expect(app!.examples.map((example) => example.id)).toEqual(['coast'])
+  })
+
+  it('prefers the catalog examples over the website ones', () => {
+    const known = desktopFields(websiteApps([websiteApp({ examples: [websiteExample()] })], SITE))
+    const examples = [{ title: 'From the catalog', values: { id: 'cat' }, static_thumb: STILL }]
+
+    const [app] = catalogApps({ items: [catalogItem({ examples })] }, CLOUD, known)
+
+    expect(app!.examples.map((example) => example.id)).toEqual(['cat'])
+  })
 })
 
 describe('websiteApps', () => {
@@ -231,6 +317,62 @@ describe('websiteApps', () => {
 
   it('returns nothing for a body that is not a list', () => {
     expect(websiteApps({ apps: [] }, SITE)).toEqual([])
+  })
+
+  it('shows a video example by its poster and a picture example by itself', () => {
+    const [app] = websiteApps(
+      [
+        websiteApp({
+          examples: [
+            websiteExample(),
+            websiteExample({
+              id: 'cottage',
+              title: 'A cottage',
+              kind: 'image',
+              src: '/apps/examples/doodle-to-image/cottage.jpg',
+              poster: undefined
+            })
+          ]
+        })
+      ],
+      SITE
+    )
+
+    expect(app!.examples).toEqual([
+      {
+        id: 'coast',
+        title: 'Waves on a rocky coast',
+        kind: 'video',
+        thumbUrl: `${SITE}/apps/examples/animate-photo/coast.jpg`
+      },
+      {
+        id: 'cottage',
+        title: 'A cottage',
+        kind: 'image',
+        thumbUrl: `${SITE}/apps/examples/doodle-to-image/cottage.jpg`
+      }
+    ])
+  })
+
+  it('leaves out examples with no picture, a bad id, a repeated id, or a third-party file', () => {
+    const [app] = websiteApps(
+      [
+        websiteApp({
+          examples: [
+            websiteExample({ id: 'no-poster', poster: undefined }),
+            websiteExample({ id: 'outside', poster: 'https://evil.example/x.jpg' }),
+            websiteExample({ id: 'Bad Id' }),
+            websiteExample({ id: 'hf-ml-01', source: 'higgsfield-motion' }),
+            websiteExample({ title: '' }),
+            websiteExample(),
+            websiteExample({ title: 'The same id again' })
+          ]
+        })
+      ],
+      SITE
+    )
+
+    expect(app!.examples.map((example) => example.title)).toEqual(['Waves on a rocky coast'])
   })
 })
 
@@ -326,6 +468,113 @@ describe('loadApps', () => {
 
     await expect(loadApps({ catalogOrigin: CLOUD, appsOrigin: null })).rejects.toThrow()
     expect(fetchJSON).toHaveBeenCalledOnce()
+  })
+})
+
+describe('toListing examples', () => {
+  function appWith(id: string, exampleIds: string[], over: Record<string, unknown> = {}) {
+    return websiteApp({
+      id,
+      title: id,
+      examples: exampleIds.map((exampleId) => websiteExample({ id: exampleId, title: exampleId })),
+      ...over
+    })
+  }
+
+  it('mixes the examples of every app, one from each in app order', () => {
+    const apps = websiteApps(
+      [
+        appWith('animate-photo', ['coast', 'cat', 'lanterns'], { order: 1 }),
+        appWith('doodle-to-image', ['cottage'], { order: 2 }),
+        appWith('text-to-image', ['fox', 'ramen'], { order: 3 })
+      ],
+      SITE
+    )
+
+    const { examples } = toListing({ source: 'website', apps })
+
+    expect(examples.map((example) => example.key)).toEqual([
+      'animate-photo/coast',
+      'doodle-to-image/cottage',
+      'text-to-image/fox',
+      'animate-photo/cat',
+      'text-to-image/ramen',
+      'animate-photo/lanterns'
+    ])
+  })
+
+  it('names the app and opens its page asking for the example, without the picture address', () => {
+    const apps = websiteApps(
+      [
+        appWith('animate-photo', ['coast'], { page: '/apps/animate-photo/desktop.html' }),
+        appWith('make-image', ['cover'], { page: undefined, steps: [{}], order: 1 })
+      ],
+      SITE
+    )
+
+    const { examples } = toListing({ source: 'website', apps })
+
+    expect(examples).toEqual([
+      {
+        key: 'make-image/cover',
+        appId: 'make-image',
+        appTitle: 'make-image',
+        title: 'cover',
+        kind: 'video',
+        page: '/apps/#/make-image?example=cover'
+      },
+      {
+        key: 'animate-photo/coast',
+        appId: 'animate-photo',
+        appTitle: 'animate-photo',
+        title: 'coast',
+        kind: 'video',
+        page: '/apps/animate-photo/desktop.html?example=coast'
+      }
+    ])
+  })
+})
+
+describe('appExampleThumb', () => {
+  function image(type: string, bytes: Uint8Array, headers: Record<string, string> = {}): Response {
+    return new Response(Buffer.from(bytes), { headers: { 'content-type': type, ...headers } })
+  }
+
+  function listed(): void {
+    toListing({
+      source: 'website',
+      apps: websiteApps([websiteApp({ examples: [websiteExample()] })], SITE)
+    })
+  }
+
+  it('hands the panel a listed example picture as a data address', async () => {
+    listed()
+    netFetch.mockResolvedValueOnce(image('image/jpeg', new Uint8Array([1, 2, 3])))
+
+    expect(await appExampleThumb('doodle-to-image/coast')).toBe('data:image/jpeg;base64,AQID')
+    expect(netFetch).toHaveBeenCalledWith(`${SITE}/apps/examples/animate-photo/coast.jpg`)
+  })
+
+  it('fetches nothing for an example that was not listed', async () => {
+    listed()
+
+    expect(await appExampleThumb('doodle-to-image/other')).toBeNull()
+    expect(await appExampleThumb(`${SITE}/apps/examples/animate-photo/coast.jpg`)).toBeNull()
+    expect(await appExampleThumb(42)).toBeNull()
+    expect(netFetch).not.toHaveBeenCalled()
+  })
+
+  it('refuses a picture over 2 MiB, whether announced or not', async () => {
+    listed()
+    const big = new Uint8Array(2 * 1024 * 1024 + 1)
+    netFetch
+      .mockResolvedValueOnce(
+        image('image/jpeg', new Uint8Array([1]), { 'content-length': String(big.byteLength) })
+      )
+      .mockResolvedValueOnce(image('image/jpeg', big))
+
+    expect(await appExampleThumb('doodle-to-image/coast')).toBeNull()
+    expect(await appExampleThumb('doodle-to-image/coast')).toBeNull()
   })
 })
 

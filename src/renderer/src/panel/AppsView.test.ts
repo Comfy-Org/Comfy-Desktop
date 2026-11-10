@@ -7,7 +7,7 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AppCard, AssetSummary, Installation } from '../types/ipc'
+import type { AppCard, AppExample, AssetSummary, Installation } from '../types/ipc'
 
 const listAssets = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
@@ -15,6 +15,7 @@ const showApps = vi.fn()
 const hideApps = vi.fn()
 const listApps = vi.fn()
 const getAppCover = vi.fn()
+const getAppExampleThumb = vi.fn()
 let appsLoadFailed: ((info: { url: string }) => void) | null = null
 const onAppsLoadFailed = vi.fn((callback: (info: { url: string }) => void) => {
   appsLoadFailed = callback
@@ -42,6 +43,43 @@ function appCard(id: string, over: Partial<AppCard> = {}): AppCard {
     hasCover: true,
     ...over
   }
+}
+
+function example(key: string, over: Partial<AppExample> = {}): AppExample {
+  const [appId = '', id = ''] = key.split('/')
+  return {
+    key,
+    appId,
+    appTitle: 'Doodle to Image',
+    title: id,
+    kind: 'image',
+    page: `/apps/${appId}/desktop.html?example=${id}`,
+    ...over
+  }
+}
+
+const watchedExamples = new Set<Element>()
+let seeExamples: ((entries: Array<{ isIntersecting: boolean; target: Element }>) => void) | null =
+  null
+
+class FakeIntersectionObserver {
+  constructor(callback: typeof seeExamples) {
+    seeExamples = callback
+  }
+  observe(el: Element): void {
+    watchedExamples.add(el)
+  }
+  unobserve(el: Element): void {
+    watchedExamples.delete(el)
+  }
+  disconnect(): void {
+    watchedExamples.clear()
+  }
+}
+
+function scrollIntoView(testId: string): void {
+  const target = document.querySelector(`[data-testid="${testId}"]`)!
+  seeExamples!([{ isIntersecting: true, target }])
 }
 
 function asset(id: string, name: string, kind: AssetSummary['kind']): AssetSummary {
@@ -89,8 +127,16 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
 
 beforeEach(() => {
   vi.clearAllMocks()
-  listApps.mockResolvedValue({ source: 'website', apps: [appCard('doodle-to-image')] })
+  listApps.mockResolvedValue({
+    source: 'website',
+    apps: [appCard('doodle-to-image')],
+    examples: []
+  })
   getAppCover.mockResolvedValue('data:image/jpeg;base64,AQID')
+  getAppExampleThumb.mockResolvedValue('data:image/jpeg;base64,BAUG')
+  watchedExamples.clear()
+  seeExamples = null
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
   window.localStorage.clear()
   window.localStorage.setItem('comfy.desktop.apps.tab', 'files')
   ;(window as unknown as { api: unknown }).api = {
@@ -99,6 +145,7 @@ beforeEach(() => {
     hideApps,
     listApps,
     getAppCover,
+    getAppExampleThumb,
     onAppsLoadFailed,
     onAppsBack,
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -135,7 +182,8 @@ describe('AppsView', () => {
           runsOn: ['cloud'],
           hasCover: false
         })
-      ]
+      ],
+      examples: []
     })
 
     const wrapper = await mountAssets([])
@@ -153,6 +201,71 @@ describe('AppsView', () => {
     expect(make.get('[data-testid="app-cover"]').attributes('style')).toContain('#f472b6')
     expect(make.get('[data-testid="app-runs-on"]').text()).toBe('Cloud')
     expect(getAppCover).toHaveBeenCalledExactlyOnceWith('doodle-to-image')
+  })
+
+  it('lists every example under the apps, loading each picture as it shows', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listApps.mockResolvedValue({
+      source: 'catalog',
+      apps: [appCard('doodle-to-image')],
+      examples: [
+        example('doodle-to-image/cottage', { title: 'A cottage' }),
+        example('doodle-to-image/rocket', { title: 'A rocket', kind: 'video' })
+      ]
+    })
+
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+
+    const section = wrapper.get('[data-testid="apps-examples"]')
+    expect(section.text()).toContain('Examples')
+    const cottage = wrapper.get('[data-testid="app-example-doodle-to-image/cottage"]')
+    expect(cottage.text()).toContain('A cottage')
+    expect(cottage.text()).toContain('Doodle to Image')
+    expect(cottage.find('img').exists()).toBe(false)
+    expect(getAppExampleThumb).not.toHaveBeenCalled()
+    expect(watchedExamples.size).toBe(2)
+
+    scrollIntoView('app-example-doodle-to-image/cottage')
+    await flushPromises()
+
+    expect(getAppExampleThumb).toHaveBeenCalledExactlyOnceWith('doodle-to-image/cottage')
+    expect(cottage.get('img').attributes('src')).toBe('data:image/jpeg;base64,BAUG')
+    expect(watchedExamples.size).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('opens the app page asking for the example when one is clicked', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listApps.mockResolvedValue({
+      source: 'catalog',
+      apps: [appCard('doodle-to-image')],
+      examples: [example('doodle-to-image/cottage'), example('gone-app/cat')]
+    })
+    const wrapper = await mountAssets([])
+
+    await wrapper.get('[data-testid="app-example-open-gone-app/cat"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-example-open-doodle-to-image/cottage"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="apps-open-title"]').text()).toBe('Doodle to Image')
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: '/apps/doodle-to-image/desktop.html?example=cottage',
+        fresh: true
+      })
+    )
+  })
+
+  it('shows no Examples section when no app has examples', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+
+    const wrapper = await mountAssets([])
+
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-examples"]').exists()).toBe(false)
   })
 
   it('shows skeleton cards while the app list loads', async () => {
