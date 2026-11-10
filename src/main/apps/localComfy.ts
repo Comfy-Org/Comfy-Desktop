@@ -40,8 +40,11 @@ import {
   localEvent,
   localRequest,
   MAX_UPLOAD_BYTES,
+  noteRun,
+  queueAnswer,
   readCapped,
   reconnectDelay,
+  type RunSeen,
   textAnswer,
   uploadForm
 } from './guards'
@@ -64,6 +67,7 @@ const IDLE_CHECK_MS = 60_000
 let appsPages: () => WebContents[] = () => []
 let starting: Promise<LocalState> | null = null
 let lastUse = Date.now()
+const runsSeen = new Map<string, RunSeen>()
 
 function touch(): void {
   lastUse = Date.now()
@@ -206,6 +210,7 @@ export async function localFetch(input: unknown): Promise<LocalAnswer> {
     const res = await fetch(`http://127.0.0.1:${run.port}${req.path}`, init)
     const body = await readCapped(res, MAX_UPLOAD_BYTES)
     if (!body) return textAnswer(502, 'ComfyUI answered more than 50 MB.')
+    if (req.kind === 'queue') return queueAnswer(res.status, body, runsSeen)
     return {
       status: res.status,
       contentType: res.headers.get('content-type') ?? 'application/octet-stream',
@@ -313,6 +318,7 @@ function connect(s: Socket): void {
     const msg = localEvent(ev.data)
     if (!msg) return
     touch()
+    noteRun(runsSeen, msg, Date.now())
     if (isRunEnd(msg.type)) scheduleFree(s.port)
     forward(msg)
   }
@@ -330,6 +336,7 @@ function closeSocket(): void {
   if (socket.timer) clearTimeout(socket.timer)
   socket.ws?.close()
   socket = null
+  runsSeen.clear()
 }
 
 export function syncLocalSocket(): void {
