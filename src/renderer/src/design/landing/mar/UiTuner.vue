@@ -228,14 +228,14 @@ const linkSays = computed(() => {
           <Row v-if="can.home" label="Surface">
             <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
           </Row>
-          <Row v-if="can.design && !onCloud" label="Start at" stack>
+          <Row v-if="can.design && !onCloud" label="Start at">
             <Seg v-model="startAt" label="Start at" :options="START_AT" />
           </Row>
           <!-- The proposed onboarding (mar/setup), on Desktop: its options
                show while it's on screen. -->
           <template v-if="can.design && !onCloud && startAt === 'onboarding'">
             <!-- M1 ships Builds only: no Home, no example workflows. -->
-            <Row label="Scope" stack>
+            <Row label="Scope">
               <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
             </Row>
             <!-- Home first needs the Home, so it is offered past M1 only. -->
@@ -368,10 +368,10 @@ const linkSays = computed(() => {
               >Adds what Builds already has: Settings, build problems and Remote.</span
             >
           </Row>
-          <Row :show="shows('cover')" label="Workflow cover" stack>
+          <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
           </Row>
-          <Row :show="shows('comfyLook')" label="ComfyUI" stack>
+          <Row :show="shows('comfyLook')" label="ComfyUI">
             <Seg v-model="comfyLook.id" label="ComfyUI" :options="COMFY_LOOKS" />
             <span class="text-ui text-subtle-foreground">{{
               comfyLook.id === 'production'
@@ -379,7 +379,7 @@ const linkSays = computed(() => {
                 : 'Our take on the new structure.'
             }}</span>
           </Row>
-          <Row :show="shows('graph') && comfyLook.id === 'proposal'" label="Graph look" stack>
+          <Row :show="shows('graph') && comfyLook.id === 'proposal'" label="Graph look">
             <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
           </Row>
           <Row :show="shows('ports')"><NavOptionsTuner /></Row>
@@ -414,7 +414,7 @@ const linkSays = computed(() => {
             </button>
           </summary>
           <div class="flex flex-col pt-1">
-            <Row label="Screen" stack>
+            <Row label="Screen">
               <div class="flex gap-1.5">
                 <Select v-model="screen.id" :options="screenOptions" class="min-w-0 flex-1" />
                 <Select v-model="zoomPick" :options="zoomOptions" class="w-22 shrink-0" />

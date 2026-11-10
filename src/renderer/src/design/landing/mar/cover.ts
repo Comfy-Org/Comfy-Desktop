@@ -2,14 +2,12 @@ import { reactive, watch } from 'vue'
 import { can } from '../milestones'
 
 /** Workflow cards' cover (UI Playground › Workflow cover): the tilted canvas
- *  (brand/WorkflowCover.vue), since workflows carry no picture yet, a
- *  gradient of their own (brand/WorkflowGradient.vue), or the image the
- *  workflow makes. */
-export type Cover = 'canvas' | 'gradient' | 'output'
+ *  (brand/WorkflowCover.vue), since workflows carry no picture yet, or the
+ *  image the workflow makes. */
+export type Cover = 'canvas' | 'output'
 
 export const COVERS: { value: Cover; label: string }[] = [
   { value: 'canvas', label: 'Canvas' },
-  { value: 'gradient', label: 'Gradient' },
   { value: 'output', label: 'Image' }
 ]
 
