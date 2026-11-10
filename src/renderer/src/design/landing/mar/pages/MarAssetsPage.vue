@@ -196,12 +196,10 @@ const KINDS = computed(() =>
       ['audio', 'Audio']
     ] as const
   )
+    // Every type keeps its tab, empty or not: the bar never shifts, and it
+    // says what a library can hold; an empty one says so (scopeEmpty).
     .map(([value, label]) => ({ value: value as Kind, label, count: count(value) }))
-    // A type with nothing in it has no tab.
-    .filter((k) => k.value === 'all' || k.count > 0)
 )
-// The type you were on emptied (another build, a delete): back to All.
-watch(KINDS, (ks) => ks.some((k) => k.value === kind.value) || (kind.value = 'all'))
 const WHERE = [
   { value: 'all', label: 'Everywhere' },
   { value: 'local', label: 'This computer' },
@@ -255,18 +253,32 @@ const shown = computed(() => {
   return [...list].sort(by[sort.value])
 })
 /** A search or a filter is on: only then does an empty wall say Nothing
- *  matches. A folder, label, tag or Favorites picked in the sidebar is a
- *  place, not a search; empty, it says so (scopeEmpty). */
+ *  matches. A type tab, or a folder, label, tag or Favorites picked in the
+ *  sidebar, is a place, not a search; empty, it says so (scopeEmpty). */
 const searchOn = computed(
   () =>
-    kind.value !== 'all' ||
     where.value !== 'all' ||
     activeFilters({ ...filter.value, source: 'all', tags: [] }) > 0 ||
     project.value !== 'all' ||
     !!query.value.trim()
 )
+/** An empty type tab: what lands there, in its own words. */
+const TYPE_EMPTY = {
+  image: { icon: ImagePlus, title: 'No images yet', text: 'Pictures your runs make land here.' },
+  video: { icon: Video, title: 'No videos yet', text: 'Clips your runs make land here.' },
+  '3d': { icon: Box, title: 'No 3D files yet', text: 'Models your runs make land here.' },
+  audio: { icon: Music, title: 'No audio yet', text: 'Sounds your runs make land here.' }
+}
 const scopeEmpty = computed(() => {
   if (!browsable.value || shown.value.length || searchOn.value) return null
+  if (kind.value !== 'all' && !folder.value && !label.value && !favOnly.value) {
+    const t = TYPE_EMPTY[kind.value as keyof typeof TYPE_EMPTY]
+    if (t)
+      return {
+        ...t,
+        text: uploadable.value || inGraph ? `${t.text} Upload one to start.` : t.text
+      }
+  }
   if (folder.value)
     return {
       icon: FolderOpen,
@@ -1290,12 +1302,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           <ChevronRight :size="14" />
         </template>
       </nav>
-    </template>
-    <template v-if="browsable && inGraph" #meta>
-      <!-- What the wall shows now; Select all lives in the selection bar. -->
-      <span class="mar-anav-total"
-        >{{ shown.length }} {{ shown.length === 1 ? 'asset' : 'assets' }}</span
-      >
     </template>
     <template #actions="{ state }">
       <Button
@@ -2386,10 +2392,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 .mar-anav-naming input:focus {
   box-shadow: 0 0 0 2px var(--color-border-focus);
 }
-.mar-anav-total {
-  color: var(--color-subtle-foreground);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
+/* Assets' type tabs carry their counts (the title doesn't): the one
+   place tab counts stay on (shell/marShell.css turns them off). */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .mar-asset-seg .mar-pseg-count {
+  display: inline;
 }
 /* The same pill as an example tile's (ExampleTile.vue), at the bottom
    since the hover check takes the top left corner. */

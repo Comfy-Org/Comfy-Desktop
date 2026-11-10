@@ -49,8 +49,13 @@ DS's Motion page (`ds/motion.ts`).
   `graph/AssetFilterMenu.vue`).
 - **A filter shows as a chip** under the toolbar, removable, with Clear
   filters (⌘⌫).
-- **Nothing empty to pick.** A type tab, filter group or option with nothing
-  in it isn't shown; if the one you're on empties, fall back to All.
+- **Tabs stay.** Type tabs (All, Images, Videos, 3D, Audio) always show,
+  empty or not, so the bar never shifts. An empty one says what lands there
+  ("No 3D files yet"), never "Nothing matches", which is only for a search
+  or a filter.
+- **Counts go in the tabs**, not beside the title ("Images 4", not "17
+  assets" after the heading). Assets' type tabs only; other tab rows keep
+  counts off.
 
 ## Feedback
 
