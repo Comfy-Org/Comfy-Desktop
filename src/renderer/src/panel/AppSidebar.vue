@@ -9,7 +9,12 @@ import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
-import type { DashboardPage } from '../types/ipc'
+import { useInstallationStore } from '../stores/installationStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { useSessionStore } from '../stores/sessionStore'
+import { installTypeMetaForInstall } from '../lib/installTypeIcon'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import type { DashboardPage, Installation } from '../types/ipc'
 
 const { activePage } = defineProps<{
   activePage: DashboardPage
@@ -17,6 +22,7 @@ const { activePage } = defineProps<{
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
+  pick: [installation: Installation]
 }>()
 
 interface SidebarRow {
@@ -26,6 +32,15 @@ interface SidebarRow {
 }
 
 const { t } = useI18n()
+const installationStore = useInstallationStore()
+const dashboardScope = useDashboardScopeStore()
+const sessionStore = useSessionStore()
+
+const builds = computed(() =>
+  installationStore.installations.filter((inst) =>
+    isInstallationInWorkspace(inst, dashboardScope.selectedWorkspaceId)
+  )
+)
 
 const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
@@ -119,6 +134,28 @@ function navigate(page: DashboardPage): void {
           <component :is="row.icon" :size="15" aria-hidden="true" />
           <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
         </Button>
+        <template v-if="group.key === 'main' && !collapsed">
+          <Button
+            v-for="inst in builds"
+            :key="inst.id"
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg pr-3 pl-8 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+            :data-testid="`app-sidebar-build-${inst.id}`"
+            @click="emit('pick', inst)"
+          >
+            <span class="relative flex shrink-0">
+              <component :is="installTypeMetaForInstall(inst).icon" :size="15" aria-hidden="true" />
+              <span
+                v-if="sessionStore.isRunning(inst.id) || sessionStore.errorInstances.has(inst.id)"
+                class="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-sidebar-background"
+                :class="sessionStore.errorInstances.has(inst.id) ? 'bg-destructive' : 'bg-success'"
+                aria-hidden="true"
+              />
+            </span>
+            <span class="min-w-0 flex-1 truncate text-left">{{ inst.name }}</span>
+          </Button>
+        </template>
       </template>
     </nav>
 

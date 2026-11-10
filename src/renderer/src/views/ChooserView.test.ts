@@ -248,7 +248,7 @@ describe('ChooserView', () => {
     await flushPromises()
 
     const start = wrapper.get('.chooser-tile-launch')
-    expect(start.text()).toBe('Start')
+    expect(start.text()).toBe('Start on this computer')
     await start.trigger('click')
     await flushPromises()
 
@@ -256,7 +256,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('open-details')).toBeUndefined()
   })
 
-  it('leads with Update and keeps starting as a named icon', async () => {
+  it('shows Update available beside the name and keeps the start button labeled', async () => {
     installMockApi([
       makeInstall({
         id: 'a',
@@ -267,11 +267,10 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
 
-    expect(wrapper.get('.chooser-tile-pill-update').text()).toBe('Update')
-    const start = wrapper.get('.chooser-tile-launch')
-    expect(start.text()).toBe('')
-    expect(start.attributes('aria-label')).toBe('Start')
-    expect(wrapper.get('.chooser-tile-footer').text()).toContain('Update available')
+    expect(wrapper.get('.chooser-tile-name-row .chooser-tile-pill-update').text()).toBe(
+      'Update available'
+    )
+    expect(wrapper.get('.chooser-tile-launch').text()).toBe('Start on this computer')
   })
 
   it('renders a cloud install through the same tile component as local installs', async () => {
@@ -393,7 +392,7 @@ describe('ChooserView', () => {
     const wrapper = mountChooser()
     await flushPromises()
     expect(wrapper.find('.chooser-tile-cta').exists()).toBe(false)
-    expect(wrapper.find('.chooser-tile-status').exists()).toBe(false)
+    expect(wrapper.get('.chooser-tile-status--stopped').text()).toBe('Stopped')
     expect(wrapper.find('.chooser-tile-error-badge').exists()).toBe(false)
   })
 
@@ -494,7 +493,7 @@ describe('ChooserView', () => {
     expect(bootedTile.find('.chooser-tile-meta-line').exists()).toBe(true)
   })
 
-  it('renders the update affordance as a bare "Update" pill - the target version lives in the meta line', async () => {
+  it('renders the update affordance as an "Update available" badge - the target version lives in the meta line', async () => {
     installMockApi([
       makeInstall({
         id: 'u',
@@ -508,7 +507,7 @@ describe('ChooserView', () => {
     const tile = wrapper.findAll('.chooser-tile').find((t) => t.text().includes('Updatable'))!
     const pill = tile.find('.chooser-tile-pill-update')
     expect(pill.exists()).toBe(true)
-    expect(pill.text().trim()).toBe('Update')
+    expect(pill.text().trim()).toBe('Update available')
     expect(tile.find('.chooser-tile-meta-line').text()).toContain('v0.22.3')
   })
 

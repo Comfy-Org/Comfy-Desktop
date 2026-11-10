@@ -433,6 +433,7 @@ onUnmounted(() => {
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
         @navigate="closeBuildDetails"
+        @pick="launchFromBuildDetails"
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
