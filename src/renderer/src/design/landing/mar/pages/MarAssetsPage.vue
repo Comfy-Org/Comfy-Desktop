@@ -1071,16 +1071,17 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   z-index: 5;
   /* Edge to edge: out over the page's own side padding (px-11). */
   margin-inline: -44px;
-  padding: 12px 44px 0;
-  /* Its top padding pulled back, so the tools sit where Apps' do. */
+  padding: 12px 44px;
+  /* Its padding pulled back on both sides, so the tools sit where Apps'
+     do and the wall starts where it did (MarPage's 20px gap, less 12). */
   margin-top: -12px;
-  transition:
-    background-color 160ms ease,
-    backdrop-filter 160ms ease;
+  margin-bottom: 8px;
+  transition: background-color 160ms ease;
 }
+/* Stuck: the page's own background, solid, with room under the tools,
+   so the cards pass behind a clean edge instead of a blur. */
 .mar-page-bar.is-stuck:has(.mar-asset-tools) {
-  background-color: color-mix(in oklch, var(--color-content-background) 82%, transparent);
-  backdrop-filter: blur(16px) saturate(1.2);
+  background-color: var(--color-content-background);
 }
 .mar-asset-tools {
   display: flex;
