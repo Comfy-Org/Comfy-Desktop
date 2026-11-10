@@ -104,10 +104,6 @@ export function reservePendingIdentityMerge(
   return null
 }
 
-/**
- * Complete a rotation if the process crashed after recording W/D -> F but
- * before replacing the reusable anonymous ID. This runs before first capture.
- */
 export function recoverPendingIdentityRotation(currentAnonymousId: string): string {
   const interrupted = readPendingIdentityMerges()
     .reverse()

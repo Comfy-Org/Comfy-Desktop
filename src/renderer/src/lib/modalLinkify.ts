@@ -1,5 +1,3 @@
-// Markdown-lite formatter for modal copy: escapes HTML, linkifies URLs, renders **bold**.
-
 function escapeHtml(text: string): string {
   const div = document.createElement('div')
   div.textContent = text

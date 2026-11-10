@@ -2,13 +2,6 @@ import { app, ipcMain } from 'electron'
 import type { IpcMainInvokeEvent } from 'electron'
 import { PICKER_SETTINGS_CHANNELS as CH } from '../../types/ipc'
 
-/**
- * Picker expanded-Manage IPC handlers. The picker popup has its own preload (no `window.api`), so each
- * popup-facing channel forwards to the existing panel-facing handler.
- *
- * Forwarding uses `ipcMain._invokeHandlers`, a private Electron map (stable as of v33, not contractual).
- * If a future release removes it, factor the panel handlers into plain async functions both sides call.
- */
 type InvokeHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 function dispatchInvoke(
   channel: string,
@@ -26,11 +19,6 @@ function dispatchInvoke(
 }
 
 export interface PickerSettingsIpcOptions {
-  /** Controlled quit used for the relaunch path. Must route through
-   *  `app.quit()` semantics (destroying host windows whose close handlers
-   *  would otherwise consult/prompt), NEVER `app.exit()`: exit() skips
-   *  `will-quit`, where active managed model downloads park their staged
-   *  bytes for resume, so it would strand in-flight transfers. */
   quitForRelaunch: () => void
 }
 
@@ -157,10 +145,6 @@ export function registerPickerSettingsIpc(options: PickerSettingsIpcOptions): vo
     dispatchInvoke('preview-local-migration', event, payload?.installationId)
   )
 
-  // Fire-and-forget. If `relaunch()` throws (sandboxed builds), skip the quit
-  // so the user isn't killed without a respawn. The quit itself is the
-  // controlled path (see PickerSettingsIpcOptions.quitForRelaunch), so active
-  // model downloads park resumably instead of being killed mid-write.
   ipcMain.on(CH.relaunchApp, () => {
     try {
       app.relaunch()
@@ -171,7 +155,6 @@ export function registerPickerSettingsIpc(options: PickerSettingsIpcOptions): vo
     options.quitForRelaunch()
   })
 
-  // Pull main's full i18n catalog so keys like `actions.restart` resolve inside the popup.
   ipcMain.handle(CH.getLocaleMessages, (event) => dispatchInvoke('get-locale-messages', event))
   ipcMain.handle(CH.getLocale, (event) => dispatchInvoke('get-locale', event))
 }

@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'events'
 import fs from 'fs'
@@ -57,7 +56,6 @@ const tools = {
   update: async (): Promise<void> => {}
 }
 
-/** Whether the promise has settled yet, sampled without awaiting it. */
 async function settled(p: Promise<unknown>): Promise<boolean> {
   let done = false
   void p.then(
@@ -68,7 +66,6 @@ async function settled(p: Promise<unknown>): Promise<boolean> {
       done = true
     }
   )
-  // Give already-queued reactions a chance to run.
   await new Promise((r) => setImmediate(r))
   return done
 }
@@ -92,9 +89,6 @@ describe('runStreamed', () => {
     fakeChild = makeFakeChild(1234)
     const p = runStreamed('uv', [], 'failed', tools)
 
-    // Abort surfaces as an 'error' event while the process is still dying.
-    // Settling here would let the caller start rollback against a venv that
-    // a live pip/uv still holds locks in.
     fakeChild.emit('error', new Error('The operation was aborted'))
     expect(await settled(p)).toBe(false)
 
@@ -190,15 +184,11 @@ describe('planPipReconciliation', () => {
   }
 
   it('entering multi-arch sweeps the universal SDK packages and a pytorch.org triton-rocm', () => {
-    // pip writes `rocm_sdk_core-7.2.1.dist-info` (underscores) for the
-    // package named rocm-sdk-core.
     distInfo('rocm_sdk_core', '7.2.1')
     distInfo('rocm_sdk_devel', '7.2.1')
     distInfo('rocm_bootstrap', '7.2.1')
     distInfo('rocm', '7.2.1')
     distInfo('triton_rocm', '3.6.0')
-    // Core dists are removed too - pip would otherwise keep a same-version
-    // wheel from the other index (torch is declared by the target).
     distInfo('torch', '2.9.1+rocm7.2.1')
     const plan = planPipReconciliation(multiArch(fullTuple), tmpDir)
     expect(plan.removals.sort()).toEqual([
@@ -220,10 +210,6 @@ describe('planPipReconciliation', () => {
   })
 
   it('a same-version cross-index switch removes the installed core tuple so pip must reinstall from the target index', () => {
-    // pip/uv treat an installed wheel of the requested version as satisfied
-    // regardless of source index; without the removal the pytorch.org wheel
-    // would survive an identical-tuple switch to the AMD index (and vice
-    // versa).
     distInfo('torch', '2.12.0+rocm7.14.0')
     distInfo('torchvision', '0.27.0+rocm7.14.0')
     distInfo('torchaudio', '2.11.0+rocm7.14.0')
@@ -233,7 +219,6 @@ describe('planPipReconciliation', () => {
     distInfo('amd_torch_device_gfx1100', '2.12.0+rocm7.14.0')
     const outOf = planPipReconciliation(pytorchIndex(fullTuple), tmpDir)
     expect(outOf.removals).toEqual(expect.arrayContaining(['torch', 'torchvision', 'torchaudio']))
-    // The target reinstalls the core tuple, so it is NOT asserted absent.
     expect(outOf.expectAbsent).not.toEqual(expect.arrayContaining(['torch']))
     expect(outOf.expectAbsent).toEqual(['amd_torch_device_gfx1100'])
   })
@@ -282,15 +267,10 @@ describe('planPipReconciliation', () => {
       'rocm_sdk_device_gfx1100'
     ]
     expect(plan.removals.sort()).toEqual([...ecosystem, 'triton'].sort())
-    // triton is removed but NOT asserted absent: the target's own dependency
-    // tree may legitimately reinstall a triton build.
     expect(plan.expectAbsent.sort()).toEqual(ecosystem)
   })
 
   it('a non-multi-arch venv on a non-multi-arch target gets no ecosystem sweep', () => {
-    // Universal SDK packages without device overlays (e.g. an observed-tuple
-    // restore of the universal stack) must be left to the target dependency
-    // tree, which references them.
     distInfo('rocm', '7.2.1')
     distInfo('rocm_sdk_core', '7.2.1')
     distInfo('triton_rocm', '3.6.0')
@@ -350,7 +330,7 @@ describe('amdOverlayCoherenceError', () => {
   it('passes when every overlay tracks the core tuple', () => {
     distInfo('amd_torch_device_gfx1100', '2.12.0+rocm7.14.0')
     distInfo('amd_torchvision_device_gfx1100', '0.27.0+rocm7.14.0')
-    distInfo('rocm_sdk_device_gfx1100', '7.14.0') // not an amd-* overlay; unversioned vs tuple
+    distInfo('rocm_sdk_device_gfx1100', '7.14.0')
     expect(amdOverlayCoherenceError(tmpDir, packages)).toBeNull()
   })
 
@@ -403,7 +383,6 @@ describe('preparePipStack / pipInstallSpecs', () => {
     const prepared = preparePipStack(amdEntry.packages, amdEntry)
     expect(prepared.source).toEqual({ kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' })
     expect(prepared.indexUrl).toBe(AMD_MULTI_ARCH_INDEX_URL)
-    // The rocm tag still asserts AMD accelerator evidence at verify time.
     expect(prepared.accelVariant).toBe('amd')
   })
 
@@ -428,9 +407,6 @@ describe('preparePipStack / pipInstallSpecs', () => {
   })
 
   it('passes AMD as the EXTRA index over a default-PyPI --index-url, in exactly that order', () => {
-    // uv gives --extra-index-url priority over --index-url (first-index
-    // strategy): were AMD the --index-url, uv would resolve the torch
-    // project against PyPI (the extra) and fail the +rocm pins.
     expect(pipIndexArgs(preparePipStack(amdEntry.packages, amdEntry))).toEqual([
       '--index-url',
       'https://pypi.org/simple',
@@ -460,8 +436,6 @@ describe('preflightDiskSpace (pip estimates)', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  // The machine's real free space decides pass/fail; the estimate under
-  // test is visible either way (result or DiskSpaceError both carry it).
   async function requiredBytesFor(
     opts?: Parameters<typeof preflightDiskSpace>[3]
   ): Promise<number> {
@@ -483,7 +457,6 @@ describe('preflightDiskSpace (pip estimates)', () => {
       pipSource: { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0' }
     })
     expect(pytorchIndex).toBe(generic)
-    // 24 GiB AMD estimate vs the 8 GiB generic pip fallback.
     expect(amd - generic).toBeGreaterThanOrEqual(16 * 1024 ** 3)
   })
 })
@@ -512,8 +485,6 @@ describe('applyBundleGraft (real fs)', () => {
   })
 
   it('switches an AMD multi-arch venv back to the universal bundle: SDK payloads grafted, multi-arch leftovers swept', async () => {
-    // Universal ROCm 7.2.1 bundle: torch family + rocm dist metadata, pure
-    // shims, and the `_`-prefixed SDK payload packages find_libraries needs.
     for (const name of [
       'torch',
       'torch-2.9.1+rocm7.2.1.dist-info',
@@ -536,9 +507,6 @@ describe('applyBundleGraft (real fs)', () => {
       fileIn(srcSite, name, 'FILE')
     fileIn(srcSite, '_rocm_sdk_libraries_custom', 'bin', 'hipblas.dll')
 
-    // Venv on the multi-arch 7.14 stack, exactly as the forward switch
-    // leaves it - including AMD's device-overlay .kpack payload inside
-    // torch/ and unrelated packages that must survive.
     for (const name of [
       'torch',
       'torch-2.11.0+rocm7.14.0.dist-info',
@@ -587,8 +555,6 @@ describe('applyBundleGraft (real fs)', () => {
       dstSite
     )
 
-    // Universal SDK payload is complete - this is what the E2E switch-back
-    // verification failed on (hipblas.dll unreachable via _rocm_sdk_*).
     expect(
       fs.existsSync(path.join(dstSite, '_rocm_sdk_libraries_custom', 'bin', 'hipblas.dll'))
     ).toBe(true)
@@ -597,7 +563,6 @@ describe('applyBundleGraft (real fs)', () => {
     expect(fs.existsSync(path.join(dstSite, 'rocm_sdk_core-7.2.1.dist-info'))).toBe(true)
     expect(fs.existsSync(path.join(dstSite, 'torch-2.9.1+rocm7.2.1.dist-info'))).toBe(true)
 
-    // No trace of the multi-arch stack: dists, payloads, device overlays.
     for (const name of [
       'torch-2.11.0+rocm7.14.0.dist-info',
       'rocm-7.14.0.dist-info',
@@ -613,15 +578,12 @@ describe('applyBundleGraft (real fs)', () => {
       'amd_torchvision_device_gfx1100-0.26.0+rocm7.14.0.dist-info'
     ])
       expect(fs.existsSync(path.join(dstSite, name)), name).toBe(false)
-    // The device overlays' .kpack payload went with the torch dir swap.
     expect(fs.existsSync(path.join(dstSite, 'torch', '.kpack'))).toBe(false)
     expect(fs.existsSync(path.join(dstSite, 'torchvision', '.kpack'))).toBe(false)
 
-    // Unrelated packages survive.
     expect(fs.existsSync(path.join(dstSite, 'torchsde'))).toBe(true)
     expect(fs.existsSync(path.join(dstSite, 'numpy'))).toBe(true)
 
-    // Swept dists are reported so verification asserts they stayed gone.
     expect(removed.sort()).toEqual([
       'amd_torch_device_gfx1100',
       'amd_torchvision_device_gfx1100',
@@ -656,13 +618,11 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     venvDir = path.join(installPath, 'ComfyUI', '.venv')
     venvSite = sitePathIn(venvDir)
     fs.mkdirSync(venvSite, { recursive: true })
-    // Original venv contents: old torch payload + a non-torch survivor.
     distInfoIn(venvSite, 'torch', '2.1.0')
     fs.mkdirSync(path.join(venvSite, 'torch'), { recursive: true })
     fs.writeFileSync(path.join(venvSite, 'torch', 'old-payload.py'), 'old')
     fs.writeFileSync(path.join(venvSite, 'unrelated.py'), 'keep me')
 
-    // Bundle payload staging: the new torch family.
     stagingDir = path.join(tmpDir, 'staging')
     srcSite = path.join(stagingDir, 'site-packages')
     fs.mkdirSync(srcSite, { recursive: true })
@@ -697,9 +657,6 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
   }
 
   it('rolls the venv back intact and leaves stack metadata untouched when verification fails', async () => {
-    // The graft succeeds (dist-info matches the tuple) but the venv has no
-    // python interpreter, so verifyStack fails AFTER mutation - exercising
-    // the full rollback path.
     const update = vi.fn(async () => {})
     const result = await applyTorchStackTransaction(makeInstallation(), makePrepared(), {
       sendProgress: () => {},
@@ -709,23 +666,16 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
     expect(result.ok).toBe(false)
     expect(result.message).toContain('the previous environment was restored')
 
-    // Original venv is back byte-for-byte in shape: old dist-info + payload
-    // restored, grafted new stack gone, non-torch file intact.
     expect(fs.existsSync(path.join(venvSite, 'torch-2.1.0.dist-info'))).toBe(true)
     expect(fs.existsSync(path.join(venvSite, 'torch-2.9.9.dist-info'))).toBe(false)
     expect(fs.readFileSync(path.join(venvSite, 'torch', 'old-payload.py'), 'utf-8')).toBe('old')
     expect(fs.existsSync(path.join(venvSite, 'torch', 'new-payload.py'))).toBe(false)
     expect(fs.readFileSync(path.join(venvSite, 'unrelated.py'), 'utf-8')).toBe('keep me')
 
-    // No transaction debris: backup renamed back, no gc dir, journal removed.
     expect(fs.existsSync(venvDir + '.torch-backup')).toBe(false)
     expect(fs.existsSync(venvDir + '.torch-gc')).toBe(false)
     expect(fs.existsSync(path.join(installPath, '.torch-stack-journal.json'))).toBe(false)
 
-    // The new stack ref must never be persisted - a rolled-back venv with
-    // the new ref recorded would hand repair a false acquisition source. The
-    // rollback path re-persists the PRIOR refs (an idempotent reset that also
-    // covers a failure landing after the step-7 persist).
     for (const call of update.mock.calls as unknown as Array<[Record<string, unknown>]>) {
       const persisted = call[0]['lastVerifiedTorchStack'] as { stackId?: string } | null
       expect(persisted?.stackId).not.toBe('comfy-bundle:win-cpu:test-env')
@@ -735,7 +685,6 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
       observedTorchStack: null
     })
 
-    // The staging dir is always cleaned up.
     expect(fs.existsSync(stagingDir)).toBe(false)
   })
 
@@ -767,7 +716,6 @@ describe('applyTorchStackTransaction (bundle path, real fs)', () => {
 
     expect(result.ok).toBe(false)
     expect(result.message).toContain('did not finish')
-    // The live venv and the recovery-owned backup are both untouched.
     expect(fs.existsSync(path.join(venvSite, 'torch-2.1.0.dist-info'))).toBe(true)
     expect(fs.existsSync(venvDir + '.torch-backup')).toBe(true)
     expect(update).not.toHaveBeenCalled()

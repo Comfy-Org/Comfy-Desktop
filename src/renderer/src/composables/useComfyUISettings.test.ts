@@ -3,17 +3,10 @@ import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref, type Ref } from 'vue'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    // t(key, fallbackString) returns the fallback; t(key, paramsObject)
-    // returns the bare key.
-    t: (key: string, arg?: string | Record<string, unknown>) =>
-      typeof arg === 'string' ? arg : key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
-// Hoisted so they can capture calls — the composable invokes
-// `useModal()` / `useActionGuard()` once at setup.
 const modalSpies = vi.hoisted(() => ({
   confirm: vi.fn(),
   prompt: vi.fn(),
@@ -21,7 +14,6 @@ const modalSpies = vi.hoisted(() => ({
   confirmWithOptions: vi.fn(),
   alert: vi.fn()
 }))
-// `dialogsSpies.confirm` resolves `'primary'` to proceed, `false` to cancel.
 const dialogsSpies = vi.hoisted(() => ({
   confirm: vi.fn(),
   prompt: vi.fn(),
@@ -78,7 +70,6 @@ function makeInstall(id: string, name: string): Installation {
 }
 
 function makeSection(installName: string): DetailSection {
-  // Stamp the title with the install name so assertions can tell payloads apart.
   return {
     tab: 'status',
     title: `Sections for ${installName}`,
@@ -115,7 +106,6 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
   })
 
   it('keeps the previous install\'s sections + diskSpace painted during the switch window so the right pane does not flash "Loading…" (#782)', async () => {
-    // Install B's IPC is held open to model the disk-bound delay.
     let resolveB: ((value: DetailSection[]) => void) | null = null
     const sectionsB = new Promise<DetailSection[]>((resolve) => {
       resolveB = resolve
@@ -138,16 +128,12 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
       composable = useComfyUISettings({ installation, onShowProgress })
     })
 
-    // Initial load (install A) resolves immediately.
     await nextTick()
-    await Promise.resolve() // flush microtasks for the await chain in loadAll
+    await Promise.resolve()
     await Promise.resolve()
     expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A'])
     expect(composable.sectionsFresh.value).toBe(true)
 
-    // Switch to install B. Sections/diskSpace are deliberately NOT blanked
-    // synchronously so the "Loading…" placeholder never flashes;
-    // `sectionsFresh` flips to false to mark the pane stale until B lands.
     installation.value = makeInstall('b', 'B')
     await nextTick()
 
@@ -155,7 +141,6 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A'])
     expect(composable.sectionsFresh.value).toBe(false)
 
-    // Resolve B's IPC; sections flip to B and sectionsFresh returns true.
     resolveB!([makeSection('B')])
     await Promise.resolve()
     await Promise.resolve()
@@ -195,8 +180,6 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
   })
 
   it('does NOT clear sections on a same-install reload (only on install switches)', async () => {
-    // Blanking on a same-install reload would flash Loading… for an edit;
-    // only an install switch should clear.
     let getCallCount = 0
     installMockApi({
       getDetailSections: vi.fn(() => {
@@ -218,7 +201,6 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     await Promise.resolve()
     expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A-call-1'])
 
-    // Second reload for the same install must not blank the pane mid-flight.
     await composable.reload()
     expect(composable.sections.value.length).toBeGreaterThan(0)
     expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A-call-2'])
@@ -227,8 +209,6 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
   })
 
   it('discards an out-of-order older response (A → B → A returning B late)', async () => {
-    // When B resolves after the switch back to A, its sections must NOT
-    // overwrite A's payload.
     let resolveB: ((value: DetailSection[]) => void) | null = null
     const sectionsB = new Promise<DetailSection[]>((resolve) => {
       resolveB = resolve
@@ -252,11 +232,9 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     await Promise.resolve()
     await Promise.resolve()
 
-    // Switch to B — fetch held open.
     installation.value = makeInstall('b', 'B')
     await nextTick()
 
-    // Switch back to A — A's IPC resolves immediately, sections=A.
     installation.value = makeInstall('a', 'A')
     await nextTick()
     await Promise.resolve()
@@ -264,8 +242,6 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A'])
     expect(composable.loading.value).toBe(false)
 
-    // Now resolve B late. The request-sequence guard must drop the
-    // result so it never overwrites A's payload or flips loading.
     resolveB!([makeSection('B')])
     await Promise.resolve()
     await Promise.resolve()
@@ -274,6 +250,100 @@ describe('useComfyUISettings — switch staleness behaviour (#782 / #582)', () =
     expect(composable.sections.value.map((s) => s.title)).toEqual(['Sections for A'])
     expect(composable.loading.value).toBe(false)
     expect(api.getDetailSections).toHaveBeenCalledTimes(3)
+    scope.stop()
+  })
+})
+
+describe('useComfyUISettings — refreshing after an operation', () => {
+  beforeEach(() => {
+    setActivePinia(createTestingPinia({ stubActions: false }))
+  })
+
+  async function flush(): Promise<void> {
+    await nextTick()
+    await Promise.resolve()
+    await Promise.resolve()
+  }
+
+  async function mountForInstall(apiOverrides: Partial<MockApi> = {}) {
+    const api = installMockApi(apiOverrides)
+    const installation = ref<Installation | null>(makeInstall('a', 'A'))
+    const scope = effectScope()
+    let composable!: ReturnType<typeof useComfyUISettings>
+    scope.run(() => {
+      composable = useComfyUISettings({ installation, onShowProgress: vi.fn() })
+    })
+    await flush()
+    vi.mocked(api.getDetailSections).mockClear()
+    return { composable, api, scope }
+  }
+
+  it('re-reads sections when an operation on this install ends', async () => {
+    const { api, scope } = await mountForInstall()
+    const store = useSessionStore()
+
+    store.operationInstances.set('a', { actionId: 'update-comfyui' })
+    await flush()
+    expect(api.getDetailSections).not.toHaveBeenCalled()
+
+    store.operationInstances.delete('a')
+    await flush()
+    expect(api.getDetailSections).toHaveBeenCalledExactlyOnceWith('a')
+    scope.stop()
+  })
+
+  it('ignores an operation on another install', async () => {
+    const { api, scope } = await mountForInstall()
+    const store = useSessionStore()
+
+    store.operationInstances.set('b', { actionId: 'update-comfyui' })
+    await flush()
+    store.operationInstances.delete('b')
+    await flush()
+
+    expect(api.getDetailSections).not.toHaveBeenCalled()
+    scope.stop()
+  })
+
+  it('leaves the refresh to an inline action that is still finishing', async () => {
+    let finishAction: (result: ActionResult) => void = () => {}
+    const { composable, api, scope } = await mountForInstall({
+      runAction: vi.fn(() => new Promise<ActionResult>((resolve) => (finishAction = resolve)))
+    })
+    const store = useSessionStore()
+
+    const running = composable.runAction({ id: 'check-update', label: 'Check' } as ActionDef)
+    await flush()
+    store.operationInstances.set('a', { actionId: 'check-update' })
+    await flush()
+    store.operationInstances.delete('a')
+    await flush()
+    expect(api.getDetailSections).not.toHaveBeenCalled()
+
+    finishAction({ ok: true })
+    await running
+    expect(api.getDetailSections).toHaveBeenCalledOnce()
+    scope.stop()
+  })
+
+  it('stops loading when a section refresh supersedes a full reload', async () => {
+    let finishReload: (sections: DetailSection[]) => void = () => {}
+    const { composable, api, scope } = await mountForInstall({
+      getDetailSections: vi.fn().mockResolvedValue([makeSection('A')])
+    })
+    vi.mocked(api.getDetailSections).mockImplementationOnce(
+      () => new Promise<DetailSection[]>((resolve) => (finishReload = resolve))
+    )
+
+    const reloading = composable.reload()
+    await flush()
+    expect(composable.loading.value).toBe(true)
+
+    await composable.refreshSection('Sections for A')
+    finishReload([makeSection('A')])
+    await reloading
+
+    expect(composable.loading.value).toBe(false)
     scope.stop()
   })
 })
@@ -294,7 +364,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     actionGuardSpies.checkBeforeAction.mockResolvedValue('proceed')
   })
 
-  /** Mark an install running so `runAction`'s `wasRunning` capture flips true. */
   function markRunning(id: string, name = id): void {
     const sessionStore = useSessionStore()
     sessionStore.runningInstances.set(id, {
@@ -330,7 +399,7 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   it('prepends the willStopRunning warning to the action confirm message when the install is running', async () => {
     installMockApi()
     markRunning('a', 'A')
-    dialogsSpies.confirm.mockResolvedValue(false) // user cancels — composable returns early
+    dialogsSpies.confirm.mockResolvedValue(false)
     const { composable, scope } = mountComposable(makeInstall('a', 'A'))
 
     await composable.runAction({
@@ -341,8 +410,9 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
     const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { message: string }
-    // The warning is joined above the action copy with `\n\n`.
-    expect(callArg.message).toBe('errors.willStopRunning\n\nThis will pull the latest ComfyUI.')
+    expect(callArg.message).toBe(
+      'A is running and will be stopped first.\n\nThis will pull the latest ComfyUI.'
+    )
     scope.stop()
   })
 
@@ -359,14 +429,13 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     expect(dialogsSpies.confirm).toHaveBeenCalledTimes(1)
     const callArg = dialogsSpies.confirm.mock.calls[0]![0] as { message: string; title: string }
-    expect(callArg.message).toBe('errors.willStopRunning')
+    expect(callArg.message).toBe('A is running and will be stopped first.')
     expect(callArg.title).toBe('Restore Snapshot')
     scope.stop()
   })
 
   it('does NOT prepend the warning when the install is not running', async () => {
     installMockApi()
-    // No markRunning — sessionStore.isRunning('a') === false.
     dialogsSpies.confirm.mockResolvedValue(false)
     const { composable, scope } = mountComposable(makeInstall('a', 'A'))
 
@@ -396,7 +465,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     expect(callArg.tone).toBe('danger')
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(api.stopComfyUI).toHaveBeenCalledWith('a')
-    // Preview dismissed so the window lands on the stopped-relaunch card.
     expect(onDismissPreview).toHaveBeenCalledTimes(1)
     scope.stop()
   })
@@ -430,8 +498,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   })
 
   it('IN_PLACE_RELAUNCH apiCall stops the session, runs the op, and relaunches when the op succeeds', async () => {
-    // stopComfyUI fires → flip runningInstances → polling loop in
-    // stopAndWaitForExit exits → runAction(update-comfyui) → runAction(launch).
     const api = installMockApi({
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
@@ -453,14 +519,12 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
 
     expect(onShowProgress).toHaveBeenCalledTimes(1)
     const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
-    // triggersInstanceStart reflects the relaunch the apiCall appends.
     expect(opts.triggersInstanceStart).toBe(true)
 
     const result = (await opts.apiCall()) as ActionResult
 
     expect(api.stopComfyUI).toHaveBeenCalledTimes(1)
     expect(api.stopComfyUI).toHaveBeenCalledWith('a')
-    // Two run-action calls: the actual op, then the auto-relaunch.
     expect(api.runAction).toHaveBeenCalledTimes(2)
     expect(api.runAction).toHaveBeenNthCalledWith(1, 'a', 'update-comfyui', undefined)
     expect(api.runAction).toHaveBeenNthCalledWith(2, 'a', 'launch')
@@ -469,7 +533,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   })
 
   it('IN_PLACE_RELAUNCH apiCall skips the relaunch when the op result reports ok: false', async () => {
-    // Must NOT relaunch on a failed update.
     const api = installMockApi({
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
@@ -498,8 +561,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   })
 
   it('REQUIRES_STOPPED-but-not-IN_PLACE_RELAUNCH apiCall stops and runs the op without an auto-relaunch (e.g. copy-update)', async () => {
-    // copy-update returns a newInstallationId that opens in its own window;
-    // the source install is intentionally left stopped, so no relaunch.
     const api = installMockApi({
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
@@ -519,7 +580,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
     } as ActionDef)
 
     const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
-    // No auto-relaunch → triggersInstanceStart stays false.
     expect(opts.triggersInstanceStart).toBe(false)
     await opts.apiCall()
 
@@ -530,8 +590,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   })
 
   it('copy-pytorch warns in its prompt, stops the running install, and runs without an auto-relaunch', async () => {
-    // Like copy-update: the op targets the new copy, so the source install
-    // is stopped for a consistent venv copy and intentionally left stopped.
     const api = installMockApi({
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
@@ -551,9 +609,8 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
       prompt: { title: 'Copy & Change PyTorch', message: 'Name the copy.', field: 'name' }
     } as ActionDef)
 
-    // The stop warning lands on the prompt (the action's only surface).
     const promptArg = dialogsSpies.prompt.mock.calls[0]![0] as { message: string }
-    expect(promptArg.message).toBe('errors.willStopRunning\n\nName the copy.')
+    expect(promptArg.message).toBe('A is running and will be stopped first.\n\nName the copy.')
 
     const opts = onShowProgress.mock.calls[0]?.[0] as ShowProgressOpts
     expect(opts.triggersInstanceStart).toBe(false)
@@ -569,7 +626,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   })
 
   it('apiCall does not stop or relaunch when the install is not running', async () => {
-    // Wasn't running → nothing to stop or relaunch; just invoke the op.
     const api = installMockApi({
       runAction: vi.fn().mockResolvedValue({ ok: true })
     })
@@ -595,7 +651,6 @@ describe('useComfyUISettings.runAction — stop-warning augment + self-stopping 
   })
 
   it('inline (no showProgress) REQUIRES_STOPPED action self-stops before invoking the backend', async () => {
-    // Self-stop so the backend's running-check doesn't race the stop.
     const api = installMockApi({
       stopComfyUI: vi.fn().mockImplementation(async (id: string) => {
         useSessionStore().runningInstances.delete(id)
@@ -638,7 +693,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     return { tab: 'settings', title: 'Launch', fields: [field] } as DetailSection
   }
 
-  /** Bring the composable up with one restart-required field in `sections`. */
   async function mountWithField(
     installId: string,
     initialValue: unknown,
@@ -682,13 +736,11 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await Promise.resolve()
     const afterLaunch = vi.mocked(api.getDetailSections).mock.calls.length
 
-    // Running -> running: the stop and relaunch landed between two snapshots.
     store.runningInstances.set('a', { ...store.runningInstances.get('a')!, startedAt: 2 })
     await nextTick()
     await Promise.resolve()
     expect(vi.mocked(api.getDetailSections).mock.calls.length).toBe(afterLaunch + 1)
 
-    // A snapshot that repeats the same session is not a restart.
     store.runningInstances.set('a', { ...store.runningInstances.get('a')! })
     await nextTick()
     await Promise.resolve()
@@ -745,8 +797,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
   })
 
   it('writes the new value into sections optimistically before the IPC resolves', async () => {
-    // The optimistic write must land on `sections.value` regardless of
-    // when main responds, so hold the IPC open.
     let resolveIpc: (() => void) | null = null
     const ipcPromise = new Promise<void>((r) => {
       resolveIpc = r
@@ -760,7 +810,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
       'console'
     )
 
-    // Microtask flush — but IPC is still pending.
     await nextTick()
     const field = composable.sections.value[0]!.fields![0]!
     expect(field.value).toBe('console')
@@ -778,8 +827,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
 
-    // Revert — baseline is the original 'window', so this should drop
-    // the dirty entry.
     await composable.updateField(makeRestartField('launchMode', 'console'), 'window')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(false)
     expect(composable.pendingRestartFieldIds.value.size).toBe(0)
@@ -788,8 +835,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
 
   it('does NOT mark dirty when the install is not running', async () => {
     const { composable, scope } = await mountWithField('a', 'window')
-    // No markRunning — stopped install picks up new values on next
-    // launch, so there is nothing pending.
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.size).toBe(0)
     scope.stop()
@@ -799,9 +844,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     useSessionStore().launchingInstances.set(id, { installationName: id.toUpperCase() })
   }
 
-  // The boot window (#1300): the spawned process consumed its configuration
-  // at launch start, so an edit made while it boots is not reflected in it -
-  // it must surface the restart CTA once the instance is running.
   it('marks dirty during the boot window and keeps it once the instance is running', async () => {
     const { composable, scope } = await mountWithField('a', 'window')
     markLaunching('a')
@@ -810,8 +852,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
 
-    // launching -> running exactly as the session store's instance-started
-    // handler does it: launching dropped and running set in the same tick.
     useSessionStore().launchingInstances.delete('a')
     markRunning('a')
     await nextTick()
@@ -838,8 +878,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
 
-    // instance-launch-failed: launching ends without running. The persisted
-    // value will be picked up by the next launch, so nothing is pending.
     useSessionStore().launchingInstances.delete('a')
     await nextTick()
     expect(composable.pendingRestartFieldIds.value.size).toBe(0)
@@ -853,17 +891,12 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
 
-    // Restart flow without a visible running -> stopped dip: the relaunch
-    // re-reads the persisted values, so the rising launching edge clears.
     markLaunching('a')
     await nextTick()
     expect(composable.pendingRestartFieldIds.value.size).toBe(0)
     scope.stop()
   })
 
-  // Lifecycle cleanup must be keyed on the install id, not the picker
-  // selection - an off-screen install's launch failure or stop would
-  // otherwise leave a stale "Restart to apply" tag behind.
   async function mountTwoInstalls() {
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
     const api = installMockApi({
@@ -896,7 +929,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
 
-    // A fails while B is selected; re-selecting A must not resurrect the tag.
     await selectInstall(installation, 'b')
     useSessionStore().launchingInstances.delete('a')
     await nextTick()
@@ -920,8 +952,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
   })
 
   it('keeps the dirty state when the picker selection swaps to another install and back', async () => {
-    // The Map<installId, ...> shape isolates state per install so toggling
-    // the picker row preserves install A's edits.
     const initialField = makeRestartField('launchMode', 'window')
     const installation = ref<Installation | null>(makeInstall('a', 'A'))
     const api = installMockApi({
@@ -945,15 +975,12 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
 
-    // Switch picker selection to B — different install, no edits, no
-    // tag should surface for B.
     installation.value = makeInstall('b', 'B')
     await nextTick()
     await Promise.resolve()
     await Promise.resolve()
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(false)
 
-    // Switch back to A — dirty marker for A's launchMode is still there.
     installation.value = makeInstall('a', 'A')
     await nextTick()
     await Promise.resolve()
@@ -971,17 +998,13 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
 
     const field = composable.sections.value[0]!.fields![0]!
-    // Rolled back to the prior value — UI doesn't lie about state.
     expect(field.value).toBe('window')
-    // Failed writes never engage the dirty/yellow state.
     expect(composable.pendingRestartFieldIds.value.size).toBe(0)
-    // Inline error pill surfaces the IPC message.
     expect(composable.fieldErrorMessages.value.get('launchMode')).toBe('boom')
     scope.stop()
   })
 
   it('treats a 5s+ IPC stall as a timeout and rolls back with a timeout-flavoured message', async () => {
-    // updateInstallation never settles — the 5s timeout should win and roll back.
     vi.useFakeTimers()
     try {
       const updateInstallation = vi.fn().mockReturnValue(new Promise<void>(() => {}))
@@ -992,7 +1015,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
         makeRestartField('launchMode', 'window'),
         'console'
       )
-      // Advance past the 5s deadline to trigger the timeout branch.
       await vi.advanceTimersByTimeAsync(5_001)
       await updatePromise
 
@@ -1016,16 +1038,12 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     const { composable, scope } = await mountWithField('a', 'window', { updateInstallation })
     markRunning('a')
 
-    // First call fails → error pill present.
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.fieldErrorMessages.value.get('launchMode')).toBe('boom')
 
-    // Second call succeeds → dirty engaged.
     await composable.updateField(makeRestartField('launchMode', 'window'), 'console')
     expect(composable.pendingRestartFieldIds.value.has('launchMode')).toBe(true)
 
-    // Stop the install — both per-install entries should drop because
-    // the next launch will pick up the new value.
     useSessionStore().runningInstances.delete('a')
     await nextTick()
     expect(composable.pendingRestartFieldIds.value.size).toBe(0)
@@ -1059,8 +1077,6 @@ describe('useComfyUISettings.updateField — optimistic write + restart-required
     await composable.updateField(initialField, { FOO: 'bar', BAZ: 'qux' })
     expect(composable.pendingRestartFieldIds.value.has('envVars')).toBe(true)
 
-    // Revert to the baseline object — equality is by keys+values, not
-    // by reference, so a fresh `{ FOO: 'bar' }` object still matches.
     await composable.updateField(
       { ...initialField, value: { FOO: 'bar', BAZ: 'qux' } } as DetailField,
       {
@@ -1100,7 +1116,7 @@ describe('useComfyUISettings — renameInstallation', () => {
 
     expect(committed).toBe(true)
     expect(api.updateInstallation).toHaveBeenCalledWith('a', { name: 'New Name' })
-    expect(api.getDetailSections).toHaveBeenCalled() // reload() ran
+    expect(api.getDetailSections).toHaveBeenCalled()
     expect(dialogsSpies.alert).not.toHaveBeenCalled()
     scope.stop()
   })
@@ -1136,7 +1152,7 @@ describe('useComfyUISettings — renameInstallation', () => {
 
     expect(committed).toBe(false)
     expect(dialogsSpies.alert).toHaveBeenCalledWith(expect.objectContaining({ message: 'taken' }))
-    expect(api.getDetailSections).not.toHaveBeenCalled() // no reload on failure
+    expect(api.getDetailSections).not.toHaveBeenCalled()
     scope.stop()
   })
 })

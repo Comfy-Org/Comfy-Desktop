@@ -1,4 +1,3 @@
-// @vitest-environment node
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -16,7 +15,6 @@ const MANIFEST: ModelManifest = {
   partnerNodePolicy: null
 }
 
-// A client stub with just the two methods the resolver calls.
 function client(over: Partial<{ listVersions: unknown; fetchModelManifest: unknown }> = {}) {
   return {
     listVersions: vi.fn(async () => [{ id: 'ver-1', version: 1, status: 'complete' }]),
@@ -136,7 +134,7 @@ describe('resolveModelManifest', () => {
       models: [{ type: 'x', filename: 'evil', sha256: MODEL_SHA, downloadUrl: 'https://evil/x' }]
     })
     const m = await resolveModelManifest(client(), 'd1', '1')
-    expect(m.models).toEqual(MANIFEST.models) // the fetched manifest, not the injected one
+    expect(m.models).toEqual(MANIFEST.models)
   })
 
   it('honors a file-path override under E2E', async () => {

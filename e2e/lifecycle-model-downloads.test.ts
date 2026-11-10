@@ -1,19 +1,3 @@
-/**
- * Lifecycle coverage for the managed model-download system (issue #1322):
- * startup hydration of interrupted downloads, and the real transfer controls
- * (Resume / Pause / Retry / Cancel) driven through the actual Downloads UI
- * against a real local HTTP server. Zero mocks: the app's own manager,
- * transport, staging layer, IPC bridge, and popup renderer are all exercised
- * end to end, including a quit + relaunch of the same profile.
- *
- * The suite seeds real staged pairs (`<final>.part` + `<final>.part.dl-meta`)
- * into an isolated models root before first launch, exactly what a prior
- * session's interrupted transfers leave behind, so no multi-gigabyte template
- * download is needed to reach the production code paths.
- *
- * Tagged @lifecycle only: runs under `pnpm run test:e2e:lifecycle`.
- */
-
 import { expect, test } from '@playwright/test'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
@@ -30,15 +14,6 @@ import {
 import { getTitlePopupBounds } from './support/devHooks'
 import { deterministicBytes, ModelDownloadServer } from './support/modelDownloadServer'
 
-// Profile reuse (quit + relaunch of the same dir) is unsupported on macOS:
-// Electron resolves userData outside the isolated HOME there. The whole spec
-// launches against an explicit profile dir so the restart test can rehydrate
-// it, so it is skipped on macOS; Windows + Linux lifecycle runs cover it.
-test.skip(
-  process.platform === 'darwin',
-  'profile reuse (restart hydration) is unsupported on macOS'
-)
-
 test.describe.configure({ mode: 'serial' })
 
 const ETAG = '"lc-model-e2e-v1"'
@@ -53,8 +28,6 @@ interface SeededJob {
   chunkDelayMs: number
 }
 
-/** Slow enough that Pause/Cancel reliably land mid-flight (~4s of body),
- *  fast enough to keep the suite quick. */
 const JOBS: Record<'complete' | 'pause' | 'retry' | 'cancel', SeededJob> = {
   complete: {
     file: 'lc-complete.safetensors',
@@ -95,8 +68,6 @@ let popup: WebContentsPage
 let server: ModelDownloadServer
 let modelRoot: string
 let profileDir: string
-/** Staged size of the pause job when the first launch quit, asserted to
- *  survive the restart untouched. */
 let pausedPartSize = 0
 
 function finalPath(job: SeededJob): string {
@@ -115,8 +86,6 @@ async function fileSize(p: string): Promise<number> {
   }
 }
 
-/** Seed the exact on-disk state an interrupted transfer leaves behind:
- *  the first `stagedSize` bytes in `<final>.part` plus a v2 sidecar. */
 async function seedStagedPair(job: SeededJob): Promise<void> {
   const dest = finalPath(job)
   await mkdir(path.dirname(dest), { recursive: true })
@@ -148,7 +117,6 @@ async function launch(): Promise<void> {
   popup = titlePopupPage(ctx.app)
 }
 
-/** Open the full Downloads popup (tray -> "View All Downloads"). */
 async function openFullDownloads(): Promise<void> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((r) => setTimeout(r, TITLE_REOPEN_SUPPRESSION_MS))
@@ -165,8 +133,6 @@ async function openFullDownloads(): Promise<void> {
   await popup.waitForSelector('.dlm-panel', { timeout: 10_000 })
 }
 
-/** Wait until the popup's height stops changing so the renderer's
- *  request-size round trip has settled before we click inside it. */
 async function waitForStableBounds(timeoutMs = 5_000, settleMs = 250): Promise<void> {
   const deadline = Date.now() + timeoutMs
   let lastH = -1
@@ -184,7 +150,6 @@ async function waitForStableBounds(timeoutMs = 5_000, settleMs = 250): Promise<v
   }
 }
 
-/** The status class (`is-paused` etc.) of the row for `file`, or null. */
 function rowStatus(file: string): Promise<string | null> {
   return popup.evaluate<string | null>(`(() => {
     const rows = Array.from(document.querySelectorAll('.dlm-row'))
@@ -195,7 +160,6 @@ function rowStatus(file: string): Promise<string | null> {
   })()`)
 }
 
-/** Click the control with `ariaLabel` inside the row for `file`. */
 function clickRowButton(file: string, ariaLabel: string): Promise<boolean> {
   return popup.evaluate<boolean>(`(() => {
     const rows = Array.from(document.querySelectorAll('.dlm-row'))
@@ -219,7 +183,6 @@ async function expectRowStatus(file: string, status: string, timeout = 60_000): 
     .toBe(status)
 }
 
-/** Assert a verified completion: exact final bytes, no staging left. */
 async function expectCompletedOnDisk(job: SeededJob): Promise<void> {
   const dest = finalPath(job)
   const bytes = await readFile(dest)
@@ -252,15 +215,12 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await ctx?.cleanup()
   await server?.stop()
-  // `profileDir` counts as a reuse dir, so harness cleanup preserved it.
   if (profileDir) await rm(profileDir, { recursive: true, force: true })
   if (modelRoot) await rm(modelRoot, { recursive: true, force: true })
 })
 
 test('startup hydrates interrupted downloads as actionable paused rows @lifecycle', async () => {
   await openFullDownloads()
-  // The startup pass is fire-and-forget, so poll until all four staged pairs
-  // have been hydrated and broadcast into the popup.
   await expect
     .poll(() => popup.count('.dlm-row'), {
       timeout: 30_000,
@@ -269,7 +229,6 @@ test('startup hydrates interrupted downloads as actionable paused rows @lifecycl
     .toBe(4)
   for (const job of Object.values(JOBS)) {
     expect(await rowStatus(job.file)).toBe('is-paused')
-    // Incomplete bytes are never visible under the final model name.
     expect(await fileSize(finalPath(job))).toBe(-1)
     expect(await fileSize(finalPath(job) + '.part')).toBe(job.stagedSize)
   }
@@ -282,7 +241,6 @@ test('resume continues from staged bytes with Range/If-Range and completes atomi
   await expectRowStatus(job.file, 'is-completed')
   await expectCompletedOnDisk(job)
 
-  // The transport must have spliced onto the staged bytes, not restarted.
   const requests = server.requestsFor(job.file)
   expect(requests.length).toBe(1)
   expect(requests[0]!.range).toBe(`bytes=${job.stagedSize}-`)
@@ -294,7 +252,6 @@ test('pause stops network activity and preserves staged bytes @lifecycle', async
   const job = JOBS.pause
   const part = finalPath(job) + '.part'
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
-  // Wait until the transfer is provably mid-flight (staged bytes grew).
   await expect
     .poll(() => fileSize(part), {
       timeout: 30_000,
@@ -305,12 +262,10 @@ test('pause stops network activity and preserves staged bytes @lifecycle', async
   expect(await clickRowButton(job.file, 'Pause')).toBe(true)
   await expectRowStatus(job.file, 'is-paused', 15_000)
 
-  // No further network activity: the staged size stays frozen.
   const sizeAtPause = await fileSize(part)
   expect(sizeAtPause).toBeGreaterThan(job.stagedSize)
   await new Promise((r) => setTimeout(r, 800))
   expect(await fileSize(part)).toBe(sizeAtPause)
-  // Final name absent, resume identity retained.
   expect(await fileSize(finalPath(job))).toBe(-1)
   expect(await fileSize(finalPath(job) + '.part.dl-meta')).toBeGreaterThan(0)
   pausedPartSize = sizeAtPause
@@ -319,19 +274,16 @@ test('pause stops network activity and preserves staged bytes @lifecycle', async
 test('network interruption preserves staged bytes and Retry resumes them @lifecycle', async () => {
   const job = JOBS.retry
   const part = finalPath(job) + '.part'
-  // First resume: the server hard-drops the socket mid-body.
   server.configure(job.file, { failAfterBytes: 2 * job.chunkSize })
   expect(await clickRowButton(job.file, 'Resume')).toBe(true)
   await expectRowStatus(job.file, 'is-error', 30_000)
 
-  // Failure keeps the partial: staged bytes + sidecar retained, final absent.
   const sizeAtError = await fileSize(part)
   expect(sizeAtError).toBeGreaterThanOrEqual(job.stagedSize)
   expect(sizeAtError).toBeLessThan(job.totalSize)
   expect(await fileSize(finalPath(job))).toBe(-1)
   expect(await fileSize(finalPath(job) + '.part.dl-meta')).toBeGreaterThan(0)
 
-  // Retry resumes the retained bytes instead of restarting.
   server.configure(job.file, { failAfterBytes: undefined })
   server.clearLog()
   const sizeBeforeRetry = await fileSize(part)
@@ -360,8 +312,6 @@ test('cancel stops the transfer and removes staged bytes and metadata @lifecycle
   expect(await clickRowButton(job.file, 'Cancel')).toBe(true)
   await expectRowStatus(job.file, 'is-cancelled', 15_000)
 
-  // Cancel semantics: staged bytes AND resume metadata removed (deletion is
-  // deferred cleanup, so poll), final name never created.
   await expect.poll(() => fileSize(part), { timeout: 15_000, intervals: [200, 400] }).toBe(-1)
   await expect
     .poll(() => fileSize(finalPath(job) + '.part.dl-meta'), {
@@ -376,8 +326,6 @@ test('quit + relaunch rehydrates the paused job and resume completes it @lifecyc
   const job = JOBS.pause
   const part = finalPath(job) + '.part'
 
-  // Quit the app. The paused job's staged pair (written by the APP, not the
-  // seed - its sidecar was rewritten during the real transfer) must survive.
   await ctx.cleanup()
   expect(await fileSize(part)).toBe(pausedPartSize)
 
@@ -389,14 +337,10 @@ test('quit + relaunch rehydrates the paused job and resume completes it @lifecyc
       intervals: [250, 500, 1000]
     })
     .toBe('is-paused')
-  // Completed files from the previous session are left untouched, and the
-  // finished registry rows (completed/cancelled) are gone - only the
-  // interrupted job hydrates.
   await expectCompletedOnDisk(JOBS.complete)
   await expectCompletedOnDisk(JOBS.retry)
   expect(await popup.count('.dlm-row')).toBe(1)
 
-  // Resume continues from the exact preserved offset and completes.
   server.clearLog()
   const sizeBeforeResume = await fileSize(part)
   expect(sizeBeforeResume).toBe(pausedPartSize)

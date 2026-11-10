@@ -50,12 +50,6 @@ function installMockBridge(platform: string = 'darwin'): MockBridgeState {
 
 const EMPTY_STATE: MockDownloadsState = { active: [], recent: [] }
 
-/**
- * The redesigned popover collapses per-row actions into a right-edge X
- * (cancel/dismiss) plus a row-click that opens the save location on completed
- * rows. Pause/Resume are dropped from the UI. Bridge IPC shapes are unchanged.
- */
-
 describe('comfyTitlePopup/DownloadsView', () => {
   let bridgeState: MockBridgeState
 
@@ -97,13 +91,11 @@ describe('comfyTitlePopup/DownloadsView', () => {
     const item = wrapper.find('.downloads-item.is-active')
     expect(item.exists()).toBe(true)
     expect(item.find('.downloads-item-name').text()).toBe('models/checkpoints / a.bin')
-    // All four facets (size / percent / speed / ETA) show without leaving the tray.
     const sub = item.find('.downloads-item-sub').text()
     expect(sub).toContain('4.0 MB / 9.5 MB')
     expect(sub).toContain('42%')
     expect(sub).toContain('1.0 MB/s')
     expect(sub).toContain('30s')
-    // The row itself acts as the progress bar (gradient stop at 42%).
     const style = item.attributes('style') ?? ''
     expect(style).toContain('linear-gradient')
     expect(style).toContain('42%')
@@ -267,7 +259,6 @@ describe('comfyTitlePopup/DownloadsView', () => {
     expect(wrapper.find('.downloads-link').text()).toBe('View All Downloads')
     await wrapper.find('.downloads-link').trigger('click')
     expect(bridgeState.openDownloadsModalCalls).toBe(1)
-    // The full popup, not `openSettingsTab('downloads')`, is now the destination.
     expect(bridgeState.openSettingsTabCalls).toEqual([])
   })
 })

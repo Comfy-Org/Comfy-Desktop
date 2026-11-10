@@ -22,8 +22,6 @@ describe('findActionById', () => {
   })
 
   it('finds an action nested inside a channel-card field option (regression for #582)', () => {
-    // The standalone source emits `update-comfyui` inside
-    // `field.options[].data.actions[]`, not at the section level.
     const sections: DetailSection[] = [
       {
         tab: 'update',
@@ -55,8 +53,6 @@ describe('findActionById', () => {
   })
 
   it("prefers the action on the install's currently-selected channel when the same id appears across channels", () => {
-    // Both stable and latest expose `update-comfyui`; given the install
-    // is on 'latest', the latest-channel action wins.
     const sections: DetailSection[] = [
       {
         tab: 'update',
@@ -117,9 +113,6 @@ describe('findActionById', () => {
   })
 
   it('top-level section actions win over nested ones with the same id', () => {
-    // `check-update` is a top-level action; if a channel card ever
-    // accidentally also defines one, the top-level wins because section
-    // actions are the canonical surface.
     const sections: DetailSection[] = [
       {
         tab: 'update',

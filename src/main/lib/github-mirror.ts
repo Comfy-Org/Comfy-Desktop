@@ -12,8 +12,6 @@ export function rewriteCloneUrl(url: string, enabled: boolean): string {
   if (!enabled) return url
   const match = url.match(COMFY_ORG_RE)
   if (!match) return url
-  // .git suffix is required — gitcode redirects bare URLs and pygit2/libgit2
-  // does not follow the redirect.
   return `${GITCODE_COMFY_ORG_BASE}/${match[1]}.git`
 }
 
@@ -30,8 +28,6 @@ function restoreGitHubUrl(url: string): string {
   return `https://github.com/Comfy-Org/${match[1]}.git`
 }
 
-// Set origin's URL per the mirror setting, editing .git/config directly so it
-// works even without system git (pygit2-only environments).
 export async function ensureRemoteUrl(repoPath: string, enabled: boolean): Promise<void> {
   try {
     const gitDir = resolveGitDir(repoPath)

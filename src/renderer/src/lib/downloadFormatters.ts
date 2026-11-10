@@ -1,5 +1,3 @@
-// Shared, pure formatting + status-class helpers for the model-download UIs (popup + Settings tab).
-
 export interface DownloadFormatInput {
   filename: string
   directory?: string
@@ -36,7 +34,6 @@ export function formatEta(seconds: number): string {
   return `${h}h ${m}m`
 }
 
-/** Single-line status summary; pass `completedShowsSize` to append total size to the completed line. */
 export function statusLine(
   d: DownloadFormatInput,
   opts: { completedShowsSize?: boolean } = {}
@@ -89,8 +86,6 @@ export function statusKindClass(d: Pick<DownloadFormatInput, 'status'>): string 
   }
 }
 
-/** Human-readable relative time from a wall-clock ms timestamp. `now` is
- *  injectable so callers can drive a ticking clock for live re-rendering. */
 export function relativeTime(timestampMs: number | undefined, now = Date.now()): string {
   if (!timestampMs) return ''
   const delta = Math.max(0, now - timestampMs)
@@ -109,8 +104,6 @@ export interface ModalFormatInput extends DownloadFormatInput {
   totalBytes?: number
 }
 
-/** Rich subtitle for the Downloads Modal: progress details for active, size + time for terminal.
- *  `now` is injectable so the relative-time portion can re-render against a ticking clock. */
 export function modalSubtitle(d: ModalFormatInput, now = Date.now()): string {
   const pct = Math.round(d.progress * 100)
   switch (d.status) {

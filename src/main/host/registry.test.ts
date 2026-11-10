@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// shared.ts imports electron at module load (pulled in transitively by registry.ts).
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -46,7 +45,6 @@ interface FakeWindow {
   minimized: boolean
   isDestroyed: () => boolean
   isMinimized: () => boolean
-  /** show()/focus()/restore() calls, in order, so tests can assert raise behaviour. */
   raised: string[]
   show: () => void
   focus: () => void
@@ -163,8 +161,6 @@ describe('computeBodyMode', () => {
   })
 
   it('routes a stopping install to lifecycle even while its session is still running', () => {
-    // The session lives until the kill completes; the "Stopping…" panel must
-    // show up front so the dying canvas doesn't flash black.
     const entry = makeEntry({ installationId: 'inst-A', activePanel: 'comfy' })
     _runningSessions.set('inst-A', {} as never)
     _stoppingInstallationIds.add('inst-A')
@@ -176,8 +172,6 @@ describe('computeBodyMode', () => {
     expect(computeBodyMode(entry)).toBe('new-install')
   })
 
-  // `'progress'` must flip showPanel true so ProgressModal stays visible over a running
-  // canvas; otherwise the panel sits at 0x0 behind comfyView and the modal is unreachable.
   it('returns `progress` for install-backed hosts in progress mode, even while the session is running', () => {
     const entry = makeEntry({ installationId: 'inst-A', activePanel: 'progress' })
     _runningSessions.set('inst-A', {} as never)
@@ -191,8 +185,6 @@ describe('computeBodyMode', () => {
 })
 
 describe('computeViewKind', () => {
-  // Rule: install-less host → dashboard; local install → instance; cloud OR
-  // remote install → cloud (the two share navigation behavior).
   it('returns dashboard for an install-less (chooser) host', () => {
     expect(computeViewKind(makeEntry({ installationId: null }))).toBe('dashboard')
   })
@@ -212,8 +204,6 @@ describe('computeViewKind', () => {
     ).toBe('cloud')
   })
 
-  // A preview/launching host can be install-backed before its category is
-  // pushed; treat an unknown category as non-local (cloud) rather than instance.
   it('treats an install-backed host with no category as cloud', () => {
     expect(computeViewKind(makeEntry({ installationId: 'inst-A', sourceCategory: null }))).toBe(
       'cloud'
@@ -228,8 +218,6 @@ describe('computeViewKind', () => {
 })
 
 describe('shouldConfirmKillForEntry', () => {
-  // Rule: "would tearing this down kill a local ComfyUI process?" — yes for install-backed
-  // local hosts, no for everything else.
   it('returns true for an install-backed local host', () => {
     const entry = makeEntry({ installationId: 'inst-A', sourceCategory: 'local' })
     expect(shouldConfirmKillForEntry(entry)).toBe(true)
@@ -253,8 +241,6 @@ describe('shouldConfirmKillForEntry', () => {
   })
 
   it('returns false for a preview-chooser host that carries a local sourceCategory without an install', () => {
-    // attachHostPreview can flash `sourceCategory` onto an install-less host while hovering;
-    // no attached install or session means no kill-confirm.
     expect(
       shouldConfirmKillForEntry(makeEntry({ installationId: null, sourceCategory: 'local' }))
     ).toBe(false)
@@ -267,9 +253,6 @@ describe('shouldConfirmKillForEntry', () => {
 })
 
 describe('hasRunningSessionForEntry', () => {
-  // Rule: "is this an install-backed window showing a live ComfyUI view?" — true only when
-  // the install has a session in `_runningSessions` (local OR cloud/remote). Drives whether
-  // the window is a healthy "last active surface" worth restoring on next boot.
   it('returns true for an install-backed host with a running session', () => {
     const entry = makeEntry({ installationId: 'inst-A', sourceCategory: 'local' })
     _runningSessions.set('inst-A', {} as never)
@@ -304,7 +287,7 @@ describe('hasRunningSessionForEntry', () => {
 describe('forceRevealHostWindow', () => {
   it('reveals a deferred host regardless of the coldStartPendingReveal flag', () => {
     const entry = makeEntry({ installationId: null })
-    entry.coldStartPendingReveal = false // deferred restore leaves the flag off
+    entry.coldStartPendingReveal = false
     registerHostEntry(entry)
 
     forceRevealHostWindow(entry.windowKey)
@@ -330,7 +313,6 @@ describe('attach-claim helpers', () => {
     claimAttachHost('inst-A', 7)
     claimAttachHost('inst-B', 9)
     expect(consumeAttachClaim('inst-A')).toBe(7)
-    // Take-once contract: a second consume is empty so onLaunch can't double-attach.
     expect(consumeAttachClaim('inst-A')).toBeUndefined()
     expect(consumeAttachClaim('inst-B')).toBe(9)
   })
@@ -379,15 +361,12 @@ describe('register/unregister + getEntryByInstallationId', () => {
     second.installationId = 'inst-A'
     indexInstallationId('inst-A', second.windowKey)
     expect(getEntryByInstallationId('inst-A')).toBe(second)
-    // Unregistering the original entry must not blow away the new owner's index pointer.
     unregisterHostEntry(first)
     expect(getEntryByInstallationId('inst-A')).toBe(second)
   })
 })
 
 describe('hostInstallEvents', () => {
-  // Without this event the picker's "Current" pill would only repaint at instance-started
-  // time, leaving a Current-less row for the whole launching window.
   let events: string[]
   let listener: () => void
   beforeEach(() => {
@@ -412,7 +391,6 @@ describe('hostInstallEvents', () => {
   })
 
   it('does NOT fire on dropInstallationIndex when the id was already absent', () => {
-    // No-op drops shouldn't churn picker snapshots.
     dropInstallationIndex('inst-never-indexed')
     expect(events).toEqual([])
   })
@@ -423,7 +401,6 @@ describe('hostInstallEvents', () => {
   })
 
   it('does NOT fire on registerHostEntry for an install-less (chooser) host', () => {
-    // A fresh chooser host has no attached install to surface, so it shouldn't repaint pickers.
     registerHostEntry(makeEntry({ installationId: null }))
     expect(events).toEqual([])
   })
@@ -536,7 +513,6 @@ describe('raiseAllHostWindows', () => {
     registerHostEntry(chooser)
     registerHostEntry(install)
     const result = raiseAllHostWindows()
-    // install-backed beats chooser, so it's focused last (frontmost) and returned.
     expect(order[order.length - 1]).toBe('install')
     expect(result).toBe(install.window)
   })

@@ -17,38 +17,15 @@ import type {
 export interface Operation {
   title: string
   returnTo?: string
-  /** Categorises this op for ProgressModal so the brand branch can
-   *  pick the right caption set + finished-state copy. Defaults to
-   *  `'generic'` when the host doesn't tag the op; only launch ops
-   *  drive the rolling 5-step launchCaption pipeline. */
   opKind: NonNullable<ShowProgressOpts['opKind']>
-  /** Mirrors `ShowProgressOpts.destroysInstance`. Carried on the op so
-   *  ProgressModal's footer can swap Reboot for a no-Reboot finished
-   *  state and the success path can auto-detach the host. */
   destroysInstance: boolean
-  /** Mirrors `ShowProgressOpts.chainSpan`. When set, ProgressModal's
-   *  unified bar maps the install leg to 0–70% and the launch leg to
-   *  70–100% so the user sees one continuous 0→100% journey instead of
-   *  the bar hitting 100 mid-install and stalling through the launch
-   *  tail. Standalone ops leave this unset. */
   chainSpan: 'install' | 'launch' | null
-  /** Optional success-terminal screen rendered by ProgressModal in
-   *  place of the auto-close. Picker-driven mutating-non-launch ops opt
-   *  in to surface a follow-up choice (e.g. `[Go to Dashboard | Open
-   *  Instance]`) so the user can decide whether to enter the app after
-   *  the op completes. */
   successTerminal: NonNullable<ShowProgressOpts['successTerminal']> | null
   steps: ProgressStep[] | null
-  /** Completed steps carried over from the previous leg of a chain (e.g. the
-   *  install op's steps when this is the `chainSpan:'launch'` leg). The
-   *  renderer renders `priorSteps` (all done) + `steps` as one continuous
-   *  stepper so install→launch reads as a single list, no seam. */
   priorSteps: ProgressStep[] | null
   activePhase: string | null
   activePercent: number
   lastStatus: Record<string, string>
-  /** Phases the producer flagged as non-fatally failed — drives the active
-   *  row's error styling without failing the op. Keyed by phase id. */
   phaseErrors: Record<string, boolean>
   flatStatus: string
   flatPercent: number
@@ -58,24 +35,12 @@ export interface Operation {
   finished: boolean
   cancelRequested: boolean
   result: ActionResult | null
-  /** Action id that kicked off this op (`copy-install`, `copy-update`,
-   *  `update`, `restore-snapshot`, …). Carried so the op-outcome event
-   *  can split the funnel by the exact path the user took — opKind
-   *  alone collapses copy-update / release-update / update into
-   *  `'update'` and copy-install into `'generic'`. */
   actionId?: string
-  /** Wall-clock start, for the op-outcome event's duration_ms. */
   _startedAtMs: number
-  /** One-shot guard so `comfy.desktop.op.result` fires exactly once per op
-   *  (a terminal transition AND a later cleanup must not double-count). */
   _resultEmitted: boolean
   unsubProgress: Unsubscribe | null
   unsubOutput: Unsubscribe | null
   apiCall: (() => Promise<ActionResult>) | null
-  /** Monotonic floor for the unified `globalProgressFor` bar. Lazily
-   *  raised; never decremented. See `globalProgressFor` for the full
-   *  contract. Underscored because it's internal to the store — UI code
-   *  should read through `globalProgressFor`, not this field. */
   _globalFloor: number
 }
 
@@ -85,10 +50,6 @@ export const useProgressStore = defineStore('progress', () => {
 
   const operations = reactive(new Map<string, Operation>())
 
-  // Listen for async error detail updates (e.g. locking process names resolved after the initial error).
-  // Guarded — the picker popup's `window.api` shim does not forward
-  // `onErrorDetail`, and a hard call would throw at store construction
-  // and silently blank the entire ComfyUISettingsContent right pane.
   window.api.onErrorDetail?.((data: ErrorDetailData) => {
     const op = operations.get(data.installationId)
     if (op?.error) {
@@ -98,23 +59,6 @@ export const useProgressStore = defineStore('progress', () => {
     }
   })
 
-  /**
-   * Fire `comfy.desktop.op.result` exactly once per operation. This is the
-   * outcome half of the multi-instance funnel: `comfy.desktop.action.invoked`
-   * (with `action_id`) marks the click; this marks how it ended.
-   *
-   * `result`:
-   *   - `success`          — apiCall resolved ok
-   *   - `failed`           — sync throw, rejected promise, or ok:false
-   *                          (carries `error_bucket`)
-   *   - `cancelled_user`   — user clicked Cancel (apiCall resolved
-   *                          `cancelled` after `cancelOperation`)
-   *   - `cancelled_abrupt` — op torn down before any terminal state
-   *                          (window closed / replaced mid-flight)
-   *
-   * `portConflict` is deliberately NOT terminal — the op stays alive
-   * pending resolution, so we don't emit for it.
-   */
   function emitOpResult(
     op: Operation,
     installationId: string,
@@ -126,9 +70,6 @@ export const useProgressStore = defineStore('progress', () => {
       installation_id: installationId,
       action_id: op.actionId ?? null,
       op_kind: op.opKind,
-      // Panel/drawer/dashboard ops route through this store; picker-
-      // initiated ops emit their own op.result main-side tagged
-      // `source: 'picker'`. Lets the dashboard split the two surfaces.
       source: 'panel',
       result,
       duration_ms: Date.now() - op._startedAtMs,
@@ -139,9 +80,6 @@ export const useProgressStore = defineStore('progress', () => {
   function cleanupOperation(installationId: string): void {
     const op = operations.get(installationId)
     if (!op) return
-    // An op torn down before reaching a terminal state = the user left
-    // mid-way (window closed, or a new op replaced this one). Distinct
-    // from a deliberate Cancel click, which resolves `cancelled` below.
     if (!op.finished && !op._resultEmitted) {
       emitOpResult(op, installationId, 'cancelled_abrupt')
     }
@@ -155,9 +93,6 @@ export const useProgressStore = defineStore('progress', () => {
     const op = operations.get(installationId)
     if (!op || op.finished) return null
     if (op.steps && op.activePhase) {
-      // Prefer real status detail, then the registered step label, only
-      // falling back to the raw phase id when neither is available — so
-      // ambient surfaces never surface dev-y slugs like "source".
       const raw = op.lastStatus[op.activePhase]
       const stepLabel = op.steps.find((s) => s.phase === op.activePhase)?.label
       const status = (raw && raw !== op.activePhase ? raw : null) || stepLabel || op.activePhase
@@ -190,9 +125,6 @@ export const useProgressStore = defineStore('progress', () => {
       actionId
     } = opts
 
-    // Snapshot the outgoing op's steps BEFORE cleanup so the launch leg of a
-    // chain can render the install leg's (now-complete) steps as a prefix —
-    // one continuous stepper across install → launch with no seam.
     const outgoing = operations.get(installationId)
     const carriedPriorSteps =
       chainSpan === 'launch' && outgoing?.steps?.length
@@ -237,12 +169,6 @@ export const useProgressStore = defineStore('progress', () => {
     operations.set(installationId, op)
     const rop = operations.get(installationId)!
 
-    // Log continuity across a chain: the launch leg's `terminalOutput` starts
-    // empty, but a background template-model download may have logged lines
-    // during the install leg. Seed from the durable ring buffer so "View logs"
-    // shows the full history. Async + guarded against a newer op replacing this
-    // one mid-fetch. Prepended so any lines that streamed in before the snapshot
-    // resolved aren't clobbered.
     if (chainSpan === 'launch' && typeof window.api.logsSnapshot === 'function') {
       void window.api
         .logsSnapshot(installationId)
@@ -333,10 +259,7 @@ export const useProgressStore = defineStore('progress', () => {
         emitOpResult(rop, installationId, 'success')
       } else if (result.cancelled) {
         emitOpResult(rop, installationId, 'cancelled_user')
-      } else if (result.portConflict) {
-        // Not terminal — the user resolves the conflict and a fresh op
-        // (with its own outcome) supersedes this one. No op.result here.
-      } else {
+      } else if (!result.portConflict) {
         rop.error = result.message || t('progress.unknownError')
         sessionStore.errorInstances.set(installationId, {
           installationName: rop.title,
@@ -360,10 +283,6 @@ export const useProgressStore = defineStore('progress', () => {
   function cancelOperation(installationId: string): void {
     const op = operations.get(installationId)
     if (!op) return
-    // A finished op has nothing to cancel: the silent takeover→takeover
-    // overlay swap fires `onCancel` indiscriminately, but stopping
-    // ComfyUI here would punish the next op (or a relaunched session)
-    // for the previous one having completed.
     if (op.finished) return
     op.cancelRequested = true
     op.flatStatus = t('progress.cancelling')
@@ -371,42 +290,10 @@ export const useProgressStore = defineStore('progress', () => {
     window.api.stopComfyUI(installationId)
   }
 
-  /**
-   * Unified 0→100 progress across an op's phases.
-   *
-   * Flat op (`steps === null`): passes through `flatPercent` — zero
-   * behavioral change for chooser-launch / port-conflict / single-phase
-   * ops.
-   *
-   * Stepped op:
-   *   - Each phase has a weight from `getPhaseWeights`, summing to 1.0.
-   *   - Phases strictly before the active phase contribute their full
-   *     weight. The active phase contributes `weight * (percent/100)`
-   *     when determinate; 0 when indeterminate (`-1`).
-   *   - When the active phase is indeterminate, the bar fill HOLDS at
-   *     the previous floor; the caller renders the slide animation on
-   *     top via `indeterminate: true`. That's what stops the bar from
-   *     regressing every time a `cleanup` / `update` phase starts.
-   *
-   * Monotonic clamp via `_globalFloor` on the op: a late-arriving smaller
-   * value (retry, re-entering an earlier phase) can never walk the bar
-   * backward.
-   *
-   * Finished ops snap to 100 on success; otherwise hold at the last
-   * floor — the bar's "error" / "cancelled" visuals come from existing
-   * `flatStatus` / `cancelRequested` paths, we just hand them a number
-   * that doesn't reset.
-   */
   function globalProgressFor(op: Operation): {
     percent: number
     indeterminate: boolean
   } {
-    // Chained install→launch maps to ONE continuous bar via a fixed split:
-    //   - the install leg (`chainSpan:'install'`) fills 0 → 70%
-    //   - the launch leg (`chainSpan:'launch'`, carries `priorSteps`) fills
-    //     70 → 100%
-    // so the two legs read as one stepper with no seam. Standalone ops own
-    // the full 0→100.
     const PRIOR_FRACTION = 0.7
     const isLaunchLeg = !!op.priorSteps?.length || op.chainSpan === 'launch'
     const isInstallLeg = op.chainSpan === 'install'
@@ -414,16 +301,12 @@ export const useProgressStore = defineStore('progress', () => {
     const span = isLaunchLeg ? 1 - PRIOR_FRACTION : isInstallLeg ? PRIOR_FRACTION : 1
 
     if (op.finished) {
-      // A finished INSTALL leg of a chain isn't the end — it hands off to the
-      // launch leg. Cap it at the install/launch boundary (70%), never 100,
-      // so the bar doesn't flash full before "Starting ComfyUI" takes over.
       if (op.result?.ok) {
         return { percent: isInstallLeg ? PRIOR_FRACTION * 100 : 100, indeterminate: false }
       }
       return { percent: op._globalFloor, indeterminate: false }
     }
 
-    // Flat path — pass-through (remote launch / single-phase ops).
     if (!op.steps) {
       const raw = op.flatPercent
       if (raw < 0) return { percent: op._globalFloor, indeterminate: true }
@@ -432,19 +315,15 @@ export const useProgressStore = defineStore('progress', () => {
       return { percent: next, indeterminate: false }
     }
 
-    // Stepped path.
     const weights = getPhaseWeights(op.steps)
     const activeIdx = op.activePhase ? op.steps.findIndex((s) => s.phase === op.activePhase) : -1
 
     if (activeIdx < 0 || !op.activePhase) {
-      // Steps payload landed but no per-phase update yet. Hold at the
-      // completed-prior baseline so the bar never drops back.
       const floor = Math.max(op._globalFloor, priorBase)
       op._globalFloor = floor
       return { percent: floor, indeterminate: false }
     }
 
-    // Sum the weight of every phase strictly before the active one.
     let baselineW = 0
     for (let i = 0; i < activeIdx; i++) {
       const prev = op.steps[i]
@@ -455,19 +334,10 @@ export const useProgressStore = defineStore('progress', () => {
     const baseline = priorBase + baselineW * span * 100
     const slotEnd = priorBase + (baselineW + activeW) * span * 100
 
-    // HONEST model — no creep. The bar moves only on real log milestones:
-    //   - indeterminate active phase → HOLD at the slot start; the active
-    //     step's spinner conveys "working" during a silent gap (e.g. the
-    //     ~110s GPU/torch init). The bar advances only when the NEXT phase
-    //     fires (its baseline absorbs this slot).
-    //   - determinate active phase → fill within the slot by the real percent.
-    // Never report 100 while still running — the success branch above owns 100.
     const raw =
       op.activePercent < 0 ? baseline : baseline + (slotEnd - baseline) * (op.activePercent / 100)
     const next = Math.min(99, Math.max(op._globalFloor, raw))
     op._globalFloor = next
-    // `indeterminate` flags a silent-gap hold so the renderer keeps the active
-    // step's spinner alive; the bar itself stays put (honest — no creep).
     return { percent: next, indeterminate: op.activePercent < 0 }
   }
 

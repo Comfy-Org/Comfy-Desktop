@@ -53,7 +53,6 @@ function findPortableRoot(installPath: string): string | null {
   try {
     entries = fs.readdirSync(installPath, { withFileTypes: true })
   } catch {
-    // installPath missing/unreadable (e.g. drive unplugged) — no root to find.
     return null
   }
   for (const entry of entries) {
@@ -65,15 +64,9 @@ function findPortableRoot(installPath: string): string | null {
   return null
 }
 
-/**
- * Probe-only root resolution. Adds an upward check to {@link findPortableRoot}
- * for when the user pointed at the nested `ComfyUI/` folder of a portable
- * install. Kept separate so the runtime helper's resolution is unchanged.
- */
 function findPortableProbeRoot(dirPath: string): string | null {
   const root = findPortableRoot(dirPath)
   if (root) return root
-  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
   return resolveNestedComfyUIParent(dirPath, (parent) =>
     fs.existsSync(path.join(parent, 'python_embeded'))
   )
@@ -150,16 +143,10 @@ export const portable: SourcePlugin = {
   },
 
   getTerminalEnv(installation: InstallationRecord): TerminalEnv {
-    // A portable build has no venv — it runs the embedded `python_embeded`
-    // interpreter and has no bundled `standalone-env/uv.exe`. Put that
-    // interpreter (and its Scripts) on PATH and route pip through it; return an
-    // empty env (plain shell, no broken standalone-env reference) if the
-    // embedded layout can't be located.
     const root = findPortableRoot(installation.installPath)
     if (!root) return {}
     const embedded = path.join(root, 'python_embeded')
     return {
-      // Open the shell on the ComfyUI code folder, not the portable root.
       cwd: path.join(root, 'ComfyUI'),
       pathPrepends: [embedded, path.join(embedded, 'Scripts')],
       promptName: 'python_embeded',
@@ -339,8 +326,6 @@ export const portable: SourcePlugin = {
   probeInstallation(dirPath: string): Record<string, unknown> | null {
     const root = findPortableProbeRoot(dirPath)
     if (!root) return null
-    // Record the portable root, not whatever the user picked — they may have
-    // pointed at the nested `ComfyUI/` folder or the parent of the install.
     return {
       version: 'unknown',
       asset: '',

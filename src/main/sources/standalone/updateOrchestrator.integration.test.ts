@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import os from 'os'
 import fs from 'fs'
@@ -9,12 +8,10 @@ import type { ChildProcess } from 'child_process'
 import type { Readable } from 'stream'
 import type * as ChildProcessModule from 'child_process'
 
-// Sentinel commands from mocked envPaths, used to identify Python/uv subprocesses below.
 const SENTINEL_PYTHON = '__TEST_MASTER_PY__'
 const SENTINEL_UV_NAME = '__sentinel_uv__'
 const SENTINEL_ACTIVE_PY = '__TEST_ACTIVE_PY__'
 
-// vi.hoisted ensures this exists before any vi.mock factory runs.
 const spawnState = vi.hoisted(() => ({
   pythonHandler: undefined as undefined | ((args: string[]) => ChildProcess),
   uvHandler: undefined as undefined | ((args: string[]) => ChildProcess),
@@ -26,7 +23,6 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
 }))
 
-// Mock snapshots to avoid pulling in scanCustomNodes / pipFreeze / fs assumptions.
 vi.mock('../../lib/snapshots', () => ({
   saveSnapshot: vi.fn(
     async (_installPath: string, _installation: unknown, trigger: string) => `${trigger}-snap.json`
@@ -35,18 +31,15 @@ vi.mock('../../lib/snapshots', () => ({
   deduplicatePreUpdateSnapshot: vi.fn(async () => false)
 }))
 
-// Mock envPaths to return sentinel command strings the spawn mock intercepts.
 vi.mock('./envPaths', () => ({
   getMasterPythonPath: () => SENTINEL_PYTHON,
   getUvPath: (p: string) => path.join(p, SENTINEL_UV_NAME),
-  // Mirror getUvPath with the sentinel so the spawn interceptor still matches.
   getActiveUvPath: (inst: { installPath: string }) => path.join(inst.installPath, SENTINEL_UV_NAME),
   getActivePythonPath: () => SENTINEL_ACTIVE_PY,
   getVenvDir: (p: string) => path.join(p, 'ComfyUI', '.venv'),
   getVenvPythonPath: (p: string) => path.join(p, 'ComfyUI', '.venv', 'Scripts', 'python.exe')
 }))
 
-// Mock settings to avoid reading real settings.json from disk.
 vi.mock('../../settings', () => ({
   get: vi.fn((key: string) => {
     if (key === 'pypiMirror') return undefined
@@ -71,7 +64,6 @@ vi.mock('../../lib/i18n', () => ({
   }
 }))
 
-// Intercept only Python/uv sentinel commands; delegate everything else (git, etc.) to real spawn.
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof ChildProcessModule>()
   return {
@@ -93,7 +85,6 @@ vi.mock('child_process', async (importOriginal) => {
   }
 })
 
-// Import the SUT after all vi.mock declarations.
 import { runComfyUIUpdate } from './updateOrchestrator'
 import { recoverInterruptedComfyOp } from '../../lib/opMarker'
 import { isUpdateAvailable } from '../../lib/release-cache'
@@ -111,10 +102,8 @@ function isGitAvailable(): boolean {
   }
 }
 
-/** Create a readable stream that emits given chunks then ends. */
 function makeReadable(chunks: string[]): Readable {
   const readable = new EventEmitter() as Readable
-  // Prevent "no listeners" warnings — spawnUpdateScript attaches .on('data')
   readable.destroy = vi.fn() as Readable['destroy']
   process.nextTick(() => {
     for (const chunk of chunks) {
@@ -124,14 +113,12 @@ function makeReadable(chunks: string[]): Readable {
   return readable
 }
 
-/** Build a fake ChildProcess that emits the given stdout/stderr and exits. */
 function fakeProc(opts: {
   stdout?: string[]
   stderr?: string[]
   exitCode?: number
   exitSignal?: string | null
 }): ChildProcess {
-  // Use a plain object cast to ChildProcess to avoid TS2540 on readonly props
   const proc = new EventEmitter() as ChildProcess & { pid: number; killed: boolean }
   const exitCode = opts.exitCode ?? 0
   proc.stdout = makeReadable(opts.stdout ?? [])
@@ -143,7 +130,6 @@ function fakeProc(opts: {
     process.nextTick(() => proc.emit('close', 1, 'SIGTERM'))
     return true
   })
-  // Emit 'close' after streams are consumed; guard against double-emit if kill() ran first.
   process.nextTick(() => {
     process.nextTick(() => {
       if (!proc.killed) {
@@ -157,11 +143,9 @@ function fakeProc(opts: {
 interface TestRepoShas {
   v1Sha: string
   v2Sha: string
-  /** Commits beyond the latest tag (for latest-channel tests). */
   aheadShas: string[]
 }
 
-/** Create a minimal git repo with tagged commits and a requirements file. */
 function createTestRepo(installPath: string, commitsAheadOfTag: number = 0): TestRepoShas {
   const comfyuiDir = path.join(installPath, 'ComfyUI')
   fs.mkdirSync(comfyuiDir, { recursive: true })
@@ -171,14 +155,12 @@ function createTestRepo(installPath: string, commitsAheadOfTag: number = 0): Tes
   execFileSync('git', ['config', 'user.email', 'test@test.com'], gitOpts)
   execFileSync('git', ['config', 'user.name', 'Test'], gitOpts)
 
-  // First commit + tag v0.1.0
   fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==1.0\n')
   execFileSync('git', ['add', '.'], gitOpts)
   execFileSync('git', ['commit', '-m', 'initial'], gitOpts)
   execFileSync('git', ['tag', 'v0.1.0'], gitOpts)
   const v1Sha = execFileSync('git', ['rev-parse', 'HEAD'], gitOpts).toString().trim()
 
-  // Second commit + tag v0.2.0 — changed requirements
   fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==2.0\nbar==1.0\n')
   fs.writeFileSync(path.join(comfyuiDir, 'manager_requirements.txt'), 'baz==1.0\n')
   execFileSync('git', ['add', '.'], gitOpts)
@@ -186,7 +168,6 @@ function createTestRepo(installPath: string, commitsAheadOfTag: number = 0): Tes
   execFileSync('git', ['tag', 'v0.2.0'], gitOpts)
   const v2Sha = execFileSync('git', ['rev-parse', 'HEAD'], gitOpts).toString().trim()
 
-  // Optional commits beyond v0.2.0 (untagged, simulating "latest" channel)
   const aheadShas: string[] = []
   for (let i = 1; i <= commitsAheadOfTag; i++) {
     fs.writeFileSync(path.join(comfyuiDir, `feature-${i}.txt`), `feature ${i}\n`)
@@ -195,19 +176,16 @@ function createTestRepo(installPath: string, commitsAheadOfTag: number = 0): Tes
     aheadShas.push(execFileSync('git', ['rev-parse', 'HEAD'], gitOpts).toString().trim())
   }
 
-  // Point HEAD back to v0.1.0 (pre-update state)
   execFileSync('git', ['checkout', 'v0.1.0', '--detach'], gitOpts)
 
   return { v1Sha, v2Sha, aheadShas }
 }
 
-/** Build a fake Python update script handler that "moves" the repo to v0.2.0. */
 function makeSuccessfulUpdateHandler(
   comfyuiDir: string,
   v2Sha: string
 ): (args: string[]) => ChildProcess {
   return (_args: string[]) => {
-    // Simulate what update_comfyui.py does: checkout the new version
     execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
       cwd: comfyuiDir,
       windowsHide: true,
@@ -273,12 +251,10 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     comfyuiDir = path.join(installPath, 'ComfyUI')
     repoShas = createTestRepo(installPath)
 
-    // Reset spawn state
     spawnState.pythonHandler = undefined
     spawnState.uvHandler = undefined
     spawnState.uvCalls = []
 
-    // Create sentinel uv file so fs.existsSync(getUvPath(...)) passes.
     fs.writeFileSync(path.join(installPath, SENTINEL_UV_NAME), '')
 
     clearVersionCache()
@@ -303,7 +279,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
     it('excludes PyTorch packages from requirements before installing', async () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
 
-      // Capture filtered requirements in the uv handler before the orchestrator cleans up.
       const capturedFilteredContents: string[] = []
       spawnState.uvHandler = (args: string[]) => {
         if (args.includes('pip') && args.includes('install') && args.includes('-r')) {
@@ -311,9 +286,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           if (rIdx >= 0 && args[rIdx + 1]) {
             try {
               capturedFilteredContents.push(fs.readFileSync(args[rIdx + 1]!, 'utf-8'))
-            } catch {
-              /* file may not exist for this call */
-            }
+            } catch {}
           }
         }
         return fakeProc({ exitCode: 0 })
@@ -322,14 +295,12 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       const opts = makeBaseOpts(installPath)
       await runComfyUIUpdate(opts)
 
-      // The repo's requirements.txt contains 'torch==2.0' — verify it was stripped
       expect(capturedFilteredContents.length).toBeGreaterThan(0)
       for (const content of capturedFilteredContents) {
         expect(content).not.toMatch(/^torch==/m)
         expect(content).not.toMatch(/^torchvision==/m)
         expect(content).not.toMatch(/^torchaudio==/m)
       }
-      // Non-PyTorch deps should still be present
       const mainReqs = capturedFilteredContents[0]!
       expect(mainReqs).toContain('foo==')
       expect(mainReqs).toContain('bar==')
@@ -345,12 +316,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           stdio: 'pipe'
         })
 
-        // Split markers across chunks to test the line-buffering logic.
         return fakeProc({
           stdout: [
-            '[PRE_UPDATE_HE', // partial marker line
-            `AD] ${repoShas.v1Sha}\n`, // rest of first marker
-            `[POST_UPDATE_HEAD] ${repoShas.v2Sha}\n[CHECKED_OUT_TAG] v0.2.0\n`, // two markers in one chunk
+            '[PRE_UPDATE_HE',
+            `AD] ${repoShas.v1Sha}\n`,
+            `[POST_UPDATE_HEAD] ${repoShas.v2Sha}\n[CHECKED_OUT_TAG] v0.2.0\n`,
             '[BACKUP_BRANCH] backup\n'
           ],
           exitCode: 0
@@ -379,20 +349,16 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       spawnState.pythonHandler = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
       spawnState.uvHandler = () => fakeProc({ exitCode: 1 })
 
-      expect(headSha()).toBe(repoShas.v1Sha) // pre-update state
+      expect(headSha()).toBe(repoShas.v1Sha)
 
       const opts = makeBaseOpts(installPath)
       const result = await runComfyUIUpdate(opts)
 
       expect(result.ok).toBe(false)
       expect(result.message).toMatch(/rolled back/i)
-      // Source is back at the pre-update commit, not the failed-update commit.
       expect(headSha()).toBe(repoShas.v1Sha)
-      // Marker is left behind on failure so a launch-time recovery would re-run
-      // (here a no-op, since the in-process rollback already restored HEAD).
       expect(markerExists()).toBe(true)
 
-      // No success metadata persisted on the failure path.
       const updateFn = opts.update as ReturnType<typeof vi.fn>
       const calls = updateFn.mock.calls.map((c: unknown[]) => c[0] as Record<string, unknown>)
       expect(calls.some((c) => c.comfyVersion !== undefined)).toBe(false)
@@ -424,7 +390,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       const opts = makeBaseOpts(installPath)
       await runComfyUIUpdate(opts)
 
-      // Only the main requirements install was attempted; manager reqs skipped.
       const installCalls = spawnState.uvCalls.filter((a) => a.includes('install'))
       expect(installCalls.length).toBe(1)
     })
@@ -437,17 +402,13 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       const result = await runComfyUIUpdate(opts)
 
       expect(result.ok).toBe(true)
-      expect(headSha()).toBe(repoShas.v2Sha) // no rollback on success
-      // Marker cleared on success so the next launch won't roll a good update back.
+      expect(headSha()).toBe(repoShas.v2Sha)
       expect(markerExists()).toBe(false)
     })
   })
 
   describe('git-script-failure rollback', () => {
     it('rolls the source back when the update script exits non-zero after moving HEAD', async () => {
-      // Simulate update_comfyui.py advancing the branch ref, then failing the
-      // working-tree checkout (e.g. the Windows symlink-privilege error) and
-      // exiting 1 without emitting POST_UPDATE_HEAD.
       spawnState.pythonHandler = (_args: string[]) => {
         execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
           cwd: comfyuiDir,
@@ -463,18 +424,15 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         })
       }
 
-      expect(headSha()).toBe(repoShas.v1Sha) // pre-update state
+      expect(headSha()).toBe(repoShas.v1Sha)
 
       const opts = makeBaseOpts(installPath)
       const result = await runComfyUIUpdate(opts)
 
       expect(result.ok).toBe(false)
       expect(result.message).toMatch(/rolled back/i)
-      // Source is restored to the pre-update commit, not the failed-update commit.
       expect(headSha()).toBe(repoShas.v1Sha)
-      // Marker is left behind so a launch-time recovery re-runs if needed.
       expect(markerExists()).toBe(true)
-      // The local backup branch is recorded for offline manual recovery.
       const marker = JSON.parse(
         fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
       )
@@ -484,8 +442,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
   describe('half-updated tree', () => {
     it('blocks the next launch until an update repairs it', async () => {
-      // The update failed and its restore could not finish (a file held open):
-      // HEAD is back at v0.1.0, but requirements.txt still has v0.2.0's content.
       spawnState.pythonHandler = () => {
         fs.writeFileSync(
           path.join(comfyuiDir, 'requirements.txt'),
@@ -503,8 +459,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         'The last update did not finish'
       )
       expect(markerExists()).toBe(true)
-      // The block says "Run Update": the Update tab must offer it even though the
-      // install already reports the channel's latest version.
       const atLatest = {
         installPath,
         comfyVersion: { commit: repoShas.v1Sha, baseTag: 'v0.1.0', commitsAhead: 0 }
@@ -512,15 +466,11 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       const latest = { latestTag: 'v0.1.0', commitSha: repoShas.v1Sha }
       expect(isUpdateAvailable(atLatest, 'stable', latest)).toBe(true)
 
-      // An Update retried offline fails before writing: the earlier damage must
-      // stay on record, so the launch is still blocked.
       spawnState.pythonHandler = () =>
         fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
       expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(false)
       await expect(recoverInterruptedComfyOp(installPath)).rejects.toThrow('Run Update to repair')
 
-      // Running Update again rewrites the tree (the updater hard-resets) and
-      // clears the marker.
       const succeed = makeSuccessfulUpdateHandler(comfyuiDir, repoShas.v2Sha)
       spawnState.pythonHandler = (args: string[]) => {
         execFileSync('git', ['reset', '-q', '--hard'], { cwd: comfyuiDir, stdio: 'pipe' })
@@ -536,8 +486,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
   describe('repairing update', () => {
     it('resyncs dependencies even when HEAD and requirements already match the target', async () => {
-      // Desktop was killed mid-update after HEAD and requirements.txt reached
-      // v0.2.0; the packages are still v0.1.0's.
       execFileSync('git', ['checkout', '-q', 'v0.2.0', '--detach'], {
         cwd: comfyuiDir,
         stdio: 'pipe'
@@ -551,9 +499,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
           backupBranch: 'backup_before_update'
         })
       )
-      // A retry that fails before writing (offline) keeps the original pre-update
-      // commit, so the next launch still rolls back instead of launching v0.2.0
-      // source on v0.1.0 packages.
       spawnState.pythonHandler = () =>
         fakeProc({
           stdout: [
@@ -567,8 +512,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         fs.readFileSync(path.join(installPath, '.comfyui-op-in-progress.json'), 'utf-8')
       )
       expect(kept.preHead).toBe(repoShas.v1Sha)
-      // The backup named in the block message stays the one with the user's
-      // pre-update edits, not the retry's backup of the mixed tree.
       expect(kept.backupBranch).toBe('backup_before_update')
 
       spawnState.pythonHandler = () =>
@@ -583,7 +526,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
       expect((await runComfyUIUpdate(makeBaseOpts(installPath))).ok).toBe(true)
       expect(spawnState.uvCalls.some((a) => a.includes('install'))).toBe(true)
-      // Both requirement files are unchanged, but their packages may be stale.
       const installed = spawnState.uvCalls.filter((a) => a.includes('install')).flat()
       expect(installed.some((a) => a.endsWith('.post-install-reqs.txt'))).toBe(true)
       expect(installed.some((a) => a.endsWith('.post-install-mgr-reqs.txt'))).toBe(true)
@@ -593,7 +535,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
   describe('update that fails before writing', () => {
     it('clears its marker, so a user edit does not block the next launch', async () => {
-      // A failed fetch: nothing written, but the user had edited a tracked file.
       fs.writeFileSync(path.join(comfyuiDir, 'requirements.txt'), 'torch==2.0\nfoo==1.0\n# mine\n')
       spawnState.pythonHandler = () =>
         fakeProc({ stdout: [`[PRE_UPDATE_HEAD] ${repoShas.v1Sha}\n`], exitCode: 1 })
@@ -620,8 +561,6 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
 
     it('rolls the source back when cancelled after the script moved HEAD', async () => {
       const controller = new AbortController()
-      // Abort during the update script, after it advanced HEAD — mimics a cancel
-      // that kills the process mid-checkout, leaving the source moved.
       spawnState.pythonHandler = (_args: string[]) => {
         execFileSync('git', ['checkout', 'v0.2.0', '--detach'], {
           cwd: comfyuiDir,
@@ -635,7 +574,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
         })
       }
 
-      expect(headSha()).toBe(repoShas.v1Sha) // pre-update state
+      expect(headSha()).toBe(repoShas.v1Sha)
 
       const opts = makeBaseOpts(installPath, { signal: controller.signal })
       const result = await runComfyUIUpdate(opts)
@@ -643,9 +582,7 @@ describe.skipIf(!HAS_GIT)('runComfyUIUpdate integration', () => {
       expect(result.ok).toBe(false)
       expect(result.message).toMatch(/^Cancelled/)
       expect(result.message).toMatch(/rolled back/i)
-      // Source is restored to the pre-update commit despite the cancel.
       expect(headSha()).toBe(repoShas.v1Sha)
-      // Marker is left behind so a launch-time recovery re-runs if needed.
       expect(markerExists()).toBe(true)
     })
   })

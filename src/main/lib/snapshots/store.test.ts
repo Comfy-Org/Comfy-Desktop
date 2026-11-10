@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../git', () => ({
@@ -23,8 +22,6 @@ vi.mock('../telemetry', () => ({
   emit: vi.fn()
 }))
 
-// Imports the R2 catalog (electron `net`, cacheDir) transitively — stub it
-// out so this unit test stays free of the Electron runtime.
 vi.mock('../../sources/standalone/torchStackCatalog', () => ({
   classifyTorchStackForSnapshot: vi.fn(() => ({
     kind: 'observed',
@@ -79,13 +76,6 @@ const mockedTelemetryEmit = vi.mocked(telemetry.emit)
 const mockedReadGitHead = vi.mocked(readGitHead)
 const mockedScanCustomNodes = vi.mocked(scanCustomNodes)
 
-/**
- * Stateful in-memory `fs.promises` mock — `writeFile`/`rename` route into a
- * Map keyed by absolute path; `readdir`/`readFile`/`unlink` read from the same
- * Map. Lets us drive `captureSnapshotIfChanged`'s `loadSnapshot` /
- * `listSnapshots` / `deduplicateRestartSnapshot` paths without spinning up
- * real disk I/O. Reset in each `beforeEach` via `installFsMemory()`.
- */
 function installFsMemory(): Map<string, string> {
   const memory = new Map<string, string>()
   vi.mocked(fs.promises.writeFile).mockImplementation(async (p, data) => {
@@ -196,11 +186,6 @@ describe('captureState commit-matching guard', () => {
   })
 
   it('freezes packages via the adopted-aware uv path so adopted installs do not snapshot 0 packages', async () => {
-    // Regression for issue #855: adopted Legacy Desktop installs have no
-    // managed standalone-env, so `getUvPath(installPath)` resolved to a
-    // file that doesn't exist and the freeze was silently skipped.
-    // `captureState` must now consult `getActiveUvPath(installation)`,
-    // which returns the uv pip-installed into the legacy `.venv`.
     mockedReadGitHead.mockReturnValue('abc1234')
     vi.mocked(getActiveUvPath).mockReturnValue('/legacy/.venv/bin/uv')
     vi.mocked(getActivePythonPath).mockReturnValue('/legacy/.venv/bin/python3')
@@ -270,10 +255,8 @@ describe('saveSnapshot telemetry', () => {
       installation_id: 'install-42',
       trigger: 'manual',
       custom_nodes_count: 2,
-      // pip freeze is short-circuited by the python-path mock returning null
       pip_packages_count: 0,
       has_label: true,
-      // saveSnapshot never deduplicates a previous snapshot
       deduplicated_previous: false
     })
   })
@@ -305,9 +288,6 @@ describe('captureSnapshotIfChanged telemetry', () => {
 
   it('emits no telemetry when boot state matches the last snapshot (saved: false)', async () => {
     const memory = installFsMemory()
-    // Pre-seed `lastSnapshot` with a state that matches what `captureState`
-    // will produce (manifest read fails → ref:'unknown', commit comes from
-    // mocked readGitHead, no nodes, no pip).
     const matching = {
       version: 2,
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -318,8 +298,6 @@ describe('captureSnapshotIfChanged telemetry', () => {
       pipPackages: {},
       pythonVersion: undefined,
       updateChannel: 'stable',
-      // Same stack identity as the mocked classifier but an older observedAt —
-      // dedupe must compare identity only, or every boot would re-snapshot.
       torchStack: {
         kind: 'observed' as const,
         torchVersion: null,
@@ -327,10 +305,6 @@ describe('captureSnapshotIfChanged telemetry', () => {
       }
     }
     const lastFilename = 'last.json'
-    // loadSnapshot reads through `resolveSnapshotPath` which uses
-    // `path.resolve` — on Windows that prepends the drive letter, so the
-    // memory key has to be the resolved absolute path, not a path.join
-    // form, or the readFile mock won't find it.
     memory.set(
       path.resolve('/test/install', '.launcher', 'snapshots', lastFilename),
       JSON.stringify(matching)
@@ -353,9 +327,6 @@ describe('captureSnapshotIfChanged telemetry', () => {
 
   it('emits deduplicated_previous: true when restart collapses the prior intermediate snapshot', async () => {
     const memory = installFsMemory()
-    // Pre-seed an intermediate restart snapshot (no label, same comfyui +
-    // empty nodes) that should get collapsed by `deduplicateRestartSnapshot`
-    // when the new restart snapshot lands.
     const intermediate = {
       version: 1,
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -367,10 +338,6 @@ describe('captureSnapshotIfChanged telemetry', () => {
       pythonVersion: undefined,
       updateChannel: 'stable'
     }
-    // Filename uses the same `YYYYMMDD_HHMMSS_mmm-<trigger>-<suffix>.json`
-    // shape `formatTimestamp` produces; an older lexicographic key ensures
-    // it sorts AFTER the freshly-written one (newest-first sort in
-    // `listSnapshots`).
     const intermediateFilename = '20260101_120000_000-restart-aaaaaa.json'
     memory.set(
       path.join('/test/install', '.launcher', 'snapshots', intermediateFilename),
@@ -416,11 +383,6 @@ describe('ensureCurrentSnapshotOnTop', () => {
     sourceId: 'test'
   } as InstallationRecord
 
-  // The live state `captureState` produces here: ref 'unknown' (manifest read
-  // fails), commit from mocked readGitHead, no nodes, no pip, channel 'stable',
-  // and the mocked observed torch stack (torchVersion null, tuple fields
-  // absent — torchStacksMatch distinguishes null from undefined and ignores
-  // only observedAt).
   const liveStateSnapshot = {
     version: 1,
     createdAt: '2025-01-01T00:00:00.000Z',
@@ -447,7 +409,6 @@ describe('ensureCurrentSnapshotOnTop', () => {
 
   it('writes a post-restore snapshot of the live state when the top snapshot does not match', async () => {
     const memory = installFsMemory()
-    // Imported-but-never-applied snapshot on top: different commit than live.
     seedTopSnapshot(
       memory,
       { ...liveStateSnapshot, comfyui: { ...liveStateSnapshot.comfyui, commit: 'imported9' } },
@@ -458,7 +419,6 @@ describe('ensureCurrentSnapshotOnTop', () => {
 
     expect(result.saved).toBe(true)
     expect(result.filename).toMatch(/-post-restore-/)
-    // The imported snapshot is kept (retry can still use it).
     expect(
       memory.has(
         path.join(
@@ -469,7 +429,6 @@ describe('ensureCurrentSnapshotOnTop', () => {
         )
       )
     ).toBe(true)
-    // The written snapshot records the live commit.
     const written = JSON.parse(
       memory.get(path.join('/test/install', '.launcher', 'snapshots', result.filename!))!
     )
@@ -490,15 +449,12 @@ describe('ensureCurrentSnapshotOnTop', () => {
     expect(result.saved).toBe(false)
     expect(result.filename).toBe('20250101_000000_000-boot-match.json')
     expect(mockedTelemetryEmit).not.toHaveBeenCalled()
-    // No new file written — only the seeded one remains.
     const files = [...memory.keys()].filter((k) => k.endsWith('.json'))
     expect(files).toHaveLength(1)
   })
 
   it('writes a snapshot that sorts above an imported top with a future timestamp', async () => {
     const memory = installFsMemory()
-    // A multi-snapshot import (or a same-ms import) can leave the newest entry
-    // with a timestamp at/after `now`; the correction snapshot must still win.
     seedTopSnapshot(
       memory,
       {
@@ -518,8 +474,6 @@ describe('ensureCurrentSnapshotOnTop', () => {
 
   it('writes a new snapshot when only updateChannel or pythonVersion differ (stricter than statesMatch)', async () => {
     const memory = installFsMemory()
-    // Same comfyui/nodes/pips as live (so `statesMatch` is true) but a different
-    // updateChannel — `snapshotRepresentsCurrentState` must treat this as stale.
     seedTopSnapshot(
       memory,
       { ...liveStateSnapshot, updateChannel: 'nightly' },
@@ -532,9 +486,6 @@ describe('ensureCurrentSnapshotOnTop', () => {
     expect(result.filename).toMatch(/-post-restore-/)
   })
 
-  // #1514: a restore that failed or was cancelled must not leave a history
-  // entry that reads as a completed restore. The trigger stays `post-restore`
-  // (that IS the state's provenance), and the label carries the caveat.
   it('labels the written snapshot when the caller supplies one', async () => {
     const memory = installFsMemory()
     seedTopSnapshot(
@@ -580,13 +531,11 @@ describe('ensureCurrentSnapshotOnTop', () => {
     const first = await ensureCurrentSnapshotOnTop('/test/install', installation)
     expect(first.saved).toBe(true)
 
-    // A second failed attempt (retry) now sees a live-state snapshot on top and
-    // must not write another.
     const second = await ensureCurrentSnapshotOnTop('/test/install', installation)
     expect(second.saved).toBe(false)
     expect(second.filename).toBe(first.filename)
 
     const files = [...memory.keys()].filter((k) => k.endsWith('.json'))
-    expect(files).toHaveLength(2) // imported + one post-restore
+    expect(files).toHaveLength(2)
   })
 })

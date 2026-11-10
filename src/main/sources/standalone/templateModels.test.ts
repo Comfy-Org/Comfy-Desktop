@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// `resolveTemplateModels` loads the template JSON from site-packages (fs) then
-// falls back to a remote fetch. Stub both so the loader returns our crafted doc,
-// letting us assert the URL whitelist + path-traversal guards end-to-end.
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/userdata' },
   ipcMain: { handle: vi.fn() }

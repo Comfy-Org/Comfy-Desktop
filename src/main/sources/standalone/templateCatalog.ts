@@ -1,15 +1,3 @@
-/**
- * Hydrates the curated starter-template manifest against the live
- * `comfyui_workflow_templates` index, so card metadata (title, description,
- * size, thumbnail) tracks upstream automatically instead of being hand-kept.
- *
- * One ETag-cached fetch per picker open (`fetchJSON` handles caching, R2-mirror
- * retry, and last-cached fallback on network failure); the index is flattened
- * once into a `Map` for O(1) lookup per curated id rather than rescanning its
- * ~500 entries. When the index can't be reached at all (cold cache, offline),
- * every template falls back to its inline `snapshot`, so the catalog is always
- * non-empty and the picker always renders.
- */
 import { fetchJSON } from '../../lib/fetch'
 import type { FieldOption } from '../../types/sources'
 import { loadStarterTemplates, _resetStarterTemplatesForTest } from './remoteStarterTemplates'
@@ -21,33 +9,20 @@ import {
   type TemplateSnapshot
 } from './curatedTemplates'
 
-/** A curated template merged with its (optional) live index metadata, ready to
- *  render as a picker card. */
 export interface HydratedTemplate {
   id: string
   modality: TemplateModality
   recommended: boolean
   title: string
-  /** Short model name for the card (e.g. "Z-Image-Turbo") — the title minus its
-   *  task suffix. */
   name: string
-  /** Task descriptor for the card subtitle (e.g. "Text to Image", "Image Edit"),
-   *  or '' when none. */
   task: string
   description: string
-  /** Coarse total download estimate (bytes); 0 when unknown. */
   sizeBytes: number
-  /** Runs on API nodes — nothing to download, but each run spends credits. */
   apiNode: boolean
-  /** Card preview image URL, or `null` for non-image previews (audio → glyph). */
   thumbnailUrl: string | null
-  /** Index `title` (e.g. "Image", "Video") of the category the template lives
-   *  in upstream — carried for telemetry/sub-grouping, not the tab grouping. */
   category: string
 }
 
-/** The fields we read off a live index template entry. Everything is optional —
- *  upstream coverage varies — so hydration always tolerates a missing field. */
 interface IndexEntry {
   name: string
   title?: unknown
@@ -57,7 +32,6 @@ interface IndexEntry {
   tags?: unknown
 }
 
-/** A live index category: `{ title, type, templates: [...] }`. */
 interface IndexCategory {
   title?: unknown
   type?: unknown
@@ -67,8 +41,6 @@ interface IndexCategory {
 interface IndexLocation {
   entry: IndexEntry
   category: string
-  /** The category's `type`, when it's one of our modalities — used to pick a
-   *  same-category substitute for a curated id that's vanished upstream. */
   modality: TemplateModality | null
 }
 
@@ -78,12 +50,6 @@ function modalityFromType(type: unknown): TemplateModality | null {
     : null
 }
 
-/**
- * Flatten the index (an array of categories) into `id → { entry, category }`.
- * First occurrence of an id wins, matching the upstream gallery's de-dup. Any
- * structurally-unexpected element is skipped rather than throwing, so a single
- * malformed entry can't sink the whole catalog.
- */
 function indexById(index: unknown): Map<string, IndexLocation> {
   const byId = new Map<string, IndexLocation>()
   if (!Array.isArray(index)) return byId
@@ -105,8 +71,6 @@ function indexById(index: unknown): Map<string, IndexLocation> {
 
 const NON_TASK_TAGS = new Set(['image', 'video', 'audio', '3d', '3d model', 'api'])
 
-/** Subtitle shown when a template's `tags` carry no specific task, so a card is
- *  never left with a blank descriptor (e.g. Wan Fun Camera, tags: ['Video']). */
 const DEFAULT_TASK: Record<TemplateModality, string> = {
   image: 'Text to Image',
   video: 'Text to Video',
@@ -114,8 +78,6 @@ const DEFAULT_TASK: Record<TemplateModality, string> = {
   '3d': 'Image to 3D'
 }
 
-/** The template's task (e.g. "Text to Image", "Image Edit") from its `tags`,
- *  skipping kind labels; falls back to the modality default. */
 function taskOf(tags: unknown, modality: TemplateModality): string {
   if (Array.isArray(tags)) {
     for (const tag of tags) {
@@ -127,9 +89,6 @@ function taskOf(tags: unknown, modality: TemplateModality): string {
   return DEFAULT_TASK[modality]
 }
 
-/** Short card name: the title up to its `:` separator, then with a trailing task
- *  phrase stripped ("Z-Image-Turbo Text to Image" → "Z-Image-Turbo"). Falls back
- *  to the whole title when nothing is strippable. */
 function nameOf(title: string, task: string): string {
   const beforeColon = title.split(':')[0]!.trim()
   if (task && beforeColon.toLowerCase().endsWith(task.toLowerCase())) {
@@ -139,9 +98,6 @@ function nameOf(title: string, task: string): string {
   return beforeColon || title
 }
 
-/** Build a card from a template `id` + its live index location (when present),
- *  preferring live metadata and falling back to the offline `snapshot` (which a
- *  substituted, non-curated id won't have). */
 function hydrateOne(card: {
   id: string
   modality: TemplateModality
@@ -180,25 +136,10 @@ function hydrateOne(card: {
   }
 }
 
-/** Stable ordering for the picker: modality tab order, then curated order
- *  within a modality. */
 function byModalityOrder(a: HydratedTemplate, b: HydratedTemplate): number {
   return TEMPLATE_MODALITY_ORDER.indexOf(a.modality) - TEMPLATE_MODALITY_ORDER.indexOf(b.modality)
 }
 
-/**
- * Resolve the curated manifest into renderable cards, hydrated from the live
- * index where reachable. Defensive by contract: never throws and never returns
- * a card the picker can't render —
- *   - a failed/garbage index fetch yields a snapshot-only catalog,
- *   - a duplicate curated id (dev typo) is collapsed to its first occurrence,
- *   - a curated entry missing its required snapshot (dev edit) is dropped, not
- *     surfaced as a broken card.
- * So renaming/removing a template upstream, or fat-fingering the manifest, can
- * only ever shrink the offering — it can't crash the picker.
- */
-/** Coalesces the wizard's field-options read and the thumbnail warm-up — which
- *  fire together at picker open — into one index fetch; a later open refetches. */
 const CATALOG_TTL_MS = 60_000
 let catalogInFlight: Promise<HydratedTemplate[]> | null = null
 let catalogCache: { at: number; value: HydratedTemplate[] } | null = null
@@ -219,27 +160,19 @@ export function loadTemplateCatalog(): Promise<HydratedTemplate[]> {
   return catalogInFlight
 }
 
-/** Drops the memoized catalog so the next read refetches. Test-only. */
 export function resetTemplateCatalogCache(): void {
   catalogInFlight = null
   catalogCache = null
-  // The starter list is memoized for the process, so leaving it would make a
-  // reset only half-work and any fetch-count assertion order-dependent.
   _resetStarterTemplatesForTest()
 }
 
 async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
-  // The card list comes from R2 so content can change it without a release;
-  // `loadStarterTemplates` falls back to `CURATED_TEMPLATES` on any failure and
-  // never rejects, so this stays a straight read.
   const [starterTemplates, index] = await Promise.all([
     loadStarterTemplates(),
     fetchJSON(INDEX_URL).catch(() => null)
   ])
 
   const byId = index ? indexById(index) : new Map<string, IndexLocation>()
-  // Only substitute when we actually have a live index to substitute FROM —
-  // an empty map means offline, where the curated snapshot is the right fallback.
   const online = byId.size > 0
 
   const used = new Set<string>()
@@ -260,11 +193,6 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
       continue
     }
 
-    // Curated id has vanished upstream: show the first live template of the same
-    // modality we haven't already used, so the slot still offers a real,
-    // installable pick rather than a stale snapshot card. An API-node slot keeps
-    // its snapshot — substituting would put a multi-GB download behind a badge
-    // that promises none.
     const sub = apiNode ? null : firstUnusedOfModality(byId, modality, used)
     if (sub) {
       used.add(sub.entry.name)
@@ -288,7 +216,6 @@ async function loadTemplateCatalogUncached(): Promise<HydratedTemplate[]> {
   return catalog.sort(byModalityOrder)
 }
 
-/** A hydrated template as a `TemplatePickerStep` card. */
 export function toTemplateFieldOption(
   template: HydratedTemplate,
   modelsPresent: boolean
@@ -311,11 +238,6 @@ export function toTemplateFieldOption(
   }
 }
 
-/**
- * Hydrate a fixed template list against the live index. Unlike the starter
- * catalog, an id missing upstream keeps its snapshot instead of being swapped
- * for another template, since callers pair each id with id-specific artifacts.
- */
 export async function hydrateTemplates(
   templates: ReadonlyArray<{
     id: string
@@ -338,9 +260,6 @@ export async function hydrateTemplates(
   )
 }
 
-/** First unused, locally-installable index template of `modality` — skips
- *  API/cloud entries (`api_*`) and size-less ones, since a substitute fills a
- *  local download slot the disk-space gate sizes off `sizeBytes`. */
 function firstUnusedOfModality(
   byId: Map<string, IndexLocation>,
   modality: TemplateModality,

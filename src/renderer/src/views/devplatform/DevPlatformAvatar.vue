@@ -1,25 +1,13 @@
 <script setup lang="ts">
-/**
- * Square gradient avatar adapted from the ComfyUI frontend's
- * `WorkspaceProfilePic.vue`. It uses the same PRNG, saturation, and lightness
- * calculations with a narrower second-hue offset for a cohesive color pair.
- *
- * Used for both the account-chip face (seeded from the active workspace name,
- * falling back to the email) and the switcher rows (seeded from each workspace
- * name): the colour is a deterministic function of whatever string it is given.
- */
 import { computed } from 'vue'
 
 const { name, neutral } = defineProps<{
-  /** Subject the colour is derived from; only its first character is rendered. */
   name: string
-  /** Render an unlabelled neutral square instead of a workspace identity. */
   neutral?: boolean
 }>()
 
 const letter = computed(() => name?.charAt(0)?.toUpperCase() || '?')
 
-/** mulberry32: the frontend's PRNG, ported verbatim. */
 function mulberry32(a: number): () => number {
   return function () {
     let t = (a += 0x6d2b79f5)
@@ -29,11 +17,6 @@ function mulberry32(a: number): () => number {
   }
 }
 
-/** Two-stop gradient seeded from the letter. The rand() call ORDER and COUNT are
- *  part of the contract: reordering or adding a call changes every colour.
- *
- * The second stop uses an 18-41 degree hue offset so the stops read as shades
- * of one color family. */
 const gradient = computed(() => {
   const rand = mulberry32(letter.value.charCodeAt(0))
   const hue1 = Math.floor(rand() * 360)
@@ -45,39 +28,16 @@ const gradient = computed(() => {
 </script>
 
 <template>
-  <!-- Decorative: the subject's name is always rendered beside this avatar. -->
   <span
-    class="dp-avatar"
-    :class="{ 'dp-avatar--neutral': neutral }"
+    class="dp-avatar inline-flex size-[var(--dp-avatar-size,32px)] flex-none items-center justify-center overflow-hidden rounded-md text-[length:calc(var(--dp-avatar-size,32px)*0.42)] leading-none font-semibold text-white select-none"
+    :class="
+      neutral
+        ? 'dp-avatar--neutral bg-neutral-400 [text-shadow:none]'
+        : '[text-shadow:0_1px_2px_rgba(0,0,0,0.2)]'
+    "
     :style="neutral ? undefined : { background: gradient }"
     aria-hidden="true"
   >
     {{ neutral ? '' : letter }}
   </span>
 </template>
-
-<style scoped>
-.dp-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: var(--dp-avatar-size, 32px);
-  height: var(--dp-avatar-size, 32px);
-  border-radius: 6px;
-  overflow: hidden;
-  /* Paired to the generated gradient, not the app palette: same values as
-   * the frontend component this is ported from. */
-  color: #fff;
-  /* Scales with the box so the letter keeps the same optical weight at any size. */
-  font-size: calc(var(--dp-avatar-size, 32px) * 0.42);
-  font-weight: 600;
-  line-height: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  user-select: none;
-}
-.dp-avatar--neutral {
-  background: var(--neutral-400);
-  text-shadow: none;
-}
-</style>

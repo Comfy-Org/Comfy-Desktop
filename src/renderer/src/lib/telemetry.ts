@@ -24,7 +24,6 @@ export function toVariantBucket(variantId: string | undefined): string {
   return variantId.replace(/^(?:beta-)?(win|mac|linux)-/, '')
 }
 
-// Re-exported so renderer and main classify errors identically.
 export { bucketError as toErrorBucket } from '../../../shared/errorBucket'
 
 export function toCountBucket(count: number): string {

@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}:${JSON.stringify(params)}` : key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const mockConfirm = vi.hoisted(() => vi.fn())
 vi.mock('./useModal', () => ({
@@ -37,9 +34,9 @@ vi.mock('../stores/progressStore', () => ({
 }))
 
 const mockCancelOperation = vi.hoisted(() => vi.fn())
-;(
-  globalThis as unknown as { window: { api: { cancelOperation: typeof mockCancelOperation } } }
-).window = { api: { cancelOperation: mockCancelOperation } }
+;(window as unknown as { api: { cancelOperation: typeof mockCancelOperation } }).api = {
+  cancelOperation: mockCancelOperation
+}
 
 import { useActionGuard } from './useActionGuard'
 
@@ -76,8 +73,6 @@ describe('useActionGuard.checkBeforeAction', () => {
   })
 
   it('treats a progressStore-only in-flight op (no active session) as busy', async () => {
-    // Some ops register progress without a sessionStore entry, so the busy
-    // guard must consult progressStore directly.
     progressState.info.set(INSTALL_ID, { status: 'Copying…', percent: 42 })
     mockConfirm.mockResolvedValue(false)
 
@@ -93,7 +88,6 @@ describe('useActionGuard.checkBeforeAction', () => {
     mockConfirm.mockResolvedValue(true)
 
     const pending = useActionGuard().checkBeforeAction(INSTALL_ID, 'Restart')
-    // Let the poll iterate a couple of times before the op clears.
     await new Promise((r) => setTimeout(r, 250))
     expect(mockCancelOperation).toHaveBeenCalledWith(INSTALL_ID)
     progressState.info.set(INSTALL_ID, null)

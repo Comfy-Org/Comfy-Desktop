@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Reports what the mirror service account can do. Uses the JSON API with the
-# token `google-github-actions/auth` exports, rather than the gcloud CLI.
 set -uo pipefail
 
 BUCKET=comfy-desktop-public
@@ -26,7 +24,6 @@ fi
 say "- Service account: \`$(jq -r '.client_email // "unknown"' "$CREDS")\`"
 say "- Project: \`$(jq -r '.project_id // "unknown"' "$CREDS")\`"
 
-# Mint an access token from the service-account key.
 TOKEN=$(python3 - "$CREDS" <<'PY'
 import base64, json, sys, time, urllib.parse, urllib.request
 from cryptography.hazmat.primitives import hashes, serialization
@@ -79,8 +76,6 @@ write_code=$(curl -sS --connect-timeout 10 --max-time 30 -o "$TMP/gcs-write.json
 say "- Write a throwaway object: HTTP $write_code"
 
 if [ "$write_code" = "200" ]; then
-  # Publishing overwrites an existing object, which a create-only credential
-  # cannot do, so prove overwrite rather than just create.
   again=$(curl -sS --connect-timeout 10 --max-time 30 -o /dev/null -w '%{http_code}' -X POST \
     "https://storage.googleapis.com/upload/storage/v1/b/$BUCKET/o?uploadType=media&name=$(printf %s "$KEY" | jq -sRr @uri)" \
     -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \

@@ -21,9 +21,6 @@ beforeEach(() => {
 
 afterEach(() => vi.unstubAllGlobals())
 
-/** Fire queued idle callbacks; work that settles synchronously and re-pumps
- *  enqueues the next job, which the browser fires on a subsequent idle. Drain
- *  those follow-ups too, capped so a genuine wedge surfaces as a hang-free fail. */
 function flushIdle(): void {
   for (let i = 0; i < 100 && idleQueue.length > 0; i++) {
     const pending = idleQueue
@@ -41,8 +38,6 @@ function run<T>(fn: () => T): { result: T; dispose: () => void } {
 describe('useAssetPrefetch', () => {
   it('drains the queue when a loader settles synchronously', () => {
     const loaded: string[] = []
-    // A loader that calls done() before returning its canceller — the frame is
-    // already warm (cache hit), so it settles inside the same call.
     const syncLoader: AssetLoader = (url, done) => {
       loaded.push(url)
       done()

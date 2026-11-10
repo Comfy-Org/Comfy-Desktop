@@ -1,9 +1,3 @@
-/**
- * OAuth token store (main process only). Tokens are encrypted at rest with
- * Electron `safeStorage` in `userData/comfy-cloud-auth.bin` and never reach the
- * renderer, logs, or disk in plaintext. When the OS secure-storage backend is
- * unavailable, tokens are kept in memory for the process lifetime only.
- */
 import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -27,10 +21,6 @@ let cachedVault: TokenVault | null = null
 let authFilePath: string | null = null
 let secureStorageUnavailable = false
 
-/** True when the last save/load found no OS secure-storage backend, so tokens
- *  live only in memory for this process. False before any check has run. A
- *  getter rather than an exported binding: a re-exported `let` can be captured
- *  stale after CJS transpilation. */
 export function isSecureStorageUnavailable(): boolean {
   return secureStorageUnavailable
 }
@@ -104,21 +94,14 @@ function vaultFor(tokens: AuthTokens): TokenVault {
 function persistVault(vault: TokenVault): void {
   cachedVault = vault
   if (!encryptionAvailable()) {
-    // No secure backend: never write plaintext, and drop any prior encrypted
-    // file so a later run can't read stale tokens back as current.
     try {
       fs.rmSync(filePath(), { force: true })
-    } catch {
-      /* nothing to remove */
-    }
+    } catch {}
     return
   }
   try {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(vault)))
-  } catch {
-    // A failed persist must not fail the sign-in the user just completed; the
-    // in-memory cache still holds the tokens for this session.
-  }
+  } catch {}
 }
 
 function loadVault(): TokenVault | null {
@@ -131,7 +114,6 @@ function loadVault(): TokenVault | null {
       return cachedVault
     }
     if (isTokens(parsed)) {
-      // Migrate the original single-token payload without signing the user out.
       const migrated = vaultFor(parsed)
       persistVault(migrated)
       return migrated
@@ -142,7 +124,6 @@ function loadVault(): TokenVault | null {
   }
 }
 
-/** Save and activate a browser-auth token bundle. A changed account replaces the vault. */
 export function saveTokens(tokens: AuthTokens): void {
   const current = loadVault()
   const nextSubject = subjectOf(tokens.accessToken)
@@ -155,18 +136,15 @@ export function saveTokens(tokens: AuthTokens): void {
   persistVault(vault)
 }
 
-/** The active workspace's token bundle. */
 export function loadTokens(): AuthTokens | null {
   const vault = loadVault()
   return vault?.bundles[vault.activeKey] ?? null
 }
 
-/** A cached workspace token bundle, without changing the active workspace. */
 export function loadWorkspaceTokens(workspaceId: string | null): AuthTokens | null {
   return loadVault()?.bundles[workspaceKey(workspaceId)] ?? null
 }
 
-/** Cache workspace names only when the response belongs to the current account. */
 export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[]): void {
   const vault = loadVault()
   const subject = subjectOf(accessToken)
@@ -177,12 +155,10 @@ export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[])
   persistVault(vault)
 }
 
-/** Return a cached workspace name by durable id without changing the active workspace. */
 export function getCachedWorkspaceName(workspaceId: string): string | null {
   return loadVault()?.workspaceNames?.[workspaceId] ?? null
 }
 
-/** Activate a cached workspace. Returns null when it has never been authorized. */
 export function activateWorkspace(workspaceId: string): AuthTokens | null {
   const vault = loadVault()
   if (!vault) return null
@@ -194,7 +170,6 @@ export function activateWorkspace(workspaceId: string): AuthTokens | null {
   return tokens
 }
 
-/** Compare-and-swap one workspace's tokens after refresh rotation. */
 export function replaceWorkspaceTokens(
   workspaceId: string | null,
   expectedAccessToken: string,
@@ -223,9 +198,7 @@ export function clearTokens(): void {
   cachedVault = null
   try {
     fs.rmSync(filePath(), { force: true })
-  } catch {
-    /* nothing to remove */
-  }
+  } catch {}
 }
 
 export function getAuthStatus(): AuthStatus {
@@ -238,7 +211,6 @@ export function getAuthStatus(): AuthStatus {
   return workspaceName ? { ...status, workspaceName } : status
 }
 
-/** @internal reset module state between unit tests. */
 export function _resetForTest(): void {
   cachedVault = null
   authFilePath = null

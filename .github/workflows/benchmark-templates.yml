@@ -1,8 +1,5 @@
 name: Benchmark templates
 
-# Guards `assets/benchmark-templates.json`, the example workflows the performance
-# test page offers. An example whose prompt or parent template is not on the
-# workflow_templates repo's `main` fails for every user who picks it.
 on:
   pull_request:
     paths:
@@ -28,5 +25,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Shape the app accepts, and every example downloadable from GitHub `main`.
       - run: node scripts/benchmark-templates.mjs validate

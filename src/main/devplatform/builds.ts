@@ -1,8 +1,3 @@
-/** Build catalog and install selection for terminal releases.
- * Ready, host-compatible artifacts alone qualify; models resolve during installation. */
-// Import from the library's leaf modules (not its barrel): these are pure and
-// pull no Electron/filesystem side effects, so this policy module stays cheap to
-// load and to unit-test.
 import { isTerminalRelease } from '../comfybuilder/releases'
 import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from '../comfybuilder/targets'
 import type { Artifact, Build, BuildVersion, Host } from '../comfybuilder/types'
@@ -11,16 +6,8 @@ import { detectGPUCached } from '../lib/gpu'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { setCachedVersions } from './versionCache'
 
-/**
- * Build catalog states. `installable` / `no-build` / `platform-mismatch` are
- * decided from the catalog alone; `update-available` also needs the installed
- * version (passed in), and only fires when the newer version has a host-runnable
- * artifact (you can never "update" to a build with nothing for this machine).
- */
 export type BuildRowState = 'installable' | 'no-build' | 'platform-mismatch' | 'update-available'
 
-/** One renderer-safe Build catalog row. Field names mirror the renderer's
- *  `devplatform/types.ts` so swapping mocks for this stays mechanical. */
 export interface BuildRow {
   id: string
   name: string
@@ -28,8 +15,6 @@ export interface BuildRow {
   createdBy?: string
   creatorName?: string
   version?: string
-  /** ComfyUI version bundled by this build. TODO(builder-backend): the
-   *  build metadata doesn't carry it yet, so this is currently never set. */
   comfyuiVersion?: string
   finishedAt?: string
   numModels?: number
@@ -38,14 +23,9 @@ export interface BuildRow {
   sizeBytes?: number
   updatedAt?: string
   state: BuildRowState
-  /** The installed version of this build, when one backs it. Set for both
-   *  an up-to-date install and an `update-available` one; absent when not installed. */
   installedVersion?: number
-  /** Machine-readable reason for a blocked state. */
   blockedReason?: string
-  /** OSes targeted by ready artifacts in the latest terminal release. */
   targetOs?: string[]
-  /** Runnable targets in the latest terminal release, recommended first. */
   releaseTargets?: Array<{
     artifactId: string
     releaseVersion: number
@@ -56,22 +36,17 @@ export interface BuildRow {
   }>
 }
 
-/** What `installBuild` resolves before it hands off to the install chain. */
 export interface ResolvedHostArtifact {
   artifact: Artifact
   version: number
 }
 
-/** The signed-in host's build target: OS from the platform, GPU from detection. */
 export async function resolveHost(): Promise<Host> {
   const gpu = await detectGPUCached()
-  // The library targets nvidia/amd/cpu/mps; an Intel dGPU (or none) maps to the
-  // universal CPU build, which `selectArtifactForHost` treats as the fallback.
   const mapped = gpu?.id === 'nvidia' || gpu?.id === 'amd' || gpu?.id === 'mps' ? gpu.id : 'cpu'
   return { os: hostOs(), gpu: mapped }
 }
 
-/** Latest complete or stopped release; callers still require a ready artifact. */
 function latestTerminalVersion<T extends { version: number; status: string }>(
   versions: T[]
 ): T | null {
@@ -81,11 +56,6 @@ function latestTerminalVersion<T extends { version: number; status: string }>(
   return terminal[0] ?? null
 }
 
-/**
- * Resolve one catalog entry into a build display row: newest terminal
- * version, then whether it has a host-runnable artifact. Never drops the build: an
- * un-installable one becomes a blocked row with a reason, not a hidden entry.
- */
 async function buildRow(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
@@ -140,8 +110,6 @@ async function buildRow(
       cacheGeneration
     )
   } catch (err) {
-    // Optional cache warming must not hide the already resolved catalog row.
-    // Explicit update checks still propagate the error rather than cache a partial list.
     console.error('[devplatform] failed to warm version cache:', err)
   }
   const targetOs = [
@@ -167,20 +135,12 @@ async function buildRow(
     accelVariant: target.accelVariant,
     recommended: index === 0
   }))
-  // Installed at an older version, and the newer one runs here: offer the update.
   if (installedVersion !== undefined && latest.version > installedVersion) {
     return { ...withVersion, state: 'update-available' }
   }
   return { ...withVersion, state: 'installable' }
 }
 
-/**
- * Every build the signed-in workspace can see, as display rows. A build whose
- * version lookup fails is dropped for THIS list rather than
- * failing the whole grid. Rows resolve through a bounded pool; artifact reads
- * within each row are sequential so stopped-release eligibility checks cannot
- * exceed the gateway request concurrency limit.
- */
 const ROW_CONCURRENCY = 6
 
 export async function listBuildRows(
@@ -192,7 +152,6 @@ export async function listBuildRows(
   return resolveBuildRows(client, host, await client.listBuilds(), installed, cacheGeneration)
 }
 
-/** Resolve an already-fetched catalog without requesting the list again. */
 export async function resolveBuildRows(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
@@ -211,12 +170,6 @@ export async function resolveBuildRows(
   return rows.filter((r): r is BuildRow => r !== undefined)
 }
 
-/**
- * Resolve the artifact to install for one build on this host: the latest
- * terminal version's host-matched artifact, or null when none is runnable here.
- * This is the same policy `listBuildRows` renders, re-run at install time
- * against fresh catalog data.
- */
 export async function resolveHostArtifact(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
@@ -229,8 +182,6 @@ export async function resolveHostArtifact(
   return artifact ? { artifact, version: latest.version } : null
 }
 
-/** Resolve one renderer-selected target after revalidating its Build, release,
- * readiness, and host compatibility against fresh Builder data. */
 export async function resolveSelectedHostArtifact(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
@@ -249,14 +200,6 @@ export async function resolveSelectedHostArtifact(
   return artifact ? { artifact, version: release.version } : null
 }
 
-/**
- * The same resolution against ONE named version - what the manage view's update
- * action installs. Rollback and roll-forward are the same operation.
- *
- * Null when the version isn't published, isn't terminal, or has no artifact this
- * machine can run, so the caller reports that instead of installing something
- * the host can't launch.
- */
 export async function resolveHostArtifactForVersion(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   host: Host,
@@ -272,8 +215,6 @@ export async function resolveHostArtifactForVersion(
   return artifact ? { artifact, version: target.version } : null
 }
 
-/** Complete releases retain their update policy; stopped releases need a ready
- * host-compatible artifact before the manage view may advertise them. */
 async function updateVersions(
   versions: BuildVersion[],
   host: Host,
@@ -291,7 +232,6 @@ async function updateVersions(
   return eligible.sort((a, b) => b - a)
 }
 
-/** Versions eligible for the manage view's update offers, newest first. */
 export async function listUpdateVersions(
   client: Pick<ComfyBuilderClient, 'listVersions' | 'getVersion'>,
   buildId: string,

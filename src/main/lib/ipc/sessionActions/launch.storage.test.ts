@@ -9,8 +9,6 @@ const { root, priorXdgDataHome } = await vi.hoisted(async () => {
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const root = mkdtempSync(join(tmpdir(), 'launch-storage-'))
-  // dataDir() resolves via XDG on Linux (not Electron userData); pin it under
-  // the test root so the per-install YAML lands in the sandbox on every OS.
   const priorXdgDataHome = process.env.XDG_DATA_HOME
   process.env.XDG_DATA_HOME = join(root, 'xdg-data')
   return { root, priorXdgDataHome }
@@ -71,7 +69,6 @@ function yamlPath(installationId: string): string {
   return path.join(dataDir(), 'instance-model-paths', `${installationId}.yaml`)
 }
 
-/** Desktop's folder settings, as the launch's one settings read hands them over. */
 function storage(
   modelsDirs: string[] = [],
   inputDir = globalInput,
@@ -292,8 +289,6 @@ describe('applyStorageLaunchArgs', () => {
       '--output-directory',
       globalOutput
     ])
-    // Every section header, root and default in the YAML, in order: one
-    // section per dir, the shared dir first and the default.
     expect(
       yaml.split('\n').filter((l) => /^(comfy\.desktop_| {2}base_path:| {2}is_default:)/.test(l))
     ).toEqual([

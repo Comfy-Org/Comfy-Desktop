@@ -18,11 +18,6 @@ import type * as DiskModule from '../../lib/disk'
 
 let tmpDir: string
 
-/**
- * Create a managed venv site-packages dir with a torch dist-info of the given
- * version and a `torch/version.py` carrying the given cuda/hip accelerator
- * evidence (the authoritative signal the detector probes).
- */
 function makeVenvWithTorch(
   installPath: string,
   torchVersion: string | null,
@@ -42,7 +37,6 @@ function makeVenvWithTorch(
   if (torchVersion) {
     fs.mkdirSync(path.join(sitePackages, `torch-${torchVersion}.dist-info`))
     fs.mkdirSync(path.join(sitePackages, 'torch'))
-    // Mirror real torch/version.py, which writes type-annotated fields.
     const lit = (v: string | null | undefined): string => (v ? `'${v}'` : 'None')
     fs.writeFileSync(
       path.join(sitePackages, 'torch', 'version.py'),
@@ -111,8 +105,6 @@ describe('getTorchVendorMismatch', () => {
   })
 
   it('does not flag a bare-versioned but CUDA-capable PyPI wheel (user freedom)', () => {
-    // `pip install torch` from PyPI yields a bare version that IS CUDA-enabled;
-    // version.py is the only signal that distinguishes it from the bug's CPU torch.
     makeVenvWithTorch(tmpDir, '2.6.0', { cuda: '12.4' })
     expect(getTorchVendorMismatch(install({ variant: 'win-nvidia' }))).toBeNull()
   })
@@ -196,10 +188,6 @@ describe('repairTorch dispatch', () => {
         source: { kind: 'pytorch-index', backend: 'cuda', indexTag: 'cu128' }
       }
     })
-    // No venv exists in tmpDir, so the pip path (routed through the journaled
-    // stack transaction) fails at its venv check — proving dispatch reached
-    // pip instead of the bundle re-download (whose failure message names
-    // missing bundle download info).
     const result = await repairTorch(inst, tools)
     expect(result.ok).toBe(false)
     expect(result.message).toContain('installation venv not found')
@@ -213,10 +201,7 @@ describe('repairTorch dispatch', () => {
   })
 
   it('honours a caller-supplied verified ref over the (reconciliation-cleared) record', async () => {
-    // Launch reconciliation clears lastVerifiedTorchStack when it sees the
-    // damaged tuple; the launch path re-supplies the pre-reconciliation ref so
-    // repair still targets the stack the user chose.
-    const inst = install({ variant: 'win-nvidia' }) // record carries no ref
+    const inst = install({ variant: 'win-nvidia' })
     const result = await repairTorch(inst, tools, {
       stackId: 'pytorch-index:cu126:2.11.0',
       variant: 'win-nvidia',
