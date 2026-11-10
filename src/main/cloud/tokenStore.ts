@@ -142,23 +142,26 @@ function migratedVault(legacy: LegacyVault): TokenVault | null {
   }
 }
 
-function persistVault(vault: TokenVault): void {
+/** False when an older vault may still be on disk for the next launch to read. */
+function persistVault(vault: TokenVault): boolean {
   cachedVault = vault
   if (!encryptionAvailable()) {
     // No secure backend: never write plaintext, and drop any prior encrypted
     // file so a later run can't read stale tokens back as current.
     try {
       fs.rmSync(filePath(), { force: true })
+      return true
     } catch {
-      /* nothing to remove */
+      return false
     }
-    return
   }
   try {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(vault)))
+    return true
   } catch {
     // A failed persist must not fail the sign-in the user just completed; the
     // in-memory cache still holds the tokens for this session.
+    return false
   }
 }
 
@@ -192,13 +195,15 @@ function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
 
 /** Store the grant from a browser sign-in. A changed account replaces the vault. The old access
  *  token stays held for its old anchor; an active workspace with no held token moves to the new one. */
-export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: boolean } = {}): void {
+export function saveGrant(
+  grant: AuthTokens,
+  options: { mintScopeWithheld?: boolean } = {}
+): boolean {
   const withheld = options.mintScopeWithheld ? ({ mintScopeWithheld: true } as const) : {}
   const current = loadVault()
   const subject = subjectOf(grant.accessToken)
   if (!current || !subject || current.subject !== subject) {
-    persistVault({ ...vaultFor(grant), ...configuredOrigin(), ...withheld })
-    return
+    return persistVault({ ...vaultFor(grant), ...configuredOrigin(), ...withheld })
   }
   delete current.mintScopeWithheld
   Object.assign(current, withheld)
@@ -218,7 +223,7 @@ export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: bool
   Object.assign(current, configuredOrigin())
   if (!holdsToken(current, current.activeWorkspaceId))
     current.activeWorkspaceId = workspaceIdOf(grant.accessToken)
-  persistVault(current)
+  return persistVault(current)
 }
 
 /** A browser sign-in returned this grant without the mint scope, so another trip would not help. */

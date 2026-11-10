@@ -177,8 +177,8 @@ export class CloudSession {
     const origin = loadGrantOrigin()
     this.mintBlockedUntil = 0
     const mintScopeWithheld = !canMintWorkspaceTokens(tokens.accessToken)
-    saveGrant(tokens, { mintScopeWithheld })
-    if (replaced !== tokens.refreshToken) this.retireGrant(replaced, origin)
+    const saved = saveGrant(tokens, { mintScopeWithheld })
+    if (saved && replaced !== tokens.refreshToken) this.retireGrant(replaced, origin)
     if (mintScopeWithheld) mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
   }
 

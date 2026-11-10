@@ -3,7 +3,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 const electronState = vi.hoisted(() => ({ userData: '' }))
 
@@ -2244,6 +2244,25 @@ describe('CloudSession logout revokes this device on Cloud (T-V8, T-V18)', () =>
 
     await vi.waitFor(() => expect(pendingRevocations()).toEqual([]))
     expect(revokedTokens).toEqual([replaced.refreshToken])
+  })
+
+  it('keeps the replaced grant when the new one could not be saved, since a relaunch reads it back', async () => {
+    const replaced = grantOn('w1')
+    saveGrant(replaced)
+    browserSignInReturns(signedInResult(grantOn('w1', { revision: '-again' })))
+    const encrypt = mocked(safeStorage.encryptString).getMockImplementation()
+    onTestFinished(() => {
+      mocked(safeStorage.encryptString).mockImplementation(encrypt!)
+    })
+    mocked(safeStorage.encryptString).mockImplementation(() => {
+      throw new Error('disk full')
+    })
+
+    await new CloudSession().login()
+
+    expect(pendingRevocations()).toEqual([])
+    expect(revokedTokens).toEqual([])
+    expect(vaultOnDisk().grant).toEqual(replaced)
   })
 
   it('revokes nothing for a grant Cloud reported ended when a sign-in replaces it', async () => {
