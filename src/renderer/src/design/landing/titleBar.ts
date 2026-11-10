@@ -171,7 +171,12 @@ export function openFromMenu(id: string): void {
     return setPrototypeOption(key, value)
   }
   const inst = instanceById(id)
-  if (inst) hostActions.launch(inst)
+  if (!inst) return
+  // Mar's tabs bar: the pill says where work runs, so a pick switches it
+  // (Home follows); opening a workflow is what adds a tab.
+  if (marTabsOn.value && (inst.kind !== 'cloud' || proto.signedIn))
+    return void (proto.activeInstanceId = inst.id)
+  hostActions.launch(inst)
 }
 
 export function runTitleBarCommand(cmd: TitleBarCommand): void {
