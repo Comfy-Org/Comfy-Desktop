@@ -346,9 +346,19 @@ const without = <K extends 'types' | 'tags' | 'labels' | 'models' | 'loras' | 'w
 ): void => {
   filter.value = { ...filter.value, [k]: (filter.value[k] as string[]).filter((x) => x !== v) }
 }
+/** Desktop's Filters › Folder: the build's folders, in tree order. */
+const FOLDER_LIST = computed(() => tree().map(({ folder: f, depth }) => ({ ...f, depth })))
 const CHIPS = computed<Chip[]>(() => {
   const f = filter.value
   const out: Chip[] = []
+  // ComfyUI's tab names the folder in its title instead.
+  if (folder.value && !inGraph)
+    out.push({
+      key: 'folder',
+      label: folderName(folder.value) ?? 'Folder',
+      icon: Folder,
+      remove: () => (folder.value = '')
+    })
   if (f.source !== 'all')
     out.push({
       key: 'source',
@@ -394,6 +404,7 @@ const CHIPS = computed<Chip[]>(() => {
 })
 function clearFilters(): void {
   filter.value = noFilter()
+  if (!inGraph) folder.value = ''
 }
 const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 // ⌘⌫ / Ctrl+Backspace clears every filter, ahead of the selection's own
@@ -817,6 +828,7 @@ watch(build, (id) => {
   rememberBuild(id)
   detail.value = null
   filter.value = noFilter()
+  folder.value = ''
   query.value = ''
   kind.value = 'all'
   lib.sel.clear()
@@ -1380,6 +1392,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           </Tooltip>
           <AssetFilterMenu
             v-model="filter"
+            v-model:folder="folder"
             field
             source
             range
@@ -1387,6 +1400,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :types="MORE_TYPES"
             :tags="TAGS"
             :meta="metaIn(base)"
+            :folders="FOLDER_LIST"
           />
           <AssetSearch v-model:query="query" />
           <AssetLayoutMenu

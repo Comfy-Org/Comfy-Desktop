@@ -6,6 +6,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Folder,
   FolderInput,
   Image,
   ListFilter,
@@ -60,6 +61,7 @@ const {
   source = false,
   range = false,
   typesLabel = 'Media type',
+  folders,
   meta
 } = defineProps<{
   types: readonly { value: AssetType; label: string }[]
@@ -71,8 +73,16 @@ const {
   typesLabel?: string
   /** What the runs recorded, for the Metadata group; none hides it. */
   meta?: { models: string[]; loras: string[]; workflows: string[] }
+  /** Desktop: the build's folders, in tree order (ComfyUI's tab keeps
+   *  them in its sidebar). One folder at a time, its subfolders in it. */
+  folders?: { id: string; name: string; depth: number }[]
 }>()
 const f = defineModel<AssetFilter>({ required: true })
+const folder = defineModel<string>('folder', { default: '' })
+const count = computed(() => activeFilters(f.value) + (folder.value ? 1 : 0))
+const pickFolder = (id: string): void => {
+  folder.value = folder.value === id ? '' : id
+}
 const surface = computed(() => (field ? cn(floatingSurface, 'afm is-ds min-w-48') : 'proto-ui afm'))
 const item = computed(() => (field ? cn(menuItem, 'afm-item') : 'afm-item'))
 
@@ -142,6 +152,7 @@ const found = computed(() => ({
   types: types.filter((t) => match(t.label)),
   dates: DATES.filter((d) => match(d.label)),
   tags: tags.filter(match),
+  folders: (folders ?? []).filter((x) => match(x.name)),
   labels: LABELS.filter((l) => match(l.label)),
   meta: META.map((m) => ({ ...m, values: metaOptions(m.key).filter(match) })).filter(
     (m) => m.values.length
@@ -169,7 +180,7 @@ const searching = computed(() => !!q.value.trim())
       >
         <ListFilter :size="14" class="shrink-0 text-subtle-foreground" />
         <span class="aff-label">Filters</span>
-        <span v-if="activeFilters(f)" class="aff-badge">{{ activeFilters(f) }}</span>
+        <span v-if="count" class="aff-badge">{{ count }}</span>
         <ChevronDown :size="13" class="aff-chev ml-1 shrink-0 text-subtle-foreground" />
       </button>
       <button
@@ -179,7 +190,7 @@ const searching = computed(() => !!q.value.trim())
         title="Filter by"
         aria-label="Filter by"
       >
-        <ListFilter :size="15" /><i v-if="activeFilters(f)" class="rp-dot" />
+        <ListFilter :size="15" /><i v-if="count" class="rp-dot" />
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuPortal :to="PORTAL_TO">
@@ -234,6 +245,21 @@ const searching = computed(() => !!q.value.trim())
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </template>
+          <template v-if="found.folders.length">
+            <DropdownMenuLabel class="afm-label">Folder</DropdownMenuLabel>
+            <DropdownMenuRadioGroup :model-value="folder">
+              <DropdownMenuRadioItem
+                v-for="x in found.folders"
+                :key="x.id"
+                :class="item"
+                :value="x.id"
+                @select.prevent="pickFolder(x.id)"
+              >
+                <span class="afm-grow truncate">{{ x.name }}</span>
+                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </template>
           <template v-if="found.tags.length">
             <DropdownMenuLabel class="afm-label">Tag</DropdownMenuLabel>
             <DropdownMenuCheckboxItem
@@ -281,6 +307,7 @@ const searching = computed(() => !!q.value.trim())
               !found.types.length &&
               !found.dates.length &&
               !found.tags.length &&
+              !found.folders.length &&
               !found.labels.length &&
               !found.meta.length
             "
@@ -379,6 +406,43 @@ const searching = computed(() => !!q.value.trim())
                     @update:to="(v) => (f = { ...f, to: v })"
                   />
                 </template>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+          <DropdownMenuSub
+            v-if="folders?.length"
+            :open="sub === 'folders'"
+            @update:open="only('folders', $event)"
+          >
+            <DropdownMenuSubTrigger :class="item">
+              <Folder :size="16" class="afm-icon" /><span class="afm-grow">Folder</span
+              ><ChevronRight :size="16" class="afm-icon" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal :to="PORTAL_TO">
+              <DropdownMenuSubContent
+                :side-offset="8"
+                :align-offset="-9"
+                :class="cn(surface, 'afm-folders')"
+              >
+                <DropdownMenuRadioGroup :model-value="folder">
+                  <!-- The tree, indented up to the fourth level, as the
+                       sidebar draws it in ComfyUI. -->
+                  <DropdownMenuRadioItem
+                    v-for="x in folders"
+                    :key="x.id"
+                    :class="item"
+                    :value="x.id"
+                    :style="{ paddingLeft: `${8 + Math.min(x.depth, 4) * 12}px` }"
+                    @select.prevent="pickFolder(x.id)"
+                  >
+                    <Folder :size="15" class="afm-icon" /><span
+                      class="afm-grow truncate"
+                      :title="x.name"
+                      >{{ x.name }}</span
+                    >
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
@@ -627,5 +691,11 @@ const searching = computed(() => !!q.value.trim())
 .afm-none {
   padding: 6px 12px;
   color: var(--color-muted-foreground);
+}
+/* Deep trees stay readable: a fixed width, long names cut. */
+.afm-folders {
+  width: 260px;
+  max-height: 360px;
+  overflow-y: auto;
 }
 </style>
