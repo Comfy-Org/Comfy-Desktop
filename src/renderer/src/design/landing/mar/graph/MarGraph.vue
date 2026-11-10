@@ -2950,9 +2950,11 @@ function addFromPanel(kind: NodeKind): void {
   min-height: 0;
   background: var(--mg-canvas);
 }
+/* The sidebar is a column of its own, the tab's full height: a soft
+   fill sets it apart, no line. */
 .mg-assets-nav {
   overflow-y: auto;
-  box-shadow: inset -1px 0 0 var(--mg-chrome-line, transparent);
+  background: var(--mg-well);
 }
 .mg-assets-main {
   min-width: 0;
