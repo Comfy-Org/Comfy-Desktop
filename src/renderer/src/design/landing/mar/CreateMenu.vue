@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronDown, Play, Plus, Rocket } from 'lucide-vue-next'
+import { ArrowRight, ArrowUpRight, ChevronDown, Play, Plus, Rocket } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import Button from '../ui/Button.vue'
 import DropdownMenuContent from '../ui/DropdownMenuContent.vue'
@@ -36,7 +36,7 @@ function deploy(): void {
 
 <template>
   <Button v-if="!deployable" variant="primary" class="gap-1.5" @click="hostActions.launch(target)">
-    <Play :size="14" />{{ onCloud ? 'Open ComfyUI ↗' : 'Open ComfyUI' }}
+    Open ComfyUI<component :is="onCloud ? ArrowUpRight : ArrowRight" :size="14" />
   </Button>
   <DropdownMenuRoot v-else :modal="false">
     <DropdownMenuTrigger as-child>
