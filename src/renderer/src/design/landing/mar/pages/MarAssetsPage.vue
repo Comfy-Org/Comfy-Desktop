@@ -83,7 +83,16 @@ import {
   within
 } from '../assets/assetFolders'
 import type { AssetFolder } from '../assets/assetFolders'
-import { allTagged, deleteTag, flipTag, renameTag, tagsOf } from '../assets/assetTags'
+import {
+  addTag,
+  allTagged,
+  deleteTag,
+  flipTag,
+  makeTag,
+  newTags,
+  renameTag,
+  tagsOf
+} from '../assets/assetTags'
 import { isStarred, toggleStar } from '../assets/assetFavorites'
 import { GROUPS, groupAssets } from '../assets/assetGroups'
 import { assetView } from '../assets/assetView'
@@ -205,7 +214,10 @@ const WHERE = [
   { value: 'local', label: 'This computer' },
   { value: 'cloud', label: 'Cloud' }
 ]
-const TAGS = computed(() => tagsIn(base.value))
+// ComfyUI's sidebar can make a tag before any file has it (TAGS › +).
+const TAGS = computed(() =>
+  inGraph ? [...new Set([...tagsIn(base.value), ...newTags])] : tagsIn(base.value)
+)
 /** Type's tabs cover the main kinds; Filters adds the rest. */
 const MORE_TYPES = [
   { value: 'text', label: 'Text' },
@@ -503,6 +515,13 @@ function dropLabel(on: string): void {
 const tagMenu = ref(false)
 const TAG_SORT_LINES = computed<MenuLine[]>(() => [
   {
+    label: 'New tag',
+    icon: Plus,
+    // After the menu has handed the focus back, so the field keeps it.
+    run: () => setTimeout(() => (tagAdding.value = ''), 50)
+  },
+  'sep',
+  {
     label: 'Sort by',
     icon: ArrowUpDown,
     sub: [
@@ -652,28 +671,39 @@ function endNaming(keep: boolean): void {
  *  place, and Delete tag, asked first in place. Both reach every file. */
 const tagRowMenu = ref('')
 const tagNaming = ref<{ from: string; name: string } | null>(null)
-const tagDeleting = ref('')
 function tagLines(tag: string): MenuLine[] {
+  const n = TAG_ROWS.value.find((r) => r.tag === tag)?.count ?? 0
   return [
     {
       label: 'Rename tag',
       icon: Pencil,
-      run: () => {
-        tagDeleting.value = ''
-        tagNaming.value = { from: tag, name: tag }
-      }
+      run: () => (tagNaming.value = { from: tag, name: tag })
     },
     'sep',
     {
       label: 'Delete tag',
       icon: Trash2,
       danger: true,
-      run: () => {
-        tagNaming.value = null
-        tagDeleting.value = tag
-      }
+      // A tag no file has goes at once; one in use asks, in the menu.
+      confirm: n
+        ? {
+            text: `Remove “${tag}” from ${n === 1 ? '1 asset' : `${n} assets`}?`,
+            yes: 'Delete tag'
+          }
+        : undefined,
+      run: () => dropTag(tag)
     }
   ]
+}
+/** TAGS › ⋯ › New tag: typed in place; the selected files take it. */
+const tagAdding = ref<string | null>(null)
+function endTagAdd(keep: boolean): void {
+  const n = tagAdding.value
+  tagAdding.value = null
+  if (!keep || !n) return
+  const t = makeTag(n)
+  if (!t) return
+  for (const a of store.items) if (lib.sel.has(a.id)) addTag(a, t)
 }
 function endTagNaming(keep: boolean): void {
   const n = tagNaming.value
@@ -687,7 +717,6 @@ function endTagNaming(keep: boolean): void {
     }
 }
 function dropTag(tag: string): void {
-  tagDeleting.value = ''
   deleteTag(store.items, tag)
   if (filter.value.tags.includes(tag))
     filter.value = { ...filter.value, tags: filter.value.tags.filter((x) => x !== tag) }
@@ -1852,7 +1881,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           @blur="endNaming(true)"
         />
       </div>
-      <template v-if="TAG_ROWS.length">
+      <template v-if="inGraph">
         <div class="mar-anav-head">
           <p class="mar-anav-label">Tags</p>
           <span class="mar-anav-head-tools">
@@ -1878,26 +1907,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
               @blur="endTagNaming(true)"
             />
           </div>
-          <!-- Delete tag asks first, in place: the row becomes the question. -->
-          <div
-            v-else-if="tagDeleting === t.tag"
-            class="mar-anav-confirm"
-            role="alertdialog"
-            :aria-label="`Delete tag ${t.tag}`"
-            @keydown.esc="tagDeleting = ''"
-          >
-            <p class="mar-anav-confirm-text">
-              Remove “{{ t.tag }}” from {{ t.count === 1 ? '1 asset' : `${t.count} assets` }}?
-            </p>
-            <span class="mar-anav-confirm-actions">
-              <button v-focus type="button" class="mar-anav-confirm-btn" @click="tagDeleting = ''">
-                Cancel
-              </button>
-              <button type="button" class="mar-anav-confirm-btn is-danger" @click="dropTag(t.tag)">
-                Delete tag
-              </button>
-            </span>
-          </div>
           <div v-else class="mar-anav-folder" @contextmenu.prevent="tagRowMenu = t.tag">
             <button
               type="button"
@@ -1919,6 +1928,16 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             </span>
           </div>
         </template>
+        <div v-if="tagAdding !== null" class="mar-anav-naming">
+          <Tag :size="15" /><input
+            v-model="tagAdding"
+            v-focus
+            aria-label="New tag name"
+            @keydown.enter="endTagAdd(true)"
+            @keydown.esc="endTagAdd(false)"
+            @blur="endTagAdd(true)"
+          />
+        </div>
       </template>
       <div class="mar-anav-head">
         <p class="mar-anav-label">Labels</p>
@@ -2490,46 +2509,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 :root .proto-ui.proto-ui.proto-ui .mar-anav-row.is-drop {
   background: color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
   color: var(--color-base-foreground);
-}
-/* Delete tag, asked in place of the row. */
-.mar-anav-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 2px 0;
-  padding: 10px;
-  border-radius: var(--radius-control);
-  background: var(--color-secondary-background);
-}
-.mar-anav-confirm-text {
-  color: var(--color-base-foreground);
-  font-size: 12px;
-  line-height: 1.4;
-}
-.mar-anav-confirm-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn {
-  height: 26px;
-  padding: 0 10px;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 500;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn.is-danger {
-  background: color-mix(in oklch, var(--color-status-danger) 18%, transparent);
-  color: var(--color-status-danger);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn.is-danger:hover {
-  background: color-mix(in oklch, var(--color-status-danger) 26%, transparent);
 }
 /* Play on a card: the clip over the cover, under the card's corners. */
 .mar-asset-sections .mar-item-tools {

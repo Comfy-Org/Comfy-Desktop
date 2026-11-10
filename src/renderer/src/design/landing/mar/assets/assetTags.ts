@@ -46,4 +46,16 @@ export function renameTag(list: MarAsset[], from: string, to: string): string | 
 /** Delete tag (ComfyUI's sidebar): off every file in the list. */
 export function deleteTag(list: MarAsset[], tag: string): void {
   for (const a of list) if (tagsOf(a).includes(tag)) removeTag(a, tag)
+  const i = newTags.indexOf(tag)
+  if (i >= 0) newTags.splice(i, 1)
+}
+
+/** Tags made from ComfyUI's sidebar (TAGS › ⋯ › New tag) before any file has them:
+ *  they list at 0 until a file takes them. */
+export const newTags = reactive<string[]>([])
+export function makeTag(name: string): string | undefined {
+  const t = name.trim().replace(/^#/, '').toLowerCase()
+  if (!t) return undefined
+  if (!newTags.includes(t)) newTags.push(t)
+  return t
 }

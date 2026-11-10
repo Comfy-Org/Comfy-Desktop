@@ -13,6 +13,8 @@ export interface MenuAction {
   /** Why it's disabled, on hover. */
   title?: string
   sub?: MenuAction[]
+  /** Ask first, inside the same menu: the panel turns into the question. */
+  confirm?: { text: string; yes: string }
 }
 /** A quiet line of words, not an action (why some lines are greyed). */
 export interface MenuNote {

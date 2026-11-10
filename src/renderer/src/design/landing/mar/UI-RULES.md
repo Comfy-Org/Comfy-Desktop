@@ -37,7 +37,7 @@ DS's Motion page (`ds/motion.ts`).
 - **One tool per header.** A section header has one tool: + when you can
   add, ⋯ when there's more. If the ⋯ menu already has Add, no + beside it.
   A row's hover tools follow the same rule (a folder row: only ⋯, with New
-  subfolder inside).
+  subfolder inside). Tags: ⋯ › New tag, Sort by.
 - **Single click opens.** Cards and rows open on one click; selection is
   the check on hover.
 - **More (⋯) sits at the right** of the row it belongs to (the asset view:
@@ -45,6 +45,10 @@ DS's Motion page (`ds/motion.ts`).
 
 ## Menus
 
+- **Confirm inside the menu.** A destructive line that asks first turns the
+  same menu into the question (`confirm` on a `MenuLine`, see
+  `pages/MarItemMenu.vue`); never a box in the page. Nothing to lose
+  (a tag on 0 files), no question.
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
 - **A filter shows as a chip** under the toolbar, removable, with Clear
