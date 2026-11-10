@@ -15,7 +15,7 @@ import { thumb } from './mock'
 import { marTabsOn } from './mar/shell/titleTabs'
 import { buildTrail } from './mar/build/buildNav'
 import { onCloud } from './mar/shell/surface'
-import { assetsTab } from './mar/graph/comfyLook'
+import { assetsCrumbState, runAssetsCrumb } from './mar/shell/assetsCrumb'
 
 /**
  * The launcher page's side of the title-bar breadcrumb (titleBarBridge.ts):
@@ -104,9 +104,7 @@ export const titleBarState = computed<TitleBarState>(() => ({
     return app ? [{ id, name: app.name, thumb: thumb(app.thumbId) }] : []
   }),
   appFront: appsProto.front || null,
-  ...(assetsTab.open && frontTab.value
-    ? { assets: { front: assetsTab.on && !appsProto.front } }
-    : {}),
+  ...assetsCrumbState(Boolean(frontTab.value)),
   // Mar's tabs title bar (mar/shell/titleTabs.ts): only while it's on.
   ...(marTabsOn.value ? marTabs() : {}),
   // Mar's page trail (mar/build/buildNav.ts): only while it's on.
@@ -179,6 +177,7 @@ export function openFromMenu(id: string): void {
 export function runTitleBarCommand(cmd: TitleBarCommand): void {
   // Anything else clicked in the bar closes the switcher.
   if (cmd.type !== 'switcher') switcherMenu.open = false
+  if (runAssetsCrumb(cmd)) return
   switch (cmd.type) {
     case 'home':
       appsProto.front = ''
@@ -186,13 +185,6 @@ export function runTitleBarCommand(cmd: TitleBarCommand): void {
       break
     case 'app':
       appsProto.front = cmd.id
-      break
-    case 'assets':
-      appsProto.front = ''
-      assetsTab.on = true
-      break
-    case 'closeAssets':
-      Object.assign(assetsTab, { open: false, on: false })
       break
     case 'closeApp':
       closeAppTab(cmd.id)
@@ -215,11 +207,6 @@ export function runTitleBarCommand(cmd: TitleBarCommand): void {
       go(cmd.page as Parameters<typeof go>[0])
       break
     case 'info':
-      // With Assets in front, the build's name brings its workflow back.
-      if (cmd.phase === 'click' && assetsTab.on) {
-        assetsTab.on = false
-        break
-      }
       // The browser preview has no popup to show it in.
       if (cmd.phase === 'click') toast('Build info opens on hover in the app')
       break

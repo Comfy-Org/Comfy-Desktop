@@ -2,7 +2,7 @@
 import { ChevronDown, ChevronRight, Home, LayoutGrid, X } from 'lucide-vue-next'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import MarTitleTabs from '../../mar/shell/MarTitleTabs.vue'
-import { ComfyAssets } from '../../mar/icons/comfyIcons'
+import MarAssetsCrumb from '../../mar/shell/MarAssetsCrumb.vue'
 import type { TitleBarCommand, TitleBarState } from '../../titleBarBridge'
 
 /**
@@ -116,35 +116,12 @@ const crumb = (active: boolean): string =>
     <!-- App tabs, and Assets when ComfyUI opens it as one -->
     <template v-if="state.apps?.length || state.assets">
       <span class="mx-1.5 h-4 w-px shrink-0 bg-border-default" aria-hidden="true" />
-      <div
+      <MarAssetsCrumb
         v-if="state.assets"
-        :class="[
-          crumb(state.assets.front),
-          'group min-w-0 shrink pr-1 pl-1.5',
-          !state.assets.front && 'bg-transparent'
-        ]"
-      >
-        <button
-          type="button"
-          class="flex min-w-0 items-center gap-2 outline-none"
-          :aria-current="state.assets.front ? 'page' : undefined"
-          @click="emit('command', { type: 'assets' })"
-        >
-          <ComfyAssets class="size-4 shrink-0" />
-          <span class="max-w-40 truncate">Assets</span>
-        </button>
-        <button
-          type="button"
-          aria-label="Close Assets"
-          :class="[
-            'inline-flex size-5 shrink-0 items-center justify-center rounded-min text-subtle-foreground outline-none hover:bg-secondary-background-hover hover:text-base-foreground focus-visible:opacity-100',
-            state.assets.front ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          ]"
-          @click="emit('command', { type: 'closeAssets' })"
-        >
-          <X :size="12" />
-        </button>
-      </div>
+        :front="state.assets.front"
+        :crumb="crumb(state.assets.front)"
+        @command="emit('command', $event)"
+      />
       <div
         v-for="a in state.apps"
         :key="a.id"
