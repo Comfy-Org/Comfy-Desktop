@@ -74,6 +74,7 @@ import {
 import {
   addFolder,
   folderName,
+  folders,
   folderOf,
   moveToFolder,
   removeFolder,
@@ -81,6 +82,7 @@ import {
   tree,
   within
 } from '../assets/assetFolders'
+import type { AssetFolder } from '../assets/assetFolders'
 import { allTagged, deleteTag, flipTag, renameTag, tagsOf } from '../assets/assetTags'
 import { isStarred, toggleStar } from '../assets/assetFavorites'
 import { GROUPS, groupAssets } from '../assets/assetGroups'
@@ -585,11 +587,55 @@ function labelLine(ids: () => string[], name = 'Label'): MenuAction {
 /** Folders beside tags (Better Asset Management): each row counts what
  *  it holds, folders inside it included. */
 const FOLDER_ROWS = computed(() =>
-  tree().map(({ folder: f, depth }) => {
-    const inside = within(f.id)
-    return { ...f, depth, count: done.value.filter((a) => inside.has(folderOf(a.id) ?? '')).length }
-  })
+  tree()
+    .filter(({ folder: f }) => folderPath(f.id).every((p) => unfolded.value.has(p.id)))
+    .map(({ folder: f, depth }) => {
+      const inside = within(f.id)
+      return {
+        ...f,
+        depth,
+        // The indent stops growing at the fourth level, so a deep name
+        // keeps its room; the chevron still says where it sits.
+        indent: Math.min(depth, 4) * 12,
+        kids: folders.some((x) => x.parent === f.id),
+        count: done.value.filter((a) => inside.has(folderOf(a.id) ?? '')).length
+      }
+    })
 )
+/** The tree folds: top-level folders show, a chevron opens one, and the
+ *  way down to the folder you're in always stays open. */
+const unfolded = ref(new Set<string>())
+function unfold(id: string, open = !unfolded.value.has(id)): void {
+  const next = new Set(unfolded.value)
+  if (open) next.add(id)
+  else next.delete(id)
+  unfolded.value = next
+}
+watch(folder, (id) => id && folderPath(id).forEach((p) => unfold(p.id, true)), {
+  immediate: true
+})
+/** The folders above this one, from the top. */
+function folderPath(id: string): AssetFolder[] {
+  const out: AssetFolder[] = []
+  for (let f = folders.find((x) => x.id === id); f?.parent; ) {
+    const up = folders.find((x) => x.id === f!.parent)
+    if (!up) break
+    out.unshift(up)
+    f = up
+  }
+  return out
+}
+/** The title's breadcrumb in a nested folder: the top folder, the one
+ *  above, and an ellipsis for the levels between (named in its tooltip). */
+const crumbs = computed(() => {
+  if (!inGraph || !folder.value) return null
+  const path = folderPath(folder.value)
+  if (!path.length) return null
+  const first = path[0]!
+  const last = path.length > 1 ? path[path.length - 1]! : null
+  const between = path.slice(1, -1)
+  return { first, between, last }
+})
 /** A new folder, or a renamed one, is typed in place in the sidebar. */
 const naming = ref<{ id?: string; parent?: string; name: string } | null>(null)
 const vFocus = {
@@ -1241,6 +1287,28 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     @second="pick()"
     @clear="clear"
   >
+    <template v-if="crumbs" #lead>
+      <nav class="mar-crumbs" aria-label="Folder path">
+        <button type="button" @click="folder = crumbs.first.id">{{ crumbs.first.name }}</button>
+        <ChevronRight :size="14" />
+        <template v-if="crumbs.between.length">
+          <Tooltip :content="crumbs.between.map((f) => f.name).join(' › ')">
+            <button
+              type="button"
+              :aria-label="crumbs.between.map((f) => f.name).join(', ')"
+              @click="folder = crumbs.between[crumbs.between.length - 1]!.id"
+            >
+              …
+            </button>
+          </Tooltip>
+          <ChevronRight :size="14" />
+        </template>
+        <template v-if="crumbs.last">
+          <button type="button" @click="folder = crumbs.last.id">{{ crumbs.last.name }}</button>
+          <ChevronRight :size="14" />
+        </template>
+      </nav>
+    </template>
     <template v-if="browsable && inGraph" #meta>
       <!-- What the wall shows now; Select all lives in the selection bar. -->
       <span class="mar-anav-total"
@@ -1713,7 +1781,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         <div
           v-if="naming?.id === f.id"
           class="mar-anav-naming"
-          :style="{ paddingLeft: `${10 + f.depth * 14}px` }"
+          :style="{ paddingLeft: `${20 + f.indent}px` }"
         >
           <Folder :size="15" /><input
             v-model="naming.name"
@@ -1735,15 +1803,30 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         >
           <button
             type="button"
-            class="mar-anav-row is-sub"
+            class="mar-anav-row is-sub is-tree"
             :class="folder === f.id && 'is-on'"
-            :style="{ paddingLeft: `${10 + f.depth * 14}px` }"
+            :style="{ paddingLeft: `${4 + f.indent}px` }"
             :aria-pressed="folder === f.id"
             @click="folder = folder === f.id ? '' : f.id"
             @dblclick="startNaming({ id: f.id, name: f.name })"
           >
-            <Folder :size="15" /><span class="mar-anav-name">{{ f.name }}</span
+            <i class="mar-anav-chev-room" /><Folder :size="15" /><span
+              class="mar-anav-name"
+              :title="f.name"
+              >{{ f.name }}</span
             ><span class="mar-anav-n">{{ f.count }}</span>
+          </button>
+          <button
+            v-if="f.kids"
+            type="button"
+            class="mar-anav-chev"
+            :class="unfolded.has(f.id) && 'is-open'"
+            :style="{ left: `${4 + f.indent}px` }"
+            :aria-label="`${unfolded.has(f.id) ? 'Collapse' : 'Expand'} ${f.name}`"
+            :aria-expanded="unfolded.has(f.id)"
+            @click="unfold(f.id)"
+          >
+            <ChevronRight :size="13" />
           </button>
           <span class="mar-anav-folder-tools">
             <Tooltip content="New subfolder" side="bottom">
@@ -1767,7 +1850,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         <div
           v-if="naming && !naming.id && naming.parent === f.id"
           class="mar-anav-naming"
-          :style="{ paddingLeft: `${24 + f.depth * 14}px` }"
+          :style="{ paddingLeft: `${32 + Math.min(f.depth + 1, 4) * 12}px` }"
         >
           <Folder :size="15" /><input
             v-model="naming.name"
@@ -2220,6 +2303,67 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 }
 :root .proto-ui.proto-ui.proto-ui .mar-anav-add:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+}
+/* The folder tree: a chevron's room on every row, the chevron itself a
+   button of its own over it (the row picks the folder). */
+.mar-anav-chev-room {
+  width: 14px;
+  flex: none;
+  margin-right: -4px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-row.is-tree {
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-chev {
+  position: absolute;
+  top: 8px;
+  display: flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-chev:hover {
+  color: var(--color-base-foreground);
+}
+.mar-anav-chev svg {
+  transition: rotate 150ms ease-out;
+}
+.mar-anav-chev.is-open svg {
+  rotate: 90deg;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-anav-chev svg {
+    transition: none;
+  }
+}
+/* The path above a nested folder, before its title: quieter, each step
+   goes there. */
+.mar-crumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-crumbs button {
+  max-width: 160px;
+  overflow: hidden;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-crumbs button:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-base-foreground);
 }
 .mar-anav-folder {
