@@ -81,8 +81,15 @@
     var(--color-content-background);
   background-attachment: local;
 }
+/* Light mode: a page's blurred photo turns beige on white and reads as
+   dirt, so every page takes Home's light instead. */
+:root[data-mar-ui='on'][data-ds-theme='light'] .mar-backdrop:not(.is-bloom, .is-space) {
+  display: none;
+}
 :root[data-mar-ui='on'][data-ds-theme='light']
-  .proto-main:has(> .mar-backdrop:is(.is-canvas, .is-wires, .is-grade)) {
+  .proto-main:has(
+    > .mar-backdrop:is(.is-canvas, .is-wires, .is-grade, :not(.is-bloom, .is-space))
+  ) {
   background:
     radial-gradient(
       ellipse 62% 100% at 50% 0%,
