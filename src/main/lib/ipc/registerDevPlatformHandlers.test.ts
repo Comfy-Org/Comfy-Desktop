@@ -1027,10 +1027,33 @@ describe('registerDevPlatformHandlers', () => {
     })
 
     expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
+    expect(mocks.allowDesktopWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
       'https://platform.comfy.org/profile/builds/build-2/draft?workspace=w2'
     )
+  })
+
+  it('does not let views hold a workspace the promotion failed to activate', async () => {
+    mocks.get.mockResolvedValue({
+      id: 'local-1',
+      name: 'Workspace Instance',
+      sourceId: 'comfybuilder',
+      workspaceId: 'w2',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    })
+    mocks.switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team'
+    })
+
+    await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+      ok: false,
+      message: 'Could not activate the instance workspace.'
+    })
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
   })
 
   it('does not upload if the active workspace changes during capture', async () => {
