@@ -195,8 +195,13 @@ const KINDS = computed(() =>
       ['3d', '3D'],
       ['audio', 'Audio']
     ] as const
-  ).map(([value, label]) => ({ value: value as Kind, label, count: count(value) }))
+  )
+    .map(([value, label]) => ({ value: value as Kind, label, count: count(value) }))
+    // A type with nothing in it has no tab.
+    .filter((k) => k.value === 'all' || k.count > 0)
 )
+// The type you were on emptied (another build, a delete): back to All.
+watch(KINDS, (ks) => ks.some((k) => k.value === kind.value) || (kind.value = 'all'))
 const WHERE = [
   { value: 'all', label: 'Everywhere' },
   { value: 'local', label: 'This computer' },

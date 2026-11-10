@@ -240,6 +240,31 @@ const ALL = computed<PanelAsset[]>(() => [
       outputs: i % 4 === 1 ? 4 : 1,
       preview: kind === 'Generated' && i % 5 === 2
     }
+  }),
+  // Sound and 3D: no picture of their own, so the card draws their kind
+  // (as Desktop's Assets does), and every type tab has something.
+  ...(
+    [
+      ['narration_intro.wav', 'audio', '5.1 MB', 'Generated', 1],
+      ['ambience_rain_loop.mp3', 'audio', '2.4 MB', 'Imported', 3],
+      ['pyramid_prop.glb', '3d', '7.9 MB', 'Generated', 2]
+    ] as const
+  ).map(([name, type, size, kind, w], i) => {
+    const [when, age] = WHEN[w]!
+    return {
+      id: `file-${i}`,
+      name,
+      src: '',
+      type,
+      source: 'local' as const,
+      size,
+      sizeMb: Number.parseFloat(size),
+      age,
+      when,
+      kind,
+      seconds: 9 + i * 4,
+      outputs: 1
+    }
   })
 ])
 /** Generated or Imported is a filter (Source), not tabs: All by default,
