@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { GROUPS, groupAssets, type AssetGroup } from '../assets/assetGroups'
 import { computed, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
@@ -82,21 +83,23 @@ const query = ref('')
 const menu = ref<'' | 'view'>('')
 /** View settings › Sort by: its options open to the right, level with the row,
  *  past the panel's edge. */
-const sortOpen = ref(false)
-const sortRow = ref<HTMLElement>()
-const sortTop = ref(0)
-const sortLeft = ref(0)
-function openSort(): void {
+type Sub = '' | 'sort' | 'group' | 'show'
+const sub = ref<Sub>('')
+const subTop = ref(0)
+const subLeft = ref(0)
+/** Sort by, Group by and Show each open beside the menu, level with their
+ *  row, like the Assets page's Layout menu. */
+function openSub(which: Sub, e: Event): void {
   // Fixed, in window coordinates: the panel clips what crosses its edge.
-  const row = sortRow.value
-  const menuBox = row?.closest('.rp-menu')?.getBoundingClientRect()
-  if (row && menuBox) {
-    sortTop.value = row.getBoundingClientRect().top - 5
-    sortLeft.value = menuBox.right + 4
+  const row = e.currentTarget as HTMLElement
+  const menuBox = row.closest('.rp-menu')?.getBoundingClientRect()
+  if (menuBox) {
+    subTop.value = row.getBoundingClientRect().top - 5
+    subLeft.value = menuBox.right + 4
   }
-  sortOpen.value = true
+  sub.value = which
 }
-watch(menu, () => (sortOpen.value = false))
+watch(menu, () => (sub.value = ''))
 const viewAnchor = ref<HTMLElement>()
 onClickOutside(viewAnchor, () => (menu.value = ''))
 // Masonry by default; a pick is remembered per viewer.
@@ -156,6 +159,24 @@ const DISPLAY = [
   { label: 'Preview assets', on: showPreviews }
 ]
 const sort = ref('Newest first')
+const group = ref<AssetGroup>('none')
+/** Show's row says what is on: All, None, or the ones on. */
+const showLabel = computed(() => {
+  const on = DISPLAY.filter((d) => d.on.value)
+  if (on.length === DISPLAY.length) return 'All'
+  return on.length
+    ? on.map((d) => d.label.replace(/^File (\w)/, (_, c: string) => c.toUpperCase())).join(', ')
+    : 'None'
+})
+const SUBS = computed(() => [
+  { id: 'sort' as const, label: 'Sort by', value: sort.value },
+  {
+    id: 'group' as const,
+    label: 'Group by',
+    value: GROUPS.find((g) => g.value === group.value)?.label
+  },
+  { id: 'show' as const, label: 'Show', value: showLabel.value }
+])
 const filter = ref(noFilter())
 const MEDIA = [
   { value: 'image', label: 'Image' },
@@ -294,17 +315,21 @@ const cols = computed(() => {
 })
 /** The cards in columns: one run for the grids and the list, balanced
  *  columns for Masonry (each card to the shortest one). */
-const groups = computed<PanelAsset[][]>(() => {
-  if (view.value !== 'masonry') return [shown.value]
+function columns(items: PanelAsset[]): PanelAsset[][] {
+  if (view.value !== 'masonry') return [items]
   const out: PanelAsset[][] = Array.from({ length: cols.value }, () => [])
   const h = out.map(() => 0)
-  for (const a of shown.value) {
+  for (const a of items) {
     const i = h.indexOf(Math.min(...h))
     out[i]!.push(a)
     h[i]! += 1 / factsFor(a).ratio + 0.25
   }
   return out
-})
+}
+/** Group by: each group under its header, its cards in columns. */
+const sections = computed(() =>
+  groupAssets(shown.value, group.value).map((g) => ({ ...g, cols: columns(g.items) }))
+)
 /** "PNG 512×768": the format and the size, as ComfyUI labels a file. */
 function meta(a: PanelAsset): string {
   if (a.status) return a.statusLabel ?? ''
@@ -593,7 +618,7 @@ function upload(files: FileList | null | undefined): void {
                 class="mar-pseg ap-views"
                 role="radiogroup"
                 aria-label="View"
-                @mouseenter="sortOpen = false"
+                @mouseenter="sub = ''"
               >
                 <button
                   v-for="v in VIEWS"
@@ -611,7 +636,7 @@ function upload(files: FileList | null | undefined): void {
                 </button>
               </div>
             </div>
-            <div v-if="view !== 'list'" class="ap-size" @mouseenter="sortOpen = false">
+            <div v-if="view !== 'list'" class="ap-size" @mouseenter="sub = ''">
               <span class="ap-cap">Size</span>
               <button
                 type="button"
@@ -644,55 +669,72 @@ function upload(files: FileList | null | undefined): void {
               </button>
             </div>
             <button
-              ref="sortRow"
+              v-for="r in SUBS"
+              :key="r.id"
               type="button"
               role="menuitem"
               class="rp-row ap-check"
-              :class="sortOpen && 'is-open'"
+              :class="sub === r.id && 'is-open'"
               aria-haspopup="menu"
-              :aria-expanded="sortOpen"
-              @click="openSort"
-              @mouseenter="openSort"
+              :aria-expanded="sub === r.id"
+              @click="openSub(r.id, $event)"
+              @mouseenter="openSub(r.id, $event)"
             >
-              <span class="ap-cap">Sort by</span><span class="ap-menu-val">{{ sort }}</span
+              <span class="ap-cap">{{ r.label }}</span
+              ><span class="ap-menu-val">{{ r.value }}</span
               ><ChevronRight :size="14" />
             </button>
-            <span class="rp-menu-sep" />
-            <p class="rp-menu-label">Show</p>
-            <button
-              v-for="d in DISPLAY"
-              :key="d.label"
-              type="button"
-              role="menuitemcheckbox"
-              class="rp-row ap-check"
-              :aria-checked="d.on.value"
-              @click="d.on.value = !d.on.value"
-              @mouseenter="sortOpen = false"
-            >
-              <span>{{ d.label }}</span
-              ><Check v-if="d.on.value" :size="14" />
-            </button>
           </div>
-          <!-- Sort by opens beside the menu, to the right, as a submenu. -->
+          <!-- Sort by, Group by and Show open beside the menu, to the right. -->
           <div
-            v-if="menu === 'view' && !prod && sortOpen"
+            v-if="menu === 'view' && !prod && sub"
             class="rp-menu ap-menu ap-sub"
             role="menu"
-            aria-label="Sort by"
-            :style="{ top: `${sortTop}px`, left: `${sortLeft}px` }"
+            :aria-label="SUBS.find((r) => r.id === sub)?.label"
+            :style="{ top: `${subTop}px`, left: `${subLeft}px` }"
           >
-            <button
-              v-for="o in SORTS"
-              :key="o"
-              type="button"
-              role="menuitemradio"
-              class="rp-row ap-check"
-              :aria-checked="sort === o"
-              @click="((sort = o), (menu = ''))"
-            >
-              <span>{{ o }}</span
-              ><Check v-if="sort === o" :size="14" />
-            </button>
+            <template v-if="sub === 'sort'">
+              <button
+                v-for="o in SORTS"
+                :key="o"
+                type="button"
+                role="menuitemradio"
+                class="rp-row ap-check"
+                :aria-checked="sort === o"
+                @click="((sort = o), (menu = ''))"
+              >
+                <span>{{ o }}</span
+                ><Check v-if="sort === o" :size="14" />
+              </button>
+            </template>
+            <template v-else-if="sub === 'group'">
+              <button
+                v-for="o in GROUPS"
+                :key="o.value"
+                type="button"
+                role="menuitemradio"
+                class="rp-row ap-check"
+                :aria-checked="group === o.value"
+                @click="((group = o.value), (menu = ''))"
+              >
+                <span>{{ o.label }}</span
+                ><Check v-if="group === o.value" :size="14" />
+              </button>
+            </template>
+            <template v-else>
+              <button
+                v-for="d in DISPLAY"
+                :key="d.label"
+                type="button"
+                role="menuitemcheckbox"
+                class="rp-row ap-check"
+                :aria-checked="d.on.value"
+                @click="d.on.value = !d.on.value"
+              >
+                <span>{{ d.label }}</span
+                ><Check v-if="d.on.value" :size="14" />
+              </button>
+            </template>
           </div>
         </span>
       </div>
@@ -729,51 +771,59 @@ function upload(files: FileList | null | undefined): void {
         :aria-label="`${source === 'all' ? 'All' : source === 'generated' ? 'Generated' : 'Imported'} assets`"
         @click.self="selected = new Set()"
       >
-        <div v-for="(col, ci) in groups" :key="ci" class="ap-col">
-          <div
-            v-for="a in col"
-            :key="a.id"
-            class="ap-drag"
-            draggable="true"
-            @dragstart="drag(a, $event)"
-            @dblclick="prod && !a.status && look(a)"
-          >
-            <MarItem
-              :name="a.name.replace(/\.[^.]+$/, '')"
-              :thumb="a.src || undefined"
-              :cover="a"
-              :meta="view === 'small' ? undefined : meta(a)"
-              :layout="view === 'list' ? 'list' : 'grid'"
-              :ratio="view === 'masonry' ? String(factsFor(a).ratio) : '1 / 1'"
-              :status="a.status"
-              :status-label="a.statusLabel"
-              :selected="selected.has(a.id)"
-              :selecting="selected.size > 0"
-              :lines="lines(a)"
-              context-menu
-              menu-align="start"
-              :title="`${a.name} · drag onto the canvas`"
-              @open="prod || a.status ? toggle(a) : look(a)"
-              @select="toggle(a)"
+        <template v-for="g in sections" :key="g.key">
+          <p v-if="g.title" class="ap-group-head">
+            <span class="ap-group-name">{{ g.title }}</span
+            ><span>{{ g.items.length }}</span>
+          </p>
+          <div v-for="(col, ci) in g.cols" :key="ci" class="ap-col">
+            <div
+              v-for="a in col"
+              :key="a.id"
+              class="ap-drag"
+              draggable="true"
+              @dragstart="drag(a, $event)"
+              @dblclick="prod && !a.status && look(a)"
             >
-              <template v-if="(a.outputs > 1 && a.kind === 'Generated') || a.preview" #overlay>
-                <span
-                  v-if="a.outputs > 1 && a.kind === 'Generated'"
-                  class="ap-stack"
-                  :aria-label="`${a.outputs} outputs`"
-                >
-                  <MediaChip :icon="Layers">{{ a.outputs }}</MediaChip>
-                </span>
-                <span v-if="a.preview" class="ap-prev" title="Preview asset, not saved">Prev</span>
-              </template>
-              <template v-if="view === 'list' && a.outputs > 1 && a.kind === 'Generated'" #cols>
-                <span class="ap-stack-row" :aria-label="`${a.outputs} outputs`"
-                  ><Layers :size="12" />{{ a.outputs }}</span
-                >
-              </template>
-            </MarItem>
+              <MarItem
+                :name="a.name.replace(/\.[^.]+$/, '')"
+                :thumb="a.src || undefined"
+                :cover="a"
+                :meta="view === 'small' ? undefined : meta(a)"
+                :layout="view === 'list' ? 'list' : 'grid'"
+                :ratio="view === 'masonry' ? String(factsFor(a).ratio) : '1 / 1'"
+                :status="a.status"
+                :status-label="a.statusLabel"
+                :selected="selected.has(a.id)"
+                :selecting="selected.size > 0"
+                :lines="lines(a)"
+                context-menu
+                menu-align="start"
+                :title="`${a.name} · drag onto the canvas`"
+                @open="prod || a.status ? toggle(a) : look(a)"
+                @select="toggle(a)"
+              >
+                <template v-if="(a.outputs > 1 && a.kind === 'Generated') || a.preview" #overlay>
+                  <span
+                    v-if="a.outputs > 1 && a.kind === 'Generated'"
+                    class="ap-stack"
+                    :aria-label="`${a.outputs} outputs`"
+                  >
+                    <MediaChip :icon="Layers">{{ a.outputs }}</MediaChip>
+                  </span>
+                  <span v-if="a.preview" class="ap-prev" title="Preview asset, not saved"
+                    >Prev</span
+                  >
+                </template>
+                <template v-if="view === 'list' && a.outputs > 1 && a.kind === 'Generated'" #cols>
+                  <span class="ap-stack-row" :aria-label="`${a.outputs} outputs`"
+                    ><Layers :size="12" />{{ a.outputs }}</span
+                  >
+                </template>
+              </MarItem>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
       <MarEmpty
         v-else-if="query || activeFilters(filter)"
@@ -902,6 +952,29 @@ function upload(files: FileList | null | undefined): void {
 }
 .ap-col {
   display: contents;
+}
+/* Group by: the group's name across every column, the uppercase label. */
+.ap-group-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ap-group-head:first-child {
+  margin-top: 0;
+}
+.ap-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ap-items.is-masonry {
   align-items: start;

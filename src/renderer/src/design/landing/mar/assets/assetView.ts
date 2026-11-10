@@ -1,4 +1,5 @@
 import { reactive, watch, type Component } from 'vue'
+import type { AssetGroup } from './assetGroups'
 import { LayoutDashboard, LayoutGrid, Rows3 } from 'lucide-vue-next'
 
 /** How your own things are laid out (Assets, in Mar's proposal): the
@@ -25,13 +26,14 @@ const DEFAULTS = {
   size: 'm' as AssetSize,
   details: true,
   wall: 'masonry' as AssetWall,
-  /** Group by job: what one run made sits together under its header. */
-  group: 'none' as 'none' | 'job',
+  /** Group by: what one run made, the day, or the type, each under its
+   *  header. */
+  group: 'none' as AssetGroup,
   /** The color label's dot on each card. */
   labels: true,
   /** The sidebar's TAGS and LABELS, in the order picked from their ⋯. */
   tagSort: 'name' as 'name' | 'count',
-  labelSort: 'custom' as 'custom' | 'color'
+  labelSort: 'custom' as 'custom' | 'name' | 'color'
 }
 
 function load(): typeof DEFAULTS {

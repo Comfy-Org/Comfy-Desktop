@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { appExamplesAt } from './appPage'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { onClickOutside, useResizeObserver } from '@vueuse/core'
+import { useResizeObserver } from '@vueuse/core'
 import {
   Folder,
   ArrowRight,
   Check,
   ChevronLeft,
-  ChevronDown,
   ChevronsLeftRight,
   Coins,
-  Columns2,
   Download,
   Ellipsis,
   Image as ImageIcon,
@@ -37,6 +35,7 @@ import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import AssetDetail from '../assets/AssetDetail.vue'
+import ZoomControl from '../assets/ZoomControl.vue'
 import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
@@ -160,18 +159,15 @@ function measure(): void {
   const el = pic.value
   if (el?.naturalWidth) fit.value = el.clientWidth / el.naturalWidth
 }
-const shownPct = computed(() => Math.round(fit.value * zoom.value))
-const ZOOMS = [50, 100, 200]
-const zoomMenu = ref(false)
-const zoomBox = ref<HTMLElement>()
-onClickOutside(zoomBox, () => (zoomMenu.value = false))
-function zoomTo(pct?: number): void {
-  zoom.value = pct ? Math.min(800, Math.max(10, pct / fit.value)) : 100
-  zoomMenu.value = false
-}
 useResizeObserver(pic, measure)
 watch(take, () => (zoom.value = 100))
 const hasResult = computed(() => state.value === 'done' || Boolean(sample.value))
+/** Compare sits beside the zoom, there only once there is a before. */
+const compareModel = computed({
+  get: () =>
+    hasResult.value && state.value !== 'running' && showCanvas.value ? comparing.value : undefined,
+  set: (v) => (comparing.value = Boolean(v))
+})
 
 // Comfy credits: 211 to the dollar. A run on this computer is free.
 const CREDITS_PER_USD = 211
@@ -508,19 +504,6 @@ function back(): void {
             <Select v-model="histSort" :options="HIST_SORTS" label="Sort" class="w-40" />
           </template>
           <div class="mar-app-editor-actions">
-            <!-- Compare: an icon alone, white on no fill. Share and Download
-                 live on each output's cover in History. -->
-            <Button
-              v-if="hasResult && state !== 'running' && showCanvas"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Compare before and after"
-              title="Compare"
-              :aria-pressed="comparing"
-              :class="cn('mar-app-editor-icon', comparing && 'is-on')"
-              @click="comparing = !comparing"
-              ><Columns2 :size="16"
-            /></Button>
             <!-- More: what you'd do now and then, out of the way. -->
             <DropdownMenuRoot>
               <DropdownMenuTrigger as-child>
@@ -787,23 +770,15 @@ function back(): void {
               ><slot name="saved" /><ArrowRight :size="13"
             /></span>
           </div>
-          <div ref="zoomBox" class="mar-app-editor-zoom" role="group" aria-label="Zoom">
-            <button
-              type="button"
-              class="mar-app-editor-zoom-pct"
-              aria-haspopup="menu"
-              :aria-expanded="zoomMenu"
-              @click="zoomMenu = !zoomMenu"
-            >
-              <span>{{ shownPct }}%</span><ChevronDown :size="13" />
-            </button>
-            <div v-if="zoomMenu" class="mar-app-editor-zoom-menu" role="menu">
-              <button type="button" role="menuitem" @click="zoomTo()">Fit to screen</button>
-              <button v-for="z in ZOOMS" :key="z" type="button" role="menuitem" @click="zoomTo(z)">
-                {{ z }}%
-              </button>
-            </div>
-          </div>
+          <!-- Zoom as on ComfyUI's canvas, with Compare beside it once
+               there is a before. -->
+          <ZoomControl
+            v-model="zoom"
+            v-model:compare="compareModel"
+            :fit="fit"
+            keys
+            class="mar-app-editor-zoom"
+          />
         </div>
       </main>
       <AssetDetail
@@ -1413,56 +1388,7 @@ function back(): void {
   object-fit: cover;
 }
 .mar-app-editor-zoom {
-  position: relative;
-  display: flex;
   justify-self: end;
-  padding: 3px;
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font-size: 13px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct span {
-  min-width: 34px;
-  text-align: center;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-pct[aria-expanded='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-}
-.mar-app-editor-zoom-menu {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
-  display: grid;
-  min-width: 140px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--color-secondary-background);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-menu button {
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font-size: 13px;
-  text-align: left;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-app-editor-zoom-menu button:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 .mar-app-editor-canvas {
   position: relative;

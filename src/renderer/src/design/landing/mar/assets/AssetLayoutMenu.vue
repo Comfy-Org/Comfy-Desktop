@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { Check, LayoutGrid, Minus, Plus } from 'lucide-vue-next'
 import { DropdownMenuItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
-import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
 import DropdownMenuSubContent from '../../ui/DropdownMenuSubContent.vue'
 import DropdownMenuSubTrigger from '../../ui/DropdownMenuSubTrigger.vue'
 import { cn } from '../../ui/cn'
@@ -14,8 +13,8 @@ import { WALLS, type AssetWall } from './assetView'
  * The Layout menu of the Assets page and the Apps page: LAYOUT with
  * Masonry and Grid as icon tabs beside it (the picked one with its name;
  * Assets adds masonry in rows); Size as − a stepped bar +; then, where the
- * page has them (Assets), Sort by as a submenu, Group by job, and SHOW,
- * what a card carries. Every title is the uppercase label.
+ * page has them (Assets), Sort by, Group by and Show, each a submenu
+ * with its value on the row. Every title is the uppercase label.
  */
 export type AssetView = AssetWall
 const view = defineModel<AssetView>('view', { required: true })
@@ -24,9 +23,14 @@ const sort = defineModel<string>('sort')
 const showName = defineModel<boolean>('showName')
 const showDetails = defineModel<boolean>('showDetails')
 const showLabels = defineModel<boolean>('showLabels')
-const byJob = defineModel<boolean>('byJob')
-const { sorts = [], views = ['masonry', 'grid'] } = defineProps<{
+const group = defineModel<string>('group')
+const {
+  sorts = [],
+  groups = [],
+  views = ['masonry', 'grid']
+} = defineProps<{
   sorts?: { value: string; label: string }[]
+  groups?: { value: string; label: string }[]
   /** Which layouts the page offers, in order. */
   views?: AssetView[]
 }>()
@@ -34,6 +38,7 @@ const { sorts = [], views = ['masonry', 'grid'] } = defineProps<{
 const SIZES = 3
 const VIEWS = computed(() => WALLS.filter((w) => views.includes(w.value)))
 const sortLabel = computed(() => sorts.find((s) => s.value === sort.value)?.label ?? '')
+const groupLabel = computed(() => groups.find((g) => g.value === group.value)?.label ?? '')
 const setSize = (n: number): void => {
   size.value = Math.min(SIZES, Math.max(1, n))
 }
@@ -46,6 +51,14 @@ const SHOW = computed(() =>
         ...(showLabels.value === undefined ? [] : [{ label: 'Labels', on: showLabels }])
       ]
 )
+/** Show's row says what is on: All, None, or the ones on. */
+const showLabel = computed(() => {
+  const on = SHOW.value.filter((d) => d.on.value)
+  if (on.length === SHOW.value.length) return 'All'
+  return on.length
+    ? on.map((d) => d.label.replace(/^File (\w)/, (_, c: string) => c.toUpperCase())).join(', ')
+    : 'None'
+})
 </script>
 
 <template>
@@ -123,26 +136,40 @@ const SHOW = computed(() =>
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      <DropdownMenuItem
-        v-if="byJob !== undefined"
-        :class="cn(menuItem, 'alm-row')"
-        @select.prevent="byJob = !byJob"
-      >
-        <span class="flex-1">Group by job</span><Check v-if="byJob" :size="14" />
-      </DropdownMenuItem>
-      <template v-if="SHOW.length">
-        <DropdownMenuSeparator class="alm-sep" />
-        <p class="alm-label">Show</p>
-        <DropdownMenuItem
-          v-for="d in SHOW"
-          :key="d.label"
-          :class="cn(menuItem, 'alm-row')"
-          @select.prevent="d.on.value = !d.on.value"
+      <DropdownMenuSub v-if="groups.length">
+        <DropdownMenuSubTrigger class="alm-row"
+          ><span class="alm-cap flex-1">Group by</span
+          ><span class="text-subtle-foreground">{{ groupLabel }}</span></DropdownMenuSubTrigger
         >
-          <span class="flex-1">{{ d.label }}</span
-          ><Check v-if="d.on.value" :size="14" />
-        </DropdownMenuItem>
-      </template>
+        <DropdownMenuSubContent>
+          <DropdownMenuItem
+            v-for="o in groups"
+            :key="o.value"
+            :class="menuItem"
+            @select="group = o.value"
+          >
+            <span class="flex-1">{{ o.label }}</span
+            ><Check v-if="group === o.value" :size="14" />
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      <DropdownMenuSub v-if="SHOW.length">
+        <DropdownMenuSubTrigger class="alm-row"
+          ><span class="alm-cap flex-1">Show</span
+          ><span class="alm-val">{{ showLabel }}</span></DropdownMenuSubTrigger
+        >
+        <DropdownMenuSubContent>
+          <DropdownMenuItem
+            v-for="d in SHOW"
+            :key="d.label"
+            :class="menuItem"
+            @select.prevent="d.on.value = !d.on.value"
+          >
+            <span class="flex-1">{{ d.label }}</span
+            ><Check v-if="d.on.value" :size="14" />
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
     </DropdownMenuContent>
   </DropdownMenuRoot>
 </template>
@@ -171,8 +198,13 @@ const SHOW = computed(() =>
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-:root .alm.alm.proto-ui.proto-ui .alm-sep {
-  margin: 6px -6px;
+/* A long Show value stays on one line. */
+.alm-val {
+  max-width: 110px;
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* LAYOUT, then its views as tabs on the same line. */
 .alm-head {

@@ -23,6 +23,7 @@ import {
   X
 } from 'lucide-vue-next'
 import { onClickOutside, useResizeObserver } from '@vueuse/core'
+import ZoomControl from './ZoomControl.vue'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import { assets as desktopAssets, type MarAsset } from '../pages/assetsStore'
@@ -155,19 +156,7 @@ function measure(): void {
   const w = facts.value.width ?? (media.value?.querySelector('img')?.naturalWidth || 0)
   if (media.value && w) fit.value = media.value.clientWidth / w
 }
-const shownPct = computed(() => Math.round(fit.value * zoom.value))
-const ZOOMS = [50, 100, 200]
-const zoomMenu = ref(false)
-const zoomBox = ref<HTMLElement>()
-onClickOutside(zoomBox, () => (zoomMenu.value = false))
-function zoomTo(pct?: number): void {
-  zoom.value = pct ? Math.min(800, Math.max(10, pct / fit.value)) : 100
-  zoomMenu.value = false
-}
-/** The slider reads in real size too, 10% to 400%. */
-function slide(e: Event): void {
-  zoom.value = Math.min(800, Math.max(10, Number((e.target as HTMLInputElement).value) / fit.value))
-}
+const zoomCtl = ref<InstanceType<typeof ZoomControl>>()
 /** The details panel folds away for the picture alone. */
 const side = ref(true)
 // The fit changes with the stage: the window, or Details folding.
@@ -399,7 +388,7 @@ watch(
 const root = ref<HTMLElement>()
 const addBtn = ref<HTMLButtonElement>()
 const opener = document.activeElement as HTMLElement | null
-const menuOpen = (): boolean => moreMenu.value || labelMenu.value || zoomMenu.value
+const menuOpen = (): boolean => moreMenu.value || labelMenu.value || Boolean(zoomCtl.value?.open)
 /** Escape closes what's open, innermost first, and hands focus back to
  *  the button that opened it. */
 function closeMenus(): boolean {
@@ -407,15 +396,14 @@ function closeMenus(): boolean {
     insertOpen.value = false
     return true
   }
-  const box = moreMenu.value
-    ? moreBox
-    : labelMenu.value
-      ? labelBox
-      : zoomMenu.value
-        ? zoomBox
-        : null
+  const box = moreMenu.value ? moreBox : labelMenu.value ? labelBox : null
+  if (zoomCtl.value?.open) {
+    zoomCtl.value.open = false
+    zoomCtl.value.$el.querySelector('[aria-haspopup]')?.focus()
+    return true
+  }
   if (!box) return false
-  moreMenu.value = labelMenu.value = zoomMenu.value = false
+  moreMenu.value = labelMenu.value = false
   box.value?.querySelector<HTMLElement>('[aria-haspopup]')?.focus()
   return true
 }
@@ -577,41 +565,8 @@ onBeforeUnmount(() => {
                 <AssetCover v-else :name="a.name" :type="a.type" />
               </button>
             </nav>
-            <!-- Zoom: the real-size percentage; it opens a slider with Fit
-                 and the presets. -->
-            <div ref="zoomBox" class="mad-zoom" role="group" aria-label="Zoom">
-              <button
-                type="button"
-                class="mad-zoom-pct"
-                aria-haspopup="menu"
-                :aria-expanded="zoomMenu"
-                @click="zoomMenu = !zoomMenu"
-              >
-                <span>{{ shownPct }}%</span><ChevronDown :size="13" />
-              </button>
-              <div v-if="zoomMenu" class="mad-menu is-up is-end is-zoom" role="menu">
-                <input
-                  class="mad-zoom-range"
-                  type="range"
-                  min="10"
-                  max="400"
-                  step="1"
-                  :value="shownPct"
-                  aria-label="Zoom"
-                  @input="slide"
-                />
-                <button type="button" role="menuitem" @click="zoomTo()">Fit to screen</button>
-                <button
-                  v-for="z in ZOOMS"
-                  :key="z"
-                  type="button"
-                  role="menuitem"
-                  @click="zoomTo(z)"
-                >
-                  {{ z }}%
-                </button>
-              </div>
-            </div>
+            <!-- Zoom: the real-size percentage, as on ComfyUI's canvas. -->
+            <ZoomControl ref="zoomCtl" v-model="zoom" :fit="fit" keys />
           </footer>
         </section>
 
@@ -1157,38 +1112,8 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-icon:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
 }
-/* Zoom: the real-size percentage, opening Fit and the presets. (No
- * compare icon: that only makes sense once an asset holds edits.) */
-.mad-zoom {
-  position: relative;
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-}
 :root .proto-ui.proto-ui.proto-ui .mad-icon.is-on {
   color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--color-base-foreground);
-  font-size: 13px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct span {
-  min-width: 34px;
-  text-align: center;
-}
-:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct:hover,
-:root .proto-ui.proto-ui.proto-ui .mad-zoom-pct[aria-expanded='true'] {
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
 }
 .mad-menu {
   position: absolute;
@@ -1268,19 +1193,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 16px;
 }
-.mad-foot .mad-zoom {
+.mad-foot .zc {
   justify-self: end;
-  padding: 3px;
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
-}
-.mad-menu.is-zoom {
-  min-width: 180px;
-}
-.mad-zoom-range {
-  width: auto;
-  margin: 6px 10px 8px;
-  accent-color: var(--color-base-foreground);
 }
 .mad-strip {
   min-width: 0;

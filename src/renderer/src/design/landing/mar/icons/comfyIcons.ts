@@ -75,3 +75,11 @@ export const ComfyNode = comfyIcon(
   '0 0 16 16',
   `<path ${S} d="m11.2667 10.45-.0842.3156c-.143.5363-.6286.9094-1.18362.9094H4.6945c-.80486 0-1.39102-.7629-1.18364-1.5406l1.30667-4.90002c.143-.53625.62865-.90937 1.18364-.90937h5.46393c.7243 0 1.2518.68663 1.0652 1.38652l-.0301.11275M15.35 8.00001h-4.9m-6.73748 0H.65002"/>`
 )
+
+/** comfy--compare: ComfyUI's Compare beside the zoom, two brackets split
+ *  by the line where before meets after. */
+export const ComfyCompare = comfyIcon(
+  'ComfyCompare',
+  '0 0 16 16',
+  `<path d="M6 3.5H4.5a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1H6M10 3.5h1.5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H10M8 2v12" ${S}/>`
+)
