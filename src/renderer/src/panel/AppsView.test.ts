@@ -408,6 +408,22 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('second.png')
   })
 
+  it('closes the detail view for good when its file goes away on a reload', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+
+    listAssets.mockResolvedValue([])
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
+    await flushPromises()
+    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
+
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-c' }
+    await flushPromises()
+    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
+  })
+
   it('reloads when the signed-in workspace changes', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
     await mountAssets([build('lab', 'Video Lab')])
