@@ -1167,8 +1167,6 @@
   "snapshots": {
     "empty": "还没有快照。ComfyUI 启动时会自动捕获快照。",
     "createSnapshot": "创建快照",
-    "createNew": "创建快照",
-    "createLabel": "创建快照",
     "changesInSnapshot": "此快照中发生的更改",
     "ifYouRestore": "恢复此快照将改变的内容",
     "noSnapshotsToShare": "还没有可分享的快照。",

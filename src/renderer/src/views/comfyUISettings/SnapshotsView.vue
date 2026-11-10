@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { ChevronDown, Download, RotateCcw, Trash2, Upload } from 'lucide-vue-next'
+import { Camera, ChevronDown, Download, RotateCcw, Trash2, Upload } from 'lucide-vue-next'
 import { TID } from '../../../../shared/testIds'
 import { MSG_CANCELLED } from '../../../../shared/operationStatus'
 import { useDialogs } from '../../composables/useDialogs'
@@ -569,6 +569,19 @@ async function handleImport(): Promise<void> {
           <Download :size="14" aria-hidden="true" />
           <span>{{ t('snapshots.exportAllSnapshots') }}</span>
         </Button>
+        <Button
+          type="button"
+          variant="textonly"
+          size="unset"
+          :class="toolButtonClass"
+          :disabled="restoreInFlight"
+          :aria-label="t('snapshots.createSnapshot')"
+          :data-testid="TID.snapshotsSaveCta"
+          @click="handleSave"
+        >
+          <Camera :size="14" aria-hidden="true" />
+          <span>{{ t('snapshots.createSnapshot') }}</span>
+        </Button>
       </div>
     </header>
 
@@ -599,6 +612,7 @@ async function handleImport(): Promise<void> {
       :class="{ 'is-empty': timeline.length === 0 }"
     >
       <li
+        v-if="showRestoreCard"
         ref="topCardRef"
         class="snapshots-rail-node is-save"
         :class="[
@@ -613,15 +627,13 @@ async function handleImport(): Promise<void> {
         <span
           class="snapshots-rail-dot absolute top-1 left-0 z-[1] size-[14px] rounded-[7px] border-2"
           :class="
-            !showRestoreCard
-              ? 'is-pending border-dashed border-neutral-400 bg-[var(--titlebar-bg)]'
-              : restoreInFlight
-                ? 'is-spinning border-solid border-snapshot-ring bg-[conic-gradient(var(--brand-accent,#f5c518)_270deg,transparent_270deg)] animate-spin [animation-duration:0.8s]'
-                : restoreTerminal === 'ok'
-                  ? 'is-restored border-solid border-snapshot-ring bg-[var(--success,#34c759)]'
-                  : restoreTerminal === 'error'
-                    ? 'is-error border-solid border-snapshot-ring bg-[var(--danger,#ef4444)]'
-                    : 'border-solid border-snapshot-ring [background:linear-gradient(0deg,#8a8a8a_0%,#8a8a8a_100%),#fd9903]'
+            restoreInFlight
+              ? 'is-spinning border-solid border-snapshot-ring bg-[conic-gradient(var(--brand-accent,#f5c518)_270deg,transparent_270deg)] animate-spin [animation-duration:0.8s]'
+              : restoreTerminal === 'ok'
+                ? 'is-restored border-solid border-snapshot-ring bg-[var(--success,#34c759)]'
+                : restoreTerminal === 'error'
+                  ? 'is-error border-solid border-snapshot-ring bg-[var(--danger,#ef4444)]'
+                  : 'border-solid border-snapshot-ring [background:linear-gradient(0deg,#8a8a8a_0%,#8a8a8a_100%),#fd9903]'
           "
           :aria-hidden="true"
         ></span>
@@ -635,7 +647,6 @@ async function handleImport(): Promise<void> {
             <template v-else-if="restoreTerminal === 'cancelled'">{{
               t('snapshots.restoreCancelled')
             }}</template>
-            <template v-else>{{ t('snapshots.createLabel') }}</template>
           </span>
           <div
             class="snapshots-rail-save-box flex flex-col rounded-lg border"
@@ -768,19 +779,6 @@ async function handleImport(): Promise<void> {
                 </Button>
               </div>
             </div>
-
-            <Button
-              v-else
-              type="button"
-              variant="textonly"
-              size="unset"
-              class="snapshots-rail-cta static inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-2.5 text-[length:var(--takeover-fs-body)] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
-              :aria-label="t('snapshots.createSnapshot')"
-              :data-testid="TID.snapshotsSaveCta"
-              @click="handleSave"
-            >
-              <span>{{ t('snapshots.createNew') }}</span>
-            </Button>
           </div>
         </div>
       </li>

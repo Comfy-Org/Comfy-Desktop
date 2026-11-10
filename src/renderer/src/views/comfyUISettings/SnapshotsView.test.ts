@@ -97,11 +97,13 @@ describe('comfyUISettings/SnapshotsView', () => {
     vi.useRealTimers()
   })
 
-  it('idle: renders the Save New Snapshot CTA and no op-card', async () => {
+  it('idle: renders the Create Snapshot button in the toolbar and no op-card', async () => {
     const w = await mountView()
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
-    expect(w.find('.snapshots-rail-cta').text()).toContain('Create Snapshot')
+    expect(w.find('.snapshots-rail-node.is-save').exists()).toBe(false)
+    const cta = w.find(`[data-testid="${TID.snapshotsSaveCta}"]`)
+    expect(cta.text()).toContain('Create Snapshot')
+    expect(cta.attributes('disabled')).toBeUndefined()
   })
 
   it('in-flight: morphs the slot into the op-card with target label + percent + spinner dot', async () => {
@@ -118,7 +120,7 @@ describe('comfyUISettings/SnapshotsView', () => {
       }
     })
 
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(false)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeDefined()
     const card = w.find(`[data-testid="${TID.snapshotsOpCard}"]`)
     expect(card.exists()).toBe(true)
 
@@ -264,7 +266,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     await w.find(`[data-testid="${TID.snapshotsOpCardRetry}"]`).trigger('click')
     expect(w.emitted('op-retry')).toHaveLength(1)
     await nextTick()
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeUndefined()
   })
 
   it('error: Dismiss button emits op-dismiss and clears the card', async () => {
@@ -322,7 +324,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     await flushPromises()
 
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeUndefined()
     expect(w.emitted('op-dismiss')).toHaveLength(1)
     expect(w.emitted('op-retry')).toBeUndefined()
   })
@@ -392,7 +394,7 @@ describe('comfyUISettings/SnapshotsView', () => {
       }
     })
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeUndefined()
   })
 
   it('scrolls the top card into view when restore starts', async () => {
