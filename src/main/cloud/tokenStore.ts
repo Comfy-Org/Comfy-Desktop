@@ -38,6 +38,7 @@ interface LegacyVault {
 
 export interface PendingRevocation extends GrantOrigin {
   refreshToken: string
+  queuedAt: number
 }
 
 let cachedVault: TokenVault | null = null
@@ -221,7 +222,8 @@ function configuredOrigin(): GrantOrigin {
 
 export function loadGrantOrigin(): GrantOrigin | null {
   const vault = loadVault()
-  if (!vault?.issuer || !vault.clientId) return null
+  if (!vault) return null
+  if (!vault.issuer || !vault.clientId) return configuredOrigin()
   return { issuer: vault.issuer, clientId: vault.clientId }
 }
 
@@ -320,12 +322,15 @@ function revocationPath(refreshToken: string): string {
   return path.join(revocationsDir(), `${name}.bin`)
 }
 
-function isPendingRevocation(v: unknown): v is PendingRevocation {
+function isSavedRevocation(
+  v: unknown
+): v is Omit<PendingRevocation, 'queuedAt'> & { queuedAt?: number } {
   return (
     isRecord(v) &&
     typeof v.issuer === 'string' &&
     typeof v.clientId === 'string' &&
-    typeof v.refreshToken === 'string'
+    typeof v.refreshToken === 'string' &&
+    (v.queuedAt === undefined || typeof v.queuedAt === 'number')
   )
 }
 
@@ -358,10 +363,10 @@ function readSavedRevocations(): PendingRevocations {
   if (names.length > 0 && !encryptionAvailable()) return { pending: [], complete: false }
   const pending = names.flatMap((name) => {
     try {
-      const parsed: unknown = JSON.parse(
-        safeStorage.decryptString(fs.readFileSync(path.join(revocationsDir(), name)))
-      )
-      return isPendingRevocation(parsed) ? [parsed] : []
+      const file = path.join(revocationsDir(), name)
+      const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(file)))
+      if (!isSavedRevocation(parsed)) return []
+      return [{ ...parsed, queuedAt: parsed.queuedAt ?? fs.statSync(file).mtimeMs }]
     } catch {
       return []
     }

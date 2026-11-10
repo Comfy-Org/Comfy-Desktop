@@ -365,7 +365,7 @@ describe('grant vault', () => {
     expect(fs.existsSync(vaultPath())).toBe(false)
   })
 
-  it('records the Cloud a grant came from at sign-in and at each refresh, and nothing for an older vault', () => {
+  it('records the Cloud a grant came from at sign-in and at each refresh, and assumes the configured Cloud for an older vault', () => {
     const grant = tokens('user-1', 'w1')
     saveGrant(grant)
     expect(loadGrantOrigin()).toEqual({
@@ -376,7 +376,10 @@ describe('grant vault', () => {
     const { issuer: _issuer, clientId: _clientId, ...older } = readVault()
     writeVault(older)
     _resetForTest()
-    expect(loadGrantOrigin()).toBeNull()
+    expect(loadGrantOrigin()).toEqual({
+      issuer: CLOUD_CONFIG.issuer,
+      clientId: CLOUD_CONFIG.clientId
+    })
 
     replaceGrant(grant.accessToken, grant.refreshToken ?? '', tokens('user-1', 'w1', '-next'))
     expect(loadGrantOrigin()).toEqual({
@@ -386,7 +389,12 @@ describe('grant vault', () => {
   })
 
   it('keeps queued revocations encrypted, outside the vault, one file each', () => {
-    const first = { issuer: 'https://cloud.test', clientId: 'cid', refreshToken: 'refresh-1' }
+    const first = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
     const second = { ...first, refreshToken: 'refresh-2' }
     saveGrant(tokens('user-1', 'w1'))
 
@@ -408,7 +416,12 @@ describe('grant vault', () => {
   })
 
   it('never loses a queued revocation to an unreadable sibling entry', () => {
-    const first = { issuer: 'https://cloud.test', clientId: 'cid', refreshToken: 'refresh-1' }
+    const first = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
     addPendingRevocation(first)
     const dir = path.join(electronState.userData, 'comfy-cloud-revocations')
     fs.writeFileSync(path.join(dir, 'unreadable.bin'), 'garbage')
@@ -421,7 +434,12 @@ describe('grant vault', () => {
   })
 
   it('keeps a revocation in memory while it cannot be saved, and saves it once storage works', () => {
-    const revocation = { issuer: 'https://cloud.test', clientId: 'cid', refreshToken: 'refresh-1' }
+    const revocation = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
     electronState.encryptionAvailable = false
 
     addPendingRevocation(revocation)

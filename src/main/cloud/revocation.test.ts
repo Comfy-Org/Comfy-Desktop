@@ -50,6 +50,7 @@ type Reply = () => Response | Promise<Response>
 let replies: Reply[]
 let replyFor: Record<string, Reply>
 let requests: RevokeRequest[]
+const written = new Set<string>()
 
 const ok: Reply = () => new Response(null, { status: 200 })
 const offline: Reply = () => Promise.reject(new TypeError('fetch failed'))
@@ -59,7 +60,12 @@ function status(code: number, body: unknown = {}): Reply {
 }
 
 function revocation(refreshToken: string): PendingRevocation {
-  return { issuer: CLOUD_CONFIG.issuer, clientId: CLOUD_CONFIG.clientId, refreshToken }
+  return {
+    issuer: CLOUD_CONFIG.issuer,
+    clientId: CLOUD_CONFIG.clientId,
+    refreshToken,
+    queuedAt: Date.now()
+  }
 }
 
 function queuedTokens(): string[] {
@@ -73,6 +79,7 @@ beforeEach(() => {
   electronState.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'comfy-cloud-revocation-'))
   _resetForTest()
   requests = []
+  written.clear()
   replies = []
   replyFor = {}
   vi.stubGlobal(
@@ -347,6 +354,24 @@ describe('Revocations', () => {
     }
   })
 
+  it('revokes a token queued by an earlier build, dating it by its file', async () => {
+    const dir = path.join(electronState.userData, 'comfy-cloud-revocations')
+    const monthAgo = new Date(Date.now() - 31 * 24 * 3_600_000)
+    for (const token of ['refresh-recent', 'refresh-month-old']) {
+      addPendingRevocation(revocation(token))
+      const file = fs.readdirSync(dir).find((name) => !written.has(name)) ?? ''
+      written.add(file)
+      const { queuedAt: _queuedAt, ...older } = revocation(token)
+      fs.writeFileSync(path.join(dir, file), safeStorage.encryptString(JSON.stringify(older)))
+      if (token === 'refresh-month-old') fs.utimesSync(path.join(dir, file), monthAgo, monthAgo)
+    }
+
+    await new Revocations().drain()
+
+    expect(requests.map((request) => request.token)).toEqual(['refresh-recent'])
+    expect(queuedTokens()).toEqual([])
+  })
+
   it('reads a saved token again later when it could not be read at start', async () => {
     vi.useFakeTimers()
     addPendingRevocation(revocation('refresh-2'))
@@ -362,11 +387,31 @@ describe('Revocations', () => {
     expect(queuedTokens()).toEqual([])
   })
 
+  it('gives up on a token once it has outlived its 30 day lifetime on Cloud', async () => {
+    vi.useFakeTimers()
+    replies = [status(503), status(503)]
+    const revocations = new Revocations()
+    revocations.add(revocation('refresh-1'))
+    await revocations.drain()
+    addPendingRevocation({ ...revocation('refresh-old'), queuedAt: Date.now() - 720 * 3_600_000 })
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(requests.map((request) => request.token)).toEqual(['refresh-1', 'refresh-1'])
+    expect(queuedTokens()).toEqual(['refresh-1'])
+
+    vi.setSystemTime(Date.now() + 720 * 3_600_000)
+    await vi.advanceTimersByTimeAsync(MAX_WAIT_MS)
+
+    expect(requests).toHaveLength(2)
+    expect(queuedTokens()).toEqual([])
+  })
+
   it('sends each token only to the Cloud that issued it', async () => {
     addPendingRevocation({
       issuer: 'https://other-cloud.example',
       clientId: 'other-client',
-      refreshToken: 'refresh-elsewhere'
+      refreshToken: 'refresh-elsewhere',
+      queuedAt: Date.now()
     })
     addPendingRevocation(revocation('refresh-1'))
 

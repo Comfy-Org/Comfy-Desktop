@@ -146,7 +146,10 @@ export class CloudSession {
         if (generation === this.authGeneration) this.loginAuthorizeUrl = url
       }
     })
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) {
+      this.revokeUnstored(tokens.refreshToken)
+      return this.status()
+    }
     this.storeSignedInGrant(tokens)
     const anchor = workspaceIdOf(tokens.accessToken)
     if (anchor) activateWorkspace(anchor)
@@ -183,6 +186,15 @@ export class CloudSession {
     if (!refreshToken) return
     if (this.refreshing.has(refreshToken)) this.retiredRefreshTokens.add(refreshToken)
     if (origin) this.revocations.add({ ...origin, refreshToken })
+  }
+
+  private revokeUnstored(refreshToken: string | undefined): void {
+    if (!refreshToken || refreshToken === loadGrant()?.refreshToken) return
+    this.revocations.add({
+      issuer: CLOUD_CONFIG.issuer,
+      clientId: CLOUD_CONFIG.clientId,
+      refreshToken
+    })
   }
 
   resumeRevocations(): void {
@@ -278,13 +290,8 @@ export class CloudSession {
       const rotated = await refresh(refreshToken)
       const stored = replaceGrant(grant.accessToken, refreshToken, rotated)
       if (stored) this.rotatedTo.set(grant.accessToken, rotated.accessToken)
-      const next = rotated.refreshToken
-      if (!stored && this.retiredRefreshTokens.has(refreshToken) && next) {
-        this.revocations.add({
-          issuer: CLOUD_CONFIG.issuer,
-          clientId: CLOUD_CONFIG.clientId,
-          refreshToken: next
-        })
+      if (!stored && this.retiredRefreshTokens.has(refreshToken)) {
+        this.revokeUnstored(rotated.refreshToken)
       }
       return 'refreshed'
     } catch (error) {
@@ -505,7 +512,10 @@ export class CloudSession {
       if (!browserOpened) reportSwitch('retryable', reason)
       return generation === this.authGeneration ? this.stayed('retryable') : this.unreached()
     }
-    if (generation !== this.authGeneration) return this.unreached()
+    if (generation !== this.authGeneration) {
+      this.revokeUnstored(tokens.refreshToken)
+      return this.unreached()
+    }
     this.storeSignedInGrant(tokens)
 
     const canMint = canMintWorkspaceTokens(tokens.accessToken)

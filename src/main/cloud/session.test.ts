@@ -2352,27 +2352,67 @@ describe('CloudSession logout revokes this device on Cloud (T-V8, T-V18)', () =>
     expect(revokedTokens).toEqual([])
   })
 
-  it('revokes nothing for a grant from an older build until a refresh proves its Cloud', async () => {
-    const stale = grantOn('w1', { expiresAt: PAST })
-    saveGrant(stale)
+  it('revokes a grant from an older build at the configured Cloud', async () => {
+    const grant = grantOn('w1')
+    saveGrant(grant)
     const vaultPath = path.join(electronState.userData, 'comfy-cloud-auth.bin')
     const { issuer: _issuer, clientId: _clientId, ...older } = vaultOnDisk()
     fs.writeFileSync(vaultPath, safeStorage.encryptString(JSON.stringify(older)))
     _resetForTest()
+
+    new CloudSession().logout()
+
+    await vi.waitFor(() => expect(revokedTokens).toEqual([grant.refreshToken]))
+  })
+
+  it('revokes a sign-in that finishes after logout', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const session = new CloudSession()
+    const late = grantOn('w1', { revision: '-late' })
+
+    const login = session.login()
+    session.logout()
+    pending.resolve(signedInResult(late))
+    await login
+
+    await vi.waitFor(() => expect(revokedTokens).toEqual([late.refreshToken]))
+    expect(session.isSignedIn()).toBe(false)
+  })
+
+  it('never revokes the stored grant when a superseded sign-in returns it', async () => {
+    const grant = grantOn('w1')
+    saveGrant(grant)
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
     const session = new CloudSession()
 
-    session.logout()
+    const login = session.login()
+    await session.switchWorkspace('w1')
+    pending.resolve(signedInResult(grant))
+    await login
+    session.resumeRevocations()
+
     expect(revokedTokens).toEqual([])
+    expect(vaultOnDisk().grant).toEqual(grant)
+  })
 
-    saveGrant(stale)
-    fs.writeFileSync(vaultPath, safeStorage.encryptString(JSON.stringify(older)))
-    _resetForTest()
-    const rotated = grantOn('w1', { revision: '-fresh' })
-    mocked(refresh).mockResolvedValue(rotated)
-    await session.getAccessToken()
+  it('revokes a switch consent that finishes after logout', async () => {
+    const grant = grantOn('w1')
+    saveGrant(grant)
+    mintReply = () => json(403, { code: 'sso_required' })
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const session = new CloudSession()
+    const late = grantOn('w2', { revision: '-late' })
+
+    const switching = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
     session.logout()
+    pending.resolve(signedInResult(late))
+    await switching
 
-    await vi.waitFor(() => expect(revokedTokens).toEqual([rotated.refreshToken]))
+    await vi.waitFor(() => expect(revokedTokens).toEqual([grant.refreshToken, late.refreshToken]))
   })
 
   it('revokes nothing when no one is signed in', () => {

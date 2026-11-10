@@ -5,6 +5,7 @@ import type { PendingRevocation } from './tokenStore'
 
 const FIRST_RETRY_MS = 5_000
 const MAX_RETRY_MS = 15 * 60_000
+const CLOUD_REFRESH_TOKEN_LIFETIME_MS = 720 * 60 * 60_000
 
 export class Revocations {
   private draining: Promise<void> | null = null
@@ -13,8 +14,8 @@ export class Revocations {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private readonly settledButSaved = new Set<string>()
 
-  add(revocation: PendingRevocation): void {
-    addPendingRevocation(revocation)
+  add(revocation: Omit<PendingRevocation, 'queuedAt'>): void {
+    addPendingRevocation({ ...revocation, queuedAt: Date.now() })
     if (this.draining) this.drainAgain = true
     else void this.drain()
   }
@@ -48,7 +49,11 @@ export class Revocations {
         else this.scheduleRetry()
         return
       }
-      if ((await revoke(next.refreshToken, next.clientId, revokeUrlOf(next.issuer))) === 'retry') {
+      const expired = next.queuedAt + CLOUD_REFRESH_TOKEN_LIFETIME_MS <= Date.now()
+      if (
+        !expired &&
+        (await revoke(next.refreshToken, next.clientId, revokeUrlOf(next.issuer))) === 'retry'
+      ) {
         failed.add(next.refreshToken)
       } else if (!removePendingRevocation(next.refreshToken)) {
         this.settledButSaved.add(next.refreshToken)
