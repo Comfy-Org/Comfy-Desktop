@@ -25,8 +25,9 @@ import {
 } from './appsBuild'
 import {
   APPS_BUILD_NAME,
-  FREE_DELAY_MS,
+  FREE_IDLE_MS,
   FREE_JSON,
+  freeWait,
   isRunEnd,
   queueEmpty,
   type SetupEvent,
@@ -369,12 +370,14 @@ export async function freeIfDone(port: number): Promise<boolean> {
 
 let freeTimer: ReturnType<typeof setTimeout> | null = null
 
-function scheduleFree(port: number): void {
+function scheduleFree(port: number, wait = FREE_IDLE_MS): void {
   if (freeTimer) clearTimeout(freeTimer)
   freeTimer = setTimeout(() => {
     freeTimer = null
+    const left = freeWait(lastUse, Date.now())
+    if (left > 0) return scheduleFree(port, left)
     void freeIfDone(port)
-  }, FREE_DELAY_MS)
+  }, wait)
 }
 
 async function stopWhenIdle(): Promise<void> {

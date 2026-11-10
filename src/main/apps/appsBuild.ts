@@ -1,5 +1,6 @@
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import { promises as fsp } from 'fs'
+import os from 'os'
 import path from 'path'
 
 import { getEntryByInstallationId } from '../host/registry'
@@ -21,7 +22,7 @@ import { dataDir, defaultDataRoot, defaultInstallDir } from '../lib/paths'
 import { findAvailablePort } from '../lib/process'
 import * as settings from '../settings'
 import { buildPinnedVariant } from '../sources/standalone'
-import { variantMatchesHost } from '../sources/standalone/envPaths'
+import { DEFAULT_LAUNCH_ARGS, variantMatchesHost } from '../sources/standalone/envPaths'
 import { fetchR2Latest, fetchR2VendorReleases } from '../sources/standalone/r2Catalog'
 import type { FieldOption } from '../types/sources'
 import {
@@ -29,6 +30,7 @@ import {
   APPS_BUILD_LAST_PORT,
   APPS_BUILD_NAME,
   APPS_BUILD_RELEASE,
+  appsLaunchArgs,
   appsModelDirs,
   appsOutputDir,
   downloadBytes,
@@ -150,7 +152,13 @@ async function storageFor(inst: InstallationRecord): Promise<Record<string, unkn
       sharedOutput,
       installPath: inst.installPath
     }),
-    modelDirs: appsModelDirs(await installations.list(), categoryOf, installModelsDir)
+    modelDirs: appsModelDirs(await installations.list(), categoryOf, installModelsDir),
+    launchArgs: appsLaunchArgs(
+      inst.launchArgs,
+      DEFAULT_LAUNCH_ARGS,
+      process.platform,
+      os.totalmem()
+    )
   }
 }
 
