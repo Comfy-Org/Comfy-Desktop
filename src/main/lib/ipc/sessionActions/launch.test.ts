@@ -5347,6 +5347,17 @@ describe('prior ComfyUI process handling at launch', () => {
       )
     })
 
+    it('adds no hint when the DLL message is not on an exception line', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      const stderr = "Could not find module 'aimdo.dll' (or one of its dependencies).\n"
+      failBootWith(stderr)
+
+      const res = await handleLaunch(ctxFor('dll-unprefixed'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${stderr.trim()}`)
+    })
+
     it('ignores a DLL failure the start survived when another error ends it', async () => {
       setArgs()
       vcRuntime.missing = ['msvcp140.dll']
