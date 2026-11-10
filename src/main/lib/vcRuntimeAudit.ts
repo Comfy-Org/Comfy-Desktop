@@ -19,6 +19,9 @@ export async function auditVcRuntime(): Promise<string[]> {
   return results.filter((dll): dll is string => dll !== null)
 }
 
+const DLL_LOAD_FAILURE =
+  /\[WinError (?:126|1114)\]|DLL load failed|Could not find module .+\(or one of its dependencies\)/
+
 export function isDllLoadFailure(output: string): boolean {
-  return /\[WinError (?:126|1114)\]|DLL load failed/.test(output)
+  return DLL_LOAD_FAILURE.test(output)
 }

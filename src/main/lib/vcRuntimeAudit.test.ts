@@ -77,6 +77,12 @@ describe('isDllLoadFailure', () => {
         '"D:\\ComfyUI\\.venv\\Lib\\site-packages\\torch\\lib\\c10.dll" or one of its dependencies.'
     ],
     [
+      'a library loaded through ctypes',
+      'FileNotFoundError: Could not find module ' +
+        "'C:\\ComfyUI\\.venv\\Lib\\site-packages\\comfy_aimdo\\aimdo.dll' " +
+        '(or one of its dependencies). Try using the full path with constructor syntax.'
+    ],
+    [
       'extension module import',
       'ImportError: DLL load failed while importing _C: 指定されたモジュールが見つかりません。'
     ]
@@ -88,6 +94,7 @@ describe('isDllLoadFailure', () => {
     ['a CUDA traceback', 'Traceback (most recent call last):\nRuntimeError: CUDA error'],
     ['a paging file error', 'OSError: [WinError 1455] The paging file is too small'],
     ['a different WinError with the same digits', 'OSError: [WinError 1260] blocked'],
+    ['a missing module with no dependency wording', "Could not find module 'foo'"],
     ['empty output', '']
   ])('ignores %s', (_name, output) => {
     expect(isDllLoadFailure(output)).toBe(false)
