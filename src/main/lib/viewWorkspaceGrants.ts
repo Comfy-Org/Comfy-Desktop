@@ -89,7 +89,7 @@ export class ViewWorkspaceGrants {
     return this.session.currentSubject() === held.subject ? held.token : null
   }
 
-  private seed(): void {
+  seed(): void {
     if (this.seeded) return
     this.seeded = true
     const current = this.session.currentWorkspaceId()
