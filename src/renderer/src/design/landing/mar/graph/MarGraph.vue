@@ -845,6 +845,9 @@ watch(
 // dialogs; Shortcuts as a panel along the bottom. ──
 type RailPanelId = '' | 'queue' | 'assets' | 'nodes' | 'models' | 'workflows' | 'apps'
 // A share link can open it on Media Assets (graphOpen.ts).
+// Assets › Open workflow lands on the panel, the asset selected, never on
+// the full Assets tab (even if it was left open on this build).
+if (graphOpen.select) Object.assign(assetsTab, { open: false, on: false })
 const panel = ref<RailPanelId>(graphOpen.assets ? 'assets' : '')
 graphOpen.assets = false
 // Assets › Open workflow on a build already open: back to Media Assets.
@@ -852,6 +855,7 @@ watch(
   () => graphOpen.assets,
   (on) => {
     if (!on) return
+    if (graphOpen.select) Object.assign(assetsTab, { open: false, on: false })
     panel.value = 'assets'
     graphOpen.assets = false
   }

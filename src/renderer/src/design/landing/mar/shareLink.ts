@@ -146,7 +146,7 @@ const PARTS: Part[] = [
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
   one('folders', folderDepth, 'few', FOLDER_DEPTHS),
-  one('fullAssets', fullAssets, 'tab', FULL_ASSETS),
+  one('fullAssets', fullAssets, 'home', FULL_ASSETS),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
   // After Graph look: Production sets it to Current.

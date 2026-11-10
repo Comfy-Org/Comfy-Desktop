@@ -83,8 +83,10 @@ DS's Motion page (`ds/motion.ts`).
   folder kept open; indent stops at the fourth level; a nested folder's
   title is a breadcrumb (top › … › parent). Desktop reaches folders from
   Filters › Folder.
-- **ComfyUI's full Assets** is a Playground choice (Full Assets): Tab grows
-  the panel into a tab (default); Home opens Desktop's Assets on that build.
+- **One Assets.** ComfyUI's panel expand opens Desktop's Assets on that
+  build (default); the tab is kept as Playground › Full Assets › Tab.
+  Open workflow lands on ComfyUI's panel with the asset selected, never
+  on the full Assets tab.
 
 ## Motion
 

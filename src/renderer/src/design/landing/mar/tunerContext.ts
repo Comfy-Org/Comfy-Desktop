@@ -219,7 +219,7 @@ export const TWEAKS = {
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
   folderDepth: one(folderDepth, 'few'),
-  fullAssets: one(fullAssets, 'tab'),
+  fullAssets: one(fullAssets, 'home'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
