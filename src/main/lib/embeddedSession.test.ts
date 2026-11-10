@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getGrantAccessToken: vi.fn<() => Promise<string | null>>(),
   mint: vi.fn(),
   current: 'ws-1',
+  generation: 0,
   entries: [] as unknown[]
 }))
 
@@ -18,7 +19,7 @@ vi.mock('../devplatform/session', () => ({
     getGrantAccessToken: mocks.getGrantAccessToken,
     currentWorkspaceId: () => mocks.current,
     currentSubject: () => (mocks.current ? 'user-1' : null),
-    currentAuthGeneration: () => 0,
+    currentAuthGeneration: () => mocks.generation,
     isWorkspaceMintAllowed: async () => true,
     endGrantFamily: () => {}
   })
@@ -146,8 +147,10 @@ describe('embeddedSession', () => {
 
   it('switches a signed-in view to the workspace it names and returns the new state', async () => {
     const { event } = view('http://127.0.0.1:8000')
-    const switchWorkspace = vi.fn(async () => {
-      mocks.current = 'ws-2'
+    const switchWorkspace = vi.fn(async (workspaceId: string) => {
+      mocks.generation += 1
+      mocks.current = workspaceId
+      return { signedIn: true, workspaceId }
     })
 
     await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
@@ -162,14 +165,44 @@ describe('embeddedSession', () => {
   it('releases the workspace a view switched to only to that view', async () => {
     const switcher = view('http://127.0.0.1:8000')
     const bystander = view('http://127.0.0.1:8001')
-    const switchWorkspace = vi.fn(async () => {
-      mocks.current = 'ws-2'
+    const switchWorkspace = vi.fn(async (workspaceId: string) => {
+      mocks.generation += 1
+      mocks.current = workspaceId
+      return { signedIn: true, workspaceId }
     })
 
     await switchWorkspaceForSender(switcher.event, 'ws-2', switchWorkspace)
 
     await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBe(mintedFor('ws-2'))
     await expect(workspaceTokenForSender(bystander.event, 'ws-2')).resolves.toBeNull()
+  })
+
+  it('does not let a view hold a workspace its switch failed to reach, even once the session is on it', async () => {
+    const switcher = view('http://127.0.0.1:8000')
+    const failingSwitch = vi.fn(async () => {
+      mocks.generation += 1
+      return { signedIn: true, workspaceId: 'ws-1' }
+    })
+
+    await switchWorkspaceForSender(switcher.event, 'ws-2', failingSwitch)
+    mocks.current = 'ws-2'
+
+    await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBeNull()
+  })
+
+  it('does not let a view hold a workspace when a newer switch superseded its own', async () => {
+    const switcher = view('http://127.0.0.1:8000')
+    const supersededSwitch = vi.fn(async () => {
+      mocks.generation += 1
+      await Promise.resolve()
+      mocks.generation += 1
+      mocks.current = 'ws-2'
+      return { signedIn: true, workspaceId: 'ws-2' }
+    })
+
+    await switchWorkspaceForSender(switcher.event, 'ws-2', supersededSwitch)
+
+    await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBeNull()
   })
 
   it.each([
@@ -180,7 +213,7 @@ describe('embeddedSession', () => {
   ])('does not switch for %s', async (_name, comfyUrl, workspaceId, token, expected) => {
     mocks.getGrantAccessToken.mockResolvedValue(token)
     const { event } = view(comfyUrl)
-    const switchWorkspace = vi.fn(async () => undefined)
+    const switchWorkspace = vi.fn(async () => ({ signedIn: true }))
 
     const state = await switchWorkspaceForSender(event, workspaceId, switchWorkspace)
 
@@ -192,7 +225,7 @@ describe('embeddedSession', () => {
   it('does not switch while the ops flag is off', async () => {
     mocks.enabled = false
     const { event } = view('http://127.0.0.1:8000')
-    const switchWorkspace = vi.fn(async () => undefined)
+    const switchWorkspace = vi.fn(async () => ({ signedIn: true }))
 
     await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
       status: 'disabled'

@@ -105,7 +105,7 @@ export class ViewWorkspaceGrants {
     return fence.epoch === this.epoch && fence.generation === this.session.currentAuthGeneration()
   }
 
-  private seed(): void {
+  seed(): void {
     if (this.seeded) return
     this.seeded = true
     const current = this.session.currentWorkspaceId()
