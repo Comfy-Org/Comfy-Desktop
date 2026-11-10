@@ -116,7 +116,7 @@ function play(e: MouseEvent, on: boolean): void {
 .mar-ex-tile-kind {
   position: absolute;
   z-index: 1;
-  top: 8px;
+  bottom: 8px;
   left: 8px;
   display: inline-flex;
   height: 22px;
@@ -131,6 +131,11 @@ function play(e: MouseEvent, on: boolean): void {
   font-size: 11.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+  transition: opacity 200ms ease;
+}
+/* Bottom left, as on Assets' cards; the hover's title takes that corner. */
+.mar-ex-tile:is(:hover, :focus-visible) .mar-ex-tile-kind {
+  opacity: 0;
 }
 /* Slim, like a caption: the picture leads. */
 .mar-ex-tile-kind.is-icon {
