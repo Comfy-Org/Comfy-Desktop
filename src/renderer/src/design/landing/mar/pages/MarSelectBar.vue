@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
 import { X } from 'lucide-vue-next'
 import type { MenuAction } from './menu'
 import MarItemMenu from './MarItemMenu.vue'
@@ -18,13 +20,36 @@ const {
   more?: MenuAction[]
 }>()
 const emit = defineEmits<{ clear: []; all: [] }>()
+
+/** Centered on the page's own column (MarPage), not the window, so it
+ *  never slides under the sidebar and sits over the grid in ComfyUI's
+ *  tab too. Off a page, the window's middle. */
+const bar = ref<HTMLElement>()
+const mid = ref<number | null>(null)
+let column: HTMLElement | null = null
+const watcher = new ResizeObserver(() => place())
+function place(): void {
+  if (!column) return void (mid.value = null)
+  const r = column.getBoundingClientRect()
+  mid.value = Math.round(r.left + r.width / 2)
+}
+watch(bar, (el) => {
+  watcher.disconnect()
+  column = el?.parentElement?.closest<HTMLElement>('.mar-page') ?? null
+  if (column) watcher.observe(column)
+  place()
+})
+useEventListener(window, 'resize', place)
+onBeforeUnmount(() => watcher.disconnect())
 </script>
 
 <template>
   <Transition name="mar-selbar">
     <div
       v-if="n > 0"
+      ref="bar"
       class="mar-selbar"
+      :style="mid !== null ? { left: `${mid}px` } : undefined"
       role="toolbar"
       :aria-label="`${n} selected`"
       @keydown.esc="emit('clear')"

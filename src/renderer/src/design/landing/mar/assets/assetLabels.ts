@@ -57,3 +57,17 @@ export function addLabel(name: string): LabelDef | undefined {
   LABELS.push(def)
   return def
 }
+
+/** No label: takes the label off every one. */
+export function clearLabel(ids: string[]): void {
+  for (const id of ids) delete set[id]
+}
+
+/** Custom order: a label dragged to another's place in the sidebar. */
+export function moveLabel(from: string, to: string): void {
+  const i = LABELS.findIndex((x) => x.value === from)
+  const j = LABELS.findIndex((x) => x.value === to)
+  if (i < 0 || j < 0 || i === j) return
+  const [def] = LABELS.splice(i, 1)
+  LABELS.splice(j, 0, def!)
+}

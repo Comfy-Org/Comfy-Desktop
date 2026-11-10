@@ -8,12 +8,23 @@ import type { MenuAction, MenuLine } from './menu'
 /**
  * The wiring every library page in Mar's proposal shares: selection
  * (with ⌘A, Delete and Esc), rename in place, and Move to project.
- * `select: false` (Builds) leaves selection and its keys out.
+ * `select: false` (Builds) leaves selection and its keys out. A page can
+ * add ⌘C (`copy`) and the digit keys (`digit`, 0 to 9) for its selection.
  */
 export function useLibrary<T extends Base>(
   col: ReturnType<typeof collection<T>>,
   shown: ComputedRef<T[]>,
-  { select = true }: { select?: boolean } = {}
+  {
+    select = true,
+    copy,
+    digit
+  }: {
+    select?: boolean
+    /** ⌘C / Ctrl+C with something selected. */
+    copy?: (ids: string[]) => void
+    /** A digit key, no modifiers, with something selected (Assets: labels). */
+    digit?: (n: number, ids: string[]) => void
+  } = {}
 ) {
   const sel = selection()
   const renaming = ref('')
@@ -71,6 +82,25 @@ export function useLibrary<T extends Base>(
     } else if ((e.key === 'Backspace' || e.key === 'Delete') && sel.ids.value.size) {
       e.preventDefault()
       removeSelected()
+    } else if (
+      copy &&
+      (e.metaKey || e.ctrlKey) &&
+      e.key.toLowerCase() === 'c' &&
+      sel.ids.value.size &&
+      !window.getSelection()?.toString()
+    ) {
+      e.preventDefault()
+      copy(selected.value)
+    } else if (
+      digit &&
+      /^[0-9]$/.test(e.key) &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      sel.ids.value.size
+    ) {
+      e.preventDefault()
+      digit(Number(e.key), selected.value)
     }
   }
   if (select) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, ref, watch, type FunctionalComponent } from 'vue'
+import { computed, h, onBeforeUnmount, ref, watch, type FunctionalComponent } from 'vue'
 import { useElementSize, useEventListener } from '@vueuse/core'
 import {
   Box,
@@ -22,6 +22,7 @@ import {
   Minimize2,
   MoreHorizontal,
   Palette,
+  Pause,
   PanelRight,
   Play,
   Search,
@@ -61,6 +62,8 @@ import { graphLibrary } from '../graph/comfyLook'
 import {
   LABELS,
   addLabel,
+  clearLabel,
+  moveLabel,
   labelColor,
   labelName,
   labelOf,
@@ -77,8 +80,9 @@ import {
   tree,
   within
 } from '../assets/assetFolders'
-import { allTagged, flipTag, tagsOf } from '../assets/assetTags'
+import { allTagged, deleteTag, flipTag, renameTag, tagsOf } from '../assets/assetTags'
 import { isStarred, toggleStar } from '../assets/assetFavorites'
+import { GROUPS, groupAssets } from '../assets/assetGroups'
 import { assetView } from '../assets/assetView'
 import BulkTagMenu from '../graph/BulkTagMenu.vue'
 import Tooltip from '../../ui/Tooltip.vue'
@@ -262,7 +266,9 @@ const scopeEmpty = computed(() => {
     return {
       icon: Tag,
       title: `No assets tagged ${filter.value.tags.join(', ')} yet`,
-      text: 'Use Add tags from an asset’s menu, or Tag in the selection bar.'
+      text: inGraph
+        ? 'Use Add tags from an asset’s menu, or Tag in the selection bar.'
+        : 'Tags are added in ComfyUI’s Assets tab.'
     }
   if (favOnly.value)
     return {
@@ -292,7 +298,118 @@ function clear(): void {
   query.value = ''
 }
 
-const lib = useLibrary(store, shown)
+/** Copy: the menu's and ⌘C's, for one file or the selection. */
+function copyAssets(ids: string[]): void {
+  if (ids.length) toast('Copied to the clipboard')
+}
+/** Label keys on the selection: 1 to 6 the first six colors, 0 none. */
+function labelKey(n: number, ids: string[]): void {
+  if (n === 0) clearLabel(ids)
+  else if (n <= 6 && LABELS[n - 1]) setLabel(ids, LABELS[n - 1]!.value)
+}
+/** The filters on, one chip each under the toolbar (only while any is
+ *  on): its × lets just that one go; Clear filters ends the row. */
+const TYPE_NAMES: Record<string, string> = {
+  image: 'Images',
+  video: 'Videos',
+  '3d': '3D',
+  audio: 'Audio',
+  text: 'Text',
+  other: 'Other'
+}
+const stem = (x: string): string => x.replace(/\.(safetensors|ckpt|pt|pth|bin|gguf|json)$/i, '')
+const dayName = (d: string): string => {
+  const [y, m, n] = d.split('-').map(Number)
+  return new Date(y!, m! - 1, n!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+interface Chip {
+  key: string
+  label: string
+  icon?: FunctionalComponent | typeof Tag
+  remove: () => void
+}
+const without = <K extends 'types' | 'tags' | 'labels' | 'models' | 'loras' | 'workflows'>(
+  k: K,
+  v: string
+): void => {
+  filter.value = { ...filter.value, [k]: (filter.value[k] as string[]).filter((x) => x !== v) }
+}
+const CHIPS = computed<Chip[]>(() => {
+  const f = filter.value
+  const out: Chip[] = []
+  if (f.source !== 'all')
+    out.push({
+      key: 'source',
+      label: f.source === 'generated' ? 'Generated' : 'Imported',
+      icon: f.source === 'generated' ? Sparkles : ArrowDownToLine,
+      remove: () => (filter.value = { ...filter.value, source: 'all' })
+    })
+  for (const t of f.types)
+    out.push({ key: `type-${t}`, label: TYPE_NAMES[t] ?? t, remove: () => without('types', t) })
+  if (f.from || f.to)
+    out.push({
+      key: 'date',
+      label:
+        f.from && f.to
+          ? f.from === f.to
+            ? dayName(f.from)
+            : `${dayName(f.from)} to ${dayName(f.to)}`
+          : f.from
+            ? `From ${dayName(f.from)}`
+            : `Until ${dayName(f.to)}`,
+      remove: () => (filter.value = { ...filter.value, from: '', to: '' })
+    })
+  for (const t of f.tags)
+    out.push({ key: `tag-${t}`, label: t, icon: Tag, remove: () => without('tags', t) })
+  for (const l of f.labels)
+    out.push({
+      key: `label-${l}`,
+      label: labelName(l) ?? l,
+      icon: dotOf(labelColor(l) ?? 'transparent'),
+      remove: () => without('labels', l)
+    })
+  for (const m of f.models)
+    out.push({ key: `model-${m}`, label: `Model: ${stem(m)}`, remove: () => without('models', m) })
+  for (const m of f.loras)
+    out.push({ key: `lora-${m}`, label: `LoRA: ${stem(m)}`, remove: () => without('loras', m) })
+  for (const w of f.workflows)
+    out.push({
+      key: `flow-${w}`,
+      label: `Workflow: ${stem(w)}`,
+      remove: () => without('workflows', w)
+    })
+  return out
+})
+function clearFilters(): void {
+  filter.value = noFilter()
+}
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+// ⌘⌫ / Ctrl+Backspace clears every filter, ahead of the selection's own
+// Backspace (useLibrary), unless you're typing.
+useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+  if (e.key !== 'Backspace' || !(e.metaKey || e.ctrlKey) || !CHIPS.value.length) return
+  const t = e.target as HTMLElement | null
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+  clearFilters()
+})
+
+/** The title reads the view in ComfyUI's tab: the folder, label, Favorites
+ *  or tags picked in its sidebar, else where files came from, else All.
+ *  Desktop's big title stays Assets. */
+const title = computed(() => {
+  if (!inGraph) return 'Assets'
+  if (folder.value) return folderName(folder.value) ?? 'Assets'
+  if (label.value) return labelName(label.value) ?? 'Assets'
+  if (favOnly.value) return 'Favorites'
+  if (filter.value.tags.length) return filter.value.tags.join(', ')
+  if (filter.value.source !== 'all')
+    return filter.value.source === 'generated' ? 'Generated' : 'Imported'
+  return 'All'
+})
+
+const lib = useLibrary(store, shown, { copy: copyAssets, digit: labelKey })
 
 /** The tab's sidebar (Alex Tov's media-assets proto): where files came
  *  from, then tags and color labels, each with how many it holds. Every
@@ -332,8 +449,27 @@ const LABEL_ROWS = computed(() => {
     ...l,
     count: done.value.filter((a) => labelOf(a.id) === l.value).length
   }))
-  return assetView.labelSort === 'color' ? rows.sort((a, b) => a.hue - b.hue) : rows
+  return labelSort.value === 'color'
+    ? rows.sort((a, b) => a.hue - b.hue)
+    : labelSort.value === 'name'
+      ? rows.sort((a, b) => a.label.localeCompare(b.label))
+      : rows
 })
+/** LABELS' order, Name (A → Z) beside Custom order and Color. assetView
+ *  types it as custom or color; it keeps any string. */
+type LabelSort = 'custom' | 'color' | 'name'
+const labelSort = computed<LabelSort>({
+  get: () => assetView.labelSort,
+  set: (v) => (assetView.labelSort = v)
+})
+/** Custom order: a label row dragged onto another takes its place. */
+const labelDrag = ref('')
+const labelOver = ref('')
+function dropLabel(on: string): void {
+  if (labelDrag.value) moveLabel(labelDrag.value, on)
+  labelDrag.value = ''
+  labelOver.value = ''
+}
 const tagMenu = ref(false)
 const labelMenu = ref(false)
 const TAG_SORT_LINES = computed<MenuLine[]>(() => [
@@ -361,13 +497,18 @@ const LABEL_SORT_LINES = computed<MenuLine[]>(() => [
     sub: [
       {
         label: 'Custom order',
-        checked: assetView.labelSort === 'custom',
-        run: () => (assetView.labelSort = 'custom')
+        checked: labelSort.value === 'custom',
+        run: () => (labelSort.value = 'custom')
+      },
+      {
+        label: 'Name (A → Z)',
+        checked: labelSort.value === 'name',
+        run: () => (labelSort.value = 'name')
       },
       {
         label: 'Color',
-        checked: assetView.labelSort === 'color',
-        run: () => (assetView.labelSort = 'color')
+        checked: labelSort.value === 'color',
+        run: () => (labelSort.value = 'color')
       }
     ]
   },
@@ -406,17 +547,29 @@ const dotOf =
   (color: string): FunctionalComponent =>
   () =>
     h('i', { class: 'mar-anav-dot', style: { background: color } })
+/** No label's icon: an empty ring where the color would be. */
+const noDot: FunctionalComponent = () => h('i', { class: 'mar-anav-dot is-none' })
 /** Label ›, for one file or the selection; Label as › in its menu. */
 function labelLine(ids: () => string[], name = 'Label'): MenuAction {
   return {
     label: name,
     icon: Palette,
-    sub: LABELS.map((l) => ({
-      label: l.label,
-      icon: dotOf(l.color),
-      checked: ids().length > 0 && ids().every((id) => labelOf(id) === l.value),
-      run: () => setLabel(ids(), l.value)
-    }))
+    sub: [
+      {
+        label: 'No label',
+        icon: noDot,
+        hint: '0',
+        checked: ids().length > 0 && ids().every((id) => !labelOf(id)),
+        run: () => clearLabel(ids())
+      },
+      ...LABELS.map((l, i) => ({
+        label: l.label,
+        icon: dotOf(l.color),
+        hint: i < 6 ? String(i + 1) : undefined,
+        checked: ids().length > 0 && ids().every((id) => labelOf(id) === l.value),
+        run: () => setLabel(ids(), l.value)
+      }))
+    ]
   }
 }
 /** Folders beside tags (Better Asset Management): each row counts what
@@ -430,7 +583,11 @@ const FOLDER_ROWS = computed(() =>
 /** A new folder, or a renamed one, is typed in place in the sidebar. */
 const naming = ref<{ id?: string; parent?: string; name: string } | null>(null)
 const vFocus = {
-  mounted: (el: HTMLInputElement) => requestAnimationFrame(() => (el.focus(), el.select()))
+  mounted: (el: HTMLElement) =>
+    requestAnimationFrame(() => {
+      el.focus()
+      if (el instanceof HTMLInputElement) el.select()
+    })
 }
 function startNaming(n: { id?: string; parent?: string; name: string }): void {
   naming.value = n
@@ -441,6 +598,50 @@ function endNaming(keep: boolean): void {
   if (!n || !keep) return
   if (n.id) renameFolder(n.id, n.name)
   else if (n.name.trim()) folder.value = addFolder(n.name, n.parent).id
+}
+/** A tag's ⋯ and right-click in ComfyUI's sidebar: Rename tag, typed in
+ *  place, and Delete tag, asked first in place. Both reach every file. */
+const tagRowMenu = ref('')
+const tagNaming = ref<{ from: string; name: string } | null>(null)
+const tagDeleting = ref('')
+function tagLines(tag: string): MenuLine[] {
+  return [
+    {
+      label: 'Rename tag',
+      icon: Pencil,
+      run: () => {
+        tagDeleting.value = ''
+        tagNaming.value = { from: tag, name: tag }
+      }
+    },
+    'sep',
+    {
+      label: 'Delete tag',
+      icon: Trash2,
+      danger: true,
+      run: () => {
+        tagNaming.value = null
+        tagDeleting.value = tag
+      }
+    }
+  ]
+}
+function endTagNaming(keep: boolean): void {
+  const n = tagNaming.value
+  tagNaming.value = null
+  if (!n || !keep) return
+  const to = renameTag(store.items, n.from, n.name)
+  if (to && filter.value.tags.includes(n.from))
+    filter.value = {
+      ...filter.value,
+      tags: [...new Set(filter.value.tags.map((x) => (x === n.from ? to : x)))]
+    }
+}
+function dropTag(tag: string): void {
+  tagDeleting.value = ''
+  deleteTag(store.items, tag)
+  if (filter.value.tags.includes(tag))
+    filter.value = { ...filter.value, tags: filter.value.tags.filter((x) => x !== tag) }
 }
 const folderMenu = ref('')
 function folderLines(id: string): MenuLine[] {
@@ -540,28 +741,8 @@ function pack(items: MarAsset[]): { items: MarAsset[] }[] {
 const ROW = [0, 150, 200, 280]
 const ratioOf = (a: MarAsset): string =>
   assetView.wall === 'grid' ? '4 / 3' : String(factsFor(a).ratio)
-/** Group by job: what one run made sits together. The mock keeps no job
- *  ids, so a job is the workflow a run came from and the day it ran;
- *  imports are one group of their own. */
-function jobOf(a: MarAsset): { key: string; title: string } {
-  const f = factsFor(a)
-  if (f.imported) return { key: 'imported', title: 'Imported' }
-  const flow = (f.workflowName ?? a.name)
-    .replace(/\.[^.]+$/, '')
-    .replace(/_\d+$/, '')
-    .replace(/[_-]+/g, ' ')
-  return { key: `${flow}|${a.when}|${a.envId ?? ''}`, title: `${flow} · ${a.when}` }
-}
 const sections = computed(() => {
-  const groups: { key: string; title: string; items: MarAsset[] }[] = []
-  if (assetView.group !== 'job') groups.push({ key: 'all', title: '', items: shown.value })
-  else
-    for (const a of shown.value) {
-      const j = jobOf(a)
-      const g = groups.find((x) => x.key === j.key)
-      if (g) g.items.push(a)
-      else groups.push({ ...j, items: [a] })
-    }
+  const groups = groupAssets(shown.value, assetView.group)
   return groups.map((g) => ({
     ...g,
     cols: assetView.wall === 'masonry' ? pack(g.items) : [{ items: g.items }]
@@ -595,12 +776,100 @@ const iconOf = (a: MarAsset) =>
 const picOf = (a: MarAsset): string | undefined =>
   a.src ?? (a.thumbId ? thumb(a.thumbId) : undefined)
 
-// Refresh re-reads the build: a beat of the spinner, nothing else moves.
-const refreshing = ref(false)
-function refresh(): void {
-  refreshing.value = true
-  setTimeout(() => (refreshing.value = false), 700)
+/** Play on a card (video and audio, on hover): the clip plays in place,
+ *  muted and looping; a sound plays out loud. One at a time; a click on
+ *  the card still opens it. The mock's videos borrow the stock clips
+ *  (assets/examples/gv-*.mp4), matched by what's in the name, else by a
+ *  hash so each card keeps its own. The mock has no sound files, so a
+ *  sound plays a soft synthesized loop. */
+const CLIPS = import.meta.glob<string>('../assets/examples/gv-*.mp4', {
+  eager: true,
+  import: 'default'
+})
+const CLIP_LIST = Object.keys(CLIPS)
+  .sort()
+  .map((k) => CLIPS[k]!)
+const CLIP_BY_WORD: [RegExp, string][] = [
+  [/desert|dune|drone/, 'dunes'],
+  [/smoke|dancer/, 'smoke'],
+  [/surf|wave|lighthouse|storm|sea/, 'waves'],
+  [/lake|fjord|terrace/, 'lake'],
+  [/horse/, 'horse'],
+  [/fire|wok|barrel/, 'barrel']
+]
+function clipOf(a: MarAsset): string | undefined {
+  const name = a.name.toLowerCase()
+  const word = CLIP_BY_WORD.find(([re]) => re.test(name))?.[1]
+  const hit = word && CLIPS[`../assets/examples/gv-${word}.mp4`]
+  if (hit) return hit
+  const n = [...a.name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)
+  return CLIP_LIST[n % CLIP_LIST.length]
 }
+const playing = ref('')
+let sound: { ctx: AudioContext; stop: () => void } | null = null
+function stopSound(): void {
+  sound?.stop()
+  sound = null
+}
+function playSound(a: MarAsset): void {
+  const ctx = new AudioContext()
+  // Rain for a loop of ambience, a low hum for anything else.
+  const len = ctx.sampleRate * 2
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate)
+  const data = buf.getChannelData(0)
+  const rain = /rain|ambien|loop/i.test(a.name)
+  for (let i = 0; i < len; i++)
+    data[i] = rain
+      ? (Math.random() * 2 - 1) * 0.5
+      : Math.sin((i / ctx.sampleRate) * 2 * Math.PI * 196) *
+        0.35 *
+        (0.6 + 0.4 * Math.sin((i / len) * 2 * Math.PI))
+  const src = ctx.createBufferSource()
+  src.buffer = buf
+  src.loop = true
+  const lp = ctx.createBiquadFilter()
+  lp.type = 'lowpass'
+  lp.frequency.value = rain ? 1800 : 900
+  const vol = ctx.createGain()
+  vol.gain.value = 0.12
+  src.connect(lp).connect(vol).connect(ctx.destination)
+  src.start()
+  sound = { ctx, stop: () => (src.stop(), void ctx.close()) }
+}
+function togglePlay(a: MarAsset): void {
+  stopSound()
+  if (playing.value === a.id) return void (playing.value = '')
+  playing.value = a.id
+  if (a.type === 'audio') playSound(a)
+}
+const playable = (a: MarAsset): boolean =>
+  !a.status && (a.type === 'audio' || (a.type === 'video' && !!clipOf(a)))
+// Gone from the wall, or the page left: it stops.
+watch(shown, (list) => {
+  if (playing.value && !list.some((a) => a.id === playing.value)) {
+    playing.value = ''
+    stopSound()
+  }
+})
+onBeforeUnmount(stopSound)
+
+/** Refresh re-reads the build, and reads as a reload: the button spins,
+ *  the cards dim to a soft pulse in their own shapes, then come back with
+ *  a short stagger (none with reduced motion). */
+const refreshing = ref(false)
+const reload = ref<'' | 'pulse' | 'back'>('')
+function refresh(): void {
+  if (refreshing.value) return
+  refreshing.value = true
+  reload.value = 'pulse'
+  setTimeout(() => {
+    refreshing.value = false
+    reload.value = 'back'
+    setTimeout(() => reload.value === 'back' && (reload.value = ''), 700)
+  }, 700)
+}
+/** Each card's place on the wall, for the stagger. */
+const place = computed(() => new Map(shown.value.map((a, i) => [a.id, i])))
 
 /** Upload: into the picked build's inputs, through that build. Only a
  *  local build that's running takes files; nothing starts on its own. */
@@ -622,10 +891,8 @@ const uploadTitle = computed(() =>
           : `Start ${current.value?.name} to add files`
 )
 const picker = ref<HTMLInputElement>()
-const dropping = ref(false)
 let uploads = 0
 function upload(files: FileList | null | undefined): void {
-  dropping.value = false
   if (!files?.length || !uploadable.value) return
   const added = [...files].map((file) => {
     const n = ++uploads
@@ -667,10 +934,6 @@ function upload(files: FileList | null | undefined): void {
     toast(`${n} file${n === 1 ? '' : 's'} added${hidden ? `, ${hidden} hidden by filters` : ''}`)
   }, 1200)
 }
-useEventListener(window, 'dragenter', (e: DragEvent) => {
-  if (e.dataTransfer?.types.includes('Files')) dropping.value = true
-})
-useEventListener(window, 'dragend', () => (dropping.value = false))
 function pick(): void {
   if (uploadable.value) picker.value?.click()
 }
@@ -732,14 +995,16 @@ function lines(a: MarAsset): MenuLine[] {
     ]
   return [
     // A click opens it and Download sits on the card, so neither is here.
-    { label: 'Show details', icon: PanelRight, run: () => (detail.value = a) },
+    { label: 'Inspect asset', icon: PanelRight, run: () => (detail.value = a) },
     labelLine(() => [a.id], 'Label as'),
-    tagLine(() => [a]),
+    // Tags are read-only in Desktop: ComfyUI is where they're edited.
+    ...(inGraph ? [tagLine(() => [a])] : []),
     'sep',
     ...(a.source === 'cloud'
       ? []
       : [{ label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${a.name}`) }]),
-    insertLine(a),
+    // Desktop has no workflow open to insert into.
+    ...(inGraph ? [insertLine(a)] : []),
     // Only when the file kept its workflow: an import or a sound has none.
     ...(factsFor(a).workflow === 'available'
       ? [
@@ -748,7 +1013,7 @@ function lines(a: MarAsset): MenuLine[] {
         ]
       : []),
     ...(inGraph ? [folderLine(() => [a.id])] : []),
-    { label: 'Copy', icon: Copy, hint: '⌘C', run: () => toast('Copied to the clipboard') },
+    { label: 'Copy', icon: Copy, hint: '⌘C', run: () => copyAssets([a.id]) },
     // Projects are Desktop's; in ComfyUI a file takes a color label.
     ...(inGraph ? [] : [lib.moveLine(() => [a.id], a.project)]),
     'sep',
@@ -887,7 +1152,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 
 <template>
   <MarPage
-    title="Assets"
+    :title="title"
     skeleton="grid"
     :no-results="browsable && shown.length === 0 && searchOn"
     :embedded="!!fixedProject"
@@ -914,7 +1179,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     @second="pick()"
     @clear="clear"
   >
-    <template v-if="browsable" #meta>
+    <template v-if="browsable && inGraph" #meta>
       <!-- What the wall shows now; Select all lives in the selection bar. -->
       <span class="mar-anav-total"
         >{{ shown.length }} {{ shown.length === 1 ? 'asset' : 'assets' }}</span
@@ -972,16 +1237,17 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             "
           />
           <Select v-if="fixedProject" v-model="where" :options="WHERE" class="w-36" />
-          <button
-            v-if="!fixedProject && !inGraph"
-            type="button"
-            class="mar-asset-refresh"
-            aria-label="Refresh"
-            title="Refresh"
-            @click="refresh"
-          >
-            <RefreshCw :size="14" :class="refreshing && 'animate-spin'" />
-          </button>
+          <Tooltip v-if="!fixedProject && !inGraph" content="Refresh" side="bottom">
+            <button
+              type="button"
+              class="mar-asset-refresh"
+              aria-label="Refresh"
+              :disabled="refreshing"
+              @click="refresh"
+            >
+              <RefreshCw :size="14" :class="refreshing && 'animate-spin'" />
+            </button>
+          </Tooltip>
           <AssetFilterMenu
             v-model="filter"
             field
@@ -1005,12 +1271,34 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             v-model:show-name="showName"
             v-model:show-details="showDetails"
             v-model:show-labels="assetView.labels"
-            :by-job="assetView.group === 'job'"
+            v-model:group="assetView.group"
             :sorts="SORTS"
+            :groups="GROUPS"
             :views="['masonry', 'rows', 'grid']"
-            @update:by-job="assetView.group = $event ? 'job' : 'none'"
           />
         </div>
+      </div>
+      <div v-if="browsable && CHIPS.length" class="mar-asset-chips" aria-label="Active filters">
+        <span v-if="!inGraph" class="mar-asset-chips-n"
+          >{{ shown.length }} of {{ base.length }}</span
+        >
+        <span v-for="c in CHIPS" :key="c.key" class="mar-asset-chip">
+          <component :is="c.icon" v-if="c.icon" :size="12" />
+          <span class="mar-asset-chip-name">{{ c.label }}</span>
+          <Tooltip :content="`Remove ${c.label}`" side="bottom">
+            <button
+              type="button"
+              class="mar-asset-chip-x"
+              :aria-label="`Remove ${c.label}`"
+              @click="c.remove()"
+            >
+              <X :size="12" />
+            </button>
+          </Tooltip>
+        </span>
+        <button type="button" class="mar-asset-chips-clear" @click="clearFilters">
+          Clear filters<kbd class="mar-menu-hint">{{ MOD }}⌫</kbd>
+        </button>
       </div>
     </template>
 
@@ -1035,17 +1323,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       compact
       @action="startBuild(current.id)"
     />
-    <div
-      v-else-if="dropping"
-      class="mar-asset-drop"
-      @dragleave.self="dropping = false"
-      @dragover.prevent
-      @drop.prevent="upload($event.dataTransfer?.files)"
-    >
-      <Upload :size="20" />{{
-        uploadable ? `Add to ${current?.name ?? fixedProject} inputs` : uploadTitle
-      }}
-    </div>
     <MarEmpty
       v-else-if="scopeEmpty"
       :icon="scopeEmpty.icon"
@@ -1060,7 +1337,13 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         <ContextMenuTrigger as-child>
           <div
             ref="wall"
-            :class="['mar-asset-sections', !showName && 'no-name', !showDetails && 'no-details']"
+            :class="[
+              'mar-asset-sections',
+              !showName && 'no-name',
+              !showDetails && 'no-details',
+              reload && `is-${reload}`
+            ]"
+            :aria-busy="reload === 'pulse' || undefined"
           >
             <section v-for="g in sections" :key="g.key" class="mar-asset-job">
               <p v-if="g.title" class="mar-asset-job-head">
@@ -1094,7 +1377,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                     v-for="a in col.items"
                     :key="a.id"
                     :data-asset="a.id"
-                    :style="assetView.wall === 'rows' ? { '--r': factsFor(a).ratio } : undefined"
+                    :style="{
+                      '--i': Math.min(place.get(a.id) ?? 0, 16),
+                      ...(assetView.wall === 'rows' ? { '--r': factsFor(a).ratio } : {})
+                    }"
                     :name="a.name"
                     :thumb="picOf(a)"
                     :icon="iconOf(a)"
@@ -1141,6 +1427,32 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                       </button>
                     </template>
                     <template #overlay>
+                      <video
+                        v-if="playing === a.id && a.type === 'video'"
+                        class="mar-asset-clip"
+                        :src="clipOf(a)"
+                        autoplay
+                        muted
+                        loop
+                        playsinline
+                      />
+                      <Tooltip
+                        v-if="playable(a)"
+                        :content="playing === a.id ? 'Pause' : 'Play'"
+                        side="bottom"
+                      >
+                        <button
+                          type="button"
+                          class="mar-asset-play"
+                          :class="playing === a.id && 'is-on'"
+                          :aria-label="playing === a.id ? `Pause ${a.name}` : `Play ${a.name}`"
+                          :aria-pressed="playing === a.id"
+                          @click.stop="togglePlay(a)"
+                        >
+                          <Pause v-if="playing === a.id" :size="16" fill="currentColor" />
+                          <Play v-else :size="16" fill="currentColor" />
+                        </button>
+                      </Tooltip>
                       <span v-if="a.status === 'running'" class="mar-asset-progress"
                         ><i style="width: 62%"
                       /></span>
@@ -1203,7 +1515,13 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                     >
                       <component :is="x.icon" v-if="x.icon" :size="15" />
                       <span class="flex-1 truncate">{{ x.label }}</span>
-                      <Check v-if="x.checked" :size="14" />
+                      <template v-if="x.hint">
+                        <kbd class="mar-menu-hint">{{ x.hint }}</kbd>
+                        <span class="mar-asset-menu-check"
+                          ><Check v-if="x.checked" :size="14"
+                        /></span>
+                      </template>
+                      <Check v-else-if="x.checked" :size="14" />
                     </ContextMenuItem>
                   </ContextMenuSubContent>
                 </ContextMenuPortal>
@@ -1238,7 +1556,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             lib.sel.clear()
           )
         },
-        { label: 'Tag', icon: Tag, run: () => (tagging = !tagging) },
+        ...(inGraph ? [{ label: 'Tag', icon: Tag, run: () => (tagging = !tagging) }] : []),
         labelLine(() => lib.selected.value),
         ...(inGraph
           ? [folderLine(() => lib.selected.value)]
@@ -1402,18 +1720,58 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             </Tooltip>
           </span>
         </div>
-        <button
-          v-for="t in TAG_ROWS"
-          :key="t.tag"
-          type="button"
-          class="mar-anav-row is-sub"
-          :class="filter.tags.includes(t.tag) && 'is-on'"
-          :aria-pressed="filter.tags.includes(t.tag)"
-          @click="toggleTag(t.tag)"
-        >
-          <span class="mar-anav-name">{{ t.tag }}</span
-          ><span class="mar-anav-n">{{ t.count }}</span>
-        </button>
+        <template v-for="t in TAG_ROWS" :key="t.tag">
+          <div v-if="tagNaming?.from === t.tag" class="mar-anav-naming">
+            <Tag :size="15" /><input
+              v-model="tagNaming.name"
+              v-focus
+              aria-label="Tag name"
+              @keydown.enter="endTagNaming(true)"
+              @keydown.esc="endTagNaming(false)"
+              @blur="endTagNaming(true)"
+            />
+          </div>
+          <!-- Delete tag asks first, in place: the row becomes the question. -->
+          <div
+            v-else-if="tagDeleting === t.tag"
+            class="mar-anav-confirm"
+            role="alertdialog"
+            :aria-label="`Delete tag ${t.tag}`"
+            @keydown.esc="tagDeleting = ''"
+          >
+            <p class="mar-anav-confirm-text">
+              Remove “{{ t.tag }}” from {{ t.count === 1 ? '1 asset' : `${t.count} assets` }}?
+            </p>
+            <span class="mar-anav-confirm-actions">
+              <button v-focus type="button" class="mar-anav-confirm-btn" @click="tagDeleting = ''">
+                Cancel
+              </button>
+              <button type="button" class="mar-anav-confirm-btn is-danger" @click="dropTag(t.tag)">
+                Delete tag
+              </button>
+            </span>
+          </div>
+          <div v-else class="mar-anav-folder" @contextmenu.prevent="tagRowMenu = t.tag">
+            <button
+              type="button"
+              class="mar-anav-row is-sub"
+              :class="filter.tags.includes(t.tag) && 'is-on'"
+              :aria-pressed="filter.tags.includes(t.tag)"
+              @click="toggleTag(t.tag)"
+            >
+              <span class="mar-anav-name">{{ t.tag }}</span
+              ><span class="mar-anav-n">{{ t.count }}</span>
+            </button>
+            <span class="mar-anav-folder-tools">
+              <MarItemMenu
+                :open="tagRowMenu === t.tag"
+                :lines="tagLines(t.tag)"
+                label="Tag actions"
+                @update:open="tagRowMenu = $event ? t.tag : ''"
+              />
+            </span>
+          </div>
+        </template>
       </template>
       <div class="mar-anav-head">
         <p class="mar-anav-label">Labels</p>
@@ -1444,9 +1802,18 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         :key="l.value"
         type="button"
         class="mar-anav-row is-sub"
-        :class="label === l.value && 'is-on'"
+        :class="[
+          label === l.value && 'is-on',
+          labelOver === l.value && labelDrag !== l.value && 'is-drop'
+        ]"
         :aria-pressed="label === l.value"
+        :draggable="labelSort === 'custom'"
         @click="label = label === l.value ? '' : l.value"
+        @dragstart="labelDrag = l.value"
+        @dragover.prevent="labelDrag && (labelOver = l.value)"
+        @dragleave="labelOver === l.value && (labelOver = '')"
+        @drop.prevent="dropLabel(l.value)"
+        @dragend="((labelDrag = ''), (labelOver = ''))"
       >
         <i class="mar-anav-dot" :style="{ background: l.color }" /><span class="mar-anav-name">{{
           l.label
@@ -1527,18 +1894,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   :root .proto-ui.proto-ui.proto-ui .mar-asset-kind {
     display: flex;
   }
-}
-.mar-asset-drop {
-  display: flex;
-  min-height: 320px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 1.5px dashed color-mix(in oklch, var(--color-base-foreground) 24%, transparent);
-  border-radius: 14px;
-  color: var(--color-muted-foreground);
-  font-size: 14px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-asset-refresh {
   display: inline-flex;
@@ -1877,5 +2232,216 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   height: 100%;
   background: rgb(255 255 255 / 0.9);
   transition: width 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* Label as › No label: an empty ring where the color would be. */
+.mar-anav-dot.is-none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  opacity: 0.6;
+}
+/* A submenu line with a key: the key, then the check's own place, so
+   the keys line up whether a line is checked or not. */
+.mar-asset-menu-check {
+  display: inline-flex;
+  width: 14px;
+  justify-content: center;
+}
+/* A label row dragged onto another (Custom order). */
+:root .proto-ui.proto-ui.proto-ui .mar-anav-row.is-drop {
+  background: color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+  color: var(--color-base-foreground);
+}
+/* Delete tag, asked in place of the row. */
+.mar-anav-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0;
+  padding: 10px;
+  border-radius: var(--radius-control);
+  background: var(--color-secondary-background);
+}
+.mar-anav-confirm-text {
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.mar-anav-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn.is-danger {
+  background: color-mix(in oklch, var(--color-status-danger) 18%, transparent);
+  color: var(--color-status-danger);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-confirm-btn.is-danger:hover {
+  background: color-mix(in oklch, var(--color-status-danger) 26%, transparent);
+}
+/* Play on a card: the clip over the cover, under the card's corners. */
+.mar-asset-sections .mar-item-tools {
+  z-index: 1;
+}
+.mar-asset-clip {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--color-media-overlay);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  opacity: 0;
+  translate: -50% -50%;
+  transition:
+    opacity 140ms ease,
+    scale 140ms ease;
+}
+/* Refresh: the cards keep their shapes and pulse softly, then come back
+   one after another. */
+.mar-asset-sections.is-pulse .mar-item {
+  pointer-events: none;
+}
+.mar-asset-sections.is-pulse :is(.mar-item-media > *, .mar-item-check) {
+  visibility: hidden;
+}
+.mar-asset-sections.is-pulse .mar-item-media {
+  animation: mar-asset-pulse 1.1s ease-in-out infinite;
+}
+.mar-asset-sections.is-pulse .mar-item-text {
+  opacity: 0.3;
+}
+.mar-asset-sections.is-back .mar-item {
+  animation: mar-asset-in 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 0) * 22ms);
+}
+@keyframes mar-asset-pulse {
+  50% {
+    background-color: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
+  }
+}
+@keyframes mar-asset-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-asset-sections.is-pulse .mar-item-media,
+  .mar-asset-sections.is-back .mar-item {
+    animation: none;
+  }
+}
+/* Shown on hover; while playing, Pause stays. */
+:root .proto-ui.proto-ui.proto-ui .mar-item:is(:hover, :focus-within) .mar-asset-play,
+:root .proto-ui.proto-ui.proto-ui .mar-asset-play.is-on {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-play:hover {
+  scale: 1.06;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-play:active {
+  scale: 0.96;
+}
+/* Playing: Pause waits in a corner of the picture, out of the clip. */
+:root .proto-ui.proto-ui.proto-ui .mar-asset-play.is-on {
+  top: auto;
+  right: auto;
+  bottom: 8px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  translate: none;
+}
+.mar-asset-play.is-on ~ .mar-asset-len {
+  display: none;
+}
+/* The filters on, under the toolbar: one chip each, then Clear filters. */
+.mar-page-bar > .mar-asset-chips {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+.mar-asset-chips-n {
+  margin-right: 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-asset-chip {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+  font-size: 12px;
+}
+.mar-asset-chip-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-chip-x {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-chip-x:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-chips-clear {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-chips-clear:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
 }
 </style>

@@ -28,3 +28,22 @@ export function flipTag(list: MarAsset[], tag: string): void {
   const off = allTagged(list, tag)
   for (const a of list) (off ? removeTag : addTag)(a, tag)
 }
+
+/** Rename tag (ComfyUI's sidebar): every file with it takes the new name;
+ *  one that has both keeps a single copy. Returns the name it took, or
+ *  undefined when there was nothing to do. */
+export function renameTag(list: MarAsset[], from: string, to: string): string | undefined {
+  const t = to.trim().replace(/^#/, '').toLowerCase()
+  if (!t || t === from) return undefined
+  for (const a of list) {
+    const tags = tagsOf(a)
+    if (!tags.includes(from)) continue
+    edits[a.id] = [...new Set(tags.map((x) => (x === from ? t : x)))]
+  }
+  return t
+}
+
+/** Delete tag (ComfyUI's sidebar): off every file in the list. */
+export function deleteTag(list: MarAsset[], tag: string): void {
+  for (const a of list) if (tagsOf(a).includes(tag)) removeTag(a, tag)
+}
