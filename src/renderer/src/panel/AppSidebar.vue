@@ -22,7 +22,7 @@ const { activePage } = defineProps<{
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
-  pick: [installation: Installation]
+  'open-details': [installation: Installation]
 }>()
 
 interface SidebarRow {
@@ -142,7 +142,7 @@ function navigate(page: DashboardPage): void {
             size="unset"
             class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg pr-3 pl-8 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
             :data-testid="`app-sidebar-build-${inst.id}`"
-            @click="emit('pick', inst)"
+            @click="emit('open-details', inst)"
           >
             <span class="relative flex shrink-0">
               <component :is="installTypeMetaForInstall(inst).icon" :size="15" aria-hidden="true" />

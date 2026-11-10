@@ -75,7 +75,7 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('chooser')
   })
 
-  it('lists the builds under Builds and opens one without navigating', async () => {
+  it('lists the builds under Builds and opens a build page without launching it', async () => {
     useInstallationStore().installations = [
       { id: 'a', name: 'Alpha', sourceCategory: 'local' },
       { id: 'b', name: 'Beta', sourceCategory: 'cloud' }
@@ -92,7 +92,7 @@ describe('AppSidebar', () => {
 
     await wrapper.get('[data-testid="app-sidebar-build-b"]').trigger('click')
 
-    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'b' })]])
+    expect(wrapper.emitted('open-details')).toEqual([[expect.objectContaining({ id: 'b' })]])
     expect(navigatePanel).not.toHaveBeenCalled()
   })
 

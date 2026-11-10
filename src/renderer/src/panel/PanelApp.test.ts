@@ -1238,6 +1238,25 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
+  it("opens a build's details from its sidebar entry on another screen without launching it", async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    window.history.replaceState({}, '', '/?panel=benchmarks&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const api = (
+      window as unknown as {
+        api: { navigatePanel: ReturnType<typeof vi.fn>; getListActions: ReturnType<typeof vi.fn> }
+      }
+    ).api
+
+    await wrapper.get(`[data-testid="app-sidebar-build-${SAMPLE_INSTALL.id}"]`).trigger('click')
+    await flushPromises()
+
+    expect(api.navigatePanel).toHaveBeenCalledWith('chooser')
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+    expect(api.getListActions).not.toHaveBeenCalled()
+  })
+
   it("leaves a build's details when the window switches screens", async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()

@@ -181,6 +181,15 @@ function closeBuildDetails(): void {
 
 watch(activePanel, closeBuildDetails)
 
+async function openBuildFromSidebar(inst: Installation): Promise<void> {
+  if (activePanel.value !== 'chooser') {
+    window.api.navigatePanel('chooser')
+    await switchPanel('chooser', 'sidebar')
+    await nextTick()
+  }
+  openBuildDetails(inst)
+}
+
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
   await handleChooserPick(inst)
@@ -433,7 +442,7 @@ onUnmounted(() => {
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
         @navigate="closeBuildDetails"
-        @pick="launchFromBuildDetails"
+        @open-details="openBuildFromSidebar"
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
