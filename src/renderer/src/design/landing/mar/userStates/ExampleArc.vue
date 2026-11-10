@@ -247,7 +247,7 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-scrim" />
         <!-- App, as a badge up top; its name and what it does, below. -->
         <span class="mar-arc-text">
-          <span class="mar-arc-app"><PanelsTopLeft :size="10" />App</span>
+          <span class="mar-arc-app"><PanelsTopLeft :size="11" />App</span>
         </span>
         <span class="mar-arc-dim" />
         <!-- As on the app cards: the name and what it does on the left,
@@ -356,18 +356,18 @@ function wheel(e: WheelEvent): void {
 /* The same glass badge as the example tiles' corner. */
 .mar-arc-app {
   display: inline-flex;
-  height: 18px;
+  height: 22px;
   align-items: center;
   align-self: flex-start;
-  gap: 4px;
-  padding: 0 6px 0 5px;
+  gap: 6px;
+  padding: 0 10px 0 8px;
   border-radius: 999px;
   background: rgb(14 14 16 / 0.28);
   backdrop-filter: blur(14px) saturate(1.5);
   color: #fff;
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   transition: opacity 200ms ease-out;
 }
