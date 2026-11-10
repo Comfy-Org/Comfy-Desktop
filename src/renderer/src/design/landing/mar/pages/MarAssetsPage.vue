@@ -2376,7 +2376,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 .mar-anav-folder-tools:has([data-state='open']) {
   opacity: 1;
 }
-.mar-anav-folder:is(:hover, :focus-within) .mar-anav-n {
+/* The count makes room for the ⋯, also while its menu is open. */
+.mar-anav-folder:is(:hover, :focus-within, :has([data-state='open'])) .mar-anav-n {
   visibility: hidden;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-anav-folder-tools .mar-kebab {
