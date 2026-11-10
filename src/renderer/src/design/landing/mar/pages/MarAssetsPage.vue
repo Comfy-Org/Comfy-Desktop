@@ -151,19 +151,9 @@ const favOnly = ref(false)
 // In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
 const store = inGraph ? graphLibrary : assets
 
-// Everywhere reads every running build at once; each card names its own.
-const running = computed(() =>
-  assetBuilds.value.filter((b) => buildStatus(b) === 'running').map((b) => b.id)
-)
 const base = computed(() =>
   store.items.filter(
-    (a) =>
-      inGraph ||
-      (fixedProject
-        ? a.project === fixedProject
-        : build.value === 'all'
-          ? running.value.includes(a.envId ?? '')
-          : a.envId === build.value)
+    (a) => inGraph || (fixedProject ? a.project === fixedProject : a.envId === build.value)
   )
 )
 const current = computed(() => assetBuilds.value.find((b) => b.id === build.value))
@@ -774,9 +764,7 @@ const meta = (a: MarAsset): string =>
     ? [a.source === 'cloud' ? 'Cloud' : 'This computer', !fixedProject && a.project]
         .filter(Boolean)
         .join(' · ')
-    : [a.when, a.size, build.value === 'all' ? buildName(a) : !fixedProject && a.project]
-        .filter((x) => x && x !== '—')
-        .join(' · ')
+    : [a.when, a.size, !fixedProject && a.project].filter((x) => x && x !== '—').join(' · ')
 const iconOf = (a: MarAsset) =>
   ({ audio: Music, '3d': Box, text: FileText, other: FileIcon })[a.type as string] ?? ImagePlus
 const picOf = (a: MarAsset): string | undefined =>
@@ -898,7 +886,7 @@ const uploadTitle = computed(() =>
     ? 'Upload files'
     : fixedProject || uploadable.value
       ? `Add files to ${fixedProject ?? current.value?.name} inputs`
-      : build.value === 'all' || build.value === ''
+      : build.value === ''
         ? 'Pick a build to add files to'
         : current.value?.kind === 'cloud'
           ? 'Upload to Comfy Cloud from Comfy Cloud'

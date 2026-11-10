@@ -29,7 +29,7 @@ const KEY = 'comfy.design.mar.assetBuild'
 export function defaultBuild(): string {
   try {
     const v = localStorage.getItem(KEY) ?? ''
-    return v === 'all' || assetBuilds.value.some((b) => b.id === v) ? v : ''
+    return assetBuilds.value.some((b) => b.id === v) ? v : ''
   } catch {
     return ''
   }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Check, ChevronDown, Layers } from 'lucide-vue-next'
+import { Check, ChevronDown } from 'lucide-vue-next'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { cn } from '../../ui/cn'
@@ -10,8 +10,8 @@ import { PORTAL_TO } from '../../ui/portal'
 import { assetBuilds, buildStatus, type AssetBuild } from './assetBuilds'
 
 /** Whose assets (Assets, Phase 2): one build at a time, each with its
- *  state, or Everywhere (every running build at once). Nothing is picked
- *  until you pick it; then Assets remembers it. A stopped build
+ *  state, as the PRD scopes it (browsing across builds is its own
+ *  scope). Nothing is picked until you pick it; then Assets remembers it. A stopped build
  *  stays on the list; picking it shows a page that offers to start it,
  *  nothing starts on its own. */
 const model = defineModel<string>({ required: true })
@@ -19,9 +19,8 @@ const open = ref(false)
 const current = (): AssetBuild | undefined => assetBuilds.value.find((b) => b.id === model.value)
 const STATE = { running: 'Running', launching: 'Starting', stopped: 'Stopped' } as const
 // Two lines a row: the name, then where it runs and its state.
-const rows = computed(() => [
-  { id: 'all', name: 'Everywhere', cloud: false, status: '', sub: 'Every running build at once' },
-  ...assetBuilds.value.map((b) => {
+const rows = computed(() =>
+  assetBuilds.value.map((b) => {
     const status = buildStatus(b)
     return {
       id: b.id,
@@ -31,7 +30,7 @@ const rows = computed(() => [
       sub: `${b.kind === 'cloud' ? 'Cloud' : 'Local'} · ${STATE[status]}`
     }
   })
-])
+)
 function pick(id: string): void {
   model.value = id
   open.value = false
@@ -51,16 +50,13 @@ function pick(id: string): void {
         "
         aria-label="Build"
       >
-        <Layers v-if="model === 'all'" :size="14" class="shrink-0 text-subtle-foreground" />
         <LocationIcon
-          v-else-if="current()"
+          v-if="current()"
           :kind="current()!.kind === 'cloud' ? 'cloud' : 'local'"
           :size="14"
           class="shrink-0 text-subtle-foreground"
         />
-        <span class="truncate">{{
-          model === 'all' ? 'Everywhere' : (current()?.name ?? 'Pick a build')
-        }}</span>
+        <span class="truncate">{{ current()?.name ?? 'Pick a build' }}</span>
         <ChevronDown :size="13" class="ml-auto shrink-0 text-subtle-foreground" />
       </button>
     </PopoverTrigger>
@@ -93,8 +89,7 @@ function pick(id: string): void {
           @click="pick(r.id)"
         >
           <span class="abp-tile">
-            <Layers v-if="r.id === 'all'" :size="15" />
-            <LocationIcon v-else :kind="r.cloud ? 'cloud' : 'local'" :size="15" />
+            <LocationIcon :kind="r.cloud ? 'cloud' : 'local'" :size="15" />
           </span>
           <span class="flex min-w-0 flex-1 flex-col gap-0.5">
             <span class="truncate text-base-foreground">{{ r.name }}</span>
