@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import { canMintWorkspaceTokens, statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
@@ -12,7 +12,6 @@ interface TokenVault {
   version: typeof VAULT_VERSION
   subject?: string
   grant: AuthTokens
-  mintScopeWithheld?: true
   activeWorkspaceId: string | null
   workspaceTokens: Record<string, AuthTokens>
   workspaceNames?: Record<string, string>
@@ -73,7 +72,6 @@ function isVault(v: unknown): v is TokenVault {
   if (!isRecord(v) || v.version !== VAULT_VERSION) return false
   return (
     isTokens(v.grant) &&
-    (v.mintScopeWithheld === undefined || v.mintScopeWithheld === true) &&
     (v.activeWorkspaceId === null || typeof v.activeWorkspaceId === 'string') &&
     (v.subject === undefined || typeof v.subject === 'string') &&
     isRecord(v.workspaceTokens) &&
@@ -154,16 +152,13 @@ function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
   )
 }
 
-export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: boolean } = {}): void {
-  const withheld = options.mintScopeWithheld ? ({ mintScopeWithheld: true } as const) : {}
+export function saveGrant(grant: AuthTokens): void {
   const current = loadVault()
   const subject = subjectOf(grant.accessToken)
   if (!current || !subject || current.subject !== subject) {
-    persistVault({ ...vaultFor(grant), ...withheld })
+    persistVault(vaultFor(grant))
     return
   }
-  delete current.mintScopeWithheld
-  Object.assign(current, withheld)
   const previous = current.grant
   const previousAnchor = workspaceIdOf(previous.accessToken)
   if (
@@ -180,10 +175,6 @@ export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: bool
   if (!holdsToken(current, current.activeWorkspaceId))
     current.activeWorkspaceId = workspaceIdOf(grant.accessToken)
   persistVault(current)
-}
-
-export function isMintScopeWithheld(): boolean {
-  return loadVault()?.mintScopeWithheld === true
 }
 
 export function loadGrant(): AuthTokens | null {
@@ -255,7 +246,6 @@ export function replaceGrant(
     return false
   }
   vault.grant = grant
-  if (canMintWorkspaceTokens(grant.accessToken)) delete vault.mintScopeWithheld
   persistVault(vault)
   return true
 }

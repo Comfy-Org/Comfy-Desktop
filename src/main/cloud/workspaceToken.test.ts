@@ -290,7 +290,11 @@ describe('classifyMint', () => {
       { kind: 'refused' }
     ],
     ['403 workspace_access_denied', failed(403, 'workspace_access_denied'), { kind: 'refused' }],
-    ['403 oauth_token_mint_refused', failed(403, 'oauth_token_mint_refused'), { kind: 'refused' }],
+    [
+      '403 oauth_token_mint_refused',
+      failed(403, 'oauth_token_mint_refused'),
+      { kind: 'reauthorize', reason: 'mint_refused' }
+    ],
     ['403 insufficient_scope', failed(403, 'insufficient_scope'), { kind: 'refused' }],
     [
       '403 oauth_derived_mint_refused',

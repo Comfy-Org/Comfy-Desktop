@@ -10,7 +10,6 @@ import {
   dropWorkspaceToken,
   endGrant,
   getAuthStatus,
-  isMintScopeWithheld,
   loadActiveWorkspaceId,
   loadGrant,
   loadWorkspaceToken,
@@ -149,9 +148,9 @@ export class CloudSession {
 
   private storeSignedInGrant(tokens: AuthTokens): void {
     this.mintBlockedUntil = 0
-    const mintScopeWithheld = !canMintWorkspaceTokens(tokens.accessToken)
-    saveGrant(tokens, { mintScopeWithheld })
-    if (mintScopeWithheld) mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
+    saveGrant(tokens)
+    if (!canMintWorkspaceTokens(tokens.accessToken))
+      mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
   }
 
   private clearPendingLogin(): void {
@@ -395,6 +394,9 @@ export class CloudSession {
     }
     const held = loadWorkspaceToken(workspaceId)
     if (held && held.expiresAt > Date.now()) return this.activated(workspaceId, 'cached')
+    if (this.switchIntent === 'requested') {
+      return this.reauthorize(workspaceId, generation, 'view_requested')
+    }
 
     const outcome = await this.mintForWorkspace(workspaceId, generation)
     if (generation !== this.authGeneration) return this.unreached()
@@ -411,10 +413,6 @@ export class CloudSession {
         reportSwitch('retryable')
         return this.stayed('retryable')
       case 'reauthorize':
-        if (outcome.reason === 'mint_scope_missing' && isMintScopeWithheld()) {
-          reportSwitch('retryable', 'scope_not_granted')
-          return this.stayed('retryable')
-        }
         return this.reauthorize(workspaceId, generation, outcome.reason)
     }
   }
