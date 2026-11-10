@@ -1660,6 +1660,51 @@ describe('CloudSession regressions', () => {
   })
 })
 
+describe('CloudSession switches a local ComfyUI view requests', () => {
+  it('asks the browser for a new workspace instead of minting silently', async () => {
+    saveGrant(grantOn('w1'))
+    browserSignInReturns(signedInResult(grantOn('w2')))
+
+    await expect(new CloudSession().switchWorkspace('w2', 'requested')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
+    expect(mintRequests).toEqual([])
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'view_requested' }])
+  })
+
+  it('moves without a browser to the anchor or a workspace Desktop already holds', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+
+    await expect(session.switchWorkspace('w1', 'requested')).resolves.toMatchObject({
+      workspaceId: 'w1'
+    })
+    await expect(session.switchWorkspace('w2', 'requested')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(mintRequests).toHaveLength(1)
+  })
+})
+
+describe('CloudSession when Cloud refuses this client a mint', () => {
+  it('falls back to browser consent, as with the kill switch', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'oauth_token_mint_refused' })
+    browserSignInReturns(signedInResult(grantOn('w2')))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_refused' }])
+  })
+})
+
 describe('CloudSession grants without the mint scope (T-V29)', () => {
   it('opens exactly one browser, asks Cloud nothing first, and then mints', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
@@ -1704,32 +1749,36 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_scope_missing' }])
   })
 
-  it('a second and third switch after a scopeless sign-in stay put with no browser', async () => {
+  it('keeps asking the browser on each chosen switch while Cloud withholds the scope', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
-    await session.switchWorkspace('w2')
-    const browserTrips = browserEvents().length
 
-    for (const workspaceId of ['w2', 'w3']) {
+    for (const workspaceId of ['w2', 'w2', 'w3']) {
       await expect(session.switchWorkspace(workspaceId)).resolves.toMatchObject({
         workspaceId: 'w1',
         workspaceSwitchFailure: 'retryable'
       })
     }
 
-    expect(signIn).toHaveBeenCalledOnce()
-    expect(browserEvents()).toHaveLength(browserTrips)
+    expect(signIn).toHaveBeenCalledTimes(3)
     expect(mintRequests).toEqual([])
-    expect(switchEvents().at(-1)).toEqual({
-      outcome: 'retryable',
-      reauthorize_reason: 'scope_not_granted'
-    })
   })
 
-  it('a scopeless grant on B reaches its anchor and asks no browser for the next workspace', async () => {
+  it('never opens a browser for a restored switch while Cloud withholds the scope', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+
+    await expect(new CloudSession().switchWorkspace('w2', 'restored')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a scopeless grant on B reaches its anchor and asks the browser for the next workspace', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
     const session = new CloudSession()
@@ -1740,10 +1789,10 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
       workspaceSwitchFailure: 'retryable'
     })
 
-    expect(signIn).toHaveBeenCalledOnce()
+    expect(signIn).toHaveBeenCalledTimes(2)
   })
 
-  it('an explicit sign-in with the scope lifts the hold and switching mints again', async () => {
+  it('an explicit sign-in with the scope lets switching mint again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1759,7 +1808,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(mintRequests).toHaveLength(1)
   })
 
-  it('a grant that can mint lifts the hold, so one that later narrows can ask again', async () => {
+  it('a grant that later narrows asks the browser again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1782,7 +1831,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(signIn).toHaveBeenCalledTimes(3)
   })
 
-  it('an explicit sign-in that also returns no scope keeps ordinary switches off the browser', async () => {
+  it('a switch after an explicit sign-in that returned no scope asks the browser again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1794,68 +1843,10 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
       workspaceSwitchFailure: 'retryable'
     })
 
-    expect(signIn).toHaveBeenCalledOnce()
-  })
-
-  it('logout resets the hold', async () => {
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    const session = new CloudSession()
-    await session.switchWorkspace('w2')
-
-    session.logout()
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    await session.switchWorkspace('w2')
-
     expect(signIn).toHaveBeenCalledTimes(2)
   })
 
-  it('a restart keeps the hold: no second browser across sessions', async () => {
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    await new CloudSession().switchWorkspace('w2')
-    _resetForTest()
-
-    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
-      workspaceId: 'w1',
-      workspaceSwitchFailure: 'retryable'
-    })
-
-    expect(signIn).toHaveBeenCalledOnce()
-    expect(vaultOnDisk().mintScopeWithheld).toBe(true)
-  })
-
-  it('a pre-upgrade grant gets its one trip on first launch, then the hold survives restarts', async () => {
-    fs.writeFileSync(
-      path.join(electronState.userData, 'comfy-cloud-auth.bin'),
-      safeStorage.encryptString(
-        JSON.stringify({
-          version: 1,
-          activeKey: 'workspace:w1',
-          subject: 'user-1',
-          bundles: { 'workspace:w1': grantOn('w1', { scope: READ_ONLY_SCOPE }) }
-        })
-      )
-    )
-    _resetForTest()
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    expect(vaultOnDisk().mintScopeWithheld).toBeUndefined()
-
-    await new CloudSession().switchWorkspace('w2')
-    expect(signIn).toHaveBeenCalledOnce()
-    _resetForTest()
-    await new CloudSession().switchWorkspace('w2')
-
-    expect(signIn).toHaveBeenCalledOnce()
-  })
-
-  it('a restart with a scoped sign-in in between mints: the grant that can mint cleared the hold', async () => {
+  it('a restart after a scoped sign-in mints', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1871,23 +1862,9 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     })
 
     expect(signIn).toHaveBeenCalledTimes(2)
-    expect(vaultOnDisk()).not.toHaveProperty('mintScopeWithheld')
   })
 
-  it('an explicit sign-in can still try after a restart', async () => {
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    await new CloudSession().switchWorkspace('w2')
-    _resetForTest()
-
-    await new CloudSession().login()
-
-    expect(signIn).toHaveBeenCalledTimes(2)
-  })
-
-  it('emits one mint_scope_not_granted for a switch sign-in, and none for the later held switches', async () => {
+  it('emits mint_scope_not_granted for each switch sign-in that returns no scope', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-b' })))
     const session = new CloudSession()
@@ -1895,7 +1872,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     await session.switchWorkspace('w2')
     await session.switchWorkspace('w3')
 
-    expect(mintScopeNotGrantedEvents()).toHaveLength(1)
+    expect(mintScopeNotGrantedEvents()).toHaveLength(2)
   })
 
   it('emits one mint_scope_not_granted for an explicit sign-in with no scope', async () => {

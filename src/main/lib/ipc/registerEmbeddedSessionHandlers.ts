@@ -39,6 +39,6 @@ export function registerEmbeddedSessionHandlers(): void {
   )
 
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.switchWorkspace, (event, workspaceId: unknown) =>
-    switchWorkspaceForSender(event, workspaceId, switchCloudWorkspace)
+    switchWorkspaceForSender(event, workspaceId, (id) => switchCloudWorkspace(id, 'requested'))
   )
 }

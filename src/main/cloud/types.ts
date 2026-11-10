@@ -15,7 +15,7 @@ export interface AuthStatus {
 
 export type WorkspaceSwitchFailure = 'unavailable' | 'retryable'
 
-export type WorkspaceSwitchIntent = 'chosen' | 'restored'
+export type WorkspaceSwitchIntent = 'chosen' | 'restored' | 'requested'
 
 export interface WorkspaceSwitchStatus extends AuthStatus {
   workspaceSwitchFailure?: WorkspaceSwitchFailure

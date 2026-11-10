@@ -32,7 +32,8 @@ vi.mock('../../cloud/oauth', () => ({
 vi.mock('../../devplatform/session', () => ({
   getCloudSession: () => state.session,
   getBuilderClient: vi.fn(),
-  setUnauthorizedHandler: vi.fn()
+  setUnauthorizedHandler: vi.fn(),
+  rejectAccessToken: vi.fn()
 }))
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(),

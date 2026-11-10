@@ -3,7 +3,7 @@ import type { WebContents } from 'electron'
 import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from '../cloud/claims'
 import { classifyMint, mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
-import { getCloudSession } from '../devplatform/session'
+import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import * as mainTelemetry from './telemetry'
 
 const MINT_REFRESH_SKEW_MS = 60_000
@@ -65,7 +65,8 @@ export class ViewWorkspaceGrants {
 
   constructor(
     private readonly session: GrantSession,
-    private readonly mint: MintWorkspaceToken = mintWorkspaceToken
+    private readonly mint: MintWorkspaceToken = mintWorkspaceToken,
+    private readonly onUnauthorized: (accessToken: string) => void = () => {}
   ) {}
 
   allowDesktop(workspaceId: string | undefined): void {
@@ -122,9 +123,12 @@ export class ViewWorkspaceGrants {
 
   private async workspaceToken(workspaceId: string, fence: MintFence): Promise<HeldToken | null> {
     const accessToken = await this.session.getGrantAccessToken()
-    if (!this.isCurrent(fence) || !accessToken || !canMintWorkspaceTokens(accessToken)) return null
+    if (!this.isCurrent(fence) || !accessToken) return null
     const subject = subjectOf(accessToken)
     if (!subject) return null
+    if (!canMintWorkspaceTokens(accessToken)) {
+      return workspaceIdOf(accessToken) === workspaceId ? { token: accessToken, subject } : null
+    }
     const key = mintKey(subject, workspaceId)
     const cached = this.minted.get(key)
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now())
@@ -157,6 +161,7 @@ export class ViewWorkspaceGrants {
         const outcome = classifyMint(result)
         if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended')
           this.session.endGrantFamily(accessToken)
+        if (result.kind === 'failed' && result.status === 401) this.onUnauthorized(accessToken)
         return result
       })
       .finally(() => {
@@ -170,7 +175,8 @@ export class ViewWorkspaceGrants {
 let grants: ViewWorkspaceGrants | null = null
 
 export function getViewWorkspaceGrants(): ViewWorkspaceGrants {
-  if (!grants) grants = new ViewWorkspaceGrants(getCloudSession())
+  if (!grants)
+    grants = new ViewWorkspaceGrants(getCloudSession(), mintWorkspaceToken, rejectAccessToken)
   return grants
 }
 
