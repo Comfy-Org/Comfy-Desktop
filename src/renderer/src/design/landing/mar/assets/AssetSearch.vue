@@ -16,6 +16,8 @@ import {
   X
 } from 'lucide-vue-next'
 import type { MarAsset } from '../pages/assetsStore'
+import { cn } from '../../ui/cn'
+import { floatingSurface } from '../../ui/menu.styles'
 import { LABELS } from './assetLabels'
 import { metaIn, tagsIn, type AssetFilter, type AssetType } from './assetFilters'
 
@@ -181,7 +183,13 @@ function onEsc(e: KeyboardEvent): void {
         <X :size="13" />
       </button>
     </label>
-    <div v-if="open && filter" class="asr-pop" @mousedown="keep">
+    <div
+      v-if="open && filter"
+      :class="cn(floatingSurface, 'asr-pop')"
+      role="menu"
+      aria-label="Search suggestions"
+      @mousedown="keep"
+    >
       <template v-if="query.trim()">
         <button type="button" class="asr-row" @click="close">
           <Search :size="14" class="asr-icon" /><span class="asr-grow"
@@ -279,13 +287,6 @@ function onEsc(e: KeyboardEvent): void {
   flex-direction: column;
   gap: 1px;
   overflow-y: auto;
-  padding: 6px;
-  border-radius: 10px;
-  background: var(--color-content-background);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 10%, transparent),
-    0 10px 15px -3px rgb(0 0 0 / 0.3);
-  color: var(--color-base-foreground);
   font-size: 13px;
 }
 .asr-label {
