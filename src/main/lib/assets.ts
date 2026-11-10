@@ -1,4 +1,9 @@
-import { ipcMain } from 'electron'
+import fs from 'fs'
+import path from 'path'
+import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
+import type { ReadableStream as WebReadableStream } from 'stream/web'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import * as installations from '../installations'
@@ -7,6 +12,7 @@ import { runPool } from '../sources/standalone/templateDownloadCore'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
 
 const ASSETS_LIST_CHANNEL = 'assets:list'
+const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 
 const LIST_QUERY = 'tags_any=output&sort=created_at&order=desc&limit=100'
 const REQUEST_TIMEOUT_MS = 20_000
@@ -157,8 +163,52 @@ export async function listAssets(installationId: string): Promise<AssetSummary[]
     : listLocalAssets(source.origin)
 }
 
+async function downloadUrl(source: AssetSource, assetId: string): Promise<string | null> {
+  return source.kind === 'cloud'
+    ? resolveCloudContentUrl(assetId, source.accessToken, 'attachment')
+    : `${source.origin}${contentPath(assetId, 'attachment')}`
+}
+
+function safeFileName(fileName: string, assetId: string): string {
+  const base = path.basename(fileName)
+  return base === '' || base === '.' || base === '..' ? assetId : base
+}
+
+export async function downloadAsset(
+  win: BrowserWindow,
+  installationId: string,
+  assetId: string,
+  fileName: string
+): Promise<boolean> {
+  const source = await resolveSource(installationId)
+  if (!source) throw new Error('This build is not running.')
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: path.join(app.getPath('downloads'), safeFileName(fileName, assetId))
+  })
+  if (canceled || !filePath) return false
+  const url = await downloadUrl(source, assetId)
+  if (!url) throw new Error('The asset has no download link.')
+  const res = await fetch(url)
+  if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+  await pipeline(Readable.fromWeb(res.body as WebReadableStream), fs.createWriteStream(filePath))
+  return true
+}
+
 export function registerAssetsHandlers(): void {
   ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown) =>
     typeof installationId === 'string' ? listAssets(installationId) : []
+  )
+  ipcMain.handle(
+    ASSETS_DOWNLOAD_CHANNEL,
+    (event, installationId: unknown, assetId: unknown, fileName: unknown) => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow()
+      if (!win || typeof installationId !== 'string' || typeof assetId !== 'string') return false
+      return downloadAsset(
+        win,
+        installationId,
+        assetId,
+        typeof fileName === 'string' ? fileName : assetId
+      )
+    }
   )
 }

@@ -1,11 +1,34 @@
+import { Writable } from 'stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
 const runningSessions = new Map<string, { port?: number }>()
 
+const showSaveDialog = vi.fn()
+const written = new Map<string, string>()
+const createWriteStream = vi.fn((filePath: string) => {
+  const chunks: Buffer[] = []
+  return new Writable({
+    write(chunk: Buffer, _encoding, done) {
+      chunks.push(chunk)
+      done()
+    },
+    final(done) {
+      written.set(filePath, Buffer.concat(chunks).toString())
+      done()
+    }
+  })
+})
+
 vi.mock('electron', () => ({
+  app: { getPath: () => '/downloads' },
+  BrowserWindow: {},
+  dialog: { showSaveDialog: (...args: unknown[]) => showSaveDialog(...args) },
   ipcMain: { handle: vi.fn() }
+}))
+vi.mock('fs', () => ({
+  default: { createWriteStream: (filePath: string) => createWriteStream(filePath) }
 }))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
@@ -20,7 +43,7 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 
-const { assetKind, listAssets, signedStorageUrl } = await import('./assets')
+const { assetKind, downloadAsset, listAssets, signedStorageUrl } = await import('./assets')
 
 const fetchMock = vi.fn()
 
@@ -34,6 +57,7 @@ function jsonResponse(body: unknown): Response {
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   runningSessions.clear()
+  written.clear()
 })
 
 afterEach(() => {
@@ -166,5 +190,43 @@ describe('listAssets', () => {
       ['mesh.glb', '3d', null]
     ])
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('downloadAsset', () => {
+  const win = {} as Parameters<typeof downloadAsset>[0]
+
+  it('saves a local build asset where the user picks', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    fetchMock.mockResolvedValue(new Response('bytes'))
+
+    expect(await downloadAsset(win, 'local-1', 'a1', '../still.png')).toBe(true)
+    expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/still.png')
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      'http://127.0.0.1:8188/api/assets/a1/content?disposition=attachment'
+    )
+    expect(written.get('/picked/still.png')).toBe('bytes')
+  })
+
+  it('fails without writing a file when the build cannot serve the asset', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    fetchMock.mockResolvedValue(new Response(null, { status: 503 }))
+
+    await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow('HTTP 503')
+    expect(createWriteStream).not.toHaveBeenCalled()
+  })
+
+  it('writes nothing when the save dialog is cancelled', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: true })
+
+    expect(await downloadAsset(win, 'local-1', 'a1', 'still.png')).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(createWriteStream).not.toHaveBeenCalled()
   })
 })

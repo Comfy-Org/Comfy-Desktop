@@ -1,18 +1,21 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useScroll } from '@vueuse/core'
 import {
   AudioLines,
   Box,
   Check,
+  Download,
+  Ellipsis,
   File,
   LayoutGrid,
   LayoutDashboard,
   ListFilter,
   Play,
   RefreshCw,
-  Search
+  Search,
+  ZoomIn
 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -22,6 +25,9 @@ import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AssetDetailView from './AssetDetailView.vue'
+import type { GalleryAsset } from './AssetDetailView.vue'
+import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -29,11 +35,6 @@ import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
-
-interface GalleryAsset extends AssetSummary {
-  installationId: string
-  buildName: string
-}
 
 type AppsTab = 'all' | 'files'
 type KindFilter = 'all' | AssetKind
@@ -44,6 +45,7 @@ const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
 
 const { t } = useI18n()
+const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
@@ -58,6 +60,9 @@ const showName = useLocalStorage('comfy.desktop.assets.showName', false)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 
 const assets = ref<GalleryAsset[]>([])
+const detailIndex = ref<number | null>(null)
+const cardMenuOpenKey = ref<string | null>(null)
+const lastOpenedKey = ref<string | null>(null)
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
@@ -180,6 +185,9 @@ watch(
   },
   { immediate: true }
 )
+watch(visibleAssets, (list) => {
+  if (detailIndex.value !== null && detailIndex.value >= list.length) detailIndex.value = null
+})
 
 function warmNameTooltips(): void {
   clearTimeout(warmTimer)
@@ -205,6 +213,27 @@ async function signIn(): Promise<void> {
   }
 }
 
+function openDetail(asset: GalleryAsset): void {
+  lastOpenedKey.value = cardKey(asset)
+  detailIndex.value = visibleAssets.value.indexOf(asset)
+}
+
+async function closeDetail(): Promise<void> {
+  detailIndex.value = null
+  await nextTick()
+  scroller.value
+    ?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(lastOpenedKey.value ?? '')}"]`)
+    ?.focus()
+}
+
+async function download(asset: GalleryAsset): Promise<void> {
+  try {
+    await window.api.downloadAsset(asset.installationId, asset.id, asset.name)
+  } catch {
+    await modal.alert({ title: t('assets.downloadFailed'), message: asset.name })
+  }
+}
+
 function assetDetails(asset: AssetSummary): string {
   return [
     asset.createdAt ? formatRelativeFromMs(Date.parse(asset.createdAt), t) : null,
@@ -221,7 +250,15 @@ function extensionOf(name: string): string {
 </script>
 
 <template>
+  <AssetDetailView
+    v-if="detailIndex !== null && visibleAssets.length > 0"
+    v-model:index="detailIndex"
+    :assets="visibleAssets"
+    @close="closeDetail"
+    @download="download"
+  />
   <div
+    v-show="detailIndex === null"
     ref="scroller"
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
     :class="PAGE_SPOTLIGHT_CLASS"
@@ -453,7 +490,14 @@ function extensionOf(name: string): string {
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
             class="w-full align-top"
           >
-            <div class="block w-full">
+            <button
+              type="button"
+              class="block w-full cursor-pointer text-left"
+              :aria-label="t('assets.inspect', { name: asset.name })"
+              :data-testid="`asset-open-${asset.id}`"
+              :data-card-key="cardKey(asset)"
+              @click="openDetail(asset)"
+            >
               <span
                 class="relative block overflow-hidden"
                 :class="
@@ -504,8 +548,67 @@ function extensionOf(name: string): string {
                   assetDetails(asset)
                 }}</span>
               </span>
-            </div>
+            </button>
           </Tooltip>
+
+          <div
+            class="absolute top-2 right-2 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+            :class="cardMenuOpenKey === cardKey(asset) && 'opacity-100'"
+          >
+            <div class="flex items-center rounded-md bg-media-overlay">
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="icon"
+                class="text-foreground"
+                :aria-label="t('assets.download')"
+                :title="t('assets.download')"
+                @click="download(asset)"
+              >
+                <Download :size="14" aria-hidden="true" />
+              </Button>
+              <Menu
+                :open="cardMenuOpenKey === cardKey(asset)"
+                :modal="false"
+                align="end"
+                class="z-20 min-w-[180px]"
+                :aria-label="t('assets.moreActions')"
+                @update:open="cardMenuOpenKey = $event ? cardKey(asset) : null"
+              >
+                <template #trigger>
+                  <Button
+                    type="button"
+                    variant="muted-textonly"
+                    size="icon"
+                    class="text-foreground"
+                    :aria-label="t('assets.moreActions')"
+                    :title="t('assets.moreActions')"
+                    :data-testid="`asset-menu-${asset.id}`"
+                  >
+                    <Ellipsis :size="14" aria-hidden="true" />
+                  </Button>
+                </template>
+                <MenuItem
+                  as="button"
+                  type="button"
+                  class="w-full gap-2.5"
+                  @select="openDetail(asset)"
+                >
+                  <ZoomIn :size="15" aria-hidden="true" />
+                  {{ t('assets.inspectAsset') }}
+                </MenuItem>
+                <MenuItem
+                  as="button"
+                  type="button"
+                  class="w-full gap-2.5"
+                  @select="download(asset)"
+                >
+                  <Download :size="15" aria-hidden="true" />
+                  {{ t('assets.download') }}
+                </MenuItem>
+              </Menu>
+            </div>
+          </div>
         </li>
       </ul>
     </div>
