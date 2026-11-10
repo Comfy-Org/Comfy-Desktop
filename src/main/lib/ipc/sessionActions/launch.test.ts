@@ -243,6 +243,13 @@ vi.mock('../../comfyProcessRecord', () => ({
   listRecords: () => []
 }))
 
+const vcRuntime = vi.hoisted(() => ({ missing: [] as string[] }))
+
+vi.mock('../../vcRuntimeAudit', async (importOriginal) => ({
+  ...(await importOriginal<typeof VcRuntimeAuditModule>()),
+  auditVcRuntime: async () => vcRuntime.missing
+}))
+
 vi.mock('../../comfy-args', async (importOriginal) => {
   const actual = await importOriginal<typeof ComfyArgsModule>()
   return {
@@ -401,6 +408,7 @@ import type * as CoreBetaGrantsModule from '../../coreBetaGrants'
 import type * as CoreBetaAncestryModule from '../../coreBetaAncestry'
 import type * as HardwareTapModule from '../../hardwareTap'
 import type * as PipModule from '../../pip'
+import type * as VcRuntimeAuditModule from '../../vcRuntimeAudit'
 import { getUvPath, getVenvPythonPath } from '../../pythonEnv'
 import {
   _resetAgentPrefetchesForTest,
@@ -5273,6 +5281,50 @@ describe('prior ComfyUI process handling at launch', () => {
     )
     const [failed] = eventsNamed('comfy.desktop.comfyui.boot_failed')
     expect(failed).toMatchObject({ assets_startup_failure: null })
+  })
+
+  describe('a DLL that fails to load at start', () => {
+    const C10_NOT_FOUND =
+      'OSError: [WinError 126] The specified module could not be found. Error loading ' +
+      '"C:\\ComfyUI\\.venv\\Lib\\site-packages\\torch\\lib\\c10.dll" or one of its dependencies.\n'
+    const HINT =
+      '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+      'installing the latest redistributable may fix this'
+
+    afterEach(() => {
+      vcRuntime.missing = []
+    })
+
+    it('adds the VC++ runtime hint when the runtime is missing', async () => {
+      setArgs()
+      vcRuntime.missing = ['vcruntime140_1.dll']
+      failBootWith(C10_NOT_FOUND)
+
+      const res = await handleLaunch(ctxFor('dll-runtime-missing'))
+
+      expect(res.message).toBe(`Process exited with code 1${HINT}\n\n${C10_NOT_FOUND.trim()}`)
+    })
+
+    it('leaves the message alone when the runtime is present', async () => {
+      setArgs()
+      failBootWith(C10_NOT_FOUND)
+
+      const res = await handleLaunch(ctxFor('dll-runtime-present'))
+
+      expect(res.message).toBe(`Process exited with code 1\n\n${C10_NOT_FOUND.trim()}`)
+    })
+
+    it('leaves a failure that names no DLL alone even when the runtime is missing', async () => {
+      setArgs()
+      vcRuntime.missing = ['msvcp140.dll']
+      failBootWith('Traceback (most recent call last):\nRuntimeError: CUDA error\n')
+
+      const res = await handleLaunch(ctxFor('dll-other-failure'))
+
+      expect(res.message).toBe(
+        'Process exited with code 1\n\nTraceback (most recent call last):\nRuntimeError: CUDA error'
+      )
+    })
   })
 
   describe('an asset database from a newer ComfyUI', () => {

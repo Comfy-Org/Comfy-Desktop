@@ -62,7 +62,7 @@ import type { ModelPathsOptions } from '../../models'
 import type { ActionContext, ActionResult } from './types'
 import { lastNLines, stripAnsi } from '../../stderrTail'
 import { decodeExitCode } from '../../exitCodeInfo'
-import { auditVcRuntime } from '../../vcRuntimeAudit'
+import { auditVcRuntime, isDllLoadFailure } from '../../vcRuntimeAudit'
 import { rotateLogFiles, getLogDir } from '../../logRotation'
 import { createAssetsTap } from '../../assetsTap'
 import { createAgentTap } from '../../agentTap'
@@ -598,22 +598,28 @@ async function diagnoseCrash(
   return out
 }
 
-async function describeExitCode(code: number | null): Promise<string> {
+async function vcRuntimeHint(): Promise<string> {
+  try {
+    if ((await auditVcRuntime()).length > 0) {
+      return (
+        '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+        'installing the latest redistributable may fix this'
+      )
+    }
+  } catch (err) {
+    console.warn('VC++ runtime audit failed:', err)
+  }
+  return ''
+}
+
+async function describeExitCode(code: number | null, stderr: string): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
-  if (!decoded) return String(code)
+  if (!decoded) return isDllLoadFailure(stderr) ? `${code}${await vcRuntimeHint()}` : String(code)
   let out = `${decoded.code} / ${decoded.hex}`
   if (decoded.kind === 'access-violation') {
     out += ' (memory access violation — usually a faulty or missing native library)'
-    try {
-      if ((await auditVcRuntime()).length > 0) {
-        out +=
-          '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
-          'installing the latest redistributable may fix this'
-      }
-    } catch (err) {
-      console.warn('VC++ runtime audit failed:', err)
-    }
+    out += await vcRuntimeHint()
   }
   return out
 }
@@ -1978,7 +1984,9 @@ async function runLaunch(
         exitSignal = signal
         if (!earlyExit) {
           const detail = spawned.getStderr().trim() ? `\n\n${spawned.getStderr().trim()}` : ''
-          const rendered = signal ? `signal ${signal}` : `code ${await describeExitCode(code)}`
+          const rendered = signal
+            ? `signal ${signal}`
+            : `code ${await describeExitCode(code, spawned.getStderr())}`
           earlyExit = `Process exited with ${rendered}${detail}`
           reject(new Error(earlyExit))
         }

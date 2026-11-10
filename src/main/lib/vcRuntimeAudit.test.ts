@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 
-import { auditVcRuntime } from './vcRuntimeAudit'
+import { auditVcRuntime, isDllLoadFailure } from './vcRuntimeAudit'
 
 const originalPlatform = process.platform
 
@@ -61,5 +61,35 @@ describe('auditVcRuntime', () => {
       return Promise.resolve()
     })
     expect(await auditVcRuntime()).toEqual([])
+  })
+})
+
+describe('isDllLoadFailure', () => {
+  it.each([
+    [
+      'torch c10.dll not found',
+      'OSError: [WinError 126] The specified module could not be found. Error loading ' +
+        '"C:\\ComfyUI\\.venv\\Lib\\site-packages\\torch\\lib\\c10.dll" or one of its dependencies.'
+    ],
+    [
+      'localized c10.dll init failure',
+      'OSError: [WinError 1114] 动态链接库(DLL)初始化例程失败。 Error loading ' +
+        '"D:\\ComfyUI\\.venv\\Lib\\site-packages\\torch\\lib\\c10.dll" or one of its dependencies.'
+    ],
+    [
+      'extension module import',
+      'ImportError: DLL load failed while importing _C: 指定されたモジュールが見つかりません。'
+    ]
+  ])('matches %s', (_name, output) => {
+    expect(isDllLoadFailure(output)).toBe(true)
+  })
+
+  it.each([
+    ['a CUDA traceback', 'Traceback (most recent call last):\nRuntimeError: CUDA error'],
+    ['a paging file error', 'OSError: [WinError 1455] The paging file is too small'],
+    ['a different WinError with the same digits', 'OSError: [WinError 1260] blocked'],
+    ['empty output', '']
+  ])('ignores %s', (_name, output) => {
+    expect(isDllLoadFailure(output)).toBe(false)
   })
 })
