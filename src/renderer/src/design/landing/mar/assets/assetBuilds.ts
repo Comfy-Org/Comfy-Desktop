@@ -23,16 +23,21 @@ export function buildStatus(b: AssetBuild): 'running' | 'launching' | 'stopped' 
   return started[b.id] ?? (b.kind === 'cloud' || b.state === 'running' ? 'running' : 'stopped')
 }
 
-/** The build you last picked: Assets opens there. Until you pick one
- *  ('' here), it asks first; the PRD wants the choice made, not guessed. */
+/** Where Assets opens: the build you last picked while it runs, else the
+ *  most recent running build, a local one first. With none ('' here) it
+ *  asks; nothing starts on its own. The picker always shows which build
+ *  is in view, so the context stays explicit, as the PRD asks. */
 const KEY = 'comfy.design.mar.assetBuild'
 export function defaultBuild(): string {
   try {
     const v = localStorage.getItem(KEY) ?? ''
-    return assetBuilds.value.some((b) => b.id === v) ? v : ''
+    const last = assetBuilds.value.find((b) => b.id === v)
+    if (last && buildStatus(last) === 'running') return last.id
   } catch {
-    return ''
+    // Storage blocked: fall through to the most recent running build.
   }
+  const running = assetBuilds.value.filter((b) => buildStatus(b) === 'running')
+  return (running.find((b) => b.kind === 'local') ?? running[0])?.id ?? ''
 }
 export function rememberBuild(id: string): void {
   try {

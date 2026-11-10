@@ -1299,12 +1299,12 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       </div>
     </template>
 
-    <!-- No build picked yet: ask, with the most recent running one a click away. -->
+    <!-- No local build running: ask, with the most recent one a click away. -->
     <MarEmpty
       v-if="unpicked"
       :icon="ComfyAssets"
       title="Pick a build to browse"
-      text="Assets are read from one build at a time, through its own ComfyUI. Pick one above, or open the one you used last."
+      text="Assets are read from one build at a time, through its own ComfyUI, and none is running. Pick one above, or open the one you used last."
       :action="suggested ? `Browse ${suggested.name}` : undefined"
       compact
       @action="suggested && (build = suggested.id)"
