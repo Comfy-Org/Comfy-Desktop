@@ -58,6 +58,9 @@ import type { ItemStatus } from './MarStatus.vue'
  * published, and who can use it. Works on the apps in memory, so a
  * rename shows on the app's own page too.
  */
+/** Inside Apps' My apps tab (Explore & Learn on): no title of its own, its
+ *  tools on Apps' line, your apps only. */
+const { embedded = false, toolbarTo } = defineProps<{ embedded?: boolean; toolbarTo?: string }>()
 const apps = collection<LibApp & { project?: string; fav?: boolean }>(LIB, 'app')
 
 const tab = ref<'mine' | 'shared'>('mine')
@@ -195,6 +198,8 @@ function lines(a: LibApp): MenuLine[] {
 <template>
   <MarPage
     title="Apps"
+    :embedded
+    :toolbar-to
     :skeleton="view === 'grid' ? 'grid' : 'list'"
     :no-results="shown.length === 0 && filtered"
     :state="shownState === 'live' && all.length === 0 ? 'empty' : undefined"
@@ -231,8 +236,8 @@ function lines(a: LibApp): MenuLine[] {
     </template>
 
     <template #toolbar>
-      <MarSeg v-model="tab" :options="TABS" label="Whose" />
-      <div class="ml-auto flex items-center gap-2">
+      <MarSeg v-if="!embedded" v-model="tab" :options="TABS" label="Whose" />
+      <div class="flex items-center gap-2" :class="!embedded && 'ml-auto'">
         <Select v-if="tab === 'mine'" v-model="state" :options="STATES" class="w-44" />
         <Select v-model="sort" :options="SORTS" label="Sort" class="w-44" />
         <MarSearchField v-model="query" placeholder="Search apps" />

@@ -28,9 +28,9 @@ const page = computed<string>(() => proto.page)
 
 <template>
   <MarWorkflowsPage v-if="page === 'workflows'" />
-  <!-- Milestone 2: Apps is where apps are found (Examples and Apps); the
-       library of your own comes with Explore. -->
-  <MarExplore v-else-if="page === 'apps' && can.exploreApps && !can.explore" as-apps />
+  <!-- Milestone 2: Apps is where apps are found (Inspiration and All apps);
+       from Explore & Learn on, My apps joins them as a third tab. -->
+  <MarExplore v-else-if="page === 'apps' && can.exploreApps" as-apps :library="can.explore" />
   <MarAppsPage v-else-if="page === 'apps'" />
   <MarAssetsPage v-else-if="page === 'assets'" />
   <MarBuildsPage v-else-if="page === 'environments' || page === 'instances'" />

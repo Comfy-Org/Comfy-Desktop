@@ -9,6 +9,7 @@ import {
   PanelsTopLeft,
   Play,
   Video,
+  UserRound,
   X
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
@@ -26,6 +27,7 @@ import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { goIn, toast } from '../../useProto'
 import { can } from '../../milestones'
 import MarPage from '../pages/MarPage.vue'
+import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import ExampleTile from '../apps/ExampleTile.vue'
 import StarsGlyph from '../apps/StarsGlyph.vue'
@@ -44,8 +46,10 @@ import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
  */
 /** At Milestone 2 this is the Apps page: Examples (everything the apps
  *  have made, whatever app made it) and Apps (the apps themselves). */
-const { asApps = false } = defineProps<{ asApps?: boolean }>()
-type Tab = 'examples' | 'apps' | 'templates' | 'models' | 'tutorials'
+/** From Explore & Learn on, Apps also keeps the library of your own: a
+ *  third tab, My apps. */
+const { asApps = false, library = false } = defineProps<{ asApps?: boolean; library?: boolean }>()
+type Tab = 'examples' | 'apps' | 'mine' | 'templates' | 'models' | 'tutorials'
 const tab = ref<Tab>(asApps ? 'examples' : 'apps')
 const type = ref('all')
 const query = ref('')
@@ -54,7 +58,8 @@ const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
 const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = asApps
   ? [
       { value: 'examples', label: 'Inspiration', count: APP_EXAMPLES.length, icon: StarsGlyph },
-      { value: 'apps', label: 'All apps', count: APPS_COUNT, icon: PanelsTopLeft }
+      { value: 'apps', label: 'All apps', count: APPS_COUNT, icon: PanelsTopLeft },
+      ...(library ? [{ value: 'mine' as const, label: 'My apps', count: 0, icon: UserRound }] : [])
     ]
   : [
       {
@@ -81,6 +86,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
     { value: 'video', label: 'Video' }
   ],
   apps: [],
+  mine: [],
   examples: [],
   tutorials: [
     { value: 'all', label: 'All topics' },
@@ -91,7 +97,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
   ]
 }
 watch(tab, clearFilters)
-const PLACEHOLDER: Record<Tab, string> = {
+const PLACEHOLDER: Record<Exclude<Tab, 'mine'>, string> = {
   templates: 'Search templates',
   models: 'Search models or providers',
   apps: 'Search',
@@ -221,6 +227,8 @@ const empty = computed(
       templates: templates.value,
       models: models.value,
       apps: apps.value,
+      // My apps handles its own empty and no-match states.
+      mine: [1],
       examples: examples.value,
       tutorials: tutorials.value
     })[tab.value].length === 0
@@ -251,6 +259,13 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
       >
         <!-- Apps and Examples: one Filter menu; Sort for the apps and
              Layout for the examples, last, in the same place. -->
+        <!-- My apps: its own tools (state, sort, search, view), from the library. -->
+        <span
+          v-if="tab === 'mine'"
+          id="mar-ex-lib-tools"
+          key="lib"
+          class="inline-flex items-center gap-2"
+        />
         <span v-if="tab === 'apps' || tab === 'examples'" key="filter" class="inline-flex">
           <DropdownMenuRoot :modal="false">
             <DropdownMenuTrigger
@@ -300,11 +315,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           </DropdownMenuRoot>
         </span>
         <!-- Keyed by tab, so its label follows the tab (All types, All topics). -->
-        <span v-else :key="`type-${tab}`" class="inline-flex">
+        <span v-else-if="tab !== 'mine'" :key="`type-${tab}`" class="inline-flex">
           <Select v-model="type" :options="TYPES[tab]" class="w-36" />
         </span>
-        <span key="search" class="inline-flex">
-          <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab]" />
+        <span v-if="tab !== 'mine'" key="search" class="inline-flex">
+          <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab as Exclude<Tab, 'mine'>]" />
         </span>
         <span v-if="tab === 'apps'" key="sort" class="inline-flex">
           <Select v-model="appSort" :options="APP_SORTS" label="Sort" class="w-40" />
@@ -376,6 +391,9 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         </div>
       </div>
     </template>
+
+    <!-- My apps: the ones you made, live, draft or with changes. -->
+    <MarAppsPage v-else-if="tab === 'mine'" embedded toolbar-to="#mar-ex-lib-tools" />
 
     <!-- Templates -->
     <div v-else-if="tab === 'templates'" class="mar-ex-grid">
