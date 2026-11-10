@@ -43,7 +43,7 @@ import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSele
 const resultListClass =
   'grid gap-x-6 m-0 [&>div]:min-w-0 [&_dt]:text-neutral-200 [&_dt]:[text-align:var(--perf-label-align,left)] [&_dd]:mt-[var(--perf-value-margin,4px)] [&_dd]:[overflow-wrap:anywhere] [&_dd]:[color:var(--perf-value-color,var(--text-primary))] [&_dd]:text-[length:var(--perf-value-size,24px)] [&_dd]:leading-[var(--perf-value-leading,1.25)] [&_dd]:[text-align:var(--perf-value-align,left)]'
 const compactResultListClass =
-  'grid-cols-1 gap-y-2 [--perf-value-margin:0px] [--perf-value-size:12px] [--perf-value-leading:1.3] [--perf-value-color:var(--text-muted)] [--perf-value-align:right] [--perf-label-align:left] [&>div]:flex [&>div]:items-baseline [&>div]:justify-between [&>div]:gap-2 [&>div]:pb-1 [&>div]:border-b [&>div]:border-solid [&>div]:border-[var(--chooser-surface-border)] [&_dt]:flex-none [&_dt]:text-[12px]'
+  'grid-cols-1 gap-y-2 [--perf-value-margin:0px] [--perf-value-size:12px] [--perf-value-leading:1.3] [--perf-value-color:var(--text-muted)] [--perf-value-align:right] [--perf-label-align:left] [&>div]:flex [&>div]:items-baseline [&>div]:justify-between [&>div]:gap-2 [&>div]:pb-1 [&_dt]:flex-none [&_dt]:text-[12px]'
 
 interface PerformanceTestRunTelemetry {
   readonly installationId: string
@@ -700,9 +700,9 @@ watch(performanceTestLogs, async () => {
         </BrandedPageHeader>
         <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-8">
           <div
-            class="performance-test__setup grid w-full flex-none grid-cols-[minmax(220px,1fr)_minmax(0,1.3fr)_minmax(220px,1fr)] overflow-hidden rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] [&>section+section]:border-l [&>section+section]:border-solid [&>section+section]:border-[var(--chooser-surface-border)] @max-[800px]:grid-cols-1 @max-[800px]:[&>section+section]:border-l-0 @max-[800px]:[&>section+section]:border-t"
+            class="performance-test__setup grid w-full flex-none grid-cols-[minmax(200px,1fr)_minmax(0,1.3fr)_minmax(200px,1fr)] gap-x-10 gap-y-8 rounded-[14px] bg-[color-mix(in_srgb,white_5%,transparent)] p-6 @max-[800px]:grid-cols-1"
           >
-            <section class="performance-test__step flex min-w-0 flex-col gap-4 p-5">
+            <section class="performance-test__step flex min-w-0 flex-col gap-4">
               <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
                 {{ t('performanceTest.selectInstance') }}
               </h2>
@@ -733,7 +733,7 @@ watch(performanceTestLogs, async () => {
               </div>
             </section>
 
-            <section class="performance-test__step flex min-w-0 flex-col gap-4 p-5">
+            <section class="performance-test__step flex min-w-0 flex-col gap-4">
               <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
                 {{ t('performanceTest.chooseWorkflow') }}
               </h2>
@@ -758,7 +758,7 @@ watch(performanceTestLogs, async () => {
                 }}
               </Button>
               <div
-                class="performance-test__workflow-divider flex w-full items-center gap-2.5 text-[12px] text-[var(--text-faint)] before:h-px before:flex-1 before:bg-[var(--chooser-surface-border)] before:content-[''] after:h-px after:flex-1 after:bg-[var(--chooser-surface-border)] after:content-['']"
+                class="performance-test__workflow-divider w-full text-center text-[12px] text-[var(--text-faint)]"
               >
                 <span>{{ t('performanceTest.orImportApiWorkflow') }}</span>
               </div>
@@ -815,7 +815,7 @@ watch(performanceTestLogs, async () => {
                     <template v-else-if="exampleDownload">
                       <code>{{ exampleDownload.message }}</code>
                       <span
-                        class="performance-test__example-download-bar block h-1 overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)] [&>span]:block [&>span]:h-full [&>span]:rounded-[inherit] [&>span]:bg-[var(--action)] [&>span]:transition-[width] [&>span]:duration-[400ms] [&>span]:ease-[ease]"
+                        class="performance-test__example-download-bar block h-1 overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)] [&>span]:block [&>span]:h-full [&>span]:rounded-[inherit] [&>span]:bg-neutral-100 [&>span]:transition-[width] [&>span]:duration-[400ms] [&>span]:ease-[ease]"
                         role="progressbar"
                         :aria-valuenow="
                           exampleDownload.percent >= 0 ? exampleDownload.percent : undefined
@@ -868,16 +868,12 @@ watch(performanceTestLogs, async () => {
               </p>
             </section>
 
-            <section class="performance-test__step flex min-w-0 flex-col gap-4 p-5">
+            <section class="performance-test__step flex min-w-0 flex-col gap-4">
               <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
                 {{ t('performanceTest.measurementSettings') }}
               </h2>
-              <div
-                class="performance-test__settings flex flex-col [&>div+div]:border-t [&>div+div]:border-solid [&>div+div]:border-[var(--chooser-surface-border)]"
-              >
-                <div
-                  class="performance-test__setting flex w-full items-center gap-3 py-2.5 first:pt-0"
-                >
+              <div class="performance-test__settings flex flex-col gap-3">
+                <div class="performance-test__setting flex w-full items-center gap-3">
                   <span class="performance-test__setting-label inline-flex min-w-0 items-center">
                     <label
                       for="performance-test-warmup-runs"
@@ -902,7 +898,7 @@ watch(performanceTestLogs, async () => {
                     />
                   </div>
                 </div>
-                <div class="performance-test__setting flex w-full items-center gap-3 py-2.5">
+                <div class="performance-test__setting flex w-full items-center gap-3">
                   <span class="performance-test__setting-label inline-flex min-w-0 items-center">
                     <label
                       for="performance-test-measured-runs"
@@ -961,7 +957,7 @@ watch(performanceTestLogs, async () => {
                   </span>
                 </div>
                 <div
-                  class="performance-test__progress-track h-2 overflow-hidden rounded-[999px] bg-[var(--chooser-surface-border)] [&>i]:block [&>i]:h-full [&>i]:rounded-[inherit] [&>i]:bg-comfy-yellow [&>i]:transition-[width] [&>i]:duration-[180ms] [&>i]:ease-[ease]"
+                  class="performance-test__progress-track h-2 overflow-hidden rounded-[999px] bg-[var(--chooser-surface-border)] [&>i]:block [&>i]:h-full [&>i]:rounded-[inherit] [&>i]:bg-neutral-100 [&>i]:transition-[width] [&>i]:duration-[180ms] [&>i]:ease-[ease]"
                   role="progressbar"
                   :aria-label="t('performanceTest.runProgress')"
                   :aria-valuenow="completedProgressRuns"
@@ -996,7 +992,7 @@ watch(performanceTestLogs, async () => {
                       <div
                         v-for="aggregate in aggregateChart"
                         :key="aggregate.label"
-                        class="performance-test__aggregate-bar grid grid-cols-[110px_minmax(40px,1fr)] items-center gap-2 text-[10px] leading-[1.2] text-text-muted [&>div]:h-[5px] [&>div]:overflow-hidden [&>div]:rounded-[999px] [&>div]:bg-[var(--chooser-surface-border)] [&_i]:block [&_i]:h-full [&_i]:rounded-[inherit] [&_i]:bg-comfy-yellow"
+                        class="performance-test__aggregate-bar grid grid-cols-[110px_minmax(40px,1fr)] items-center gap-2 text-[10px] leading-[1.2] text-text-muted [&>div]:h-[5px] [&>div]:overflow-hidden [&>div]:rounded-[999px] [&>div]:bg-[var(--chooser-surface-border)] [&_i]:block [&_i]:h-full [&_i]:rounded-[inherit] [&_i]:bg-neutral-100"
                       >
                         <span>{{ aggregate.label }}</span>
                         <div aria-hidden="true">
@@ -1056,7 +1052,7 @@ watch(performanceTestLogs, async () => {
               </template>
               <div
                 v-else
-                class="performance-test__results-placeholder flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center"
+                class="performance-test__results-placeholder flex flex-col items-center justify-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center"
               >
                 <Gauge :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
                 <p class="m-0">{{ t('performanceTest.resultsPlaceholder') }}</p>
@@ -1066,7 +1062,7 @@ watch(performanceTestLogs, async () => {
                 <h3>{{ t('performanceTest.systemInformation') }}</h3>
                 <div class="performance-test__system-groups grid grid-cols-2 gap-3">
                   <section
-                    class="performance-test__system-group min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg-hover)_45%,transparent)] p-3.5"
+                    class="performance-test__system-group min-w-0 rounded-[14px] bg-[color-mix(in_srgb,white_4%,transparent)] p-4"
                   >
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
@@ -1097,7 +1093,7 @@ watch(performanceTestLogs, async () => {
 
                   <section
                     v-if="performanceTestResult.systemInfo"
-                    class="performance-test__system-group min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg-hover)_45%,transparent)] p-3.5"
+                    class="performance-test__system-group min-w-0 rounded-[14px] bg-[color-mix(in_srgb,white_4%,transparent)] p-4"
                   >
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
@@ -1168,15 +1164,10 @@ watch(performanceTestLogs, async () => {
             </div>
           </section>
           <section
-            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col overflow-hidden rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,black_40%,transparent)] [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
+            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col overflow-hidden rounded-[14px] bg-[color-mix(in_srgb,black_40%,transparent)] [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
             :class="{ 'performance-test__logs-section--collapsed': !logsExpanded }"
           >
-            <div
-              class="performance-test__logs-head flex items-center gap-2 px-4 py-3"
-              :class="{
-                'border-b border-solid border-[var(--chooser-surface-border)]': logsExpanded
-              }"
-            >
+            <div class="performance-test__logs-head flex items-center gap-2 px-4 py-3">
               <CollapsibleSectionToggle
                 :expanded="logsExpanded"
                 :label="t('settings.logs')"
@@ -1191,7 +1182,7 @@ watch(performanceTestLogs, async () => {
             <div
               v-show="logsExpanded"
               ref="logsElement"
-              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto px-4 py-3 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
+              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto px-4 pt-0 pb-3 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
               aria-live="polite"
             >
               {{ performanceTestLogs || t('performanceTest.logsPlaceholder') }}
