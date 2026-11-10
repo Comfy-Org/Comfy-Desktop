@@ -10,7 +10,9 @@ import {
   _test_ageEntries as _test_ageReleaseCacheEntries
 } from './release-cache'
 import { _test_getOpenTitlePopupBounds } from '../popups/titlePopup'
-import { stageModels, resolveModelManifest, installModelsRoot } from '../comfybuilder'
+import { resolveModelManifest } from '../comfybuilder'
+import { runModelStagingTask } from '../sources/comfybuilder/modelStagingTask'
+import type { InstallationRecord } from '../installations'
 import { getBuilderClient } from '../devplatform/session'
 import { returnToDashboard } from '../host/detach'
 import { comfyWindows, getEntryByInstallationId, isInstallHost } from '../host/registry'
@@ -155,19 +157,13 @@ export function registerE2EHooks(): void {
       try {
         const dm = await import('./comfyDownloadManager')
         await dm.initializeModelDownloads()
-        const releaseModelRoot = dm.acquireModelDownloadRootLock(installModelsRoot(installPath))
-        if (!releaseModelRoot) {
-          return { error: 'The model directory is busy.', kind: 'busy' }
-        }
-        try {
-          await stageModels({
-            models: manifest.models,
-            installPath,
-            jobs: { start: dm.startManagedModelJob, cancel: dm.cancelModelDownload }
-          })
-        } finally {
-          releaseModelRoot()
-        }
+        const installation = { id: `e2e-${buildId}`, installPath } as InstallationRecord
+        const outcome = await runModelStagingTask(
+          installation,
+          manifest.models,
+          new AbortController().signal
+        )
+        if (outcome === 'busy') return { error: 'The model directory is busy.', kind: 'busy' }
         return { staged: manifest.models.map((m) => `${m.type}/${m.filename}`) }
       } catch (e) {
         const err = e as { message?: string; kind?: string }

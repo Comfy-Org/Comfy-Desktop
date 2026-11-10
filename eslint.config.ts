@@ -12,6 +12,8 @@ import noNewVueStyleBlocks from './scripts/eslint/no-new-vue-style-blocks'
 
 const extraFileExtensions = ['.vue']
 
+const publishedApiSpecs = ['./src/types/comfyDesktopBridge.ts']
+
 const desktop = {
   rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
 }
@@ -94,6 +96,10 @@ export default defineConfig([
       'vue/no-use-v-else-with-v-for': 'error',
       'vue/one-component-per-file': 'error'
     }
+  },
+  {
+    files: publishedApiSpecs,
+    rules: { 'desktop/no-comments': ['error', { allowDocComments: true }] }
   },
   {
     files: ['./e2e/support/**/*.cjs'],

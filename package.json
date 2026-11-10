@@ -1,6 +1,6 @@
 {
   "name": "comfyui-desktop-2",
-  "version": "1.1.9",
+  "version": "1.1.10-rc.1",
   "description": "Comfy Desktop",
   "author": {
     "name": "Comfy Org",
@@ -55,6 +55,7 @@
     "test:integration": "vitest run -c vitest.integration.config.ts",
     "test:e2e": "playwright test",
     "test:e2e:macos": "playwright test --project=macos",
+    "test:e2e:macos:focus": "playwright test --project=macos-focus --pass-with-no-tests",
     "test:e2e:windows": "playwright test --project=windows",
     "test:e2e:windows:focus": "playwright test --project=windows-focus --pass-with-no-tests",
     "test:e2e:hardware-acceleration": "playwright test --project=windows e2e/hardware-acceleration.test.ts",

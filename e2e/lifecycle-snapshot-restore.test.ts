@@ -191,7 +191,7 @@ test.afterAll(async () => {
   if (workTmpPath) await rm(workTmpPath, { recursive: true, force: true })
 })
 
-test('seeded HEADs start at commit B (sanity) @lifecycle', async () => {
+test('seeded HEADs start at commit B (sanity) @lifecycle @windows @macos @linux', async () => {
   const comfyHead = gitIn(path.join(stagedInstallPath, 'ComfyUI'), ['rev-parse', 'HEAD'])
   const nodeHead = gitIn(path.join(stagedInstallPath, 'ComfyUI', 'custom_nodes', NODE_DIRNAME), [
     'rev-parse',
@@ -201,7 +201,7 @@ test('seeded HEADs start at commit B (sanity) @lifecycle', async () => {
   expect(nodeHead).toBe(nodeCommitB)
 })
 
-test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', async () => {
+test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle @windows @macos @linux', async () => {
   const list = await ctx.panel.evaluate<SnapshotListResult>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`
   )
@@ -254,7 +254,7 @@ test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle', a
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('restore captures a post-restore snapshot @lifecycle', async () => {
+test('restore captures a post-restore snapshot @lifecycle @windows @macos @linux', async () => {
   await expect
     .poll(
       async () =>

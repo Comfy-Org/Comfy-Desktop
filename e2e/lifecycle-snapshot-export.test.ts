@@ -125,7 +125,7 @@ async function waitForExportedEnvelope<T>(prefix: string): Promise<T> {
   }
 }
 
-test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () => {
+test('per-row Export writes a valid envelope JSON to disk @windows @macos @linux', async () => {
   const popup = await openSnapshotsTab()
 
   const filenames = await ctx.panel.evaluate<string[]>(
@@ -151,7 +151,7 @@ test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () 
   expect(envelope.snapshots?.[0]?.comfyui?.commit).toBe(COMMIT_B)
 })
 
-test('Export All writes an envelope containing every seeded snapshot @lifecycle', async () => {
+test('Export All writes an envelope containing every seeded snapshot @windows @macos @linux', async () => {
   const popup = await openSnapshotsTab()
 
   await popup.waitForVisible(byTestId(TID.snapshotsExportAll), { timeout: 5_000 })

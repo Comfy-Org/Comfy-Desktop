@@ -137,7 +137,7 @@ async function findExportedFile(prefix: string): Promise<string | null> {
   return match ? path.join(exportDir, match) : null
 }
 
-test('Export All from A writes an envelope containing both seeded snapshots @lifecycle', async () => {
+test('Export All from A writes an envelope containing both seeded snapshots @windows @macos @linux', async () => {
   const popup = await openSnapshotsTab(INSTALL_ID_A)
 
   await popup.waitForVisible(byTestId(TID.snapshotsExportAll), { timeout: 5_000 })
@@ -172,7 +172,7 @@ test('Export All from A writes an envelope containing both seeded snapshots @lif
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('Import into B previews the full envelope and stages it without committing history @lifecycle', async () => {
+test('Import into B previews the full envelope and stages it without committing history @windows @macos @linux', async () => {
   const initialCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID_B)}).then(d => d.snapshots.length)`
   )
