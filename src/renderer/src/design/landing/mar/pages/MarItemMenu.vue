@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { Check, MoreHorizontal } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuSub, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
@@ -26,6 +27,14 @@ const {
   align?: 'start' | 'end'
 }>()
 const open = defineModel<boolean>('open', { default: false })
+// One submenu at a time: a quick sweep down the list could leave the
+// ones it crossed open, stacked beside each other (as AssetFilterMenu).
+const sub = ref(-1)
+const only = (i: number, on: boolean): void => {
+  if (on) sub.value = i
+  else if (sub.value === i) sub.value = -1
+}
+watch(open, (o) => !o && (sub.value = -1))
 </script>
 
 <template>
@@ -47,7 +56,7 @@ const open = defineModel<boolean>('open', { default: false })
       <template v-for="(l, i) in lines" :key="i">
         <DropdownMenuSeparator v-if="l === 'sep'" />
         <p v-else-if="'note' in l" class="mar-menu-note">{{ l.note }}</p>
-        <DropdownMenuSub v-else-if="l.sub">
+        <DropdownMenuSub v-else-if="l.sub" :open="sub === i" @update:open="only(i, $event)">
           <DropdownMenuSubTrigger
             ><component :is="l.icon" v-if="l.icon" :size="15" />{{
               l.label

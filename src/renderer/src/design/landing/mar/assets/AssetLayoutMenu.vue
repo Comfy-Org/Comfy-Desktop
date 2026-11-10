@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Check, LayoutGrid, Minus, Plus } from 'lucide-vue-next'
 import { DropdownMenuItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
@@ -35,6 +35,13 @@ const {
   views?: AssetView[]
 }>()
 
+// One submenu at a time: a quick sweep down the list could leave the
+// ones it crossed open, stacked beside each other (as AssetFilterMenu).
+const sub = ref('')
+const only = (key: string, open: boolean): void => {
+  if (open) sub.value = key
+  else if (sub.value === key) sub.value = ''
+}
 const SIZES = 3
 const VIEWS = computed(() => WALLS.filter((w) => views.includes(w.value)))
 const sortLabel = computed(() => sorts.find((s) => s.value === sort.value)?.label ?? '')
@@ -62,7 +69,7 @@ const showLabel = computed(() => {
 </script>
 
 <template>
-  <DropdownMenuRoot :modal="false">
+  <DropdownMenuRoot :modal="false" @update:open="(o) => !o && (sub = '')">
     <DropdownMenuTrigger as-child>
       <button type="button" class="alm-trigger" aria-label="Layout" title="Layout">
         <LayoutGrid :size="15" />
@@ -119,7 +126,11 @@ const showLabel = computed(() => {
           <Plus :size="13" />
         </button>
       </div>
-      <DropdownMenuSub v-if="sorts.length">
+      <DropdownMenuSub
+        v-if="sorts.length"
+        :open="sub === 'sort'"
+        @update:open="only('sort', $event)"
+      >
         <DropdownMenuSubTrigger class="alm-row"
           ><span class="alm-cap flex-1">Sort by</span
           ><span class="text-subtle-foreground">{{ sortLabel }}</span></DropdownMenuSubTrigger
@@ -136,7 +147,11 @@ const showLabel = computed(() => {
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      <DropdownMenuSub v-if="groups.length">
+      <DropdownMenuSub
+        v-if="groups.length"
+        :open="sub === 'group'"
+        @update:open="only('group', $event)"
+      >
         <DropdownMenuSubTrigger class="alm-row"
           ><span class="alm-cap flex-1">Group by</span
           ><span class="text-subtle-foreground">{{ groupLabel }}</span></DropdownMenuSubTrigger
@@ -153,7 +168,11 @@ const showLabel = computed(() => {
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      <DropdownMenuSub v-if="SHOW.length">
+      <DropdownMenuSub
+        v-if="SHOW.length"
+        :open="sub === 'show'"
+        @update:open="only('show', $event)"
+      >
         <DropdownMenuSubTrigger class="alm-row"
           ><span class="alm-cap flex-1">Show</span
           ><span class="alm-val">{{ showLabel }}</span></DropdownMenuSubTrigger
