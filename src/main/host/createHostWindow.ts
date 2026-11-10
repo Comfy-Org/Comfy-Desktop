@@ -736,8 +736,7 @@ export function buildComfyView(
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {
-    const liveEntry = comfyWindows.get(windowKey)
-    if (!liveEntry || isChooserHost(liveEntry)) return
+    if (!comfyWindows.has(windowKey)) return
     e.preventDefault()
   })
   attachContextMenu(comfyWindow, comfyContents)
