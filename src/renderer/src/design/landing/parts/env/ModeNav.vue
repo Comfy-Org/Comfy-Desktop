@@ -7,7 +7,6 @@ import {
   Compass,
   GraduationCap,
   Home,
-  Images,
   KeyRound,
   LayoutDashboard,
   Rocket,
@@ -17,6 +16,7 @@ import {
   SquareArrowOutUpRight,
   Workflow
 } from 'lucide-vue-next'
+import { ComfyAssets } from '../../mar/icons/comfyIcons'
 import Button from '../../ui/Button.vue'
 import { cn } from '../../ui/cn'
 import { go, isNewUser, proto, toast, type Mode, type Page } from '../../useProto'
@@ -69,7 +69,7 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
       : []),
     // Where an app's results land, before Projects brings the Libraries group.
     ...(can.value.exploreApps && !can.value.projects
-      ? [{ page: 'assets' as Page, label: 'Assets', icon: Images }]
+      ? [{ page: 'assets' as Page, label: 'Assets', icon: ComfyAssets }]
       : []),
     ...(can.value.projects
       ? [
@@ -83,7 +83,7 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
           ...(proto.signedIn
             ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
             : []),
-          { page: 'assets' as Page, label: 'Assets', icon: Images },
+          { page: 'assets' as Page, label: 'Assets', icon: ComfyAssets },
           // No builds to list: a new user before any install, or logged out.
           ...((isNewUser.value && proto.fresh) || !proto.signedIn
             ? []
