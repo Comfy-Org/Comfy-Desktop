@@ -43,7 +43,14 @@ import {
   uploadForm,
   VERSIONS_FILE
 } from './guards'
-import { getLocal, initLocalComfy, localFetch, startLocal, syncLocalSocket } from './localComfy'
+import {
+  getLocal,
+  initLocalComfy,
+  localDownload,
+  localFetch,
+  startLocal,
+  syncLocalSocket
+} from './localComfy'
 
 const APPS_URL = appsUrl()
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -462,4 +469,5 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:get-local', getLocal)
   handleFromApps('comfy-apps:start-local', startLocal)
   handleFromApps('comfy-apps:local-fetch', localFetch)
+  handleFromApps('comfy-apps:local-download', localDownload)
 }

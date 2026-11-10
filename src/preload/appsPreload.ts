@@ -27,7 +27,8 @@ const CALLS = [
   'getLocal',
   'startLocal',
   'localFetch',
-  'onLocalEvent'
+  'onLocalEvent',
+  'localDownload'
 ]
 
 contextBridge.exposeInMainWorld('comfyDesktopApps', {
@@ -61,7 +62,12 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
   // One call to it, from main's short list: { method, path, body?, fileName? } -> { status, contentType, body }.
   localFetch: (req: { method: string; path: string; body?: unknown; fileName?: string }) =>
     ipcRenderer.invoke('comfy-apps:local-fetch', req),
-  // Its run messages ({ type, data }) as they arrive; returns the call that stops them.
+  // A model from huggingface.co into the install's models folder: { url, folder, name } ->
+  // { state: 'done' } or { state: 'failed', error }. Progress comes through onLocalEvent as type 'download'.
+  localDownload: (req: { url: string; folder: string; name: string }) =>
+    ipcRenderer.invoke('comfy-apps:local-download', req),
+  // Its run messages ({ type, data }) and model downloads ({ type: 'download', data }) as they
+  // arrive; returns the call that stops them.
   onLocalEvent: (callback: (event: unknown) => void) => {
     const listener = (_e: IpcRendererEvent, msg: unknown) => callback(msg)
     ipcRenderer.on('comfy-apps:local-event', listener)

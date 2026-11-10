@@ -397,3 +397,56 @@ export function localInstalls<T extends LocalInstall>(
     .sort((a, b) => at(b.inst) - at(a.inst) || a.i - b.i)
     .map(({ inst }) => inst)
 }
+
+/** The model folders an app may fill, under the install's models folder. */
+export const DOWNLOAD_FOLDERS = [
+  'checkpoints',
+  'controlnet',
+  'loras',
+  'vae',
+  'upscale_models',
+  'clip_vision',
+  'text_encoders',
+  'diffusion_models'
+]
+
+export interface DownloadRequest {
+  url: string
+  folder: string
+  name: string
+}
+
+/**
+ * A model the page asks Desktop to fetch: from huggingface.co over https only (Hugging Face's
+ * own redirect to its file servers is followed), into one of the folders above, under a plain
+ * model file name. `.bin` is refused: Desktop's model downloader takes only .safetensors, .sft,
+ * .ckpt, .pth and .pt (lib/downloadFilename.ts), and .ckpt/.pt can run code when loaded.
+ */
+export function downloadRequest(input: unknown): DownloadRequest | { error: string } {
+  if (!input || typeof input !== 'object') return { error: 'Name a model to download.' }
+  const { url, folder, name } = input as Record<string, unknown>
+  let parsed: URL
+  try {
+    parsed = new URL(typeof url === 'string' ? url : '')
+  } catch {
+    return { error: 'Models download only from huggingface.co.' }
+  }
+  if (
+    parsed.protocol !== 'https:' ||
+    parsed.hostname !== 'huggingface.co' ||
+    parsed.port !== '' ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.pathname.length < 2
+  ) {
+    return { error: 'Models download only from huggingface.co.' }
+  }
+  if (typeof folder !== 'string' || !DOWNLOAD_FOLDERS.includes(folder)) {
+    return { error: 'Apps cannot put a model in that folder.' }
+  }
+  if (typeof name !== 'string' || !/^[A-Za-z0-9._-]{1,128}\.(safetensors|pth)$/.test(name)) {
+    return { error: 'A model name ends in .safetensors or .pth.' }
+  }
+  if (name.startsWith('.')) return { error: 'A model name ends in .safetensors or .pth.' }
+  return { url: parsed.href, folder, name }
+}

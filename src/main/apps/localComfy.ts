@@ -10,6 +10,7 @@
  */
 import { randomUUID } from 'crypto'
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
+import { promises as fsp } from 'fs'
 
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
@@ -21,8 +22,11 @@ import {
   sourceMap
 } from '../lib/ipc/shared'
 import { dispatchSessionAction } from '../lib/ipc/sessionActions'
+import { startManagedModelJob } from '../lib/comfyDownloadManager'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
 import {
+  type DownloadRequest,
+  downloadRequest,
   type LocalAnswer,
   localEvent,
   localInstalls,
@@ -193,6 +197,84 @@ export async function localFetch(input: unknown): Promise<LocalAnswer> {
       ? textAnswer(504, 'ComfyUI took too long to answer.')
       : textAnswer(502, 'ComfyUI did not answer.')
   }
+}
+
+// ---- models: fetched by Desktop's own model downloader into the install's models folder ----
+
+export type LocalDownload = { state: 'done' } | { state: 'failed'; error: string }
+
+/** Downloads this file started, by install, source and target; a second ask joins the first. */
+const downloads = new Map<string, Promise<LocalDownload>>()
+
+async function runDownload(installationId: string, req: DownloadRequest): Promise<LocalDownload> {
+  let done = 0
+  let total = 0
+  let moved = false
+  const send = (state: 'running' | 'done' | 'failed', error?: string) =>
+    forward({
+      type: 'download',
+      data: { ...req, done, total, state, ...(error ? { error } : {}) }
+    })
+  const failed = (error: string): LocalDownload => {
+    send('failed', error)
+    return { state: 'failed', error }
+  }
+  // The same job the Downloads tray shows: the install's models folder (its extra model paths
+  // count as already there), a .part file renamed into place when complete, one transfer per
+  // target file however many ask.
+  const handle = await startManagedModelJob({
+    url: req.url,
+    filename: req.name,
+    directory: req.folder,
+    installationId,
+    onProgress: (received, size) => {
+      done = received
+      total = size
+      moved = true
+    }
+  }).catch(() => null)
+  if (!handle) return failed('Desktop could not start the download.')
+  // At most four progress messages a second.
+  const timer = setInterval(() => {
+    if (!moved) return
+    moved = false
+    send('running')
+  }, 250)
+  let outcome: Awaited<typeof handle.completion>
+  try {
+    outcome = await handle.completion
+  } finally {
+    clearInterval(timer)
+    handle.release()
+  }
+  if (outcome.status === 'cancelled') return failed('The download was cancelled.')
+  if (outcome.status === 'error') return failed(shortError(outcome.error))
+  const size = await fsp.stat(outcome.savePath).then(
+    (st) => st.size,
+    () => total
+  )
+  done = total = size
+  send('done')
+  return { state: 'done' }
+}
+
+/**
+ * Put a model the page names into the local install's models folder; resolves when the file is
+ * there. The install is the running one, else the one startLocal would start: the models
+ * folder comes from the install's settings, so ComfyUI need not be running.
+ */
+export async function localDownload(input: unknown): Promise<LocalDownload> {
+  const req = downloadRequest(input)
+  if ('error' in req) return { state: 'failed', error: req.error }
+  const installationId = runningLocal()?.id ?? (await currentState()).install?.id
+  if (!installationId) return { state: 'failed', error: 'Start your ComfyUI first.' }
+  const key = [installationId, req.url, req.folder, req.name].join('\n')
+  let job = downloads.get(key)
+  if (!job) {
+    job = runDownload(installationId, req).finally(() => downloads.delete(key))
+    downloads.set(key, job)
+  }
+  return job
 }
 
 // ---- the websocket: open while a local ComfyUI runs and an Apps view is open ----

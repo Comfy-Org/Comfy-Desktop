@@ -6,6 +6,7 @@ import {
   appsUrl,
   cleanSaveName,
   collectOutputs,
+  downloadRequest,
   DEFAULT_APPS_URL,
   isAppsFrameUrl,
   isInside,
@@ -398,5 +399,71 @@ describe('localInstalls', () => {
       { id: 'r', name: 'Remote', sourceId: 'remote' }
     ]
     expect(localInstalls(list, category)).toEqual([])
+  })
+})
+
+describe('downloadRequest', () => {
+  const url = 'https://huggingface.co/org/repo/resolve/main/model.safetensors'
+  const ok = { url, folder: 'checkpoints', name: 'model.safetensors' }
+
+  it('passes a Hugging Face model into a known folder', () => {
+    expect(downloadRequest(ok)).toEqual(ok)
+    expect(downloadRequest({ ...ok, folder: 'upscale_models', name: '4x-Ultra_v2.pth' })).toEqual({
+      ...ok,
+      folder: 'upscale_models',
+      name: '4x-Ultra_v2.pth'
+    })
+    for (const folder of ['controlnet', 'loras', 'vae', 'clip_vision', 'text_encoders']) {
+      expect(downloadRequest({ ...ok, folder })).not.toHaveProperty('error')
+    }
+    expect(downloadRequest({ ...ok, folder: 'diffusion_models' })).not.toHaveProperty('error')
+  })
+
+  it('refuses other hosts, plain http, ports and credentials', () => {
+    for (const bad of [
+      'http://huggingface.co/org/repo/resolve/main/model.safetensors',
+      'https://huggingface.co.evil.example/x.safetensors',
+      'https://evil.example/huggingface.co/x.safetensors',
+      'https://cdn-lfs.huggingface.co/x.safetensors',
+      'https://huggingface.co:8443/org/repo/x.safetensors',
+      'https://user:pass@huggingface.co/org/repo/x.safetensors',
+      'https://token@huggingface.co/org/repo/x.safetensors',
+      'https://huggingface.co/',
+      'file:///etc/passwd',
+      'not a url',
+      42
+    ]) {
+      expect(downloadRequest({ ...ok, url: bad }), String(bad)).toHaveProperty('error')
+    }
+  })
+
+  it('refuses other folders', () => {
+    for (const folder of ['custom_nodes', '../checkpoints', 'checkpoints/sub', 'clip', '', 1]) {
+      expect(downloadRequest({ ...ok, folder }), String(folder)).toHaveProperty('error')
+    }
+  })
+
+  it('refuses names that are not plain model files', () => {
+    for (const name of [
+      'model.ckpt',
+      'model.pt',
+      'pytorch_model.bin',
+      'model.safetensors.exe',
+      'model',
+      '../model.safetensors',
+      'sub/model.safetensors',
+      'my model.safetensors',
+      '.safetensors',
+      '..safetensors',
+      'a'.repeat(129) + '.safetensors',
+      undefined
+    ]) {
+      expect(downloadRequest({ ...ok, name }), String(name)).toHaveProperty('error')
+    }
+  })
+
+  it('refuses a missing request', () => {
+    expect(downloadRequest(null)).toHaveProperty('error')
+    expect(downloadRequest('x')).toHaveProperty('error')
   })
 })
