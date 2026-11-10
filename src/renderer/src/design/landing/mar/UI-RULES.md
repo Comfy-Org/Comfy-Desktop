@@ -102,6 +102,10 @@ DS's Motion page (`ds/motion.ts`).
   ones that change).
 - Respect `prefers-reduced-motion` on every transition.
 
+- **Title bar is tabs** (default): Home as an icon, one tab per open
+  workflow and app, so an open workflow stays in view on Home. Pablo's
+  breadcrumb is one pick away (Prototype menu › Title bar).
+
 ## Links
 
 - **Every screen has a view code** in the address bar (`?view=…`, see
