@@ -2226,6 +2226,7 @@ export async function shutdown(reason: string): Promise<void> {
   } finally {
     client = null
     initialized = false
+    publishProactiveGreetingAdmission()
   }
 }
 
@@ -2258,7 +2259,7 @@ export function installAppHooks(): void {
   beforeQuitHooked = true
 
   app.on('before-quit', (event) => {
-    if (drainingForQuit || !client) return
+    if (event.defaultPrevented || drainingForQuit || !client) return
     drainingForQuit = true
     event.preventDefault()
     const drainPromise = shutdown('quit').catch(() => {})

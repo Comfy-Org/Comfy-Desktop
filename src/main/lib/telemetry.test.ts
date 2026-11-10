@@ -7,11 +7,16 @@ import type { PostHog } from 'posthog-node'
 import type { TelemetryValue } from './telemetry'
 import { DEFAULT_POSTHOG_API_KEY, DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
 
+const electronAppMock = vi.hoisted(() => ({
+  on: vi.fn<(event: string, listener: (event: Electron.Event) => void) => void>(),
+  quit: vi.fn()
+}))
+
 vi.mock('electron', () => ({
   app: {
     getPath: () => path.join(os.tmpdir(), 'launcher-test'),
     isPackaged: true,
-    on: () => {}
+    ...electronAppMock
   },
   BrowserWindow: { getAllWindows: () => [] }
 }))
@@ -84,6 +89,7 @@ const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, u
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
   failNextFlushes: 0,
+  shutdown: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   autoFailNextIdentifies: 0,
   featureFlagResult: undefined as
     | { enabled: boolean; variant?: string; payload?: unknown }
@@ -163,7 +169,7 @@ vi.mock('posthog-node', () => ({
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
-      return Promise.resolve()
+      return posthogClientMock.shutdown()
     }
     getFeatureFlagResult(
       key: string,
@@ -492,6 +498,62 @@ describe('proactive greeting pair attribution', () => {
     unsubscribe()
   })
 
+  it('honors a canceled quit, then drains and reissues a confirmed quit once', async () => {
+    vi.useFakeTimers()
+    try {
+      signIn()
+      telemetry.installAppHooks()
+      const onBeforeQuit = electronAppMock.on.mock.calls.find(
+        ([event]) => event === 'before-quit'
+      )![1]
+      const canceled = { defaultPrevented: true, preventDefault: vi.fn() }
+      onBeforeQuit(canceled)
+      await vi.runAllTimersAsync()
+      expect(posthogClientMock.shutdown).not.toHaveBeenCalled()
+      expect(electronAppMock.quit).not.toHaveBeenCalled()
+      expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(true)
+      expect(telemetry.capture('after.canceled.quit')).toBe(true)
+
+      const drain = Promise.withResolvers<void>()
+      posthogClientMock.shutdown.mockReturnValueOnce(drain.promise)
+      const confirmed = { defaultPrevented: false, preventDefault: vi.fn() }
+      const reissued = { defaultPrevented: false, preventDefault: vi.fn() }
+      electronAppMock.quit.mockImplementationOnce(() => onBeforeQuit(reissued))
+      onBeforeQuit(confirmed)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(confirmed.preventDefault).toHaveBeenCalledTimes(1)
+      expect(posthogClientMock.shutdown).toHaveBeenCalledTimes(1)
+      expect(electronAppMock.quit).not.toHaveBeenCalled()
+
+      drain.resolve()
+      await vi.runAllTimersAsync()
+      expect(electronAppMock.quit).toHaveBeenCalledTimes(1)
+      expect(posthogClientMock.shutdown).toHaveBeenCalledTimes(1)
+      expect(reissued.preventDefault).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['success', 'failure'])(
+    'shutdown invalidates admission after an SDK drain %s',
+    async (outcome) => {
+      signIn()
+      const changes: boolean[] = []
+      const unsubscribe = telemetry.observeProactiveGreetingAdmissionChanged(() =>
+        changes.push(telemetry.canEnrollProactiveGreeting('firebase-user'))
+      )
+      if (outcome === 'failure') {
+        posthogClientMock.shutdown.mockRejectedValueOnce(new Error('offline'))
+      }
+      await telemetry.shutdown('quit')
+      expect(posthogClientMock.shutdown).toHaveBeenCalledTimes(1)
+      expect(changes).toEqual([false])
+      expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+      unsubscribe()
+    }
+  )
+
   it('attributes a verified Local experiment without binding or identifying ordinary telemetry', () => {
     setupTelemetry()
     captured.length = 0
@@ -577,6 +639,7 @@ afterEach(() => {
   anonymousIdentityMock.fail = false
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
+  posthogClientMock.shutdown.mockReset().mockResolvedValue(undefined)
   posthogClientMock.autoFailNextIdentifies = 0
   posthogClientMock.featureFlagResult = undefined
   posthogClientMock.featureFlagBehavior = 'resolve'
