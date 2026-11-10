@@ -1,10 +1,3 @@
-/**
- * Which Core beta grants a stopped install's next launch is eligible for, decided by the launch's
- * own `planCoreBetaArgs`. Nothing launches, but reading the enrolments can restore their file
- * from its backup, and the first read with beta on can start the campaign fetches. Commit ranges
- * are proven against the current HEAD and cached per (HEAD, commit), which never needs
- * invalidating; a relation git cannot prove is not cached, and its grant is not shown.
- */
 import { MAX_RESOLVED_SHAS, proveCommitRelation } from './coreBetaAncestry'
 import {
   NO_CORE_COMMITS,
@@ -27,7 +20,6 @@ import type { InstallationRecord } from '../installations'
 import type { LaunchCommand } from '../types/sources'
 import type { BetaArgView, CoreBetaArgs } from '../../types/ipc'
 
-/** A proof still running past this keeps going and caches its answer for the next request. */
 export const PREVIEW_PROOF_BUDGET_MS = 5_000
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/
@@ -65,7 +57,6 @@ async function previewCommits(
   const head = checkout.commit.toLowerCase()
   if (!FULL_SHA_RE.test(head)) return NO_CORE_COMMITS
   const ancestry = new Map<string, boolean>()
-  // Sequential: concurrent pygit2 spawns into one repository only contend.
   const work = (async () => {
     for (const sha of shas.slice(0, MAX_RESOLVED_SHAS)) {
       const relation = await relate(repoPath, head, sha)
@@ -83,7 +74,6 @@ async function previewCommits(
   return { head, ancestry: new Map(ancestry) }
 }
 
-/** `inst` with the args the settings view just committed, which can be ahead of the stored write. */
 export function withCommittedArgs(
   inst: InstallationRecord,
   launchArgs: unknown
@@ -110,7 +100,6 @@ export async function previewCoreBetaArgs(
     getIdClass()
   )
   if (grants.length === 0 && campaignGrants.length === 0) return []
-  // A launch without a schema injects no managed args; the args field fills this cache.
   const schema = peekComfyArgsSchema(
     split.mainPyAbs,
     installationId,
@@ -119,7 +108,6 @@ export async function previewCoreBetaArgs(
   if (!schema) return []
   const checkout = resolveCoreCheckout(split.comfyuiDir)
   const core = coreVersionState(inst, checkout)
-  // The floor gets its own proof, as at launch, so it never uses up the grants' cap or budget.
   const [floor, granted] = await Promise.all([
     previewCommits(
       split.comfyuiDir,
@@ -144,7 +132,6 @@ export async function previewCoreBetaArgs(
     commits,
     schema
   })
-  // Enrolments included; only a launch writes a record.
   const campaign = planCampaignArgs({
     ...campaigns,
     records,
@@ -159,13 +146,10 @@ export async function previewCoreBetaArgs(
   return [...plan.applied, ...campaign.applied.map((entry) => entry.grant)].map(toBetaArgView)
 }
 
-/** The beta-args pill's answer: the running session's grants, else the next-launch preview.
- *  Never throws: a failure anywhere costs the pill, never the settings view. */
 export async function answerCoreBetaArgs(
   installationId: string,
   launchArgs: unknown,
   lookup: {
-    /** `null` when the install is not running. */
     sessionArgs: (id: string) => readonly BetaArgView[] | null
     record: (id: string) => Promise<InstallationRecord | null>
     launchCommand: (inst: InstallationRecord) => LaunchCommand | null
@@ -186,7 +170,6 @@ export async function answerCoreBetaArgs(
   }
 }
 
-/** @internal */
 export function _resetForTest(): void {
   relations.clear()
   inFlight.clear()

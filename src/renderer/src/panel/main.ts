@@ -8,7 +8,8 @@ import { i18n } from '../i18n'
 import { initializeRendererBootstrap } from '../lib/rendererBootstrap'
 import { registerE2ERendererHooks } from './e2eRendererHooks'
 
-// Renderer E2E hooks, gated to the `e2e=1` URL flag propagated by main.
+document.documentElement.classList.add('desktop-panel')
+
 if (new URLSearchParams(window.location.search).get('e2e') === '1') {
   registerE2ERendererHooks()
 }
@@ -22,5 +23,4 @@ app.mount('#app')
 
 document.getElementById('panel-boot-splash')?.remove()
 
-// Defer telemetry bootstrap past first paint so chooser/takeover paint ASAP.
 queueMicrotask(() => initializeRendererBootstrap('panel'))

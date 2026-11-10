@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// The gate (`awaitTemplateDownloadSettled`) polls the process-global download
-// state that `startTemplateDownload` writes. We drive that state through the
-// real public API while mocking only the download manager underneath the task,
-// so the poller's branching (terminal / skip / abort / absent) is exercised
-// end-to-end against real managed-job orchestration (issue #1322).
-
 const resolveTemplateModels = vi.fn<() => Promise<Array<Record<string, unknown>>>>()
 const startManagedModelJob = vi.fn()
 const getDiskSpace = vi.fn(async (_dir: string) => ({ free: 1e15, total: 1e15 }))
@@ -23,8 +17,6 @@ vi.mock('../../lib/modelDownloadPaths', () => ({
   resolveDownloadContextById: (id: string) => resolveDownloadContextById(id),
   areModelsPresent: (id: string, models: unknown[]) => areModelsPresent(id, models)
 }))
-// Keep the task hermetic - never touch the real filesystem. `stat` rejects so
-// the completed-size probe is simply skipped.
 vi.mock('fs', () => ({
   default: {
     promises: {
@@ -54,10 +46,8 @@ function makeInstall(id: string) {
   } as unknown as Parameters<typeof startTemplateDownload>[0]
 }
 
-/** Per-handle caller-owned lease release spies, keyed by job id. */
 const jobReleases = new Map<string, ReturnType<typeof vi.fn>>()
 
-/** A managed-job handle whose completion never settles (in-flight download). */
 function hangingJob(url: string) {
   const release = vi.fn()
   jobReleases.set(`id-${url}`, release)
@@ -65,14 +55,11 @@ function hangingJob(url: string) {
     id: `id-${url}`,
     url,
     savePath: `/tmp/models/checkpoints/${url}`,
-    completion: new Promise(() => {
-      /* hangs */
-    }),
+    completion: new Promise(() => {}),
     release
   }
 }
 
-/** Spin the microtask queue + fake-timer poll until the task settles the state. */
 async function flush(): Promise<void> {
   for (let i = 0; i < 8; i++) {
     await Promise.resolve()
@@ -154,17 +141,9 @@ describe('awaitTemplateDownloadSettled', () => {
     ])
     startManagedModelJob.mockImplementation(async () => hangingJob('u'))
     startTemplateDownload(makeInstall('cancel-1'), 0, { sendOutput })
-    // Event-driven: wait for the managed job to be dispatched instead of
-    // counting ticks (lease registration happens after the dispatch await).
     await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
 
     abortTemplateDownload('cancel-1')
-    // The abort must release this install's own lease handle on the actual
-    // managed transfer (never a URL- or id-addressed whole-job cancel -
-    // another caller may hold its own lease on the same job), not just flip
-    // state. The manager parks the transfer once the last lease is released,
-    // so a destination shared with another caller survives. The release may
-    // land via the add-after-abort re-release path, so wait for the event.
     await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalled())
     const ctrl = new AbortController()
     await expect(awaitTemplateDownloadSettled('cancel-1', ctrl.signal)).resolves.toBe('cancelled')
@@ -196,7 +175,7 @@ describe('awaitTemplateDownloadSettled', () => {
     const ctrl = new AbortController()
     const settled = awaitTemplateDownloadSettled('skip-1', ctrl.signal)
     requestSkipTemplateDownload('skip-1')
-    await vi.advanceTimersByTimeAsync(300) // one poll tick
+    await vi.advanceTimersByTimeAsync(300)
     await expect(settled).resolves.toBe('skipped')
   })
 
@@ -208,8 +187,6 @@ describe('awaitTemplateDownloadSettled', () => {
     startTemplateDownload(makeInstall('job-1'), 0, { sendOutput })
     await flush()
 
-    // The SAME managed entry point in-Comfy downloads use, carrying the
-    // install identity so destination/session resolution matches.
     expect(startManagedModelJob).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'u',
@@ -225,8 +202,6 @@ describe('awaitTemplateDownloadSettled', () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
-    // Install-aware storage context (useSharedModels / modelDirs / modelDirsPrimary)
-    // resolved through the same byId lookup the download manager itself uses.
     resolveDownloadContextById.mockResolvedValue({
       downloadBaseDir: '/install/models',
       modelRoots: ['/install/models'],
@@ -236,7 +211,6 @@ describe('awaitTemplateDownloadSettled', () => {
     startTemplateDownload(makeInstall('dest-1'), 1024, { sendOutput })
     await flush()
 
-    // Disk preflight must probe the install-aware base dir, not '/tmp/models'.
     expect(resolveDownloadContextById).toHaveBeenCalledWith('dest-1')
     expect(getDiskSpace).toHaveBeenCalledWith('/install/models')
   })
@@ -269,7 +243,6 @@ describe('awaitTemplateDownloadSettled', () => {
     await vi.advanceTimersByTimeAsync(300)
     await expect(first).resolves.toBe('skipped')
 
-    // Second wait must NOT immediately resolve 'skipped' from the stale flag.
     const ctrl2 = new AbortController()
     const second = awaitTemplateDownloadSettled('skip-clear', ctrl2.signal)
     ctrl2.abort()

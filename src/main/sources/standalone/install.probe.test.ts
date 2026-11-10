@@ -10,7 +10,6 @@ vi.mock('electron', () => ({
 
 import { probeInstallation } from './install'
 
-/** Build a standalone layout (standalone-env/ + manifest.json + ComfyUI/main.py). */
 function makeStandalone(root: string): void {
   fs.mkdirSync(path.join(root, 'standalone-env'), { recursive: true })
   fs.mkdirSync(path.join(root, 'ComfyUI'), { recursive: true })
@@ -54,7 +53,6 @@ describe('standalone probeInstallation', () => {
 
     const result = await probeInstallation(path.join(root, 'ComfyUI'))
     expect(result).not.toBeNull()
-    // installPath must be the root, not the nested ComfyUI folder.
     expect(result!.installPath).toBe(root)
     expect(result!.version).toBe('v0.1.0')
   })
@@ -75,7 +73,6 @@ describe('standalone probeInstallation', () => {
   it('does not resolve up from a non-ComfyUI sibling inside a standalone', async () => {
     const root = path.join(tmp, 'install')
     makeStandalone(root)
-    // Pointing at standalone-env/ (a sibling of ComfyUI) must not track the root.
     expect(await probeInstallation(path.join(root, 'standalone-env'))).toBeNull()
   })
 })

@@ -45,10 +45,6 @@ export function trackGuardrailBlocked(guardrailType: string, flow: string, stage
   })
 }
 
-/**
- * Show blocking alerts for each path issue. Returns `true` if the path is valid
- * (no issues), or `false` if a blocking issue was shown.
- */
 export async function showPathIssueAlerts(
   issues: PathIssue[],
   flow: string,
@@ -67,10 +63,6 @@ export async function showPathIssueAlerts(
   return true
 }
 
-/**
- * Check NVIDIA driver compatibility and show a warning if unsupported.
- * Returns `true` if the caller should proceed, `false` if the user cancelled.
- */
 export async function checkNvidiaDriverOrWarn(
   flow: string,
   stage: string,
@@ -113,10 +105,6 @@ export function trackDiskWarningResponse(
   })
 }
 
-/**
- * Check disk space at the given path and show a warning dialog if insufficient.
- * Returns `true` if the caller should proceed, `false` if the user cancelled.
- */
 export async function checkDiskSpaceOrWarn(opts: {
   path: string
   estimatedRequired: number
@@ -159,34 +147,13 @@ export async function checkDiskSpaceOrWarn(opts: {
   return true
 }
 
-/**
- * Hard-block (not a warn) when the volume can't hold the template's required
- * models. Unlike `checkDiskSpaceOrWarn`, there's no "continue anyway" — running
- * out of disk would leave a half-downloaded model set and a confusing error
- * row, so the user must free space or deselect the template first.
- *
- * Returns `true` when there's room (or nothing to check), `false` when the
- * block alert was shown. `estimatedModelBytes` is the template's coarse model
- * size; a small headroom multiplier covers the unzip/temp overhead and the
- * estimate's imprecision.
- */
 const TEMPLATE_DISK_HEADROOM = 1.1
 
-/** Bytes the volume must have free to safely fit `estimatedModelBytes` of
- *  template models (model size + a headroom for temp/unzip + estimate slop).
- *  Pure — the threshold math, isolated so it's unit-testable. */
 export function templateDiskRequiredBytes(estimatedModelBytes: number): number {
   if (estimatedModelBytes <= 0) return 0
   return Math.ceil(estimatedModelBytes * TEMPLATE_DISK_HEADROOM)
 }
 
-/**
- * Single source of truth for "is the volume too small for this template's
- * models?" — used by the picker (to show the alert + disable Install) and by the
- * wizard (the same decision). Pure: `false` when there's nothing to check
- * (no models, disk space not yet known, or it fits). Keeps the three callers
- * from each re-deriving the rule and drifting.
- */
 export function isTemplateDiskBlocked(
   diskSpace: DiskSpaceInfo | null,
   estimatedModelBytes: number
@@ -196,29 +163,20 @@ export function isTemplateDiskBlocked(
   return diskSpace.free < required
 }
 
-/**
- * Smallest model footprint among the model-bearing templates, or 0 when none
- * carry models. Drives the "skip the picker entirely when even the cheapest
- * template won't fit" gate — there's no point offering a showcase nothing on it
- * can install. Zero-model templates are ignored (they need no disk).
- */
 export function minTemplateModelBytes(modelByteSizes: number[]): number {
   const withModels = modelByteSizes.filter((b) => b > 0)
   return withModels.length ? Math.min(...withModels) : 0
 }
 
-/** A template option's model footprint, or 0 when it carries none. */
 export function templateSizeBytes(option: FieldOption | null | undefined): number {
   const size = option?.data?.sizeBytes
   return typeof size === 'number' && size > 0 ? size : 0
 }
 
-/** Model bytes still to download: 0 when every model is already on disk. */
 export function templateDownloadBytes(option: FieldOption | null | undefined): number {
   return option?.data?.modelsPresent === true ? 0 : templateSizeBytes(option)
 }
 
-/** Runs on API nodes: no models to download, but every run spends credits. */
 export function isApiNodeTemplate(option: FieldOption | null | undefined): boolean {
   return option?.data?.apiNode === true
 }
@@ -236,7 +194,6 @@ export async function checkTemplateDiskOrBlock(opts: {
   try {
     diskSpace = await window.api.getDiskSpace(opts.path)
   } catch {
-    // Can't probe — don't block on a failed read; the in-task guard is the net.
     return true
   }
   if (!isTemplateDiskBlocked(diskSpace, opts.estimatedModelBytes)) return true

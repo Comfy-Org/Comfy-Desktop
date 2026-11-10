@@ -3,7 +3,9 @@ import { defineComponent, h, shallowRef, type ShallowRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { useTitleBarMenus } from './useTitleBarMenus'
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (k: string) => k }) }))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 type TitleMenuKind = 'menu' | 'downloads' | 'instance-picker'
 
@@ -17,9 +19,6 @@ interface Bridge {
   onDownloadsChanged: (cb: (s: unknown) => void) => () => void
 }
 
-/** Mount the composable in a throwaway host so its `onMounted` bridge
- *  subscriptions fire, then drive it via the captured menu-opened/closed
- *  callbacks the title bar would receive from main. */
 function setup() {
   const opened: ((info: { menu: TitleMenuKind }) => void)[] = []
   const closed: ((info: { menu: TitleMenuKind }) => void)[] = []

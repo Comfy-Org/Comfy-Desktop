@@ -1,7 +1,3 @@
-/**
- * IPC for `__comfyDesktop2.Auth`. Trust and token rules live in
- * `../embeddedSession`; this file only wires the channels.
- */
 import { ipcMain } from 'electron'
 
 import { findEntryByComfySender } from '../../host/registry'

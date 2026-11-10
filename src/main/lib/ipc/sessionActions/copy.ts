@@ -104,8 +104,6 @@ export async function handleCopyUpdate(ctx: ActionContext): Promise<ActionResult
       )
     }
 
-    // Channel switches happen inside the source's window; omitting
-    // newInstallationId keeps ProgressModal from opening a new chooser host.
     const isChannelSwitch = !!actionData?.channel
     return isChannelSwitch
       ? { ok: true, navigate: 'list' }
@@ -113,10 +111,6 @@ export async function handleCopyUpdate(ctx: ActionContext): Promise<ActionResult
   })
 }
 
-/** Copy & Change PyTorch: copy the whole install first, then run the normal
- *  `change-pytorch` transaction on the copy. Same principle as Copy & Update:
- *  a failed change keeps the finished copy (the user retries from there) and
- *  the original install is never touched. */
 export async function handleCopyChangePytorch(ctx: ActionContext): Promise<ActionResult> {
   const { event, installationId, inst, actionData } = ctx
   const name = actionData?.name as string | undefined
@@ -132,8 +126,6 @@ export async function handleCopyChangePytorch(ctx: ActionContext): Promise<Actio
   const sendOutput = makeSendOutput(sender, installationId)
 
   return withAbortableSessionAction(ctx, async (signal) => {
-    // Same viaPip judgment as the change-pytorch handler (which re-declares
-    // its own steps; those are filtered below in favor of these).
     const viaPip = inst.adopted === true || parseAnyIndexStackId(stackId) !== null
     sendProgress('steps', {
       steps: [
@@ -315,7 +307,6 @@ export async function handleReleaseUpdate(ctx: ActionContext): Promise<ActionRes
       sendProgress('done', { percent: 100, status: 'Complete' })
       return { ok: true, navigate: 'list', newInstallationId: entry.id }
     } catch (err) {
-      // Wipe the half-built install (disk + registry) before re-throwing.
       if (!installComplete) {
         if (entry)
           try {

@@ -1,17 +1,3 @@
-/**
- * Dev-platform IPC bridge: the ONE seam between the renderer and the
- * cloud-auth + comfy-builder libraries.
- *
- * Auth, workspace, build-catalog, and install-kickoff all funnel through
- * the single main-process `CloudSession` (see `../../devplatform/session`).
- * Access/refresh tokens NEVER cross this boundary: handlers return and broadcast
- * only renderer-safe shapes: `AuthStatus`, `Workspace[]`, and build
- * DISPLAY rows: never a token or a download ref.
- *
- * `signInToCloud` is exported alongside the handlers because the title-bar file
- * menu starts sign-ins from main, with no renderer in the loop. It shares the
- * same auth broadcast as renderer-driven sign-ins.
- */
 import { BrowserWindow, ipcMain, shell } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
@@ -62,7 +48,6 @@ import {
   workspaceContextId
 } from '../../../shared/workspaces'
 
-/** IPC channels for the dev-platform bridge. Kept together so a rename can't desync. */
 export const DEVPLATFORM_CHANNELS = {
   signIn: 'comfybuilder:signIn',
   signOut: 'comfybuilder:signOut',
@@ -94,17 +79,6 @@ function isPromotableLocalInstallation(inst: InstallationRecord): boolean {
   )
 }
 
-/**
- * Push the renderer-safe {@link AuthStatus} to every surface so they update in
- * lockstep. Only the status (never tokens) is sent.
- *
- * A host window loads NO page of its own - the dashboard/chooser renderer lives
- * in a child `panelView` WebContentsView - so `BrowserWindow.getAllWindows()`
- * alone delivers to an empty webContents and the chip never repaints. That went
- * unnoticed while the only sign-in trigger was the chip itself, which set the
- * store from `signIn()`'s return value and never needed the push. Now that the
- * file menu starts sign-ins from main, this broadcast is the only path back.
- */
 export function broadcastAuthChanged(status: AuthStatus): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed())
@@ -118,11 +92,6 @@ export function broadcastAuthChanged(status: AuthStatus): void {
   void broadcastEmbeddedSessionChanged()
 }
 
-/**
- * Run the browser sign-in handoff and announce the result. The primitive
- * behind both the `comfybuilder:signIn` IPC and the title-bar file menu's
- * sign-in item. `CloudSession` owns browser-auth race handling.
- */
 export async function signInToCloud(): Promise<AuthStatus> {
   const session = getCloudSession()
   clearVersionCache()
@@ -161,11 +130,6 @@ async function switchAndAnnounce(
   return { reply, superseded }
 }
 
-/**
- * Activate `workspaceId` and announce the result; `CloudSession` decides whether a browser is
- * needed. A failure stays on this reply and off the broadcast. Shared by the chooser and the
- * hosted ComfyUI view.
- */
 export async function switchCloudWorkspace(
   workspaceId: string,
   intent: WorkspaceSwitchIntent = 'chosen'
@@ -173,19 +137,11 @@ export async function switchCloudWorkspace(
   return (await switchAndAnnounce(workspaceId, intent)).reply
 }
 
-/**
- * Sign Desktop out of its Cloud account and announce it. Asks first, on
- * `host`'s window, when an install or update still needs the account; without
- * a window to ask on, it keeps the session. Shared by the account chip and the
- * hosted ComfyUI view.
- */
 export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
   const session = getCloudSession()
   const installingOperations: Array<[string, AbortController]> = []
   for (const [installationId, abort] of _operationAborts) {
     const installation = await installations.get(installationId)
-    // In-place updates ('updating') ride the same install dispatch path and
-    // hold the same auth-dependent downloads, so they need the guard too.
     if (installation?.status === 'installing' || installation?.status === 'updating') {
       installingOperations.push([installationId, abort])
     }
@@ -221,19 +177,6 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
   return SIGNED_OUT
 }
 
-/** Sign-in state for main-side surfaces that decide what to render (the file
- *  menu). Renderer surfaces read it over `getAuthStatus` instead. */
-export function isSignedInToCloud(): boolean {
-  return getCloudSession().status().signedIn
-}
-
-/**
- * Register the dev-platform IPC handlers. Call once at startup.
- *
- * The renderer can never pass a token in or read one out: `signIn` takes no
- * arguments and returns only the status; every catalog call reads the bearer
- * token main-side via the session's `TokenProvider`.
- */
 export function registerDevPlatformHandlers(): void {
   const session = getCloudSession()
   setUnauthorizedHandler(() => {
@@ -248,8 +191,6 @@ export function registerDevPlatformHandlers(): void {
     broadcastAuthChanged(status)
   })
 
-  // Build ids whose install-kickoff is mid-flight, so a double-click cannot
-  // create two records for the same build.
   const installing = new Set<string>()
   const promoting = new Set<string>()
 
@@ -370,9 +311,6 @@ export function registerDevPlatformHandlers(): void {
         if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
-        // The portal's draft route receives a hand-off: it processes workspace
-        // deep links, marks the Build as just arrived, and redirects to the
-        // Build page, which opens the "Desktop snapshot received" dialog.
         const url = new URL(
           `/profile/builds/${encodeURIComponent(draft.buildId)}/draft`,
           PLATFORM_WEB_BASE_URL
@@ -389,9 +327,6 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  // Display rows for the current workspace. Signed out -> empty (no network
-  // calls); the renderer already gates the grid on sign-in. The installed-version
-  // map lets a row whose newer build runs here surface as `update-available`.
   ipcMain.handle(DEVPLATFORM_CHANNELS.listBuilds, async (): Promise<BuildRow[]> => {
     if (!session.isSignedIn()) return []
     const status = session.status()
@@ -410,8 +345,6 @@ export function registerDevPlatformHandlers(): void {
           return []
         })
       : Promise.resolve([])
-    // Associate only unowned installs whose exact opaque id is present in the
-    // successfully fetched catalog for the same active workspace.
     if (workspaceId && session.status().workspaceId === workspaceId) {
       try {
         await installations.associateUnownedBuildInstalls(
@@ -435,8 +368,6 @@ export function registerDevPlatformHandlers(): void {
     const creatorNames = new Map(
       members.map((member) => [member.id, member.name || member.email || member.id])
     )
-    // Catalog reads warm the synchronous source update cache. Re-pull
-    // installations so existing managed instances gain their Update action.
     _broadcastToRenderer('installations-changed', {})
     return rows.map((row) => ({
       ...row,
@@ -444,10 +375,6 @@ export function registerDevPlatformHandlers(): void {
     }))
   })
 
-  // Resolve the host artifact for one build and create an `installing`
-  // record, then hand the id back so the renderer runs the normal
-  // `installInstance` + progress flow. The install itself (download -> verify
-  // sha -> extract) runs in the comfybuilder SourcePlugin.
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.installBuild,
     async (_event, request: InstallBuildRequest): Promise<InstallBuildResult> => {
@@ -538,9 +465,6 @@ export function registerDevPlatformHandlers(): void {
   )
 }
 
-/** Persisted build id -> highest installed version, over the comfybuilder
- *  installs, so `listBuildRows` can mark an outdated one `update-available`.
- *  The installation schema retains the legacy `distributionId` field name. */
 async function installedBuildVersions(
   workspaceId: string | undefined
 ): Promise<Map<string, number>> {

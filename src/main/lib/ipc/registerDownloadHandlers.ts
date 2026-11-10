@@ -33,9 +33,6 @@ export function registerDownloadHandlers(): void {
     event.returnValue = entry?.sourceCategory === 'cloud' || entry?.sourceCategory === 'remote'
   })
 
-  // Per-installation id for cloud attribution (sent as X-Comfy-Install-Id by
-  // the cloud-hosted frontend). Only the main frame of a trusted cloud page
-  // gets it, and only a machine-derived id: a fallback id changes every launch.
   ipcMain.on('desktop2-get-install-id', (event) => {
     event.returnValue =
       isTrustedCloudSender(event) && getIdClass() === 'machine_derived' ? getDeviceId() : undefined
@@ -54,8 +51,6 @@ export function registerDownloadHandlers(): void {
     }
   )
 
-  // Control payloads accept a stable job id (`ref`) or, for compatibility with
-  // older renderer bundles / the in-Comfy bridge, the download URL (`url`).
   const controlRef = (payload?: { ref?: unknown; url?: unknown }): string | null => {
     if (typeof payload?.ref === 'string' && payload.ref) return payload.ref
     if (typeof payload?.url === 'string' && payload.url) return payload.url
@@ -89,7 +84,6 @@ export function registerDownloadHandlers(): void {
     return ref !== null && retryDownload(ref)
   })
 
-  // Seed the renderer store with active + recent downloads on first paint.
   ipcMain.handle('model-download-list', () => getAllDownloads())
 
   ipcMain.handle('show-download-in-folder', (_event, { savePath }: { savePath: string }) => {
@@ -98,9 +92,6 @@ export function registerDownloadHandlers(): void {
     }
   })
 
-  // Lazy preview thumbnail for a completed image download; null for non-images
-  // or unreadable files. Reachable from the panel (`window.api`) and the
-  // title-bar popup (`ipcRenderer.invoke`) alike.
   ipcMain.handle('download-thumbnail', (_event, { savePath }: { savePath: string }) =>
     getDownloadThumbnail(savePath)
   )

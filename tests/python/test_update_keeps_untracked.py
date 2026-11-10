@@ -1,10 +1,3 @@
-"""Real-pygit2 tests: lib/update_comfyui.py must not delete untracked files a
-user keeps inside the ComfyUI checkout, while the backup branch still captures
-edits to tracked files.
-
-Run: python -m unittest discover -s tests/python
-"""
-
 import os
 import shutil
 import subprocess
@@ -14,8 +7,6 @@ import unittest
 
 UPDATE = os.path.join(os.path.dirname(__file__), "..", "..", "lib", "update_comfyui.py")
 
-# ComfyUI's real ignore rules: the user folders in these tests (outputs/,
-# my_models/) are deliberately near-misses that git doesn't ignore.
 IGNORE = "/output/\n/models/\n"
 V1 = {"main.py": "v1\n", "app/db.py": "v1\n", "README.md": "v1\n", ".gitignore": IGNORE}
 V2 = {"main.py": "v2\n", "app/db.py": "v2\n", "README.md": "v2\n", ".gitignore": IGNORE,
@@ -55,8 +46,6 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
             git(src, "add", "-A")
             git(src, "commit", "-m", tag)
             git(src, "tag", tag)
-        # master moves on past the release, as upstream does, so the update
-        # resets to master and then checks the tag back out.
         write(src, {"main.py": "master\n"})
         git(src, "commit", "-am", "master")
         origin = os.path.join(self.tmp, "origin.git")
@@ -136,17 +125,12 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
         self.assertEqual(git(self.repo, "show", "%s:link.py" % backup), "user edit")
 
     def test_untracked_file_at_a_newly_tracked_path_is_only_in_the_backup(self):
-        # The forced checkout replaces an untracked file at a path the target
-        # commit starts tracking; the backup branch keeps the user's copy.
         write(self.repo, {"collide.txt": "user file\n"})
         backup = self.backup_branch(self.update())
         self.assertEqual(read(self.repo, "collide.txt"), "from v2\n")
         self.assertEqual(git(self.repo, "show", "%s:collide.txt" % backup), "user file")
 
     def test_files_staged_by_an_earlier_failed_update_survive(self):
-        # The previous updater wrote its add_all() staging to the on-disk
-        # index; a run that then failed (e.g. at the fetch) left user files
-        # staged for the next update.
         write(self.repo, {"outputs/ComfyUI_00001_.png": "image\n"})
         git(self.repo, "add", "outputs")
         self.update()
@@ -156,7 +140,6 @@ class UpdateKeepsUntrackedTest(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt" or os.geteuid() == 0, "needs a file this user can't read")
     def test_untracked_files_survive_a_failed_backup(self):
-        # add_all() stages outputs/ and then fails on the unreadable file.
         write(self.repo, {"outputs/ComfyUI_00001_.png": "image\n", "zz_unreadable.txt": "x\n"})
         os.chmod(os.path.join(self.repo, "zz_unreadable.txt"), 0)
         self.assertIn("could not create backup branch", self.update())

@@ -54,7 +54,6 @@ export {
 } from './shared'
 export type { RegisterCallbacks, ExitCallbackInfo } from './shared'
 
-// Idempotent guard so a re-run (tests/hot-reload) doesn't double-subscribe.
 let _releaseCacheBridgeWired = false
 function wireReleaseCacheBroadcast(): void {
   if (_releaseCacheBridgeWired) return
@@ -68,9 +67,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   setCallbacks(callbacks)
   wireReleaseCacheBroadcast()
 
-  // These startup writes go through loadForWrite(), which rejects when
-  // installations.json cannot be safely modified right now (locked or corrupt,
-  // issue #1367) - log and continue instead of an unhandled rejection.
   const warnStartupWrite = (op: string) => (err: unknown) => {
     console.warn(`[ipc] Skipped startup installations ${op}:`, err)
   }
@@ -95,12 +91,8 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
       status: 'installed'
     })
     .catch(warnStartupWrite('ensureExists(cloud)'))
-  // The Cloud entry is not user-renamable; reset any entry a prior build
-  // let the user rename back to the canonical name (issue #922). Runs after
-  // ensureExists via the shared FIFO write queue.
   installations.enforceCloudName().catch(warnStartupWrite('enforceCloudName'))
 
-  // Auto-track a detected Legacy Desktop install.
   {
     const desktopInfo = detectDesktopInstall()
     if (desktopInfo) {
@@ -153,10 +145,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
     }
   })
 
-  // Sweep leftover empty local install dirs (aborted installs) after recovery.
-  // Only reclaim dirs that exist but are effectively empty - never a missing
-  // or unreadable dir, which would silently forget a tracked instance whose
-  // drive is merely offline/renamed (issue #1155).
   void startupRecovery.then(async (recovery) => {
     if (!recovery) return
     try {
@@ -170,9 +158,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
           !recoveredInstallationIds.has(inst.id)
         )
       })
-      // Probe in parallel so a few offline paths don't serialize their timeouts.
-      // Only an existing-but-empty dir (aborted install) is reclaimed; a missing,
-      // access-denied, or timed-out ('inaccessible') dir is kept (issue #1155).
       const states = await Promise.all(
         sweepable.map(async (inst) => ({
           inst,
@@ -191,24 +176,11 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
 
       if (swept) _broadcastToRenderer('installations-changed', {})
 
-      // Reclaim per-install browser partitions left behind by deletes (the
-      // inline cleanup can't remove them on Windows while their session is
-      // alive). Uses the post-sweep id set so swept installs are reclaimed too.
       const remaining = await installations.list()
       sweepOrphanPartitions(new Set(remaining.map((i) => i.id)))
     } catch {}
   })
 
-  // Default to bundled bootstrap pygit2 so the pygit2 path is always exercised
-  // (system git would otherwise mask bugs real users hit). Falls back to
-  // standalone pygit2 then system git; COMFY_FORCE_BOOTSTRAP_GIT=1 disables that.
-  //
-  // Note: individual network operations (clone/fetch/checkout) additionally
-  // fall back to system git at runtime when pygit2 hits an authentication-class
-  // failure — e.g. a global `insteadOf` https->ssh rewrite the SSH-less bundled
-  // pygit2 can't satisfy. Developers can set COMFY_FORCE_PYGIT2=1 to disable
-  // that per-op fallback (and force the pygit2 backend in ComfyUI-Manager too),
-  // keeping the pygit2 path exercised. See git.ts `withSystemGitFallback`.
   void (async () => {
     const configureGitBackend = async (): Promise<void> => {
       const forceBootstrap = process.env.COMFY_FORCE_BOOTSTRAP_GIT === '1'
@@ -231,7 +203,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
         return
       }
 
-      // Isolated try/catch so a listing failure doesn't skip the system-git fallback.
       try {
         const all = await installations.list()
         for (const inst of all) {
@@ -248,7 +219,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
         console.warn('[ipc] Failed to enumerate standalone installations for pygit2 fallback:', err)
       }
 
-      // Final fallback: system git, if installed.
       try {
         if (await isGitAvailable()) {
           console.log(
@@ -267,17 +237,11 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
 
     await configureGitBackend()
 
-    // Pre-warm both stable-tag caches so the New Install wizard is responsive on
-    // first open (no local clone needed): the latest tag drives the concrete
-    // version shown for the stable channel, and the full list backs the version
-    // picker. They use independent caches, so warm both here to move the slow
-    // ls-remote (cold/proxied setups) off the wizard's blocking field cascade.
     try {
       await Promise.all([getLatestStableTag(), getStableTags()])
     } catch {}
   })()
 
-  // Clean up partial downloads
   void (async () => {
     try {
       const cache = createCache(
@@ -288,36 +252,26 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
     } catch {}
   })()
 
-  // Pre-warm the ETag cache
   void (async () => {
     try {
       await fetchJSON(`${R2_BASE_URL}/latest.json`)
     } catch {}
   })()
 
-  // Check installation updates on startup and periodically
   setTimeout(() => checkInstallationUpdates(), 3_000)
   setInterval(() => checkInstallationUpdates(), UPDATE_CHECK_INTERVAL)
 
-  // Probe local install dir availability on startup, periodically, and whenever
-  // a window regains focus — the last one clears a stale "directory not found"
-  // pill promptly after the user reconnects a drive / restores a folder without
-  // waiting for the periodic pass. Single-flight + change-only broadcast keep
-  // the frequent focus events cheap.
   void refreshInstallDirStates()
   setInterval(() => refreshInstallDirStates(), UPDATE_CHECK_INTERVAL)
   app.on('browser-window-focus', () => {
     void refreshInstallDirStates()
   })
 
-  // Register all handler groups
   registerAppHandlers()
   registerInstallationHandlers()
   registerSnapshotHandlers()
   registerSettingsHandlers()
   registerSessionHandlers()
-  // Let the Console activate each install's actual environment (git venv,
-  // portable embedded python, …) instead of assuming the standalone layout.
   setTerminalEnvResolver((inst) => sourceMap[inst.sourceId]?.getTerminalEnv?.(inst) ?? null)
   registerTerminalHandlers()
   registerLogsHandlers()

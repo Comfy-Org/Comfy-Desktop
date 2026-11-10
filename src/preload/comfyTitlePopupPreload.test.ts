@@ -29,8 +29,6 @@ function popupBridge(): ComfyTitlePopupBridge {
     (globalThis as Record<string, unknown>)['__comfyTitlePopup']) as ComfyTitlePopupBridge
 }
 
-/** Minimal snapshot the runtime guard accepts, used as the base every case
- *  mutates one property of. */
 function validSnapshot(): PopupGlobalSettingsSnapshot {
   return {
     initialTab: null,
@@ -69,8 +67,6 @@ function validSnapshot(): PopupGlobalSettingsSnapshot {
   }
 }
 
-/** Subscribe through the bridge and push `payload` down the real IPC handler
- *  the bridge registered, so the runtime guard is the thing under test. */
 function deliver(payload: unknown): unknown[] {
   const received: unknown[] = []
   popupBridge().onGlobalSettingsSnapshot((snapshot) => received.push(snapshot))
@@ -92,8 +88,6 @@ describe('global-settings snapshot guard', () => {
     expect(deliver(snapshot)).toEqual([snapshot])
   })
 
-  // Without a guard entry the property crosses the bridge untyped and reaches
-  // the view as `undefined`, which todo 16's entry rule would read as "granted".
   it('rejects a snapshot with telemetryGranted missing', () => {
     const { telemetryGranted: _dropped, ...withoutGrant } = validSnapshot()
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { ChevronRight, ShieldAlert } from 'lucide-vue-next'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
@@ -13,7 +14,7 @@ import SectionActionButton from './SectionActionButton.vue'
 import ArgsBuilderField from './ArgsBuilderField.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
-import TooltipWrap from '../../components/TooltipWrap.vue'
+import TooltipWrap from '../../components/ui/Tooltip.vue'
 import { isOpenablePathString } from '../../lib/openablePath'
 import type {
   ActionDef,
@@ -23,22 +24,12 @@ import type {
   VersionStatsValue
 } from '../../types/ipc'
 
-/**
- * Shared section + field renderer for both the Settings drawer and the instance-picker's Settings accordion.
- * Pure presentation; the host wires the handlers so the same DOM serves panel (`window.api`) and popup (bridge) without either importing the other's IPC.
- */
-
 interface Props {
   sections: DetailSection[]
-  /** Status-tab styling: hairline dividers + label-over-value, no input chrome. */
   readonly?: boolean
-  /** Installation context for install-scoped IPCs (e.g. ArgsBuilderField's `getComfyArgs(id)`). */
   installationId?: string
-  /** Inline-action busy set driving per-button spinner/disabled state. */
   runningActionIds?: Set<string>
-  /** Field ids edited while running that need a restart; renders a tag next to the label. */
   pendingRestartFieldIds?: Set<string>
-  /** Per-field error messages from failed `updateInstallation` IPCs; renders a red inline pill. */
   fieldErrorMessages?: Map<string, string>
 }
 
@@ -50,7 +41,6 @@ const props = withDefaults(defineProps<Props>(), {
   fieldErrorMessages: () => new Map<string, string>()
 })
 
-// Wrap in a computed so each `.has()` tracks a reactive dep (bare access on a destructured prop can miss it).
 const runningIdsSet = computed(() => props.runningActionIds ?? new Set<string>())
 function isActionRunning(actionId: string): boolean {
   return runningIdsSet.value.has(actionId)
@@ -70,8 +60,6 @@ const emit = defineEmits<{
   'update-field': [field: DetailField, value: unknown]
   'run-action': [action: ActionDef]
   'open-args-page': [field: DetailField]
-  /** Open a filesystem path in the OS file manager; the host wires the IPC
-   *  (`window.api.openPath` in the panel, the bridge in the title popup). */
   'open-path': [path: string]
 }>()
 
@@ -81,8 +69,6 @@ function asString(v: DetailField['value']): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
-/** Unpack a `version-stats` field. The backend owns the wording - it knows what
- *  the versions mean - so this only supplies defaults for a malformed payload. */
 function versionStats(field: DetailField): Required<VersionStatsValue> {
   const v = (field.value ?? {}) as Partial<VersionStatsValue>
   return {
@@ -94,8 +80,6 @@ function versionStats(field: DetailField): Required<VersionStatsValue> {
   }
 }
 
-/** Guards each row before VersionStatPanel dereferences `id`/`label`/`value`:
- *  a malformed IPC payload (e.g. a null entry) must not break the render. */
 function isVersionStatRow(r: unknown): r is VersionStatRow {
   if (r === null || typeof r !== 'object') return false
   const row = r as Partial<VersionStatRow>
@@ -104,7 +88,6 @@ function isVersionStatRow(r: unknown): r is VersionStatRow {
   )
 }
 
-// Per-title collapse state; only titled sections (with a `section.collapsed` seed) are collapsible.
 const collapsedTitles = ref(new Set<string>())
 
 watch(
@@ -142,17 +125,12 @@ function isNestedField(field: DetailField): boolean {
   return field.nested === true
 }
 
-/** Field types that render the section's actions themselves, so the generic
- *  full-width footer must stand down or the buttons appear twice. */
 const ACTION_OWNING_EDIT_TYPES = new Set(['channel-cards', 'version-stats'])
 
 function fieldOwnsSectionActions(section: DetailSection): boolean {
   return (section.fields ?? []).some((f) => f.editType && ACTION_OWNING_EDIT_TYPES.has(f.editType))
 }
 
-/** Chunk a section's fields into rows: consecutive fields sharing a
- *  `rowGroup` render side-by-side; everything else gets its own row.
- *  Only adjacency groups, so unrelated fields never merge. */
 function fieldRows(section: DetailSection): DetailField[][] {
   const rows: DetailField[][] = []
   for (const field of section.fields ?? []) {
@@ -177,10 +155,6 @@ function isPathLikeValue(value: unknown): boolean {
   return v.includes('/') || v.includes('\\') || v.startsWith('~')
 }
 
-/** Stricter than `isPathLikeValue`: only values safe to open in the OS file
- *  manager. `editType === 'path'` is openable when it holds a real value (not
- *  empty or the em dash placeholder); otherwise the value must look like a local
- *  path (not a URL, SSH remote, or date). */
 function canOpenFilesystemPath(field: DetailField): boolean {
   const v = asString(field.value).trim()
   if (field.editType === 'path') return v.length > 0 && v !== '\u2014'
@@ -195,74 +169,124 @@ function fieldOwnsLabel(field: DetailField): boolean {
   return (
     field.editType === 'env-vars' ||
     field.editType === 'channel-cards' ||
-    // The panel leads with its own headline; a label above it would echo the
-    // section title.
     field.editType === 'version-stats'
   )
+}
+
+const sectionTitleClass = computed(() =>
+  props.readonly
+    ? 'pt-2 pb-1 m-0 leading-[1.5] text-[11px] font-semibold tracking-[0.04em] uppercase text-text-muted opacity-55'
+    : 'leading-[1.5] text-[length:var(--takeover-fs-body)] font-medium text-text-muted'
+)
+
+function actionButtonClass(running = false, itemRow = false, looksDisabled = false): string {
+  const base =
+    'settings-v2-action static inline-flex w-full items-center justify-center gap-1.5 rounded-lg border-none px-4 py-2 text-[14px] font-normal whitespace-normal appearance-auto transition-none focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] disabled:pointer-events-auto'
+  return `${base} ${itemRow ? 'leading-[1.4]' : 'leading-[1.5]'} ${running ? 'is-running cursor-progress opacity-85 disabled:cursor-progress disabled:opacity-85' : looksDisabled ? 'cursor-default opacity-40 disabled:cursor-default disabled:opacity-40' : 'disabled:cursor-default disabled:opacity-40'}`
+}
+
+function actionVariantClass(action: ActionDef, directStyle = true): string {
+  switch (action.style) {
+    case 'primary':
+      return 'bg-[var(--accent-primary)] text-background font-medium hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:bg-[var(--accent-hover)] hover:transition-[background,border-color] hover:duration-[120ms] hover:ease-[ease]'
+    case 'accent':
+      return directStyle
+        ? 'bg-[var(--surface)] text-[var(--action)] font-semibold hover:bg-[var(--action)] hover:text-[var(--bg)]'
+        : 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
+    case 'danger':
+      return 'bg-[var(--surface)] text-danger hover:bg-[var(--danger)] hover:text-[var(--bg)]'
+    default:
+      return 'bg-[var(--surface)] text-text hover:bg-[var(--border)]'
+  }
 }
 </script>
 
 <template>
-  <div class="settings-v2-sections">
+  <div class="settings-v2-sections flex flex-col gap-8">
     <article
       v-for="(section, si) in visibleSections"
       :key="`s-${si}`"
-      class="settings-v2-section"
-      :class="{
-        'is-readonly-list': readonly,
-        'is-collapsible': isCollapsible(section),
-        'is-collapsed': isCollapsible(section) && isCollapsed(section)
-      }"
+      class="settings-v2-section flex flex-col"
+      :class="[
+        readonly
+          ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
+          : 'gap-4',
+        {
+          'is-collapsible': isCollapsible(section),
+          'is-collapsed [&>*:not(.settings-v2-section-title)]:hidden':
+            isCollapsible(section) && isCollapsed(section)
+        }
+      ]"
     >
-      <button
+      <Button
         v-if="isCollapsible(section)"
+        variant="textonly"
+        size="unset"
         type="button"
-        class="settings-v2-section-title is-toggle"
+        class="settings-v2-section-title is-toggle static inline-flex items-center gap-1 self-start rounded-lg border-none bg-transparent p-0 text-left text-text-muted whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color]"
+        :class="sectionTitleClass"
         :aria-expanded="!isCollapsed(section)"
         @click="toggleCollapsed(section)"
       >
         <ChevronRight
           :size="14"
-          class="settings-v2-section-chevron"
-          :class="{ 'is-open': !isCollapsed(section) }"
+          class="settings-v2-section-chevron text-text-muted transition-transform duration-[160ms] ease-[cubic-bezier(0.32,0.72,0,1)]"
+          :class="{ 'is-open [transform:rotate(90deg)]': !isCollapsed(section) }"
         />
         {{ section.title }}
-      </button>
+      </Button>
 
       <p
         v-else-if="section.title && readonly"
         class="settings-v2-section-title settings-v2-section-title--readonly"
+        :class="sectionTitleClass"
       >
         {{ section.title }}
       </p>
 
-      <p v-if="section.description && !isCollapsed(section)" class="settings-v2-section-desc">
+      <p
+        v-if="section.description && !isCollapsed(section)"
+        class="settings-v2-section-desc -mt-1 mb-1 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-text-muted"
+      >
         {{ section.description }}
       </p>
 
-      <div v-for="(item, i) in section.items" :key="`i-${i}`" class="settings-v2-item">
-        <span class="settings-v2-item-label">
-          {{ item.label }}{{ item.active ? ` (${t('common.active', 'active')})` : '' }}
-          <span v-if="item.tag" class="settings-v2-item-tag">{{ item.tag }}</span>
+      <div
+        v-for="(item, i) in section.items"
+        :key="`i-${i}`"
+        class="settings-v2-item flex items-center justify-between gap-2 text-[length:var(--takeover-fs-body)] leading-[1.4] text-text"
+      >
+        <span class="settings-v2-item-label inline-flex min-w-0 flex-1 items-center gap-1.5">
+          {{ item.label }}{{ item.active ? ` (${t('common.active')})` : '' }}
+          <span
+            v-if="item.tag"
+            class="settings-v2-item-tag rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-0.5 text-[length:var(--takeover-fs-caption)] font-medium text-text-muted"
+            >{{ item.tag }}</span
+          >
         </span>
-        <span v-if="item.actions && item.actions.length" class="settings-v2-item-actions">
+        <span
+          v-if="item.actions && item.actions.length"
+          class="settings-v2-item-actions inline-flex shrink-0 items-center gap-1.5"
+        >
           <TooltipWrap
             v-for="a in item.actions"
             :key="a.id"
             :text="a.enabled === false && a.disabledMessage ? a.disabledMessage : a.tooltip"
           >
-            <button
+            <Button
+              variant="textonly"
+              size="unset"
               type="button"
               :class="[
-                'settings-v2-action',
-                a.style,
-                { 'looks-disabled': a.enabled === false && a.disabledMessage }
+                actionButtonClass(false, true),
+                actionVariantClass(a),
+                { 'opacity-40 cursor-default': a.enabled === false && a.disabledMessage }
               ]"
               :disabled="a.enabled === false && !a.disabledMessage"
               @click="emit('run-action', a)"
             >
               {{ a.label }}
-            </button>
+            </Button>
           </TooltipWrap>
         </span>
       </div>
@@ -271,59 +295,90 @@ function fieldOwnsLabel(field: DetailField): boolean {
         v-for="row in fieldRows(section)"
         :key="rowKey(row)"
         class="settings-v2-field-row"
-        :class="{ 'is-paired': row.length > 1 }"
+        :class="[
+          row.length > 1 ? 'is-paired flex flex-wrap gap-4' : 'contents',
+          { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
+        ]"
       >
-        <!-- `data-field-id` is the only per-row anchor a settings deep link has to aim at
-             (e.g. the beta activation notice pointing at the beta opt-in switch): the row is
-             rendered several components below whoever opened the popup, so there is no
-             template ref to hand out. -->
         <div
           v-for="field in row"
           :key="field.id"
           :data-field-id="field.id"
           class="settings-v2-field"
-          :class="{
-            'is-boolean-row': field.editType === 'boolean',
-            'is-nested': isNestedField(field),
-            'is-env-vars': field.editType === 'env-vars',
-            'is-channel-picker': field.editType === 'channel-cards'
-          }"
+          :class="[
+            readonly
+              ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-x-4 gap-y-2 border-b border-solid border-[var(--chooser-surface-border)] px-0 py-2.5'
+              : 'flex flex-col gap-2.5',
+            {
+              'min-w-0 flex-[1_1_240px]': row.length > 1,
+              'is-boolean-row': field.editType === 'boolean',
+              'is-nested -mt-2 border-l border-solid border-l-[color-mix(in_srgb,var(--chooser-surface-border)_70%,transparent)]':
+                isNestedField(field),
+              'pl-3.5': isNestedField(field) && !readonly,
+              'is-env-vars': field.editType === 'env-vars',
+              'is-channel-picker': field.editType === 'channel-cards'
+            }
+          ]"
         >
           <template v-if="field.editType === 'env-vars'">
-            <div class="settings-v2-env-header">
-              <label class="settings-v2-field-label">
-                <span class="settings-v2-field-label-text">{{ field.label }}</span>
+            <div class="settings-v2-env-header flex items-start justify-between gap-3">
+              <label
+                class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-auto min-w-0"
+              >
+                <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
+                  field.label
+                }}</span>
                 <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-                <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
-                  {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+                <span
+                  v-if="needsRestartTag(field)"
+                  class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                  role="status"
+                >
+                  {{ t('comfyUISettings.restartRequired') }}
                 </span>
                 <span
                   v-if="fieldErrorMessage(field)"
-                  class="settings-v2-field-error-tag"
+                  class="settings-v2-field-error-tag ml-1.5 max-w-60 flex-none truncate rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-danger"
                   role="alert"
                   :title="fieldErrorMessage(field) ?? ''"
                 >
                   {{ fieldErrorMessage(field) }}
                 </span>
               </label>
-              <div class="settings-v2-env-notice" role="note">
-                <ShieldAlert :size="14" class="settings-v2-env-notice-icon" aria-hidden="true" />
-                <span class="settings-v2-env-notice-text">
-                  {{
-                    t('envVars.securityWarningShort', 'Environment variables may contain secrets')
-                  }}
+              <div
+                class="settings-v2-env-notice -my-1.5 ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
+                role="note"
+              >
+                <ShieldAlert
+                  :size="14"
+                  class="settings-v2-env-notice-icon mt-px shrink-0 text-neutral-100"
+                  aria-hidden="true"
+                />
+                <span class="settings-v2-env-notice-text min-w-0">
+                  {{ t('envVars.securityWarningShort') }}
                 </span>
               </div>
             </div>
             <EnvVarsField :field="field" @update="(f, v) => emit('update-field', f, v)" />
           </template>
 
-          <div v-else-if="field.editType === 'boolean'" class="settings-v2-boolean-row">
-            <label class="settings-v2-field-label">
-              <span class="settings-v2-field-label-text">{{ field.label }}</span>
+          <div
+            v-else-if="field.editType === 'boolean'"
+            class="settings-v2-boolean-row flex min-h-11 items-center justify-between gap-3 py-1"
+          >
+            <label
+              class="settings-v2-field-label inline-flex w-fit max-w-[calc(100%_-_48px)] items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-[0_1_auto]"
+            >
+              <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
+                field.label
+              }}</span>
               <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-              <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
-                {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+              <span
+                v-if="needsRestartTag(field)"
+                class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                role="status"
+              >
+                {{ t('comfyUISettings.restartRequired') }}
               </span>
             </label>
             <BooleanToggle
@@ -335,11 +390,20 @@ function fieldOwnsLabel(field: DetailField): boolean {
           </div>
 
           <template v-else>
-            <label v-if="!fieldOwnsLabel(field) && field.label" class="settings-v2-field-label">
-              <span class="settings-v2-field-label-text">{{ field.label }}</span>
+            <label
+              v-if="!fieldOwnsLabel(field) && field.label"
+              class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted"
+            >
+              <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
+                field.label
+              }}</span>
               <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-              <span v-if="needsRestartTag(field)" class="settings-v2-restart-tag" role="status">
-                {{ t('comfyUISettings.restartRequired', 'Restart to apply') }}
+              <span
+                v-if="needsRestartTag(field)"
+                class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                role="status"
+              >
+                {{ t('comfyUISettings.restartRequired') }}
               </span>
             </label>
 
@@ -351,21 +415,25 @@ function fieldOwnsLabel(field: DetailField): boolean {
 
             <div
               v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
-              class="settings-v2-readonly-path"
+              class="settings-v2-readonly-path flex min-w-0 items-center gap-2 justify-self-stretch w-full text-right"
             >
-              <button
+              <Button
                 v-if="canOpenFilesystemPath(field)"
+                variant="textonly"
+                size="unset"
                 type="button"
-                class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open"
-                :title="t('models.openDir', 'Open folder')"
-                :aria-label="`${t('models.openDir', 'Open folder')}: ${readonlyDisplayValue(field)}`"
+                class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+                :title="t('models.openDir')"
+                :aria-label="`${t('models.openDir')}: ${readonlyDisplayValue(field)}`"
                 @click="emit('open-path', readonlyDisplayValue(field))"
               >
                 {{ readonlyDisplayValue(field) }}
-              </button>
-              <span v-else class="settings-v2-field-readonly settings-v2-field-readonly-path">{{
-                readonlyDisplayValue(field)
-              }}</span>
+              </Button>
+              <span
+                v-else
+                class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100 w-full text-right justify-self-end settings-v2-field-readonly-path min-w-0 flex-1 truncate"
+                >{{ readonlyDisplayValue(field) }}</span
+              >
               <BaseCopyButton :value="readonlyDisplayValue(field)" />
             </div>
 
@@ -427,11 +495,24 @@ function fieldOwnsLabel(field: DetailField): boolean {
               @change="(v: string) => emit('update-field', field, v === '' ? null : Number(v))"
             />
 
-            <span v-else class="settings-v2-field-readonly">{{ asString(field.value) }}</span>
+            <span
+              v-else
+              class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100"
+              :class="{ 'w-full text-right justify-self-end': readonly }"
+              >{{ asString(field.value) }}</span
+            >
           </template>
 
-          <p v-if="field.description" class="settings-v2-field-description" role="note">
-            <ShieldAlert :size="14" class="settings-v2-field-description-icon" aria-hidden="true" />
+          <p
+            v-if="field.description"
+            class="settings-v2-field-description -mt-0.5 mb-0 flex items-start gap-1.5 text-[11.5px] leading-[1.45] text-text-muted"
+            role="note"
+          >
+            <ShieldAlert
+              :size="14"
+              class="settings-v2-field-description-icon mt-0.5 shrink-0 text-[var(--info,var(--neutral-100))]"
+              aria-hidden="true"
+            />
             <span>{{ field.description }}</span>
           </p>
         </div>
@@ -439,413 +520,26 @@ function fieldOwnsLabel(field: DetailField): boolean {
 
       <div
         v-if="section.actions && section.actions.length && !fieldOwnsSectionActions(section)"
-        class="settings-v2-actions"
+        class="settings-v2-actions mt-2 flex flex-wrap gap-2 [&:has(>.settings-v2-action-tooltip:only-child)_.settings-v2-action]:flex-1"
       >
         <SectionActionButton
           v-for="action in section.actions"
           :key="action.id"
           :action="action"
           :running="isActionRunning(action.id)"
-          button-class="settings-v2-action"
-          tooltip-class="settings-v2-action-tooltip"
-          spinner-class="settings-v2-action-spinner"
+          :button-class="
+            actionButtonClass(
+              isActionRunning(action.id),
+              false,
+              action.enabled === false && !!action.disabledMessage
+            )
+          "
+          :variant-class="actionVariantClass(action, false)"
+          tooltip-class="settings-v2-action-tooltip w-full"
+          spinner-class="settings-v2-action-spinner flex-none animate-spin [animation-duration:0.9s]"
           @action="emit('run-action', action)"
         />
       </div>
     </article>
   </div>
 </template>
-
-<style scoped>
-.settings-v2-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-}
-
-.settings-v2-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.settings-v2-section-title {
-  font-size: var(--takeover-fs-body);
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-.settings-v2-section-title.is-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  text-align: left;
-  align-self: flex-start;
-}
-
-.settings-v2-section-title.is-toggle:hover {
-  background: transparent;
-  color: var(--text);
-}
-
-.settings-v2-section-title--micro {
-  padding: 0 0 4px;
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  opacity: 0.55;
-}
-
-.settings-v2-section-chevron {
-  color: var(--text-muted);
-  transition: transform 160ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
-.settings-v2-section-chevron.is-open {
-  transform: rotate(90deg);
-}
-
-/* Collapse the body: hide every direct child except the title (the toggle target). */
-.settings-v2-section.is-collapsed > *:not(.settings-v2-section-title) {
-  display: none;
-}
-
-.settings-v2-section-desc {
-  margin: -4px 0 4px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.settings-v2-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: var(--takeover-fs-body);
-  color: var(--text);
-  line-height: 1.4;
-}
-
-.settings-v2-item-label {
-  flex: 1;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.settings-v2-item-tag {
-  padding: 2px 6px;
-  font-size: var(--takeover-fs-caption);
-  font-weight: 500;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  border-radius: 999px;
-}
-
-.settings-v2-item-actions {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* Row wrapper around every field. Single-field rows are layout-transparent
- * (display: contents) so the section's flex gap and nested-field margins keep
- * working exactly as before; paired rows place their fields side-by-side with
- * equal widths, wrapping back to stacked on narrow layouts. */
-.settings-v2-field-row {
-  display: contents;
-}
-
-.settings-v2-field-row.is-paired {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.settings-v2-field-row.is-paired > .settings-v2-field {
-  flex: 1 1 240px;
-  min-width: 0;
-}
-
-.settings-v2-field {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* Inline explanation beneath the control for fields whose effect isn't self-evident. */
-.settings-v2-field-description {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin: -2px 0 0;
-  font-size: 11.5px;
-  line-height: 1.45;
-  color: var(--text-muted);
-}
-
-.settings-v2-field-description-icon {
-  flex-shrink: 0;
-  margin-top: 2px;
-  color: var(--info, var(--neutral-100));
-}
-
-/* Nested fields pull up tight to their parent and indent behind a hairline rail so the chain reads as one dependent group. */
-.settings-v2-field.is-nested {
-  margin-top: -8px;
-  padding-left: 14px;
-  border-left: 1px solid color-mix(in srgb, var(--chooser-surface-border) 70%, transparent);
-}
-
-.settings-v2-field-label {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  max-width: 100%;
-  gap: 2px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--text-muted);
-  line-height: 16px;
-}
-
-.settings-v2-field-label-text {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.settings-v2-restart-tag {
-  flex: 0 0 auto;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 14px;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--warning);
-  background: color-mix(in srgb, var(--warning) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--warning) 36%, transparent);
-  white-space: nowrap;
-}
-
-/* Failed-write pill: restart-tag shape in the danger ramp. Clamped with ellipsis; full message in the `title` tooltip. */
-.settings-v2-field-error-tag {
-  flex: 0 0 auto;
-  margin-left: 6px;
-  max-width: 240px;
-  padding: 1px 6px;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 14px;
-  letter-spacing: 0.02em;
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--danger) 36%, transparent);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.settings-v2-boolean-row .settings-v2-field-label {
-  flex: 0 1 auto;
-  max-width: calc(100% - 48px);
-}
-
-.settings-v2-field.is-env-vars,
-.settings-v2-field.is-channel-picker {
-  gap: 10px;
-}
-
-.settings-v2-env-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.settings-v2-env-header .settings-v2-field-label {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.settings-v2-env-notice {
-  flex: 0 0 auto;
-  width: fit-content;
-  max-width: min(100%, 320px);
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 6px 8px;
-  margin: -6px 0 -6px auto;
-  border: 1px solid var(--chooser-surface-border);
-  border-radius: 8px;
-  background: var(--chooser-surface-bg);
-  font-size: 10.5px;
-  line-height: 16px;
-  color: var(--text-muted);
-  text-align: left;
-}
-
-.settings-v2-env-notice-icon {
-  flex-shrink: 0;
-  margin-top: 1px;
-  color: var(--neutral-100);
-}
-
-.settings-v2-env-notice-text {
-  min-width: 0;
-}
-
-.settings-v2-boolean-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 44px;
-  padding: 4px 0;
-}
-.settings-v2-readonly-path {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.settings-v2-field-readonly-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Clickable path that opens the folder in the OS file manager. Only the path
- *  text is the click target (matches StorageDirRow / StatusFactPanel), so the
- *  button is sized to its text rather than filling the value column. */
-.settings-v2-field-readonly-open {
-  flex: 0 1 auto;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.settings-v2-field-readonly-open:hover,
-.settings-v2-field-readonly-open:focus-visible {
-  color: var(--accent);
-  text-decoration: underline;
-  outline: none;
-}
-
-.settings-v2-field-readonly {
-  font-size: 13px;
-  color: var(--neutral-100);
-  line-height: 19px;
-}
-
-.settings-v2-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-:deep(.settings-v2-action) {
-  border: none;
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-:deep(.settings-v2-action.is-running) {
-  cursor: progress;
-  opacity: 0.85;
-}
-
-:deep(.settings-v2-action-spinner) {
-  flex: 0 0 auto;
-  animation: settings-v2-action-spin 0.9s linear infinite;
-}
-
-@keyframes settings-v2-action-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-:deep(.settings-v2-action-tooltip) {
-  width: 100%;
-}
-
-.settings-v2-actions:has(> .settings-v2-action-tooltip:only-child) :deep(.settings-v2-action) {
-  flex: 1;
-}
-
-/* Status-tab treatment: hairline dividers between rows + muted
- * label-over-value layout instead of input-style field chrome. */
-.settings-v2-section.is-readonly-list {
-  gap: 0;
-  padding: 4px 12px;
-  border-radius: 10px;
-  background: var(--secondary-background);
-  border: 1px solid var(--chooser-surface-border);
-}
-
-.settings-v2-section.is-readonly-list .settings-v2-section-title {
-  padding: 8px 0 4px;
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.55;
-}
-
-.settings-v2-section.is-readonly-list .settings-v2-field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-  align-items: start;
-  gap: 8px 16px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--chooser-surface-border);
-}
-
-/* Each field sits alone inside a display:contents row wrapper, so "last row
- * in the section" is the wrapper's :last-child, not the field's. */
-.settings-v2-section.is-readonly-list .settings-v2-field-row:last-child .settings-v2-field {
-  border-bottom: none;
-}
-
-.settings-v2-section.is-readonly-list .settings-v2-field-label {
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-.settings-v2-section.is-readonly-list .settings-v2-field-readonly,
-.settings-v2-section.is-readonly-list .settings-v2-readonly-path {
-  justify-self: end;
-  text-align: right;
-  width: 100%;
-}
-
-.settings-v2-section.is-readonly-list .settings-v2-readonly-path {
-  justify-self: stretch;
-}
-</style>

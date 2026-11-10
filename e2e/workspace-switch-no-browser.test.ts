@@ -1,17 +1,3 @@
-/**
- * E2E: sign in once, then switch workspaces with no further browser, driven through the real
- * workspace selector in the instance-selection window of the real built app.
- *
- * A fake Cloud on 127.0.0.1 stands in for the real one, so this is E2E rather than lifecycle. The
- * fake browser plays the authorize step for every URL the app records through the openExternal
- * hook: it requests the authorize page and follows the redirect to the app's loopback listener.
- *
- * Every launch runs on its own temporary Electron userData dir with a mock keychain. On macOS the
- * harness's HOME override does not move userData, so without this the vault and settings would
- * land in the developer's real profile.
- *
- * `E2E_SHOTS_DIR`, when set, receives a screenshot of each main state.
- */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { existsSync } from 'node:fs'
@@ -89,7 +75,6 @@ class FakeCloud {
   readonly builds: { workspace: string; canMint: boolean }[] = []
   readonly members: string[] = []
   mintBehavior: MintBehavior = () => undefined
-  /** Plays the workspace a person picks on the consent screen. */
   consentOverride: string | null = null
   port = 0
   private server: Server | null = null

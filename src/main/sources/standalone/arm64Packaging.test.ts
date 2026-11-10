@@ -25,8 +25,6 @@ describe('Linux ARM64 packaging', () => {
     const x64Bootstrap = x64Resources.find((resource) => resource.to === 'bootstrap-python')
     const arm64Bootstrap = arm64Resources.find((resource) => resource.to === 'bootstrap-python')
 
-    // ToDesktop permits architecture-specific sources, but every target must
-    // have the same destinations and source basenames, in the same order.
     const resourcePaths = (resources: ExtraResource[]): string[] =>
       resources.map((resource) => path.posix.join(resource.to, path.posix.basename(resource.from)))
     expect(resourcePaths(arm64Resources)).toEqual(resourcePaths(x64Resources))

@@ -1,23 +1,3 @@
-/**
- * Generate sandbox-test.wsb in the project root.
- *
- * Windows Sandbox configuration files (.wsb) require absolute paths in
- * <HostFolder>, so we cannot commit a single .wsb that works on every
- * developer's machine. This script writes one with the absolute path
- * to ./dist on the current host.
- *
- * Usage:
- *   node scripts/generate-sandbox.mjs
- *   pnpm run sandbox:gen
- *
- * After generating, launch with:
- *   Start-Process .\sandbox-test.wsb
- *
- * The sandbox maps ./dist (read-only) to C:\installers and copies any
- * *.exe found there to the sandbox Desktop on logon, ready to test
- * the assisted wizard or a silent /S install.
- */
-
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'

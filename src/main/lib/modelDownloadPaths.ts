@@ -8,7 +8,6 @@ import {
   type InstallModelSearch
 } from './models'
 
-/** Primary shared models directory used by interactive and template downloads. */
 export function getModelsBaseDir(): string {
   const modelsDirs = settings.get('modelsDirs') as string[] | undefined
   return modelsDirs?.[0] || settings.defaults.modelsDirs[0]!
@@ -19,24 +18,10 @@ export function getSharedModelsDirs(): string[] {
   return modelsDirs && modelsDirs.length > 0 ? modelsDirs : settings.defaults.modelsDirs
 }
 
-/** Installation-aware download context for callers that already hold the
- *  record (e.g. the template-model task). Sync: no store lookup needed. */
 export function resolveDownloadContext(inst: installations.InstallationRecord): InstallModelSearch {
   return resolveInstallModelSearchPaths(inst, getSharedModelsDirs())
 }
 
-/**
- * Every launcher-managed model root where staged model downloads (or legacy
- * final-path partials) may live: the shared models dirs plus each known
- * installation's model roots and extra model paths. Used by startup
- * migration/hydration of interrupted downloads (issue #1322). NOT
- * best-effort: a failure to list installations or resolve an install's
- * model paths propagates, because a root silently dropped from the scan
- * would let the legacy migration certify directories it never looked at.
- * The caller treats the failure as an unsafe (non-memoized) startup pass:
- * it warns, refuses jobs for known-unsafe destinations, and retries the
- * pass later - launch itself is never blocked.
- */
 export async function collectModelScanRoots(): Promise<string[]> {
   const roots = new Set<string>()
   const shared = getSharedModelsDirs()
@@ -78,7 +63,6 @@ function rootRelDirsForDirectory(directory: string): string[] {
   return heads.map((head) => path.join(head, ...remainder))
 }
 
-/** Every path where an installation's ComfyUI could find a model file. */
 export function buildExistenceCandidates(
   ctx: InstallModelSearch | null,
   baseDir: string,
@@ -116,7 +100,6 @@ export async function regularFileExists(filePath: string): Promise<boolean> {
   }
 }
 
-/** True when every model is already present in the installation's search set. */
 export async function areModelsPresent(
   installationId: string | null,
   models: ReadonlyArray<{ directory: string; filename: string }>
@@ -135,11 +118,6 @@ export async function areModelsPresent(
   return checks.every(Boolean)
 }
 
-/**
- * Which templates already have every model on disk, for the picker's
- * "Downloaded" badge. Bounded by `budgetMs`: an id not settled in time is left
- * out (unbadged) rather than reported absent, and late results are discarded.
- */
 export async function resolveModelsPresence(
   ids: readonly string[],
   installationId: string | null,
@@ -153,9 +131,7 @@ export async function resolveModelsPresence(
       let present = false
       try {
         present = await areModelsPresent(installationId, await resolveModels(id))
-      } catch {
-        // an unresolvable template reads as "not downloaded"
-      }
+      } catch {}
       if (!budgeted) presence.set(id, present)
     })
   )

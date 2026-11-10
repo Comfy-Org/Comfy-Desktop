@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useEventListener } from '@vueuse/core'
+import { DropdownMenuRadioGroup } from 'reka-ui'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
-import { usePopoverDismiss } from '../../composables/usePopoverDismiss'
 import { useAuthStore } from '../../stores/authStore'
 import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../../shared/workspaces'
 
 const props = defineProps<{
   modelValue: string
+  side?: 'top' | 'bottom'
 }>()
 
 const emit = defineEmits<{
@@ -18,16 +24,12 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const store = useAuthStore()
 
-const rootRef = ref<HTMLElement | null>(null)
-const faceRef = ref<HTMLElement | null>(null)
 const currentWorkspaceId = computed(() => props.modelValue)
 
-const {
-  menuOpen,
-  closeMenu,
-  toggleMenu: togglePopover,
-  onKeydown
-} = usePopoverDismiss({ rootRef, faceRef })
+const menuOpen = ref(false)
+useEventListener(window, 'blur', () => {
+  menuOpen.value = false
+})
 
 function workspaceLabel(workspace: { name: string; type: string }): string {
   return isPersonalWorkspace(workspace) || workspace.type !== 'team'
@@ -45,8 +47,6 @@ const currentWorkspaceName = computed(() => {
   }
   const current = store.workspaces.find((workspace) => workspace.id === currentWorkspaceId.value)
   if (current) return workspaceLabel(current)
-  // Cached auth metadata describes only the authenticated workspace, which
-  // may differ from the dashboard's selection (especially while offline).
   if (store.status.workspaceId === currentWorkspaceId.value) {
     if (
       isPersonalWorkspace({ name: store.status.workspaceName, type: store.status.workspaceType })
@@ -72,233 +72,117 @@ watch(
   { immediate: true }
 )
 
-function toggleMenu(): void {
-  togglePopover()
-  if (menuOpen.value) fetchWorkspacesIfNeeded()
-}
+watch(menuOpen, (open) => {
+  if (open) fetchWorkspacesIfNeeded()
+})
 
 function onSelectWorkspace(workspaceId: string): void {
   if (workspaceId === currentWorkspaceId.value) {
-    closeMenu()
+    menuOpen.value = false
     return
   }
   emit('update:modelValue', workspaceId)
-  closeMenu()
+  menuOpen.value = false
 }
 </script>
 
 <template>
-  <div ref="rootRef" class="workspace-selector" @keydown="onKeydown">
-    <button
-      ref="faceRef"
-      type="button"
-      class="workspace-selector__face"
-      data-testid="devplatform-workspace-selector"
-      aria-haspopup="true"
-      :aria-expanded="menuOpen"
-      :aria-label="$t('devPlatform.workspace.switchLabel')"
-      @click="toggleMenu"
-    >
-      <DevPlatformAvatar :name="currentWorkspaceName" />
-      <span class="workspace-selector__name">{{ currentWorkspaceName }}</span>
-      <ChevronDown
-        :size="14"
-        class="workspace-selector__caret"
-        :class="{ 'workspace-selector__caret--open': menuOpen }"
-        aria-hidden="true"
-      />
-    </button>
-
-    <div
-      v-if="menuOpen"
-      class="workspace-selector__menu"
-      role="group"
+  <div class="workspace-selector relative" :class="$slots.trigger ? 'w-full' : 'w-fit'">
+    <Menu
+      v-model:open="menuOpen"
+      :modal="false"
+      :side="side"
+      class="workspace-selector__menu z-20 min-w-[260px] max-w-[340px]"
       :aria-label="$t('devPlatform.workspace.switchLabel')"
       data-testid="devplatform-workspace-menu"
     >
+      <template #trigger>
+        <slot name="trigger" :workspace-name="currentWorkspaceName">
+          <Button
+            type="button"
+            variant="textonly"
+            size="md"
+            class="workspace-selector__face min-w-0 max-w-80 [--dp-avatar-size:20px]"
+            data-testid="devplatform-workspace-selector"
+            :aria-label="$t('devPlatform.workspace.switchLabel')"
+          >
+            <DevPlatformAvatar :name="currentWorkspaceName" />
+            <span class="workspace-selector__name min-w-0 flex-auto truncate text-left">{{
+              currentWorkspaceName
+            }}</span>
+            <ChevronDown
+              :size="14"
+              class="workspace-selector__caret shrink-0 transition-transform"
+              :class="{ 'workspace-selector__caret--open rotate-180': menuOpen }"
+              aria-hidden="true"
+            />
+          </Button>
+        </slot>
+      </template>
       <div
         v-if="store.loadingWorkspaces && store.workspaces.length === 0"
-        class="workspace-selector__hint"
+        class="workspace-selector__hint px-3 py-2 text-xs text-muted-foreground"
+        role="status"
       >
         {{ $t('common.loading') }}
       </div>
-      <button
+      <MenuItem
         v-else-if="store.workspacesError && store.workspaces.length === 0"
+        as="button"
         type="button"
-        class="workspace-selector__item workspace-selector__retry"
+        class="workspace-selector__retry w-full"
         data-testid="devplatform-workspace-retry"
-        @click="store.fetchWorkspaces()"
+        @select.prevent="store.fetchWorkspaces()"
+        >{{ $t('devPlatform.workspace.loadError') }}</MenuItem
       >
-        {{ $t('devPlatform.workspace.loadError') }}
-      </button>
-
-      <button
-        type="button"
-        class="workspace-selector__item"
-        :aria-pressed="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
-        data-testid="devplatform-workspace-personal"
-        @click="onSelectWorkspace(PERSONAL_WORKSPACE_ID)"
-      >
-        <DevPlatformAvatar :name="$t('devPlatform.workspace.personalLabel')" />
-        <span class="workspace-selector__identity">
-          <span class="workspace-selector__item-name">{{
-            $t('devPlatform.workspace.personalLabel')
-          }}</span>
-        </span>
-        <Check
-          v-if="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
-          :size="15"
-          class="workspace-selector__check"
-          aria-hidden="true"
-        />
-      </button>
-
-      <button
-        v-for="workspace in teamWorkspaces"
-        :key="workspace.id"
-        type="button"
-        class="workspace-selector__item"
-        :aria-pressed="workspace.id === currentWorkspaceId"
-        :data-testid="`devplatform-workspace-${workspace.id}`"
-        @click="onSelectWorkspace(workspace.id)"
-      >
-        <DevPlatformAvatar :name="workspaceLabel(workspace)" />
-        <span class="workspace-selector__identity">
-          <span class="workspace-selector__item-name">{{ workspaceLabel(workspace) }}</span>
-          <span v-if="workspace.type !== 'personal'" class="workspace-selector__item-sub">{{
-            workspace.type
-          }}</span>
-        </span>
-        <Check
-          v-if="workspace.id === currentWorkspaceId"
-          :size="15"
-          class="workspace-selector__check"
-          aria-hidden="true"
-        />
-      </button>
-    </div>
+      <DropdownMenuRadioGroup :model-value="currentWorkspaceId">
+        <MenuRadioItem
+          as="button"
+          type="button"
+          :value="PERSONAL_WORKSPACE_ID"
+          class="workspace-selector__item w-full [--dp-avatar-size:24px]"
+          data-testid="devplatform-workspace-personal"
+          @select="onSelectWorkspace(PERSONAL_WORKSPACE_ID)"
+        >
+          <DevPlatformAvatar :name="$t('devPlatform.workspace.personalLabel')" />
+          <span class="workspace-selector__identity min-w-0 flex-auto text-left"
+            ><span class="workspace-selector__item-name block truncate">{{
+              $t('devPlatform.workspace.personalLabel')
+            }}</span></span
+          >
+          <Check
+            v-if="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
+            :size="15"
+            aria-hidden="true"
+          />
+        </MenuRadioItem>
+        <MenuRadioItem
+          v-for="workspace in teamWorkspaces"
+          :key="workspace.id"
+          as="button"
+          type="button"
+          :value="workspace.id"
+          class="workspace-selector__item w-full [--dp-avatar-size:24px]"
+          :data-testid="`devplatform-workspace-${workspace.id}`"
+          @select="onSelectWorkspace(workspace.id)"
+        >
+          <DevPlatformAvatar :name="workspaceLabel(workspace)" />
+          <span
+            class="workspace-selector__identity flex min-w-0 flex-auto flex-col text-left leading-tight"
+          >
+            <span class="workspace-selector__item-name truncate">{{
+              workspaceLabel(workspace)
+            }}</span>
+            <span
+              v-if="workspace.type !== 'personal'"
+              class="workspace-selector__item-sub truncate text-xs text-muted-foreground capitalize"
+              >{{ workspace.type }}</span
+            >
+          </span>
+          <Check v-if="workspace.id === currentWorkspaceId" :size="15" aria-hidden="true" />
+        </MenuRadioItem>
+      </DropdownMenuRadioGroup>
+      <slot name="footer" />
+    </Menu>
   </div>
 </template>
-
-<style scoped>
-.workspace-selector {
-  position: relative;
-  width: fit-content;
-}
-
-.workspace-selector__face {
-  --dp-avatar-size: calc(var(--takeover-fs-caption) * 2.5);
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 220px;
-  max-width: 320px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  background: color-mix(in oklab, var(--neutral-100) 5%, transparent);
-  color: var(--neutral-100);
-  font: inherit;
-  cursor: pointer;
-}
-.workspace-selector__face:hover {
-  background: color-mix(in oklab, var(--neutral-100) 10%, transparent);
-  border-color: color-mix(in oklab, var(--neutral-100) 18%, transparent);
-}
-.workspace-selector__face:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.workspace-selector__name,
-.workspace-selector__item-name,
-.workspace-selector__item-sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.workspace-selector__name {
-  flex: 1 1 auto;
-  color: var(--neutral-100);
-  font-size: var(--takeover-fs-caption);
-  font-weight: 600;
-  text-align: left;
-}
-.workspace-selector__caret {
-  flex: 0 0 auto;
-  color: var(--neutral-200);
-  transition: transform 140ms ease;
-}
-.workspace-selector__caret--open {
-  transform: rotate(180deg);
-}
-
-.workspace-selector__menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 20;
-  min-width: 260px;
-  max-width: 340px;
-  max-height: min(70vh, 480px);
-  overflow-y: auto;
-  padding: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--brand-surface-border);
-  background: var(--neutral-800);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-}
-
-.workspace-selector__hint {
-  padding: 8px 10px;
-  color: var(--neutral-200);
-  font-size: var(--takeover-fs-caption);
-}
-
-.workspace-selector__item {
-  --dp-avatar-size: calc(var(--takeover-fs-caption) * 2.5);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--neutral-100);
-  font: inherit;
-  font-size: var(--takeover-fs-caption);
-  text-align: left;
-  cursor: pointer;
-}
-.workspace-selector__item:hover:not(:disabled) {
-  background: var(--brand-surface-bg-hover);
-}
-.workspace-selector__item:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -2px;
-}
-.workspace-selector__retry {
-  color: var(--neutral-200);
-}
-
-.workspace-selector__identity {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-direction: column;
-  line-height: 1.2;
-}
-.workspace-selector__item-name {
-  color: var(--neutral-100);
-  font-weight: 600;
-}
-.workspace-selector__item-sub {
-  color: var(--neutral-200);
-  text-transform: capitalize;
-}
-.workspace-selector__check {
-  flex: 0 0 auto;
-  color: var(--comfy-yellow);
-}
-</style>

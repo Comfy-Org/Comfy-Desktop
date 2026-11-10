@@ -1,11 +1,3 @@
-/**
- * CloudSession - the one object the app (and its UI) drives for auth + workspace.
- *
- * Ties the PKCE flow, the encrypted token store, and the workspace client into a
- * single facade, and exposes a {@link TokenProvider} so the comfy-builder client
- * can pull a fresh bearer token without ever seeing the store. Tokens never leave
- * the main process; the UI only ever gets {@link AuthStatus} + {@link Workspace}.
- */
 import type { TokenProvider } from '../comfybuilder'
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
@@ -44,19 +36,13 @@ import { classifyMint, mintWorkspaceToken } from './workspaceToken'
 import type { ReauthorizeReason, WorkspaceMintOutcome } from './workspaceToken'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
-/** Refresh or re-mint an access token this many ms before it actually expires. */
 const REFRESH_SKEW_MS = 60_000
 
-/** One event per switch decision. `outcome` is how the goal of no further consent is measured. */
 export const WORKSPACE_SWITCH_EVENT = 'comfy.desktop.auth.workspace_switch'
-/** Mirrored to Datadog: every browser trip a workspace switch causes. */
 export const WORKSPACE_SWITCH_BROWSER_EVENT = 'comfy.desktop.auth.workspace_switch_browser'
-/** Mirrored to Datadog: a browser sign-in returned a grant without the mint scope. */
 export const MINT_SCOPE_NOT_GRANTED_EVENT = 'comfy.desktop.auth.mint_scope_not_granted'
-/** Mirrored to Datadog: a token read could not renew the active workspace, so it went back to the anchor. */
 export const WORKSPACE_RETURNED_TO_ANCHOR_EVENT = 'comfy.desktop.auth.workspace_returned_to_anchor'
 
-/** What `switchWorkspace` resolves with. `reachedThroughConsent` is for main only and never crosses IPC. */
 export interface SessionSwitchReply extends WorkspaceSwitchStatus {
   reachedThroughConsent?: true
 }
@@ -126,25 +112,18 @@ export class CloudSession {
   private readonly revocations = new Revocations()
   private readonly retiredRefreshTokens = new Set<string>()
 
-  /** Latest auth intent. Older flows may finish, but cannot change what a newer
-   *  login, workspace switch, or logout chose. */
   private authGeneration = 0
 
-  /** The one mint policy: the grant's anchor always, any other workspace unless the ops flag killed it. */
   async isWorkspaceMintAllowed(workspaceId: string): Promise<boolean> {
     const grant = loadGrant()
     if (grant && workspaceIdOf(grant.accessToken) === workspaceId) return true
     return isWorkspaceMintSwitchEnabled()
   }
 
-  /** Called after a token read moved the active workspace back to the anchor. */
   setReturnedToAnchorHandler(handler: () => void): void {
     this.returnedToAnchorHandler = handler
   }
 
-  /** Start the PKCE sign-in (system browser); persists tokens on success.
-   *  A repeat request while one is pending reopens its browser page, since the
-   *  user may have closed it or hit an IdP error there. */
   login(): Promise<AuthStatus> {
     if (this.loginInFlight) {
       if (this.loginAuthorizeUrl) void openAuthorizePage(this.loginAuthorizeUrl).catch(() => {})
@@ -187,7 +166,6 @@ export class CloudSession {
     this.loginAuthorizeUrl = null
   }
 
-  /** Forget tokens at once; revoke this grant on Cloud in the background. Installs are untouched. */
   logout(): void {
     const refreshToken = loadGrant()?.refreshToken
     const origin = loadGrantOrigin()
@@ -199,14 +177,12 @@ export class CloudSession {
     clearTokens()
   }
 
-  /** Revoke a grant Desktop no longer holds, and any rotation of it still in flight. */
   private retireGrant(refreshToken: string | undefined, origin: GrantOrigin | null): void {
     if (!refreshToken) return
     if (this.refreshing.has(refreshToken)) this.retiredRefreshTokens.add(refreshToken)
     if (origin) this.revocations.add({ ...origin, refreshToken })
   }
 
-  /** Resume revocations a previous run queued and Cloud has not confirmed. */
   resumeRevocations(): void {
     void this.revocations.drain()
   }
@@ -219,23 +195,19 @@ export class CloudSession {
     return getAuthStatus().signedIn
   }
 
-  /** Bumped by every login, workspace switch and logout. */
   currentAuthGeneration(): number {
     return this.authGeneration
   }
 
-  /** The account the grant belongs to, or null when signed out. */
   currentSubject(): string | null {
     const grant = loadGrant()
     return grant ? subjectOf(grant.accessToken) : null
   }
 
-  /** The active workspace, or null when signed out. */
   currentWorkspaceId(): string | null {
     return loadActiveWorkspaceId()
   }
 
-  /** The grant's access token for minting and scope checks. After a failed refresh it is the stale one. */
   async getGrantAccessToken(): Promise<string | null> {
     const grant = loadGrant()
     if (!grant) return null
@@ -245,8 +217,6 @@ export class CloudSession {
     return this.currentSubject() === subject ? (loadGrant()?.accessToken ?? null) : null
   }
 
-  /** The token for API calls in the active workspace, null when it cannot get one.
-   *  A definitively refused grant returns its stale token, so the API's 401 ends the session. */
   async getAccessToken(): Promise<string | null> {
     const grant = loadGrant()
     if (!grant) return null
@@ -408,14 +378,12 @@ export class CloudSession {
     return outcome
   }
 
-  /** Cloud ended the grant `accessToken` came from: drop its refresh token, and that of any rotation of it. */
   endGrantFamily(accessToken: string): void {
     for (let token: string | undefined = accessToken; token; token = this.rotatedTo.get(token)) {
       endGrant(token)
     }
   }
 
-  /** The signed-in user's workspaces; unavailable catalogs reject rather than imply removal. */
   async listWorkspaces(): Promise<Workspace[]> {
     const token = await this.getGrantAccessToken()
     if (!token) return []
@@ -424,16 +392,12 @@ export class CloudSession {
     return workspaces
   }
 
-  /** Members of the active workspace, used to resolve Builder creator ids. */
   async listWorkspaceMembers(): Promise<WorkspaceMember[]> {
     const token = await this.getAccessToken()
     if (!token) return []
     return listWorkspaceMembers(token)
   }
 
-  /** Activate `workspaceId`. Only a refused grant, an SSO policy, a missing mint scope or a
-   *  mint kill switch opens the browser, and only for a `chosen` switch; every other failure
-   *  stays put and says so. */
   switchWorkspace(
     workspaceId: string,
     intent: WorkspaceSwitchIntent = 'chosen'
@@ -561,7 +525,6 @@ export class CloudSession {
     return reached ? { ...reply, reachedThroughConsent: true } : reply
   }
 
-  /** Adapter for the comfy-builder client's auth seam. */
   asTokenProvider(onSignedOut?: () => void): TokenProvider {
     return {
       getAccessToken: () => this.getAccessToken(),

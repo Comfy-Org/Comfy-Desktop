@@ -27,13 +27,8 @@ import type { InstallationRecord } from '../../installations'
 const mockedFetchJSON = vi.mocked(fetchJSON)
 const mockedGetLatestStableTag = vi.mocked(getLatestStableTag)
 
-// Use the running platform's vendor prefix (and, on Windows, the running
-// architecture's suffix) so tests work on win32/darwin/linux CI runners and on
-// native ARM64 Windows dev machines alike — the wizard filters by both.
 const ARCH_SUFFIX = process.platform === 'win32' && process.arch === 'arm64' ? '-arm64' : ''
 const VENDOR_ID = `${PLATFORM_PREFIX[process.platform] || 'win-'}nvidia${ARCH_SUFFIX}`
-
-// --- Helpers ---
 
 type R2Release = {
   tag: string
@@ -61,14 +56,10 @@ function makeR2Releases(tags: string[], options?: { vendorId?: string; comfyuiVe
     python_version: '3.13.12',
     torch_version: '2.7.0'
   }))
-  // latest.json: vendor_id → newest release
   const latest: Record<string, R2Release> = { [vendorId]: releases[0]! }
-  // per-vendor releases.json
   const vendorReleases: Record<string, { releases: R2Release[] }> = { [vendorId]: { releases } }
   return { latest, vendorReleases, vendorId }
 }
-
-// --- buildInstallation ---
 
 describe('standalone.buildInstallation', () => {
   const makeRelease = (value: string, tag?: string): FieldOption => ({
@@ -115,10 +106,6 @@ describe('standalone.buildInstallation', () => {
       release: makeRelease('latest', 'v0.18.2-env1'),
       variant: makeVariant(VENDOR_ID)
     })
-    // Both channels run the post-install update step — the bundle's
-    // checked-in commit is necessarily behind both stable AND master,
-    // so picking "Latest on GitHub" without an update would leave the
-    // user on an OLD master commit, not the actual latest one.
     expect(result.autoUpdateComfyUI).toBe(true)
     expect(result.updateChannel).toBe('latest')
   })
@@ -145,7 +132,6 @@ describe('standalone.buildInstallation', () => {
     expect(result.originalTorchVersion).toBe('2.7.0')
   })
 
-  // --- Starter-template gating (the "Skip & Install" vs "Install" contract) ---
   describe('starter template', () => {
     const base = {
       release: makeRelease('stable', 'v0.18.2-env1'),
@@ -165,7 +151,6 @@ describe('standalone.buildInstallation', () => {
       })
       expect(result.bundledTemplateId).toBe(apiTemplate.id)
       expect(result.pendingTemplateOpen).toBe(apiTemplate.id)
-      // Zero bytes is what keeps the launch stepper from showing a model phase.
       expect(result.bundledTemplateSizeBytes).toBe(0)
     })
 
@@ -210,8 +195,6 @@ describe('standalone.buildInstallation', () => {
     })
 
     it('persists a live-index substitute id not in the curated set (substitution survives the gate)', () => {
-      // When a curated id vanishes upstream the picker offers a same-modality
-      // substitute whose id isn't in CURATED_TEMPLATES; picking it must still install.
       const substituteId = 'some_live_image_model'
       expect(CURATED_TEMPLATES.some((t) => t.id === substituteId)).toBe(false)
       const result = standalone.buildInstallation({
@@ -234,8 +217,6 @@ describe('standalone.buildInstallation', () => {
   })
 })
 
-// --- getFieldOptions('bundledTemplate') — curated + hydrated picker options ---
-
 describe('standalone.getFieldOptions bundledTemplate', () => {
   beforeEach(() => {
     mockedFetchJSON.mockReset()
@@ -254,7 +235,6 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
     const options = await standalone.getFieldOptions!('bundledTemplate', {}, {})
     const skip = options.find((o) => o.value === NO_TEMPLATE_VALUE)!
     expect(skip.recommended).toBeFalsy()
-    // Options come back in tab order, which the manifest does not follow.
     const recommendedIds = options.filter((o) => o.recommended).map((o) => o.value)
     expect(recommendedIds.sort()).toEqual(
       CURATED_TEMPLATES.filter((t) => t.recommended)
@@ -316,11 +296,7 @@ describe('standalone.getFieldOptions bundledTemplate', () => {
   })
 })
 
-// --- buildPinnedVariant ---
-
 describe('buildPinnedVariant', () => {
-  // Two bundles for one vendor: a newer one (releases[0]) and the older one a
-  // snapshot might have been captured on (releases[1]).
   const releases: R2Release[] = [
     {
       tag: 'v0.20.0-env1',
@@ -399,12 +375,9 @@ describe('buildPinnedVariant', () => {
   })
 })
 
-// --- getFieldOptions('release') ---
-
 describe('standalone.getFieldOptions release', () => {
   function setupMockReleases() {
     const { latest, vendorReleases, vendorId } = makeR2Releases(['v0.18.3-env1', 'v0.18.2-env1'])
-    // Make the first tag newer
     vendorReleases[vendorId]!.releases[0]!.date = '2026-04-01T00:00:00Z'
     vendorReleases[vendorId]!.releases[1]!.date = '2026-03-15T00:00:00Z'
     vendorReleases[vendorId]!.releases[1]!.comfyui_version = '0.18.2'
@@ -418,8 +391,6 @@ describe('standalone.getFieldOptions release', () => {
   it('returns exactly the two IPP channel options (Stable + Latest on GitHub)', async () => {
     setupMockReleases()
     const options = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
-    // No per-tag entries — only the two channel options surface, in
-    // the same order + with the same value ids the IPP Update tab uses.
     expect(options.length).toBe(2)
     expect(options[0]!.value).toBe('stable')
     expect(options[0]!.recommended).toBe(true)
@@ -443,9 +414,6 @@ describe('standalone.getFieldOptions release', () => {
   })
 
   it('Stable entry threads the upstream stable tag through data.latestStableTag', async () => {
-    // The variant card reads `data.latestStableTag` to show the version
-    // the user lands on after post-install update — that survived the
-    // IPP-label cleanup so issue #708 stays fixed.
     setupMockReleases()
     mockedGetLatestStableTag.mockResolvedValue('v1.19.5')
     const options = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })
@@ -454,15 +422,11 @@ describe('standalone.getFieldOptions release', () => {
   })
 })
 
-// --- getLaunchCommand: adopted Legacy Desktop installs ---
-
 describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () => {
   const installPath = path.join('C:', 'fake', 'installs', 'adopted')
   const adoptedBaseDir = path.join('C:', 'Users', 'me', 'Documents', 'ComfyUI')
   const adoptedPythonPath = path.join(adoptedBaseDir, '.venv', 'Scripts', 'python.exe')
 
-  // Pretend every path the source checks is on disk — we're only exercising
-  // arg construction, not file resolution.
   beforeEach(() => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true)
   })
@@ -481,10 +445,6 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
       adopted: true,
       adoptedBaseDir,
       adoptedPythonPath,
-      // Adopted records ship with shared models on (legacy `models/` is
-      // registered in the global modelsDirs list) and shared input/output
-      // off — the workspace is pinned to legacy basePath via the
-      // per-install inputDir/outputDir fields, which launch.ts handles.
       useSharedModels: true,
       useSharedInput: false,
       useSharedOutput: false,
@@ -509,9 +469,6 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
   })
 
   it('injects only --base-directory / --user-directory rooted at adoptedBaseDir', () => {
-    // --input-directory / --output-directory are NOT injected here anymore;
-    // they're first-class per-install fields handled by launch.ts'
-    // shared-input-output branch.
     const cmd = standalone.getLaunchCommand!(makeAdoptedRecord())!
     const args = cmd.args!
     const idx = (flag: string) => args.indexOf(flag)
@@ -522,10 +479,6 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
   })
 
   it('pins --database-url at the legacy user dir so SQLite can open it', () => {
-    // ComfyUI's default --database-url resolves to <source>/../user/comfyui.db,
-    // which for an adopted install lives in the empty new install dir — the
-    // parent `user/` doesn't exist there, so SQLite raised "unable to open
-    // database file" on launch. Anchor the URL at the legacy user folder.
     const cmd = standalone.getLaunchCommand!(makeAdoptedRecord())!
     const args = cmd.args!
     const idx = args.indexOf('--database-url')
@@ -539,7 +492,6 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
       makeAdoptedRecord({ launchArgs: `--port 8188 --database-url ${userUrl}` })
     )!
     const args = cmd.args!
-    // Only one --database-url, and it's the user's value.
     const positions = args
       .map((value, index) => (value === '--database-url' ? index : -1))
       .filter((index) => index >= 0)
@@ -552,8 +504,6 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
       makeAdoptedRecord({ launchArgs: '--port 8188 --database-url=sqlite:///:memory:' })
     )!
     const args = cmd.args!
-    // Adopt branch must not inject its own --database-url alongside the
-    // `=`-style override.
     expect(args.includes('--database-url')).toBe(false)
     expect(args.some((a) => a === '--database-url=sqlite:///:memory:')).toBe(true)
   })
@@ -565,7 +515,6 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
       })
     )!
     const args = cmd.args!
-    // Two --base-directory occurrences; user override comes after the adopt-injected one
     const positions = args
       .map((value, index) => (value === '--base-directory' ? index : -1))
       .filter((index) => index >= 0)
@@ -587,19 +536,13 @@ describe('standalone.getLaunchCommand for adopted Legacy Desktop installs', () =
   it('does not inject adopt args when adopted flag is absent', () => {
     const record = makeAdoptedRecord({ adopted: undefined })
     const cmd = standalone.getLaunchCommand!(record)
-    // adoptedPythonPath is ignored for non-adopted; getActivePythonPath would
-    // return a standalone-env path which our existsSync mock also accepts.
     expect(cmd).not.toBeNull()
     expect(cmd!.args!.includes('--base-directory')).toBe(false)
     expect(cmd!.args!.includes('--user-directory')).toBe(false)
   })
 })
 
-// --- getFieldOptions('variant') — version-display consistency (issue #708) ---
-
 describe('standalone.getFieldOptions variant version display', () => {
-  // The newest R2 standalone bundle ships an OLDER ComfyUI (0.20.1) than the
-  // upstream stable tag the wizard auto-updates to (v0.22.3). Set up that gap.
   function setupVersionGap() {
     const { latest, vendorReleases, vendorId } = makeR2Releases(['v0.20.1-env1'], {
       comfyuiVersion: '0.20.1'
@@ -627,7 +570,6 @@ describe('standalone.getFieldOptions variant version display', () => {
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    // The card and the dropdown must agree: both surface 0.22.3.
     expect(card.description).toContain('ComfyUI 0.22.3')
     expect(card.description).not.toContain('ComfyUI 0.20.1')
   })
@@ -649,9 +591,6 @@ describe('standalone.getFieldOptions variant version display', () => {
 
     const variants = await standalone.getFieldOptions!('variant', { release }, {})
     const card = variants.find((o) => o.value === vendorId)!
-    // Picking 'latest' fast-forwards the install to master HEAD (a few commits
-    // past the latest stable tag), so the card advertises that as a nightly â€”
-    // not the much older ComfyUI baked into the bundle (issue #1068).
     expect(card.description).toContain('ComfyUI 0.22.3 (nightly)')
     expect(card.description).not.toContain('ComfyUI 0.20.1')
   })
@@ -668,8 +607,6 @@ describe('standalone.getFieldOptions variant version display', () => {
   })
 })
 
-// --- Architecture filter: suffixed ARM64 bundles must match the running app ---
-
 describe('standalone.getFieldOptions architecture filter', () => {
   const realPlatform = process.platform
   const realArch = process.arch
@@ -679,7 +616,6 @@ describe('standalone.getFieldOptions architecture filter', () => {
   }
   afterEach(() => setHost(realPlatform, realArch))
 
-  /** latest.json + per-vendor releases.json with one bundle per vendor id. */
   function setupCatalog(vendorIds: string[]) {
     const latest: Record<string, R2Release> = {}
     const vendorReleases: Record<string, { releases: R2Release[] }> = {}
@@ -715,8 +651,6 @@ describe('standalone.getFieldOptions architecture filter', () => {
     'win-amd',
     'mac-mps',
     'linux-nvidia',
-    // Pre-release id: invisible to desktops that filter on the bare
-    // platform prefix, offered here only to a matching ARM64 host.
     'beta-win-nvidia-arm64'
   ]
 
@@ -749,8 +683,6 @@ describe('standalone.getFieldOptions architecture filter', () => {
   })
 
   it('an ARM64 Windows app gets no release options when R2 only has x64 bundles', async () => {
-    // Nothing runnable exists: the wizard must not fall back to an x64 bundle
-    // under emulation, whose CUDA torch cannot drive the GPU.
     setHost('win32', 'arm64')
     setupCatalog(['win-nvidia', 'win-cpu'])
     const releases = await standalone.getFieldOptions!('release', {}, { includeLatestStable: true })

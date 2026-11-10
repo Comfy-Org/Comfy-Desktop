@@ -1,10 +1,7 @@
-// @vitest-environment node
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
-// The guard tests never reach download/extract; stub them so importing install.ts
-// does not pull Electron (`net`) or 7zip-bin into this unit test.
 vi.mock('../lib/download', () => ({ download: vi.fn() }))
 vi.mock('../lib/extract', () => ({ extractNested: vi.fn() }))
 

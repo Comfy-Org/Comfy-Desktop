@@ -1,7 +1,3 @@
-/**
- * Durable this-device sign-out: a signed-out grant's refresh token waits in an encrypted queue
- * until the Cloud that issued it, and only that Cloud, confirms `POST /oauth/revoke`.
- */
 import { revokeUrlOf } from './config'
 import { revoke } from './oauth'
 import { addPendingRevocation, loadPendingRevocations, removePendingRevocation } from './tokenStore'
@@ -17,14 +13,12 @@ export class Revocations {
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private readonly settledButSaved = new Set<string>()
 
-  /** Persist a revocation, then send it unless an earlier attempt is still running or backing off. */
   add(revocation: PendingRevocation): void {
     addPendingRevocation(revocation)
     if (this.draining) this.drainAgain = true
     else if (!this.retryTimer) void this.drain()
   }
 
-  /** Send every queued revocation, each to the Cloud that issued it; resolves when this pass ends. */
   drain(): Promise<void> {
     if (this.draining) return this.draining
     if (this.retryTimer) clearTimeout(this.retryTimer)

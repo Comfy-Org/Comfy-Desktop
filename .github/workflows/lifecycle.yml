@@ -3,13 +3,7 @@ name: Lifecycle Tests
 on:
   workflow_dispatch:
   schedule:
-    # Nightly at 09:00 UTC
     - cron: '0 9 * * *'
-  # On-demand per-PR run: add the `run-lifecycle` label to a PR to run
-  # the CPU lifecycle chain against it. The job below skips every other
-  # label event, so normal PR activity never triggers this workflow.
-  # Re-run by removing and re-adding the label (or via Actions re-run).
-  # Do NOT make this a required check - it is opt-in by design.
   pull_request:
     types: [labeled]
 
@@ -23,7 +17,6 @@ concurrency:
 jobs:
   lifecycle:
     name: Lifecycle (windows)
-    # Label events fire for every label; only `run-lifecycle` runs the job.
     if: github.event_name != 'pull_request' || github.event.label.name == 'run-lifecycle'
     runs-on: windows-latest
     timeout-minutes: 120
@@ -44,10 +37,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Lifecycle tests exercise the real install path, which prefers the
-      # bundled bootstrap-python git backend (the same backend shipped to
-      # users). Fetch it so the run covers production wiring instead of
-      # silently falling back to the runner's system git.
       - name: Fetch bootstrap Python
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -57,7 +46,6 @@ jobs:
         run: pnpm run build
 
       - name: Run lifecycle tests
-        # Hosted runners have no GPU - pin the CPU variant explicitly.
         env:
           LIFECYCLE_VARIANT: cpu
         run: pnpm run test:e2e:lifecycle

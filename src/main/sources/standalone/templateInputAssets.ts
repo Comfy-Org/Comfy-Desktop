@@ -7,30 +7,14 @@ import { loadTemplateJson } from './templateModels'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
 
-/**
- * A single sample input file a template's `LoadImage`/`LoadVideo`/`LoadAudio`
- * node references, ready to download into the install's `input/` dir.
- *
- * The filename is derived from the workflow JSON (not hand-maintained) and the
- * bytes are fetched from the templates repo's root `input/` dir at install time,
- * so a template's input node resolves on first open without us shipping or
- * tracking any binary.
- */
 export interface TemplateInputAsset {
-  /** Template-scoped identifier accepted by the privileged download bridge. */
   assetId: string
-  /** Bare on-disk filename, placed at `<inputDir>/<filename>`. */
   filename: string
   mediaType: 'image' | 'video' | 'audio'
-  /** Host-generated public preview URL. Its existence is not guaranteed when
-   *  an installed template package and the live templates repo have drifted. */
   previewUrl: string
-  /** Source URL under the repo's `input/` dir. */
   url: string
 }
 
-/** Node types whose first widget value is an `input/` filename. Mirrors the
- *  loader nodes the workflow templates use for sample media. */
 const LOAD_NODE_TYPES = new Set([
   'LoadImage',
   'LoadImageMask',
@@ -41,8 +25,6 @@ const LOAD_NODE_TYPES = new Set([
 
 type TemplateInputMediaType = TemplateInputAsset['mediaType']
 
-/** Media extensions we'll place in `input/`. Excludes model/script types so a
- *  crafted widget value can't pull an arbitrary payload through this path. */
 const MEDIA_TYPE_BY_EXTENSION: Readonly<Record<string, TemplateInputMediaType>> = {
   '.png': 'image',
   '.jpg': 'image',
@@ -64,15 +46,11 @@ function mediaTypeForFilename(filename: string): TemplateInputMediaType | undefi
   return MEDIA_TYPE_BY_EXTENSION[path.extname(filename).toLowerCase()]
 }
 
-/** A template-declared input filename must be a bare name (no separator, no
- *  `..`) with an allowed media extension, so it can't escape the input dir or
- *  pull a non-media payload. */
 function isSafeInputAsset(name: string): boolean {
   if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) return false
   return mediaTypeForFilename(name) !== undefined
 }
 
-/** Collect the first widget value (the filename) of every Load* node. */
 function walkLoadNodes(nodes: unknown, out: string[]): void {
   if (!Array.isArray(nodes)) return
   for (const node of nodes) {
@@ -90,14 +68,6 @@ function walkLoadNodes(nodes: unknown, out: string[]): void {
   }
 }
 
-/**
- * Short-lived snapshots, keyed by install and template. A template with four
- * inputs means one listing plus one download call per asset, and for a
- * template outside the installed packages each of those re-fetches the remote
- * JSON uncached. Sharing one answer across that burst also keeps the set
- * stable: without it an asset the view just listed can come back
- * `not-declared` because the remote changed between calls.
- */
 const SNAPSHOT_TTL_MS = 30_000
 const snapshotCache = new Map<
   string,
@@ -119,21 +89,12 @@ export async function resolveTemplateInputAssetSnapshot(
   })()
   const entry = { expiresAt: now + SNAPSHOT_TTL_MS, snapshot }
   snapshotCache.set(key, entry)
-  // A failed resolution must not be held: the next call should retry. Only
-  // evict this entry - a slow resolution can outlive its own TTL, by which
-  // point a later call owns the key.
   void snapshot.then((value) => {
     if (value === null && snapshotCache.get(key) === entry) snapshotCache.delete(key)
   })
   return snapshot
 }
 
-/**
- * Extract the de-duplicated, validated set of sample input assets a template
- * needs. Scans every Load* node (including subgraph definitions), keeps only
- * bare media filenames, and points each at the repo's `input/` dir. Returns `[]`
- * for templates with no image/media input or when the JSON can't be resolved.
- */
 export async function resolveTemplateInputAssets(
   installation: InstallationRecord,
   templateId: string
@@ -142,7 +103,6 @@ export async function resolveTemplateInputAssets(
   return resolveTemplateInputAssetsFromJson(json)
 }
 
-/** Extract sample inputs from an already-resolved editor workflow. */
 function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[] {
   if (!json || typeof json !== 'object') return []
 
@@ -169,11 +129,6 @@ function resolveTemplateInputAssetsFromJson(json: unknown): TemplateInputAsset[]
   return result
 }
 
-/**
- * Resolve the `input/` dir ComfyUI reads at launch for this install — the same
- * precedence the launch args + session migration use: shared (global settings)
- * → per-install override → `<installPath>/ComfyUI/input`.
- */
 export function resolveInputDir(installation: InstallationRecord): string {
   if (installation.useSharedInput !== false) {
     return settings.get('inputDir') || settings.defaults.inputDir
@@ -190,8 +145,6 @@ interface TemplateInputAssetAvailabilityDependencies {
   access: (filePath: string) => Promise<void>
 }
 
-/** Resolve safe, exact filenames against the active installation. Only ENOENT
- *  proves absence; permission and other filesystem failures remain unknown. */
 export async function resolveTemplateInputAssetAvailability(
   installation: InstallationRecord,
   filenames: readonly string[],
@@ -227,17 +180,9 @@ export async function resolveTemplateInputAssetAvailability(
 
 export interface PlacedInputAsset {
   filename: string
-  /** `false` when the file already existed on disk (download skipped). */
   downloaded: boolean
 }
 
-/**
- * Download a template's sample input asset(s) into the install's `input/` dir so
- * its Load* node resolves on first open. Best-effort: a resolve/download/write
- * error is logged and skipped (ComfyUI's missing-input prompt is the final
- * safety net), never throwing. Idempotent — an asset already on disk is left
- * untouched.
- */
 export async function downloadTemplateInputAssets(
   installation: InstallationRecord,
   templateId: string,
@@ -270,9 +215,7 @@ export async function downloadTemplateInputAssets(
       results.push({ filename: asset.filename, downloaded: false })
       log(`[templates] Input asset ${asset.filename} already present, skipping.\n`)
       continue
-    } catch {
-      // not present — download it
-    }
+    } catch {}
     try {
       await download(asset.url, destPath, null, { signal })
       results.push({ filename: asset.filename, downloaded: true })

@@ -8,8 +8,6 @@ import {
   normaliseFirstUseMode
 } from './firstUseMode'
 
-// Pins the chrome-lockdown taxonomy: first-use lockdown (hide chrome) and loading lockdown (keep chrome live) must not bleed into each other.
-
 const ALL_MODES: FirstUseMode[] = ['none', 'consent-lockdown', 'post-consent', 'loading-lockdown']
 
 describe('firstUseMode', () => {

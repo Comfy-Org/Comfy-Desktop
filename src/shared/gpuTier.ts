@@ -1,4 +1,3 @@
-/** Coarse hardware tier for cohort filtering and GPU-aware surfaces. */
 export type GpuTier = 'high' | 'mid' | 'low' | 'sub_low' | 'apple' | 'cpu_only'
 
 export function deriveGpuTier(opts: {
@@ -6,7 +5,6 @@ export function deriveGpuTier(opts: {
   vramGb: number | null | undefined
 }): GpuTier {
   const vendor = (opts.vendor ?? '').toLowerCase()
-  // Main reports 'mps' for Apple Silicon; also accept literal 'apple'.
   if (vendor === 'apple' || vendor === 'mps') return 'apple'
   const vram = opts.vramGb ?? 0
   if (!vendor) return 'cpu_only'

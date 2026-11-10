@@ -2,18 +2,9 @@ import { ref, shallowRef } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 
-/**
- * The card's copy is resolved by the caller, and WHEN it is resolved is load-bearing.
- *
- * The title bar's i18n instance starts in English and `syncLocale()` only runs on mount, so
- * copy read during setup is an English snapshot that never updates — the wrong language for a
- * user whose persisted locale is not English, and permanently wrong for every later card in
- * that renderer. These pin the contract that the getters are called when the card is built.
- */
 describe('useBetaActivationNotice copy resolution', () => {
   let showCoachmark: ReturnType<typeof vi.fn>
 
-  /** Enough of a host for the gate to pass and a card to be built. */
   function mountNotice(copy: () => string) {
     showCoachmark = vi.fn()
     const anchor = document.createElement('button')
@@ -54,7 +45,6 @@ describe('useBetaActivationNotice copy resolution', () => {
   })
 
   it('resolves copy when the card is shown, not when the composable is created', async () => {
-    // Stands in for the i18n instance: English at setup, switched by `syncLocale()` on mount.
     let translated = 'english-copy'
     const notice = mountNotice(() => translated)
 
@@ -76,7 +66,6 @@ describe('useBetaActivationNotice copy resolution', () => {
     await notice.maybeShow()
     expect(showCoachmark.mock.calls[0]![0].title).toBe('first-language')
 
-    // The user switches language, then a second grant clears its version gate.
     translated = 'second-language'
     notice.forgetWithoutAcknowledging()
     ;(window.api.getPendingBetaNotice as ReturnType<typeof vi.fn>).mockResolvedValue({

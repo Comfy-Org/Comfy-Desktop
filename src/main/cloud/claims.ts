@@ -3,7 +3,6 @@ import { Buffer } from 'node:buffer'
 import { WORKSPACE_MINT_SCOPE } from './config'
 import type { AuthStatus } from './types'
 
-/** Claims read (never verified here; the server does that) from the access-token JWT. */
 interface AccessTokenClaims {
   sub?: string
   email?: string
@@ -27,15 +26,6 @@ function decodeJwtPayload(token: string): AccessTokenClaims | null {
   }
 }
 
-/**
- * Signed-in status from an access token's claims. A malformed token still counts
- * as signed in; the identity fields just stay unset.
- *
- * SECURITY: these claims are NOT signature-verified here (the server verifies the
- * token on every request). Treat `role`/`workspaceId`/`workspaceType` as
- * DISPLAY-ONLY; never gate features or access on them client-side, or a forged
- * local token would grant them.
- */
 export function statusFromAccessToken(accessToken: string): AuthStatus {
   const claims = decodeJwtPayload(accessToken)
   return {
@@ -47,18 +37,15 @@ export function statusFromAccessToken(accessToken: string): AuthStatus {
   }
 }
 
-/** The workspace id a token is scoped to, or null. Used to detect a scope switch. */
 export function workspaceIdOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.workspace_id ?? null
 }
 
-/** The grant behind this token can mint workspace tokens; false for grants from before the mint scope. */
 export function canMintWorkspaceTokens(accessToken: string): boolean {
   const scope = decodeJwtPayload(accessToken)?.scope
   return typeof scope === 'string' && scope.split(' ').includes(WORKSPACE_MINT_SCOPE)
 }
 
-/** How long a token was issued for, in seconds, independent of any clock; null without usable claims. */
 export function lifetimeSecondsOf(accessToken: string): number | null {
   const { iat, exp } = decodeJwtPayload(accessToken) ?? {}
   if (typeof iat !== 'number' || typeof exp !== 'number') return null
@@ -66,20 +53,16 @@ export function lifetimeSecondsOf(accessToken: string): number | null {
   return Number.isFinite(lifetime) ? lifetime : null
 }
 
-/** The account subject a token belongs to, or null for malformed/legacy tokens. */
 export function subjectOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.sub ?? null
 }
 
-/** Who a token belongs to, read from its unverified claims. Identity only:
- *  never gate access on it (see `statusFromAccessToken`). */
 export interface TokenIdentity {
   userId: string
   email?: string
   workspaceId?: string
 }
 
-/** Null when the token has no `sub`. */
 export function identityOf(accessToken: string): TokenIdentity | null {
   const claims = decodeJwtPayload(accessToken)
   if (!claims?.sub) return null

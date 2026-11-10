@@ -1,11 +1,3 @@
-/**
- * Workspace client: list the workspaces a signed-in user belongs to.
- *
- * `GET {apiBase}/workspaces` (the ingest service) returns the caller's
- * workspaces. Switching the ACTIVE workspace mints that workspace's token from
- * the OAuth grant, with no browser; `CloudSession.switchWorkspace` drives that.
- * This module is read-only listing.
- */
 import { CLOUD_CONFIG } from './config'
 import type { Workspace, WorkspaceMember } from './types'
 
@@ -22,7 +14,6 @@ interface WorkspaceRow {
 }
 
 export interface ListWorkspacesOptions {
-  /** Cloud API base. Defaults to the configured issuer's `/api`. */
   apiBase?: string
   timeoutMs?: number
 }
@@ -53,7 +44,6 @@ function isWorkspaceRow(value: unknown): value is WorkspaceRow {
   )
 }
 
-/** Only a valid catalog establishes membership; unavailable catalogs must reject. */
 export async function listWorkspaces(
   accessToken: string,
   options: ListWorkspacesOptions = {}
@@ -82,7 +72,6 @@ export async function listWorkspaces(
   }))
 }
 
-/** List every member of the active workspace for creator-name resolution. */
 export async function listWorkspaceMembers(
   accessToken: string,
   options: ListWorkspacesOptions = {}
