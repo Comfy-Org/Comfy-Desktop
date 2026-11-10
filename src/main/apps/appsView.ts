@@ -40,6 +40,7 @@ import {
   startLocal,
   syncLocalSocket
 } from './localComfy'
+import { listCatalogApps } from './catalog'
 import { localBuilds, openInComfy } from './openInComfy'
 
 const APPS_URL = appsUrl()
@@ -52,6 +53,7 @@ const failedViews = new WeakSet<WebContentsView>()
 
 export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
 export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
+export const APPS_CATALOG_CHANNEL = 'comfy-apps:catalog'
 
 const appOpen = new Map<number, boolean>()
 
@@ -61,6 +63,7 @@ export interface AppsRect {
   width: number
   height: number
   fresh?: boolean
+  url?: string
 }
 
 export type AppsAuthState = { signedIn: false } | { signedIn: true; email?: string }
@@ -90,7 +93,7 @@ function markLoadFailed(key: number, view: WebContentsView, url: string): void {
   tellPanelLoadFailed(comfyWindows.get(key)?.panelView?.webContents, url || APPS_URL)
 }
 
-function createAppsView(key: number): WebContentsView {
+function createAppsView(key: number, url: string): WebContentsView {
   const view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, '../preload/appsPreload.js'),
@@ -121,8 +124,18 @@ function createAppsView(key: number): WebContentsView {
   wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
     if (isMainFrame) trackAppOpen(key, url)
   })
-  wc.loadURL(APPS_URL).catch(() => {})
+  appOpen.set(key, isAppOpen(url, APPS_URL))
+  wc.loadURL(url).catch(() => {})
   return view
+}
+
+function requestedUrl(r: Partial<AppsRect>): string {
+  return typeof r.url === 'string' && isAppsFrameUrl(r.url, APPS_ORIGIN) ? r.url : APPS_URL
+}
+
+function openUrl(key: number, view: WebContentsView, url: string): void {
+  appOpen.set(key, isAppOpen(url, APPS_URL))
+  view.webContents.loadURL(url).catch(() => {})
 }
 
 function entryForPanel(
@@ -142,14 +155,17 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   const r = rect as Partial<AppsRect> | null
   if (!r || ![r.x, r.y, r.width, r.height].every((n) => typeof n === 'number' && isFinite(n)))
     return
+  const url = requestedUrl(r)
   let view = views.get(key)
   if (view && failedViews.has(view)) {
     if (r.fresh !== true) return
     failedViews.delete(view)
-    view.webContents.loadURL(APPS_URL).catch(() => {})
+    openUrl(key, view, url)
+  } else if (view && r.fresh === true && view.webContents.getURL() !== url) {
+    openUrl(key, view, url)
   }
   if (!view || view.webContents.isDestroyed()) {
-    view = createAppsView(key)
+    view = createAppsView(key, url)
     views.set(key, view)
     entry.window.once('closed', () => {
       views.delete(key)
@@ -464,6 +480,7 @@ function appsPages(): WebContents[] {
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  ipcMain.handle(APPS_CATALOG_CHANNEL, () => listCatalogApps(APPS_URL))
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)

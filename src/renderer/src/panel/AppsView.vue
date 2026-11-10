@@ -25,6 +25,7 @@ import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
 import AssetDetailView from './AssetDetailView.vue'
 import type { GalleryAsset } from './AssetDetailView.vue'
@@ -35,7 +36,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type { AssetKind, AssetSummary, CatalogApp, Installation } from '../types/ipc'
 
 type AppsTab = 'all' | 'files'
 type KindFilter = 'all' | AssetKind
@@ -53,14 +54,26 @@ const sessionStore = useSessionStore()
 
 const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
 const appsLoadFailedUrl = ref<string | null>(null)
-const appOpen = ref(false)
+const openApp = ref<CatalogApp | null>(null)
 watch(tab, (next) => {
   if (next === 'all') appsLoadFailedUrl.value = null
-  else appOpen.value = false
+  else openApp.value = null
 })
-const appFillsPage = computed(
-  () => tab.value === 'all' && appOpen.value && !appsLoadFailedUrl.value
-)
+const appFillsPage = computed(() => tab.value === 'all' && openApp.value !== null)
+
+function openCatalogApp(app: CatalogApp): void {
+  appsLoadFailedUrl.value = null
+  openApp.value = app
+}
+
+function closeApp(open: boolean): void {
+  if (!open) openApp.value = null
+}
+
+function appFailed(url: string): void {
+  openApp.value = null
+  appsLoadFailedUrl.value = url
+}
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -430,24 +443,18 @@ function extensionOf(name: string): string {
     </div>
 
     <AppsHost
-      v-if="tab === 'all' && !appsLoadFailedUrl"
-      @failed="appsLoadFailedUrl = $event"
-      @app-open="appOpen = $event"
+      v-if="tab === 'all' && openApp"
+      :url="openApp.url"
+      @failed="appFailed"
+      @app-open="closeApp"
+    />
+    <AppsGallery
+      v-else-if="tab === 'all'"
+      :load-failed-url="appsLoadFailedUrl"
+      @open="openCatalogApp"
     />
     <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <template v-if="tab === 'all'">
-        <p class="m-0 text-ui text-muted-foreground" data-testid="apps-coming-soon">
-          {{ t('sidebar.comingSoon') }}
-        </p>
-        <p class="mt-2 mb-0 text-ui text-muted-foreground" data-testid="apps-load-failed">
-          {{ t('apps.loadFailed', { url: appsLoadFailedUrl }) }}
-        </p>
-      </template>
-      <div
-        v-else-if="loading && assets.length === 0"
-        role="status"
-        :aria-label="t('common.loading')"
-      >
+      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
         <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
             <Skeleton

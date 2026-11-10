@@ -7,7 +7,7 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AssetSummary, Installation } from '../types/ipc'
+import type { AssetSummary, CatalogApp, Installation } from '../types/ipc'
 
 const listAssets = vi.fn()
 const downloadAsset = vi.fn()
@@ -23,6 +23,7 @@ const onAppsLoadFailed = vi.fn((callback: (info: { url: string }) => void) => {
   }
 })
 
+const listCatalogApps = vi.fn()
 let appsAppOpen: ((info: { open: boolean }) => void) | null = null
 const onAppsAppOpen = vi.fn((callback: (info: { open: boolean }) => void) => {
   appsAppOpen = callback
@@ -77,8 +78,20 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
     .map((card) => card.attributes('aria-label')!.replace('Inspect ', ''))
 }
 
+function catalogApp(id: string, title: string): CatalogApp {
+  return {
+    id,
+    title,
+    description: `${title} description`,
+    thumbnailUrl: `https://comfy.org/catalog-media/${id}/v1`,
+    url: `https://apps.example/apps/${id}/desktop.html`,
+    order: 0
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  listCatalogApps.mockResolvedValue([])
   window.localStorage.clear()
   window.localStorage.setItem('comfy.desktop.apps.tab', 'files')
   ;(window as unknown as { api: unknown }).api = {
@@ -86,6 +99,7 @@ beforeEach(() => {
     downloadAsset,
     showApps,
     hideApps,
+    listCatalogApps,
     onAppsLoadFailed,
     onAppsAppOpen,
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -100,57 +114,85 @@ beforeEach(() => {
 })
 
 describe('AppsView', () => {
-  it('opens on All apps the first time, showing the hosted Apps page', async () => {
+  it('opens on All apps the first time, showing the app cards from the catalog', async () => {
     window.localStorage.clear()
+    listCatalogApps.mockResolvedValue([
+      catalogApp('studio', 'Cinematic Studio'),
+      catalogApp('reshoot', 'Re-shoot a video')
+    ])
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
-    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
+    const cards = wrapper.findAll('[data-testid^="app-card-"]')
+    expect(cards.map((card) => card.find('span span').text())).toEqual([
+      'Cinematic Studio',
+      'Re-shoot a video'
+    ])
+    expect(cards[0]!.text()).toContain('Cinematic Studio description')
+    expect(cards[0]!.get('img').attributes('src')).toBe('https://comfy.org/catalog-media/studio/v1')
+    expect(showApps).not.toHaveBeenCalled()
     expect(listAssets).not.toHaveBeenCalled()
   })
 
-  it('shows Coming soon and the address when the apps page cannot load, and retries on reopening', async () => {
+  it('opens an app from its card over the whole page and returns to the cards when the app goes back', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
-    listAssets.mockResolvedValue([])
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    appsLoadFailed!({ url: 'https://apps.example/apps/' })
-    await flushPromises()
-
-    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
-    expect(wrapper.get('[data-testid="apps-load-failed"]').text()).toContain(
-      'https://apps.example/apps/'
-    )
-    expect(hideApps).toHaveBeenCalled()
-
-    showApps.mockClear()
-    const tabButton = (label: string) => wrapper.findAll('button').find((n) => n.text() === label)!
-    await tabButton('Generated Files').trigger('click')
-    await flushPromises()
-    await tabButton('All apps').trigger('click')
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="apps-load-failed"]').exists()).toBe(false)
-    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
-  })
-
-  it('hides the Apps title and tabs while an app fills the page, and shows them on the list again', async () => {
-    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
-    const wrapper = await mountAssets([build('lab', 'Video Lab')])
-    const header = () => wrapper.find('h1').exists()
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fresh: true,
+        url: 'https://apps.example/apps/studio/desktop.html'
+      })
+    )
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="assets-toolbar"]').exists()).toBe(false)
 
     appsAppOpen!({ open: true })
     await flushPromises()
-    expect(header()).toBe(false)
-    expect(wrapper.find('[data-testid="assets-toolbar"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
 
     appsAppOpen!({ open: false })
     await flushPromises()
-    expect(header()).toBe(true)
-    expect(wrapper.find('[data-testid="assets-toolbar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(hideApps).toHaveBeenCalled()
+    expect(wrapper.find('h1').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="app-card-studio"]').exists()).toBe(true)
+  })
+
+  it('shows the address when an app cannot load, and opens it again from its card', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+
+    appsLoadFailed!({ url: 'https://apps.example/apps/studio/desktop.html' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="apps-load-failed"]').text()).toContain(
+      'https://apps.example/apps/studio/desktop.html'
+    )
+
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-load-failed"]').exists()).toBe(false)
+  })
+
+  it('shows Coming soon when the catalog has no apps or cannot be reached', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    const empty = await mountAssets([build('lab', 'Video Lab')])
+    expect(empty.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    empty.unmount()
+
+    listCatalogApps.mockRejectedValue(new Error('offline'))
+    const offline = await mountAssets([build('lab', 'Video Lab')])
+    expect(offline.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
   })
 
   it('starts in masonry with file names and details hidden', async () => {
@@ -256,17 +298,18 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
     expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+    await flushPromises()
 
-    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
   })
 
-  it('shows the hosted Apps page under All apps without loading assets, then loads Generated Files', async () => {
+  it('shows the app cards under All apps without loading assets, then loads Generated Files', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(listAssets).not.toHaveBeenCalled()
 
@@ -278,7 +321,6 @@ describe('AppsView', () => {
 
     expect(listAssets).toHaveBeenCalledOnce()
     expect(assetNames(wrapper)).toEqual(['forest.png'])
-    expect(hideApps).toHaveBeenCalled()
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {

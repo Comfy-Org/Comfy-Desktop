@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
 
+const props = defineProps<{
+  url: string
+}>()
+
 const emit = defineEmits<{
   failed: [url: string]
   'app-open': [open: boolean]
@@ -15,7 +19,7 @@ function report(fresh = false): void {
   const el = slot.value
   if (!el) return
   const r = el.getBoundingClientRect()
-  window.api.showApps({ x: r.x, y: r.y, width: r.width, height: r.height, fresh })
+  window.api.showApps({ x: r.x, y: r.y, width: r.width, height: r.height, fresh, url: props.url })
 }
 
 const reportResize = (): void => report()
