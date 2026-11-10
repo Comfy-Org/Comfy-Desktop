@@ -1219,6 +1219,29 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'grant_ended' }])
   })
 
+  it('an oauth_grant_ended 401 also ends a rotation of the grant stored while the mint was out', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const ended = grantOn('w1')
+    const rotated = grantOn('w1', { revision: '-fresh', expiresAt: ended.expiresAt + 3_600_000 })
+    saveGrant(ended)
+    const late = deferred<Response>()
+    mintReply = () => late.promise
+    mocked(refresh).mockResolvedValue(rotated)
+    const session = new CloudSession()
+
+    const switching = session.switchWorkspace('w2', 'restored')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    vi.setSystemTime(ended.expiresAt + 1)
+    await expect(session.getAccessToken()).resolves.toBe(rotated.accessToken)
+    late.resolve(json(401, { code: 'oauth_grant_ended' }))
+    await switching
+    vi.setSystemTime(rotated.expiresAt + 1)
+
+    await expect(session.getAccessToken()).resolves.toBe(rotated.accessToken)
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(ended.refreshToken)
+    expect(vaultOnDisk().grant).not.toHaveProperty('refreshToken')
+  })
+
   it('an oauth_grant_ended 401 leaves no refresh token, so the ended grant is never refreshed', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const ended = grantOn('w1')

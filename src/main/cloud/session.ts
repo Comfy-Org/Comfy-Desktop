@@ -111,6 +111,7 @@ function reportBrowser(reason: ReauthorizeReason): void {
 
 export class CloudSession {
   private readonly refreshing = new Map<string, Promise<GrantRefresh>>()
+  private readonly rotatedTo = new Map<string, string>()
   private readonly minting = new Map<string, Promise<SettledMintOutcome>>()
   private switching: { workspaceId: string; result: Promise<SessionSwitchReply> } | null = null
   private switchIntent: WorkspaceSwitchIntent = 'chosen'
@@ -278,7 +279,9 @@ export class CloudSession {
 
   private async rotateGrant(grant: AuthTokens, refreshToken: string): Promise<GrantRefresh> {
     try {
-      replaceGrant(grant.accessToken, refreshToken, await refresh(refreshToken))
+      const rotated = await refresh(refreshToken)
+      if (replaceGrant(grant.accessToken, refreshToken, rotated))
+        this.rotatedTo.set(grant.accessToken, rotated.accessToken)
       return 'refreshed'
     } catch (error) {
       return isDefinitiveRefreshRefusal(error) ? 'ended' : 'unavailable'
@@ -358,7 +361,7 @@ export class CloudSession {
       return RETRYABLE
     const outcome = classifyMint(await mintWorkspaceToken(grant.accessToken, workspaceId))
     if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended') {
-      endGrant(grant.accessToken)
+      this.endGrantFamily(grant.accessToken)
     }
     if (
       outcome.kind === 'retryable' &&
@@ -369,6 +372,13 @@ export class CloudSession {
       this.mintBlockedUntil = Date.now() + outcome.retryAfterSeconds * 1000
     }
     return outcome
+  }
+
+  /** End the stored grant if it is `accessToken` or a rotation of it. */
+  private endGrantFamily(accessToken: string): void {
+    for (let token: string | undefined = accessToken; token; token = this.rotatedTo.get(token)) {
+      endGrant(token)
+    }
   }
 
   /** The signed-in user's workspaces; unavailable catalogs reject rather than imply removal. */
