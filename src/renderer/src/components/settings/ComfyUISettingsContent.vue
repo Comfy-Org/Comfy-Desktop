@@ -558,9 +558,15 @@ function actionIcon(id: string): Component {
   }
 }
 
-const pinBottomMenuActions = computed<MenuAction[]>(() =>
-  pinBottomActions.value.map((action) => ({ ...action, icon: actionIcon(action.id) }))
-)
+const pinBottomMenuActions = computed<MenuAction[]>(() => {
+  const firstDanger = pinBottomActions.value.findIndex((action) => action.style === 'danger')
+  return pinBottomActions.value.map((action, index) => ({
+    ...action,
+    icon: actionIcon(action.id),
+    style: action.id === 'untrack' || action.id === 'remove' ? undefined : action.style,
+    separator: index === firstDanger
+  }))
+})
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
