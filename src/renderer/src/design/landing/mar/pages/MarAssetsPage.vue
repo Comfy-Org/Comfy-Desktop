@@ -472,18 +472,8 @@ const LABEL_ROWS = computed(() => {
     ...l,
     count: done.value.filter((a) => labelOf(a.id) === l.value).length
   }))
-  return labelSort.value === 'color'
-    ? rows.sort((a, b) => a.hue - b.hue)
-    : labelSort.value === 'name'
-      ? rows.sort((a, b) => a.label.localeCompare(b.label))
-      : rows
-})
-/** LABELS' order, Name (A → Z) beside Custom order and Color. assetView
- *  types it as custom or color; it keeps any string. */
-type LabelSort = 'custom' | 'color' | 'name'
-const labelSort = computed<LabelSort>({
-  get: () => assetView.labelSort,
-  set: (v) => (assetView.labelSort = v)
+  // In their own order, which a drag changes; the + is their only tool.
+  return rows
 })
 /** Custom order: a label row dragged onto another takes its place. */
 const labelDrag = ref('')
@@ -494,7 +484,6 @@ function dropLabel(on: string): void {
   labelOver.value = ''
 }
 const tagMenu = ref(false)
-const labelMenu = ref(false)
 const TAG_SORT_LINES = computed<MenuLine[]>(() => [
   {
     label: 'Sort by',
@@ -512,30 +501,6 @@ const TAG_SORT_LINES = computed<MenuLine[]>(() => [
       }
     ]
   }
-])
-const LABEL_SORT_LINES = computed<MenuLine[]>(() => [
-  {
-    label: 'Sort by',
-    icon: ArrowUpDown,
-    sub: [
-      {
-        label: 'Custom order',
-        checked: labelSort.value === 'custom',
-        run: () => (labelSort.value = 'custom')
-      },
-      {
-        label: 'Name (A → Z)',
-        checked: labelSort.value === 'name',
-        run: () => (labelSort.value = 'name')
-      },
-      {
-        label: 'Color',
-        checked: labelSort.value === 'color',
-        run: () => (labelSort.value = 'color')
-      }
-    ]
-  },
-  { label: 'Add label', icon: Plus, run: () => (labelNaming.value = 'New label') }
 ])
 /** Add label: typed in place under LABELS, like a new folder. */
 const labelNaming = ref<string | null>(null)
@@ -1843,16 +1808,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             <ChevronRight :size="13" />
           </button>
           <span class="mar-anav-folder-tools">
-            <Tooltip content="New subfolder" side="bottom">
-              <button
-                type="button"
-                class="mar-anav-add"
-                aria-label="New subfolder"
-                @click="startNaming({ parent: f.id, name: 'New folder' })"
-              >
-                <Plus :size="14" />
-              </button>
-            </Tooltip>
             <MarItemMenu
               :open="folderMenu === f.id"
               :lines="folderLines(f.id)"
@@ -1967,15 +1922,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
               <Plus :size="14" />
             </button>
           </Tooltip>
-          <Tooltip content="Label options" side="bottom" wrap>
-            <MarItemMenu v-model:open="labelMenu" :lines="LABEL_SORT_LINES" label="Label options">
-              <template #trigger>
-                <button type="button" class="mar-anav-add" aria-label="Label options">
-                  <MoreHorizontal :size="14" />
-                </button>
-              </template>
-            </MarItemMenu>
-          </Tooltip>
         </span>
       </div>
       <button
@@ -1988,7 +1934,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           labelOver === l.value && labelDrag !== l.value && 'is-drop'
         ]"
         :aria-pressed="label === l.value"
-        :draggable="labelSort === 'custom'"
+        draggable="true"
         @click="label = label === l.value ? '' : l.value"
         @dragstart="labelDrag = l.value"
         @dragover.prevent="labelDrag && (labelOver = l.value)"
