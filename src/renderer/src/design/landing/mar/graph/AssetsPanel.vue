@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { GROUPS, groupAssets, type AssetGroup } from '../assets/assetGroups'
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import {
   Check,
@@ -49,6 +49,7 @@ import BulkTagMenu from './BulkTagMenu.vue'
 import { assetTab, comfyLook, graphLibrary } from './comfyLook'
 import { graphStyle } from './graphStyle'
 import { graphOpen } from './graphOpen'
+import { dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
 import { RAIL_DEFAULT, railWidth } from './panels/railWidth'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
@@ -415,6 +416,18 @@ if (graphOpen.inspect) {
   if (first) openFull(first)
   graphOpen.inspect = false
 }
+// Share link: the asset open here, as the link's (assetLink.ts); a link
+// opens its asset, or the panel expanded to a tab (?comfy=tab).
+const linked = linkedAsset('panel')
+if (linked) detail.value = ALL.value.find((a) => a.id === linked) ?? null
+// (Not while a link expands it: the tab takes the link.)
+watch(detail, (a) => holdAssetLink('panel', a?.id ?? ''), { immediate: !graphOpen.tab })
+onBeforeUnmount(() => dropAssetLink('panel'))
+onMounted(() => {
+  if (!graphOpen.tab) return
+  graphOpen.tab = false
+  expand()
+})
 
 /** Today a click checks and a double-click opens ComfyUI's lightbox. In the
  *  proposal, as in a photo library: a click opens the asset large (our

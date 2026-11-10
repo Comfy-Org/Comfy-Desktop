@@ -91,7 +91,7 @@ import MarItemMenu from './MarItemMenu.vue'
 import { saveFile } from '../assets/saveFile'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import { assetsEverywhere } from '../assets/assetsEverywhere'
-import { assetLink } from '../assets/assetLink'
+import { assetLink, dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
@@ -140,7 +140,7 @@ type Kind = 'all' | MarAsset['type']
 const kind = ref<Kind>('all')
 const where = ref('all')
 // A shared link names the build first (mar/assets/assetLink.ts).
-const build = ref(assetLink.build || defaultBuild())
+const build = ref((assetLink.at === 'desktop' && assetLink.build) || defaultBuild())
 const filter = ref(noFilter())
 const project = ref('all')
 const sort = ref('newest')
@@ -779,18 +779,14 @@ const suggested = computed(() => suggestedBuild())
 const finished = computed(() => shown.value.filter((a) => !a.status))
 
 // Share link: the asset a link names opens full screen; after that the
-// link follows what's open here, and forgets it when Assets closes.
-const linked = assetLink.id
+// link follows what's open here, and forgets it when this view closes.
+const at = inGraph ? 'tab' : 'desktop'
+const linked = linkedAsset(at)
 if (linked) detail.value = base.value.find((a) => a.id === linked) ?? null
-watch(
-  [detail, build],
-  ([a, b]) => {
-    assetLink.id = a?.id ?? ''
-    assetLink.build = b
-  },
-  { immediate: true }
-)
-onBeforeUnmount(() => Object.assign(assetLink, { id: '', build: '' }))
+watch([detail, build], ([a, b]) => holdAssetLink(at, a?.id ?? '', inGraph ? '' : b), {
+  immediate: true
+})
+onBeforeUnmount(() => dropAssetLink(at))
 
 const meta = (a: MarAsset): string =>
   a.status && a.status !== 'failed'
