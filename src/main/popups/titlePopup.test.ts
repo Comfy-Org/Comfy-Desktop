@@ -846,6 +846,28 @@ describe('desktop2-open-terminal', () => {
 
     expect(call![1]({ sender } as never)).toBe(false)
   })
+
+  it('opens the instance picker for a local install', async () => {
+    const { ipcMain } = await import('electron')
+    const getInstancePickerInstalls = vi.fn(async () => [])
+    registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.handle)
+      .mock.calls.findLast(([name]) => name === 'desktop2-open-terminal')
+    const sender = {}
+    const windowKey = nextWindowKey()
+    comfyWindows.set(windowKey, {
+      windowKey,
+      installationId: 'inst-local-terminal',
+      sourceCategory: 'local',
+      comfyView: { webContents: sender },
+      titleBarView: { webContents: {} },
+      window: { isDestroyed: () => true }
+    } as unknown as ComfyWindowEntry)
+
+    expect(call![1]({ sender } as never)).toBe(true)
+    expect(getInstancePickerInstalls).toHaveBeenCalledOnce()
+  })
 })
 
 describe('build page open-in-new-window IPC', () => {

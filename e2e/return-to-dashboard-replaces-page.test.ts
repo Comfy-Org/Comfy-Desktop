@@ -59,16 +59,18 @@ test('return to dashboard replaces a page that asks to stay @linux', async () =>
     )
     .toBe(true)
 
-  await ctx.app.evaluate(
-    ({ webContents }, wcId) =>
-      webContents
-        .fromId(wcId)!
-        .executeJavaScript(
-          `window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = '' }); true`,
-          true
-        ),
-    id
-  )
+  await ctx.app.evaluate(async ({ webContents }, wcId) => {
+    const wc = webContents.fromId(wcId)!
+    const flags = globalThis as unknown as { __unloadVetoSeen?: boolean }
+    flags.__unloadVetoSeen = false
+    wc.once('will-prevent-unload', () => {
+      flags.__unloadVetoSeen = true
+    })
+    await wc.executeJavaScript(
+      `window.addEventListener('beforeunload', (e) => { e.preventDefault(); e.returnValue = '' }); true`,
+      true
+    )
+  }, id)
 
   expect(await returnFirstInstallHostToDashboard(ctx.app)).not.toBeNull()
 
@@ -79,4 +81,11 @@ test('return to dashboard replaces a page that asks to stay @linux', async () =>
       { message: 'the remote page stayed loaded after return to dashboard' }
     )
     .toBe('about:blank')
+
+  expect(
+    await ctx.app.evaluate(
+      () => (globalThis as unknown as { __unloadVetoSeen?: boolean }).__unloadVetoSeen
+    ),
+    'the page never vetoed the unload, so the override was not exercised'
+  ).toBe(true)
 })
