@@ -839,7 +839,7 @@ onActivated(() => {
       />
 
       <section
-        class="benchmarks__card min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg)_90%,transparent)] p-4 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__library"
+        class="benchmarks__card min-w-0 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__library"
         :aria-label="t('benchmarks.runsLibrary')"
       >
         <div
@@ -915,10 +915,10 @@ onActivated(() => {
             ref="libraryColumnsPicker"
             class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
           >
-            <Button as-child variant="secondary" size="lg">
-              <summary class="secondary">
+            <Button as-child variant="secondary" size="icon-lg">
+              <summary class="secondary justify-center" :title="t('benchmarks.columns')">
                 <SlidersHorizontal :size="16" aria-hidden="true" />
-                {{ t('benchmarks.columns') }}
+                <span class="sr-only">{{ t('benchmarks.columns') }}</span>
               </summary>
             </Button>
             <div
@@ -1097,7 +1097,9 @@ onActivated(() => {
         </template>
       </section>
 
-      <div class="benchmarks__comparison-section flex flex-col gap-4">
+      <div
+        class="benchmarks__comparison-section flex flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
+      >
         <CollapsibleSectionToggle
           id="comparison-title"
           :expanded="comparisonExpanded"
@@ -1107,7 +1109,7 @@ onActivated(() => {
 
         <section
           v-show="comparisonExpanded"
-          class="benchmarks__card min-w-0 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--chooser-surface-bg)_90%,transparent)] p-4 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__comparison"
+          class="benchmarks__card min-w-0 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__comparison"
           aria-labelledby="comparison-title"
         >
           <span id="benchmark-reorder-instructions" class="benchmarks__visually-hidden sr-only">
@@ -1200,10 +1202,10 @@ onActivated(() => {
               ref="comparisonColumnsPicker"
               class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
             >
-              <Button as-child variant="secondary" size="lg">
-                <summary class="secondary">
+              <Button as-child variant="secondary" size="icon-lg">
+                <summary class="secondary justify-center" :title="t('benchmarks.columns')">
                   <SlidersHorizontal :size="16" aria-hidden="true" />
-                  {{ t('benchmarks.columns') }}
+                  <span class="sr-only">{{ t('benchmarks.columns') }}</span>
                 </summary>
               </Button>
               <div
