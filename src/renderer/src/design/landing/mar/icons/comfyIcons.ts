@@ -49,7 +49,7 @@ export const ComfyTemplate = comfyIcon(
 export const ComfyAssets = comfyIcon(
   'ComfyAssets',
   '0 0 24 24',
-  `<g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l6-3 10 4-6 3z"/><path d="M4 13l10 4 6-3"/><path d="M4 17l10 4 6-3"/><path d="M4 9v8"/><path d="M14 13v8"/></g>`
+  `<g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5l6-3 10 4-6 3z"/><path d="M4 11.5l10 4 6-3"/><path d="M4 15.5l10 4 6-3"/><path d="M4 7.5v8"/><path d="M14 11.5v8"/></g>`
 )
 
 /** comfy--ai-model: the Model library tab. */
