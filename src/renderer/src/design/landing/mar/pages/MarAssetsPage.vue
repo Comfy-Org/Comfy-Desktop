@@ -1618,7 +1618,11 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 :root[data-mar-asset-labels='off'] .mar-asset-label {
   display: none;
 }
-/* A starred card keeps its star; the rest show it on hover. */
+/* A starred card keeps its star; the rest show it on hover. The global
+   star (FavoriteStar.vue) waits for a .group hover asset cards don't have. */
+:root .proto-ui.proto-ui.proto-ui .mar-item:is(:hover, :focus-within, .is-menu) .mar-star {
+  opacity: 1;
+}
 :root .proto-ui.proto-ui.proto-ui .mar-item-tools .mar-star.is-on {
   opacity: 1;
   color: oklch(0.85 0.15 85);
