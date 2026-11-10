@@ -145,6 +145,30 @@ describe('AppsView', () => {
     expect(signIn).toHaveBeenCalledOnce()
   })
 
+  it('still asks a signed-out user to log in when a local build has no assets', async () => {
+    listAssets.mockResolvedValue([])
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(listAssets).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('Log in to see your assets')
+  })
+
+  it('ignores a cancelled log-in', async () => {
+    signIn.mockRejectedValueOnce(new Error('cancelled'))
+    const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
+    useInstallationStore().installations = [cloud]
+    const wrapper = mount(AppsView)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+    await flushPromises()
+
+    expect(
+      wrapper.get('[data-testid="assets-empty-action"]').attributes('disabled')
+    ).toBeUndefined()
+  })
+
   it('points a signed-in user with no assets to the apps', async () => {
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
@@ -154,9 +178,8 @@ describe('AppsView', () => {
     useAuthStore().status = { signedIn: true }
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain(
-      'No assets yetOpen an app to make assets.'
-    )
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
+    expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
 
     expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)

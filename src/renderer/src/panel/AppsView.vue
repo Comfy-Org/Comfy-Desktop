@@ -52,9 +52,8 @@ const sessionStore = useSessionStore()
 
 const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'files')
 const kindFilter = ref<KindFilter>('all')
-const filterMenuOpen = ref(false)
 const searchQuery = ref('')
-const viewMenuOpen = ref(false)
+const signingIn = ref(false)
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', false)
@@ -148,7 +147,7 @@ const emptyState = computed<EmptyState>(() => {
     return {
       title: t('assets.signedOutTitle'),
       body: t('assets.signedOutBody'),
-      action: { label: t('assets.signIn'), run: () => void authStore.signIn() }
+      action: { label: t('assets.signIn'), run: () => void signIn() }
     }
   }
   return {
@@ -201,6 +200,18 @@ function coolNameTooltips(): void {
 }
 
 onBeforeUnmount(() => clearTimeout(warmTimer))
+
+async function signIn(): Promise<void> {
+  if (signingIn.value) return
+  signingIn.value = true
+  try {
+    await authStore.signIn()
+  } catch {
+    return
+  } finally {
+    signingIn.value = false
+  }
+}
 
 function openDetail(asset: GalleryAsset): void {
   lastOpenedKey.value = cardKey(asset)
@@ -285,7 +296,6 @@ function extensionOf(name: string): string {
             />
           </Button>
           <Menu
-            v-model:open="filterMenuOpen"
             :modal="false"
             align="end"
             class="z-20 min-w-[180px]"
@@ -327,7 +337,6 @@ function extensionOf(name: string): string {
             </BaseInput>
           </div>
           <Menu
-            v-model:open="viewMenuOpen"
             :modal="false"
             align="end"
             class="z-20 min-w-[240px]"
@@ -453,6 +462,7 @@ function extensionOf(name: string): string {
           variant="inverted"
           size="md"
           class="mt-6 px-4 text-[13px]/5"
+          :disabled="signingIn"
           data-testid="assets-empty-action"
           @click="emptyState.action.run"
         >
