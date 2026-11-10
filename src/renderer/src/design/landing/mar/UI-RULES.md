@@ -58,8 +58,8 @@ DS's Motion page (`ds/motion.ts`).
   ("No 3D files yet"), never "Nothing matches", which is only for a search
   or a filter.
 - **Counts go in the tabs**, not beside the title ("Images 4", not "17
-  assets" after the heading). Assets' type tabs only; other tab rows keep
-  counts off.
+  assets" after the heading). They count the whole build, not the open
+  folder or filter. Assets' type tabs only; other tab rows keep counts off.
 
 ## Feedback
 
