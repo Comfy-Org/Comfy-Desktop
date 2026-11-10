@@ -255,12 +255,12 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
 
   recordDashboardSurface()
 
-  entry._installCleanup?.()
-
   if (!entry.comfyView.webContents.isDestroyed()) {
     void entry.comfyView.webContents.loadURL('about:blank').catch(() => {})
     entry.comfyView.setBackgroundColor(COMFY_BG)
   }
+
+  entry._installCleanup?.()
 
   entry.titleBarText = CHOOSER_HOST_TITLE_TEXT
   entry.sourceCategory = null

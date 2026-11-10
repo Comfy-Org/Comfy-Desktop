@@ -17,10 +17,20 @@ vi.mock('electron', () => ({
 
 const systemModal = vi.hoisted(() => ({ openSystemModalAsync: vi.fn(async () => false) }))
 vi.mock('../popups/systemModal', () => systemModal)
+vi.mock('../lib/lastSession', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  recordDashboardSurface: vi.fn()
+}))
+vi.mock('./panelView', () => ({ destroyPanelView: vi.fn(), ensurePanelView: vi.fn() }))
+vi.mock('./createHostWindow', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  applyChooserHostTheme: vi.fn()
+}))
 
 import { _runningSessions } from '../lib/ipc/shared'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from './registry'
 import {
+  _detachInstallImpl,
   closeAllHostWindows,
   detachOrphanedInstallHosts,
   preClearedClose,
@@ -231,5 +241,34 @@ describe('returnToDashboard without a panel', () => {
 
     expect(systemModal.openSystemModalAsync).not.toHaveBeenCalled()
     expect(entry.detachInstall).toHaveBeenCalledOnce()
+  })
+})
+
+describe('_detachInstallImpl', () => {
+  it('replaces the page while the entry still holds its install', () => {
+    const entry = makeEntry(makeWindow())
+    entry.installationId = 'inst-remote'
+    entry.sourceCategory = 'remote'
+    entry._installCleanup = () => {
+      entry.installationId = null
+    }
+    const installAtLoad: Array<string | null> = []
+    const loadURL = vi.fn(async () => {
+      installAtLoad.push(entry.installationId)
+    })
+    entry.comfyView = {
+      setBackgroundColor: vi.fn(),
+      webContents: { isDestroyed: () => false, loadURL }
+    } as unknown as ComfyWindowEntry['comfyView']
+    entry.titleBarView = {
+      webContents: { isDestroyed: () => false, send: vi.fn() }
+    } as unknown as ComfyWindowEntry['titleBarView']
+    Object.assign(entry.window, { setTitle: vi.fn() })
+
+    _detachInstallImpl(entry)
+
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith('about:blank')
+    expect(installAtLoad).toEqual(['inst-remote'])
+    expect(entry.installationId).toBeNull()
   })
 })
