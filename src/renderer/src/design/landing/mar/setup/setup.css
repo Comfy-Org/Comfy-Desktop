@@ -1743,6 +1743,11 @@
 .mss-body-inst .mss-inst-steps {
   margin-top: 0;
 }
+/* The showcase panel tops with the title, not with the first step: up by
+   the title's line (24px) and the section's gap (24px). */
+.mss-body-inst .mss-inst-media {
+  margin-top: -48px;
+}
 .mss-foot .mss-pitch {
   justify-content: flex-start;
   gap: 10px;
