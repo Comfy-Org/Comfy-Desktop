@@ -390,92 +390,95 @@ function back(): void {
           /></Button>
           <h1 class="shrink-0 text-heading font-semibold">{{ name }}</h1>
         </div>
-        <div class="mar-app-editor-fields">
-          <!-- UI Playground › App examples › Panel: a field of its own at the
+        <!-- What you give it and Run, on a lighter sheet under the name. -->
+        <div class="mar-app-editor-sheet">
+          <div class="mar-app-editor-fields">
+            <!-- UI Playground › App examples › Panel: a field of its own at the
                top, like the ones under it: up to five, square, sharing the
                width. -->
-          <section
-            v-if="appExamplesAt.id === 'panel' && state === 'idle' && examples.length > 1"
-            class="mar-app-editor-field"
-          >
-            <h2 class="mar-app-editor-label">Examples</h2>
-            <div class="mar-app-editor-exs" role="group" aria-label="Examples">
+            <section
+              v-if="appExamplesAt.id === 'panel' && state === 'idle' && examples.length > 1"
+              class="mar-app-editor-field"
+            >
+              <h2 class="mar-app-editor-label">Examples</h2>
+              <div class="mar-app-editor-exs" role="group" aria-label="Examples">
+                <button
+                  v-for="x in examples.slice(0, 5)"
+                  :key="x.id"
+                  type="button"
+                  :title="x.title"
+                  :aria-label="x.title"
+                  :aria-pressed="x.id === exId"
+                  class="mar-app-editor-ex"
+                  @click="pickExample(x)"
+                >
+                  <img :src="x.after" alt="" />
+                </button>
+              </div>
+            </section>
+            <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
+              <h2 class="mar-app-editor-label">{{ f.label }}</h2>
               <button
-                v-for="x in examples.slice(0, 5)"
-                :key="x.id"
+                v-if="f.kind === 'image' && f.id === firstImage"
                 type="button"
-                :title="x.title"
-                :aria-label="x.title"
-                :aria-pressed="x.id === exId"
-                class="mar-app-editor-ex"
-                @click="pickExample(x)"
+                class="mar-app-editor-source group"
+                :aria-label="`Replace ${f.label.toLowerCase()}`"
+                @click="toast('Pick an image')"
               >
-                <img :src="x.after" alt="" />
+                <img :src="input" alt="" class="size-full object-cover" />
+                <span class="mar-app-editor-replace"><ImageUp :size="14" />Replace</span>
               </button>
-            </div>
-          </section>
-          <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
-            <h2 class="mar-app-editor-label">{{ f.label }}</h2>
-            <button
-              v-if="f.kind === 'image' && f.id === firstImage"
-              type="button"
-              class="mar-app-editor-source group"
-              :aria-label="`Replace ${f.label.toLowerCase()}`"
-              @click="toast('Pick an image')"
-            >
-              <img :src="input" alt="" class="size-full object-cover" />
-              <span class="mar-app-editor-replace"><ImageUp :size="14" />Replace</span>
-            </button>
-            <button
-              v-else-if="f.kind === 'image'"
-              type="button"
-              class="mar-app-editor-drop"
-              @click="toast('Pick an image')"
-            >
-              <ImageUp :size="16" />
-              <span>Add {{ f.label.toLowerCase() }}</span>
-            </button>
-            <textarea
-              v-else-if="f.kind === 'text'"
-              :value="values[f.id] ?? ''"
-              :placeholder="f.placeholder ?? ''"
-              rows="3"
-              class="mar-app-editor-text"
-              @input="values[f.id] = ($event.target as HTMLTextAreaElement).value"
-            />
-            <SegmentedControl
-              v-else
-              :model-value="pick(f)"
-              variant="contained"
-              size="sm"
-              class="self-start"
-              :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
-              @update:model-value="(v: string) => (values[f.id] = v)"
-            />
-          </section>
-          <slot name="place" />
-        </div>
+              <button
+                v-else-if="f.kind === 'image'"
+                type="button"
+                class="mar-app-editor-drop"
+                @click="toast('Pick an image')"
+              >
+                <ImageUp :size="16" />
+                <span>Add {{ f.label.toLowerCase() }}</span>
+              </button>
+              <textarea
+                v-else-if="f.kind === 'text'"
+                :value="values[f.id] ?? ''"
+                :placeholder="f.placeholder ?? ''"
+                rows="3"
+                class="mar-app-editor-text"
+                @input="values[f.id] = ($event.target as HTMLTextAreaElement).value"
+              />
+              <SegmentedControl
+                v-else
+                :model-value="pick(f)"
+                variant="contained"
+                size="sm"
+                class="self-start"
+                :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
+                @update:model-value="(v: string) => (values[f.id] = v)"
+              />
+            </section>
+            <slot name="place" />
+          </div>
 
-        <!-- Run: the label, and what a run costs in credits -->
-        <footer class="mar-app-editor-foot">
-          <button
-            type="button"
-            class="mar-app-editor-run"
-            :disabled="state === 'running'"
-            :title="payer"
-            @click="run"
-          >
-            <span class="flex items-center gap-2">
-              <Loader2 v-if="state === 'running'" :size="15" class="animate-spin" />
-              {{ state === 'running' ? 'Running' : 'Run' }}
-            </span>
-            <span class="mar-app-editor-cost">
-              <template v-if="credits"><Coins :size="14" />{{ credits }}</template>
-              <template v-else>Free</template>
-            </span>
-          </button>
-          <p v-if="payerNote" class="mar-app-editor-payer">{{ payerNote }}</p>
-        </footer>
+          <!-- Run: the label, and what a run costs in credits -->
+          <footer class="mar-app-editor-foot">
+            <button
+              type="button"
+              class="mar-app-editor-run"
+              :disabled="state === 'running'"
+              :title="payer"
+              @click="run"
+            >
+              <span class="flex items-center gap-2">
+                <Loader2 v-if="state === 'running'" :size="15" class="animate-spin" />
+                {{ state === 'running' ? 'Running' : 'Run' }}
+              </span>
+              <span class="mar-app-editor-cost">
+                <template v-if="credits"><Coins :size="14" />{{ credits }}</template>
+                <template v-else>Free</template>
+              </span>
+            </button>
+            <p v-if="payerNote" class="mar-app-editor-payer">{{ payerNote }}</p>
+          </footer>
+        </div>
       </aside>
       <!-- Stage: the result, the example's until you run it (its examples
              over it), centred in its frame; your takes under it -->
@@ -859,6 +862,14 @@ function back(): void {
   border-radius: var(--radius-panel);
   background: var(--color-card-background);
 }
+.mar-app-editor-sheet {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, var(--color-card-background));
+}
 .mar-app-editor-fields {
   display: flex;
   min-height: 0;
@@ -950,7 +961,6 @@ function back(): void {
   flex-shrink: 0;
   margin-top: auto;
   padding: 12px 20px 20px;
-  border-top: 1px solid var(--color-border-default);
 }
 /* Run: the one white button, its label left and the cost right. */
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-run {
