@@ -13,6 +13,8 @@ const listAssets = vi.fn()
 const downloadAsset = vi.fn()
 const alert = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
+const showApps = vi.fn()
+const hideApps = vi.fn()
 
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert })
@@ -63,9 +65,12 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
+  window.localStorage.setItem('comfy.desktop.apps.tab', 'files')
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
     downloadAsset,
+    showApps,
+    hideApps,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -78,6 +83,15 @@ beforeEach(() => {
 })
 
 describe('AppsView', () => {
+  it('opens on All apps the first time, showing the hosted Apps page', async () => {
+    window.localStorage.clear()
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(showApps).toHaveBeenCalled()
+    expect(listAssets).not.toHaveBeenCalled()
+  })
+
   it('starts in masonry with file names and details hidden', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
@@ -182,16 +196,16 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
 
-    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
   })
 
-  it('shows Coming soon under All apps without loading assets, then loads Generated Files', async () => {
+  it('shows the hosted Apps page under All apps without loading assets, then loads Generated Files', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(listAssets).not.toHaveBeenCalled()
 
@@ -203,6 +217,7 @@ describe('AppsView', () => {
 
     expect(listAssets).toHaveBeenCalledOnce()
     expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(hideApps).toHaveBeenCalled()
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {

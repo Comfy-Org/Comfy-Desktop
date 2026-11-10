@@ -25,6 +25,7 @@ import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AppsHost from './AppsHost.vue'
 import AssetDetailView from './AssetDetailView.vue'
 import type { GalleryAsset } from './AssetDetailView.vue'
 import { useModal } from '../composables/useModal'
@@ -50,7 +51,7 @@ const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
-const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'files')
+const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -418,19 +419,9 @@ function extensionOf(name: string): string {
       </div>
     </div>
 
-    <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <p
-        v-if="tab === 'all'"
-        class="m-0 text-ui text-muted-foreground"
-        data-testid="apps-coming-soon"
-      >
-        {{ t('sidebar.comingSoon') }}
-      </p>
-      <div
-        v-else-if="loading && assets.length === 0"
-        role="status"
-        :aria-label="t('common.loading')"
-      >
+    <AppsHost v-if="tab === 'all'" />
+    <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
         <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
             <Skeleton

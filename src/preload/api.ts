@@ -101,6 +101,8 @@ export function buildElectronApi(): ElectronApi {
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
     downloadAsset: (installationId, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', installationId, assetId, fileName),
+    showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),
+    hideApps: () => ipcRenderer.send('comfy-apps:hide'),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
