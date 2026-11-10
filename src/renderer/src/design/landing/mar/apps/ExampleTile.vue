@@ -124,9 +124,9 @@ function play(e: MouseEvent, on: boolean): void {
   gap: 5px;
   padding: 0 8px 0 7px;
   border-radius: 999px;
-  /* Dark glass, so it reads on any picture, bright or dark. */
-  background: rgb(14 14 16 / 0.5);
-  backdrop-filter: blur(16px) saturate(1.6);
+  /* A light dark glass with a blur: it reads on bright and dark pictures. */
+  background: rgb(14 14 16 / 0.28);
+  backdrop-filter: blur(14px) saturate(1.5);
   color: #fff;
   font-size: 11.5px;
   font-weight: 500;

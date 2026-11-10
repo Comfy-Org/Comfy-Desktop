@@ -353,8 +353,7 @@ function wheel(e: WheelEvent): void {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
 /* Marks the example as an app, ahead of what it makes. */
-/* The same dark glass badge as the example tiles' corner, so it reads on
-   any picture. */
+/* The same glass badge as the example tiles' corner. */
 .mar-arc-app {
   display: inline-flex;
   height: 18px;
@@ -363,8 +362,8 @@ function wheel(e: WheelEvent): void {
   gap: 4px;
   padding: 0 6px 0 5px;
   border-radius: 999px;
-  background: rgb(14 14 16 / 0.5);
-  backdrop-filter: blur(16px) saturate(1.6);
+  background: rgb(14 14 16 / 0.28);
+  backdrop-filter: blur(14px) saturate(1.5);
   color: #fff;
   font-size: 9.5px;
   font-weight: 600;
