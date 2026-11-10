@@ -20,6 +20,7 @@ import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
+import { assetLink } from './assets/assetLink'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
@@ -138,6 +139,9 @@ const PARTS: Part[] = [
   one('buildPage', buildPage, 'production', BUILD_PAGES),
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
+  // Assets: its build, and the asset open full screen (assetLink.ts).
+  field('assetBuild', assetLink, 'build', '', []),
+  field('asset', assetLink, 'id', '', []),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
   // After Graph look: Production sets it to Current.
@@ -262,12 +266,22 @@ async function openShared(): Promise<void> {
 
 void openShared()
 
-/** Copy the link, and say so. */
+/** Copy the link, and say so. The Clipboard API refuses an unfocused
+ *  page (a click from DevTools or another window), so the old copy
+ *  command stands in. */
 export async function copyShareUrl(): Promise<boolean> {
+  const url = shareUrl()
   try {
-    await navigator.clipboard.writeText(shareUrl())
+    await navigator.clipboard.writeText(url)
     return true
   } catch {
-    return false
+    const t = document.createElement('textarea')
+    t.value = url
+    t.style.cssText = 'position:fixed;opacity:0'
+    document.body.append(t)
+    t.select()
+    const ok = document.execCommand('copy')
+    t.remove()
+    return ok
   }
 }

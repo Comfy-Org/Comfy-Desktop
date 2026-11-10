@@ -733,13 +733,14 @@ onBeforeUnmount(() => {
               <GenerationInfo :facts="facts" :loading="loading" />
             </section>
           </div>
-          <!-- At the bottom, labeled: only the actions this file has, Download
-               and More leading. -->
+          <!-- At the bottom, labeled: only the actions this file has. Download
+               leads; More sits at the right of Open workflow (of Download
+               when there is no workflow). -->
           <footer class="mad-actions">
             <button
               v-if="facts.workflow === 'available'"
               type="button"
-              class="mad-btn"
+              class="mad-btn is-wf"
               :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
               @click="openWorkflow"
             >
@@ -753,75 +754,73 @@ onBeforeUnmount(() => {
             <button v-if="saveable" type="button" class="mad-btn" @click="emit('save')">
               <Plus :size="14" /><span>Save to Assets</span>
             </button>
-            <div class="mad-lead">
+            <button
+              type="button"
+              class="mad-btn is-primary"
+              @click="saveFile(picOf(asset), asset.name)"
+            >
+              <Download :size="14" /><span>Download</span>
+            </button>
+            <div ref="moreBox" class="mad-pick">
               <button
                 type="button"
-                class="mad-btn is-primary"
-                @click="saveFile(picOf(asset), asset.name)"
+                class="mad-btn is-more"
+                aria-label="More"
+                title="More"
+                aria-haspopup="menu"
+                :aria-expanded="moreMenu"
+                @click="moreMenu = !moreMenu"
               >
-                <Download :size="14" /><span>Download</span>
+                <MoreHorizontal :size="16" />
               </button>
-              <div ref="moreBox" class="mad-pick">
+              <div v-if="moreMenu" class="mad-menu is-up is-end is-more" role="menu">
+                <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
+                  <FolderOpen :size="14" />Show in Finder
+                </button>
                 <button
                   type="button"
-                  class="mad-btn is-more"
-                  aria-label="More"
-                  title="More"
+                  role="menuitem"
                   aria-haspopup="menu"
-                  :aria-expanded="moreMenu"
-                  @click="moreMenu = !moreMenu"
+                  :aria-expanded="insertOpen"
+                  @click="insertOpen = !insertOpen"
                 >
-                  <MoreHorizontal :size="16" />
+                  <Plus :size="14" />Insert into workflow<ChevronRight
+                    :size="14"
+                    class="mad-menu-chev"
+                    :class="insertOpen && 'is-open'"
+                  />
                 </button>
-                <div v-if="moreMenu" class="mad-menu is-up is-end is-more" role="menu">
-                  <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
-                    <FolderOpen :size="14" />Show in Finder
+                <div v-if="insertOpen" class="mad-menu-sub" role="menu">
+                  <button type="button" role="menuitem" @click="insert('new')">
+                    <Plus :size="14" />As a new {{ loader }} node
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    aria-haspopup="menu"
-                    :aria-expanded="insertOpen"
-                    @click="insertOpen = !insertOpen"
-                  >
-                    <Plus :size="14" />Insert into workflow<ChevronRight
-                      :size="14"
-                      class="mad-menu-chev"
-                      :class="insertOpen && 'is-open'"
-                    />
-                  </button>
-                  <div v-if="insertOpen" class="mad-menu-sub" role="menu">
-                    <button type="button" role="menuitem" @click="insert('new')">
-                      <Plus :size="14" />As a new {{ loader }} node
-                    </button>
-                    <button type="button" role="menuitem" @click="insert('selected')">
-                      <ImagePlus :size="14" />Into the selected node
-                    </button>
-                  </div>
-                  <template v-if="facts.workflow === 'available'">
-                    <button type="button" role="menuitem" @click="openWorkflow">
-                      <Workflow :size="14" />Open as workflow in new tab
-                    </button>
-                    <button type="button" role="menuitem" @click="exportWorkflow">
-                      <FileOutput :size="14" />Export workflow
-                    </button>
-                  </template>
-                  <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
-                    <Copy :size="14" />Copy file name
-                  </button>
-                  <button
-                    v-if="facts.prompt"
-                    type="button"
-                    role="menuitem"
-                    @click="copyText(facts.prompt, 'prompt')"
-                  >
-                    <Copy :size="14" />Copy prompt
-                  </button>
-                  <span class="mad-menu-gap" role="separator" />
-                  <button type="button" role="menuitem" class="is-danger" @click="remove">
-                    <Trash2 :size="14" />Delete
+                  <button type="button" role="menuitem" @click="insert('selected')">
+                    <ImagePlus :size="14" />Into the selected node
                   </button>
                 </div>
+                <template v-if="facts.workflow === 'available'">
+                  <button type="button" role="menuitem" @click="openWorkflow">
+                    <Workflow :size="14" />Open as workflow in new tab
+                  </button>
+                  <button type="button" role="menuitem" @click="exportWorkflow">
+                    <FileOutput :size="14" />Export workflow
+                  </button>
+                </template>
+                <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
+                  <Copy :size="14" />Copy file name
+                </button>
+                <button
+                  v-if="facts.prompt"
+                  type="button"
+                  role="menuitem"
+                  @click="copyText(facts.prompt, 'prompt')"
+                >
+                  <Copy :size="14" />Copy prompt
+                </button>
+                <span class="mad-menu-gap" role="separator" />
+                <button type="button" role="menuitem" class="is-danger" @click="remove">
+                  <Trash2 :size="14" />Delete
+                </button>
               </div>
             </div>
           </footer>
@@ -1270,11 +1269,14 @@ onBeforeUnmount(() => {
   inset: 0;
 }
 .mad-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 10px 8px;
   margin: 0 16px;
   padding: 14px 0 16px;
+}
+.mad-actions > * {
+  grid-column: 1 / -1;
 }
 /* Download on top, the rest under it as quieter rows: a soft fill, no
    line, no divider above. */
@@ -1292,14 +1294,20 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn:not(.is-primary):hover {
   background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
 }
-.mad-lead {
-  order: -1;
-  display: flex;
-  gap: 8px;
-}
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-primary {
-  flex: 1;
+  order: -2;
   justify-content: center;
+}
+.mad-actions:not(:has(.is-wf)) > .is-primary {
+  grid-column: 1;
+}
+.mad-actions > .is-wf {
+  order: -1;
+  grid-column: 1;
+}
+.mad-actions > .mad-pick {
+  order: -1;
+  grid-column: 2;
 }
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-more {
   width: 36px;
