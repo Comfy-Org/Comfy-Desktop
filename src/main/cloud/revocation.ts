@@ -16,7 +16,7 @@ export class Revocations {
   add(revocation: PendingRevocation): void {
     addPendingRevocation(revocation)
     if (this.draining) this.drainAgain = true
-    else if (!this.retryTimer) void this.drain()
+    else void this.drain()
   }
 
   drain(): Promise<void> {

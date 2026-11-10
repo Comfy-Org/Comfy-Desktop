@@ -247,25 +247,24 @@ describe('Revocations', () => {
     expect(queuedTokens()).toEqual([])
   })
 
-  it('holds a token queued during a backoff until the backoff ends', async () => {
+  it('sends a token queued during a backoff right away while the failing one keeps backing off', async () => {
     vi.useFakeTimers()
-    replies = [offline]
+    replyFor = { 'refresh-1': offline }
     const revocations = new Revocations()
     revocations.add(revocation('refresh-1'))
     await revocations.drain()
 
     revocations.add(revocation('refresh-2'))
-    await vi.advanceTimersByTimeAsync(4_999)
-    expect(requests).toHaveLength(1)
-    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(0)
 
-    expect(requests[0]?.token).toBe('refresh-1')
-    expect(requests.map((request) => request.token).sort()).toEqual([
-      'refresh-1',
-      'refresh-1',
-      'refresh-2'
-    ])
-    expect(queuedTokens()).toEqual([])
+    expect(requests.map((request) => request.token)).toContain('refresh-2')
+    expect(queuedTokens()).toEqual(['refresh-1'])
+    const attempts = requests.length
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(requests).toHaveLength(attempts)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(requests).toHaveLength(attempts + 1)
+    expect(requests.at(-1)?.token).toBe('refresh-1')
   })
 
   it('sends a token queued while another attempt fails, then retries only the failed one', async () => {
