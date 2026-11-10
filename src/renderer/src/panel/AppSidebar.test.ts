@@ -111,6 +111,7 @@ describe('AppSidebar', () => {
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="app-sidebar-build-a"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('title')).toBe('Builds')
   })
 
   it('collapses to icons with tooltips and stays collapsed when reopened', async () => {

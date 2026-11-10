@@ -126,7 +126,7 @@ const statusPill = computed<{
       markerClass: 'chooser-tile-status--running',
       tone: 'go'
     }
-  if (inst.value.sourceCategory === 'local' && !hasError.value && !dangerTag.value)
+  if (inst.value.sourceCategory === 'local' && !dangerTag.value)
     return {
       label: 'chooser.statusStopped',
       markerClass: 'chooser-tile-status--stopped',
@@ -236,7 +236,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     role="button"
     :tabindex="isUpdating ? -1 : 0"
     :aria-disabled="isUpdating || undefined"
-    class="chooser-tile chooser-tile--install group/tile col-span-full grid h-14 min-w-0 cursor-pointer grid-cols-subgrid items-center rounded-card bg-card/72 pr-3 pl-4 outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-card-hover/80 focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+    class="chooser-tile chooser-tile--install group/tile col-span-full grid h-14 min-w-0 cursor-pointer grid-cols-subgrid items-center rounded-card bg-card pr-3 pl-4 outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-card-hover focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
     :class="statusClasses"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
@@ -270,7 +270,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         variant="destructive-textonly"
         size="unset"
         type="button"
-        class="chooser-tile-error-badge h-5 shrink-0 gap-1 rounded-sm bg-destructive/16 px-1.5 text-[12px] leading-none font-medium hover:bg-destructive/25"
+        class="chooser-tile-error-badge h-5 shrink-0 gap-1 rounded-md bg-destructive/16 px-1.5 text-[12px] leading-none font-medium hover:bg-destructive/25"
         :title="t('chooser.viewErrorTooltip')"
         @click.stop="emit('view-error', inst)"
         @keydown.enter.stop
@@ -284,7 +284,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         variant="destructive-textonly"
         size="unset"
         type="button"
-        class="chooser-tile-danger-tag h-5 min-w-0 gap-1 rounded-sm bg-destructive/16 px-1.5 text-[12px] leading-none font-medium hover:bg-destructive/25"
+        class="chooser-tile-danger-tag h-5 min-w-0 gap-1 rounded-md bg-destructive/16 px-1.5 text-[12px] leading-none font-medium hover:bg-destructive/25"
         :title="t('chooser.viewErrorTooltip')"
         @click.stop="emit('view-danger', inst)"
         @keydown.enter.stop
@@ -302,7 +302,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           type="button"
           variant="textonly"
           size="unset"
-          class="chooser-tile-pill h-5 gap-1 rounded-sm bg-warning/15 px-1.5 text-[12px] leading-none font-medium text-warning hover:bg-warning/25"
+          class="chooser-tile-pill h-5 gap-1 rounded-md bg-warning/14 px-1.5 text-[12px] leading-none font-medium text-warning hover:bg-warning/25"
           :class="{
             'chooser-tile-pill-update': actionPill.action === 'update',
             'chooser-tile-pill-migrate': actionPill.action === 'migrate',
@@ -342,7 +342,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <span
       v-if="statusPill"
-      class="chooser-tile-status pointer-events-none inline-flex items-center gap-2 text-[13px]/5 whitespace-nowrap"
+      class="chooser-tile-status pointer-events-none inline-flex min-w-37 items-center gap-[9px] text-[13px]/5 font-medium whitespace-nowrap"
       :class="[
         statusPill.markerClass,
         statusPill.tone === 'go' ? 'text-success' : 'text-foreground'
@@ -356,19 +356,19 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       />
       <span
         v-else
-        class="size-2 shrink-0 rounded-full"
+        class="size-[7px] shrink-0 rounded-full"
         :class="
           statusPill.tone === 'go'
             ? 'animate-status-breathe bg-current motion-reduce:animate-none'
-            : 'bg-muted-foreground'
+            : 'bg-subtle-foreground'
         "
         aria-hidden="true"
       />
       {{ t(statusPill.label) }}
     </span>
-    <span v-else />
+    <span v-else class="min-w-37" />
 
-    <div class="chooser-tile-actions flex items-center justify-end gap-2">
+    <div class="chooser-tile-actions flex min-w-60 items-center justify-end gap-1">
       <Button
         v-if="showLaunch"
         type="button"
@@ -395,7 +395,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         @keydown.enter.stop
         @keydown.space.stop
       >
-        <Ellipsis :size="16" />
+        <Ellipsis :size="15" />
       </Button>
     </div>
   </div>

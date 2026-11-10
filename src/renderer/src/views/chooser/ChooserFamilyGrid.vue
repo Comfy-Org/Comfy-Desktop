@@ -58,7 +58,7 @@ function unlockTileSize(el: Element): void {
     leave-active-class="tile-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
     leave-to-class="tile-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
     move-class="tile-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
-    class="chooser-family-grid relative grid w-full grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 gap-y-2"
+    class="chooser-family-grid relative grid w-full grid-cols-[minmax(0,1fr)_auto_auto] gap-x-4 gap-y-2"
     @before-leave="lockLeavingTileSize"
     @leave-cancelled="unlockTileSize"
   >

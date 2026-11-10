@@ -53,7 +53,10 @@ const toolRows = computed<SidebarRow[]>(() => [
   { page: 'benchmarks', label: t('fileMenu.benchmarks'), icon: ChartColumn }
 ])
 const groups = computed(() => [
-  { key: 'main', rows: mainRows.value },
+  {
+    key: 'main',
+    rows: collapsed.value ? mainRows.value : mainRows.value.filter((row) => row.page !== 'chooser')
+  },
   { key: 'tools', title: t('sidebar.tools'), rows: toolRows.value }
 ])
 
@@ -136,19 +139,34 @@ function navigate(page: DashboardPage): void {
         </Button>
         <template v-if="group.key === 'main' && !collapsed">
           <Button
+            variant="muted-textonly"
+            size="unset"
+            class="mt-5.5 h-6.5 w-full shrink-0 justify-start rounded-lg pr-1 pl-4.5 text-[13px]/5 font-medium tracking-[0.65px] uppercase hover:bg-secondary hover:text-foreground"
+            :class="
+              activePage === 'chooser'
+                ? 'bg-accent text-foreground hover:bg-accent'
+                : 'text-subtle-foreground'
+            "
+            :aria-current="activePage === 'chooser' ? 'page' : undefined"
+            data-testid="app-sidebar-chooser"
+            @click="navigate('chooser')"
+          >
+            {{ t('sidebar.builds') }}
+          </Button>
+          <Button
             v-for="inst in builds"
             :key="inst.id"
             variant="muted-textonly"
             size="unset"
-            class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg pr-3 pl-8 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+            class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
             :data-testid="`app-sidebar-build-${inst.id}`"
             @click="emit('open-details', inst)"
           >
             <span class="relative flex shrink-0">
-              <component :is="installTypeMetaForInstall(inst).icon" :size="15" aria-hidden="true" />
+              <component :is="installTypeMetaForInstall(inst).icon" :size="16" aria-hidden="true" />
               <span
                 v-if="sessionStore.isRunning(inst.id) || sessionStore.errorInstances.has(inst.id)"
-                class="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-sidebar-background"
+                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2 ring-sidebar-background"
                 :class="sessionStore.errorInstances.has(inst.id) ? 'bg-destructive' : 'bg-success'"
                 aria-hidden="true"
               />
