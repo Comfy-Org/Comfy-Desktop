@@ -1076,6 +1076,16 @@ function upload(files: FileList | null | undefined): void {
 .ap-views {
   display: flex;
 }
+/* Each tab only as wide as it needs (the panel's tabs elsewhere share the
+ * width), so the picked one's name has room and the others hug their icon. */
+:root .proto-ui.proto-ui.proto-ui .rp-controls .ap-views .ap-view {
+  flex: none;
+  outline: none;
+}
+:root .proto-ui.proto-ui.proto-ui .rp-controls .ap-views .ap-view:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
 :root .proto-ui.proto-ui.proto-ui .ap-views .ap-view {
   display: inline-flex;
   min-width: 30px;
