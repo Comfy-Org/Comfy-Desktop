@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLocalStorage } from '@vueuse/core'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
@@ -10,6 +11,7 @@ import AppSidebar from './AppSidebar.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import AppsView from './AppsView.vue'
+import { SIDEBAR_COLLAPSED_KEY, SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from './sidebarWidth'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -166,6 +168,9 @@ if (params.get('e2e') === '1') {
 const dashboardSection = ref<DashboardSection | null>(null)
 const appsVisit = ref(0)
 const appsAppOpen = ref(false)
+const appsAppEntered = ref(false)
+const sidebarCollapsed = useLocalStorage(SIDEBAR_COLLAPSED_KEY, false)
+const appsGrowBy = computed(() => (sidebarCollapsed.value ? 0 : SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH))
 
 const sidebarPage = computed<SidebarPage | null>(() => {
   const panel = activePanel.value
@@ -176,6 +181,7 @@ const sidebarPage = computed<SidebarPage | null>(() => {
 function handleSidebarNavigate(page: SidebarPage): void {
   if (page === 'apps' && appsAppOpen.value) {
     appsAppOpen.value = false
+    appsAppEntered.value = false
     appsVisit.value++
   }
   dashboardSection.value = isDashboardSection(page) ? page : null
@@ -451,6 +457,7 @@ onUnmounted(() => {
       <AppSidebar
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
+        :folded="appsAppEntered"
         @navigate="handleSidebarNavigate"
       />
       <main
@@ -471,12 +478,14 @@ onUnmounted(() => {
 
           <div
             v-else-if="activePanel === 'chooser'"
-            class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
+            class="panel-chooser relative flex min-h-0 flex-1 flex-col overflow-hidden"
           >
             <AppsView
               v-if="dashboardSection === 'apps'"
               :key="appsVisit"
+              :grow-by="appsGrowBy"
               @app-open="appsAppOpen = $event"
+              @app-entered="appsAppEntered = $event"
             />
             <section
               v-else-if="dashboardSection"

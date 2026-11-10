@@ -56,16 +56,27 @@ const sessionStore = useSessionStore()
 
 const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
 const appsLoadFailedUrl = ref<string | null>(null)
+const { growBy = 0 } = defineProps<{
+  growBy?: number
+}>()
 const openApp = ref<CatalogApp | null>(null)
+const appEntered = ref(false)
 const emit = defineEmits<{
   'app-open': [open: boolean]
+  'app-entered': [entered: boolean]
 }>()
-watch(openApp, (app) => emit('app-open', app !== null))
+watch(openApp, (app) => {
+  if (!app) appEntered.value = false
+  emit('app-open', app !== null)
+})
+watch(appEntered, (entered) => emit('app-entered', entered))
 watch(tab, (next) => {
   if (next === 'all') appsLoadFailedUrl.value = null
   else openApp.value = null
 })
-const appFillsPage = computed(() => tab.value === 'all' && openApp.value !== null)
+const appFillsPage = computed(
+  () => tab.value === 'all' && openApp.value !== null && appEntered.value
+)
 
 function openCatalogApp(app: CatalogApp): void {
   appsLoadFailedUrl.value = null
@@ -462,15 +473,9 @@ function extensionOf(name: string): string {
       </div>
     </div>
 
-    <AppsHost
-      v-if="tab === 'all' && openApp"
-      :url="openApp.url"
-      @failed="appFailed"
-      @app-open="closeApp"
-    />
     <AppsGallery
       v-if="tab === 'all'"
-      v-show="!openApp"
+      v-show="!appFillsPage"
       :load-failed-url="appsLoadFailedUrl"
       @open="openCatalogApp"
     />
@@ -658,4 +663,13 @@ function extensionOf(name: string): string {
       </ul>
     </div>
   </div>
+  <AppsHost
+    v-if="tab === 'all' && openApp"
+    class="absolute inset-0"
+    :url="openApp.url"
+    :grow-by="growBy"
+    @failed="appFailed"
+    @app-open="closeApp"
+    @entered="appEntered = true"
+  />
 </template>

@@ -56,7 +56,7 @@ function build(id: string, name: string): Installation {
 async function mountAssets(
   running: Installation[],
   stopped: Installation[] = [],
-  options: { attachTo?: HTMLElement } = {}
+  options: { attachTo?: HTMLElement; props?: { growBy?: number } } = {}
 ) {
   useInstallationStore().installations = [...running, ...stopped]
   const sessions = useSessionStore()
@@ -147,6 +147,7 @@ describe('AppsView', () => {
         url: 'https://apps.example/apps/studio/desktop.html'
       })
     )
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(wrapper.find('[data-testid="assets-toolbar"]').exists()).toBe(false)
 
@@ -161,6 +162,47 @@ describe('AppsView', () => {
     expect(wrapper.find('h1').exists()).toBe(true)
     expect(wrapper.find('[data-testid="app-card-studio"]').exists()).toBe(true)
     expect(listCatalogApps).toHaveBeenCalledOnce()
+  })
+
+  it('slides an app in from the right at its final width and keeps the cards visible until it is in', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], { props: { growBy: 172 } })
+
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+
+    const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
+    const first = showApps.mock.calls[0]![0]
+    expect(first.fresh).toBe(true)
+    expect(Math.round(first.x)).toBe(Math.round(slot.x + slot.width))
+    expect(Math.round(first.width)).toBe(Math.round(slot.width + 172))
+    expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
+    expect(wrapper.find('h1').exists()).toBe(true)
+
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    const last = showApps.mock.calls.at(-1)![0]
+    expect(Math.round(last.x)).toBe(Math.round(slot.x))
+    expect(wrapper.find('h1').exists()).toBe(false)
+  })
+
+  it('shows an app in place at once when motion is reduced', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const matchMedia = vi
+      .spyOn(window, 'matchMedia')
+      .mockImplementation((query) => ({ matches: query.includes('reduce') }) as MediaQueryList)
+    try {
+      const wrapper = await mountAssets([build('lab', 'Video Lab')])
+      await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+      await flushPromises()
+
+      const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
+      expect(Math.round(showApps.mock.calls[0]![0].x)).toBe(Math.round(slot.x))
+      expect(wrapper.emitted('app-entered')).toEqual([[true]])
+    } finally {
+      matchMedia.mockRestore()
+    }
   })
 
   it('shows the address when an app cannot load, and opens it again from its card', async () => {
