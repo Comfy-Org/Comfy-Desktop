@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  Camera,
   Check,
   ChevronRight,
   ImageUp,
@@ -10,19 +9,13 @@ import {
   Plus,
   RectangleHorizontal,
   Scan,
-  UserRound,
-  X
+  UserRound
 } from 'lucide-vue-next'
-import {
-  DropdownMenuRoot,
-  DropdownMenuTrigger,
-  PopoverClose,
-  PopoverRoot,
-  PopoverTrigger
-} from 'reka-ui'
+import { DropdownMenuRoot, DropdownMenuTrigger, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import PopoverContent from '../../ui/PopoverContent.vue'
+import CineIcon from './CineIcon.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import Select from '../../ui/Select.vue'
 import Switch from '../../ui/Switch.vue'
@@ -58,6 +51,9 @@ const set = (id: string, v: string): void => {
 const opt = (g: CineGroup): CineOption | undefined => g.options.find((o) => o.label === get(g.id))
 
 /** The camera card: the body as its value, lens, focal and aperture under it. */
+const bodyIcon = computed(
+  () => CAMERA[0]!.options.find((o) => o.label === get('camera'))?.icon ?? 'auto'
+)
 const cameraSpecs = computed(() =>
   CAMERA.slice(1)
     .map((g) => get(g.id))
@@ -71,19 +67,17 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   <div class="cine">
     <!-- Image or Video, and the model -->
     <section class="cine-block">
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="cine-title">New shot</h2>
-        <SegmentedControl
-          :model-value="get('mode')"
-          variant="contained"
-          size="sm"
-          :options="[
-            { value: 'Image', label: 'Image' },
-            { value: 'Video', label: 'Video' }
-          ]"
-          @update:model-value="(v: string) => set('mode', v)"
-        />
-      </div>
+      <SegmentedControl
+        :model-value="get('mode')"
+        variant="contained"
+        size="sm"
+        class="cine-seg"
+        :options="[
+          { value: 'Image', label: 'Image' },
+          { value: 'Video', label: 'Video' }
+        ]"
+        @update:model-value="(v: string) => set('mode', v)"
+      />
       <Select
         :model-value="get('model')"
         size="sm"
@@ -93,7 +87,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 
       <!-- The character, large, as the app's picture -->
       <div class="cine-field">
-        <span>Character reference</span>
+        <h2 class="cine-title">Character reference</h2>
         <button
           v-if="hasReference"
           type="button"
@@ -138,7 +132,9 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
         <PopoverRoot>
           <PopoverTrigger as-child>
             <button type="button" class="cine-row">
-              <span class="cine-thumb"><Camera :size="16" /></span>
+              <span class="cine-thumb">
+                <CineIcon part="body" :option="bodyIcon" class="cine-thumb-icon" />
+              </span>
               <span class="cine-row-text">
                 <span class="cine-key">Camera</span>
                 <span class="cine-val">{{ get('camera') }}</span>
@@ -147,30 +143,42 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
               <ChevronRight :size="15" class="cine-chev" />
             </button>
           </PopoverTrigger>
-          <PopoverContent side="right" align="start" :side-offset="20" class="cine-picker">
+          <PopoverContent
+            side="right"
+            align="start"
+            :side-offset="20"
+            class="cine-picker is-camera"
+          >
             <header class="cine-picker-head">
               <h3 class="cine-title">Camera</h3>
-              <PopoverClose class="cine-close" aria-label="Close"><X :size="14" /></PopoverClose>
             </header>
-            <div class="flex flex-col gap-4 p-4 pt-1">
-              <div v-for="g in CAMERA" :key="g.id" class="flex flex-col gap-2">
-                <p class="text-ui text-muted-foreground">{{ g.label }}</p>
-                <div
-                  class="flex flex-wrap gap-1.5"
-                  role="radiogroup"
-                  data-no-pill
-                  :aria-label="g.label"
-                >
+            <div class="cine-cols">
+              <div
+                v-for="g in CAMERA"
+                :key="g.id"
+                class="cine-col"
+                role="radiogroup"
+                data-no-pill
+                :aria-label="g.label"
+              >
+                <p class="cine-title cine-col-title">{{ g.label }}</p>
+                <div class="cine-col-list">
                   <button
                     v-for="o in g.options"
                     :key="o.label"
                     type="button"
                     role="radio"
                     :aria-checked="get(g.id) === o.label"
-                    :class="cn('cine-chip', get(g.id) === o.label && 'is-on')"
+                    :class="cn('cine-opt', get(g.id) === o.label && 'is-on')"
                     @click="set(g.id, o.label)"
                   >
-                    {{ o.label }}
+                    <span class="truncate">{{ o.label }}</span>
+                    <CineIcon
+                      v-if="g.part && o.icon"
+                      :part="g.part"
+                      :option="o.icon"
+                      class="cine-opt-icon"
+                    />
                   </button>
                 </div>
               </div>
@@ -198,7 +206,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
           <PopoverContent side="right" align="start" :side-offset="20" class="cine-picker">
             <header class="cine-picker-head">
               <h3 class="cine-title">{{ g.label }}</h3>
-              <PopoverClose class="cine-close" aria-label="Close"><X :size="14" /></PopoverClose>
             </header>
             <div class="cine-grid" role="radiogroup" data-no-pill :aria-label="g.label">
               <button
@@ -257,7 +264,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
               <RectangleHorizontal :size="14" />{{ get('aspect') }}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" class="w-52">
+          <DropdownMenuContent side="top" align="end" :side-offset="8" class="cine-menu">
             <DropdownMenuItem
               v-for="a in CINE_ASPECTS"
               :key="a.value"
@@ -275,7 +282,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
               <ImageUpscale :size="14" />{{ get('size') }}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-44">
+          <DropdownMenuContent side="top" align="end" :side-offset="8" class="cine-menu">
             <DropdownMenuItem
               v-for="r in ['1K', '2K']"
               :key="r"
@@ -389,7 +396,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   flex-direction: column;
   gap: 6px;
 }
-.cine-row {
+:root .proto-ui.proto-ui.proto-ui .cine-row {
   display: flex;
   min-width: 0;
   min-height: 56px;
@@ -402,9 +409,9 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   outline: none;
   transition: background-color 150ms;
 }
-.cine-row:hover,
-.cine-row[data-state='open'],
-.cine-row:focus-visible {
+:root .proto-ui.proto-ui.proto-ui .cine-row:hover,
+:root .proto-ui.proto-ui.proto-ui .cine-row[data-state='open'],
+:root .proto-ui.proto-ui.proto-ui .cine-row:focus-visible {
   background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
 }
 .cine-thumb {
@@ -470,19 +477,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 10px 6px 14px;
-}
-.cine-close {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--color-muted-foreground);
-}
-.cine-close:hover {
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
+  padding: 14px 14px 10px;
 }
 .cine-grid {
   display: grid;
@@ -552,23 +547,80 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   background: var(--color-base-foreground);
   color: var(--color-app-background);
 }
-:root .proto-ui.proto-ui.proto-ui .cine-chip {
-  height: 28px;
-  padding: 0 10px;
+/* The camera: four lists side by side, each scrolls on its own */
+.cine-cols {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 2px 12px 12px;
+}
+.cine-col {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-radius: var(--radius-card, 12px);
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  padding: 6px;
+}
+.cine-col-title {
+  padding: 8px 6px 10px;
+  text-align: center;
+}
+.cine-col-list {
+  display: flex;
+  max-height: 360px;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.cine-col-list::-webkit-scrollbar {
+  display: none;
+}
+:root .proto-ui.proto-ui.proto-ui .cine-opt {
+  display: flex;
+  height: 48px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   border-radius: 8px;
-  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  padding: 0 8px 0 12px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  box-shadow: inset 0 0 0 1px transparent;
   font-size: var(--text-ui);
   color: var(--color-muted-foreground);
+  text-align: left;
   transition:
     background-color 150ms,
-    color 150ms;
+    color 150ms,
+    box-shadow 150ms;
 }
-:root .proto-ui.proto-ui.proto-ui .cine-chip:hover {
+:root .proto-ui.proto-ui.proto-ui .cine-opt:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
   color: var(--color-base-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .cine-chip.is-on {
-  background: var(--color-base-foreground);
-  color: var(--color-app-background);
+:root .proto-ui.proto-ui.proto-ui .cine-opt.is-on {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  box-shadow: inset 0 0 0 1px var(--color-base-foreground);
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.cine-opt-icon {
+  width: 40px;
+  height: 25px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 150ms;
+}
+.cine-opt.is-on .cine-opt-icon,
+.cine-opt:hover .cine-opt-icon {
+  opacity: 1;
+}
+.cine-thumb-icon {
+  width: 46px;
+  height: 29px;
 }
 
 .cine-field {
@@ -577,9 +629,15 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   flex-direction: column;
   gap: 6px;
 }
-.cine-field > span {
-  font-size: 11px;
-  color: var(--color-muted-foreground);
+.cine-field {
+  gap: 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .cine-seg {
+  width: 100%;
+}
+:root .proto-ui.proto-ui.proto-ui .cine-seg > button {
+  flex: 1;
+  justify-content: center;
 }
 
 /* Format: one row of pills */
@@ -641,7 +699,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 @media (prefers-reduced-motion: reduce) {
   .cine-row,
   .cine-tile-pic,
-  .cine-chip,
+  .cine-opt,
   .cine-source-replace {
     transition: none;
   }
@@ -656,5 +714,13 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   max-height: min(560px, var(--reka-popover-content-available-height));
   overflow-y: auto;
   padding: 0;
+}
+:root .proto-ui.proto-ui.proto-ui.cine-picker.is-camera {
+  width: 780px;
+  overflow: hidden;
+}
+/* The format menus open the same way and look the same */
+:root .proto-ui.proto-ui.proto-ui.cine-menu {
+  width: 208px;
 }
 </style>
