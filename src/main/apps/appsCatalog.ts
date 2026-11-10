@@ -73,20 +73,29 @@ function catalogCover(origin: string, data: Json): string | null {
   )
 }
 
-function catalogApp(origin: string, item: unknown): CatalogApp | null {
+export type DesktopFields = Pick<CatalogApp, 'page' | 'runsOn' | 'accent'>
+
+function catalogApp(
+  origin: string,
+  item: unknown,
+  known: ReadonlyMap<string, DesktopFields>
+): CatalogApp | null {
   const data = record(record(item)?.data)
   if (!data || (data.type !== undefined && data.type !== 'app')) return null
   const desktop = record(record(data.compatibility)?.desktop)
   const id = typeof data.slug === 'string' && SLUG.test(data.slug) ? data.slug : null
   const title = text(data.title, MAX_TITLE)
-  if (!desktop || !id || !title || !isAppsPath(desktop.page)) return null
+  if (!id || !title) return null
+  const fields: DesktopFields | null =
+    desktop && isAppsPath(desktop.page)
+      ? { page: desktop.page, runsOn: runsOn(desktop.runs_on), accent: accent(desktop.accent) }
+      : (known.get(id) ?? null)
+  if (!fields) return null
   return {
     id,
     title,
     description: text(data.description, MAX_DESCRIPTION) ?? '',
-    page: desktop.page,
-    runsOn: runsOn(desktop.runs_on),
-    accent: accent(desktop.accent),
+    ...fields,
     sortOrder: sortOrder(data.sort_order),
     coverUrl: catalogCover(origin, data)
   }
@@ -129,10 +138,20 @@ function ordered(apps: Array<CatalogApp | null>): CatalogApp[] {
     .slice(0, MAX_APPS)
 }
 
-export function catalogApps(raw: unknown, catalogOrigin: string): CatalogApp[] {
+export function catalogApps(
+  raw: unknown,
+  catalogOrigin: string,
+  known: ReadonlyMap<string, DesktopFields> = new Map()
+): CatalogApp[] {
   const items = record(raw)?.items
   if (!Array.isArray(items)) return []
-  return ordered(items.map((item) => catalogApp(catalogOrigin, item)))
+  return ordered(items.map((item) => catalogApp(catalogOrigin, item, known)))
+}
+
+export function desktopFields(apps: readonly CatalogApp[]): Map<string, DesktopFields> {
+  return new Map(
+    apps.map((app) => [app.id, { page: app.page, runsOn: app.runsOn, accent: app.accent }])
+  )
 }
 
 export function websiteApps(raw: unknown, origin: string): CatalogApp[] {
@@ -185,12 +204,19 @@ function defaultSources(): AppsSources {
 export async function loadApps(
   sources: AppsSources = defaultSources()
 ): Promise<{ source: AppsListing['source']; apps: CatalogApp[] }> {
-  const items = await readCatalogItems(sources.catalogOrigin).catch(() => [])
-  const fromCatalog = catalogApps({ items }, sources.catalogOrigin)
+  const appsOrigin = sources.appsOrigin
+  const [items, fromWebsite] = await Promise.all([
+    readCatalogItems(sources.catalogOrigin).catch(() => []),
+    appsOrigin
+      ? withTimeout(fetchJSON(`${appsOrigin}/apps/apps.json`), FETCH_TIMEOUT_MS).then(
+          (raw) => websiteApps(raw, appsOrigin),
+          () => [] as CatalogApp[]
+        )
+      : Promise.resolve([] as CatalogApp[])
+  ])
+  const fromCatalog = catalogApps({ items }, sources.catalogOrigin, desktopFields(fromWebsite))
   if (fromCatalog.length) return { source: 'catalog', apps: fromCatalog }
-  if (!sources.appsOrigin) throw new Error('No apps address is set.')
-  const raw = await withTimeout(fetchJSON(`${sources.appsOrigin}/apps/apps.json`), FETCH_TIMEOUT_MS)
-  const fromWebsite = websiteApps(raw, sources.appsOrigin)
+  if (!appsOrigin) throw new Error('No apps address is set.')
   if (!fromWebsite.length) throw new Error('No apps are listed yet.')
   return { source: 'website', apps: fromWebsite }
 }

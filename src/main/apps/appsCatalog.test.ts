@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fetchJSON = vi.fn()
 const netFetch = vi.fn()
@@ -237,6 +237,22 @@ describe('websiteApps', () => {
 describe('loadApps', () => {
   const sources = { catalogOrigin: CLOUD, appsOrigin: SITE }
 
+  afterEach(() => {
+    fetchJSON.mockReset()
+  })
+
+  function serve(catalog: unknown[] | Error, site: unknown): void {
+    const pages = catalog instanceof Error ? catalog : [...catalog]
+    fetchJSON.mockImplementation(async (url: string) => {
+      if (url.startsWith(`${SITE}/`)) {
+        if (site instanceof Error) throw site
+        return site
+      }
+      if (pages instanceof Error) throw pages
+      return pages.shift() ?? { items: [] }
+    })
+  }
+
   it('asks the catalog for Desktop apps', () => {
     expect(catalogListUrl(CLOUD)).toBe(
       `${CLOUD}/api/v1/catalog/items?type=app&surface=desktop_starters&limit=100`
@@ -244,54 +260,69 @@ describe('loadApps', () => {
   })
 
   it('uses the catalog when it has apps', async () => {
-    fetchJSON.mockResolvedValueOnce({ items: [catalogItem()], has_more: false })
+    serve([{ items: [catalogItem()], has_more: false }], [])
 
     const loaded = await loadApps(sources)
 
     expect(loaded.source).toBe('catalog')
     expect(loaded.apps.map((app) => app.id)).toEqual(['doodle-to-image'])
-    expect(fetchJSON).toHaveBeenCalledOnce()
   })
 
-  it('follows the next page of the catalog', async () => {
-    fetchJSON
-      .mockResolvedValueOnce({ items: [catalogItem()], has_more: true, next_cursor: 'c2' })
-      .mockResolvedValueOnce({ items: [catalogItem({ slug: 'sticker', title: 'Sticker' })] })
+  it('takes the page and places from the website list when the catalog item has none', async () => {
+    serve(
+      [{ items: [catalogItem({ compatibility: { website: { href: '/hub/apps/x/' } } })] }],
+      [websiteApp({ runs_on: ['cloud', 'local'] })]
+    )
 
     const loaded = await loadApps(sources)
 
-    expect(fetchJSON).toHaveBeenLastCalledWith(catalogListUrl(CLOUD, 'c2'))
+    expect(loaded.source).toBe('catalog')
+    expect(loaded.apps).toHaveLength(1)
+    expect(loaded.apps[0]?.page).toBe('/apps/doodle-to-image/desktop.html')
+    expect(loaded.apps[0]?.runsOn).toEqual(['cloud', 'local'])
+  })
+
+  it('follows the next page of the catalog', async () => {
+    serve(
+      [
+        { items: [catalogItem()], has_more: true, next_cursor: 'c2' },
+        { items: [catalogItem({ slug: 'sticker', title: 'Sticker' })] }
+      ],
+      []
+    )
+
+    const loaded = await loadApps(sources)
+
+    expect(fetchJSON).toHaveBeenCalledWith(catalogListUrl(CLOUD, 'c2'))
     expect(loaded.apps.map((app) => app.id)).toEqual(['doodle-to-image', 'sticker'])
   })
 
   it('falls back to the website apps.json when the catalog has no apps', async () => {
-    fetchJSON
-      .mockResolvedValueOnce({ items: [], has_more: false })
-      .mockResolvedValueOnce([websiteApp()])
+    serve([{ items: [], has_more: false }], [websiteApp()])
 
     const loaded = await loadApps(sources)
 
-    expect(fetchJSON).toHaveBeenLastCalledWith(`${SITE}/apps/apps.json`)
+    expect(fetchJSON).toHaveBeenCalledWith(`${SITE}/apps/apps.json`)
     expect(loaded.source).toBe('website')
     expect(loaded.apps.map((app) => app.id)).toEqual(['doodle-to-image'])
   })
 
   it('falls back to the website apps.json when the catalog cannot be reached', async () => {
-    fetchJSON.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([websiteApp()])
+    serve(new Error('offline'), [websiteApp()])
 
     expect((await loadApps(sources)).source).toBe('website')
   })
 
   it('fails when neither source has apps, so the panel shows Coming soon', async () => {
-    fetchJSON.mockResolvedValueOnce({ items: [] }).mockRejectedValueOnce(new Error('offline'))
-    await expect(loadApps(sources)).rejects.toThrow('offline')
+    serve([{ items: [] }], new Error('offline'))
+    await expect(loadApps(sources)).rejects.toThrow()
 
-    fetchJSON.mockResolvedValueOnce({ items: [] }).mockResolvedValueOnce([])
+    serve([{ items: [] }], [])
     await expect(loadApps(sources)).rejects.toThrow()
   })
 
   it('fails without asking the website when no apps address is set', async () => {
-    fetchJSON.mockResolvedValueOnce({ items: [] })
+    serve([{ items: [] }], [])
 
     await expect(loadApps({ catalogOrigin: CLOUD, appsOrigin: null })).rejects.toThrow()
     expect(fetchJSON).toHaveBeenCalledOnce()
