@@ -22,6 +22,14 @@ import type { AuthStatus, AuthTokens } from './types'
 const DEFAULT_SIGN_IN_TIMEOUT_MS = 600_000
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000
 
+/** RFC 7009 / 6749 errors that no retry of the same revocation can fix. */
+const PERMANENT_REVOKE_ERRORS: ReadonlySet<string> = new Set([
+  'invalid_request',
+  'invalid_client',
+  'unauthorized_client',
+  'unsupported_token_type'
+])
+
 export interface OAuthOptions {
   authorizeUrl?: string
   tokenUrl?: string
@@ -206,4 +214,32 @@ export async function refresh(
     })
   )
   return toTokens(r, refreshToken)
+}
+
+/** RFC 7009 revocation of one refresh token. `settled` on 200, or a refusal no retry can fix;
+ *  `retry` on network failure, timeout or any other answer. */
+export async function revoke(
+  refreshToken: string,
+  clientId: string,
+  revokeUrl: string = CLOUD_CONFIG.revokeUrl
+): Promise<'settled' | 'retry'> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
+  try {
+    const resp = await fetch(revokeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: refreshToken, client_id: clientId }).toString(),
+      redirect: 'manual',
+      signal: controller.signal
+    })
+    const detail = await resp.text().catch(() => '')
+    if (resp.status === 200) return 'settled'
+    if (resp.status !== 400 && resp.status !== 401) return 'retry'
+    return PERMANENT_REVOKE_ERRORS.has(oauthErrorOf(detail) ?? '') ? 'settled' : 'retry'
+  } catch {
+    return 'retry'
+  } finally {
+    clearTimeout(timer)
+  }
 }

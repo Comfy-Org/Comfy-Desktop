@@ -10,7 +10,9 @@ import type { TokenProvider } from '../comfybuilder'
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
 import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from './claims'
+import { CLOUD_CONFIG } from './config'
 import { openAuthorizePage, refresh, signIn } from './oauth'
+import { Revocations } from './revocation'
 import { SignInFailure } from './signInFailure'
 import {
   activateWorkspace,
@@ -20,6 +22,7 @@ import {
   isMintScopeWithheld,
   loadActiveWorkspaceId,
   loadGrant,
+  loadGrantOrigin,
   loadWorkspaceToken,
   replaceGrant,
   saveGrant,
@@ -117,6 +120,8 @@ export class CloudSession {
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
   private returnedToAnchorHandler: (() => void) | null = null
+  private readonly revocations = new Revocations()
+  private readonly signedOutRefreshTokens = new Set<string>()
 
   /** Latest auth intent. Older flows may finish, but cannot change what a newer
    *  login, workspace switch, or logout chose. */
@@ -176,13 +181,23 @@ export class CloudSession {
     this.loginAuthorizeUrl = null
   }
 
-  /** Forget tokens. Installed environments are untouched. */
+  /** Forget tokens at once; revoke this grant on Cloud in the background. Installs are untouched. */
   logout(): void {
+    const refreshToken = loadGrant()?.refreshToken
+    const origin = loadGrantOrigin()
     this.authGeneration += 1
     this.switching = null
     this.mintBlockedUntil = 0
     this.clearPendingLogin()
+    if (refreshToken && this.refreshing.has(refreshToken))
+      this.signedOutRefreshTokens.add(refreshToken)
+    if (refreshToken && origin) this.revocations.add({ ...origin, refreshToken })
     clearTokens()
+  }
+
+  /** Resume revocations a previous run queued and Cloud has not confirmed. */
+  resumeRevocations(): void {
+    void this.revocations.drain()
   }
 
   status(): AuthStatus {
@@ -277,10 +292,21 @@ export class CloudSession {
 
   private async rotateGrant(grant: AuthTokens, refreshToken: string): Promise<GrantRefresh> {
     try {
-      replaceGrant(grant.accessToken, refreshToken, await refresh(refreshToken))
+      const rotated = await refresh(refreshToken)
+      const stored = replaceGrant(grant.accessToken, refreshToken, rotated)
+      const next = rotated.refreshToken
+      if (!stored && this.signedOutRefreshTokens.has(refreshToken) && next) {
+        this.revocations.add({
+          issuer: CLOUD_CONFIG.issuer,
+          clientId: CLOUD_CONFIG.clientId,
+          refreshToken: next
+        })
+      }
       return 'refreshed'
     } catch (error) {
       return isDefinitiveRefreshRefusal(error) ? 'ended' : 'unavailable'
+    } finally {
+      this.signedOutRefreshTokens.delete(refreshToken)
     }
   }
 

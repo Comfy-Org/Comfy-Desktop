@@ -4,18 +4,29 @@
  * renderer, logs, or disk in plaintext. When the OS secure-storage backend is
  * unavailable, tokens are kept in memory for the process lifetime only.
  */
+import { createHash } from 'crypto'
 import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
 import { canMintWorkspaceTokens, statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import { CLOUD_CONFIG } from './config'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
+const REVOCATIONS_DIRNAME = 'comfy-cloud-revocations'
 const VAULT_VERSION = 2
+
+/** The Cloud and OAuth client a grant was issued by. */
+export interface GrantOrigin {
+  issuer: string
+  clientId: string
+}
 
 interface TokenVault {
   version: typeof VAULT_VERSION
+  issuer?: string
+  clientId?: string
   subject?: string
   grant: AuthTokens
   mintScopeWithheld?: true
@@ -32,7 +43,13 @@ interface LegacyVault {
   workspaceNames?: Record<string, string>
 }
 
+/** A signed-out grant's refresh token, kept until the Cloud that issued it confirms revocation. */
+export interface PendingRevocation extends GrantOrigin {
+  refreshToken: string
+}
+
 let cachedVault: TokenVault | null = null
+const unsavedRevocations = new Map<string, PendingRevocation>()
 let authFilePath: string | null = null
 let secureStorageUnavailable = false
 
@@ -86,6 +103,8 @@ function isVault(v: unknown): v is TokenVault {
     (v.mintScopeWithheld === undefined || v.mintScopeWithheld === true) &&
     (v.activeWorkspaceId === null || typeof v.activeWorkspaceId === 'string') &&
     (v.subject === undefined || typeof v.subject === 'string') &&
+    (v.issuer === undefined || typeof v.issuer === 'string') &&
+    (v.clientId === undefined || typeof v.clientId === 'string') &&
     isRecord(v.workspaceTokens) &&
     Object.values(v.workspaceTokens).every(isTokens) &&
     isWorkspaceNames(v.workspaceNames)
@@ -178,7 +197,7 @@ export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: bool
   const current = loadVault()
   const subject = subjectOf(grant.accessToken)
   if (!current || !subject || current.subject !== subject) {
-    persistVault({ ...vaultFor(grant), ...withheld })
+    persistVault({ ...vaultFor(grant), ...configuredOrigin(), ...withheld })
     return
   }
   delete current.mintScopeWithheld
@@ -196,6 +215,7 @@ export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: bool
     }
   }
   current.grant = grant
+  Object.assign(current, configuredOrigin())
   if (!holdsToken(current, current.activeWorkspaceId))
     current.activeWorkspaceId = workspaceIdOf(grant.accessToken)
   persistVault(current)
@@ -209,6 +229,18 @@ export function isMintScopeWithheld(): boolean {
 /** The OAuth grant bundle, the only one carrying a refresh token. */
 export function loadGrant(): AuthTokens | null {
   return loadVault()?.grant ?? null
+}
+
+function configuredOrigin(): GrantOrigin {
+  return { issuer: CLOUD_CONFIG.issuer, clientId: CLOUD_CONFIG.clientId }
+}
+
+/** Where the stored grant came from: its browser sign-in or its last refresh. Null when unknown,
+ *  as for a vault written before this was recorded and not refreshed since. */
+export function loadGrantOrigin(): GrantOrigin | null {
+  const vault = loadVault()
+  if (!vault?.issuer || !vault.clientId) return null
+  return { issuer: vault.issuer, clientId: vault.clientId }
 }
 
 /** The workspace API calls act in, or null when signed out or the grant has no workspace claim. */
@@ -284,6 +316,7 @@ export function replaceGrant(
     return false
   }
   vault.grant = grant
+  Object.assign(vault, configuredOrigin())
   if (canMintWorkspaceTokens(grant.accessToken)) delete vault.mintScopeWithheld
   persistVault(vault)
   return true
@@ -295,6 +328,103 @@ export function clearTokens(): void {
     fs.rmSync(filePath(), { force: true })
   } catch {
     /* nothing to remove */
+  }
+}
+
+function revocationsDir(): string {
+  return path.join(app.getPath('userData'), REVOCATIONS_DIRNAME)
+}
+
+function revocationPath(refreshToken: string): string {
+  const name = createHash('sha256').update(refreshToken).digest('hex')
+  return path.join(revocationsDir(), `${name}.bin`)
+}
+
+function isPendingRevocation(v: unknown): v is PendingRevocation {
+  return (
+    isRecord(v) &&
+    typeof v.issuer === 'string' &&
+    typeof v.clientId === 'string' &&
+    typeof v.refreshToken === 'string'
+  )
+}
+
+function writeRevocation(revocation: PendingRevocation): boolean {
+  if (!encryptionAvailable()) return false
+  const target = revocationPath(revocation.refreshToken)
+  try {
+    fs.mkdirSync(revocationsDir(), { recursive: true })
+    fs.writeFileSync(`${target}.tmp`, safeStorage.encryptString(JSON.stringify(revocation)))
+    fs.renameSync(`${target}.tmp`, target)
+    return true
+  } catch {
+    removeQuietly(`${target}.tmp`)
+    return false
+  }
+}
+
+/** The revocations still waiting for Cloud; `complete` is false when a saved one could not be read yet. */
+export interface PendingRevocations {
+  pending: PendingRevocation[]
+  complete: boolean
+}
+
+function readSavedRevocations(): PendingRevocations {
+  let names: string[]
+  try {
+    names = fs.readdirSync(revocationsDir()).filter((name) => name.endsWith('.bin'))
+  } catch (error) {
+    return { pending: [], complete: (error as NodeJS.ErrnoException).code === 'ENOENT' }
+  }
+  if (names.length > 0 && !encryptionAvailable()) return { pending: [], complete: false }
+  const pending = names.flatMap((name) => {
+    try {
+      const parsed: unknown = JSON.parse(
+        safeStorage.decryptString(fs.readFileSync(path.join(revocationsDir(), name)))
+      )
+      return isPendingRevocation(parsed) ? [parsed] : []
+    } catch {
+      return []
+    }
+  })
+  return { pending, complete: pending.length === names.length }
+}
+
+/** One encrypted file per revocation, so no write can touch another. An entry that could not be
+ *  saved stays in memory, and saving it is retried on every read. */
+export function loadPendingRevocations(): PendingRevocations {
+  for (const [refreshToken, revocation] of unsavedRevocations) {
+    if (writeRevocation(revocation)) unsavedRevocations.delete(refreshToken)
+  }
+  const saved = readSavedRevocations()
+  const savedTokens = new Set(saved.pending.map((entry) => entry.refreshToken))
+  const unsaved = [...unsavedRevocations.values()].filter(
+    (entry) => !savedTokens.has(entry.refreshToken)
+  )
+  return { pending: [...saved.pending, ...unsaved], complete: saved.complete }
+}
+
+export function addPendingRevocation(revocation: PendingRevocation): void {
+  if (!writeRevocation(revocation)) unsavedRevocations.set(revocation.refreshToken, revocation)
+}
+
+/** False when the saved entry could not be deleted. */
+export function removePendingRevocation(refreshToken: string): boolean {
+  unsavedRevocations.delete(refreshToken)
+  removeQuietly(`${revocationPath(refreshToken)}.tmp`)
+  try {
+    fs.rmSync(revocationPath(refreshToken), { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeQuietly(file: string): void {
+  try {
+    fs.rmSync(file, { force: true })
+  } catch {
+    // Retried with the entry's next removal.
   }
 }
 
@@ -322,6 +452,7 @@ export function getAuthStatus(): AuthStatus {
 /** @internal reset module state between unit tests. */
 export function _resetForTest(): void {
   cachedVault = null
+  unsavedRevocations.clear()
   authFilePath = null
   secureStorageUnavailable = false
 }
