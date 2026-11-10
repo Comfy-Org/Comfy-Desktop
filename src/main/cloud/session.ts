@@ -37,6 +37,7 @@ import type { ReauthorizeReason, WorkspaceMintOutcome } from './workspaceToken'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
 const REFRESH_SKEW_MS = 60_000
+const MAX_MINT_BLOCK_MS = 5 * 60_000
 
 export const WORKSPACE_SWITCH_EVENT = 'comfy.desktop.auth.workspace_switch'
 export const WORKSPACE_SWITCH_BROWSER_EVENT = 'comfy.desktop.auth.workspace_switch_browser'
@@ -373,7 +374,8 @@ export class CloudSession {
       generation === this.authGeneration &&
       subjectOf(grant.accessToken) === this.currentSubject()
     ) {
-      this.mintBlockedUntil = Date.now() + outcome.retryAfterSeconds * 1000
+      this.mintBlockedUntil =
+        Date.now() + Math.min(outcome.retryAfterSeconds * 1000, MAX_MINT_BLOCK_MS)
     }
     return outcome
   }

@@ -766,6 +766,25 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     expect(mintRequests).toHaveLength(1)
   })
 
+  it('caps a huge Retry-After at five minutes', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(429, {}, { 'Retry-After': '1000000000' })
+    const session = new CloudSession()
+    const start = Date.now()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start)
+    onTestFinished(() => now.mockRestore())
+
+    await session.switchWorkspace('w2')
+    now.mockReturnValue(start + 5 * 60_000 - 1)
+    await session.switchWorkspace('w3')
+    expect(mintRequests).toHaveLength(1)
+
+    now.mockReturnValue(start + 5 * 60_000)
+    mintReply = ({ workspaceId }) => minted(workspaceId, start + 60 * 60_000)
+    await expect(session.switchWorkspace('w4')).resolves.toMatchObject({ workspaceId: 'w4' })
+    expect(mintRequests).toHaveLength(2)
+  })
+
   it('a late 429 from before logout does not throttle the next account', async () => {
     saveGrant(grantOn('w1'))
     const late = deferred<Response>()

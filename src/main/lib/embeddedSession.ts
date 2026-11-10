@@ -4,6 +4,7 @@ import { canMintWorkspaceTokens, identityOf } from '../cloud/claims'
 import { getCloudSession } from '../devplatform/session'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
+import type { AuthStatus } from '../cloud/types'
 import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
@@ -94,13 +95,22 @@ export async function workspaceTokenForSender(
 export async function switchWorkspaceForSender(
   event: EmbeddedSessionSender,
   workspaceId: unknown,
-  switchWorkspace: (workspaceId: string) => Promise<unknown>
+  switchWorkspace: (workspaceId: string) => Promise<AuthStatus>
 ): Promise<ComfyDesktop2AuthState> {
   const state = await stateForSender(event)
   if (state.status !== 'signed_in' || typeof workspaceId !== 'string' || workspaceId === '')
     return state
-  getViewWorkspaceGrants().allowView(event.sender, workspaceId)
-  await switchWorkspace(workspaceId)
+  const session = getCloudSession()
+  const grants = getViewWorkspaceGrants()
+  grants.seed()
+  const switching = switchWorkspace(workspaceId)
+  const generation = session.currentAuthGeneration()
+  const status = await switching
+  const ownSwitchReached =
+    session.currentAuthGeneration() === generation &&
+    status.signedIn &&
+    status.workspaceId === workspaceId
+  if (ownSwitchReached) grants.allowView(event.sender, workspaceId)
   return stateForSender(event)
 }
 

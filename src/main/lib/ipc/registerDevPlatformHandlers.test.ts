@@ -504,6 +504,16 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
+  it('lets no view hold the target when a newer auth operation superseded the dashboard switch', async () => {
+    mocks.currentAuthGeneration.mockReturnValueOnce(1).mockReturnValueOnce(2)
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+    mocks.allowDesktopWorkspace.mockClear()
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
+  })
+
   it('forgets view allowlists when a switch signs in as a different account', async () => {
     mocks.currentSubject.mockReturnValueOnce('user-1').mockReturnValueOnce('user-2')
     mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w9' })
