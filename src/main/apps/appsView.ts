@@ -13,6 +13,7 @@ import {
   appsUrl,
   cleanSaveName,
   collectOutputs,
+  isAppOpen,
   isAppsFrameUrl,
   isDocumentFailure,
   isInside,
@@ -50,6 +51,9 @@ const views = new Map<number, WebContentsView>()
 const failedViews = new WeakSet<WebContentsView>()
 
 export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
+export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
+
+const appOpen = new Map<number, boolean>()
 
 export interface AppsRect {
   x: number
@@ -67,6 +71,17 @@ function openOutside(url: string): void {
 
 function tellPanelLoadFailed(panel: WebContents | undefined, url: string): void {
   if (panel && !panel.isDestroyed()) panel.send(APPS_LOAD_FAILED_CHANNEL, { url })
+}
+
+function tellPanelAppOpen(key: number): void {
+  const panel = comfyWindows.get(key)?.panelView?.webContents
+  if (panel && !panel.isDestroyed())
+    panel.send(APPS_APP_OPEN_CHANNEL, { open: appOpen.get(key) === true })
+}
+
+function trackAppOpen(key: number, url: string): void {
+  appOpen.set(key, isAppOpen(url, APPS_URL))
+  tellPanelAppOpen(key)
 }
 
 function markLoadFailed(key: number, view: WebContentsView, url: string): void {
@@ -101,6 +116,10 @@ function createAppsView(key: number): WebContentsView {
   })
   wc.on('did-navigate', (_event, url, httpResponseCode) => {
     if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
+    trackAppOpen(key, url)
+  })
+  wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
+    if (isMainFrame) trackAppOpen(key, url)
   })
   wc.loadURL(APPS_URL).catch(() => {})
   return view
@@ -134,6 +153,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     views.set(key, view)
     entry.window.once('closed', () => {
       views.delete(key)
+      appOpen.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -147,6 +167,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   })
   entry.window.contentView.addChildView(view)
   view.setVisible(true)
+  if (r.fresh === true) tellPanelAppOpen(key)
 }
 
 function hideApps(event: IpcMainEvent): void {

@@ -23,6 +23,14 @@ const onAppsLoadFailed = vi.fn((callback: (info: { url: string }) => void) => {
   }
 })
 
+let appsAppOpen: ((info: { open: boolean }) => void) | null = null
+const onAppsAppOpen = vi.fn((callback: (info: { open: boolean }) => void) => {
+  appsAppOpen = callback
+  return () => {
+    appsAppOpen = null
+  }
+})
+
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert })
 }))
@@ -79,6 +87,7 @@ beforeEach(() => {
     showApps,
     hideApps,
     onAppsLoadFailed,
+    onAppsAppOpen,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -125,6 +134,23 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="apps-load-failed"]').exists()).toBe(false)
     expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
+  })
+
+  it('hides the Apps title and tabs while an app fills the page, and shows them on the list again', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    const header = () => wrapper.find('h1').exists()
+
+    appsAppOpen!({ open: true })
+    await flushPromises()
+    expect(header()).toBe(false)
+    expect(wrapper.find('[data-testid="assets-toolbar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+
+    appsAppOpen!({ open: false })
+    await flushPromises()
+    expect(header()).toBe(true)
+    expect(wrapper.find('[data-testid="assets-toolbar"]').exists()).toBe(true)
   })
 
   it('starts in masonry with file names and details hidden', async () => {

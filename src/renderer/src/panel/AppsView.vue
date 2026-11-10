@@ -53,9 +53,14 @@ const sessionStore = useSessionStore()
 
 const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
 const appsLoadFailedUrl = ref<string | null>(null)
+const appOpen = ref(false)
 watch(tab, (next) => {
   if (next === 'all') appsLoadFailedUrl.value = null
+  else appOpen.value = false
 })
+const appFillsPage = computed(
+  () => tab.value === 'all' && appOpen.value && !appsLoadFailedUrl.value
+)
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -269,13 +274,14 @@ function extensionOf(name: string): string {
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="apps-view"
   >
-    <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
+    <header v-if="!appFillsPage" class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
       <h1 class="m-0 font-display text-display font-semibold text-foreground">
         {{ t('sidebar.apps') }}
       </h1>
     </header>
 
     <div
+      v-if="!appFillsPage"
       class="sticky top-0 z-10 w-full shrink-0 transition-colors duration-200"
       :class="scrollTop > 0 && 'bg-content-background/75 backdrop-blur-lg'"
       data-testid="assets-toolbar"
@@ -423,7 +429,11 @@ function extensionOf(name: string): string {
       </div>
     </div>
 
-    <AppsHost v-if="tab === 'all' && !appsLoadFailedUrl" @failed="appsLoadFailedUrl = $event" />
+    <AppsHost
+      v-if="tab === 'all' && !appsLoadFailedUrl"
+      @failed="appsLoadFailedUrl = $event"
+      @app-open="appOpen = $event"
+    />
     <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
       <template v-if="tab === 'all'">
         <p class="m-0 text-ui text-muted-foreground" data-testid="apps-coming-soon">

@@ -11,6 +11,7 @@ import {
   downloadRequest,
   interruptJson,
   DEFAULT_APPS_URL,
+  isAppOpen,
   isAppsFrameUrl,
   isBuildId,
   isComfyPage,
@@ -44,6 +45,22 @@ describe('appsUrl', () => {
   it('defaults to the hosted site and takes an override', () => {
     expect(appsUrl({})).toBe(DEFAULT_APPS_URL)
     expect(appsUrl({ COMFY_APPS_URL: 'http://127.0.0.1:5310/' })).toBe('http://127.0.0.1:5310/')
+  })
+})
+
+describe('isAppOpen', () => {
+  const list = 'https://apps.example/apps/'
+
+  it('is open on an app page or an app route of the list page', () => {
+    expect(isAppOpen('https://apps.example/apps/text-to-image/desktop.html', list)).toBe(true)
+    expect(isAppOpen('https://apps.example/apps/#/make-image', list)).toBe(true)
+  })
+
+  it('is closed on the list itself and on other origins', () => {
+    expect(isAppOpen('https://apps.example/apps/', list)).toBe(false)
+    expect(isAppOpen('https://apps.example/apps/#/', list)).toBe(false)
+    expect(isAppOpen('https://other.example/apps/x/desktop.html', list)).toBe(false)
+    expect(isAppOpen('not a url', list)).toBe(false)
   })
 })
 

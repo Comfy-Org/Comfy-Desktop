@@ -25,6 +25,20 @@ export function isAppsFrameUrl(frameUrl: string, origin: string | null): boolean
   }
 }
 
+export function isAppOpen(pageUrl: string, listUrl: string): boolean {
+  let page: URL
+  let list: URL
+  try {
+    page = new URL(pageUrl)
+    list = new URL(listUrl)
+  } catch {
+    return false
+  }
+  if (page.origin !== list.origin) return false
+  if (page.pathname !== list.pathname) return true
+  return page.hash.startsWith('#/') && page.hash.length > 2
+}
+
 const MAX_WORKFLOW_BYTES = 1_000_000
 export const MAX_UPLOAD_BYTES = 50_000_000
 

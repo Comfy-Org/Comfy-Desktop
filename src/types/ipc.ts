@@ -1119,6 +1119,7 @@ export interface ElectronApi {
   showApps(rect: { x: number; y: number; width: number; height: number; fresh?: boolean }): void
   hideApps(): void
   onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
+  onAppsAppOpen(callback: (info: { open: boolean }) => void): Unsubscribe
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

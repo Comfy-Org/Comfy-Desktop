@@ -3,11 +3,13 @@ import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
 
 const emit = defineEmits<{
   failed: [url: string]
+  'app-open': [open: boolean]
 }>()
 
 const slot = useTemplateRef<HTMLElement>('slot')
 let observer: ResizeObserver | null = null
 let stopListening: (() => void) | null = null
+let stopAppOpen: (() => void) | null = null
 
 function report(fresh = false): void {
   const el = slot.value
@@ -20,6 +22,7 @@ const reportResize = (): void => report()
 
 onMounted(() => {
   stopListening = window.api.onAppsLoadFailed(({ url }) => emit('failed', url))
+  stopAppOpen = window.api.onAppsAppOpen(({ open }) => emit('app-open', open))
   observer = new ResizeObserver(reportResize)
   if (slot.value) observer.observe(slot.value)
   window.addEventListener('resize', reportResize)
@@ -28,6 +31,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopListening?.()
+  stopAppOpen?.()
   observer?.disconnect()
   window.removeEventListener('resize', reportResize)
   window.api.hideApps()
