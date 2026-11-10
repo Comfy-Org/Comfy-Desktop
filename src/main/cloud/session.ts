@@ -374,8 +374,8 @@ export class CloudSession {
     return outcome
   }
 
-  /** End the stored grant if it is `accessToken` or a rotation of it. */
-  private endGrantFamily(accessToken: string): void {
+  /** Cloud ended the grant `accessToken` came from: drop its refresh token, and that of any rotation of it. */
+  endGrantFamily(accessToken: string): void {
     for (let token: string | undefined = accessToken; token; token = this.rotatedTo.get(token)) {
       endGrant(token)
     }

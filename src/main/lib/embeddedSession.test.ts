@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as WorkspaceTokenModule from '../cloud/workspaceToken'
+
 const mocks = vi.hoisted(() => ({
   enabled: true,
   getGrantAccessToken: vi.fn<() => Promise<string | null>>(),
@@ -18,10 +20,12 @@ vi.mock('../devplatform/session', () => ({
     currentWorkspaceId: () => mocks.current,
     currentSubject: () => (mocks.current ? 'user-1' : null),
     currentAuthGeneration: () => 0,
-    isWorkspaceMintAllowed: async () => true
+    isWorkspaceMintAllowed: async () => true,
+    endGrantFamily: () => {}
   })
 }))
-vi.mock('../cloud/workspaceToken', () => ({
+vi.mock('../cloud/workspaceToken', async (importOriginal) => ({
+  ...(await importOriginal<typeof WorkspaceTokenModule>()),
   mintWorkspaceToken: mocks.mint
 }))
 vi.mock('../host/registry', () => ({

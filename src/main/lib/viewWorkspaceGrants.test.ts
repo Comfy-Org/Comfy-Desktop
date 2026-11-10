@@ -73,7 +73,8 @@ function grantSession(
     currentSubject: () => (current ? user : null),
     currentAuthGeneration: () => generation,
     getGrantAccessToken,
-    isWorkspaceMintAllowed: async () => true
+    isWorkspaceMintAllowed: async () => true,
+    endGrantFamily: () => {}
   }
 }
 

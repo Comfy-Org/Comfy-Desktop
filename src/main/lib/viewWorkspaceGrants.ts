@@ -1,7 +1,7 @@
 import type { WebContents } from 'electron'
 
 import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from '../cloud/claims'
-import { mintWorkspaceToken } from '../cloud/workspaceToken'
+import { classifyMint, mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import { getCloudSession } from '../devplatform/session'
 import * as mainTelemetry from './telemetry'
@@ -28,6 +28,7 @@ export interface GrantSession {
   currentAuthGeneration(): number
   getGrantAccessToken(): Promise<string | null>
   isWorkspaceMintAllowed(workspaceId: string): Promise<boolean>
+  endGrantFamily(accessToken: string): void
 }
 
 export type MintWorkspaceToken = (
@@ -156,6 +157,9 @@ export class ViewWorkspaceGrants {
     const pending = this.mint(accessToken, workspaceId)
       .then((result) => {
         reportMint(result)
+        const outcome = classifyMint(result)
+        if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended')
+          this.session.endGrantFamily(accessToken)
         return result
       })
       .finally(() => {
