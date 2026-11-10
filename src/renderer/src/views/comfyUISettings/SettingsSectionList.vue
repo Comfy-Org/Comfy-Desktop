@@ -27,6 +27,7 @@ import type {
 interface Props {
   sections: DetailSection[]
   readonly?: boolean
+  columns?: boolean
   installationId?: string
   runningActionIds?: Set<string>
   pendingRestartFieldIds?: Set<string>
@@ -35,6 +36,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   readonly: false,
+  columns: false,
   installationId: undefined,
   runningActionIds: () => new Set<string>(),
   pendingRestartFieldIds: () => new Set<string>(),
@@ -202,7 +204,10 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 </script>
 
 <template>
-  <div class="settings-v2-sections flex flex-col gap-8">
+  <div
+    class="settings-v2-sections flex flex-col gap-8"
+    :class="{ '@container/build-settings': columns }"
+  >
     <article
       v-for="(section, si) in visibleSections"
       :key="`s-${si}`"
@@ -211,6 +216,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         readonly
           ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
           : 'gap-4',
+        columns &&
+          '@2xl/build-settings:grid @2xl/build-settings:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] @2xl/build-settings:gap-x-12 @2xl/build-settings:gap-y-3',
         {
           'is-collapsible': isCollapsible(section),
           'is-collapsed [&>*:not(.settings-v2-section-title)]:hidden':
@@ -218,8 +225,25 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         }
       ]"
     >
+      <header
+        v-if="columns && section.title && !isCollapsible(section)"
+        class="settings-v2-section-head flex min-w-0 flex-col gap-1.5 @2xl/build-settings:pt-1"
+      >
+        <h3
+          class="settings-v2-section-title m-0 text-[13px] leading-[18px] font-semibold text-neutral-100"
+        >
+          {{ section.title }}
+        </h3>
+        <p
+          v-if="section.description"
+          class="settings-v2-section-desc m-0 text-[13px] leading-[1.45] text-text-muted"
+        >
+          {{ section.description }}
+        </p>
+      </header>
+
       <Button
-        v-if="isCollapsible(section)"
+        v-else-if="isCollapsible(section)"
         variant="textonly"
         size="unset"
         type="button"
@@ -245,85 +269,133 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       </p>
 
       <p
-        v-if="section.description && !isCollapsed(section)"
+        v-if="section.description && !isCollapsed(section) && !(columns && section.title)"
         class="settings-v2-section-desc -mt-1 mb-1 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-text-muted"
       >
         {{ section.description }}
       </p>
 
       <div
-        v-for="(item, i) in section.items"
-        :key="`i-${i}`"
-        class="settings-v2-item flex items-center justify-between gap-2 text-[length:var(--takeover-fs-body)] leading-[1.4] text-text"
-      >
-        <span class="settings-v2-item-label inline-flex min-w-0 flex-1 items-center gap-1.5">
-          {{ item.label }}{{ item.active ? ` (${t('common.active')})` : '' }}
-          <span
-            v-if="item.tag"
-            class="settings-v2-item-tag rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-0.5 text-[length:var(--takeover-fs-caption)] font-medium text-text-muted"
-            >{{ item.tag }}</span
-          >
-        </span>
-        <span
-          v-if="item.actions && item.actions.length"
-          class="settings-v2-item-actions inline-flex shrink-0 items-center gap-1.5"
-        >
-          <TooltipWrap
-            v-for="a in item.actions"
-            :key="a.id"
-            :text="a.enabled === false && a.disabledMessage ? a.disabledMessage : a.tooltip"
-          >
-            <Button
-              variant="textonly"
-              size="unset"
-              type="button"
-              :class="[
-                actionButtonClass(false, true),
-                actionVariantClass(a),
-                { 'opacity-40 cursor-default': a.enabled === false && a.disabledMessage }
-              ]"
-              :disabled="a.enabled === false && !a.disabledMessage"
-              @click="emit('run-action', a)"
-            >
-              {{ a.label }}
-            </Button>
-          </TooltipWrap>
-        </span>
-      </div>
-
-      <div
-        v-for="row in fieldRows(section)"
-        :key="rowKey(row)"
-        class="settings-v2-field-row"
-        :class="[
-          row.length > 1 ? 'is-paired flex flex-wrap gap-4' : 'contents',
-          { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
-        ]"
+        class="settings-v2-section-body"
+        :class="columns && section.title ? 'flex min-w-0 max-w-xl flex-col gap-4' : 'contents'"
       >
         <div
-          v-for="field in row"
-          :key="field.id"
-          :data-field-id="field.id"
-          class="settings-v2-field"
+          v-for="(item, i) in section.items"
+          :key="`i-${i}`"
+          class="settings-v2-item flex items-center justify-between gap-2 text-[length:var(--takeover-fs-body)] leading-[1.4] text-text"
+        >
+          <span class="settings-v2-item-label inline-flex min-w-0 flex-1 items-center gap-1.5">
+            {{ item.label }}{{ item.active ? ` (${t('common.active')})` : '' }}
+            <span
+              v-if="item.tag"
+              class="settings-v2-item-tag rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-0.5 text-[length:var(--takeover-fs-caption)] font-medium text-text-muted"
+              >{{ item.tag }}</span
+            >
+          </span>
+          <span
+            v-if="item.actions && item.actions.length"
+            class="settings-v2-item-actions inline-flex shrink-0 items-center gap-1.5"
+          >
+            <TooltipWrap
+              v-for="a in item.actions"
+              :key="a.id"
+              :text="a.enabled === false && a.disabledMessage ? a.disabledMessage : a.tooltip"
+            >
+              <Button
+                variant="textonly"
+                size="unset"
+                type="button"
+                :class="[
+                  actionButtonClass(false, true),
+                  actionVariantClass(a),
+                  { 'opacity-40 cursor-default': a.enabled === false && a.disabledMessage }
+                ]"
+                :disabled="a.enabled === false && !a.disabledMessage"
+                @click="emit('run-action', a)"
+              >
+                {{ a.label }}
+              </Button>
+            </TooltipWrap>
+          </span>
+        </div>
+
+        <div
+          v-for="row in fieldRows(section)"
+          :key="rowKey(row)"
+          class="settings-v2-field-row"
           :class="[
-            readonly
-              ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-x-4 gap-y-2 border-b border-solid border-[var(--chooser-surface-border)] px-0 py-2.5'
-              : 'flex flex-col gap-2.5',
-            {
-              'min-w-0 flex-[1_1_240px]': row.length > 1,
-              'is-boolean-row': field.editType === 'boolean',
-              'is-nested -mt-2 border-l border-solid border-l-[color-mix(in_srgb,var(--chooser-surface-border)_70%,transparent)]':
-                isNestedField(field),
-              'pl-3.5': isNestedField(field) && !readonly,
-              'is-env-vars': field.editType === 'env-vars',
-              'is-channel-picker': field.editType === 'channel-cards'
-            }
+            row.length > 1 ? 'is-paired flex flex-wrap gap-4' : 'contents',
+            { '[&:last-child>.settings-v2-field]:border-b-0': readonly }
           ]"
         >
-          <template v-if="field.editType === 'env-vars'">
-            <div class="settings-v2-env-header flex items-start justify-between gap-3">
+          <div
+            v-for="field in row"
+            :key="field.id"
+            :data-field-id="field.id"
+            class="settings-v2-field"
+            :class="[
+              readonly
+                ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-x-4 gap-y-2 border-b border-solid border-[var(--chooser-surface-border)] px-0 py-2.5'
+                : 'flex flex-col gap-2.5',
+              {
+                'min-w-0 flex-[1_1_240px]': row.length > 1,
+                'is-boolean-row': field.editType === 'boolean',
+                'is-nested -mt-2 border-l border-solid border-l-[color-mix(in_srgb,var(--chooser-surface-border)_70%,transparent)]':
+                  isNestedField(field),
+                'pl-3.5': isNestedField(field) && !readonly,
+                'is-env-vars': field.editType === 'env-vars',
+                'is-channel-picker': field.editType === 'channel-cards'
+              }
+            ]"
+          >
+            <template v-if="field.editType === 'env-vars'">
+              <div class="settings-v2-env-header flex items-start justify-between gap-3">
+                <label
+                  class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-auto min-w-0"
+                >
+                  <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
+                    field.label
+                  }}</span>
+                  <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
+                  <span
+                    v-if="needsRestartTag(field)"
+                    class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                    role="status"
+                  >
+                    {{ t('comfyUISettings.restartRequired') }}
+                  </span>
+                  <span
+                    v-if="fieldErrorMessage(field)"
+                    class="settings-v2-field-error-tag ml-1.5 max-w-60 flex-none truncate rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-danger"
+                    role="alert"
+                    :title="fieldErrorMessage(field) ?? ''"
+                  >
+                    {{ fieldErrorMessage(field) }}
+                  </span>
+                </label>
+                <div
+                  class="settings-v2-env-notice -my-1.5 ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
+                  role="note"
+                >
+                  <ShieldAlert
+                    :size="14"
+                    class="settings-v2-env-notice-icon mt-px shrink-0 text-neutral-100"
+                    aria-hidden="true"
+                  />
+                  <span class="settings-v2-env-notice-text min-w-0">
+                    {{ t('envVars.securityWarningShort') }}
+                  </span>
+                </div>
+              </div>
+              <EnvVarsField :field="field" @update="(f, v) => emit('update-field', f, v)" />
+            </template>
+
+            <div
+              v-else-if="field.editType === 'boolean'"
+              class="settings-v2-boolean-row flex min-h-11 items-center justify-between gap-3 py-1"
+            >
               <label
-                class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-auto min-w-0"
+                class="settings-v2-field-label inline-flex w-fit max-w-[calc(100%_-_48px)] items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-[0_1_auto]"
               >
                 <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
                   field.label
@@ -336,209 +408,166 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 >
                   {{ t('comfyUISettings.restartRequired') }}
                 </span>
+              </label>
+              <BooleanToggle
+                :field="field"
+                :turn-on-disabled="field.turnOnDisabled"
+                :turn-on-disabled-tooltip-key="field.turnOnDisabledTooltipKey"
+                @update="(v) => emit('update-field', field, v)"
+              />
+            </div>
+
+            <template v-else>
+              <label
+                v-if="!fieldOwnsLabel(field) && field.label"
+                class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted"
+              >
+                <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
+                  field.label
+                }}</span>
+                <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
                 <span
-                  v-if="fieldErrorMessage(field)"
-                  class="settings-v2-field-error-tag ml-1.5 max-w-60 flex-none truncate rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-danger"
-                  role="alert"
-                  :title="fieldErrorMessage(field) ?? ''"
+                  v-if="needsRestartTag(field)"
+                  class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                  role="status"
                 >
-                  {{ fieldErrorMessage(field) }}
+                  {{ t('comfyUISettings.restartRequired') }}
                 </span>
               </label>
+
+              <PathField
+                v-if="field.editType === 'path' && !readonly"
+                :field="field"
+                @update="(f, v) => emit('update-field', f, v)"
+              />
+
               <div
-                class="settings-v2-env-notice -my-1.5 ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
-                role="note"
+                v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
+                class="settings-v2-readonly-path flex min-w-0 items-center gap-2 justify-self-stretch w-full text-right"
               >
-                <ShieldAlert
-                  :size="14"
-                  class="settings-v2-env-notice-icon mt-px shrink-0 text-neutral-100"
-                  aria-hidden="true"
-                />
-                <span class="settings-v2-env-notice-text min-w-0">
-                  {{ t('envVars.securityWarningShort') }}
-                </span>
+                <Button
+                  v-if="canOpenFilesystemPath(field)"
+                  variant="textonly"
+                  size="unset"
+                  type="button"
+                  class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+                  :title="t('models.openDir')"
+                  :aria-label="`${t('models.openDir')}: ${readonlyDisplayValue(field)}`"
+                  @click="emit('open-path', readonlyDisplayValue(field))"
+                >
+                  {{ readonlyDisplayValue(field) }}
+                </Button>
+                <span
+                  v-else
+                  class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100 w-full text-right justify-self-end settings-v2-field-readonly-path min-w-0 flex-1 truncate"
+                  >{{ readonlyDisplayValue(field) }}</span
+                >
+                <BaseCopyButton :value="readonlyDisplayValue(field)" />
               </div>
-            </div>
-            <EnvVarsField :field="field" @update="(f, v) => emit('update-field', f, v)" />
-          </template>
 
-          <div
-            v-else-if="field.editType === 'boolean'"
-            class="settings-v2-boolean-row flex min-h-11 items-center justify-between gap-3 py-1"
-          >
-            <label
-              class="settings-v2-field-label inline-flex w-fit max-w-[calc(100%_-_48px)] items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-[0_1_auto]"
-            >
-              <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
-                field.label
-              }}</span>
-              <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-              <span
-                v-if="needsRestartTag(field)"
-                class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
-                role="status"
-              >
-                {{ t('comfyUISettings.restartRequired') }}
-              </span>
-            </label>
-            <BooleanToggle
-              :field="field"
-              :turn-on-disabled="field.turnOnDisabled"
-              :turn-on-disabled-tooltip-key="field.turnOnDisabledTooltipKey"
-              @update="(v) => emit('update-field', field, v)"
-            />
-          </div>
+              <BaseSelect
+                v-else-if="field.editType === 'select'"
+                :model-value="asString(field.value)"
+                :options="
+                  (field.options ?? []).map(
+                    (opt): BaseSelectOption => ({
+                      value: opt.value,
+                      label: opt.label,
+                      description: opt.description
+                    })
+                  )
+                "
+                :aria-label="field.label"
+                @update:model-value="(v: string) => emit('update-field', field, v)"
+              />
 
-          <template v-else>
-            <label
-              v-if="!fieldOwnsLabel(field) && field.label"
-              class="settings-v2-field-label inline-flex w-fit max-w-full items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted"
-            >
-              <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
-                field.label
-              }}</span>
-              <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-              <span
-                v-if="needsRestartTag(field)"
-                class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
-                role="status"
-              >
-                {{ t('comfyUISettings.restartRequired') }}
-              </span>
-            </label>
+              <ArgsBuilderField
+                v-else-if="field.editType === 'args-builder'"
+                :field="field"
+                :installation-id="props.installationId"
+                @open="emit('open-args-page', field)"
+                @update="(f, v) => emit('update-field', f, v)"
+              />
 
-            <PathField
-              v-if="field.editType === 'path' && !readonly"
-              :field="field"
-              @update="(f, v) => emit('update-field', f, v)"
-            />
+              <ChannelPicker
+                v-else-if="field.editType === 'channel-cards'"
+                :field="field"
+                :section-actions="section.actions ?? []"
+                :running-action-ids="runningIdsSet"
+                @action="(a) => emit('run-action', a)"
+              />
 
-            <div
-              v-else-if="readonly && (field.editType === 'path' || isPathLikeValue(field.value))"
-              class="settings-v2-readonly-path flex min-w-0 items-center gap-2 justify-self-stretch w-full text-right"
-            >
-              <Button
-                v-if="canOpenFilesystemPath(field)"
-                variant="textonly"
-                size="unset"
-                type="button"
-                class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
-                :title="t('models.openDir')"
-                :aria-label="`${t('models.openDir')}: ${readonlyDisplayValue(field)}`"
-                @click="emit('open-path', readonlyDisplayValue(field))"
-              >
-                {{ readonlyDisplayValue(field) }}
-              </Button>
+              <VersionStatPanel
+                v-else-if="field.editType === 'version-stats'"
+                v-bind="versionStats(field)"
+                :actions="section.actions ?? []"
+                :running-action-ids="runningIdsSet"
+                @action="(a) => emit('run-action', a)"
+              />
+
+              <BaseInput
+                v-else-if="field.editType === 'text'"
+                :model-value="asString(field.value)"
+                :aria-label="field.label"
+                :placeholder="field.placeholder"
+                @change="(v: string) => emit('update-field', field, v)"
+              />
+
+              <BaseInput
+                v-else-if="field.editType === 'number'"
+                :model-value="asString(field.value)"
+                :aria-label="field.label"
+                type="number"
+                :min="field.min"
+                :max="field.max"
+                @change="(v: string) => emit('update-field', field, v === '' ? null : Number(v))"
+              />
+
               <span
                 v-else
-                class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100 w-full text-right justify-self-end settings-v2-field-readonly-path min-w-0 flex-1 truncate"
-                >{{ readonlyDisplayValue(field) }}</span
+                class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100"
+                :class="{ 'w-full text-right justify-self-end': readonly }"
+                >{{ asString(field.value) }}</span
               >
-              <BaseCopyButton :value="readonlyDisplayValue(field)" />
-            </div>
+            </template>
 
-            <BaseSelect
-              v-else-if="field.editType === 'select'"
-              :model-value="asString(field.value)"
-              :options="
-                (field.options ?? []).map(
-                  (opt): BaseSelectOption => ({
-                    value: opt.value,
-                    label: opt.label,
-                    description: opt.description
-                  })
-                )
-              "
-              :aria-label="field.label"
-              @update:model-value="(v: string) => emit('update-field', field, v)"
-            />
-
-            <ArgsBuilderField
-              v-else-if="field.editType === 'args-builder'"
-              :field="field"
-              :installation-id="props.installationId"
-              @open="emit('open-args-page', field)"
-              @update="(f, v) => emit('update-field', f, v)"
-            />
-
-            <ChannelPicker
-              v-else-if="field.editType === 'channel-cards'"
-              :field="field"
-              :section-actions="section.actions ?? []"
-              :running-action-ids="runningIdsSet"
-              @action="(a) => emit('run-action', a)"
-            />
-
-            <VersionStatPanel
-              v-else-if="field.editType === 'version-stats'"
-              v-bind="versionStats(field)"
-              :actions="section.actions ?? []"
-              :running-action-ids="runningIdsSet"
-              @action="(a) => emit('run-action', a)"
-            />
-
-            <BaseInput
-              v-else-if="field.editType === 'text'"
-              :model-value="asString(field.value)"
-              :aria-label="field.label"
-              :placeholder="field.placeholder"
-              @change="(v: string) => emit('update-field', field, v)"
-            />
-
-            <BaseInput
-              v-else-if="field.editType === 'number'"
-              :model-value="asString(field.value)"
-              :aria-label="field.label"
-              type="number"
-              :min="field.min"
-              :max="field.max"
-              @change="(v: string) => emit('update-field', field, v === '' ? null : Number(v))"
-            />
-
-            <span
-              v-else
-              class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100"
-              :class="{ 'w-full text-right justify-self-end': readonly }"
-              >{{ asString(field.value) }}</span
+            <p
+              v-if="field.description"
+              class="settings-v2-field-description -mt-0.5 mb-0 flex items-start gap-1.5 text-[11.5px] leading-[1.45] text-text-muted"
+              role="note"
             >
-          </template>
-
-          <p
-            v-if="field.description"
-            class="settings-v2-field-description -mt-0.5 mb-0 flex items-start gap-1.5 text-[11.5px] leading-[1.45] text-text-muted"
-            role="note"
-          >
-            <ShieldAlert
-              :size="14"
-              class="settings-v2-field-description-icon mt-0.5 shrink-0 text-[var(--info,var(--neutral-100))]"
-              aria-hidden="true"
-            />
-            <span>{{ field.description }}</span>
-          </p>
+              <ShieldAlert
+                :size="14"
+                class="settings-v2-field-description-icon mt-0.5 shrink-0 text-[var(--info,var(--neutral-100))]"
+                aria-hidden="true"
+              />
+              <span>{{ field.description }}</span>
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div
-        v-if="section.actions && section.actions.length && !fieldOwnsSectionActions(section)"
-        class="settings-v2-actions mt-2 flex flex-wrap gap-2 [&:has(>.settings-v2-action-tooltip:only-child)_.settings-v2-action]:flex-1"
-      >
-        <SectionActionButton
-          v-for="action in section.actions"
-          :key="action.id"
-          :action="action"
-          :running="isActionRunning(action.id)"
-          :button-class="
-            actionButtonClass(
-              isActionRunning(action.id),
-              false,
-              action.enabled === false && !!action.disabledMessage
-            )
-          "
-          :variant-class="actionVariantClass(action, false)"
-          tooltip-class="settings-v2-action-tooltip w-full"
-          spinner-class="settings-v2-action-spinner flex-none animate-spin [animation-duration:0.9s]"
-          @action="emit('run-action', action)"
-        />
+        <div
+          v-if="section.actions && section.actions.length && !fieldOwnsSectionActions(section)"
+          class="settings-v2-actions mt-2 flex flex-wrap gap-2 [&:has(>.settings-v2-action-tooltip:only-child)_.settings-v2-action]:flex-1"
+        >
+          <SectionActionButton
+            v-for="action in section.actions"
+            :key="action.id"
+            :action="action"
+            :running="isActionRunning(action.id)"
+            :button-class="
+              actionButtonClass(
+                isActionRunning(action.id),
+                false,
+                action.enabled === false && !!action.disabledMessage
+              )
+            "
+            :variant-class="actionVariantClass(action, false)"
+            tooltip-class="settings-v2-action-tooltip w-full"
+            spinner-class="settings-v2-action-spinner flex-none animate-spin [animation-duration:0.9s]"
+            @action="emit('run-action', action)"
+          />
+        </div>
       </div>
     </article>
   </div>

@@ -1085,6 +1085,7 @@ defineExpose({
                     >
                       <SettingsSectionList
                         :sections="visibleSections"
+                        :columns="isPage && activeTab === 'config'"
                         :installation-id="installation?.id"
                         :running-action-ids="runningActionIds"
                         :pending-restart-field-ids="pendingRestartFieldIds"
