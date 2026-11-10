@@ -133,6 +133,8 @@ describe('collectOutputs', () => {
   it('names kinds by extension', () => {
     expect(outputKind('x.PNG')).toBe('image')
     expect(outputKind('x.bin')).toBe('file')
+    expect(outputKind('hdr.avif')).toBe('image')
+    expect(outputKind('master.exr')).toBe('file')
     expect(outputKind('voice.mp3')).toBe('audio')
   })
 })
@@ -151,6 +153,8 @@ describe('saving results', () => {
     expect(saveExt('glb')).toBe('glb')
     expect(saveExt('sh')).toBeNull()
     expect(saveExt('mp3')).toBe('mp3')
+    expect(saveExt('avif')).toBe('avif')
+    expect(saveExt('EXR')).toBe('exr')
   })
   it('names a file by date, time and label', () => {
     expect(savedFileName('film', 'mp4', new Date(2026, 10, 4, 11, 41))).toBe(
@@ -424,7 +428,8 @@ describe('downloadRequest', () => {
       'vae',
       'clip_vision',
       'text_encoders',
-      'model_patches'
+      'model_patches',
+      'background_removal'
     ]) {
       expect(downloadRequest({ ...ok, folder })).not.toHaveProperty('error')
     }

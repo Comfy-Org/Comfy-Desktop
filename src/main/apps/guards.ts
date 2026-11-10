@@ -71,7 +71,7 @@ export type OutputKind = 'image' | 'video' | 'audio' | '3d' | 'text' | 'file'
 
 export function outputKind(filename: string): OutputKind {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
-  if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return 'image'
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'].includes(ext)) return 'image'
   if (['mp4', 'webm', 'mov'].includes(ext)) return 'video'
   if (['mp3', 'wav', 'flac', 'ogg', 'm4a', 'opus'].includes(ext)) return 'audio'
   if (['glb', 'gltf', 'obj', 'fbx', 'ply'].includes(ext)) return '3d'
@@ -116,6 +116,8 @@ const SAVE_EXTS = [
   'jpeg',
   'webp',
   'gif',
+  'avif',
+  'exr',
   'mp4',
   'webm',
   'mov',
@@ -398,7 +400,8 @@ export const DOWNLOAD_FOLDERS = [
   'clip_vision',
   'text_encoders',
   'diffusion_models',
-  'model_patches'
+  'model_patches',
+  'background_removal'
 ]
 
 export interface DownloadRequest {
