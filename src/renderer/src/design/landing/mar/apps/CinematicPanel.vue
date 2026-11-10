@@ -388,7 +388,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 .cine-rows {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
 }
 :root .proto-ui.proto-ui.proto-ui .cine-row {
   display: flex;
