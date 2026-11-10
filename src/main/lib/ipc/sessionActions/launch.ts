@@ -598,31 +598,25 @@ async function diagnoseCrash(
   return out
 }
 
-async function vcRuntimeHint(): Promise<string> {
-  try {
-    if ((await auditVcRuntime()).length > 0) {
-      return (
-        '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
-        'installing the latest redistributable may fix this'
-      )
-    }
-  } catch (err) {
-    console.warn('VC++ runtime audit failed:', err)
-  }
-  return ''
-}
-
 async function describeExitCode(code: number | null, stderr: string): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
-  if (!decoded) {
-    const dllFailure = isDllLoadFailure(findExceptionLine(stderr) ?? '')
-    return dllFailure ? `${code}${await vcRuntimeHint()}` : String(code)
-  }
-  let out = `${decoded.code} / ${decoded.hex}`
-  if (decoded.kind === 'access-violation') {
+  const dllFailure = !decoded && isDllLoadFailure(findExceptionLine(stderr) ?? '')
+  if (!decoded && !dllFailure) return String(code)
+  let out = decoded ? `${decoded.code} / ${decoded.hex}` : String(code)
+  if (decoded?.kind === 'access-violation') {
     out += ' (memory access violation — usually a faulty or missing native library)'
-    out += await vcRuntimeHint()
+  }
+  if (decoded?.kind === 'access-violation' || dllFailure) {
+    try {
+      if ((await auditVcRuntime()).length > 0) {
+        out +=
+          '. The Microsoft Visual C++ Redistributable runtime files appear to be missing; ' +
+          'installing the latest redistributable may fix this'
+      }
+    } catch (err) {
+      console.warn('VC++ runtime audit failed:', err)
+    }
   }
   return out
 }
