@@ -99,7 +99,7 @@ function setComparisonVisualization(value: unknown): void {
 }
 const UNMANAGED_WORKSPACE_FILTER = '__unmanaged__'
 
-const seriesColors = ['#e8e8ee', '#7aa2f7', '#e0af68', '#9ece6a', '#bb9af7', '#7dcfff']
+const seriesColors = ['#e8e8ee', '#7aa2f7', '#9ece6a', '#bb9af7', '#7dcfff']
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short'

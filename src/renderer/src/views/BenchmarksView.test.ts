@@ -297,7 +297,7 @@ describe('BenchmarksView', () => {
 
     await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), true)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').attributes('style')).toContain(
-      '--series-color: #9ece6a'
+      '--series-color: #bb9af7'
     )
     expect(wrapper.get('.benchmarks__comparison').text()).toContain('landscape.json')
 
