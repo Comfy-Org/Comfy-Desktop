@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
-import AssetsView from './AssetsView.vue'
+import AppsView from './AppsView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -48,7 +48,7 @@ async function mountAssets(
       mode: 'app'
     })
   }
-  const wrapper = mount(AssetsView, options)
+  const wrapper = mount(AppsView, options)
   await flushPromises()
   return wrapper
 }
@@ -75,7 +75,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-describe('AssetsView', () => {
+describe('AppsView', () => {
   it('starts in masonry with file names and details hidden', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
@@ -118,10 +118,10 @@ describe('AssetsView', () => {
     ])
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    await wrapper
-      .findAll('button')
-      .find((n) => n.text() === 'Images')!
-      .trigger('click')
+    await wrapper.get('[data-testid="assets-filter"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    document.querySelector<HTMLElement>('[data-testid="assets-filter-image"]')!.click()
+    await flushPromises()
     expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png'])
 
     await wrapper.get('input').setValue('terr')
@@ -141,13 +141,33 @@ describe('AssetsView', () => {
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
 
-    const wrapper = mount(AssetsView)
+    const wrapper = mount(AppsView)
     await flushPromises()
 
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain(
       'Start a build to browse its assets.'
     )
+  })
+
+  it('shows Coming soon under All apps without loading assets, then loads Generated Files', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
+    expect(listAssets).not.toHaveBeenCalled()
+
+    await wrapper
+      .findAll('button')
+      .find((n) => n.text() === 'Generated Files')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(listAssets).toHaveBeenCalledOnce()
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {

@@ -20,7 +20,6 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
-    "assets": "Assets",
     "comingSoon": "Coming soon",
     "tools": "Tools",
     "collapse": "Collapse sidebar",
@@ -82,7 +81,15 @@
       "position": "{build} · {index} / {total}"
     },
     "noMatches": "No matching assets",
-    "noMatchesHint": "Try another type or search."
+    "noMatchesHint": "Try another type or search.",
+    "filter": "Filter"
+  },
+  "apps": {
+    "tabsLabel": "Apps view",
+    "tabs": {
+      "all": "All apps",
+      "files": "Generated Files"
+    }
   },
   "installType": {
     "standalone": "Standalone",

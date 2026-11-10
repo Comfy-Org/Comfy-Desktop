@@ -20,7 +20,6 @@
     "navigation": "导航",
     "home": "主页",
     "apps": "应用",
-    "assets": "资产",
     "comingSoon": "即将推出",
     "tools": "工具",
     "collapse": "收起侧边栏",
@@ -82,7 +81,15 @@
       "position": "{build} · {index} / {total}"
     },
     "noMatches": "没有匹配的资产",
-    "noMatchesHint": "试试其他类型或搜索词。"
+    "noMatchesHint": "试试其他类型或搜索词。",
+    "filter": "筛选"
+  },
+  "apps": {
+    "tabsLabel": "应用视图",
+    "tabs": {
+      "all": "所有应用",
+      "files": "生成的文件"
+    }
   },
   "installType": {
     "standalone": "独立版",

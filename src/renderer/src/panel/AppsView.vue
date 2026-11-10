@@ -11,6 +11,7 @@ import {
   File,
   LayoutGrid,
   LayoutDashboard,
+  ListFilter,
   Play,
   RefreshCw,
   Search,
@@ -35,6 +36,7 @@ import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
 
+type AppsTab = 'all' | 'files'
 type KindFilter = 'all' | AssetKind
 type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
@@ -48,7 +50,9 @@ const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
+const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'files')
 const kindFilter = ref<KindFilter>('all')
+const filterMenuOpen = ref(false)
 const searchQuery = ref('')
 const viewMenuOpen = ref(false)
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
@@ -86,6 +90,15 @@ const kindOptions = computed(() => [
   { value: '3d' as const, label: t('assets.kind.3d') },
   { value: 'audio' as const, label: t('assets.kind.audio') }
 ])
+const tabOptions = computed(() => [
+  { value: 'all' as const, label: t('apps.tabs.all') },
+  { value: 'files' as const, label: t('apps.tabs.files') }
+])
+const filterLabel = computed(() =>
+  kindFilter.value === 'all'
+    ? t('assets.filter')
+    : (kindOptions.value.find((option) => option.value === kindFilter.value)?.label ?? '')
+)
 const layoutOptions = computed(() => [
   { value: 'masonry' as const, label: t('assets.layout.masonry'), icon: LayoutDashboard },
   { value: 'grid' as const, label: t('assets.layout.grid'), icon: LayoutGrid }
@@ -152,8 +165,10 @@ async function loadAssets(): Promise<void> {
 }
 
 watch(
-  () => [...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
-  loadAssets,
+  () => [tab.value, ...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
+  () => {
+    if (tab.value === 'files') void loadAssets()
+  },
   { immediate: true }
 )
 watch(visibleAssets, (list) => {
@@ -221,11 +236,11 @@ function extensionOf(name: string): string {
     ref="scroller"
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
     :class="PAGE_SPOTLIGHT_CLASS"
-    data-testid="assets-view"
+    data-testid="apps-view"
   >
     <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
       <h1 class="m-0 font-display text-display font-semibold text-foreground">
-        {{ t('sidebar.assets') }}
+        {{ t('sidebar.apps') }}
       </h1>
     </header>
 
@@ -235,13 +250,9 @@ function extensionOf(name: string): string {
       data-testid="assets-toolbar"
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
-        <SegmentedControl
-          v-model="kindFilter"
-          :options="kindOptions"
-          :label="t('assets.kindLabel')"
-        />
+        <SegmentedControl v-model="tab" :options="tabOptions" :label="t('apps.tabsLabel')" />
 
-        <div class="ml-auto flex items-center gap-2">
+        <div v-if="tab === 'files'" class="ml-auto flex items-center gap-2">
           <Button
             variant="muted-textonly"
             size="icon"
@@ -258,6 +269,38 @@ function extensionOf(name: string): string {
               aria-hidden="true"
             />
           </Button>
+          <Menu
+            v-model:open="filterMenuOpen"
+            :modal="false"
+            align="end"
+            class="z-20 min-w-[180px]"
+            :aria-label="t('assets.kindLabel')"
+          >
+            <template #trigger>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                class="gap-1.5 px-3 text-[13px]/5"
+                data-testid="assets-filter"
+              >
+                <ListFilter :size="15" aria-hidden="true" />
+                {{ filterLabel }}
+              </Button>
+            </template>
+            <MenuItem
+              v-for="option in kindOptions"
+              :key="option.value"
+              as="button"
+              type="button"
+              class="w-full"
+              :data-testid="`assets-filter-${option.value}`"
+              @select="kindFilter = option.value"
+            >
+              <span class="flex-1 text-left">{{ option.label }}</span>
+              <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
+            </MenuItem>
+          </Menu>
           <div class="w-[220px]">
             <BaseInput
               v-model="searchQuery"
@@ -352,7 +395,18 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
+      <p
+        v-if="tab === 'all'"
+        class="m-0 text-ui text-muted-foreground"
+        data-testid="apps-coming-soon"
+      >
+        {{ t('sidebar.comingSoon') }}
+      </p>
+      <div
+        v-else-if="loading && assets.length === 0"
+        role="status"
+        :aria-label="t('common.loading')"
+      >
         <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
             <Skeleton

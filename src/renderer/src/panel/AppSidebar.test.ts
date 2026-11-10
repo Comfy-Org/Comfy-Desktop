@@ -33,13 +33,12 @@ async function mountSidebar(activePage: SidebarPage = 'chooser') {
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Apps, Assets, Builds, Performance Tests, then Benchmarks', async () => {
+  it('lists Home, Apps, Builds, Performance Tests, then Benchmarks', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
       'Apps',
-      'Assets',
       'Builds',
       'Performance Tests',
       'Benchmarks'
@@ -66,7 +65,7 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith(page)
   })
 
-  it.each<SidebarPage>(['home', 'apps', 'assets'])(
+  it.each<SidebarPage>(['home', 'apps'])(
     'opens the %s section inside the dashboard',
     async (section) => {
       const wrapper = await mountSidebar('benchmarks')
@@ -79,9 +78,9 @@ describe('AppSidebar', () => {
   )
 
   it('marks a dashboard section as the current page', async () => {
-    const wrapper = await mountSidebar('assets')
+    const wrapper = await mountSidebar('apps')
 
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Assets'])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
   })
 
   it('returns Home from the Comfy mark', async () => {

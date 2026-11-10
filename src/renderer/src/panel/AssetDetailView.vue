@@ -141,7 +141,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           @click="emit('close')"
         >
           <ArrowLeft :size="15" aria-hidden="true" />
-          {{ t('sidebar.assets') }}
+          {{ t('apps.tabs.files') }}
         </Button>
         <span class="min-w-0 truncate text-ui font-medium text-foreground">{{ asset.name }}</span>
         <span class="ml-auto shrink-0 text-ui text-subtle-foreground tabular-nums">

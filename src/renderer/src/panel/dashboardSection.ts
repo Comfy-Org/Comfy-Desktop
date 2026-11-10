@@ -1,6 +1,6 @@
 import type { DashboardPage } from '../types/ipc'
 
-export const DASHBOARD_SECTIONS = ['home', 'apps', 'assets'] as const
+export const DASHBOARD_SECTIONS = ['home', 'apps'] as const
 
 export type DashboardSection = (typeof DASHBOARD_SECTIONS)[number]
 

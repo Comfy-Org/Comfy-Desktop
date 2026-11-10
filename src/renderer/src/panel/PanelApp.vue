@@ -9,7 +9,7 @@ import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
-import AssetsView from './AssetsView.vue'
+import AppsView from './AppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -467,7 +467,7 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <AssetsView v-if="dashboardSection === 'assets'" />
+            <AppsView v-if="dashboardSection === 'apps'" />
             <section
               v-else-if="dashboardSection"
               class="flex min-h-0 flex-1 flex-col"
