@@ -662,12 +662,12 @@ watch(performanceTestLogs, async () => {
           :title="t('performanceTest.title')"
           :description="t('performanceTest.description')"
         />
-        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-6">
+        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-3">
           <div
-            class="performance-test__columns grid min-h-0 w-full flex-none grid-cols-[minmax(240px,3fr)_repeat(2,minmax(0,3.5fr))] gap-6 @max-[800px]:grid-cols-1"
+            class="performance-test__columns grid min-h-0 w-full flex-none grid-cols-[minmax(240px,3fr)_repeat(2,minmax(0,3.5fr))] gap-3 @max-[800px]:grid-cols-1"
           >
             <section
-              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 [&>h2]:m-0 [&>h2]:text-neutral-200 [&>h2]:text-[13px] [&>h2]:font-normal [&>h2]:leading-[1.4]"
+              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&>h2]:m-0 [&>h2]:text-text-muted [&>h2]:text-[11px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h2]:tracking-[0.04em] [&>h2]:uppercase"
             >
               <h2>{{ t('performanceTest.selectInstance') }}</h2>
               <div class="performance-test__selection-row flex w-full items-center gap-3">
@@ -704,7 +704,7 @@ watch(performanceTestLogs, async () => {
             </section>
 
             <section
-              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 [&>h2]:m-0 [&>h2]:text-neutral-200 [&>h2]:text-[13px] [&>h2]:font-normal [&>h2]:leading-[1.4]"
+              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&>h2]:m-0 [&>h2]:text-text-muted [&>h2]:text-[11px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h2]:tracking-[0.04em] [&>h2]:uppercase"
             >
               <h2>{{ t('performanceTest.chooseWorkflow') }}</h2>
               <Button
@@ -835,7 +835,7 @@ watch(performanceTestLogs, async () => {
             </section>
 
             <section
-              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 [&>h2]:m-0 [&>h2]:text-neutral-200 [&>h2]:text-[13px] [&>h2]:font-normal [&>h2]:leading-[1.4]"
+              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&>h2]:m-0 [&>h2]:text-text-muted [&>h2]:text-[11px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h2]:tracking-[0.04em] [&>h2]:uppercase"
             >
               <h2>{{ t('performanceTest.measurementSettings') }}</h2>
               <div
@@ -848,7 +848,7 @@ watch(performanceTestLogs, async () => {
                   <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
                 </span>
                 <div
-                  class="performance-test__setting-input ml-auto w-[260px] min-w-[180px] flex-[0_1_260px]"
+                  class="performance-test__setting-input ml-auto w-[140px] min-w-[80px] flex-[0_1_140px]"
                 >
                   <Input
                     id="performance-test-warmup-runs"
@@ -872,7 +872,7 @@ watch(performanceTestLogs, async () => {
                   <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
                 </span>
                 <div
-                  class="performance-test__setting-input ml-auto w-[260px] min-w-[180px] flex-[0_1_260px]"
+                  class="performance-test__setting-input ml-auto w-[140px] min-w-[80px] flex-[0_1_140px]"
                 >
                   <Input
                     id="performance-test-measured-runs"
@@ -912,7 +912,9 @@ watch(performanceTestLogs, async () => {
             </section>
           </div>
 
-          <section class="performance-test__results-section flex w-full flex-none flex-col gap-4">
+          <section
+            class="performance-test__results-section flex w-full flex-none flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
+          >
             <CollapsibleSectionToggle
               :expanded="resultsExpanded"
               :label="t('performanceTest.results')"
@@ -920,7 +922,7 @@ watch(performanceTestLogs, async () => {
             />
             <div
               v-show="resultsExpanded"
-              class="performance-test__results rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] p-5 text-[13px] text-text-muted [&>h3]:mt-5 [&>h3]:mb-3 [&>h3]:text-neutral-200 [&>h3]:text-[13px] [&>h3]:font-normal"
+              class="performance-test__results text-[13px] text-text-muted [&>h3]:mt-5 [&>h3]:mb-3 [&>h3]:text-neutral-200 [&>h3]:text-[13px] [&>h3]:font-normal"
             >
               <div
                 v-if="isLaunching && totalProgressRuns > 0"
@@ -1143,7 +1145,7 @@ watch(performanceTestLogs, async () => {
             </div>
           </section>
           <section
-            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col gap-4"
+            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
             :class="{ 'performance-test__logs-section--collapsed': !logsExpanded }"
           >
             <CollapsibleSectionToggle
@@ -1154,7 +1156,7 @@ watch(performanceTestLogs, async () => {
             <div
               v-show="logsExpanded"
               ref="logsElement"
-              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] p-5 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
+              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto rounded-lg bg-[color-mix(in_srgb,black_35%,transparent)] px-4 py-3 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
               aria-live="polite"
             >
               {{ performanceTestLogs || t('performanceTest.logsPlaceholder') }}
