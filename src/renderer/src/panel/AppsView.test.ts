@@ -112,6 +112,19 @@ describe('AppsView', () => {
     expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
   })
 
+  it('loads the Cloud assets once when the account has several Cloud builds', async () => {
+    const cloud = (id: string) => ({ ...build(id, id), sourceCategory: 'cloud' })
+    useInstallationStore().installations = [cloud('cloud-a'), cloud('cloud-b')]
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = mount(AppsView)
+    await flushPromises()
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+
+    expect(listAssets.mock.calls.map(([id]) => id)).toEqual(['cloud-a'])
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+  })
+
   it('filters by asset type and by name', async () => {
     listAssets.mockResolvedValue([
       asset('a', 'surfer.mp4', 'video'),
