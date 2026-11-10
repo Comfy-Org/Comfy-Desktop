@@ -13,7 +13,6 @@ import {
   Columns2,
   Download,
   Ellipsis,
-  Globe,
   Image as ImageIcon,
   ImageUp,
   Link2,
@@ -21,11 +20,9 @@ import {
   Plus,
   Share2
 } from 'lucide-vue-next'
-import { DropdownMenuRoot, DropdownMenuTrigger, PopoverRoot, PopoverTrigger } from 'reka-ui'
+import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
-import PopoverContent from '../../ui/PopoverContent.vue'
-import Switch from '../../ui/Switch.vue'
 import Badge from '../../ui/Badge.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
@@ -39,6 +36,8 @@ import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
+import AssetDetail from '../assets/AssetDetail.vue'
+import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
 
@@ -137,7 +136,9 @@ const LOOKS = [
 const takes = computed(() => LOOKS.slice(0, count.value))
 /** Everything you've made here, newest first: each run adds its takes,
  *  so earlier ones stay along the bottom to go back to. */
-const outputs = ref<{ src: string; filter: string; title: string; at: number }[]>([])
+const outputs = ref<{ src: string; filter: string; title: string; at: number; asset: MarAsset }[]>(
+  []
+)
 let runs = 0
 const take = ref(0)
 const result = computed(
@@ -223,7 +224,8 @@ function run(): void {
           src,
           filter: LOOKS[(runs + i) % LOOKS.length] ?? 'none',
           title: example.value?.title ?? name,
-          at: Date.now()
+          at: Date.now(),
+          asset: saveToAssets(src, runs + i + 1)
         })),
         ...outputs.value
       ]
@@ -321,10 +323,29 @@ const histGroups = computed(() => {
     groups.unshift({ label: month(Date.now()), items: [] })
   return groups
 })
+// Every output is an asset from the moment it lands: it shows in Assets
+// (Comfy Cloud) and opens in the same modal there and here.
+function saveToAssets(src: string, n: number): MarAsset {
+  const video = kind.value === 'Video'
+  const a: MarAsset = {
+    id: `app-${appId}-${Date.now()}-${n}`,
+    name: `${slug.value.replace(/-/g, '_')}_${String(n).padStart(5, '0')}.${video ? 'mp4' : 'png'}`,
+    type: video ? 'video' : 'image',
+    source: 'cloud',
+    src,
+    envId: 'cloud',
+    size: video ? '8.4 MB' : '2.1 MB',
+    sizeMb: video ? 8.4 : 2.1,
+    age: 0,
+    when: 'Today'
+  }
+  assets.items.unshift(a)
+  return a
+}
+const detail = ref<MarAsset | null>(null)
 function openOutput(i: number): void {
-  take.value = i
-  state.value = 'done'
-  focused.value = true
+  const o = outputs.value[i]
+  if (o) detail.value = o.asset
 }
 
 // Share: the app's link, and once you've run it, your result with it.
@@ -484,7 +505,8 @@ function back(): void {
             <Select v-model="histSort" :options="HIST_SORTS" label="Sort" class="w-40" />
           </template>
           <div class="mar-app-editor-actions">
-            <!-- Compare and Share: icons alone, white on no fill. -->
+            <!-- Compare: an icon alone, white on no fill. Share and Download
+                 live on each output's cover in History. -->
             <Button
               v-if="hasResult && state !== 'running' && showCanvas"
               variant="ghost"
@@ -496,60 +518,6 @@ function back(): void {
               @click="comparing = !comparing"
               ><Columns2 :size="16"
             /></Button>
-            <PopoverRoot>
-              <PopoverTrigger as-child>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Share"
-                  title="Share"
-                  class="mar-app-editor-icon"
-                  ><Share2 :size="16"
-                /></Button>
-              </PopoverTrigger>
-              <!-- Share: the app and its link, copied in one click; once you've
-                   run it, whether your result goes with it. -->
-              <PopoverContent align="end" class="mar-app-share w-[320px] border-0 p-0">
-                <div class="mar-app-share-head">
-                  <img :src="thumb(thumbId)" alt="" />
-                  <div class="min-w-0">
-                    <p class="truncate text-ui font-semibold">{{ name }}</p>
-                    <p class="text-[12px] text-balance text-muted-foreground">
-                      Anyone with the link can run it, on their credits.
-                    </p>
-                  </div>
-                </div>
-                <label v-if="state === 'done'" class="mar-app-share-opt">
-                  <img :src="result" alt="" :style="{ filter: shownFilter }" />
-                  <span class="min-w-0 flex-1">
-                    <span class="block text-ui">Include your result</span>
-                    <span class="block text-[12px] text-subtle-foreground"
-                      >They see it before they run.</span
-                    >
-                  </span>
-                  <Switch v-model="withResult" aria-label="Include your result" />
-                </label>
-                <div class="mar-app-share-link">
-                  <button type="button" class="mar-app-share-url" title="Copy link" @click="copy">
-                    <Globe :size="13" /><span>{{ link }}</span>
-                  </button>
-                  <Button variant="primary" size="sm" class="mar-app-share-copy" @click="copy"
-                    ><Check v-if="copied" :size="13" /><Link2 v-else :size="13" />{{
-                      copied ? 'Copied' : 'Copy'
-                    }}</Button
-                  >
-                </div>
-              </PopoverContent>
-            </PopoverRoot>
-            <!-- Download only once there is something of yours to download. -->
-            <Button
-              v-if="state === 'done'"
-              variant="primary"
-              size="sm"
-              class="ml-1"
-              @click="toast('Downloading…')"
-              ><Download :size="13" />Download</Button
-            >
             <!-- More: what you'd do now and then, out of the way. -->
             <DropdownMenuRoot>
               <DropdownMenuTrigger as-child>
@@ -625,7 +593,7 @@ function back(): void {
              in progress leading; one opens large. -->
         <div
           v-else-if="onHistoryGrid && (outputs.length || state === 'running')"
-          class="mar-app-editor-grid"
+          class="mar-app-editor-grid is-gallery"
         >
           <template v-for="(g, gi) in histGroups" :key="g.label">
             <p class="mar-app-editor-when">{{ g.label }}</p>
@@ -641,16 +609,38 @@ function back(): void {
                 }}<span class="ml-auto tabular-nums">{{ pct }}%</span></span
               >
             </div>
-            <button
+            <!-- Each output opens as the asset it is; its Share and
+                 Download sit on its cover, on hover. -->
+            <div
               v-for="{ o, i } in g.items"
               :key="outputs.length - i"
-              type="button"
+              role="button"
+              tabindex="0"
               class="mar-app-editor-out"
-              :aria-label="`Open ${o.title}`"
+              :aria-label="`Open ${o.asset.name}`"
               @click="openOutput(i)"
+              @keydown.enter="openOutput(i)"
             >
               <img :src="o.src" alt="" :style="{ filter: o.filter }" />
-            </button>
+              <span class="mar-app-editor-out-acts">
+                <button
+                  type="button"
+                  aria-label="Share"
+                  title="Share"
+                  @click.stop="toast('Link copied')"
+                >
+                  <Share2 :size="15" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Download"
+                  title="Download"
+                  @click.stop="toast('Downloading…')"
+                >
+                  <Download :size="15" />
+                </button>
+              </span>
+            </div>
           </template>
           <p v-if="!histGroups.length" class="mar-app-editor-nohits">
             Nothing matches “{{ histQuery }}”.
@@ -813,6 +803,14 @@ function back(): void {
           </div>
         </div>
       </main>
+      <AssetDetail
+        v-if="detail"
+        :asset="detail"
+        :list="outputs.map((o) => o.asset)"
+        build="Comfy Cloud"
+        @go="detail = $event"
+        @close="detail = null"
+      />
     </div>
     <slot name="below" />
   </div>
@@ -1191,6 +1189,35 @@ function back(): void {
   border-radius: var(--radius-card);
   background: var(--color-secondary-background);
   outline: none;
+}
+.mar-app-editor-out-acts {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.mar-app-editor-out:is(:hover, :focus-visible, :focus-within) .mar-app-editor-out-acts {
+  opacity: 1;
+}
+/* Dark glass, as the badges, so it reads on any picture. */
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-out-acts button {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 999px;
+  background: rgb(14 14 16 / 0.5);
+  backdrop-filter: blur(16px) saturate(1.6);
+  color: #fff;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-out-acts button:hover {
+  background: rgb(14 14 16 / 0.7);
 }
 .mar-app-editor-out img {
   position: absolute;
