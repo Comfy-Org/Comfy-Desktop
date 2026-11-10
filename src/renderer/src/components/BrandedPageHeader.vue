@@ -15,5 +15,11 @@ defineProps<{
         {{ description }}
       </p>
     </div>
+    <div
+      v-if="$slots.actions"
+      class="branded-page-header__actions ml-auto flex flex-none items-center gap-2 @max-[700px]:ml-0"
+    >
+      <slot name="actions" />
+    </div>
   </header>
 </template>

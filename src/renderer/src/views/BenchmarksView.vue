@@ -8,6 +8,7 @@ import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupIte
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   ArrowUpDown,
+  ChartColumn,
   FolderOpen,
   GripVertical,
   ImageDown,
@@ -831,33 +832,61 @@ onActivated(() => {
     data-testid="benchmarks"
   >
     <div
-      class="benchmarks__layout @container relative flex h-full min-h-0 w-full flex-col gap-4 overflow-x-hidden overflow-y-auto text-neutral-100"
+      class="benchmarks__layout @container relative flex h-full min-h-0 w-full flex-col gap-8 overflow-x-hidden overflow-y-auto text-neutral-100"
     >
-      <BrandedPageHeader
-        :title="t('benchmarks.title')"
-        :description="t('benchmarks.description')"
-      />
+      <BrandedPageHeader :title="t('benchmarks.title')" :description="t('benchmarks.description')">
+        <template #actions>
+          <Button
+            variant="secondary"
+            size="lg"
+            class="benchmarks__open-folder"
+            type="button"
+            :disabled="loading"
+            :title="benchmarksFolderPath"
+            @click="selectBenchmarksFolder"
+          >
+            <FolderOpen :size="16" aria-hidden="true" />
+            {{ t('benchmarks.openFolder') }}
+          </Button>
+        </template>
+      </BrandedPageHeader>
 
       <section
-        class="benchmarks__card min-w-0 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__library"
+        class="benchmarks__card benchmarks__library flex min-w-0 flex-col gap-3"
         :aria-label="t('benchmarks.runsLibrary')"
       >
         <div
-          class="benchmarks__filters grid grid-cols-[auto_minmax(180px,1.5fr)_repeat(4,minmax(115px,1fr))_auto] gap-2.5 [&>*]:min-w-0 @max-[1000px]:grid-cols-[auto_repeat(4,minmax(0,1fr))] @max-[700px]:grid-cols-[auto_minmax(0,1fr)]"
+          class="benchmarks__filters flex flex-wrap items-center gap-2 @max-[860px]:[&>div]:w-full"
         >
-          <div class="benchmarks__folder-controls flex items-center gap-1">
-            <Button
-              variant="secondary"
-              size="lg"
-              class="benchmarks__open-folder"
-              type="button"
-              :disabled="loading"
-              :title="benchmarksFolderPath"
-              @click="selectBenchmarksFolder"
-            >
-              <FolderOpen :size="16" aria-hidden="true" />
-              {{ t('benchmarks.openFolder') }}
-            </Button>
+          <div
+            class="benchmarks__filter-selects flex min-w-0 flex-1 items-center gap-2 [&>*]:min-w-0 [&>*]:flex-1 [&>*]:max-w-[170px]"
+          >
+            <BaseSelect
+              v-model="workspaceFilter"
+              :options="workspaceOptions"
+              :aria-label="t('benchmarks.allWorkspaces')"
+              compact
+            />
+            <BaseSelect
+              v-model="instanceFilter"
+              :options="instanceOptions"
+              :aria-label="t('benchmarks.allInstances')"
+              compact
+            />
+            <BaseSelect
+              v-model="hardwareFilter"
+              :options="hardwareOptions"
+              :aria-label="t('benchmarks.allHardware')"
+              compact
+            />
+            <BaseSelect
+              v-model="workflowFilter"
+              :options="workflowOptions"
+              :aria-label="t('benchmarks.allWorkflows')"
+              compact
+            />
+          </div>
+          <div class="benchmarks__folder-controls ml-auto flex items-center gap-2">
             <Button
               variant="muted-textonly"
               size="icon"
@@ -877,88 +906,68 @@ onActivated(() => {
                 aria-hidden="true"
               />
             </Button>
-          </div>
-          <BaseInput
-            v-model="searchQuery"
-            class="benchmarks__search @max-[1000px]:col-[2/-1] @max-[700px]:col-2"
-            :placeholder="t('benchmarks.searchPlaceholder')"
-            :aria-label="t('benchmarks.searchPlaceholder')"
-            :spellcheck="false"
-          >
-            <template #leading><Search :size="16" aria-hidden="true" /></template>
-          </BaseInput>
-          <BaseSelect
-            v-model="workspaceFilter"
-            :options="workspaceOptions"
-            :aria-label="t('benchmarks.allWorkspaces')"
-            compact
-          />
-          <BaseSelect
-            v-model="instanceFilter"
-            :options="instanceOptions"
-            :aria-label="t('benchmarks.allInstances')"
-            compact
-          />
-          <BaseSelect
-            v-model="hardwareFilter"
-            :options="hardwareOptions"
-            :aria-label="t('benchmarks.allHardware')"
-            compact
-          />
-          <BaseSelect
-            v-model="workflowFilter"
-            :options="workflowOptions"
-            :aria-label="t('benchmarks.allWorkflows')"
-            compact
-          />
-          <details
-            ref="libraryColumnsPicker"
-            class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
-          >
-            <Button as-child variant="secondary" size="icon-lg">
-              <summary class="secondary justify-center" :title="t('benchmarks.columns')">
-                <SlidersHorizontal :size="16" aria-hidden="true" />
-                <span class="sr-only">{{ t('benchmarks.columns') }}</span>
-              </summary>
-            </Button>
-            <div
-              class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
+            <BaseInput
+              v-model="searchQuery"
+              class="benchmarks__search w-48 @max-[860px]:flex-1"
+              :placeholder="t('benchmarks.searchPlaceholder')"
+              :aria-label="t('benchmarks.searchPlaceholder')"
+              :spellcheck="false"
             >
-              <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
-              <label v-for="key in availableColumnKeys" :key="key">
-                <Switch
-                  :model-value="visibleColumnKeys.has(key)"
-                  :disabled="key === 'workflowName'"
-                  :data-testid="`benchmark-column-${key}`"
-                  @update:model-value="toggleColumn(key)"
-                />
-                <span>{{ columnLabel(key) }}</span>
-              </label>
-            </div>
-          </details>
+              <template #leading><Search :size="16" aria-hidden="true" /></template>
+            </BaseInput>
+            <details
+              ref="libraryColumnsPicker"
+              class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
+            >
+              <Button as-child variant="secondary" size="icon-lg">
+                <summary class="secondary justify-center" :title="t('benchmarks.columns')">
+                  <SlidersHorizontal :size="16" aria-hidden="true" />
+                  <span class="sr-only">{{ t('benchmarks.columns') }}</span>
+                </summary>
+              </Button>
+              <div
+                class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
+              >
+                <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
+                <label v-for="key in availableColumnKeys" :key="key">
+                  <Switch
+                    :model-value="visibleColumnKeys.has(key)"
+                    :disabled="key === 'workflowName'"
+                    :data-testid="`benchmark-column-${key}`"
+                    @update:model-value="toggleColumn(key)"
+                  />
+                  <span>{{ columnLabel(key) }}</span>
+                </label>
+              </div>
+            </details>
+          </div>
         </div>
 
-        <div v-if="loading" class="benchmarks__state px-4 py-8 text-center text-text-muted">
+        <div
+          v-if="loading"
+          class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted"
+        >
           {{ t('common.loading') }}
         </div>
         <div
           v-else-if="loadError"
-          class="benchmarks__state px-4 py-8 text-center text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
+          class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
         >
           {{ t('benchmarks.loadError') }}
         </div>
         <div
           v-else-if="benchmarks.length === 0"
-          class="benchmarks__state px-4 py-8 text-center text-text-muted"
+          class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted"
         >
+          <ChartColumn :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
           {{ t('benchmarks.empty') }}
         </div>
         <template v-else>
           <div
-            class="benchmarks__table-scroll mt-3 max-h-[260px] overflow-auto rounded-lg border border-solid border-[var(--chooser-surface-border)]"
+            class="benchmarks__table-scroll max-h-[320px] overflow-auto border-t border-solid border-[var(--chooser-surface-border)]"
           >
             <table
-              class="benchmarks__table w-full min-w-[1040px] border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-800 [&_thead_th]:font-medium [&_thead_th]:text-neutral-200"
+              class="benchmarks__table w-full border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-900 [&_thead_th]:font-normal [&_thead_th]:text-text-muted [&_tbody_tr:hover>td]:bg-[color-mix(in_srgb,white_3%,transparent)]"
             >
               <thead>
                 <tr>
@@ -1069,9 +1078,9 @@ onActivated(() => {
                   </td>
                   <td class="benchmarks__actions-cell w-11 text-center">
                     <Button
-                      variant="destructive-textonly"
+                      variant="muted-textonly"
                       size="icon"
-                      class="benchmarks__delete-record"
+                      class="benchmarks__delete-record hover:text-danger focus-visible:text-danger"
                       type="button"
                       :disabled="deletingIds.has(benchmark.id) || editingSessionId === benchmark.id"
                       :aria-label="
@@ -1098,14 +1107,18 @@ onActivated(() => {
       </section>
 
       <div
-        class="benchmarks__comparison-section flex flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
+        class="benchmarks__comparison-section flex flex-col gap-4 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
       >
-        <CollapsibleSectionToggle
-          id="comparison-title"
-          :expanded="comparisonExpanded"
-          :label="t('benchmarks.comparison')"
-          @toggle="comparisonExpanded = !comparisonExpanded"
-        />
+        <div
+          class="benchmarks__comparison-head flex items-center border-b border-solid border-[var(--chooser-surface-border)] pb-3"
+        >
+          <CollapsibleSectionToggle
+            id="comparison-title"
+            :expanded="comparisonExpanded"
+            :label="t('benchmarks.comparison')"
+            @toggle="comparisonExpanded = !comparisonExpanded"
+          />
+        </div>
 
         <section
           v-show="comparisonExpanded"
@@ -1116,7 +1129,7 @@ onActivated(() => {
             {{ t('benchmarks.reorderComparisonHint') }}
           </span>
           <div
-            class="benchmarks__comparison-toolbar mb-3.5 flex flex-wrap items-center justify-end gap-3"
+            class="benchmarks__comparison-toolbar mb-4 flex flex-wrap items-center justify-end gap-2"
           >
             <ToggleGroup
               type="single"
@@ -1227,7 +1240,7 @@ onActivated(() => {
 
           <div
             v-if="selectedBenchmarks.length === 0"
-            class="benchmarks__state px-4 py-8 text-center text-text-muted"
+            class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted"
           >
             {{ t('benchmarks.selectPrompt') }}
           </div>
