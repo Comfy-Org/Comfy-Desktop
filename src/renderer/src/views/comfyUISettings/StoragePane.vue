@@ -4,9 +4,9 @@ import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { AlertTriangle } from 'lucide-vue-next'
 import { useModal } from '../../composables/useModal'
-import GlobalSettingsMicroSection from '../../comfyTitlePopup/globalSettings/GlobalSettingsMicroSection.vue'
 import ModelsDirList from '../../comfyTitlePopup/globalSettings/ModelsDirList.vue'
 import StorageDirRow from './StorageDirRow.vue'
+import BuildSettingsSection from './BuildSettingsSection.vue'
 import BooleanToggle from './BooleanToggle.vue'
 import ExtraModelPathsModal, { type ExtraModelPathSection } from './ExtraModelPathsModal.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
@@ -330,7 +330,7 @@ function handleRevealPath(path: string): void {
 </script>
 
 <template>
-  <div class="storage-pane flex flex-col gap-4">
+  <div class="storage-pane @container/build-settings flex flex-col gap-8">
     <div
       v-if="showRestartWarning"
       class="storage-note is-warning m-0 flex items-center gap-2 rounded-lg border border-solid border-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-3 py-2.5 font-medium text-[var(--warning)] transition-[color,background-color,border-color] duration-[160ms] ease-[ease]"
@@ -346,13 +346,13 @@ function handleRevealPath(path: string): void {
       </p>
     </div>
 
-    <GlobalSettingsMicroSection
+    <BuildSettingsSection
       :title="t('settings.modelStorage')"
       :tooltip="t('tooltips.instanceModels')"
     >
       <template v-if="useSharedModelsField" #actions>
         <label
-          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
         >
           <span>{{ t('comfyUISettings.includeSharedDirs') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
@@ -384,12 +384,12 @@ function handleRevealPath(path: string): void {
       >
         {{ t('comfyUISettings.manageSharedDirs') }}
       </Button>
-    </GlobalSettingsMicroSection>
+    </BuildSettingsSection>
 
-    <GlobalSettingsMicroSection :title="t('settings.inputStorage')">
+    <BuildSettingsSection :title="t('settings.inputStorage')">
       <template v-if="useSharedInputField" #actions>
         <label
-          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
         >
           <span>{{ t('comfyUISettings.useSharedInput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
@@ -419,12 +419,12 @@ function handleRevealPath(path: string): void {
         @browse="handleBrowseInputDir"
         @reset="handleResetInputDir"
       />
-    </GlobalSettingsMicroSection>
+    </BuildSettingsSection>
 
-    <GlobalSettingsMicroSection :title="t('settings.outputStorage')">
+    <BuildSettingsSection :title="t('settings.outputStorage')">
       <template v-if="useSharedOutputField" #actions>
         <label
-          class="storage-header-toggle inline-flex min-w-0 cursor-pointer items-center gap-1.5 text-[12px] text-text-muted [&>span]:truncate"
+          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
         >
           <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />
@@ -454,7 +454,7 @@ function handleRevealPath(path: string): void {
         @browse="handleBrowseOutputDir"
         @reset="handleResetOutputDir"
       />
-    </GlobalSettingsMicroSection>
+    </BuildSettingsSection>
 
     <ExtraModelPathsModal
       :open="extraModalOpen"
