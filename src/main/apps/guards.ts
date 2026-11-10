@@ -599,7 +599,8 @@ export const DOWNLOAD_FOLDERS = [
   'diffusion_models',
   'model_patches',
   'background_removal',
-  'frame_interpolation'
+  'frame_interpolation',
+  'geometry_estimation'
 ]
 
 export interface DownloadRequest {

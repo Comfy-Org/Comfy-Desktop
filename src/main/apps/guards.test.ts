@@ -457,7 +457,8 @@ describe('downloadRequest', () => {
       'text_encoders',
       'model_patches',
       'background_removal',
-      'frame_interpolation'
+      'frame_interpolation',
+      'geometry_estimation'
     ]) {
       expect(downloadRequest({ ...ok, folder })).not.toHaveProperty('error')
     }
