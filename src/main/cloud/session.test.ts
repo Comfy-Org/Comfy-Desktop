@@ -1655,6 +1655,23 @@ describe('CloudSession switches a local ComfyUI view requests', () => {
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'view_requested' }])
   })
 
+  it('lets a view request joining a restored switch still ask the browser', async () => {
+    saveGrant(grantOn('w1'))
+    const slow = deferred<Response>()
+    mintReply = () => slow.promise
+    browserSignInReturns(signedInResult(grantOn('w2')))
+    const session = new CloudSession()
+
+    const restored = session.switchWorkspace('w2', 'restored')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    const requested = session.switchWorkspace('w2', 'requested')
+    slow.resolve(json(403, { code: 'sso_required' }))
+
+    await expect(requested).resolves.toMatchObject({ workspaceId: 'w2' })
+    await restored
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
   it('moves without a browser to the anchor or a workspace Desktop already holds', async () => {
     saveGrant(grantOn('w1'))
     const session = new CloudSession()

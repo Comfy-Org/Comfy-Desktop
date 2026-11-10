@@ -70,13 +70,15 @@ function signInAt(workspaceId: string | null): void {
 }
 
 function grantSession(
-  getGrantAccessToken: () => Promise<string | null>
+  getGrantAccessToken: () => Promise<string | null>,
+  getAccessToken: () => Promise<string | null> = getGrantAccessToken
 ): ConstructorParameters<typeof ViewWorkspaceGrants>[0] {
   return {
     currentWorkspaceId: () => current,
     currentSubject: () => (current ? user : null),
     currentAuthGeneration: () => generation,
     getGrantAccessToken,
+    getAccessToken,
     isWorkspaceMintAllowed: async () => true,
     endGrantFamily: () => {}
   }
@@ -314,6 +316,32 @@ describe('ViewWorkspaceGrants', () => {
       accessToken('ws-1', 'comfy-cloud:user:read')
     )
     expect(mint).not.toHaveBeenCalled()
+  })
+
+  it('hands a view the token Desktop holds for a workspace it reached without the mint scope', async () => {
+    const held = accessToken('ws-1', 'comfy-cloud:user:read')
+    grants = new ViewWorkspaceGrants(
+      grantSession(
+        async () => accessToken('ws-2', 'comfy-cloud:user:read'),
+        async () => held
+      ),
+      mint
+    )
+
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(held)
+    expect(mint).not.toHaveBeenCalled()
+  })
+
+  it('never hands out a token that can mint, even one Desktop holds for the workspace', async () => {
+    grants = new ViewWorkspaceGrants(
+      grantSession(
+        async () => accessToken('ws-2', 'comfy-cloud:user:read'),
+        async () => accessToken('ws-1')
+      ),
+      mint
+    )
+
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
   })
 
   it('never hands one account a token minted for another account in the same workspace', async () => {
