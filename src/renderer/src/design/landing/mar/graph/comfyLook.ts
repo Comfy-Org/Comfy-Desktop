@@ -52,8 +52,8 @@ watch(
       // Storage blocked: the pick lasts for this window only.
     }
     // Production is ComfyUI's own chrome: top bar, workflow tabs, docked rail.
-    if (id === 'production') graphStyle.id = 'current'
-    else assetTab.asset = null
+    graphStyle.id = id === 'production' ? 'current' : 'glass'
+    if (id !== 'production') assetTab.asset = null
   },
   { immediate: true }
 )

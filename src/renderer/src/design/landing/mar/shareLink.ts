@@ -23,7 +23,6 @@ import { assetsEverywhere } from './assets/assetsEverywhere'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
-import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { LOOKS, marLook } from './looks/looks'
 import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
 import { PORTS, ports } from './navOptions'
@@ -141,7 +140,6 @@ const PARTS: Part[] = [
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
-  one('graph', graphStyle, 'glass', GRAPH_STYLES),
   // After Graph look: Production sets it to Current.
   one('comfyui', comfyLook, 'proposal', COMFY_LOOKS),
   one('look', marLook, 'current', LOOKS),

@@ -20,7 +20,6 @@ import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
 import { CREDITS_STATES, creditsState } from './credits'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
-import { GRAPH_STYLES, graphStyle } from './graph/graphStyle'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import {
   ONBOARDINGS,
@@ -142,7 +141,6 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'comfyLook', show: () => when.graph.value },
-  { id: 'graph', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
 ]
 const MORE: TweakId[] = ['screen', 'look', 'knobs']
@@ -393,9 +391,6 @@ const linkSays = computed(() => {
                 ? 'As it ships, plus Better Assets Phase 1. Inspect asset opens a tab.'
                 : 'Our take on the new structure.'
             }}</span>
-          </Row>
-          <Row :show="shows('graph') && comfyLook.id === 'proposal'" label="Graph look">
-            <Seg v-model="graphStyle.id" label="Graph look" :options="GRAPH_STYLES" />
           </Row>
           <Row :show="shows('ports')"><NavOptionsTuner /></Row>
         </section>
