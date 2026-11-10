@@ -210,9 +210,9 @@ export async function revoke(
       redirect: 'manual',
       signal: controller.signal
     })
-    const detail = await resp.text().catch(() => '')
-    if (resp.status === 200) return 'settled'
+    if (resp.ok) return 'settled'
     if (resp.status !== 400 && resp.status !== 401) return 'retry'
+    const detail = await resp.text().catch(() => '')
     return PERMANENT_REVOKE_ERRORS.has(oauthErrorOf(detail) ?? '') ? 'settled' : 'retry'
   } catch {
     return 'retry'

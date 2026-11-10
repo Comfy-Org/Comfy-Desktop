@@ -128,6 +128,17 @@ describe('Revocations', () => {
     expect(queuedTokens()).toEqual([])
   })
 
+  it.each([200, 202, 204])('drops the token once Cloud answers %i', async (code) => {
+    replies = [() => new Response(null, { status: code })]
+    const revocations = new Revocations()
+
+    revocations.add(revocation('refresh-1'))
+    await revocations.drain()
+
+    expect(requests).toHaveLength(1)
+    expect(queuedTokens()).toEqual([])
+  })
+
   it.each<[string, Reply]>([
     ['offline', offline],
     ['a 500', status(500)],
@@ -136,7 +147,7 @@ describe('Revocations', () => {
     ['a 404 before Cloud serves the endpoint', status(404)],
     ['a 400 without an OAuth error', status(400, { message: 'bad gateway page' })],
     ['a 400 with a transient OAuth error', status(400, { error: 'temporarily_unavailable' })],
-    ['a 202', status(202)],
+    ['a 502', status(502)],
     ['a redirect', () => new Response(null, { status: 307, headers: { location: 'https://x' } })]
   ])('keeps the token after %s and revokes it once Cloud is reachable', async (_name, failure) => {
     vi.useFakeTimers()
