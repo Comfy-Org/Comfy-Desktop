@@ -9,6 +9,7 @@ import {
   FolderInput,
   Image,
   ListFilter,
+  Palette,
   Puzzle,
   Search,
   Tag,
@@ -36,6 +37,7 @@ import { fieldVariants } from '../../ui/field.variants'
 import { floatingSurface, menuItem } from '../../ui/menu.styles'
 import { PORTAL_TO } from '../../ui/portal'
 import RangeCalendar from './RangeCalendar.vue'
+import { LABELS } from '../assets/assetLabels'
 import { activeFilters, noFilter, type AssetFilter, type AssetType } from '../assets/assetFilters'
 
 /**
@@ -132,6 +134,7 @@ const found = computed(() => ({
   types: types.filter((t) => match(t.label)),
   dates: DATES.filter((d) => match(d.label)),
   tags: tags.filter(match),
+  labels: LABELS.filter((l) => match(l.label)),
   meta: META.map((m) => ({ ...m, values: metaOptions(m.key).filter(match) })).filter(
     (m) => m.values.length
   )
@@ -233,6 +236,21 @@ const searching = computed(() => !!q.value.trim())
               <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
             </DropdownMenuCheckboxItem>
           </template>
+          <template v-if="found.labels.length">
+            <DropdownMenuLabel class="afm-label">Label</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem
+              v-for="l in found.labels"
+              :key="l.value"
+              :class="item"
+              :model-value="f.labels.includes(l.value)"
+              @select.prevent="f = { ...f, labels: toggle(f.labels, l.value) }"
+            >
+              <i class="afm-dot" :style="{ background: l.color }" /><span class="afm-grow">{{
+                l.label
+              }}</span>
+              <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+            </DropdownMenuCheckboxItem>
+          </template>
           <template v-for="m in found.meta" :key="m.key">
             <DropdownMenuLabel class="afm-label">{{ m.label }}</DropdownMenuLabel>
             <DropdownMenuCheckboxItem
@@ -252,6 +270,7 @@ const searching = computed(() => !!q.value.trim())
               !found.types.length &&
               !found.dates.length &&
               !found.tags.length &&
+              !found.labels.length &&
               !found.meta.length
             "
             class="afm-none"
@@ -372,6 +391,29 @@ const searching = computed(() => !!q.value.trim())
                   @select.prevent="f = { ...f, anyTag: !f.anyTag }"
                 >
                   <span class="afm-grow">Match any tag</span>
+                  <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuPortal>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger :class="item">
+              <Palette :size="16" class="afm-icon" /><span class="afm-grow">Label</span
+              ><span v-if="f.labels.length" class="aff-badge">{{ f.labels.length }}</span
+              ><ChevronRight :size="16" class="afm-icon" />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuPortal :to="PORTAL_TO">
+              <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
+                <DropdownMenuCheckboxItem
+                  v-for="l in LABELS"
+                  :key="l.value"
+                  :class="item"
+                  :model-value="f.labels.includes(l.value)"
+                  @select.prevent="f = { ...f, labels: toggle(f.labels, l.value) }"
+                >
+                  <i class="afm-dot" :style="{ background: l.color }" /><span class="afm-grow">{{
+                    l.label
+                  }}</span>
                   <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
                 </DropdownMenuCheckboxItem>
               </DropdownMenuSubContent>
@@ -545,6 +587,12 @@ const searching = computed(() => !!q.value.trim())
 }
 .afm.is-ds .afm-item[data-state='open'] {
   background: var(--color-secondary-background);
+}
+.afm-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 999px;
 }
 .afm-fold {
   transition: transform 160ms ease;

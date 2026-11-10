@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   Box,
   Calendar,
@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock,
   Image,
+  Palette,
   Puzzle,
   Search,
   Tag,
@@ -15,6 +16,7 @@ import {
   X
 } from 'lucide-vue-next'
 import type { MarAsset } from '../pages/assetsStore'
+import { LABELS } from './assetLabels'
 import { metaIn, tagsIn, type AssetFilter, type AssetType } from './assetFilters'
 
 /**
@@ -32,7 +34,7 @@ const { pool = [], types = [] } = defineProps<{
   types?: readonly { value: AssetType; label: string }[]
 }>()
 
-type Key = 'date' | 'tags' | 'types' | 'models' | 'loras' | 'workflows'
+type Key = 'date' | 'tags' | 'labels' | 'types' | 'models' | 'loras' | 'workflows'
 type MetaKey = 'models' | 'loras' | 'workflows'
 
 const recent = ref<string[]>([])
@@ -56,6 +58,7 @@ const GROUPS = computed(() => [
     items: [
       { key: 'date' as Key, label: 'Date', icon: Calendar },
       { key: 'tags' as Key, label: 'Tag', icon: Tag },
+      { key: 'labels' as Key, label: 'Label', icon: Palette },
       { key: 'types' as Key, label: 'Media type', icon: Image }
     ]
   },
@@ -83,6 +86,8 @@ function values(k: Key): { id: string; text: string; on: boolean }[] {
     }))
   if (k === 'types')
     return types.map((t) => ({ id: t.value, text: t.label, on: f.types.includes(t.value) }))
+  if (k === 'labels')
+    return LABELS.map((l) => ({ id: l.value, text: l.label, on: f.labels.includes(l.value) }))
   if (k === 'tags') return tagsIn(pool).map((v) => ({ id: v, text: v, on: f.tags.includes(v) }))
   return meta.value[k].map((v) => ({ id: v, text: short(v), on: f[k].includes(v) }))
 }
@@ -97,7 +102,13 @@ function pick(k: Key, id: string): void {
   else filter.value = { ...f, [k]: flip(f[k], id) }
 }
 
-// Typing: values from every attribute that match, under their attribute.
+// Typing: attributes whose name matches ("ta" → Tag ›), then values from
+// every attribute that match, under their attribute.
+const attrs = computed(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!q || !filter.value) return []
+  return GROUPS.value.flatMap((g) => g.items).filter((i) => i.label.toLowerCase().startsWith(q))
+})
 const hits = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q || !filter.value) return []
@@ -110,6 +121,22 @@ const hits = computed(() => {
     )
     .slice(0, 8)
 })
+
+// ⌘/ or Ctrl+/ finds the field from anywhere on the page.
+const field = ref<HTMLInputElement>()
+const mac = /Mac|iPhone|iPad/.test(navigator.platform)
+function onKey(e: KeyboardEvent): void {
+  if (e.key === '/' && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault()
+    field.value?.focus()
+  }
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+function openAttr(k: Key): void {
+  query.value = ''
+  group.value = k
+}
 
 function remember(): void {
   const q = query.value.trim()
@@ -133,6 +160,7 @@ function onEsc(e: KeyboardEvent): void {
     <label class="mar-pfind asr-field">
       <Search :size="14" />
       <input
+        ref="field"
         v-model="query"
         type="search"
         placeholder="Search"
@@ -141,6 +169,7 @@ function onEsc(e: KeyboardEvent): void {
         @keydown.esc="onEsc"
         @keydown.enter="remember"
       />
+      <kbd v-if="!query" class="asr-kbd">{{ mac ? '⌘' : 'Ctrl' }} /</kbd>
       <button
         v-if="query"
         type="button"
@@ -152,9 +181,29 @@ function onEsc(e: KeyboardEvent): void {
         <X :size="13" />
       </button>
     </label>
-    <div v-if="open && filter && (!query.trim() || hits.length)" class="asr-pop" @mousedown="keep">
+    <div v-if="open && filter" class="asr-pop" @mousedown="keep">
       <template v-if="query.trim()">
-        <p class="asr-label">Filter by</p>
+        <button type="button" class="asr-row" @click="close">
+          <Search :size="14" class="asr-icon" /><span class="asr-grow"
+            >Search for “{{ query.trim() }}”</span
+          >
+        </button>
+        <template v-if="attrs.length">
+          <p class="asr-label">Filter by attribute</p>
+          <button
+            v-for="i in attrs"
+            :key="i.key"
+            type="button"
+            class="asr-row"
+            @click="openAttr(i.key)"
+          >
+            <component :is="i.icon" :size="14" class="asr-icon" /><span class="asr-grow">{{
+              i.label
+            }}</span
+            ><ChevronRight :size="14" class="asr-icon" />
+          </button>
+        </template>
+        <p v-if="hits.length" class="asr-label">Filter by</p>
         <button
           v-for="h in hits"
           :key="`${h.key}-${h.id}`"
@@ -281,6 +330,15 @@ function onEsc(e: KeyboardEvent): void {
   flex: none;
   color: var(--color-subtle-foreground);
   font-size: 12px;
+}
+.asr-kbd {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-subtle-foreground);
+  font-family: inherit;
+  font-size: 11px;
 }
 .asr-none {
   padding: 8px;

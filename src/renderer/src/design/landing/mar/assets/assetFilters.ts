@@ -1,5 +1,6 @@
 import type { MarAsset } from '../pages/assetsStore'
 import { factsFor } from './assetFacts'
+import { labelOf } from './assetLabels'
 import { tagsOf } from './assetTags'
 
 /**
@@ -15,6 +16,8 @@ export interface AssetFilter {
   from: string
   to: string
   tags: string[]
+  /** Color labels: any picked one matches (a file has one label). */
+  labels: string[]
   /** Any tag picked (a union) instead of every one. */
   anyTag: boolean
   /** Read from the run (Alex's metadata filters): any picked one matches. */
@@ -29,6 +32,7 @@ export const noFilter = (): AssetFilter => ({
   from: '',
   to: '',
   tags: [],
+  labels: [],
   anyTag: false,
   models: [],
   loras: [],
@@ -40,6 +44,7 @@ export const activeFilters = (f: AssetFilter): number =>
   f.types.length +
   (f.from || f.to ? 1 : 0) +
   f.tags.length +
+  f.labels.length +
   f.models.length +
   f.loras.length +
   f.workflows.length
@@ -49,12 +54,13 @@ const day = (age: number): string =>
 
 /** Types are a union with the page's own type choice: either may match. */
 export function passes(a: MarAsset, f: AssetFilter): boolean {
-  if (a.status) return f.source !== 'imported' && !f.tags.length && !meta(f)
+  if (a.status) return f.source !== 'imported' && !f.tags.length && !f.labels.length && !meta(f)
   const imported = factsFor(a).imported
   if (f.source === 'generated' && imported) return false
   if (f.source === 'imported' && !imported) return false
   if (f.from && day(a.age) < f.from) return false
   if (f.to && day(a.age) > f.to) return false
+  if (f.labels.length && !f.labels.includes(labelOf(a.id) ?? '')) return false
   const m = metaOf(a)
   if (f.models.length && !f.models.some((x) => m.models.includes(x))) return false
   if (f.loras.length && !f.loras.some((x) => m.loras.includes(x))) return false
