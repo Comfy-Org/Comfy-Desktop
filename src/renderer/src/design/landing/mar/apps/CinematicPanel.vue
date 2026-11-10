@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  Check,
   ChevronRight,
   ImageUp,
   ImageUpscale,
@@ -80,7 +79,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
       />
       <Select
         :model-value="get('model')"
-        size="sm"
+        class="cine-model"
         :options="CINE_MODELS.map((m) => ({ value: m, label: m }))"
         @update:model-value="(v: string) => set('model', v)"
       />
@@ -132,7 +131,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
         <PopoverRoot>
           <PopoverTrigger as-child>
             <button type="button" class="cine-row">
-              <span class="cine-thumb">
+              <span class="cine-thumb is-icon">
                 <CineIcon part="body" :option="bodyIcon" class="cine-thumb-icon" />
               </span>
               <span class="cine-row-text">
@@ -224,9 +223,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
                   </span>
                   <Scan v-else :size="18" class="mb-3 text-subtle-foreground" />
                   <span class="cine-tile-name">{{ o.label }}</span>
-                  <span v-if="get(g.id) === o.label" class="cine-check"
-                    ><Check :size="10" :stroke-width="3"
-                  /></span>
                 </span>
               </button>
             </div>
@@ -535,18 +531,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 .cine-tile:focus-visible .cine-tile-pic {
   box-shadow: 0 0 0 2px var(--color-base-foreground);
 }
-.cine-check {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-base-foreground);
-  color: var(--color-app-background);
-}
 /* The camera: four lists side by side, each scrolls on its own */
 .cine-cols {
   display: grid;
@@ -618,9 +602,14 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 .cine-opt:hover .cine-opt-icon {
   opacity: 1;
 }
+/* The camera sits on the row itself, no box, like the hub's list */
+.cine-thumb.is-icon {
+  overflow: visible;
+  background: none;
+}
 .cine-thumb-icon {
-  width: 46px;
-  height: 29px;
+  width: 44px;
+  height: 28px;
 }
 
 .cine-field {
@@ -634,10 +623,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 }
 :root .proto-ui.proto-ui.proto-ui .cine-seg {
   width: 100%;
-}
-:root .proto-ui.proto-ui.proto-ui .cine-seg > button {
-  flex: 1;
-  justify-content: center;
 }
 
 /* Format: one row of pills */
@@ -718,6 +703,17 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 :root .proto-ui.proto-ui.proto-ui.cine-picker.is-camera {
   width: 780px;
   overflow: hidden;
+}
+/* The tabs and the model share one height; their buttons live in the
+   child components. */
+:root .proto-ui.proto-ui.proto-ui .cine-seg > button {
+  height: 30px;
+  flex: 1;
+  justify-content: center;
+}
+:root .proto-ui.proto-ui.proto-ui .cine-model {
+  height: 36px;
+  padding-inline: 12px;
 }
 /* The format menus open the same way and look the same */
 :root .proto-ui.proto-ui.proto-ui.cine-menu {
