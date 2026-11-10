@@ -601,13 +601,13 @@ async function diagnoseCrash(
 async function describeExitCode(code: number | null, stderr: string): Promise<string> {
   if (code == null) return 'unknown'
   const decoded = decodeExitCode(code)
+  const accessViolation = decoded?.kind === 'access-violation'
   const dllFailure = !decoded && isDllLoadFailure(findExceptionLine(stderr) ?? '')
-  if (!decoded && !dllFailure) return String(code)
   let out = decoded ? `${decoded.code} / ${decoded.hex}` : String(code)
-  if (decoded?.kind === 'access-violation') {
+  if (accessViolation) {
     out += ' (memory access violation — usually a faulty or missing native library)'
   }
-  if (decoded?.kind === 'access-violation' || dllFailure) {
+  if (accessViolation || dllFailure) {
     try {
       if ((await auditVcRuntime()).length > 0) {
         out +=

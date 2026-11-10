@@ -5299,14 +5299,31 @@ describe('prior ComfyUI process handling at launch', () => {
       vcRuntime.auditThrows = false
     })
 
-    it('adds the VC++ runtime hint when the runtime is missing', async () => {
+    it.each([
+      [
+        'torch c10.dll after a traceback',
+        'Traceback (most recent call last):\n' +
+          '  File "C:\\ComfyUI\\main.py", line 266, in <module>\n' +
+          '    import torch\n' +
+          C10_NOT_FOUND
+      ],
+      [
+        'a localized DLL init failure',
+        'OSError: [WinError 1114] 动态链接库(DLL)初始化例程失败。 Error loading "c10.dll".\n'
+      ],
+      ['an extension module', 'ImportError: DLL load failed while importing _C: not found\n'],
+      [
+        'a library loaded through ctypes',
+        "FileNotFoundError: Could not find module 'aimdo.dll' (or one of its dependencies).\n"
+      ]
+    ])('adds the VC++ runtime hint for %s when the runtime is missing', async (_name, stderr) => {
       setArgs()
       vcRuntime.missing = ['vcruntime140_1.dll']
-      failBootWith(C10_NOT_FOUND)
+      failBootWith(stderr)
 
       const res = await handleLaunch(ctxFor('dll-runtime-missing'))
 
-      expect(res.message).toBe(`Process exited with code 1${HINT}\n\n${C10_NOT_FOUND.trim()}`)
+      expect(res.message).toBe(`Process exited with code 1${HINT}\n\n${stderr.trim()}`)
     })
 
     it('leaves the message alone when the runtime is present', async () => {
