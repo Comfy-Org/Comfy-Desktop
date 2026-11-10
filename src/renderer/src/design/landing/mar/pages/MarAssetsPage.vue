@@ -865,11 +865,30 @@ function hoverPlay(a: MarAsset, on: boolean): void {
   } else if (playing.value === a.id) playing.value = ''
 }
 /** While a clip plays, its badge counts the time and a bar along the
- *  top edge follows it; off the card, the badge says the length again. */
+ *  bottom edge follows it; off the card, the badge says the length again. */
 const clip = ref({ at: 0, of: 0 })
 function onClipTime(e: Event): void {
   const v = e.target as HTMLVideoElement
   clip.value = { at: v.currentTime, of: v.duration || 0 }
+}
+// The bar is a scrubber: a press or a drag along it moves the clip there.
+const seeking = ref(false)
+function seekTo(e: PointerEvent): void {
+  const bar = e.currentTarget as HTMLElement
+  const v = bar.parentElement?.querySelector<HTMLVideoElement>('video.mar-asset-clip')
+  if (!v?.duration) return
+  const r = bar.getBoundingClientRect()
+  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+  v.currentTime = x * v.duration
+  clip.value = { at: v.currentTime, of: v.duration }
+}
+function seekStart(e: PointerEvent): void {
+  seeking.value = true
+  ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  seekTo(e)
+}
+function seekMove(e: PointerEvent): void {
+  if (seeking.value) seekTo(e)
 }
 const clock = (t: number): string =>
   `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
@@ -1468,9 +1487,24 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                       <span
                         v-if="playing === a.id && a.type === 'video'"
                         class="mar-asset-seek"
-                        aria-hidden="true"
-                        ><i :style="{ width: `${clip.of ? (clip.at / clip.of) * 100 : 0}%` }"
-                      /></span>
+                        :class="seeking && 'is-seeking'"
+                        role="slider"
+                        :aria-label="`Seek ${a.name}`"
+                        :aria-valuemin="0"
+                        :aria-valuemax="Math.round(clip.of)"
+                        :aria-valuenow="Math.round(clip.at)"
+                        @pointerdown.stop="seekStart"
+                        @pointermove="seekMove"
+                        @pointerup="seeking = false"
+                        @pointercancel="seeking = false"
+                        @click.stop
+                        @dblclick.stop
+                        ><span class="mar-asset-seek-track"
+                          ><i
+                            :style="{
+                              width: `${clip.of ? (clip.at / clip.of) * 100 : 0}%`
+                            }" /></span
+                      ></span>
                       <Tooltip
                         v-if="playable(a) && a.type === 'audio'"
                         :content="playing === a.id ? 'Pause' : 'Play'"
@@ -2239,6 +2273,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 /* The same pill as an example tile's (ExampleTile.vue), at the bottom
    since the hover check takes the top left corner. */
 .mar-asset-len {
+  pointer-events: none;
   position: absolute;
   bottom: 8px;
   left: 8px;
@@ -2259,16 +2294,31 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   filter: blur(14px) saturate(0.8);
   transform: scale(1.1);
 }
-/* A run in flight: the progress is the cover's bottom edge, clipped by
-   the picture's own corners, so it reads as the picture filling in. */
-/* A clip playing on hover: how far it is, along the top edge. */
+/* Along the bottom edge, as a video player has it. Its hit area is
+   taller than the line, so it's easy to catch; on hover the line
+   thickens to say it can be dragged. */
 .mar-asset-seek {
   position: absolute;
-  top: 0;
+  z-index: 2;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  height: 14px;
+  cursor: pointer;
+  touch-action: none;
+}
+.mar-asset-seek-track {
+  position: absolute;
+  bottom: 0;
   right: 0;
   left: 0;
   height: 3px;
   background: rgb(255 255 255 / 0.18);
+  transition: height 120ms ease-out;
+}
+.mar-asset-seek:hover .mar-asset-seek-track,
+.mar-asset-seek.is-seeking .mar-asset-seek-track {
+  height: 5px;
 }
 .mar-asset-seek i {
   display: block;
@@ -2276,6 +2326,11 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   background: #fff;
   transition: width 250ms linear;
 }
+.mar-asset-seek.is-seeking i {
+  transition: none;
+}
+/* A run in flight: the progress is the cover's bottom edge, clipped by
+   the picture's own corners, so it reads as the picture filling in. */
 .mar-asset-progress {
   position: absolute;
   right: 0;
