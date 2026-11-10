@@ -57,6 +57,10 @@ const sessionStore = useSessionStore()
 const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
 const appsLoadFailedUrl = ref<string | null>(null)
 const openApp = ref<CatalogApp | null>(null)
+const emit = defineEmits<{
+  'app-open': [open: boolean]
+}>()
+watch(openApp, (app) => emit('app-open', app !== null))
 watch(tab, (next) => {
   if (next === 'all') appsLoadFailedUrl.value = null
   else openApp.value = null

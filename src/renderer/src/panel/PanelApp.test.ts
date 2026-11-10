@@ -1238,21 +1238,43 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
-  it('opens the Apps page fresh each time Apps is clicked in the sidebar', async () => {
+  it('closes an open app when Apps is clicked in the sidebar, and otherwise keeps the page', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    const listCatalogApps = vi.fn().mockResolvedValue([
+      {
+        id: 'studio',
+        title: 'Cinematic Studio',
+        description: '',
+        thumbnailUrl: null,
+        url: 'https://apps.example/apps/studio/desktop.html'
+      }
+    ])
+    Object.assign(window.api, {
+      listCatalogApps,
+      showApps: vi.fn(),
+      hideApps: vi.fn(),
+      onAppsLoadFailed: vi.fn(() => () => {}),
+      onAppsAppOpen: vi.fn(() => () => {})
+    })
     const wrapper = mountPanel()
     await flushPromises()
+    const clickApps = async () => {
+      await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+      await flushPromises()
+    }
 
-    const listCatalogApps = vi.fn().mockResolvedValue([])
-    Object.assign(window.api, { listCatalogApps })
-    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    await clickApps()
+    await clickApps()
+    expect(listCatalogApps).toHaveBeenCalledOnce()
 
-    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
-    await flushPromises()
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
 
-    expect(listCatalogApps).toHaveBeenCalledTimes(2)
+    await clickApps()
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
   })
 
   it("leaves a build's details when the window switches screens", async () => {

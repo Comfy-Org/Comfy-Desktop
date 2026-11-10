@@ -165,6 +165,7 @@ if (params.get('e2e') === '1') {
 
 const dashboardSection = ref<DashboardSection | null>(null)
 const appsVisit = ref(0)
+const appsAppOpen = ref(false)
 
 const sidebarPage = computed<SidebarPage | null>(() => {
   const panel = activePanel.value
@@ -173,7 +174,10 @@ const sidebarPage = computed<SidebarPage | null>(() => {
 })
 
 function handleSidebarNavigate(page: SidebarPage): void {
-  if (page === 'apps') appsVisit.value++
+  if (page === 'apps' && appsAppOpen.value) {
+    appsAppOpen.value = false
+    appsVisit.value++
+  }
   dashboardSection.value = isDashboardSection(page) ? page : null
   closeBuildDetails()
 }
@@ -469,7 +473,11 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <AppsView v-if="dashboardSection === 'apps'" :key="appsVisit" />
+            <AppsView
+              v-if="dashboardSection === 'apps'"
+              :key="appsVisit"
+              @app-open="appsAppOpen = $event"
+            />
             <section
               v-else-if="dashboardSection"
               class="flex min-h-0 flex-1 flex-col"
