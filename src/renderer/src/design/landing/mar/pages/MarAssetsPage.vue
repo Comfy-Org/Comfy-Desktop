@@ -7,7 +7,6 @@ import {
   Download,
   File as FileIcon,
   FileText,
-  ExternalLink,
   FolderOpen,
   ImagePlus,
   Music,
@@ -23,7 +22,9 @@ import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import { ComfyAssets } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
-import { go, toast } from '../../useProto'
+import { go, hostActions, instances, toast } from '../../useProto'
+import { graphOpen } from '../graph/graphOpen'
+import { saveFile } from '../assets/saveFile'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
@@ -317,6 +318,19 @@ function open(a: MarAsset): void {
   else if (a.status === 'failed') retry(a)
   else detail.value = a
 }
+/** Open workflow: ComfyUI on the build that made it, its workflow loaded,
+ *  Media Assets open with this asset selected. */
+function openWorkflow(a: MarAsset): void {
+  const inst =
+    instances.value.find((i) => i.id === a.envId) ??
+    instances.value.find((i) => i.kind === 'local') ??
+    instances.value[0]
+  if (!inst) return
+  detail.value = null
+  graphOpen.select = { id: a.id, name: a.name, src: picOf(a), type: a.type }
+  graphOpen.assets = true
+  hostActions.launch(inst, a.name.replace(/_\d+\.[^.]+$/, ''))
+}
 function retry(a: MarAsset): void {
   const before = { status: a.status, statusLabel: a.statusLabel }
   a.status = 'queued'
@@ -330,7 +344,7 @@ function cancel(a: MarAsset): void {
 function lines(a: MarAsset): MenuLine[] {
   if (a.status === 'running' || a.status === 'queued')
     return [
-      { label: 'Open its workflow', icon: Workflow, run: () => go('workflows') },
+      { label: 'Open workflow', icon: Workflow, run: () => go('workflows') },
       'sep',
       {
         label: a.status === 'running' ? 'Stop' : 'Remove from queue',
@@ -342,25 +356,19 @@ function lines(a: MarAsset): MenuLine[] {
   if (a.status === 'failed')
     return [
       { label: 'Run again', icon: RotateCw, run: () => retry(a) },
-      { label: 'Open its workflow', icon: Workflow, run: () => go('workflows') },
+      { label: 'Open workflow', icon: Workflow, run: () => go('workflows') },
       { label: 'Copy error', icon: Copy, run: () => toast('Error copied') },
       'sep',
       { label: 'Dismiss', icon: Trash2, danger: true, run: () => assets.remove([a.id]) }
     ]
   return [
-    { label: 'Open', icon: ExternalLink, run: () => open(a) },
-    a.source === 'cloud'
-      ? { label: 'Download', icon: Download, run: () => toast(`Downloading ${a.name}`) }
-      : { label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${a.name}`) },
+    // A click opens it and Download sits on the card, so neither is here.
+    ...(a.source === 'cloud'
+      ? []
+      : [{ label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${a.name}`) }]),
     // Only when the file kept its workflow: an import or a sound has none.
     ...(factsFor(a).workflow === 'available'
-      ? [
-          {
-            label: 'Open its workflow',
-            icon: Workflow,
-            run: () => toast(`Opening the workflow in ${buildName(a)}`)
-          }
-        ]
+      ? [{ label: 'Open workflow', icon: Workflow, run: () => openWorkflow(a) }]
       : []),
     { label: 'Copy', icon: Copy, hint: '⌘C', run: () => toast('Copied to the clipboard') },
     lib.moveLine(() => [a.id], a.project),
@@ -550,6 +558,18 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           @rename="lib.rename(a.id, $event)"
           @cancel-rename="lib.renaming.value = ''"
         >
+          <template v-if="!a.status" #tools>
+            <button
+              type="button"
+              class="mar-kebab on-media"
+              aria-label="Download"
+              title="Download"
+              @click.stop="saveFile(picOf(a), a.name)"
+              @dblclick.stop
+            >
+              <Download :size="14" />
+            </button>
+          </template>
           <template #overlay>
             <span v-if="a.status === 'running'" class="mar-asset-progress"
               ><i style="width: 62%"
@@ -590,6 +610,18 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         @rename="lib.rename(a.id, $event)"
         @cancel-rename="lib.renaming.value = ''"
       >
+        <template v-if="!a.status" #tools>
+          <button
+            type="button"
+            class="mar-kebab on-media"
+            aria-label="Download"
+            title="Download"
+            @click.stop="saveFile(picOf(a), a.name)"
+            @dblclick.stop
+          >
+            <Download :size="14" />
+          </button>
+        </template>
         <template v-if="a.status === 'running'" #overlay>
           <span class="mar-asset-progress"><i style="width: 62%" /></span>
         </template>
@@ -603,7 +635,12 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         {
           label: 'Download',
           icon: Download,
-          run: () => (toast(`Downloading ${lib.selected.value.length} assets`), lib.sel.clear())
+          run: () => (
+            assets.items
+              .filter((x) => lib.sel.has(x.id))
+              .forEach((x) => saveFile(picOf(x), x.name)),
+            lib.sel.clear()
+          )
         },
         lib.moveLine(() => lib.selected.value),
         { label: 'Delete', icon: Trash2, danger: true, run: lib.removeSelected }
@@ -618,6 +655,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       :build="fixedProject ? fixedProject : buildName(detail)"
       @go="detail = $event"
       @close="detail = null"
+      @workflow="openWorkflow"
     />
   </MarPage>
 </template>

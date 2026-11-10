@@ -170,6 +170,8 @@ function click(e: MouseEvent): void {
           >
             <Star :size="13" :fill="fav ? 'currentColor' : 'none'" />
           </button>
+          <!-- The card's own quick buttons on its picture (Assets: Download). -->
+          <slot name="tools" />
           <MarItemMenu v-model:open="menuOpen" :lines :align="menuAlign" on-media />
         </span>
         <slot name="overlay" />

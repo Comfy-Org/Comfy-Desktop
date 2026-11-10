@@ -846,6 +846,15 @@ type RailPanelId = '' | 'queue' | 'assets' | 'nodes' | 'models' | 'workflows' | 
 // A share link can open it on Media Assets (graphOpen.ts).
 const panel = ref<RailPanelId>(graphOpen.assets ? 'assets' : '')
 graphOpen.assets = false
+// Assets › Open workflow on a build already open: back to Media Assets.
+watch(
+  () => graphOpen.assets,
+  (on) => {
+    if (!on) return
+    panel.value = 'assets'
+    graphOpen.assets = false
+  }
+)
 /** Production: an open rail panel floats over the canvas, so the asset's
  *  tab starts past it; measured, as the panel's edge drags. */
 const panelEdge = ref(0)

@@ -29,7 +29,8 @@ const {
   build,
   editable = false,
   tab = false,
-  saveable = false
+  saveable = false,
+  onWorkflow
 } = defineProps<{
   asset: MarAsset
   list: MarAsset[]
@@ -42,6 +43,9 @@ const {
   tab?: boolean
   /** A canvas result, not saved yet: it can be saved to Assets. */
   saveable?: boolean
+  /** Desktop's Assets: Open workflow goes to ComfyUI with the asset
+   *  selected (bound as @workflow); else a toast stands in. */
+  onWorkflow?: (a: MarAsset) => void
 }>()
 const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
@@ -347,11 +351,13 @@ onBeforeUnmount(() => {
               class="mad-btn"
               :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
               @click="
-                toast(
-                  editable
-                    ? `Opened ${asset.name} as a workflow`
-                    : `Opening the workflow in ${build}`
-                )
+                onWorkflow
+                  ? onWorkflow(asset)
+                  : toast(
+                      editable
+                        ? `Opened ${asset.name} as a workflow`
+                        : `Opening the workflow in ${build}`
+                    )
               "
             >
               <Workflow :size="14" /><span>{{
