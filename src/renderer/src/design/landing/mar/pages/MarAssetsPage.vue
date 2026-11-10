@@ -728,8 +728,13 @@ function dropCards(id: string): void {
  *  reading order stays left to right, top to bottom. */
 const wall = ref<HTMLElement>()
 const { width: wallWidth } = useElementSize(wall)
+// At the default size the columns follow the Apps wall (MarExplore.vue:
+// at least 220px each, six at most), so the two walls match; another
+// size is the viewer's own.
 function pack(items: MarAsset[]): { items: MarAsset[] }[] {
-  const n = Math.max(1, Math.floor((wallWidth.value + 14) / (CARD[size.value]! + 14)))
+  const tile = size.value === 2 ? 220 : CARD[size.value]!
+  const fit = Math.floor((wallWidth.value + 14) / (tile + 14))
+  const n = Math.max(1, size.value === 2 ? Math.min(6, fit) : fit)
   const cols = Array.from({ length: n }, () => ({ h: 0, items: [] as MarAsset[] }))
   for (const a of items) {
     const col = cols.reduce((low, c) => (c.h < low.h ? c : low))
@@ -1267,12 +1272,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :tags="TAGS"
             :meta="metaIn(base)"
           />
-          <AssetSearch
-            v-model:query="query"
-            v-model:filter="filter"
-            :pool="base"
-            :types="MORE_TYPES"
-          />
+          <AssetSearch v-model:query="query" />
           <AssetLayoutMenu
             v-model:view="assetView.wall"
             v-model:size="size"
@@ -1468,7 +1468,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                         ><i style="width: 62%"
                       /></span>
                       <span v-else-if="a.type === 'video' && !a.status" class="mar-asset-len"
-                        ><Video :size="10" />{{ factsFor(a).duration }}</span
+                        ><Video :size="12" />{{ factsFor(a).duration }}</span
                       >
                       <i
                         v-if="labelOf(a.id)"
@@ -2209,18 +2209,23 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
+/* The same pill as an example tile's (ExampleTile.vue), at the bottom
+   since the hover check takes the top left corner. */
 .mar-asset-len {
   position: absolute;
   bottom: 8px;
   left: 8px;
   display: inline-flex;
+  height: 22px;
   align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
+  gap: 5px;
+  padding: 0 8px 0 7px;
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.55);
+  background: rgb(14 14 16 / 0.28);
+  backdrop-filter: blur(14px) saturate(1.5);
   color: #fff;
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 .mar-asset-running img {
