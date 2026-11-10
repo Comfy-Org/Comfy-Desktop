@@ -9,6 +9,9 @@
  * Every result the page fetches is also written to Desktop's output folder
  * (the `outputDir` setting) under `apps/<app>/`, named by main from the app
  * slug and a short label; the page never picks a path.
+ *
+ * The page can also run on the person's own ComfyUI that Desktop runs here
+ * (localComfy.ts), behind the same frame check.
  */
 import { ipcMain, shell, WebContentsView } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
@@ -34,12 +37,13 @@ import {
   type OutputFile,
   readable,
   type OutputKind,
-  safeUploadName,
   saveExt,
   savedFileName,
   toOutputFile,
+  uploadForm,
   VERSIONS_FILE
 } from './guards'
+import { getLocal, initLocalComfy, localFetch, startLocal, syncLocalSocket } from './localComfy'
 
 const APPS_URL = appsUrl()
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -110,6 +114,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     entry.window.once('closed', () => {
       views.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
+      syncLocalSocket()
     })
   }
   // The panel reports the slot in its own coordinates; offset by where the panel sits.
@@ -409,10 +414,7 @@ async function uploadImage(bytes: unknown, name: unknown): Promise<{ name: strin
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES) {
     throw new Error('Pick a file under 50 MB.')
   }
-  const form = new FormData()
-  form.append('image', new Blob([new Uint8Array(bytes)]), safeUploadName(name))
-  form.append('overwrite', 'true')
-  const res = await cloudFetch('/upload/image', { method: 'POST', body: form })
+  const res = await cloudFetch('/upload/image', { method: 'POST', body: uploadForm(bytes, name) })
   if (!res.ok) throw await failure(res)
   const body = (await res.json()) as { name?: string }
   if (typeof body.name !== 'string') throw new Error('Comfy Cloud did not keep the file.')
@@ -429,10 +431,18 @@ function handleFromApps<A extends unknown[], R>(
   })
 }
 
+/** The Apps views whose page is on the apps origin: the only ones that hear the local ComfyUI. */
+function appsPages(): WebContents[] {
+  return [...views.values()]
+    .map((v) => v.webContents)
+    .filter((wc) => !wc.isDestroyed() && isAppsFrameUrl(wc.getURL(), APPS_ORIGIN))
+}
+
 /** Wire the Apps view and bridge. Called once at app `whenReady`. */
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)
   handleFromApps('comfy-apps:sign-in', async () => {
@@ -449,4 +459,7 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:save-versions', saveVersions)
   handleFromApps('comfy-apps:read-versions', readVersions)
   handleFromApps('comfy-apps:get-node-price', getNodePrice)
+  handleFromApps('comfy-apps:get-local', getLocal)
+  handleFromApps('comfy-apps:start-local', startLocal)
+  handleFromApps('comfy-apps:local-fetch', localFetch)
 }

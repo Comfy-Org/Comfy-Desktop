@@ -185,3 +185,215 @@ export function isVersionsIndex(bytes: unknown): bytes is Uint8Array {
     return false
   }
 }
+
+// ---- the person's own ComfyUI, the one Desktop runs on this computer ----
+
+/** The upload form local ComfyUI and Cloud both take: the file under `image`, replacing a same-named one. */
+export function uploadForm(bytes: Uint8Array, name: unknown): FormData {
+  const form = new FormData()
+  form.append('image', new Blob([new Uint8Array(bytes)]), safeUploadName(name))
+  form.append('overwrite', 'true')
+  return form
+}
+
+/** What main sends the page for a local call: the status, type and bytes ComfyUI answered. */
+export interface LocalAnswer {
+  status: number
+  contentType: string
+  body: Uint8Array
+}
+
+export function textAnswer(status: number, text: string): LocalAnswer {
+  return { status, contentType: 'text/plain; charset=utf-8', body: new TextEncoder().encode(text) }
+}
+
+/** A request main will send the local ComfyUI, rebuilt from checked parts; the page's own text is never sent. */
+export type LocalRequest =
+  | { kind: 'get'; path: string }
+  | { kind: 'prompt'; path: '/prompt'; json: string }
+  | { kind: 'upload'; path: '/upload/image'; bytes: Uint8Array; fileName: string }
+
+export interface LocalRefusal {
+  status: number
+  error: string
+}
+
+/** A /prompt body: the graph in `prompt` within the Cloud run's cap, the whole body at most 2 MB. */
+const MAX_PROMPT_BODY_BYTES = 2_000_000
+const VIEW_TYPES = ['output', 'input', 'temp']
+const LOCAL_BASE = 'http://127.0.0.1'
+
+/** The /view query rebuilt from filename, subfolder and type only, or null for anything else. */
+export function viewQuery(params: URLSearchParams): string | null {
+  const keys = [...params.keys()]
+  if (new Set(keys).size !== keys.length) return null
+  if (keys.some((k) => !['filename', 'subfolder', 'type'].includes(k))) return null
+  const filename = params.get('filename') ?? ''
+  const subfolder = params.get('subfolder') ?? ''
+  const type = params.get('type') ?? ''
+  if (!filename || filename.length > 255 || /[\\/\0]/.test(filename)) return null
+  if (filename === '.' || filename === '..') return null
+  if (subfolder.length > 255 || subfolder.includes('..') || subfolder.includes('\0')) return null
+  if (/^[\\/]/.test(subfolder) || /^[A-Za-z]:/.test(subfolder)) return null
+  if (!VIEW_TYPES.includes(type)) return null
+  return new URLSearchParams({ filename, subfolder, type }).toString()
+}
+
+function promptJson(body: unknown): string | null {
+  let value = body
+  if (typeof body === 'string') {
+    if (body.length > MAX_PROMPT_BODY_BYTES) return null
+    try {
+      value = JSON.parse(body)
+    } catch {
+      return null
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  if (!isWorkflow((value as { prompt?: unknown }).prompt)) return null
+  const json = JSON.stringify(value)
+  return json.length > MAX_PROMPT_BODY_BYTES ? null : json
+}
+
+/**
+ * Check one call the page makes to the local ComfyUI. Only these pass: GET /system_stats,
+ * /object_info/<class>, /history/<id> and /view (filename, subfolder, type); POST /prompt with
+ * a JSON graph; POST /upload/image with the file's bytes and name.
+ */
+export function localRequest(input: unknown): LocalRequest | LocalRefusal {
+  if (!input || typeof input !== 'object') return { status: 400, error: 'Not a request.' }
+  const { method, path, body, fileName } = input as Record<string, unknown>
+  if (typeof path !== 'string' || !path.startsWith('/') || path.length > 2048) {
+    return { status: 400, error: 'Not a path.' }
+  }
+  let url: URL
+  try {
+    url = new URL(path, LOCAL_BASE)
+  } catch {
+    return { status: 400, error: 'Not a path.' }
+  }
+  // "//host/x" names another host; only paths on the local ComfyUI pass.
+  if (url.origin !== LOCAL_BASE) return { status: 400, error: 'Not a path.' }
+  const p = url.pathname
+  const query = url.search !== ''
+  if (method === 'GET') {
+    if (p === '/system_stats' && !query) return { kind: 'get', path: p }
+    if (/^\/object_info\/[A-Za-z0-9_]{1,200}$/.test(p) && !query) return { kind: 'get', path: p }
+    if (/^\/history\/[A-Za-z0-9-]{1,64}$/.test(p) && !query) return { kind: 'get', path: p }
+    if (p === '/view') {
+      const q = viewQuery(url.searchParams)
+      return q ? { kind: 'get', path: `/view?${q}` } : { status: 400, error: 'Not a file.' }
+    }
+    return { status: 404, error: 'Apps cannot ask ComfyUI for that.' }
+  }
+  if (method === 'POST') {
+    if (p === '/prompt' && !query) {
+      const json = promptJson(body)
+      return json
+        ? { kind: 'prompt', path: p, json }
+        : { status: 400, error: 'That is not a workflow.' }
+    }
+    if (p === '/upload/image' && !query) {
+      if (!(body instanceof Uint8Array)) return { status: 400, error: 'Not a file.' }
+      if (body.byteLength > MAX_UPLOAD_BYTES)
+        return { status: 413, error: 'Pick a file under 50 MB.' }
+      return { kind: 'upload', path: p, bytes: body, fileName: safeUploadName(fileName) }
+    }
+    return { status: 404, error: 'Apps cannot send ComfyUI that.' }
+  }
+  return { status: 405, error: 'Apps can only GET and POST.' }
+}
+
+/** A response's bytes, or null once they pass `max` (the rest is not read). */
+export async function readCapped(res: Response, max: number): Promise<Uint8Array | null> {
+  if (Number(res.headers.get('content-length')) > max) {
+    await res.body?.cancel().catch(() => {})
+    return null
+  }
+  if (!res.body) return new Uint8Array()
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > max) {
+      await reader.cancel().catch(() => {})
+      return null
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(size)
+  let at = 0
+  for (const c of chunks) {
+    out.set(c, at)
+    at += c.byteLength
+  }
+  return out
+}
+
+/** The websocket messages the page gets: a run's progress and the queue's status. */
+export const LOCAL_EVENT_TYPES = [
+  'execution_start',
+  'execution_cached',
+  'executing',
+  'progress',
+  'progress_state',
+  'executed',
+  'execution_success',
+  'execution_error',
+  'execution_interrupted',
+  'status'
+]
+
+/** One text frame from ComfyUI's websocket as { type, data }, or null to drop it (previews are binary). */
+export function localEvent(frame: unknown): { type: string; data: unknown } | null {
+  if (typeof frame !== 'string') return null
+  let msg: unknown
+  try {
+    msg = JSON.parse(frame)
+  } catch {
+    return null
+  }
+  if (!msg || typeof msg !== 'object') return null
+  const { type, data } = msg as { type?: unknown; data?: unknown }
+  return typeof type === 'string' && LOCAL_EVENT_TYPES.includes(type) ? { type, data } : null
+}
+
+/** Wait before reconnecting the websocket: 1 s, doubling, at most 30 s. */
+export function reconnectDelay(attempt: number): number {
+  return Math.min(30_000, 1000 * 2 ** Math.max(0, attempt))
+}
+
+export interface LocalInstall {
+  id: string
+  name: string
+  sourceId: string
+  status?: string
+  lastLaunchedAt?: number
+  lastLaunchedAtByCategory?: Record<string, number>
+}
+
+/**
+ * The installs ComfyUI can run from on this computer, the default first: the one launched last
+ * (as the dashboard's "last used" reads it), then the list's own order. Legacy Desktop installs
+ * start their own app with no port Desktop knows, so they are left out, as are installs that are
+ * still installing or failed.
+ */
+export function localInstalls<T extends LocalInstall>(
+  list: readonly T[],
+  categoryOf: (inst: T) => string | undefined
+): T[] {
+  const usable = list.filter(
+    (inst) =>
+      categoryOf(inst) === 'local' &&
+      inst.sourceId !== 'desktop' &&
+      (inst.status === undefined || inst.status === 'installed')
+  )
+  const at = (inst: T) => inst.lastLaunchedAtByCategory?.['local'] ?? inst.lastLaunchedAt ?? -1
+  return usable
+    .map((inst, i) => ({ inst, i }))
+    .sort((a, b) => at(b.inst) - at(a.inst) || a.i - b.i)
+    .map(({ inst }) => inst)
+}

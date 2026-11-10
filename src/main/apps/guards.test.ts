@@ -12,12 +12,20 @@ import {
   isRunId,
   isVersionsIndex,
   isWorkflow,
+  localEvent,
+  localInstalls,
+  localRequest,
   outputKind,
   readable,
+  readCapped,
+  reconnectDelay,
   safeUploadName,
   saveExt,
   savedFileName,
-  toOutputFile
+  textAnswer,
+  toOutputFile,
+  uploadForm,
+  viewQuery
 } from './guards'
 
 describe('appsUrl', () => {
@@ -176,5 +184,219 @@ describe('isVersionsIndex', () => {
     expect(isVersionsIndex(bytes('not json'))).toBe(false)
     expect(isVersionsIndex('{}')).toBe(false)
     expect(isVersionsIndex(new Uint8Array(2_000_001))).toBe(false)
+  })
+})
+
+describe('localRequest', () => {
+  const graph = { '1': { class_type: 'SaveImage', inputs: {} } }
+
+  it('passes the GET paths apps use, rebuilt by main', () => {
+    expect(localRequest({ method: 'GET', path: '/system_stats' })).toEqual({
+      kind: 'get',
+      path: '/system_stats'
+    })
+    expect(localRequest({ method: 'GET', path: '/object_info/KSampler_Advanced2' })).toEqual({
+      kind: 'get',
+      path: '/object_info/KSampler_Advanced2'
+    })
+    expect(localRequest({ method: 'GET', path: '/history/9f1c-ab12' })).toEqual({
+      kind: 'get',
+      path: '/history/9f1c-ab12'
+    })
+    expect(
+      localRequest({ method: 'GET', path: '/view?filename=a%20b.png&subfolder=apps&type=output' })
+    ).toEqual({ kind: 'get', path: '/view?filename=a+b.png&subfolder=apps&type=output' })
+  })
+
+  it('refuses other paths, methods and hosts with a 4xx', () => {
+    const refused = [
+      { method: 'GET', path: '/prompt' },
+      { method: 'GET', path: '/queue' },
+      { method: 'GET', path: '/object_info' },
+      { method: 'GET', path: '/userdata/workflows%2Fa.json' },
+      { method: 'GET', path: '/system_stats/' },
+      { method: 'GET', path: '/system_stats?x=1' },
+      { method: 'GET', path: '/object_info/Bad%20Name' },
+      { method: 'GET', path: '/object_info/Bad.Name' },
+      { method: 'GET', path: '/history/' + 'a'.repeat(65) },
+      { method: 'GET', path: '/history/a_b' },
+      { method: 'POST', path: '/interrupt' },
+      { method: 'POST', path: '/free' },
+      { method: 'DELETE', path: '/history/abc' },
+      { method: 'GET', path: '//evil.example/system_stats' },
+      { method: 'GET', path: 'system_stats' },
+      { method: 'GET', path: 'http://127.0.0.1:8188/system_stats' },
+      { method: 'GET' },
+      null,
+      'GET /system_stats'
+    ]
+    for (const req of refused) {
+      const out = localRequest(req)
+      expect(out, JSON.stringify(req)).not.toHaveProperty('kind')
+      const status = (out as { status: number }).status
+      expect(status).toBeGreaterThanOrEqual(400)
+      expect(status).toBeLessThan(500)
+    }
+    expect(localRequest({ method: 'PUT', path: '/prompt' })).toMatchObject({ status: 405 })
+  })
+
+  it('takes a /prompt body as an object or JSON text with a graph in prompt', () => {
+    const body = { prompt: graph, client_id: 'c1' }
+    const asObject = localRequest({ method: 'POST', path: '/prompt', body })
+    expect(asObject).toEqual({ kind: 'prompt', path: '/prompt', json: JSON.stringify(body) })
+    const asText = localRequest({ method: 'POST', path: '/prompt', body: JSON.stringify(body) })
+    expect(asText).toEqual(asObject)
+  })
+
+  it('refuses a /prompt body without a graph, or over 2 MB', () => {
+    for (const body of [undefined, 'not json', [], { prompt: 'x' }, { prompt: { '1': {} } }]) {
+      expect(localRequest({ method: 'POST', path: '/prompt', body })).toMatchObject({ status: 400 })
+    }
+    const big = { prompt: graph, extra_data: { pad: 'x'.repeat(2_000_001) } }
+    expect(localRequest({ method: 'POST', path: '/prompt', body: big })).toMatchObject({
+      status: 400
+    })
+    expect(localRequest({ method: 'POST', path: '/prompt?x=1', body: { prompt: graph } })).toEqual({
+      status: 404,
+      error: expect.any(String)
+    })
+  })
+
+  it('takes an upload as bytes and a cleaned file name, up to 50 MB', () => {
+    const bytes = new Uint8Array([1, 2, 3])
+    expect(
+      localRequest({ method: 'POST', path: '/upload/image', body: bytes, fileName: '../x/cat.png' })
+    ).toEqual({ kind: 'upload', path: '/upload/image', bytes, fileName: 'cat.png' })
+    expect(
+      localRequest({ method: 'POST', path: '/upload/image', body: 'abc', fileName: 'a.png' })
+    ).toMatchObject({ status: 400 })
+    expect(
+      localRequest({
+        method: 'POST',
+        path: '/upload/image',
+        body: new Uint8Array(50_000_001),
+        fileName: 'a.png'
+      })
+    ).toMatchObject({ status: 413 })
+  })
+})
+
+describe('viewQuery', () => {
+  const q = (s: string) => viewQuery(new URLSearchParams(s))
+
+  it('keeps filename, subfolder and type, in that order', () => {
+    expect(q('type=temp&filename=a.png')).toBe('filename=a.png&subfolder=&type=temp')
+    expect(q('filename=a.png&subfolder=x%2Fy&type=input')).toBe(
+      'filename=a.png&subfolder=x%2Fy&type=input'
+    )
+  })
+
+  it('refuses other keys, repeated keys, other types and paths out of the folder', () => {
+    expect(q('filename=a.png&type=output&preview=webp')).toBeNull()
+    expect(q('filename=a.png&type=output&channel=rgba')).toBeNull()
+    expect(q('filename=a.png&filename=b.png&type=output')).toBeNull()
+    expect(q('filename=a.png&type=models')).toBeNull()
+    expect(q('filename=a.png')).toBeNull()
+    expect(q('type=output')).toBeNull()
+    expect(q('filename=..&type=output')).toBeNull()
+    expect(q('filename=x%2Fa.png&type=output')).toBeNull()
+    expect(q('filename=x%5Ca.png&type=output')).toBeNull()
+    expect(q('filename=a.png&subfolder=..%2Fsecret&type=output')).toBeNull()
+    expect(q('filename=a.png&subfolder=%2Fetc&type=output')).toBeNull()
+    expect(q('filename=a.png&subfolder=C%3A%5Cx&type=output')).toBeNull()
+  })
+})
+
+describe('uploadForm', () => {
+  it('puts the file under image, with overwrite on', async () => {
+    const form = uploadForm(new Uint8Array([7, 8]), 'my cat.png')
+    const file = form.get('image') as File
+    expect(file.name).toBe('my_cat.png')
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(new Uint8Array([7, 8]))
+    expect(form.get('overwrite')).toBe('true')
+    expect(form.getAll('image')).toHaveLength(1)
+    expect(form.getAll('overwrite')).toEqual(['true'])
+  })
+})
+
+describe('readCapped', () => {
+  it('reads an answer up to the cap and drops one over it', async () => {
+    expect(await readCapped(new Response(new Uint8Array([1, 2, 3])), 3)).toEqual(
+      new Uint8Array([1, 2, 3])
+    )
+    expect(await readCapped(new Response(new Uint8Array(4)), 3)).toBeNull()
+    const declared = new Response('x', { headers: { 'content-length': '10' } })
+    expect(await readCapped(declared, 3)).toBeNull()
+  })
+})
+
+describe('textAnswer', () => {
+  it('is shaped like a ComfyUI answer', () => {
+    const a = textAnswer(404, 'no')
+    expect(a.status).toBe(404)
+    expect(a.contentType).toMatch(/^text\/plain/)
+    expect(new TextDecoder().decode(a.body)).toBe('no')
+  })
+})
+
+describe('localEvent', () => {
+  it('passes the run messages and the queue status', () => {
+    const frame = JSON.stringify({ type: 'progress', data: { value: 3, max: 20, prompt_id: 'p' } })
+    expect(localEvent(frame)).toEqual({
+      type: 'progress',
+      data: { value: 3, max: 20, prompt_id: 'p' }
+    })
+    expect(localEvent(JSON.stringify({ type: 'status', data: { sid: 'c1' } }))).toMatchObject({
+      type: 'status'
+    })
+  })
+
+  it('drops binary previews, other types and text that is not JSON', () => {
+    expect(localEvent(new ArrayBuffer(8))).toBeNull()
+    expect(localEvent(JSON.stringify({ type: 'crystools.monitor', data: {} }))).toBeNull()
+    expect(localEvent(JSON.stringify({ data: {} }))).toBeNull()
+    expect(localEvent('not json')).toBeNull()
+    expect(localEvent('null')).toBeNull()
+  })
+})
+
+describe('reconnectDelay', () => {
+  it('doubles from 1 s and stops at 30 s', () => {
+    expect([0, 1, 2, 3, 4, 5, 9].map(reconnectDelay)).toEqual([
+      1000, 2000, 4000, 8000, 16000, 30000, 30000
+    ])
+  })
+})
+
+describe('localInstalls', () => {
+  const category = (inst: { sourceId: string }) =>
+    ({ standalone: 'local', git: 'local', desktop: 'local', cloud: 'cloud', remote: 'remote' })[
+      inst.sourceId
+    ]
+
+  it('lists local installs, the one launched last first', () => {
+    const list = [
+      { id: 'a', name: 'A', sourceId: 'standalone', status: 'installed', lastLaunchedAt: 1 },
+      { id: 'c', name: 'Cloud', sourceId: 'cloud', lastLaunchedAt: 9 },
+      {
+        id: 'b',
+        name: 'B',
+        sourceId: 'git',
+        lastLaunchedAt: 9,
+        lastLaunchedAtByCategory: { local: 5 }
+      },
+      { id: 'n', name: 'Never', sourceId: 'standalone', status: 'installed' }
+    ]
+    expect(localInstalls(list, category).map((i) => i.id)).toEqual(['b', 'a', 'n'])
+  })
+
+  it('leaves out legacy Desktop, unfinished and failed installs', () => {
+    const list = [
+      { id: 'd', name: 'Legacy', sourceId: 'desktop', status: 'installed', lastLaunchedAt: 9 },
+      { id: 'i', name: 'Installing', sourceId: 'standalone', status: 'installing' },
+      { id: 'f', name: 'Failed', sourceId: 'standalone', status: 'failed' },
+      { id: 'r', name: 'Remote', sourceId: 'remote' }
+    ]
+    expect(localInstalls(list, category)).toEqual([])
   })
 })

@@ -3,6 +3,7 @@
  * stays in main, which checks every call comes from the apps origin.
  */
 import { contextBridge, ipcRenderer } from 'electron'
+import type { IpcRendererEvent } from 'electron'
 
 // The bridge's version and the calls it has. Old Desktops stay installed for months while the
 // page deploys daily, so the page asks before it uses a call ("Update Comfy Desktop to use
@@ -22,7 +23,11 @@ const CALLS = [
   'showInFolder',
   'saveVersions',
   'readVersions',
-  'getNodePrice'
+  'getNodePrice',
+  'getLocal',
+  'startLocal',
+  'localFetch',
+  'onLocalEvent'
 ]
 
 contextBridge.exposeInMainWorld('comfyDesktopApps', {
@@ -48,5 +53,20 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
     ipcRenderer.invoke('comfy-apps:save-versions', app, bytes),
   readVersions: (app: string) => ipcRenderer.invoke('comfy-apps:read-versions', app),
   // What Cloud says a node costs (its price_badge), so a choice can show a price per option.
-  getNodePrice: (node: string) => ipcRenderer.invoke('comfy-apps:get-node-price', node)
+  getNodePrice: (node: string) => ipcRenderer.invoke('comfy-apps:get-node-price', node),
+  // The person's own ComfyUI that Desktop runs on this computer: { state, name?, clientId? }.
+  getLocal: () => ipcRenderer.invoke('comfy-apps:get-local'),
+  // Starts the default local install as the dashboard's Launch does; resolves once it answers.
+  startLocal: () => ipcRenderer.invoke('comfy-apps:start-local'),
+  // One call to it, from main's short list: { method, path, body?, fileName? } -> { status, contentType, body }.
+  localFetch: (req: { method: string; path: string; body?: unknown; fileName?: string }) =>
+    ipcRenderer.invoke('comfy-apps:local-fetch', req),
+  // Its run messages ({ type, data }) as they arrive; returns the call that stops them.
+  onLocalEvent: (callback: (event: unknown) => void) => {
+    const listener = (_e: IpcRendererEvent, msg: unknown) => callback(msg)
+    ipcRenderer.on('comfy-apps:local-event', listener)
+    return () => {
+      ipcRenderer.removeListener('comfy-apps:local-event', listener)
+    }
+  }
 })
