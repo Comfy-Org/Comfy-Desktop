@@ -18,28 +18,10 @@ import {
 } from './createHostWindow'
 import type { CloseWindowChoice } from './createHostWindow'
 
-/**
- * Host windows whose `close` should skip the panel-renderer consult and tear down
- * immediately, because the bulk-close confirm already listed everything at risk.
- */
 export const preClearedClose = new WeakSet<BrowserWindow>()
 
-/**
- * Outcome of a panel-renderer close/return consult:
- *   - `cleared`  — proceed (no overlay, or the user confirmed cancelling one)
- *   - `aborted`  — the user backed out of an overlay cancel-prompt; keep open
- *   - `defer`    — no overlay in flight; main owns the confirm (the renderer can't be
- *     trusted: while an instance runs its panel view is hidden behind ComfyUI).
- */
 type PanelConsultResult = 'cleared' | 'aborted' | 'defer'
 
-/**
- * Shared wire logic for both panel-renderer consult flows. Falls back to `fallback` when
- * the panelView is missing/destroyed, the renderer doesn't ack within 2s, or the
- * webContents goes away mid-flight. After the ack we wait INDEFINITELY for the response:
- * the user may be staring at a confirm modal, and a timeout would force-close out from
- * under their prompt.
- */
 async function consultPanelRenderer(
   panelView: WebContentsView | null | undefined,
   requestPrefix: 'comfy-window:request-close' | 'comfy-window:request-return-to-dashboard',
@@ -107,26 +89,15 @@ async function consultPanelRenderer(
   })
 }
 
-/**
- * Consult the panel renderer before tearing down a host window so an in-flight overlay can
- * prompt to confirm cancellation. Falls back to `defer` when the renderer can't be reached
- * so the confirm still fires from main.
- */
 export async function consultPanelRendererClose(
   panelView: WebContentsView | null | undefined
 ): Promise<PanelConsultResult> {
   return consultPanelRenderer(panelView, 'comfy-window:request-close', 'defer')
 }
 
-/**
- * Consult the panel renderer before flipping an install-backed host window back to the
- * dashboard. Cloud / remote installs and chooser hosts clear immediately.
- */
 export async function consultPanelRendererReturnToDashboard(
   panelView: WebContentsView | null | undefined
 ): Promise<boolean> {
-  // No `defer` path here (the renderer owns its prompt, a missing renderer clears); map
-  // the tri-state onto this caller's boolean contract.
   return (
     (await consultPanelRenderer(
       panelView,
@@ -136,11 +107,6 @@ export async function consultPanelRendererReturnToDashboard(
   )
 }
 
-/**
- * Close every host window but leave the app / tray alive. Each window's own `close` handler
- * runs the full teardown. Snapshot the entry list first so `closed` callbacks that delete
- * from `comfyWindows` mid-loop don't skip entries.
- */
 export function closeAllHostWindows(): void {
   const entries = Array.from(comfyWindows.values())
   for (const entry of entries) {
@@ -148,12 +114,6 @@ export function closeAllHostWindows(): void {
   }
 }
 
-/**
- * File menu's "Return to Dashboard" entry. Flips the install-backed host window in place to
- * chooser mode via `entry.detachInstall()`. Confirm surface depends on panelView state:
- * alive → renderer consult; destroyed → a shell system modal. Cloud / remote installs and
- * stopped sessions clear silently.
- */
 export async function returnToDashboard(parentEntryId: number): Promise<void> {
   const entry = comfyWindows.get(parentEntryId)
   if (!entry || isChooserHost(entry) || entry.window.isDestroyed()) return
@@ -166,11 +126,6 @@ export async function returnToDashboard(parentEntryId: number): Promise<void> {
   entry.detachInstall()
 }
 
-/**
- * "Return to Dashboard" confirm as a shell system modal, used when the panelView is
- * destroyed. Mirrors `useReturnToDashboardConfirm`: skips the prompt for non-local installs
- * and already-stopped sessions.
- */
 async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {
   if (!shouldConfirmKillForEntry(entry)) return true
   if (!_runningSessions.has(entry.installationId)) return true
@@ -188,28 +143,18 @@ async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): 
   })
 }
 
-/**
- * Confirm a quit when more than one instance window is open, listing the open windows and
- * any active operations / downloads that will be cancelled. With one or zero, quit straight
- * through.
- */
 export async function confirmAndCloseAllHostWindows(
   parentWindow: BrowserWindow | null,
   performQuit: () => void
 ): Promise<void> {
   const entries = Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed())
-  // "Instances" = windows that would lose a local ComfyUI process on quit. Chooser hosts
-  // and cloud/remote windows close silently (no local work at risk).
   const instanceWindows = entries.filter((e) => shouldConfirmKillForEntry(e))
   if (instanceWindows.length === 0) {
     performQuit()
     return
   }
-  // Use the title-bar pill name, not the verbose OS window title.
   const titles = instanceWindows.map((e) => e.titleBarText || 'Untitled instance')
   const details: SystemModalDetailGroup[] = [{ label: 'Open instances', items: titles }]
-  // Surface the EXTRA things a quit tears down. Running sessions are deliberately NOT
-  // re-listed: they already appear under "Open instances".
   if (ipc.hasActiveOperations()) {
     try {
       const items = await ipc.getActiveDetails()
@@ -218,12 +163,8 @@ export async function confirmAndCloseAllHostWindows(
       if (operations.length > 0)
         details.push({ label: 'In-progress operations', items: operations })
       if (downloads.length > 0) details.push({ label: 'Active downloads', items: downloads })
-    } catch {
-      // Fall back to just the instance list if active-detail collection throws.
-    }
+    } catch {}
   }
-  // Prefer the caller's hint, falling back to any live host so the confirm isn't dropped
-  // when the popup's parent goes away mid-flight.
   const overlayParentEntry =
     parentWindow && !parentWindow.isDestroyed()
       ? entries.find((e) => e.window === parentWindow)
@@ -251,17 +192,6 @@ export async function confirmAndCloseAllHostWindows(
   if (confirmed) performQuit()
 }
 
-/**
- * Shared "Close Window" confirm, used by both the menu entry and the OS ✕ handler. Lives in
- * main, not the panel renderer, because the renderer is hidden behind ComfyUI while an
- * instance runs and can't be relied on to surface a prompt.
- *
- * The same Close / Cancel prompt is shown for every local install window, including the last
- * one — confirming it tears the window down and the app quits via `window-all-closed`.
- * `isLastWindow` and `stopsLocalComfy` only tailor the copy (a stopped / cloud window has no
- * local process to stop; the last window's close quits Comfy Desktop). Returning to the
- * dashboard is a deliberate action via the title pill, not a close-time option.
- */
 export async function confirmCloseInstanceWindow(
   window: BrowserWindow,
   isLastWindow: boolean,
@@ -289,12 +219,6 @@ export async function confirmCloseInstanceWindow(
   return confirmed ? 'close' : 'cancel'
 }
 
-/**
- * Confirm + close a single install-backed host window. Model downloads are owned by the
- * desktop app, not the instance, so they keep running after a close (no active-download
- * list here). The confirm prompt is gated by `confirmBeforeClosingWindow` (off by
- * default); closing the last window quits Desktop either way.
- */
 export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Promise<void> {
   if (parentWindow.isDestroyed()) return
   const entry = Array.from(comfyWindows.values()).find((e) => e.window === parentWindow)
@@ -306,9 +230,6 @@ export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Pr
     (e) => !e.window.isDestroyed()
   ).length
   const isLastWindow = liveWindowCount <= 1
-  // Same rule as the OS ✕ path: confirm only when the user opted in and the
-  // close kills a local ComfyUI process or closes the last install window.
-  // Cloud/remote non-last windows and chooser hosts close immediately.
   if (
     installCloseNeedsConfirm(
       settings.get('confirmBeforeClosingWindow') === true,
@@ -324,40 +245,23 @@ export async function confirmAndCloseHostWindow(parentWindow: BrowserWindow): Pr
     )
     if (choice === 'cancel') return
   }
-  // Skip the close handler's consult: the user already confirmed via this prompt.
   preClearedClose.add(entry.window)
   entry.window.close()
 }
 
-/**
- * Flip an install-backed host window in place to install-less (chooser) mode: the symmetric
- * undo to `attachInstall()`, bound onto `entry.detachInstall` by `createHostWindow()`. Runs
- * `_installCleanup`, navigates the comfyView to about:blank (kept alive for re-attach),
- * resets + re-pushes the title-bar identity, and remounts the panel in chooser mode. No-op
- * when already install-less; does NOT destroy the comfyView or window.
- */
 export function _detachInstallImpl(entry: ComfyWindowEntry): void {
   if (isChooserHost(entry)) return
   if (entry.window.isDestroyed()) return
 
-  // Returning to the dashboard makes it the active surface — persist so the
-  // next boot opens the dashboard, not the install we just detached. The
-  // record helper no-ops while quitting (the user's last surface is whatever
-  // they left from).
   recordDashboardSurface()
 
-  // Symmetric undo of attachInstall (listeners, maps, stopRunning, etc).
   entry._installCleanup?.()
 
-  // Release the ComfyUI page; the view is kept alive for re-attach.
   if (!entry.comfyView.webContents.isDestroyed()) {
     void entry.comfyView.webContents.loadURL('about:blank').catch(() => {})
     entry.comfyView.setBackgroundColor(COMFY_BG)
   }
 
-  // Flip identity back to chooser-host shape and push every identity-derived signal: the
-  // title bar doesn't reload across attach/detach, so without these the renderer keeps the
-  // stale install identity.
   entry.titleBarText = CHOOSER_HOST_TITLE_TEXT
   entry.sourceCategory = null
   entry.previewInstallationId = null
@@ -371,8 +275,6 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
     )
     entry.titleBarView.webContents.send('comfy-titlebar:installation-id-changed', null)
     entry.titleBarView.webContents.send('comfy-titlebar:preview-mode-changed', false)
-    // Reset the install-scoped update pill to "no update" so it clears immediately instead
-    // of inheriting the prior install's pending-update flag.
     entry.titleBarView.webContents.send('comfy-titlebar:install-update-changed', {
       available: false,
       version: null
@@ -380,18 +282,11 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
   }
   applyChooserHostTheme(entry)
 
-  // Tear down the install-backed PanelApp and remount fresh in chooser mode, preserving no
-  // per-install state.
   destroyPanelView(entry)
   ensurePanelView(entry.windowKey, entry, 'chooser')
   entry.layoutViews()
 }
 
-/**
- * Detach every install-backed host whose backing install is no longer in `liveIds` (delete
- * / untrack paths), else it keeps rendering chrome for a non-existent install. Snapshots
- * the entry list so a synchronous detach mutating `comfyWindows` doesn't skip entries.
- */
 export function detachOrphanedInstallHosts(liveIds: ReadonlySet<string>): void {
   const entries = Array.from(comfyWindows.values())
   for (const entry of entries) {

@@ -22,5 +22,5 @@
     },
     "types": ["vitest/globals"]
   },
-  "include": ["src/**/*.test.ts", "locales/*.json"]
+  "include": ["src/**/*.test.ts", "locales/*.json", "src/types/css.d.ts"]
 }

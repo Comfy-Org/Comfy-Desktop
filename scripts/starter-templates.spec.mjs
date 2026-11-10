@@ -1,13 +1,3 @@
-/**
- * Guards `starter-templates.mjs` against edits that would break the picker
- * silently. Every case here is a state the app cannot report: a short tab
- * quietly backfills, a paid auto-pick spends credits on first run, and a
- * missing size makes the disk-space check under-count.
- *
- * Runs on `node --test`, against the real script and the live template index.
- * No test framework: this has to be runnable in CI without installing the
- * app's dependencies.
- */
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -20,14 +10,11 @@ const FILE = path.join(ROOT, 'assets', 'starter-templates.json')
 const SCRIPT = path.join(ROOT, 'scripts', 'starter-templates.mjs')
 const ORIGINAL = fs.readFileSync(FILE, 'utf-8')
 
-// Mirrors the script's own constants (kept local to avoid importing it).
 const MODALITIES = ['video', 'image', '3d', 'audio']
 const SLOTS = 4
 
 const run = (...args) => {
   try {
-    // Merge stderr into stdout: warnings (upstream drift) go to stderr even on
-    // a successful run, and assertions need to see them.
     const out = execFileSync('node', [SCRIPT, ...args], {
       cwd: ROOT,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -35,13 +22,10 @@ const run = (...args) => {
     })
     return { ok: true, err: out ?? '' }
   } catch (e) {
-    // Carries stderr so a rejection can be asserted on its reason. Without it
-    // every `ok === false` assertion passes on a crash or a network outage too.
     return { ok: false, err: String(e.stderr ?? '') }
   }
 }
 
-/** Refused for the stated reason, not merely non-zero. */
 const refuses = (result, reason) => {
   assert.equal(result.ok, false)
   assert.ok(
@@ -130,10 +114,7 @@ describe('the validator matches what the app reads', () => {
   })
 
   it('warns about a field that drifted from upstream, without failing', () => {
-    // Upstream edits its own metadata, so this must not redden unrelated PRs.
     mutate((_d, t) => (t('image')[0].snapshot.title = 'Hand-edited'))
-    // Exits clean: the workflow reports drift as a warning, and a hard failure
-    // here would redden every open PR the moment upstream edits a description.
     assert.equal(run('validate').ok, true)
   })
 })
@@ -165,7 +146,10 @@ describe('swapping a card keeps the tab whole', () => {
   })
 
   it('treats an api_ id as paid without the flag', () => {
-    assert.equal(run('set', '--modality', 'image', '--id', 'api_google_nano_banana2_image_edit').ok, true)
+    assert.equal(
+      run('set', '--modality', 'image', '--id', 'api_google_nano_banana2_image_edit').ok,
+      true
+    )
     const paid = tab('image').filter((c) => c.apiNode)
     assert.equal(paid.length, 1)
     assert.equal(paid[0].id, 'api_google_nano_banana2_image_edit')
@@ -207,7 +191,6 @@ describe('swapping a card keeps the tab whole', () => {
   })
 
   it('refuses an id that belongs to a different tab upstream', () => {
-    // Not already in the list, so the duplicate check cannot catch this one.
     assert.equal(
       run(
         'set',
@@ -238,9 +221,6 @@ describe('rebuilding the whole list', () => {
     return run('replace', ...Object.entries(merged).flatMap(([k, v]) => [`--${k}`, v]))
   }
 
-  // The picker auto-selects slot 1 and shows the paid card in slot 2, so those
-  // two positions are load-bearing. The other two are free to reorder, so this
-  // pins the rule, not a snapshot: a swap of slots 3 and 4 must not touch it.
   it('keeps the recommended pick first and the paid card second in every tab', () => {
     const doc = JSON.parse(ORIGINAL)
     for (const modality of MODALITIES) {
@@ -289,9 +269,6 @@ describe('rebuilding the whole list', () => {
     assert.equal(fs.readFileSync(FILE, 'utf-8'), ORIGINAL)
   })
 
-  // The blank is caught either by the emptiness check or, failing that, by
-  // `entryFor` refusing an unknown id. Pinned so neither guard can be dropped
-  // without the other noticing.
   it('refuses an empty slot rather than silently dropping it', () => {
     assert.equal(
       replace({ video: '*video_minimax_h3_t2v,$api_seedance2_5_r2v,,wan2.1_fun_inp' }).ok,
@@ -300,7 +277,6 @@ describe('rebuilding the whole list', () => {
   })
 
   it('treats an unmarked api_ id as paid', () => {
-    // Without this it would be written as free and fail the zero-size rule.
     assert.equal(
       replace({
         video:

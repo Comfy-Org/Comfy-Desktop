@@ -12,7 +12,6 @@ describe('decodeExitCode', () => {
   })
 
   it('decodes the decimal form Node reports the same way', () => {
-    // 3221225477 === 0xC0000005 — the value users actually see in the UI.
     expect(decodeExitCode(3221225477)).toEqual({
       code: 3221225477,
       hex: '0xC0000005',
@@ -21,8 +20,6 @@ describe('decodeExitCode', () => {
   })
 
   it('normalizes a signed int32 form to the same unsigned code', () => {
-    // -1073741819 === 0xC0000005 as a signed 32-bit int; some wrappers report
-    // exit codes that way.
     expect(decodeExitCode(-1073741819)).toEqual({
       code: 3221225477,
       hex: '0xC0000005',
@@ -31,7 +28,6 @@ describe('decodeExitCode', () => {
   })
 
   it('returns null for the signed force-kill sentinel (-1)', () => {
-    // -1 === 0xFFFFFFFF unsigned, the TerminateProcess sentinel — not a fault.
     expect(decodeExitCode(-1)).toBeNull()
   })
 
@@ -58,8 +54,6 @@ describe('decodeExitCode', () => {
   })
 
   it('returns null for the Windows TerminateProcess sentinel (0xFFFFFFFF)', () => {
-    // Force-kill reports 4294967295, which is outside the NTSTATUS fault band —
-    // don't mislabel a deliberate kill as a native crash.
     expect(decodeExitCode(4294967295)).toBeNull()
   })
 })

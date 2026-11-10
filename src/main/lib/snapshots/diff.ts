@@ -22,7 +22,6 @@ export function formatSnapshotVersion(
   return comfyui.ref
 }
 
-/** Subset of Snapshot['comfyui'] needed for version resolution. */
 interface VersionResolvable {
   ref: string
   commit: string | null
@@ -30,7 +29,6 @@ interface VersionResolvable {
   commitsAhead?: number
 }
 
-/** Resolve a snapshot's version from local git state, falling back to stored fields when git is unavailable. */
 export async function resolveSnapshotVersion(
   installPath: string,
   comfyui: VersionResolvable,
@@ -142,7 +140,6 @@ export function diffSnapshots(a: Snapshot, b: Snapshot): SnapshotDiff {
   return diff
 }
 
-/** Diff current live state against a target snapshot (what a restore would change). */
 export async function diffAgainstCurrent(
   installPath: string,
   installation: InstallationRecord,
@@ -161,7 +158,6 @@ export async function diffAgainstCurrent(
   return diff
 }
 
-/** Resolve formattedVersion fields from git state, mutating diff.comfyui in place. */
 export async function resolveDiffVersions(installPath: string, diff: SnapshotDiff): Promise<void> {
   if (!diff.comfyui) return
   const [fromVersion, toVersion] = await Promise.all([

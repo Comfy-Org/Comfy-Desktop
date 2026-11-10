@@ -1,4 +1,3 @@
-// @vitest-environment node
 import http from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startLoopbackListener, type LoopbackListener } from './loopback'
@@ -24,8 +23,6 @@ function get(url: string): Promise<{ status: number; body: string; contentType?:
       .on('error', reject)
   })
 }
-/** Drain queued IO callbacks and microtasks so any already-settled promise
- *  has run its handlers; no wall-clock wait. */
 const drain = (): Promise<void> => new Promise((r) => setImmediate(r))
 
 describe('loopback listener', () => {
@@ -60,11 +57,8 @@ describe('loopback listener', () => {
     const invalidResponse = await get(`${listener.redirectUri}?state=WRONG&code=x`)
     expect(invalidResponse.status).toBe(400)
     expect(invalidResponse.body).toContain('Invalid sign-in response')
-    // Any settlement happens in the same synchronous handler that sends the
-    // response, so once the 400 has arrived a drain is enough for a (wrong)
-    // settlement's then-handlers to run.
     await drain()
-    expect(settled).toBe(false) // an outsider could not abort our sign-in
+    expect(settled).toBe(false)
 
     await get(`${listener.redirectUri}?state=st&code=real`)
     expect(await codeP).toEqual({ code: 'real' })

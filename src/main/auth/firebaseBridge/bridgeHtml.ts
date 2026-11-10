@@ -1,18 +1,3 @@
-/**
- * Bridge-page HTML rendered to the user's system browser. Two flows
- * share these helpers depending on provider:
- *
- *  - Google: server-driven raw OAuth (`createAuthUri` → HTTP 302 →
- *    provider → 302 back to `signInWithIdp`). The user's browser only
- *    sees a terminal state — "Signed in" or "Sign-in failed".
- *
- *  - GitHub: client-driven popup bridge — the page initialises Firebase
- *    JS SDK and calls `signInWithPopup` (gated behind a button click so
- *    popup-blockers can't fire). Used because GitHub OAuth Apps only
- *    permit a single Authorization Callback URL (reserved for web
- *    sign-in), so the loopback raw-OAuth flow can't be used.
- */
-
 import type { FirebaseProjectConfig } from './config'
 import type { SupportedProvider } from './intercept'
 
@@ -194,14 +179,6 @@ function shell(title: string, body: string): string {
 </html>`
 }
 
-/**
- * Terminal success page shown when the OAuth callback completes and
- * the user has been injected into the Desktop view. Renders a
- * countdown synchronised with the server-side `POST_SIGNIN_HOLD_MS`
- * delay so the page doesn't disappear out from under the user the
- * instant Google completes — focus only shifts after the counter
- * reaches zero.
- */
 export function renderDoneHtml(): string {
   return shell(
     "You're signed in — Comfy Desktop",
@@ -234,11 +211,6 @@ export function renderDoneHtml(): string {
   )
 }
 
-/**
- * Terminal error page for IdP-denied or Firebase-exchange failures.
- * The user can retry by returning to Comfy Desktop and clicking
- * Sign in again.
- */
 export function renderErrorHtml(message: string): string {
   return shell(
     'Sign-in failed — Comfy Desktop',
@@ -249,18 +221,6 @@ export function renderErrorHtml(message: string): string {
   )
 }
 
-/**
- * Provider-bridge page used for IdPs that can't use the raw OAuth
- * loopback flow (today: GitHub — its OAuth Apps allow only a single
- * Authorization Callback URL, reserved for web). The page initialises
- * Firebase JS SDK and runs `signInWithPopup` from a user gesture (the
- * "Continue with X" button — gated so popup-blockers don't fire).
- * Auto-attempt on load handles browsers that allow external-app-opened
- * tabs to popup once without explicit interaction.
- *
- * On success the page POSTs `auth.currentUser.toJSON()` to `/callback`
- * — same payload shape the IndexedDB injection script expects.
- */
 export function renderPopupBridgeHtml(
   firebaseConfig: FirebaseProjectConfig,
   providerId: SupportedProvider

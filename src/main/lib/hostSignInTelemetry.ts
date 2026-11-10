@@ -1,10 +1,3 @@
-/**
- * `comfy.desktop.auth.host_sign_in`: the hosted ComfyUI view's sign-in through
- * `__comfyDesktop2.Auth`, reported for the shared SSO funnel. One event with a
- * `stage`, apart from the Firebase bridge's `sign_in_started`/`sign_in_failed`,
- * whose properties and Datadog alert it would otherwise mix into.
- * Carries a reason code and HTTP status only: no email, name or IdP text.
- */
 import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
 import { SignInFailure } from '../cloud/signInFailure'
 import type { SignInFailureReason } from '../cloud/signInFailure'
@@ -12,7 +5,6 @@ import * as mainTelemetry from './telemetry'
 
 export const HOST_SIGN_IN_EVENT = 'comfy.desktop.auth.host_sign_in'
 
-/** `superseded`: a sign-out or workspace switch replaced the sign-in before it finished. */
 export type HostSignInFailureReason = SignInFailureReason | 'superseded' | 'unknown'
 
 type HostSignInOutcome =
@@ -33,11 +25,6 @@ function failureOf(error: unknown): HostSignInOutcome {
   return { stage: 'failed', reason: error.reason, httpStatus: error.httpStatus }
 }
 
-/**
- * The sign-in a repeat request joins is still one attempt: only the request
- * that started it reports, so a second click reopens the browser page without
- * counting a second request or outcome.
- */
 let attemptInFlight = false
 
 export async function reportHostSignIn(

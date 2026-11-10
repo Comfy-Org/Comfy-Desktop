@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { ref, shallowRef, type ShallowRef } from 'vue'
 
 import { useCentralPillCoachmark, CENTRAL_PILL_HINT_SEEN_KEY } from './useCentralPillCoachmark'
@@ -19,8 +20,6 @@ function makeBridge() {
   }
 }
 
-/** A stand-in pill element whose `getBoundingClientRect` returns a fixed
- *  rect so anchor math is deterministic. */
 function makePillRef(rect?: Partial<DOMRect>): ShallowRef<HTMLElement | null> {
   const el = {
     getBoundingClientRect: () =>
@@ -37,13 +36,10 @@ describe('useCentralPillCoachmark', () => {
   beforeEach(() => {
     getSetting = vi.fn().mockResolvedValue(undefined)
     setSetting = vi.fn().mockResolvedValue(undefined)
-    vi.stubGlobal('window', {
-      ...window,
-      api: { getSetting, setSetting },
-      requestAnimationFrame: (cb: FrameRequestCallback) => {
-        cb(0)
-        return 0
-      }
+    stubWindowApi({ getSetting, setSetting })
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0)
+      return 0
     })
   })
 
@@ -72,7 +68,6 @@ describe('useCentralPillCoachmark', () => {
     expect(payload.title).toBe('T')
     expect(payload.body).toBe('Switch & manage instances here.')
     expect(payload.dismissLabel).toBe('Got it')
-    // Anchored below the pill, centered on it.
     expect(payload.leftX).toBe(100)
     expect(payload.rightX).toBe(240)
     expect(payload.bottomY).toBe(36)
@@ -245,7 +240,6 @@ describe('useCentralPillCoachmark', () => {
     })
 
     await cm.maybeShow()
-    // Pill click counts as acknowledgement.
     await cm.acknowledgeViaPillOpen()
 
     expect(setSetting).toHaveBeenCalledWith(CENTRAL_PILL_HINT_SEEN_KEY, true)

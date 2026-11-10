@@ -1,7 +1,5 @@
-/** Stable local identity for the workspace that exists without an account. */
 export const PERSONAL_WORKSPACE_ID = 'personal'
 
-/** Persisted dashboard scope used by every New Instance entry point. */
 export const DASHBOARD_WORKSPACE_SETTING = 'dashboardWorkspaceId'
 
 export function isPersonalWorkspace(workspace: { name?: string; type?: string }): boolean {
@@ -18,4 +16,15 @@ export function workspaceContextId(workspace: {
   return isPersonalWorkspace({ name: workspace.workspaceName, type: workspace.workspaceType })
     ? PERSONAL_WORKSPACE_ID
     : workspace.workspaceId || PERSONAL_WORKSPACE_ID
+}
+
+export function installationWorkspaceId(installation: { workspaceId?: string }): string {
+  return installation.workspaceId === undefined ? PERSONAL_WORKSPACE_ID : installation.workspaceId
+}
+
+export function isInstallationInWorkspace(
+  installation: { workspaceId?: string },
+  workspaceId: string
+): boolean {
+  return installationWorkspaceId(installation) === workspaceId
 }

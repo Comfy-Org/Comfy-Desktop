@@ -42,7 +42,6 @@ describe('isTemplateDiskBlocked', () => {
   })
 
   it('blocks when free space is below model size + headroom', () => {
-    // 2 GB models → ~2.2 GB required; 2.1 GB free is short.
     expect(isTemplateDiskBlocked({ free: 2.1 * GB, total: 100 * GB }, 2 * GB)).toBe(true)
   })
 

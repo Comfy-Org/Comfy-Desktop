@@ -270,14 +270,12 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    // Icon-only so the host-app menu doesn't clash with ComfyUI's own File menu.
     const fileBtn = wrapper.find('.title-menu-button')
     expect(fileBtn.exists()).toBe(true)
     expect(fileBtn.attributes('aria-label')).toBe('Menu')
     expect(fileBtn.classes()).toContain('title-menu-button--icon')
     const pill = wrapper.find('.title-install-pill')
     expect(pill.exists()).toBe(true)
-    // role=button div (not native <button>) so it can hold the nested Update chip.
     expect(pill.element.tagName).toBe('DIV')
     expect(pill.attributes('role')).toBe('button')
     expect(pill.attributes('aria-haspopup')).toBe('dialog')
@@ -293,7 +291,6 @@ describe('TitleBarApp', () => {
   })
 
   it('routes pill clicks to the install-picker bridge handler with an anchor', async () => {
-    // Pill click opens the picker popup, NOT a `setPanel` route.
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
@@ -312,7 +309,6 @@ describe('TitleBarApp', () => {
     await flushPromises()
     await wrapper.find('.title-menu-button').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
-    // jsdom returns 0/0 rects; assert the anchor contract is well-formed.
     const anchor = bridgeState.fileMenuAnchors[0]!
     expect(typeof anchor.x).toBe('number')
     expect(typeof anchor.y).toBe('number')
@@ -335,7 +331,6 @@ describe('TitleBarApp', () => {
   })
 
   it('updates the install pill label when main pushes a title', async () => {
-    // The install name reads bare; the category surfaces as an icon.
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
@@ -401,11 +396,9 @@ describe('TitleBarApp', () => {
     await wrapper.find('.title-menu-button').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
 
-    // Simulate the close callback stamping the suppression timestamp.
     bridgeState.menuClosedCallbacks.forEach((cb) => cb({ menu: 'menu' }))
     await flushPromises()
 
-    // Second click within the suppression window must NOT open the menu.
     await wrapper.find('.title-menu-button').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
 
@@ -416,14 +409,12 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    // Steady state — every button is rendered.
     expect(wrapper.find('.title-menu-button--icon').exists()).toBe(true)
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
     expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(true)
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
 
-    // Consent step — full strip.
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('consent-lockdown'))
     await flushPromises()
     expect(wrapper.find('header').classes()).toContain('is-consent-lockdown')
@@ -432,7 +423,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(false)
 
-    // Post-consent — waffle returns (Skip Onboarding lives there); rest hidden.
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('post-consent'))
     await flushPromises()
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
@@ -441,7 +431,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('.title-feedback-button').exists()).toBe(false)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(false)
 
-    // Loading-lockdown — every chrome button stays live (not a chrome lockdown).
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('loading-lockdown'))
     await flushPromises()
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
@@ -450,7 +439,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('.title-feedback-button').exists()).toBe(true)
     expect(wrapper.find('.title-install-pill.is-interactive').exists()).toBe(true)
 
-    // Takeover dismissed — back to steady state.
     bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
     await flushPromises()
     expect(wrapper.find('header').classes()).not.toContain('is-consent-lockdown')
@@ -488,7 +476,6 @@ describe('TitleBarApp', () => {
     await flushPromises()
     const icon = wrapper.find('.title-install-type-icon')
     expect(icon.exists()).toBe(true)
-    // Tooltip mirrors the i18n `installType.standalone` value.
     expect(icon.attributes('title')).toBe('Standalone')
     expect(icon.attributes('aria-label')).toBe('Standalone')
   })
@@ -758,7 +745,6 @@ describe('TitleBarApp', () => {
     await flushPromises()
     const tray = wrapper.find('.title-downloads-tray')
     expect(tray.exists()).toBe(true)
-    // Badge shows the in-flight count; recent entries don't bump it.
     const badge = wrapper.find('.title-downloads-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toBe('2')
@@ -767,8 +753,6 @@ describe('TitleBarApp', () => {
   })
 
   it('treats recent entries already present on the first push as already-acknowledged', async () => {
-    // `recent` entries in the initial push finished before this window opened,
-    // so the unseen indicator must not misfire on mount.
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
@@ -869,7 +853,6 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    // Initial empty state so the next push counts as a real new arrival.
     bridgeState.downloadsChangedCallbacks.forEach((cb) => cb({ active: [], recent: [] }))
     await flushPromises()
     bridgeState.downloadsChangedCallbacks.forEach((cb) =>
@@ -1014,8 +997,6 @@ describe('TitleBarApp', () => {
     expect(wrapper.find('.title-downloads-tray').exists()).toBe(true)
   })
 
-  // macOS routes hover through the bridge; Win/Linux must use the native
-  // `title` only (else two tooltips render).
   it('does NOT route hover through showTooltip on Win/Linux (native title is reliable there)', async () => {
     bridgeState = installMockBridge({ isMac: false })
     vi.resetModules()
@@ -1025,9 +1006,7 @@ describe('TitleBarApp', () => {
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
       const btn = wrapper.find('.title-menu-button').element as HTMLElement
-      // Dispatch on the button so it bubbles to the window-level listener.
       btn.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))
-      // Even past the show delay the bridge should NOT be called on Win/Linux.
       vi.advanceTimersByTime(1000)
       await flushPromises()
       expect(bridgeState.showTooltipCalls.length).toBe(0)
@@ -1073,24 +1052,19 @@ describe('TitleBarApp', () => {
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
       const btn = wrapper.find('.title-menu-button').element as HTMLElement
-      // Stub a deterministic geometry — JSDOM returns 0×0 by default.
       btn.getBoundingClientRect = () =>
         ({ left: 20, top: 6, right: 50, bottom: 30, width: 30, height: 24, x: 20, y: 6 }) as DOMRect
       btn.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))
-      // Advance past the show delay.
       vi.advanceTimersByTime(500)
       await flushPromises()
       expect(bridgeState.showTooltipCalls.length).toBe(1)
       const call = bridgeState.showTooltipCalls[0]
       expect(call.text).toBe('Menu')
-      // Both edges sent so main can anchor left, falling back to right on overflow.
       expect(call.leftX).toBe(20)
       expect(call.rightX).toBe(50)
       expect(call.bottomY).toBe(30)
       const root = wrapper.find('header').element as HTMLElement
       root.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
-      // The listener is on documentElement; dispatch there too since JSDOM
-      // doesn't bubble custom PointerEvents to the document root.
       document.documentElement.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true }))
       await flushPromises()
       expect(bridgeState.hideTooltipCalls).toBeGreaterThanOrEqual(1)
@@ -1100,9 +1074,6 @@ describe('TitleBarApp', () => {
     }
   })
 
-  // Centered-pill mirror: the trailing cluster's width is reflected onto
-  // `--title-trailing-width`, which the left cluster reads as `min-width` so the
-  // centre track stays equidistant and the pill anchors to true window centre.
   describe('trailing-width mirror (true-centered install pill)', () => {
     type ResizeCallback = (entries: ResizeObserverEntry[], obs: ResizeObserver) => void
     interface ResizeObserverHandle {
@@ -1135,9 +1106,7 @@ describe('TitleBarApp', () => {
       StubCtor.prototype.disconnect = function disconnect(this: { observed: Element[] }) {
         this.observed.length = 0
       }
-      StubCtor.prototype.unobserve = function unobserve() {
-        // no-op
-      }
+      StubCtor.prototype.unobserve = function unobserve() {}
       ;(globalThis as { ResizeObserver?: unknown }).ResizeObserver =
         StubCtor as unknown as typeof globalThis.ResizeObserver
     }
@@ -1162,7 +1131,6 @@ describe('TitleBarApp', () => {
       const mod = await import('./TitleBarApp.vue')
       const wrapper = mount(mod.default, { attachTo: document.body })
       await flushPromises()
-      // Two observers: the trailing-cluster mirror (this test) and the fit controller.
       expect(handles).toHaveLength(2)
       const trailingEl = wrapper.find('.title-trailing').element
       const handle = handles.find((h) => h.observed[0] === trailingEl)
@@ -1179,7 +1147,6 @@ describe('TitleBarApp', () => {
       await flushPromises()
       const titleBar = wrapper.find('.title-bar').element as HTMLElement
       const handle = handles[0]!
-      // Initial state — no resize fired yet, var resolves to 0px.
       expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('0px')
       handle.fire(240)
       await flushPromises()
@@ -1199,7 +1166,6 @@ describe('TitleBarApp', () => {
       handle.fire(300)
       await flushPromises()
       expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('300px')
-      // Firing the same width is a no-op (the callback guards the assignment).
       handle.fire(300)
       await flushPromises()
       expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('300px')
@@ -1207,7 +1173,6 @@ describe('TitleBarApp', () => {
     })
 
     it('rounds fractional widths up so the left-cluster reservation never under-shoots', async () => {
-      // Round up: a sub-pixel under-shoot would nudge the centre off true centre.
       const mod = await import('./TitleBarApp.vue')
       const wrapper = mount(mod.default, { attachTo: document.body })
       await flushPromises()
@@ -1224,7 +1189,6 @@ describe('TitleBarApp', () => {
       const mod = await import('./TitleBarApp.vue')
       const wrapper = mount(mod.default, { attachTo: document.body })
       await flushPromises()
-      // No observer, but the component renders; the var falls back to 0px.
       const titleBar = wrapper.find('.title-bar').element as HTMLElement
       expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('0px')
       expect(wrapper.find('.title-install-pill').exists()).toBe(true)
@@ -1240,8 +1204,6 @@ describe('TitleBarApp', () => {
     beforeEach(() => {
       getSetting = vi.fn().mockResolvedValue(undefined)
       setSetting = vi.fn().mockResolvedValue(undefined)
-      // Nothing pending, so the beta notice never competes for the single popup and these
-      // assertions keep counting only pill-hint shows.
       getPendingBetaNotice = vi.fn().mockResolvedValue(null)
       ;(window as unknown as { api: unknown }).api = {
         getSetting,
@@ -1250,8 +1212,6 @@ describe('TitleBarApp', () => {
         acknowledgeBetaNotice: vi.fn().mockResolvedValue(undefined),
         openGlobalSettings: vi.fn()
       }
-      // Run the deferred rAF synchronously so the coachmark trigger
-      // resolves within a flushPromises() tick.
       vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
         cb(0)
         return 0
@@ -1264,16 +1224,13 @@ describe('TitleBarApp', () => {
     })
 
     it('shows the coachmark when a window attaches to an instance AFTER mount', async () => {
-      // The watcher must re-attempt when isInstallLess flips false post-attach.
       bridgeState = installMockBridge({ installationId: null })
       vi.resetModules()
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
-      // Install-less at mount → no coachmark yet.
       expect(bridgeState.showCoachmarkCalls.length).toBe(0)
 
-      // Main pushes an installation id — the window is now install-backed.
       bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-1'))
       await flushPromises()
 
@@ -1307,7 +1264,6 @@ describe('TitleBarApp', () => {
     })
 
     it('waits for loading-lockdown to clear (ComfyUI screen visible) before showing', async () => {
-      // Must not show the coachmark over the loader; fire only once lockdown clears.
       bridgeState = installMockBridge({ installationId: 'inst-1' })
       vi.resetModules()
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
@@ -1316,7 +1272,6 @@ describe('TitleBarApp', () => {
       await flushPromises()
       expect(bridgeState.showCoachmarkCalls.length).toBe(0)
 
-      // Loader finished → ComfyUI is visible.
       bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
       await flushPromises()
       expect(bridgeState.showCoachmarkCalls.length).toBe(1)
@@ -1335,12 +1290,6 @@ describe('TitleBarApp', () => {
     })
   })
 
-  /**
-   * Core beta activation notice — the card raised when a launch turned a beta feature on for
-   * the first time. `hasSeenCentralPillHint: true` throughout so the onboarding hint is spent
-   * and the beta notice is the only card competing for the window's single popup; the one
-   * exception is the suppression test, which deliberately lets both want it at once.
-   */
   describe('core beta activation notice', () => {
     let getPendingBetaNotice: ReturnType<typeof vi.fn>
     let acknowledgeBetaNotice: ReturnType<typeof vi.fn>
@@ -1349,7 +1298,6 @@ describe('TitleBarApp', () => {
 
     function installApiMock(
       opts: {
-        /** `null` = main has nothing to announce. */
         pending?: {
           args: string[]
           direction: 'enabled' | 'disabled'
@@ -1411,9 +1359,7 @@ describe('TitleBarApp', () => {
       expect(betaCards().length).toBe(1)
       const payload = betaCards()[0]!
       expect(payload.title).toBe('A beta feature is on')
-      // With no payload-supplied name the copy stays generic, and it never leaks the raw arg.
       expect(payload.body).not.toContain('--enable-assets')
-      // The action is what makes it more than an FYI.
       expect(payload.actionLabel).toBe('Settings')
       wrapper.unmount()
     })
@@ -1433,13 +1379,10 @@ describe('TitleBarApp', () => {
     })
 
     it('defers while the onboarding pill hint owns the popup', async () => {
-      // Both want the single popup on this launch. The hint wins and the notice replays next
-      // launch, rather than replacing a card the user is mid-read of.
       installApiMock({ pillHintSeen: false })
       const wrapper = await mountBar()
       expect(bridgeState.showCoachmarkCalls.length).toBe(1)
       expect(bridgeState.showCoachmarkCalls[0]!.kind).not.toBe('beta-notice')
-      // Nothing was acknowledged, so main still holds the pending notice.
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
       wrapper.unmount()
     })
@@ -1453,46 +1396,33 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    // The host window moving or resizing auto-hides the shared popup in main (the anchor the
-    // beak points at has gone stale). Nothing retired the card, so the user may never have
-    // read it — and if the composable stayed latched, no later card could be raised at all.
     it('does not put the card back until the window has stopped moving', async () => {
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
 
-      // A drag: many hides, no settle yet. Main owns the debounce, so nothing arrives here.
       bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
-      // Re-showing mid-drag would flash the card and steal focus on every move.
       expect(betaCards().length).toBe(1)
 
       bridgeState.coachmarkSettledCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
 
-      // Exactly one re-show for the whole gesture.
       expect(betaCards().length).toBe(2)
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
       wrapper.unmount()
     })
 
-    // The other card TAKING the popup is not a hide, so `onCoachmarkAutoHidden` never fires
-    // for it. Without a displacement signal the composable keeps believing its card is up and
-    // refuses every later show — which is how a first-run beta notice ended up armed but
-    // permanently invisible behind the onboarding hint.
     it('forgets a card the other one displaced, so it can be raised again', async () => {
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
 
-      // The hint takes the popup out from under the beta card.
       bridgeState.coachmarkDisplacedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
 
-      // Displacement is not acknowledgement: main must still hold it.
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
 
-      // And the card can be raised again once the popup frees up.
       getPendingBetaNotice.mockResolvedValue({
         args: ['--enable-something-else'],
         direction: 'enabled',
@@ -1504,9 +1434,6 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    // One popup backs both cards, so the auto-hide is addressed by kind. The pill hint's own
-    // auto-hide must not make the beta notice forget which card it has on screen — if it did,
-    // the later dismissal would acknowledge nothing and the notice would replay forever.
     it('ignores an auto-hide addressed to the other card', async () => {
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
@@ -1516,7 +1443,6 @@ describe('TitleBarApp', () => {
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
       await flushPromises()
 
-      // Still knew which args were on screen, so the dismissal spent exactly those.
       expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
       wrapper.unmount()
     })
@@ -1528,15 +1454,11 @@ describe('TitleBarApp', () => {
       expect(openGlobalSettings).toHaveBeenCalledWith('general', {
         highlightField: 'betaFeaturesEnabled'
       })
-      // Acting on the card acknowledges it: the user is now looking at the switch it named.
       expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
       wrapper.unmount()
     })
 
     it('survives the pill drawer opening: the hint must not hide a card it did not raise', async () => {
-      // One popup per window. The hint's retire path hides it unconditionally, and by the time
-      // the drawer is opened the hint has usually never been on it — so without an ownership
-      // check the card vanishes with nothing acknowledged.
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
       const hidesBefore = bridgeState.hideCoachmarkCalls
@@ -1550,31 +1472,23 @@ describe('TitleBarApp', () => {
       wrapper.unmount()
     })
 
-    // The hint shares the popup, so it gets auto-hidden by movement too — and stranding it is
-    // worse than stranding the notice: `coachmark.isShowing` IS the beta notice's suppression
-    // gate, and the hint cannot be dismissed once its card is gone.
     it('re-raises the onboarding hint after movement auto-hides it', async () => {
       installApiMock({ pillHintSeen: false })
       const wrapper = await mountBar()
       const hintCards = () => bridgeState.showCoachmarkCalls.filter((c) => c.kind !== 'beta-notice')
       expect(hintCards().length).toBe(1)
-      // The hint owns the popup, so the beta notice correctly defers.
       expect(betaCards().length).toBe(0)
 
       bridgeState.coachmarkAutoHiddenCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
       bridgeState.coachmarkSettledCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
       await flushPromises()
 
-      // Raised again rather than stranded: the user never read it, so it is not spent.
       expect(hintCards().length).toBe(2)
-      // And it was NOT persisted as seen, which only a real dismissal may do.
       expect(setSetting).not.toHaveBeenCalledWith('hasSeenCentralPillHint', true)
       wrapper.unmount()
     })
 
     it('retries once the onboarding hint releases the popup', async () => {
-      // Deferring is correct, but nothing in the gate watcher changes when the hint goes away,
-      // so the card would otherwise wait for the next launch.
       installApiMock({ pillHintSeen: false })
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(0)
@@ -1587,9 +1501,6 @@ describe('TitleBarApp', () => {
     })
 
     it('never acknowledges an install the card was not raised for', async () => {
-      // The card names "this instance". If the window attaches elsewhere while it floats, the
-      // card comes down unspent — acknowledging the new install would permanently consume a
-      // notice that was never shown for it.
       getPendingBetaNotice.mockImplementation(async (id: string) =>
         id === 'inst-1'
           ? { args: ['--enable-assets'], direction: 'enabled', description: null }
@@ -1601,7 +1512,6 @@ describe('TitleBarApp', () => {
       bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-2'))
       await flushPromises()
       expect(acknowledgeBetaNotice).not.toHaveBeenCalled()
-      // inst-2 has nothing pending, so nothing new is raised either.
       expect(betaCards().length).toBe(1)
 
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'beta-notice' }))
@@ -1611,8 +1521,6 @@ describe('TitleBarApp', () => {
     })
 
     it('queries the NEW install after the host retargets between two real instances', async () => {
-      // The gate watcher keys on install-less/lockdown, neither of which moves on a retarget,
-      // so without an explicit re-query the new install's notice is never asked for again.
       getPendingBetaNotice.mockImplementation(async (id: string) =>
         id === 'inst-2'
           ? { args: ['--enable-agent'], direction: 'enabled', description: null }
@@ -1630,9 +1538,6 @@ describe('TitleBarApp', () => {
     })
 
     it('shows a SECOND, different notice for the same install after the first is retired', async () => {
-      // The latch is keyed on the card, not the install. A user who updates Core without
-      // restarting Desktop can have a later grant newly clear its version gate; main queues it
-      // and this must be able to show it.
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
 
@@ -1645,7 +1550,6 @@ describe('TitleBarApp', () => {
       await flushPromises()
       expect(acknowledgeBetaNotice).toHaveBeenCalledWith('inst-1', ['--enable-assets'])
 
-      // A gate transition re-runs the watcher; the new card is a different arg set.
       bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('loading-lockdown'))
       await flushPromises()
       bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('none'))
@@ -1656,8 +1560,6 @@ describe('TitleBarApp', () => {
     })
 
     it('does not re-raise the same card when acknowledging it failed', async () => {
-      // Main still holds it pending, so without a per-card latch every gate transition would
-      // put the identical card back up.
       acknowledgeBetaNotice.mockRejectedValue(new Error('ipc down'))
       const wrapper = await mountBar()
       expect(betaCards().length).toBe(1)
@@ -1685,8 +1587,6 @@ describe('TitleBarApp', () => {
     })
 
     it('reads the other way round for a named remote force-off', async () => {
-      // A withdrawn beta is not "a beta feature is on". Main only resolves this direction for
-      // a grant the payload named, so there is always something to put in the sentence.
       installApiMock({
         pending: {
           args: ['--disable-assets'],
@@ -1698,14 +1598,11 @@ describe('TitleBarApp', () => {
       const payload = betaCards()[0]!
       expect(payload.title).toBe('The Asset library beta is off')
       expect(payload.title).not.toContain('is on')
-      // Still points at Settings — the beta program switch is what the user can act on.
       expect(payload.actionLabel).toBe('Settings')
       wrapper.unmount()
     })
 
     it('routes a pill-hint dismiss away from the beta notice', async () => {
-      // One popup, two owners: a retirement addressed to the hint must not spend the
-      // notice's once-ever acknowledgement.
       const wrapper = await mountBar()
       bridgeState.coachmarkDismissedCallbacks.forEach((cb) => cb({ kind: 'pill-hint' }))
       await flushPromises()

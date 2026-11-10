@@ -1,19 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 
-import { en } from '../../lib/i18nMessages.ts'
 import PathField from './PathField.vue'
 import type { DetailField } from '../../types/ipc'
 
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
-
 function mountField(field: DetailField) {
   return mount(PathField, {
-    props: { field },
-    global: { plugins: [makeI18n()] }
+    props: { field }
   })
 }
 

@@ -2,9 +2,6 @@ import { computed, ref, watch, type Component, type Ref } from 'vue'
 import { Image as ImageIcon, Video, AudioLines, Box } from 'lucide-vue-next'
 import type { FieldOption } from '../types/ipc'
 
-/** Modality tab order + its glyph. Mirrors the main-process curated manifest's
- *  `TEMPLATE_MODALITY_ORDER`; kept here so the renderer owns its own UI ordering
- *  without reaching across the process boundary. */
 const MODALITY_ORDER = ['video', 'image', '3d', 'audio'] as const
 type Modality = (typeof MODALITY_ORDER)[number]
 
@@ -29,12 +26,6 @@ function modalityOf(option: FieldOption): Modality | null {
     : null
 }
 
-/**
- * Groups the picker's template options into per-modality tabs and tracks the
- * active one. The "None" sentinel is excluded; only modalities with ≥1 template
- * get a tab. The active tab follows the selected template (so re-entering the
- * step lands on the user's pick) and defaults to the first populated tab.
- */
 export function useTemplateTabs(
   options: Ref<FieldOption[]>,
   noneValue: Ref<string> | string,
@@ -73,8 +64,6 @@ export function useTemplateTabs(
 
   const activeModality = ref<Modality | null>(null)
 
-  /** Keep the active tab valid: prefer the selected template's modality, then
-   *  the current tab if it still exists, then the first populated tab. */
   watch(
     [tabs, modalityOfSelected],
     () => {

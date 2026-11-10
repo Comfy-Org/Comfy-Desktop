@@ -27,9 +27,6 @@ vi.mock('./comfy-args', async (importOriginal) => ({
 import { _backgroundFetchesForTest, proveCommitRelation } from './coreBetaAncestry'
 import { _resetForTest, previewCoreBetaArgs } from './coreBetaPreview'
 
-// The preview end to end against real repositories: real git, real checkout reads, no fetch.
-
-/** Git variables a test run can inherit (from a hook, say) that would point git at another repo. */
 const INHERITED_GIT_STATE = [
   'GIT_DIR',
   'GIT_WORK_TREE',
@@ -68,7 +65,6 @@ let root = ''
 let upstream = ''
 const sha: Record<string, string> = {}
 
-/** A fresh clone of upstream's master, so a test may move or damage it. */
 function cloneOf(name: string, ...flags: string[]): string {
   const dir = path.join(root, name)
   git(root, 'clone', '-q', '--single-branch', '-b', 'master', ...flags, `file://${upstream}`, dir)
@@ -137,8 +133,6 @@ describe('previewCoreBetaArgs against a real repository', () => {
     await expect(preview(repo)).resolves.toEqual([{ arg: '--enable-agent', name: null }])
   })
 
-  // `[]` alone cannot tell a proven answer from an unprovable one, so the negatives also check
-  // the relation the preview decided on.
   it('hides it once HEAD is below the range, having proven the lower bound absent', async () => {
     const repo = cloneOf('below')
     git(repo, 'reset', '-q', '--hard', sha.base!)

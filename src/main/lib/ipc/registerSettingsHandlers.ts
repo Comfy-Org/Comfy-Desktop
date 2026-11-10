@@ -20,18 +20,10 @@ import { recordIpcInvocation } from '../e2eOverrides'
 import type { SettingsSection } from '../../../types/ipc'
 import { AUTO_LAUNCH_LAST, AUTO_LAUNCH_NONE } from '../../settings'
 
-// Build the App + sources + About settings sections. Shared so the Global
-// Settings popup snapshot can call it without going through IPC.
-//
-// `installs` populates per-install options for the `autoLaunchOnStartup`
-// dropdown. Optional so the fast-open path can render the basic
-// none/last options without waiting on the installations file; the
-// snapshot rebroadcast then fills in the per-install entries.
 export function buildSettingsSections(
   installs?: Pick<{ id: string; name: string }, 'id' | 'name'>[]
 ): SettingsSection[] {
   const s = settings.getAll()
-  // Inline description only shows when ON so it reads as "currently in use".
   const chineseMirrorsField = {
     id: 'useChineseMirrors',
     label: i18n.t('settings.useChineseMirrors'),
@@ -47,9 +39,6 @@ export function buildSettingsSections(
     {
       title: i18n.t('settings.general'),
       fields: [
-        // Locale picker first — most users only ever touch this once and
-        // then forget the panel exists. Keeping it at the top so it's
-        // discoverable.
         {
           id: 'language',
           label: i18n.t('settings.language'),
@@ -57,13 +46,7 @@ export function buildSettingsSections(
           value: s.language || i18n.getLocale(),
           options: i18n.getAvailableLocales()
         },
-        // Theme picker hidden (app is dark-only); the theme plumbing stays
-        // wired so re-adding this field is the only change needed to restore it.
 
-        // Opt-in auto-launch on Desktop startup. Opt-in (defaults to None) so
-        // a user who never picks a specific install lands on the dashboard
-        // like today. When set to 'last' the most-recent install opens; when
-        // set to an installation id, that install opens.
         {
           id: 'autoLaunchOnStartup',
           label: i18n.t('settings.autoLaunchOnStartup'),
@@ -77,9 +60,6 @@ export function buildSettingsSections(
           tooltip: i18n.t('settings.autoLaunchOnStartupDescription')
         },
 
-        // Close confirmation, off by default. When on, closing a local-install
-        // window asks the user to confirm first (guards against accidentally
-        // killing a ComfyUI that took minutes to boot).
         {
           id: 'confirmBeforeClosingWindow',
           label: i18n.t('settings.confirmBeforeClosingWindow'),
@@ -95,10 +75,6 @@ export function buildSettingsSections(
           tooltip: i18n.t('settings.warnBeforeRunningMultipleInstancesDescription')
         },
 
-        // Cloud opt-out — pure visibility toggle, doesn't affect any
-        // running behavior. Kept after the window-behavior block so
-        // users who don't care about Cloud find it without scrolling
-        // past the more invasive ones.
         {
           id: 'hideCloudFromPicker',
           label: i18n.t('settings.hideCloudFromPicker'),
@@ -107,17 +83,12 @@ export function buildSettingsSections(
           tooltip: i18n.t('settings.hideCloudFromPickerDescription')
         },
 
-        // autoInstallUpdates is filtered out of generalFields by
-        // buildGlobalSettingsSnapshot — it renders inside the Updates
-        // tab. Keeping the field definition here so the schema stays
-        // single-source.
         {
           id: 'autoInstallUpdates',
           label: i18n.t('settings.autoInstallUpdates'),
           type: 'boolean',
           value: s.autoInstallUpdates !== false
         },
-        // onAppClose field hidden while docking-to-tray is disabled.
         ...(isChinese ? [chineseMirrorsField] : [])
       ]
     },
@@ -130,9 +101,6 @@ export function buildSettingsSections(
           type: 'boolean',
           value: s.telemetryEnabled !== false
         },
-        // Read through the resolver, never off `s`: absence means "not yet
-        // seeded", which the resolver settles (once) from the telemetry
-        // choice. Reading the raw value would coerce that to a default here.
         {
           id: 'betaFeaturesEnabled',
           label: i18n.t('settings.betaFeaturesEnabled'),
@@ -208,7 +176,6 @@ export function buildSettingsSections(
   return [...appSections, ...sourceSections, aboutSection]
 }
 
-// Models directory payload (truly-global launcher setting).
 export function buildModelsPayload(): { systemDefault: string; sections: SettingsSection[] } {
   const s = settings.getAll()
   return {
@@ -229,9 +196,6 @@ export function buildModelsPayload(): { systemDefault: string; sections: Setting
   }
 }
 
-// Default suggested install location (global-only; intentionally NOT part of
-// buildMediaSections so it doesn't leak into the per-instance Storage tab).
-// Label/tooltip live on the section header, so the field itself is unlabelled.
 export function buildInstallLocationFields(): SettingsSection[] {
   const s = settings.getAll()
   return [
@@ -249,7 +213,6 @@ export function buildInstallLocationFields(): SettingsSection[] {
   ]
 }
 
-// Shared input/output directories.
 export function buildMediaSections(): SettingsSection[] {
   const s = settings.getAll()
   return [
@@ -277,8 +240,6 @@ export function buildMediaSections(): SettingsSection[] {
   ]
 }
 
-// Write a setting and run its side-effect branches (theme/locale/telemetry
-// broadcasts, updater hint, settings-changed) plus the Global Settings refresh.
 export function applySettingSet(key: string, value: unknown): void {
   if (
     key === 'betaFeaturesEnabled' &&
@@ -304,18 +265,13 @@ export function applySettingSet(key: string, value: unknown): void {
   }
   if (key === 'telemetryEnabled') {
     _broadcastToRenderer('telemetry-setting-changed', value)
-    // Three-state: true => granted, false => denied, null/undefined => undecided
-    // (so an un-prompted migrator isn't collapsed into "opted in").
     const state: mainTelemetry.ConsentState =
       value === true ? 'granted' : value === false ? 'denied' : 'undecided'
     mainTelemetry.setConsentState(state)
   }
   if (key === 'autoInstallUpdates' || key === 'autoUpdate') {
-    // Re-broadcast so a pending 'ready' immediately reads as auto-on/off.
     updater.notifyAutoUpdateChanged()
   }
-  // Keep the durable per-setting person properties current on toggle (issues
-  // #1220/#1223) instead of waiting for the next boot. No-op for 'omit' keys.
   const trackedProps = settings.getTrackedSettingsTelemetryProperties([key])
   if (Object.keys(trackedProps).length > 0) {
     mainTelemetry.registerPersonProperties(trackedProps)
@@ -338,27 +294,16 @@ export function registerSettingsHandlers(): void {
     return settings.get(key)
   })
 
-  // Core beta activation notice. A PULL pair rather than a push: main arms the pending set
-  // during launch, when the host window may still be mid-attach or under the progress
-  // takeover, and the title bar drains it once its own gate opens.
   ipcMain.handle('get-pending-beta-notice', (_event, installationId: unknown) => {
     if (typeof installationId !== 'string' || installationId === '') return null
     return peekBetaActivationNotice(installationId)
   })
 
-  // Retire the card: persist its args as announced so it never shows again. Deliberately
-  // separate from the read, so a notice that is shown but never retired replays next launch.
   ipcMain.handle(
     'acknowledge-beta-notice',
     (_event, installationId: unknown, shownArgs?: unknown) => {
-      // A persistent, append-only write driven from the renderer, so the id is checked rather
-      // than trusted: a non-string would silently fail to retire the real pending notice.
       if (typeof installationId !== 'string' || installationId === '') return
       recordIpcInvocation('acknowledge-beta-notice', { installationId })
-      // Malformed input is REFUSED, not filtered. Filtering `[123]` down to `[]` would read
-      // as "the renderer named nothing", and the fallback for that is to acknowledge the whole
-      // queue — so a junk array would permanently retire notices the user was never shown.
-      // Only an omitted value, or a non-empty array of strings, is accepted.
       const isStringArray = (v: unknown): v is string[] =>
         Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string')
       if (shownArgs !== undefined && !isStringArray(shownArgs)) return
@@ -368,7 +313,6 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('get-locale-messages', () => i18n.getMessages())
   ipcMain.handle('get-available-locales', () => i18n.getAvailableLocales())
-  // Main owns the resolved locale; the renderer's vue-i18n locale is always 'en'.
   ipcMain.handle('get-locale', () => i18n.getLocale())
 
   ipcMain.handle('get-first-use-state', () => detectFirstUseState())

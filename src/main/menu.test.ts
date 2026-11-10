@@ -129,7 +129,6 @@ describe('installAppMenu', () => {
     }>
     const appEntry = template[0]
     expect(appEntry).toBeTruthy()
-    // Expanded into an explicit submenu so the item sits right after About.
     expect(appEntry?.role).toBeUndefined()
     const items = appEntry?.submenu ?? []
     const aboutIndex = items.findIndex((i) => i.role === 'about')
@@ -142,7 +141,6 @@ describe('installAppMenu', () => {
     check?.click?.()
     expect(onCheckForUpdates).toHaveBeenCalledTimes(1)
 
-    // Standard items are preserved.
     const roles = items.map((i) => i.role)
     expect(roles).toContain('services')
     expect(roles).toContain('hide')
@@ -152,8 +150,6 @@ describe('installAppMenu', () => {
   it('does not add the app menu item on non-darwin platforms', () => {
     const onCheckForUpdates = vi.fn()
     installAppMenu('win32', undefined, { onCheckForUpdates })
-    // The "Check for Updates…" item is macOS-only; win32 gets just the
-    // fullscreen-carrying View menu and never wires the handler.
     const template = buildFromTemplate.mock.calls[0]?.[0] as Array<{
       label?: string
       submenu?: Array<{ role?: string; label?: string }>

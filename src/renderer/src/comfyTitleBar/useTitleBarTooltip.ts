@@ -18,35 +18,18 @@ interface UseTitleBarTooltipOpts {
 }
 
 interface TitleBarTooltipApi {
-  /** Control attribute bag. Emits `title` off-mac and `data-title-tooltip` on
-   *  mac so the native and custom tooltips stay mutually exclusive (Cocoa
-   *  occasionally fires `title` for sibling-view buttons). `aria-label` is
-   *  unconditional. */
   tooltipAttrs: (text: string, ariaLabel?: string) => Record<string, string>
   handleTooltipPointer: (event: PointerEvent) => void
   hideTip: () => void
 }
 
-/**
- * macOS hover-tooltip plumbing. The native `title` tooltip doesn't reliably
- * fire for controls in an unfocused sibling chrome WebContentsView, so on macOS
- * we route hover through main, which positions a popup that escapes the title
- * bar's clip. Win/Linux use the native `title`; the JS handlers no-op there.
- * Delegated: a single pointer pair finds the closest `[data-title-tooltip]`
- * ancestor, so new tooltipped elements just need the data attribute.
- */
 export function useTitleBarTooltip(opts: UseTitleBarTooltipOpts): TitleBarTooltipApi {
   const TOOLTIP_SHOW_DELAY_MS = 400
-  /** If a tooltip was visible this recently, the next hover shows immediately so
-   *  scanning across the bar feels snappy (matches native behaviour). */
   const TOOLTIP_HANDOFF_WINDOW_MS = 1500
 
   let tooltipShowTimer: number | null = null
-  /** Text the renderer most recently asked main to show/queue; `null` when idle. */
   let activeTooltipText: string | null = null
-  /** True while a tooltip is visible (false in the pending-but-not-shown state). */
   let isTooltipVisible = false
-  /** `performance.now()` of the most recent hide; drives the handoff fast path. */
   let lastHiddenAt = -Infinity
 
   function tooltipAttrs(text: string, ariaLabel?: string): Record<string, string> {
@@ -107,11 +90,8 @@ export function useTitleBarTooltip(opts: UseTitleBarTooltipOpts): TitleBarToolti
       return
     }
     if (found.text === activeTooltipText) {
-      // Same trigger — don't reset state mid-hover.
       return
     }
-    // New target: hide any in-flight tooltip and queue the new one, skipping the
-    // show delay on a hover-handoff.
     const handoff = isTooltipVisible || performance.now() - lastHiddenAt < TOOLTIP_HANDOFF_WINDOW_MS
     hideTip()
     const captured = found

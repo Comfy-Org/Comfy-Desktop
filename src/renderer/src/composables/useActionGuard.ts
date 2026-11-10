@@ -3,9 +3,6 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
 
-// Guard for in-progress operations. Returns true to proceed, false if the
-// user cancelled. Stop-running is handled by each action's own copy + the
-// apiCall wrapper, not a separate stop-confirm modal.
 export function useActionGuard() {
   const { t } = useI18n()
   const sessionStore = useSessionStore()
@@ -28,8 +25,6 @@ export function useActionGuard() {
       })
       if (!confirmed) return false
       await window.api.cancelOperation(installationId)
-      // Wait for the cancelled op to clear so the next action can't race it;
-      // generous deadline because Windows taskkill / Restart Manager is slow.
       const deadline = Date.now() + 10_000
       while (
         (progressStore.getProgressInfo(installationId) !== null ||

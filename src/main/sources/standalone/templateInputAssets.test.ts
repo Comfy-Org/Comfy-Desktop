@@ -5,8 +5,6 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
 }))
 
-// resolveTemplateInputAssets reads the workflow JSON via loadTemplateJson; stub
-// it so we can feed crafted docs and assert the Load*-node scan + safety guards.
 const loadTemplateJson = vi.fn()
 vi.mock('./templateModels', () => ({
   loadTemplateJson: (...a: unknown[]) => loadTemplateJson(...a)
@@ -144,7 +142,6 @@ describe('resolveTemplateInputAssets', () => {
       .mockResolvedValue({ nodes: [{ type: 'LoadImage', widgets_values: ['subject.png'] }] })
 
     const slow = resolveTemplateInputAssetSnapshot(inst, 'slow')
-    // The first resolution outlives its TTL, so a later call owns the key.
     vi.setSystemTime(Date.now() + 31_000)
     const second = resolveTemplateInputAssetSnapshot(inst, 'slow')
     settleFirst(null)
@@ -152,7 +149,6 @@ describe('resolveTemplateInputAssets', () => {
     await expect(slow).resolves.toBeNull()
     await expect(second).resolves.toHaveLength(1)
 
-    // The newer entry must survive the older one's failure.
     await expect(resolveTemplateInputAssetSnapshot(inst, 'slow')).resolves.toHaveLength(1)
     expect(loadTemplateJson).toHaveBeenCalledTimes(2)
   })

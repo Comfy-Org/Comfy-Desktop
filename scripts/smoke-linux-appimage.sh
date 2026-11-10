@@ -147,8 +147,6 @@ if [[ -n "$expected_version" ]] && ! grep -Fq "App started v${expected_version} 
   dump_log
   exit 1
 fi
-# The startup marker is emitted before window and host initialization. Keep the production-mode
-# process alive long enough for immediate initialization crashes to surface.
 sleep 5
 if ! kill -0 "$app_pid" 2>/dev/null; then
   echo "AppImage did not remain running after startup" >&2

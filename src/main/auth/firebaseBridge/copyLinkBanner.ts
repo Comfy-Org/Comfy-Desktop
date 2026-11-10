@@ -1,26 +1,5 @@
-/**
- * Sign-in "copy login link" card.
- *
- * When `handleFirebasePopup` opens the loopback login URL in the user's
- * DEFAULT browser, that browser may not be where they're signed into
- * Google/GitHub. We inject a small floating card into the embedded Cloud
- * view (the surface the user is looking at) offering "Copy link" / "Open
- * again" so they can finish sign-in in a browser of their choice — the
- * same affordance Notion / Claude / Zoom provide.
- *
- * Injected with `insertCSS` + `executeJavaScript`, like
- * `injectMacPasskeyWarning`. The URL is string-baked via `JSON.stringify`
- * so a hostile URL can't break the Cloud page. Copy stays in-page; only
- * "Open again" reaches main (see `OPEN_LINK_SENTINEL`).
- */
-
 export const COPY_LINK_BANNER_ID = 'comfy-copy-login-banner'
 
-/**
- * Open-again → main, so it can `shell.openExternal` (page JS can't). The
- * only page→main channel — copy stays in-page so a remote page can't
- * drive a no-gesture clipboard write — and it re-opens only our own URL.
- */
 export const OPEN_LINK_SENTINEL = '__comfyOpenLoginLink'
 
 export interface CopyLinkBannerLabels {
@@ -31,21 +10,7 @@ export interface CopyLinkBannerLabels {
   dismiss: string
 }
 
-// Values mirror the Comfy Desktop brand tokens defined in
-// `src/renderer/src/assets/main.css` — CSS vars don't cross into the
-// cloud webview, so we inline the resolved hex/rgba so this banner
-// reads as Desktop chrome on top of whatever cloud is rendering. Key
-// tokens used:
-//   --neutral-700: #2c2533   (deep plum surface)
-//   --neutral-100: #c2bfb9   (warm off-white text)
-//   --neutral-300: #8a8688   (muted text — close ✕, secondary copy)
-//   --accent-primary: #0b8ce9 (brand blue — primary CTA)
-//   --comfy-yellow: #f2ff59  (used for the success/copied flash so
-//                             the confirmation reads as branded)
 export const COPY_LINK_BANNER_CSS =
-  // Width hugs the content (so the message stays on one line) but is
-  // capped at the viewport, so as the window shrinks the card grows
-  // toward full-width instead of wrapping the text.
   `#${COPY_LINK_BANNER_ID}{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);` +
   `z-index:2147483647;display:flex;align-items:center;gap:10px;` +
   `width:max-content;max-width:calc(100vw - 32px);` +
@@ -67,11 +32,6 @@ export const COPY_LINK_BANNER_CSS =
   `padding:4px 6px;font-size:16px;line-height:1;}` +
   `#${COPY_LINK_BANNER_ID} button.ccl-close:hover{background:transparent;color:#c2bfb9;}`
 
-/**
- * Build the page-context IIFE that renders the card. Every interpolated
- * value (the URL and each label) is escaped via `JSON.stringify`, so the
- * script is safe to hand to `executeJavaScript` even for hostile input.
- */
 export function buildCopyLinkBannerScript(url: string, labels: CopyLinkBannerLabels): string {
   const u = JSON.stringify(url)
   const id = JSON.stringify(COPY_LINK_BANNER_ID)
@@ -121,7 +81,6 @@ export function buildCopyLinkBannerScript(url: string, labels: CopyLinkBannerLab
   }catch(e){}})()`
 }
 
-/** Remove the card and detach its observer. Idempotent. */
 export function buildRemoveCopyLinkBannerScript(): string {
   const id = JSON.stringify(COPY_LINK_BANNER_ID)
   return `(function(){try{var b=document.getElementById(${id});if(b){if(b.__cclObs)b.__cclObs.disconnect();b.remove();}}catch(e){}})()`

@@ -2,8 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { BRIDGE_PORT, startBridgeServer } from './server'
 
-// oauth.ts goes through Chromium's net.fetch; delegate to the global fetch so
-// the raw-OAuth initiator arm keeps its pre-existing live-call behavior here.
 vi.mock('electron', () => ({
   net: { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) }
 }))
@@ -31,9 +29,6 @@ describe('startBridgeServer', () => {
 
   it('serves the error page when the IdP redirects with ?error=...', async () => {
     const handle = await startBridgeServer({ env: 'prod', providerId: 'google.com', port: 0 })
-    // Attach the rejection handler before the error fetch: the ?error= branch
-    // rejects signInPromise synchronously, which Vitest would otherwise flag
-    // as an unhandled rejection.
     const rejected = expect(handle.signInPromise).rejects.toThrow(/IdP error/)
     try {
       const res = await fetch(
@@ -87,8 +82,6 @@ describe('startBridgeServer', () => {
   })
 
   it('exports the fixed port (9876) used by the Google OAuth client allowlist', () => {
-    // Assert the constant, not a live bind — the contract with the Google
-    // OAuth client's redirect-URI allowlist is the constant itself.
     expect(BRIDGE_PORT).toBe(9876)
   })
 })

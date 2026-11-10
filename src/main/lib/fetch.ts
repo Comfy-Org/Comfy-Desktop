@@ -10,7 +10,6 @@ interface CacheEntry {
   data: unknown
 }
 
-// ETag cache (url -> { etag, data }) persisted to disk; bounded, oldest evicted first.
 const MAX_CACHE_SIZE = 100
 const CACHE_FILE = path.join(cacheDir(), 'fetch-cache.json')
 
@@ -35,9 +34,7 @@ function _ensureLoaded(): void {
         }
       }
     }
-  } catch {
-    // ignore — cache file may not exist yet
-  }
+  } catch {}
 }
 
 function _persist(): void {
@@ -47,13 +44,11 @@ function _persist(): void {
       obj[url] = entry
     }
     writeFileSafe(CACHE_FILE, JSON.stringify(obj))
-  } catch {
-    // ignore — best-effort persistence
-  }
+  } catch {}
 }
 
 function _cacheSet(url: string, entry: CacheEntry): void {
-  _cache.delete(url) // re-insert to refresh LRU order
+  _cache.delete(url)
   _cache.set(url, entry)
   if (_cache.size > MAX_CACHE_SIZE) {
     const oldest = _cache.keys().next().value
@@ -69,12 +64,6 @@ function _headerString(value: string | string[] | undefined): string | undefined
   return Array.isArray(value) ? value[0] : value
 }
 
-// Single-shot fetch with ETag negotiation. `cached` provides the If-None-Match
-// value (and the 304 short-circuit body); `cacheKey` is the URL the successful
-// response should be cached under, or undefined to skip writing to the cache
-// entirely. Splitting these lets the mirror-retry below run WITHOUT leaking the
-// primary's ETag to the mirror (cached: undefined) and WITHOUT poisoning the
-// primary's persisted cache entry with mirror-tagged data (cacheKey: undefined).
 function fetchJSONOnce(
   url: string,
   cached: CacheEntry | undefined,
@@ -90,9 +79,7 @@ function fetchJSONOnce(
         if (new URL(url).hostname === 'api.github.com') {
           request.setHeader('Authorization', `token ${ghToken}`)
         }
-      } catch {
-        /* invalid URL — skip auth */
-      }
+      } catch {}
     }
 
     if (cached?.etag) {
@@ -149,7 +136,6 @@ function fetchJSONOnce(
   })
 }
 
-/** @internal — exposed only for tests. */
 export function _resetCacheForTest(): void {
   _cache.clear()
   _loaded = false
@@ -157,25 +143,16 @@ export function _resetCacheForTest(): void {
 
 export async function fetchJSON(url: string, opts?: { refresh?: boolean }): Promise<unknown> {
   _ensureLoaded()
-  // `refresh` ignores the persisted ETag so the response is never served from cache. Used
-  // for R2 manifests where a stale value would strand users on an old release.
   const cached = opts?.refresh ? undefined : _cache.get(url)
 
   try {
     return await fetchJSONOnce(url, cached, url)
   } catch (primaryErr) {
-    // If this is an R2 URL with a configured mirror, retry once against it
-    // before falling back to the persisted cache. The retry deliberately
-    // discards `cached` (no ETag negotiation against the mirror) and writes
-    // nothing back to the cache so a stale or compromised mirror cannot
-    // poison the primary's cache entry.
     const mirror = r2MirrorUrl(url)
     if (mirror && mirror !== url) {
       try {
         return await fetchJSONOnce(mirror, undefined, undefined)
-      } catch {
-        // fall through to cache / primary error
-      }
+      } catch {}
     }
     if (cached) return structuredClone(cached.data)
     throw primaryErr
