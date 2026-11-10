@@ -3,9 +3,12 @@ import { computed, h, ref, watch, type FunctionalComponent } from 'vue'
 import { useElementSize, useEventListener } from '@vueuse/core'
 import {
   Box,
+  Check,
+  ChevronRight,
   Copy,
   Download,
   File as FileIcon,
+  FileOutput,
   FileText,
   Folder,
   FolderInput,
@@ -17,11 +20,16 @@ import {
   Plus,
   Music,
   Minimize2,
+  MoreHorizontal,
+  Palette,
+  PanelRight,
   Play,
+  Search,
   Sparkles,
+  Star,
   Tag,
-  Library,
   ArrowDownToLine,
+  ArrowUpDown,
   RefreshCw,
   RotateCw,
   Trash2,
@@ -29,14 +37,36 @@ import {
   Workflow,
   X
 } from 'lucide-vue-next'
+import {
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuPortal,
+  ContextMenuRoot,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger
+} from 'reka-ui'
 import Button from '../../ui/Button.vue'
+import { cn } from '../../ui/cn'
+import { floatingSurface, menuItem } from '../../ui/menu.styles'
+import { PORTAL_TO } from '../../ui/portal'
 import Select from '../../ui/Select.vue'
 import { ComfyAssets } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
 import { go, hostActions, instances, toast } from '../../useProto'
 import { graphOpen } from '../graph/graphOpen'
 import { graphLibrary } from '../graph/comfyLook'
-import { LABELS, labelColor, labelOf, setLabel, type AssetLabel } from '../assets/assetLabels'
+import {
+  LABELS,
+  addLabel,
+  labelColor,
+  labelName,
+  labelOf,
+  setLabel,
+  type AssetLabel
+} from '../assets/assetLabels'
 import {
   addFolder,
   folderName,
@@ -47,7 +77,10 @@ import {
   tree,
   within
 } from '../assets/assetFolders'
-import { tagsOf } from '../assets/assetTags'
+import { allTagged, flipTag, tagsOf } from '../assets/assetTags'
+import { isStarred, toggleStar } from '../assets/assetFavorites'
+import { assetView } from '../assets/assetView'
+import BulkTagMenu from '../graph/BulkTagMenu.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import MarItemMenu from './MarItemMenu.vue'
 import { saveFile } from '../assets/saveFile'
@@ -55,7 +88,7 @@ import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import AssetDetail from '../assets/AssetDetail.vue'
 import AssetFilterMenu from '../graph/AssetFilterMenu.vue'
 import { factsFor } from '../assets/assetFacts'
-import { noFilter, passes, tagsIn } from '../assets/assetFilters'
+import { activeFilters, metaIn, noFilter, passes, tagsIn } from '../assets/assetFilters'
 import {
   assetBuilds,
   buildStatus,
@@ -108,6 +141,8 @@ const query = ref('')
 const label = ref<AssetLabel | ''>('')
 /** And a folder, with every folder inside it. */
 const folder = ref('')
+/** And only the starred ones (the sidebar's Favorites). */
+const favOnly = ref(false)
 // In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
 const store = inGraph ? graphLibrary : assets
 
@@ -161,7 +196,8 @@ const SORTS = [
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
   { value: 'largest', label: 'Largest first' },
-  { value: 'name', label: 'Name (A → Z)' }
+  { value: 'name', label: 'Name (A → Z)' },
+  { value: 'name-desc', label: 'Name (Z → A)' }
 ]
 // Layout (AssetLayoutMenu): how big the cards are, and what they carry.
 const size = ref(2)
@@ -182,6 +218,7 @@ const shown = computed(() => {
       passes(a, filter.value) &&
       (!label.value || labelOf(a.id) === label.value) &&
       (!folder.value || within(folder.value).has(folderOf(a.id) ?? '')) &&
+      (!favOnly.value || isStarred(a.id)) &&
       (fixedProject ||
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
@@ -191,25 +228,65 @@ const shown = computed(() => {
     newest: (a, b) => a.age - b.age,
     oldest: (a, b) => b.age - a.age,
     largest: (a, b) => b.sizeMb - a.sizeMb,
-    name: (a, b) => a.name.localeCompare(b.name)
+    name: (a, b) => a.name.localeCompare(b.name),
+    'name-desc': (a, b) => b.name.localeCompare(a.name)
   }
   return [...list].sort(by[sort.value])
 })
-const filtered = computed(
+/** A search or a filter is on: only then does an empty wall say Nothing
+ *  matches. A folder, label, tag or Favorites picked in the sidebar is a
+ *  place, not a search; empty, it says so (scopeEmpty). */
+const searchOn = computed(
   () =>
     kind.value !== 'all' ||
     where.value !== 'all' ||
-    !!label.value ||
-    !!folder.value ||
-    JSON.stringify(filter.value) !== JSON.stringify(noFilter()) ||
+    activeFilters({ ...filter.value, source: 'all', tags: [] }) > 0 ||
     project.value !== 'all' ||
-    !!query.value
+    !!query.value.trim()
 )
+const scopeEmpty = computed(() => {
+  if (!browsable.value || shown.value.length || searchOn.value) return null
+  if (folder.value)
+    return {
+      icon: FolderOpen,
+      title: 'This folder is empty',
+      text: 'Drag assets here, or use Move to folder from an asset’s menu.'
+    }
+  if (label.value)
+    return {
+      icon: Palette,
+      title: `No assets labeled ${labelName(label.value)} yet`,
+      text: 'Use Label as from an asset’s menu, or Label in the selection bar.'
+    }
+  if (filter.value.tags.length)
+    return {
+      icon: Tag,
+      title: `No assets tagged ${filter.value.tags.join(', ')} yet`,
+      text: 'Use Add tags from an asset’s menu, or Tag in the selection bar.'
+    }
+  if (favOnly.value)
+    return {
+      icon: Star,
+      title: 'No favorites yet',
+      text: 'Star an asset from its corner to keep it here.'
+    }
+  if (filter.value.source !== 'all')
+    return {
+      icon: filter.value.source === 'generated' ? Sparkles : ArrowDownToLine,
+      title: `Nothing ${filter.value.source} yet`,
+      text:
+        filter.value.source === 'generated'
+          ? 'What your runs make lands here.'
+          : 'Upload files to see them here.'
+    }
+  return null
+})
 function clear(): void {
   kind.value = 'all'
   where.value = 'all'
   label.value = ''
   folder.value = ''
+  favOnly.value = false
   filter.value = noFilter()
   project.value = 'all'
   query.value = ''
@@ -224,7 +301,7 @@ const done = computed(() => base.value.filter((a) => !a.status))
 const SOURCES = computed(() =>
   (
     [
-      ['all', 'All', Library],
+      ['all', 'All', ComfyAssets],
       ['generated', 'Generated', Sparkles],
       ['imported', 'Imported', ArrowDownToLine]
     ] as const
@@ -238,21 +315,83 @@ const SOURCES = computed(() =>
         : done.value.filter((a) => factsFor(a).imported === (value === 'imported')).length
   }))
 )
-const TAG_ROWS = computed(() =>
-  TAGS.value.map((t) => ({ tag: t, count: done.value.filter((a) => tagsOf(a).includes(t)).length }))
-)
-const LABEL_ROWS = computed(() =>
-  LABELS.map((l) => ({ ...l, count: done.value.filter((a) => labelOf(a.id) === l.value).length }))
-)
-/** All is everything: a folder or a label picked, it isn't lit, and a
- *  click on it lets them go. */
+const FAV_COUNT = computed(() => done.value.filter((a) => isStarred(a.id)).length)
+/** TAGS and LABELS in the order picked from their ⋯: tags A to Z or by
+ *  how many hold them, labels as made or around the color wheel. */
+const TAG_ROWS = computed(() => {
+  const rows = TAGS.value.map((t) => ({
+    tag: t,
+    count: done.value.filter((a) => tagsOf(a).includes(t)).length
+  }))
+  return assetView.tagSort === 'count'
+    ? rows.sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+    : rows
+})
+const LABEL_ROWS = computed(() => {
+  const rows = LABELS.map((l) => ({
+    ...l,
+    count: done.value.filter((a) => labelOf(a.id) === l.value).length
+  }))
+  return assetView.labelSort === 'color' ? rows.sort((a, b) => a.hue - b.hue) : rows
+})
+const tagMenu = ref(false)
+const labelMenu = ref(false)
+const TAG_SORT_LINES = computed<MenuLine[]>(() => [
+  {
+    label: 'Sort by',
+    icon: ArrowUpDown,
+    sub: [
+      {
+        label: 'Name (A → Z)',
+        checked: assetView.tagSort === 'name',
+        run: () => (assetView.tagSort = 'name')
+      },
+      {
+        label: 'Most used first',
+        checked: assetView.tagSort === 'count',
+        run: () => (assetView.tagSort = 'count')
+      }
+    ]
+  }
+])
+const LABEL_SORT_LINES = computed<MenuLine[]>(() => [
+  {
+    label: 'Sort by',
+    icon: ArrowUpDown,
+    sub: [
+      {
+        label: 'Custom order',
+        checked: assetView.labelSort === 'custom',
+        run: () => (assetView.labelSort = 'custom')
+      },
+      {
+        label: 'Color',
+        checked: assetView.labelSort === 'color',
+        run: () => (assetView.labelSort = 'color')
+      }
+    ]
+  },
+  { label: 'Add label', icon: Plus, run: () => (labelNaming.value = 'New label') }
+])
+/** Add label: typed in place under LABELS, like a new folder. */
+const labelNaming = ref<string | null>(null)
+function endLabel(keep: boolean): void {
+  const n = labelNaming.value
+  labelNaming.value = null
+  if (!keep || !n?.trim()) return
+  const made = addLabel(n)
+  if (made) label.value = made.value
+}
+/** All is everything: a folder, a label or Favorites picked, it isn't
+ *  lit, and a click on it lets them go. */
 const sourceOn = (v: string): boolean =>
-  filter.value.source === v && (v !== 'all' || (!folder.value && !label.value))
+  filter.value.source === v && (v !== 'all' || (!folder.value && !label.value && !favOnly.value))
 function pickSource(v: (typeof filter.value)['source']): void {
   filter.value = { ...filter.value, source: v }
   if (v === 'all') {
     folder.value = ''
     label.value = ''
+    favOnly.value = false
   }
 }
 function toggleTag(t: string): void {
@@ -267,11 +406,11 @@ const dotOf =
   (color: string): FunctionalComponent =>
   () =>
     h('i', { class: 'mar-anav-dot', style: { background: color } })
-/** Label ›, for one file or the selection. */
-function labelLine(ids: () => string[]): MenuAction {
+/** Label ›, for one file or the selection; Label as › in its menu. */
+function labelLine(ids: () => string[], name = 'Label'): MenuAction {
   return {
-    label: 'Label',
-    icon: Tag,
+    label: name,
+    icon: Palette,
     sub: LABELS.map((l) => ({
       label: l.label,
       icon: dotOf(l.color),
@@ -381,41 +520,52 @@ function dropCards(id: string): void {
   toast(`Moved ${n === 1 ? '1 file' : `${n} files`} to ${folderName(id)}`)
 }
 
-// Its own view: masonry first, remembered per viewer.
-type View = 'masonry' | 'grid'
-const VIEW_KEY = 'comfy.design.mar.assetsPageView'
-const view = ref<View>(
-  (() => {
-    try {
-      // List is gone from the menu: a remembered List opens as masonry.
-      const v = localStorage.getItem(VIEW_KEY) as View | null
-      return v === 'grid' ? 'grid' : 'masonry'
-    } catch {
-      return 'masonry'
-    }
-  })()
-)
-watch(view, (v) => {
-  try {
-    localStorage.setItem(VIEW_KEY, v)
-  } catch {
-    // Storage blocked: the pick lasts for this window only.
-  }
-})
-
+// Its own view (assetView, remembered per viewer): masonry in columns
+// first, masonry in rows, or the grid; Group by job and Labels beside.
 /** Masonry: as many columns as fit, each picture to the shortest one, so
  *  reading order stays left to right, top to bottom. */
 const wall = ref<HTMLElement>()
 const { width: wallWidth } = useElementSize(wall)
-const columns = computed(() => {
+function pack(items: MarAsset[]): { items: MarAsset[] }[] {
   const n = Math.max(1, Math.floor((wallWidth.value + 14) / (CARD[size.value]! + 14)))
   const cols = Array.from({ length: n }, () => ({ h: 0, items: [] as MarAsset[] }))
-  for (const a of shown.value) {
+  for (const a of items) {
     const col = cols.reduce((low, c) => (c.h < low.h ? c : low))
     col.items.push(a)
     col.h += 1 / factsFor(a).ratio + 0.2
   }
   return cols
+}
+/** Masonry rows: each row one height, set by the size. */
+const ROW = [0, 150, 200, 280]
+const ratioOf = (a: MarAsset): string =>
+  assetView.wall === 'grid' ? '4 / 3' : String(factsFor(a).ratio)
+/** Group by job: what one run made sits together. The mock keeps no job
+ *  ids, so a job is the workflow a run came from and the day it ran;
+ *  imports are one group of their own. */
+function jobOf(a: MarAsset): { key: string; title: string } {
+  const f = factsFor(a)
+  if (f.imported) return { key: 'imported', title: 'Imported' }
+  const flow = (f.workflowName ?? a.name)
+    .replace(/\.[^.]+$/, '')
+    .replace(/_\d+$/, '')
+    .replace(/[_-]+/g, ' ')
+  return { key: `${flow}|${a.when}|${a.envId ?? ''}`, title: `${flow} · ${a.when}` }
+}
+const sections = computed(() => {
+  const groups: { key: string; title: string; items: MarAsset[] }[] = []
+  if (assetView.group !== 'job') groups.push({ key: 'all', title: '', items: shown.value })
+  else
+    for (const a of shown.value) {
+      const j = jobOf(a)
+      const g = groups.find((x) => x.key === j.key)
+      if (g) g.items.push(a)
+      else groups.push({ ...j, items: [a] })
+    }
+  return groups.map((g) => ({
+    ...g,
+    cols: assetView.wall === 'masonry' ? pack(g.items) : [{ items: g.items }]
+  }))
 })
 
 // Another build is another catalog: nothing of the last one stays, not
@@ -582,20 +732,142 @@ function lines(a: MarAsset): MenuLine[] {
     ]
   return [
     // A click opens it and Download sits on the card, so neither is here.
+    { label: 'Show details', icon: PanelRight, run: () => (detail.value = a) },
+    labelLine(() => [a.id], 'Label as'),
+    tagLine(() => [a]),
+    'sep',
     ...(a.source === 'cloud'
       ? []
       : [{ label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${a.name}`) }]),
+    insertLine(a),
     // Only when the file kept its workflow: an import or a sound has none.
     ...(factsFor(a).workflow === 'available'
-      ? [{ label: 'Open workflow', icon: Workflow, run: () => workflowOf(a) }]
+      ? [
+          { label: 'Open as workflow in new tab', icon: Workflow, run: () => workflowOf(a) },
+          { label: 'Export workflow', icon: FileOutput, run: () => exportWorkflow(a) }
+        ]
       : []),
-    ...(inGraph ? [folderLine(() => [a.id]), labelLine(() => [a.id])] : []),
+    ...(inGraph ? [folderLine(() => [a.id])] : []),
     { label: 'Copy', icon: Copy, hint: '⌘C', run: () => toast('Copied to the clipboard') },
     // Projects are Desktop's; in ComfyUI a file takes a color label.
     ...(inGraph ? [] : [lib.moveLine(() => [a.id], a.project)]),
     'sep',
     { label: 'Delete', icon: Trash2, danger: true, hint: '⌫', run: () => store.remove([a.id]) }
   ]
+}
+
+/** Insert into workflow › (Media Assets' Insert as node): a loader node
+ *  for its type, on the workflow you're on. */
+const LOADER: Partial<Record<MarAsset['type'], string>> = {
+  image: 'Load Image',
+  video: 'Load Video',
+  audio: 'Load Audio',
+  '3d': 'Load 3D'
+}
+function insertLine(a: MarAsset): MenuAction {
+  const node = LOADER[a.type] ?? 'Load File'
+  return {
+    label: 'Insert into workflow',
+    icon: Plus,
+    sub: [
+      {
+        label: `As a new ${node} node`,
+        icon: Plus,
+        run: () => toast(`Added ${a.name} as a ${node} node`)
+      },
+      {
+        label: 'Into the selected node',
+        icon: ImagePlus,
+        run: () => toast(`${a.name} is in the selected node`)
+      }
+    ]
+  }
+}
+/** Export workflow: the run's workflow as a file, saved by the browser. */
+function exportWorkflow(a: MarAsset): void {
+  const f = factsFor(a)
+  const json = f.json ?? JSON.stringify({ workflow: f.workflowName }, null, 2)
+  saveFile(
+    URL.createObjectURL(new Blob([json], { type: 'application/json' })),
+    f.workflowName ?? `${a.name.replace(/\.[^.]+$/, '')}.json`
+  )
+}
+/** Add tags ›, for one file or the selection: a check where all have it;
+ *  New tag… opens the selection bar's Tag, with the file selected. */
+function tagLine(list: () => MarAsset[]): MenuAction {
+  return {
+    label: 'Add tags',
+    icon: Tag,
+    sub: [
+      ...TAGS.value.map((t) => ({
+        label: t,
+        checked: allTagged(list(), t),
+        run: () => flipTag(list(), t)
+      })),
+      {
+        label: 'New tag…',
+        icon: Plus,
+        run: () => {
+          const ids = list().map((x) => x.id)
+          if (!ids.every((id) => lib.sel.has(id))) lib.sel.all(ids)
+          tagging.value = true
+        }
+      }
+    ]
+  }
+}
+/** Tag in the selection bar: ComfyUI panel's own picker (BulkTagMenu). */
+const tagging = ref(false)
+const selectedAssets = computed(() => store.items.filter((x) => lib.sel.has(x.id)))
+watch(
+  () => lib.sel.ids.value.size,
+  (n) => n || (tagging.value = false)
+)
+
+/** Right-click on a card: its menu at the pointer, with Search actions…
+ *  first; typing narrows every line, a submenu's lines included. */
+const menuFor = ref<MarAsset | null>(null)
+const menuQuery = ref('')
+const menuFind = ref<HTMLInputElement>()
+function aim(e: MouseEvent): void {
+  const id = (e.target as HTMLElement).closest<HTMLElement>('[data-asset]')?.dataset.asset
+  menuFor.value = shown.value.find((a) => a.id === id) ?? null
+  // Off a card: the browser's own menu, not an empty one.
+  if (!menuFor.value) e.stopPropagation()
+}
+function menuOpened(on: boolean): void {
+  menuQuery.value = ''
+  if (on) requestAnimationFrame(() => menuFind.value?.focus())
+}
+const menuShown = computed<MenuLine[]>(() => {
+  const all = menuFor.value ? lines(menuFor.value) : []
+  const q = menuQuery.value.trim().toLowerCase()
+  if (!q) return all
+  return all.flatMap((l): MenuLine[] => {
+    if (l === 'sep' || 'note' in l) return []
+    if (l.sub)
+      return l.sub
+        .filter((x) => `${l.label} ${x.label}`.toLowerCase().includes(q))
+        .map((x) => ({ ...x, label: `${l.label} › ${x.label.trim()}` }))
+    return l.label.toLowerCase().includes(q) ? [l] : []
+  })
+})
+/** Typing stays in the field; ↓ goes to the first line, Enter runs it,
+ *  Esc closes the menu. */
+function findKey(e: KeyboardEvent): void {
+  if (e.key === 'Escape') return
+  e.stopPropagation()
+  const first = (e.target as HTMLElement)
+    .closest('[role="menu"]')
+    ?.querySelector<HTMLElement>('[role="menuitem"]:not([data-disabled])')
+  if (!first) return
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    first.focus()
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    first.click()
+  }
 }
 
 // The sticky toolbar takes a background only once it's stuck at the top,
@@ -617,7 +889,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   <MarPage
     title="Assets"
     skeleton="grid"
-    :no-results="browsable && shown.length === 0 && filtered"
+    :no-results="browsable && shown.length === 0 && searchOn"
     :embedded="!!fixedProject"
     :toolbar-to="fixedProject ? '#mar-proj-tools' : undefined"
     :state="pageState.id === 'live' ? (!browsable || base.length ? 'live' : 'empty') : undefined"
@@ -642,18 +914,11 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     @second="pick()"
     @clear="clear"
   >
-    <template v-if="inGraph" #meta>
+    <template v-if="browsable" #meta>
+      <!-- What the wall shows now; Select all lives in the selection bar. -->
       <span class="mar-anav-total"
         >{{ shown.length }} {{ shown.length === 1 ? 'asset' : 'assets' }}</span
       >
-      <button
-        v-if="shown.length"
-        type="button"
-        class="mar-anav-all"
-        @click="lib.sel.all(lib.order.value)"
-      >
-        Select all
-      </button>
     </template>
     <template #actions="{ state }">
       <Button
@@ -725,15 +990,25 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             types-label="More types"
             :types="MORE_TYPES"
             :tags="TAGS"
+            :meta="metaIn(base)"
           />
-          <AssetSearch v-model:query="query" />
+          <AssetSearch
+            v-model:query="query"
+            v-model:filter="filter"
+            :pool="base"
+            :types="MORE_TYPES"
+          />
           <AssetLayoutMenu
-            v-model:view="view"
+            v-model:view="assetView.wall"
             v-model:size="size"
             v-model:sort="sort"
             v-model:show-name="showName"
             v-model:show-details="showDetails"
+            v-model:show-labels="assetView.labels"
+            :by-job="assetView.group === 'job'"
             :sorts="SORTS"
+            :views="['masonry', 'rows', 'grid']"
+            @update:by-job="assetView.group = $event ? 'job' : 'none'"
           />
         </div>
       </div>
@@ -771,122 +1046,184 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         uploadable ? `Add to ${current?.name ?? fixedProject} inputs` : uploadTitle
       }}
     </div>
-    <div
-      v-else-if="view === 'masonry'"
-      ref="wall"
-      :class="['mar-masonry', !showName && 'no-name', !showDetails && 'no-details']"
-    >
-      <div v-for="(col, i) in columns" :key="i" class="mar-masonry-col">
-        <MarItem
-          v-for="a in col.items"
-          :key="a.id"
-          :name="a.name"
-          :thumb="picOf(a)"
-          :icon="iconOf(a)"
-          :cover="a"
-          :ratio="String(factsFor(a).ratio)"
-          :meta="meta(a)"
-          :status="a.status"
-          :status-label="a.statusLabel"
-          :fav-id="a.status ? undefined : a.id"
-          fav-kind="asset"
-          :lines="lines(a)"
-          :selected="lib.sel.has(a.id)"
-          :selecting="lib.sel.ids.value.size > 0"
-          :renaming="lib.renaming.value === a.id"
-          :class="a.status === 'running' && 'mar-asset-running'"
-          :draggable="inGraph && !a.status"
-          @dragstart="dragCard($event, a)"
-          @open="open(a)"
-          @select="lib.pick(a.id, $event)"
-          @start-rename="lib.renaming.value = a.id"
-          @rename="lib.rename(a.id, $event)"
-          @cancel-rename="lib.renaming.value = ''"
-        >
-          <template v-if="!a.status" #tools>
-            <button
-              type="button"
-              class="mar-kebab on-media"
-              aria-label="Download"
-              title="Download"
-              @click.stop="saveFile(picOf(a), a.name)"
-              @dblclick.stop
-            >
-              <Download :size="14" />
-            </button>
-          </template>
-          <template #overlay>
-            <span v-if="a.status === 'running'" class="mar-asset-progress"
-              ><i style="width: 62%"
-            /></span>
-            <span v-else-if="a.type === 'video' && !a.status" class="mar-asset-len"
-              ><Play :size="10" />{{ factsFor(a).duration }}</span
-            >
-            <i
-              v-if="labelOf(a.id)"
-              class="mar-asset-label"
-              :style="{ background: labelColor(labelOf(a.id)) }"
-              :aria-label="`${labelOf(a.id)} label`"
-            />
-          </template>
-        </MarItem>
-      </div>
-    </div>
-    <div
-      v-else
-      :class="['mar-grid', !showName && 'no-name', !showDetails && 'no-details']"
-      :style="{ gridTemplateColumns: `repeat(auto-fill, minmax(${CARD[size]! + 36}px, 1fr))` }"
-    >
-      <MarItem
-        v-for="a in shown"
-        :key="a.id"
-        :name="a.name"
-        :thumb="picOf(a)"
-        :icon="iconOf(a)"
-        :cover="a"
-        ratio="4 / 3"
-        :meta="meta(a)"
-        :status="a.status"
-        :status-label="a.statusLabel"
-        :fav-id="a.status ? undefined : a.id"
-        fav-kind="asset"
-        :lines="lines(a)"
-        :selected="lib.sel.has(a.id)"
-        :selecting="lib.sel.ids.value.size > 0"
-        :renaming="lib.renaming.value === a.id"
-        :class="a.status === 'running' && 'mar-asset-running'"
-        :draggable="inGraph && !a.status"
-        @dragstart="dragCard($event, a)"
-        @open="open(a)"
-        @select="lib.pick(a.id, $event)"
-        @start-rename="lib.renaming.value = a.id"
-        @rename="lib.rename(a.id, $event)"
-        @cancel-rename="lib.renaming.value = ''"
-      >
-        <template v-if="!a.status" #tools>
-          <button
-            type="button"
-            class="mar-kebab on-media"
-            aria-label="Download"
-            title="Download"
-            @click.stop="saveFile(picOf(a), a.name)"
-            @dblclick.stop
+    <MarEmpty
+      v-else-if="scopeEmpty"
+      :icon="scopeEmpty.icon"
+      :title="scopeEmpty.title"
+      :text="scopeEmpty.text"
+      compact
+    />
+    <!-- One wall for every layout; Group by job splits it under headers.
+         A right-click on a card opens its menu at the pointer. -->
+    <div v-else class="mar-asset-wall" @contextmenu.capture="aim">
+      <ContextMenuRoot :modal="false" @update:open="menuOpened">
+        <ContextMenuTrigger as-child>
+          <div
+            ref="wall"
+            :class="['mar-asset-sections', !showName && 'no-name', !showDetails && 'no-details']"
           >
-            <Download :size="14" />
-          </button>
-        </template>
-        <template v-if="a.status === 'running' || labelOf(a.id)" #overlay>
-          <span v-if="a.status === 'running'" class="mar-asset-progress"
-            ><i style="width: 62%"
-          /></span>
-          <i
-            v-if="labelOf(a.id)"
-            class="mar-asset-label"
-            :style="{ background: labelColor(labelOf(a.id)) }"
-            :aria-label="`${labelOf(a.id)} label`"
-          />
-        </template>
-      </MarItem>
+            <section v-for="g in sections" :key="g.key" class="mar-asset-job">
+              <p v-if="g.title" class="mar-asset-job-head">
+                <span class="mar-asset-job-name">{{ g.title }}</span
+                ><span class="mar-asset-job-n">{{ g.items.length }}</span>
+              </p>
+              <div
+                :class="
+                  assetView.wall === 'masonry'
+                    ? 'mar-masonry'
+                    : assetView.wall === 'rows'
+                      ? 'mar-rows'
+                      : 'mar-grid'
+                "
+                :style="
+                  assetView.wall === 'grid'
+                    ? {
+                        gridTemplateColumns: `repeat(auto-fill, minmax(${CARD[size]! + 36}px, 1fr))`
+                      }
+                    : assetView.wall === 'rows'
+                      ? { '--mar-row': `${ROW[size]}px` }
+                      : undefined
+                "
+              >
+                <div
+                  v-for="(col, i) in g.cols"
+                  :key="i"
+                  :class="assetView.wall === 'masonry' ? 'mar-masonry-col' : 'mar-asset-run'"
+                >
+                  <MarItem
+                    v-for="a in col.items"
+                    :key="a.id"
+                    :data-asset="a.id"
+                    :style="assetView.wall === 'rows' ? { '--r': factsFor(a).ratio } : undefined"
+                    :name="a.name"
+                    :thumb="picOf(a)"
+                    :icon="iconOf(a)"
+                    :cover="a"
+                    :ratio="ratioOf(a)"
+                    :meta="meta(a)"
+                    :status="a.status"
+                    :status-label="a.statusLabel"
+                    :lines="lines(a)"
+                    :selected="lib.sel.has(a.id)"
+                    :selecting="lib.sel.ids.value.size > 0"
+                    :renaming="lib.renaming.value === a.id"
+                    :class="a.status === 'running' && 'mar-asset-running'"
+                    :draggable="inGraph && !a.status"
+                    @dragstart="dragCard($event, a)"
+                    @open="open(a)"
+                    @select="lib.pick(a.id, $event)"
+                    @start-rename="lib.renaming.value = a.id"
+                    @rename="lib.rename(a.id, $event)"
+                    @cancel-rename="lib.renaming.value = ''"
+                  >
+                    <template v-if="!a.status" #tools>
+                      <button
+                        type="button"
+                        class="mar-star"
+                        :class="isStarred(a.id) && 'is-on'"
+                        :aria-pressed="isStarred(a.id)"
+                        :aria-label="isStarred(a.id) ? 'Remove from favorites' : 'Add to favorites'"
+                        :title="isStarred(a.id) ? 'Remove from favorites' : 'Add to favorites'"
+                        @click.stop="toggleStar(a.id)"
+                        @dblclick.stop
+                      >
+                        <Star :size="13" :fill="isStarred(a.id) ? 'currentColor' : 'none'" />
+                      </button>
+                      <button
+                        type="button"
+                        class="mar-kebab on-media"
+                        aria-label="Download"
+                        title="Download"
+                        @click.stop="saveFile(picOf(a), a.name)"
+                        @dblclick.stop
+                      >
+                        <Download :size="14" />
+                      </button>
+                    </template>
+                    <template #overlay>
+                      <span v-if="a.status === 'running'" class="mar-asset-progress"
+                        ><i style="width: 62%"
+                      /></span>
+                      <span v-else-if="a.type === 'video' && !a.status" class="mar-asset-len"
+                        ><Play :size="10" />{{ factsFor(a).duration }}</span
+                      >
+                      <i
+                        v-if="labelOf(a.id)"
+                        class="mar-asset-label"
+                        :style="{ background: labelColor(labelOf(a.id)) }"
+                        :aria-label="`${labelName(labelOf(a.id))} label`"
+                      />
+                    </template>
+                  </MarItem>
+                </div>
+              </div>
+            </section>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuPortal :to="PORTAL_TO" defer>
+          <ContextMenuContent
+            :class="cn(floatingSurface, 'mar-asset-menu min-w-60')"
+            @close-auto-focus.prevent
+          >
+            <label class="mar-asset-menu-find">
+              <Search :size="14" />
+              <input
+                ref="menuFind"
+                v-model="menuQuery"
+                placeholder="Search actions…"
+                aria-label="Search actions"
+                @keydown="findKey"
+              />
+            </label>
+            <template v-for="(l, i) in menuShown" :key="i">
+              <ContextMenuSeparator
+                v-if="l === 'sep'"
+                class="mar-menu-sep -mx-1.5 my-1.5 h-px bg-border-default"
+              />
+              <p v-else-if="'note' in l" class="mar-menu-note">{{ l.note }}</p>
+              <ContextMenuSub v-else-if="l.sub">
+                <ContextMenuSubTrigger
+                  :class="cn(menuItem, 'data-[state=open]:bg-secondary-background')"
+                >
+                  <component :is="l.icon" v-if="l.icon" :size="15" />
+                  <span class="flex-1 truncate">{{ l.label }}</span>
+                  <ChevronRight :size="13" class="ml-auto" />
+                </ContextMenuSubTrigger>
+                <ContextMenuPortal :to="PORTAL_TO" defer>
+                  <ContextMenuSubContent
+                    :side-offset="8"
+                    :class="cn(floatingSurface, 'min-w-52 max-h-80 overflow-y-auto')"
+                  >
+                    <ContextMenuItem
+                      v-for="(x, j) in l.sub"
+                      :key="j"
+                      :class="menuItem"
+                      :disabled="x.disabled"
+                      @select="x.run?.()"
+                    >
+                      <component :is="x.icon" v-if="x.icon" :size="15" />
+                      <span class="flex-1 truncate">{{ x.label }}</span>
+                      <Check v-if="x.checked" :size="14" />
+                    </ContextMenuItem>
+                  </ContextMenuSubContent>
+                </ContextMenuPortal>
+              </ContextMenuSub>
+              <ContextMenuItem
+                v-else
+                :class="cn(menuItem, l.danger && 'mar-menu-danger')"
+                :disabled="l.disabled"
+                @select="l.run?.()"
+              >
+                <component :is="l.icon" v-if="l.icon" :size="15" />
+                <span class="flex-1 truncate">{{ l.label }}</span>
+                <Check v-if="l.checked" :size="14" />
+                <kbd v-else-if="l.hint" class="mar-menu-hint">{{ l.hint }}</kbd>
+              </ContextMenuItem>
+            </template>
+            <p v-if="!menuShown.length" class="mar-menu-note">No actions match</p>
+          </ContextMenuContent>
+        </ContextMenuPortal>
+      </ContextMenuRoot>
     </div>
 
     <MarSelectBar
@@ -901,14 +1238,24 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             lib.sel.clear()
           )
         },
+        { label: 'Tag', icon: Tag, run: () => (tagging = !tagging) },
+        labelLine(() => lib.selected.value),
         ...(inGraph
-          ? [folderLine(() => lib.selected.value), labelLine(() => lib.selected.value)]
+          ? [folderLine(() => lib.selected.value)]
           : [lib.moveLine(() => lib.selected.value)]),
         { label: 'Delete', icon: Trash2, danger: true, run: lib.removeSelected }
       ]"
       @clear="lib.sel.clear()"
       @all="lib.sel.all(lib.order.value)"
-    />
+    >
+      <BulkTagMenu
+        v-if="tagging"
+        class="mar-asset-tagmenu"
+        :selected="selectedAssets"
+        :pool="base"
+        @close="tagging = false"
+      />
+    </MarSelectBar>
     <AssetDetail
       v-if="detail"
       :asset="detail"
@@ -935,18 +1282,30 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         <component :is="s.icon" :size="15" /><span class="mar-anav-name">{{ s.label }}</span
         ><span class="mar-anav-n">{{ s.count }}</span>
       </button>
+      <button
+        type="button"
+        class="mar-anav-row"
+        :class="favOnly && 'is-on'"
+        :aria-pressed="favOnly"
+        @click="favOnly = !favOnly"
+      >
+        <Star :size="15" /><span class="mar-anav-name">Favorites</span
+        ><span class="mar-anav-n">{{ FAV_COUNT }}</span>
+      </button>
       <div class="mar-anav-head">
         <p class="mar-anav-label">Folders</p>
-        <Tooltip content="New folder" side="bottom">
-          <button
-            type="button"
-            class="mar-anav-add"
-            aria-label="New folder"
-            @click="startNaming({ name: 'New folder' })"
-          >
-            <Plus :size="14" />
-          </button>
-        </Tooltip>
+        <span class="mar-anav-head-tools">
+          <Tooltip content="New folder" side="bottom">
+            <button
+              type="button"
+              class="mar-anav-add"
+              aria-label="New folder"
+              @click="startNaming({ name: 'New folder' })"
+            >
+              <Plus :size="14" />
+            </button>
+          </Tooltip>
+        </span>
       </div>
       <template v-for="f in FOLDER_ROWS" :key="f.id">
         <div
@@ -1029,7 +1388,20 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         />
       </div>
       <template v-if="TAG_ROWS.length">
-        <p class="mar-anav-label">Tags</p>
+        <div class="mar-anav-head">
+          <p class="mar-anav-label">Tags</p>
+          <span class="mar-anav-head-tools">
+            <Tooltip content="Tag options" side="bottom" wrap>
+              <MarItemMenu v-model:open="tagMenu" :lines="TAG_SORT_LINES" label="Tag options">
+                <template #trigger>
+                  <button type="button" class="mar-anav-add" aria-label="Tag options">
+                    <MoreHorizontal :size="14" />
+                  </button>
+                </template>
+              </MarItemMenu>
+            </Tooltip>
+          </span>
+        </div>
         <button
           v-for="t in TAG_ROWS"
           :key="t.tag"
@@ -1043,7 +1415,30 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           ><span class="mar-anav-n">{{ t.count }}</span>
         </button>
       </template>
-      <p class="mar-anav-label">Labels</p>
+      <div class="mar-anav-head">
+        <p class="mar-anav-label">Labels</p>
+        <span class="mar-anav-head-tools">
+          <Tooltip content="Add label" side="bottom">
+            <button
+              type="button"
+              class="mar-anav-add"
+              aria-label="Add label"
+              @click="labelNaming = 'New label'"
+            >
+              <Plus :size="14" />
+            </button>
+          </Tooltip>
+          <Tooltip content="Label options" side="bottom" wrap>
+            <MarItemMenu v-model:open="labelMenu" :lines="LABEL_SORT_LINES" label="Label options">
+              <template #trigger>
+                <button type="button" class="mar-anav-add" aria-label="Label options">
+                  <MoreHorizontal :size="14" />
+                </button>
+              </template>
+            </MarItemMenu>
+          </Tooltip>
+        </span>
+      </div>
       <button
         v-for="l in LABEL_ROWS"
         :key="l.value"
@@ -1058,6 +1453,16 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         }}</span
         ><span class="mar-anav-n">{{ l.count }}</span>
       </button>
+      <div v-if="labelNaming !== null" class="mar-anav-naming">
+        <Palette :size="15" /><input
+          v-model="labelNaming"
+          v-focus
+          aria-label="Label name"
+          @keydown.enter="endLabel(true)"
+          @keydown.esc="endLabel(false)"
+          @blur="endLabel(true)"
+        />
+      </div>
     </nav>
   </Teleport>
 </template>
@@ -1150,12 +1555,112 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   color: var(--color-base-foreground);
 }
 /* Layout › Show: a card without its name or its details. */
-:is(.mar-masonry, .mar-grid).no-name .mar-item-name,
-:is(.mar-masonry, .mar-grid).no-details .mar-item-meta {
+.mar-asset-sections.no-name .mar-item-name,
+.mar-asset-sections.no-details .mar-item-meta {
   display: none;
 }
-:is(.mar-masonry, .mar-grid).no-name.no-details .mar-item-text {
+.mar-asset-sections.no-name.no-details .mar-item-text {
   display: none;
+}
+/* Group by job: each run's things under a small header. */
+.mar-asset-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.mar-asset-job-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.mar-asset-job-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-asset-job-n {
+  font-variant-numeric: tabular-nums;
+}
+/* The grid: one run of cards, straight into its columns. */
+.mar-asset-run {
+  display: contents;
+}
+/* Masonry rows: every card in a row one height, as wide as its shape
+   allows; the last row keeps that height instead of stretching. */
+.mar-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.mar-rows::after {
+  content: '';
+  flex: 999 1 0;
+}
+.mar-rows .mar-asset-run {
+  display: contents;
+}
+.mar-rows .mar-item {
+  min-width: 0;
+  flex: var(--r) 1 calc(var(--r) * var(--mar-row, 200px));
+}
+.mar-rows .mar-item-media img {
+  position: absolute;
+  inset: 0;
+}
+/* Layout › Labels off: no color dot on the cards. */
+:root[data-mar-asset-labels='off'] .mar-asset-label {
+  display: none;
+}
+/* A starred card keeps its star; the rest show it on hover. */
+:root .proto-ui.proto-ui.proto-ui .mar-item-tools .mar-star.is-on {
+  opacity: 1;
+  color: oklch(0.85 0.15 85);
+}
+/* Right-click menu: Search actions… first, a field in the menu. */
+.mar-asset-menu-find {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-asset-menu-find input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  outline: none;
+}
+/* Tag (the selection bar): the panel's picker over the bar, on the
+   bar's own solid surface. */
+.mar-selbar .mar-asset-tagmenu {
+  --rp-surface: var(--color-card-background);
+  --rp-ring: transparent;
+  --rp-line: transparent;
+  --rp-hover: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  --rp-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 16px 40px -12px rgb(0 0 0 / 0.45);
+  --rp-text: var(--color-base-foreground);
+  --rp-meta: var(--color-muted-foreground);
+  backdrop-filter: none;
+}
+/* Past the page's field rule (a label holding an input grows to 220px):
+   here it's the picker's search line. */
+:root .proto-ui.proto-ui.proto-ui .mar-selbar .mar-asset-tagmenu .ap-tagmenu-search {
+  min-width: 0;
+  flex: none;
 }
 .mar-masonry {
   display: flex;
@@ -1241,12 +1746,23 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   flex: none;
   border-radius: 999px;
 }
-/* FOLDERS, with + by its label; a row shows + and ⋯ on hover. */
+/* FOLDERS, TAGS and LABELS: one head each, the label's spacing on the
+   head itself so its tools center on the label's line; the last icon's
+   glyph ends where the counts below do (row padding 10, less the
+   button's 5 around its 14px icon). A folder row shows + and ⋯ on hover. */
 .mar-anav-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-right: 4px;
+  padding: 18px 5px 6px 0;
+}
+.mar-anav .mar-anav-head .mar-anav-label {
+  padding-block: 0;
+}
+.mar-anav-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-anav-add {
   display: inline-flex;
@@ -1262,9 +1778,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 :root .proto-ui.proto-ui.proto-ui .mar-anav-add:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   color: var(--color-base-foreground);
-}
-.mar-anav-head .mar-anav-add {
-  margin-top: 12px;
 }
 .mar-anav-folder {
   position: relative;
@@ -1325,18 +1838,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   color: var(--color-subtle-foreground);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-anav-all {
-  height: 26px;
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-anav-all:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  color: var(--color-base-foreground);
 }
 .mar-asset-len {
   position: absolute;

@@ -18,3 +18,13 @@ export function addTag(a: MarAsset, tag: string): void {
 export function removeTag(a: MarAsset, tag: string): void {
   edits[a.id] = tagsOf(a).filter((t) => t !== tag)
 }
+
+/** Every one has it: a check by the tag in a menu. */
+export const allTagged = (list: MarAsset[], tag: string): boolean =>
+  list.length > 0 && list.every((a) => tagsOf(a).includes(tag))
+
+/** On all of them, or off all when they all had it (Add tags ›). */
+export function flipTag(list: MarAsset[], tag: string): void {
+  const off = allTagged(list, tag)
+  for (const a of list) (off ? removeTag : addTag)(a, tag)
+}

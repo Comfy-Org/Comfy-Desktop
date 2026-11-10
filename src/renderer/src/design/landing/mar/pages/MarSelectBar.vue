@@ -3,8 +3,9 @@ import { X } from 'lucide-vue-next'
 import type { MenuAction } from './menu'
 import MarItemMenu from './MarItemMenu.vue'
 
-/** What you can do to everything selected (Mar's pages): a dark bar at
- *  the foot with the count, the common actions, and Esc to let go. */
+/** What you can do to everything selected (Mar's pages): an inverted bar at
+ *  the foot with the count, the common actions, and Esc to let go. The
+ *  default slot takes a page's own panel over the bar (Assets: Tag). */
 const {
   n,
   noun,
@@ -58,6 +59,7 @@ const emit = defineEmits<{ clear: []; all: [] }>()
         </button>
       </template>
       <MarItemMenu v-if="more.length" :lines="more" side="top" />
+      <slot />
     </div>
   </Transition>
 </template>
@@ -74,15 +76,12 @@ const emit = defineEmits<{ clear: []; all: [] }>()
   gap: 4px;
   padding: 0 6px;
   border-radius: 14px;
-  background: color-mix(
-    in oklch,
-    color-mix(in oklch, var(--color-base-foreground) 8%, var(--color-card-background)) 88%,
-    transparent
-  );
-  backdrop-filter: blur(30px) saturate(1.3);
-  box-shadow:
-    0 20px 50px -16px rgb(0 0 0 / 0.6),
-    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  /* Inverted, like the graph panel's bar (.ap-selbar): the page's text
+     color as its fill, so it stands out in either theme. No glass, no
+     edge, a soft lift off the grid. */
+  background: var(--color-base-foreground);
+  color: var(--color-content-background);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
   font-size: 13px;
   transform: translateX(-50%);
 }
@@ -96,7 +95,7 @@ const emit = defineEmits<{ clear: []; all: [] }>()
   width: 1px;
   height: 20px;
   margin: 0 4px;
-  background: var(--color-border-default);
+  background: color-mix(in oklch, var(--color-content-background) 16%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-selbar-btn,
 :root .proto-ui.proto-ui.proto-ui .mar-selbar-x {
@@ -107,23 +106,25 @@ const emit = defineEmits<{ clear: []; all: [] }>()
   gap: 6px;
   padding: 0 10px;
   border-radius: 9px;
-  color: var(--color-base-foreground);
+  color: var(--color-content-background);
   white-space: nowrap;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-selbar-x {
   width: 32px;
   justify-content: center;
   padding: 0;
-  color: var(--color-muted-foreground);
+  color: color-mix(in oklch, var(--color-content-background) 62%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-selbar-btn.is-quiet {
-  color: var(--color-muted-foreground);
+  color: color-mix(in oklch, var(--color-content-background) 62%, transparent);
 }
+/* The danger red pulled toward the bar's text color: darker on the
+   light bar, lighter on the dark one, so it reads on both. */
 :root .proto-ui.proto-ui.proto-ui .mar-selbar-btn.is-danger {
-  color: var(--color-status-danger);
+  color: color-mix(in oklch, var(--color-status-danger) 68%, var(--color-content-background));
 }
 :root .proto-ui.proto-ui.proto-ui :is(.mar-selbar-btn, .mar-selbar-x):hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  background: color-mix(in oklch, var(--color-content-background) 9%, transparent);
 }
 .mar-selbar-enter-active,
 .mar-selbar-leave-active {

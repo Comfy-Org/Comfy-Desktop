@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, LayoutDashboard, LayoutGrid, Minus, Plus } from 'lucide-vue-next'
+import { Check, LayoutGrid, Minus, Plus } from 'lucide-vue-next'
 import { DropdownMenuItem, DropdownMenuRoot, DropdownMenuSub, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
@@ -8,26 +8,31 @@ import DropdownMenuSubContent from '../../ui/DropdownMenuSubContent.vue'
 import DropdownMenuSubTrigger from '../../ui/DropdownMenuSubTrigger.vue'
 import { cn } from '../../ui/cn'
 import { menuItem } from '../../ui/menu.styles'
+import { WALLS, type AssetWall } from './assetView'
 
 /**
  * The Layout menu of the Assets page and the Apps page: LAYOUT with
- * Masonry and Grid as icon tabs beside it (the picked one with its name); Size as − a stepped bar +; then,
- * where the page has them (Assets), Sort by as a submenu and SHOW, what a
- * card carries. Every title is the uppercase label.
+ * Masonry and Grid as icon tabs beside it (the picked one with its name;
+ * Assets adds masonry in rows); Size as − a stepped bar +; then, where the
+ * page has them (Assets), Sort by as a submenu, Group by job, and SHOW,
+ * what a card carries. Every title is the uppercase label.
  */
-export type AssetView = 'masonry' | 'grid'
+export type AssetView = AssetWall
 const view = defineModel<AssetView>('view', { required: true })
 const size = defineModel<number>('size')
 const sort = defineModel<string>('sort')
 const showName = defineModel<boolean>('showName')
 const showDetails = defineModel<boolean>('showDetails')
-const { sorts = [] } = defineProps<{ sorts?: { value: string; label: string }[] }>()
+const showLabels = defineModel<boolean>('showLabels')
+const byJob = defineModel<boolean>('byJob')
+const { sorts = [], views = ['masonry', 'grid'] } = defineProps<{
+  sorts?: { value: string; label: string }[]
+  /** Which layouts the page offers, in order. */
+  views?: AssetView[]
+}>()
 
 const SIZES = 3
-const VIEWS = [
-  { value: 'masonry', label: 'Masonry', icon: LayoutDashboard },
-  { value: 'grid', label: 'Grid', icon: LayoutGrid }
-] as const
+const VIEWS = computed(() => WALLS.filter((w) => views.includes(w.value)))
 const sortLabel = computed(() => sorts.find((s) => s.value === sort.value)?.label ?? '')
 const setSize = (n: number): void => {
   size.value = Math.min(SIZES, Math.max(1, n))
@@ -37,7 +42,8 @@ const SHOW = computed(() =>
     ? []
     : [
         { label: 'File name', on: showName },
-        { label: 'File details', on: showDetails }
+        { label: 'File details', on: showDetails },
+        ...(showLabels.value === undefined ? [] : [{ label: 'Labels', on: showLabels }])
       ]
 )
 </script>
@@ -59,8 +65,8 @@ const SHOW = computed(() =>
             type="button"
             role="radio"
             :aria-checked="view === v.value"
-            :aria-label="v.label"
-            :title="v.label"
+            :aria-label="views.length > 2 ? v.title : v.label"
+            :title="views.length > 2 ? v.title : v.label"
             :class="cn('alm-view', view === v.value && 'is-on')"
             @click="view = v.value"
           >
@@ -117,6 +123,13 @@ const SHOW = computed(() =>
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
+      <DropdownMenuItem
+        v-if="byJob !== undefined"
+        :class="cn(menuItem, 'alm-row')"
+        @select.prevent="byJob = !byJob"
+      >
+        <span class="flex-1">Group by job</span><Check v-if="byJob" :size="14" />
+      </DropdownMenuItem>
       <template v-if="SHOW.length">
         <DropdownMenuSeparator class="alm-sep" />
         <p class="alm-label">Show</p>
