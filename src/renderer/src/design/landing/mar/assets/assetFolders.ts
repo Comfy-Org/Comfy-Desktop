@@ -1,4 +1,5 @@
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
+import { assets } from '../pages/assetsStore'
 
 /**
  * Folders for ComfyUI's Assets tab, alongside tags: a file sits in
@@ -19,6 +20,26 @@ export const folders = reactive<AssetFolder[]>([
 ])
 const placed = reactive<Record<string, string>>({})
 let next = 0
+
+// A few files already filed, so the demo folders aren't empty.
+const FILED: [RegExp, string][] = [
+  [/^hero_shot_|^upscaled_/, 'f-client'],
+  [/^moodboard_|_ref[._]/, 'f-moodboards'],
+  [/^relight_|^alpine_|^storyboard_/, 'f-tests']
+]
+const filed = new Set<string>()
+watch(
+  () => assets.items.map((a) => a.id).join(),
+  () => {
+    for (const a of assets.items) {
+      if (filed.has(a.id)) continue
+      filed.add(a.id)
+      const f = FILED.find(([re]) => re.test(a.name))?.[1]
+      if (f) placed[a.id] = f
+    }
+  },
+  { immediate: true }
+)
 
 export const folderOf = (id: string): string | undefined => placed[id]
 export const folderName = (id?: string): string | undefined =>

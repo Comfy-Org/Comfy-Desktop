@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 /**
- * Filters › Date › Custom range: one month, in the menu's own style. The
- * first click sets the start, the second the end (either order); a third
- * starts over. Dates are ISO days (2026-11-09).
+ * Filters › Date › Custom range: two fields to type the days, and one
+ * month, in the menu's own style. The first click sets the start, the
+ * second the end (either order); a third starts over. Dates are ISO days
+ * (2026-11-09).
  */
 const from = defineModel<string>('from', { required: true })
 const to = defineModel<string>('to', { required: true })
@@ -46,19 +47,53 @@ function pick(d: string): void {
 }
 const ends = (d: string): boolean => d === from.value || d === to.value
 const inside = (d: string): boolean => !!to.value && d > from.value && d < to.value
-const short = (d: string): string =>
-  new Date(`${d}T00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-const summary = computed(() =>
-  !from.value
-    ? 'Pick a start day'
-    : to.value
-      ? `${short(from.value)} – ${short(to.value)}`
-      : `${short(from.value)} – pick an end day`
-)
+const long = (d: string): string =>
+  d
+    ? new Date(`${d}T00:00`).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+    : ''
+// "Nov 9, 2026", "11/9/2026" or "2026-11-09"; anything else is left as typed.
+function parse(text: string): string | null {
+  const t = text.trim()
+  if (!t) return ''
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(t) ? new Date(`${t}T00:00`) : new Date(t)
+  return Number.isNaN(d.getTime()) ? null : iso(d)
+}
+const typed = ref({ from: long(from.value), to: long(to.value) })
+watch([from, to], ([a, b]) => (typed.value = { from: long(a), to: long(b) }))
+function commit(end: 'from' | 'to'): void {
+  const d = parse(typed.value[end])
+  if (d === null) return
+  if (end === 'from') from.value = d
+  else to.value = d
+  // Typed backwards: swap, as clicking does.
+  if (from.value && to.value && to.value < from.value)
+    [from.value, to.value] = [to.value, from.value]
+  if (d) month.value = new Date(`${d}T00:00`)
+  month.value = new Date(month.value.getFullYear(), month.value.getMonth(), 1)
+  typed.value = { from: long(from.value), to: long(to.value) }
+}
+const bad = (end: 'from' | 'to'): boolean => parse(typed.value[end]) === null
 </script>
 
 <template>
   <div class="rc" @keydown.stop>
+    <div class="rc-fields">
+      <label v-for="end in ['from', 'to'] as const" :key="end" class="rc-field">
+        <span class="rc-cap">{{ end === 'from' ? 'Start' : 'End' }}</span>
+        <input
+          v-model="typed[end]"
+          :class="['rc-input', bad(end) && 'is-bad']"
+          :placeholder="end === 'from' ? 'Nov 1, 2026' : 'Nov 9, 2026'"
+          :aria-label="end === 'from' ? 'Start date' : 'End date'"
+          @keydown.enter.prevent="commit(end)"
+          @blur="commit(end)"
+        />
+      </label>
+    </div>
     <div class="rc-head">
       <span class="rc-title">{{ title }}</span>
       <button type="button" class="rc-nav" aria-label="Previous month" @click="shift(-1)">
@@ -88,7 +123,6 @@ const summary = computed(() =>
         {{ d.n }}
       </button>
     </div>
-    <p class="rc-sum">{{ summary }}</p>
   </div>
 </template>
 
@@ -163,9 +197,42 @@ const summary = computed(() =>
   color: var(--color-content-background);
   font-weight: 600;
 }
-.rc-sum {
-  padding: 8px 6px 0;
-  color: var(--color-muted-foreground);
+.rc-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px 2px 10px;
+}
+.rc-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.rc-cap {
+  padding-left: 2px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+}
+:root .afm.afm.proto-ui.proto-ui .rc-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+:root .afm.afm.proto-ui.proto-ui .rc-input:focus-visible {
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+:root .afm.afm.proto-ui.proto-ui .rc-input.is-bad {
+  box-shadow: 0 0 0 1px var(--color-destructive-background, #e5484d);
+}
+.rc-input::placeholder {
+  color: var(--color-subtle-foreground);
 }
 </style>

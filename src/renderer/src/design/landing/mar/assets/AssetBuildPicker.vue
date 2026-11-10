@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Check, ChevronDown, Layers } from 'lucide-vue-next'
 import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui'
 import LocationIcon from '../../ui/LocationIcon.vue'
@@ -7,7 +7,6 @@ import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import { floatingSurface, menuItem } from '../../ui/menu.styles'
 import { PORTAL_TO } from '../../ui/portal'
-import MarStatus from '../pages/MarStatus.vue'
 import { assetBuilds, buildStatus, type AssetBuild } from './assetBuilds'
 
 /** Whose assets (Assets, Phase 2): one build at a time, each with its
@@ -18,6 +17,21 @@ import { assetBuilds, buildStatus, type AssetBuild } from './assetBuilds'
 const model = defineModel<string>({ required: true })
 const open = ref(false)
 const current = (): AssetBuild | undefined => assetBuilds.value.find((b) => b.id === model.value)
+const STATE = { running: 'Running', launching: 'Starting', stopped: 'Stopped' } as const
+// Two lines a row: the name, then where it runs and its state.
+const rows = computed(() => [
+  { id: 'all', name: 'Everywhere', cloud: false, status: '', sub: 'Every running build at once' },
+  ...assetBuilds.value.map((b) => {
+    const status = buildStatus(b)
+    return {
+      id: b.id,
+      name: b.name,
+      cloud: b.kind === 'cloud',
+      status,
+      sub: `${b.kind === 'cloud' ? 'Cloud' : 'Local'} · ${STATE[status]}`
+    }
+  })
+])
 function pick(id: string): void {
   model.value = id
   open.value = false
@@ -54,58 +68,77 @@ function pick(id: string): void {
       <PopoverContent
         align="start"
         :side-offset="6"
-        :class="cn(floatingSurface, 'flex w-72 flex-col')"
+        :class="cn(floatingSurface, 'abp flex w-80 flex-col gap-0.5')"
         role="listbox"
         aria-label="Builds"
       >
         <p
-          class="px-2.5 pt-2 pb-1 text-[11px] font-medium tracking-[0.08em] text-subtle-foreground uppercase"
+          class="px-2.5 pt-2 pb-1.5 text-[11px] font-medium tracking-[0.08em] text-subtle-foreground uppercase"
         >
           Browse the assets of
         </p>
         <button
+          v-for="r in rows"
+          :key="r.id"
           type="button"
           role="option"
-          :aria-selected="model === 'all'"
+          :aria-selected="r.id === model"
           :class="
             cn(
               menuItem,
-              'w-full text-left hover:bg-secondary-background',
-              model === 'all' && 'bg-secondary-background'
+              'abp-row h-auto w-full gap-3 py-2 text-left hover:bg-secondary-background',
+              r.id === model && 'bg-secondary-background'
             )
           "
-          @click="pick('all')"
+          @click="pick(r.id)"
         >
-          <Layers :size="14" />
-          <span class="min-w-0 flex-1 truncate">Everywhere</span>
-          <span class="shrink-0 text-ui text-subtle-foreground">Running builds</span>
-          <span class="flex w-4 shrink-0 justify-end text-muted-foreground"
-            ><Check v-if="model === 'all'" :size="13"
-          /></span>
-        </button>
-        <button
-          v-for="b in assetBuilds"
-          :key="b.id"
-          type="button"
-          role="option"
-          :aria-selected="b.id === model"
-          :class="
-            cn(
-              menuItem,
-              'w-full text-left hover:bg-secondary-background',
-              b.id === model && 'bg-secondary-background'
-            )
-          "
-          @click="pick(b.id)"
-        >
-          <LocationIcon :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="14" />
-          <span class="min-w-0 flex-1 truncate">{{ b.name }}</span>
-          <MarStatus :status="buildStatus(b)" class="shrink-0" />
-          <span class="flex w-4 shrink-0 justify-end text-muted-foreground"
-            ><Check v-if="b.id === model" :size="13"
-          /></span>
+          <span class="abp-tile">
+            <Layers v-if="r.id === 'all'" :size="15" />
+            <LocationIcon v-else :kind="r.cloud ? 'cloud' : 'local'" :size="15" />
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span class="truncate text-base-foreground">{{ r.name }}</span>
+            <span class="abp-sub">
+              <span v-if="r.status" :class="['abp-dot', `is-${r.status}`]" />{{ r.sub }}
+            </span>
+          </span>
+          <Check v-if="r.id === model" :size="14" class="shrink-0 text-base-foreground" />
         </button>
       </PopoverContent>
     </PopoverPortal>
   </PopoverRoot>
 </template>
+
+<style>
+.abp-tile {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-muted-foreground);
+}
+.abp-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.abp-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--color-subtle-foreground);
+}
+.abp-dot.is-running {
+  background: var(--color-success-foreground, oklch(0.75 0.15 150));
+}
+.abp-dot.is-launching {
+  background: var(--color-warning-foreground, oklch(0.8 0.14 80));
+}
+</style>

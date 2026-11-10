@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
+  Box,
   Calendar,
   Check,
   ChevronDown,
@@ -8,8 +9,10 @@ import {
   FolderInput,
   Image,
   ListFilter,
+  Puzzle,
   Search,
   Tag,
+  Workflow,
   X
 } from 'lucide-vue-next'
 import {
@@ -54,7 +57,8 @@ const {
   field = false,
   source = false,
   range = false,
-  typesLabel = 'Media type'
+  typesLabel = 'Media type',
+  meta
 } = defineProps<{
   types: readonly { value: AssetType; label: string }[]
   tags: string[]
@@ -63,6 +67,8 @@ const {
   source?: boolean
   range?: boolean
   typesLabel?: string
+  /** What the runs recorded, for the Metadata group; none hides it. */
+  meta?: { models: string[]; loras: string[]; workflows: string[] }
 }>()
 const f = defineModel<AssetFilter>({ required: true })
 const surface = computed(() => (field ? cn(floatingSurface, 'afm is-ds min-w-48') : 'proto-ui afm'))
@@ -90,10 +96,34 @@ function setSource(v: AssetFilter['source']): void {
 }
 function setDate(v: string): void {
   const d = DATES.find((x) => x.value === v)
+  custom.value = false
   f.value = { ...f.value, from: d && date.value !== v ? ago(d.days) : '', to: '' }
+}
+// Custom range stays folded until picked; picked again, it clears.
+const custom = ref(false)
+const showRange = computed(() => custom.value || date.value === 'custom')
+function toggleRange(): void {
+  if (showRange.value) {
+    custom.value = false
+    if (date.value === 'custom') f.value = { ...f.value, from: '', to: '' }
+  } else custom.value = true
 }
 const toggle = <T,>(list: T[], v: T): T[] =>
   list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
+
+// Alex's metadata filters: what made the file, as read from its run.
+const META = [
+  { key: 'models', label: 'Model', icon: Box },
+  { key: 'loras', label: 'LoRA', icon: Puzzle },
+  { key: 'workflows', label: 'Workflow name', icon: Workflow }
+] as const
+type MetaKey = (typeof META)[number]['key']
+const metaGroups = computed(() => META.filter((m) => meta?.[m.key].length))
+const metaOptions = (k: MetaKey): string[] => meta?.[k] ?? []
+const short = (v: string): string => v.replace(/\.(safetensors|ckpt|pt|json)$/, '')
+function toggleMeta(k: MetaKey, v: string): void {
+  f.value = { ...f.value, [k]: toggle(f.value[k], v) }
+}
 
 const q = ref('')
 const match = (s: string): boolean => s.toLowerCase().includes(q.value.trim().toLowerCase())
@@ -101,13 +131,16 @@ const found = computed(() => ({
   sources: source ? SOURCES.filter((x) => match(x.label)) : [],
   types: types.filter((t) => match(t.label)),
   dates: DATES.filter((d) => match(d.label)),
-  tags: tags.filter(match)
+  tags: tags.filter(match),
+  meta: META.map((m) => ({ ...m, values: metaOptions(m.key).filter(match) })).filter(
+    (m) => m.values.length
+  )
 }))
 const searching = computed(() => !!q.value.trim())
 </script>
 
 <template>
-  <DropdownMenuRoot :modal="false" @update:open="(o) => !o && (q = '')">
+  <DropdownMenuRoot :modal="false" @update:open="(o) => !o && ((q = ''), (custom = false))">
     <DropdownMenuTrigger as-child>
       <button
         v-if="field"
@@ -200,12 +233,26 @@ const searching = computed(() => !!q.value.trim())
               <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
             </DropdownMenuCheckboxItem>
           </template>
+          <template v-for="m in found.meta" :key="m.key">
+            <DropdownMenuLabel class="afm-label">{{ m.label }}</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem
+              v-for="v in m.values"
+              :key="v"
+              :class="item"
+              :model-value="f[m.key].includes(v)"
+              @select.prevent="toggleMeta(m.key, v)"
+            >
+              <span class="afm-grow truncate">{{ short(v) }}</span>
+              <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+            </DropdownMenuCheckboxItem>
+          </template>
           <p
             v-if="
               !found.sources.length &&
               !found.types.length &&
               !found.dates.length &&
-              !found.tags.length
+              !found.tags.length &&
+              !found.meta.length
             "
             class="afm-none"
           >
@@ -264,7 +311,7 @@ const searching = computed(() => !!q.value.trim())
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal :to="PORTAL_TO">
               <DropdownMenuSubContent :side-offset="8" :align-offset="-9" :class="surface">
-                <DropdownMenuRadioGroup :model-value="date">
+                <DropdownMenuRadioGroup :model-value="showRange ? 'custom' : date">
                   <DropdownMenuRadioItem
                     v-for="d in DATES"
                     :key="d.value"
@@ -275,10 +322,22 @@ const searching = computed(() => !!q.value.trim())
                     <span class="afm-grow">{{ d.label }}</span>
                     <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
                   </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem
+                    v-if="range"
+                    :class="item"
+                    value="custom"
+                    @select.prevent="toggleRange"
+                  >
+                    <span class="afm-grow">Custom range</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                    <ChevronDown
+                      :size="16"
+                      :class="['afm-icon afm-fold', showRange && 'is-open']"
+                    />
+                  </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
-                <template v-if="range">
+                <template v-if="range && showRange">
                   <DropdownMenuSeparator class="afm-sep" />
-                  <DropdownMenuLabel class="afm-label">Custom range</DropdownMenuLabel>
                   <RangeCalendar
                     :from="f.from"
                     :to="f.to"
@@ -306,9 +365,49 @@ const searching = computed(() => !!q.value.trim())
                   <span class="afm-grow">{{ t }}</span>
                   <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
                 </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator class="afm-sep" />
+                <DropdownMenuCheckboxItem
+                  :class="item"
+                  :model-value="f.anyTag"
+                  @select.prevent="f = { ...f, anyTag: !f.anyTag }"
+                >
+                  <span class="afm-grow">Match any tag</span>
+                  <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                </DropdownMenuCheckboxItem>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
+          <template v-if="metaGroups.length">
+            <DropdownMenuSeparator class="afm-sep" />
+            <DropdownMenuLabel class="afm-label">Metadata</DropdownMenuLabel>
+            <DropdownMenuSub v-for="m in metaGroups" :key="m.key">
+              <DropdownMenuSubTrigger :class="item">
+                <component :is="m.icon" :size="16" class="afm-icon" /><span class="afm-grow">{{
+                  m.label
+                }}</span
+                ><span v-if="f[m.key].length" class="aff-badge">{{ f[m.key].length }}</span
+                ><ChevronRight :size="16" class="afm-icon" />
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal :to="PORTAL_TO">
+                <DropdownMenuSubContent
+                  :side-offset="8"
+                  :align-offset="-9"
+                  :class="[surface, 'max-h-80 overflow-y-auto']"
+                >
+                  <DropdownMenuCheckboxItem
+                    v-for="v in metaOptions(m.key)"
+                    :key="v"
+                    :class="item"
+                    :model-value="f[m.key].includes(v)"
+                    @select.prevent="toggleMeta(m.key, v)"
+                  >
+                    <span class="afm-grow max-w-64 truncate" :title="v">{{ short(v) }}</span>
+                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
+                  </DropdownMenuCheckboxItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
+          </template>
         </template>
         <template v-if="activeFilters(f)">
           <DropdownMenuSeparator class="afm-sep" />
@@ -446,6 +545,12 @@ const searching = computed(() => !!q.value.trim())
 }
 .afm.is-ds .afm-item[data-state='open'] {
   background: var(--color-secondary-background);
+}
+.afm-fold {
+  transition: transform 160ms ease;
+}
+.afm-fold.is-open {
+  transform: rotate(180deg);
 }
 .afm-none {
   padding: 6px 12px;
