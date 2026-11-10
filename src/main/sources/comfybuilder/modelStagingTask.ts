@@ -23,7 +23,7 @@ export function startModelStaging(
   const abort = new AbortController()
   _stagingAborts.set(installationId, abort)
 
-  void runTask(installation, models, abort.signal)
+  void runModelStagingTask(installation, models, abort.signal)
     .catch((err) => {
       console.warn(
         `[buildModels:${installationId}] staging failed: ${err instanceof Error ? err.message : String(err)}`
@@ -34,15 +34,17 @@ export function startModelStaging(
     })
 }
 
-async function runTask(
+export type ModelStagingOutcome = 'staged' | 'busy' | 'aborted'
+
+export async function runModelStagingTask(
   installation: InstallationRecord,
   models: readonly ModelDescriptor[],
   signal: AbortSignal
-): Promise<void> {
+): Promise<ModelStagingOutcome> {
   const installationId = installation.id
   if (models.length === 0) {
     await installations.update(installationId, { modelsStaged: true }).catch(() => {})
-    return
+    return 'staged'
   }
 
   const downloadManager = await import('../../lib/comfyDownloadManager')
@@ -53,7 +55,7 @@ async function runTask(
     console.warn(
       `[buildModels:${installationId}] model directory is busy; staging retries at the next launch`
     )
-    return
+    return 'busy'
   }
   try {
     await stageModels({
@@ -69,9 +71,10 @@ async function runTask(
   } finally {
     releaseModelRoot()
   }
-  if (signal.aborted) return
+  if (signal.aborted) return 'aborted'
   await installations.update(installationId, { modelsStaged: true }).catch(() => {})
   console.log(`[buildModels:${installationId}] all build models staged`)
+  return 'staged'
 }
 
 export function restageBuildModelsIfNeeded(installation: InstallationRecord): void {
