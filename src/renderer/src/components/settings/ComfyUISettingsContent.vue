@@ -33,7 +33,8 @@ import {
   EyeOff,
   Settings2,
   Repeat2,
-  Server
+  Server,
+  Ellipsis
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
@@ -1176,7 +1177,7 @@ defineExpose({
           <div class="settings-v2-more-wrap relative inline-flex">
             <Button
               variant="secondary"
-              size="md"
+              :size="isPage ? 'icon' : 'md'"
               type="button"
               class="settings-v2-more"
               data-more-trigger
@@ -1190,8 +1191,11 @@ defineExpose({
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >
-              {{ t('comfyUISettings.more') }}
-              <component :is="menuChevron" :size="14" />
+              <Ellipsis v-if="isPage" :size="16" aria-hidden="true" />
+              <template v-else>
+                {{ t('comfyUISettings.more') }}
+                <component :is="menuChevron" :size="14" />
+              </template>
             </Button>
             <MoreMenu
               :open="moreMenuOpen"
