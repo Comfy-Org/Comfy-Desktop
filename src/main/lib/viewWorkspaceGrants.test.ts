@@ -71,14 +71,14 @@ function signInAt(workspaceId: string | null): void {
 
 function grantSession(
   getGrantAccessToken: () => Promise<string | null>,
-  getAccessToken: () => Promise<string | null> = getGrantAccessToken
+  heldWorkspaceToken: (workspaceId: string) => string | null = () => null
 ): ConstructorParameters<typeof ViewWorkspaceGrants>[0] {
   return {
     currentWorkspaceId: () => current,
     currentSubject: () => (current ? user : null),
     currentAuthGeneration: () => generation,
     getGrantAccessToken,
-    getAccessToken,
+    heldWorkspaceToken,
     isWorkspaceMintAllowed: async () => true,
     endGrantFamily: () => {}
   }
@@ -323,7 +323,7 @@ describe('ViewWorkspaceGrants', () => {
     grants = new ViewWorkspaceGrants(
       grantSession(
         async () => accessToken('ws-2', 'comfy-cloud:user:read'),
-        async () => held
+        () => held
       ),
       mint
     )
@@ -336,7 +336,7 @@ describe('ViewWorkspaceGrants', () => {
     grants = new ViewWorkspaceGrants(
       grantSession(
         async () => accessToken('ws-2', 'comfy-cloud:user:read'),
-        async () => accessToken('ws-1')
+        () => accessToken('ws-1')
       ),
       mint
     )

@@ -27,7 +27,7 @@ export interface GrantSession {
   currentSubject(): string | null
   currentAuthGeneration(): number
   getGrantAccessToken(): Promise<string | null>
-  getAccessToken(): Promise<string | null>
+  heldWorkspaceToken(workspaceId: string): string | null
   isWorkspaceMintAllowed(workspaceId: string): Promise<boolean>
   endGrantFamily(accessToken: string): void
 }
@@ -122,13 +122,10 @@ export class ViewWorkspaceGrants {
     )
   }
 
-  private async unmintable(
-    workspaceId: string,
-    subject: string,
-    fence: MintFence
-  ): Promise<HeldToken | null> {
-    const token = await this.session.getAccessToken()
-    if (!this.isCurrent(fence) || !token || canMintWorkspaceTokens(token)) return null
+  private unmintable(grant: string, workspaceId: string, subject: string): HeldToken | null {
+    const token =
+      workspaceIdOf(grant) === workspaceId ? grant : this.session.heldWorkspaceToken(workspaceId)
+    if (!token || canMintWorkspaceTokens(token)) return null
     if (workspaceIdOf(token) !== workspaceId || subjectOf(token) !== subject) return null
     return { token, subject }
   }
@@ -138,7 +135,8 @@ export class ViewWorkspaceGrants {
     if (!this.isCurrent(fence) || !accessToken) return null
     const subject = subjectOf(accessToken)
     if (!subject) return null
-    if (!canMintWorkspaceTokens(accessToken)) return this.unmintable(workspaceId, subject, fence)
+    if (!canMintWorkspaceTokens(accessToken))
+      return this.unmintable(accessToken, workspaceId, subject)
     const key = mintKey(subject, workspaceId)
     const cached = this.minted.get(key)
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now())
