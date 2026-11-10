@@ -1,11 +1,10 @@
-import { revokeUrlOf } from './config'
+import { CLOUD_REFRESH_TOKEN_LIFETIME_MS, revokeUrlOf } from './config'
 import { revoke } from './oauth'
 import { addPendingRevocation, loadPendingRevocations, removePendingRevocation } from './tokenStore'
 import type { PendingRevocation } from './tokenStore'
 
 const FIRST_RETRY_MS = 5_000
 const MAX_RETRY_MS = 15 * 60_000
-const CLOUD_REFRESH_TOKEN_LIFETIME_MS = 720 * 60 * 60_000
 
 export class Revocations {
   private draining: Promise<void> | null = null

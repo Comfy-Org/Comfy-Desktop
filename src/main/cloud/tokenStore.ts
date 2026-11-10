@@ -4,7 +4,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 
 import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
-import { CLOUD_CONFIG } from './config'
+import { CLOUD_CONFIG, CLOUD_REFRESH_TOKEN_LIFETIME_MS } from './config'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
@@ -340,6 +340,16 @@ export interface PendingRevocations {
   complete: boolean
 }
 
+function dropIfOutlived(file: string): boolean {
+  try {
+    if (fs.statSync(file).mtimeMs + CLOUD_REFRESH_TOKEN_LIFETIME_MS > Date.now()) return false
+    fs.rmSync(file, { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
 function readSavedRevocations(): PendingRevocations {
   let names: string[]
   try {
@@ -348,17 +358,18 @@ function readSavedRevocations(): PendingRevocations {
     return { pending: [], complete: (error as NodeJS.ErrnoException).code === 'ENOENT' }
   }
   if (names.length > 0 && !encryptionAvailable()) return { pending: [], complete: false }
+  let unreadable = 0
   const pending = names.flatMap((name) => {
+    const file = path.join(revocationsDir(), name)
     try {
-      const file = path.join(revocationsDir(), name)
       const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(file)))
-      if (!isSavedRevocation(parsed)) return []
-      return [{ ...parsed, queuedAt: parsed.queuedAt ?? fs.statSync(file).mtimeMs }]
-    } catch {
-      return []
-    }
+      if (isSavedRevocation(parsed))
+        return [{ ...parsed, queuedAt: parsed.queuedAt ?? fs.statSync(file).mtimeMs }]
+    } catch {}
+    if (!dropIfOutlived(file)) unreadable += 1
+    return []
   })
-  return { pending, complete: pending.length === names.length }
+  return { pending, complete: unreadable === 0 }
 }
 
 export function loadPendingRevocations(): PendingRevocations {

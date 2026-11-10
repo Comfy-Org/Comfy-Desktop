@@ -361,6 +361,26 @@ describe('grant vault', () => {
     }
   })
 
+  it('drops an unreadable queue file once it has outlived the refresh token, and only then', () => {
+    const revocation = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
+    addPendingRevocation(revocation)
+    const dir = path.join(electronState.userData, 'comfy-cloud-revocations')
+    const unreadable = path.join(dir, 'unreadable.bin')
+    fs.writeFileSync(unreadable, 'garbage')
+    expect(loadPendingRevocations()).toEqual({ pending: [revocation], complete: false })
+
+    const monthAgo = new Date(Date.now() - 31 * 24 * 3_600_000)
+    fs.utimesSync(unreadable, monthAgo, monthAgo)
+
+    expect(loadPendingRevocations()).toEqual({ pending: [revocation], complete: true })
+    expect(fs.existsSync(unreadable)).toBe(false)
+  })
+
   it('never loses a queued revocation to an unreadable sibling entry', () => {
     const first = {
       issuer: 'https://cloud.test',

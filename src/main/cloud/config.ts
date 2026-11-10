@@ -1,6 +1,8 @@
 const DEFAULT_ISSUER = 'https://cloud.comfy.org'
 const DEFAULT_CLIENT_ID = 'comfy-desktop'
 
+export const CLOUD_REFRESH_TOKEN_LIFETIME_MS = 720 * 60 * 60_000
+
 export const WORKSPACE_MINT_SCOPE = 'comfy-cloud:workspace-token:mint'
 
 export const CLOUD_ISSUER = process.env.COMFY_CLOUD_ISSUER || DEFAULT_ISSUER
