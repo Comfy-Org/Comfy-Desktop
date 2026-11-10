@@ -2945,16 +2945,26 @@ function addFromPanel(kind: NodeKind): void {
   display: grid;
   grid-row: 2;
   grid-column: 2;
-  grid-template-columns: 216px minmax(0, 1fr);
+  grid-template-columns: 224px minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   background: var(--mg-canvas);
 }
-/* The sidebar is a column of its own, the tab's full height: a soft
-   fill sets it apart, no line. */
+/* The sidebar floats inside the tab, the tab's full height, as Home's
+   Floating sidebar does (shell/MarSidebar.vue): inset, rounded, glass. */
 .mg-assets-nav {
+  margin: 8px 0 8px 8px;
   overflow-y: auto;
-  background: var(--mg-well);
+  border-radius: 20px;
+  background: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 4%, var(--color-content-background)) 82%,
+    transparent
+  );
+  backdrop-filter: blur(40px) saturate(1.3);
+  box-shadow:
+    0 24px 64px -24px rgb(0 0 0 / 0.7),
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
 }
 .mg-assets-main {
   min-width: 0;
