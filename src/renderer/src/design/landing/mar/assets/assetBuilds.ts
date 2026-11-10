@@ -21,7 +21,11 @@ export const assetBuilds = computed<AssetBuild[]>(() =>
 )
 
 export function buildStatus(b: AssetBuild): 'running' | 'launching' | 'stopped' {
-  return started[b.id] ?? (b.kind === 'cloud' || b.state === 'running' ? 'running' : 'stopped')
+  // A build open in a ComfyUI tab is running: you're in it.
+  const open = proto.tabs.some((t) => t.instanceId === b.id)
+  return (
+    started[b.id] ?? (b.kind === 'cloud' || b.state === 'running' || open ? 'running' : 'stopped')
+  )
 }
 
 /** Where Assets opens: the build you last picked while it runs, else the

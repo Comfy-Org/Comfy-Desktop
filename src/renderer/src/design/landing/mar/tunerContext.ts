@@ -14,6 +14,7 @@ import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { folderDepth } from './assets/folderDepth'
+import { fullAssets } from './graph/fullAssets'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
 import { appExamplesAt, appPage } from './apps/appPage'
@@ -103,6 +104,8 @@ export const when = {
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
   // ComfyUI's Assets tab, where folders live.
   folderDepth: computed(() => assetsTab.open && assetsTab.on),
+  // ComfyUI (Proposal): where the Assets panel's expand button goes.
+  fullAssets: computed(() => inGraph.value && comfyLook.id === 'proposal'),
   // Credits: the sidebar foot; Tabs has no sidebar.
   credits: computed(() => sidebarShown.value && !!shownCredits.value && marNav.id !== 'tabs'),
   graph: inGraph,
@@ -216,6 +219,7 @@ export const TWEAKS = {
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
   folderDepth: one(folderDepth, 'few'),
+  fullAssets: one(fullAssets, 'tab'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   // The modal opens on Configure (or Needs upload for an unreleased version).

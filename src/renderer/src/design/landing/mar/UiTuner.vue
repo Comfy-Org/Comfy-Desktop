@@ -15,6 +15,7 @@ import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
+import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -141,6 +142,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'folderDepth', show: () => when.folderDepth.value },
+  { id: 'fullAssets', show: () => when.fullAssets.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
@@ -385,6 +387,14 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('folderDepth')" label="Folders">
             <Seg v-model="folderDepth.id" label="Folders" :options="FOLDER_DEPTHS" />
+          </Row>
+          <Row :show="shows('fullAssets')" label="Full Assets">
+            <Seg v-model="fullAssets.id" label="Full Assets" :options="FULL_ASSETS" />
+            <span class="text-ui text-subtle-foreground">{{
+              fullAssets.id === 'home'
+                ? "The panel's expand opens Home's Assets, on this build."
+                : 'The panel grows into a tab beside the workflows.'
+            }}</span>
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />

@@ -28,7 +28,7 @@ import {
   Workflow,
   X
 } from 'lucide-vue-next'
-import { toast } from '../../useProto'
+import { go, proto, toast } from '../../useProto'
 import RailPanel from './panels/RailPanel.vue'
 import { PICTURES } from './panels/panelData'
 import { savedAssets } from './savedAssets'
@@ -50,6 +50,7 @@ import { assetTab, comfyLook, graphLibrary } from './comfyLook'
 import { graphStyle } from './graphStyle'
 import { graphOpen } from './graphOpen'
 import { dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
+import { fullAssets } from './fullAssets'
 import { RAIL_DEFAULT, railWidth } from './panels/railWidth'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
@@ -291,6 +292,15 @@ watch(
 )
 const inTab = computed(() => ALL.value.filter((a) => !a.status))
 /** Open in tab: the same files, now with room to organize them. */
+/** The expand button: a tab, or Home's Assets on this build (Playground
+ *  › Full Assets). A link to the tab (?view=…assets-tab) keeps the tab. */
+const growLabel = computed(() => (fullAssets.id === 'home' ? 'Open in Home' : 'Open in tab'))
+function grow(): void {
+  if (fullAssets.id === 'tab') return expand()
+  const tab = proto.tabs.find((t) => t.id === proto.activeTab)
+  holdAssetLink('desktop', '', tab?.instanceId ?? '')
+  go('assets')
+}
 function expand(): void {
   const keep = ALL.value.filter((a) => !deleted.value.has(a.id))
   graphLibrary.items.splice(0, graphLibrary.items.length, ...keep)
@@ -572,8 +582,8 @@ function upload(files: FileList | null | undefined): void {
           <Upload :size="15" />
         </button>
       </Tooltip>
-      <Tooltip v-if="!prod && !tabs" content="Open in tab" side="bottom">
-        <button type="button" class="rp-icon" aria-label="Open in tab" @click="expand">
+      <Tooltip v-if="!prod && !tabs" :content="growLabel" side="bottom">
+        <button type="button" class="rp-icon" :aria-label="growLabel" @click="grow">
           <Maximize2 :size="15" />
         </button>
       </Tooltip>
