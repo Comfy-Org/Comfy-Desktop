@@ -44,8 +44,14 @@ const titleKey = computed(() => {
     @close="emit('close')"
   >
     <template #header>
-      <h2 class="terms-title">{{ t(titleKey) }}</h2>
-      <div class="terms-meta">
+      <h2
+        class="terms-title mt-0 mr-0 mb-2 ml-0 font-display text-[length:var(--takeover-fs-h3)] font-extrabold tracking-normal text-neutral-100"
+      >
+        {{ t(titleKey) }}
+      </h2>
+      <div
+        class="terms-meta flex flex-wrap gap-4 text-[length:var(--takeover-fs-caption)] text-neutral-300 [&_strong]:font-semibold [&_strong]:text-neutral-100"
+      >
         <span
           ><strong>{{ t('firstUse.legalDocEffective') }}:</strong> {{ policy.effectiveDate }}</span
         >
@@ -54,14 +60,30 @@ const titleKey = computed(() => {
         >
       </div>
     </template>
-    <div class="terms-body" tabindex="0">
+    <div
+      class="terms-body select-text text-[length:var(--takeover-fs-body)] leading-[1.6] text-neutral-300 focus:outline-none [&_strong]:font-semibold [&_strong]:text-neutral-100"
+      tabindex="0"
+    >
       <template v-for="(block, i) in policy.blocks" :key="`${doc}-${i}`">
-        <h2 v-if="block.kind === 'h2'" class="terms-h2">{{ block.text }}</h2>
-        <h3 v-else-if="block.kind === 'h3'" class="terms-h3">{{ block.text }}</h3>
-        <p v-else-if="block.kind === 'p' && block.text" class="terms-p">
+        <h2
+          v-if="block.kind === 'h2'"
+          class="terms-h2 mt-[18px] mr-0 mb-2 ml-0 text-[length:var(--takeover-fs-lead)] font-semibold text-neutral-100 first:mt-0"
+        >
+          {{ block.text }}
+        </h2>
+        <h3
+          v-else-if="block.kind === 'h3'"
+          class="terms-h3 mt-3.5 mr-0 mb-1.5 ml-0 text-[length:var(--takeover-fs-body)] font-semibold text-neutral-100"
+        >
+          {{ block.text }}
+        </h3>
+        <p v-else-if="block.kind === 'p' && block.text" class="terms-p mt-0 mr-0 mb-2.5 ml-0">
           <InlineRichText :text="block.text" />
         </p>
-        <ul v-else-if="block.kind === 'ul' && block.items" class="terms-ul">
+        <ul
+          v-else-if="block.kind === 'ul' && block.items"
+          class="terms-ul mt-0 mr-0 mb-2.5 ml-0 pl-5 [&>li]:mb-1.5"
+        >
           <li v-for="(item, k) in block.items" :key="k">
             <InlineRichText :text="item" />
           </li>
@@ -70,75 +92,3 @@ const titleKey = computed(() => {
     </div>
   </BaseModal>
 </template>
-
-<style scoped>
-:deep(.base-modal-panel.terms-content) {
-  width: min(100%, 720px);
-}
-:deep(.base-modal-panel.terms-content) .base-modal-header {
-  padding: clamp(1.25rem, 2.5vw, 2rem) clamp(1.5rem, 3vw, 2.25rem) 1rem;
-}
-:deep(.base-modal-panel.terms-content) .base-modal-body {
-  padding: 1.25rem clamp(1.5rem, 3vw, 2.25rem) clamp(1.5rem, 3vw, 2.25rem);
-}
-
-.terms-title {
-  margin: 0 0 8px 0;
-  font-family: var(--font-display);
-  font-size: var(--takeover-fs-h3);
-  font-weight: 800;
-  letter-spacing: 0;
-  color: var(--neutral-100);
-}
-.terms-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--neutral-300);
-}
-.terms-meta strong {
-  color: var(--neutral-100);
-  font-weight: 600;
-}
-
-.terms-body {
-  user-select: text;
-  font-size: var(--takeover-fs-body);
-  line-height: 1.6;
-  color: var(--neutral-300);
-}
-.terms-body:focus {
-  outline: none;
-}
-
-.terms-h2 {
-  font-size: var(--takeover-fs-lead);
-  font-weight: 600;
-  margin: 18px 0 8px 0;
-  color: var(--neutral-100);
-}
-.terms-h2:first-child {
-  margin-top: 0;
-}
-.terms-h3 {
-  font-size: var(--takeover-fs-body);
-  font-weight: 600;
-  margin: 14px 0 6px 0;
-  color: var(--neutral-100);
-}
-.terms-p {
-  margin: 0 0 10px 0;
-}
-.terms-ul {
-  margin: 0 0 10px 0;
-  padding-left: 20px;
-}
-.terms-ul li {
-  margin-bottom: 6px;
-}
-.terms-body :deep(strong) {
-  color: var(--neutral-100);
-  font-weight: 600;
-}
-</style>

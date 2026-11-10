@@ -23,7 +23,6 @@ vi.mock('./git', () => ({
     return git.gitDir
   },
   revParseRef: (...args: [string, string]) => git.revParseRef(...args),
-  // A definite miss unless the rev-parse mock resolves it; `presence` overrides per test.
   commitPresence: async (repo: string, sha: string) =>
     git.presence ?? ((await git.revParseRef(repo, `${sha}^{commit}`)) ? 'present' : 'absent')
 }))
@@ -48,7 +47,6 @@ beforeEach(() => {
   git.configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'core-beta-config-'))
   git.findMergeBase.mockReset()
   git.fetchCommitSha.mockReset()
-  // Default: HEAD resolves (the repository is readable) and no other SHA exists locally.
   git.presence = undefined
   git.noCommonAncestor = false
   git.gitDirReads = 0
@@ -274,8 +272,6 @@ describe('resolveCoreCommitState', () => {
     const GRAFT = 'c'.repeat(40)
     const OTHER_GRAFT = 'd'.repeat(40)
 
-    /** HEAD contains LOWER; UPPER is not reachable from HEAD (merge-base OLDER). `graftsBelowUpper`
-     *  names the grafts the local graph shows to be ancestors of UPPER. */
     function graph(graftsBelowUpper: readonly string[]): void {
       git.findMergeBase.mockImplementation(async (_repo, a, b) => {
         if (b === UPPER && graftsBelowUpper.includes(a)) return a
@@ -481,7 +477,6 @@ describe('resolveCoreCommitState', () => {
   describe('human review follow-ups', () => {
     it('proves "not contained" for a commit with no common ancestor on a full clone', async () => {
       git.noCommonAncestor = true
-      // Present, so only the no-common-ancestor answer (not the absence rule) can prove it.
       git.presence = 'present'
 
       const state = await resolveCoreCommitState(REPO, { kind: 'head', commit: HEAD }, [UPPER])

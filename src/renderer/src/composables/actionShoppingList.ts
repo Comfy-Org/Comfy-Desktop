@@ -1,8 +1,3 @@
-// Shopping-list chain steps shared by every `runAction` dispatcher. Each
-// helper drives a modal step and returns the updated `ActionDef`, or `null`
-// when the user cancelled or prerequisites failed (caller short-circuits).
-// Orchestration (guards, progress, telemetry, navigation) stays in callers.
-
 import type { useModal } from './useModal'
 import type { useDialogs } from './useDialogs'
 import type { ActionDef, DiskSpaceInfo, FieldOption, Installation } from '../types/ipc'
@@ -23,8 +18,6 @@ function formatBytes(bytes: number): string {
   return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-// Drive `action.fieldSelects`: each step picks from a main-side source and
-// feeds both the next step and `action.data[fs.field]`.
 export async function runFieldSelectsChain(
   action: ActionDef,
   driver: Modal | Dialogs,
@@ -68,8 +61,6 @@ export async function runFieldSelectsChain(
   return next
 }
 
-// `useDialogs` exposes `actionSheet`; legacy `useModal` exposes `select`.
-// These normalise around whichever driver the caller passed.
 function isDialogs(driver: Modal | Dialogs): driver is Dialogs {
   return typeof (driver as Dialogs).actionSheet === 'function'
 }
@@ -87,8 +78,6 @@ function pickPrompt(driver: Modal | Dialogs) {
   return (opts: Parameters<Modal['prompt']>[0]): Promise<string | null> => driver.prompt(opts)
 }
 
-// Drive `action.select`: a single named-source pick onto
-// `action.data[action.select.field]`.
 export async function runSelectChain(
   action: ActionDef,
   ownerInstallationId: string,
@@ -127,23 +116,17 @@ export async function runSelectChain(
   return { ...action, data: { ...action.data, [action.select.field]: selected } }
 }
 
-// Drive `action.prompt`: free-form text onto `action.data[action.prompt.field]`.
 export async function runPromptChain(
   action: ActionDef,
   driver: Modal | Dialogs
 ): Promise<ActionDef | null> {
   if (!action.prompt) return action
   const showPrompt = pickPrompt(driver)
-  // For create-a-new-install prompts, resolve the default to the name that
-  // would actually be assigned right now (e.g. "ComfyUI (2)" → "ComfyUI (8)"
-  // when the lower numbers are taken) so the suggestion matches reality.
   let defaultValue = action.prompt.defaultValue
   if (action.prompt.uniquifyDefault && defaultValue) {
     try {
       defaultValue = await window.api.getUniqueName(defaultValue)
-    } catch {
-      // Fall back to the raw default; save-time dedup still guarantees uniqueness.
-    }
+    } catch {}
   }
   const value = await showPrompt({
     title: action.prompt.title || action.label,
@@ -158,9 +141,6 @@ export async function runPromptChain(
   return { ...action, data: { ...action.data, [action.prompt.field]: value } }
 }
 
-// Drive `action.confirm`. Plain confirm uses `dialogs.confirm` when given,
-// else `modal.confirm`; the checkbox path always uses `confirmWithOptions`
-// since `useDialogs` has no equivalent.
 export async function runConfirmChain(
   action: ActionDef,
   modal: Modal,
@@ -199,8 +179,6 @@ export async function runConfirmChain(
   return confirmed ? action : null
 }
 
-// Disk-space check for write-heavy actions; returns `false` when the user
-// declines the over-quota prompt.
 export async function runDiskSpaceCheck(
   action: ActionDef,
   installation: Installation,
@@ -221,9 +199,7 @@ export async function runDiskSpaceCheck(
         try {
           const r = await window.api.getInstallationSize(installation.id)
           estimatedRequired = r.sizeBytes
-        } catch {
-          // fall through to generic threshold
-        }
+        } catch {}
       }
     }
     const threshold = estimatedRequired > 0 ? Math.ceil(estimatedRequired * 1.1) : 1073741824
@@ -254,8 +230,6 @@ export async function runDiskSpaceCheck(
         if (!ok) return false
       }
     }
-  } catch {
-    // If the disk check itself fails, proceed.
-  }
+  } catch {}
   return true
 }

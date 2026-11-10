@@ -1,19 +1,10 @@
-/**
- * Pop-out terminal window. A small standalone Electron BrowserWindow that
- * runs xterm in a bundled Desktop renderer that is isolated from the served
- * ComfyUI frontend. Uses the same per-install shared shell as the trusted
- * console view (`terminal-*` IPC handlers in `registerTerminalHandlers.ts`).
- *
- * The dedicated preload is the security boundary: this renderer gets PTY
- * access while the served ComfyUI renderer gets only an open/focus request.
- */
-
 import { BrowserWindow } from 'electron'
 import type { WebContents } from 'electron'
 import path from 'path'
 import { readFileSync } from 'fs'
 import { createRequire } from 'module'
 import { COMFY_BG } from './theme'
+import { standaloneWindowStyles } from './standaloneStyles'
 import * as installations from '../installations'
 
 const require = createRequire(__filename)
@@ -28,10 +19,6 @@ function stripSourceMapComment(source: string): string {
   return source.replace(/\n?\/\/# sourceMappingURL=.*$/u, '')
 }
 
-/**
- * Build the standalone xterm bootstrap script for the pop-out window.
- * Memoised — the UMD payloads are large and never change at runtime.
- */
 function buildPopoutScript(): string {
   if (!cachedScript) {
     const xtermJs = stripSourceMapComment(readPackageFile('@xterm/xterm/lib/xterm.js'))
@@ -61,38 +48,24 @@ function buildPopoutScript(): string {
   return cachedScript
 }
 
-/**
- * Standalone xterm bootstrap. Subscribes to the shared shell of the
- * popout's bound install, wires data/output/exit, fits to the window,
- * and refits on every resize. Render mounts directly to the body — no
- * bottom-panel tab plumbing.
- */
 const POPOUT_MAIN_JS = `
 var bridge = window.__comfyDesktopTerminal;
 if (!bridge) return;
 
 var root = document.body;
-root.style.background = '#171717';
-root.style.margin = '0';
-root.style.padding = '6px';
-root.style.height = '100vh';
-root.style.boxSizing = 'border-box';
-root.style.overflow = 'hidden';
+root.className = 'm-0 box-border h-screen overflow-hidden bg-[#171717] p-[6px]';
 
 var host = document.createElement('div');
-host.style.position = 'relative';
-host.style.width = '100%';
-host.style.height = '100%';
-host.style.overflow = 'hidden';
+host.className = 'relative h-full w-full overflow-hidden';
 root.appendChild(host);
 
 var banner = document.createElement('div');
-banner.style.cssText = 'position:absolute;left:0;right:0;bottom:0;display:none;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:#262626;color:#e5e5e5;font-size:13px;';
+banner.className = 'absolute inset-x-0 bottom-0 hidden items-center justify-between gap-[12px] bg-[#262626] px-[12px] py-[8px] text-[13px] text-[#e5e5e5]';
 var bannerText = document.createElement('span');
 bannerText.textContent = 'This terminal session ended.';
 var restartBtn = document.createElement('button');
 restartBtn.textContent = 'Restart';
-restartBtn.style.cssText = 'cursor:pointer;border:0;border-radius:6px;padding:4px 12px;background:#3b82f6;color:#fff;font-size:12px;';
+restartBtn.className = 'cursor-pointer rounded-[6px] border-0 border-none border-current bg-[#3b82f6] px-[12px] py-[4px] text-[12px] text-white';
 banner.appendChild(bannerText);
 banner.appendChild(restartBtn);
 root.appendChild(banner);
@@ -104,7 +77,10 @@ term.open(host);
 
 var state = { disposed: false, exited: false, resizeTimer: 0 };
 
-function updateBanner() { banner.style.display = state.exited ? 'flex' : 'none'; }
+function updateBanner() {
+  banner.classList.toggle('hidden', !state.exited);
+  banner.classList.toggle('flex', state.exited);
+}
 
 function doFit(forceReclaim) {
   if (state.disposed || !host.offsetParent) return;
@@ -170,8 +146,6 @@ bridge.subscribe().then(function (restore) {
 }).catch(function () {});
 `
 
-// Track open pop-outs per installation so a second click on the inline
-// button focuses the existing window instead of spawning a duplicate.
 const popoutsByInstallation = new Map<string, BrowserWindow>()
 
 export function findTerminalPopoutInstallationIdBySender(sender: WebContents): string | null {
@@ -188,16 +162,11 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
     return
   }
 
-  // Best-effort label using the install's user-facing name; falls back
-  // to a generic title when the lookup fails. Lookup is async so the
-  // IPC handler awaits this whole call.
   let label = 'Comfy Terminal'
   try {
     const inst = await installations.get(installationId)
     if (inst?.name) label = `Comfy Terminal — ${inst.name}`
-  } catch {
-    // installations registry not ready; keep the generic label
-  }
+  } catch {}
 
   const win = new BrowserWindow({
     width: 800,
@@ -220,9 +189,9 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
   })
 
   const html =
-    `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comfy Terminal</title>` +
-    `<style>html,body{margin:0;padding:0;height:100%;background:${COMFY_BG};}</style>` +
-    `</head><body></body></html>`
+    `<!DOCTYPE html><html class="m-0 h-full bg-[var(--terminal-window-background)] p-0" style="--terminal-window-background:${COMFY_BG}"><head><meta charset="utf-8"><title>Comfy Terminal</title>` +
+    `<style>${standaloneWindowStyles}</style>` +
+    `</head><body class="m-0 h-full bg-[var(--terminal-window-background)] p-0"></body></html>`
   void win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
 
   win.webContents.once('did-finish-load', () => {
@@ -231,21 +200,12 @@ export async function openTerminalPopout(installationId: string): Promise<void> 
   })
 }
 
-/**
- * Close the terminal pop-out for a single install, if one is open. Used when
- * the install is detached / its host window closes (so an orphaned pop-out
- * can't keep the app alive) and before update/restore (so the shared shell
- * can be torn down without a surface still bound to it). The window's
- * `closed` handler drops the map entry; we delete eagerly too so a
- * concurrent re-open spawns a fresh window.
- */
 export function closeTerminalPopout(installationId: string): void {
   const win = popoutsByInstallation.get(installationId)
   popoutsByInstallation.delete(installationId)
   if (win && !win.isDestroyed()) win.destroy()
 }
 
-/** Close every open terminal pop-out (e.g. on app quit). */
 export function closeAllTerminalPopouts(): void {
   for (const win of popoutsByInstallation.values()) {
     if (!win.isDestroyed()) win.destroy()

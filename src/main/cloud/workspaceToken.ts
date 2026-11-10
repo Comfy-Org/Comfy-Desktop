@@ -1,4 +1,3 @@
-/** Mints a workspace token at `POST {apiBase}/auth/token` with Desktop's OAuth access token. */
 import { CLOUD_CONFIG } from './config'
 
 const DEFAULT_TIMEOUT_MS = 20_000

@@ -105,7 +105,6 @@ function formatDuration(value: number): string {
 
 export const MAX_BENCHMARK_COMPARISON_EXPORT_RUNS = 20
 
-/** Create a self-contained SVG containing the selected benchmark comparison. */
 export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData): string {
   if (data.runs.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) {
     throw new Error(
@@ -320,7 +319,7 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
   ${chartDescription}
   ${chartRows}
   <g role="img" aria-label="Comfy" transform="translate(${margin} ${height - 51}) scale(0.65)">
-    <path d="${COMFY_WORDMARK_PATH}" fill="#F2FF59" />
+    <path d="${COMFY_WORDMARK_PATH}" fill="#ffffff" />
   </g>
   ${text(width - margin, height - 28, data.exportDateTime, 'footer-date', 'end')}
 </svg>`

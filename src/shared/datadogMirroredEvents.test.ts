@@ -7,10 +7,6 @@ import {
 } from './datadogMirroredEvents'
 
 describe('isDatadogMirroredEvent', () => {
-  // The boot lifecycle splits success vs failure: boot_failed is a failure
-  // signal ops alerts on, boot_started/boot_completed are funnel events
-  // (PostHog only). Mirroring a success event would page on-call on healthy
-  // boots and double its RUM volume for no monitor benefit.
   it('mirrors boot_failed but not boot_started / boot_completed', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_failed')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.asset_scan_error')).toBe(true)
@@ -23,16 +19,11 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.auth.view_token_minted')).toBe(false)
   })
 
-  // The onboarding→install handoff (#1224) splits the same way: install.not_started
-  // is the abort/failure signal ops alerts on; install.dispatched is the paired
-  // funnel success gate (PostHog only).
   it('mirrors install.not_started but not install.dispatched', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.install.not_started')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.install.dispatched')).toBe(false)
   })
 
-  // The SSO dashboards and monitors live in Datadog, so the hosted-view sign-in
-  // mirrors every stage; the Firebase bridge's sign_in_started stays PostHog-only.
   it.each([
     ['comfy.desktop.auth.host_sign_in', true],
     ['comfy.desktop.auth.sign_in_failed', true],
@@ -41,7 +32,6 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent(name)).toBe(mirrored)
   })
 
-  // Local Agent failures page; its startup timing and ready summary do not.
   it.each([
     ['comfy.desktop.comfyui.agent.startup_failed', true],
     ['comfy.desktop.comfyui.agent.startup_stalled', true],
@@ -58,9 +48,6 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.not.a.real.event')).toBe(false)
   })
 
-  // The fourteen scan-pipeline failures from assetsTap's ALLOWED_EVENTS (prefix
-  // plus bare event name, verified against assetsTap.ts's own
-  // `${EVENT_PREFIX}${event}` construction).
   const ASSETS_ERROR_EVENTS = [
     'comfy.desktop.comfyui.assets.scanner.hash_failed',
     'comfy.desktop.comfyui.assets.scanner.enrich_failed',
@@ -86,32 +73,22 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent(name)).toBe(true)
   })
 
-  // Volume guard: scan_started fires once per scan (a funnel-timing event,
-  // not a failure signal) and must stay PostHog-only, same shape as
-  // boot_started / install.dispatched above.
   it('does not mirror seeder.scan_started (volume guard)', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.assets.seeder.scan_started')).toBe(false)
   })
 
-  // failure_bucket is a per-scan triage aggregate of failures, not a
-  // per-failure alerting signal, so it stays PostHog-only.
   it('does not mirror scanner.failure_bucket', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.assets.scanner.failure_bucket')).toBe(
       false
     )
   })
 
-  // invalid_mtime counts files skipped for a pre-epoch mtime: a property of the
-  // user's files rather than a scanner fault, so it stays PostHog-only.
   it('does not mirror scanner.invalid_mtime', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.assets.scanner.invalid_mtime')).toBe(false)
   })
 })
 
 describe('stripDatadogDroppedKeys', () => {
-  // Datadog is the alerting surface: the large / high-cardinality diagnostic
-  // fields belong in PostHog, not on RUM actions where they bloat payloads and
-  // pollute facets.
   it('drops the large / high-cardinality diagnostic fields', () => {
     const context = {
       installation_id: 'abc',
@@ -134,7 +111,6 @@ describe('stripDatadogDroppedKeys', () => {
       exit_code: 1,
       signal: null
     })
-    // Does not mutate the input (PostHog copy must keep the full schema).
     expect(context.error_message).toBe('boom')
   })
 

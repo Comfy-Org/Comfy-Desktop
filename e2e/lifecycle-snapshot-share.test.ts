@@ -1,31 +1,3 @@
-/**
- * Lifecycle E2E: snapshot "Share" — the promoted top-level export of an
- * install's LATEST snapshot, reachable from two surfaces:
- *
- *   - **Dashboard tile kebab → Share** — the `share` context-menu item
- *     in `useInstallContextMenu`; handled renderer-side in the panel
- *     webContents (no confirm modal): `shareLatestSnapshot` →
- *     `window.api.getSnapshots` (newest = `[0]`) → `window.api.exportSnapshot`.
- *   - **Picker footer "More" → Share** — the `share` pin-bottom action in
- *     the standalone source's `getDetailSections`, rendered in the
- *     instance-picker popup's `MoreMenu` and intercepted in
- *     `useComfyUISettings.runAction` so it runs the same export rather than
- *     dispatching a (non-existent) source action.
- *
- * Both routes funnel into the same `export-snapshot` IPC →
- * `dialog.showSaveDialog` → `writeFile(envelope)`. The native save dialog
- * is monkey-patched (as in `lifecycle-snapshot-export`) so it never opens;
- * the stub writes into the test's tmp dir and the assertions read the JSON
- * to confirm the envelope carries exactly the newest snapshot.
- *
- * Pins both entry points so a future menu / action refactor can't silently
- * drop Share from either surface, and so the "latest snapshot only"
- * contract can't regress into exporting the wrong (or every) snapshot.
- *
- * The snapshot records are seeded directly via `installations[].snapshots`
- * so the test does not depend on any real ComfyUI install on disk.
- */
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
@@ -79,8 +51,8 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 1,
-            },
+              commitsAhead: 1
+            }
           },
           {
             trigger: 'manual',
@@ -92,29 +64,28 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 2,
-            },
-          },
-        ],
-      },
-    ],
+              commitsAhead: 2
+            }
+          }
+        ]
+      }
+    ]
   })
 
-  // Monkey-patch `dialog.showSaveDialog` in main so the native save dialog
-  // never opens. Patching the shared `dialog` module covers both the panel
-  // `export-snapshot` handler and the picker popup's delegating handler.
-  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
-    ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
-      _win: unknown,
-      opts: { defaultPath?: string },
-    ) => {
-      const raw = opts.defaultPath ?? 'snapshot-export.json'
-      const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
-      const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
-      const sep = dir.includes('\\') ? '\\' : '/'
-      return { canceled: false, filePath: `${dir}${sep}${base}` }
-    }
-  }, exportDir))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ dialog }, dir) => {
+      ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
+        _win: unknown,
+        opts: { defaultPath?: string }
+      ) => {
+        const raw = opts.defaultPath ?? 'snapshot-export.json'
+        const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
+        const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
+        const sep = dir.includes('\\') ? '\\' : '/'
+        return { canceled: false, filePath: `${dir}${sep}${base}` }
+      }
+    }, exportDir)
+  )
 
   await expectChooserVisible(ctx.panel)
 })
@@ -125,18 +96,11 @@ test.afterAll(async () => {
   if (exportDir) await rm(exportDir, { recursive: true, force: true })
 })
 
-/** Empty the export dir before each Share click. Both surfaces export the
- *  same latest snapshot, so they land on an identical default filename —
- *  clearing first guarantees each test reads the file IT produced, not a
- *  stale one from the prior test. */
 async function clearExportDir(): Promise<void> {
   const entries = await readdir(exportDir)
   await Promise.all(entries.map((e) => rm(path.join(exportDir, e), { force: true })))
 }
 
-/** Poll until the single-snapshot `snapshot-*.json` envelope lands (the
- *  `snapshots-*` plural prefix is Export-All, which Share never uses) and
- *  return it parsed. */
 async function readSharedEnvelope(): Promise<ShareEnvelope> {
   const exportedPath = await new Promise<string>((resolve, reject) => {
     const deadline = Date.now() + 10_000
@@ -144,7 +108,8 @@ async function readSharedEnvelope(): Promise<ShareEnvelope> {
       const entries = await readdir(exportDir)
       const match = entries.find((e) => e.startsWith('snapshot-') && e.endsWith('.json'))
       if (match) return resolve(path.join(exportDir, match))
-      if (Date.now() > deadline) return reject(new Error('shared snapshot file did not appear within 10s'))
+      if (Date.now() > deadline)
+        return reject(new Error('shared snapshot file did not appear within 10s'))
       setTimeout(poll, 200)
     }
     void poll()
@@ -152,8 +117,6 @@ async function readSharedEnvelope(): Promise<ShareEnvelope> {
   return JSON.parse(await readFile(exportedPath, 'utf-8')) as ShareEnvelope
 }
 
-/** Share must export ONLY the newest snapshot (the current state), as a
- *  single-entry envelope. */
 function expectLatestEnvelope(envelope: ShareEnvelope): void {
   expect(envelope.type).toBe('comfyui-desktop-2-snapshot')
   expect(envelope.installationName).toBe(INSTALL_NAME)
@@ -183,16 +146,17 @@ test('picker footer More → Share exports the latest snapshot @lifecycle', asyn
         initialTab: 'config',
       })
       return true
-    })()`,
+    })()`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
 
-  // Open the footer "More" overflow menu, then click the Share action.
-  // (`[data-more-trigger]` also matches the window-options caret, so
-  // target the explicit footer test id.)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
-  await popup.clickUntilVisible(byTestId(TID.pickerMoreTrigger), byTestId(TID.pinBottomAction('share')), { timeout: 30_000 })
+  await popup.clickUntilVisible(
+    byTestId(TID.pickerMoreTrigger),
+    byTestId(TID.pinBottomAction('share')),
+    { timeout: 30_000 }
+  )
   expect(await popup.click(byTestId(TID.pinBottomAction('share')))).toBe(true)
 
   expectLatestEnvelope(await readSharedEnvelope())

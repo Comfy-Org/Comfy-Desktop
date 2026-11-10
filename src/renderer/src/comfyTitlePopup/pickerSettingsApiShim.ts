@@ -1,20 +1,11 @@
-/**
- * Picker popup `window.api` shim. The popup has the comfyTitlePopupPreload
- * bridge, not window.api, so this forwards the settings UI's calls to the
- * popup's `pickerSettings*` bridge. Adding a call needs: bridge method in
- * comfyTitlePopupPreload.ts, main handler in pickerSettingsHandlers.ts, and
- * an entry in API_MAP below.
- */
-
 import type { ComfyTitlePopupBridge } from '../../../preload/comfyTitlePopupPreload'
 import type { LocaleSource } from '../lib/useAppLocale'
 
 const API_MAP = {
   getDetailSections: 'pickerSettingsGetDetailSections',
   getDiskSpace: 'pickerSettingsGetDiskSpace',
-  // Open a folder in the OS file manager (clickable storage path rows). Reuses
-  // the popup's existing globalSettings open-path bridge.
   openPath: 'globalSettingsOpenPath',
+  revealPath: 'globalSettingsRevealPath',
   updateInstallation: 'pickerSettingsUpdateInstallation',
   runAction: 'pickerSettingsRunAction',
   getFieldOptions: 'pickerSettingsGetFieldOptions',
@@ -50,12 +41,11 @@ const API_MAP = {
 type ShimApi = {
   [K in keyof typeof API_MAP]: ComfyTitlePopupBridge[(typeof API_MAP)[K]]
 } & {
+  platform: NodeJS.Platform
   browseFolder: (
     defaultPath?: string
   ) => ReturnType<ComfyTitlePopupBridge['pickerSettingsBrowseFolder']>
   relaunchApp: () => void
-  /** The popup has no installations-changed IPC, so this maps onto the
-   *  picker's snapshot rebroadcast to live-refresh settings views. */
   onInstallationsChanged: (cb: () => void) => () => void
 }
 
@@ -63,8 +53,6 @@ export function installPickerSettingsApiShim(): void {
   const bridge = (window as unknown as { __comfyTitlePopup?: ComfyTitlePopupBridge })
     .__comfyTitlePopup
   if (!bridge) {
-    // Leave window.api undefined so a settings-UI mount fails loudly rather
-    // than silently no-opping.
     return
   }
 
@@ -75,7 +63,7 @@ export function installPickerSettingsApiShim(): void {
     ) => unknown
     ;(api as Record<string, unknown>)[apiKey] = method.bind(bridge)
   }
-  // Adapters for the two methods whose shape diverges from a pure pass-through.
+  api.platform = bridge.platform
   api.browseFolder = (defaultPath?: string) =>
     bridge.pickerSettingsBrowseFolder(defaultPath ? { defaultPath } : undefined)
   api.relaunchApp = () => bridge.pickerSettingsRelaunchApp()
@@ -83,11 +71,6 @@ export function installPickerSettingsApiShim(): void {
   ;(window as unknown as { api: ShimApi }).api = api
 }
 
-/**
- * `LocaleSource` for `useAppLocale`, backed by the popup's bridge. Syncs lazily
- * when the expanded settings UI opens, and live-updates when main switches
- * locale (the language picker lives in this popup).
- */
 export function popupLocaleSource(): LocaleSource {
   const bridge = (window as unknown as { __comfyTitlePopup?: ComfyTitlePopupBridge })
     .__comfyTitlePopup

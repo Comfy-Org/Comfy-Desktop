@@ -3,7 +3,6 @@ import fs from 'fs'
 import type { InstallationRecord } from '../../installations'
 import type * as I18nModule from '../../lib/i18n'
 
-// `getDetailSections` transitively imports `electron` (via paths/settings).
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -16,12 +15,6 @@ vi.mock('electron', () => ({
   shell: {}
 }))
 
-/**
- * Locks the `update-comfyui` action-payload's downgrade-vs-update branch. The
- * function reads the FS (.git probe) and release-cache, both mocked. `t()`
- * returns the bare i18n key (no locale), so we assert against the key.
- */
-
 vi.mock('../../lib/release-cache', () => ({
   getEffectiveInfo: vi.fn(),
   isUpdateAvailable: vi.fn(() => true)
@@ -32,9 +25,6 @@ vi.mock('../../lib/git', () => ({
 vi.mock('./torchStackCatalog', () => ({
   getCachedTorchStacks: vi.fn(() => [])
 }))
-// No locale is loaded in tests, so the real t() returns the bare key — the
-// same signal production uses for "unknown key". Translate exactly one note
-// key and one series-note key so the known-noteKey paths are exercisable too.
 vi.mock('../../lib/i18n', async (importOriginal) => {
   const mod = await importOriginal<typeof I18nModule>()
   const known: Record<string, string> = {
@@ -110,7 +100,6 @@ describe('updateSections — update-comfyui action payload', () => {
   beforeEach(() => {
     vi.mocked(releaseCache.getEffectiveInfo).mockReset()
     vi.mocked(releaseCache.isUpdateAvailable).mockReset().mockReturnValue(true)
-    // hasGit is gated on a `.git` probe; return true so the actions are emitted.
     vi.spyOn(fs, 'existsSync').mockReturnValue(true)
     vi.mocked(releaseCache.getEffectiveInfo).mockImplementation((_repo, channel) => ({
       installedTag: 'v0.3.20',
@@ -124,8 +113,6 @@ describe('updateSections — update-comfyui action payload', () => {
   })
 
   it('frames a stable target as a channel switch (not a downgrade) when the install is effectively on latest', () => {
-    // commitsAhead > 0 makes getEffectiveChannel report `latest`, so picking the
-    // `stable` card is a channel switch.
     const action = getUpdateAction(
       baseInstall({
         comfyVersion: { commit: 'abc1234', baseTag: 'v0.3.20', commitsAhead: 5 }
@@ -133,7 +120,6 @@ describe('updateSections — update-comfyui action payload', () => {
       'stable'
     )
     expect(action).toBeDefined()
-    // Backend still rolls back, but the copy is "Switching to", not "Downgrading".
     expect(action!.data?.isDowngrade).toBe(true)
     expect(action!.progressTitle).toBe('channelCards.switchingToTitle')
   })
@@ -193,16 +179,12 @@ describe('updateSections — update-comfyui action payload', () => {
   })
 
   it('always carries actionData.channel, even on a same-channel update', () => {
-    // The explicit target channel must be carried so the handler never falls back
-    // to a stale stored `updateChannel`.
     const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
     expect(action!.data?.channel).toBe('stable')
     expect(action!.data?.isDowngrade).toBeDefined()
   })
 
   it('confirm copy explains how to restore after custom-node breakage', () => {
-    // The update is reversible via the auto-saved pre-update snapshot; the
-    // confirm copy must surface both the risk and the undo path.
     const action = getUpdateAction(baseInstall({ updateChannel: 'stable' }), 'stable')
     expect(action!.confirm?.message).toContain('standalone.updateSnapshotUndoHint')
   })
@@ -221,7 +203,6 @@ describe('getEffectiveChannel — de-facto channel from git state', () => {
   })
 
   it('reports `latest` for a stored-`stable` install whose checkout is ahead of its base tag', () => {
-    // e.g. a `git pull` outside the app leaves updateChannel stale on `stable`.
     expect(
       getEffectiveChannel(
         baseInstall({
@@ -287,22 +268,17 @@ describe('updateSections — copy (duplicate) prompt default', () => {
     const copy = sections.flatMap((s) => s.actions ?? []).find((a) => a.id === 'copy')
     expect(copy).toBeDefined()
     expect(copy!.prompt?.defaultValue).toBe('My Comfy')
-    // uniquifyDefault tells the renderer to show the name it will actually get.
     expect(copy!.prompt?.uniquifyDefault).toBe(true)
   })
 
   it('pre-fills the copy & update prompt with the source name only, never the target version (which goes stale)', () => {
-    // commitsAhead makes the effective channel `latest`, so the `latest` card
-    // exposes the copy-update action for an install that's on stable.
     const copyUpdate = getChannelAction(
       baseInstall({ name: 'My Comfy', updateChannel: 'stable' }),
       'latest',
       'copy-update'
     )
     expect(copyUpdate).toBeDefined()
-    // Guard against version-stamping regressions like "My Comfy (v0.3.20+12)".
     expect(copyUpdate!.prompt?.defaultValue).toBe('My Comfy')
-    // Flagged so the renderer shows the numbered name it will actually be saved as.
     expect(copyUpdate!.prompt?.uniquifyDefault).toBe(true)
   })
 })
@@ -352,12 +328,6 @@ describe('updateSections — PyTorch picker', () => {
     return options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
   }
 
-  /**
-   * Mock the installed tuple's dist-info listing platform-safely: on
-   * non-Windows, findSitePackages first readdirs `<env>/lib` to locate the
-   * pythonX.Y dir, so a blanket mockReturnValue of dist-info entries would
-   * break site-packages discovery there (and only there).
-   */
   function mockInstalledDistInfo(entries: string[]) {
     return vi
       .spyOn(fs, 'readdirSync')
@@ -376,13 +346,11 @@ describe('updateSections — PyTorch picker', () => {
     ])
     const option = getIndexOption()
     expect(option).toBeDefined()
-    // The known noteKey wins over the remote plain-text fallback.
     expect(option!.description).toContain('Requires CUDA 12.8 drivers')
     expect(option!.description).not.toContain('remote plain-text fallback')
     expect(option!.description).not.toContain('pytorchDownloadSize')
     const action = option!.data?.actions?.find((a) => a.id === 'change-pytorch')
     expect(action).toBeDefined()
-    // t() returns bare keys here, so assert on the key the copy is built from.
     expect(action!.confirm?.message).toContain('standalone.pytorchConfirmMessagePip')
   })
 
@@ -431,7 +399,6 @@ describe('updateSections — PyTorch picker', () => {
   })
 
   it('does not warn on the CURRENT stack when it omits torchaudio: nothing gets removed', () => {
-    // Installed tuple (dist-info dirs) matches the no-torchaudio stack.
     const readdir = mockInstalledDistInfo([
       'torch-2.13.0+cu130.dist-info',
       'torchvision-0.28.0+cu130.dist-info'
@@ -465,7 +432,7 @@ describe('updateSections — PyTorch picker', () => {
     const option = getIndexOption()
     expect(option!.description).toContain('standalone.pytorchCapWarning')
     const action = option!.data?.actions?.find((a) => a.id === 'change-pytorch')
-    expect(action).toBeDefined() // informational: the change stays offered
+    expect(action).toBeDefined()
     expect(action!.confirm?.message).toContain('standalone.pytorchCapConfirmWarning')
   })
 
@@ -486,7 +453,6 @@ describe('updateSections — PyTorch picker', () => {
     const copyChange = option!.data?.actions?.find((a) => a.id === 'copy-pytorch')
     expect(copyChange).toBeDefined()
     expect(copyChange!.data?.stackId).toBe('pytorch-index:cu128:2.11.0')
-    // Same prompt contract as Copy & Update: source name, uniquified on show.
     expect(copyChange!.prompt?.defaultValue).toBe('My Comfy')
     expect(copyChange!.prompt?.uniquifyDefault).toBe(true)
   })
@@ -531,9 +497,6 @@ describe('updateSections — PyTorch picker', () => {
       expect(field.groupLabels).toEqual(['standalone.pytorchSeriesLabel'])
       const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
       const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
-      // cu130's series noteKey is "translated" by the i18n mock, so its group
-      // carries a description; cu128's key is unknown here, so its group has
-      // none (a bare i18n key must never leak into the dropdown).
       expect(cu130!.groupPath).toEqual([
         { id: 'cu130', label: 'CUDA 13.0 (cu130)', description: 'Current stable CUDA line' }
       ])
@@ -550,8 +513,6 @@ describe('updateSections — PyTorch picker', () => {
         (o) => o.value === 'pytorch-index:cu132:2.13.0.dev20260720'
       )
       const stable = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
-      // A nightly never shares a series with stable builds - selecting one
-      // must be a deliberate step past a labeled fork in the first dropdown.
       expect(nightly!.groupPath?.[0]?.id).toBe('nightly-cu132')
       expect(nightly!.groupPath?.[0]?.label).toContain('pytorchSeriesNightly')
       expect(stable!.groupPath).toEqual([
@@ -594,8 +555,6 @@ describe('updateSections — PyTorch picker', () => {
     })
 
     it('gives the synthetic current entry a full path so the cascade stays coherent', () => {
-      // No installed torch is detected in tests, so the synthetic entry lands
-      // in the untagged "Default" series while real stacks keep theirs.
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         cudaEntry('cu130', '2.10.0'),
         cudaEntry('cu128', '2.11.0')
@@ -608,9 +567,6 @@ describe('updateSections — PyTorch picker', () => {
     })
 
     it('orders grouped options newest-first across sources (bundle vs index)', () => {
-      // The catalog concatenates bundle stacks before index stacks; the
-      // display sort must interleave them so group-switching (first match)
-      // lands on the newest build, not on an older bundle.
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         indexEntry({
           stackId: 'bundle:cu130:2.9.0',
@@ -633,8 +589,6 @@ describe('updateSections — PyTorch picker', () => {
     })
 
     it('orders series numerically descending regardless of release dates', () => {
-      // Date must not drive series order: a freshly rebuilt cu126 bundle
-      // would otherwise wedge itself between (or ahead of) newer series.
       vi.mocked(getCachedTorchStacks).mockReturnValue([
         { ...cudaEntry('cu126', '2.9.0'), date: '2026-05-01' },
         { ...cudaEntry('cu130', '2.10.0'), date: '2026-01-01' },
@@ -652,7 +606,6 @@ describe('updateSections — PyTorch picker', () => {
         { ...cudaEntry('cu130', '2.13.0'), date: '2026-01-01' },
         { ...cudaEntry('cu130', '2.10.0'), date: '2026-03-01' }
       ])
-      // Single series -> flat picker; the synthetic current entry leads.
       const values = getPytorchOptions(install()).map((o) => o.value)
       expect(values).toEqual([
         'pytorch-current',
@@ -691,18 +644,16 @@ describe('updateSections — PyTorch picker', () => {
       ])
       for (const option of getPytorchOptions(install())) {
         const action = option.data?.actions?.find((a) => a.id === 'change-pytorch')
-        if (!action) continue // synthetic current entry has no action
+        if (!action) continue
         expect(action.data?.stackId).toBe(option.value)
       }
     })
 
     describe('series descriptions and NVIDIA driver warnings', () => {
-      // All platforms get the same minimum so assertions hold wherever the
-      // test runner happens to be.
       const minDriver = { win32: '580.88', linux: '580.88', darwin: '580.88' }
 
       afterEach(() => {
-        _setRemoteDefsForTest(null) // back to built-in stacks and series
+        _setRemoteDefsForTest(null)
         _setNvidiaDriverForTest(undefined)
       })
 
@@ -724,7 +675,6 @@ describe('updateSections — PyTorch picker', () => {
         const field = groupedField()
         const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
         expect(cu128!.groupPath?.[0]?.description).toBe('Remote series explanation')
-        // Series the remote map does not mention keep the built-in note.
         const cu130 = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
         expect(cu130!.groupPath?.[0]?.description).toBe('Current stable CUDA line')
       })
@@ -751,9 +701,8 @@ describe('updateSections — PyTorch picker', () => {
         expect(cu130!.groupPath?.[0]?.description).toContain('standalone.pytorchDriverWarning')
         expect(cu130!.description).toContain('standalone.pytorchDriverWarning')
         const action = cu130!.data?.actions?.find((a) => a.id === 'change-pytorch')
-        expect(action).toBeDefined() // informational: the change stays offered
+        expect(action).toBeDefined()
         expect(action!.confirm?.message).toContain('standalone.pytorchDriverConfirmWarning')
-        // cu128's built-in minimum (527.41 / 525.60.13) is met by 576.02.
         const cu128 = field.options.find((o) => o.value === 'pytorch-index:cu128:2.11.0')
         expect(cu128!.description ?? '').not.toContain('standalone.pytorchDriverWarning')
       })
@@ -774,8 +723,6 @@ describe('updateSections — PyTorch picker', () => {
       })
 
       it('the current stack skips the per-option warning but its series still warns', () => {
-        // Nothing changes by staying on the current stack, so its own row
-        // stays clean; the series dropdown still flags the driver gap.
         const readdir = mockInstalledDistInfo([
           'torch-2.10.0+cu130.dist-info',
           'torchvision-0.26.0+cu130.dist-info',
@@ -786,7 +733,7 @@ describe('updateSections — PyTorch picker', () => {
           _setNvidiaDriverForTest('576.02')
           const field = groupedField()
           const current = field.options.find((o) => o.value === 'pytorch-index:cu130:2.10.0')
-          expect(current!.data?.actions).toBeUndefined() // it IS the current stack
+          expect(current!.data?.actions).toBeUndefined()
           expect(current!.description ?? '').not.toContain('standalone.pytorchDriverWarning')
           expect(current!.groupPath?.[0]?.description).toContain('standalone.pytorchDriverWarning')
         } finally {

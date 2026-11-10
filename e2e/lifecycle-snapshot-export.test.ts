@@ -1,24 +1,3 @@
-/**
- * Lifecycle E2E: snapshot export (single + all) end-to-end through the
- * Snapshots tab UI (lifecycle audit gap #9).
- *
- * Drives the production wiring from the user click down to the JSON
- * envelope landing on disk:
- *   - per-row Export button → `window.api.exportSnapshot` →
- *     `export-snapshot` IPC → `dialog.showSaveDialog` →
- *     `writeFile(envelope)`,
- *   - toolbar Export All button → `window.api.exportAllSnapshots` →
- *     `export-all-snapshots` IPC → same dialog → same writeFile.
- *
- * `dialog.showSaveDialog` is monkey-patched via `app.evaluate` so the
- * Electron native save dialog never opens during the test run; the
- * stub returns deterministic file paths inside the test's tmp dir and
- * the assertions then read the resulting JSON to verify the envelope.
- *
- * The two snapshot records are seeded directly via `installations[].snapshots`
- * so the test does not depend on any real ComfyUI install on disk.
- */
-
 import os from 'node:os'
 import path from 'node:path'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -65,8 +44,8 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 1,
-            },
+              commitsAhead: 1
+            }
           },
           {
             trigger: 'manual',
@@ -78,32 +57,28 @@ test.beforeAll(async () => {
               releaseTag: BASE_TAG,
               variant: 'cpu',
               baseTag: BASE_TAG,
-              commitsAhead: 2,
-            },
-          },
-        ],
-      },
-    ],
+              commitsAhead: 2
+            }
+          }
+        ]
+      }
+    ]
   })
 
-  // Monkey-patch `dialog.showSaveDialog` in main BEFORE the user
-  // clicks Export so the Electron save dialog never opens during the
-  // test run. The stub returns a fresh path inside `exportDir` keyed
-  // off the requested `defaultPath` filename — production code uses
-  // distinct default names per export variant (single vs all), so the
-  // returned path is uniquely identifiable per call.
-  await evalWithRetry(() => ctx.app.evaluate(({ dialog }, dir) => {
-    ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
-      _win: unknown,
-      opts: { defaultPath?: string },
-    ) => {
-      const raw = opts.defaultPath ?? 'snapshot-export.json'
-      const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
-      const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
-      const sep = dir.includes('\\') ? '\\' : '/'
-      return { canceled: false, filePath: `${dir}${sep}${base}` }
-    }
-  }, exportDir))
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ dialog }, dir) => {
+      ;(dialog as unknown as { showSaveDialog: unknown }).showSaveDialog = async (
+        _win: unknown,
+        opts: { defaultPath?: string }
+      ) => {
+        const raw = opts.defaultPath ?? 'snapshot-export.json'
+        const lastSep = Math.max(raw.lastIndexOf('/'), raw.lastIndexOf('\\'))
+        const base = lastSep >= 0 ? raw.slice(lastSep + 1) : raw
+        const sep = dir.includes('\\') ? '\\' : '/'
+        return { canceled: false, filePath: `${dir}${sep}${base}` }
+      }
+    }, exportDir)
+  )
 })
 
 test.afterAll(async () => {
@@ -120,7 +95,7 @@ async function openSnapshotsTab(): Promise<ReturnType<typeof titlePopupPage>> {
         initialTab: 'snapshots',
       })
       return true
-    })()`,
+    })()`
   )
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible('.snapshot-row', { timeout: 15_000 })
@@ -134,9 +109,6 @@ async function findExportedFile(prefix: string): Promise<string | null> {
   return match ? path.join(exportDir, match) : null
 }
 
-/** Wait for an exported `<prefix>*.json` to land AND parse. The file entry
- *  appears before `writeFile` finishes flushing, so polling on existence
- *  alone can read an empty/partial file ("Unexpected end of JSON input"). */
 async function waitForExportedEnvelope<T>(prefix: string): Promise<T> {
   const deadline = Date.now() + 10_000
   for (;;) {
@@ -144,9 +116,7 @@ async function waitForExportedEnvelope<T>(prefix: string): Promise<T> {
     if (match) {
       try {
         return JSON.parse(await readFile(match, 'utf-8')) as T
-      } catch {
-        // still being written - keep polling
-      }
+      } catch {}
     }
     if (Date.now() > deadline) {
       throw new Error(`exported ${prefix}*.json did not appear (or never parsed) within 10s`)
@@ -158,25 +128,17 @@ async function waitForExportedEnvelope<T>(prefix: string): Promise<T> {
 test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () => {
   const popup = await openSnapshotsTab()
 
-  // Read the seeded snapshot filenames off the registry so the test
-  // does not have to guess the on-disk filename the harness picked.
   const filenames = await ctx.panel.evaluate<string[]>(
-    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => s.filename))`,
+    `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.map(s => s.filename))`
   )
   expect(filenames.length).toBe(2)
   const firstFilename = filenames[0]!
 
-  // SnapshotsView auto-expands the first (newest) row on load, so the
-  // Export button is already in the active part of the accordion — no
-  // click on the header needed. Just wait for the per-row Export action
-  // to render before driving it.
   await popup.waitForSelector('.snapshot-row.is-expanded', { timeout: 5_000 })
   await popup.waitForSelector(byTestId(TID.snapshotRowExport(firstFilename)), { timeout: 5_000 })
 
   expect(await popup.click(byTestId(TID.snapshotRowExport(firstFilename)))).toBe(true)
 
-  // Wait for the file to land and parse. The handler's `defaultPath`
-  // starts with `snapshot-` and is unique per install/trigger/date.
   const envelope = await waitForExportedEnvelope<{
     type?: string
     installationName?: string
@@ -185,8 +147,6 @@ test('per-row Export writes a valid envelope JSON to disk @lifecycle', async () 
   expect(envelope.type).toBe('comfyui-desktop-2-snapshot')
   expect(envelope.installationName).toBe(INSTALL_NAME)
   expect(envelope.snapshots?.length).toBe(1)
-  // The first row in the picker is the newest snapshot — second-seeded
-  // by our seed order — so the envelope must carry its label + commit.
   expect(envelope.snapshots?.[0]?.label).toBe('second-seeded')
   expect(envelope.snapshots?.[0]?.comfyui?.commit).toBe(COMMIT_B)
 })
@@ -205,8 +165,6 @@ test('Export All writes an envelope containing every seeded snapshot @lifecycle'
   expect(envelope.type).toBe('comfyui-desktop-2-snapshot')
   expect(envelope.installationName).toBe(INSTALL_NAME)
   expect(envelope.snapshots?.length).toBe(2)
-  // Both seeded labels must appear regardless of order (listSnapshots
-  // sorts newest first; the seed timestamps land within milliseconds).
   const labels = envelope.snapshots?.map((s) => s.label) ?? []
   expect(labels).toContain('first-seeded')
   expect(labels).toContain('second-seeded')

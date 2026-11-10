@@ -17,9 +17,6 @@ const originalXdgCacheHome = process.env.XDG_CACHE_HOME
 process.env.XDG_CONFIG_HOME = xdgConfigHome
 process.env.XDG_CACHE_HOME = xdgCacheHome
 fs.mkdirSync(homePath, { recursive: true })
-// A home-root footprint marks this as an existing install, so on Windows the
-// large-data defaults resolve to the home layout these tests assert (a clean
-// machine would instead default to %LOCALAPPDATA%\Comfy-Desktop).
 fs.mkdirSync(path.join(homePath, 'ComfyUI-Installs'), { recursive: true })
 fs.mkdirSync(userDataPath, { recursive: true })
 fs.mkdirSync(adminHomePath, { recursive: true })
@@ -188,8 +185,6 @@ describe('settings unset/default semantics', () => {
     expect(readPersistedSettings()).not.toHaveProperty('installDir')
   })
 
-  // The volume check keys off the path root, which is always `/` on POSIX, so
-  // this dead-drive fallback only meaningfully applies on Windows.
   it.runIf(process.platform === 'win32')(
     'falls back installDir/cacheDir to defaults when their volume is gone',
     () => {
@@ -206,10 +201,8 @@ describe('settings unset/default semantics', () => {
           p.toString().toUpperCase().startsWith('Z:\\') ? false : realExistsSync(p)
         )
       try {
-        // Drive Z: is gone, so both fall back to the (home-layout) defaults...
         expect(settings.get('installDir')).toBe(builtinDefault)
         expect(settings.get('cacheDir')).toBe(expectedCacheDir)
-        // ...and the fallback is persisted so it's deterministic next launch.
         const persisted = readPersistedSettings()
         expect(persisted['installDir']).toBe(builtinDefault)
         expect(persisted['cacheDir']).toBe(expectedCacheDir)
@@ -220,8 +213,6 @@ describe('settings unset/default semantics', () => {
   )
 
   it('keeps a custom installDir on a live volume even if it does not exist yet', () => {
-    // Created-on-demand parent dirs must not be reset just because the leaf is
-    // absent — only a missing volume triggers fallback.
     const custom = path.join(homePath, 'Not', 'Yet', 'Created', 'Installs')
     expect(fs.existsSync(custom)).toBe(false)
     settings.set('installDir', custom)
@@ -276,19 +267,10 @@ describe('settings path sanitization', () => {
   it('rewrites copied foreign-user defaults on Windows only', () => {
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     const customModelsDir = path.join(tmpRoot, 'custom-models')
-    // The directories referenced below must exist on disk, otherwise the
-    // "all model dirs missing -> restore shared default" and "input/output
-    // missing -> fall back to default" safeguards would fire and obscure
-    // what this test is actually checking (path sanitization).
     fs.mkdirSync(customModelsDir, { recursive: true })
     for (const sub of ['models', 'input', 'output']) {
       fs.mkdirSync(path.join(adminHomePath, 'ComfyUI-Shared', sub), { recursive: true })
     }
-    // systemDefault is no longer force-appended when the user's
-    // modelsDirs is non-empty. On Windows the foreign-admin path is
-    // dropped via sanitizeModelsDirs and the user is left with just
-    // their custom entry; on non-Windows the admin path stays because
-    // sanitization doesn't run.
     const expectedModelsDirs = shouldRewriteCopiedDefaults
       ? [customModelsDir]
       : [path.join(adminHomePath, 'ComfyUI-Shared', 'models'), customModelsDir]
@@ -332,12 +314,10 @@ describe('settings path sanitization', () => {
 describe('settings.has (persisted-only check)', () => {
   it('returns false when settings.json does not exist yet', () => {
     expect(settings.has('theme')).toBe(false)
-    // Built-in defaults must NOT register as user choices, even though they show up in getAll().
     expect(settings.has('inputDir')).toBe(false)
   })
 
   it('returns false for keys with defaults even after first load creates settings.json', () => {
-    // Force a write so the file exists but doesn't carry the defaulted keys.
     settings.set('theme', 'dark')
     expect(fs.existsSync(settingsPath)).toBe(true)
     expect(settings.has('theme')).toBe(true)
@@ -358,15 +338,12 @@ describe('settings.has (persisted-only check)', () => {
   })
 
   it('returns false for null persisted values', () => {
-    // legacy null normalization: any null on disk is treated as unset.
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ theme: null }), 'utf-8')
     expect(settings.has('theme')).toBe(false)
   })
 
   it('treats a stale sentinel value as unset (autoLaunchOnStartup: none)', () => {
-    // A manually edited / migrated file may still carry the 'none' sentinel that
-    // set() would have dropped; has() must not report it as a user choice.
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ autoLaunchOnStartup: 'none' }), 'utf-8')
     expect(settings.has('autoLaunchOnStartup')).toBe(false)
@@ -383,8 +360,6 @@ describe('modelsDirs user ordering', () => {
   it('preserves user-chosen primary models path across restarts', () => {
     const userPrimary = path.join(tmpRoot, 'D-drive-models')
     const systemDefault = path.join(homePath, 'ComfyUI-Shared', 'models')
-    // Must exist on disk so the "all model dirs missing" safeguard
-    // doesn't promote systemDefault ahead of the user's primary.
     fs.mkdirSync(userPrimary, { recursive: true })
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(
@@ -398,12 +373,6 @@ describe('modelsDirs user ordering', () => {
   })
 
   it('does not recreate ~/ComfyUI-Shared when user has custom existing paths (#699)', () => {
-    // Alexis's scenario: custom model/input/output paths that all exist,
-    // and a deleted ~/ComfyUI-Shared. None of it should reappear on load.
-    //
-    // beforeEach only wipes settings.json's parent dir; sweep the shared
-    // root from any previous test in this run so we can assert it stays
-    // absent after `settings.get` loads.
     const sharedRoot = path.join(homePath, 'ComfyUI-Shared')
     fs.rmSync(sharedRoot, { recursive: true, force: true })
 
@@ -426,34 +395,30 @@ describe('modelsDirs user ordering', () => {
     expect(settings.get('inputDir')).toBe(userInput)
     expect(settings.get('outputDir')).toBe(userOutput)
 
-    // And ~/ComfyUI-Shared must NOT have been recreated on disk.
     expect(fs.existsSync(sharedRoot)).toBe(false)
   })
 
   it('restores shared default as primary when all model dirs are missing (#699)', () => {
-    // The user's only model dir was deleted (e.g. by a system tool). The
-    // app must never be left with no usable models dir, so the shared
-    // default is restored as the primary entry and created on disk.
     const sharedRoot = path.join(homePath, 'ComfyUI-Shared')
     fs.rmSync(sharedRoot, { recursive: true, force: true })
     const systemDefault = path.join(homePath, 'ComfyUI-Shared', 'models')
-    const missing = path.join(tmpRoot, 'gone-models') // deliberately not created
+    const missing = path.join(tmpRoot, 'gone-models')
 
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(settingsPath, JSON.stringify({ modelsDirs: [missing] }, null, 2), 'utf-8')
 
     const dirs = settings.get('modelsDirs') as string[]
-    expect(dirs[0]).toBe(systemDefault) // restored as primary (non-deletable)
-    expect(dirs.length).toBe(2) // the missing custom path is kept after it
-    expect(fs.existsSync(systemDefault)).toBe(true) // created on disk
+    expect(dirs[0]).toBe(systemDefault)
+    expect(dirs.length).toBe(2)
+    expect(fs.existsSync(systemDefault)).toBe(true)
   })
 
   it('falls back to the default input/output dir when the designated one is missing (#699)', () => {
     const sharedRoot = path.join(homePath, 'ComfyUI-Shared')
     const defaultInput = path.join(sharedRoot, 'input')
     const defaultOutput = path.join(sharedRoot, 'output')
-    const missingInput = path.join(tmpRoot, 'gone-input') // not created
-    const missingOutput = path.join(tmpRoot, 'gone-output') // not created
+    const missingInput = path.join(tmpRoot, 'gone-input')
+    const missingOutput = path.join(tmpRoot, 'gone-output')
 
     fs.mkdirSync(path.dirname(settingsPath), { recursive: true })
     fs.writeFileSync(
@@ -507,18 +472,15 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
   }
 
   it('autoInstallUpdates: effective value plus an explicit-set companion', () => {
-    // Unset => default-on and not explicit.
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: true,
       auto_install_updates_explicit: false
     })
-    // Explicit false => off and explicit.
     settings.set('autoInstallUpdates', false)
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: false,
       auto_install_updates_explicit: true
     })
-    // Explicit true => on and explicit (distinct from the default-on majority).
     settings.set('autoInstallUpdates', true)
     expect(settings.getTrackedSettingsTelemetryProperties(['autoInstallUpdates'])).toEqual({
       auto_install_updates: true,
@@ -527,7 +489,6 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
   })
 
   it('language: emits only the selected value (null when following the OS default)', () => {
-    // Effective locale lives on the app.language_resolved event, not here.
     expect(settings.getTrackedSettingsTelemetryProperties(['language'])).toEqual({
       setting_language_selected: null
     })
@@ -545,8 +506,6 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
   })
 
   it('scalar value settings emit their typed value, never a hand-edited string', () => {
-    // onAppClose enum + maxCachedDownloads number pass through when valid
-    // (onAppClose resolves to its 'quit' default while tray docking is disabled).
     settings.set('maxCachedDownloads', 5)
     expect(
       settings.getTrackedSettingsTelemetryProperties(['onAppClose', 'maxCachedDownloads'])
@@ -554,7 +513,6 @@ describe('getTrackedSettingsTelemetryProperties (telemetry policy)', () => {
       setting_on_app_close: 'quit',
       setting_max_cached_downloads: 5
     })
-    // A corrupt/hand-edited settings.json can't leak a free-form string.
     fs.writeFileSync(
       settingsPath,
       JSON.stringify({ onAppClose: '/Users/me/secret', maxCachedDownloads: 'lots' }),
@@ -687,16 +645,13 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
     ) => {
       if (p === settingsPath) {
         const err = new Error('fake EPERM') as NodeJS.ErrnoException
-        err.code = 'EPERM' // lock never clears
+        err.code = 'EPERM'
         throw err
       }
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
 
-    // Reads degrade to the backup content...
     expect(settings.get('pypiMirror')).toBe('https://stale.example')
-    // ...but a write is dropped: persisting state derived from the stale
-    // backup would overwrite the newer primary once the lock clears.
     settings.set('confirmBeforeClosingWindow', true)
 
     vi.restoreAllMocks()
@@ -704,11 +659,6 @@ describe('locked settings.json served from .bak (issue #1367)', () => {
   })
 })
 
-// The beta-features toggle is the gate for injecting core beta launch args.
-// It is deliberately NOT telemetry consent: gating on consent creates a trap
-// where a user hitting beta bugs escapes by disabling telemetry, killing the
-// diagnostics exactly when they matter. Consent only ever seeds the initial
-// value, once.
 describe('peekBetaFeaturesEnabled', () => {
   it.each([
     ['a telemetry opt-in', { telemetryEnabled: true }, true],
@@ -831,8 +781,6 @@ describe('resolveBetaFeaturesEnabled', () => {
     expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
   })
 
-  // Desktop-1 migrants have no telemetryEnabled key at all (see the migrator
-  // note at src/main/index.ts). Absent consent must seed OFF, not ON.
   it('seeds false when telemetryEnabled was never recorded', () => {
     expect(settings.get('telemetryEnabled')).toBeUndefined()
 
@@ -840,8 +788,6 @@ describe('resolveBetaFeaturesEnabled', () => {
     expect(readPersistedSettings()['betaFeaturesEnabled']).toBe(false)
   })
 
-  // The trap this whole design exists to kill: once seeded, the value is the
-  // user's own, and revoking telemetry consent must never eject them.
   it('ignores a telemetry flip after seeding', () => {
     settings.set('telemetryEnabled', true)
     expect(settings.resolveBetaFeaturesEnabled()).toBe(true)
@@ -875,9 +821,7 @@ describe('settings.json and its .bak both unreadable', () => {
 
   beforeEach(() => {
     locked.clear()
-    // Earlier tests in this file leave their own readFileSync spies installed.
     vi.restoreAllMocks()
-    // Custom dirs that don't exist are normalized away, so each test owns its own.
     fs.mkdirSync(customModels, { recursive: true })
     const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
     vi.spyOn(fs, 'readFileSync').mockImplementation(((
@@ -891,7 +835,6 @@ describe('settings.json and its .bak both unreadable', () => {
       }
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
-    // Async reads go through the sync spy, so only fake timers decide when they settle.
     vi.spyOn(fs.promises, 'readFile').mockImplementation(((p: fs.PathLike, opts?: unknown) => {
       try {
         return Promise.resolve(fs.readFileSync(p, opts as BufferEncoding))
@@ -899,7 +842,6 @@ describe('settings.json and its .bak both unreadable', () => {
         return Promise.reject(err)
       }
     }) as typeof fs.promises.readFile)
-    // safe-file's own per-read retries block on Atomics.wait; skip those sleeps.
     vi.spyOn(Atomics, 'wait').mockReturnValue('timed-out')
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   })
@@ -915,13 +857,11 @@ describe('settings.json and its .bak both unreadable', () => {
 
     let settled: Record<string, unknown> | null | undefined
     void settings.readSettled().then((value) => (settled = value))
-    // 5 s of settled waits plus 5 attempts x 600 ms of safe-file's own read retries.
     await vi.advanceTimersByTimeAsync(7000)
     expect(settled).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1000)
 
     expect(settled).toBeNull()
-    // Waiting never blocks the main process on safe-file's synchronous lock retries.
     expect(Atomics.wait).not.toHaveBeenCalled()
   })
 
@@ -930,7 +870,6 @@ describe('settings.json and its .bak both unreadable', () => {
     locked.add(settingsPath).add(settingsPath + '.bak')
 
     const result = settings.readSettled()
-    // Past the first read and its own lock retries (600 ms), into the first settled wait.
     await vi.advanceTimersByTimeAsync(1000)
     locked.clear()
     await vi.runAllTimersAsync()
@@ -944,7 +883,6 @@ describe('settings.json and its .bak both unreadable', () => {
 
     let settled: Record<string, unknown> | null | undefined
     void settings.readSettled().then((value) => (settled = value))
-    // The primary's own lock retries take 300 ms; the first settled wait would take 500.
     await vi.advanceTimersByTimeAsync(400)
 
     expect(settled?.['modelsDirs']).toEqual([customModels])
@@ -967,7 +905,6 @@ describe('settings.json and its .bak both unreadable', () => {
   })
 
   it('readSettled never saves over a write made while it was reading', async () => {
-    // A legacy key makes loading normalize, which would save.
     writeSettings({ maxCachedFiles: 5, modelsDirs: [customModels] })
     const captured = fs.readFileSync(settingsPath, 'utf-8')
     let release!: () => void

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@comfyorg/design-system/button/Button'
 import { ChevronDown, Download, RotateCcw, Trash2, Upload } from 'lucide-vue-next'
 import { TID } from '../../../../shared/testIds'
 import { MSG_CANCELLED } from '../../../../shared/operationStatus'
@@ -38,26 +39,16 @@ interface ActiveOperation {
   actionData?: Record<string, unknown>
 }
 
-/** Snapshots tab body: save / restore / delete / export / import.
- *  Presentational + IPC-glue only; restore runs through `show-progress`
- *  so PanelApp's ProgressModal owns the long-running op. */
-
 interface Props {
   installationId: string
-  /** Live background-op status, used to mark the restoring row and lock
-   *  out the others. */
   activeOperation?: ActiveOperation | null
 }
 
 const props = withDefaults(defineProps<Props>(), { activeOperation: null })
 
 const emit = defineEmits<{
-  /** Fires when restore commits; the host routes it through the
-   *  show-progress flow. */
   'run-action': [action: ActionDef]
-  /** Lets the host re-load sections after a snapshot op. */
   'refresh-all': []
-  /** Cancel / retry / dismiss for the inline top-card restore op. */
   'op-cancel': []
   'op-retry': []
   'op-dismiss': []
@@ -67,6 +58,13 @@ const { t } = useI18n()
 const dialogs = useDialogs()
 const actionGuard = useActionGuard()
 
+const railNodeClass =
+  "relative min-h-3 pl-6 before:absolute before:top-3 before:left-[5px] before:z-0 before:h-[calc(100%+12px)] before:w-0.5 before:rounded-[1px] before:bg-[var(--border)] before:content-[''] last:before:hidden"
+const toolButtonClass =
+  'snapshots-view-toolbtn static inline-flex min-h-7 items-center justify-normal gap-[5px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[var(--brand-surface-bg)]'
+const detailButtonClass =
+  'snapshots-view-detail-btn static inline-flex min-h-8 items-center justify-normal gap-[5px] rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-2 text-[12px] leading-[1.5] font-medium whitespace-normal appearance-auto transition-[background-color,border-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-50'
+
 const listData = ref<SnapshotListData | null>(null)
 const loading = ref(true)
 const loadError = ref<string | null>(null)
@@ -74,8 +72,6 @@ const loadError = ref<string | null>(null)
 const snapshots = computed<SnapshotSummary[]>(() => listData.value?.snapshots ?? [])
 const copyEvents = computed<CopyEvent[]>(() => listData.value?.copyEvents ?? [])
 
-// Restore feedback card in the "Save New Snapshot" slot at the top of the
-// rail: ok → success (auto-dismiss + reload), error → retry/dismiss.
 const restoreOp = computed<ActiveOperation | null>(() => {
   const op = props.activeOperation
   return op && op.actionId === 'snapshot-restore' ? op : null
@@ -103,12 +99,9 @@ const restoreCancellable = computed<boolean>(
     ((restoreOp.value as ActiveOperation & { cancellable?: boolean }).cancellable ?? false)
 )
 
-/** Label for the snapshot being restored to. Falls back to the filename
- *  when the row isn't loaded locally yet. */
 const restoreFromLabel = computed<string>(() => {
   const file = restoreOpFile.value
-  if (!file)
-    return restoreOpIsImport.value ? t('snapshots.importedSnapshot', 'Imported snapshot') : ''
+  if (!file) return restoreOpIsImport.value ? t('snapshots.importedSnapshot') : ''
   const target = snapshots.value.find((s) => s.filename === file)
   if (target) {
     const trigger = triggerLabel(target.trigger, t)
@@ -118,7 +111,6 @@ const restoreFromLabel = computed<string>(() => {
   return file
 })
 
-// Latched terminal state so the card keeps the right copy until dismissed.
 const restoreTerminal = ref<'ok' | 'error' | 'cancelled' | null>(null)
 const restoreErrorMessage = ref<string>('')
 let restoreOkTimer: ReturnType<typeof setTimeout> | null = null
@@ -145,7 +137,6 @@ watch(
   restoreOp,
   (op, prev) => {
     if (!op) return
-    // In-flight → done transition only.
     if (!op.done || (prev && prev.done)) return
     if (op.ok) {
       clearRestoreTerminal()
@@ -153,15 +144,12 @@ watch(
       restoreOkTimer = setTimeout(() => {
         restoreTerminal.value = null
         restoreOkTimer = null
-        // Reload so the post-restore snapshot lands as the newest entry.
         void load()
         emit('refresh-all')
         emit('op-dismiss')
       }, 1800)
     } else if (op.error === MSG_CANCELLED) {
       clearRestoreTerminal()
-      // An import cancel keeps a card up (the staged target is still retryable),
-      // but as a neutral "cancelled" state — not a red failure.
       if (restoreOpIsImport.value) restoreTerminal.value = 'cancelled'
       else emit('op-dismiss')
     } else {
@@ -182,7 +170,6 @@ const showRestoreCard = computed<boolean>(
   () => restoreInFlight.value || restoreTerminal.value !== null
 )
 
-// Scroll to the top card when an op begins so it's not missed deep in the timeline.
 const topCardRef = ref<HTMLElement | null>(null)
 watch(restoreInFlight, (yes) => {
   if (!yes) return
@@ -191,7 +178,6 @@ watch(restoreInFlight, (yes) => {
   })
 })
 
-// Merged timeline (snapshots + copy events), newest first.
 type TimelineItem =
   | { kind: 'snapshot'; snapshot: SnapshotSummary; snapshotIndex: number }
   | { kind: 'copy'; event: CopyEvent }
@@ -218,9 +204,6 @@ const timeline = computed<TimelineItem[]>(() => {
   return out
 })
 
-/** "Latest: 8d ago" stat from the newest snapshot; null when none. Copy
- * events are excluded so an interleaved "Copied from/as X" entry can't hijack
- * the stat (see issue #1007). */
 const latestRelative = computed<string | null>(() => {
   const newest = snapshots.value[0]
   if (!newest) return null
@@ -236,17 +219,13 @@ function autoExpandFirst(): void {
 }
 
 async function load(silent = false): Promise<void> {
-  // `silent` = background refresh: keep the current list visible (no
-  // Loading… flash, no auto-expand) while refetching in place.
   if (!silent) loading.value = true
   loadError.value = null
   try {
     const data = await window.api.getSnapshots(props.installationId)
     listData.value = data
-    // Cache so the next remount paints instantly.
     setCachedSnapshotList(props.installationId, data)
   } catch (err: unknown) {
-    // Surface IPC rejections so "load failed" is distinguishable from "none".
     if (!silent) {
       loadError.value = (err as Error)?.message ?? String(err)
       listData.value = null
@@ -258,8 +237,6 @@ async function load(silent = false): Promise<void> {
   }
 }
 
-// Live refresh on `installations-changed`, debounced so a burst of pushes
-// collapses into a single silent reload.
 let unsubChanges: (() => void) | undefined
 let reloadTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleReload(): void {
@@ -277,13 +254,8 @@ onMounted(() => {
   }
 })
 
-// --- Per-row expansion (change summary) ---
-
 const expandedFilenames = ref<Set<string>>(new Set())
 
-// Two diff accordions per snapshot, keyed `${filename}|${mode}`:
-// `previous` = changes vs the prior snapshot; `current` = restore preview
-// vs live state. `diffCache` presence = loaded.
 type DiffMode = 'previous' | 'current'
 const diffCache = ref<Map<string, SnapshotDiffData | null>>(new Map())
 const openDiffs = ref<Set<string>>(new Set())
@@ -351,7 +323,6 @@ watch(
     diffLoading.value = new Set()
     const cached = getCachedSnapshotList(id)
     if (cached) {
-      // Paint the cached list instantly, then refresh silently.
       listData.value = cached
       loading.value = false
       loadError.value = null
@@ -363,8 +334,6 @@ watch(
   },
   { immediate: true }
 )
-
-// --- Save ---
 
 async function handleSave(): Promise<void> {
   const label = await dialogs.prompt({
@@ -396,8 +365,6 @@ async function handleSave(): Promise<void> {
   emit('refresh-all')
 }
 
-// --- Restore (with diff preview confirm) ---
-
 async function handleRestore(filename: string): Promise<void> {
   let diff: SnapshotDiffData | null
   try {
@@ -413,26 +380,22 @@ async function handleRestore(filename: string): Promise<void> {
     has_diff: hasChanges
   })
 
-  // Pass the diff-preview confirm through so `runAction` augments it with
-  // the willStopRunning warning rather than synthesizing a second modal.
   emit('run-action', {
     id: 'snapshot-restore',
-    label: t('standalone.snapshotRestore', 'Restore'),
+    label: t('standalone.snapshotRestore'),
     data: { file: filename },
     showProgress: true,
-    progressTitle: t('standalone.snapshotRestoringTitle', 'Restoring snapshot'),
+    progressTitle: t('standalone.snapshotRestoringTitle'),
     cancellable: true,
     style: 'primary',
     confirm: {
       title: t('snapshots.restoreConfirmTitle'),
       message: t('snapshots.restoreConfirmMessage'),
       restoreDiff: diff?.diff ?? null,
-      confirmLabel: t('standalone.snapshotRestore', 'Restore')
+      confirmLabel: t('standalone.snapshotRestore')
     }
   })
 }
-
-// --- Delete ---
 
 async function handleDelete(filename: string): Promise<void> {
   const target = snapshots.value.find((s) => s.filename === filename)
@@ -469,8 +432,6 @@ async function handleDelete(filename: string): Promise<void> {
   emit('refresh-all')
 }
 
-// --- Export ---
-
 async function handleExport(filename: string): Promise<void> {
   await window.api.exportSnapshot(props.installationId, filename)
   emitTelemetryAction('comfy.desktop.snapshot.flow', {
@@ -487,10 +448,7 @@ async function handleExportAll(): Promise<void> {
   })
 }
 
-// --- Import ---
-
 async function handleImport(): Promise<void> {
-  // Step 1: pick file(s) → preview
   const preview = await window.api.importSnapshotsPreview()
   if (!preview.ok) {
     if (preview.message) {
@@ -511,14 +469,13 @@ async function handleImport(): Promise<void> {
     message: t('snapshots.importConfirmMessage'),
     messageDetails:
       previewLines.length > 0
-        ? [{ label: t('snapshots.importPreviewLabel', 'Snapshots'), items: previewLines }]
+        ? [{ label: t('snapshots.importPreviewLabel'), items: previewLines }]
         : undefined,
     confirmLabel: t('snapshots.importConfirmLabel'),
     tone: 'primary'
   })
   if (importChoice !== 'primary') return
 
-  // Step 2: diff
   const diff = await window.api.importSnapshotsDiff(props.installationId)
   if (!diff.ok) {
     if (diff.message) {
@@ -531,15 +488,7 @@ async function handleImport(): Promise<void> {
     return
   }
 
-  // Step 3: confirm restore. Gate behind the busy guard — confirm writes
-  // the staged snapshots and auto-restores, so racing an in-flight op
-  // would clobber both surfaces.
-  if (
-    !(await actionGuard.checkBeforeAction(
-      props.installationId,
-      t('snapshots.importSnapshots', 'Import Snapshots')
-    ))
-  )
+  if (!(await actionGuard.checkBeforeAction(props.installationId, t('snapshots.importSnapshots'))))
     return
   const importResult = await window.api.importSnapshotsConfirm(props.installationId)
   if (!importResult.ok) {
@@ -552,15 +501,11 @@ async function handleImport(): Promise<void> {
     }
     return
   }
-  // Kept-local PyTorch disclosure: the snapshot's recorded stack can't be
-  // applied on this machine, so the restore will keep the local stack.
-  // Surface that BEFORE running the restore; cancelling leaves only the
-  // staged token behind (it self-prunes), nothing was mutated.
   if (importResult.torchStackNotice) {
     const noticeChoice = await dialogs.confirm({
-      title: t('snapshots.importTorchNoticeTitle', 'Snapshot uses a different PyTorch'),
+      title: t('snapshots.importTorchNoticeTitle'),
       message: importResult.torchStackNotice,
-      confirmLabel: t('standalone.snapshotRestore', 'Restore'),
+      confirmLabel: t('standalone.snapshotRestore'),
       tone: 'primary'
     })
     if (noticeChoice !== 'primary') return
@@ -572,16 +517,13 @@ async function handleImport(): Promise<void> {
     imported_bucket: toCountBucket(importResult.imported ?? 0)
   })
 
-  // The import only staged a restore target; nothing landed in the live history
-  // yet, so don't reload here. The restore commits it on success and the
-  // success watcher reloads then.
   if (importResult.restoreToken) {
     emit('run-action', {
       id: 'snapshot-restore',
-      label: t('standalone.snapshotRestore', 'Restore'),
+      label: t('standalone.snapshotRestore'),
       data: { restoreToken: importResult.restoreToken },
       showProgress: true,
-      progressTitle: t('standalone.snapshotRestoringTitle', 'Restoring snapshot'),
+      progressTitle: t('standalone.snapshotRestoringTitle'),
       cancellable: true,
       style: 'primary'
     })
@@ -590,160 +532,205 @@ async function handleImport(): Promise<void> {
 </script>
 
 <template>
-  <div class="snapshots-view">
-    <header class="snapshots-view-header">
-      <span class="snapshots-view-latest">
+  <div class="snapshots-view flex flex-col gap-4">
+    <header class="snapshots-view-header flex items-center justify-between gap-3">
+      <span class="snapshots-view-latest text-[12px] leading-4 text-text-muted">
         <template v-if="latestRelative">
-          {{ t('snapshots.latestLabel', 'Latest:') }}
+          {{ t('snapshots.latestLabel') }}
           {{ latestRelative }}
         </template>
         <template v-else>
-          {{ t('snapshots.noneYet', 'No snapshots yet') }}
+          {{ t('snapshots.noneYet') }}
         </template>
       </span>
-      <div class="snapshots-view-toolbar">
-        <button
+      <div class="snapshots-view-toolbar inline-flex flex-wrap gap-2">
+        <Button
           type="button"
-          class="snapshots-view-toolbtn"
-          :aria-label="t('snapshots.importSnapshots', 'Import')"
+          variant="textonly"
+          size="unset"
+          :class="toolButtonClass"
+          :aria-label="t('snapshots.importSnapshots')"
           :data-testid="TID.snapshotsImport"
           @click="handleImport"
         >
           <Upload :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.importSnapshots', 'Import') }}</span>
-        </button>
-        <button
+          <span>{{ t('snapshots.importSnapshots') }}</span>
+        </Button>
+        <Button
           type="button"
-          class="snapshots-view-toolbtn"
+          variant="textonly"
+          size="unset"
+          :class="toolButtonClass"
           :disabled="snapshots.length === 0"
-          :aria-label="t('snapshots.exportAll', 'Export All')"
+          :aria-label="t('snapshots.exportAllSnapshots')"
           :data-testid="TID.snapshotsExportAll"
           @click="handleExportAll"
         >
           <Download :size="14" aria-hidden="true" />
-          <span>{{ t('snapshots.exportAll', 'Export All') }}</span>
-        </button>
+          <span>{{ t('snapshots.exportAllSnapshots') }}</span>
+        </Button>
       </div>
     </header>
 
-    <p v-if="loading" class="snapshots-view-status">{{ t('common.loading', 'Loading…') }}</p>
-    <div v-else-if="loadError" class="snapshots-view-status is-error">
+    <p
+      v-if="loading"
+      class="snapshots-view-status m-0 text-[length:var(--takeover-fs-body)] text-text-muted"
+    >
+      {{ t('common.loading') }}
+    </p>
+    <div
+      v-else-if="loadError"
+      class="snapshots-view-status is-error m-0 flex flex-col items-start gap-2 text-[length:var(--takeover-fs-body)] text-danger [&_p]:m-0"
+    >
       <p>{{ loadError }}</p>
-      <button type="button" class="snapshots-view-toolbtn" @click="load()">
-        {{ t('common.retry', 'Retry') }}
-      </button>
+      <Button
+        type="button"
+        variant="textonly"
+        size="unset"
+        :class="toolButtonClass"
+        @click="load()"
+      >
+        {{ t('common.retry') }}
+      </Button>
     </div>
 
-    <!-- Timeline rail: first node is the "Save New Snapshot" CTA, then
-         snapshots + copy events, newest first. -->
-    <ul class="snapshots-rail" :class="{ 'is-empty': timeline.length === 0 }">
+    <ul
+      class="snapshots-rail relative m-0 flex list-none flex-col gap-3 p-0"
+      :class="{ 'is-empty': timeline.length === 0 }"
+    >
       <li
         ref="topCardRef"
         class="snapshots-rail-node is-save"
-        :class="{
-          'is-op-inflight': restoreInFlight,
-          'is-op-success': restoreTerminal === 'ok',
-          'is-op-error': restoreTerminal === 'error'
-        }"
+        :class="[
+          railNodeClass,
+          {
+            'is-op-inflight': restoreInFlight,
+            'is-op-success': restoreTerminal === 'ok',
+            'is-op-error': restoreTerminal === 'error'
+          }
+        ]"
       >
         <span
-          class="snapshots-rail-dot"
-          :class="{
-            'is-pending': !showRestoreCard,
-            'is-spinning': restoreInFlight,
-            'is-restored': restoreTerminal === 'ok',
-            'is-error': restoreTerminal === 'error'
-          }"
+          class="snapshots-rail-dot absolute top-1 left-0 z-[1] size-[14px] rounded-[7px] border-2"
+          :class="
+            !showRestoreCard
+              ? 'is-pending border-dashed border-neutral-400 bg-[var(--titlebar-bg)]'
+              : restoreInFlight
+                ? 'is-spinning border-solid border-snapshot-ring bg-[conic-gradient(var(--brand-accent,#f5c518)_270deg,transparent_270deg)] animate-spin [animation-duration:0.8s]'
+                : restoreTerminal === 'ok'
+                  ? 'is-restored border-solid border-snapshot-ring bg-[var(--success,#34c759)]'
+                  : restoreTerminal === 'error'
+                    ? 'is-error border-solid border-snapshot-ring bg-[var(--danger,#ef4444)]'
+                    : 'border-solid border-snapshot-ring [background:linear-gradient(0deg,#8a8a8a_0%,#8a8a8a_100%),#fd9903]'
+          "
           :aria-hidden="true"
         ></span>
-        <div class="snapshots-rail-content">
-          <span class="snapshots-rail-label">
-            <template v-if="restoreInFlight">{{
-              t('snapshots.restoringStatus', 'Restoring snapshot')
-            }}</template>
-            <template v-else-if="restoreTerminal === 'ok'">{{
-              t('snapshots.restored', 'Snapshot restored')
-            }}</template>
+        <div class="snapshots-rail-content flex flex-col gap-1.5">
+          <span class="snapshots-rail-label text-[12px] text-neutral-100">
+            <template v-if="restoreInFlight">{{ t('snapshots.restoringStatus') }}</template>
+            <template v-else-if="restoreTerminal === 'ok'">{{ t('snapshots.restored') }}</template>
             <template v-else-if="restoreTerminal === 'error'">{{
-              t('snapshots.restoreFailed', 'Restore failed')
+              t('snapshots.restoreFailed')
             }}</template>
             <template v-else-if="restoreTerminal === 'cancelled'">{{
-              t('snapshots.restoreCancelled', 'Restore cancelled')
+              t('snapshots.restoreCancelled')
             }}</template>
-            <template v-else>{{ t('snapshots.createLabel', 'Create Snapshot') }}</template>
+            <template v-else>{{ t('snapshots.createLabel') }}</template>
           </span>
           <div
-            class="snapshots-rail-save-box"
-            :class="{
-              'is-op-inflight': restoreInFlight,
-              'is-op-success': restoreTerminal === 'ok',
-              'is-op-error': restoreTerminal === 'error'
-            }"
+            class="snapshots-rail-save-box flex flex-col rounded-lg border"
+            :class="[
+              restoreInFlight || restoreTerminal === 'ok' || restoreTerminal === 'error'
+                ? 'border-solid p-3.5'
+                : 'border-dashed p-3',
+              restoreTerminal === 'ok'
+                ? 'is-op-success border-[var(--success,#34c759)] bg-[color-mix(in_srgb,var(--success,#34c759)_8%,transparent)]'
+                : restoreTerminal === 'error'
+                  ? 'is-op-error border-[var(--danger,#ef4444)] bg-[color-mix(in_srgb,var(--danger,#ef4444)_8%,transparent)]'
+                  : 'border-[var(--chooser-surface-border)]',
+              { 'is-op-inflight': restoreInFlight }
+            ]"
           >
             <div
               v-if="restoreInFlight"
-              class="snapshots-op-card"
+              class="snapshots-op-card flex flex-col gap-2.5"
               role="status"
               aria-live="polite"
               :data-testid="TID.snapshotsOpCard"
             >
-              <p v-if="restoreFromLabel" class="snapshots-op-card-target">
+              <p
+                v-if="restoreFromLabel"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
                 {{ t('snapshots.restoringFrom', { label: restoreFromLabel }) }}
               </p>
               <div
-                class="snapshots-op-bar-wrap"
+                class="snapshots-op-bar-wrap flex flex-col gap-1.5"
                 role="progressbar"
                 :aria-valuenow="restorePercent ?? undefined"
                 aria-valuemin="0"
                 aria-valuemax="100"
               >
-                <div class="snapshots-op-bar-header">
-                  <span class="snapshots-op-bar-status">{{ restorePhase }}</span>
-                  <span v-if="restorePercent !== null" class="snapshots-op-bar-pct">
+                <div
+                  class="snapshots-op-bar-header flex items-center justify-between text-[length:var(--takeover-fs-caption)]"
+                >
+                  <span class="snapshots-op-bar-status text-neutral-100">{{ restorePhase }}</span>
+                  <span
+                    v-if="restorePercent !== null"
+                    class="snapshots-op-bar-pct text-text-muted tabular-nums"
+                  >
                     {{ restorePercent }}%
                   </span>
                 </div>
-                <div class="snapshots-op-bar-track">
+                <div
+                  class="snapshots-op-bar-track relative h-1 overflow-hidden rounded-[2px] bg-[color-mix(in_srgb,var(--neutral-100)_8%,transparent)]"
+                >
                   <div
-                    class="snapshots-op-bar-fill"
-                    :class="{ 'is-indeterminate': restorePercent === null }"
+                    class="snapshots-op-bar-fill h-full bg-[var(--brand-accent,#f5c518)] transition-[width] duration-[120ms] ease-[ease]"
+                    :class="{
+                      'is-indeterminate w-[40%] animate-[snapshots-op-bar-indet_1.2s_ease-in-out_infinite]':
+                        restorePercent === null
+                    }"
                     :style="restorePercent === null ? {} : { width: `${restorePercent}%` }"
                   />
                 </div>
               </div>
-              <button
+              <Button
                 v-if="restoreCancellable"
                 type="button"
-                class="snapshots-op-ghost-btn"
+                variant="textonly"
+                size="unset"
+                class="snapshots-op-ghost-btn static inline-flex min-h-7 items-center justify-center rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
                 :data-testid="TID.snapshotsOpCardCancel"
                 @click="cancelRestore"
               >
-                {{ t('common.cancel', 'Cancel') }}
-              </button>
+                {{ t('common.cancel') }}
+              </Button>
             </div>
 
-            <!-- Success: auto-dismisses after ~1.8s. -->
             <div
               v-else-if="restoreTerminal === 'ok'"
-              class="snapshots-op-card is-success"
+              class="snapshots-op-card is-success flex flex-col gap-2.5"
               role="status"
               :data-testid="TID.snapshotsOpCard"
             >
-              <!-- A successful import is an apply, not a rollback; "Rolled
-                   back to {label}" is only for restores of local history. -->
-              <p v-if="restoreOpIsImport" class="snapshots-op-card-target">
-                {{ t('snapshots.restoredImported', 'Applied imported snapshot') }}
+              <p
+                v-if="restoreOpIsImport"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
+                {{ t('snapshots.restoredImported') }}
               </p>
-              <p v-else-if="restoreFromLabel" class="snapshots-op-card-target">
+              <p
+                v-else-if="restoreFromLabel"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
                 {{ t('snapshots.restoredFrom', { label: restoreFromLabel }) }}
               </p>
             </div>
 
-            <!-- Error/cancelled: persistent until user dismisses. A cancelled
-                 import keeps the retry action but renders neutrally. -->
             <div
               v-else-if="restoreTerminal === 'error' || restoreTerminal === 'cancelled'"
-              class="snapshots-op-card"
+              class="snapshots-op-card flex flex-col gap-2.5"
               :class="{ 'is-error': restoreTerminal === 'error' }"
               :role="restoreTerminal === 'error' ? 'alert' : 'status'"
               :data-testid="TID.snapshotsOpCard"
@@ -752,40 +739,48 @@ async function handleImport(): Promise<void> {
                 v-if="restoreTerminal === 'error' && restoreErrorMessage"
                 :error="restoreErrorMessage"
               />
-              <p v-else-if="restoreTerminal === 'cancelled'" class="snapshots-op-card-target">
-                {{ t('snapshots.restoreCancelledBody', 'The imported snapshot was not applied.') }}
+              <p
+                v-else-if="restoreTerminal === 'cancelled'"
+                class="snapshots-op-card-target m-0 text-[length:var(--takeover-fs-caption)] text-text-muted"
+              >
+                {{ t('snapshots.restoreCancelledBody') }}
               </p>
-              <div class="snapshots-op-actions">
-                <button
+              <div class="snapshots-op-actions flex gap-2">
+                <Button
                   type="button"
-                  class="snapshots-op-primary-btn"
+                  variant="textonly"
+                  size="unset"
+                  class="snapshots-op-primary-btn static inline-flex min-h-7 items-center justify-center rounded-lg border border-solid border-[var(--brand-accent,#f5c518)] bg-[var(--brand-accent,#f5c518)] px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-[#1a1a1a] whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--brand-accent,#f5c518)_88%,white)] focus-visible:bg-[color-mix(in_srgb,var(--brand-accent,#f5c518)_88%,white)] focus-visible:outline-none focus-visible:ring-0"
                   :data-testid="TID.snapshotsOpCardRetry"
                   @click="retryRestore"
                 >
-                  {{ t('snapshots.tryAgain', 'Try again') }}
-                </button>
-                <button
+                  {{ t('snapshots.tryAgain') }}
+                </Button>
+                <Button
                   type="button"
-                  class="snapshots-op-ghost-btn"
+                  variant="textonly"
+                  size="unset"
+                  class="snapshots-op-ghost-btn static inline-flex min-h-7 items-center justify-center rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3 py-1.5 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
                   :data-testid="TID.snapshotsOpCardDismiss"
                   @click="dismissRestoreCard"
                 >
-                  {{ t('common.dismiss', 'Dismiss') }}
-                </button>
+                  {{ t('common.dismiss') }}
+                </Button>
               </div>
             </div>
 
-            <!-- Idle: the Save CTA. -->
-            <button
+            <Button
               v-else
               type="button"
-              class="snapshots-rail-cta"
-              :aria-label="t('snapshots.createSnapshot', 'Create Snapshot')"
+              variant="textonly"
+              size="unset"
+              class="snapshots-rail-cta static inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-2.5 text-[length:var(--takeover-fs-body)] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto transition-[background-color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:outline-none focus-visible:ring-0"
+              :aria-label="t('snapshots.createSnapshot')"
               :data-testid="TID.snapshotsSaveCta"
               @click="handleSave"
             >
-              <span>{{ t('snapshots.createNew', 'Create Snapshot') }}</span>
-            </button>
+              <span>{{ t('snapshots.createNew') }}</span>
+            </Button>
           </div>
         </div>
       </li>
@@ -794,22 +789,26 @@ async function handleImport(): Promise<void> {
         v-for="(item, i) in timeline"
         :key="item.kind === 'snapshot' ? `s-${item.snapshot.filename}` : `c-${i}`"
         class="snapshots-rail-node"
-        :class="{
-          'is-snapshot': item.kind === 'snapshot',
-          'is-copy': item.kind === 'copy'
-        }"
+        :class="[
+          railNodeClass,
+          {
+            'is-snapshot': item.kind === 'snapshot',
+            'is-copy': item.kind === 'copy'
+          }
+        ]"
       >
         <span
-          class="snapshots-rail-dot"
-          :class="{
-            'is-state':
-              item.kind === 'snapshot' &&
-              (item.snapshot.trigger === 'post-update' || item.snapshot.trigger === 'post-restore'),
-            'is-muted': item.kind === 'copy'
-          }"
+          class="snapshots-rail-dot absolute top-1 left-0 z-[1] size-[14px] rounded-[7px] border-2"
+          :class="
+            item.kind === 'copy'
+              ? 'is-muted border-solid border-snapshot-ring bg-[color-mix(in_srgb,var(--text-muted)_55%,transparent)]'
+              : item.snapshot.trigger === 'post-update' || item.snapshot.trigger === 'post-restore'
+                ? 'is-state border-solid border-snapshot-ring bg-[var(--warning)]'
+                : 'border-solid border-snapshot-ring [background:linear-gradient(0deg,#8a8a8a_0%,#8a8a8a_100%),#fd9903]'
+          "
           :aria-hidden="true"
         ></span>
-        <div class="snapshots-rail-content">
+        <div class="snapshots-rail-content flex flex-col gap-1.5">
           <template v-if="item.kind === 'snapshot'">
             <SnapshotRow
               :snapshot="item.snapshot"
@@ -820,33 +819,44 @@ async function handleImport(): Promise<void> {
               @toggle="toggleExpand(item.snapshot.filename)"
             >
               <template #expanded>
-                <p v-if="item.snapshot.label" class="snapshots-view-label">
+                <p
+                  v-if="item.snapshot.label"
+                  class="snapshots-view-label mt-0 mr-0 mb-1.5 ml-0 text-[length:var(--takeover-fs-caption)] font-medium text-text"
+                >
                   {{ item.snapshot.label }}
                 </p>
 
-                <!-- "Release notes": changes vs the previous snapshot.
-                     Hidden for the oldest snapshot (no predecessor); copy
-                     events interleaved in the timeline don't count. -->
-                <div v-if="item.snapshotIndex < snapshots.length - 1" class="snap-diff-accordion">
-                  <button
+                <div
+                  v-if="item.snapshotIndex < snapshots.length - 1"
+                  class="snap-diff-accordion mt-2 flex flex-col"
+                >
+                  <Button
                     type="button"
-                    class="snap-diff-trigger"
+                    variant="textonly"
+                    size="unset"
+                    class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-lg border-none bg-transparent pt-0.5 pr-1 pb-0.5 pl-0 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:bg-transparent focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
                     :class="{ 'is-open': isDiffOpen(item.snapshot.filename, 'previous') }"
                     :aria-expanded="isDiffOpen(item.snapshot.filename, 'previous')"
                     @click="toggleDiff(item.snapshot.filename, 'previous')"
                   >
-                    <ChevronDown :size="13" class="snap-diff-chevron" />
-                    <span>{{
-                      t('snapshots.changesInSnapshot', 'What changed in this snapshot')
-                    }}</span>
-                  </button>
+                    <ChevronDown
+                      :size="13"
+                      class="snap-diff-chevron text-text-muted transition-transform duration-[180ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
+                      :class="{
+                        '[transform:rotate(180deg)]': isDiffOpen(item.snapshot.filename, 'previous')
+                      }"
+                    />
+                    <span>{{ t('snapshots.changesInSnapshot') }}</span>
+                  </Button>
                   <BaseAccordion :open="isDiffOpen(item.snapshot.filename, 'previous')">
-                    <div class="snapshots-view-diff">
+                    <div
+                      class="snapshots-view-diff mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-solid border-border-hover bg-transparent px-3 py-2.5"
+                    >
                       <div
                         v-if="isDiffLoading(item.snapshot.filename, 'previous')"
-                        class="snapshots-view-diff-loading"
+                        class="snapshots-view-diff-loading px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
                       >
-                        {{ t('common.loading', 'Loading…') }}
+                        {{ t('common.loading') }}
                       </div>
                       <template
                         v-else-if="diffFor(item.snapshot.filename, 'previous') !== undefined"
@@ -856,11 +866,9 @@ async function handleImport(): Promise<void> {
                             !diffFor(item.snapshot.filename, 'previous') ||
                             !diffHasChanges(diffFor(item.snapshot.filename, 'previous')!.diff)
                           "
-                          class="snapshots-view-diff-empty"
+                          class="snapshots-view-diff-empty text-[length:var(--takeover-fs-caption)] text-text-muted italic"
                         >
-                          {{
-                            t('snapshots.diffNoChanges', 'No changes from the previous snapshot.')
-                          }}
+                          {{ t('snapshots.diffNoChanges') }}
                         </div>
                         <SnapshotDiffView
                           v-else
@@ -871,29 +879,34 @@ async function handleImport(): Promise<void> {
                   </BaseAccordion>
                 </div>
 
-                <!-- "Restore preview": changes vs live state. Hidden for the
-                     newest snapshot (restoring it is a no-op); copy events
-                     interleaved in the timeline don't count. -->
-                <div v-if="item.snapshotIndex !== 0" class="snap-diff-accordion">
-                  <button
+                <div v-if="item.snapshotIndex !== 0" class="snap-diff-accordion mt-2 flex flex-col">
+                  <Button
                     type="button"
-                    class="snap-diff-trigger"
+                    variant="textonly"
+                    size="unset"
+                    class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-lg border-none bg-transparent pt-0.5 pr-1 pb-0.5 pl-0 text-[12px] leading-[1.5] font-medium text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-text focus-visible:bg-transparent focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
                     :class="{ 'is-open': isDiffOpen(item.snapshot.filename, 'current') }"
                     :aria-expanded="isDiffOpen(item.snapshot.filename, 'current')"
                     @click="toggleDiff(item.snapshot.filename, 'current')"
                   >
-                    <ChevronDown :size="13" class="snap-diff-chevron" />
-                    <span>{{
-                      t('snapshots.ifYouRestore', 'What restoring this would change')
-                    }}</span>
-                  </button>
+                    <ChevronDown
+                      :size="13"
+                      class="snap-diff-chevron text-text-muted transition-transform duration-[180ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
+                      :class="{
+                        '[transform:rotate(180deg)]': isDiffOpen(item.snapshot.filename, 'current')
+                      }"
+                    />
+                    <span>{{ t('snapshots.ifYouRestore') }}</span>
+                  </Button>
                   <BaseAccordion :open="isDiffOpen(item.snapshot.filename, 'current')">
-                    <div class="snapshots-view-diff">
+                    <div
+                      class="snapshots-view-diff mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-solid border-border-hover bg-transparent px-3 py-2.5"
+                    >
                       <div
                         v-if="isDiffLoading(item.snapshot.filename, 'current')"
-                        class="snapshots-view-diff-loading"
+                        class="snapshots-view-diff-loading px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
                       >
-                        {{ t('common.loading', 'Loading…') }}
+                        {{ t('common.loading') }}
                       </div>
                       <template
                         v-else-if="diffFor(item.snapshot.filename, 'current') !== undefined"
@@ -903,14 +916,9 @@ async function handleImport(): Promise<void> {
                             !diffFor(item.snapshot.filename, 'current') ||
                             !diffHasChanges(diffFor(item.snapshot.filename, 'current')!.diff)
                           "
-                          class="snapshots-view-diff-empty"
+                          class="snapshots-view-diff-empty text-[length:var(--takeover-fs-caption)] text-text-muted italic"
                         >
-                          {{
-                            t(
-                              'snapshots.restoreNoChanges',
-                              'Restoring this would make no changes — it matches your current state.'
-                            )
-                          }}
+                          {{ t('snapshots.restoreNoChanges') }}
                         </div>
                         <SnapshotDiffView
                           v-else
@@ -921,51 +929,65 @@ async function handleImport(): Promise<void> {
                   </BaseAccordion>
                 </div>
 
-                <!-- Actions live in the expanded detail so the collapsed
-                     row stays a clean tap target. -->
-                <div class="snapshots-view-detail-actions">
-                  <button
+                <div
+                  class="snapshots-view-detail-actions mt-1 flex flex-wrap justify-end gap-2 border-t border-solid border-border-hover pt-3"
+                >
+                  <Button
                     v-if="item.snapshotIndex !== 0"
                     type="button"
-                    class="snapshots-view-detail-btn"
-                    :aria-label="t('snapshots.restore', 'Restore')"
+                    variant="textonly"
+                    size="unset"
+                    :class="[detailButtonClass, 'text-neutral-100']"
+                    :aria-label="t('snapshots.restore')"
                     :data-testid="TID.snapshotRowRestore(item.snapshot.filename)"
                     :disabled="restoreInFlight"
                     @click="handleRestore(item.snapshot.filename)"
                   >
                     <RotateCcw :size="13" />
-                    <span>{{ t('snapshots.restore', 'Restore') }}</span>
-                  </button>
-                  <button
+                    <span>{{ t('snapshots.restore') }}</span>
+                  </Button>
+                  <Button
                     type="button"
-                    class="snapshots-view-detail-btn"
-                    :aria-label="t('snapshots.exportSnapshot', 'Export')"
+                    variant="textonly"
+                    size="unset"
+                    :class="[detailButtonClass, 'text-neutral-100']"
+                    :aria-label="t('snapshots.exportSnapshot')"
                     :data-testid="TID.snapshotRowExport(item.snapshot.filename)"
                     :disabled="restoreInFlight"
                     @click="handleExport(item.snapshot.filename)"
                   >
                     <Download :size="13" />
-                    <span>{{ t('snapshots.exportSnapshot', 'Export') }}</span>
-                  </button>
-                  <button
+                    <span>{{ t('snapshots.exportSnapshot') }}</span>
+                  </Button>
+                  <Button
                     type="button"
-                    class="snapshots-view-detail-btn snapshots-view-detail-btn-danger"
-                    :aria-label="t('snapshots.delete', 'Delete')"
+                    variant="destructive-textonly"
+                    size="unset"
+                    :class="[
+                      detailButtonClass,
+                      'snapshots-view-detail-btn-danger text-danger hover:text-danger hover:border-[var(--danger)] focus-visible:text-danger focus-visible:border-[var(--danger)]'
+                    ]"
+                    :aria-label="t('snapshots.delete')"
                     :disabled="restoreInFlight"
                     @click="handleDelete(item.snapshot.filename)"
                   >
                     <Trash2 :size="13" />
-                    <span>{{ t('snapshots.delete', 'Delete') }}</span>
-                  </button>
+                    <span>{{ t('snapshots.delete') }}</span>
+                  </Button>
                 </div>
               </template>
             </SnapshotRow>
           </template>
-          <div v-else class="snapshots-view-copy-event">
-            <span class="snapshots-view-copy-icon" :aria-hidden="true">{{
-              item.event.direction === 'in' ? '←' : '→'
-            }}</span>
-            <span class="snapshots-view-copy-label">
+          <div
+            v-else
+            class="snapshots-view-copy-event flex items-center gap-1.5 rounded-lg border border-dashed border-[var(--border)] bg-transparent px-3 py-2 text-[length:var(--takeover-fs-caption)] text-text-muted"
+          >
+            <span
+              class="snapshots-view-copy-icon text-[var(--accent-primary)]"
+              :aria-hidden="true"
+              >{{ item.event.direction === 'in' ? '←' : '→' }}</span
+            >
+            <span class="snapshots-view-copy-label min-w-0 flex-1">
               {{
                 item.event.direction === 'in'
                   ? t('snapshots.copyEventLabelIncoming', {
@@ -976,7 +998,9 @@ async function handleImport(): Promise<void> {
                     })
               }}
             </span>
-            <span class="snapshots-view-copy-time">{{ formatDate(item.event.copiedAt) }}</span>
+            <span class="snapshots-view-copy-time text-[11px] opacity-70">{{
+              formatDate(item.event.copiedAt)
+            }}</span>
           </div>
         </div>
       </li>
@@ -984,414 +1008,7 @@ async function handleImport(): Promise<void> {
   </div>
 </template>
 
-<style scoped>
-.snapshots-view {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.snapshots-view-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.snapshots-view-latest {
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--text-muted);
-}
-
-.snapshots-view-toolbar {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.snapshots-view-toolbtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--neutral-100);
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  cursor: pointer;
-  transition: background-color 100ms ease;
-}
-
-.snapshots-view-toolbtn:hover:not(:disabled),
-.snapshots-view-toolbtn:focus-visible:not(:disabled) {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-view-toolbtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.snapshots-view-status {
-  margin: 0;
-  font-size: var(--takeover-fs-body);
-  color: var(--text-muted);
-}
-
-.snapshots-view-status.is-error {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-start;
-  color: var(--danger);
-}
-
-.snapshots-view-status.is-error p {
-  margin: 0;
-}
-
-.snapshots-rail {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* Per-node connector from this dot's center to the next. Last node has
- * none, so the rail doesn't overshoot the bottom. */
-.snapshots-rail-node:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 12px;
-  height: calc(100% + 12px);
-  width: 2px;
-  background: var(--border);
-  border-radius: 1px;
-  z-index: 0;
-}
-
-.snapshots-rail-node {
-  position: relative;
-  padding-left: 24px;
-  min-height: 12px;
-}
-
-/* Dot marker. Color reflects the trigger semantic: .is-state = orange
- * (post-update/restore), .is-muted = copy events, .is-pending = Save CTA. */
-.snapshots-rail-dot {
-  position: absolute;
-  left: 0;
-  top: 4px;
-  width: 14px;
-  height: 14px;
-  border: none;
-  z-index: 1;
-  border-radius: 7px;
-  border: 2px solid #262729;
-  background: linear-gradient(0deg, #8a8a8a 0%, #8a8a8a 100%), #fd9903;
-}
-
-.snapshots-rail-dot.is-state {
-  background: var(--warning);
-  border-radius: 7px;
-  border: 2px solid var(--color-surface);
-}
-
-.snapshots-rail-dot.is-muted {
-  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
-}
-
-/* Restore in-flight — rotating conic ring, matching the picker row's spinner. */
-.snapshots-rail-dot.is-spinning {
-  background: conic-gradient(var(--brand-accent, #f5c518) 270deg, transparent 270deg);
-  border: 2px solid var(--color-surface);
-  animation: snapshots-rail-dot-spin 0.8s linear infinite;
-}
-.snapshots-rail-dot.is-restored {
-  background: var(--success, #34c759);
-  border: 2px solid var(--color-surface);
-}
-.snapshots-rail-dot.is-error {
-  background: var(--danger, #ef4444);
-  border: 2px solid var(--color-surface);
-}
-@keyframes snapshots-rail-dot-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.snapshots-rail-dot.is-pending {
-  border-radius: 7px;
-  border: 2px dashed var(--neutral-400);
-  background: var(--titlebar-bg);
-}
-
-.snapshots-rail-content {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.snapshots-rail-save-box {
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-  border: 1px dashed var(--chooser-surface-border);
-  border-radius: 8px;
-}
-
-.snapshots-rail-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  font-size: var(--takeover-fs-body);
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 100ms ease;
-}
-
-.snapshots-rail-cta:hover,
-.snapshots-rail-cta:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-rail-node.is-save .snapshots-rail-label {
-  font-size: 12px;
-  color: var(--neutral-100);
-}
-
-.snapshots-view-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  background: color-mix(in srgb, var(--surface) 60%, var(--titlebar-bg));
-  border: 1px solid var(--border);
-  border-top: none;
-  border-radius: 0 0 10px 10px;
-  margin-top: -4px;
-}
-
-.snapshots-view-detail-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border-hover);
-}
-
-.snapshots-view-detail-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 32px;
-  padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 8px;
-  border: 1px solid var(--chooser-surface-border);
-  background: var(--brand-surface-bg);
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    background-color 100ms ease,
-    border-color 100ms ease;
-}
-
-.snapshots-view-detail-btn:hover,
-.snapshots-view-detail-btn:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-view-detail-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.snapshots-view-detail-btn.is-active {
-  background: var(--brand-surface-bg-hover);
-  border-color: color-mix(in oklab, var(--neutral-100) 28%, transparent);
-}
-
-.snapshots-view-detail-btn-danger {
-  color: var(--danger);
-}
-
-.snapshots-view-detail-btn-danger:hover,
-.snapshots-view-detail-btn-danger:focus-visible {
-  color: var(--danger);
-  border-color: var(--danger);
-}
-
-.snapshots-view-diff {
-  padding: 10px 12px;
-  margin-top: 8px;
-  /* Cap height so long diffs scroll internally instead of pushing the
-   * action row off-screen. */
-  max-height: 280px;
-  overflow-y: auto;
-  border: 1px solid var(--border-hover);
-  border-radius: 8px;
-  background: transparent;
-}
-
-.snapshots-view-diff-empty {
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-.snapshots-view-diff-loading {
-  padding: 8px 12px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-}
-
-.snap-diff-accordion {
-  display: flex;
-  flex-direction: column;
-  margin-top: 8px;
-}
-.snap-diff-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 2px 4px 2px 0;
-  background: transparent;
-  border: none;
-  color: var(--neutral-100);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.snap-diff-trigger:hover,
-.snap-diff-trigger:focus-visible {
-  color: var(--text);
-  outline: none;
-}
-.snap-diff-chevron {
-  color: var(--text-muted);
-  transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-.snap-diff-trigger.is-open .snap-diff-chevron {
-  transform: rotate(180deg);
-}
-.snap-diff-accordion .snapshots-view-diff {
-  margin-top: 6px;
-}
-
-.snapshots-view-label {
-  margin: 0 0 6px;
-  font-size: var(--takeover-fs-caption);
-  font-weight: 500;
-  color: var(--text);
-}
-
-.snapshots-view-changes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.snapshots-view-changes li {
-  line-height: 16px;
-}
-
-.snapshots-view-no-changes {
-  margin: 0;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-  font-style: italic;
-}
-
-/* Top-card restore feedback: in-flight (percent bar), success (green
- * tint), error (red tint). */
-.snapshots-rail-save-box.is-op-inflight,
-.snapshots-rail-save-box.is-op-success,
-.snapshots-rail-save-box.is-op-error {
-  border-style: solid;
-  padding: 14px;
-}
-.snapshots-rail-save-box.is-op-success {
-  border-color: var(--success, #34c759);
-  background: color-mix(in srgb, var(--success, #34c759) 8%, transparent);
-}
-.snapshots-rail-save-box.is-op-error {
-  border-color: var(--danger, #ef4444);
-  background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
-}
-
-.snapshots-op-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.snapshots-op-card-target {
-  margin: 0;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-}
-.snapshots-op-bar-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.snapshots-op-bar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--takeover-fs-caption);
-}
-.snapshots-op-bar-status {
-  color: var(--neutral-100);
-}
-.snapshots-op-bar-pct {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.snapshots-op-bar-track {
-  position: relative;
-  height: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--neutral-100) 8%, transparent);
-  overflow: hidden;
-}
-.snapshots-op-bar-fill {
-  height: 100%;
-  background: var(--brand-accent, #f5c518);
-  transition: width 120ms ease;
-}
-.snapshots-op-bar-fill.is-indeterminate {
-  width: 40%;
-  animation: snapshots-op-bar-indet 1.2s ease-in-out infinite;
-}
+<style>
 @keyframes snapshots-op-bar-indet {
   0% {
     transform: translateX(-100%);
@@ -1399,69 +1016,5 @@ async function handleImport(): Promise<void> {
   100% {
     transform: translateX(250%);
   }
-}
-
-.snapshots-op-actions {
-  display: flex;
-  gap: 8px;
-}
-.snapshots-op-primary-btn,
-.snapshots-op-ghost-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 100ms ease;
-}
-.snapshots-op-primary-btn {
-  background: var(--brand-accent, #f5c518);
-  color: #1a1a1a;
-  border: 1px solid var(--brand-accent, #f5c518);
-}
-.snapshots-op-primary-btn:hover,
-.snapshots-op-primary-btn:focus-visible {
-  background: color-mix(in srgb, var(--brand-accent, #f5c518) 88%, white);
-  outline: none;
-}
-.snapshots-op-ghost-btn {
-  background: transparent;
-  color: var(--neutral-100);
-  border: 1px solid var(--chooser-surface-border);
-}
-.snapshots-op-ghost-btn:hover,
-.snapshots-op-ghost-btn:focus-visible {
-  background: var(--brand-surface-bg-hover);
-  outline: none;
-}
-
-.snapshots-view-copy-event {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: transparent;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  font-size: var(--takeover-fs-caption);
-  color: var(--text-muted);
-}
-
-.snapshots-view-copy-icon {
-  color: var(--accent-primary);
-}
-
-.snapshots-view-copy-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.snapshots-view-copy-time {
-  font-size: 11px;
-  opacity: 0.7;
 }
 </style>

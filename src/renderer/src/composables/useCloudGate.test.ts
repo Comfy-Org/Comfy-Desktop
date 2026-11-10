@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { createPinia, setActivePinia } from 'pinia'
 import { effectScope } from 'vue'
 import { useCloudGate } from './useCloudGate'
@@ -32,9 +33,6 @@ function stubApi(over: Partial<Record<keyof ApiStub, unknown>> = {}): void {
     onInstallationsChanged: vi.fn(),
     ...over
   } as ApiStub
-  // The stores this composable pulls in subscribe to several `on*` channels;
-  // a Proxy answers any of them with a no-op unsubscribe so the test only has
-  // to spell out the calls it actually asserts on.
   const withListeners = new Proxy(api as unknown as Record<string, unknown>, {
     get(target, prop: string) {
       if (prop in target) return target[prop]
@@ -43,7 +41,7 @@ function stubApi(over: Partial<Record<keyof ApiStub, unknown>> = {}): void {
     },
     has: () => true
   })
-  vi.stubGlobal('window', { api: withListeners })
+  stubWindowApi(withListeners)
 }
 
 let stops: Array<() => void> = []

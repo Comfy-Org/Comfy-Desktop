@@ -16,10 +16,6 @@ export const useInstallationStore = defineStore('installation', () => {
     }
   }
 
-  // At most one request in flight plus one queued behind it: a burst of
-  // `installations-changed` events collapses into a single follow-up fetch,
-  // which still starts after every caller asked, so each caller gets data at
-  // least as fresh as its request.
   let inFlight: Promise<Installation[]> | null = null
   let queued: Promise<Installation[]> | null = null
 

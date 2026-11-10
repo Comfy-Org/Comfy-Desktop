@@ -3,8 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDesktopLoginCode, DesktopLoginCodeError, exchangeDesktopLoginCode } from './client'
 import { hangingFetch, jsonResponse } from './testHelpers'
 
-// postJson goes through Chromium's net.fetch; delegate to the current global
-// fetch so the vi.stubGlobal('fetch', ...) stubs below keep driving it.
 vi.mock('electron', () => ({
   net: { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) }
 }))
@@ -19,7 +17,6 @@ const CREATE_REQUEST = {
 
 const EXCHANGE_REQUEST = { code: 'dlc_test-code', code_verifier: 'verifier-value' }
 
-/** fetch stub that resolves headers but leaves the response body open. */
 function stalledBodyFetch(): typeof fetch {
   return (...args: Parameters<typeof fetch>) => {
     const signal = args[1]?.signal
@@ -292,9 +289,6 @@ describe('grant timing validation', () => {
 })
 
 describe('retryable status classification', () => {
-  // Each sign-in issues tens of exchange polls, so a rate limiter on the
-  // endpoint is expected. Treating 429 as terminal would kill a sign-in whose
-  // code and browser tab are both still valid.
   it.each([408, 429, 500, 503])('treats %i as retryable', async (status) => {
     vi.stubGlobal(
       'fetch',

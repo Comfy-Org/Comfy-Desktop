@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import { createPinia, setActivePinia } from 'pinia'
 
-import { en } from '../lib/i18nMessages.ts'
 import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import BrandVariantList from '../components/BrandVariantList.vue'
@@ -11,16 +9,12 @@ import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
-
 function mountModal() {
   const pinia = createPinia()
   setActivePinia(pinia)
   return mount(InstallWizardModal, {
     global: {
-      plugins: [makeI18n(), pinia],
+      plugins: [pinia],
       stubs: {
         BrandTakeoverLayout: {
           template: '<div><slot /><slot name="footer-left" /><slot name="footer" /></div>'
@@ -66,13 +60,14 @@ beforeEach(() => {
 })
 
 describe('InstallWizardModal heading', () => {
-  it('uses the new-instance title and local-install subtitle', async () => {
+  it('uses the install-build title and local-install subtitle', async () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('.brand-title').text()).toBe('Create a New Instance')
-    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-title').text()).toBe('Install a New Build')
+    expect(wrapper.find('[aria-label="Install a New Build"]').exists()).toBe(true)
+    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
   })
 
   it('shows signed-out local fields directly like the Public workspace tab', async () => {
@@ -196,10 +191,8 @@ describe('InstallWizardModal starter template disk gate', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
     await wrapper.get('.config-continue').trigger('click')
-    // The disk-space probe is debounced.
     await vi.waitFor(() => expect(window.api.getDiskSpace).toHaveBeenCalled(), { timeout: 5000 })
     await flushPromises()
-    // Nothing is pre-selected: the user picks the card.
     await wrapper.get('.tps__card').trigger('click')
     await flushPromises()
     return wrapper
@@ -430,7 +423,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('.config-advanced').classes()).toContain('config-advanced--direct')
     expect(wrapper.get('.config-advanced').classes()).toContain('is-open')
@@ -558,7 +551,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
     expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(4_500)
@@ -584,7 +577,6 @@ describe('InstallWizardModal workspace Builds', () => {
     })
     const wrapper = await openWorkspaceModal()
 
-    // Visit Standalone (loads template options), then return to Managed.
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
@@ -630,7 +622,7 @@ describe('InstallWizardModal workspace Builds', () => {
     signInToWorkspace([])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('.brand-lead').text()).toBe('Set up a fresh ComfyUI environment.')
+    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
@@ -916,7 +908,6 @@ describe('InstallWizardModal hardware warning', () => {
     ).not.toBe(0)
     expect(gpuField.parentElement).toBe(wrapper.get('.config-install-meta').element)
     expect(wrapper.get('.config-install-separator').text()).toBe('·')
-    expect(wrapper.get('.config-gpu-value').classes()).toContain('disk-space-info')
     expect(wrapper.get('.config-gpu-value').text()).toBe('detected GPU: Radeon RX 7900')
   })
 
@@ -942,7 +933,6 @@ describe('InstallWizardModal hardware warning', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    // Standalone is auto-selected; the warning shows.
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(true)
 
     const remotePill = wrapper
@@ -952,7 +942,6 @@ describe('InstallWizardModal hardware warning', () => {
     await remotePill!.trigger('click')
     await flushPromises()
 
-    // Remote installs run on other hardware; local GPU access is irrelevant.
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
   })
 })

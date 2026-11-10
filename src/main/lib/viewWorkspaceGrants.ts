@@ -60,13 +60,11 @@ export class ViewWorkspaceGrants {
     private readonly mint: MintWorkspaceToken = mintWorkspaceToken
   ) {}
 
-  /** Desktop UI (sign-in, dashboard) chose `workspaceId`: every view may hold it. */
   allowDesktop(workspaceId: string | undefined): void {
     this.seed()
     if (workspaceId) this.desktopAllowed.add(workspaceId)
   }
 
-  /** `view` itself asked to switch to `workspaceId`. */
   allowView(view: WebContents, workspaceId: string): void {
     this.seed()
     const allowed = this.viewAllowed.get(view) ?? new Set<string>()
@@ -74,7 +72,6 @@ export class ViewWorkspaceGrants {
     this.viewAllowed.set(view, allowed)
   }
 
-  /** Sign-in or sign-out: forget every allowlist and token, and drop replies in flight. */
   endAll(): void {
     this.epoch += 1
     this.seeded = true
@@ -149,13 +146,11 @@ export class ViewWorkspaceGrants {
 
 let grants: ViewWorkspaceGrants | null = null
 
-/** The process-wide view grants, bound to the shared CloudSession. */
 export function getViewWorkspaceGrants(): ViewWorkspaceGrants {
   if (!grants) grants = new ViewWorkspaceGrants(getCloudSession())
   return grants
 }
 
-/** @internal: reset the singleton between tests. */
 export function _resetForTest(): void {
   grants = null
 }

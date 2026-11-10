@@ -1,102 +1,94 @@
-/**
- * Eval-bridge helpers for asserting against renderer DOM in WebContentsViews.
- * `connectOverCDP` hangs here: the host BrowserWindow has no DOM and child
- * WebContentsView targets aren't exposed as Pages, so we run
- * `executeJavaScript` against each webContents via `app.evaluate()` instead.
- */
 import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { evalWithRetry } from './evalRetry'
 
 export function findWebContentsId(
   app: ElectronApplication,
-  marker: string,
+  marker: string
 ): Promise<number | null> {
-  return evalWithRetry(() => app.evaluate(({ BrowserWindow, WebContentsView, webContents }, m) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      for (const child of win.contentView.children) {
-        if (!(child instanceof WebContentsView) || !child.getVisible()) continue
-        if (child.webContents.getURL().includes(m)) return child.webContents.id
+  return evalWithRetry(() =>
+    app.evaluate(({ BrowserWindow, WebContentsView, webContents }, m) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        for (const child of win.contentView.children) {
+          if (!(child instanceof WebContentsView) || !child.getVisible()) continue
+          if (child.webContents.getURL().includes(m)) return child.webContents.id
+        }
       }
-    }
-    for (const wc of webContents.getAllWebContents()) {
-      if (wc.getURL().includes(m)) return wc.id
-    }
-    return null
-  }, marker))
+      for (const wc of webContents.getAllWebContents()) {
+        if (wc.getURL().includes(m)) return wc.id
+      }
+      return null
+    }, marker)
+  )
 }
 
-/** Wait until a webContents whose URL contains `marker` exists. */
 export async function waitForWebContents(
   app: ElectronApplication,
   marker: string,
-  timeoutMs = 30_000,
+  timeoutMs = 30_000
 ): Promise<number> {
   let id: number | null = null
-  await expect.poll(
-    async () => {
-      id = await findWebContentsId(app, marker)
-      return id !== null
-    },
-    { timeout: timeoutMs, intervals: [250, 500, 1000] },
-  ).toBe(true)
+  await expect
+    .poll(
+      async () => {
+        id = await findWebContentsId(app, marker)
+        return id !== null
+      },
+      { timeout: timeoutMs, intervals: [250, 500, 1000] }
+    )
+    .toBe(true)
   return id!
 }
 
-/**
- * Page-like facade over a WebContentsView's webContents. Re-resolves the
- * webContents id each call so it survives reloads while the URL marker matches.
- */
 export class WebContentsPage {
   constructor(
     private readonly app: ElectronApplication,
-    private readonly marker: string,
+    private readonly marker: string
   ) {}
 
   private async wcEval<T>(expr: string): Promise<T> {
     return this.evaluate<T>(expr)
   }
 
-  /** Evaluate an arbitrary JS expression in the matching webContents. */
   async evaluate<T>(expr: string): Promise<T> {
     const id = await findWebContentsId(this.app, this.marker)
     if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-    return evalWithRetry(() => this.app.evaluate(async ({ webContents }, payload) => {
-      const wc = webContents.fromId(payload.id)
-      if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-      return wc.executeJavaScript(payload.expr) as Promise<unknown>
-    }, { id, expr })) as Promise<T>
+    return evalWithRetry(() =>
+      this.app.evaluate(
+        async ({ webContents }, payload) => {
+          const wc = webContents.fromId(payload.id)
+          if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+          return wc.executeJavaScript(payload.expr) as Promise<unknown>
+        },
+        { id, expr }
+      )
+    ) as Promise<T>
   }
 
   url(): Promise<string> {
     return this.wcEval<string>('location.href')
   }
 
-  /** True iff at least one element matches the CSS selector. */
   exists(selector: string): Promise<boolean> {
     return this.wcEval<boolean>(`!!document.querySelector(${JSON.stringify(selector)})`)
   }
 
-  /** Element count matching the selector. */
   count(selector: string): Promise<number> {
     return this.wcEval<number>(`document.querySelectorAll(${JSON.stringify(selector)}).length`)
   }
 
-  /** Text content of the first matching element, or null if none. */
   textOf(selector: string): Promise<string | null> {
     return this.wcEval<string | null>(
-      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? (el.textContent || '').trim() : null })()`,
+      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? (el.textContent || '').trim() : null })()`
     )
   }
 
-  /** All text contents matching the selector. */
   allText(selector: string): Promise<string[]> {
     return this.wcEval<string[]>(
-      `Array.from(document.querySelectorAll(${JSON.stringify(selector)})).map(el => (el.textContent || '').trim())`,
+      `Array.from(document.querySelectorAll(${JSON.stringify(selector)})).map(el => (el.textContent || '').trim())`
     )
   }
 
-  /** True iff the first match is visible (display + size > 0, opacity > 0). */
   isVisible(selector: string): Promise<boolean> {
     return this.wcEval<boolean>(`(() => {
       const el = document.querySelector(${JSON.stringify(selector)})
@@ -108,39 +100,76 @@ export class WebContentsPage {
     })()`)
   }
 
-  /** Click the first matching element. Returns false if not found. */
+  private async sendClick(elementExpression: string): Promise<'clicked' | 'missing' | 'blocked'> {
+    const id = await findWebContentsId(this.app, this.marker)
+    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+    return this.app.evaluate(
+      async ({ BrowserWindow, WebContentsView, webContents }, payload) => {
+        const wc = webContents.fromId(payload.id)
+        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+        const win = BrowserWindow.getAllWindows().find(
+          (candidate) =>
+            candidate.webContents === wc ||
+            candidate.contentView.children.some(
+              (child) => child instanceof WebContentsView && child.webContents === wc
+            )
+        )
+        win?.focus()
+        wc.focus()
+        const point = (await wc.executeJavaScript(`(async () => {
+        const deadline = performance.now() + 5000
+        for (;;) {
+          const el = ${payload.elementExpression}
+          if (!el) return 'missing'
+          el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+          const rect = el.getBoundingClientRect()
+          const left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right)
+          const top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom)
+          const x = Math.floor((left + right) / 2), y = Math.floor((top + bottom) / 2)
+          const hit = document.elementFromPoint(x, y)
+          if (right > left && bottom > top && hit && el.contains(hit)) {
+            window.__e2eInputHandled = new Promise(resolve => {
+              window.addEventListener('mouseup', () => setTimeout(resolve), { capture: true, once: true })
+            })
+            return { x, y }
+          }
+          if (performance.now() >= deadline) return 'blocked'
+          await new Promise(resolve => setTimeout(resolve, 50))
+        }
+      })()`)) as { x: number; y: number } | 'missing' | 'blocked'
+        if (typeof point === 'string') return point
+        wc.sendInputEvent({ type: 'mouseMove', ...point })
+        wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
+        wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+        await Promise.race([
+          wc.executeJavaScript('window.__e2eInputHandled').catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, 1000))
+        ])
+        return 'clicked'
+      },
+      { id, elementExpression }
+    )
+  }
+
+  private async clickElement(elementExpression: string): Promise<boolean> {
+    const outcome = await this.sendClick(elementExpression)
+    if (outcome === 'blocked') {
+      throw new Error(
+        `click: element is covered or has no interactive area (${elementExpression}, marker=${this.marker})`
+      )
+    }
+    return outcome === 'clicked'
+  }
+
   click(selector: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)})
-      if (!el) return false
-      el.click()
-      return true
-    })()`)
+    return this.clickElement(`document.querySelector(${JSON.stringify(selector)})`)
   }
 
-  /** Click the nth (0-based) element matching `selector`. Returns false
-   *  if fewer than `index + 1` elements match. */
   clickNth(selector: string, index: number): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
-      const els = document.querySelectorAll(${JSON.stringify(selector)})
-      const el = els[${index}]
-      if (!el) return false
-      el.click()
-      return true
-    })()`)
+    return this.clickElement(`document.querySelectorAll(${JSON.stringify(selector)})[${index}]`)
   }
 
-  /**
-   * Fill an input through Electron's real text-input pipeline: focus +
-   * select-all in the page, then `webContents.insertText`, which routes
-   * through the renderer's IME/input path and fires real `beforeinput` /
-   * `input` events - unlike assigning `.value` and dispatching synthetic
-   * events, which bypasses the browser's input handling entirely.
-   */
   async fill(selector: string, text: string): Promise<void> {
-    // Each retry attempt re-focuses and re-selects before inserting so a
-    // retried insert replaces the previous attempt's text instead of
-    // appending to it, then verifies the resulting value.
     await evalWithRetry(async () => {
       const focused = await this.wcEval<boolean>(`(() => {
         const el = document.querySelector(${JSON.stringify(selector)})
@@ -149,88 +178,99 @@ export class WebContentsPage {
         if (typeof el.select === 'function') el.select()
         return document.activeElement === el
       })()`)
-      if (!focused) throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
+      if (!focused)
+        throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
       const id = await findWebContentsId(this.app, this.marker)
       if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-      await this.app.evaluate(async ({ webContents }, payload) => {
-        const wc = webContents.fromId(payload.id)
-        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
-        await wc.insertText(payload.text)
-      }, { id, text })
+      await this.app.evaluate(
+        async ({ webContents }, payload) => {
+          const wc = webContents.fromId(payload.id)
+          if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+          await wc.insertText(payload.text)
+        },
+        { id, text }
+      )
       const value = await this.wcEval<string | null>(`(() => {
         const el = document.querySelector(${JSON.stringify(selector)})
         return el && 'value' in el ? el.value : null
       })()`)
       if (value !== text) {
-        throw new Error(`fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`)
+        throw new Error(
+          `fill: value mismatch after insertText (expected ${JSON.stringify(text)}, got ${JSON.stringify(value)})`
+        )
       }
     })
   }
 
-  /**
-   * Click the first element matching `selector` whose textContent contains
-   * `textSubstring` (case-insensitive). Returns false if no match.
-   */
   clickByText(selector: string, textSubstring: string): Promise<boolean> {
-    return this.wcEval<boolean>(`(() => {
+    return this.clickElement(`(() => {
       const needle = ${JSON.stringify(textSubstring.toLowerCase())}
       const els = Array.from(document.querySelectorAll(${JSON.stringify(selector)}))
-      const match = els.find(el => (el.textContent || '').toLowerCase().includes(needle))
-      if (!match) return false
-      match.click()
-      return true
+      return els.find(el => (el.textContent || '').toLowerCase().includes(needle))
     })()`)
   }
 
-  /** Press a key by dispatching a KeyboardEvent (limited; for Escape/Enter and similar). */
-  pressKey(key: string): Promise<void> {
-    return this.wcEval<void>(`(() => {
-      const ev = new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true })
-      document.dispatchEvent(ev)
-    })()`)
+  async pressKey(key: string): Promise<void> {
+    const id = await findWebContentsId(this.app, this.marker)
+    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+    const aliases: Record<string, string> = {
+      ArrowDown: 'Down',
+      ArrowUp: 'Up',
+      ArrowLeft: 'Left',
+      ArrowRight: 'Right',
+      ' ': 'Space'
+    }
+    const keyCode = aliases[key] ?? key
+    await this.app.evaluate(
+      async ({ webContents }, payload) => {
+        const wc = webContents.fromId(payload.id)
+        if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
+        wc.focus()
+        await wc.executeJavaScript(`void (window.__e2eInputHandled = new Promise(resolve => {
+        window.addEventListener('keydown', () => setTimeout(resolve), { capture: true, once: true })
+      }))`)
+        wc.sendInputEvent({ type: 'keyDown', keyCode: payload.keyCode })
+        wc.sendInputEvent({ type: 'keyUp', keyCode: payload.keyCode })
+        await Promise.race([
+          wc.executeJavaScript('window.__e2eInputHandled').catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, 1000))
+        ])
+      },
+      { id, keyCode }
+    )
   }
 
-  /** Wait until `pred` returns true, polling the webContents. */
   async waitFor(
     pred: () => Promise<boolean> | boolean,
-    opts: { timeout?: number; message?: string } = {},
+    opts: { timeout?: number; message?: string } = {}
   ): Promise<void> {
-    await expect.poll(async () => pred(), {
-      timeout: opts.timeout ?? 15_000,
-      intervals: [200, 400, 800],
-      message: opts.message,
-    }).toBe(true)
+    await expect
+      .poll(async () => pred(), {
+        timeout: opts.timeout ?? 15_000,
+        intervals: [200, 400, 800],
+        message: opts.message
+      })
+      .toBe(true)
   }
 
-  /** Wait until at least one element matches `selector`. */
   waitForSelector(selector: string, opts: { timeout?: number } = {}): Promise<void> {
     return this.waitFor(() => this.exists(selector), {
       timeout: opts.timeout,
-      message: `selector ${selector} did not appear`,
+      message: `selector ${selector} did not appear`
     })
   }
 
-  /** Wait until at least one element is visible (display + size > 0). */
   waitForVisible(selector: string, opts: { timeout?: number } = {}): Promise<void> {
     return this.waitFor(() => this.isVisible(selector), {
       timeout: opts.timeout,
-      message: `selector ${selector} did not become visible`,
+      message: `selector ${selector} did not become visible`
     })
   }
 
-  /** Click a toggle `trigger` until `result` becomes visible. A DOM
-   *  `.click()` can dispatch before the component's handler is attached
-   *  (or while the trigger is still disabled) on slow hosted CI runners,
-   *  silently swallowing the click on overflow menus and expandable rows.
-   *  The re-click decision reads the trigger's `aria-expanded` state
-   *  (accordion bodies stay mounted while collapsed, so result-in-DOM is
-   *  not proof the click landed), falling back to result DOM presence for
-   *  triggers without the attribute. Never re-clicks an open toggle, so
-   *  it cannot toggle one shut. */
   async clickUntilVisible(
     trigger: string,
     result: string,
-    opts: { timeout?: number } = {},
+    opts: { timeout?: number } = {}
   ): Promise<void> {
     const deadline = Date.now() + (opts.timeout ?? 30_000)
     for (;;) {
@@ -244,34 +284,28 @@ export class WebContentsPage {
       if (state === 'missing') {
         throw new Error(`clickUntilVisible: trigger ${trigger} not found`)
       }
-      if (state === 'closed') await this.click(trigger)
+      if (state === 'closed')
+        await this.sendClick(`document.querySelector(${JSON.stringify(trigger)})`)
       const remaining = deadline - Date.now()
       if (remaining <= 0) {
-        throw new Error(`clickUntilVisible: ${result} did not become visible after clicking ${trigger}`)
+        throw new Error(
+          `clickUntilVisible: ${result} did not become visible after clicking ${trigger}`
+        )
       }
       try {
         await this.waitForVisible(result, { timeout: Math.min(2_000, remaining) })
         return
-      } catch { /* re-evaluate the toggle state and retry until deadline */ }
+      } catch {}
     }
   }
 
-  /** Drive a BaseSelect until the selection actually lands: open the
-   *  trigger's listbox (via `aria-expanded`), click the option whose text
-   *  contains `optionLabel`, and confirm the trigger text reflects it. The
-   *  option click is a raw DOM `.click()`; a store-driven re-render can swap
-   *  the option node between query and dispatch and silently swallow the
-   *  selection, so the whole open-then-pick cycle retries until the trigger
-   *  proves the selection landed. */
   async selectOption(
     trigger: string,
     optionLabel: string,
-    opts: { timeout?: number } = {},
+    opts: { timeout?: number } = {}
   ): Promise<void> {
     const deadline = Date.now() + (opts.timeout ?? 15_000)
     for (;;) {
-      // Exact (trimmed) match: the trigger renders only the selected label,
-      // and a substring check would let a prefix look-alike pass for it.
       if ((await this.textOf(trigger))?.trim() === optionLabel) return
       const state = await this.wcEval<'missing' | 'open' | 'closed'>(`(() => {
         const t = document.querySelector(${JSON.stringify(trigger)})
@@ -282,9 +316,14 @@ export class WebContentsPage {
         throw new Error(`selectOption: trigger ${trigger} not found`)
       }
       if (state === 'closed') {
-        await this.click(trigger)
+        await this.sendClick(`document.querySelector(${JSON.stringify(trigger)})`)
       } else {
-        await this.clickByText('.ui-select-option', optionLabel)
+        await this.sendClick(`(() => {
+          const trigger = document.querySelector(${JSON.stringify(trigger)})
+          const listbox = document.getElementById(trigger?.getAttribute('aria-controls') || '')
+          return Array.from(listbox?.querySelectorAll('[role="option"]') || []).find(option =>
+            option.querySelector('.ui-select-option-label')?.textContent.trim() === ${JSON.stringify(optionLabel)})
+        })()`)
       }
       if (Date.now() > deadline) {
         throw new Error(`selectOption: "${optionLabel}" did not land on ${trigger}`)
@@ -294,72 +333,58 @@ export class WebContentsPage {
   }
 }
 
-/** WebContentsPage for the chooser/lifecycle/etc panel body. */
 export function panelPage(app: ElectronApplication): WebContentsPage {
   return new WebContentsPage(app, 'panel.html')
 }
 
-/** WebContentsPage for the host's native title bar. */
 export function titleBarPage(app: ElectronApplication): WebContentsPage {
   return new WebContentsPage(app, 'comfyTitleBar.html')
 }
 
-/** WebContentsPage for the title-bar dropdown popup (waffle / downloads). */
 export function titlePopupPage(app: ElectronApplication): WebContentsPage {
   return new WebContentsPage(app, 'comfyTitlePopup.html')
 }
 
-/** WebContentsPage for the shell-level system-modal popup. */
 export function systemModalPage(app: ElectronApplication): WebContentsPage {
   return new WebContentsPage(app, 'comfySystemModal.html')
 }
 
-/**
- * True iff the WebContentsView matching `marker` is `setVisible(true)` and
- * has non-zero bounds - the EmbeddedPopupView contract for "shown to user".
- */
-export function isPopupVisible(
-  app: ElectronApplication,
-  marker: string,
-): Promise<boolean> {
-  return evalWithRetry(() => app.evaluate(({ BrowserWindow, WebContentsView }, m) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      for (const child of win.contentView.children) {
-        if (!(child instanceof WebContentsView)) continue
-        if (!child.webContents.getURL().includes(m)) continue
-        if (!child.getVisible()) return false
-        const b = child.getBounds()
-        return b.width > 0 && b.height > 0
+export function isPopupVisible(app: ElectronApplication, marker: string): Promise<boolean> {
+  return evalWithRetry(() =>
+    app.evaluate(({ BrowserWindow, WebContentsView }, m) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        for (const child of win.contentView.children) {
+          if (!(child instanceof WebContentsView)) continue
+          if (!child.webContents.getURL().includes(m)) continue
+          if (!child.getVisible()) return false
+          const b = child.getBounds()
+          return b.width > 0 && b.height > 0
+        }
       }
-    }
-    return false
-  }, marker))
-    // A popup/webContents torn down mid-evaluate destroys the execution
-    // context; treat that as "not visible" rather than failing the test.
-    .catch(() => false)
+      return false
+    }, marker)
+  ).catch(() => false)
 }
 
-/** Force-close the title popup via its bridge if it is currently visible. */
 export async function closeTitlePopupIfOpen(app: ElectronApplication): Promise<void> {
   const id = await findWebContentsId(app, 'comfyTitlePopup.html')
   if (id === null) return
   if (!(await isPopupVisible(app, 'comfyTitlePopup.html'))) return
-  // Retried: closing an already-closed popup is a no-op, so re-running the
-  // callback after a lost result is safe.
-  await evalWithRetry(() => app.evaluate(({ webContents }) => {
-    const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('comfyTitlePopup.html'))
-    if (!wc) return
-    return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
-  })).catch(() => {
-    // Popup dismissed between the visibility check and the close call -
-    // already in the desired state.
-  })
-  await expect.poll(
-    () => isPopupVisible(app, 'comfyTitlePopup.html'),
-    { timeout: 3_000, intervals: [100, 200] },
-  ).toBe(false)
+  await evalWithRetry(() =>
+    app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().includes('comfyTitlePopup.html'))
+      if (!wc) return
+      return wc.executeJavaScript(`(window).__comfyTitlePopup.close()`)
+    })
+  ).catch(() => {})
+  await expect
+    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {
+      timeout: 3_000,
+      intervals: [100, 200]
+    })
+    .toBe(false)
 }
 
-/** Wait past the title bar's 100ms reopen-suppression debounce; padded
- *  so CI timer drift can't push the wait under the suppression window. */
 export const TITLE_REOPEN_SUPPRESSION_MS = 300

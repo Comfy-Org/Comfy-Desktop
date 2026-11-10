@@ -1,11 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}:${JSON.stringify(params)}` : key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const mockModalConfirm = vi.hoisted(() => vi.fn())
 const mockModalAlert = vi.hoisted(() => vi.fn())
@@ -42,8 +39,8 @@ vi.mock('../lib/telemetry', () => ({
 }))
 
 const mockRunAction = vi.hoisted(() => vi.fn())
-;(globalThis as unknown as { window: { api: { runAction: typeof mockRunAction } } }).window = {
-  api: { runAction: mockRunAction }
+;(window as unknown as { api: { runAction: typeof mockRunAction } }).api = {
+  runAction: mockRunAction
 }
 
 import { useListAction } from './useListAction'
@@ -54,7 +51,6 @@ function makeInstall(overrides: Partial<Installation> = {}): Installation {
     id: 'inst-1',
     name: 'Legacy Desktop',
     sourceLabel: 'Legacy Desktop',
-    // Legacy Desktop reports category `local`; the `desktop` sourceId is the marker.
     sourceCategory: 'local',
     sourceId: 'desktop',
     status: 'installed',
@@ -83,8 +79,8 @@ describe('useListAction — desktop launch interceptor', () => {
   it('on confirm: emits show-progress with an apiCall that chains migrate → launch', async () => {
     mockModalConfirm.mockResolvedValueOnce(true)
     mockRunAction
-      .mockResolvedValueOnce({ ok: true, newInstallationId: 'inst-adopted-1' }) // migrate-to-standalone
-      .mockResolvedValueOnce({ ok: true }) // launch on adopted
+      .mockResolvedValueOnce({ ok: true, newInstallationId: 'inst-adopted-1' })
+      .mockResolvedValueOnce({ ok: true })
 
     const showProgress = vi.fn()
     const { executeAction } = useListAction('chooser', { showProgress })
@@ -93,7 +89,7 @@ describe('useListAction — desktop launch interceptor', () => {
 
     expect(mockModalConfirm).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'desktop.migrateBeforeLaunchTitle'
+        title: 'Migrate before launching?'
       })
     )
     expect(showProgress).toHaveBeenCalledOnce()
@@ -194,8 +190,6 @@ describe('useListAction.executeAction onGuardsPassed hook', () => {
 
     expect(onGuardsPassed).toHaveBeenCalledOnce()
     expect(showProgress).toHaveBeenCalledOnce()
-    // Hook must fire BEFORE showProgress so the chooser claim is in place
-    // by the time the launch op is dispatched.
     expect(onGuardsPassed.mock.invocationCallOrder[0]).toBeLessThan(
       showProgress.mock.invocationCallOrder[0]
     )

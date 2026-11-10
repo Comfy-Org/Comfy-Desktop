@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Stub every handler module and the broadcast helper so the dispatch wrapper
-// can be exercised without an Electron runtime or datastore.
 const broadcast = vi.fn<(channel: string, data: unknown) => void>()
 const delegate = vi.fn<() => Promise<{ ok: boolean }>>()
 const launch = vi.fn<() => Promise<{ ok: boolean }>>()
@@ -107,16 +105,13 @@ describe('dispatchSessionAction operation tracking', () => {
     let finishOuter!: (value: { ok: boolean }) => void
     const outerGate = new Promise<{ ok: boolean }>((resolve) => (finishOuter = resolve))
     delegate.mockImplementation(async () => {
-      // Simulate a handler that dispatches a nested action mid-flight.
       await dispatchSessionAction(ctx(), 'launch')
       return outerGate
     })
 
     const pending = dispatchSessionAction(ctx(), 'update-comfyui')
-    // Yield so the nested dispatch inside the mock has run and finished.
     await vi.waitFor(() => expect(launch).toHaveBeenCalled())
 
-    // The nested launch must not have announced itself or cleared the outer op.
     expect(_getActiveOperations()).toEqual([
       { installationId: 'inst-1', actionId: 'update-comfyui' }
     ])

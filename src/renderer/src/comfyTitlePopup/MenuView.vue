@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 
 interface MenuItem {
   id?: string
-  /** English fallback when `labelKey` is set. */
   label?: string
   labelKey?: string
   checked?: boolean
@@ -34,64 +33,25 @@ function handleClick(item: MenuItem): void {
 </script>
 
 <template>
-  <ul class="menu">
+  <ul class="menu m-0 list-none p-1">
     <template v-for="(item, idx) in items" :key="idx">
-      <li v-if="item.kind === 'separator'" class="separator" role="separator" />
-      <li v-else class="item" role="menuitem" tabindex="-1" @click="handleClick(item)">
-        <span class="check">
+      <li
+        v-if="item.kind === 'separator'"
+        class="separator mx-1.5 my-1 h-px bg-border opacity-100"
+        role="separator"
+      />
+      <li
+        v-else
+        class="item box-border flex h-8 cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-0 whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-[oklch(1_0_0/0.07)]"
+        role="menuitem"
+        tabindex="-1"
+        @click="handleClick(item)"
+      >
+        <span class="check inline-flex size-3.5 shrink-0 items-center justify-center opacity-85">
           <Check v-if="item.checked" :size="14" />
         </span>
-        <span class="label">{{ labelFor(item) }}</span>
+        <span class="label flex-auto overflow-hidden text-ellipsis">{{ labelFor(item) }}</span>
       </li>
     </template>
   </ul>
 </template>
-
-<style scoped>
-.menu {
-  list-style: none;
-  margin: 0;
-  padding: 4px 0;
-}
-
-.item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  height: 28px;
-  box-sizing: border-box;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 0.08s;
-}
-.item:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-:global(.popup.is-light) .item:hover {
-  background: rgba(0, 0, 0, 0.07);
-}
-
-.check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  opacity: 0.85;
-}
-
-.label {
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.separator {
-  height: 1px;
-  margin: 4px 8px;
-  background: var(--border, #494a50);
-  opacity: 0.6;
-}
-</style>

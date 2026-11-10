@@ -3,11 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { firstUseModeForOverlaySwap } from './usePanelOverlays'
 import type { Overlay } from '../composables/useOverlay'
 
-// Pins the overlay-watcher lockdown decisions: the first-use chain
-// handoff must not clobber the chain's 'post-consent' assert, while a
-// stale chain flag must never suppress the 'none' push on ordinary
-// overlay closes (the Skip Onboarding lockdown bug's regression case).
-
 const progressTakeover: Overlay = { kind: 'takeover', component: 'update' }
 const firstUseTakeover: Overlay = { kind: 'takeover', component: 'first-use' }
 const newInstallTakeover: Overlay = { kind: 'takeover', component: 'new-install' }

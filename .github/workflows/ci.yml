@@ -26,10 +26,6 @@ jobs:
       - name: Ensure PP Formula is not committed
         run: |
           set -euo pipefail
-          # PP Formula (Pangram Pangram) is license-restricted and must never be
-          # committed to this public repo. It is fetched at build time from
-          # gs://comfy-org-fonts (see scripts/fetch-font.mjs). This guard fails
-          # the build if any PP Formula binary is tracked in git.
           matches="$(git ls-files '*PPFormula*' '*ppformula*' '*pp-formula*' '*pp_formula*' || true)"
           if [ -n "$matches" ]; then
             echo "::error::Proprietary PP Formula font files are committed to the repo:"
@@ -42,7 +38,7 @@ jobs:
 
   checks:
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.needs_browser && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,6 +51,7 @@ jobs:
             command: pnpm run typecheck && pnpm run bridge-types:check
           - name: Test
             command: pnpm run test
+            needs_browser: true
           - name: Test (integration)
             command: pnpm run test:integration
 
@@ -73,6 +70,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for browser tests
+        if: matrix.needs_browser
+        run: pnpm exec playwright install --with-deps --only-shell chromium
 
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
@@ -113,16 +114,12 @@ jobs:
       - name: Require a version bump when the contract changes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          # The checked-out tree is the merge ref, which already carries main's
-          # later commits; diff the branch tip so only this change is measured.
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
           PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
           MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          # Glob the declarations: tsc emits one file per source module, so the
-          # set is not fixed.
           if git diff --quiet "$MERGE_BASE" "$HEAD_SHA" -- \
             src/types/comfyDesktopBridge.ts \
             'packages/comfyui-desktop-bridge-types/*.d.ts' \
@@ -135,10 +132,7 @@ jobs:
           read_version() { git show "$1:$PACKAGE_JSON" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version"; }
           BASE_VERSION=$(read_version "$MERGE_BASE")
           HEAD_VERSION=$(read_version "$HEAD_SHA")
-          # Exported, not just assigned: the comparator reads them from env.
           export BASE_VERSION HEAD_VERSION
-          # Prerelease-aware precedence, inline so an unrelated registry outage
-          # cannot fail this PR. Build metadata is ignored, per semver.
           if ! node -e '
             const parse = (v) => {
               const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v)

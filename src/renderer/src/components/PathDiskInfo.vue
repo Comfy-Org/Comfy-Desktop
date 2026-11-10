@@ -11,19 +11,31 @@ defineProps<{
 </script>
 
 <template>
-  <div v-if="pathIssues.includes('insideAppBundle')" class="field-error">
+  <div
+    v-if="pathIssues.includes('insideAppBundle')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.insideAppBundleMessage') }}
   </div>
-  <div v-else-if="pathIssues.includes('oneDrive')" class="field-error">
+  <div
+    v-else-if="pathIssues.includes('oneDrive')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.oneDriveMessage') }}
   </div>
-  <div v-else-if="pathIssues.includes('insideSharedDir')" class="field-error">
+  <div
+    v-else-if="pathIssues.includes('insideSharedDir')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.insideSharedDirMessage') }}
   </div>
-  <div v-else-if="pathIssues.includes('insideExistingInstall')" class="field-error">
+  <div
+    v-else-if="pathIssues.includes('insideExistingInstall')"
+    class="path-disk-error mt-1 min-h-0 text-[13px] text-[var(--danger)]"
+  >
     {{ $t('pathValidation.insideExistingInstallMessage') }}
   </div>
-  <div class="disk-space-info">
+  <div class="path-disk-info mt-1 min-h-[18px] text-[13px] text-text-muted">
     <template v-if="diskSpaceLoading">
       {{ $t('diskSpace.checking') }}
     </template>

@@ -53,8 +53,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ inputs.target_branch }}
-          # Use the bot token so the branch push is the bot's and triggers
-          # downstream workflows (the default GITHUB_TOKEN does not).
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Node.js
@@ -83,10 +81,6 @@ jobs:
           const channel = process.env.CHANNEL
           const pkgPath = 'package.json'
           const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
-          // Accept X.Y.Z, X.Y.Z-rc, or X.Y.Z-rc.N. Bare `-rc` (no `.N`)
-          // shows up when an earlier manual bump landed without the
-          // numeric suffix — treat it as `-rc.0` so the next rc bump
-          // produces `-rc.1` and a stable bump drops the suffix.
           const match = String(pkg.version).match(/^(\d+)\.(\d+)\.(\d+)(-rc(?:\.(\d+))?)?$/)
 
           if (!match) {
@@ -96,8 +90,6 @@ jobs:
           let major = Number(match[1])
           let minor = Number(match[2])
           let patch = Number(match[3])
-          // match[4] is the whole suffix (e.g. "-rc", "-rc.3", or undefined).
-          // match[5] is the explicit N. Missing N on a present suffix → 0.
           const currentRc = match[4] === undefined ? null : (match[5] === undefined ? 0 : Number(match[5]))
 
           const applyBaseBump = () => {
@@ -117,7 +109,6 @@ jobs:
 
           let nextVersion
           if (channel === 'stable') {
-            // stable: drop -rc suffix if present, otherwise apply the requested bump
             if (currentRc !== null) {
               nextVersion = `${major}.${minor}.${patch}`
             } else {
@@ -125,7 +116,6 @@ jobs:
               nextVersion = `${major}.${minor}.${patch}`
             }
           } else if (channel === 'rc') {
-            // rc: increment -rc.N if already on the same base, otherwise bump base and start at -rc.1
             if (currentRc !== null) {
               nextVersion = `${major}.${minor}.${patch}-rc.${currentRc + 1}`
             } else {
@@ -182,8 +172,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Last released tag (annotated or lightweight). If the repo has
-          # no tags yet (first release), fall back to the full history.
           LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
           if [ -n "${LAST_TAG}" ]; then
             RANGE="${LAST_TAG}..HEAD"
@@ -196,8 +184,6 @@ jobs:
           : > "${FEATS}"
           : > "${FIXES}"
 
-          # Group conventional commits by type. Strip the prefix/scope.
-          # Drop the version-bump commit itself (always a chore).
           while IFS= read -r line; do
             [ -z "${line}" ] && continue
             msg="$(printf '%s' "${line}" | sed -E 's/^(feat|fix|chore|docs|refactor|test|infra|ci|perf|build|style)(\([^)]*\))?(!)?: //')"
@@ -211,7 +197,6 @@ jobs:
             esac
           done < <(git log --no-merges --pretty='format:%s' "${RANGE}")
 
-          # Placeholder when a section is empty so the human notices.
           [ -s "${FEATS}" ] || echo "- _(no \`feat:\` commits since ${LAST_TAG:-repo start} — add highlights here)_" > "${FEATS}"
           [ -s "${FIXES}" ] || echo "- _(no \`fix:\` commits since ${LAST_TAG:-repo start} — add highlights here)_" > "${FIXES}"
 

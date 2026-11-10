@@ -1,14 +1,3 @@
-/**
- * Beta-args pill for a STOPPED install whose grant is a Core commit range.
- *
- * The next launch runs the checkout's current HEAD, so the preview proves the range against it
- * with read-only git, before any launch has happened. The fixture's ComfyUI dir is a real git
- * repository the spec moves and then damages: a HEAD below the range, and an object store git
- * cannot read, must both hide the grant without disturbing the rest of the settings view.
- *
- * Linux-only: `writeFakeComfyInstall` builds a shell-script interpreter.
- */
-
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -21,10 +10,14 @@ import {
   titlePopupPage,
   TITLE_REOPEN_SUPPRESSION_MS,
   waitForWebContents,
-  type WebContentsPage,
+  type WebContentsPage
 } from './support/cdpPages'
 import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
-import { opsFlagsGrantSeed, reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
+import {
+  opsFlagsGrantSeed,
+  reserveFreePort,
+  writeFakeComfyInstall
+} from './support/fakeComfyInstall'
 import { byTestId, TID } from './support/testIds'
 
 test.describe.configure({ mode: 'serial' })
@@ -40,7 +33,6 @@ let repo: string
 const sha: Record<string, string> = {}
 let previousPosthogHost: string | undefined
 
-/** Git variables a test run can inherit (from a hook, say) that would point git at another repo. */
 const INHERITED_GIT_STATE = [
   'GIT_DIR',
   'GIT_WORK_TREE',
@@ -65,8 +57,8 @@ function git(...args: string[]): string {
       GIT_COMMITTER_NAME: 't',
       GIT_COMMITTER_EMAIL: 't@example.com',
       GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: os.devNull,
-    },
+      GIT_CONFIG_GLOBAL: os.devNull
+    }
   }).trim()
 }
 
@@ -76,7 +68,6 @@ function commit(message: string): string {
 }
 
 test.beforeAll(async () => {
-  // Launching the app can run well past the 45s default on a loaded machine.
   test.setTimeout(120_000)
   previousPosthogHost = process.env['POSTHOG_HOST']
   process.env['POSTHOG_HOST'] = UNREACHABLE_POSTHOG_HOST
@@ -93,7 +84,7 @@ test.beforeAll(async () => {
       firstUseCompleted: true,
       telemetryEnabled: true,
       betaFeaturesEnabled: true,
-      hasSeenCentralPillHint: true,
+      hasSeenCentralPillHint: true
     },
     installations: [
       {
@@ -105,14 +96,19 @@ test.beforeAll(async () => {
         status: 'installed',
         launchArgs: `--port ${port}`,
         seen: true,
-        comfyVersion: { commit: sha.head, baseTag: 'v0.3.99', commitsAhead: 0, baseTagVerified: true },
-      },
+        comfyVersion: {
+          commit: sha.head,
+          baseTag: 'v0.3.99',
+          commitsAhead: 0,
+          baseTagVerified: true
+        }
+      }
     ],
     opsFlags: opsFlagsGrantSeed({
       arg: '--enable-asset-hashing',
       commitRanges: [[sha.fix!, null]],
-      description: 'Asset hashing',
-    }),
+      description: 'Asset hashing'
+    })
   })
   await expectChooserVisible(ctx.panel)
 })
@@ -128,7 +124,7 @@ async function openStartupArgs(): Promise<WebContentsPage> {
   await closeTitlePopupIfOpen(ctx.app)
   await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
   await ctx.panel.evaluate(
-    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`,
+    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_ID)}, initialTab: 'config' })`
   )
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -139,26 +135,19 @@ async function openStartupArgs(): Promise<WebContentsPage> {
 
 const pillLabel = (popup: WebContentsPage): Promise<string | null> =>
   popup.evaluate<string | null>(
-    `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`,
+    `document.querySelector(${JSON.stringify(PILL)})?.getAttribute('aria-label') ?? null`
   )
 
-/** Open with the request count reset, so absence can be read against this open's own answers. */
 async function openCounted(): Promise<WebContentsPage> {
   await resetIpcInvocations(ctx.app, 'get-core-beta-args')
   return openStartupArgs()
 }
 
-/**
- * The pill renders nothing both before its answer and for an empty one, so absence only means
- * something once the answers are in. A fresh open asks twice (on mount, and again once the args
- * field's schema load settles), so wait for both, then require no pill and no loading placeholder
- * for long enough that a late answer would have shown.
- */
 async function expectAnsweredWithNoPill(popup: WebContentsPage, message: string): Promise<void> {
   await expect
     .poll(async () => (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length, {
       timeout: 15_000,
-      intervals: [100, 200],
+      intervals: [100, 200]
     })
     .toBeGreaterThanOrEqual(2)
   const deadline = Date.now() + 2_000
@@ -185,7 +174,6 @@ test('moving HEAD below the range hides it @linux', async () => {
 })
 
 test('an object store git cannot read hides the grant, and the settings view still loads @linux', async () => {
-  // Point HEAD at a commit no earlier open has proven, so nothing cached can answer for it.
   sha.next = commit('next')
   const objects = path.join(repo, '.git', 'objects')
   for (const entry of await readdir(objects)) {

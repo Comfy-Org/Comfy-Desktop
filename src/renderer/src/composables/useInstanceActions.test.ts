@@ -88,8 +88,6 @@ describe('useInstanceActions.dispatch', () => {
     expect(bridge.openInstallNewWindow).toHaveBeenCalledWith('a', expect.objectContaining({}))
   })
 
-  // `allowDuplicate` is currently dormant (no cell sets it); this pins that the
-  // plumbing still passes it through if a future cell does.
   it('passes allowDuplicate through to openInstallNewWindow when a decision sets it', async () => {
     const bridge = makeBridge()
     await useInstanceActions(makeDeps(bridge)).dispatch(

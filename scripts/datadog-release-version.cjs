@@ -33,18 +33,12 @@ function readGitSha() {
   }
 }
 
-/** Datadog unified-service tag values must begin with a lowercase or uncased letter and
- * may only contain those letters, numbers, underscores, minuses, colons, periods, and
- * forward slashes. Keep release and sourcemap versions identical by normalizing once at
- * their shared source. Reserve eight characters for the `version:` tag prefix. */
 function normalizeDatadogVersion(value, maxLength = DATADOG_VERSION_MAX_LENGTH) {
   if (maxLength < 24) throw new Error('Datadog version length budget is too small')
   const source = String(value || '').trim()
   if (!source) throw new Error('Datadog release version cannot be empty')
   const raw = source.toLowerCase()
 
-  // A SemVer build-metadata suffix containing a commit is the same release spelling used by
-  // our self-resolved path. Other lossy changes receive a deterministic hash suffix below.
   const commitMatch = raw.match(/^([^+]+)\+([a-f0-9]{7,64})$/i)
   const sourceCommitMatch = source.match(/^([^+]+)\+([a-f0-9]{7,64})$/i)
   const commitSuffix = commitMatch ? `-${commitMatch[2].toLowerCase().slice(0, 12)}` : ''
