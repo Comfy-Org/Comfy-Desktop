@@ -116,6 +116,24 @@ export interface Installation {
 
 export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
 
+export type AppRunsOn = 'cloud' | 'local'
+
+export interface AppCard {
+  id: string
+  title: string
+  description: string
+  page: string
+  runsOn: AppRunsOn[]
+  accent: [string, string] | null
+  sortOrder: number
+  hasCover: boolean
+}
+
+export interface AppsListing {
+  source: 'catalog' | 'website'
+  apps: AppCard[]
+}
+
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
 export interface AssetSummary {
@@ -1115,6 +1133,19 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
+  listApps(): Promise<AppsListing>
+  getAppCover(appId: string): Promise<string | null>
+  showApps(rect: {
+    x: number
+    y: number
+    width: number
+    height: number
+    page: string
+    fresh?: boolean
+  }): void
+  hideApps(): void
+  onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
+  onAppsBack(callback: () => void): Unsubscribe
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

@@ -2,6 +2,8 @@ export type {
   DashboardPage,
   AssetKind,
   AssetSummary,
+  AppCard,
+  AppRunsOn,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

@@ -99,6 +99,21 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
+    listApps: () => ipcRenderer.invoke('comfy-apps:list'),
+    getAppCover: (appId) => ipcRenderer.invoke('comfy-apps:cover', appId),
+    showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),
+    hideApps: () => ipcRenderer.send('comfy-apps:hide'),
+    onAppsLoadFailed: (callback) => {
+      const handler = (_event: IpcRendererEvent, info: unknown) =>
+        callback(info as Parameters<typeof callback>[0])
+      ipcRenderer.on('comfy-apps:load-failed', handler)
+      return () => ipcRenderer.removeListener('comfy-apps:load-failed', handler)
+    },
+    onAppsBack: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on('comfy-apps:back', handler)
+      return () => ipcRenderer.removeListener('comfy-apps:back', handler)
+    },
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
