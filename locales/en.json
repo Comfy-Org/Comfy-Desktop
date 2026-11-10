@@ -88,6 +88,7 @@
     "browseApps": "Browse apps"
   },
   "apps": {
+    "catalogFailed": "Couldn't load the apps.",
     "loadFailed": "The app at {url} could not load.",
     "tabsLabel": "Apps view",
     "tabs": {

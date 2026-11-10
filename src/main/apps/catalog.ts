@@ -1,8 +1,9 @@
+import { app } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import type { CatalogApp } from '../../types/ipc'
 import { appsOrigin, isAppsFrameUrl } from './guards'
 
-const CATALOG_SURFACE = process.env['COMFY_APPS_CATALOG_SURFACE'] || 'desktop_starters'
+const DESKTOP_SURFACE = 'desktop_starters'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
 const CATALOG_TIMEOUT_MS = 8000
 const THUMBNAIL_FIELDS = ['$.static_thumb', '$.hero_poster']
@@ -19,7 +20,11 @@ interface CatalogItem {
   } | null
 }
 
-export function catalogUrl(surface = CATALOG_SURFACE): string {
+function catalogSurface(): string {
+  return (!app.isPackaged && process.env['COMFY_APPS_CATALOG_SURFACE']) || DESKTOP_SURFACE
+}
+
+export function catalogUrl(surface = catalogSurface()): string {
   const url = new URL('/api/v1/catalog/items', CLOUD_CONFIG.issuer)
   url.searchParams.set('type', 'app')
   url.searchParams.set('surface', surface)
@@ -59,15 +64,18 @@ export function toCatalogApp(item: CatalogItem, listUrl: string): CatalogApp | n
   const url = appPageUrl(item, uid, listUrl)
   if (!url) return null
   const description = item.data?.description
-  const order = item.data?.sort_order
   return {
     id: uid,
     title,
     description: typeof description === 'string' ? description : '',
     thumbnailUrl: thumbnailUrl(item.data?.website_media),
-    url,
-    order: typeof order === 'number' && isFinite(order) ? order : Number.MAX_SAFE_INTEGER
+    url
   }
+}
+
+function sortOrder(item: CatalogItem): number {
+  const order = item.data?.sort_order
+  return typeof order === 'number' && isFinite(order) ? order : Number.MAX_SAFE_INTEGER
 }
 
 export async function listCatalogApps(listUrl: string): Promise<CatalogApp[]> {
@@ -75,8 +83,8 @@ export async function listCatalogApps(listUrl: string): Promise<CatalogApp[]> {
   if (!res.ok) throw new Error(`Catalog request failed: HTTP ${res.status}`)
   const body = (await res.json()) as { items?: unknown }
   const items = Array.isArray(body.items) ? (body.items as CatalogItem[]) : []
-  return items
+  return [...items]
+    .sort((a, b) => sortOrder(a) - sortOrder(b))
     .map((item) => toCatalogApp(item, listUrl))
-    .filter((app): app is CatalogApp => app !== null)
-    .sort((a, b) => a.order - b.order)
+    .filter((entry): entry is CatalogApp => entry !== null)
 }

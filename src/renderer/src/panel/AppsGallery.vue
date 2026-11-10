@@ -21,12 +21,13 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const apps = ref<CatalogApp[]>([])
 const loading = ref(true)
+const failed = ref(false)
 
 onMounted(async () => {
   try {
     apps.value = await window.api.listCatalogApps()
   } catch {
-    apps.value = []
+    failed.value = true
   } finally {
     loading.value = false
   }
@@ -59,6 +60,13 @@ onMounted(async () => {
         <Skeleton class="mx-2.5 h-2.5 w-3/4 rounded-full" />
       </li>
     </ul>
+    <p
+      v-else-if="failed"
+      class="m-0 text-ui text-muted-foreground"
+      data-testid="apps-catalog-failed"
+    >
+      {{ t('apps.catalogFailed') }}
+    </p>
     <p
       v-else-if="apps.length === 0"
       class="m-0 text-ui text-muted-foreground"
@@ -95,10 +103,10 @@ onMounted(async () => {
             <template #bottom>
               <CardBottom>
                 <span class="flex min-w-0 flex-col gap-0.5 px-2.5 pt-3 pb-2.5">
-                  <span class="truncate text-[14px]/5 font-medium text-foreground">
+                  <span class="truncate text-ui font-medium text-foreground">
                     {{ app.title }}
                   </span>
-                  <span v-if="app.description" class="truncate text-ui text-muted-foreground">
+                  <span v-if="app.description" class="line-clamp-2 text-ui text-muted-foreground">
                     {{ app.description }}
                   </span>
                 </span>

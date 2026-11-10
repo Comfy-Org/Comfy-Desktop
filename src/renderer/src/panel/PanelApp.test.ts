@@ -1238,6 +1238,23 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
+  it('opens the Apps page fresh each time Apps is clicked in the sidebar', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const listCatalogApps = vi.fn().mockResolvedValue([])
+    Object.assign(window.api, { listCatalogApps })
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(listCatalogApps).toHaveBeenCalledTimes(2)
+  })
+
   it("leaves a build's details when the window switches screens", async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()

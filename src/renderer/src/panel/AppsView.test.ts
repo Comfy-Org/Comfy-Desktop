@@ -84,8 +84,7 @@ function catalogApp(id: string, title: string): CatalogApp {
     title,
     description: `${title} description`,
     thumbnailUrl: `https://comfy.org/catalog-media/${id}/v1`,
-    url: `https://apps.example/apps/${id}/desktop.html`,
-    order: 0
+    url: `https://apps.example/apps/${id}/desktop.html`
   }
 }
 
@@ -161,6 +160,7 @@ describe('AppsView', () => {
     expect(hideApps).toHaveBeenCalled()
     expect(wrapper.find('h1').exists()).toBe(true)
     expect(wrapper.find('[data-testid="app-card-studio"]').exists()).toBe(true)
+    expect(listCatalogApps).toHaveBeenCalledOnce()
   })
 
   it('shows the address when an app cannot load, and opens it again from its card', async () => {
@@ -184,7 +184,7 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="apps-load-failed"]').exists()).toBe(false)
   })
 
-  it('shows Coming soon when the catalog has no apps or cannot be reached', async () => {
+  it('shows Coming soon for an empty catalog and says so when it cannot be reached', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
     const empty = await mountAssets([build('lab', 'Video Lab')])
     expect(empty.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
@@ -192,7 +192,10 @@ describe('AppsView', () => {
 
     listCatalogApps.mockRejectedValue(new Error('offline'))
     const offline = await mountAssets([build('lab', 'Video Lab')])
-    expect(offline.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(offline.get('[data-testid="apps-catalog-failed"]').text()).toBe(
+      "Couldn't load the apps."
+    )
+    expect(offline.find('[data-testid="apps-coming-soon"]').exists()).toBe(false)
   })
 
   it('starts in masonry with file names and details hidden', async () => {

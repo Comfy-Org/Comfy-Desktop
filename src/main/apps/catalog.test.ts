@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { catalogUrl, listCatalogApps, toCatalogApp } from './catalog'
+vi.mock('electron', () => ({ app: { isPackaged: false } }))
+
+const { catalogUrl, listCatalogApps, toCatalogApp } = await import('./catalog')
 
 const LIST = 'https://apps.example/apps/'
 const fetchMock = vi.fn()
@@ -47,8 +49,7 @@ describe('toCatalogApp', () => {
       title: 'Cinematic Studio',
       description: 'Cinematic Studio description',
       thumbnailUrl: 'https://comfy.org/catalog-media/studio/v1',
-      url: 'https://apps.example/apps/studio/desktop.html',
-      order: 2
+      url: 'https://apps.example/apps/studio/desktop.html'
     })
   })
 

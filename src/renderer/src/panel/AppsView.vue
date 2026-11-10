@@ -461,11 +461,12 @@ function extensionOf(name: string): string {
       @app-open="closeApp"
     />
     <AppsGallery
-      v-else-if="tab === 'all'"
+      v-if="tab === 'all'"
+      v-show="!openApp"
       :load-failed-url="appsLoadFailedUrl"
       @open="openCatalogApp"
     />
-    <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+    <div v-if="tab === 'files'" class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
       <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
         <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">

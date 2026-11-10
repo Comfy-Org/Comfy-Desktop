@@ -124,7 +124,6 @@ export interface CatalogApp {
   description: string
   thumbnailUrl: string | null
   url: string
-  order: number
 }
 
 export interface AssetSummary {
