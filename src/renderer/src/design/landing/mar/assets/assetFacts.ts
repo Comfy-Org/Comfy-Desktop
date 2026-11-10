@@ -31,6 +31,11 @@ export interface AssetFacts {
   params?: { seed: number; steps: number; cfg: number; sampler: string }
   seconds?: number
   json?: string
+  /** Who brought the file in, or "You" for a run you queued; unset when
+   *  the build ran it on its own, so the view names the build. */
+  uploadedBy?: string
+  /** The workflow file the run came from, when the file carries it. */
+  workflowName?: string
 }
 
 const hash = (s: string): number => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)
@@ -76,6 +81,9 @@ const PROMPTS: [RegExp, string][] = [
   [/banner/, 'flowing abstract silk in pastel light, macro, soft gradients']
 ]
 
+/** People on the team who bring files in. */
+const PEOPLE = ['John Doe', 'Maya Chen', 'Luis Ortega', 'Priya Nair', 'Sam Okafor']
+
 /** What a model file does in the run, from its name: a guess, like the rest. */
 export function modelRole(file: string): string {
   if (/lora/i.test(file)) return 'LoRA'
@@ -117,10 +125,14 @@ export function factsFor(a: MarAsset): AssetFacts {
       workflow: 'missing',
       history: 'missing',
       metadata: a.type === 'text' || a.type === 'other' ? 'missing' : 'available',
-      models: []
+      models: [],
+      uploadedBy: PEOPLE[h % PEOPLE.length]
     }
 
   const kept = recent(a.when)
+  const workflow = a.type === 'audio' ? 'missing' : 'available'
+  // The template it came from, else the file's stem without its counter.
+  const stem = a.name.replace(/\.[^.]+$/, '').replace(/_\d+$/, '')
   const prompt = PROMPTS.find(([re]) => re.test(a.name))?.[1]
   const models = MODELS[template] ?? (prompt ? MODELS.image_z_image_turbo! : [])
   const seconds = 6 + (h % 70) / 2
@@ -144,7 +156,7 @@ export function factsFor(a: MarAsset): AssetFacts {
     format: ext,
     imported,
     tags: [['hero', 'client-review'], ['keeper'], [], ['draft', 'lighting']][h % 4]!,
-    workflow: a.type === 'audio' ? 'missing' : 'available',
+    workflow,
     history: kept ? 'available' : 'lost',
     metadata: 'available',
     prompt: kept ? prompt : undefined,
@@ -170,6 +182,8 @@ export function factsFor(a: MarAsset): AssetFacts {
           null,
           2
         )
-      : undefined
+      : undefined,
+    uploadedBy: h % 3 ? 'You' : undefined,
+    workflowName: workflow === 'available' ? `${template || stem}.json` : undefined
   }
 }

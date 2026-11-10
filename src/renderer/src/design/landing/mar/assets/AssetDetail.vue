@@ -3,10 +3,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AppWindow,
   Box,
+  Check,
   ChevronDown,
+  Copy,
   Download,
   FolderOpen,
   Info,
+  MoreHorizontal,
   Plus,
   Workflow,
   X
@@ -20,6 +23,7 @@ import { saveFile } from './saveFile'
 import AssetCover from './AssetCover.vue'
 import GenerationInfo from './GenerationInfo.vue'
 import { addTag, removeTag, tagsOf } from './assetTags'
+import { LABELS, labelColor, labelOf, setLabel } from './assetLabels'
 
 /**
  * One asset, large (Better Asset Management PRD). One view for both
@@ -32,6 +36,8 @@ import { addTag, removeTag, tagsOf } from './assetTags'
  * the tile. It opens as a framed window over the app, the same from the
  * canvas and from Assets, Details open; zoom and the file's size sit along
  * the bottom, Download leads the details (Alex Tov's media-assets proto).
+ * From that proto too: a zoom slider in the zoom's menu, the file's
+ * details as rows, a color label, and a More menu beside Download.
  */
 const {
   asset,
@@ -65,10 +71,51 @@ const emit = defineEmits<{ close: []; go: [asset: MarAsset]; save: [] }>()
 
 const facts = computed(() => factsFor(asset))
 const tags = computed(() => tagsOf(asset))
+/** Adding a tag: "+ Add tag" turns into a chip-sized field in the same
+ *  row, suggesting the tags already in use as you type. Enter adds the
+ *  highlighted one (or creates the name), Escape cancels, Backspace on an
+ *  empty field takes the last tag off. */
 const draft = ref('')
-function add(): void {
-  addTag(asset, draft.value)
+const adding = ref(false)
+const hi = ref(0)
+const field = ref<HTMLInputElement>()
+const known = computed(() => [...new Set(list.flatMap((a) => tagsOf(a)))].sort())
+const query = computed(() => draft.value.trim().replace(/^#/, '').toLowerCase())
+const offers = computed(() => {
+  const q = query.value
+  const found = known.value
+    .filter((t) => !tags.value.includes(t) && (!q || t.includes(q)))
+    .slice(0, 6)
+    .map((t) => ({ tag: t, create: false }))
+  return q && !known.value.includes(q) ? [...found, { tag: q, create: true }] : found
+})
+watch(query, () => (hi.value = 0))
+watch(() => asset.id, closeAdd)
+async function openAdd(): Promise<void> {
+  adding.value = true
+  hi.value = 0
+  await nextTick()
+  field.value?.focus()
+}
+function closeAdd(): void {
+  adding.value = false
   draft.value = ''
+}
+function add(tag = offers.value[hi.value]?.tag): void {
+  if (tag) addTag(asset, tag)
+  draft.value = ''
+  hi.value = 0
+}
+function tagKey(e: KeyboardEvent): void {
+  const n = offers.value.length
+  if (e.key === 'ArrowDown' && n) hi.value = (hi.value + 1) % n
+  else if (e.key === 'ArrowUp' && n) hi.value = (hi.value - 1 + n) % n
+  else if (e.key === 'Enter') add()
+  else if (e.key === 'Escape') closeAdd()
+  else if (e.key === 'Backspace' && !draft.value && tags.value.length)
+    removeTag(asset, tags.value[tags.value.length - 1]!)
+  else return
+  e.preventDefault()
 }
 const pic = computed(() => asset.src ?? (asset.thumbId ? thumb(asset.thumbId) : undefined))
 const added = computed(() =>
@@ -102,6 +149,10 @@ onClickOutside(zoomBox, () => (zoomMenu.value = false))
 function zoomTo(pct?: number): void {
   zoom.value = pct ? Math.min(800, Math.max(10, pct / fit.value)) : 100
   zoomMenu.value = false
+}
+/** The slider reads in real size too, 10% to 400%. */
+function slide(e: Event): void {
+  zoom.value = Math.min(800, Math.max(10, Number((e.target as HTMLInputElement).value) / fit.value))
 }
 /** The details panel folds away for the picture alone. */
 const side = ref(true)
@@ -151,18 +202,6 @@ watch(
 const dims = computed(() =>
   facts.value.width ? `${facts.value.width} × ${facts.value.height}` : undefined
 )
-/** What the file is, as chips: format, size on screen, length, how long
- *  the run took, size on disk. */
-const chips = computed(() =>
-  [
-    facts.value.format,
-    dims.value,
-    facts.value.duration,
-    facts.value.seconds ? `Generated in ${facts.value.seconds.toFixed(1)}s` : undefined,
-    asset.size
-  ].filter((c): c is string => !!c)
-)
-
 const KIND: Record<string, string> = {
   image: 'Image',
   video: 'Video',
@@ -171,16 +210,48 @@ const KIND: Record<string, string> = {
   text: 'Text',
   other: 'File'
 }
-// When the file came to be: made by a run, or brought in.
-const summary = computed(() =>
-  [
-    KIND[asset.type] ?? 'File',
-    `${facts.value.imported ? 'Imported' : 'Created'} ${added.value}`
-  ].join(' · ')
+/** The file as rows: what it is, its size on screen and on disk, when it
+ *  came to be, and who made or brought it in. */
+const details = computed(() =>
+  (
+    [
+      ['Type', `${KIND[asset.type] ?? 'File'} · ${facts.value.format}`],
+      ['Dimensions', dims.value],
+      ['Length', facts.value.duration],
+      ['Size', asset.size],
+      [facts.value.imported ? 'Date imported' : 'Date created', added.value],
+      ['Run time', facts.value.seconds ? `${facts.value.seconds.toFixed(1)}s` : undefined],
+      ['Uploaded by', facts.value.uploadedBy ?? build]
+    ] as [string, string | undefined][]
+  ).filter((r): r is [string, string] => !!r[1])
 )
+
+// One color label per file, picked from a menu; picking it again takes it off.
+const label = computed(() => labelOf(asset.id))
+const labelName = computed(() => LABELS.find((l) => l.value === label.value)?.label)
+const labelMenu = ref(false)
+const labelBox = ref<HTMLElement>()
+onClickOutside(labelBox, () => (labelMenu.value = false))
+function pickLabel(l?: (typeof LABELS)[number]['value']): void {
+  const v = l ?? label.value
+  if (v) setLabel([asset.id], v)
+  labelMenu.value = false
+}
+
+// More, beside Download: what the file has beyond the labeled actions.
+const moreMenu = ref(false)
+const moreBox = ref<HTMLElement>()
+onClickOutside(moreBox, () => (moreMenu.value = false))
+function copyText(text: string, what: string): void {
+  navigator.clipboard?.writeText(text).catch(() => {})
+  toast(`Copied ${what}`)
+  moreMenu.value = false
+}
 const root = ref<HTMLElement>()
 const opener = document.activeElement as HTMLElement | null
 function key(e: KeyboardEvent): void {
+  // The tag field keeps its own keys, Escape included.
+  if (e.target === field.value) return
   if (e.target instanceof HTMLInputElement && e.key !== 'Escape') return
   if (e.key === 'Escape' && !tab) emit('close')
   else if (e.key === 'ArrowLeft' && prev.value) emit('go', prev.value)
@@ -250,6 +321,8 @@ onBeforeUnmount(() => {
                 <AssetCover v-else :name="a.name" :type="a.type" />
               </button>
             </nav>
+            <!-- Zoom: the real-size percentage; it opens a slider with Fit
+                 and the presets. -->
             <div ref="zoomBox" class="mad-zoom" role="group" aria-label="Zoom">
               <button
                 type="button"
@@ -260,7 +333,17 @@ onBeforeUnmount(() => {
               >
                 <span>{{ shownPct }}%</span><ChevronDown :size="13" />
               </button>
-              <div v-if="zoomMenu" class="mad-zoom-menu" role="menu">
+              <div v-if="zoomMenu" class="mad-menu is-up is-end is-zoom" role="menu">
+                <input
+                  class="mad-zoom-range"
+                  type="range"
+                  min="10"
+                  max="400"
+                  step="1"
+                  :value="shownPct"
+                  aria-label="Zoom"
+                  @input="slide"
+                />
                 <button type="button" role="menuitem" @click="zoomTo()">Fit to screen</button>
                 <button
                   v-for="z in ZOOMS"
@@ -281,7 +364,6 @@ onBeforeUnmount(() => {
             <header class="mad-head">
               <div class="mad-head-text">
                 <h2 class="mad-name">{{ asset.name }}</h2>
-                <p class="mad-sub">{{ summary }}</p>
               </div>
               <button
                 v-if="!editable"
@@ -295,9 +377,53 @@ onBeforeUnmount(() => {
               </button>
             </header>
 
-            <ul class="mad-chips" aria-label="File">
-              <li v-for="c in chips" :key="c">{{ c }}</li>
-            </ul>
+            <section class="mad-sec">
+              <h3 class="mad-label">Asset details</h3>
+              <dl class="mad-rows">
+                <div v-for="[k, v] in details" :key="k">
+                  <dt>{{ k }}</dt>
+                  <dd :title="v">{{ v }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="mad-sec">
+              <h3 class="mad-label">Label</h3>
+              <div ref="labelBox" class="mad-pick">
+                <button
+                  type="button"
+                  class="mad-select"
+                  aria-haspopup="menu"
+                  :aria-expanded="labelMenu"
+                  @click="labelMenu = !labelMenu"
+                >
+                  <i
+                    class="mad-dot"
+                    :class="!label && 'is-none'"
+                    :style="label && { background: labelColor(label) }"
+                    aria-hidden="true"
+                  /><span>{{ labelName ?? 'No label' }}</span
+                  ><ChevronDown :size="13" />
+                </button>
+                <div v-if="labelMenu" class="mad-menu is-down is-wide" role="menu">
+                  <button
+                    v-for="l in LABELS"
+                    :key="l.value"
+                    type="button"
+                    role="menuitemradio"
+                    :aria-checked="label === l.value"
+                    @click="pickLabel(l.value)"
+                  >
+                    <i class="mad-dot" :style="{ background: l.color }" aria-hidden="true" />{{
+                      l.label
+                    }}<Check v-if="label === l.value" :size="14" class="mad-menu-check" />
+                  </button>
+                  <button v-if="label" type="button" role="menuitem" @click="pickLabel()">
+                    <i class="mad-dot is-none" aria-hidden="true" />No label
+                  </button>
+                </div>
+              </div>
+            </section>
 
             <section class="mad-sec">
               <h3 class="mad-label">
@@ -328,21 +454,46 @@ onBeforeUnmount(() => {
                   >
                     <X :size="11" /></button
                 ></span>
-                <label v-if="editable" class="mad-tag-add">
-                  <Plus :size="12" />
-                  <input
-                    v-model="draft"
-                    placeholder="Add tag"
-                    aria-label="Add a tag"
-                    @keydown.enter.prevent="add"
-                  />
-                </label>
+                <template v-if="editable">
+                  <button v-if="!adding" type="button" class="mad-tag-add" @click="openAdd">
+                    <Plus :size="12" />Add tag
+                  </button>
+                  <div v-else class="mad-tag-pick">
+                    <input
+                      ref="field"
+                      v-model="draft"
+                      class="mad-tag-field"
+                      placeholder="Tag name"
+                      aria-label="Add a tag"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      :aria-expanded="offers.length > 0"
+                      @keydown="tagKey"
+                      @blur="closeAdd"
+                    />
+                    <div v-if="offers.length" class="mad-menu is-down is-wide" role="listbox">
+                      <button
+                        v-for="(o, i) in offers"
+                        :key="o.tag + o.create"
+                        type="button"
+                        role="option"
+                        :aria-selected="i === hi"
+                        :class="i === hi && 'is-hi'"
+                        @mousedown.prevent="add(o.tag)"
+                        @mouseenter="hi = i"
+                      >
+                        <template v-if="o.create"><Plus :size="13" />Create "{{ o.tag }}"</template
+                        ><template v-else>{{ o.tag }}</template>
+                      </button>
+                    </div>
+                  </div>
+                </template>
               </div>
             </section>
 
             <section class="mad-sec">
               <h3 class="mad-label">
-                Generation info
+                Generation details
                 <span
                   class="mad-tip"
                   tabindex="0"
@@ -357,7 +508,8 @@ onBeforeUnmount(() => {
               <GenerationInfo :facts="facts" :loading="loading" />
             </section>
           </div>
-          <!-- At the bottom, labeled: only the actions this file has. -->
+          <!-- At the bottom, labeled: only the actions this file has, Download
+               and More leading. -->
           <footer class="mad-actions">
             <button
               v-if="facts.workflow === 'available'"
@@ -384,13 +536,49 @@ onBeforeUnmount(() => {
             <button v-if="saveable" type="button" class="mad-btn" @click="emit('save')">
               <Plus :size="14" /><span>Save to Assets</span>
             </button>
-            <button
-              type="button"
-              class="mad-btn is-primary"
-              @click="saveFile(picOf(asset), asset.name)"
-            >
-              <Download :size="14" /><span>Download</span>
-            </button>
+            <div class="mad-lead">
+              <button
+                type="button"
+                class="mad-btn is-primary"
+                @click="saveFile(picOf(asset), asset.name)"
+              >
+                <Download :size="14" /><span>Download</span>
+              </button>
+              <div ref="moreBox" class="mad-pick">
+                <button
+                  type="button"
+                  class="mad-btn is-more"
+                  aria-label="More"
+                  title="More"
+                  aria-haspopup="menu"
+                  :aria-expanded="moreMenu"
+                  @click="moreMenu = !moreMenu"
+                >
+                  <MoreHorizontal :size="16" />
+                </button>
+                <div v-if="moreMenu" class="mad-menu is-up is-end" role="menu">
+                  <button
+                    v-if="!editable"
+                    type="button"
+                    role="menuitem"
+                    @click="(toast(`Revealed ${asset.name}`), (moreMenu = false))"
+                  >
+                    <FolderOpen :size="14" />Show in Finder
+                  </button>
+                  <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
+                    <Copy :size="14" />Copy file name
+                  </button>
+                  <button
+                    v-if="facts.prompt"
+                    type="button"
+                    role="menuitem"
+                    @click="copyText(facts.prompt, 'prompt')"
+                  >
+                    <Copy :size="14" />Copy prompt
+                  </button>
+                </div>
+              </div>
+            </div>
           </footer>
         </aside>
       </div>
@@ -619,10 +807,9 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-zoom-pct[aria-expanded='true'] {
   background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
 }
-.mad-zoom-menu {
+.mad-menu {
   position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
+  z-index: 3;
   display: grid;
   min-width: 140px;
   padding: 4px;
@@ -630,8 +817,26 @@ onBeforeUnmount(() => {
   background: var(--color-secondary-background);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-zoom-menu button {
+.mad-menu.is-down {
+  top: calc(100% + 6px);
+}
+.mad-menu.is-up {
+  bottom: calc(100% + 6px);
+}
+.mad-menu.is-down,
+.mad-menu.is-end {
+  right: 0;
+}
+.mad-menu.is-wide {
+  right: auto;
+  left: 0;
+  min-width: 160px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-menu button {
+  display: flex;
   height: 30px;
+  align-items: center;
+  gap: 8px;
   padding: 0 10px;
   border-radius: 6px;
   background: transparent;
@@ -639,7 +844,7 @@ onBeforeUnmount(() => {
   font-size: 13px;
   text-align: left;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-zoom-menu button:hover {
+:root .proto-ui.proto-ui.proto-ui .mad-menu button:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-icon:disabled {
@@ -662,6 +867,14 @@ onBeforeUnmount(() => {
   padding: 3px;
   border-radius: 10px;
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.mad-menu.is-zoom {
+  min-width: 180px;
+}
+.mad-zoom-range {
+  width: auto;
+  margin: 6px 10px 8px;
+  accent-color: var(--color-base-foreground);
 }
 .mad-strip {
   min-width: 0;
@@ -741,9 +954,20 @@ onBeforeUnmount(() => {
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn:not(.is-primary):hover {
   background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-primary {
+.mad-lead {
   order: -1;
+  display: flex;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-primary {
+  flex: 1;
   justify-content: center;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-more {
+  width: 36px;
+  flex: none;
+  justify-content: center;
+  padding: 0;
 }
 .mad-side {
   --mad-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
@@ -758,7 +982,8 @@ onBeforeUnmount(() => {
   background: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
 }
 .mad-body {
-  /* Name, chips, tags, how it was made: spaced, no lines or blocks. */
+  /* Name, details, label, tags, how it was made: spaced, no lines or
+   * blocks. */
   display: flex;
   min-height: 0;
   flex: 1;
@@ -786,15 +1011,6 @@ onBeforeUnmount(() => {
   line-height: 1.35;
   text-wrap: balance;
 }
-.mad-sub {
-  margin-top: 4px;
-  overflow: hidden;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .mad-sec {
   display: flex;
   min-width: 0;
@@ -813,22 +1029,68 @@ onBeforeUnmount(() => {
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-.mad-chips {
+.mad-rows {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
-  padding: 0 20px 6px;
 }
-.mad-chips li {
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+.mad-rows div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
   font-size: 12px;
-  font-weight: 500;
+}
+.mad-rows dt {
+  flex: none;
+  color: var(--color-muted-foreground);
+}
+.mad-rows dd {
+  min-width: 0;
+  overflow: hidden;
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A menu's anchor: the label picker, More. */
+.mad-pick {
+  position: relative;
+  display: flex;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-select {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: var(--mad-fill);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-select:hover,
+:root .proto-ui.proto-ui.proto-ui .mad-select[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+.mad-select svg {
+  color: var(--color-muted-foreground);
+}
+.mad-menu-check {
+  margin-left: auto;
+}
+.mad-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 999px;
+}
+.mad-dot.is-none {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
+}
 .mad-tags {
+  /* Suggestions open under the whole row, inside the panel. */
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -868,39 +1130,41 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 0 0 1px var(--mad-line);
   color: var(--color-muted-foreground);
 }
-.mad-tag-add {
+:root .proto-ui.proto-ui.proto-ui .mad-tag-add {
   display: inline-flex;
   height: 24px;
-  flex: 0 1 112px;
-  min-width: 0;
   align-items: center;
   gap: 4px;
   padding: 0 9px;
   border-radius: 999px;
+  background: transparent;
   color: var(--color-muted-foreground);
-  cursor: text;
+  font-size: 12px;
 }
-.mad-tag-add:hover,
-.mad-tag-add:focus-within {
+:root .proto-ui.proto-ui.proto-ui .mad-tag-add:hover {
   background: var(--mad-fill);
   color: var(--color-base-foreground);
 }
-.mad-tag-add svg {
-  flex: none;
+.mad-tag-pick {
+  display: flex;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-tag-add input {
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
+/* The field takes the button's place, chip-sized, so nothing moves. */
+:root .proto-ui.proto-ui.proto-ui .mad-tag-field {
+  width: 112px;
+  height: 24px;
+  padding: 0 10px;
   border: 0;
-  background: transparent;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   color: var(--color-base-foreground);
   font-size: 12px;
   outline: none;
 }
-:root .proto-ui.proto-ui.proto-ui .mad-tag-add input::placeholder {
+:root .proto-ui.proto-ui.proto-ui .mad-tag-field::placeholder {
   color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mad-menu button.is-hi {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
 }
 .mad-tip {
   position: relative;

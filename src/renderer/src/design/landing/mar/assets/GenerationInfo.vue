@@ -5,9 +5,9 @@ import { modelRole, type AssetFacts } from './assetFacts'
 
 /**
  * How an asset was made, as far as the run's data tells (Better Asset
- * Management PRD): the prompt as text you read, each model with what it
- * did, the sampler's settings when they were recorded, and the raw run
- * data folded away. Above them, what the file holds: metadata, workflow
+ * Management PRD): workflow, model, steps and seed as rows, the prompt
+ * as text you read, each model with what it did, the sampler's other
+ * settings when they were recorded, and the raw run data folded away. Above them, what the file holds: metadata, workflow
  * and run history, each available or not. Shared by Desktop's asset view and
  * ComfyUI's Asset details panel, so both read the same.
  */
@@ -31,11 +31,22 @@ function copy(what: string, text = ''): void {
 }
 
 const name = (file: string): string => file.replace(/\.(safetensors|ckpt|pt|pth|gguf)$/i, '')
+/** The run at a glance, as in Alex Tov's media-assets proto: the
+ *  workflow, the main model, and the sampler's steps and seed. */
+const main = computed(() => facts.models.find((m) => modelRole(m) === 'Model') ?? facts.models[0])
+const rows = computed(() =>
+  (
+    [
+      ['Workflow', facts.workflowName],
+      ['Model', main.value && name(main.value)],
+      ['Steps', facts.params && String(facts.params.steps)],
+      ['Seed', facts.params && String(facts.params.seed)]
+    ] as [string, string | undefined][]
+  ).filter((r): r is [string, string] => !!r[1])
+)
 const params = computed(() =>
   facts.params
     ? [
-        ['Seed', String(facts.params.seed)],
-        ['Steps', String(facts.params.steps)],
         ['CFG', String(facts.params.cfg)],
         ['Sampler', facts.params.sampler]
       ]
@@ -73,9 +84,16 @@ const unnamed = computed(
       </ul>
       <p v-if="unnamed" class="gi-gap">No prompt or model identified in the run.</p>
 
+      <dl v-if="rows.length" class="gi-rows">
+        <div v-for="[k, v] in rows" :key="k">
+          <dt>{{ k }}</dt>
+          <dd :title="v">{{ v }}</dd>
+        </div>
+      </dl>
+
       <div v-if="facts.prompt" class="gi-block" :title="`From ${facts.promptNode} #6`">
         <div class="gi-head">
-          <span class="gi-k">Prompt</span>
+          <span class="gi-title">Prompt</span>
           <button
             type="button"
             class="gi-copy"
@@ -91,13 +109,14 @@ const unnamed = computed(
           {{ more ? 'Show less' : 'Show more' }}
         </button>
         <template v-if="facts.negative">
-          <span class="gi-k is-sub">Negative</span>
+          <span class="gi-title is-sub">Negative</span>
           <p class="gi-prompt is-negative">{{ facts.negative }}</p>
         </template>
       </div>
 
-      <div v-if="facts.models.length" class="gi-block">
-        <span class="gi-k">Models</span>
+      <!-- One model reads in the row above; several get their roles. -->
+      <div v-if="facts.models.length > 1" class="gi-block">
+        <span class="gi-title">Models</span>
         <ul class="gi-models">
           <li v-for="m in facts.models" :key="m" :title="m">
             <span class="gi-role">{{ modelRole(m) }}</span>
@@ -176,6 +195,30 @@ const unnamed = computed(
   color: var(--color-muted-foreground);
   font-size: 12px;
 }
+.gi-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gi-rows div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+}
+.gi-rows dt {
+  flex: none;
+  color: var(--color-muted-foreground);
+}
+.gi-rows dd {
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .gi-block {
   display: flex;
   flex-direction: column;
@@ -192,7 +235,15 @@ const unnamed = computed(
   font-size: 12px;
   font-weight: 500;
 }
-.gi-k.is-sub {
+/* Titles read like the panel's section labels: small, uppercase. */
+.gi-title {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.gi-title.is-sub {
   margin-top: 4px;
 }
 :root .proto-ui.proto-ui.proto-ui .gi-copy {
@@ -218,6 +269,10 @@ const unnamed = computed(
   color: var(--color-base-foreground);
 }
 .gi-prompt {
+  /* In a box, like the models: the same fill, padding and radius. */
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--gi-fill);
   font-size: 13px;
   line-height: 1.55;
   overflow-wrap: anywhere;
@@ -309,7 +364,10 @@ const unnamed = computed(
   padding: 0;
   background: transparent;
   color: var(--color-muted-foreground);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 :root .proto-ui.proto-ui.proto-ui .gi-json-toggle:hover {
   color: var(--color-base-foreground);
