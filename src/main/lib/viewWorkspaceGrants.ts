@@ -1,12 +1,6 @@
 import type { WebContents } from 'electron'
 
-import {
-  canMintPartnerNodeTokens,
-  canMintWorkspaceTokens,
-  grantFamilyOf,
-  subjectOf,
-  workspaceIdOf
-} from '../cloud/claims'
+import { canMintWorkspaceTokens, grantFamilyOf, subjectOf, workspaceIdOf } from '../cloud/claims'
 import {
   classifyMint,
   mintPartnerNodeToken,
@@ -238,8 +232,7 @@ export class ViewWorkspaceGrants {
 
   private async partnerNodeToken(workspaceId: string, fence: MintFence): Promise<HeldToken | null> {
     const accessToken = await this.session.getGrantAccessToken()
-    if (!this.isCurrent(fence) || !accessToken || !canMintPartnerNodeTokens(accessToken))
-      return null
+    if (!this.isCurrent(fence) || !accessToken) return null
     const subject = subjectOf(accessToken)
     if (!subject) return null
     const key = JSON.stringify([subject, grantFamilyOf(accessToken), workspaceId])

@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 
-import { PARTNER_NODE_MINT_SCOPE, WORKSPACE_MINT_SCOPE } from './config'
+import { WORKSPACE_MINT_SCOPE } from './config'
 import type { AuthStatus } from './types'
 
 interface AccessTokenClaims {
@@ -43,16 +43,8 @@ export function workspaceIdOf(accessToken: string): string | null {
 }
 
 export function canMintWorkspaceTokens(accessToken: string): boolean {
-  return hasScope(accessToken, WORKSPACE_MINT_SCOPE)
-}
-
-export function canMintPartnerNodeTokens(accessToken: string): boolean {
-  return canMintWorkspaceTokens(accessToken) && hasScope(accessToken, PARTNER_NODE_MINT_SCOPE)
-}
-
-function hasScope(accessToken: string, wanted: string): boolean {
   const scope = decodeJwtPayload(accessToken)?.scope
-  return typeof scope === 'string' && scope.split(' ').includes(wanted)
+  return typeof scope === 'string' && scope.split(' ').includes(WORKSPACE_MINT_SCOPE)
 }
 
 export function lifetimeSecondsOf(accessToken: string): number | null {

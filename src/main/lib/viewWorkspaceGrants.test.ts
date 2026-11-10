@@ -591,12 +591,14 @@ describe('ViewWorkspaceGrants partner-node tokens', () => {
     }
   )
 
-  it('hands out nothing, and does not ask Cloud, for a grant from before jobs:write', async () => {
-    grants = build(`comfy-cloud:user:read ${WORKSPACE_MINT_SCOPE}`)
+  it.each([
+    ['from before jobs:write', `comfy-cloud:user:read ${WORKSPACE_MINT_SCOPE}`],
+    ['from before the mint scope', 'comfy-cloud:user:read']
+  ])('asks Cloud with a grant %s and hands out the token it mints', async (_name, scope) => {
+    grants = build(scope)
 
-    await expect(grants.partnerNodeTokenFor(viewA, 'ws-1')).resolves.toBeNull()
-    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
-    expect(partnerMint).not.toHaveBeenCalled()
+    await expect(grants.partnerNodeTokenFor(viewA, 'ws-1')).resolves.toBe(partnerToken('ws-1'))
+    expect(partnerMint).toHaveBeenCalledExactlyOnceWith(accessToken('ws-1', scope), 'ws-1')
   })
 
   it('hands out nothing for another workspace while the mint switch is off', async () => {
