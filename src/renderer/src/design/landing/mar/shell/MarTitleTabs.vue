@@ -73,7 +73,8 @@ const close = (active: boolean): string =>
     <!-- Where things run sits by Home; a divider, then what's open. -->
     <span
       v-if="state.runsOn && (state.tabs?.length || state.assets || state.apps?.length)"
-      class="mx-1.5 h-4 w-px shrink-0 bg-border-default"
+      class="mx-1 h-4 w-px shrink-0"
+      style="background: color-mix(in oklch, var(--color-base-foreground) 22%, transparent)"
       aria-hidden="true"
     />
 
