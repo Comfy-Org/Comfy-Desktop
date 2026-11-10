@@ -21,7 +21,6 @@ export async function getSnapshotListData(
       nodeCount: s.customNodes.length,
       pipPackageCount: Object.keys(s.pipPackages).length
     }
-    // Entries are sorted newest-first, so the next entry is the previous snapshot.
     if (i < entries.length - 1) {
       const prev = entries[i + 1]!.snapshot
       const diff = diffSnapshots(prev, s)
@@ -72,7 +71,6 @@ export async function getSnapshotDiffVsPrevious(
   const idx = entries.findIndex((e) => e.filename === filename)
   if (idx < 0) throw new Error(`Snapshot not found: ${filename}`)
   if (idx >= entries.length - 1) {
-    // Oldest snapshot — no previous to diff against.
     return {
       mode: 'previous',
       baseLabel: '',

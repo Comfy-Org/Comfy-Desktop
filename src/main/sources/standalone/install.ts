@@ -36,19 +36,6 @@ import type { InstallTools, PostInstallTools } from '../../types/sources'
 
 const BULKY_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
 
-/**
- * Per-phase install telemetry. Splits the two former mega-spans
- * (`install.standalone` / `install.post_install`) into the five real dark
- * sub-steps so the install→canvas drop (−79%) is attributable to a phase.
- * `torch_deps_sync` is the dominant +60min sink and gets its own boundary.
- *
- * Lives here (not at the orchestration call sites) so BOTH the express install
- * path (`install-instance` handler) and the standalone-migration path — which
- * both call this module's `install` / `postInstall` — are instrumented by one
- * wiring. Enum/number/bool props only; the installation id is an opaque
- * `inst-<ms>` token and the variant is an enum, so nothing here is raw user
- * data. `error` events ride the Datadog mirror (via `emit`) for alerting.
- */
 type InstallPhase = InstallPhaseName | 'env_create' | 'package_copy' | 'torch_deps_sync'
 
 function emitInstallPhase(
@@ -57,8 +44,6 @@ function emitInstallPhase(
   status: InstallPhaseStatus,
   info: { durationMs?: number; error?: unknown } = {}
 ): void {
-  // Side-channel only: classification/emission must never derail an install
-  // phase (this is also the installer's onPhase tap).
   try {
     const props: Record<string, string | number | null> = {
       installation_id: installation.id,
@@ -68,8 +53,6 @@ function emitInstallPhase(
     }
     if (typeof info.durationMs === 'number') props.duration_ms = info.durationMs
     if (status === 'error') {
-      // Standard error schema so a failing phase carries the actual error
-      // text, not just the coarse bucket.
       Object.assign(props, buildErrorFields(info.error))
     }
     mainTelemetry.emit('comfy.desktop.install.phase', props)
@@ -78,8 +61,6 @@ function emitInstallPhase(
   }
 }
 
-/** Wrap a post-install phase with start/end/error boundaries. Re-throws so the
- *  cancel / repair control flow is untouched; telemetry is a side-channel. */
 async function withPostInstallPhase<T>(
   installation: InstallationRecord,
   phase: InstallPhase,
@@ -124,7 +105,6 @@ async function createEnv(
   const uvPath = getUvPath(installPath)
   const masterPython = getMasterPythonPath(installPath)
   const venvPath = getVenvDir(installPath)
-  // env_create: `uv venv` — the bare interpreter env, before any packages land.
   await withPostInstallPhase(
     installation,
     'env_create',
@@ -159,8 +139,6 @@ async function createEnv(
     if (!masterSitePackages || !envSitePackages || !fs.existsSync(masterSitePackages)) {
       throw new Error('Could not locate site-packages for .venv.')
     }
-    // package_copy: hydrate the venv from the master site-packages (multi-GB,
-    // the disk-bound stretch of post-install).
     await withPostInstallPhase(installation, 'package_copy', async () => {
       await copyDirWithProgress(masterSitePackages, envSitePackages, onProgress, { signal })
       await codesignBinaries(envSitePackages)
@@ -175,8 +153,6 @@ export async function install(
   installation: InstallationRecord,
   tools: InstallTools
 ): Promise<void> {
-  // The installer owns the download↔extract seam; map its boundary callbacks
-  // onto the consent-gated install.phase telemetry with this install's id/variant.
   const installerCtx = {
     ...tools,
     onPhase: (
@@ -236,9 +212,6 @@ export async function postInstall(
   sendProgress('cleanup', { percent: -1, status: t('standalone.cleanupEnvStatus') })
   await stripMasterPackages(installation.installPath)
 
-  // Populate comfyVersion now so version displays are correct without waiting
-  // for the first update. Without a global git binary, configure pygit2 against
-  // the just-installed standalone Python so tag resolution works.
   if (!isPygit2Configured() && !(await isGitAvailable())) {
     await tryConfigurePygit2Fallback(installation.installPath)
   }
@@ -254,7 +227,6 @@ export async function postInstall(
     installation = { ...installation, comfyVersion } as InstallationRecord
   }
 
-  // Capture initial snapshot so the detail view shows "Current" immediately.
   try {
     const filename = await snapshots.saveSnapshot(installation.installPath, installation, 'boot')
     const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
@@ -263,19 +235,10 @@ export async function postInstall(
     console.warn('Initial snapshot failed:', err)
   }
 
-  // Auto-update to the channel the user picked on the install wizard.
-  // `installation.updateChannel` is set by `buildInstallation`:
-  // 'stable' → check out the latest stable tag; 'latest' → fast-forward
-  // to master HEAD. Defaults to 'stable' for installs created before
-  // the channel split, where `autoUpdateComfyUI` implicitly meant stable.
   if (installation.autoUpdateComfyUI && fs.existsSync(path.join(comfyuiDir, '.git'))) {
     if (signal?.aborted) throw new Error('Cancelled')
     const channel: 'stable' | 'latest' =
       (installation.updateChannel as 'stable' | 'latest' | undefined) ?? 'stable'
-    // The wizard's version picker pins an explicit stable tag for the install.
-    // When set, the post-install update checks out that tag instead of
-    // resolving the channel head, so the user lands on the version they
-    // picked even if a newer one shipped between selection and download.
     const pickedTag = installation.comfyVersionTag as string | undefined
     const channelLabel = pickedTag
       ? `ComfyUI ${pickedTag}`
@@ -285,9 +248,6 @@ export async function postInstall(
     sendProgress('update', { percent: -1, status: `Fetching ${channelLabel}` })
 
     try {
-      // Bypass the in-memory tag cache, which can be poisoned with `null` at
-      // startup before any git backend is configured. `tryConfigurePygit2Fallback`
-      // above has since configured pygit2, so the refreshed lookup fires.
       const latestRelease = await fetchLatestRelease(channel, { refresh: true })
       const latestTag = latestRelease?.tag_name as string | undefined
       const current = installation.comfyVersion as ComfyVersion | undefined
@@ -297,8 +257,6 @@ export async function postInstall(
         !!pickedTag && tagsEqual(current?.baseTag, pickedTag) && current?.commitsAhead === 0
 
       if (!latestTag && !pickedTag) {
-        // A network flake must not masquerade as "up to date" — that stranded
-        // first installs on the bundled version.
         sendProgress('update', {
           percent: 100,
           status: `Skipped — could not verify ${channelLabel}`
@@ -306,10 +264,6 @@ export async function postInstall(
       } else if (pickedTag ? onPickedTag : onLatestTag) {
         sendProgress('update', { percent: 100, status: 'Already up to date' })
       } else {
-        // torch_deps_sync: the dominant dark time-sink in post-install
-        // (the forced `pip install --upgrade -r requirements.txt` can run
-        // 60+ min on a cold torch/cuda set). Own boundary so it stops hiding
-        // inside the post_install mega-span and a stall here is attributable.
         const result = await withPostInstallPhase(installation, 'torch_deps_sync', () =>
           runComfyUIUpdate({
             installPath: installation.installPath,
@@ -319,13 +273,6 @@ export async function postInstall(
             update,
             sendProgress: sendProgress as (step: string, data: Record<string, unknown>) => void,
             signal,
-            // The standalone bundle ships a pre-extracted venv whose pinned
-            // versions can lag ComfyUI's own `requirements.txt` (most visibly
-            // `comfy-aimdo`, which crashes on import when the venv's copy is
-            // older than what ComfyUI's source expects). Force a `pip install
-            // --upgrade -r requirements.txt` after the post-install git update,
-            // even when the file is byte-identical pre/post, so the venv always
-            // ends up in sync with ComfyUI's pins before the user runs anything.
             forceDepsSync: true
           })
         )
@@ -342,24 +289,13 @@ export async function postInstall(
       sendProgress('update', { percent: 100, status: 'Skipped' })
     }
   }
-  // NOTE: starter-template model downloads no longer run here. They start in the
-  // BACKGROUND when install begins (see `startTemplateDownload` wired in
-  // registerInstallationHandlers) and are displayed as a launch-span stepper
-  // phase, so the bytes overlap env setup instead of blocking the install.
 }
 
-/**
- * Resolve the standalone root for a probed directory. Returns the directory
- * itself when it holds the standalone markers (`standalone-env/` +
- * `ComfyUI/main.py`), or its parent when the user pointed at the nested
- * `ComfyUI/` folder inside a standalone install. Returns null otherwise.
- */
 function findStandaloneRoot(dirPath: string): string | null {
   const hasMarkers = (root: string): boolean =>
     fs.existsSync(path.join(root, 'standalone-env')) &&
     fs.existsSync(path.join(root, 'ComfyUI', 'main.py'))
   if (hasMarkers(dirPath)) return dirPath
-  // User pointed at the nested `ComfyUI/` folder — the root is one level up.
   return resolveNestedComfyUIParent(dirPath, hasMarkers)
 }
 
@@ -402,8 +338,6 @@ export async function probeInstallation(dirPath: string): Promise<Record<string,
     variant,
     pythonVersion,
     hasGit,
-    // Record the standalone root, not whatever the user picked — they may have
-    // pointed at the nested `ComfyUI/` folder. Runtime paths resolve off this.
     installPath: root,
     launchArgs: DEFAULT_LAUNCH_ARGS,
     launchMode: 'window',
@@ -426,7 +360,6 @@ export async function migrateEnvLayout(
 
   await fs.promises.rename(legacyEnvDir, venvDir)
 
-  // Rewrite the pyvenv.cfg home path (old path included envs/default/).
   const cfgPath = path.join(venvDir, 'pyvenv.cfg')
   if (fs.existsSync(cfgPath)) {
     let content = await fs.promises.readFile(cfgPath, 'utf-8')
@@ -435,7 +368,6 @@ export async function migrateEnvLayout(
     await fs.promises.writeFile(cfgPath, content, 'utf-8')
   }
 
-  // Rewrite shebangs on unix.
   if (process.platform !== 'win32') {
     const binDir = path.join(venvDir, 'bin')
     if (fs.existsSync(binDir)) {
@@ -455,7 +387,6 @@ export async function migrateEnvLayout(
     }
   }
 
-  // Re-codesign moved binaries on macOS.
   if (process.platform === 'darwin') {
     sendProgress?.('migration', { percent: 50, status: 'Codesigning migrated binaries…' })
     await codesignBinaries(venvDir)

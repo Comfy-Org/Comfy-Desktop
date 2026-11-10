@@ -4,7 +4,6 @@ import type * as Installations from '../../installations'
 import type * as Git from '../git'
 import type { ComfyVersion } from '../version'
 
-// Stub the electron surface ../shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -29,7 +28,6 @@ vi.mock('../git', async (importOriginal) => ({
   ...(await importOriginal<typeof Git>()),
   hasGitDir: () => true,
   readGitHead: () => null,
-  // No origin, so no tag fetch and no latest-tag override: the resolver mock is the only input.
   readGitRemoteUrl: () => null
 }))
 
@@ -60,9 +58,6 @@ function install(comfyVersion: ComfyVersion): InstallationRecord {
   }
 }
 
-// The persist decision compares formatted version strings, which ignore provenance. These pin the
-// terms that catch a provenance-only change: without them a record written before a field existed
-// keeps its absence forever, and the beta-grant gate reads that absence as a refusal.
 describe('_resolveAndBroadcastVersions provenance-only changes', () => {
   beforeEach(() => {
     vi.mocked(resolveLocalVersion).mockReset()
@@ -99,8 +94,6 @@ describe('_resolveAndBroadcastVersions provenance-only changes', () => {
   })
 
   it('writes nothing when the resolved record is identical', async () => {
-    // Negative control: proves the two cases above persist because of the provenance term, not
-    // because this harness makes every resolve look like a change.
     const stored: ComfyVersion = {
       commit: COMMIT,
       baseTag: 'v0.37.1',

@@ -76,7 +76,6 @@ export async function copyDirWithProgress(
     i += concurrency
   }
 
-  // Recreate symlinks, rewriting absolute targets that point inside src
   for (const rel of symlinks) {
     if (signal?.aborted) throw new Error('Cancelled')
     const srcLink = path.join(src, rel)

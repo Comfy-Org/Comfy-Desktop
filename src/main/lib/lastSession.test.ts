@@ -5,8 +5,6 @@ import path from 'path'
 
 let testStateDir = ''
 
-// Mock paths.ts directly: stateDir() reads XDG_STATE_HOME on Linux, bypassing
-// the electron.app.getPath mock and breaking CI.
 vi.mock('./paths', () => ({
   stateDir: () => testStateDir
 }))

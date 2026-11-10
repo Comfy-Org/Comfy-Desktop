@@ -8,11 +8,6 @@ vi.mock('./telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
-// `coreBetaGrants` is the one flag that persists, so resolving a value here writes `ops-flags.json`
-// for real — into the developer's own config dir, granting them the beta grants on their next launch.
-// Pinning `configDir()` to a temp dir is how `opsFlag.test.ts` and `experiments.test.ts` contain
-// that. Set for every test, not just the fetch one: an empty dir would resolve the file relative
-// to cwd and drop it in the repo root.
 let testConfigDir = ''
 vi.mock('./paths', () => ({
   configDir: () => testConfigDir
@@ -212,9 +207,6 @@ describe('parseCoreBetaGrants', () => {
 })
 
 describe('parseCoreBetaGrants notice wording', () => {
-  /** The exact payload shape live in the prod acceptance-test flag. A flag object carrying
-   *  nothing but `arg` + `min_core_version` MUST keep granting — the notice fields are copy,
-   *  added after that payload was written, and cannot become required. */
   it('grants a payload entry that says nothing about the notice', () => {
     expect(
       parseCoreBetaGrants(true, {
@@ -246,8 +238,6 @@ describe('parseCoreBetaGrants notice wording', () => {
   })
 
   it('only the exact string "silent" suppresses the card', () => {
-    // `notice: true` reads as "yes, notify" at least as naturally as "yes, silent", and a
-    // rollout silenced by accident is invisible until someone asks why nobody was told.
     for (const notice of [true, 1, 'SILENT', 'quiet', null]) {
       expect(
         parseCoreBetaGrants(true, {
@@ -275,8 +265,6 @@ describe('parseCoreBetaGrants notice wording', () => {
   })
 
   it('drops an over-long or non-string description instead of refusing the grant', () => {
-    // Copy never gates a flag: a name too long for the card, or the wrong type entirely, costs
-    // the card its wording and nothing else.
     for (const description of ['x'.repeat(49), 42, { text: 'Assets' }, ['Assets']]) {
       expect(
         parseCoreBetaGrants(true, {
@@ -292,8 +280,6 @@ describe('parseCoreBetaGrants notice wording', () => {
     ['a bidi override', 'Assets\u202Ebrowser'],
     ['a zero-width joiner', 'Assets\u200Dbrowser']
   ])('drops a description containing %s', (_label, description) => {
-    // The name is rendered verbatim in desktop chrome next to a Settings action, so anything
-    // that can reshape or reverse the sentence falls back to the generic wording.
     expect(
       parseCoreBetaGrants(true, {
         flags: [{ arg: '--enable-asset-hashing', min_core_version: '0.3.80', description }]
@@ -324,9 +310,6 @@ describe('selectCoreBetaGrantArgs', () => {
     maxCoreVersion: '0.4.0'
   }
 
-  /** Defaults to exact, verified and current: an install sitting on an ancestry-established
-   *  release tag its record still describes is the ordinary case, so the cases below vary only
-   *  what they are actually about. */
   function at(semver: string | null, exact = true): CoreVersionState {
     return { semver, exact, verified: true, current: true }
   }
@@ -390,8 +373,6 @@ describe('selectCoreBetaGrantArgs', () => {
   })
 
   it('pairs opposites by exact stem, not by a shared prefix', () => {
-    // `--enable-assets` and `--disable-asset-hashing` are different features; the stems
-    // (`assets` vs `asset-hashing`) must not collide just because one prefixes the other.
     expect(
       selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), true, ['--disable-asset-hashing'])
     ).toEqual([unboundedGrant])
@@ -400,9 +381,6 @@ describe('selectCoreBetaGrantArgs', () => {
   it.each([['--enable-assets=true'], ['--disable-assets=true'], ['--DISABLE-ASSETS']])(
     'does not treat the near miss %s as an exact arg token',
     (userArg) => {
-      // Exact-token match on both the duplicate and the conflict check: the allowlist grammar
-      // has no `=value` or mixed-case form, so a lookalike is an ordinary user arg that
-      // neither suppresses the grant nor counts as already present.
       expect(selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81'), true, [userArg])).toEqual([
         unboundedGrant
       ])
@@ -424,8 +402,6 @@ describe('selectCoreBetaGrantArgs', () => {
     expect(selectCoreBetaGrantArgs([unboundedGrant], at(null), true, [])).toEqual([])
   })
 
-  /** An install record carrying exactly the version data under test, so the cases below derive
-   *  their gate inputs from production readers rather than hand-set booleans that could drift. */
   function installWith(comfyVersion: ComfyVersion): InstallationRecord {
     return {
       id: 'inst-1',
@@ -440,8 +416,6 @@ describe('selectCoreBetaGrantArgs', () => {
   const COMMIT = '61e5e3b5a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4'
 
   it('returns no grants when the base tag was not established by ancestry', () => {
-    // `resolveLocalVersion`'s merge-base fallback runs only because v0.3.99 is NOT an ancestor,
-    // so this install may be missing the fix a raised minimum is asking for.
     const mergeBaseFallback = installWith({
       commit: COMMIT,
       baseTag: 'v0.3.99',
@@ -490,9 +464,6 @@ describe('selectCoreBetaGrantArgs', () => {
   const PULLED_COMMIT = '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c'
 
   it('returns no grants when the live checkout has moved off the recorded commit', () => {
-    // A pull after the record was written leaves `exact` and `verified` true of a commit that is
-    // no longer running, so neither of them can refuse this — they are assertions about the
-    // recorded commit, not about the checkout still being at it.
     const pulled = installWith({
       commit: COMMIT,
       baseTag: 'v0.3.99',
@@ -532,8 +503,6 @@ describe('selectCoreBetaGrantArgs', () => {
     ).toEqual([unboundedGrant])
   })
 
-  /** Derives exactness the way production does, so these cases pin the real `commitsAhead`
-   *  semantics rather than a hand-set boolean that could drift from `coreGateVersion`. */
   function exactnessOf(commitsAhead: number | undefined): boolean {
     return coreGateVersion(
       installWith({ commit: COMMIT, baseTag: 'v0.3.99', commitsAhead, baseTagVerified: true })
@@ -550,16 +519,12 @@ describe('selectCoreBetaGrantArgs', () => {
     ['the commit comparison failed', undefined],
     ['the install is 40 commits past the tag', 40]
   ] as const)('withholds a max-bounded grant when %s', (_label, commitsAhead) => {
-    // `coreSemver` resolves from `baseTag`, so a latest-channel install still MEASURES as
-    // 0.3.99 and would otherwise slip under the `<0.4.0` ceiling it is actually well past.
     expect(
       selectCoreBetaGrantArgs([boundedGrant], at('0.3.99', exactnessOf(commitsAhead)), true, [])
     ).toEqual([])
   })
 
   it('still applies a min-only grant when the install is not exactly on its tag', () => {
-    // The lower bound stays conservative under baseTag lag: the running code can only be NEWER
-    // than its tag, so `>=min` can under-report but never over-report.
     expect(
       selectCoreBetaGrantArgs([unboundedGrant], at('0.3.81', exactnessOf(undefined)), true, [])
     ).toEqual([unboundedGrant])
@@ -1023,8 +988,6 @@ describe('core beta grants fetch', () => {
     ])
 
     expect(getOpsFlagResult).toHaveBeenCalledOnce()
-    // The trailing callback is what lets a revocation arriving after the boot deadline reach
-    // disk for the next launch. This flag persists grants, so it is the one that must have one.
     expect(getOpsFlagResult).toHaveBeenCalledWith(
       CORE_BETA_FEATURES_FLAG_KEY,
       'device-id',
@@ -1165,7 +1128,6 @@ describe('Desktop assets args', () => {
     knownFlags: new Set(names)
   })
   const forceOff: CoreBetaGrant = { arg: '--disable-assets', minCoreVersion: '9.0.0' }
-  // Below the floor by version, so only the commit proof can pass unless a case says otherwise.
   const preAssets = { semver: '0.37.9', exact: true, verified: true, current: true }
   const atFloor = { semver: '0.38.0', exact: true, verified: true, current: true }
   const gitAtFloor = { head: HEAD, ancestry: new Map([[ASSETS_MIN_CORE_COMMIT, true]]) }

@@ -7,7 +7,6 @@ import {
   waitLaunchSpawnHold
 } from './e2eOverrides'
 
-/** Resolves true if `p` settles within `ms`, false otherwise. */
 function settlesWithin(p: Promise<unknown>, ms: number): Promise<boolean> {
   return Promise.race([
     p.then(() => true),
@@ -22,7 +21,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  // Disarm + release anything a failed assertion left behind.
   releaseLaunchSpawnHold()
   if (savedE2E === undefined) delete process.env['E2E']
   else process.env['E2E'] = savedE2E
@@ -42,7 +40,7 @@ describe('waitLaunchSpawnHold', () => {
     const abort = new AbortController()
     await expect(settlesWithin(waitLaunchSpawnHold(abort.signal), 50)).resolves.toBe(true)
     expect(isLaunchSpawnHeld()).toBe(false)
-    releaseLaunchSpawnHold() // disarm for the next test
+    releaseLaunchSpawnHold()
   })
 
   it('parks an armed launch until explicitly released', async () => {
@@ -53,7 +51,7 @@ describe('waitLaunchSpawnHold', () => {
     expect(isLaunchSpawnHeld()).toBe(true)
 
     releaseLaunchSpawnHold()
-    await held // deterministic: the release guarantees resolution
+    await held
     expect(isLaunchSpawnHeld()).toBe(false)
   })
 
@@ -64,7 +62,7 @@ describe('waitLaunchSpawnHold', () => {
     await expect(settlesWithin(held, 50)).resolves.toBe(false)
 
     abort.abort()
-    await held // deterministic: the abort guarantees resolution
+    await held
     expect(isLaunchSpawnHeld()).toBe(false)
   })
 
@@ -82,12 +80,11 @@ describe('waitLaunchSpawnHold', () => {
     const held = waitLaunchSpawnHold(first.signal)
     await expect(settlesWithin(held, 50)).resolves.toBe(false)
 
-    // A second launch entering while the first is parked must NOT park.
     const second = new AbortController()
     await expect(settlesWithin(waitLaunchSpawnHold(second.signal), 50)).resolves.toBe(true)
 
     releaseLaunchSpawnHold()
-    await held // deterministic: the release guarantees resolution
+    await held
   })
 
   it('re-arming while a launch is parked throws instead of orphaning the waiter', async () => {
@@ -99,7 +96,7 @@ describe('waitLaunchSpawnHold', () => {
     expect(() => armLaunchSpawnHold()).toThrow(/already parked/)
 
     releaseLaunchSpawnHold()
-    await held // deterministic: the release guarantees resolution
+    await held
   })
 
   it('release before any launch consumes the hold just disarms it', async () => {

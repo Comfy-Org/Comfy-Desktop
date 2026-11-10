@@ -33,7 +33,6 @@ export function findComfyUIDir(installPath: string): string | null {
   const direct = path.join(installPath, 'ComfyUI')
   if (fs.existsSync(direct)) return direct
 
-  // Desktop basePath: models/, user/, and custom_nodes/ live directly in installPath
   if (
     fs.existsSync(path.join(installPath, 'models')) &&
     fs.existsSync(path.join(installPath, 'user')) &&

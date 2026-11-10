@@ -24,7 +24,6 @@ import type { InstallationRecord } from '../../installations'
 const ENV_FILENAME = '.comfy_environment'
 const EXPECTED_CONTENT = 'local-desktop2-standalone\n'
 
-/** Build the platform-appropriate site-packages dir under a managed venv and return it. */
 function makeSitePackages(installPath: string): string {
   const venv = path.join(installPath, 'ComfyUI', '.venv')
   const sitePackages =
@@ -58,7 +57,6 @@ describe('writeComfyEnvironment', () => {
     const filePath = path.join(tmpDir, ENV_FILENAME)
     await writeComfyEnvironment(tmpDir)
     const mtimeBefore = fs.statSync(filePath).mtimeMs
-    // Wait a tick so mtime would change if a write actually happened.
     await new Promise((r) => setTimeout(r, 20))
     await writeComfyEnvironment(tmpDir)
     const mtimeAfter = fs.statSync(filePath).mtimeMs
@@ -80,7 +78,6 @@ describe('writeComfyEnvironment', () => {
 
   it('swallows write errors and warns instead of throwing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    // tmpDir exists, but we pre-create the marker as a directory so writeFile fails with EISDIR.
     fs.mkdirSync(path.join(tmpDir, ENV_FILENAME))
     await expect(writeComfyEnvironment(tmpDir)).resolves.toBeUndefined()
     expect(warn).toHaveBeenCalled()
@@ -122,8 +119,6 @@ describe('getTorchVersion', () => {
   })
 })
 
-// --- Architecture-specific vendor ids (for example win-nvidia-arm64) ---
-
 describe('architecture-specific vendor ids', () => {
   const realPlatform = process.platform
   const realArch = process.arch
@@ -157,8 +152,6 @@ describe('architecture-specific vendor ids', () => {
   })
 
   it('a beta- id strips, resolves and recommends like its final id, labelled Beta', () => {
-    // beta- hides a pre-release bundle from desktops that filter on the bare
-    // platform prefix; this build reads through it.
     expect(isBetaVariant('beta-win-nvidia-arm64')).toBe(true)
     expect(isBetaVariant('win-nvidia-arm64')).toBe(false)
     expect(stripPlatform('beta-win-nvidia-arm64')).toBe('nvidia-arm64')

@@ -11,14 +11,6 @@ import { isBuildInstall } from '../devplatform/buildState'
 import type { ContextMenuItem } from '../types/context-menu'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
-/** Action / context menu for chooser tiles, powering both the right-click
- *  context menu and the kebab action menu with the same items. The
- *  same items also drive the tile's update/migrate pills via
- *  `triggerAction`, so the surfaces cannot diverge.
- *
- *  REQUIRES_STOPPED items (Update, Migrate, Restore, Delete) render
- *  `disabled` while the install is running, stopping, or has an op in
- *  flight, mirroring main's REQUIRES_STOPPED guard. */
 export type InstallMenuActionId =
   | 'manage'
   | 'update'
@@ -38,16 +30,9 @@ export interface ManageOpenOptions {
 
 export function useInstallContextMenu(
   opts: {
-    /** Open the per-install Manage... overlay. Items funnel through this with
-     *  the right `initialTab` / `autoAction` so the source-side action
-     *  machinery is reused. */
     onManage?: (inst: Installation, options?: ManageOpenOptions) => void
-    /** Fast-path for actions that own their own confirm + showProgress
-     *  (Delete). Avoids the ManageInstallModal spinner flash. Falls back
-     *  to `onManage(inst, { autoAction })` when omitted. */
     onShowProgress?: (showOpts: ShowProgressOpts) => void
-    /** Dashboard-only gate for the workspace promotion action. Main revalidates
-     *  the installation and active workspace before uploading anything. */
+    onUpdate?: (inst: Installation) => Promise<void>
     canPromoteToWorkspace?: (inst: Installation) => boolean
   } = {}
 ) {
@@ -92,9 +77,6 @@ export function useInstallContextMenu(
   }
 
   function hasMigratePrompt(inst: Installation): boolean {
-    // The backend tags every migratable install (Legacy Desktop, portable,
-    // git) with a `migrate` status tag - mirror the `hasUpdateTag` pattern
-    // rather than special-casing a single source.
     return inst.statusTag?.style === 'migrate'
   }
 
@@ -102,8 +84,6 @@ export function useInstallContextMenu(
     return !!inst.installPath
   }
 
-  /** True when REQUIRES_STOPPED actions would no-op: install is running,
-   *  stopping, or has an op in flight. Drives the `disabled` flag. */
   function isStoppedActionGated(inst: Installation): boolean {
     return (
       sessionStore.isRunning(inst.id) ||
@@ -117,7 +97,6 @@ export function useInstallContextMenu(
     const stoppedActionGated = isStoppedActionGated(inst)
     const supportsSnapshotActions =
       isInstalled(inst) && hasInstallPath(inst) && isLocalLikeInstall(inst) && !isBuildInstall(inst)
-    // Tooltip explaining why the gated items are greyed out.
     const gatedTitle = stoppedActionGated ? t('chooser.stoppedActionGatedReason') : undefined
 
     if (opts.onManage) {
@@ -144,7 +123,6 @@ export function useInstallContextMenu(
       }
     }
 
-    // Only sources whose detail sections expose the generic copy action.
     if (isInstalled(inst) && (inst.sourceId === 'standalone' || isBuildInstall(inst))) {
       items.push({
         id: 'copy-install',
@@ -163,11 +141,10 @@ export function useInstallContextMenu(
 
     const snapshotCluster: ContextMenuItem[] = []
 
-    // Workspace-managed installs do not support Desktop snapshot actions.
     if (supportsSnapshotActions) {
       snapshotCluster.push({
         id: 'share',
-        label: t('chooser.menuExportSnapshot', 'Export Snapshot')
+        label: t('chooser.menuExportSnapshot')
       })
     }
 
@@ -185,14 +162,11 @@ export function useInstallContextMenu(
       snapshotCluster.push({
         id: 'promote-to-workspace',
         label: promoting
-          ? t('devPlatform.workspace.promoting', 'Creating...')
-          : t('devPlatform.workspace.promoteToWorkspace', 'Create Build'),
-        hint: t(
-          'devPlatform.workspace.promoteToWorkspaceHint',
-          'Create a Build from this instance in Comfy Developer Platform.'
-        ),
+          ? t('devPlatform.workspace.promoting')
+          : t('devPlatform.workspace.promoteToWorkspace'),
+        hint: t('devPlatform.workspace.promoteToWorkspaceHint'),
         hintUrl: 'https://platform.comfy.org/profile/deploy',
-        hintLinkLabel: t('devPlatform.workspace.readMore', 'Read more'),
+        hintLinkLabel: t('devPlatform.workspace.readMore'),
         disabled: promoting
       })
     }
@@ -203,13 +177,10 @@ export function useInstallContextMenu(
       items.push(...snapshotCluster)
     }
 
-    // Bottom cluster - Stop (running only) + Delete (wipes disk). Built as one
-    // group so only its first item draws the divider.
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
-      cluster.push({ id: 'stop', label: t('actions.stop', 'Stop'), style: 'danger' })
+      cluster.push({ id: 'stop', label: t('actions.stop'), style: 'danger' })
     }
-    // Managed Build settings allow incomplete local records to be uninstalled.
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
         id: 'delete',
@@ -228,7 +199,6 @@ export function useInstallContextMenu(
     return items
   }
 
-  /** Right-click on a card - anchor at click coords. */
   function openCardMenu(event: MouseEvent, inst: Installation): void {
     const items = getMenuItems(inst)
     if (items.length === 0) return
@@ -236,15 +206,12 @@ export function useInstallContextMenu(
     ctxMenu.value = { open: true, x: event.clientX, y: event.clientY, inst }
   }
 
-  /** Click on the kebab button - anchor the menu beneath the icon. */
   function openKebabMenu(event: MouseEvent, inst: Installation): void {
     const items = getMenuItems(inst)
     if (items.length === 0) return
     event.stopPropagation()
     event.preventDefault()
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect?.()
-    // Right-aligned drop. ContextMenu clamps to viewport, so a negative x
-    // is safe.
     const x = rect ? rect.right - 180 : event.clientX
     const y = (rect?.bottom ?? event.clientY) + 4
     ctxMenu.value = { open: true, x, y, inst }
@@ -256,9 +223,6 @@ export function useInstallContextMenu(
     return getMenuItems(inst)
   })
 
-  /** Run a fire-and-forget action and surface a failure via `modal.alert`.
-   *  Main returns `{ ok: false, message }` on action-level failures, not
-   *  just rejections. */
   async function runInstantActionWithAlert(
     inst: Installation,
     actionId: string,
@@ -275,22 +239,17 @@ export function useInstallContextMenu(
     }
   }
 
-  /** Single dispatch path for both menus and the tile's visual pills, so
-   *  the surfaces cannot diverge. */
   async function triggerAction(id: string, inst: Installation): Promise<void> {
     if (id === 'manage') {
       opts.onManage?.(inst)
     } else if (id === 'update') {
-      // Open the Update tab AND auto-fire the update so the modal runs.
-      opts.onManage?.(inst, { initialTab: 'update', autoAction: 'update-comfyui' })
+      if (opts.onUpdate) await opts.onUpdate(inst)
+      else opts.onManage?.(inst, { initialTab: 'update', autoAction: 'update-comfyui' })
     } else if (id === 'migrate') {
       opts.onManage?.(inst, { autoAction: 'migrate-to-standalone' })
     } else if (id === 'restore-snapshot') {
       opts.onManage?.(inst, { initialTab: 'snapshots' })
     } else if (id === 'stop') {
-      // Stop the Python backend but leave the window/frontend alive (main's
-      // onComfyExited swaps the body to the lifecycle card). Shared confirm +
-      // stop logic lives in useStopAction.
       await confirmAndStop(inst.id)
     } else if (id === 'reveal-in-folder') {
       await runInstantActionWithAlert(
@@ -299,9 +258,7 @@ export function useInstallContextMenu(
         revealInFolderLabel(window.api?.platform)
       )
     } else if (id === 'share') {
-      // Export the latest snapshot. The IPC owns its own save dialog; a
-      // cancel is a silent no-op. Only surface genuine failures.
-      const label = t('chooser.menuExportSnapshot', 'Export Snapshot')
+      const label = t('chooser.menuExportSnapshot')
       try {
         const result = await shareLatestSnapshot(inst.id)
         if (!result.ok) {
@@ -309,8 +266,8 @@ export function useInstallContextMenu(
             title: label,
             message:
               result.reason === 'none'
-                ? t('snapshots.noSnapshotsToShare', 'There are no snapshots to share yet.')
-                : (result.message ?? t('snapshots.shareFailed', 'Could not share the snapshot.'))
+                ? t('snapshots.noSnapshotsToShare')
+                : (result.message ?? t('snapshots.shareFailed'))
           })
         }
       } catch (err) {
@@ -318,18 +275,13 @@ export function useInstallContextMenu(
       }
     } else if (id === 'promote-to-workspace') {
       if (isPromotingToWorkspace(inst)) return
-      const title = t('devPlatform.workspace.promoteFailedTitle', 'Could not create build')
+      const title = t('devPlatform.workspace.promoteFailedTitle')
       let failureMessage: string | null = null
       setPromotingToWorkspace(inst.id, true)
       try {
         const result = await window.api.comfybuilder.promoteLocalInstance(inst.id)
         if (!result.ok) {
-          failureMessage =
-            result.message ||
-            t(
-              'devPlatform.workspace.promoteFailedMessage',
-              'Could not create a draft in Comfy Developer Platform.'
-            )
+          failureMessage = result.message || t('devPlatform.workspace.promoteFailedMessage')
         }
       } catch (err) {
         failureMessage = (err as Error)?.message || String(err)
@@ -338,23 +290,15 @@ export function useInstallContextMenu(
       }
       if (failureMessage) await modal.alert({ title, message: failureMessage })
     } else if (id === 'copy-install') {
-      // Route through `onManage` so the prompt / disk-check / showProgress
-      // chain runs; calling `runAction('copy')` directly bails on a
-      // missing name.
       opts.onManage?.(inst, { autoAction: 'copy' })
     } else if (id === 'delete') {
-      // Build the confirm + showProgress payload renderer-side instead of
-      // round-tripping through `getDetailSections` (the ~2s Windows stall).
       if (opts.onShowProgress) {
-        // English fallbacks: locales merge in after mount, so a fast first
-        // click could otherwise render raw dotted keys.
-        const deleteLabel = t('actions.delete', 'Delete')
+        const deleteLabel = t('actions.delete')
         const confirmed = await modal.confirm({
-          title: t('actions.deleteConfirmTitle', 'Delete Install'),
+          title: t('actions.deleteConfirmTitle'),
           message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
-            'actions.deleteConfirmMessage',
-            'This permanently removes this ComfyUI installation and all its files. This cannot be undone.'
-          )}\n\n${t('actions.deleteConfirmDetail', 'Other installs are not affected.')}`,
+            'actions.deleteConfirmMessage'
+          )}\n\n${t('actions.deleteConfirmDetail')}`,
           confirmLabel: deleteLabel,
           confirmStyle: 'danger'
         })
@@ -371,7 +315,6 @@ export function useInstallContextMenu(
         return
       }
       if (opts.onManage) {
-        // Fallback when the host doesn't expose `onShowProgress`.
         opts.onManage(inst, { autoAction: 'delete' })
       } else {
         await runInstantActionWithAlert(inst, 'delete', t('chooser.menuDelete'))
@@ -389,7 +332,6 @@ export function useInstallContextMenu(
     ctxMenu.value.open = false
   }
 
-  /** Surface either an operation failure or a crashed instance's details. */
   function viewError(inst: Installation): void {
     const err = sessionStore.errorInstances.get(inst.id)
     if (!err) return
@@ -412,7 +354,6 @@ export function useInstallContextMenu(
     void modal.alert({ title: t('chooser.errorTitle'), message })
   }
 
-  /** Surface the full explanation for a backend-provided danger status. */
   function viewDanger(inst: Installation): void {
     const tag = inst.statusTag
     if (!tag || tag.style !== 'danger') return

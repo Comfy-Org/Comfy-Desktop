@@ -24,7 +24,6 @@ describe('installTypeMetaFor', () => {
     expect(legacy.key).toBe('legacyDesktop')
     expect(legacy.icon).toBe(Computer)
     expect(legacy.labelKey).toBe('installType.legacyDesktop')
-    // Legacy Desktop must not share an icon with Standalone.
     expect(legacy.icon).not.toBe(standalone.icon)
   })
 
@@ -54,9 +53,6 @@ describe('installTypeMetaForInstall', () => {
   })
 
   it('gives a build install the build glyph, not the local one', () => {
-    // It reports `local` like any standalone install, but what it IS matters
-    // more than where it runs — and the tile, the picker row and the title bar
-    // all read this, so they can't drift apart.
     const bySource = installTypeMetaForInstall({
       sourceId: 'comfybuilder',
       sourceCategory: 'local'

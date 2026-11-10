@@ -48,8 +48,6 @@ const mockedPipFreeze = vi.mocked(pipFreeze)
 const mockedRunUvPip = vi.mocked(runUvPip)
 const mockedTelemetryEmit = vi.mocked(telemetry.emit)
 
-// --- Helpers ---
-
 function makeNode(overrides?: Partial<ScannedNode>): ScannedNode {
   return {
     id: 'test-node',
@@ -92,8 +90,6 @@ function makeEnvelope(snapshots?: Snapshot[]): SnapshotExportEnvelope {
     snapshots: snapshots ?? [makeSnapshot()]
   }
 }
-
-// --- validateExportEnvelope ---
 
 describe('validateExportEnvelope', () => {
   it('accepts a valid envelope', () => {
@@ -138,8 +134,6 @@ describe('validateExportEnvelope', () => {
   })
 
   it('rejects a v1 envelope containing a v2 snapshot', () => {
-    // The envelope version is the compatibility gate older clients check; a v1
-    // envelope smuggling v2 snapshots would slip torch-aware data past it.
     expect(() =>
       validateExportEnvelope({
         ...makeEnvelope([{ ...makeSnapshot(), version: 2 }]),
@@ -149,8 +143,6 @@ describe('validateExportEnvelope', () => {
   })
 
   it('rejects a newer version with an update-the-app hint', () => {
-    // A higher integer version means the file came from a newer Desktop; the
-    // error must point at the likely fix instead of looking like corruption.
     expect(() => validateExportEnvelope({ ...makeEnvelope(), version: 3 })).toThrow(
       /Unsupported snapshot version: 3.*updating the app/
     )
@@ -186,8 +178,6 @@ describe('validateExportEnvelope', () => {
     const { snapshots: _, ...rest } = env
     expect(() => validateExportEnvelope(rest)).toThrow('no snapshots')
   })
-
-  // Snapshot-level validation
 
   it('accepts a v2 snapshot without torchStack', () => {
     const result = validateExportEnvelope(makeEnvelope([{ ...makeSnapshot(), version: 2 }]))
@@ -250,8 +240,6 @@ describe('validateExportEnvelope', () => {
     }
   })
 
-  // Custom node validation
-
   it('rejects custom node with path traversal in dirName', () => {
     expect(() =>
       validateExportEnvelope(
@@ -290,8 +278,6 @@ describe('validateExportEnvelope', () => {
       expect(result.snapshots[0]!.customNodes[0]!.type).toBe(type)
     }
   })
-
-  // Pip package name validation
 
   it('rejects pip name starting with hyphen (argument injection)', () => {
     expect(() =>
@@ -334,8 +320,6 @@ describe('validateExportEnvelope', () => {
     )
     expect(Object.keys(result.snapshots[0]!.pipPackages)).toHaveLength(6)
   })
-
-  // torchStack validation (v2)
 
   const makeManagedTorchStack = (): Snapshot['torchStack'] => ({
     kind: 'managed',
@@ -414,8 +398,6 @@ describe('validateExportEnvelope', () => {
     )
   })
 
-  /** Deep-clone the managed fixture as raw JSON so tests can corrupt it
-   *  field-by-field without fighting the discriminated-union types. */
   const rawManagedStack = (): { kind: string; ref: Record<string, unknown> } =>
     JSON.parse(JSON.stringify(makeManagedTorchStack())) as {
       kind: string
@@ -463,9 +445,9 @@ describe('validateExportEnvelope', () => {
 
   it('rejects an amd-multi-arch-index source whose stackId does not name its tag + tuple', () => {
     for (const stackId of [
-      'pytorch-index:rocm7.14.0:2.10.0', // wrong namespace
-      'amd-index:rocm7.13.0:2.10.0', // tag disagrees with the source
-      'amd-index:rocm7.14.0:2.11.0' // version disagrees with the tuple
+      'pytorch-index:rocm7.14.0:2.10.0',
+      'amd-index:rocm7.13.0:2.10.0',
+      'amd-index:rocm7.14.0:2.11.0'
     ]) {
       const stack = rawManagedStack()
       stack.ref.stackId = stackId
@@ -505,12 +487,8 @@ describe('validateExportEnvelope', () => {
     for (const source of [
       { kind: 'amd-multi-arch-index' },
       { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0 --index-url https://evil.example' },
-      // The index URL is a hardcoded app constant; a snapshot supplying one
-      // must not validate.
       { kind: 'amd-multi-arch-index', indexTag: 'https://evil.example/' },
-      // Only rocm tags name AMD multi-arch stacks.
       { kind: 'amd-multi-arch-index', indexTag: 'cu130' },
-      // Extra fields (e.g. a smuggled url) mark the source as not ours.
       { kind: 'amd-multi-arch-index', indexTag: 'rocm7.14.0', url: 'https://evil.example' }
     ]) {
       const stack = rawManagedStack()
@@ -546,8 +524,6 @@ describe('validateExportEnvelope', () => {
   })
 })
 
-// --- buildExportEnvelope ---
-
 describe('buildExportEnvelope', () => {
   it('wraps a single snapshot', () => {
     const entry = makeEntry()
@@ -576,8 +552,6 @@ describe('buildExportEnvelope', () => {
     expect(() => validateExportEnvelope(result)).not.toThrow()
   })
 })
-
-// --- diffSnapshots ---
 
 describe('diffSnapshots', () => {
   it('returns empty diff for identical snapshots', () => {
@@ -629,8 +603,6 @@ describe('diffSnapshots', () => {
     expect(diff.comfyui).toBeUndefined()
   })
 
-  // Update channel diffs
-
   it('detects update channel change', () => {
     const a = makeSnapshot({ updateChannel: 'stable' })
     const b = makeSnapshot({ updateChannel: 'latest' })
@@ -654,8 +626,6 @@ describe('diffSnapshots', () => {
     expect(diff.updateChannelChanged).toBe(false)
     expect(diff.updateChannel).toBeUndefined()
   })
-
-  // Node diffs
 
   it('detects added nodes', () => {
     const a = makeSnapshot({ customNodes: [] })
@@ -713,8 +683,6 @@ describe('diffSnapshots', () => {
     expect(diff.nodesChanged).toHaveLength(0)
   })
 
-  // Pip diffs
-
   it('detects added pip packages', () => {
     const a = makeSnapshot({ pipPackages: {} })
     const b = makeSnapshot({ pipPackages: { numpy: '1.24.0' } })
@@ -750,8 +718,6 @@ describe('diffSnapshots', () => {
     expect(diff.pipsChanged).toHaveLength(0)
   })
 
-  // Mixed changes
-
   it('detects all change types simultaneously', () => {
     const a = makeSnapshot({
       comfyui: { ref: 'v1', commit: 'c1', releaseTag: 'r1', variant: 'v' },
@@ -779,8 +745,6 @@ describe('diffSnapshots', () => {
     expect(diff.pipsChanged).toHaveLength(1)
   })
 })
-
-// --- importSnapshots ---
 
 describe('importSnapshots', () => {
   let tmpDir: string
@@ -843,7 +807,6 @@ describe('importSnapshots', () => {
     const entries = await listSnapshots(tmpDir)
     expect(entries).toHaveLength(1)
     const loaded = entries[0]!.snapshot
-    // createdAt is re-stamped to "now" on import, so just verify it's a valid ISO date
     expect(new Date(loaded.createdAt).getTime()).toBeGreaterThan(0)
     expect(loaded.trigger).toBe(original.trigger)
     expect(loaded.customNodes).toHaveLength(1)
@@ -852,7 +815,6 @@ describe('importSnapshots', () => {
   })
 
   it('imported snapshots land at the top with preserved envelope order (newest-first)', async () => {
-    // Envelope is newest-first: boot is the "newest" at index 0
     const envelope = makeEnvelope([
       makeSnapshot({ createdAt: '2026-03-01T12:00:00.000Z', trigger: 'boot' }),
       makeSnapshot({ createdAt: '2026-03-03T12:00:00.000Z', trigger: 'manual' }),
@@ -862,13 +824,11 @@ describe('importSnapshots', () => {
 
     const entries = await listSnapshots(tmpDir)
     expect(entries).toHaveLength(3)
-    // All three should have fresh timestamps (not the original ones)
     for (const e of entries) {
       expect(new Date(e.snapshot.createdAt).getTime()).toBeGreaterThan(
         new Date('2026-03-03T12:00:00.000Z').getTime()
       )
     }
-    // Newest-first: first in envelope (boot) gets the highest timestamp
     expect(entries[0]!.snapshot.trigger).toBe('boot')
     expect(entries[1]!.snapshot.trigger).toBe('manual')
     expect(entries[2]!.snapshot.trigger).toBe('restart')
@@ -904,7 +864,6 @@ describe('importSnapshots', () => {
     await importSnapshots(tmpDir, envelope, 'install-99')
 
     expect(mockedTelemetryEmit).toHaveBeenCalledTimes(2)
-    // First (envelope index 0) — labeled manual snapshot with nodes + pip
     expect(mockedTelemetryEmit).toHaveBeenNthCalledWith(1, 'comfy.desktop.snapshot.imported', {
       installation_id: 'install-99',
       original_trigger: 'manual',
@@ -914,7 +873,6 @@ describe('importSnapshots', () => {
       batch_size: 2,
       batch_index: 0
     })
-    // Second (envelope index 1) — empty boot snapshot
     expect(mockedTelemetryEmit).toHaveBeenNthCalledWith(2, 'comfy.desktop.snapshot.imported', {
       installation_id: 'install-99',
       original_trigger: 'boot',
@@ -927,33 +885,18 @@ describe('importSnapshots', () => {
   })
 })
 
-// --- staged restore targets ---
-
 describe('staged snapshot envelopes', () => {
-  // Staging keeps imported restore targets out of history — addressable only by
-  // an opaque token — until a restore from them succeeds.
-  it('stages an envelope and loads it back by token without writing history', async () => {
-    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snapshot-stage-'))
-    try {
-      const envelope = makeEnvelope([makeSnapshot({ label: 'staged-target' })])
-      const token = await stageSnapshotEnvelope(envelope, 'install-1')
-      // Token is an opaque 32-char hex string (the shape doubles as
-      // path-traversal defense when resolving the staged file back).
-      expect(token).toMatch(/^[a-f0-9]{32}$/)
+  it('stages an envelope, loads it back by token, and forgets it after release', async () => {
+    const envelope = makeEnvelope([makeSnapshot({ label: 'staged-target' })])
+    const token = await stageSnapshotEnvelope(envelope, 'install-1')
+    expect(token).toMatch(/^[a-f0-9]{32}$/)
 
-      // Staging must not touch any install's snapshot history.
-      const history = await listSnapshots(tmpDir)
-      expect(history).toHaveLength(0)
+    const loaded = await loadStagedSnapshotEnvelope(token, 'install-1')
+    expect(loaded.snapshots).toHaveLength(1)
+    expect(loaded.snapshots[0]!.label).toBe('staged-target')
 
-      const loaded = await loadStagedSnapshotEnvelope(token, 'install-1')
-      expect(loaded.snapshots).toHaveLength(1)
-      expect(loaded.snapshots[0]!.label).toBe('staged-target')
-
-      await releaseStagedSnapshotEnvelope(token)
-      await expect(loadStagedSnapshotEnvelope(token, 'install-1')).rejects.toThrow()
-    } finally {
-      await fs.promises.rm(tmpDir, { recursive: true, force: true })
-    }
+    await releaseStagedSnapshotEnvelope(token)
+    await expect(loadStagedSnapshotEnvelope(token, 'install-1')).rejects.toThrow()
   })
 
   it('rejects an invalid/traversal token', async () => {
@@ -972,7 +915,6 @@ describe('staged snapshot envelopes', () => {
       await expect(loadStagedSnapshotEnvelope(token, 'install-b')).rejects.toThrow(
         /invalid staged snapshot token/i
       )
-      // Still loadable for the installation it was staged for.
       const loaded = await loadStagedSnapshotEnvelope(token, 'install-a')
       expect(loaded.snapshots[0]!.label).toBe('bound-target')
     } finally {
@@ -985,8 +927,6 @@ describe('staged snapshot envelopes', () => {
     await expect(releaseStagedSnapshotEnvelope('0'.repeat(32))).resolves.toBeUndefined()
   })
 })
-
-// --- restoreComfyUIVersion ---
 
 describe('restoreComfyUIVersion', () => {
   let restoreTmpDir: string
@@ -1025,8 +965,6 @@ describe('restoreComfyUIVersion', () => {
     expect(output.some((l) => l.includes('.git directory not found'))).toBe(true)
   })
 })
-
-// --- buildPostRestoreState ---
 
 describe('buildPostRestoreState', () => {
   it('includes comfyVersion and lastRollback when comfyResult has no error', () => {
@@ -1102,8 +1040,6 @@ describe('buildPostRestoreState', () => {
   })
 })
 
-// --- frozenSnapshotInstallOverrides ---
-
 describe('frozenSnapshotInstallOverrides', () => {
   it('disables auto-update so a snapshot-created install stays frozen (#986)', () => {
     expect(frozenSnapshotInstallOverrides('stable').autoUpdateComfyUI).toBe(false)
@@ -1114,7 +1050,6 @@ describe('frozenSnapshotInstallOverrides', () => {
   it("mirrors the snapshot's update channel when provided", () => {
     expect(frozenSnapshotInstallOverrides('latest').updateChannel).toBe('latest')
     expect(frozenSnapshotInstallOverrides('stable').updateChannel).toBe('stable')
-    // Unknown/legacy channel strings fall back to stable.
     expect(frozenSnapshotInstallOverrides('v0.24.0').updateChannel).toBe('stable')
   })
 
@@ -1122,8 +1057,6 @@ describe('frozenSnapshotInstallOverrides', () => {
     expect(frozenSnapshotInstallOverrides()).not.toHaveProperty('updateChannel')
   })
 })
-
-// --- restorePipPackages abort revert ---
 
 describe('restorePipPackages', () => {
   let tmpDir: string
@@ -1134,7 +1067,6 @@ describe('restorePipPackages', () => {
 
   beforeEach(async () => {
     tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pip-restore-test-'))
-    // Create the directory structure that restorePipPackages expects
     const venvDir = path.join(tmpDir, 'ComfyUI', '.venv')
     if (process.platform === 'win32') {
       sitePackagesDir = path.join(venvDir, 'Lib', 'site-packages')
@@ -1170,24 +1102,17 @@ describe('restorePipPackages', () => {
   })
 
   it('uses pre-computed newPkgNames (not result.installed) when reverting on abort', async () => {
-    // Mock pipFreeze to report an empty current environment
     mockedPipFreeze.mockResolvedValue({})
 
-    // Track all runUvPip calls
     const uvCalls: string[][] = []
     const ac = new AbortController()
 
     mockedRunUvPip.mockImplementation(async (_uvPath, args, _cwd, _sendOutput, _signal?) => {
       uvCalls.push([...args])
-      // Simulate: the bulk install is running when the signal aborts.
-      // The bulk install returns non-zero (killed), and result.installed
-      // is never populated because the bulk path only populates it on
-      // success (exit code 0).
       if (args.includes('install')) {
         ac.abort()
         return 1
       }
-      // Uninstall calls during revert should succeed
       return 0
     })
 
@@ -1205,21 +1130,16 @@ describe('restorePipPackages', () => {
       ac.signal
     )
 
-    // The function should have reverted
     expect(result.errors.length).toBeGreaterThan(0)
     expect(result.errors[0]).toContain('Restore reverted')
     expect(result.installed).toHaveLength(0)
 
-    // Find the revert uninstall call — it should contain the new package names
-    // even though result.installed was never populated
     const uninstallCall = uvCalls.find((args) => args.includes('uninstall'))
     expect(uninstallCall).toBeDefined()
     expect(uninstallCall).toContain('new-pkg-a')
     expect(uninstallCall).toContain('new-pkg-b')
   })
 })
-
-// --- formatSnapshotVersion ---
 
 describe('formatSnapshotVersion', () => {
   it('uses stored baseTag and commitsAhead when present', () => {

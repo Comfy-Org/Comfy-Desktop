@@ -2,6 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { useAuthStore } from './authStore'
 
 const api = {
@@ -15,7 +16,6 @@ const api = {
   installBuild: vi.fn()
 }
 
-/** Capture the renderer-side auth-change listener the store registers. */
 let authChangedCb: ((status: unknown) => void) | undefined
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -36,11 +36,11 @@ describe('useAuthStore', () => {
       return () => {}
     })
     api.getAuthStatus.mockResolvedValue({ signedIn: false })
-    ;(globalThis as unknown as { window: unknown }).window = { api: { comfybuilder: api } }
+    stubWindowApi({ comfybuilder: api })
   })
 
   afterEach(() => {
-    delete (globalThis as unknown as { window?: unknown }).window
+    vi.unstubAllGlobals()
   })
 
   it('hydrates status from the persisted session on creation', async () => {
@@ -71,7 +71,6 @@ describe('useAuthStore', () => {
 
   it('fetchBuilds pulls rows only when signed in', async () => {
     const store = useAuthStore()
-    // Signed out: no call, empty list.
     expect(await store.fetchBuilds()).toEqual([])
     expect(api.listBuilds).not.toHaveBeenCalled()
 
@@ -93,7 +92,7 @@ describe('useAuthStore', () => {
     await store.fetchBuilds()
     expect(store.buildsError).toBe(true)
     expect(store.buildsLoaded).toBe(false)
-    expect(store.builds).toEqual([]) // stays empty, but flagged as an error not an empty workspace
+    expect(store.builds).toEqual([])
 
     api.listBuilds.mockResolvedValue([{ id: 'd1', name: 'Image', state: 'installable' }])
     await store.fetchBuilds()
@@ -265,9 +264,6 @@ describe('useAuthStore', () => {
     const store = useAuthStore()
     await store.signIn()
 
-    // Main broadcasts the switched status BEFORE the switchWorkspace invoke
-    // resolves; the watcher keyed on workspace identity fires exactly once,
-    // off this push.
     const invoke = deferred<unknown>()
     api.switchWorkspace.mockReturnValueOnce(invoke.promise)
     const switching = store.switchWorkspace('w2')
@@ -278,9 +274,6 @@ describe('useAuthStore', () => {
     const fetching = store.fetchBuilds()
     expect(store.loadingBuilds).toBe(true)
 
-    // The invoke result carries the identical identity; it must not advance
-    // the revision - that would discard the only fetch for w2 and leave the
-    // UI reporting a false empty workspace with no re-fire.
     invoke.resolve({ signedIn: true, workspaceId: 'w2' })
     await switching
     expect(store.loadingBuilds).toBe(true)
@@ -304,14 +297,10 @@ describe('useAuthStore', () => {
     expect(store.loadingWorkspaces).toBe(true)
     expect(store.buildsError).toBe(true)
 
-    // Sign-out arrives while the workspace fetch is still in flight; nothing
-    // refetches for the signed-out state, so the transition itself must
-    // settle the flags.
     authChangedCb?.({ signedIn: false })
     expect(store.loadingWorkspaces).toBe(false)
     expect(store.buildsError).toBe(false)
 
-    // The stale fetch settling later must not resurrect anything.
     stale.resolve([{ id: 'w1', name: 'W1', type: 'team', role: 'owner' }])
     await staleFetch
     expect(store.loadingWorkspaces).toBe(false)

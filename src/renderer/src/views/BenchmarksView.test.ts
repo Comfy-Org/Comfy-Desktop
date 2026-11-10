@@ -1,11 +1,12 @@
+import { defineComponent, h, KeepAlive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark } from '../types/ipc'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import { useDialogs } from '../composables/useDialogs'
 import BenchmarksView from './BenchmarksView.vue'
+import { setChecked } from './testHelpers'
 
 const createResultsPngMock = vi.hoisted(() =>
   vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer)
@@ -29,83 +30,6 @@ vi.mock('../lib/performanceTestResultsSvg', async (importOriginal) => ({
 vi.mock('./devplatform/DevPlatformAccountChip.vue', () => ({
   default: { template: '<div data-testid="account-chip" />' }
 }))
-
-const messages = {
-  common: { loading: 'Loading...' },
-  benchmarks: {
-    title: 'Benchmarks',
-    description: 'Compare results from your performance tests.',
-    runsLibrary: 'Runs library',
-    openFolder: 'Select folder',
-    refresh: 'Refresh sessions',
-    searchPlaceholder: 'Search runs...',
-    allWorkspaces: 'All workspaces',
-    allInstances: 'All instances',
-    allHardware: 'All hardware',
-    allWorkflows: 'All workflows',
-    columns: 'Properties',
-    columnsToDisplay: 'Columns to display',
-    unmanagedWorkspace: 'Unmanaged',
-    unknownHardware: 'Unknown hardware',
-    session: 'Session',
-    dateTime: 'Date / Time',
-    workflow: 'Workflow',
-    instance: 'Instance',
-    workspace: 'Workspace',
-    runs: 'Runs',
-    hardware: 'GPU / Hardware',
-    fastest: 'Fastest',
-    average: 'Average',
-    median: 'Median',
-    slowest: 'Slowest',
-    measuredRuns: 'Measured runs',
-    selectVisible: 'Select all visible runs',
-    selectRun: 'Select {workflow}',
-    actions: 'Actions',
-    deleteRecord: 'Delete {workflow} benchmark',
-    deleteConfirmTitle: 'Delete {workflow}?',
-    deleteConfirmMessage:
-      'This will permanently delete all files for session {session}. This cannot be undone.',
-    deleteFiles: 'Delete files',
-    deleteErrorTitle: 'Could not delete benchmark',
-    deleteErrorMessage: 'The benchmark files could not be deleted.',
-    sessionName: 'Session name',
-    editSessionName: 'Edit session {session}',
-    renameErrorTitle: 'Could not rename session',
-    renameErrorMessage: 'The session folder could not be renamed.',
-    sessionNameRequired: 'Enter a session name.',
-    comparison: 'Comparison',
-    sortComparison: 'Sort comparison',
-    manualSort: 'Manual sort',
-    switchSortAscending: 'Switch to ascending sort',
-    switchSortDescending: 'Switch to descending sort',
-    reorderComparisonColumn: 'Reorder {workflow} comparison column',
-    reorderComparisonHint: 'Drag to reorder. You can also press Alt+Left or Alt+Right.',
-    comparisonImageTitle: 'Benchmark Comparison',
-    exportResultsImage: 'Export results',
-    exportingImage: 'Exporting image...',
-    exportImageFailed: 'Could not export the comparison image.',
-    metric: 'Metric',
-    baseline: 'Baseline',
-    selectBaseline: 'Use {workflow}, session {session}, as the baseline',
-    visualization: 'Comparison visualization',
-    speed: 'Speed',
-    relativePerformance: 'Relative speed',
-    relativePerformanceHint:
-      'Choose a baseline. Relative speed factor = baseline duration / run duration.',
-    faster: 'Faster',
-    slower: 'Slower',
-    same: 'Same speed',
-    missing: 'Unavailable',
-    duration: 'Duration',
-    durationRange: 'Duration range (min → max)',
-    durationRangeHint: 'Range hint',
-    selectPrompt: 'Select runs from the library to compare them.',
-    empty: 'No performance test results yet.',
-    noMatches: 'No runs match these filters.',
-    loadError: 'Could not load performance test results.'
-  }
-}
 
 function benchmark(
   id: string,
@@ -153,10 +77,17 @@ const sampleBenchmarks = [
 ]
 
 function mountView() {
-  return mount(BenchmarksView, {
-    global: {
-      plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: messages } })]
-    }
+  return mount(BenchmarksView)
+}
+
+function mountKeptAlive() {
+  const Page = defineComponent({
+    props: { visible: { type: Boolean, required: true } },
+    setup: (props) => () =>
+      h(KeepAlive, null, { default: () => (props.visible ? h(BenchmarksView) : h('div')) })
+  })
+  return mount(Page, {
+    props: { visible: true }
   })
 }
 
@@ -178,6 +109,82 @@ describe('BenchmarksView', () => {
         benchmarks: sampleBenchmarks
       }))
     }
+  })
+
+  describe('returning to the page', () => {
+    const list = (): ReturnType<typeof vi.fn> =>
+      window.api.listPerformanceTestBenchmarks as unknown as ReturnType<typeof vi.fn>
+    const browseFolder = (): ReturnType<typeof vi.fn> =>
+      window.api.browseFolder as unknown as ReturnType<typeof vi.fn>
+
+    async function leaveAndReturn(wrapper: ReturnType<typeof mountKeptAlive>): Promise<void> {
+      await wrapper.setProps({ visible: false })
+      await wrapper.setProps({ visible: true })
+      await flushPromises()
+    }
+
+    it('loads once on first open', async () => {
+      mountKeptAlive()
+      await flushPromises()
+
+      expect(list()).toHaveBeenCalledOnce()
+    })
+
+    it('keeps the folder, search and picked runs', async () => {
+      browseFolder().mockResolvedValue('D:\\other')
+      list().mockImplementation(async (folderPath?: string) => ({
+        folderPath: folderPath ?? 'C:\\results\\performance-tests',
+        benchmarks: sampleBenchmarks
+      }))
+      const wrapper = mountKeptAlive()
+      await flushPromises()
+      const selectFolder = wrapper
+        .findAll('button')
+        .find((button) => button.text() === 'Select folder')
+      await selectFolder?.trigger('click')
+      await flushPromises()
+      await setChecked(wrapper.get('[data-testid="benchmark-row-13"] [role="checkbox"]'), false)
+      await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), true)
+      await wrapper.get<HTMLInputElement>('input[type="text"]').setValue('json')
+
+      await leaveAndReturn(wrapper)
+
+      expect(list()).toHaveBeenLastCalledWith('D:\\other')
+      expect(wrapper.get<HTMLInputElement>('input[type="text"]').element.value).toBe('json')
+      const checked = (id: string): string | undefined =>
+        wrapper
+          .get(`[data-testid="benchmark-row-${id}"] [role="checkbox"]`)
+          .attributes('aria-checked')
+      expect(checked('13')).toBe('false')
+      expect(checked('10')).toBe('true')
+    })
+
+    it('shows runs that finished meanwhile and drops picks that are gone', async () => {
+      const wrapper = mountKeptAlive()
+      await flushPromises()
+      list().mockResolvedValue({
+        folderPath: 'C:\\results\\performance-tests',
+        benchmarks: [benchmark('14', 'new.json', 1), ...sampleBenchmarks.slice(1)]
+      })
+
+      await leaveAndReturn(wrapper)
+
+      expect(wrapper.find('[data-testid="benchmark-row-14"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(false)
+      expect(
+        wrapper.get('[data-testid="benchmark-row-14"] [role="checkbox"]').attributes('aria-checked')
+      ).toBe('false')
+    })
+
+    it('keeps the list on screen when the refresh fails', async () => {
+      const wrapper = mountKeptAlive()
+      await flushPromises()
+      list().mockRejectedValue(new Error('offline'))
+
+      await leaveAndReturn(wrapper)
+
+      expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(4)
+    })
   })
 
   it('selects the three newest runs and highlights only the best duration in each metric', async () => {
@@ -237,7 +244,7 @@ describe('BenchmarksView', () => {
     expect(svg).toContain('Benchmark Comparison')
     expect(svg).toContain('portrait.json')
     expect(svg).toContain('Duration range')
-    expect(svg).toContain('Range hint')
+    expect(svg).toContain('Each line shows the fastest and slowest run, with the average marked.')
     expect(svg).toContain('role="img" aria-label="Comfy"')
     expect(svg).toContain('class="footer-date"')
     expect(svg.match(/class="table-cell best-cell"/g)).toHaveLength(4)
@@ -253,11 +260,11 @@ describe('BenchmarksView', () => {
       true
     )
     expect(wrapper.find('[data-testid="benchmark-comparison-13-customScore"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="benchmark-column-customScore"]').setValue(true)
+    await setChecked(wrapper.get('[data-testid="benchmark-column-customScore"]'), true)
     expect(wrapper.get('.benchmarks__table thead').text()).toContain('Custom Score')
     expect(wrapper.get('[data-testid="benchmark-row-13"]').text()).toContain('13')
     expect(wrapper.find('[data-testid="benchmark-comparison-13-customScore"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="benchmark-comparison-column-customScore"]').setValue(true)
+    await setChecked(wrapper.get('[data-testid="benchmark-comparison-column-customScore"]'), true)
     expect(wrapper.get('[data-testid="benchmark-comparison-13-customScore"]').text()).toBe(
       'Custom Score: 13'
     )
@@ -288,7 +295,7 @@ describe('BenchmarksView', () => {
     expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').text()).toContain('landscape.json')
 
-    await wrapper.get('[data-testid="benchmark-row-10"] input[type="checkbox"]').setValue(true)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), true)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').attributes('style')).toContain(
       '--series-color: #ff8a65'
     )
@@ -301,12 +308,12 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__comparison').attributes('style')).toContain('display: none')
     await comparisonToggle.trigger('click')
 
-    await wrapper.get('[data-testid="benchmark-row-10"] input[type="checkbox"]').setValue(false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), false)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').attributes('style')).toBeUndefined()
     await wrapper.get('input[type="text"]').setValue('')
-    await wrapper.get('[data-testid="benchmark-row-13"] input[type="checkbox"]').setValue(false)
-    await wrapper.get('[data-testid="benchmark-row-12"] input[type="checkbox"]').setValue(false)
-    await wrapper.get('[data-testid="benchmark-row-11"] input[type="checkbox"]').setValue(false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-13"] [role="checkbox"]'), false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-12"] [role="checkbox"]'), false)
+    await setChecked(wrapper.get('[data-testid="benchmark-row-11"] [role="checkbox"]'), false)
     expect(wrapper.get('.benchmarks__comparison').text()).toContain(
       'Select runs from the library to compare them.'
     )
@@ -393,7 +400,7 @@ describe('BenchmarksView', () => {
     for (const picker of pickers) {
       const details = picker.element as HTMLDetailsElement
       details.open = true
-      await picker.get('input').trigger('pointerdown')
+      await picker.get('[role="switch"]').trigger('pointerdown')
       expect(details.open).toBe(true)
 
       document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
@@ -412,12 +419,7 @@ describe('BenchmarksView', () => {
 
     expect(columnIds()).toEqual(['13', '12', '11'])
 
-    const dataTransfer = {
-      effectAllowed: 'none',
-      dropEffect: 'none',
-      setData: vi.fn(),
-      getData: vi.fn(() => '13')
-    }
+    const dataTransfer = new DataTransfer()
     await wrapper
       .get('[data-testid="benchmark-comparison-column-title-13"] .benchmarks__column-grip')
       .trigger('dragstart', { dataTransfer })

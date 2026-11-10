@@ -5,7 +5,6 @@ import type { DiskSpaceInfo, PathIssue } from '../../types/ipc'
 import * as settings from '../settings'
 import * as installations from '../installations'
 
-// Free and total disk space for the volume containing `targetPath`.
 export async function getDiskSpace(targetPath: string): Promise<DiskSpaceInfo> {
   let dir = path.resolve(targetPath)
 
@@ -22,8 +21,6 @@ export async function getDiskSpace(targetPath: string): Promise<DiskSpaceInfo> {
   }
 }
 
-// Recursive directory size in bytes (0 if missing); bounded concurrency to
-// avoid EMFILE on large trees.
 export async function getDirectorySize(dirPath: string, signal?: AbortSignal): Promise<number> {
   const MAX_CONCURRENT = 64
   let active = 0
@@ -57,9 +54,7 @@ export async function getDirectorySize(dirPath: string, signal?: AbortSignal): P
         const stat = await fs.promises.lstat(fullPath)
         total += stat.size
       }
-    } catch {
-      // Skip files/dirs that can't be read
-    }
+    } catch {}
     release()
   }
 
@@ -86,7 +81,6 @@ export async function getDirectorySize(dirPath: string, signal?: AbortSignal): P
 
 function normalizePath(p: string): string {
   const resolved = path.resolve(p)
-  // Case-insensitive on Windows and macOS.
   return process.platform === 'win32' || process.platform === 'darwin'
     ? resolved.toLowerCase()
     : resolved
@@ -98,7 +92,6 @@ function isPathInside(candidate: string, parent: string): boolean {
   return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
 }
 
-// Paths installs must not be placed inside (app bundle, updater caches, etc.).
 function getRestrictedPaths(): { path: string; issue: PathIssue }[] {
   const entries: { path: string; issue: PathIssue }[] = []
   const seen = new Set<string>()
@@ -113,7 +106,6 @@ function getRestrictedPaths(): { path: string; issue: PathIssue }[] {
 
   const exePath = app.getPath('exe')
   if (process.platform === 'darwin') {
-    // Walk up to the .app bundle.
     let current = exePath
     while (current && current !== '/' && !current.endsWith('.app')) {
       const next = path.dirname(current)
@@ -150,7 +142,6 @@ function getRestrictedPaths(): { path: string; issue: PathIssue }[] {
   return entries
 }
 
-// Issues found if `targetPath` is inside a restricted location, else empty.
 export async function validateInstallPath(targetPath: string): Promise<PathIssue[]> {
   const normalized = normalizePath(targetPath)
   const issues: PathIssue[] = []

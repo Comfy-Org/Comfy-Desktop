@@ -58,7 +58,6 @@ afterEach(() => {
   fs.rmSync(dirs.state, { recursive: true, force: true })
 })
 
-/** A pid that was just used and is now certainly dead (and reaped). */
 async function deadPid(): Promise<number> {
   const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' })
   await new Promise((r) => child.once('exit', r))
@@ -123,7 +122,6 @@ describe('resolvePriorProcess', () => {
     ownStartTime: async () => SELF.start,
     isPidAlive: (pid) => alive.has(pid),
     probeQueue: async () => ({ running: 0, pending: 0 }),
-    // The copies these tests stand in for serve the recorded port.
     portInUse: async () => true,
     portListeners: async () => [...alive],
     processGroupOf: async () => null,
@@ -300,8 +298,6 @@ describe('resolvePriorProcess', () => {
       { signal: abort.signal },
       deps({
         now: () => 0,
-        // Cancelled once the probe is under way; a probe that ignored the cancel would hang
-        // until the budget ran out (8 s of attempts), past the test's own timeout.
         probeQueue: () => {
           abort.abort()
           return new Promise(() => {})
@@ -343,7 +339,6 @@ describe('resolvePriorProcess', () => {
       'inst-1',
       {},
       deps({
-        // The start and the deadline are read at 0; every later read leaves 50 ms of budget.
         now: () => (reads++ < 2 ? 0 : QUEUE_PROBE_BUDGET_MS - 50),
         probeQueue: () => new Promise(() => {})
       })
@@ -441,7 +436,6 @@ describe('resolvePriorProcess', () => {
       {},
       deps({
         readRecord: () => record({ stopRequestedAt: 9_000 }),
-        // A PowerShell-slow start-time query: 12 s, more than the whole grace period.
         readStartTimes: async (pids) => {
           clock += 12_000
           return new Map(
@@ -574,7 +568,6 @@ describe('resolvePriorProcess', () => {
             }
           }),
         rescanWindows: async () => [{ pid: 300, startTime: 'restarted-start' }],
-        // The restarted copy serves the port.
         portListeners: async () => [300],
         readStartTimes: async (pids) =>
           new Map(
@@ -611,8 +604,6 @@ describe('resolvePriorProcess', () => {
   })
 
   it('gives up an owed scan that cannot run when the port is free and the exit is old', async () => {
-    // What the scan looks for serves that port; with it free, blocking every launch for days
-    // (naming a child long gone) protects nothing.
     const written: ComfyProcessRecord[] = []
     const out = await resolvePriorProcess(
       'inst-1',
@@ -640,8 +631,6 @@ describe('resolvePriorProcess', () => {
   })
 
   it('keeps blocking on an owed scan while a restarted copy may still be starting up', async () => {
-    // Booting (custom nodes, prestartup installs) can take minutes with the database open and
-    // the port not yet bound: a free port says nothing that soon after the exit.
     const written: ComfyProcessRecord[] = []
     const out = await resolvePriorProcess(
       'inst-1',
@@ -698,7 +687,6 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
       new Map(pids.filter((p) => alive.has(p)).map((p) => [p, p === 555 ? 'survivor-start' : 'x'])),
     ownStartTime: async () => SELF.start,
     isPidAlive: (pid) => alive.has(pid),
-    // Idle unless a test says otherwise: a survivor still serving the port answers it.
     probeQueue: async () => ({ running: 0, pending: 0 }),
     portListeners: async () => [...alive],
     processGroupOf: async () => null,
@@ -899,8 +887,6 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
   })
 
   describe('when another process answers on the recorded port', () => {
-    // Every installation defaults to the same port: once the child is gone, another ComfyUI (a
-    // different installation, say) can hold it, and its answer says nothing about the survivors.
     const STRANGER = 900
 
     it('never stops the survivors on a stranger\'s "idle": they are put to the user', async () => {
@@ -1009,8 +995,6 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
   })
 
   it('does not trust /queue when a stranger listens on the port beside a survivor', async () => {
-    // A survivor bound to a LAN address and a stranger on loopback share the port number; the
-    // busy check (127.0.0.1) would reach the stranger.
     const probeQueue = vi.fn(async () => ({ running: 0, pending: 0 }))
     const out = await resolvePriorProcess(
       'inst-1',
@@ -1058,7 +1042,6 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
   })
 
   it('asks a survivor that took the port during the grace, instead of calling it portless', async () => {
-    // Still booting when the launch looked; it binds (and turns busy) a moment later.
     let listening = false
     let polls = 0
     const out = await resolvePriorProcess(
@@ -1079,8 +1062,6 @@ describe('resolvePriorProcess: survivors of an exited child', () => {
 })
 
 describe.runIf(process.platform !== 'win32')('survivors of a real process group', () => {
-  /** A detached leader (like Desktop's ComfyUI) that starts a long-lived child from `childFile`,
-   *  then exits when its stdin closes, which the test does only after `trackSpawn` listens. */
   async function leaderWithChild(
     childFile: string
   ): Promise<{ leader: ReturnType<typeof spawn>; survivorPid: number }> {
@@ -1108,7 +1089,6 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
   }
 
   it('records a ComfyUI that outlives the child, and the next launch stops only it', async () => {
-    // Node runs a file of any name, so a script called main.py stands in for a ComfyUI worker.
     const { leader, survivorPid } = await leaderWithChild(path.join(dirs.state, 'main.py'))
     try {
       trackSpawn(leader, info)
@@ -1118,8 +1098,6 @@ describe.runIf(process.platform !== 'win32')('survivors of a real process group'
       })
       expect(isPidAlive(leader.pid!)).toBe(false)
 
-      // This survivor serves no port, so it never answers the busy check; the next launch asks,
-      // and this is the user having chosen "Stop it and launch".
       const out = await resolvePriorProcess('inst-1', { stopBusy: true })
       expect(out).toMatchObject({ action: 'terminated', lingering: 1, exitedInTime: true })
       expect(isPidAlive(survivorPid)).toBe(false)
@@ -1185,10 +1163,6 @@ describe.runIf(process.platform === 'linux' && hasLsof())(
       }
     })
 
-    /** A stand-in ComfyUI (a script called main.py): answers /queue idle or busy on `port`, or
-     *  serves nothing (`portless`, a worker holding the lock). */
-    /** Listens on a port of the OS's choosing (no free-then-rebind race with other workers)
-     *  and reports it. */
     async function fakeComfy(
       mode: 'idle' | 'busy' | 'portless'
     ): Promise<{ pid: number; port: number }> {
@@ -1213,7 +1187,6 @@ setInterval(() => {}, 1 << 30)
       return { pid: p.pid!, port }
     }
 
-    /** A record whose child and Desktop are gone, with `survivor` proven by its start time. */
     async function survivorRecord(survivor: number, port: number): Promise<void> {
       const times = await readStartTimes([survivor])
       writeRecord(
@@ -1228,7 +1201,6 @@ setInterval(() => {}, 1 << 30)
     }
 
     it('asks about a portless survivor even when an idle stranger holds the port', async () => {
-      // Another installation took the recorded port once it was free.
       const { pid: stranger, port } = await fakeComfy('idle')
       const { pid: survivor } = await fakeComfy('portless')
       await survivorRecord(survivor, port)
@@ -1259,9 +1231,6 @@ setInterval(() => {}, 1 << 30)
 )
 
 describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)', () => {
-  // Launcher L (pid 100) ran interpreter I (101). I execv'd: a new venv launcher N (200, parent
-  // I) and its interpreter (201) now run outside the job, and L and I are gone. Creation times
-  // are FILETIMEs; the exit is at EXIT.
   const INSTALL = 'C:\\c\\one'
   const EXIT = filetimeOf(Date.UTC(2026, 8, 29, 12, 0, 0))
   const at = (secondsFromExit: number): string =>
@@ -1296,10 +1265,7 @@ describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)',
   })
 
   it('ignores the child of a NEW process that took a dead tree pid', () => {
-    const rows = [
-      row(101, 5, at(-10), 'cmd.exe'), // pid 101 reused by something else
-      row(300, 101, at(-5), venvMain)
-    ]
+    const rows = [row(101, 5, at(-10), 'cmd.exe'), row(300, 101, at(-5), venvMain)]
     expect(findWindowsSurvivors(rows, ctx)).toEqual([])
   })
 
@@ -1355,9 +1321,6 @@ describe('findWindowsSurvivors (a ComfyUI that restarted itself with os.execv)',
   })
 
   describe('the shape QA saw: a relative main.py under a dead interpreter', () => {
-    // Recorded: launcher 11000 and its interpreter 12184 (the tree), exit at 00:36:04Z. The
-    // restarted launcher 1192 was created at 00:36:00Z, 4 s before the exit, names the dead
-    // interpreter as parent, and runs this install's venv python with a relative main.py.
     const exit = filetimeOf(Date.UTC(2026, 8, 30, 0, 36, 4))
     const t = (h: number, m: number, sec: number): string =>
       String(filetimeOf(Date.UTC(2026, 8, 30, h, m, sec)))
@@ -1511,7 +1474,6 @@ describe('record store', () => {
       const exited = new Promise((r) => child.once('exit', r))
       child.kill('SIGKILL')
       await exited
-      // The exit bookkeeping looks for survivors first (asynchronous `ps` on macOS).
       await vi.waitFor(() => expect(readRecord('inst-1')).toBeNull())
     }
   )
@@ -1570,7 +1532,6 @@ describe('takePriorSessionUnclean', () => {
     takePriorSessionUnclean()
     expect(readRecord('inst-1')?.pendingScan).toBeDefined()
 
-    // The next launch runs the scan, stops what it finds, and no longer owes it.
     const kills: number[] = []
     const out = await resolvePriorProcess(
       'inst-1',
@@ -1582,7 +1543,6 @@ describe('takePriorSessionUnclean', () => {
           new Map(pids.filter((p) => p === 300).map((p) => [p, 'restarted-start'])),
         ownStartTime: async () => 'self',
         isPidAlive: (pid) => pid === 300 && kills.length === 0,
-        // The restarted copy serves the recorded port and is idle.
         portListeners: async () => [300],
         probeQueue: async () => ({ running: 0, pending: 0 }),
         killPidTree: async (pid) => {
@@ -1645,7 +1605,6 @@ describe('commandLineIsInstall', () => {
       true
     ],
     ['"C:\\Py\\python.exe" "C:\\c\\one\\ComfyUI\\main.py"', 'C:\\c\\one', true],
-    // `ps -o args=` on macOS: nothing is quoted, and install paths can contain spaces.
     [
       '/Users/a/My ComfyUI/.venv/bin/python -s ComfyUI/main.py --port 8188',
       '/Users/a/My ComfyUI',
@@ -1667,7 +1626,6 @@ describe('commandLineIsInstall', () => {
       false
     ],
     ['/Users/a/My ComfyUI/.venv/bin/python -m pip list', '/Users/a/My ComfyUI', false],
-    // A drive-letter path is absolute: another install's main.py is not this one's relative one.
     ['C:\\c\\one\\.venv\\Scripts\\python.exe C:\\c\\two\\ComfyUI\\main.py', 'C:\\c\\one', false],
     ['C:\\c\\one\\.venv\\Scripts\\python.exe ComfyUI\\main.py', 'C:\\c\\one', true]
   ])('%s in %s → %s', (cmd, installPath, expected) => {
@@ -1693,15 +1651,12 @@ describe('commandLineIsInstall with an exact argv', () => {
     expect(commandLineIsInstall(venv, root)).toBe(false)
     expect(commandLineIsInstall(venv, root, root)).toBe(true)
     expect(commandLineIsInstall(['python3', 'main.py'], root, `${root}/ComfyUI`)).toBe(true)
-    // Somewhere else, the same relative command line is another ComfyUI.
     expect(commandLineIsInstall(venv, root, '/home/a/Other')).toBe(false)
-    // A bare interpreter name comes from PATH, not the working directory.
     expect(commandLineIsInstall(['python3', '-c', 'x'], root, root)).toBe(false)
   })
 })
 
 describe.runIf(process.platform === 'linux')('holderIsInstall from a record', () => {
-  // A helper whose command line names nothing of the install: only the record says it is ours.
   it.each([
     ['the recorded child, by start time', 'child', true],
     ['a recorded survivor, by start time', 'survivor', true],
@@ -1749,8 +1704,7 @@ describe.runIf(process.platform === 'linux')('holderIsInstall (real process, spa
         ? spawn(interpreter, [path.join('ComfyUI', 'main.py')], { cwd: install, stdio: 'ignore' })
         : mode === 'absolute'
           ? spawn(process.execPath, [path.join(install, 'ComfyUI', 'main.py')], { stdio: 'ignore' })
-          : // No `-s`: the stand-in interpreter is node, which exits on it at once.
-            spawn('./.venv/bin/python', [path.join('ComfyUI', 'main.py')], {
+          : spawn('./.venv/bin/python', [path.join('ComfyUI', 'main.py')], {
               cwd: install,
               stdio: 'ignore'
             })
@@ -1809,7 +1763,6 @@ describe('probeQueue', () => {
   })
 
   it('answers null when nothing listens, and when it hangs (its own timer ends the wait)', async () => {
-    // The server never responds: only the probe's own timeout can settle this.
     const port = await serve(() => {})
     expect(await probeQueue(port, 200)).toBeNull()
     server!.closeAllConnections()

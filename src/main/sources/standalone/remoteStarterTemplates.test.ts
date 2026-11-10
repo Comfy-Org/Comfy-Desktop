@@ -29,7 +29,6 @@ function doc(templates: unknown[]): Record<string, unknown> {
   return { schemaVersion: 1, templates }
 }
 
-/** Ids the hardcoded list owns, per modality. */
 function bakedIds(modality: string): string[] {
   return CURATED_TEMPLATES.filter((t) => t.modality === modality).map((t) => t.id)
 }

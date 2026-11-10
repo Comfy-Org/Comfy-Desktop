@@ -111,9 +111,9 @@ describe('handleDelegateToSource', () => {
     async () => {
       const fakeUv = path.join(dir, 'bin', 'uv')
       fs.mkdirSync(path.dirname(fakeUv))
-      fs.writeFileSync(fakeUv, '#!/bin/sh\nsleep 60\n', { mode: 0o755 })
+      fs.symlinkSync(execFileSync('which', ['sleep'], { encoding: 'utf-8' }).trim(), fakeUv)
       const startedAt = Date.now()
-      const orphan = spawn(fakeUv, [], { detached: true, stdio: 'ignore' })
+      const orphan = spawn(fakeUv, ['60'], { detached: true, stdio: 'ignore' })
       const pid = orphan.pid!
       const comm = (): string => {
         try {

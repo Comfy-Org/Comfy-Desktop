@@ -1,49 +1,20 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
-import { Check, Volume2, VolumeX, X } from 'lucide-vue-next'
+import { onMounted, ref } from 'vue'
+import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
+import Button from '@comfyorg/design-system/button/Button'
+import { Volume2, VolumeX, X } from 'lucide-vue-next'
 import { emitTelemetryAction } from '../lib/telemetry'
 
-/**
- * One-off announcement modal (currently the Comfy API launch).
- * Deliberately mirrors `WhyTryCloudModal.vue`'s layout and styling so it feels
- * native. Swapping to the next announcement means changing ANNOUNCEMENT_ID, the
- * URLs, the hero media and the i18n namespace below, plus a new seen-flag in
- * settings so previously-dismissed users still get the bell.
- *
- * Strings live in `announcement.comfyApi.*` (locales/en.json).
- */
-
-// Announcement id, carried in telemetry so this component can be reused for a
-// future announcement by swapping the id + copy.
 const ANNOUNCEMENT_ID = 'comfy_api'
 
-// CTA destination. The UTM tags clicks as Desktop-origin so they're
-// attributable in analytics.
 const UTM = '?utm_source=comfy_desktop&utm_medium=announcement&utm_campaign=comfy_api'
 const PRIMARY_CTA_URL = `https://comfy.org/platform/comfy-api${UTM}`
 
-// Comfy API launch hero on media.comfy.org. media.comfy.org caches for an
-// hour, so bump the version in the filename rather than re-uploading a key.
-// Poster paints immediately; the video muted-autoplays + loops.
-// TODO: no hero asset has been provided for Comfy API yet (tracked the same
-// way #1560 tracked the Router hero) - this path 404s until it's uploaded, so
-// the modal falls back to the `.announce-media` gradient in the meantime.
 const HERO_VIDEO_URL = 'https://media.comfy.org/website/comfy-api/hero_v1.mp4'
 const HERO_POSTER_URL = 'https://media.comfy.org/website/comfy-api/hero-poster_v1.webp'
 
 const emit = defineEmits<{ close: [] }>()
-const { tm } = useI18n()
 
-const highlights = computed<string[]>(() => {
-  const raw = tm('announcement.comfyApi.highlights')
-  return Array.isArray(raw) ? (raw as unknown as string[]) : []
-})
-
-const overlayRef = ref<HTMLDivElement | null>(null)
-const mouseDownOnOverlay = ref(false)
-
-// Video autoplays muted (browsers block audible autoplay); users opt into sound.
 const videoRef = ref<HTMLVideoElement | null>(null)
 const isMuted = ref(true)
 function toggleSound(): void {
@@ -57,9 +28,6 @@ function toggleSound(): void {
     muted: v.muted
   })
 }
-// Element focused before open; restored on close to return focus to the trigger.
-let returnFocusTo: HTMLElement | null = null
-
 function dismiss(): void {
   emitTelemetryAction('comfy.desktop.announcement.dismissed', { id: ANNOUNCEMENT_ID })
   emit('close')
@@ -69,331 +37,98 @@ function openCta(cta: string, url: string): void {
   window.api?.openExternal?.(url)
 }
 
-function onOverlayMouseDown(e: MouseEvent) {
-  mouseDownOnOverlay.value = e.target === overlayRef.value
-}
-function onOverlayClick(e: MouseEvent) {
-  if (e.target === overlayRef.value && mouseDownOnOverlay.value) dismiss()
-  mouseDownOnOverlay.value = false
-}
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') dismiss()
-}
-
 onMounted(() => {
   emitTelemetryAction('comfy.desktop.announcement.shown', { id: ANNOUNCEMENT_ID })
-  document.addEventListener('keydown', onKeydown)
-  returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  // Focus the dialog container, not a button. Traps focus without a ring on open.
-  void nextTick(() => overlayRef.value?.focus())
-})
-onUnmounted(() => {
-  document.removeEventListener('keydown', onKeydown)
-  returnFocusTo?.focus()
 })
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="modal-fade" appear>
+  <DesktopDialogSurface
+    :open="true"
+    :aria-label="$t('announcement.comfyApi.title')"
+    overlay-class="announce-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70"
+    content-class="announce-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-full max-h-full aspect-[916/445] overflow-hidden rounded-panel border border-solid border-border bg-neutral-900 max-[800px]:h-full max-[800px]:aspect-auto"
+    @close="dismiss"
+  >
+    <Button
+      variant="muted-textonly"
+      size="icon"
+      class="announce-close absolute top-4 right-4 z-2"
+      type="button"
+      :aria-label="$t('common.close')"
+      data-testid="announcement-close"
+      @click="dismiss"
+    >
+      <X :size="18" />
+    </Button>
+    <div
+      class="announce-grid flex-auto grid size-full grid-cols-[repeat(auto-fit,minmax(min(360px,100%),1fr))] overflow-y-auto max-[800px]:grid-rows-[minmax(0,1fr)_auto]"
+    >
       <div
-        ref="overlayRef"
-        class="announce-overlay"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="$t('announcement.comfyApi.title')"
-        tabindex="-1"
-        @mousedown="onOverlayMouseDown"
-        @click="onOverlayClick"
+        class="announce-media-wrap relative aspect-video w-full self-center max-[800px]:min-h-0 max-[800px]:aspect-auto max-[800px]:self-stretch"
       >
-        <div class="announce-content modal-fade-panel">
-          <button
-            class="announce-close"
-            type="button"
-            :aria-label="$t('common.close')"
-            data-testid="announcement-close"
-            @click="dismiss"
-          >
-            <X :size="18" />
-          </button>
-          <div class="announce-grid">
-            <div class="announce-media-wrap">
-              <video
-                ref="videoRef"
-                class="announce-media"
-                :poster="HERO_POSTER_URL"
-                autoplay
-                muted
-                loop
-                playsinline
-                :aria-label="$t('announcement.comfyApi.imageAlt')"
-              >
-                <source :src="HERO_VIDEO_URL" type="video/mp4" />
-              </video>
-              <button
-                class="announce-sound"
-                type="button"
-                :aria-label="
-                  isMuted ? $t('announcement.comfyApi.unmute') : $t('announcement.comfyApi.mute')
-                "
-                :aria-pressed="!isMuted"
-                data-testid="announcement-sound-toggle"
-                @click="toggleSound"
-              >
-                <VolumeX v-if="isMuted" :size="16" />
-                <Volume2 v-else :size="16" />
-              </button>
-            </div>
-            <div class="announce-body">
-              <div class="announce-body-main">
-                <header class="announce-header">
-                  <h2 class="announce-title">{{ $t('announcement.comfyApi.title') }}</h2>
-                </header>
-                <p class="announce-lead">{{ $t('announcement.comfyApi.lead') }}</p>
-                <ul v-if="highlights.length" class="announce-list">
-                  <li v-for="h in highlights" :key="h">
-                    <Check :size="16" class="announce-check" />
-                    <span>{{ h }}</span>
-                  </li>
-                </ul>
-              </div>
-              <footer class="announce-footer">
-                <button
-                  class="brand-primary"
-                  type="button"
-                  data-testid="announcement-primary-cta"
-                  @click="openCta('learn_more', PRIMARY_CTA_URL)"
-                >
-                  {{ $t('announcement.comfyApi.primaryCta') }}
-                </button>
-              </footer>
-            </div>
-          </div>
-        </div>
+        <video
+          ref="videoRef"
+          class="announce-media block size-full object-cover bg-[linear-gradient(135deg,var(--neutral-800)_0%,var(--neutral-900)_100%)]"
+          :poster="HERO_POSTER_URL"
+          autoplay
+          muted
+          loop
+          playsinline
+          :aria-label="$t('announcement.comfyApi.imageAlt')"
+        >
+          <source :src="HERO_VIDEO_URL" type="video/mp4" />
+        </video>
+        <Button
+          variant="secondary"
+          size="icon"
+          class="announce-sound absolute bottom-4 left-4 z-2"
+          type="button"
+          :aria-label="
+            isMuted ? $t('announcement.comfyApi.unmute') : $t('announcement.comfyApi.mute')
+          "
+          :aria-pressed="!isMuted"
+          data-testid="announcement-sound-toggle"
+          @click="toggleSound"
+        >
+          <VolumeX v-if="isMuted" :size="16" />
+          <Volume2 v-else :size="16" />
+        </Button>
       </div>
-    </Transition>
-  </Teleport>
+      <div
+        class="announce-body flex flex-col justify-between overflow-auto p-[clamp(1.5rem,2.5vw,2.5rem)] max-[800px]:overflow-visible"
+      >
+        <div
+          class="announce-body-main flex flex-auto flex-col justify-center gap-[clamp(0.75rem,1.2vw,1.25rem)]"
+        >
+          <header class="announce-header flex flex-wrap items-center gap-3">
+            <h2
+              class="announce-title m-0 font-display text-[length:var(--takeover-fs-h2)] leading-8 font-extrabold tracking-normal text-neutral-100"
+            >
+              {{ $t('announcement.comfyApi.title') }}
+            </h2>
+          </header>
+          <p
+            class="announce-lead m-0 font-sans text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-300"
+          >
+            {{ $t('announcement.comfyApi.lead') }}
+          </p>
+        </div>
+        <footer
+          class="announce-footer flex items-center justify-end gap-4 border-t border-solid border-neutral-100/8 pt-[clamp(1rem,1.5vw,1.5rem)]"
+        >
+          <Button
+            size="lg"
+            variant="inverted"
+            class="announce-primary whitespace-normal"
+            type="button"
+            data-testid="announcement-primary-cta"
+            @click="openCta('learn_more', PRIMARY_CTA_URL)"
+          >
+            {{ $t('announcement.comfyApi.primaryCta') }}
+          </Button>
+        </footer>
+      </div>
+    </div>
+  </DesktopDialogSurface>
 </template>
-
-<style scoped>
-/* Mirrors WhyTryCloudModal.vue, keep the two visually consistent. */
-.announce-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: clamp(72px, 10vh, 132px) clamp(32px, 5vw, 80px) clamp(80px, 11vh, 140px);
-  background: color-mix(in oklab, var(--neutral-800) 70%, transparent);
-  backdrop-filter: blur(8px) saturate(115%);
-  -webkit-backdrop-filter: blur(8px) saturate(115%);
-}
-
-.announce-content {
-  position: relative;
-  display: flex;
-  width: min(100%, calc((100vh - clamp(152px, 21vh, 272px)) * (916 / 445)));
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: 916 / 445;
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--neutral-900);
-  border: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-
-.announce-close {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  opacity: 0.7;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-.announce-close:hover {
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-  opacity: 1;
-}
-.announce-close:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.announce-close :deep(svg) {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 auto;
-  stroke: currentColor;
-}
-
-.announce-grid {
-  flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
-  width: 100%;
-  height: 100%;
-  /* The 916/445 card ratio assumes two columns. Whenever the grid stacks, the
-     16:9 media is taller than the whole card on its own, so scroll here rather
-     than let .announce-content clip the copy and the CTAs. */
-  overflow-y: auto;
-}
-
-.announce-media-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  align-self: center;
-}
-.announce-media {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  background: linear-gradient(135deg, var(--neutral-800) 0%, var(--neutral-900) 100%);
-}
-
-/* Sound toggle, mirrors .announce-close, pinned to the video's lower-left. */
-.announce-sound {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--neutral-900) 55%, transparent);
-  opacity: 0.85;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-.announce-sound:hover {
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-  opacity: 1;
-}
-.announce-sound:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-.announce-sound :deep(svg) {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  stroke: currentColor;
-}
-
-.announce-body {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: clamp(1.5rem, 2.5vw, 2.5rem);
-  overflow: auto;
-}
-.announce-body-main {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: clamp(0.75rem, 1.2vw, 1.25rem);
-}
-
-.announce-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.announce-title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--takeover-fs-h2);
-  font-weight: 800;
-  letter-spacing: 0;
-  color: var(--neutral-100);
-  line-height: 32px;
-}
-.announce-lead {
-  margin: 0;
-  font-size: var(--takeover-fs-lead);
-  color: var(--neutral-300);
-  font-weight: 400;
-  font-family: var(--font-sans);
-  line-height: normal;
-}
-
-.announce-list {
-  list-style: none;
-  margin: 4px 0 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.announce-list li {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: start;
-  gap: 12px;
-  font-size: var(--takeover-fs-lead);
-  color: var(--neutral-100);
-  line-height: normal;
-}
-.announce-check {
-  color: var(--comfy-yellow);
-  margin-top: 3px;
-}
-
-.announce-footer {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 16px;
-  padding-top: clamp(1rem, 1.5vw, 1.5rem);
-  border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-.announce-fine {
-  margin: 12px 0 4px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: color-mix(in oklab, var(--neutral-300) 65%, transparent);
-  font-family: var(--font-sans);
-}
-
-/* One column, which the grid drops to below 720px of card width. Drop the
-   two-column card ratio, and let the media take what the copy and CTAs leave
-   rather than 16:9, which on its own is taller than the whole card. */
-@media (width < 800px) {
-  .announce-content {
-    height: 100%;
-    aspect-ratio: auto;
-  }
-  .announce-grid {
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-  .announce-media-wrap {
-    aspect-ratio: auto;
-    align-self: stretch;
-    min-height: 0;
-  }
-  .announce-body {
-    overflow: visible;
-  }
-}
-</style>

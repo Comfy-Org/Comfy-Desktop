@@ -1,12 +1,6 @@
 import { WebContentsView, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 
-/**
- * Dim + blur scrim behind the credits-checkout popup. The checkout is a separate floating window
- * (its page forbids iframing), so this scrim darkens the host underneath to read as a modal.
- * Clicking the scrim dismisses via `onDismiss`. Separate from the title-popup backdrop on purpose.
- */
-
 interface CheckoutBackdropEntry {
   view: WebContentsView
   visible: boolean
@@ -16,7 +10,6 @@ interface CheckoutBackdropEntry {
 const backdropsByParent = new Map<number, CheckoutBackdropEntry>()
 const parentByWebContents = new Map<number, number>()
 
-/** Translucent dim + blur scrim; a click anywhere fires the dismiss IPC. */
 const CHECKOUT_BACKDROP_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
   html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden;-webkit-user-select:none;user-select:none}
@@ -69,7 +62,6 @@ function ensureBackdrop(parent: BrowserWindow): CheckoutBackdropEntry {
   backdropsByParent.set(parent.id, entry)
   parentByWebContents.set(view.webContents.id, parent.id)
 
-  // Keep the scrim fitted to the host's content area on resize.
   parent.on('resize', () => {
     if (!entry.visible || parent.isDestroyed() || view.webContents.isDestroyed()) return
     view.setBounds(fullBounds(parent))
@@ -83,24 +75,19 @@ function ensureBackdrop(parent: BrowserWindow): CheckoutBackdropEntry {
   return entry
 }
 
-/** Show the scrim over `parent`, re-stacked above its content views (still below the popup window). */
 export function showCheckoutBackdrop(parent: BrowserWindow, onDismiss: () => void): void {
   if (parent.isDestroyed()) return
   const entry = ensureBackdrop(parent)
   entry.onDismiss = onDismiss
   entry.view.setBounds(fullBounds(parent))
-  // Re-stack so the scrim sits above comfyView / titleBarView.
   try {
     parent.contentView.removeChildView(entry.view)
     parent.contentView.addChildView(entry.view)
-  } catch {
-    /* noop */
-  }
+  } catch {}
   entry.view.setVisible(true)
   entry.visible = true
 }
 
-/** Hide the scrim and detach it so it can't intercept input. */
 export function hideCheckoutBackdrop(parent: BrowserWindow): void {
   const entry = backdropsByParent.get(parent.id)
   if (!entry || !entry.visible) return
@@ -111,8 +98,6 @@ export function hideCheckoutBackdrop(parent: BrowserWindow): void {
   if (!parent.isDestroyed()) {
     try {
       parent.contentView.removeChildView(entry.view)
-    } catch {
-      /* noop */
-    }
+    } catch {}
   }
 }

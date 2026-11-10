@@ -18,7 +18,6 @@ vi.mock('./pip', async (importOriginal) => ({
   runUvPipDetailed: vi.fn(async () => ({ code: 0, output: '[]' }))
 }))
 
-/** Observes the force-stop path: process discovery and, on Windows, the kill. */
 const execCalls: { cmd: string; args: string[] }[] = []
 const execAnswered: string[] = []
 const slowTaskkill = { ms: 0 }
@@ -68,13 +67,11 @@ const mockUvPip = vi.mocked(runUvPipDetailed)
 
 let installDir = ''
 
-/** Create a file (and its parents) the way the real layout has it on disk. */
 function touch(target: string): void {
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, '')
 }
 
-/** A standalone install: `standalone-env` uv + the managed `ComfyUI/.venv`. */
 function managedInstall(): InstallationRecord {
   touch(getUvPath(installDir))
   touch(getVenvPythonPath(installDir))
@@ -124,8 +121,6 @@ describe('planAgentRequirementsInstall', () => {
   })
 
   it('plans the install when a beta grant added the flag', () => {
-    // A grant reaches the final args ahead of the user's own, which is the only
-    // difference from the hand-typed case - the args are all this reads.
     const reqPath = writeAgentRequirements()
     const inst = managedInstall()
 
@@ -155,8 +150,6 @@ describe('planAgentRequirementsInstall', () => {
   })
 
   it('plans nothing for an install with no Desktop-managed Python environment', () => {
-    // Portable, git and build installs: the requirements file may well be there,
-    // but there is no uv/venv pair to install it into.
     writeAgentRequirements()
     const inst = { installPath: installDir } as unknown as InstallationRecord
 
@@ -349,9 +342,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('does not reprint uv output it already streamed', async () => {
-    // The shared helper streams into the same sink it captures from, so
-    // appending the captured tail to the failure line put uv's error in the
-    // log twice - seen on a real Windows run of a failing install.
     online(async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
       const stream = args[5]
       stream('ERROR: No solution found for comfyui-agent\n')
@@ -378,8 +368,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('abandons an install that outlives the ceiling and lets the launch continue', async () => {
-    // The whole point of the bound: a stalled uv must not hold the user at the
-    // launcher. Core starts with the flag and disables the agent itself.
     vi.useFakeTimers()
     try {
       let uvSignal: AbortSignal | undefined
@@ -406,16 +394,9 @@ describe('installAgentRequirements', () => {
   })
 
   it('stops waiting for a uv that never exits after being killed', async () => {
-    // The ceiling only asks uv to stop: killProcTree sends SIGTERM and does not
-    // wait, and the helper settles on the child's exit, so a uv that ignores the
-    // signal would hold the launch open past the bound meant to prevent exactly
-    // that. The wait has to end on its own.
     vi.useFakeTimers()
     try {
-      online(
-        // Never settles, however it is signalled.
-        () => new Promise<never>(() => {})
-      )
+      online(() => new Promise<never>(() => {}))
       const sendOutput = vi.fn()
 
       const pending = installAgentRequirements(plan, sendOutput)
@@ -431,8 +412,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('keeps waiting while uv is still within the grace period', async () => {
-    // The grace must not cut short a uv that is on its way out, or the warning
-    // would fire on every ordinary cancellation.
     vi.useFakeTimers()
     try {
       online(async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
@@ -462,9 +441,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('reports success for an install that finishes inside the grace period', async () => {
-    // The ceiling can fire while uv is already on its way out with a zero exit.
-    // Reporting that from the timer rather than the exit code would tell the
-    // user the agent was skipped on a launch that actually installed it.
     vi.useFakeTimers()
     try {
       online(async (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
@@ -495,8 +471,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('does not cancel the launch when the ceiling fires', async () => {
-    // The deadline aborts a controller this module owns, never the launch's own
-    // signal - the launch must proceed, not report itself cancelled.
     vi.useFakeTimers()
     try {
       const launchAbort = new AbortController()
@@ -558,8 +532,6 @@ describe('installAgentRequirements', () => {
   })
 
   it('stays quiet about the exit code when the launch was cancelled mid-install', async () => {
-    // Cancelling kills uv, so its non-zero exit IS the cancellation; reporting it
-    // would put a spurious failure in the output of a launch the user stopped.
     const abort = new AbortController()
     online(async () => {
       abort.abort()
@@ -749,8 +721,6 @@ describe('force-stopping an abandoned install', () => {
     installPath: dir
   })
 
-  /** Stand-in for the helper: delivers a handle, then never settles, which is
-   *  what a uv that ignored the SIGTERM looks like from here. */
   const deliverThenHang = (pid: number): void => {
     mockInstall.mockImplementation(
       (...args: Parameters<typeof installFilteredRequirementsDetailed>) => {
@@ -795,10 +765,8 @@ describe('force-stopping an abandoned install', () => {
       if (process.platform === 'win32') {
         expect(execCalls).toEqual([{ cmd: 'taskkill', args: ['/F', '/T', '/PID', '4242'] }])
       } else {
-        // Negated pid: the helper spawns detached, so the group is the tree.
         expect(kill).toHaveBeenCalledWith(-4242, 'SIGKILL')
         expect(kill).toHaveBeenCalledTimes(1)
-        // Nothing is searched for: no process enumeration of any kind.
         expect(execCalls).toEqual([])
       }
       expect(fs.existsSync(filtered)).toBe(false)

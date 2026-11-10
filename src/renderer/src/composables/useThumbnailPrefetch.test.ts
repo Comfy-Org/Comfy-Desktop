@@ -3,13 +3,9 @@ import { effectScope } from 'vue'
 
 import { useThumbnailPrefetch } from './useThumbnailPrefetch'
 
-// Drive idle callbacks manually so tests control exactly when a queued fetch
-// runs — no real timers, no flakiness.
 let idleQueue: Array<() => void> = []
 let nextHandle = 1
 
-// Track the Image instances the composable creates + their live handlers, so we
-// can assert concurrency, completion, and leak-freedom (handlers nulled).
 interface FakeImage {
   src: string
   onload: (() => void) | null
@@ -27,7 +23,6 @@ beforeEach(() => {
     return nextHandle++
   })
   vi.stubGlobal('cancelIdleCallback', (handle: number) => {
-    // Mark cancelled by index; flushIdle skips holes.
     idleQueue[handle - 1] = undefined as unknown as () => void
   })
   vi.stubGlobal(
@@ -42,21 +37,17 @@ beforeEach(() => {
       }
     }
   )
-  // Default: a normal (non-metered) connection.
   vi.stubGlobal('navigator', { connection: undefined })
 })
 
 afterEach(() => vi.unstubAllGlobals())
 
-/** Run all currently-queued idle callbacks (FIFO), as the browser would when idle.
- *  Idle work that schedules more idle work surfaces on the next flush. */
 function flushIdle(): void {
   const pending = idleQueue
   idleQueue = []
   for (const cb of pending) cb?.()
 }
 
-/** Settle the Nth in-flight image as loaded. */
 function loadImage(i: number): void {
   images[i]!.onload?.()
 }
@@ -74,7 +65,7 @@ describe('useThumbnailPrefetch', () => {
     flushIdle()
     expect(images.map((i) => i.src).sort()).toEqual(['a.webp', 'b.webp'])
 
-    result.prefetch(['a.webp']) // already seen → no new fetch
+    result.prefetch(['a.webp'])
     flushIdle()
     expect(images).toHaveLength(2)
   })
@@ -83,31 +74,30 @@ describe('useThumbnailPrefetch', () => {
     const { result } = run(() => useThumbnailPrefetch({ concurrency: 2 }))
     result.prefetch(['a', 'b', 'c', 'd'])
     flushIdle()
-    expect(images).toHaveLength(2) // only 2 in flight
+    expect(images).toHaveLength(2)
 
     loadImage(0)
     flushIdle()
-    expect(images).toHaveLength(3) // a freed a slot
+    expect(images).toHaveLength(3)
 
     loadImage(1)
     loadImage(2)
     flushIdle()
-    expect(images).toHaveLength(4) // all drained
+    expect(images).toHaveLength(4)
   })
 
   it('defers while busy and resumes once important work finishes', () => {
-    // Fake only the backoff timer; keep our requestIdleCallback stub intact.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       let busy = true
       const { result } = run(() => useThumbnailPrefetch({ isBusy: () => busy, concurrency: 5 }))
       result.prefetch(['a', 'b'])
-      flushIdle() // busy → backs off on a timer, nothing fetched
+      flushIdle()
       expect(images).toHaveLength(0)
 
       busy = false
-      vi.advanceTimersByTime(1500) // backoff elapses → pump retries
-      flushIdle() // now-scheduled idle loads run
+      vi.advanceTimersByTime(1500)
+      flushIdle()
       expect(images.length).toBeGreaterThan(0)
     } finally {
       vi.useRealTimers()
@@ -143,7 +133,7 @@ describe('useThumbnailPrefetch', () => {
     const { result, dispose } = run(() => useThumbnailPrefetch({ concurrency: 1 }))
     result.prefetch(['a'])
     flushIdle()
-    expect(images[0]!.onload).not.toBeNull() // in flight
+    expect(images[0]!.onload).not.toBeNull()
     dispose()
     expect(images[0]!.onload).toBeNull()
     expect(images[0]!.onerror).toBeNull()
@@ -156,11 +146,11 @@ describe('useThumbnailPrefetch', () => {
     expect(images).toHaveLength(1)
 
     dispose()
-    loadImage(0) // completing the in-flight one must not pump the queue
+    loadImage(0)
     flushIdle()
     expect(images).toHaveLength(1)
 
-    result.prefetch(['d']) // disposed → ignored
+    result.prefetch(['d'])
     flushIdle()
     expect(images).toHaveLength(1)
   })
@@ -172,7 +162,7 @@ describe('useThumbnailPrefetch', () => {
     try {
       const { result } = run(() => useThumbnailPrefetch({ concurrency: 5 }))
       result.prefetch(['a', 'b'])
-      expect(images).toHaveLength(0) // deferred, not run synchronously
+      expect(images).toHaveLength(0)
       vi.advanceTimersByTime(50)
       expect(images.map((i) => i.src).sort()).toEqual(['a', 'b'])
     } finally {

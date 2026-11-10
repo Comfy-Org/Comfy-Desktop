@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// contextMenu.ts imports electron at module load; mock it before importing.
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: vi.fn() },
   clipboard: { writeText: vi.fn() },
   shell: { openExternal: vi.fn() }
 }))
 
-// i18n reads locale files off disk; keep labels deterministic and side-effect free.
 vi.mock('./i18n', () => ({
   t: (key: string) => key
 }))

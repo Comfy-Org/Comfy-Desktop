@@ -1,18 +1,3 @@
-/**
- * Install: the write side of the functionality library.
- *
- * Given a chosen {@link Artifact}, turn it into a runnable install directory:
- * resolve the presigned URL, download, verify sha256, extract, validate the
- * layout. The archive is what comfy-builder tars: a top-level `venv/` +
- * `ComfyUI/` (a ready, relocatable env), so there is no post-extract env build;
- * launch drives that `venv/` directly (see `./launch`).
- *
- * Integrity: the artifact must carry an `archiveSha256`, and the bytes must match
- * it or nothing is extracted. The archive downloads to a per-run temp under `cacheDir`
- * so concurrent installs of the same artifact cannot corrupt each other, and on
- * any failure only files THIS run created are cleaned up: a failed re-install
- * never destroys a previously-working environment.
- */
 import { randomBytes } from 'crypto'
 import fs from 'fs'
 import path from 'path'
@@ -27,7 +12,6 @@ import type { ComfyBuilderClient } from './client'
 import { isSecureDownloadUrl, normalizeSha256 } from './integrity'
 import type { Artifact, InstallProgress } from './types'
 
-/** The directories every well-formed archive extracts to. */
 const ARTIFACT_DIRS = ['venv', 'ComfyUI'] as const
 
 export type ComfyBuilderInstallErrorKind =
@@ -46,18 +30,13 @@ export class ComfyBuilderInstallError extends Error {
 
 export interface InstallArtifactOptions {
   artifact: Artifact
-  /** Resolves the presigned download URL. */
   client: Pick<ComfyBuilderClient, 'resolveDownloadUrl'>
-  /** Directory the archive extracts into (becomes the runnable install). */
   installPath: string
-  /** Scratch dir for the download; the temp archive is removed after extraction. */
   cacheDir: string
   onProgress?: (p: InstallProgress) => void
   signal?: AbortSignal
 }
 
-/** A real directory (not a symlink). Rejecting a symlinked layout dir guards
- *  against a `venv -> /` style archive escaping `installPath`. */
 function isRealDir(p: string): boolean {
   try {
     return fs.lstatSync(p).isDirectory()
@@ -66,13 +45,10 @@ function isRealDir(p: string): boolean {
   }
 }
 
-/** Cache-folder-safe slug for an artifact id (which may contain path chars). */
 function cacheSlug(artifactId: string): string {
   return artifactId.replace(/[^a-zA-Z0-9._-]/g, '_')
 }
 
-// Re-exported so callers keep one import site; the implementation is shared
-// with the managed model transport, which verifies downloads the same way.
 export { sha256File }
 
 function assertLayout(installPath: string): void {
@@ -86,8 +62,6 @@ function assertLayout(installPath: string): void {
   }
 }
 
-/** Remove only entries created this run, so a failed install never deletes a
- *  pre-existing environment or unrelated contents of a shared directory. */
 async function cleanupCreated(
   installPath: string,
   preexisting: ReadonlySet<string>
@@ -102,11 +76,6 @@ async function cleanupCreated(
   )
 }
 
-/**
- * Download + verify + extract + validate an artifact into `installPath`. Throws
- * {@link ComfyBuilderInstallError} on a bad artifact, a checksum mismatch, or a
- * bad extracted layout, or a missing integrity value.
- */
 export async function installArtifact(opts: InstallArtifactOptions): Promise<void> {
   const { artifact, client, installPath, cacheDir, onProgress, signal } = opts
   if (!artifact?.id)
@@ -123,8 +92,6 @@ export async function installArtifact(opts: InstallArtifactOptions): Promise<voi
   onProgress?.({ phase: 'resolve', percent: 0 })
   const url = await client.resolveDownloadUrl(artifact.id)
 
-  // Per-run temp: isolates concurrent installs of the same artifact and is
-  // removed after extraction (cacheDir is scratch, not a persistent cache).
   fs.mkdirSync(cacheDir, { recursive: true })
   const archivePath = path.join(
     cacheDir,

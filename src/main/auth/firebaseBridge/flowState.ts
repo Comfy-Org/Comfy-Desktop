@@ -17,12 +17,10 @@ export interface ActiveBridgeFlow {
 let activeBridgeFlow: ActiveBridgeFlow | null = null
 let activeBannerCleanup: (() => void) | null = null
 
-/** Open a trusted auth URL without leaking a rejected Electron promise. */
 export function openExternalSafely(url: string): void {
   void shell.openExternal(url).catch(() => {})
 }
 
-/** Replace any in-flight loopback flow with a new singleton owner. */
 export function beginActiveBridgeFlow(): ActiveBridgeFlow {
   closeActiveBridge()
   const flow: ActiveBridgeFlow = { controller: new AbortController(), handle: null }
@@ -34,14 +32,12 @@ export function isActiveBridgeFlow(flow: ActiveBridgeFlow): boolean {
   return activeBridgeFlow === flow
 }
 
-/** Release ownership without cancelling a flow that already completed. */
 export function releaseActiveBridgeFlow(flow: ActiveBridgeFlow): boolean {
   if (activeBridgeFlow !== flow) return false
   activeBridgeFlow = null
   return true
 }
 
-/** Cancel + clear the in-flight loopback flow, if any. */
 export function closeActiveBridge(): void {
   const flow = activeBridgeFlow
   if (!flow) return
@@ -49,19 +45,15 @@ export function closeActiveBridge(): void {
   flow.controller.abort()
   try {
     flow.handle?.close()
-  } catch {
-    // Best-effort cleanup.
-  }
+  } catch {}
 }
 
-/** Run + clear the in-flight card teardown, if any. Safe to call twice. */
 export function runBannerCleanup(): void {
   const cleanup = activeBannerCleanup
   activeBannerCleanup = null
   cleanup?.()
 }
 
-/** Inject the browser-opened card and own its singleton teardown. */
 export function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string): void {
   if (comfyContents.isDestroyed()) return
 
