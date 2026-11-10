@@ -4,6 +4,8 @@
  * catalog.ts`): the camera, then the shot, light, film, look and grade,
  * each a picture or a palette you pick from. Same options, same defaults.
  */
+import type { DirectionPart } from './cameraIcons'
+
 const files = import.meta.glob<string>('./cinematic/*.webp', { eager: true, import: 'default' })
 const frame = (name: string): string => files[`./cinematic/${name}.webp`] ?? ''
 
@@ -11,44 +13,70 @@ export interface CineOption {
   label: string
   preview?: string
   palette?: string[]
+  /** The hub's camera icon for it. */
+  icon?: string
 }
 export interface CineGroup {
   id: string
   label: string
+  /** Which hub camera icons it draws. */
+  part?: DirectionPart
   options: CineOption[]
 }
 
-const AUTO: CineOption = { label: 'Auto' }
+const AUTO: CineOption = { label: 'Auto', icon: 'auto' }
 
 /** The camera: four lists you pick one from each. */
 export const CAMERA: CineGroup[] = [
   {
     id: 'camera',
     label: 'Body',
+    part: 'body',
     options: [
       AUTO,
-      ...['Digital cinema', 'Large format', 'Super 35', '35mm film', '16mm film', 'Handheld'].map(
-        (label) => ({ label })
-      )
+      ...(
+        [
+          ['Digital cinema', 'digital'],
+          ['Large format', 'large'],
+          ['Super 35', 'super35'],
+          ['35mm film', 'film35'],
+          ['16mm film', 'film16'],
+          ['Handheld', 'handheld']
+        ] as const
+      ).map(([label, icon]) => ({ label, icon }))
     ]
   },
   {
     id: 'lens',
     label: 'Lens',
+    part: 'lens',
     options: [
       AUTO,
-      ...['Spherical', 'Anamorphic', 'Vintage', 'Macro', 'Tilt-shift'].map((label) => ({ label }))
+      ...(
+        [
+          ['Spherical', 'prime'],
+          ['Anamorphic', 'anamorphic'],
+          ['Vintage', 'vintage'],
+          ['Macro', 'macro'],
+          ['Tilt-shift', 'tilt']
+        ] as const
+      ).map(([label, icon]) => ({ label, icon }))
     ]
   },
   {
     id: 'focal',
     label: 'Focal length',
-    options: [AUTO, ...['14', '24', '35', '50', '85', '135'].map((mm) => ({ label: `${mm}mm` }))]
+    part: 'focal',
+    options: [
+      AUTO,
+      ...['14', '24', '35', '50', '85', '135'].map((mm) => ({ label: `${mm}mm`, icon: mm }))
+    ]
   },
   {
     id: 'aperture',
     label: 'Aperture',
-    options: [AUTO, ...['1.4', '2', '2.8', '4', '8'].map((f) => ({ label: `f/${f}` }))]
+    part: 'aperture',
+    options: [AUTO, ...['1.4', '2', '2.8', '4', '8'].map((f) => ({ label: `f/${f}`, icon: f }))]
   }
 ]
 
@@ -149,7 +177,7 @@ export const CINE_DEFAULTS: Record<string, string> = {
 }
 
 export const CINE_MODELS = ['Seedream 5.0 Pro', 'Nano Banana Pro', 'GPT Image 2', 'FLUX 2 Pro']
-export const CINE_ASPECTS: { value: string; label: string }[] = [
+export const CINE_ASPECTS: { value: string; label: string; hint: string }[] = [
   ['21:9', 'Scope'],
   ['16:9', 'Widescreen'],
   ['4:3', 'Academy'],
@@ -157,4 +185,4 @@ export const CINE_ASPECTS: { value: string; label: string }[] = [
   ['2:3', 'Portrait photo'],
   ['1:1', 'Square'],
   ['9:16', 'Vertical']
-].map(([value, hint]) => ({ value: value!, label: value!, hint }))
+].map(([value, hint]) => ({ value: value!, label: value!, hint: hint! }))

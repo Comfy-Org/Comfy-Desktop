@@ -1,9 +1,8 @@
 <script setup lang="ts" generic="T extends string">
-import { ArrowUpDown, Check, ChevronDown } from 'lucide-vue-next'
+import { ArrowUpDown, ChevronDown } from 'lucide-vue-next'
 import {
   SelectContent,
   SelectItem,
-  SelectItemIndicator,
   SelectItemText,
   SelectPortal,
   SelectRoot,
@@ -88,7 +87,12 @@ const model = defineModel<T>({ required: true })
             v-for="o in options"
             :key="o.value"
             :value="o.value"
-            :class="cn(menuItem, 'pr-2')"
+            :class="
+              cn(
+                menuItem,
+                'data-[state=checked]:bg-secondary-background data-[state=checked]:font-medium'
+              )
+            "
           >
             <span
               v-if="o.swatch"
@@ -98,14 +102,9 @@ const model = defineModel<T>({ required: true })
             <SelectItemText>{{ o.label }}</SelectItemText>
             <span
               v-if="o.hint"
-              class="ml-auto max-w-40 truncate pl-4 font-mono text-ui text-subtle-foreground"
+              class="ml-auto max-w-40 truncate pl-4 text-ui font-normal text-subtle-foreground"
               >{{ o.hint }}</span
             >
-            <span :class="cn('flex w-4 shrink-0 justify-end', !o.hint && 'ml-auto')">
-              <SelectItemIndicator class="text-muted-foreground"
-                ><Check :size="13"
-              /></SelectItemIndicator>
-            </span>
           </SelectItem>
         </SelectViewport>
       </SelectContent>
