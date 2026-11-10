@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight } from 'lucide-vue-next'
+import { ArrowRight, PanelsTopLeft } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion, runExample } from './examples'
@@ -245,9 +245,9 @@ function wheel(e: WheelEvent): void {
         />
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
-        <!-- App, up top; its name and what it does, below. -->
+        <!-- App, as a badge up top; its name and what it does, below. -->
         <span class="mar-arc-text">
-          <span class="mar-arc-meta"><span class="mar-arc-app">App</span></span>
+          <span class="mar-arc-app"><PanelsTopLeft :size="12" />App</span>
         </span>
         <span class="mar-arc-dim" />
         <!-- As on the app cards: the name and what it does on the left,
@@ -353,7 +353,20 @@ function wheel(e: WheelEvent): void {
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
 /* Marks the example as an app, ahead of what it makes. */
+/* The same dark glass badge as the example tiles' corner, so it reads on
+   any picture. */
 .mar-arc-app {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  padding: 0 8px 0 7px;
+  border-radius: 999px;
+  background: rgb(14 14 16 / 0.5);
+  backdrop-filter: blur(16px) saturate(1.6);
+  color: #fff;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -388,11 +401,6 @@ function wheel(e: WheelEvent): void {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.35;
-}
-.mar-arc-meta {
-  margin-top: 2px;
-  color: rgb(255 255 255 / 0.78);
-  font-size: 12px;
 }
 /* Run at the bottom: a white button over a soft scrim, shown on the front
    card when you point at it (or focus it). */

@@ -104,6 +104,14 @@ const detail = (i: (typeof shown.value)[number]): string =>
   text-align: left;
   transition: background-color 0.15s;
 }
+/* Light: the card's own white surface, as the first-run cards, not a
+ * grey wash; the corner light stays. */
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mbr-card {
+  background: var(--color-card-background, #fff);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.04);
+}
 /* Lit from its corner in the build's own hue; on hover that same light
  * grows from where it sits until it fills the card. */
 .mbr-card::before {
