@@ -766,6 +766,35 @@
     --takeover-fs-lead: 15px;
     --neutral-300: #8a8688;
   }
+  /* The takeover is drawn dark in both themes (it comes before the app, so
+   * there is no theme to follow yet). In light mode the theme tokens would
+   * put dark ink on the dark frame, so every token ui/looks/light.css
+   * overrides is restated here with its dark value from ui/tokens.css.
+   * Same for the Set up and Install steps, drawn as the takeover's next
+   * screens (.mss-in-takeover, teleported beside it). */
+  :root[data-ds-theme='light'] :is(.mss-first, .mss-in-takeover) {
+    color-scheme: dark;
+    --color-app-background: oklch(0.19 0.003 285);
+    --color-titlebar-background: oklch(0.145 0.003 285);
+    --color-content-background: oklch(0.14 0.005 285);
+    --color-base-foreground: oklch(0.955 0.002 285);
+    --color-muted-foreground: oklch(0.76 0.006 285);
+    --color-subtle-foreground: oklch(0.6 0.008 285);
+    --color-card-background: oklch(0.23 0.008 285);
+    --color-card-background-hover: oklch(0.265 0.009 285);
+    --color-secondary-background: oklch(1 0 0 / 0.06);
+    --color-secondary-background-hover: oklch(1 0 0 / 0.1);
+    --color-inverted-background: oklch(0.96 0.002 285);
+    --color-inverted-background-hover: oklch(0.995 0 0);
+    --color-inverted-foreground: oklch(0.13 0.004 285);
+    --color-border-default: oklch(1 0 0 / 0.08);
+    --color-border-strong: oklch(1 0 0 / 0.14);
+    --color-border-focus: oklch(1 0 0 / 0.45);
+    --color-status-running: oklch(0.78 0.15 155);
+    --color-status-danger: oklch(0.62 0.19 25);
+    --shadow-highlight: 0 0 #0000;
+    --shadow-popover: 0 12px 32px oklch(0 0 0 / 0.45);
+  }
   /* The prototype's control reset (ui/tokens.css) reverts a button's box
    * properties to layered styles, so ChoiceCard's scoped values are
    * restated here, unchanged, for the ones it reverts. */
