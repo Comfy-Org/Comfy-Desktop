@@ -35,6 +35,7 @@ import {
   RotateCw,
   Trash2,
   Upload,
+  Video,
   Workflow,
   X
 } from 'lucide-vue-next'
@@ -776,9 +777,10 @@ const iconOf = (a: MarAsset) =>
 const picOf = (a: MarAsset): string | undefined =>
   a.src ?? (a.thumbId ? thumb(a.thumbId) : undefined)
 
-/** Play on a card (video and audio, on hover): the clip plays in place,
- *  muted and looping; a sound plays out loud. One at a time; a click on
- *  the card still opens it. The mock's videos borrow the stock clips
+/** Play on a card: a video plays in place while the pointer is on it,
+ *  muted and looping, as the example tiles do; a sound waits for its
+ *  play button, since sound on hover would startle. One at a time; a
+ *  click on the card still opens it. The mock's videos borrow the stock clips
  *  (assets/examples/gv-*.mp4), matched by what's in the name, else by a
  *  hash so each card keeps its own. The mock has no sound files, so a
  *  sound plays a soft synthesized loop. */
@@ -841,6 +843,13 @@ function togglePlay(a: MarAsset): void {
   if (playing.value === a.id) return void (playing.value = '')
   playing.value = a.id
   if (a.type === 'audio') playSound(a)
+}
+function hoverPlay(a: MarAsset, on: boolean): void {
+  if (a.type !== 'video' || !playable(a)) return
+  if (on && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    stopSound()
+    playing.value = a.id
+  } else if (playing.value === a.id) playing.value = ''
 }
 const playable = (a: MarAsset): boolean =>
   !a.status && (a.type === 'audio' || (a.type === 'video' && !!clipOf(a)))
@@ -1396,6 +1405,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                     :class="a.status === 'running' && 'mar-asset-running'"
                     :draggable="inGraph && !a.status"
                     @dragstart="dragCard($event, a)"
+                    @mouseenter="hoverPlay(a, true)"
+                    @mouseleave="hoverPlay(a, false)"
                     @open="open(a)"
                     @select="lib.pick(a.id, $event)"
                     @start-rename="lib.renaming.value = a.id"
@@ -1437,7 +1448,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                         playsinline
                       />
                       <Tooltip
-                        v-if="playable(a)"
+                        v-if="playable(a) && a.type === 'audio'"
                         :content="playing === a.id ? 'Pause' : 'Play'"
                         side="bottom"
                       >
@@ -1457,7 +1468,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                         ><i style="width: 62%"
                       /></span>
                       <span v-else-if="a.type === 'video' && !a.status" class="mar-asset-len"
-                        ><Play :size="10" />{{ factsFor(a).duration }}</span
+                        ><Video :size="10" />{{ factsFor(a).duration }}</span
                       >
                       <i
                         v-if="labelOf(a.id)"

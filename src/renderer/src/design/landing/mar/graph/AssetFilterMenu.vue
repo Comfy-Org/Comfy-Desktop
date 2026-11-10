@@ -127,6 +127,14 @@ function toggleMeta(k: MetaKey, v: string): void {
   f.value = { ...f.value, [k]: toggle(f.value[k], v) }
 }
 
+// One submenu at a time: a quick sweep down the list could leave the
+// ones it crossed open, stacked beside each other.
+const sub = ref('')
+const only = (key: string, open: boolean): void => {
+  if (open) sub.value = key
+  else if (sub.value === key) sub.value = ''
+}
+
 const q = ref('')
 const match = (s: string): boolean => s.toLowerCase().includes(q.value.trim().toLowerCase())
 const found = computed(() => ({
@@ -143,7 +151,10 @@ const searching = computed(() => !!q.value.trim())
 </script>
 
 <template>
-  <DropdownMenuRoot :modal="false" @update:open="(o) => !o && ((q = ''), (custom = false))">
+  <DropdownMenuRoot
+    :modal="false"
+    @update:open="(o) => !o && ((q = ''), (custom = false), (sub = ''))"
+  >
     <DropdownMenuTrigger as-child>
       <button
         v-if="field"
@@ -281,7 +292,11 @@ const searching = computed(() => !!q.value.trim())
 
         <template v-else>
           <DropdownMenuLabel class="afm-label">Attribute</DropdownMenuLabel>
-          <DropdownMenuSub v-if="source">
+          <DropdownMenuSub
+            v-if="source"
+            :open="sub === 'source'"
+            @update:open="only('source', $event)"
+          >
             <DropdownMenuSubTrigger :class="item">
               <FolderInput :size="16" class="afm-icon" /><span class="afm-grow">Source</span
               ><ChevronRight :size="16" class="afm-icon" />
@@ -303,7 +318,7 @@ const searching = computed(() => !!q.value.trim())
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
-          <DropdownMenuSub>
+          <DropdownMenuSub :open="sub === 'types'" @update:open="only('types', $event)">
             <DropdownMenuSubTrigger :class="item">
               <Image :size="16" class="afm-icon" /><span class="afm-grow">{{ typesLabel }}</span
               ><ChevronRight :size="16" class="afm-icon" />
@@ -323,7 +338,7 @@ const searching = computed(() => !!q.value.trim())
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
-          <DropdownMenuSub>
+          <DropdownMenuSub :open="sub === 'date'" @update:open="only('date', $event)">
             <DropdownMenuSubTrigger :class="item">
               <Calendar :size="16" class="afm-icon" /><span class="afm-grow">Date</span
               ><ChevronRight :size="16" class="afm-icon" />
@@ -367,7 +382,11 @@ const searching = computed(() => !!q.value.trim())
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
-          <DropdownMenuSub v-if="tags.length">
+          <DropdownMenuSub
+            v-if="tags.length"
+            :open="sub === 'tags'"
+            @update:open="only('tags', $event)"
+          >
             <DropdownMenuSubTrigger :class="item">
               <Tag :size="16" class="afm-icon" /><span class="afm-grow">Tag</span
               ><ChevronRight :size="16" class="afm-icon" />
@@ -396,7 +415,7 @@ const searching = computed(() => !!q.value.trim())
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>
-          <DropdownMenuSub>
+          <DropdownMenuSub :open="sub === 'labels'" @update:open="only('labels', $event)">
             <DropdownMenuSubTrigger :class="item">
               <Palette :size="16" class="afm-icon" /><span class="afm-grow">Label</span
               ><span v-if="f.labels.length" class="aff-badge">{{ f.labels.length }}</span
@@ -422,7 +441,12 @@ const searching = computed(() => !!q.value.trim())
           <template v-if="metaGroups.length">
             <DropdownMenuSeparator class="afm-sep" />
             <DropdownMenuLabel class="afm-label">Metadata</DropdownMenuLabel>
-            <DropdownMenuSub v-for="m in metaGroups" :key="m.key">
+            <DropdownMenuSub
+              v-for="m in metaGroups"
+              :key="m.key"
+              :open="sub === m.key"
+              @update:open="only(m.key, $event)"
+            >
               <DropdownMenuSubTrigger :class="item">
                 <component :is="m.icon" :size="16" class="afm-icon" /><span class="afm-grow">{{
                   m.label
