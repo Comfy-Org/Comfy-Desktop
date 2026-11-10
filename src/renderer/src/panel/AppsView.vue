@@ -188,6 +188,10 @@ watch(
   },
   { immediate: true }
 )
+watch(visibleAssets, (list) => {
+  if (detailKey.value !== null && !list.some((asset) => cardKey(asset) === detailKey.value))
+    detailKey.value = null
+})
 const detailIndex = computed<number | null>({
   get: () => {
     if (detailKey.value === null) return null
