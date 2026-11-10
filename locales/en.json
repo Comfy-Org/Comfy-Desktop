@@ -53,8 +53,7 @@
     "showName": "File name",
     "showDetails": "File details",
     "emptyTitle": "No assets yet",
-    "emptyBody": "Outputs from your running builds show up here.",
-    "noRunningBuilds": "Start a build to browse its assets.",
+    "emptyBody": "Open an app to make assets.",
     "loadFailed": "Couldn't load assets",
     "download": "Download",
     "downloadFailed": "Couldn't download asset",
@@ -82,7 +81,12 @@
     },
     "noMatches": "No matching assets",
     "noMatchesHint": "Try another type or search.",
-    "filter": "Filter"
+    "filter": "Filter",
+    "signedOutTitle": "Log in to see your assets",
+    "signedOutBody": "Assets that you make in Comfy Cloud show here.",
+    "signIn": "Log in to Comfy Cloud",
+    "browseApps": "Browse apps",
+    "retry": "Try again"
   },
   "apps": {
     "tabsLabel": "Apps view",

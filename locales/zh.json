@@ -53,8 +53,7 @@
     "showName": "文件名",
     "showDetails": "文件详情",
     "emptyTitle": "暂无资产",
-    "emptyBody": "运行中构建的输出会显示在这里。",
-    "noRunningBuilds": "启动一个构建以浏览其资产。",
+    "emptyBody": "打开一个应用来生成资产。",
     "loadFailed": "无法加载资产",
     "download": "下载",
     "downloadFailed": "无法下载资产",
@@ -82,7 +81,12 @@
     },
     "noMatches": "没有匹配的资产",
     "noMatchesHint": "试试其他类型或搜索词。",
-    "filter": "筛选"
+    "filter": "筛选",
+    "signedOutTitle": "登录以查看你的资产",
+    "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
+    "signIn": "登录 Comfy Cloud",
+    "browseApps": "浏览应用",
+    "retry": "重试"
   },
   "apps": {
     "tabsLabel": "应用视图",

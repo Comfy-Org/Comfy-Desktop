@@ -12,6 +12,7 @@ import type { AssetSummary, Installation } from '../types/ipc'
 const listAssets = vi.fn()
 const downloadAsset = vi.fn()
 const alert = vi.fn()
+const signIn = vi.fn().mockResolvedValue({ signedIn: false })
 
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert })
@@ -69,6 +70,7 @@ beforeEach(() => {
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      signIn,
       onAuthChanged: vi.fn(() => () => {})
     }
   }
@@ -128,26 +130,36 @@ describe('AppsView', () => {
     expect(assetNames(wrapper)).toEqual(['terraces.png'])
   })
 
-  it('asks for a running build when none is running', async () => {
-    const wrapper = await mountAssets([], [build('old', 'My Local 1')])
-
-    expect(listAssets).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain(
-      'Start a build to browse its assets.'
-    )
-  })
-
-  it('marks Comfy Cloud as stopped while signed out', async () => {
+  it('asks a signed-out user to log in to Comfy Cloud', async () => {
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
-
     const wrapper = mount(AppsView)
     await flushPromises()
 
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain(
-      'Start a build to browse its assets.'
+      'Log in to see your assets'
     )
+    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('points a signed-in user with no assets to the apps', async () => {
+    const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
+    useInstallationStore().installations = [cloud]
+    listAssets.mockResolvedValue([])
+    const wrapper = mount(AppsView)
+    await flushPromises()
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain(
+      'No assets yetOpen an app to make assets.'
+    )
+    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+
+    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
   })
 
   it('shows Coming soon under All apps without loading assets, then loads Generated Files', async () => {

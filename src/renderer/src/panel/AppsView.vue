@@ -133,13 +133,34 @@ const visibleAssets = computed(() => {
   return filtered.toSorted((a, b) => direction * (createdMs(a) - createdMs(b)))
 })
 
-const emptyState = computed(() => {
-  if (failed.value) return { title: t('assets.loadFailed'), body: t('assets.emptyBody') }
-  if (assets.value.length > 0)
+interface EmptyState {
+  title: string
+  body: string
+  action?: { label: string; run: () => void }
+}
+
+const emptyState = computed<EmptyState>(() => {
+  if (failed.value) {
+    return {
+      title: t('assets.loadFailed'),
+      body: '',
+      action: { label: t('assets.retry'), run: () => void loadAssets() }
+    }
+  }
+  if (assets.value.length > 0) {
     return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
+  }
+  if (!authStore.isSignedIn) {
+    return {
+      title: t('assets.signedOutTitle'),
+      body: t('assets.signedOutBody'),
+      action: { label: t('assets.signIn'), run: () => void authStore.signIn() }
+    }
+  }
   return {
     title: t('assets.emptyTitle'),
-    body: reachableBuildIds.value.length === 0 ? t('assets.noRunningBuilds') : t('assets.emptyBody')
+    body: t('assets.emptyBody'),
+    action: { label: t('assets.browseApps'), run: () => (tab.value = 'all') }
   }
 })
 
@@ -429,7 +450,20 @@ function extensionOf(name: string): string {
         <h2 class="m-0 text-heading font-semibold text-foreground">
           {{ emptyState.title }}
         </h2>
-        <p class="m-0 text-ui text-muted-foreground">{{ emptyState.body }}</p>
+        <p v-if="emptyState.body" class="m-0 text-ui text-muted-foreground">
+          {{ emptyState.body }}
+        </p>
+        <Button
+          v-if="emptyState.action"
+          type="button"
+          variant="inverted"
+          size="md"
+          class="mt-6 px-4 text-[13px]/5"
+          data-testid="assets-empty-action"
+          @click="emptyState.action.run"
+        >
+          {{ emptyState.action.label }}
+        </Button>
       </section>
 
       <ul
