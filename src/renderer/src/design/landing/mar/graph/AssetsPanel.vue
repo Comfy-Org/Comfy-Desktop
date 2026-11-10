@@ -284,7 +284,10 @@ const SORTS = computed(() => [
 /** Columns follow the panel's width: dragged wider, it shows more
  *  cards rather than bigger ones (two at the default 320). */
 const cols = computed(() => {
-  const n = Math.max(2, Math.floor(((railWidth['Media Assets'] ?? RAIL_DEFAULT) - 20) / 150))
+  const n = Math.max(
+    2,
+    Math.floor(((railWidth[prod.value ? 'Media Assets' : 'Assets'] ?? RAIL_DEFAULT) - 20) / 150)
+  )
   if (view.value === 'list') return 1
   if (view.value === 'small') return n + 1
   return prod.value ? n : Math.max(1, n + 2 - size.value)
@@ -499,7 +502,7 @@ function upload(files: FileList | null | undefined): void {
 </script>
 
 <template>
-  <RailPanel title="Media Assets" :closable="prod" @close="$emit('close')">
+  <RailPanel :title="prod ? 'Media Assets' : 'Assets'" :closable="prod" @close="$emit('close')">
     <template #tools>
       <Tooltip content="Upload files" side="bottom">
         <button type="button" class="rp-icon" aria-label="Upload files" @click="picker?.click()">

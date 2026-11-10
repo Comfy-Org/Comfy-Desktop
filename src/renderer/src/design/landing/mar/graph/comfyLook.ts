@@ -36,7 +36,7 @@ export const assetTab = reactive<{
   on: boolean
 }>({ asset: null, list: [], build: '', on: false })
 
-/** Proposal: Media Assets expanded from its panel to a whole tab (the
+/** Proposal: Assets expanded from its panel to a whole tab (the
  *  library, as on Desktop's Assets page); `on` while it's the tab shown. */
 export const assetsTab = reactive({ open: false, on: false })
 /** The files the tab browses: the panel's own, handed over on expand. */

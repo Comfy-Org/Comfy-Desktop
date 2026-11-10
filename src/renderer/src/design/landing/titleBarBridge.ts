@@ -47,6 +47,9 @@ export interface TitleBarState {
    *  switcher; `appFront` is the tab in front (null: none). */
   apps?: { id: string; name: string; thumb: string }[]
   appFront?: string | null
+  /** Mar's proposal, ComfyUI (Glass): Assets opened as a whole tab, after
+   *  the build like an app; `front` while it is the tab on show. */
+  assets?: { front: boolean }
   /** Mar's tabs title bar (mar/shell/titleTabs.ts), only while it's on:
    *  the open workflows as tabs, the one in front, where Home runs next,
    *  and whether the agent is open. */
@@ -73,6 +76,9 @@ export type TitleBarCommand =
   /** Bring an app's tab to the front, or close it. */
   | { type: 'app'; id: string }
   | { type: 'closeApp'; id: string }
+  /** Bring the Assets tab to the front, or close it. */
+  | { type: 'assets' }
+  | { type: 'closeAssets' }
   /** Mar's tabs title bar: bring a workflow tab to the front, close it, or
    *  open and close the agent. */
   | { type: 'tab'; id: string }

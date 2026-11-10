@@ -91,7 +91,7 @@ import type { MenuAction, MenuLine } from './menu'
  */
 const { project: fixedProject, inGraph = false } = defineProps<{
   project?: string
-  /** ComfyUI: Media Assets expanded into a tab; it can go back to its panel. */
+  /** ComfyUI: Assets expanded into a tab; it can go back to its panel. */
   inGraph?: boolean
 }>()
 const emit = defineEmits<{ collapse: [] }>()
@@ -615,7 +615,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 
 <template>
   <MarPage
-    :title="inGraph ? 'Media Assets' : 'Assets'"
+    title="Assets"
     skeleton="grid"
     :no-results="browsable && shown.length === 0 && filtered"
     :embedded="!!fixedProject"
@@ -922,7 +922,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   </MarPage>
   <!-- ComfyUI's tab: the sidebar, in the tab's own left column. -->
   <Teleport v-if="inGraph" defer to="#mg-assets-nav">
-    <nav class="mar-anav" aria-label="Media Assets">
+    <nav class="mar-anav" aria-label="Assets">
       <button
         v-for="s in SOURCES"
         :key="s.value"
@@ -1183,7 +1183,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   border-radius: 999px;
   box-shadow: 0 0 0 2px rgb(0 0 0 / 0.35);
 }
-/* ComfyUI's Media Assets tab: its sidebar and the count by the title. */
+/* ComfyUI's Assets tab: its sidebar and the count by the title. */
 .mar-anav {
   display: flex;
   flex-direction: column;

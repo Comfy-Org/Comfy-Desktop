@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ChevronDown, Home, X } from 'lucide-vue-next'
 import { AgentChat } from '../icons/agentChat'
+import { ComfyAssets } from '../icons/comfyIcons'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import type { TitleBarCommand, TitleBarState } from '../../titleBarBridge'
 
@@ -68,6 +69,26 @@ const close = (active: boolean): string =>
         :aria-label="`Close ${t.name}`"
         :class="close(t.id === state.tabFront)"
         @click="emit('command', { type: 'closeTab', id: t.id })"
+      >
+        <X :size="12" />
+      </button>
+    </div>
+
+    <div v-if="state.assets" :class="[tab(state.assets.front), 'max-w-48 pr-1 pl-1.5']">
+      <button
+        type="button"
+        class="flex min-w-0 items-center gap-2 outline-none"
+        :aria-current="state.assets.front ? 'page' : undefined"
+        @click="emit('command', { type: 'assets' })"
+      >
+        <ComfyAssets class="size-4 shrink-0" />
+        <span class="truncate">Assets</span>
+      </button>
+      <button
+        type="button"
+        aria-label="Close Assets"
+        :class="close(state.assets.front)"
+        @click="emit('command', { type: 'closeAssets' })"
       >
         <X :size="12" />
       </button>

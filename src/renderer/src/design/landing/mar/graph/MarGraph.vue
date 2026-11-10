@@ -880,7 +880,7 @@ const assets = computed({
     else if (panel.value === 'assets') panel.value = ''
   }
 })
-/** Proposal: Media Assets grows from its panel into a whole tab. */
+/** Proposal: Assets grows from its panel into a whole tab. */
 function expandAssets(): void {
   panel.value = ''
   assetTab.on = false
@@ -890,7 +890,7 @@ function collapseAssets(): void {
   Object.assign(assetsTab, { open: false, on: false })
   panel.value = 'assets'
 }
-// Current keeps Media Assets a panel: switching to it closes the tab.
+// Current keeps Assets a panel: switching to it closes the tab.
 watch(current, (on) => {
   if (on && assetsTab.open) collapseAssets()
 })
@@ -1896,7 +1896,7 @@ function addFromPanel(kind: NodeKind): void {
         @close="assetTab.asset = null"
       />
     </div>
-    <!-- Proposal, Glass: Media Assets as a whole tab, the library as on
+    <!-- Proposal, Glass: Assets as a whole tab, the library as on
          Desktop. Current keeps it a panel. -->
     <div
       v-if="!current && assetsTab.open && assetsTab.on && comfyLook.id === 'proposal'"
@@ -1904,43 +1904,6 @@ function addFromPanel(kind: NodeKind): void {
     >
       <aside id="mg-assets-nav" class="mg-assets-nav" />
       <div class="mg-assets-main"><MarAssetsPage in-graph @collapse="collapseAssets" /></div>
-    </div>
-    <!-- Glass has no workflow tabs: once Media Assets opens as one, a
-         strip at the top holds it and the workflow, to switch between. -->
-    <div
-      v-if="!current && assetsTab.open && comfyLook.id === 'proposal'"
-      class="mg-gtabs proto-ui"
-      role="tablist"
-      aria-label="Tabs"
-    >
-      <button
-        type="button"
-        role="tab"
-        class="mg-gtab"
-        :aria-selected="!assetsTab.on"
-        @click="assetsTab.on = false"
-      >
-        <span class="mg-tab-name">{{ shownWorkflow }}</span>
-      </button>
-      <span class="mg-gtab is-assets" :class="assetsTab.on && 'is-on'">
-        <button
-          type="button"
-          role="tab"
-          class="mg-gtab-go"
-          :aria-selected="assetsTab.on"
-          @click="assetsTab.on = true"
-        >
-          <ComfyAssets class="mg-tab-icon" /><span class="mg-tab-name">Media Assets</span>
-        </button>
-        <button
-          type="button"
-          class="mg-tab-x"
-          aria-label="Close Media Assets"
-          @click="Object.assign(assetsTab, { open: false, on: false })"
-        >
-          <X :size="12" />
-        </button>
-      </span>
     </div>
     <AssetDetail
       v-if="viewNode && comfyLook.id !== 'production' && viewList.length"
@@ -3003,12 +2966,12 @@ function addFromPanel(kind: NodeKind): void {
 .mg.on-assets :is(.mg-runblock, .mg-tools, .mg-agent-btn, .mg-map) {
   visibility: hidden;
 }
-/* Glass: the tab takes the whole window under the strip, as in Alex
-   Tov's media-assets proto. ComfyUI's rail is the workflow's, so it
-   steps aside; the strip brings the workflow back. */
+/* Glass: the tab takes the whole window, as in Alex Tov's media-assets
+   proto. ComfyUI's rail is the workflow's, so it steps aside; the title
+   bar's Assets tab and the build's name switch between the two. */
 .is-glass .mg-assets-tab {
   position: absolute;
-  inset: calc(var(--mg-top) + 56px) 0 0 0;
+  inset: var(--mg-top) 0 0 0;
 }
 .mg-rail {
   transition:
@@ -3019,47 +2982,6 @@ function addFromPanel(kind: NodeKind): void {
   opacity: 0;
   pointer-events: none;
   translate: -8px 0;
-}
-.mg-gtabs {
-  position: absolute;
-  top: calc(var(--mg-top) + 14px);
-  left: 16px;
-  z-index: 11;
-  display: flex;
-  /* A grid child: without this it stretches down the whole canvas. */
-  height: max-content;
-  gap: 2px;
-  padding: 4px;
-  border-radius: var(--mar-tab-radius);
-  background: var(--mg-float);
-  backdrop-filter: blur(24px) saturate(1.2);
-}
-:root .proto-ui.proto-ui.proto-ui .mg-gtab,
-:root .proto-ui.proto-ui.proto-ui .mg-gtab-go {
-  display: inline-flex;
-  height: 28px;
-  max-width: 220px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border-radius: var(--mar-tab-item-radius);
-  background: transparent;
-  color: var(--mg-muted);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .mg-gtab-go {
-  padding: 0;
-  color: inherit;
-}
-:root .proto-ui.proto-ui.proto-ui .mg-gtab.is-assets {
-  padding-right: 6px;
-}
-:root .proto-ui.proto-ui.proto-ui .mg-gtab:hover {
-  color: var(--mg-text);
-}
-:root .proto-ui.proto-ui.proto-ui .mg-gtab:is([aria-selected='true'], .is-on) {
-  background: var(--mg-hover);
-  color: var(--mg-text);
 }
 .mg-tab-add {
   margin: 0 0 9px 6px;

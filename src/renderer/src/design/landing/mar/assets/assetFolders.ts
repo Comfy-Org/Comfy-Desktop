@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 
 /**
- * Folders for ComfyUI's Media Assets tab, alongside tags: a file sits in
+ * Folders for ComfyUI's Assets tab, alongside tags: a file sits in
  * one folder, folders nest. Made from the sidebar, filled from a file's
  * menu, the select bar, or by dragging cards onto a row. Kept for the
  * visit, like labels.
