@@ -1082,8 +1082,8 @@ function open(a: MarAsset): void {
   else if (a.status === 'failed') retry(a)
   else detail.value = a
 }
-/** Open workflow: ComfyUI on the build that made it, its workflow loaded,
- *  Media Assets open with this asset selected. */
+/** Open workflow: ComfyUI on the build that made it, its workflow loaded
+ *  with this asset on the canvas, Media Assets open beside it. */
 function openWorkflow(a: MarAsset): void {
   const inst =
     instances.value.find((i) => i.id === a.envId) ??
@@ -1091,7 +1091,7 @@ function openWorkflow(a: MarAsset): void {
     instances.value[0]
   if (!inst) return
   detail.value = null
-  graphOpen.select = { id: a.id, name: a.name, src: picOf(a), type: a.type }
+  graphOpen.select = { id: a.id, name: a.name, src: picOf(a), clip: clipOf(a), type: a.type }
   graphOpen.assets = true
   hostActions.launch(inst, a.name.replace(/_\d+\.[^.]+$/, ''))
 }

@@ -88,8 +88,11 @@ DS's Motion page (`ds/motion.ts`).
   Filters › Folder.
 - **One Assets.** ComfyUI's panel expand opens Desktop's Assets on that
   build (default); the tab is kept as Playground › Full Assets › Tab.
-  Open workflow lands on ComfyUI's panel with the asset selected, never
-  on the full Assets tab.
+  The expand button reads "Open Assets page". Open workflow shows the
+  asset on the canvas, on the workflow's output node (selected), the panel
+  open beside it with nothing picked; never the full Assets tab.
+  Double-click on an asset, in the panel or on the canvas, opens the asset
+  view.
 
 ## Motion
 

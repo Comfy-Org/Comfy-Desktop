@@ -78,6 +78,7 @@ import {
   settingsOpen,
   createCanvas,
   createNode,
+  mediaOf,
   uid,
   socketY,
   type Group,
@@ -845,9 +846,30 @@ watch(
 // dialogs; Shortcuts as a panel along the bottom. ──
 type RailPanelId = '' | 'queue' | 'assets' | 'nodes' | 'models' | 'workflows' | 'apps'
 // A share link can open it on Media Assets (graphOpen.ts).
-// Assets › Open workflow lands on the panel, the asset selected, never on
-// the full Assets tab (even if it was left open on this build).
-if (graphOpen.select) Object.assign(assetsTab, { open: false, on: false })
+/** Assets › Open workflow: the asset shows on the canvas, on the last node
+ *  that makes its kind of file (the workflow's output), that node selected.
+ *  The panel opens beside it, nothing picked in it; never the full Assets
+ *  tab, even if it was left open on this build. */
+function landAsset(): void {
+  const want = graphOpen.select
+  if (!want) return
+  graphOpen.select = null
+  Object.assign(assetsTab, { open: false, on: false })
+  const kind = want.type === 'video' ? 'video' : 'image'
+  const last = (m: string): SNode | undefined =>
+    sNodes.filter((n) => mediaOf(n) === m).sort((a, b) => b.x - a.x)[0]
+  const node = last(kind) ?? last('image')
+  if (!node) return
+  if (want.clip && mediaOf(node) === 'video') node.video = want.clip
+  if (want.src) {
+    node.history.push({ src: want.src, run: node.history.length + 1 })
+    node.pick = node.history.length - 1
+    node.image = want.src
+  }
+  node.state = undefined
+  selection.value = [node.id]
+}
+landAsset()
 const panel = ref<RailPanelId>(graphOpen.assets ? 'assets' : '')
 graphOpen.assets = false
 // Assets › Open workflow on a build already open: back to Media Assets.
@@ -855,7 +877,7 @@ watch(
   () => graphOpen.assets,
   (on) => {
     if (!on) return
-    if (graphOpen.select) Object.assign(assetsTab, { open: false, on: false })
+    landAsset()
     panel.value = 'assets'
     graphOpen.assets = false
   }

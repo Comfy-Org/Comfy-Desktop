@@ -294,7 +294,7 @@ const inTab = computed(() => ALL.value.filter((a) => !a.status))
 /** Open in tab: the same files, now with room to organize them. */
 /** The expand button: a tab, or Home's Assets on this build (Playground
  *  › Full Assets). A link to the tab (?view=…assets-tab) keeps the tab. */
-const growLabel = computed(() => (fullAssets.id === 'home' ? 'Open in Home' : 'Open in tab'))
+const growLabel = computed(() => (fullAssets.id === 'home' ? 'Open Assets page' : 'Open in tab'))
 function grow(): void {
   if (fullAssets.id === 'tab') return expand()
   const tab = proto.tabs.find((t) => t.id === proto.activeTab)
@@ -417,34 +417,6 @@ watch(
   (n) => n || (tagging.value = false)
 )
 const finished = computed(() => shown.value.filter((a) => !a.status))
-// Desktop's Assets › Open workflow: this asset leads Generated, selected.
-function takeSelect(): void {
-  const want = graphOpen.select
-  if (!want) return
-  graphOpen.select = null
-  if (!ALL.value.some((a) => a.id === want.id))
-    uploaded.value = [
-      {
-        id: want.id,
-        name: want.name,
-        src: want.src ?? '',
-        type: want.type as PanelAsset['type'],
-        source: 'local',
-        size: '2.1 MB',
-        sizeMb: 2.1,
-        age: 0,
-        when: 'Just now',
-        kind: 'Generated',
-        seconds: 8.5,
-        outputs: 1
-      },
-      ...uploaded.value
-    ]
-  tab.value = 'Generated'
-  selected.value = new Set([want.id])
-}
-takeSelect()
-watch(() => graphOpen.select, takeSelect)
 // A share link can open the first asset in Inspect asset (graphOpen.ts).
 if (graphOpen.inspect) {
   const first = finished.value[0]

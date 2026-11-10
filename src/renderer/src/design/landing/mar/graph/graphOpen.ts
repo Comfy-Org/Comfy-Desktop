@@ -7,7 +7,13 @@ export const graphOpen = reactive({
   assets: false,
   tab: false,
   inspect: false,
-  /** Assets › Open workflow: ComfyUI opens on Media Assets with this one
-   *  selected. */
-  select: null as null | { id: string; name: string; src?: string; type: string }
+  /** Assets › Open workflow: ComfyUI opens with this one on the canvas,
+   *  on the workflow's output (MarGraph's landAsset). */
+  select: null as null | {
+    id: string
+    name: string
+    src?: string
+    clip?: string
+    type: string
+  }
 })
