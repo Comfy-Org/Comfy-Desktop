@@ -14,6 +14,7 @@ import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
+import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -139,6 +140,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'buildPage', show: () => when.buildPage.value },
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
   { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
+  { id: 'folderDepth', show: () => when.folderDepth.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'ports', show: () => shownPorts.value.length > 0 }
@@ -380,6 +382,9 @@ const linkSays = computed(() => {
             <span class="text-ui text-subtle-foreground"
               >Adds Everywhere to the build picker: every running build at once.</span
             >
+          </Row>
+          <Row :show="shows('folderDepth')" label="Folders">
+            <Seg v-model="folderDepth.id" label="Folders" :options="FOLDER_DEPTHS" />
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">
             <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />

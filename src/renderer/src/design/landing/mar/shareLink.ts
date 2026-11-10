@@ -21,6 +21,7 @@ import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
 import { assetLink, holdAssetLink } from './assets/assetLink'
+import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
@@ -143,6 +144,7 @@ const PARTS: Part[] = [
   one('buildPage', buildPage, 'production', BUILD_PAGES),
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
   one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
+  one('folders', folderDepth, 'few', FOLDER_DEPTHS),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
   // After Graph look: Production sets it to Current.

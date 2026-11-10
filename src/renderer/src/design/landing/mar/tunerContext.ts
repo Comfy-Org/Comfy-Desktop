@@ -13,6 +13,7 @@ import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
 import { assetsEverywhere } from './assets/assetsEverywhere'
+import { folderDepth } from './assets/folderDepth'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
 import { appExamplesAt, appPage } from './apps/appPage'
@@ -20,7 +21,7 @@ import { templateStyle } from './brand/templateStyle'
 import { brandMotif } from './brand/brandMotif'
 import { creditsState } from './credits'
 import { p20 } from './p20/p20'
-import { comfyLook } from './graph/comfyLook'
+import { assetsTab, comfyLook } from './graph/comfyLook'
 import { firstRun } from './firstRun'
 import { exampleLook } from './userStates/exampleLook'
 import { editorEntry } from './userStates/editorEntry'
@@ -100,6 +101,8 @@ export const when = {
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
   // Desktop's Assets page.
   assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
+  // ComfyUI's Assets tab, where folders live.
+  folderDepth: computed(() => assetsTab.open && assetsTab.on),
   // Credits: the sidebar foot; Tabs has no sidebar.
   credits: computed(() => sidebarShown.value && !!shownCredits.value && marNav.id !== 'tabs'),
   graph: inGraph,
@@ -212,6 +215,7 @@ export const TWEAKS = {
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
   assetsEverywhere: one(assetsEverywhere, 'off'),
+  folderDepth: one(folderDepth, 'few'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   // The modal opens on Configure (or Needs upload for an unreleased version).
