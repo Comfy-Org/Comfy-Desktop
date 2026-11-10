@@ -847,7 +847,7 @@ describe('desktop2-open-terminal', () => {
     expect(call![1]({ sender } as never)).toBe(false)
   })
 
-  it('opens the instance picker for a local install', async () => {
+  it('hands a local install to the instance picker', async () => {
     const { ipcMain } = await import('electron')
     const getInstancePickerInstalls = vi.fn(async () => [])
     registerTitlePopupIpc({ getInstancePickerInstalls } as unknown as TitlePopupHostBindings)
