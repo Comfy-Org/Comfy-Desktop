@@ -152,7 +152,9 @@ export function toOutputFile(value: unknown): OutputFile | null {
 export function safeUploadName(name: unknown): string {
   const base = typeof name === 'string' ? (name.split(/[\\/]/).pop() ?? '') : ''
   const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100)
-  return /\.(png|jpe?g|webp|mp4|webm|mov|mp3|wav|flac|ogg|m4a|opus)$/i.test(cleaned) ? cleaned : 'upload.png'
+  return /\.(png|jpe?g|webp|mp4|webm|mov|mp3|wav|flac|ogg|m4a|opus)$/i.test(cleaned)
+    ? cleaned
+    : 'upload.png'
 }
 
 export type OutputKind = 'image' | 'video' | 'audio' | '3d' | 'text' | 'file'
