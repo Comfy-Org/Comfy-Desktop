@@ -49,6 +49,9 @@ DS's Motion page (`ds/motion.ts`).
   same menu into the question (`confirm` on a `MenuLine`, see
   `pages/MarItemMenu.vue`); never a box in the page. Nothing to lose
   (a tag on 0 files), no question.
+- **One choice marks its row.** A single-choice dropdown fills the picked
+  row; no check and no column kept for one. A check is only for a
+  multi-select (`ui/Select.vue`).
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
 - **A filter shows as a chip** under the toolbar, removable, with Clear

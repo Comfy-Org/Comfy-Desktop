@@ -1,12 +1,31 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Camera, Check, ChevronRight, Scan, UserRound, X } from 'lucide-vue-next'
-import { PopoverClose, PopoverRoot, PopoverTrigger } from 'reka-ui'
+import {
+  Camera,
+  Check,
+  ChevronRight,
+  ImageUp,
+  ImageUpscale,
+  Minus,
+  Plus,
+  RectangleHorizontal,
+  Scan,
+  UserRound,
+  X
+} from 'lucide-vue-next'
+import {
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+  PopoverClose,
+  PopoverRoot,
+  PopoverTrigger
+} from 'reka-ui'
+import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
+import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import PopoverContent from '../../ui/PopoverContent.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import Select from '../../ui/Select.vue'
 import Switch from '../../ui/Switch.vue'
-import NumberField from '../../ui/NumberField.vue'
 import { cn } from '../../ui/cn'
 import { toast } from '../../useProto'
 import {
@@ -23,8 +42,8 @@ import {
  * Cinematic Studio's panel, built like the hub's (comfy.org/hub/apps/
  * cinematic-studio) in the New UI's own surfaces: Image or Video and the
  * model, the scene in a box with the character and AI prompt at its foot,
- * the direction as rows with a picture each that open a picker beside the
- * panel, and the format along the bottom.
+ * the direction as cards with a picture each that open a picker beside
+ * the panel, and the format along the bottom.
  */
 const values = defineModel<Record<string, string>>('values', { required: true })
 const { reference } = defineProps<{
@@ -38,11 +57,12 @@ const set = (id: string, v: string): void => {
 }
 const opt = (g: CineGroup): CineOption | undefined => g.options.find((o) => o.label === get(g.id))
 
-/** The camera row: the body as its value, the rest as small tags. */
-const cameraTags = computed(() =>
+/** The camera card: the body as its value, lens, focal and aperture under it. */
+const cameraSpecs = computed(() =>
   CAMERA.slice(1)
     .map((g) => get(g.id))
     .filter((v) => v !== 'Auto')
+    .join(' · ')
 )
 const hasReference = computed(() => Boolean(reference) && get('character') !== 'none')
 </script>
@@ -71,7 +91,25 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
         @update:model-value="(v: string) => set('model', v)"
       />
 
-      <!-- The scene, with the character and AI prompt at its foot -->
+      <!-- The character, large, as the app's picture -->
+      <div class="cine-field">
+        <span>Character reference</span>
+        <button
+          v-if="hasReference"
+          type="button"
+          class="cine-source group"
+          aria-label="Replace the character reference"
+          @click="toast('Pick an image')"
+        >
+          <img :src="reference" alt="" />
+          <span class="cine-source-replace"><ImageUp :size="14" />Replace</span>
+        </button>
+        <button v-else type="button" class="cine-source is-empty" @click="toast('Pick an image')">
+          <UserRound :size="18" />Add a character
+        </button>
+      </div>
+
+      <!-- The scene, with AI prompt at its foot -->
       <div class="cine-prompt">
         <textarea
           :value="values.scene ?? ''"
@@ -80,27 +118,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
           aria-label="Scene"
           @input="set('scene', ($event.target as HTMLTextAreaElement).value)"
         />
-        <div class="flex items-center justify-between gap-2">
-          <span v-if="hasReference" class="cine-ref">
-            <img :src="reference" alt="" />
-            <button
-              type="button"
-              aria-label="Remove the character reference"
-              @click="set('character', 'none')"
-            >
-              <X :size="11" />
-            </button>
-          </span>
-          <button
-            v-else
-            type="button"
-            class="cine-ref-add"
-            aria-label="Add a character reference"
-            title="Add a character reference"
-            @click="toast('Pick an image')"
-          >
-            <UserRound :size="14" />
-          </button>
+        <div class="flex items-center justify-end gap-2">
           <label class="flex items-center gap-2 text-ui text-muted-foreground">
             <Switch
               :model-value="get('enhance') === 'On'"
@@ -112,20 +130,21 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
       </div>
     </section>
 
-    <!-- Direction: a row each, a picker beside the panel -->
+    <!-- Direction: a row each, its picture and what's picked; it opens a
+         picker of pictures beside the panel -->
     <section class="cine-block">
       <h2 class="cine-title">Direction</h2>
       <div class="cine-rows">
         <PopoverRoot>
           <PopoverTrigger as-child>
             <button type="button" class="cine-row">
-              <span class="cine-thumb is-icon"><Camera :size="14" /></span>
-              <span class="cine-key">Camera</span>
-              <span class="cine-val">{{ get('camera') }}</span>
-              <span class="cine-tags">
-                <span v-for="t in cameraTags" :key="t" class="cine-tag">{{ t }}</span>
+              <span class="cine-thumb"><Camera :size="16" /></span>
+              <span class="cine-row-text">
+                <span class="cine-key">Camera</span>
+                <span class="cine-val">{{ get('camera') }}</span>
+                <span v-if="cameraSpecs" class="cine-sub">{{ cameraSpecs }}</span>
               </span>
-              <ChevronRight :size="14" class="cine-chev" />
+              <ChevronRight :size="15" class="cine-chev" />
             </button>
           </PopoverTrigger>
           <PopoverContent side="right" align="start" :side-offset="20" class="cine-picker">
@@ -167,11 +186,13 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
                 <span v-else-if="opt(g)?.palette" class="cine-palette">
                   <span v-for="c in opt(g)!.palette" :key="c" :style="{ background: c }" />
                 </span>
-                <Scan v-else :size="13" />
+                <Scan v-else :size="15" />
               </span>
-              <span class="cine-key">{{ g.label }}</span>
-              <span class="cine-val">{{ get(g.id) }}</span>
-              <ChevronRight :size="14" class="cine-chev" />
+              <span class="cine-row-text">
+                <span class="cine-key">{{ g.label }}</span>
+                <span class="cine-val">{{ get(g.id) }}</span>
+              </span>
+              <ChevronRight :size="15" class="cine-chev" />
             </button>
           </PopoverTrigger>
           <PopoverContent side="right" align="start" :side-offset="20" class="cine-picker">
@@ -194,10 +215,12 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
                   <span v-else-if="o.palette" class="cine-palette">
                     <span v-for="c in o.palette" :key="c" :style="{ background: c }" />
                   </span>
-                  <Scan v-else :size="22" class="text-subtle-foreground" />
-                  <span v-if="get(g.id) === o.label" class="cine-check"><Check :size="12" /></span>
+                  <Scan v-else :size="18" class="mb-3 text-subtle-foreground" />
+                  <span class="cine-tile-name">{{ o.label }}</span>
+                  <span v-if="get(g.id) === o.label" class="cine-check"
+                    ><Check :size="10" :stroke-width="3"
+                  /></span>
                 </span>
-                <span class="truncate">{{ o.label }}</span>
               </button>
             </div>
           </PopoverContent>
@@ -205,32 +228,67 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
       </div>
     </section>
 
-    <!-- Format: the frame, the size and how many takes -->
+    <!-- Format: how many takes, the frame and the size, as one row of pills -->
     <section class="cine-block">
       <h2 class="cine-title">Format</h2>
-      <div class="cine-format">
-        <Select
-          :model-value="get('aspect')"
-          size="sm"
-          :options="CINE_ASPECTS"
-          @update:model-value="(v: string) => set('aspect', v)"
-        />
-        <Select
-          :model-value="get('size')"
-          size="sm"
-          :options="[
-            { value: '1K', label: '1K' },
-            { value: '2K', label: '2K' }
-          ]"
-          @update:model-value="(v: string) => set('size', v)"
-        />
-        <NumberField
-          :model-value="Number(get('count'))"
-          :min="1"
-          :max="4"
-          aria-label="Takes"
-          @update:model-value="(v: number) => set('count', String(v))"
-        />
+      <div class="cine-pills">
+        <div class="cine-pill is-stepper" role="group" aria-label="Takes">
+          <button
+            type="button"
+            aria-label="Fewer takes"
+            :disabled="get('count') === '1'"
+            @click="set('count', String(Number(get('count')) - 1))"
+          >
+            <Minus :size="14" />
+          </button>
+          <span class="tabular-nums" :title="`${get('count')} takes`">{{ get('count') }}</span>
+          <button
+            type="button"
+            aria-label="More takes"
+            :disabled="get('count') === '4'"
+            @click="set('count', String(Number(get('count')) + 1))"
+          >
+            <Plus :size="14" />
+          </button>
+        </div>
+        <DropdownMenuRoot>
+          <DropdownMenuTrigger as-child>
+            <button type="button" class="cine-pill" aria-label="Aspect ratio">
+              <RectangleHorizontal :size="14" />{{ get('aspect') }}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-52">
+            <DropdownMenuItem
+              v-for="a in CINE_ASPECTS"
+              :key="a.value"
+              :class="a.value === get('aspect') && 'bg-secondary-background font-medium'"
+              @select="set('aspect', a.value)"
+            >
+              {{ a.label }}
+              <span class="ml-auto font-normal text-subtle-foreground">{{ a.hint }}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuRoot>
+        <DropdownMenuRoot>
+          <DropdownMenuTrigger as-child>
+            <button type="button" class="cine-pill" aria-label="Resolution">
+              <ImageUpscale :size="14" />{{ get('size') }}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="w-44">
+            <DropdownMenuItem
+              v-for="r in ['1K', '2K']"
+              :key="r"
+              :class="r === get('size') && 'bg-secondary-background font-medium'"
+              @select="set('size', r)"
+            >
+              {{ r }}
+              <span class="ml-auto font-normal text-subtle-foreground">{{
+                r === '1K' ? 'Faster' : 'Sharper'
+              }}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenuRoot>
       </div>
     </section>
   </div>
@@ -240,17 +298,17 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 .cine {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 16px 16px 8px;
+  gap: 28px;
+  padding: 20px 20px 12px;
 }
 .cine-block {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 /* Section titles: the uppercase label (UI-RULES › Type). */
 .cine-title {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -266,76 +324,80 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   border-radius: var(--radius-card);
   background: var(--color-secondary-background);
 }
-.cine-prompt textarea {
+:root .proto-ui.proto-ui.proto-ui .cine-prompt textarea {
   resize: none;
   border: 0;
   background: transparent;
   color: var(--color-base-foreground);
-  font-size: var(--text-ui);
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.55;
   outline: none;
 }
 .cine-prompt textarea::placeholder {
   color: var(--color-subtle-foreground);
 }
-.cine-ref,
-.cine-ref-add {
+:root .proto-ui.proto-ui.proto-ui .cine-source {
   position: relative;
   display: grid;
-  width: 28px;
-  height: 28px;
+  aspect-ratio: 16 / 10;
   place-items: center;
-  border-radius: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--color-secondary-background);
+  outline: none;
 }
-.cine-ref-add {
-  color: var(--color-muted-foreground);
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  transition: color 150ms;
-}
-.cine-ref-add:hover {
-  color: var(--color-base-foreground);
-}
-.cine-ref img {
+.cine-source img {
   width: 100%;
   height: 100%;
-  border-radius: 8px;
   object-fit: cover;
 }
-.cine-ref button {
+.cine-source:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.cine-source.is-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--color-border-strong);
+  background: transparent;
+  font-size: var(--text-ui);
+  color: var(--color-muted-foreground);
+}
+.cine-source-replace {
   position: absolute;
-  top: -5px;
-  right: -5px;
-  display: grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--color-base-foreground);
-  color: var(--color-app-background);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgb(0 0 0 / 0.5);
+  color: white;
+  font-size: var(--text-ui);
+  font-weight: 500;
   opacity: 0;
   transition: opacity 150ms;
 }
-.cine-ref:hover button,
-.cine-ref button:focus-visible {
+.cine-source:hover .cine-source-replace,
+.cine-source:focus-visible .cine-source-replace {
   opacity: 1;
 }
 
-/* Direction rows: no dividers, a fill on hover (UI-RULES › No lines). */
+/* Direction: a row each, with room; a fill on hover, no dividers. */
 .cine-rows {
   display: flex;
   flex-direction: column;
-  padding: 4px;
-  border-radius: var(--radius-card);
-  background: var(--color-secondary-background);
+  gap: 6px;
 }
 .cine-row {
   display: flex;
-  height: 40px;
   min-width: 0;
+  min-height: 56px;
   align-items: center;
-  gap: 10px;
-  padding: 0 8px 0 6px;
-  border-radius: 8px;
+  gap: 12px;
+  padding: 8px 12px 8px 8px;
+  border-radius: var(--radius-card);
+  background: var(--color-secondary-background);
   text-align: left;
   outline: none;
   transition: background-color 150ms;
@@ -343,16 +405,16 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 .cine-row:hover,
 .cine-row[data-state='open'],
 .cine-row:focus-visible {
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  background: color-mix(in oklch, var(--color-base-foreground) 11%, transparent);
 }
 .cine-thumb {
   display: grid;
-  width: 36px;
-  height: 24px;
+  width: 56px;
+  height: 38px;
   flex-shrink: 0;
   place-items: center;
   overflow: hidden;
-  border-radius: 5px;
+  border-radius: 8px;
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   color: var(--color-muted-foreground);
 }
@@ -361,34 +423,36 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   height: 100%;
   object-fit: cover;
 }
+.cine-row-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
 .cine-key {
-  width: 52px;
-  flex-shrink: 0;
-  font-size: var(--text-ui);
+  font-size: 11px;
+  line-height: 14px;
   color: var(--color-subtle-foreground);
 }
+.cine-val,
+.cine-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cine-val {
-  flex-shrink: 0;
-  font-size: var(--text-ui);
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   color: var(--color-base-foreground);
 }
-.cine-tags {
-  display: flex;
-  min-width: 0;
-  gap: 4px;
-  overflow: hidden;
-}
-.cine-tag {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+.cine-sub {
   font-size: 11px;
+  line-height: 14px;
   color: var(--color-muted-foreground);
 }
 .cine-chev {
-  margin-left: auto;
   flex-shrink: 0;
   color: var(--color-subtle-foreground);
 }
@@ -402,17 +466,11 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 }
 
 /* The picker beside the panel */
-:root .proto-ui.proto-ui.proto-ui .cine-picker {
-  width: 340px;
-  max-height: min(560px, var(--reka-popover-content-available-height));
-  overflow-y: auto;
-  padding: 0;
-}
 .cine-picker-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 12px 8px 16px;
+  padding: 10px 10px 6px 14px;
 }
 .cine-close {
   display: grid;
@@ -428,42 +486,55 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 }
 .cine-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px 10px;
-  padding: 4px 16px 16px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 2px 14px 14px;
 }
 .cine-tile {
-  display: flex;
+  display: block;
   min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-  font-size: var(--text-ui);
-  color: var(--color-muted-foreground);
-  text-align: left;
   outline: none;
-}
-.cine-tile:hover,
-.cine-tile.is-on {
-  color: var(--color-base-foreground);
 }
 .cine-tile-pic {
   position: relative;
   display: grid;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 4 / 3;
   place-items: center;
   overflow: hidden;
   border-radius: 8px;
   background: var(--color-secondary-background);
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
   transition: box-shadow 150ms;
 }
 .cine-tile-pic img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+.cine-tile-pic .cine-palette {
+  position: absolute;
+  inset: 0;
+}
+/* The name sits on the picture, over a soft scrim. */
+.cine-tile-name {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  padding: 14px 7px 5px;
+  background: linear-gradient(to top, rgb(0 0 0 / 0.62), transparent);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+  color: rgb(255 255 255 / 0.94);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cine-tile:hover .cine-tile-pic {
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 24%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 30%, transparent);
 }
 .cine-tile.is-on .cine-tile-pic,
 .cine-tile:focus-visible .cine-tile-pic {
@@ -471,11 +542,11 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 }
 .cine-check {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 5px;
+  right: 5px;
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   place-items: center;
   border-radius: 999px;
   background: var(--color-base-foreground);
@@ -500,19 +571,90 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
   color: var(--color-app-background);
 }
 
-/* Format: three controls on one line */
-.cine-format {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1.1fr;
+.cine-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
   gap: 6px;
+}
+.cine-field > span {
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+}
+
+/* Format: one row of pills */
+.cine-pills {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .cine-pill {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-secondary-background);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-base-foreground);
+  outline: none;
+  transition: background-color 150ms;
+}
+.cine-pill > svg {
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .cine-pill:not(.is-stepper):hover,
+:root .proto-ui.proto-ui.proto-ui .cine-pill[data-state='open'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+.cine-pill:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui .cine-pill.is-stepper {
+  justify-content: space-between;
+  gap: 2px;
+  padding: 0 2px;
+}
+.cine-pill.is-stepper > span {
+  min-width: 18px;
+  text-align: center;
+}
+.cine-pill.is-stepper button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--color-muted-foreground);
+}
+.cine-pill.is-stepper button:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+}
+.cine-pill.is-stepper button:disabled {
+  opacity: 0.35;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .cine-row,
   .cine-tile-pic,
   .cine-chip,
-  .cine-ref button {
+  .cine-source-replace {
     transition: none;
   }
+}
+</style>
+
+<style>
+/* The picker's box is teleported out of this component, so its size can't
+   be scoped. */
+:root .proto-ui.proto-ui.proto-ui.cine-picker {
+  width: 400px;
+  max-height: min(560px, var(--reka-popover-content-available-height));
+  overflow-y: auto;
+  padding: 0;
 }
 </style>

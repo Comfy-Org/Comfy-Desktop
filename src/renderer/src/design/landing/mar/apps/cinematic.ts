@@ -149,7 +149,7 @@ export const CINE_DEFAULTS: Record<string, string> = {
 }
 
 export const CINE_MODELS = ['Seedream 5.0 Pro', 'Nano Banana Pro', 'GPT Image 2', 'FLUX 2 Pro']
-export const CINE_ASPECTS: { value: string; label: string }[] = [
+export const CINE_ASPECTS: { value: string; label: string; hint: string }[] = [
   ['21:9', 'Scope'],
   ['16:9', 'Widescreen'],
   ['4:3', 'Academy'],
@@ -157,4 +157,4 @@ export const CINE_ASPECTS: { value: string; label: string }[] = [
   ['2:3', 'Portrait photo'],
   ['1:1', 'Square'],
   ['9:16', 'Vertical']
-].map(([value, hint]) => ({ value: value!, label: value!, hint }))
+].map(([value, hint]) => ({ value: value!, label: value!, hint: hint! }))
