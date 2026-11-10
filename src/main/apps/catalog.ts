@@ -1,7 +1,5 @@
-import { app } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import type { CatalogApp } from '../../types/ipc'
-import { appsOrigin, isAppsFrameUrl } from './guards'
 
 const DESKTOP_SURFACE = 'desktop_starters'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
@@ -13,21 +11,16 @@ interface CatalogItem {
   data?: {
     title?: unknown
     description?: unknown
+    slug?: unknown
     sort_order?: unknown
-    implementation_ref?: unknown
     website_media?: Record<string, unknown> | null
-    compatibility?: { desktop?: { page?: unknown } | null } | null
   } | null
 }
 
-function catalogSurface(): string {
-  return (!app.isPackaged && process.env['COMFY_APPS_CATALOG_SURFACE']) || DESKTOP_SURFACE
-}
-
-export function catalogUrl(surface = catalogSurface()): string {
+export function catalogUrl(): string {
   const url = new URL('/api/v1/catalog/items', CLOUD_CONFIG.issuer)
   url.searchParams.set('type', 'app')
-  url.searchParams.set('surface', surface)
+  url.searchParams.set('surface', DESKTOP_SURFACE)
   url.searchParams.set('limit', '100')
   return url.href
 }
@@ -41,28 +34,13 @@ function thumbnailUrl(media: Record<string, unknown> | null | undefined): string
   return null
 }
 
-function appPageUrl(item: CatalogItem, uid: string, listUrl: string): string | null {
-  const page = item.data?.compatibility?.desktop?.page
-  if (typeof page === 'string') {
-    let url: string
-    try {
-      url = new URL(page, listUrl).href
-    } catch {
-      return null
-    }
-    return isAppsFrameUrl(url, appsOrigin(listUrl)) ? url : null
-  }
-  if (item.data?.implementation_ref === 'steps')
-    return new URL(`#/${encodeURIComponent(uid)}`, listUrl).href
-  return null
-}
-
 export function toCatalogApp(item: CatalogItem, listUrl: string): CatalogApp | null {
   const uid = item.uid
   const title = item.data?.title
   if (typeof uid !== 'string' || typeof title !== 'string' || title.trim() === '') return null
-  const url = appPageUrl(item, uid, listUrl)
-  if (!url) return null
+  const slug = item.data?.slug
+  if (typeof slug !== 'string' || slug.trim() === '') return null
+  const url = new URL(`#/${encodeURIComponent(slug)}`, listUrl).href
   const description = item.data?.description
   return {
     id: uid,

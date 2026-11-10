@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ app: { isPackaged: false } }))
-
-const { catalogUrl, listCatalogApps, toCatalogApp } = await import('./catalog')
+import { catalogUrl, listCatalogApps, toCatalogApp } from './catalog'
 
 const LIST = 'https://apps.example/apps/'
 const fetchMock = vi.fn()
@@ -11,13 +9,13 @@ function item(uid: string, data: Record<string, unknown>) {
   return { uid, data }
 }
 
-function pageApp(uid: string, title: string, order: number) {
-  return item(uid, {
+function catalogApp(slug: string, title: string, order: number) {
+  return item(`uid-${slug}`, {
     title,
+    slug,
     description: `${title} description`,
     sort_order: order,
-    compatibility: { desktop: { page: `/apps/${uid}/desktop.html` } },
-    website_media: { '$.static_thumb': `/catalog-media/${uid}/v1` }
+    website_media: { '$.static_thumb': `/catalog-media/${slug}/v1` }
   })
 }
 
@@ -43,22 +41,19 @@ describe('catalogUrl', () => {
 })
 
 describe('toCatalogApp', () => {
-  it('takes the title, description, thumbnail and Desktop page of an app', () => {
-    expect(toCatalogApp(pageApp('studio', 'Cinematic Studio', 2), LIST)).toEqual({
-      id: 'studio',
-      title: 'Cinematic Studio',
-      description: 'Cinematic Studio description',
-      thumbnailUrl: 'https://comfy.org/catalog-media/studio/v1',
-      url: 'https://apps.example/apps/studio/desktop.html'
+  it('takes the title, description and thumbnail, and opens the app on its slug route', () => {
+    expect(toCatalogApp(catalogApp('text-to-image', 'Text to Image', 2), LIST)).toEqual({
+      id: 'uid-text-to-image',
+      title: 'Text to Image',
+      description: 'Text to Image description',
+      thumbnailUrl: 'https://comfy.org/catalog-media/text-to-image/v1',
+      url: 'https://apps.example/apps/#/text-to-image'
     })
   })
 
-  it('opens a steps app on its route of the apps list', () => {
-    const app = toCatalogApp(
-      item('make image', { title: 'Make an image', implementation_ref: 'steps' }),
-      LIST
-    )
-    expect(app?.url).toBe('https://apps.example/apps/#/make%20image')
+  it('keeps an odd slug inside the route', () => {
+    const app = toCatalogApp(item('a', { title: 'A', slug: 'a b/../c' }), LIST)
+    expect(app?.url).toBe('https://apps.example/apps/#/a%20b%2F..%2Fc')
     expect(app?.description).toBe('')
     expect(app?.thumbnailUrl).toBeNull()
   })
@@ -66,12 +61,12 @@ describe('toCatalogApp', () => {
   it('falls back to the hero poster and ignores media outside the catalog', () => {
     const poster = item('a', {
       title: 'A',
-      implementation_ref: 'steps',
+      slug: 'a',
       website_media: { '$.hero_poster': '/catalog-media/a/poster' }
     })
     const outside = item('b', {
       title: 'B',
-      implementation_ref: 'steps',
+      slug: 'b',
       website_media: { '$.static_thumb': 'https://evil.example/x.png' }
     })
     expect(toCatalogApp(poster, LIST)?.thumbnailUrl).toBe(
@@ -80,31 +75,21 @@ describe('toCatalogApp', () => {
     expect(toCatalogApp(outside, LIST)?.thumbnailUrl).toBeNull()
   })
 
-  it('skips an app without a title or a page Desktop can open', () => {
-    expect(toCatalogApp(item('a', { implementation_ref: 'steps' }), LIST)).toBeNull()
-    expect(
-      toCatalogApp(item('b', { title: 'Hub only', implementation_ref: 'studio' }), LIST)
-    ).toBeNull()
-    expect(
-      toCatalogApp(
-        item('c', {
-          title: 'Elsewhere',
-          compatibility: { desktop: { page: 'https://evil.example/app' } }
-        }),
-        LIST
-      )
-    ).toBeNull()
+  it('skips an app without a title or a slug', () => {
+    expect(toCatalogApp(item('a', { slug: 'a' }), LIST)).toBeNull()
+    expect(toCatalogApp(item('b', { title: 'No slug' }), LIST)).toBeNull()
+    expect(toCatalogApp(item('c', { title: 'Blank slug', slug: ' ' }), LIST)).toBeNull()
   })
 })
 
 describe('listCatalogApps', () => {
-  it('lists the apps Desktop can open in catalog order', async () => {
+  it('lists the apps in catalog order and leaves out ones it cannot open', async () => {
     fetchMock.mockResolvedValue(
       Response.json({
         items: [
-          pageApp('b', 'Second', 1),
-          item('x', { title: 'Hub only' }),
-          pageApp('a', 'First', 0)
+          catalogApp('second', 'Second', 1),
+          item('x', { title: 'No slug' }),
+          catalogApp('first', 'First', 0)
         ]
       })
     )
