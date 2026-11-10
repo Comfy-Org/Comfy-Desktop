@@ -24,6 +24,7 @@ import type {
   AuthStatus,
   Workspace,
   WorkspaceSwitchIntent,
+  WorkspaceSwitchOutcome,
   WorkspaceSwitchStatus
 } from '../../cloud'
 import {
@@ -110,13 +111,13 @@ export async function signInToCloud(): Promise<AuthStatus> {
 async function switchAndAnnounce(
   workspaceId: string,
   intent: WorkspaceSwitchIntent
-): Promise<{ reply: WorkspaceSwitchStatus; superseded: boolean }> {
+): Promise<{ reply: WorkspaceSwitchStatus; reached: boolean }> {
   const session = getCloudSession()
   const subjectBefore = session.currentSubject()
   clearVersionCache()
   const switching = session.switchWorkspace(workspaceId, intent)
   const generation = session.currentAuthGeneration()
-  const { reachedThroughConsent, ...reply } = await switching
+  const { reachedThroughConsent, reached, ...reply } = await switching
   clearVersionCache()
   const { workspaceSwitchFailure: _failure, ...status } = reply
   const superseded = session.currentAuthGeneration() !== generation
@@ -127,14 +128,15 @@ async function switchAndAnnounce(
     getViewWorkspaceGrants().allowDesktop(status.workspaceId)
   }
   broadcastAuthChanged(status)
-  return { reply, superseded }
+  return { reply, reached: reached && !superseded }
 }
 
 export async function switchCloudWorkspace(
   workspaceId: string,
   intent: WorkspaceSwitchIntent = 'chosen'
-): Promise<WorkspaceSwitchStatus> {
-  return (await switchAndAnnounce(workspaceId, intent)).reply
+): Promise<WorkspaceSwitchOutcome> {
+  const { reply, reached } = await switchAndAnnounce(workspaceId, intent)
+  return { status: reply, reached }
 }
 
 export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
@@ -230,13 +232,11 @@ export function registerDevPlatformHandlers(): void {
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.switchWorkspace,
     async (_event, workspaceId: string, intent?: WorkspaceSwitchIntent) => {
-      const { reply: status, superseded } = await switchAndAnnounce(
+      const { reply: status, reached } = await switchAndAnnounce(
         workspaceId,
         intent === 'restored' ? 'restored' : 'chosen'
       )
-      if (!superseded && status.signedIn && status.workspaceId === workspaceId) {
-        getViewWorkspaceGrants().allowDesktop(workspaceId)
-      }
+      if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
       return status
     }
   )
@@ -271,8 +271,8 @@ export function registerDevPlatformHandlers(): void {
           if (session.currentSubject() !== subject) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
-          const { reply: switched, superseded } = await switchAndAnnounce(workspaceId, 'chosen')
-          if (superseded || !switched.signedIn || switched.workspaceId !== workspaceId) {
+          const { reached } = await switchAndAnnounce(workspaceId, 'chosen')
+          if (!reached) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
           getViewWorkspaceGrants().allowDesktop(workspaceId)

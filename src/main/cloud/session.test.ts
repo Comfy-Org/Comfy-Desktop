@@ -1020,6 +1020,62 @@ describe('CloudSession.switchWorkspace with no browser', () => {
   })
 })
 
+describe('CloudSession.switchWorkspace reached', () => {
+  it('reports a switch that minted, reused or returned to the anchor as reached', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2',
+      reached: true
+    })
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      reached: true
+    })
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2',
+      reached: true
+    })
+  })
+
+  it('reports a switch that stayed on the current workspace as unreached', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(500, {})
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable',
+      reached: false
+    })
+  })
+
+  it('reports a switch superseded during its mint as unreached', async () => {
+    saveGrant(grantOn('w1'))
+    const pendingMint = deferred<Response>()
+    mintReply = () => pendingMint.promise
+    const session = new CloudSession()
+
+    const superseded = session.switchWorkspace('w2')
+    const newer = session.switchWorkspace('w1')
+    pendingMint.resolve(minted('w2'))
+
+    await expect(superseded).resolves.toMatchObject({ reached: false })
+    await expect(newer).resolves.toMatchObject({ workspaceId: 'w1', reached: true })
+  })
+
+  it('reports an unreached switch when browser auth for the expired anchor picks another workspace', async () => {
+    saveGrant(grantOn('w1', { expiresAt: Date.now() - 1_000 }))
+    mocked(refresh).mockRejectedValue(refreshRefused())
+    browserSignInReturns(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
+
+    await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
+      workspaceId: 'w2',
+      reached: false
+    })
+  })
+})
+
 describe('CloudSession.switchWorkspace reauthorize', () => {
   it.each<[string, () => void, string]>([
     ['the server kill switch', () => (mintReply = mintDisabled), 'mint_disabled'],
@@ -1580,7 +1636,7 @@ describe('CloudSession regressions', () => {
     session.logout()
     reply.resolve(mintDisabled())
 
-    await expect(switching).resolves.toEqual({ signedIn: false })
+    await expect(switching).resolves.toEqual({ signedIn: false, reached: false })
     expect(signIn).not.toHaveBeenCalled()
   })
 
@@ -1918,7 +1974,7 @@ describe('CloudSession fencing (T-V27)', () => {
     session.logout()
     reply.resolve(minted('w2'))
 
-    await expect(switching).resolves.toEqual({ signedIn: false })
+    await expect(switching).resolves.toEqual({ signedIn: false, reached: false })
     expect(session.isSignedIn()).toBe(false)
     expect(fs.existsSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'))).toBe(false)
   })
@@ -1990,7 +2046,7 @@ describe('CloudSession fencing (T-V27)', () => {
     session.logout()
     pending.resolve(signedInResult(grantOn('w2')))
 
-    await expect(switching).resolves.toEqual({ signedIn: false })
+    await expect(switching).resolves.toEqual({ signedIn: false, reached: false })
     expect(session.isSignedIn()).toBe(false)
   })
 
