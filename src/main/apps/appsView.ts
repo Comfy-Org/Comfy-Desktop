@@ -221,6 +221,9 @@ async function run(workflow: unknown): Promise<{ runId: string }> {
 export interface RunStatus {
   state: 'waiting' | 'done' | 'failed'
   error?: string
+  running?: boolean
+  createdAt?: number
+  startedAt?: number
   outputs?: Array<OutputFile & { node: string; kind: OutputKind }>
   text?: Record<string, string[]>
 }
@@ -231,6 +234,8 @@ async function runWithoutHistory(runId: string): Promise<RunStatus> {
   const rec = (await res.json()) as {
     status?: string
     outputs_count?: number
+    create_time?: number
+    execution_start_time?: number
     execution_error?: { exception_message?: string }
   }
   if (rec.status === 'completed' && !rec.outputs_count)
@@ -242,7 +247,12 @@ async function runWithoutHistory(runId: string): Promise<RunStatus> {
         readable(rec.execution_error?.exception_message) ?? `The run ${rec.status} on Comfy Cloud.`
     }
   }
-  return { state: 'waiting' }
+  return {
+    state: 'waiting',
+    running: rec.status === 'in_progress',
+    createdAt: typeof rec.create_time === 'number' ? rec.create_time : undefined,
+    startedAt: typeof rec.execution_start_time === 'number' ? rec.execution_start_time : undefined
+  }
 }
 
 async function getRun(runId: unknown): Promise<RunStatus> {
