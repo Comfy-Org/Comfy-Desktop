@@ -29,6 +29,7 @@ import Select from '../../ui/Select.vue'
 import NumberField from '../../ui/NumberField.vue'
 import Switch from '../../ui/Switch.vue'
 import Input from '../../ui/Input.vue'
+import CinematicPanel from './CinematicPanel.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import ExampleTile from './ExampleTile.vue'
 import ImageGlyph from './ImageGlyph.vue'
@@ -431,8 +432,10 @@ function back(): void {
                 </button>
               </div>
             </section>
+            <!-- Cinematic Studio draws its own panel, as on the hub. -->
+            <CinematicPanel v-if="appId === 's-cine'" v-model:values="values" :reference="input" />
             <section
-              v-for="(b, i) in blocks"
+              v-for="(b, i) in appId === 's-cine' ? [] : blocks"
               :key="b.group ?? `${b.fields[0]?.id}-${i}`"
               class="mar-app-editor-field"
             >
