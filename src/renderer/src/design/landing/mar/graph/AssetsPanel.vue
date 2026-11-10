@@ -563,9 +563,7 @@ function upload(files: FileList | null | undefined): void {
                   :title="v.label"
                   @click="setView(v.value)"
                 >
-                  <component :is="v.icon" :size="15" /><span class="mar-tab-grow">{{
-                    v.label
-                  }}</span>
+                  <component :is="v.icon" :size="15" />
                 </button>
               </div>
             </div>
@@ -1076,8 +1074,14 @@ function upload(files: FileList | null | undefined): void {
 .ap-views {
   display: flex;
 }
-/* Each tab only as wide as it needs (the panel's tabs elsewhere share the
- * width), so the picked one's name has room and the others hug their icon. */
+/* The tab group hugs its three icons, inside the menu. */
+:root .proto-ui.proto-ui.proto-ui .rp-controls .ap-views {
+  flex: none;
+  width: auto;
+  min-width: 0;
+}
+/* Icons alone here: the panel is narrow, so names would crowd the row.
+ * Each tab hugs its icon (the panel's tabs elsewhere share the width). */
 :root .proto-ui.proto-ui.proto-ui .rp-controls .ap-views .ap-view {
   flex: none;
   outline: none;
