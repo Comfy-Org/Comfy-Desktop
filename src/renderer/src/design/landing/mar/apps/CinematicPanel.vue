@@ -15,6 +15,8 @@ import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import PopoverContent from '../../ui/PopoverContent.vue'
 import CineIcon from './CineIcon.vue'
+import ProviderMark from './ProviderMark.vue'
+import { providerLogo } from '../build/providerLogos'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import Select from '../../ui/Select.vue'
 import Switch from '../../ui/Switch.vue'
@@ -25,6 +27,7 @@ import {
   CINE_ASPECTS,
   CINE_DEFAULTS,
   CINE_MODELS,
+  CINE_MODEL_AUTHOR,
   LOOK,
   type CineGroup,
   type CineOption
@@ -82,7 +85,14 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
         class="cine-model"
         :options="CINE_MODELS.map((m) => ({ value: m, label: m }))"
         @update:model-value="(v: string) => set('model', v)"
-      />
+      >
+        <template #icon="{ value }">
+          <ProviderMark
+            v-if="providerLogo(CINE_MODEL_AUTHOR[value] ?? '')"
+            :logo="providerLogo(CINE_MODEL_AUTHOR[value] ?? '')!"
+          />
+        </template>
+      </Select>
 
       <!-- The character, large, as the app's picture -->
       <div class="cine-field">
@@ -714,6 +724,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 :root .proto-ui.proto-ui.proto-ui .cine-model {
   height: 36px;
   padding-inline: 12px;
+  gap: 8px;
 }
 /* The format menus open the same way and look the same */
 :root .proto-ui.proto-ui.proto-ui.cine-menu {

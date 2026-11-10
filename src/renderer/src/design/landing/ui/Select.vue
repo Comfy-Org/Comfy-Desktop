@@ -67,6 +67,8 @@ const model = defineModel<T>({ required: true })
         aria-hidden="true"
       />
       <span v-else-if="label" class="text-subtle-foreground">{{ label }}</span>
+      <!-- An optional mark before the value, here and in each option -->
+      <slot name="icon" :value="model" />
       <SelectValue class="truncate" />
       <ChevronDown :size="13" class="ml-auto shrink-0 text-subtle-foreground" />
     </SelectTrigger>
@@ -94,6 +96,7 @@ const model = defineModel<T>({ required: true })
               )
             "
           >
+            <slot name="icon" :value="o.value" />
             <span
               v-if="o.swatch"
               class="size-4 shrink-0 rounded-min border border-border-strong"
