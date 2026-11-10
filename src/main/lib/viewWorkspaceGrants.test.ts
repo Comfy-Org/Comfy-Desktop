@@ -135,6 +135,7 @@ describe('ViewWorkspaceGrants', () => {
   it.each<[string, () => string]>([
     ['another workspace', () => jwt({ sub: user, workspace_id: 'ws-9' })],
     ['another account', () => jwt({ sub: 'user-9', workspace_id: 'ws-1' })],
+    ['a token that can mint', () => accessToken('ws-1')],
     ['a token with no claims', () => 'opaque-token']
   ])('refuses and does not cache a minted token for %s', async (_name, token) => {
     mint.mockResolvedValueOnce({ kind: 'minted', token: token(), expiresAt: Date.now() + 900_000 })

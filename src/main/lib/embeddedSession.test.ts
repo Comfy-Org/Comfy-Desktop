@@ -57,7 +57,7 @@ function jwt(claims: Record<string, unknown>): string {
 
 const ACCESS = jwt({ sub: 'user-1', email: 'a@example.com', workspace_id: 'ws-1' })
 function mintedFor(workspaceId: string): string {
-  return jwt({ sub: 'user-1', workspace_id: workspaceId, auth_method: 'cloud' })
+  return jwt({ sub: 'user-1', workspace_id: workspaceId, auth_method: 'cloud', scope: undefined })
 }
 
 const MINTED = mintedFor('ws-1')
