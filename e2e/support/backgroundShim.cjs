@@ -3,6 +3,8 @@ const electron = require('electron')
 
 const { app, BrowserWindow: RealBrowserWindow } = electron
 
+if (process.platform === 'darwin') app.setActivationPolicy('accessory')
+
 RealBrowserWindow.prototype.show = function show() {
   this.showInactive()
 }
