@@ -41,10 +41,11 @@ export const MINT_SCOPE_NOT_GRANTED_EVENT = 'comfy.desktop.auth.mint_scope_not_g
 export const WORKSPACE_RETURNED_TO_ANCHOR_EVENT = 'comfy.desktop.auth.workspace_returned_to_anchor'
 
 export interface SessionSwitchReply extends WorkspaceSwitchStatus {
+  reached: boolean
   reachedThroughConsent?: true
 }
 
-type WorkspaceSwitchOutcome =
+type SwitchTelemetryOutcome =
   | 'cached'
   | 'anchor'
   | 'minted'
@@ -84,7 +85,7 @@ function refreshFailureOutcome(refreshed: GrantRefresh): SettledMintOutcome {
   return refreshed === 'ended' ? { kind: 'reauthorize', reason: 'grant_ended' } : RETRYABLE
 }
 
-function reportSwitch(outcome: WorkspaceSwitchOutcome, reason?: SwitchReason): void {
+function reportSwitch(outcome: SwitchTelemetryOutcome, reason?: SwitchReason): void {
   mainTelemetry.emit(
     WORKSPACE_SWITCH_EVENT,
     reason ? { outcome, reauthorize_reason: reason } : { outcome }
@@ -388,7 +389,7 @@ export class CloudSession {
 
   private async runSwitch(workspaceId: string, generation: number): Promise<SessionSwitchReply> {
     const grant = loadGrant()
-    if (!grant) return this.status()
+    if (!grant) return this.unreached()
     if (workspaceId === workspaceIdOf(grant.accessToken)) {
       return this.switchToAnchor(workspaceId, generation, grant)
     }
@@ -396,7 +397,7 @@ export class CloudSession {
     if (held && held.expiresAt > Date.now()) return this.activated(workspaceId, 'cached')
 
     const outcome = await this.mintForWorkspace(workspaceId, generation)
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) return this.unreached()
     switch (outcome.kind) {
       case 'minted':
         return this.activated(workspaceId, 'minted')
@@ -425,7 +426,7 @@ export class CloudSession {
   ): Promise<SessionSwitchReply> {
     if (!isFresh(grant)) {
       const refreshed = await this.refreshGrant(grant)
-      if (generation !== this.authGeneration) return this.status()
+      if (generation !== this.authGeneration) return this.unreached()
       if (refreshed === 'ended') return this.reauthorize(workspaceId, generation, 'grant_ended')
       if (refreshed === 'unavailable' && isExpired(grant)) {
         reportSwitch('retryable')
@@ -435,14 +436,18 @@ export class CloudSession {
     return this.activated(workspaceId, 'anchor')
   }
 
-  private activated(workspaceId: string, outcome: WorkspaceSwitchOutcome): WorkspaceSwitchStatus {
+  private activated(workspaceId: string, outcome: SwitchTelemetryOutcome): SessionSwitchReply {
     activateWorkspace(workspaceId)
     reportSwitch(outcome)
-    return this.status()
+    return { ...this.status(), reached: true }
   }
 
-  private stayed(failure: WorkspaceSwitchFailure): WorkspaceSwitchStatus {
-    return { ...this.status(), workspaceSwitchFailure: failure }
+  private stayed(failure: WorkspaceSwitchFailure): SessionSwitchReply {
+    return { ...this.status(), workspaceSwitchFailure: failure, reached: false }
+  }
+
+  private unreached(): SessionSwitchReply {
+    return { ...this.status(), reached: false }
   }
 
   private async reauthorize(
@@ -466,9 +471,9 @@ export class CloudSession {
       }))
     } catch {
       if (!browserOpened) reportSwitch('retryable', reason)
-      return generation === this.authGeneration ? this.stayed('retryable') : this.status()
+      return generation === this.authGeneration ? this.stayed('retryable') : this.unreached()
     }
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) return this.unreached()
     this.storeSignedInGrant(tokens)
 
     const canMint = canMintWorkspaceTokens(tokens.accessToken)
@@ -476,21 +481,21 @@ export class CloudSession {
     if (!canMint) reportSwitch(isAnchor ? 'anchor' : 'retryable', 'scope_not_granted')
     if (isAnchor) {
       activateWorkspace(workspaceId)
-      return this.afterConsent(this.status(), tokens)
+      return this.afterConsent({ ...this.status(), reached: true }, tokens)
     }
     if (!canMint) return this.afterConsent(this.stayed('retryable'), tokens)
 
     const outcome = await this.mintForWorkspace(workspaceId, generation)
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) return this.unreached()
     if (outcome.kind === 'minted') {
       activateWorkspace(workspaceId)
-      return this.status()
+      return { ...this.status(), reached: true }
     }
     const unavailable = outcome.kind === 'unavailable' || outcome.kind === 'refused'
     return this.afterConsent(this.stayed(unavailable ? 'unavailable' : 'retryable'), tokens)
   }
 
-  private afterConsent(reply: WorkspaceSwitchStatus, tokens: AuthTokens): SessionSwitchReply {
+  private afterConsent(reply: SessionSwitchReply, tokens: AuthTokens): SessionSwitchReply {
     const reached = loadActiveWorkspaceId() === workspaceIdOf(tokens.accessToken)
     return reached ? { ...reply, reachedThroughConsent: true } : reply
   }
