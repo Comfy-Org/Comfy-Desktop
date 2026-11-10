@@ -295,10 +295,11 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 </template>
 
 <style scoped>
+/* One gap between every block, in a section or across them */
 .cine {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 12px;
   padding: 20px 20px 12px;
 }
 .cine-block {
