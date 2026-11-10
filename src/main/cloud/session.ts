@@ -18,6 +18,7 @@ import {
   activateWorkspace,
   clearTokens,
   dropWorkspaceToken,
+  endGrant,
   getAuthStatus,
   isMintScopeWithheld,
   loadActiveWorkspaceId,
@@ -359,11 +360,7 @@ export class CloudSession {
         return refreshFailureOutcome(refreshed)
     }
     const first = await this.postMint(workspaceId, generation, subject)
-    if (
-      first.kind !== 'unauthorized' &&
-      !(first.kind === 'reauthorize' && first.reason === 'grant_ended')
-    )
-      return first
+    if (first.kind !== 'unauthorized') return first
     const current = loadGrant()
     if (!current) return RETRYABLE
     const refreshed = await this.refreshGrant(current)
@@ -386,6 +383,9 @@ export class CloudSession {
     )
       return RETRYABLE
     const outcome = classifyMint(await mintWorkspaceToken(grant.accessToken, workspaceId))
+    if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended') {
+      endGrant(grant.accessToken)
+    }
     if (
       outcome.kind === 'retryable' &&
       outcome.retryAfterSeconds !== undefined &&

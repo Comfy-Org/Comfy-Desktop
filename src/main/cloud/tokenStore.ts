@@ -322,6 +322,15 @@ export function replaceGrant(
   return true
 }
 
+/** Drop the refresh token of a grant Cloud reported as ended, so it is never refreshed again. */
+export function endGrant(expectedAccessToken: string): void {
+  const vault = loadVault()
+  if (!vault || vault.grant.accessToken !== expectedAccessToken) return
+  const { refreshToken: _ended, ...grant } = vault.grant
+  vault.grant = grant
+  persistVault(vault)
+}
+
 export function clearTokens(): void {
   cachedVault = null
   try {

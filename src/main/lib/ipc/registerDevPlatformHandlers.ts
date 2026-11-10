@@ -288,9 +288,15 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.switchWorkspace,
-    (_event, workspaceId: string, intent?: WorkspaceSwitchIntent) => {
-      getViewWorkspaceGrants().allowDesktop(workspaceId)
-      return switchCloudWorkspace(workspaceId, intent === 'restored' ? 'restored' : 'chosen')
+    async (_event, workspaceId: string, intent?: WorkspaceSwitchIntent) => {
+      const status = await switchCloudWorkspace(
+        workspaceId,
+        intent === 'restored' ? 'restored' : 'chosen'
+      )
+      if (status.signedIn && status.workspaceId === workspaceId) {
+        getViewWorkspaceGrants().allowDesktop(workspaceId)
+      }
+      return status
     }
   )
 
