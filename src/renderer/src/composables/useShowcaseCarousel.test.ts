@@ -52,8 +52,6 @@ describe('rotation', () => {
   })
 
   it('clears the anti-flicker floor', () => {
-    // Unity documents a 2s minimum dwell per splash item so content cannot
-    // flash past. Guard it so the interval is never tuned below readability.
     expect(SHOWCASE_INTERVAL_MS).toBeGreaterThanOrEqual(2_000)
   })
 
@@ -215,9 +213,6 @@ describe('every card resolves in both locales', () => {
     }
   })
 
-  /** The showcase renders on one unwrapped line beside the cloud CTA. Copy is
-   *  the only thing that can break that, so the budget is enforced here rather
-   *  than left to whoever next edits a string. */
   it('fits title, separator and body on a single line', () => {
     const SINGLE_LINE_BUDGET = 95
     for (const [name, tree] of locales) {

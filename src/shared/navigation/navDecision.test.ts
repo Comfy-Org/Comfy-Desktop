@@ -26,8 +26,6 @@ function input(over: Partial<NavInput>): NavInput {
 }
 
 describe('decideNavigation — totality', () => {
-  // The function must be total: every tuple in the full cross-product resolves
-  // to a structurally valid decision, never throws, never returns undefined.
   it('returns a valid decision for the entire input cross-product', () => {
     for (const currentView of VIEWS)
       for (const target of TARGETS)
@@ -42,10 +40,6 @@ describe('decideNavigation — totality', () => {
           }
   })
 
-  // Guards against the "dead Start button" class of bug: a picked install target
-  // (instance OR cloud/remote) in a REACHABLE run-state must always produce a
-  // live action, never a silent no-op. `self` is only reachable when the target
-  // is the host's own running install (cloud→cloud).
   it('never produces a dead no-op CTA for a reachable (host, install-target, run) combo', () => {
     const reachable: Array<[ViewKind, TargetKind, TargetRun]> = [
       ['dashboard', 'instance', 'stopped'],
@@ -75,7 +69,6 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
   const decisionFor = (currentView: ViewKind, target: TargetKind, targetRun: TargetRun) =>
     decideNavigation(input({ currentView, target, targetRun }))
 
-  // ── Dashboard → X ──
   it('Dashboard → Dashboard: no-op', () => {
     expect(decisionFor('dashboard', 'dashboard', 'self').verb).toBe('no-op')
   })
@@ -112,7 +105,6 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
     expect(decisionFor('dashboard', 'new-instance', 'stopped').verb).toBe('install-wizard')
   })
 
-  // ── Instance → X ──
   it('Instance → Dashboard: NEW window (instance keeps running)', () => {
     const decision = decisionFor('instance', 'dashboard', 'self')
     expect(decision).toMatchObject({
@@ -132,8 +124,6 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
   it('Instance → Instance B (stopped): switch in place + new-window caret (matrix row 9)', () => {
     const decision = decisionFor('instance', 'instance', 'stopped')
     expect(decision).toMatchObject({ window: 'same', verb: 'switch' })
-    // The caret offers "Open in new window" so the user can keep A running; the
-    // main-side 3-way modal also surfaces this on the primary Switch click.
     expect(decision.secondary.some((alt) => alt.window === 'new' && alt.verb === 'open-new')).toBe(
       true
     )
@@ -152,10 +142,6 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
     })
   })
 
-  // ── Cloud → X ──
-  // NOTE: documentation cell — the dashboard chip routes through the hardcoded
-  // `activate('new-window')` path, so the app opens a new window for all hosts.
-  // The matrix asks for same-window; tracked as a known deviation.
   it('Cloud → Dashboard: new window today (chip is not table-driven)', () => {
     const decision = decisionFor('cloud', 'dashboard', 'self')
     expect(decision).toMatchObject({
@@ -296,9 +282,6 @@ describe('nav/caret i18n keys', () => {
     }
   })
 
-  // The CTA/caret also resolve keys NOT in NAV_LABEL (remote relabel + the caret
-  // split-button chrome). Without this they'd survive only on inline
-  // `t(key, 'fallback')` defaults and render English in every other locale.
   it('component nav/caret keys resolve in locales/en.json', () => {
     const componentKeys = [
       'instancePicker.openRemote',

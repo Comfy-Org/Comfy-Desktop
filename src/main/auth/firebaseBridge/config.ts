@@ -1,8 +1,3 @@
-/**
- * Firebase project configs. Must mirror the cloud frontend's
- * `src/config/firebase.ts`. Values are public (apiKey is a project
- * identifier, not a secret), so hardcoding them here is fine.
- */
 export interface FirebaseProjectConfig {
   apiKey: string
   authDomain: string
@@ -39,7 +34,6 @@ export function getFirebaseConfig(env: FirebaseEnv): FirebaseProjectConfig {
   return env === 'dev' ? DEV_CONFIG : PROD_CONFIG
 }
 
-/** Decide which Firebase project the intercepted popup URL points at. */
 export function detectFirebaseEnv(url: string): FirebaseEnv {
   try {
     const host = new URL(url).host

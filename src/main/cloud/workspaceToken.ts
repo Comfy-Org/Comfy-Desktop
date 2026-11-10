@@ -1,5 +1,5 @@
-/** Mints workspace and partner-node tokens at `POST {apiBase}/auth/token` with Desktop's OAuth access token. */
 import { lifetimeSecondsOf } from './claims'
+
 import { CLOUD_CONFIG } from './config'
 
 const DEFAULT_TIMEOUT_MS = 20_000
@@ -8,17 +8,18 @@ export type WorkspaceTokenMint =
   | { kind: 'minted'; token: string; expiresAt: number }
   | { kind: 'failed'; status: number | null; code?: string; retryAfterSeconds?: number }
 
-/** Why Desktop needs a browser sign-in before it can mint. */
 export type ReauthorizeReason =
   | 'sso_required'
   | 'grant_ended'
   | 'mint_scope_missing'
   | 'mint_disabled'
+  | 'mint_refused'
+  | 'view_requested'
 
 const MINT_DISABLED_CODE = 'oauth_workspace_mint_disabled'
 const GRANT_ENDED_CODE = 'oauth_grant_ended'
+const MINT_REFUSED_CODE = 'oauth_token_mint_refused'
 
-/** What a mint reply means for the caller. `unauthorized` is a 401 that does not say the grant ended. */
 export type WorkspaceMintOutcome =
   | { kind: 'minted'; token: string; expiresAt: number }
   | { kind: 'unavailable' }
@@ -27,7 +28,6 @@ export type WorkspaceMintOutcome =
   | { kind: 'refused' }
   | { kind: 'retryable'; retryAfterSeconds?: number }
 
-/** Classify one mint reply. A null status is a network failure; a 2xx failure is a malformed body. */
 export function classifyMint(mint: WorkspaceTokenMint): WorkspaceMintOutcome {
   if (mint.kind === 'minted') return mint
   const { status, code, retryAfterSeconds } = mint
@@ -46,6 +46,8 @@ export function classifyMint(mint: WorkspaceTokenMint): WorkspaceMintOutcome {
   if (status === 404) return { kind: 'unavailable' }
   if (status === 403 && code === 'sso_required')
     return { kind: 'reauthorize', reason: 'sso_required' }
+  if (status === 403 && code === MINT_REFUSED_CODE)
+    return { kind: 'reauthorize', reason: 'mint_refused' }
   return { kind: 'refused' }
 }
 
@@ -90,7 +92,6 @@ export function mintWorkspaceToken(
   return postForToken('/auth/token', accessToken, { workspace_id: workspaceId }, options)
 }
 
-/** Mints a partner-node token, which starts a renewable partner-node session, at `POST {apiBase}/auth/token`. */
 export function mintPartnerNodeToken(
   accessToken: string,
   workspaceId: string,
@@ -104,7 +105,6 @@ export function mintPartnerNodeToken(
   )
 }
 
-/** Renews a partner-node token in its session at `POST {apiBase}/auth/partner-node/renew`. */
 export function renewPartnerNodeToken(
   partnerNodeToken: string,
   options: MintWorkspaceTokenOptions = {}

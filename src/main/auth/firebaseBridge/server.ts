@@ -32,44 +32,26 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   })
 }
 
-/** Result handed to the orchestrator once the Firebase exchange succeeds.
- *  `user` is the JSON shape Firebase JS SDK persists in IndexedDB. */
 export interface SignInResult {
   user: Record<string, unknown>
   apiKey: string
 }
 
 export interface BridgeHandle {
-  /** URL to hand to `shell.openExternal` to start the sign-in flow. */
   url: string
-  /** Resolves once the IdP callback completes and Firebase mints a user. */
   signInPromise: Promise<SignInResult>
-  /** Shut the server down. Safe to call multiple times. */
   close: () => void
 }
 
-/**
- * Fixed loopback port for the OAuth callback. Google's Web OAuth clients
- * require exact-match redirect URIs (port included), so `localhost:9876` is
- * registered as an authorized redirect and we must commit to this port.
- */
 export const BRIDGE_PORT = 9876
 
 export interface StartBridgeOpts {
   env: FirebaseEnv
   providerId: SupportedProvider
-  /** Default 5 minutes — long enough for password managers, 2FA, account-picker UI. */
   timeoutMs?: number
-  /** Override the loopback port. Defaults to `BRIDGE_PORT` (9876). Tests pass `0` to get a kernel-assigned port. */
   port?: number
 }
 
-/**
- * Start the loopback bridge, binding `127.0.0.1:<port>` and advertising
- * `http://localhost:<port>`. Routes: `GET /` initiates (302 to IdP or serves
- * the popup-bridge HTML), `GET /?code&state` completes the Google exchange,
- * `GET /?error` handles denial, `POST /callback` takes the GitHub payload.
- */
 export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> {
   const { env, providerId, timeoutMs = 5 * 60_000, port = BRIDGE_PORT } = opts
   const firebaseConfig = getFirebaseConfig(env)
@@ -89,14 +71,9 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
     const close = (): void => {
       if (server) {
         try {
-          // Force-terminate keep-alive sockets too; otherwise the browser
-          // could reuse a pinned connection into this stale closure (wrong
-          // providerId / signInPromise) on the next localhost:9876 fetch.
           server.closeAllConnections?.()
           server.close()
-        } catch {
-          // best-effort shutdown
-        }
+        } catch {}
         server = null
       }
       clearTimeout(timeoutHandle)
@@ -122,8 +99,6 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
     }, timeoutMs)
 
     server = createServer((req, res) => {
-      // Disable keep-alive so the bridge never holds sockets across the
-      // singleton server swap (a reused connection would hit the old closure).
       res.setHeader('Connection', 'close')
       void handleRequest(req, res).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err)
@@ -137,7 +112,6 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
     })
 
     async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
-      // Defence-in-depth: only honour requests on the loopback socket.
       const remoteHost = req.socket.remoteAddress ?? ''
       const isLoopback =
         remoteHost === '127.0.0.1' || remoteHost === '::1' || remoteHost === '::ffff:127.0.0.1'
@@ -159,8 +133,6 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
         return
       }
 
-      // Popup-bridge callback (GitHub only): the in-browser SDK POSTs
-      // `auth.currentUser.toJSON()` here after a successful signInWithPopup.
       if (req.method === 'POST' && path === '/callback') {
         if (providerId !== 'github.com') {
           res.statusCode = 404
@@ -186,7 +158,6 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
         return
       }
 
-      // IdP returned an explicit error (user denied consent, etc.)
       const idpError = params.get('error')
       if (idpError) {
         const description =
@@ -201,14 +172,10 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
       const code = params.get('code')
       const state = params.get('state')
 
-      // Raw-OAuth callback arm — Google only (GitHub handles the credential
-      // client-side, so it falls through to re-serve the bridge HTML).
       if (code && state && providerId === 'google.com') {
         if (!sessionId) {
           throw new Error('Callback arrived before initiator')
         }
-        // Reconstruct the full redirected URL; signInWithIdp parses its query
-        // params the same way the JS SDK does.
         const requestUri = `http://localhost:${(server!.address() as AddressInfo).port}${url}`
         const idpResponse = await signInWithIdpExchange(
           firebaseConfig.apiKey,
@@ -225,9 +192,6 @@ export function startBridgeServer(opts: StartBridgeOpts): Promise<BridgeHandle> 
         return
       }
 
-      // Initiator arm — first GET / with no callback params. Google gets a
-      // 302 to its OAuth URL; GitHub gets the popup-bridge HTML (its OAuth
-      // Apps allow only one callback URL, so the loopback redirect can't be added).
       if (providerId === 'google.com') {
         const continueUri = `http://localhost:${(server!.address() as AddressInfo).port}/`
         const authResp = await createOauthAuthUri(firebaseConfig.apiKey, providerId, continueUri)

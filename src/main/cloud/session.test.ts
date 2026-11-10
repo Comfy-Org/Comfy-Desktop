@@ -1,9 +1,8 @@
-// @vitest-environment node
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 const electronState = vi.hoisted(() => ({ userData: '' }))
 
@@ -392,6 +391,7 @@ describe('CloudSession background token reads never open the browser', () => {
 
     await expect(session.getAccessToken()).resolves.toBeNull()
 
+    expect(refresh).not.toHaveBeenCalled()
     expect(signIn).not.toHaveBeenCalled()
     expect(onReturned).toHaveBeenCalledOnce()
     expect(session.currentWorkspaceId()).toBe('w1')
@@ -747,6 +747,25 @@ describe('CloudSession.switchWorkspace with no browser', () => {
     expect(mintRequests).toHaveLength(1)
   })
 
+  it('caps a huge Retry-After at five minutes', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(429, {}, { 'Retry-After': '1000000000' })
+    const session = new CloudSession()
+    const start = Date.now()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start)
+    onTestFinished(() => now.mockRestore())
+
+    await session.switchWorkspace('w2')
+    now.mockReturnValue(start + 5 * 60_000 - 1)
+    await session.switchWorkspace('w3')
+    expect(mintRequests).toHaveLength(1)
+
+    now.mockReturnValue(start + 5 * 60_000)
+    mintReply = ({ workspaceId }) => minted(workspaceId, start + 60 * 60_000)
+    await expect(session.switchWorkspace('w4')).resolves.toMatchObject({ workspaceId: 'w4' })
+    expect(mintRequests).toHaveLength(2)
+  })
+
   it('a late 429 from before logout does not throttle the next account', async () => {
     saveGrant(grantOn('w1'))
     const late = deferred<Response>()
@@ -982,6 +1001,62 @@ describe('CloudSession.switchWorkspace with no browser', () => {
   })
 })
 
+describe('CloudSession.switchWorkspace reached', () => {
+  it('reports a switch that minted, reused or returned to the anchor as reached', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2',
+      reached: true
+    })
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      reached: true
+    })
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2',
+      reached: true
+    })
+  })
+
+  it('reports a switch that stayed on the current workspace as unreached', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(500, {})
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable',
+      reached: false
+    })
+  })
+
+  it('reports a switch superseded during its mint as unreached', async () => {
+    saveGrant(grantOn('w1'))
+    const pendingMint = deferred<Response>()
+    mintReply = () => pendingMint.promise
+    const session = new CloudSession()
+
+    const superseded = session.switchWorkspace('w2')
+    const newer = session.switchWorkspace('w1')
+    pendingMint.resolve(minted('w2'))
+
+    await expect(superseded).resolves.toMatchObject({ reached: false })
+    await expect(newer).resolves.toMatchObject({ workspaceId: 'w1', reached: true })
+  })
+
+  it('reports an unreached switch when browser auth for the expired anchor picks another workspace', async () => {
+    saveGrant(grantOn('w1', { expiresAt: Date.now() - 1_000 }))
+    mocked(refresh).mockRejectedValue(refreshRefused())
+    browserSignInReturns(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
+
+    await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
+      workspaceId: 'w2',
+      reached: false
+    })
+  })
+})
+
 describe('CloudSession.switchWorkspace reauthorize', () => {
   it.each<[string, () => void, string]>([
     ['the server kill switch', () => (mintReply = mintDisabled), 'mint_disabled'],
@@ -1116,7 +1191,8 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
 
   it('a second oauth_grant_ended 401 after a good refresh is reauthorize', async () => {
     saveGrant(grantOn('w1'))
-    mintReply = () => json(401, { code: 'oauth_grant_ended' })
+    let replies = 0
+    mintReply = () => (replies++ === 0 ? json(401, {}) : json(401, { code: 'oauth_grant_ended' }))
     mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
     browserSignInReturns(signedInResult(grantOn('w2')))
 
@@ -1200,18 +1276,66 @@ describe('CloudSession.switchWorkspace reauthorize', () => {
     expect(signIn).not.toHaveBeenCalled()
   })
 
-  it('a first oauth_grant_ended 401 still refreshes once before deciding', async () => {
-    saveGrant(grantOn('w1'))
-    let replies = 0
-    mintReply = ({ workspaceId }) =>
-      replies++ === 0 ? json(401, { code: 'oauth_grant_ended' }) : minted(workspaceId)
+  it('an oauth_grant_ended 401 asks for one sign-in without refreshing the ended grant', async () => {
+    const ended = grantOn('w1')
+    saveGrant(ended)
+    mintReply = ({ workspaceId, bearer }) =>
+      bearer === ended.accessToken ? json(401, { code: 'oauth_grant_ended' }) : minted(workspaceId)
     mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
+    browserSignInReturns(signedInResult(grantOn('w3')))
+    const session = new CloudSession()
 
-    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
-      workspaceId: 'w2'
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+    await expect(session.switchWorkspace('w4')).resolves.toMatchObject({ workspaceId: 'w4' })
+
+    expect(refresh).not.toHaveBeenCalled()
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'grant_ended' }])
+  })
+
+  it('an oauth_grant_ended 401 also ends a rotation of the grant stored while the mint was out', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const ended = grantOn('w1')
+    const rotated = grantOn('w1', { revision: '-fresh', expiresAt: ended.expiresAt + 3_600_000 })
+    saveGrant(ended)
+    const late = deferred<Response>()
+    mintReply = () => late.promise
+    mocked(refresh).mockResolvedValue(rotated)
+    const session = new CloudSession()
+
+    const switching = session.switchWorkspace('w2', 'restored')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    vi.setSystemTime(ended.expiresAt + 1)
+    await expect(session.getAccessToken()).resolves.toBe(rotated.accessToken)
+    late.resolve(json(401, { code: 'oauth_grant_ended' }))
+    await switching
+    vi.setSystemTime(rotated.expiresAt + 1)
+
+    await expect(session.getAccessToken()).resolves.toBe(rotated.accessToken)
+    expect(refresh).toHaveBeenCalledExactlyOnceWith(ended.refreshToken)
+    expect(vaultOnDisk().grant).not.toHaveProperty('refreshToken')
+  })
+
+  it('an oauth_grant_ended 401 leaves no refresh token, so the ended grant is never refreshed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const ended = grantOn('w1')
+    saveGrant(ended)
+    mintReply = () => json(401, { code: 'oauth_grant_ended' })
+    mocked(refresh).mockResolvedValue(grantOn('w1', { revision: '-fresh' }))
+    const session = new CloudSession()
+
+    await expect(session.switchWorkspace('w2', 'restored')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
     })
+    vi.setSystemTime(ended.expiresAt + 1)
 
-    expect(refresh).toHaveBeenCalledOnce()
+    await expect(session.getAccessToken()).resolves.toBe(ended.accessToken)
+    await expect(session.switchWorkspace('w1', 'restored')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'retryable'
+    })
+    expect(refresh).not.toHaveBeenCalled()
+    expect(vaultOnDisk().grant).not.toHaveProperty('refreshToken')
     expect(signIn).not.toHaveBeenCalled()
   })
 
@@ -1493,7 +1617,7 @@ describe('CloudSession regressions', () => {
     session.logout()
     reply.resolve(mintDisabled())
 
-    await expect(switching).resolves.toEqual({ signedIn: false })
+    await expect(switching).resolves.toEqual({ signedIn: false, reached: false })
     expect(signIn).not.toHaveBeenCalled()
   })
 
@@ -1514,6 +1638,86 @@ describe('CloudSession regressions', () => {
     await stale
 
     expect(mintRequests).toHaveLength(2)
+  })
+})
+
+describe('CloudSession.heldWorkspaceToken', () => {
+  it('reads a held token without minting, refreshing or moving Desktop', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: FUTURE })
+    saveWorkspaceToken('w3', { accessToken: mintedJwt('w3'), expiresAt: PAST })
+    const session = new CloudSession()
+    await session.switchWorkspace('w3', 'restored')
+    const active = session.currentWorkspaceId()
+
+    expect(session.heldWorkspaceToken('w2')).toBe(mintedJwt('w2'))
+    expect(session.heldWorkspaceToken('w3')).toBeNull()
+
+    expect(session.currentWorkspaceId()).toBe(active)
+    expect(mintRequests).toEqual([])
+    expect(signIn).not.toHaveBeenCalled()
+  })
+})
+
+describe('CloudSession switches a local ComfyUI view requests', () => {
+  it('asks the browser for a new workspace instead of minting silently', async () => {
+    saveGrant(grantOn('w1'))
+    browserSignInReturns(signedInResult(grantOn('w2')))
+
+    await expect(new CloudSession().switchWorkspace('w2', 'requested')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
+    expect(mintRequests).toEqual([])
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'view_requested' }])
+  })
+
+  it('lets a view request joining a restored switch still ask the browser', async () => {
+    saveGrant(grantOn('w1'))
+    const slow = deferred<Response>()
+    mintReply = () => slow.promise
+    browserSignInReturns(signedInResult(grantOn('w2')))
+    const session = new CloudSession()
+
+    const restored = session.switchWorkspace('w2', 'restored')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    const requested = session.switchWorkspace('w2', 'requested')
+    slow.resolve(json(403, { code: 'sso_required' }))
+
+    await expect(requested).resolves.toMatchObject({ workspaceId: 'w2' })
+    await restored
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('moves without a browser to the anchor or a workspace Desktop already holds', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    await session.switchWorkspace('w2')
+
+    await expect(session.switchWorkspace('w1', 'requested')).resolves.toMatchObject({
+      workspaceId: 'w1'
+    })
+    await expect(session.switchWorkspace('w2', 'requested')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(mintRequests).toHaveLength(1)
+  })
+})
+
+describe('CloudSession when Cloud refuses this client a mint', () => {
+  it('falls back to browser consent, as with the kill switch', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'oauth_token_mint_refused' })
+    browserSignInReturns(signedInResult(grantOn('w2')))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_refused' }])
   })
 })
 
@@ -1561,32 +1765,36 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'mint_scope_missing' }])
   })
 
-  it('a second and third switch after a scopeless sign-in stay put with no browser', async () => {
+  it('keeps asking the browser on each chosen switch while Cloud withholds the scope', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
     )
     const session = new CloudSession()
-    await session.switchWorkspace('w2')
-    const browserTrips = browserEvents().length
 
-    for (const workspaceId of ['w2', 'w3']) {
+    for (const workspaceId of ['w2', 'w2', 'w3']) {
       await expect(session.switchWorkspace(workspaceId)).resolves.toMatchObject({
         workspaceId: 'w1',
         workspaceSwitchFailure: 'retryable'
       })
     }
 
-    expect(signIn).toHaveBeenCalledOnce()
-    expect(browserEvents()).toHaveLength(browserTrips)
+    expect(signIn).toHaveBeenCalledTimes(3)
     expect(mintRequests).toEqual([])
-    expect(switchEvents().at(-1)).toEqual({
-      outcome: 'retryable',
-      reauthorize_reason: 'scope_not_granted'
-    })
   })
 
-  it('a scopeless grant on B reaches its anchor and asks no browser for the next workspace', async () => {
+  it('never opens a browser for a restored switch while Cloud withholds the scope', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+
+    await expect(new CloudSession().switchWorkspace('w2', 'restored')).resolves.toMatchObject({
+      workspaceId: 'w1',
+      workspaceSwitchFailure: 'retryable'
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('a scopeless grant on B reaches its anchor and asks the browser for the next workspace', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(signedInResult(grantOn('w2', { scope: READ_ONLY_SCOPE })))
     const session = new CloudSession()
@@ -1597,10 +1805,10 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
       workspaceSwitchFailure: 'retryable'
     })
 
-    expect(signIn).toHaveBeenCalledOnce()
+    expect(signIn).toHaveBeenCalledTimes(2)
   })
 
-  it('an explicit sign-in with the scope lifts the hold and switching mints again', async () => {
+  it('an explicit sign-in with the scope lets switching mint again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1616,7 +1824,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(mintRequests).toHaveLength(1)
   })
 
-  it('a grant that can mint lifts the hold, so one that later narrows can ask again', async () => {
+  it('a grant that later narrows asks the browser again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1639,7 +1847,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     expect(signIn).toHaveBeenCalledTimes(3)
   })
 
-  it('an explicit sign-in that also returns no scope keeps ordinary switches off the browser', async () => {
+  it('a switch after an explicit sign-in that returned no scope asks the browser again', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1651,68 +1859,10 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
       workspaceSwitchFailure: 'retryable'
     })
 
-    expect(signIn).toHaveBeenCalledOnce()
-  })
-
-  it('logout resets the hold', async () => {
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    const session = new CloudSession()
-    await session.switchWorkspace('w2')
-
-    session.logout()
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    await session.switchWorkspace('w2')
-
     expect(signIn).toHaveBeenCalledTimes(2)
   })
 
-  it('a restart keeps the hold: no second browser across sessions', async () => {
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    await new CloudSession().switchWorkspace('w2')
-    _resetForTest()
-
-    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
-      workspaceId: 'w1',
-      workspaceSwitchFailure: 'retryable'
-    })
-
-    expect(signIn).toHaveBeenCalledOnce()
-    expect(vaultOnDisk().mintScopeWithheld).toBe(true)
-  })
-
-  it('a pre-upgrade grant gets its one trip on first launch, then the hold survives restarts', async () => {
-    fs.writeFileSync(
-      path.join(electronState.userData, 'comfy-cloud-auth.bin'),
-      safeStorage.encryptString(
-        JSON.stringify({
-          version: 1,
-          activeKey: 'workspace:w1',
-          subject: 'user-1',
-          bundles: { 'workspace:w1': grantOn('w1', { scope: READ_ONLY_SCOPE }) }
-        })
-      )
-    )
-    _resetForTest()
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    expect(vaultOnDisk().mintScopeWithheld).toBeUndefined()
-
-    await new CloudSession().switchWorkspace('w2')
-    expect(signIn).toHaveBeenCalledOnce()
-    _resetForTest()
-    await new CloudSession().switchWorkspace('w2')
-
-    expect(signIn).toHaveBeenCalledOnce()
-  })
-
-  it('a restart with a scoped sign-in in between mints: the grant that can mint cleared the hold', async () => {
+  it('a restart after a scoped sign-in mints', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturnsOnce(
       signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
@@ -1728,23 +1878,9 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     })
 
     expect(signIn).toHaveBeenCalledTimes(2)
-    expect(vaultOnDisk()).not.toHaveProperty('mintScopeWithheld')
   })
 
-  it('an explicit sign-in can still try after a restart', async () => {
-    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
-    browserSignInReturns(
-      signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-again' }))
-    )
-    await new CloudSession().switchWorkspace('w2')
-    _resetForTest()
-
-    await new CloudSession().login()
-
-    expect(signIn).toHaveBeenCalledTimes(2)
-  })
-
-  it('emits one mint_scope_not_granted for a switch sign-in, and none for the later held switches', async () => {
+  it('emits mint_scope_not_granted for each switch sign-in that returns no scope', async () => {
     saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
     browserSignInReturns(signedInResult(grantOn('w1', { scope: READ_ONLY_SCOPE, revision: '-b' })))
     const session = new CloudSession()
@@ -1752,7 +1888,7 @@ describe('CloudSession grants without the mint scope (T-V29)', () => {
     await session.switchWorkspace('w2')
     await session.switchWorkspace('w3')
 
-    expect(mintScopeNotGrantedEvents()).toHaveLength(1)
+    expect(mintScopeNotGrantedEvents()).toHaveLength(2)
   })
 
   it('emits one mint_scope_not_granted for an explicit sign-in with no scope', async () => {
@@ -1831,7 +1967,7 @@ describe('CloudSession fencing (T-V27)', () => {
     session.logout()
     reply.resolve(minted('w2'))
 
-    await expect(switching).resolves.toEqual({ signedIn: false })
+    await expect(switching).resolves.toEqual({ signedIn: false, reached: false })
     expect(session.isSignedIn()).toBe(false)
     expect(fs.existsSync(path.join(electronState.userData, 'comfy-cloud-auth.bin'))).toBe(false)
   })
@@ -1903,7 +2039,7 @@ describe('CloudSession fencing (T-V27)', () => {
     session.logout()
     pending.resolve(signedInResult(grantOn('w2')))
 
-    await expect(switching).resolves.toEqual({ signedIn: false })
+    await expect(switching).resolves.toEqual({ signedIn: false, reached: false })
     expect(session.isSignedIn()).toBe(false)
   })
 

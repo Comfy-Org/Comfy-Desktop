@@ -1,6 +1,5 @@
 import type { RumErrorEvent } from '@datadog/browser-rum'
 
-// Synthetic bundle URLs used only for Datadog path matching.
 export const DATADOG_BUNDLE_BASE_URL = 'app://app'
 
 const DATADOG_BUNDLE_PATH_PATTERNS = [

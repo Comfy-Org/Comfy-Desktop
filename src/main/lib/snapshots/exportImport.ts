@@ -14,9 +14,6 @@ export function buildExportEnvelope(
   installationName: string,
   entries: SnapshotEntry[]
 ): SnapshotExportEnvelope {
-  // v2 carries torch stack data. Deliberate compatibility break: older Desktop
-  // versions reject a v2 file instead of importing it and silently performing
-  // the legacy skip-torch restore.
   return {
     type: 'comfyui-desktop-2-snapshot',
     version: 2,
@@ -44,24 +41,17 @@ function isValidCustomNode(n: unknown): boolean {
   return true
 }
 
-// Version tuple: PEP 440-ish public version, optionally with a local tag.
 const VALID_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
 
 function isVersionValid(val: unknown): boolean {
   return typeof val === 'string' && VALID_VERSION.test(val)
 }
 
-/** Strict validation of the v2 `torchStack` discriminated union. Only typed,
- *  allowlisted sources are accepted — an imported snapshot can never smuggle
- *  in an arbitrary URL or expand the protected-package surface. */
 function isValidTorchStack(v: unknown): boolean {
   if (!v || typeof v !== 'object') return false
   const obj = v as Record<string, unknown>
   if (obj.kind === 'observed') {
     if (obj.torchVersion !== null && !isVersionValid(obj.torchVersion)) return false
-    // Full-tuple fields: undefined (pre-tuple record), null (recorded as
-    // absent), or a valid version. A malformed value must not import — the
-    // restore path pip-installs these versions verbatim.
     for (const opt of ['torchvisionVersion', 'torchaudioVersion'] as const) {
       const val = obj[opt]
       if (val !== undefined && val !== null && !isVersionValid(val)) return false
@@ -95,10 +85,6 @@ function isValidTorchStack(v: unknown): boolean {
       /^[a-z0-9.]+$/.test(source.indexTag as string)
     )
   }
-  // AMD multi-arch entries carry only a rocm tag that must match the torch
-  // build itself - the index URL is a hardcoded app constant, so a snapshot
-  // can never smuggle one in, and any extra field (e.g. a url) or a tuple
-  // the tag does not name marks the source as not ours.
   if (source.kind === 'amd-multi-arch-index') {
     return isValidAmdMultiArchSource(source, packages as unknown as TorchStackPackages, ref.stackId)
   }
@@ -110,7 +96,6 @@ function isValidSnapshot(s: unknown): s is Snapshot {
   if (!s || typeof s !== 'object') return false
   const obj = s as Record<string, unknown>
   if (obj.version !== 1 && obj.version !== 2) return false
-  // torchStack is a v2 concept; a v1 snapshot carrying one is malformed.
   if (obj.torchStack !== undefined && (obj.version !== 2 || !isValidTorchStack(obj.torchStack)))
     return false
   if (typeof obj.createdAt !== 'string' || isNaN(Date.parse(obj.createdAt))) return false
@@ -119,12 +104,10 @@ function isValidSnapshot(s: unknown): s is Snapshot {
   if (!Array.isArray(obj.customNodes)) return false
   if (obj.pipPackages == null || typeof obj.pipPackages !== 'object') return false
 
-  // Validate custom node entries
   for (const node of obj.customNodes) {
     if (!isValidCustomNode(node)) return false
   }
 
-  // Validate pip package names
   const pips = obj.pipPackages as Record<string, unknown>
   for (const name of Object.keys(pips)) {
     if (!VALID_PIP_NAME.test(name)) return false
@@ -140,8 +123,6 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
   if (obj.type !== 'comfyui-desktop-2-snapshot')
     throw new Error('Invalid file: not a Comfy Desktop snapshot export')
   if (obj.version !== 1 && obj.version !== 2) {
-    // A higher integer version means the file came from a newer Comfy Desktop,
-    // so updating the app is the likely fix. Anything else is just malformed.
     if (typeof obj.version === 'number' && Number.isInteger(obj.version) && obj.version > 2)
       throw new Error(
         `Unsupported snapshot version: ${obj.version}. This file was created by a newer version of Comfy Desktop; updating the app will likely allow importing it.`
@@ -152,19 +133,12 @@ export function validateExportEnvelope(data: unknown): SnapshotExportEnvelope {
     throw new Error('File contains no snapshots')
   for (let i = 0; i < obj.snapshots.length; i++) {
     if (!isValidSnapshot(obj.snapshots[i])) throw new Error(`Invalid snapshot at index ${i}`)
-    // The envelope version exists so older clients reject torch-aware exports
-    // outright; a v1 envelope smuggling v2 snapshots would defeat that gate.
     if ((obj.snapshots[i] as Snapshot).version > (obj.version as number))
       throw new Error(`Invalid snapshot at index ${i}: snapshot version exceeds envelope version`)
   }
   return obj as unknown as SnapshotExportEnvelope
 }
 
-/**
- * Commit an imported envelope into the install's live snapshot history. Only
- * call after a restore from the envelope has succeeded; to make an envelope
- * available as a restore target, stage it with `stageSnapshotEnvelope` instead.
- */
 export async function importSnapshots(
   installPath: string,
   envelope: SnapshotExportEnvelope,
@@ -174,9 +148,6 @@ export async function importSnapshots(
   await fs.promises.mkdir(dir, { recursive: true })
 
   const filenames: string[] = []
-  // Each imported snapshot gets a fresh timestamp so it lands at the top of the
-  // timeline.  Envelope is newest-first (index 0 = newest), so the first entry
-  // gets the highest timestamp and later entries get progressively older ones.
   const count = envelope.snapshots.length
   const baseTime = Date.now()
 
@@ -192,7 +163,6 @@ export async function importSnapshots(
       await fs.promises.writeFile(tmpPath, JSON.stringify(stamped, null, 2))
       await fs.promises.rename(tmpPath, filePath)
     } catch (err) {
-      // Clean up any files already written
       for (const written of filenames) {
         await fs.promises.unlink(path.join(dir, written)).catch(() => {})
       }
@@ -200,15 +170,6 @@ export async function importSnapshots(
     }
     filenames.push(filename)
 
-    // Per-snapshot emit (not a single batch event) so the trigger / size
-    // distribution of imported snapshots is queryable the same way as
-    // `comfy.desktop.snapshot.created`. `batch_size` + `batch_index` let dashboards
-    // recover the import-operation grouping when they care about it.
-    //
-    // Distinct event from `comfy.desktop.snapshot.created` because the snapshot
-    // wasn't *taken* on this install — it was copied in from an export
-    // envelope (manual import or standalone migration), and we want the
-    // "how often does an install snapshot itself" metric to stay clean.
     telemetry.emit('comfy.desktop.snapshot.imported', {
       installation_id: installationId,
       original_trigger: snapshot.trigger,
@@ -223,23 +184,11 @@ export async function importSnapshots(
   return { imported: filenames.length, filenames }
 }
 
-// --- Staged restore targets ---
-//
-// An imported envelope is staged to a token-keyed temp file (never loaded by a
-// renderer-supplied path) and only committed to history via `importSnapshots`
-// once a restore from it succeeds; failed restores leave live history untouched.
-
 const STAGING_SUBDIR = 'comfyui-desktop-2-staged-restores'
-// Tokens are hex strings; the strict shape doubles as path-traversal defense
-// when resolving the staged file back from a token.
 const STAGE_TOKEN_RE = /^[a-f0-9]{32}$/
-// Bound the temp leak from failed-then-dismissed imports (no dismiss IPC):
-// prune staged files older than this whenever a new one is staged.
 const STAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 function stagingDir(): string {
-  // Per-user suffix so installs run by different OS users on a shared machine
-  // don't fight over ownership of one temp directory.
   let user = 'default'
   try {
     user = os.userInfo().username.replace(/[^\w.-]/g, '_')
@@ -269,9 +218,6 @@ async function pruneStaleStaged(dir: string): Promise<void> {
   } catch {}
 }
 
-/** Stage an envelope as a restore target for one installation and return its
- *  opaque token. The token is bound to the installation so a stale or
- *  misrouted token can never restore the envelope into a different install. */
 export async function stageSnapshotEnvelope(
   envelope: SnapshotExportEnvelope,
   installationId: string
@@ -287,8 +233,6 @@ export async function stageSnapshotEnvelope(
   return token
 }
 
-/** Load a previously staged envelope by token. Throws if the token is invalid
- *  or was staged for a different installation. */
 export async function loadStagedSnapshotEnvelope(
   token: string,
   installationId: string
@@ -301,7 +245,6 @@ export async function loadStagedSnapshotEnvelope(
   return validateExportEnvelope(staged.envelope)
 }
 
-/** Delete a staged envelope. Safe to call with an unknown/invalid token. */
 export async function releaseStagedSnapshotEnvelope(token: string): Promise<void> {
   const filePath = resolveStagedPath(token)
   if (!filePath) return

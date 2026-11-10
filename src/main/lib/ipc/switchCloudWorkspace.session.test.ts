@@ -31,7 +31,8 @@ vi.mock('../../cloud/oauth', () => ({
 vi.mock('../../devplatform/session', () => ({
   getCloudSession: () => state.session,
   getBuilderClient: vi.fn(),
-  setUnauthorizedHandler: vi.fn()
+  setUnauthorizedHandler: vi.fn(),
+  rejectAccessToken: vi.fn()
 }))
 vi.mock('../../devplatform/builds', () => ({
   resolveHost: vi.fn(),
@@ -146,9 +147,10 @@ describe('switchCloudWorkspace with a real session, vault and view grants', () =
     mintReply = (workspaceId) =>
       workspaceId === 'B' ? new Response('{}', { status: 404 }) : minted(workspaceId)
 
-    const reply = await switchCloudWorkspace('B')
+    const { status: reply, reached } = await switchCloudWorkspace('B')
 
     expect(reply).toMatchObject({ workspaceId: 'C', workspaceSwitchFailure: 'unavailable' })
+    expect(reached).toBe(false)
     expect(signIn).toHaveBeenCalledOnce()
     await expect(getViewWorkspaceGrants().tokenFor(viewV, 'C')).resolves.toBe(mintedJwt('C'))
     await expect(getViewWorkspaceGrants().tokenFor(otherView, 'C')).resolves.toBe(mintedJwt('C'))
@@ -171,7 +173,10 @@ describe('switchCloudWorkspace with a real session, vault and view grants', () =
     getViewWorkspaceGrants().allowDesktop('A')
     getViewWorkspaceGrants().allowView(viewV, 'X')
 
-    await expect(switchCloudWorkspace('X')).resolves.toMatchObject({ workspaceId: 'X' })
+    await expect(switchCloudWorkspace('X')).resolves.toMatchObject({
+      status: { workspaceId: 'X' },
+      reached: true
+    })
 
     await expect(getViewWorkspaceGrants().tokenFor(viewV, 'X')).resolves.toBe(mintedJwt('X'))
     await expect(getViewWorkspaceGrants().tokenFor(otherView, 'X')).resolves.toBeNull()
@@ -189,7 +194,10 @@ describe('switchCloudWorkspace with a real session, vault and view grants', () =
         : minted(workspaceId)
     vi.mocked(signIn).mockResolvedValue(consented(grantOn('C')))
 
-    await expect(switchCloudWorkspace('X')).resolves.toMatchObject({ workspaceId: 'X' })
+    await expect(switchCloudWorkspace('X')).resolves.toMatchObject({
+      status: { workspaceId: 'X' },
+      reached: true
+    })
 
     await expect(getViewWorkspaceGrants().tokenFor(viewV, 'X')).resolves.toBe(mintedJwt('X'))
     await expect(getViewWorkspaceGrants().tokenFor(otherView, 'X')).resolves.toBeNull()
@@ -203,8 +211,8 @@ describe('switchCloudWorkspace with a real session, vault and view grants', () =
     const allowDesktop = vi.spyOn(getViewWorkspaceGrants(), 'allowDesktop')
 
     await expect(switchCloudWorkspace('X')).resolves.toMatchObject({
-      workspaceId: 'A',
-      workspaceSwitchFailure: 'retryable'
+      status: { workspaceId: 'A', workspaceSwitchFailure: 'retryable' },
+      reached: false
     })
 
     expect(allowDesktop).not.toHaveBeenCalled()
@@ -215,9 +223,11 @@ describe('switchCloudWorkspace with a real session, vault and view grants', () =
     mintReply = () => new Response(JSON.stringify({ code: 'sso_required' }), { status: 403 })
     vi.mocked(signIn).mockResolvedValue(consented(grantOn('X')))
 
-    const reply = await switchCloudWorkspace('X')
+    const { status: reply } = await switchCloudWorkspace('X')
 
     expect(reply).not.toHaveProperty('reachedThroughConsent')
+    expect(reply).not.toHaveProperty('reached')
     expect(send.mock.calls[0]?.[1]).not.toHaveProperty('reachedThroughConsent')
+    expect(send.mock.calls[0]?.[1]).not.toHaveProperty('reached')
   })
 })

@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
@@ -23,7 +22,6 @@ vi.mock('electron', () => ({
 
 import { safeStorage } from 'electron'
 
-import { CLOUD_CONFIG } from './config'
 import {
   _resetForTest,
   activateWorkspace,
@@ -31,7 +29,6 @@ import {
   dropWorkspaceToken,
   getAuthStatus,
   getCachedWorkspaceName,
-  isMintScopeWithheld,
   loadActiveWorkspaceId,
   loadGrant,
   loadWorkspaceToken,
@@ -46,12 +43,6 @@ function jwt(subject: string, workspaceId: string): string {
   const b64 = (value: unknown): string =>
     Buffer.from(JSON.stringify(value), 'utf-8').toString('base64url')
   return `${b64({ alg: 'RS256' })}.${b64({ sub: subject, workspace_id: workspaceId })}.sig`
-}
-
-function jwtWithScope(subject: string, workspaceId: string, scope: string): string {
-  const b64 = (value: unknown): string =>
-    Buffer.from(JSON.stringify(value), 'utf-8').toString('base64url')
-  return `${b64({ alg: 'RS256' })}.${b64({ sub: subject, workspace_id: workspaceId, scope })}.sig`
 }
 
 function tokenWithoutSubject(workspaceId: string): string {
@@ -149,53 +140,6 @@ describe('grant vault', () => {
 
     expect(loadGrant()).toBeNull()
     expect(getAuthStatus()).toEqual({ signedIn: false })
-  })
-
-  it('persists a withheld mint scope on the grant and clears it with a grant that can mint', () => {
-    saveGrant(tokens('user-1', 'w1'), { mintScopeWithheld: true })
-    _resetForTest()
-    expect(isMintScopeWithheld()).toBe(true)
-
-    saveGrant(tokens('user-1', 'w1', '-next'))
-    _resetForTest()
-    expect(isMintScopeWithheld()).toBe(false)
-    expect(readVault()).not.toHaveProperty('mintScopeWithheld')
-  })
-
-  it('forgets a withheld mint scope on logout and on a changed account', () => {
-    saveGrant(tokens('user-1', 'w1'), { mintScopeWithheld: true })
-    saveGrant(tokens('user-2', 'w1'))
-    expect(isMintScopeWithheld()).toBe(false)
-
-    saveGrant(tokens('user-2', 'w1'), { mintScopeWithheld: true })
-    clearTokens()
-    expect(isMintScopeWithheld()).toBe(false)
-  })
-
-  it('a rotation that can mint clears a withheld scope and one that cannot keeps it', () => {
-    const scopeless = tokens('user-1', 'w1')
-    saveGrant(scopeless, { mintScopeWithheld: true })
-    const rotated = tokens('user-1', 'w1', '-rotated')
-    replaceGrant(scopeless.accessToken, scopeless.refreshToken!, rotated)
-    expect(isMintScopeWithheld()).toBe(true)
-
-    const scoped = {
-      accessToken: jwtWithScope('user-1', 'w1', CLOUD_CONFIG.scope),
-      refreshToken: 'refresh-scoped',
-      expiresAt: Date.now() + 3_600_000
-    }
-    replaceGrant(rotated.accessToken, rotated.refreshToken!, scoped)
-    expect(isMintScopeWithheld()).toBe(false)
-  })
-
-  it('never sets a withheld scope when migrating a version 1 vault', () => {
-    writeVault({
-      version: 1,
-      activeKey: 'workspace:w1',
-      bundles: { 'workspace:w1': tokens('user-1', 'w1') }
-    })
-
-    expect(isMintScopeWithheld()).toBe(false)
   })
 
   it('activates only the anchor or a workspace with a held token', () => {
@@ -394,16 +338,6 @@ describe('grant vault', () => {
   })
 
   it.each<[string, unknown]>([
-    [
-      'a version 2 vault with a malformed scope hold',
-      {
-        version: 2,
-        grant: tokens('user-1', 'w1'),
-        activeWorkspaceId: 'w1',
-        workspaceTokens: {},
-        mintScopeWithheld: 'yes'
-      }
-    ],
     ['an unknown version', { version: 3, grant: tokens('user-1', 'w1') }],
     [
       'a version 2 vault with no grant',

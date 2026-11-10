@@ -16,7 +16,6 @@ describe('pruneCrashDumps', () => {
     if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  /** Create `name` with an mtime `ageMs` in the past so ordering is deterministic. */
   function makeDump(dir: string, name: string, ageMs: number): string {
     const file = path.join(dir, name)
     fs.writeFileSync(file, 'dump')

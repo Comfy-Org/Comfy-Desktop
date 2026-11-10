@@ -120,9 +120,6 @@ describe('probeLinuxSysfs', () => {
     endpointSpeed: string | null,
     portSpeed: string | null
   ): Promise<void> {
-    // Layout mirrors the traversal: <name>/device/device/max_link_speed is
-    // the endpoint, and (with no symlinks) the parent dir <name>/device/
-    // max_link_speed stands in for the upstream port.
     const pciDir = path.join(root, name, 'device', 'device')
     await fs.mkdir(pciDir, { recursive: true })
     if (endpointSpeed !== null) {

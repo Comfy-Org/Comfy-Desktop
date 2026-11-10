@@ -1,10 +1,3 @@
-/**
- * Discovers the CLI-settable feature-flag registry via
- * `python main.py --list-feature-flags`, so the launcher only injects
- * `--feature-flag KEY=VALUE` for flags this ComfyUI version knows. Returns an
- * empty registry (= inject nothing) on any failure.
- */
-
 import { execFile } from 'child_process'
 import * as path from 'path'
 
@@ -18,10 +11,6 @@ export type FeatureFlagRegistry = Record<string, FeatureFlagInfo>
 
 const registryCache = new Map<string, { registry: FeatureFlagRegistry; version: string }>()
 
-/**
- * Parse the JSON stdout from `--list-feature-flags`. Returns `{}` on
- * malformed input, non-object payloads, or empty strings.
- */
 export function parseFeatureFlagOutput(stdout: string): FeatureFlagRegistry {
   if (!stdout) return {}
   try {
@@ -29,14 +18,10 @@ export function parseFeatureFlagOutput(stdout: string): FeatureFlagRegistry {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as FeatureFlagRegistry
     }
-  } catch {
-    /* fall through */
-  }
+  } catch {}
   return {}
 }
 
-/** Run `--list-feature-flags` and parse it, cached per (installationId,
- *  version). Returns {} on any error. */
 export async function getComfyFeatureFlagRegistry(
   pythonPath: string,
   mainPyPath: string,
@@ -61,12 +46,6 @@ export async function getComfyFeatureFlagRegistry(
   return registry
 }
 
-/**
- * Read the cached registry without ever spawning Python. Returns `null` when
- * nothing is cached for the install (e.g. discovery hasn't run, or failed).
- * A blank cached version matches any requested version so launches that lacked
- * a version string still hit.
- */
 export function getCachedFeatureFlagRegistry(
   installationId: string,
   version?: string
@@ -79,8 +58,6 @@ export function getCachedFeatureFlagRegistry(
   return cached.registry
 }
 
-/** Whether a CLI feature flag is known to the install's ComfyUI, read from the
- *  cache only (no spawn). Treats an absent cache as "not available". */
 export function isCachedFeatureFlagAvailable(
   installationId: string,
   key: string,
@@ -112,7 +89,6 @@ function runListFeatureFlags(pythonPath: string, mainPyPath: string, cwd: string
   })
 }
 
-/** Clear the registry cache for an installation (e.g. after version update). */
 export function clearFeatureFlagRegistryCache(installationId: string): void {
   registryCache.delete(installationId)
 }

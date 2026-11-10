@@ -29,7 +29,7 @@ export function createCache(dir: string, max: number): Cache {
         const stat = fs.statSync(fullPath)
         return { name: d.name, fullPath, mtime: stat.mtimeMs }
       })
-      .sort((a, b) => b.mtime - a.mtime) // newest first
+      .sort((a, b) => b.mtime - a.mtime)
 
     while (folders.length > max) {
       const old = folders.pop()
@@ -65,7 +65,6 @@ export function createCache(dir: string, max: number): Cache {
             try {
               const stat = await fs.promises.stat(metaFilePath)
               if (stat.mtimeMs < cutoff) {
-                // Remove both the meta file and the associated incomplete data file
                 const dataFilePath = metaFilePath.slice(0, -META_SUFFIX.length)
                 try {
                   await fs.promises.unlink(dataFilePath)

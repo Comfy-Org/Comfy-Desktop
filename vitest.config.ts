@@ -1,6 +1,20 @@
 import { resolve } from 'path'
 import { defineConfig } from 'vitest/config'
+import { playwright } from '@vitest/browser-playwright'
 import vue from '@vitejs/plugin-vue'
+
+const INTEGRATION_TESTS = 'src/**/*.integration.test.ts'
+const RENDERER_TESTS_THAT_READ_FILES = [
+  'src/renderer/csp.test.ts',
+  'src/renderer/src/lib/localeCoverage.test.ts'
+]
+const INJECTED_PAGE_SCRIPT_TESTS = [
+  'src/main/lib/comfyContentScript.test.ts',
+  'src/main/lib/comfyTerminalContentScript.test.ts'
+]
+const VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS = 'vue/dist/vue.esm-bundler.js'
+const VUE_TEST_UTILS_STRING_SLOT_WARNING =
+  '[@vue/compiler-core] decodeEntities option is passed but will be ignored in non-browser builds.'
 
 export default defineConfig({
   plugins: [vue()],
@@ -11,20 +25,47 @@ export default defineConfig({
     }
   },
   test: {
-    environment: 'happy-dom',
-    // Run `afterEach` hooks in registration order rather than vitest's default
-    // reverse ('stack'). The suite-wide unmount in `vitest.setup.ts` registers
-    // first, so under 'stack' it would run LAST - after each file's own
-    // teardown had deleted `window.api`, restored mocks or reset the DOM,
-    // leaving unmount hooks to run against a dismantled environment.
     sequence: { hooks: 'list' },
-    include: ['src/**/*.test.ts'],
-    exclude: ['src/**/*.integration.test.ts', 'node_modules'],
     globals: true,
     maxWorkers: 8,
-    // Installs the shared vue-i18n plugin into @vue/test-utils'
-    // global mount config so components that call `useI18n()` work
-    // out of the box in every test file.
-    setupFiles: ['./vitest.setup.ts']
+    onConsoleLog: (log) => !log.includes(VUE_TEST_UTILS_STRING_SLOT_WARNING),
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          sequence: { groupOrder: 0 },
+          environment: 'node',
+          include: [
+            'src/main/**/*.test.ts',
+            'src/preload/**/*.test.ts',
+            'src/shared/**/*.test.ts',
+            'scripts/eslint/**/*.test.ts',
+            ...RENDERER_TESTS_THAT_READ_FILES
+          ],
+          exclude: [INTEGRATION_TESTS, 'node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]
+        }
+      },
+      {
+        extends: true,
+        resolve: {
+          alias: [{ find: /^vue$/, replacement: VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS }]
+        },
+        test: {
+          name: 'browser',
+          sequence: { groupOrder: 1 },
+          include: ['src/renderer/**/*.test.ts', ...INJECTED_PAGE_SCRIPT_TESTS],
+          exclude: [INTEGRATION_TESTS, 'node_modules', ...RENDERER_TESTS_THAT_READ_FILES],
+          setupFiles: ['./vitest.setup.ts'],
+          browser: {
+            enabled: true,
+            headless: true,
+            screenshotFailures: false,
+            provider: playwright(),
+            instances: [{ browser: 'chromium' }]
+          }
+        }
+      }
+    ]
   }
 })

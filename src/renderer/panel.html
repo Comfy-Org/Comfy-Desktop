@@ -3,22 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <title>Comfy Desktop — Panel</title>
-    <!--
-      CSP is relaxed in dev by electron-vite (it injects the HMR script).
-      Mirrors the launcher renderer's CSP — these two surfaces share assets
-      and behave the same way.
-    -->
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.posthog.com https://raw.githubusercontent.com; media-src 'self' https://media.comfy.org; font-src 'self' data:; frame-src https://form.typeform.com; connect-src 'self' ws: https://*.datadoghq.com https://browser-intake-us5-datadoghq.com https://*.posthog.com"
     />
     <style>
-      /* No html/body background here — settings-v2 toggles
-       * `body.panel-overlay-mode` to transparent so the drawer
-       * backdrop can composite the live comfyView through. Painting
-       * the html element opaque shows behind the transparent body and
-       * blocks compositing. The splash div alone covers cold-start
-       * paint until panel/main.ts removes it after Vue mount. */
       html,
       body {
         margin: 0;
@@ -26,7 +15,7 @@
       #panel-boot-splash {
         position: fixed;
         inset: 0;
-        background: #171718;
+        background: #050506;
         z-index: 0;
       }
       #app {
@@ -35,10 +24,7 @@
       }
     </style>
   </head>
-  <body>
-    <!-- Painted by the parser before panel.js loads — matches the
-         chooser host's launcher-surface colour so cold start doesn't
-         read as an empty black window while the bundle boots. -->
+  <body class="[&.panel-overlay-mode]:bg-transparent">
     <div id="panel-boot-splash" aria-hidden="true"></div>
     <div id="app"></div>
     <script type="module" src="/src/panel/main.ts"></script>

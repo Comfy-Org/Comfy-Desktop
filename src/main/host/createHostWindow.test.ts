@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 
-// shared.ts (via registry.ts) loads electron at module load, so the mock
-// must be in place before the host module imports.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -136,16 +134,12 @@ describe('cascadeOffsetForCollisions', () => {
   })
 })
 
-// Pure decision helpers for the close handler's three `preClearedClose`
-// re-check points, kept testable without mocking BrowserWindow.
 describe('shouldBailAfterConsult', () => {
   it('bails when the renderer aborted and no force-close override is set', () => {
     expect(shouldBailAfterConsult('aborted', false)).toBe(true)
   })
 
   it('does not bail when the renderer aborted but the caller pre-cleared the close', () => {
-    // Bulk Exit-All consent overrides a per-window cancel, else an unrelated
-    // open prompt would strand the caller's awaited teardown.
     expect(shouldBailAfterConsult('aborted', true)).toBe(false)
   })
 
@@ -185,13 +179,11 @@ describe('shouldShowInstallCloseConfirm', () => {
   })
 
   it('skips the modal when the confirm preference is off, even for a last install window killing a local session', () => {
-    // Default experience: no prompt. The toggle gates every other condition.
     expect(shouldShowInstallCloseConfirm(false, 'defer', true, false, true)).toBe(false)
     expect(shouldShowInstallCloseConfirm(false, 'defer', false, false, true)).toBe(false)
   })
 
   it('skips the modal when the caller pre-cleared the close', () => {
-    // Force-close paths must not block on an extra user prompt.
     expect(shouldShowInstallCloseConfirm(true, 'defer', true, true, true)).toBe(false)
   })
 
@@ -200,8 +192,6 @@ describe('shouldShowInstallCloseConfirm', () => {
   })
 
   it('skips the modal on a cleared or aborted consult', () => {
-    // `cleared` → renderer already handled it; `aborted` → we already
-    // bailed in the prior check (this case is unreachable in practice).
     expect(shouldShowInstallCloseConfirm(true, 'cleared', true, false, true)).toBe(false)
     expect(shouldShowInstallCloseConfirm(true, 'aborted', true, false, true)).toBe(false)
   })
@@ -235,8 +225,6 @@ describe('shouldBailAfterCloseChoice', () => {
   })
 
   it('does not bail when a force-close lands mid-modal even on user cancel', () => {
-    // Mirrors the consult re-check: a caller-side force-close that
-    // arrives while the modal is open must override the user's cancel.
     expect(shouldBailAfterCloseChoice('cancel', true)).toBe(false)
   })
 })

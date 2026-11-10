@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { InstallationRecord } from '../installations'
 
@@ -23,8 +22,6 @@ import * as releaseCache from './release-cache'
 import { fetchLatestRelease } from './comfyui-releases'
 import { refreshTorchStackCatalogs } from '../sources/standalone/torchStackCatalog'
 
-/** Mirrors the real `getOrFetch`: runs the fetch, and on failure or a null
- *  result returns the cached entry instead of rejecting. */
 function getOrFetchFallingBackTo(cached: { checkedAt: number } | null) {
   return (async (_repo: string, _channel: string, fetchFn: () => Promise<unknown>) => {
     try {
@@ -50,7 +47,6 @@ function install(overrides: Partial<InstallationRecord> = {}): InstallationRecor
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // `clearAllMocks` keeps implementations, so pin the defaults each test relies on.
   vi.mocked(releaseCache.get).mockReturnValue(null)
   vi.mocked(releaseCache.getOrFetch).mockResolvedValue(null)
   vi.mocked(fetchLatestRelease).mockResolvedValue(null)
@@ -68,8 +64,6 @@ describe('runStartupReleaseChecks', () => {
   })
 
   it('still refreshes the PyTorch catalog when every channel cache is fresh (first boot after upgrade)', async () => {
-    // Catalog freshness is independent of the release cache: the refresh
-    // must run even when no release fetch tasks are scheduled.
     vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: Date.now() })
     const onRefreshed = vi.fn()
     await runStartupReleaseChecks([install()], { onRefreshed })
@@ -80,17 +74,15 @@ describe('runStartupReleaseChecks', () => {
 
   it('skips the PyTorch refresh inside the floor window within one app run (dashboard prewarm spam guard)', async () => {
     vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: Date.now() })
-    let clock = 100_000_000 // beyond the floor relative to the cold-start timestamp of 0
+    let clock = 100_000_000
     const now = () => clock
     await runStartupReleaseChecks([install()], { now })
     expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(1)
 
-    // Dashboard refreshes shortly after boot must not refetch the catalog...
     clock += 5 * 60 * 1000
     await runStartupReleaseChecks([install()], { now })
     expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(1)
 
-    // ...but once the floor elapses it refreshes again.
     clock += 60 * 60 * 1000
     await runStartupReleaseChecks([install()], { now })
     expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(2)
@@ -101,17 +93,14 @@ describe('runStartupReleaseChecks', () => {
     let clock = 100_000_000
     const now = () => clock
 
-    // Failure must not advance the floor...
     vi.mocked(refreshTorchStackCatalogs).mockResolvedValueOnce(false)
     await runStartupReleaseChecks([install()], { now })
     expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(1)
 
-    // ...so the next check retries immediately and succeeds...
     clock += 1000
     await runStartupReleaseChecks([install()], { now })
     expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(2)
 
-    // ...after which the floor applies again.
     clock += 1000
     await runStartupReleaseChecks([install()], { now })
     expect(vi.mocked(refreshTorchStackCatalogs)).toHaveBeenCalledTimes(2)
@@ -151,9 +140,6 @@ describe('runStartupReleaseChecks', () => {
   })
 
   it('does not fire onRefreshed when every fetch fails (offline), so renderers are not told to re-pull', async () => {
-    // onRefreshed broadcasts installations-changed; each renderer then re-fetches installations,
-    // which re-runs this check. Announcing a failed check loops, multiplied per open window.
-    // The stale entry is still returned on failure, as the real cache does.
     const stale = { checkedAt: 1 }
     vi.mocked(releaseCache.get).mockReturnValue(stale)
     vi.mocked(releaseCache.getOrFetch).mockImplementation(getOrFetchFallingBackTo(stale))
@@ -169,7 +155,6 @@ describe('runStartupReleaseChecks', () => {
   })
 
   it('fires onRefreshed when it joins a concurrent fetch that lands a newer entry', async () => {
-    // The joined call's own fetch never runs; the fresh entry comes from the other caller.
     vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: 1 })
     vi.mocked(releaseCache.getOrFetch).mockResolvedValue({ checkedAt: 2 })
     vi.mocked(refreshTorchStackCatalogs).mockResolvedValue(false)
@@ -189,7 +174,6 @@ describe('startPeriodicReleaseChecks', () => {
   })
 
   it('refreshes the PyTorch catalog on each tick, bypassing the freshness floor', async () => {
-    // Fresh cache entry: the startup floor would skip, but the periodic poll must not.
     vi.mocked(releaseCache.get).mockReturnValue({ checkedAt: Date.now() })
     const stop = startPeriodicReleaseChecks(async () => [install()], { intervalMs: 1000 })
     await vi.advanceTimersByTimeAsync(1000)

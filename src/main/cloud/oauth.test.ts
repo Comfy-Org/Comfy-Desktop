@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
@@ -57,7 +56,7 @@ describe('oauth.refresh', () => {
   })
 
   it('keeps the prior refresh token when the server omits one', async () => {
-    stub(200, { access_token: 'a2', expires_in: 3600 }) // no refresh_token
+    stub(200, { access_token: 'a2', expires_in: 3600 })
     const t = await refresh('old-refresh', { tokenUrl: 'https://c/oauth/token' })
     expect(t.accessToken).toBe('a2')
     expect(t.refreshToken).toBe('old-refresh')
@@ -190,7 +189,6 @@ describe('oauth.signIn', () => {
       const u = new URL(authorizeUrl)
       const redirect = u.searchParams.get('redirect_uri')
       const state = u.searchParams.get('state')
-      // Simulate the browser redirect with raw http (global fetch is stubbed).
       get(`${redirect}?code=abc&state=${state}`, (res) => res.resume())
     })
     const { tokens, status } = await signIn({ ...opts, timeoutMs: 5000 })
@@ -224,8 +222,6 @@ describe('oauth.signIn', () => {
   })
 
   it('rejects on the callback timeout even when openExternal never settles', async () => {
-    // A wedged OS shell handler must not strand the sign-in (and with it the
-    // single-flight login promise) forever.
     stub(200, {})
     vi.mocked(shell.openExternal).mockImplementation(() => new Promise<void>(() => {}))
     await expect(signIn({ ...opts, timeoutMs: 250 })).rejects.toThrow(/timed out/)
@@ -258,7 +254,6 @@ describe('oauth.signIn', () => {
   it('fails fast when the browser cannot be opened, without waiting for the timeout', async () => {
     stub(200, {})
     vi.mocked(shell.openExternal).mockRejectedValue(new Error('no browser handler'))
-    // timeoutMs far beyond the test timeout proves the rejection is immediate.
     await expect(signIn({ ...opts, timeoutMs: 600_000 })).rejects.toMatchObject({
       message: 'no browser handler',
       reason: 'browser_unavailable'

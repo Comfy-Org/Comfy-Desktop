@@ -108,13 +108,11 @@ function fakeContents(url = 'https://cloud.comfy.org/'): WebContents & {
   }
 }
 
-/** Fresh module per test — the singleton AbortController lives at module scope. */
 async function loadOrchestrator(): Promise<typeof OrchestratorModule> {
   vi.resetModules()
   return await import('./index')
 }
 
-/** Resolve the flow's happy tail so the poll loop can complete. */
 function mockSignInChain(persistedUser: Record<string, unknown>): void {
   h.signInWithCustomToken.mockResolvedValue({
     idToken: 'id-token',
@@ -149,8 +147,6 @@ describe('signInViaDesktopLoginCode', () => {
     expect(outcome).toBe('fallback')
     expect(h.openExternal).not.toHaveBeenCalled()
     expect(h.showCopyLinkBanner).not.toHaveBeenCalled()
-    // The legacy path emits its own funnel events — including its own
-    // sign_in_started, so this path must not have double-counted one.
     expect(h.capture).not.toHaveBeenCalled()
     expect(h.emit).not.toHaveBeenCalled()
   })
@@ -223,8 +219,6 @@ describe('signInViaDesktopLoginCode', () => {
       expect.anything()
     )
 
-    // Assert the PKCE wiring across create and exchange: the verifier presented
-    // at exchange must be the preimage of the S256 challenge sent at create.
     const createReq = h.createDesktopLoginCode.mock.calls[0]![1] as CreateDesktopLoginCodeRequest
     const exchangeReq = h.exchangeDesktopLoginCode.mock.calls[0]![1] as {
       code: string
@@ -232,14 +226,12 @@ describe('signInViaDesktopLoginCode', () => {
     }
     expect(exchangeReq.code).toBe(GRANT.code)
     expect(codeChallengeS256(exchangeReq.code_verifier)).toBe(createReq.code_challenge)
-    // A plain-text downgrade would make these equal.
     expect(exchangeReq.code_verifier).not.toBe(createReq.code_challenge)
 
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(2)
     expect(h.signInWithCustomToken).toHaveBeenCalledWith(expect.any(String), 'custom-token-value', {
       signal: expect.any(AbortSignal)
     })
-    // The bind carries the attribution and runs only after injection succeeds.
     expect(h.bindSignedInUser).toHaveBeenCalledWith(persistedUser, contents, {
       via: 'desktop_login_code'
     })
@@ -255,7 +247,6 @@ describe('signInViaDesktopLoginCode', () => {
     expect(parentWindow.focus).toHaveBeenCalled()
     expect(h.emit).not.toHaveBeenCalled()
     expect(h.runBannerCleanup).toHaveBeenCalled()
-    // A stale legacy loopback bridge is torn down before the flow starts.
     expect(h.closeActiveBridge).toHaveBeenCalledTimes(1)
   })
 
@@ -402,17 +393,12 @@ describe('signInViaDesktopLoginCode', () => {
   })
 
   it('does not inject the session if the view navigated off the Cloud origin', async () => {
-    // The inject script carries the Firebase refresh token into the page's main
-    // world. Minutes pass between flow start and injection (browser sign-in +
-    // hold), so a view that wandered off-origin must never receive it.
     h.settingsGet.mockReturnValue(true)
     h.createDesktopLoginCode.mockResolvedValue(GRANT)
     h.exchangeDesktopLoginCode.mockResolvedValue({
       status: 'complete',
       custom_token: 'custom-token-value'
     })
-    // The sign-in chain must succeed, otherwise the flow dies before the
-    // injection and this test would pass with the guard removed.
     mockSignInChain({ uid: 'uid-1' })
     const mod = await loadOrchestrator()
     const contents = fakeContents()
@@ -425,8 +411,6 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
-    // The token was minted and the user assembled — only the origin check
-    // stands between it and the foreign page.
     expect(h.buildPersistedUserFromCustomToken).toHaveBeenCalled()
     expect(contents.mainFrame.executeJavaScript).not.toHaveBeenCalledWith(
       expect.stringContaining('location.reload()'),
@@ -477,9 +461,6 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
-    // error_status carries the HTTP status so a verifier mismatch (403) is
-    // distinguishable from an old backend (404) or a 5xx. Without it every
-    // failure collapses into the same error_class/error_bucket pair.
     expect(h.emit).toHaveBeenCalledWith('comfy.desktop.auth.sign_in_failed', {
       provider: 'google.com',
       error_class: 'DesktopLoginCodeError',
@@ -514,8 +495,6 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.runAllTimersAsync()
 
     expect(await promise).toBe('handled')
-    // Polls at t=3s and t=6s; the t=9s wake-up is past the 7s deadline
-    // but still makes one final exchange attempt before giving up.
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(3)
     expect(h.emit).toHaveBeenCalledWith(
       'comfy.desktop.auth.sign_in_failed',
@@ -540,8 +519,6 @@ describe('signInViaDesktopLoginCode', () => {
     h.exchangeDesktopLoginCode
       .mockResolvedValueOnce({ status: 'pending' })
       .mockResolvedValueOnce({ status: 'pending' })
-      // t=9s: past the 7s deadline, but the backend's 120s post-redeem
-      // window still honors the exchange.
       .mockResolvedValueOnce({ status: 'complete', custom_token: 'late-token' })
     mockSignInChain({ uid: 'uid-1' })
     const mod = await loadOrchestrator()
@@ -593,17 +570,13 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.advanceTimersByTimeAsync(3500)
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
 
-    // Second click: the new attempt cancels the stale poll loop. Its own
-    // create fails fast so the test doesn't leave a flow in flight.
     h.createDesktopLoginCode.mockRejectedValueOnce(new Error('create failed'))
     const second = mod.signInViaDesktopLoginCode(AUTH_URL, fakeContents(), {})
 
     expect(await first).toBe('handled')
     expect(await second).toBe('fallback')
-    // A superseded attempt is not a failure.
     expect(h.emit).not.toHaveBeenCalled()
 
-    // The stale loop is dead: no further polls happen.
     await vi.advanceTimersByTimeAsync(30_000)
     expect(h.exchangeDesktopLoginCode).toHaveBeenCalledTimes(1)
   })
@@ -638,7 +611,6 @@ describe('signInViaDesktopLoginCode', () => {
       status: 'complete',
       custom_token: 'token-a'
     })
-    // Park flow A inside the tail, on the custom-token sign-in.
     let resolveSignIn!: (value: unknown) => void
     h.signInWithCustomToken.mockImplementation(
       () => new Promise((resolve) => (resolveSignIn = resolve))
@@ -659,8 +631,6 @@ describe('signInViaDesktopLoginCode', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(h.signInWithCustomToken).toHaveBeenCalledTimes(1)
 
-    // Re-click while A is mid-tail: B aborts A, then fails create fast so
-    // the test doesn't leave a second flow in flight.
     h.createDesktopLoginCode.mockRejectedValueOnce(new Error('create failed'))
     const second = mod.signInViaDesktopLoginCode(AUTH_URL, contents, {})
     const bannerCleanupsAfterSecondStart = h.runBannerCleanup.mock.calls.length
@@ -669,15 +639,11 @@ describe('signInViaDesktopLoginCode', () => {
     expect(await first).toBe('handled')
     expect(await second).toBe('fallback')
 
-    // The superseded flow ran none of its tail: no lookup, no identity
-    // bind/attribution, no inject, no focus steal...
     expect(h.lookupAccount).not.toHaveBeenCalled()
     expect(h.bindSignedInUser).not.toHaveBeenCalled()
     expect(contents.mainFrame.executeJavaScript).not.toHaveBeenCalled()
     expect(parentWindow.focus).not.toHaveBeenCalled()
-    // ...and did not tear down the newer flow's banner on the way out.
     expect(h.runBannerCleanup).toHaveBeenCalledTimes(bannerCleanupsAfterSecondStart)
-    // A superseded attempt is not a failure.
     expect(h.emit).not.toHaveBeenCalled()
   })
 
@@ -690,12 +656,9 @@ describe('signInViaDesktopLoginCode', () => {
       {}
     )
 
-    // The prod backend would mint a prod custom token the dev Firebase
-    // project rejects — the legacy bridge owns dev sign-ins.
     expect(outcome).toBe('fallback')
     expect(h.createDesktopLoginCode).not.toHaveBeenCalled()
     expect(h.openExternal).not.toHaveBeenCalled()
-    // The legacy path emits its own sign_in_started.
     expect(h.capture).not.toHaveBeenCalled()
   })
 

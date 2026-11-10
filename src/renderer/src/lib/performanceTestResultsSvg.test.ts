@@ -18,7 +18,7 @@ describe('createPerformanceTestResultsSvg', () => {
 
     expect(svg).toContain('<svg')
     expect(svg).toContain('role="img" aria-label="Comfy"')
-    expect(svg).toContain('fill="#F2FF59"')
+    expect(svg).toContain('fill="#ffffff"')
     expect(svg).toContain('<path d="M170.474')
     expect(svg).toContain('Performance Test: cat-workflow.json')
     expect(svg).toContain('Sep 11, 2026, 12:34 PM')

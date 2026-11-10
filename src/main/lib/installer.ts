@@ -7,13 +7,6 @@ import { isDownloadComplete } from './download'
 import type { DownloadProgress } from './download'
 import type { ExtractProgress } from './extract'
 
-/** Per-phase boundary signal for `comfy.desktop.install.phase` telemetry. The
- *  installer owns the genuine download↔extract seam (the two are one call from
- *  the caller's view but distinct work here), so it reports the boundaries; the
- *  caller in `install.ts` maps them to the consent-gated telemetry pipeline with
- *  the installation_id / variant it holds. Optional + best-effort so a throwing
- *  callback never breaks an install. `info.error` is pre-bucketed by the caller's
- *  emitter — the installer only forwards the raw Error for classification. */
 export type InstallPhaseName = 'download' | 'extract'
 export type InstallPhaseStatus = 'start' | 'end' | 'error'
 export interface InstallerContext {
@@ -32,7 +25,6 @@ export interface InstallerContext {
     options?: { signal?: AbortSignal }
   ) => Promise<void>
   signal?: AbortSignal
-  /** Optional per-phase boundary tap. See `InstallPhaseName`. */
   onPhase?: (
     phase: InstallPhaseName,
     status: InstallPhaseStatus,
@@ -40,25 +32,18 @@ export interface InstallerContext {
   ) => void
 }
 
-/** Run an installer phase, emitting start/end/error boundaries through the
- *  optional `onPhase` tap. Re-throws so existing control flow (cancel, retry)
- *  is unchanged; telemetry is a pure side-channel. */
 async function withInstallPhase<T>(
   onPhase: InstallerContext['onPhase'],
   phase: InstallPhaseName,
   fn: () => Promise<T>
 ): Promise<T> {
-  // The phase tap is a pure side-channel; a throwing `onPhase` must never abort
-  // or mask the install, so every invocation is isolated.
   const safeOnPhase = (
     status: InstallPhaseStatus,
     info?: { durationMs?: number; error?: unknown }
   ): void => {
     try {
       onPhase?.(phase, status, info)
-    } catch {
-      // swallow: telemetry failures don't affect install control flow
-    }
+    } catch {}
   }
   safeOnPhase('start')
   const t0 = Date.now()
@@ -78,8 +63,6 @@ interface DownloadFile {
   size: number
 }
 
-// Per-cache-path lock so concurrent installs don't write the same file; the
-// second caller waits, then hits the cache and skips the download.
 const _downloadLocks = new Map<string, Promise<void>>()
 
 interface DownloadLockOptions {

@@ -1,11 +1,3 @@
-/**
- * CloudSession - the one object the app (and its UI) drives for auth + workspace.
- *
- * Ties the PKCE flow, the encrypted token store, and the workspace client into a
- * single facade, and exposes a {@link TokenProvider} so the comfy-builder client
- * can pull a fresh bearer token without ever seeing the store. Tokens never leave
- * the main process; the UI only ever gets {@link AuthStatus} + {@link Workspace}.
- */
 import type { TokenProvider } from '../comfybuilder'
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
@@ -16,8 +8,8 @@ import {
   activateWorkspace,
   clearTokens,
   dropWorkspaceToken,
+  endGrant,
   getAuthStatus,
-  isMintScopeWithheld,
   loadActiveWorkspaceId,
   loadGrant,
   loadWorkspaceToken,
@@ -39,24 +31,20 @@ import { classifyMint, mintWorkspaceToken } from './workspaceToken'
 import type { ReauthorizeReason, WorkspaceMintOutcome } from './workspaceToken'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
-/** Refresh or re-mint an access token this many ms before it actually expires. */
 const REFRESH_SKEW_MS = 60_000
+const MAX_MINT_BLOCK_MS = 5 * 60_000
 
-/** One event per switch decision. `outcome` is how the goal of no further consent is measured. */
 export const WORKSPACE_SWITCH_EVENT = 'comfy.desktop.auth.workspace_switch'
-/** Mirrored to Datadog: every browser trip a workspace switch causes. */
 export const WORKSPACE_SWITCH_BROWSER_EVENT = 'comfy.desktop.auth.workspace_switch_browser'
-/** Mirrored to Datadog: a browser sign-in returned a grant without the mint scope. */
 export const MINT_SCOPE_NOT_GRANTED_EVENT = 'comfy.desktop.auth.mint_scope_not_granted'
-/** Mirrored to Datadog: a token read could not renew the active workspace, so it went back to the anchor. */
 export const WORKSPACE_RETURNED_TO_ANCHOR_EVENT = 'comfy.desktop.auth.workspace_returned_to_anchor'
 
-/** What `switchWorkspace` resolves with. `reachedThroughConsent` is for main only and never crosses IPC. */
 export interface SessionSwitchReply extends WorkspaceSwitchStatus {
+  reached: boolean
   reachedThroughConsent?: true
 }
 
-type WorkspaceSwitchOutcome =
+type SwitchTelemetryOutcome =
   | 'cached'
   | 'anchor'
   | 'minted'
@@ -96,7 +84,7 @@ function refreshFailureOutcome(refreshed: GrantRefresh): SettledMintOutcome {
   return refreshed === 'ended' ? { kind: 'reauthorize', reason: 'grant_ended' } : RETRYABLE
 }
 
-function reportSwitch(outcome: WorkspaceSwitchOutcome, reason?: SwitchReason): void {
+function reportSwitch(outcome: SwitchTelemetryOutcome, reason?: SwitchReason): void {
   mainTelemetry.emit(
     WORKSPACE_SWITCH_EVENT,
     reason ? { outcome, reauthorize_reason: reason } : { outcome }
@@ -110,6 +98,7 @@ function reportBrowser(reason: ReauthorizeReason): void {
 
 export class CloudSession {
   private readonly refreshing = new Map<string, Promise<GrantRefresh>>()
+  private readonly rotatedTo = new Map<string, string>()
   private readonly minting = new Map<string, Promise<SettledMintOutcome>>()
   private switching: { workspaceId: string; result: Promise<SessionSwitchReply> } | null = null
   private switchIntent: WorkspaceSwitchIntent = 'chosen'
@@ -118,25 +107,18 @@ export class CloudSession {
   private loginAuthorizeUrl: string | null = null
   private returnedToAnchorHandler: (() => void) | null = null
 
-  /** Latest auth intent. Older flows may finish, but cannot change what a newer
-   *  login, workspace switch, or logout chose. */
   private authGeneration = 0
 
-  /** The one mint policy: the grant's anchor always, any other workspace unless the ops flag killed it. */
   async isWorkspaceMintAllowed(workspaceId: string): Promise<boolean> {
     const grant = loadGrant()
     if (grant && workspaceIdOf(grant.accessToken) === workspaceId) return true
     return isWorkspaceMintSwitchEnabled()
   }
 
-  /** Called after a token read moved the active workspace back to the anchor. */
   setReturnedToAnchorHandler(handler: () => void): void {
     this.returnedToAnchorHandler = handler
   }
 
-  /** Start the PKCE sign-in (system browser); persists tokens on success.
-   *  A repeat request while one is pending reopens its browser page, since the
-   *  user may have closed it or hit an IdP error there. */
   login(): Promise<AuthStatus> {
     if (this.loginInFlight) {
       if (this.loginAuthorizeUrl) void openAuthorizePage(this.loginAuthorizeUrl).catch(() => {})
@@ -166,9 +148,9 @@ export class CloudSession {
 
   private storeSignedInGrant(tokens: AuthTokens): void {
     this.mintBlockedUntil = 0
-    const mintScopeWithheld = !canMintWorkspaceTokens(tokens.accessToken)
-    saveGrant(tokens, { mintScopeWithheld })
-    if (mintScopeWithheld) mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
+    saveGrant(tokens)
+    if (!canMintWorkspaceTokens(tokens.accessToken))
+      mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
   }
 
   private clearPendingLogin(): void {
@@ -176,7 +158,6 @@ export class CloudSession {
     this.loginAuthorizeUrl = null
   }
 
-  /** Forget tokens. Installed environments are untouched. */
   logout(): void {
     this.authGeneration += 1
     this.switching = null
@@ -193,29 +174,29 @@ export class CloudSession {
     return getAuthStatus().signedIn
   }
 
-  /** Bumped by every login, workspace switch and logout. */
   currentAuthGeneration(): number {
     return this.authGeneration
   }
 
-  /** The account the grant belongs to, or null when signed out. */
   currentSubject(): string | null {
     const grant = loadGrant()
     return grant ? subjectOf(grant.accessToken) : null
   }
 
-  /** The grant's refresh family, which a new sign-in replaces even for the same account. */
   currentGrantFamily(): string | null {
     const grant = loadGrant()
     return grant ? grantFamilyOf(grant.accessToken) : null
   }
 
-  /** The active workspace, or null when signed out. */
   currentWorkspaceId(): string | null {
     return loadActiveWorkspaceId()
   }
 
-  /** The grant's access token for minting and scope checks. After a failed refresh it is the stale one. */
+  heldWorkspaceToken(workspaceId: string): string | null {
+    const held = loadWorkspaceToken(workspaceId)
+    return held && held.expiresAt > Date.now() ? held.accessToken : null
+  }
+
   async getGrantAccessToken(): Promise<string | null> {
     const grant = loadGrant()
     if (!grant) return null
@@ -225,8 +206,6 @@ export class CloudSession {
     return this.currentSubject() === subject ? (loadGrant()?.accessToken ?? null) : null
   }
 
-  /** The token for API calls in the active workspace, null when it cannot get one.
-   *  A definitively refused grant returns its stale token, so the API's 401 ends the session. */
   async getAccessToken(): Promise<string | null> {
     const grant = loadGrant()
     if (!grant) return null
@@ -283,7 +262,9 @@ export class CloudSession {
 
   private async rotateGrant(grant: AuthTokens, refreshToken: string): Promise<GrantRefresh> {
     try {
-      replaceGrant(grant.accessToken, refreshToken, await refresh(refreshToken))
+      const rotated = await refresh(refreshToken)
+      if (replaceGrant(grant.accessToken, refreshToken, rotated))
+        this.rotatedTo.set(grant.accessToken, rotated.accessToken)
       return 'refreshed'
     } catch (error) {
       return isDefinitiveRefreshRefusal(error) ? 'ended' : 'unavailable'
@@ -339,11 +320,7 @@ export class CloudSession {
         return refreshFailureOutcome(refreshed)
     }
     const first = await this.postMint(workspaceId, generation, subject)
-    if (
-      first.kind !== 'unauthorized' &&
-      !(first.kind === 'reauthorize' && first.reason === 'grant_ended')
-    )
-      return first
+    if (first.kind !== 'unauthorized') return first
     const current = loadGrant()
     if (!current) return RETRYABLE
     const refreshed = await this.refreshGrant(current)
@@ -366,18 +343,27 @@ export class CloudSession {
     )
       return RETRYABLE
     const outcome = classifyMint(await mintWorkspaceToken(grant.accessToken, workspaceId))
+    if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended') {
+      this.endGrantFamily(grant.accessToken)
+    }
     if (
       outcome.kind === 'retryable' &&
       outcome.retryAfterSeconds !== undefined &&
       generation === this.authGeneration &&
       subjectOf(grant.accessToken) === this.currentSubject()
     ) {
-      this.mintBlockedUntil = Date.now() + outcome.retryAfterSeconds * 1000
+      this.mintBlockedUntil =
+        Date.now() + Math.min(outcome.retryAfterSeconds * 1000, MAX_MINT_BLOCK_MS)
     }
     return outcome
   }
 
-  /** The signed-in user's workspaces; unavailable catalogs reject rather than imply removal. */
+  endGrantFamily(accessToken: string): void {
+    for (let token: string | undefined = accessToken; token; token = this.rotatedTo.get(token)) {
+      endGrant(token)
+    }
+  }
+
   async listWorkspaces(): Promise<Workspace[]> {
     const token = await this.getGrantAccessToken()
     if (!token) return []
@@ -386,22 +372,18 @@ export class CloudSession {
     return workspaces
   }
 
-  /** Members of the active workspace, used to resolve Builder creator ids. */
   async listWorkspaceMembers(): Promise<WorkspaceMember[]> {
     const token = await this.getAccessToken()
     if (!token) return []
     return listWorkspaceMembers(token)
   }
 
-  /** Activate `workspaceId`. Only a refused grant, an SSO policy, a missing mint scope or a
-   *  mint kill switch opens the browser, and only for a `chosen` switch; every other failure
-   *  stays put and says so. */
   switchWorkspace(
     workspaceId: string,
     intent: WorkspaceSwitchIntent = 'chosen'
   ): Promise<SessionSwitchReply> {
     if (this.switching?.workspaceId === workspaceId) {
-      if (intent === 'chosen') this.switchIntent = 'chosen'
+      if (intent === 'chosen' || this.switchIntent === 'restored') this.switchIntent = intent
       return this.switching.result
     }
     this.clearPendingLogin()
@@ -416,15 +398,18 @@ export class CloudSession {
 
   private async runSwitch(workspaceId: string, generation: number): Promise<SessionSwitchReply> {
     const grant = loadGrant()
-    if (!grant) return this.status()
+    if (!grant) return this.unreached()
     if (workspaceId === workspaceIdOf(grant.accessToken)) {
       return this.switchToAnchor(workspaceId, generation, grant)
     }
     const held = loadWorkspaceToken(workspaceId)
     if (held && held.expiresAt > Date.now()) return this.activated(workspaceId, 'cached')
+    if (this.switchIntent === 'requested') {
+      return this.reauthorize(workspaceId, generation, 'view_requested')
+    }
 
     const outcome = await this.mintForWorkspace(workspaceId, generation)
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) return this.unreached()
     switch (outcome.kind) {
       case 'minted':
         return this.activated(workspaceId, 'minted')
@@ -438,10 +423,6 @@ export class CloudSession {
         reportSwitch('retryable')
         return this.stayed('retryable')
       case 'reauthorize':
-        if (outcome.reason === 'mint_scope_missing' && isMintScopeWithheld()) {
-          reportSwitch('retryable', 'scope_not_granted')
-          return this.stayed('retryable')
-        }
         return this.reauthorize(workspaceId, generation, outcome.reason)
     }
   }
@@ -453,7 +434,7 @@ export class CloudSession {
   ): Promise<SessionSwitchReply> {
     if (!isFresh(grant)) {
       const refreshed = await this.refreshGrant(grant)
-      if (generation !== this.authGeneration) return this.status()
+      if (generation !== this.authGeneration) return this.unreached()
       if (refreshed === 'ended') return this.reauthorize(workspaceId, generation, 'grant_ended')
       if (refreshed === 'unavailable' && isExpired(grant)) {
         reportSwitch('retryable')
@@ -463,14 +444,18 @@ export class CloudSession {
     return this.activated(workspaceId, 'anchor')
   }
 
-  private activated(workspaceId: string, outcome: WorkspaceSwitchOutcome): WorkspaceSwitchStatus {
+  private activated(workspaceId: string, outcome: SwitchTelemetryOutcome): SessionSwitchReply {
     activateWorkspace(workspaceId)
     reportSwitch(outcome)
-    return this.status()
+    return { ...this.status(), reached: true }
   }
 
-  private stayed(failure: WorkspaceSwitchFailure): WorkspaceSwitchStatus {
-    return { ...this.status(), workspaceSwitchFailure: failure }
+  private stayed(failure: WorkspaceSwitchFailure): SessionSwitchReply {
+    return { ...this.status(), workspaceSwitchFailure: failure, reached: false }
+  }
+
+  private unreached(): SessionSwitchReply {
+    return { ...this.status(), reached: false }
   }
 
   private async reauthorize(
@@ -494,9 +479,9 @@ export class CloudSession {
       }))
     } catch {
       if (!browserOpened) reportSwitch('retryable', reason)
-      return generation === this.authGeneration ? this.stayed('retryable') : this.status()
+      return generation === this.authGeneration ? this.stayed('retryable') : this.unreached()
     }
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) return this.unreached()
     this.storeSignedInGrant(tokens)
 
     const canMint = canMintWorkspaceTokens(tokens.accessToken)
@@ -504,26 +489,25 @@ export class CloudSession {
     if (!canMint) reportSwitch(isAnchor ? 'anchor' : 'retryable', 'scope_not_granted')
     if (isAnchor) {
       activateWorkspace(workspaceId)
-      return this.afterConsent(this.status(), tokens)
+      return this.afterConsent({ ...this.status(), reached: true }, tokens)
     }
     if (!canMint) return this.afterConsent(this.stayed('retryable'), tokens)
 
     const outcome = await this.mintForWorkspace(workspaceId, generation)
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) return this.unreached()
     if (outcome.kind === 'minted') {
       activateWorkspace(workspaceId)
-      return this.status()
+      return { ...this.status(), reached: true }
     }
     const unavailable = outcome.kind === 'unavailable' || outcome.kind === 'refused'
     return this.afterConsent(this.stayed(unavailable ? 'unavailable' : 'retryable'), tokens)
   }
 
-  private afterConsent(reply: WorkspaceSwitchStatus, tokens: AuthTokens): SessionSwitchReply {
+  private afterConsent(reply: SessionSwitchReply, tokens: AuthTokens): SessionSwitchReply {
     const reached = loadActiveWorkspaceId() === workspaceIdOf(tokens.accessToken)
     return reached ? { ...reply, reachedThroughConsent: true } : reply
   }
 
-  /** Adapter for the comfy-builder client's auth seam. */
   asTokenProvider(onSignedOut?: () => void): TokenProvider {
     return {
       getAccessToken: () => this.getAccessToken(),

@@ -46,9 +46,6 @@ describe('sanitizeNvidiaDriverVersion', () => {
   })
 
   it('rejects nvidia-smi output that is not a version', () => {
-    // The structured query path takes the first non-empty stdout line; a
-    // warning or header there must read as "not detected", never as a
-    // version for numeric comparison.
     expect(sanitizeNvidiaDriverVersion('No devices were found')).toBeUndefined()
     expect(sanitizeNvidiaDriverVersion('WARNING: infoROM is corrupted')).toBeUndefined()
     expect(sanitizeNvidiaDriverVersion('.580')).toBeUndefined()
@@ -140,8 +137,6 @@ describe('selectPrimaryGpu', () => {
       gpu('', 'Intel UHD Graphics 770', 2048),
       gpu('', 'NVIDIA GeForce RTX 4090', 24576)
     ]
-    // Without model matching, the empty-vendor NVIDIA card would be skipped and
-    // the higher-VRAM card picked by tie-break regardless of vendor.
     expect(selectPrimaryGpu(gpus, 'nvidia')?.model).toBe('NVIDIA GeForce RTX 4090')
     expect(selectPrimaryGpu(gpus, 'intel')?.model).toBe('Intel UHD Graphics 770')
   })
@@ -246,12 +241,9 @@ describe('checkLinuxAmdKfdAccess', () => {
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: realPlatform })
-    // A read-only node from the access test blocks rmSync on Windows.
     try {
       fs.chmodSync(path.join(tmpDir, 'kfd'), 0o600)
-    } catch {
-      /* node may not exist */
-    }
+    } catch {}
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 

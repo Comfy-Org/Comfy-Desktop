@@ -1,13 +1,5 @@
 import { perceivedLuminance, LUMINANCE_LIGHT_THRESHOLD } from '../../../shared/colorLuminance'
 
-/**
- * Whether a CSS color reads as "light" (so chrome should switch to its dark/`.is-light`
- * variant). Normalises any CSS color to `#rrggbb` via a throwaway canvas — the only reliable
- * way to resolve named/`rgb()`/`hsl()` inputs in the renderer — then runs the shared
- * perceived-luminance test. Returns `false` for empty / unresolvable colors so the default
- * stays dark. Renderer-only (depends on `document`); main uses `readableSymbolColor` in
- * `src/main/lib/theme.ts`, which shares the same luminance math.
- */
 export function isColorLight(color: string | null | undefined): boolean {
   if (!color) return false
   const ctx = document.createElement('canvas').getContext('2d')

@@ -186,12 +186,9 @@ describe('comfyPreload template input asset bridge', () => {
     })
     await bridge.downloadTemplateInputAsset('template-a', 'asset-a')
 
-    // The first job fails, which is when the id mapping is dropped.
     downloadProgressHandler()({}, downloadProgress('download-1', 'error'))
     const callsBeforeRetry = callback.mock.calls.length
 
-    // A retry from the tray mints a new id this renderer has never seen. The
-    // host names the input on the event, so it still reaches the view.
     downloadProgressHandler()(
       {},
       {

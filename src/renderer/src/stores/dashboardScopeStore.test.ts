@@ -1,4 +1,5 @@
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import type { AuthStatus, Workspace } from '../../../types/ipc'
@@ -46,7 +47,7 @@ describe('useDashboardScopeStore', () => {
       authChanged = cb
       return () => {}
     })
-    vi.stubGlobal('window', { api })
+    stubWindowApi(api)
   })
 
   afterEach(() => {

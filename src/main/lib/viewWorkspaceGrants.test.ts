@@ -4,7 +4,10 @@ import { Buffer } from 'node:buffer'
 import type { WebContents } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('../devplatform/session', () => ({ getCloudSession: () => ({}) }))
+vi.mock('../devplatform/session', () => ({
+  getCloudSession: () => ({}),
+  rejectAccessToken: vi.fn()
+}))
 vi.mock('./telemetry', () => ({ emit: vi.fn() }))
 
 import { CLOUD_CONFIG, WORKSPACE_MINT_SCOPE } from '../cloud/config'
@@ -59,6 +62,7 @@ let mint: ReturnType<
   typeof vi.fn<(token: string, workspaceId: string) => Promise<WorkspaceTokenMint>>
 >
 let grants: ViewWorkspaceGrants
+let rejected: string[]
 
 function signInAt(workspaceId: string | null): void {
   current = workspaceId
@@ -66,7 +70,8 @@ function signInAt(workspaceId: string | null): void {
 }
 
 function grantSession(
-  getGrantAccessToken: () => Promise<string | null>
+  getGrantAccessToken: () => Promise<string | null>,
+  heldWorkspaceToken: (workspaceId: string) => string | null = () => null
 ): ConstructorParameters<typeof ViewWorkspaceGrants>[0] {
   return {
     currentWorkspaceId: () => current,
@@ -74,7 +79,9 @@ function grantSession(
     currentGrantFamily: () => null,
     currentAuthGeneration: () => generation,
     getGrantAccessToken,
-    isWorkspaceMintAllowed: async () => true
+    heldWorkspaceToken,
+    isWorkspaceMintAllowed: async () => true,
+    endGrantFamily: () => {}
   }
 }
 
@@ -84,9 +91,11 @@ beforeEach(() => {
   generation = 0
   signInAt('ws-1')
   mint = vi.fn(async (_token: string, workspaceId: string) => minted(workspaceId))
+  rejected = []
   grants = new ViewWorkspaceGrants(
     grantSession(async () => (current ? accessToken('ws-1') : null)),
-    mint
+    mint,
+    (token) => rejected.push(token)
   )
 })
 
@@ -127,6 +136,7 @@ describe('ViewWorkspaceGrants', () => {
   it.each<[string, () => string]>([
     ['another workspace', () => jwt({ sub: user, workspace_id: 'ws-9' })],
     ['another account', () => jwt({ sub: 'user-9', workspace_id: 'ws-1' })],
+    ['a token that can mint', () => accessToken('ws-1')],
     ['a token with no claims', () => 'opaque-token']
   ])('refuses and does not cache a minted token for %s', async (_name, token) => {
     mint.mockResolvedValueOnce({ kind: 'minted', token: token(), expiresAt: Date.now() + 900_000 })
@@ -135,6 +145,17 @@ describe('ViewWorkspaceGrants', () => {
     await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(mintedToken('ws-1'))
 
     expect(mint).toHaveBeenCalledTimes(2)
+  })
+
+  it('signs Desktop out when Cloud rejects the grant at the mint, and not for other failures', async () => {
+    mint.mockResolvedValueOnce({ kind: 'failed', status: 403 })
+    await grants.tokenFor(viewA, 'ws-1')
+    expect(rejected).toEqual([])
+
+    mint.mockResolvedValueOnce({ kind: 'failed', status: 401 })
+    expect(await grants.tokenFor(viewA, 'ws-1')).toBeNull()
+
+    expect(rejected).toEqual([accessToken('ws-1')])
   })
 
   it('reuses a minted token until it nears expiry', async () => {
@@ -287,14 +308,42 @@ describe('ViewWorkspaceGrants', () => {
     await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
   })
 
-  it('hands out nothing, and does not ask Cloud, for a grant without the mint scope', async () => {
+  it('hands out the grant itself, without asking Cloud, when it cannot mint', async () => {
     grants = new ViewWorkspaceGrants(
       grantSession(async () => accessToken('ws-1', 'comfy-cloud:user:read')),
       mint
     )
 
-    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(
+      accessToken('ws-1', 'comfy-cloud:user:read')
+    )
     expect(mint).not.toHaveBeenCalled()
+  })
+
+  it('hands a view the token Desktop holds for a workspace it reached without the mint scope', async () => {
+    const held = accessToken('ws-1', 'comfy-cloud:user:read')
+    grants = new ViewWorkspaceGrants(
+      grantSession(
+        async () => accessToken('ws-2', 'comfy-cloud:user:read'),
+        () => held
+      ),
+      mint
+    )
+
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBe(held)
+    expect(mint).not.toHaveBeenCalled()
+  })
+
+  it('never hands out a token that can mint, even one Desktop holds for the workspace', async () => {
+    grants = new ViewWorkspaceGrants(
+      grantSession(
+        async () => accessToken('ws-2', 'comfy-cloud:user:read'),
+        () => accessToken('ws-1')
+      ),
+      mint
+    )
+
+    await expect(grants.tokenFor(viewA, 'ws-1')).resolves.toBeNull()
   })
 
   it('never hands one account a token minted for another account in the same workspace', async () => {
@@ -386,6 +435,7 @@ describe('ViewWorkspaceGrants partner-node tokens', () => {
         isWorkspaceMintAllowed: async () => mintScopeAllowed
       },
       mint,
+      undefined,
       { mint: partnerMint, renew: partnerRenew }
     )
   }
@@ -742,6 +792,7 @@ describe('ViewWorkspaceGrants partner-node tokens', () => {
           currentGrantFamily: () => family
         },
         mint,
+        undefined,
         { mint: partnerMint, renew: partnerRenew }
       )
     })

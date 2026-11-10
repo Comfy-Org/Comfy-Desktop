@@ -1,7 +1,6 @@
 import { useI18n } from 'vue-i18n'
 import { useModal } from './useModal'
 
-// Title-bar app-update pill prompts, shown as confirm modals.
 export function useAppUpdatePrompts(): {
   showAppUpdateRestartPrompt: (version: string | null) => Promise<void>
   showAppUpdateDownloadPrompt: (version: string | null) => Promise<void>
@@ -13,7 +12,6 @@ export function useAppUpdatePrompts(): {
     return version ? `v${version}` : t('appUpdate.fallbackVersion')
   }
 
-  // Confirm → install & relaunch; cancel leaves the pill for later.
   async function showAppUpdateRestartPrompt(version: string | null): Promise<void> {
     const ok = await modal.confirm({
       title: t('appUpdate.readyTitle'),
@@ -25,7 +23,6 @@ export function useAppUpdatePrompts(): {
     await window.api.installUpdate()
   }
 
-  // Confirm → start the download; the restart prompt fires on download-complete.
   async function showAppUpdateDownloadPrompt(version: string | null): Promise<void> {
     const ok = await modal.confirm({
       title: t('appUpdate.availableTitle'),

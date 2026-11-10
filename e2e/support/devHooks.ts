@@ -1,8 +1,3 @@
-/**
- * Test-side wrappers around the main-process `globalThis.__e2e` helpers.
- * Must stay in sync with what `src/main/lib/e2eHooks.ts` exposes.
- */
-
 import type { ElectronApplication } from 'playwright'
 import { evalWithRetry } from './evalRetry'
 
@@ -47,169 +42,207 @@ export interface PopupBoundsResult {
 
 export async function seedDownloads(
   app: ElectronApplication,
-  snapshot: DownloadsTrayStateLike,
+  snapshot: DownloadsTrayStateLike
 ): Promise<void> {
-  await evalWithRetry(() => app.evaluate((_electron, s) => {
-    const helpers = (globalThis as unknown as { __e2e?: { seedDownloads: (s: unknown) => void } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.seedDownloads(s)
-  }, snapshot))
+  await evalWithRetry(() =>
+    app.evaluate((_electron, s) => {
+      const helpers = (globalThis as unknown as { __e2e?: { seedDownloads: (s: unknown) => void } })
+        .__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.seedDownloads(s)
+    }, snapshot)
+  )
 }
 
-/** Live downloads tray snapshot from main (`active` in-flight + `recent`
- *  terminal entries) - the read counterpart to `seedDownloads`. */
 export async function getLiveDownloadsTrayState(
-  app: ElectronApplication,
+  app: ElectronApplication
 ): Promise<DownloadsTrayStateLike> {
-  return evalWithRetry(() => app.evaluate((_electron) => {
-    const helpers = (globalThis as unknown as { __e2e?: { getDownloadsTrayState: () => unknown } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.getDownloadsTrayState() as { active: unknown[]; recent: unknown[] }
-  })) as Promise<DownloadsTrayStateLike>
+  return evalWithRetry(() =>
+    app.evaluate((_electron) => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { getDownloadsTrayState: () => unknown } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.getDownloadsTrayState() as { active: unknown[]; recent: unknown[] }
+    })
+  ) as Promise<DownloadsTrayStateLike>
 }
 
 export async function setInstallUpdate(
   app: ElectronApplication,
-  opts: { installationId?: string; available: boolean; version?: string },
+  opts: { installationId?: string; available: boolean; version?: string }
 ): Promise<void> {
-  await evalWithRetry(() => app.evaluate((_electron, o) => {
-    const helpers = (globalThis as unknown as { __e2e?: { setInstallUpdate: (o: unknown) => void } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.setInstallUpdate(o)
-  }, opts))
+  await evalWithRetry(() =>
+    app.evaluate((_electron, o) => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { setInstallUpdate: (o: unknown) => void } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.setInstallUpdate(o)
+    }, opts)
+  )
 }
 
 export async function setAppUpdateState(
   app: ElectronApplication,
-  state: AppUpdateStateLike,
+  state: AppUpdateStateLike
 ): Promise<void> {
-  await evalWithRetry(() => app.evaluate((_electron, s) => {
-    const helpers = (globalThis as unknown as { __e2e?: { setAppUpdateState: (s: unknown) => void } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.setAppUpdateState(s)
-  }, state))
+  await evalWithRetry(() =>
+    app.evaluate((_electron, s) => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { setAppUpdateState: (s: unknown) => void } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.setAppUpdateState(s)
+    }, state)
+  )
 }
 
 export async function getTitlePopupBounds(
-  app: ElectronApplication,
+  app: ElectronApplication
 ): Promise<PopupBoundsResult | null> {
-  return await evalWithRetry(() => app.evaluate(() => {
-    const helpers = (globalThis as unknown as { __e2e?: { getTitlePopupBounds: () => unknown } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.getTitlePopupBounds() as PopupBoundsResult | null
-  }))
+  return await evalWithRetry(() =>
+    app.evaluate(() => {
+      const helpers = (globalThis as unknown as { __e2e?: { getTitlePopupBounds: () => unknown } })
+        .__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.getTitlePopupBounds() as PopupBoundsResult | null
+    })
+  )
 }
 
 export async function returnFirstInstallHostToDashboard(
-  app: ElectronApplication,
+  app: ElectronApplication
 ): Promise<number | null> {
-  return await evalWithRetry(() => app.evaluate(async () => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { returnFirstInstallHostToDashboard: () => Promise<number | null> }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.returnFirstInstallHostToDashboard()
-  }))
+  return await evalWithRetry(() =>
+    app.evaluate(async () => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { returnFirstInstallHostToDashboard: () => Promise<number | null> }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.returnFirstInstallHostToDashboard()
+    })
+  )
 }
 
-/** Recorded args for an instrumented IPC channel since the last reset. */
 export async function getIpcInvocations(
   app: ElectronApplication,
-  channel: string,
+  channel: string
 ): Promise<unknown[]> {
-  return await evalWithRetry(() => app.evaluate((_electron, c) => {
-    const helpers = (globalThis as unknown as { __e2e?: { getIpcInvocations: (c: string) => unknown[] } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.getIpcInvocations(c)
-  }, channel))
+  return await evalWithRetry(() =>
+    app.evaluate((_electron, c) => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { getIpcInvocations: (c: string) => unknown[] } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.getIpcInvocations(c)
+    }, channel)
+  )
 }
 
 export async function resetIpcInvocations(
   app: ElectronApplication,
-  channel?: string,
+  channel?: string
 ): Promise<void> {
-  await evalWithRetry(() => app.evaluate((_electron, c) => {
-    const helpers = (globalThis as unknown as { __e2e?: { resetIpcInvocations: (c?: string) => void } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.resetIpcInvocations(c)
-  }, channel))
+  await evalWithRetry(() =>
+    app.evaluate((_electron, c) => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { resetIpcInvocations: (c?: string) => void } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.resetIpcInvocations(c)
+    }, channel)
+  )
 }
 
-/** URLs captured by the launcher's `shell.openExternal` wrapper in E2E mode. */
-export async function getShellOpenExternalCalls(
-  app: ElectronApplication,
-): Promise<string[]> {
-  return await evalWithRetry(() => app.evaluate(() => {
-    const helpers = (globalThis as unknown as { __e2e?: { getShellOpenExternalCalls: () => string[] } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.getShellOpenExternalCalls()
-  }))
+export async function getShellOpenExternalCalls(app: ElectronApplication): Promise<string[]> {
+  return await evalWithRetry(() =>
+    app.evaluate(() => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { getShellOpenExternalCalls: () => string[] } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.getShellOpenExternalCalls()
+    })
+  )
 }
 
 export async function resetShellOpenExternalCalls(app: ElectronApplication): Promise<void> {
-  await evalWithRetry(() => app.evaluate(() => {
-    const helpers = (globalThis as unknown as { __e2e?: { resetShellOpenExternalCalls: () => void } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.resetShellOpenExternalCalls()
-  }))
+  await evalWithRetry(() =>
+    app.evaluate(() => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { resetShellOpenExternalCalls: () => void } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.resetShellOpenExternalCalls()
+    })
+  )
 }
 
-/** Register a synthetic running session so the REQUIRES_STOPPED guard and
- *  `sessionStore.isRunning` fire without spawning a real ComfyUI process. */
 export async function seedRunningSession(
   app: ElectronApplication,
   opts: {
     installationId: string
     installationName: string
-    /** Core beta grants the seeded session reports as on its command line. */
     coreBetaArgs?: { arg: string; name: string | null }[]
-  },
+  }
 ): Promise<void> {
-  await evalWithRetry(() => app.evaluate((_electron, o) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { seedRunningSession: (o: unknown) => void }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.seedRunningSession(o)
-  }, opts))
+  await evalWithRetry(() =>
+    app.evaluate((_electron, o) => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { seedRunningSession: (o: unknown) => void }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.seedRunningSession(o)
+    }, opts)
+  )
 }
 
-/** Mount the install-backed panelView eagerly. Production lazily mounts it
- *  (on Settings click / comfy-lifecycle body); tests that need `panel.html`
- *  reachable right after launch call this to skip the lazy step. */
 export async function ensureInstallPanelView(
   app: ElectronApplication,
-  installationId: string,
+  installationId: string
 ): Promise<boolean> {
-  return await evalWithRetry(() => app.evaluate((_electron, id) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { ensureInstallPanelView: (id: string) => boolean }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.ensureInstallPanelView(id)
-  }, installationId))
+  return await evalWithRetry(() =>
+    app.evaluate((_electron, id) => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { ensureInstallPanelView: (id: string) => boolean }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.ensureInstallPanelView(id)
+    }, installationId)
+  )
 }
 
-/** Force every release-cache entry's `checkedAt` to `maxCheckedAt` (ms) to
- *  drive the stale-data auto-refresh watcher without waiting wall-clock. */
 export async function ageReleaseCache(
   app: ElectronApplication,
-  maxCheckedAt: number,
+  maxCheckedAt: number
 ): Promise<void> {
-  await evalWithRetry(() => app.evaluate((_electron, ts) => {
-    const helpers = (globalThis as unknown as { __e2e?: { ageReleaseCache: (ts: number) => void } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.ageReleaseCache(ts)
-  }, maxCheckedAt))
+  await evalWithRetry(() =>
+    app.evaluate((_electron, ts) => {
+      const helpers = (
+        globalThis as unknown as { __e2e?: { ageReleaseCache: (ts: number) => void } }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.ageReleaseCache(ts)
+    }, maxCheckedAt)
+  )
 }
 
-/** Drop every synthetic session seeded via `seedRunningSession`. */
 export async function clearRunningSessions(app: ElectronApplication): Promise<void> {
-  await evalWithRetry(() => app.evaluate(() => {
-    const helpers = (globalThis as unknown as { __e2e?: { clearRunningSessions: () => void } }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.clearRunningSessions()
-  }))
+  await evalWithRetry(() =>
+    app.evaluate(() => {
+      const helpers = (globalThis as unknown as { __e2e?: { clearRunningSessions: () => void } })
+        .__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.clearRunningSessions()
+    })
+  )
 }
 
 export interface RunningSessionSnapshotLike {
@@ -219,116 +252,133 @@ export interface RunningSessionSnapshotLike {
   url: string | undefined
 }
 
-/** Snapshot the live running-session entry for `installationId` (real
- *  or synthetic). Returns `null` when no session is registered. */
 export async function getRunningSessionSnapshot(
   app: ElectronApplication,
-  installationId: string,
+  installationId: string
 ): Promise<RunningSessionSnapshotLike | null> {
-  return await evalWithRetry(() => app.evaluate((_electron, id) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { getRunningSessionSnapshot: (id: string) => unknown }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.getRunningSessionSnapshot(id) as RunningSessionSnapshotLike | null
-  }, installationId))
+  return await evalWithRetry(() =>
+    app.evaluate((_electron, id) => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { getRunningSessionSnapshot: (id: string) => unknown }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.getRunningSessionSnapshot(id) as RunningSessionSnapshotLike | null
+    }, installationId)
+  )
 }
 
-/** Whether main still holds the per-install background-operation slot
- *  (`_operationAborts`) for `installationId`. Poll to `false` before
- *  triggering a new picker op, since main rejects overlapping ops. */
 export async function hasActiveOperation(
   app: ElectronApplication,
-  installationId: string,
+  installationId: string
 ): Promise<boolean> {
-  return await evalWithRetry(() => app.evaluate((_electron, id) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { hasActiveOperation: (id: string) => boolean }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.hasActiveOperation(id)
-  }, installationId))
+  return await evalWithRetry(() =>
+    app.evaluate((_electron, id) => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { hasActiveOperation: (id: string) => boolean }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.hasActiveOperation(id)
+    }, installationId)
+  )
 }
 
-/** Whether main currently holds the launching marker for `installationId`,
- *  i.e. the install is inside the boot window (spawned, not yet port-ready). */
 export async function isInstallLaunching(
   app: ElectronApplication,
-  installationId: string,
+  installationId: string
 ): Promise<boolean> {
-  return await evalWithRetry(() => app.evaluate((_electron, id) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { isLaunching: (id: string) => boolean }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.isLaunching(id)
-  }, installationId))
+  return await evalWithRetry(() =>
+    app.evaluate((_electron, id) => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { isLaunching: (id: string) => boolean }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.isLaunching(id)
+    }, installationId)
+  )
 }
 
-/** Whether main has a launch handler in flight for `installationId` -
- *  covers the WHOLE handler, including the pre-marker prep window that
- *  `isInstallLaunching` (spawn -> port-ready) cannot see. */
 export async function hasActiveLaunch(
   app: ElectronApplication,
-  installationId: string,
+  installationId: string
 ): Promise<boolean> {
-  return await evalWithRetry(() => app.evaluate((_electron, id) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { hasActiveLaunch: (id: string) => boolean }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.hasActiveLaunch(id)
-  }, installationId))
+  return await evalWithRetry(() =>
+    app.evaluate((_electron, id) => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { hasActiveLaunch: (id: string) => boolean }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.hasActiveLaunch(id)
+    }, installationId)
+  )
 }
 
-/** Arm the one-shot launch-spawn hold: the NEXT launch parks right before
- *  spawning ComfyUI (launching marker set, port reserved, no process yet)
- *  until released or aborted. Pair with `releaseLaunchSpawnHold` in a
- *  finally so a failed test can't leave a launch parked forever. */
 export async function armLaunchSpawnHold(app: ElectronApplication): Promise<void> {
-  await evalWithRetry(() => app.evaluate(() => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { armLaunchSpawnHold: () => void }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.armLaunchSpawnHold()
-  }))
+  await evalWithRetry(() =>
+    app.evaluate(() => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { armLaunchSpawnHold: () => void }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.armLaunchSpawnHold()
+    })
+  )
 }
 
-/** Release a held launch (and disarm a not-yet-consumed hold). Idempotent. */
 export async function releaseLaunchSpawnHold(app: ElectronApplication): Promise<void> {
-  await evalWithRetry(() => app.evaluate(() => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { releaseLaunchSpawnHold: () => void }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    helpers.releaseLaunchSpawnHold()
-  }))
+  await evalWithRetry(() =>
+    app.evaluate(() => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { releaseLaunchSpawnHold: () => void }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      helpers.releaseLaunchSpawnHold()
+    })
+  )
 }
 
-/** Whether a launch is currently parked at the spawn hold. */
 export async function isLaunchSpawnHeld(app: ElectronApplication): Promise<boolean> {
-  return await evalWithRetry(() => app.evaluate(() => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { isLaunchSpawnHeld: () => boolean }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.isLaunchSpawnHeld()
-  }))
+  return await evalWithRetry(() =>
+    app.evaluate(() => {
+      const helpers = (
+        globalThis as unknown as {
+          __e2e?: { isLaunchSpawnHeld: () => boolean }
+        }
+      ).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers.isLaunchSpawnHeld()
+    })
+  )
 }
 
-/** Read the `checkedAt` ms timestamp of the shared release-cache entry
- *  for `(repo, channel)`. Returns `null` when no entry exists yet. */
 export async function getReleaseCacheCheckedAt(
   app: ElectronApplication,
   repo: string,
-  channel: string,
+  channel: string
 ): Promise<number | null> {
-  return await evalWithRetry(() => app.evaluate((_electron, args) => {
-    const helpers = (globalThis as unknown as {
-      __e2e?: { getReleaseCacheCheckedAt: (r: string, c: string) => number | null }
-    }).__e2e
-    if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
-    return helpers.getReleaseCacheCheckedAt(args.repo, args.channel)
-  }, { repo, channel }))
+  return await evalWithRetry(() =>
+    app.evaluate(
+      (_electron, args) => {
+        const helpers = (
+          globalThis as unknown as {
+            __e2e?: { getReleaseCacheCheckedAt: (r: string, c: string) => number | null }
+          }
+        ).__e2e
+        if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+        return helpers.getReleaseCacheCheckedAt(args.repo, args.channel)
+      },
+      { repo, channel }
+    )
+  )
 }

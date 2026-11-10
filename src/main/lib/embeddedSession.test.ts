@@ -1,5 +1,6 @@
-// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type * as WorkspaceTokenModule from '../cloud/workspaceToken'
 
 const mocks = vi.hoisted(() => ({
   enabled: true,
@@ -18,14 +19,18 @@ vi.mock('./embeddedSessionFlag', () => ({
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({
     getGrantAccessToken: mocks.getGrantAccessToken,
+    heldWorkspaceToken: () => null,
     currentWorkspaceId: () => mocks.current,
     currentSubject: () => (mocks.current ? 'user-1' : null),
     currentGrantFamily: () => null,
     currentAuthGeneration: () => mocks.generation,
-    isWorkspaceMintAllowed: async () => true
-  })
+    isWorkspaceMintAllowed: async () => true,
+    endGrantFamily: () => {}
+  }),
+  rejectAccessToken: vi.fn()
 }))
-vi.mock('../cloud/workspaceToken', () => ({
+vi.mock('../cloud/workspaceToken', async (importOriginal) => ({
+  ...(await importOriginal<typeof WorkspaceTokenModule>()),
   mintWorkspaceToken: mocks.mint,
   mintPartnerNodeToken: mocks.partnerMint,
   renewPartnerNodeToken: vi.fn()
@@ -59,7 +64,7 @@ function jwt(claims: Record<string, unknown>): string {
 
 const ACCESS = jwt({ sub: 'user-1', email: 'a@example.com', workspace_id: 'ws-1' })
 function mintedFor(workspaceId: string): string {
-  return jwt({ sub: 'user-1', workspace_id: workspaceId, auth_method: 'cloud' })
+  return jwt({ sub: 'user-1', workspace_id: workspaceId, auth_method: 'cloud', scope: undefined })
 }
 
 const MINTED = mintedFor('ws-1')
@@ -183,6 +188,7 @@ describe('embeddedSession', () => {
     const bystander = view('http://127.0.0.1:8001')
     await switchWorkspaceForSender(switcher.event, 'ws-2', async () => {
       mocks.current = 'ws-2'
+      return { status: { signedIn: true, workspaceId: 'ws-2' }, reached: true }
     })
 
     await expect(partnerNodeTokenForSender(switcher.event, 'ws-2')).resolves.toBe(
@@ -209,8 +215,9 @@ describe('embeddedSession', () => {
 
   it('switches a signed-in view to the workspace it names and returns the new state', async () => {
     const { event } = view('http://127.0.0.1:8000')
-    const switchWorkspace = vi.fn(async () => {
-      mocks.current = 'ws-2'
+    const switchWorkspace = vi.fn(async (workspaceId: string) => {
+      mocks.current = workspaceId
+      return { status: { signedIn: true, workspaceId }, reached: true }
     })
 
     await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
@@ -225,14 +232,31 @@ describe('embeddedSession', () => {
   it('releases the workspace a view switched to only to that view', async () => {
     const switcher = view('http://127.0.0.1:8000')
     const bystander = view('http://127.0.0.1:8001')
-    const switchWorkspace = vi.fn(async () => {
-      mocks.current = 'ws-2'
+    const switchWorkspace = vi.fn(async (workspaceId: string) => {
+      mocks.current = workspaceId
+      return { status: { signedIn: true, workspaceId }, reached: true }
     })
 
     await switchWorkspaceForSender(switcher.event, 'ws-2', switchWorkspace)
 
     await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBe(mintedFor('ws-2'))
     await expect(workspaceTokenForSender(bystander.event, 'ws-2')).resolves.toBeNull()
+  })
+
+  it.each([
+    ['failed', 'ws-1'],
+    ['did not reach although the session already names', 'ws-2']
+  ])('does not let a view hold a workspace its switch %s it', async (_name, reportedWorkspace) => {
+    const switcher = view('http://127.0.0.1:8000')
+    const unreachedSwitch = vi.fn(async () => ({
+      status: { signedIn: true, workspaceId: reportedWorkspace },
+      reached: false
+    }))
+
+    await switchWorkspaceForSender(switcher.event, 'ws-2', unreachedSwitch)
+    mocks.current = 'ws-2'
+
+    await expect(workspaceTokenForSender(switcher.event, 'ws-2')).resolves.toBeNull()
   })
 
   it.each([
@@ -243,7 +267,7 @@ describe('embeddedSession', () => {
   ])('does not switch for %s', async (_name, comfyUrl, workspaceId, token, expected) => {
     mocks.getGrantAccessToken.mockResolvedValue(token)
     const { event } = view(comfyUrl)
-    const switchWorkspace = vi.fn(async () => undefined)
+    const switchWorkspace = vi.fn(async () => ({ status: { signedIn: true }, reached: true }))
 
     const state = await switchWorkspaceForSender(event, workspaceId, switchWorkspace)
 
@@ -255,7 +279,7 @@ describe('embeddedSession', () => {
   it('does not switch while the ops flag is off', async () => {
     mocks.enabled = false
     const { event } = view('http://127.0.0.1:8000')
-    const switchWorkspace = vi.fn(async () => undefined)
+    const switchWorkspace = vi.fn(async () => ({ status: { signedIn: true }, reached: true }))
 
     await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual({
       status: 'disabled'
@@ -283,14 +307,13 @@ describe('embeddedSession', () => {
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
   })
 
-  it('asks a view to sign in again, and hands it nothing, while the grant predates the mint scope', async () => {
-    mocks.getGrantAccessToken.mockResolvedValue(
-      jwt({ sub: 'user-1', workspace_id: 'ws-1', scope: 'comfy-cloud:user:read' })
-    )
+  it('keeps a view signed in on the grant itself when Cloud did not grant the mint scope', async () => {
+    const grant = jwt({ sub: 'user-1', workspace_id: 'ws-1', scope: 'comfy-cloud:user:read' })
+    mocks.getGrantAccessToken.mockResolvedValue(grant)
     const { event } = view('http://127.0.0.1:8000')
 
-    await expect(stateForSender(event)).resolves.toEqual({ status: 'signed_out' })
-    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(stateForSender(event)).resolves.toMatchObject({ status: 'signed_in' })
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBe(grant)
     expect(mocks.mint).not.toHaveBeenCalled()
   })
 

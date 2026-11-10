@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(() => [] as unknown[]),
   openExternal: vi.fn(async () => {}),
   openSystemModalAsync: vi.fn(async () => false),
-  // session
   login: vi.fn(),
   currentAuthGeneration: vi.fn(() => 1),
   logout: vi.fn(),
@@ -19,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   currentSubject: vi.fn(() => 'user-1' as string | null),
   clearVersionCache: vi.fn(),
   getVersionCacheGeneration: vi.fn(() => 3),
-  // client + policy
   getBuilderClient: vi.fn(() => ({
     listBuilds: mocks.listBuilds,
     createBuildDraft: mocks.createBuildDraft
@@ -30,7 +28,6 @@ const mocks = vi.hoisted(() => ({
   resolveBuildRows: vi.fn(),
   resolveHostArtifact: vi.fn(),
   resolveSelectedHostArtifact: vi.fn(),
-  // installations + shared helpers
   add: vi.fn(),
   get: vi.fn(),
   update: vi.fn(),
@@ -148,8 +145,6 @@ function handler(channel: string): IpcHandler {
   return call![1] as IpcHandler
 }
 
-/** A host entry carrying only the panelView the broadcast targets. Host windows
- *  load no page of their own, so the panelView IS the dashboard renderer. */
 function registerHostWithPanel(key: number, opts: { destroyed?: boolean; none?: boolean } = {}) {
   const send = vi.fn()
   const panelView = opts.none
@@ -226,9 +221,6 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
   })
 
-  // The regression that made a file-menu sign-in look like nothing happened:
-  // the host window loads no page, so broadcasting only to `getAllWindows()`
-  // reaches an empty webContents and the account chip never repaints.
   it('signIn reaches the dashboard renderer in each host panelView', async () => {
     mocks.getAllWindows.mockReturnValue([])
     const panelA = registerHostWithPanel(1)
@@ -502,7 +494,8 @@ describe('registerDevPlatformHandlers', () => {
     mocks.switchWorkspace.mockResolvedValue({
       signedIn: true,
       workspaceId: 'w2',
-      workspaceType: 'team'
+      workspaceType: 'team',
+      reached: true
     })
 
     const status = await handler('comfybuilder:switchWorkspace')({}, 'w2')
@@ -510,6 +503,16 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.switchWorkspace).toHaveBeenCalledWith('w2', 'chosen')
     expect(status).toMatchObject({ workspaceId: 'w2' })
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
+  })
+
+  it('lets no view hold the target when a newer auth operation superseded the dashboard switch', async () => {
+    mocks.currentAuthGeneration.mockReturnValueOnce(1).mockReturnValueOnce(2)
+    mocks.switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2' })
+    mocks.allowDesktopWorkspace.mockClear()
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
   })
 
   it('forgets view allowlists when a switch signs in as a different account', async () => {
@@ -575,7 +578,9 @@ describe('registerDevPlatformHandlers', () => {
           currentAuthGeneration: () => 1,
           getGrantAccessToken: async () =>
             jwt({ sub: 'user-1', workspace_id: 'w1', scope: CLOUD_CONFIG.scope }),
-          isWorkspaceMintAllowed: async () => true
+          isWorkspaceMintAllowed: async () => true,
+          heldWorkspaceToken: () => null,
+          endGrantFamily: () => {}
         },
         async (_grant, workspaceId) => ({
           kind: 'minted',
@@ -603,7 +608,7 @@ describe('registerDevPlatformHandlers', () => {
         active = workspaceId
         const status = { signedIn: true, workspaceId, workspaceType: 'team' }
         mocks.status.mockReturnValue(status)
-        return status
+        return { ...status, reached: true }
       })
       mocks.createBuildDraft.mockResolvedValue({
         buildId: 'build-2',
@@ -672,7 +677,9 @@ describe('registerDevPlatformHandlers', () => {
             auth.subject
               ? jwt({ sub: auth.subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope })
               : null,
-          isWorkspaceMintAllowed: async () => true
+          isWorkspaceMintAllowed: async () => true,
+          heldWorkspaceToken: () => null,
+          endGrantFamily: () => {}
         },
         async (_grant, workspaceId) => ({
           kind: 'minted',
@@ -818,7 +825,7 @@ describe('registerDevPlatformHandlers', () => {
       await realViewGrants()
       mocks.switchWorkspace.mockImplementationOnce(async (workspaceId: string) => {
         auth.active = workspaceId
-        return statusNow()
+        return { ...statusNow(), reached: true }
       })
       mocks.createBuildDraft.mockResolvedValue({
         buildId: 'build-2',
@@ -851,7 +858,9 @@ describe('registerDevPlatformHandlers', () => {
         currentAuthGeneration: () => generation,
         getGrantAccessToken: async () =>
           jwt({ sub: subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope }),
-        isWorkspaceMintAllowed: async () => true
+        isWorkspaceMintAllowed: async () => true,
+        heldWorkspaceToken: () => null,
+        endGrantFamily: () => {}
       },
       async (_grant, workspaceId) => ({
         kind: 'minted',
@@ -920,6 +929,21 @@ describe('registerDevPlatformHandlers', () => {
 
     expect(win.webContents.send).toHaveBeenCalledExactlyOnceWith('comfybuilder:authChanged', status)
   })
+
+  it.for([
+    ['signed out', { signedIn: false }],
+    ['still on another workspace', { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }],
+    ['unreached on a session that names the target', { signedIn: true, workspaceId: 'w2' }]
+  ] as const)(
+    'a dashboard switch that ends %s lets no view hold the target',
+    async ([, status]) => {
+      mocks.switchWorkspace.mockResolvedValue({ ...status, reached: false })
+
+      await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+      expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
+    }
+  )
 
   it('captures fresh state, creates a draft, and opens the validated Platform URL', async () => {
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
@@ -1017,7 +1041,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.switchWorkspace.mockImplementationOnce(async () => {
       const status = { signedIn: true, workspaceId: 'w2', workspaceType: 'team' }
       mocks.status.mockReturnValue(status)
-      return status
+      return { ...status, reached: true }
     })
     mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-2',
@@ -1030,10 +1054,34 @@ describe('registerDevPlatformHandlers', () => {
     })
 
     expect(mocks.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
+    expect(mocks.allowDesktopWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
     expect(mocks.createBuildDraft).toHaveBeenCalledOnce()
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
       'https://platform.comfy.org/profile/builds/build-2/draft?workspace=w2'
     )
+  })
+
+  it('does not let views hold a workspace the promotion failed to activate', async () => {
+    mocks.get.mockResolvedValue({
+      id: 'local-1',
+      name: 'Workspace Instance',
+      sourceId: 'comfybuilder',
+      workspaceId: 'w2',
+      status: 'installed',
+      installPath: '/installs/local-1'
+    })
+    mocks.switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team',
+      reached: false
+    })
+
+    await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
+      ok: false,
+      message: 'Could not activate the instance workspace.'
+    })
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
   })
 
   it('does not upload if the active workspace changes during capture', async () => {

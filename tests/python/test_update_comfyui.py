@@ -1,12 +1,3 @@
-"""Real-pygit2 tests for lib/update_comfyui.py and `git_operations.py
-tracked-changes`, against a local origin with a master + tags layout.
-
-A mid-update write failure is forced with a read-only directory, standing in
-for a file held open by antivirus or another process on Windows.
-
-Run: python -m unittest discover -s tests/python
-"""
-
 import os
 import shutil
 import stat
@@ -20,13 +11,10 @@ LIB = os.path.join(os.path.dirname(__file__), "..", "..", "lib")
 UPDATE = os.path.join(LIB, "update_comfyui.py")
 GIT_OPS = os.path.join(LIB, "git_operations.py")
 
-# Runs update_comfyui.py, and when the update's reset fails, makes argv[1] (a
-# file) and its directory read-only: a file the update just wrote gets locked
-# before the restore can rewrite it.
 LOCK_ON_FAILURE = """
 import os, runpy, stat, sys, pygit2
 lock_file = sys.argv.pop(1)
-sys.argv.pop(0)  # "-c": the script then sees its usual argv
+sys.argv.pop(0)
 real = pygit2.Repository.reset
 def reset(self, *args):
     try:
@@ -40,9 +28,6 @@ sys.path.insert(0, os.path.dirname(sys.argv[0]))
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
-# Windows: an exclusively locked file can't be read, so libgit2's restore may
-# report success while skipping it. Simulated: the restore (the second reset)
-# runs, then argv[1] is put back at the target's content and made unreadable.
 SILENT_SKIP = """
 import os, runpy, stat, sys, pygit2
 skipped = sys.argv.pop(1)
@@ -63,8 +48,6 @@ sys.path.insert(0, os.path.dirname(sys.argv[0]))
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
 
-# Path order matters: libgit2 writes app/ before main/, so a failure in main/
-# lands after app/db.py has already been written, as in the field crash.
 V1 = {"app/db.py": "v1\n", "main/main.py": "v1\n", "only_v1.txt": "x\n",
       "tag/release.py": "dev\n"}
 V2 = {"app/db.py": "v2\n", "app/new.py": "v2\n", "main/main.py": "v2\n",
@@ -72,8 +55,6 @@ V2 = {"app/db.py": "v2\n", "app/new.py": "v2\n", "main/main.py": "v2\n",
 MASTER = {"app/db.py": "m\n", "app/new.py": "m\n", "main/main.py": "m\n",
           "main/extra.py": "m\n", "only_master.txt": "m\n", "tag/release.py": "dev\n"}
 
-# Fixture git and the helpers under test ignore the developer's config (signing,
-# hooks, an http.proxy that would reroute the refused-connection fetch).
 GIT_ENV = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1",
                HOME=tempfile.gettempdir(), XDG_CONFIG_HOME=os.devnull)
 NEEDS_PERMISSIONS = unittest.skipIf(
@@ -81,8 +62,6 @@ NEEDS_PERMISSIONS = unittest.skipIf(
     "read-only directories force the failure; root and Windows ignore them")
 
 
-# Kills the updater as its restore starts (the second reset): what a kill -9 of
-# Desktop during the restore leaves behind.
 KILL_IN_RESTORE = """
 import os, runpy, sys, pygit2
 sys.argv.pop(1)
@@ -147,7 +126,6 @@ class UpdateComfyUITest(unittest.TestCase):
         git(work, "tag", "-a", "v0.2.0", "-m", "v0.2.0", self.sha["v2"])
         self.origin = os.path.join(self.tmp, "origin.git")
         git(self.tmp, "clone", "-q", "--bare", work, self.origin)
-        # An installed ComfyUI: detached at the old stable tag, master behind.
         self.repo = os.path.join(self.tmp, "ComfyUI")
         git(self.tmp, "clone", "-q", self.origin, self.repo)
         git(self.repo, "checkout", "-q", "--detach", self.sha["v1"])
@@ -213,7 +191,6 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
     def test_unreachable_origin_leaves_the_install_untouched(self):
-        # Nothing listens on port 1: the connection is refused, as offline.
         git(self.repo, "remote", "set-url", "origin", "http://127.0.0.1:1/x.git")
         r = self.update("--stable")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -242,10 +219,6 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
     def test_failed_fetch_reports_no_write_and_changes_nothing(self):
-        # A run that never printed [WRITING_TARGET] moved nothing; when Desktop
-        # sees it exit, it drops its update marker, so the user's own files don't
-        # block launch. (A hard kill of Desktop here leaves the marker: a known
-        # limitation.)
         with open(os.path.join(self.repo, "notes.txt"), "w") as f:
             f.write("mine\n")
         with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
@@ -280,8 +253,6 @@ class UpdateComfyUITest(unittest.TestCase):
 
     @NEEDS_PERMISSIONS
     def test_a_stale_lock_that_cannot_be_removed_fails_cleanly(self):
-        # Windows: a lock still held open cannot be deleted. Stand-in: a
-        # read-only refs/heads/ keeps an old master.lock in place.
         lock = os.path.join(self.repo, ".git", "refs", "heads", "master.lock")
         open(lock, "w").close()
         old = time.time() - 3600
@@ -318,9 +289,6 @@ class UpdateComfyUITest(unittest.TestCase):
 
     @NEEDS_PERMISSIONS
     def test_failed_checkout_restores_the_install(self):
-        # app/ is written first (app/new.py is created), then main/extra.py
-        # (target only, first in main/) cannot be created. main/main.py is never
-        # touched, so the restore succeeds and must delete app/new.py again.
         self.lock("main")
         r = self.update("--stable")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
@@ -331,8 +299,6 @@ class UpdateComfyUITest(unittest.TestCase):
 
     @NEEDS_PERMISSIONS
     def test_file_locked_before_the_update_does_not_block_the_restore(self):
-        # main/ is held from the start (main/extra.py can't be created,
-        # main/main.py can't be rewritten): the restore must not need it.
         main_dir = self.lock("main")
         os.chmod(os.path.join(main_dir, "main.py"), stat.S_IRUSR)
         self.addCleanup(os.chmod, os.path.join(main_dir, "main.py"), stat.S_IRUSR | stat.S_IWUSR)
@@ -343,8 +309,6 @@ class UpdateComfyUITest(unittest.TestCase):
 
     @NEEDS_PERMISSIONS
     def test_failure_only_the_tag_needs_restores_the_install(self):
-        # tag/release.py is the same in v1 and master and differs only in v2:
-        # the field failure, where only the step from master to the tag failed.
         tag_dir = self.lock("tag")
         os.chmod(os.path.join(tag_dir, "release.py"), stat.S_IRUSR)
         self.addCleanup(os.chmod, os.path.join(tag_dir, "release.py"), stat.S_IRUSR | stat.S_IWUSR)
@@ -371,15 +335,12 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assert_clean_at(self.sha["v1"], V1)
 
     def assert_update_repairs(self):
-        # The fix for a half-updated install: run the same update again.
         r = self.update("--stable")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assert_clean_at(self.sha["v2"], V2)
 
     @NEEDS_PERMISSIONS
     def test_restore_blocked_by_a_lock_leaves_a_tree_update_repairs(self):
-        # The update writes app/db.py, fails in main/, and app/db.py is locked
-        # before the restore can put it back.
         main_dir = self.lock("main")
         app_dir = os.path.join(self.repo, "app")
         self.addCleanup(os.chmod, app_dir, stat.S_IRWXU)
@@ -410,20 +371,15 @@ class UpdateComfyUITest(unittest.TestCase):
         r = self.update("--stable", driver=SILENT_SKIP, driver_arg=main_py)
         self.assertIn("Restored ComfyUI source", r.stdout)
         os.chmod(main_py, stat.S_IRUSR | stat.S_IWUSR)
-        # HEAD reads as the old commit over a new main.py: the launch-time check
-        # sees it through tracked-changes.
         self.assertEqual(self.head(), self.sha["v1"])
         self.assertEqual(self.tracked_changes(), ["main/main.py"])
         self.assert_update_repairs()
 
     @NEEDS_PERMISSIONS
     def test_kill_during_restore_leaves_a_tree_update_repairs(self):
-        # Desktop killed mid-restore: HEAD is already back at the old commit
-        # (the restore moves refs first), the files are still the target's.
         self.lock("main")
         r = self.update("--stable", driver=KILL_IN_RESTORE, driver_arg="-")
         self.assertEqual(r.returncode, 9, r.stdout + r.stderr)
-        # Flushed before anything moves, so Desktop sees it even after a kill.
         self.assertIn("[WRITING_TARGET] %s" % self.sha["v2"], r.stdout)
         os.chmod(os.path.join(self.repo, "main"), stat.S_IRWXU)
         self.assertEqual(self.head(), self.sha["v1"])
@@ -431,8 +387,6 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assert_update_repairs()
 
     def test_update_repairs_a_tree_left_by_the_old_updater(self):
-        # The previous updater went to master, then failed partway back to the
-        # tag: HEAD on master, app/db.py at the tag's content.
         git(self.repo, "checkout", "-q", "-f", "master")
         with open(os.path.join(self.repo, "app", "db.py"), "w") as f:
             f.write(V2["app/db.py"])

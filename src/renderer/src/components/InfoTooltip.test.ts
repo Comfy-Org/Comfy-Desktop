@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import InfoTooltip from './InfoTooltip.vue'
 
-// Pins the trigger surface + forwarding; placement/flip/arrow concerns
-// belong in ui/Tooltip.test.ts.
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => vi.useRealTimers())
+
 describe('InfoTooltip', () => {
   it('renders the icon', () => {
     const wrapper = mount(InfoTooltip, { props: { text: 'tip' } })
@@ -24,7 +25,10 @@ describe('InfoTooltip', () => {
       props: { text: 'Hello tooltip', delayMs: 0 } as Record<string, unknown>,
       attachTo: document.body
     })
-    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    wrapper
+      .get('.tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.advanceTimersByTimeAsync(1)
     await flushPromises()
     const bubble = document.querySelector('.tooltip-bubble')
     expect(bubble).not.toBeNull()
@@ -37,12 +41,32 @@ describe('InfoTooltip', () => {
       props: { text: 'tip', delayMs: 0 } as Record<string, unknown>,
       attachTo: document.body
     })
-    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    wrapper
+      .get('.tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.advanceTimersByTimeAsync(1)
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
-    await wrapper.find('.tooltip-wrap').trigger('mouseleave')
+    await wrapper.find('.tooltip-wrap').trigger('pointerleave', { pointerType: 'mouse' })
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('keeps its explanation open when the help icon is clicked', async () => {
+    const wrapper = mount(InfoTooltip, {
+      props: { text: 'tip', delayMs: 0 } as Record<string, unknown>,
+      attachTo: document.body
+    })
+    wrapper
+      .get('.tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.advanceTimersByTimeAsync(1)
+    await flushPromises()
+    await wrapper.get('.tooltip-wrap').trigger('pointerdown')
+    await wrapper.get('.tooltip-wrap').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).not.toBeNull()
     wrapper.unmount()
   })
 
@@ -51,10 +75,12 @@ describe('InfoTooltip', () => {
       props: { text: 'tip', side: 'bottom', delayMs: 0 } as Record<string, unknown>,
       attachTo: document.body
     })
-    await wrapper.find('.tooltip-wrap').trigger('mouseenter')
+    wrapper
+      .get('.tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.advanceTimersByTimeAsync(1)
     await flushPromises()
     const bubble = document.querySelector('.tooltip-bubble')
-    // jsdom returns zero-sized rects, so the resolver may flip; accept any side.
     expect(bubble?.getAttribute('data-side')).toMatch(/^(top|bottom|left|right)$/)
     wrapper.unmount()
   })

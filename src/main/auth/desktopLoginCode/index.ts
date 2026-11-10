@@ -40,29 +40,16 @@ import { getDeviceId } from '../../lib/deviceId'
 import * as mainTelemetry from '../../lib/telemetry'
 import * as settings from '../../settings'
 
-/** Budget for the code-create POST; past this the legacy bridge takes over. */
 const CREATE_CODE_TIMEOUT_MS = 8000
 
-/** Random 0-500ms added to each poll so a fleet of desktops doesn't sync-poll. */
 const POLL_JITTER_MS = 500
 
-/**
- * Brief visual beat after the system browser confirms redemption. The browser
- * already shows a success toast; the legacy bridge keeps its 3s countdown.
- */
 const LOGIN_CODE_POST_SIGNIN_HOLD_MS = 500
 
-/** Cloud currently keeps a redeemed grant exchangeable for this long. */
 const POST_REDEEM_RETRY_GRACE_MS = 120_000
 
 const DESKTOP_LOGIN_CODE_FLOW = 'desktop_login_code'
 
-/**
- * In-flight flow, aborted on re-entry (mirror of firebaseBridge's
- * `activeBridgeFlow`): if the user clicks Sign in again while a previous
- * attempt is still parked on an open browser tab, the stale poll loop is
- * cancelled before the new one starts.
- */
 let activeFlow: AbortController | null = null
 
 function cancelActiveFlow(): void {
@@ -70,22 +57,6 @@ function cancelActiveFlow(): void {
   activeFlow = null
 }
 
-/**
- * Sign in through the Cloud login page with a short-lived desktop login
- * code (GTM-93): mint a PKCE-bound code on the backend, open the system
- * browser at the real Cloud login page carrying only the opaque code,
- * poll the exchange endpoint until the signed-in browser session redeems
- * it, then finish with the one-time Firebase custom token — no loopback
- * server, and the web/desktop identities get stitched server-side.
- *
- * Returns 'fallback' only when the flow died before the browser opened
- * (dev-project auth against the prod Cloud origin, backend without the
- * endpoints, network trouble, timeout) — the caller
- * then runs the legacy loopback bridge transparently. After the browser
- * has opened, failures surface via sign_in_failed + onError and resolve
- * 'handled': restarting the legacy bridge would fight the login tab the
- * user may be halfway through.
- */
 export async function signInViaDesktopLoginCode(
   interceptedAuthUrl: string,
   comfyContents: WebContents,
@@ -97,11 +68,6 @@ export async function signInViaDesktopLoginCode(
     comfyContents.getURL(),
     firebaseEnv === 'dev' && !app.isPackaged
   )
-  // The Cloud origin's backend mints custom tokens for its own Firebase
-  // project. A dev-project auth URL against the production origin would
-  // mint a PROD token the dev project rejects — only a loopback dev origin
-  // (whose /api fronts a matching dev backend) can serve the dev flow, so
-  // anything else hands off to the legacy loopback bridge.
   if (firebaseEnv === 'dev' && cloudOrigin === CLOUD_LOGIN_ORIGIN) {
     cancelActiveFlow()
     runBannerCleanup()
@@ -112,16 +78,10 @@ export async function signInViaDesktopLoginCode(
   cancelActiveFlow()
   const controller = new AbortController()
   activeFlow = controller
-  // Clear a prior attempt's "copy link" card so this attempt doesn't
-  // stack a second one, and kill any stale legacy loopback bridge so it
-  // can't complete a competing sign-in underneath this flow (same hygiene
-  // as the legacy bridge path).
   runBannerCleanup()
   closeActiveBridge()
   const sessionInjection = beginFirebaseSessionInjection(comfyContents)
 
-  // The Cloud page owns provider choice when Firebase omitted or supplied an
-  // unsupported providerId, so keep that widened path visible in the funnel.
   const provider = extractProviderId(interceptedAuthUrl) ?? 'cloud'
   const firebaseConfig = getFirebaseConfig(firebaseEnv)
   const codeVerifier = createCodeVerifier()
@@ -131,9 +91,6 @@ export async function signInViaDesktopLoginCode(
     app_version: app.getVersion(),
     code_challenge: codeChallengeS256(codeVerifier)
   }
-  // installation_id enables the web->desktop identity stitch. Consent-gated
-  // like every other telemetry write ('undecided' omits too); the auth
-  // handoff itself works without it.
   if (settings.get('telemetryEnabled') === true) {
     request.installation_id = getDeviceId()
   }
@@ -145,11 +102,6 @@ export async function signInViaDesktopLoginCode(
       timeoutMs: CREATE_CODE_TIMEOUT_MS
     })
   } catch {
-    // Backend without the endpoint (404), network trouble, or timeout —
-    // the browser never opened, so the legacy bridge can take over
-    // transparently and emit its own funnel events. A superseded attempt
-    // reports 'handled' instead so the caller doesn't start a second
-    // sign-in underneath the newer one.
     if (activeFlow === controller) activeFlow = null
     releaseFirebaseSessionInjection(sessionInjection)
     return controller.signal.aborted || comfyContents.isDestroyed() ? 'handled' : 'fallback'
@@ -160,10 +112,6 @@ export async function signInViaDesktopLoginCode(
     return 'handled'
   }
 
-  // Same funnel entry as the legacy bridge; `flow` splits the two sign-in
-  // mechanisms apart in analytics. Emitted only once the code exists —
-  // just before the browser opens — so a create-failure fallback doesn't
-  // double-count with the legacy path's own started event.
   mainTelemetry.capture('comfy.desktop.auth.sign_in_started', {
     provider,
     flow: DESKTOP_LOGIN_CODE_FLOW
@@ -171,8 +119,6 @@ export async function signInViaDesktopLoginCode(
 
   let retriedPollErrors = 0
   try {
-    // Only the opaque one-time code transits the browser — never
-    // installation_id or any auth material.
     const loginUrl = new URL('/cloud/login', cloudOrigin)
     loginUrl.searchParams.set('desktop_login_code', grant.code)
     openExternalSafely(loginUrl.href)
@@ -190,10 +136,6 @@ export async function signInViaDesktopLoginCode(
         controller.abort()
         return 'handled'
       }
-      // Past the original deadline, a pending result means the code expired.
-      // A redeem in the last poll interval can still be exchangeable because
-      // Cloud keeps a 120s post-redeem window; bounded transport/mint failures
-      // therefore keep retrying through that grace period.
       const pastCodeDeadline = Date.now() >= deadlineMs
       try {
         const exchange = await exchangeDesktopLoginCode(
@@ -203,10 +145,6 @@ export async function signInViaDesktopLoginCode(
         )
         if (exchange.status === 'complete') customToken = exchange.custom_token
       } catch (err) {
-        // Transient server/network hiccups may clear up within the code's
-        // TTL. A redeem near expiry extends Cloud's exchange window, so keep
-        // retrying bounded failures through that grace period; terminal
-        // verdicts (403/404) still stop immediately.
         if (Date.now() < retryDeadlineMs && err instanceof DesktopLoginCodeError && err.retryable) {
           retriedPollErrors += 1
           continue
@@ -217,9 +155,6 @@ export async function signInViaDesktopLoginCode(
         throw new Error('desktop login code expired before sign-in completed')
       }
     }
-    // A re-click may supersede this flow at any await from here on —
-    // check before every await/side-effect so a stale flow never signs
-    // in, injects a user, or steals focus underneath the newer one.
     if (controller.signal.aborted) return 'handled'
     if (comfyContents.isDestroyed()) {
       controller.abort()
@@ -236,16 +171,8 @@ export async function signInViaDesktopLoginCode(
     if (controller.signal.aborted) return 'handled'
     const user = buildPersistedUserFromCustomToken(firebaseConfig, signIn, account)
     if (comfyContents.isDestroyed()) return 'handled'
-    // The system browser already shows its own success toast, so keep only a
-    // brief visual beat before Desktop pulls focus back. The legacy loopback
-    // bridge retains its full three-second countdown.
     await abortableSleep(LOGIN_CODE_POST_SIGNIN_HOLD_MS, controller.signal)
     if (controller.signal.aborted || comfyContents.isDestroyed()) return 'handled'
-    // The backend/login origin and the embedded session target are distinct:
-    // local and preview views authenticate through production Cloud, but the
-    // resulting Firebase session must be injected back into the exact origin
-    // that initiated the flow. Pin that origin before any awaits and fail if
-    // the view moved while the browser flow was open.
     if (!sessionTargetOrigin || !isOnOrigin(comfyContents, sessionTargetOrigin)) {
       throw new Error('embedded view changed origin before session injection')
     }
@@ -257,16 +184,10 @@ export async function signInViaDesktopLoginCode(
     )
     if (!injected) return 'handled'
     if (controller.signal.aborted) return 'handled'
-    // Bind only after the session was successfully installed. The injected
-    // session reloads hosted Cloud views, so the bind holds this user as
-    // pending and the consensus layer identifies — and emits the login
-    // attribution — once a document re-reports the same UID. Local/legacy
-    // views confirm through their scoped reporter the same way.
     bindSignedInUser(user, comfyContents, { via: 'desktop_login_code' })
     restoreParentWindow(opts.parentWindow)
     return 'handled'
   } catch (err) {
-    // A superseded attempt isn't a failure — the newer one owns the UX.
     if (controller.signal.aborted) return 'handled'
     const error = err instanceof Error ? err : new Error(String(err))
     const failure = emitSignInFailure(provider, DESKTOP_LOGIN_CODE_FLOW, error, {
@@ -275,8 +196,6 @@ export async function signInViaDesktopLoginCode(
     opts.onError?.(failure)
     return 'handled'
   } finally {
-    // Capture ownership before nulling: a superseded flow finishing late
-    // must not tear down the banner the newer flow just put up.
     const ownsUx = activeFlow === controller
     if (ownsUx) {
       activeFlow = null

@@ -12,14 +12,13 @@ const repoRoot = path.resolve(scriptDir, '..')
 const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
 const extraArgs = process.argv[2] === '--' ? process.argv.slice(3) : process.argv.slice(2)
 
-const basePath = path.resolve(
-  repoRoot,
-  String(process.env.DATADOG_SOURCEMAP_BASE_PATH || 'out'),
-)
+const basePath = path.resolve(repoRoot, String(process.env.DATADOG_SOURCEMAP_BASE_PATH || 'out'))
 const releaseVersion = resolveDatadogReleaseVersion()
 const service = String(process.env.VITE_DATADOG_RUM_SERVICE || 'comfyui-launcher').trim()
 const minifiedPathPrefix = String(process.env.DATADOG_SOURCEMAP_PREFIX || 'app://app').trim()
-const datadogSite = String(process.env.DATADOG_SITE || process.env.VITE_DATADOG_RUM_SITE || 'us5.datadoghq.com').trim()
+const datadogSite = String(
+  process.env.DATADOG_SITE || process.env.VITE_DATADOG_RUM_SITE || 'us5.datadoghq.com'
+).trim()
 
 if (!String(process.env.DATADOG_API_KEY || '').trim()) {
   throw new Error('DATADOG_API_KEY environment variable is required to upload Datadog sourcemaps.')
@@ -41,7 +40,7 @@ const args = [
   '--release-version',
   releaseVersion,
   '--minified-path-prefix',
-  minifiedPathPrefix,
+  minifiedPathPrefix
 ]
 
 execFileSync(pnpmCommand, args, {
@@ -49,7 +48,7 @@ execFileSync(pnpmCommand, args, {
   env: {
     ...process.env,
     DATADOG_SITE: datadogSite,
-    VITE_DATADOG_RUM_VERSION: releaseVersion,
+    VITE_DATADOG_RUM_VERSION: releaseVersion
   },
-  stdio: 'inherit',
+  stdio: 'inherit'
 })

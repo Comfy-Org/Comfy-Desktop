@@ -1,10 +1,3 @@
-/**
- * Typed client for the ingest desktop-login-code endpoints.
- * Talks to the same origin that serves the Cloud frontend — the load
- * balancer routes `/api/*` to ingest — so there is no separate API base
- * URL to configure.
- */
-
 import { net } from 'electron'
 
 const REQUEST_TIMEOUT_MS = 8000
@@ -17,14 +10,7 @@ function isIntegerInRange(value: unknown, min: number, max: number): value is nu
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
 }
 
-/**
- * Classified failure from the desktop-login-code endpoints. `retryable`
- * drives the poll loop: 5xx / network / timeout may clear up within the
- * code's TTL, while 403 (verifier mismatch) and 404 (unknown or expired
- * code) are final verdicts.
- */
 export class DesktopLoginCodeError extends Error {
-  /** HTTP status, when the server responded at all. */
   readonly status?: number
   readonly retryable: boolean
 
@@ -37,20 +23,15 @@ export class DesktopLoginCodeError extends Error {
 }
 
 export interface CreateDesktopLoginCodeRequest {
-  /** Telemetry machine hash; included only when consent is granted. */
   installation_id?: string
   platform: string
   app_version: string
-  /** S256 challenge for the desktop-held code verifier. */
   code_challenge: string
 }
 
-/** 201 payload. Field names mirror the wire format. */
 export interface DesktopLoginCodeGrant {
   code: string
-  /** Seconds until the code expires — the polling deadline. */
   expires_in: number
-  /** Seconds to wait between exchange polls. */
   poll_interval: number
 }
 
@@ -71,20 +52,10 @@ export interface JsonPostResponse {
   bodyText: string
 }
 
-// 408/429 are transient: each sign-in issues tens of exchange polls, so a rate
-// limiter on the endpoint is expected. Treating them as terminal would kill a
-// sign-in whose code and browser tab are both still valid. 403/404 stay final.
 function isRetryableStatus(status: number): boolean {
   return status >= 500 || status === 408 || status === 429
 }
 
-/**
- * JSON POST with a hard timeout. A caller abort propagates untouched so
- * the poll loop can tell cancellation apart from failure; timeouts and
- * network errors come back as retryable DesktopLoginCodeErrors.
- * Transport-error messages never include request or response bodies (which
- * may hold the code, verifier, or token).
- */
 export async function postJson(
   url: string,
   body: unknown,
@@ -96,9 +67,6 @@ export async function postJson(
   if (opts.signal?.aborted) controller.abort()
   else opts.signal?.addEventListener('abort', forwardAbort, { once: true })
   try {
-    // net.fetch (Chromium's stack), not Node's undici: it resolves the OS
-    // proxy, which is the only route to Google endpoints for many CN users.
-    // credentials 'omit' keeps the request cookie-free, matching undici.
     const resp = await net.fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -106,15 +74,11 @@ export async function postJson(
       signal: controller.signal,
       credentials: 'omit'
     })
-    // Fetch resolves when response headers arrive. Consume the body before
-    // clearing the timer so a headers-only response cannot stall auth forever.
     const bodyText = await resp.text()
     let data: unknown = null
     try {
       data = JSON.parse(bodyText)
-    } catch {
-      // Callers classify malformed JSON according to their endpoint contract.
-    }
+    } catch {}
     return {
       ok: resp.ok,
       status: resp.status,
@@ -136,11 +100,6 @@ export async function postJson(
   }
 }
 
-/**
- * Mint a short-lived login code bound to the PKCE challenge. Expects a
- * 201 grant; any failure means the flow can't start, so callers fall back
- * to the legacy loopback bridge.
- */
 export async function createDesktopLoginCode(
   apiOrigin: string,
   request: CreateDesktopLoginCodeRequest,
@@ -162,8 +121,6 @@ export async function createDesktopLoginCode(
     expires_in?: unknown
     poll_interval?: unknown
   } | null
-  // Reject out-of-contract timings before opening the browser. Rewriting them
-  // would make Desktop poll on a schedule or deadline the server did not issue.
   if (
     !data ||
     typeof data.code !== 'string' ||
@@ -182,11 +139,6 @@ export async function createDesktopLoginCode(
   }
 }
 
-/**
- * Poll the exchange endpoint with the code + verifier. `pending` until the
- * user redeems the code in their browser; `complete` exactly once with the
- * one-time Firebase custom token.
- */
 export async function exchangeDesktopLoginCode(
   apiOrigin: string,
   request: { code: string; code_verifier: string },

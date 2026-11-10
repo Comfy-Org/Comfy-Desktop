@@ -8,18 +8,17 @@ import {
   workspaceIdOf
 } from '../cloud/claims'
 import {
+  classifyMint,
   mintPartnerNodeToken,
   mintWorkspaceToken,
   renewPartnerNodeToken
 } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
-import { getCloudSession } from '../devplatform/session'
+import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import * as mainTelemetry from './telemetry'
 
 const MINT_REFRESH_SKEW_MS = 60_000
-/** A partner-node token is renewed once it has less than this left, so a queued prompt still has an hour. */
 const PARTNER_NODE_RENEW_BEFORE_MS = 60 * 60_000
-/** After a failed partner-node mint or renewal, Cloud is not asked again for this long unless `Retry-After` says longer. */
 const PARTNER_NODE_RETRY_MS = 60_000
 
 export const VIEW_TOKEN_MINTED_EVENT = 'comfy.desktop.auth.view_token_minted'
@@ -42,7 +41,9 @@ export interface GrantSession {
   currentGrantFamily(): string | null
   currentAuthGeneration(): number
   getGrantAccessToken(): Promise<string | null>
+  heldWorkspaceToken(workspaceId: string): string | null
   isWorkspaceMintAllowed(workspaceId: string): Promise<boolean>
+  endGrantFamily(accessToken: string): void
 }
 
 export type MintWorkspaceToken = (
@@ -107,16 +108,15 @@ export class ViewWorkspaceGrants {
   constructor(
     private readonly session: GrantSession,
     private readonly mint: MintWorkspaceToken = mintWorkspaceToken,
+    private readonly onUnauthorized: (accessToken: string) => void = () => {},
     private readonly partnerNode: PartnerNodeTokenCalls = PARTNER_NODE_TOKEN_CALLS
   ) {}
 
-  /** Desktop UI (sign-in, dashboard) chose `workspaceId`: every view may hold it. */
   allowDesktop(workspaceId: string | undefined): void {
     this.seed()
     if (workspaceId) this.desktopAllowed.add(workspaceId)
   }
 
-  /** `view` itself asked to switch to `workspaceId`. */
   allowView(view: WebContents, workspaceId: string): void {
     this.seed()
     const allowed = this.viewAllowed.get(view) ?? new Set<string>()
@@ -124,7 +124,6 @@ export class ViewWorkspaceGrants {
     this.viewAllowed.set(view, allowed)
   }
 
-  /** Sign-in or sign-out: forget every allowlist and token, and drop replies in flight. */
   endAll(): void {
     this.epoch += 1
     this.seeded = true
@@ -136,12 +135,10 @@ export class ViewWorkspaceGrants {
     this.minting = new Map()
   }
 
-  /** `gate` is awaited inside the reply fence, so a sign-in or switch during it drops the reply. */
   tokenFor(view: WebContents, workspaceId: string, gate: Gate = OPEN): Promise<string | null> {
     return this.handOut(view, workspaceId, gate, (fence) => this.workspaceToken(workspaceId, fence))
   }
 
-  /** The current partner-node token of Desktop's session for `workspaceId`, under the same rules as {@link tokenFor}. */
   partnerNodeTokenFor(
     view: WebContents,
     workspaceId: string,
@@ -182,7 +179,7 @@ export class ViewWorkspaceGrants {
     )
   }
 
-  private seed(): void {
+  seed(): void {
     if (this.seeded) return
     this.seeded = true
     const current = this.session.currentWorkspaceId()
@@ -197,11 +194,21 @@ export class ViewWorkspaceGrants {
     )
   }
 
+  private unmintable(grant: string, workspaceId: string, subject: string): HeldToken | null {
+    const token =
+      workspaceIdOf(grant) === workspaceId ? grant : this.session.heldWorkspaceToken(workspaceId)
+    if (!token || canMintWorkspaceTokens(token)) return null
+    if (workspaceIdOf(token) !== workspaceId || subjectOf(token) !== subject) return null
+    return { token, subject }
+  }
+
   private async workspaceToken(workspaceId: string, fence: MintFence): Promise<HeldToken | null> {
     const accessToken = await this.session.getGrantAccessToken()
-    if (!this.isCurrent(fence) || !accessToken || !canMintWorkspaceTokens(accessToken)) return null
+    if (!this.isCurrent(fence) || !accessToken) return null
     const subject = subjectOf(accessToken)
     if (!subject) return null
+    if (!canMintWorkspaceTokens(accessToken))
+      return this.unmintable(accessToken, workspaceId, subject)
     const key = mintKey(subject, workspaceId)
     const cached = this.minted.get(key)
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now())
@@ -212,12 +219,20 @@ export class ViewWorkspaceGrants {
     const result = await this.once(['workspace', key], fence, () =>
       this.mint(accessToken, workspaceId).then((minted) => {
         reportMint(minted)
+        const outcome = classifyMint(minted)
+        if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended')
+          this.session.endGrantFamily(accessToken)
+        if (minted.kind === 'failed' && minted.status === 401) this.onUnauthorized(accessToken)
         return minted
       })
     )
     if (!this.isCurrent(fence) || this.session.currentSubject() !== subject) return null
     if (result.kind !== 'minted') return null
-    if (workspaceIdOf(result.token) !== workspaceId || subjectOf(result.token) !== subject)
+    if (
+      workspaceIdOf(result.token) !== workspaceId ||
+      subjectOf(result.token) !== subject ||
+      canMintWorkspaceTokens(result.token)
+    )
       return null
     this.minted.set(key, { token: result.token, expiresAt: result.expiresAt })
     return { token: result.token, subject }
@@ -272,7 +287,6 @@ export class ViewWorkspaceGrants {
       : null
   }
 
-  /** Renew in the same session; a session that ended, was refused or nears its end gets a new one. */
   private async renewOrMint(
     key: string,
     partnerNodeToken: string,
@@ -312,13 +326,12 @@ export class ViewWorkspaceGrants {
 
 let grants: ViewWorkspaceGrants | null = null
 
-/** The process-wide view grants, bound to the shared CloudSession. */
 export function getViewWorkspaceGrants(): ViewWorkspaceGrants {
-  if (!grants) grants = new ViewWorkspaceGrants(getCloudSession())
+  if (!grants)
+    grants = new ViewWorkspaceGrants(getCloudSession(), mintWorkspaceToken, rejectAccessToken)
   return grants
 }
 
-/** @internal: reset the singleton between tests. */
 export function _resetForTest(): void {
   grants = null
 }

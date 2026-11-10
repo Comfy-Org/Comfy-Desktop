@@ -69,8 +69,6 @@ describe('getModelDownloadContentScript', () => {
   })
 
   it('does not inject the in-page downloads UI', () => {
-    // The downloads affordance lives in the title-bar tray, so these DOM IDs
-    // and the progress listener must NOT appear in the injected script.
     expect(script).not.toContain('__comfy-dl-tab')
     expect(script).not.toContain('__comfy-dl-toasts')
     expect(script).not.toContain('__comfy-dl-cardlist')
@@ -85,9 +83,6 @@ describe('getModelDownloadContentScript', () => {
   })
 
   it('auto-downloads 3D outputs (SaveGLB) alongside images/audio/video', () => {
-    // SaveGLB emits results under ui={"3d": [...]}, and the WebSocket intercept
-    // iterates a fixed key list, so "3d" must be present or .glb files silently
-    // fail to download from cloud/remote sessions.
     expect(script).toContain(`['images', 'gifs', 'audio', 'video', '3d']`)
   })
 })
@@ -106,10 +101,6 @@ describe('missing-model error group interception (behavioral)', () => {
     return new Promise((resolve) => setTimeout(resolve, 0))
   }
 
-  // Build the right-side-panel missing-model group the way the frontend renders
-  // it, but wrap every translatable label in a non-English string. Only the raw
-  // directory ("loras") and the model filename (the `title` attr) are read, so a
-  // correct mapping here proves the scrape survives i18n.
   function buildLocalizedErrorGroup(directory: string, modelName: string) {
     document.body.innerHTML = `
       <div data-testid="error-group-missing-model">
@@ -144,7 +135,6 @@ describe('missing-model error group interception (behavioral)', () => {
 
     new Function(getModelDownloadContentScript())()
 
-    // The script only scrapes on mutation; nudge the observer, then let it run.
     document.body.appendChild(document.createElement('div'))
     await flushObserver()
 
@@ -223,7 +213,6 @@ describe('remote output auto-download intercept (behavioral)', () => {
   it('downloads a delivered output exactly once even if the event repeats', () => {
     const { downloadAsset } = setup()
     const ws = connect('ws://remote.example/ws?token=abc')
-    // Same executed event delivered twice (e.g. a replay after a reconnect).
     ws.emit(executedMsg('p1', 'img.png'))
     ws.emit(executedMsg('p1', 'img.png'))
     expect(downloadAsset).toHaveBeenCalledTimes(1)

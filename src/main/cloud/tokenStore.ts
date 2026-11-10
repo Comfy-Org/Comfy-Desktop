@@ -1,14 +1,8 @@
-/**
- * OAuth token store (main process only). Tokens are encrypted at rest with
- * Electron `safeStorage` in `userData/comfy-cloud-auth.bin` and never reach the
- * renderer, logs, or disk in plaintext. When the OS secure-storage backend is
- * unavailable, tokens are kept in memory for the process lifetime only.
- */
 import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import { canMintWorkspaceTokens, statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
@@ -18,7 +12,6 @@ interface TokenVault {
   version: typeof VAULT_VERSION
   subject?: string
   grant: AuthTokens
-  mintScopeWithheld?: true
   activeWorkspaceId: string | null
   workspaceTokens: Record<string, AuthTokens>
   workspaceNames?: Record<string, string>
@@ -36,10 +29,6 @@ let cachedVault: TokenVault | null = null
 let authFilePath: string | null = null
 let secureStorageUnavailable = false
 
-/** True when the last save/load found no OS secure-storage backend, so tokens
- *  live only in memory for this process. False before any check has run. A
- *  getter rather than an exported binding: a re-exported `let` can be captured
- *  stale after CJS transpilation. */
 export function isSecureStorageUnavailable(): boolean {
   return secureStorageUnavailable
 }
@@ -83,7 +72,6 @@ function isVault(v: unknown): v is TokenVault {
   if (!isRecord(v) || v.version !== VAULT_VERSION) return false
   return (
     isTokens(v.grant) &&
-    (v.mintScopeWithheld === undefined || v.mintScopeWithheld === true) &&
     (v.activeWorkspaceId === null || typeof v.activeWorkspaceId === 'string') &&
     (v.subject === undefined || typeof v.subject === 'string') &&
     isRecord(v.workspaceTokens) &&
@@ -126,21 +114,14 @@ function migratedVault(legacy: LegacyVault): TokenVault | null {
 function persistVault(vault: TokenVault): void {
   cachedVault = vault
   if (!encryptionAvailable()) {
-    // No secure backend: never write plaintext, and drop any prior encrypted
-    // file so a later run can't read stale tokens back as current.
     try {
       fs.rmSync(filePath(), { force: true })
-    } catch {
-      /* nothing to remove */
-    }
+    } catch {}
     return
   }
   try {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(vault)))
-  } catch {
-    // A failed persist must not fail the sign-in the user just completed; the
-    // in-memory cache still holds the tokens for this session.
-  }
+  } catch {}
 }
 
 function loadVault(): TokenVault | null {
@@ -171,18 +152,13 @@ function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
   )
 }
 
-/** Store the grant from a browser sign-in. A changed account replaces the vault. The old access
- *  token stays held for its old anchor; an active workspace with no held token moves to the new one. */
-export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: boolean } = {}): void {
-  const withheld = options.mintScopeWithheld ? ({ mintScopeWithheld: true } as const) : {}
+export function saveGrant(grant: AuthTokens): void {
   const current = loadVault()
   const subject = subjectOf(grant.accessToken)
   if (!current || !subject || current.subject !== subject) {
-    persistVault({ ...vaultFor(grant), ...withheld })
+    persistVault(vaultFor(grant))
     return
   }
-  delete current.mintScopeWithheld
-  Object.assign(current, withheld)
   const previous = current.grant
   const previousAnchor = workspaceIdOf(previous.accessToken)
   if (
@@ -201,27 +177,18 @@ export function saveGrant(grant: AuthTokens, options: { mintScopeWithheld?: bool
   persistVault(current)
 }
 
-/** A browser sign-in returned this grant without the mint scope, so another trip would not help. */
-export function isMintScopeWithheld(): boolean {
-  return loadVault()?.mintScopeWithheld === true
-}
-
-/** The OAuth grant bundle, the only one carrying a refresh token. */
 export function loadGrant(): AuthTokens | null {
   return loadVault()?.grant ?? null
 }
 
-/** The workspace API calls act in, or null when signed out or the grant has no workspace claim. */
 export function loadActiveWorkspaceId(): string | null {
   return loadVault()?.activeWorkspaceId ?? null
 }
 
-/** A token minted for `workspaceId`, without changing the active workspace. */
 export function loadWorkspaceToken(workspaceId: string): AuthTokens | null {
   return loadVault()?.workspaceTokens[workspaceId] ?? null
 }
 
-/** Store a token minted for `workspaceId`, without changing the active workspace. */
 export function saveWorkspaceToken(workspaceId: string, tokens: AuthTokens): void {
   const vault = loadVault()
   if (!vault) return
@@ -229,7 +196,6 @@ export function saveWorkspaceToken(workspaceId: string, tokens: AuthTokens): voi
   persistVault(vault)
 }
 
-/** Forget the minted token with this exact value. False when no minted token matches. */
 export function dropWorkspaceToken(accessToken: string): boolean {
   const vault = loadVault()
   if (!vault) return false
@@ -242,7 +208,6 @@ export function dropWorkspaceToken(accessToken: string): boolean {
   return true
 }
 
-/** Cache workspace names only when the response belongs to the current account. */
 export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[]): void {
   const vault = loadVault()
   const subject = subjectOf(accessToken)
@@ -253,12 +218,10 @@ export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[])
   persistVault(vault)
 }
 
-/** Return a cached workspace name by durable id without changing the active workspace. */
 export function getCachedWorkspaceName(workspaceId: string): string | null {
   return loadVault()?.workspaceNames?.[workspaceId] ?? null
 }
 
-/** Make `workspaceId` active. False, and no change, unless it is the anchor or a token is held for it. */
 export function activateWorkspace(workspaceId: string): boolean {
   const vault = loadVault()
   if (!vault || !holdsToken(vault, workspaceId)) return false
@@ -267,7 +230,6 @@ export function activateWorkspace(workspaceId: string): boolean {
   return true
 }
 
-/** Compare-and-swap the grant after refresh rotation. */
 export function replaceGrant(
   expectedAccessToken: string,
   expectedRefreshToken: string,
@@ -284,18 +246,23 @@ export function replaceGrant(
     return false
   }
   vault.grant = grant
-  if (canMintWorkspaceTokens(grant.accessToken)) delete vault.mintScopeWithheld
   persistVault(vault)
   return true
+}
+
+export function endGrant(expectedAccessToken: string): void {
+  const vault = loadVault()
+  if (!vault || vault.grant.accessToken !== expectedAccessToken) return
+  const { refreshToken: _ended, ...grant } = vault.grant
+  vault.grant = grant
+  persistVault(vault)
 }
 
 export function clearTokens(): void {
   cachedVault = null
   try {
     fs.rmSync(filePath(), { force: true })
-  } catch {
-    /* nothing to remove */
-  }
+  } catch {}
 }
 
 function activeToken(vault: TokenVault): string | null {
@@ -319,7 +286,6 @@ export function getAuthStatus(): AuthStatus {
   return workspaceName ? { ...status, workspaceName } : status
 }
 
-/** @internal reset module state between unit tests. */
 export function _resetForTest(): void {
   cachedVault = null
   authFilePath = null

@@ -1,8 +1,5 @@
 name: Publish Bridge Types
 
-# One workflow owns every publish because npm trusted publishing authorizes an
-# exact workflow filename. Automatic and manual runs both publish only the
-# checked-out main commit; there is intentionally no free-form ref input.
 on:
   push:
     branches: [main]
@@ -22,8 +19,6 @@ on:
 permissions:
   contents: read
 
-# npm package versions are immutable, so publishing this package must always
-# serialize, regardless of the event or requested dist-tag.
 concurrency:
   group: publish-comfyui-desktop-bridge-types
   cancel-in-progress: false
@@ -31,7 +26,6 @@ concurrency:
 jobs:
   publish_bridge_types:
     name: Publish @comfyorg/comfyui-desktop-bridge-types
-    # Defense in depth around the environment's main-only deployment policy.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: npm-publish
@@ -60,8 +54,6 @@ jobs:
             echo "::error title=Package name mismatch::Expected $EXPECTED_NAME, found $NAME" >&2
             exit 1
           fi
-          # A dispatcher who names a version is asserting what they expect main
-          # to hold; the checked-out main commit remains the source of truth.
           if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "$VERSION" ]; then
             echo "::error title=Version mismatch::${PACKAGE_JSON} version $VERSION does not match input $INPUT_VERSION" >&2
             exit 1
@@ -90,8 +82,6 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          # npm trusted publishing requires Node >=22.14 and npm >=11.5.1.
-          # Node 26 supplies a compatible npm CLI.
           node-version: 26
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
@@ -122,9 +112,6 @@ jobs:
           fi
           echo "exists=true" >> "$GITHUB_OUTPUT"
 
-          # A rerun is harmless only when npm already serves the exact package.
-          # Compare packed artifacts so package.json entrypoints and the files
-          # allowlist are covered. README-only edits may ride with the next bump.
           WORK=$(mktemp -d "$RUNNER_TEMP/bridge-types.XXXXXX")
           mkdir -p "$WORK/published-tar" "$WORK/published" "$WORK/local-tar" "$WORK/local"
           npm pack --ignore-scripts "${NAME}@${VER}" --pack-destination "$WORK/published-tar" >/dev/null
