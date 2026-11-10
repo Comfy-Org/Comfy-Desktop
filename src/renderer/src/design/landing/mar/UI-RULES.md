@@ -105,7 +105,7 @@ DS's Motion page (`ds/motion.ts`).
 - Respect `prefers-reduced-motion` on every transition.
 
 - **Title bar is tabs** (default): Home as an icon, then the build it
-  runs on (it opens the switcher), a short divider, then one tab per open
+  runs on (a filled pill that opens the switcher), a short divider, then one tab per open
   workflow and app, so an open workflow stays in view on Home. The one
   divider allowed by No lines. Pablo's
   breadcrumb is one pick away (Prototype menu › Title bar).

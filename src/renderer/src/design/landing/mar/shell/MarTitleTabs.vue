@@ -22,9 +22,11 @@ function openSwitcher(e: MouseEvent): void {
   emit('command', { type: 'switcher', left: r.left, width: r.width, bottom: r.bottom })
 }
 
+const base =
+  '[-webkit-app-region:no-drag] group flex h-7 min-w-0 shrink cursor-default items-center gap-2 rounded-control text-ui outline-none focus-visible:ring-2 focus-visible:ring-border-focus'
 const tab = (active: boolean): string =>
   [
-    '[-webkit-app-region:no-drag] group flex h-7 min-w-0 shrink cursor-default items-center gap-2 rounded-control text-ui outline-none focus-visible:ring-2 focus-visible:ring-border-focus',
+    base,
     active
       ? 'bg-secondary-background-hover text-base-foreground'
       : 'text-muted-foreground hover:bg-secondary-background hover:text-base-foreground'
@@ -51,7 +53,14 @@ const close = (active: boolean): string =>
     <button
       v-if="state.runsOn"
       type="button"
-      :class="[tab(state.menuOpen), 'shrink-0 pr-1.5 pl-2']"
+      :class="[
+        base,
+        // A resting fill, so the build reads as a control, not floating text.
+        state.menuOpen
+          ? 'bg-secondary-background-hover text-base-foreground'
+          : 'bg-secondary-background text-base-foreground hover:bg-secondary-background-hover',
+        'shrink-0 pr-1.5 pl-2'
+      ]"
       title="Where your work runs"
       aria-haspopup="menu"
       :aria-expanded="state.menuOpen"
