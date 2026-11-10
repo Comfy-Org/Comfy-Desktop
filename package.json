@@ -25,6 +25,7 @@
     "dev:bootstrap": "node -e \"process.env.COMFY_FORCE_BOOTSTRAP_GIT='1';require('child_process').execSync('electron-vite dev',{stdio:'inherit',env:process.env})\"",
     "build": "pnpm run typecheck && electron-vite build",
     "start": "electron-vite preview",
+    "apps": "node scripts/apps.mjs",
     "postinstall": "node ./scripts/postinstall.mjs",
     "todesktop:beforeInstall": "./scripts/todesktop-beforeInstall.cjs",
     "todesktop:beforeBuild": "./scripts/todesktop-beforeBuild.cjs",

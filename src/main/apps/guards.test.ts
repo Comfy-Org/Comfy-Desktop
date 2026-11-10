@@ -10,7 +10,9 @@ import {
   interruptJson,
   DEFAULT_APPS_URL,
   isAppsFrameUrl,
+  isDocumentFailure,
   isInside,
+  isPageLoadFailure,
   isRunId,
   isVersionsIndex,
   isWorkflow,
@@ -527,5 +529,21 @@ describe('stopping local runs', () => {
     ]) {
       expect(queueJson(body), JSON.stringify(body)).toBeNull()
     }
+  })
+})
+
+describe('apps page load failures', () => {
+  it('counts a failed main-frame load, but not one replaced by another navigation', () => {
+    expect(isPageLoadFailure(-105)).toBe(true)
+    expect(isPageLoadFailure(-106)).toBe(true)
+    expect(isPageLoadFailure(-3)).toBe(false)
+    expect(isPageLoadFailure(0)).toBe(false)
+  })
+
+  it('counts a main document that is not 2xx', () => {
+    expect([200, 204, 299].map(isDocumentFailure)).toEqual([false, false, false])
+    expect([404, 500, 503, 199, 304].map(isDocumentFailure)).toEqual([true, true, true, true, true])
+    expect(isDocumentFailure(-1)).toBe(false)
+    expect(isDocumentFailure(0)).toBe(false)
   })
 })

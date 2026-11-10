@@ -15,6 +15,13 @@ const alert = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
 const showApps = vi.fn()
 const hideApps = vi.fn()
+let appsLoadFailed: ((info: { url: string }) => void) | null = null
+const onAppsLoadFailed = vi.fn((callback: (info: { url: string }) => void) => {
+  appsLoadFailed = callback
+  return () => {
+    appsLoadFailed = null
+  }
+})
 
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert })
@@ -71,6 +78,7 @@ beforeEach(() => {
     downloadAsset,
     showApps,
     hideApps,
+    onAppsLoadFailed,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -88,8 +96,35 @@ describe('AppsView', () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
     expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
-    expect(showApps).toHaveBeenCalled()
+    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
     expect(listAssets).not.toHaveBeenCalled()
+  })
+
+  it('shows Coming soon and the address when the apps page cannot load, and retries on reopening', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listAssets.mockResolvedValue([])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    appsLoadFailed!({ url: 'https://apps.example/apps/' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.get('[data-testid="apps-load-failed"]').text()).toContain(
+      'https://apps.example/apps/'
+    )
+    expect(hideApps).toHaveBeenCalled()
+
+    showApps.mockClear()
+    const tabButton = (label: string) => wrapper.findAll('button').find((n) => n.text() === label)!
+    await tabButton('Generated Files').trigger('click')
+    await flushPromises()
+    await tabButton('All apps').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-load-failed"]').exists()).toBe(false)
+    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
   })
 
   it('starts in masonry with file names and details hidden', async () => {

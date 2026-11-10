@@ -14,7 +14,9 @@ import {
   cleanSaveName,
   collectOutputs,
   isAppsFrameUrl,
+  isDocumentFailure,
   isInside,
+  isPageLoadFailure,
   isRunId,
   isVersionsIndex,
   isWorkflow,
@@ -43,11 +45,16 @@ const APPS_PARTITION = 'persist:comfy-apps'
 
 const views = new Map<number, WebContentsView>()
 
+const failedViews = new WeakSet<WebContentsView>()
+
+export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
+
 export interface AppsRect {
   x: number
   y: number
   width: number
   height: number
+  fresh?: boolean
 }
 
 export type AppsAuthState = { signedIn: false } | { signedIn: true; email?: string }
@@ -56,7 +63,17 @@ function openOutside(url: string): void {
   if (url.startsWith('https://')) void shell.openExternal(url)
 }
 
-function createAppsView(): WebContentsView {
+function tellPanelLoadFailed(panel: WebContents | undefined, url: string): void {
+  if (panel && !panel.isDestroyed()) panel.send(APPS_LOAD_FAILED_CHANNEL, { url })
+}
+
+function markLoadFailed(key: number, view: WebContentsView, url: string): void {
+  failedViews.add(view)
+  view.setVisible(false)
+  tellPanelLoadFailed(comfyWindows.get(key)?.panelView?.webContents, url || APPS_URL)
+}
+
+function createAppsView(key: number): WebContentsView {
   const view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, '../preload/appsPreload.js'),
@@ -77,7 +94,13 @@ function createAppsView(): WebContentsView {
     openOutside(url)
     return { action: 'deny' }
   })
-  void wc.loadURL(APPS_URL)
+  wc.on('did-fail-load', (_event, errorCode, _description, url, isMainFrame) => {
+    if (isMainFrame && isPageLoadFailure(errorCode)) markLoadFailed(key, view, url)
+  })
+  wc.on('did-navigate', (_event, url, httpResponseCode) => {
+    if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
+  })
+  wc.loadURL(APPS_URL).catch(() => {})
   return view
 }
 
@@ -92,14 +115,20 @@ function entryForPanel(
 
 function showApps(event: IpcMainEvent, rect: unknown): void {
   const found = entryForPanel(event.sender)
-  if (!found || !APPS_ORIGIN) return
+  if (!found) return
+  if (!APPS_ORIGIN) return tellPanelLoadFailed(event.sender, APPS_URL)
   const [key, entry] = found
   const r = rect as Partial<AppsRect> | null
   if (!r || ![r.x, r.y, r.width, r.height].every((n) => typeof n === 'number' && isFinite(n)))
     return
   let view = views.get(key)
+  if (view && failedViews.has(view)) {
+    if (r.fresh !== true) return
+    failedViews.delete(view)
+    view.webContents.loadURL(APPS_URL).catch(() => {})
+  }
   if (!view || view.webContents.isDestroyed()) {
-    view = createAppsView()
+    view = createAppsView(key)
     views.set(key, view)
     entry.window.once('closed', () => {
       views.delete(key)

@@ -52,6 +52,10 @@ const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
 const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
+const appsLoadFailedUrl = ref<string | null>(null)
+watch(tab, (next) => {
+  if (next === 'all') appsLoadFailedUrl.value = null
+})
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -419,9 +423,21 @@ function extensionOf(name: string): string {
       </div>
     </div>
 
-    <AppsHost v-if="tab === 'all'" />
+    <AppsHost v-if="tab === 'all' && !appsLoadFailedUrl" @failed="appsLoadFailedUrl = $event" />
     <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
+      <template v-if="tab === 'all'">
+        <p class="m-0 text-ui text-muted-foreground" data-testid="apps-coming-soon">
+          {{ t('sidebar.comingSoon') }}
+        </p>
+        <p class="mt-2 mb-0 text-ui text-muted-foreground" data-testid="apps-load-failed">
+          {{ t('apps.loadFailed', { url: appsLoadFailedUrl }) }}
+        </p>
+      </template>
+      <div
+        v-else-if="loading && assets.length === 0"
+        role="status"
+        :aria-label="t('common.loading')"
+      >
         <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
             <Skeleton

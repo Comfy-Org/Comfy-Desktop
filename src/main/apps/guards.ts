@@ -435,3 +435,13 @@ export function downloadRequest(input: unknown): DownloadRequest | { error: stri
   if (name.startsWith('.')) return { error: 'A model name ends in .safetensors or .pth.' }
   return { url: parsed.href, folder, name }
 }
+
+const ERR_ABORTED = -3
+
+export function isPageLoadFailure(errorCode: number): boolean {
+  return errorCode !== 0 && errorCode !== ERR_ABORTED
+}
+
+export function isDocumentFailure(httpResponseCode: number): boolean {
+  return httpResponseCode > 0 && (httpResponseCode < 200 || httpResponseCode >= 300)
+}
