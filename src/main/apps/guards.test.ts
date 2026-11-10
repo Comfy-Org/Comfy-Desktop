@@ -136,6 +136,11 @@ describe('safeUploadName', () => {
     expect(safeUploadName('shot.mp4')).toBe('shot.mp4')
     expect(safeUploadName('shot.webm')).toBe('shot.webm')
   })
+  it('keeps a song name', () => {
+    expect(safeUploadName('My Song.mp3')).toBe('My_Song.mp3')
+    expect(safeUploadName('take.flac')).toBe('take.flac')
+    expect(safeUploadName('voice.m4a')).toBe('voice.m4a')
+  })
 })
 
 describe('collectOutputs', () => {
@@ -481,7 +486,8 @@ describe('downloadRequest', () => {
       'model_patches',
       'background_removal',
       'frame_interpolation',
-      'geometry_estimation'
+      'geometry_estimation',
+      'audio_encoders'
     ]) {
       expect(downloadRequest({ ...ok, folder })).not.toHaveProperty('error')
     }
