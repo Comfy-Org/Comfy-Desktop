@@ -412,7 +412,7 @@ export class CloudSession {
     intent: WorkspaceSwitchIntent = 'chosen'
   ): Promise<SessionSwitchReply> {
     if (this.switching?.workspaceId === workspaceId) {
-      if (intent === 'chosen') this.switchIntent = 'chosen'
+      if (intent === 'chosen' || this.switchIntent === 'restored') this.switchIntent = intent
       return this.switching.result
     }
     this.clearPendingLogin()
