@@ -7,9 +7,9 @@ import type { TitleBarCommand, TitleBarState } from '../../titleBarBridge'
 
 /**
  * Mar's title bar (Prototype menu › Title bar › Tabs): only tabs, like
- * Figma. Home is a fixed icon tab; each open workflow and app follows with
- * its own close button. On the right, where things run (it opens the build
- * switcher, so there is no "Open a build" crumb) and the agent. Renders in
+ * Figma. Home is a fixed icon tab, then where things run (it opens the
+ * build switcher, so there is no "Open a build" crumb), a divider, and each
+ * open workflow and app with its own close button. The agent on the right. Renders in
  * the app's title bar and the browser preview's stand-in, from the same
  * published state (titleBarBridge.ts). The agent opens on the Home tab, so
  * while it is open the agent button is the one lit, not Home.
@@ -48,6 +48,25 @@ const close = (active: boolean): string =>
     >
       <Home :size="15" />
     </button>
+    <button
+      v-if="state.runsOn"
+      type="button"
+      :class="[tab(state.menuOpen), 'shrink-0 pr-1.5 pl-2']"
+      title="Where your work runs"
+      aria-haspopup="menu"
+      :aria-expanded="state.menuOpen"
+      @click="openSwitcher"
+    >
+      <LocationIcon :kind="state.runsOn.kind" :size="14" />
+      <span class="max-w-40 truncate">{{ state.runsOn.name }}</span>
+      <ChevronDown :size="13" />
+    </button>
+    <!-- Where things run sits by Home; a divider, then what's open. -->
+    <span
+      v-if="state.runsOn && (state.tabs?.length || state.assets || state.apps?.length)"
+      class="mx-1.5 h-4 w-px shrink-0 bg-border-default"
+      aria-hidden="true"
+    />
 
     <div
       v-for="t in state.tabs ?? []"
@@ -120,19 +139,6 @@ const close = (active: boolean): string =>
 
     <span class="flex-1" aria-hidden="true" />
 
-    <button
-      v-if="state.runsOn"
-      type="button"
-      :class="[tab(state.menuOpen), 'shrink-0 pr-1.5 pl-2']"
-      title="Where your work runs"
-      aria-haspopup="menu"
-      :aria-expanded="state.menuOpen"
-      @click="openSwitcher"
-    >
-      <LocationIcon :kind="state.runsOn.kind" :size="14" />
-      <span class="max-w-40 truncate">{{ state.runsOn.name }}</span>
-      <ChevronDown :size="13" />
-    </button>
     <button
       v-if="state.agent !== undefined"
       type="button"

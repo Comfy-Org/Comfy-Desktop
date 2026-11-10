@@ -80,6 +80,8 @@ DS's Motion page (`ds/motion.ts`).
 - **Default view: masonry, 5 columns, ungrouped.** Apps and Assets have the
   same column count unless the person changes size.
 - **Video plays on hover**, muted; the bar along the bottom scrubs.
+- **Upload is always on** once a build is picked, running or not (a local
+  build's inputs are a folder on disk). Off only with no build picked.
 - **One build at a time** in Desktop's Assets, the last used running one
   (else the local one); Everywhere is only a Playground tweak.
 - **Folders nest** with a chevron, folded by default, the way to the open
@@ -102,8 +104,10 @@ DS's Motion page (`ds/motion.ts`).
   ones that change).
 - Respect `prefers-reduced-motion` on every transition.
 
-- **Title bar is tabs** (default): Home as an icon, one tab per open
-  workflow and app, so an open workflow stays in view on Home. Pablo's
+- **Title bar is tabs** (default): Home as an icon, then the build it
+  runs on (it opens the switcher), a short divider, then one tab per open
+  workflow and app, so an open workflow stays in view on Home. The one
+  divider allowed by No lines. Pablo's
   breadcrumb is one pick away (Prototype menu › Title bar).
 
 ## Links

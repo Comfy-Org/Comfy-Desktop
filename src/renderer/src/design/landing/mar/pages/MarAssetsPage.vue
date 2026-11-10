@@ -1009,24 +1009,16 @@ function refresh(): void {
 /** Each card's place on the wall, for the stagger. */
 const place = computed(() => new Map(shown.value.map((a, i) => [a.id, i])))
 
-/** Upload: into the picked build's inputs, through that build. Only a
- *  local build that's running takes files; nothing starts on its own. */
-const uploadable = computed(
-  () =>
-    inGraph ||
-    !!fixedProject ||
-    (!!current.value && current.value.kind !== 'cloud' && status.value === 'running')
-)
+/** Upload: into the picked build's inputs. Always on once a build is
+ *  picked: a local build's inputs are a folder on disk, so it doesn't need
+ *  to be running; a cloud build takes them through the account. */
+const uploadable = computed(() => inGraph || !!fixedProject || !!current.value)
 const uploadTitle = computed(() =>
   inGraph
     ? 'Upload files'
-    : fixedProject || uploadable.value
+    : uploadable.value
       ? `Add files to ${fixedProject ?? current.value?.name} inputs`
-      : build.value === 'all' || build.value === ''
-        ? 'Pick a build to add files to'
-        : current.value?.kind === 'cloud'
-          ? 'Upload to Comfy Cloud from Comfy Cloud'
-          : `Start ${current.value?.name} to add files`
+      : 'Pick a build to add files to'
 )
 const picker = ref<HTMLInputElement>()
 let uploads = 0
