@@ -320,8 +320,8 @@ const groups = computed<FactGroup[]>(() => {
 </script>
 
 <template>
-  <div class="status-fact-panel flex flex-col gap-5">
-    <header v-if="installation" class="status-fact-hero flex flex-col gap-1.5">
+  <div class="status-fact-panel flex max-w-[720px] flex-col gap-3">
+    <header v-if="installation" class="status-fact-hero mb-1 flex flex-col gap-1.5">
       <div class="status-fact-hero-title-row flex flex-wrap items-center gap-2">
         <span
           class="status-fact-hero-name-wrap group/name -ml-1.5 inline-flex max-w-full items-center gap-1.5"
@@ -330,7 +330,7 @@ const groups = computed<FactGroup[]>(() => {
             v-if="nameEditable"
             id="status-fact-hero-name"
             ref="nameEl"
-            class="status-fact-hero-name peer/name cursor-text hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] min-w-0 truncate rounded-md px-1.5 py-0.5 text-[18px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease]"
+            class="status-fact-hero-name peer/name cursor-text hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] min-w-0 truncate rounded-md px-1.5 py-0.5 text-[16px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease]"
             role="textbox"
             :aria-label="t('statusFactPanel.editName')"
             contenteditable="plaintext-only"
@@ -344,7 +344,7 @@ const groups = computed<FactGroup[]>(() => {
           />
           <span
             v-else
-            class="status-fact-hero-name min-w-0 truncate rounded-md px-1.5 py-0.5 text-[18px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease] status-fact-hero-name-static cursor-default"
+            class="status-fact-hero-name min-w-0 truncate rounded-md px-1.5 py-0.5 text-[16px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease] status-fact-hero-name-static cursor-default"
             >{{ installation.name }}</span
           >
           <Button
@@ -373,29 +373,31 @@ const groups = computed<FactGroup[]>(() => {
       </div>
     </header>
 
-    <section v-for="group in groups" :key="group.id" class="status-fact-group flex flex-col gap-2">
+    <section
+      v-for="group in groups"
+      :key="group.id"
+      class="status-fact-group flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-[18px] pt-1.5 pb-2"
+    >
       <h3
-        class="status-fact-group-title m-0 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase opacity-70"
+        class="status-fact-group-title mt-2 mb-1 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase opacity-70"
       >
         {{ group.title }}
       </h3>
-      <dl
-        class="status-fact-list m-0 flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-1"
-      >
+      <dl class="status-fact-list m-0 flex flex-col">
         <div
           v-for="row in group.rows"
           :key="row.id"
-          class="status-fact-row grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-center gap-3 border-t border-solid border-border-hover py-2.5 first:border-t-0"
+          class="status-fact-row grid min-h-9 grid-cols-[160px_minmax(0,1fr)] items-center gap-4 border-t border-solid border-border-hover py-2 first:border-t-0"
         >
           <dt class="m-0 text-[12px] leading-4 text-text-muted">{{ row.label }}</dt>
           <dd
             v-if="isUrlRow(row)"
-            class="m-0 flex min-w-0 items-center justify-end gap-1.5 text-right text-[13px] leading-[19px] text-neutral-100 status-fact-url-dd flex-wrap gap-y-1"
+            class="m-0 flex min-w-0 items-center justify-start gap-1.5 text-left text-[13px] leading-[19px] text-neutral-100 status-fact-url-dd flex-wrap gap-y-1"
           >
             <span class="status-fact-url-edit inline-flex min-w-0 max-w-full items-center gap-1.5">
               <span
                 ref="urlEl"
-                class="status-fact-value min-w-0 truncate status-fact-url-editable -mr-1.5 cursor-text rounded-md px-1.5 py-0.5 text-right outline-none transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] focus-visible:overflow-visible focus-visible:text-clip"
+                class="status-fact-value min-w-0 truncate status-fact-url-editable -ml-1.5 cursor-text rounded-md px-1.5 py-0.5 text-left outline-none transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] focus-visible:overflow-visible focus-visible:text-clip"
                 role="textbox"
                 :aria-label="t('statusFactPanel.editUrl')"
                 contenteditable="plaintext-only"
@@ -427,7 +429,7 @@ const groups = computed<FactGroup[]>(() => {
           </dd>
           <dd
             v-else
-            class="m-0 flex min-w-0 items-center justify-end gap-1.5 text-right text-[13px] leading-[19px] text-neutral-100"
+            class="m-0 flex min-w-0 items-center justify-start gap-1.5 text-left text-[13px] leading-[19px] text-neutral-100"
           >
             <Button
               v-if="row.openable"
