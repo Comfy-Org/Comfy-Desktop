@@ -2169,7 +2169,7 @@ describe('CloudSession logout revokes this device on Cloud (T-V8, T-V18)', () =>
     expect(revokedTokens).toEqual(['refresh-w1'])
   })
 
-  it('does not revoke a grant whose refresh lands after another account signed in and out', async () => {
+  it('revokes a grant another account replaced, its late rotation, and the signed-out grant', async () => {
     const first = grantOn('w1', { expiresAt: PAST })
     saveGrant(first)
     const rotation = deferred<AuthTokens>()
@@ -2181,11 +2181,59 @@ describe('CloudSession logout revokes this device on Cloud (T-V8, T-V18)', () =>
     browserSignInReturnsOnce(signedInResult(second))
     await session.login()
     session.logout()
-    rotation.resolve(grantOn('w1', { revision: '-fresh' }))
+    const rotated = grantOn('w1', { revision: '-fresh' })
+    rotation.resolve(rotated)
     await request
 
     await vi.waitFor(() => expect(pendingRevocations()).toEqual([]))
-    expect(revokedTokens).toEqual([second.refreshToken])
+    expect([...revokedTokens].sort()).toEqual(
+      [first.refreshToken, rotated.refreshToken, second.refreshToken].sort()
+    )
+  })
+
+  it.each<[string, AuthTokens]>([
+    ['the same account', grantOn('w1', { revision: '-again' })],
+    ['another account', grantOn('w2', { subject: 'user-2' })]
+  ])('revokes the grant a new sign-in as %s replaces', async (_name, next) => {
+    const replaced = grantOn('w1')
+    saveGrant(replaced)
+    browserSignInReturns(signedInResult(next))
+
+    await new CloudSession().login()
+
+    await vi.waitFor(() => expect(pendingRevocations()).toEqual([]))
+    expect(revokedTokens).toEqual([replaced.refreshToken])
+  })
+
+  it.each<[string, () => void]>([
+    ['the server kill switch', () => (mintReply = mintDisabled)],
+    ['the Desktop ops flag', killMintSwitch],
+    ['an SSO policy', () => (mintReply = () => json(403, { code: 'sso_required' }))]
+  ])('revokes the grant a switch replaces with a sign-in for %s', async (_name, arrange) => {
+    const replaced = grantOn('w1')
+    saveGrant(replaced)
+    arrange()
+    browserSignInReturns(signedInResult(grantOn('w2', { revision: '-consented' })))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    await vi.waitFor(() => expect(pendingRevocations()).toEqual([]))
+    expect(revokedTokens).toEqual([replaced.refreshToken])
+  })
+
+  it('revokes nothing for a grant Cloud reported ended when a sign-in replaces it', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(401, { code: 'oauth_grant_ended' })
+    browserSignInReturns(signedInResult(grantOn('w2', { revision: '-consented' })))
+
+    await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
+      workspaceId: 'w2'
+    })
+
+    expect(pendingRevocations()).toEqual([])
+    expect(revokedTokens).toEqual([])
   })
 
   it('revokes nothing for a grant from an older build until a refresh proves its Cloud', async () => {

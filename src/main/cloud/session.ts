@@ -30,6 +30,7 @@ import {
   saveWorkspaceNames,
   saveWorkspaceToken
 } from './tokenStore'
+import type { GrantOrigin } from './tokenStore'
 import type {
   AuthStatus,
   AuthTokens,
@@ -122,7 +123,7 @@ export class CloudSession {
   private loginAuthorizeUrl: string | null = null
   private returnedToAnchorHandler: (() => void) | null = null
   private readonly revocations = new Revocations()
-  private readonly signedOutRefreshTokens = new Set<string>()
+  private readonly retiredRefreshTokens = new Set<string>()
 
   /** Latest auth intent. Older flows may finish, but cannot change what a newer
    *  login, workspace switch, or logout chose. */
@@ -171,9 +172,12 @@ export class CloudSession {
   }
 
   private storeSignedInGrant(tokens: AuthTokens): void {
+    const replaced = loadGrant()?.refreshToken
+    const origin = loadGrantOrigin()
     this.mintBlockedUntil = 0
     const mintScopeWithheld = !canMintWorkspaceTokens(tokens.accessToken)
     saveGrant(tokens, { mintScopeWithheld })
+    if (replaced !== tokens.refreshToken) this.retireGrant(replaced, origin)
     if (mintScopeWithheld) mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
   }
 
@@ -190,10 +194,15 @@ export class CloudSession {
     this.switching = null
     this.mintBlockedUntil = 0
     this.clearPendingLogin()
-    if (refreshToken && this.refreshing.has(refreshToken))
-      this.signedOutRefreshTokens.add(refreshToken)
-    if (refreshToken && origin) this.revocations.add({ ...origin, refreshToken })
+    this.retireGrant(refreshToken, origin)
     clearTokens()
+  }
+
+  /** Revoke a grant Desktop no longer holds, and any rotation of it still in flight. */
+  private retireGrant(refreshToken: string | undefined, origin: GrantOrigin | null): void {
+    if (!refreshToken) return
+    if (this.refreshing.has(refreshToken)) this.retiredRefreshTokens.add(refreshToken)
+    if (origin) this.revocations.add({ ...origin, refreshToken })
   }
 
   /** Resume revocations a previous run queued and Cloud has not confirmed. */
@@ -296,7 +305,7 @@ export class CloudSession {
       const rotated = await refresh(refreshToken)
       const stored = replaceGrant(grant.accessToken, refreshToken, rotated)
       const next = rotated.refreshToken
-      if (!stored && this.signedOutRefreshTokens.has(refreshToken) && next) {
+      if (!stored && this.retiredRefreshTokens.has(refreshToken) && next) {
         this.revocations.add({
           issuer: CLOUD_CONFIG.issuer,
           clientId: CLOUD_CONFIG.clientId,
@@ -307,7 +316,7 @@ export class CloudSession {
     } catch (error) {
       return isDefinitiveRefreshRefusal(error) ? 'ended' : 'unavailable'
     } finally {
-      this.signedOutRefreshTokens.delete(refreshToken)
+      this.retiredRefreshTokens.delete(refreshToken)
     }
   }
 
