@@ -288,6 +288,9 @@ export function registerDevPlatformHandlers(): void {
           clearVersionCache()
           const switched = await session.switchWorkspace(workspaceId)
           clearVersionCache()
+          if (switched.signedIn && switched.workspaceId === workspaceId) {
+            getViewWorkspaceGrants().allowDesktop(workspaceId)
+          }
           broadcastAuthChanged(switched)
           if (!switched.signedIn || switched.workspaceId !== workspaceId) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
