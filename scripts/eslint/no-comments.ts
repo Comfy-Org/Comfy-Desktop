@@ -24,6 +24,10 @@ function isToolDirective(comment: CommentLike) {
   return comment.type === 'Shebang' || toolDirectives.some((pattern) => pattern.test(comment.value))
 }
 
+function isDocComment(comment: CommentLike) {
+  return comment.type === 'Block' && comment.value.startsWith('*')
+}
+
 function openerLength(comment: CommentLike) {
   return comment.type.startsWith('HTML') ? 4 : 2
 }
@@ -68,7 +72,13 @@ export default {
     type: 'suggestion',
     fixable: 'code',
     docs: { description: 'Disallow code comments other than tool directives' },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: { allowDocComments: { type: 'boolean' } },
+        additionalProperties: false
+      }
+    ],
     messages: {
       forbidden:
         'Do not write code comments. Make the code say it with names, functions, types, and tests. Rationale belongs in the commit message or PR description.',
@@ -79,8 +89,10 @@ export default {
   create(context) {
     const source = context.sourceCode
     const text = source.text
+    const allowDocComments = context.options[0]?.allowDocComments === true
 
     function check(comment: CommentLike) {
+      if (allowDocComments && isDocComment(comment)) return
       const loc = {
         start: source.getLocFromIndex(comment.range[0]),
         end: source.getLocFromIndex(comment.range[1])

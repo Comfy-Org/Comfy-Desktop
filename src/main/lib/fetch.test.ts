@@ -63,7 +63,7 @@ describe('fetchJSON — happy path preserved by refactor', () => {
     expect(requests.length).toBe(1)
   })
 
-  it('rejects with HTTP error on non-200, no mirror retry, no cached fallback', async () => {
+  it('rejects with the primary HTTP error when the mirror retry also fails, no cached fallback', async () => {
     const p = fetchJSON(PRIMARY)
     requests[0]!.emit('response', makeResponse(500, ''))
     await new Promise((r) => setImmediate(r))
@@ -72,7 +72,7 @@ describe('fetchJSON — happy path preserved by refactor', () => {
     await expect(p).rejects.toThrow(/HTTP 500/)
   })
 
-  it('rejects with parse error on malformed JSON, no cached fallback', async () => {
+  it('rejects with the primary parse error when the mirror retry also fails, no cached fallback', async () => {
     const p = fetchJSON(PRIMARY)
     requests[0]!.emit('response', makeResponse(200, '{not valid'))
     await new Promise((r) => setImmediate(r))

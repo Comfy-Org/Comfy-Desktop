@@ -16,6 +16,6 @@ export const R2_MIRROR_BASE_URL =
 export function r2MirrorUrl(primaryUrl: string): string | undefined {
   if (DEV_BASE_URL_OVERRIDE) return undefined
   if (!R2_MIRROR_BASE_URL) return undefined
-  if (!primaryUrl.startsWith(R2_BASE_URL)) return undefined
+  if (!primaryUrl.startsWith(`${R2_BASE_URL}/`)) return undefined
   return R2_MIRROR_BASE_URL + primaryUrl.slice(R2_BASE_URL.length)
 }

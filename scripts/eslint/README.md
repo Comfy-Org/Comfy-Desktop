@@ -48,6 +48,11 @@ that change how a tool behaves: ESLint directives, `@ts-expect-error`,
 shebangs. It also rejects a prose reason after an ESLint directive (`-- why`)
 or after `@ts-expect-error`.
 
+The `allowDocComments` option keeps `/** */` doc comments and still rejects
+every other comment. `eslint.config.ts` turns it on only for
+`publishedApiSpecs`, the files other projects consume as a contract, such as
+the bridge types published as `@comfyorg/comfyui-desktop-bridge-types`.
+
 `pnpm run lint:fix` deletes the comment, including its line when the comment
 is alone on it, and strips directive reasons. Run Prettier afterwards to tidy
 any blank lines left behind. CSS comments inside `<style>` blocks, and comments

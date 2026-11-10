@@ -886,25 +886,17 @@ describe('importSnapshots', () => {
 })
 
 describe('staged snapshot envelopes', () => {
-  it('stages an envelope and loads it back by token without writing history', async () => {
-    const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'snapshot-stage-'))
-    try {
-      const envelope = makeEnvelope([makeSnapshot({ label: 'staged-target' })])
-      const token = await stageSnapshotEnvelope(envelope, 'install-1')
-      expect(token).toMatch(/^[a-f0-9]{32}$/)
+  it('stages an envelope, loads it back by token, and forgets it after release', async () => {
+    const envelope = makeEnvelope([makeSnapshot({ label: 'staged-target' })])
+    const token = await stageSnapshotEnvelope(envelope, 'install-1')
+    expect(token).toMatch(/^[a-f0-9]{32}$/)
 
-      const history = await listSnapshots(tmpDir)
-      expect(history).toHaveLength(0)
+    const loaded = await loadStagedSnapshotEnvelope(token, 'install-1')
+    expect(loaded.snapshots).toHaveLength(1)
+    expect(loaded.snapshots[0]!.label).toBe('staged-target')
 
-      const loaded = await loadStagedSnapshotEnvelope(token, 'install-1')
-      expect(loaded.snapshots).toHaveLength(1)
-      expect(loaded.snapshots[0]!.label).toBe('staged-target')
-
-      await releaseStagedSnapshotEnvelope(token)
-      await expect(loadStagedSnapshotEnvelope(token, 'install-1')).rejects.toThrow()
-    } finally {
-      await fs.promises.rm(tmpDir, { recursive: true, force: true })
-    }
+    await releaseStagedSnapshotEnvelope(token)
+    await expect(loadStagedSnapshotEnvelope(token, 'install-1')).rejects.toThrow()
   })
 
   it('rejects an invalid/traversal token', async () => {

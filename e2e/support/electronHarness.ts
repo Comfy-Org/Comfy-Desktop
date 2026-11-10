@@ -183,7 +183,7 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
   if (isBackgroundRun() && !FOREGROUND_PROJECTS.includes(test.info().project.name)) {
     args.unshift(
       '-r',
-      path.resolve('e2e/support/backgroundWindowsShim.cjs'),
+      path.resolve('e2e/support/backgroundShim.cjs'),
       '--disable-features=CalculateNativeWinOcclusion',
       '--disable-backgrounding-occluded-windows'
     )
