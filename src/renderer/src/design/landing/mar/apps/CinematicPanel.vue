@@ -86,7 +86,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 
       <!-- The character, large, as the app's picture -->
       <div class="cine-field">
-        <h2 class="cine-title">Character reference</h2>
         <button
           v-if="hasReference"
           type="button"
@@ -126,7 +125,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
     <!-- Direction: a row each, its picture and what's picked; it opens a
          picker of pictures beside the panel -->
     <section class="cine-block">
-      <h2 class="cine-title">Direction</h2>
       <div class="cine-rows">
         <PopoverRoot>
           <PopoverTrigger as-child>
@@ -233,7 +231,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 
     <!-- Format: how many takes, the frame and the size, as one row of pills -->
     <section class="cine-block">
-      <h2 class="cine-title">Format</h2>
       <div class="cine-pills">
         <div class="cine-pill is-stepper" role="group" aria-label="Takes">
           <button
