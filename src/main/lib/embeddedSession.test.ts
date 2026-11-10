@@ -21,7 +21,8 @@ vi.mock('../devplatform/session', () => ({
     currentAuthGeneration: () => 0,
     isWorkspaceMintAllowed: async () => true,
     endGrantFamily: () => {}
-  })
+  }),
+  rejectAccessToken: vi.fn()
 }))
 vi.mock('../cloud/workspaceToken', async (importOriginal) => ({
   ...(await importOriginal<typeof WorkspaceTokenModule>()),
@@ -237,14 +238,13 @@ describe('embeddedSession', () => {
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
   })
 
-  it('asks a view to sign in again, and hands it nothing, while the grant predates the mint scope', async () => {
-    mocks.getGrantAccessToken.mockResolvedValue(
-      jwt({ sub: 'user-1', workspace_id: 'ws-1', scope: 'comfy-cloud:user:read' })
-    )
+  it('keeps a view signed in on the grant itself when Cloud did not grant the mint scope', async () => {
+    const grant = jwt({ sub: 'user-1', workspace_id: 'ws-1', scope: 'comfy-cloud:user:read' })
+    mocks.getGrantAccessToken.mockResolvedValue(grant)
     const { event } = view('http://127.0.0.1:8000')
 
-    await expect(stateForSender(event)).resolves.toEqual({ status: 'signed_out' })
-    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(stateForSender(event)).resolves.toMatchObject({ status: 'signed_in' })
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBe(grant)
     expect(mocks.mint).not.toHaveBeenCalled()
   })
 
