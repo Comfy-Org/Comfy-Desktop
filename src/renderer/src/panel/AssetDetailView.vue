@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useEventListener } from '@vueuse/core'
+import { useEventListener, usePreferredReducedMotion } from '@vueuse/core'
 import {
   ArrowLeft,
   AudioLines,
@@ -44,6 +44,7 @@ onMounted(() =>
   root.value?.querySelector<HTMLElement>('[data-testid="asset-detail-back"]')?.focus()
 )
 const panelOpen = ref(true)
+const preferredMotion = usePreferredReducedMotion()
 const dimensions = ref<string | null>(null)
 const duration = ref<string | null>(null)
 
@@ -64,11 +65,19 @@ const subtitle = computed(() =>
     .filter(Boolean)
     .join(' · ')
 )
+const reducedMotion = computed(() => preferredMotion.value === 'reduce')
+const hasDimensions = computed(() => asset.value.kind === 'image' || asset.value.kind === 'video')
 const properties = computed(() =>
   [
     { label: t('assets.detail.type'), value: asset.value.mimeType },
-    { label: t('assets.detail.dimensions'), value: dimensions.value },
-    { label: t('assets.detail.duration'), value: duration.value },
+    {
+      label: t('assets.detail.dimensions'),
+      value: hasDimensions.value ? (dimensions.value ?? '—') : null
+    },
+    {
+      label: t('assets.detail.duration'),
+      value: asset.value.kind === 'video' ? (duration.value ?? '—') : null
+    },
     {
       label: t('assets.detail.created'),
       value: asset.value.createdAt
@@ -180,7 +189,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           :key="asset.id"
           :src="asset.previewUrl"
           controls
-          autoplay
+          muted
+          :autoplay="!reducedMotion"
           class="max-h-full max-w-full"
           @loadedmetadata="onVideoLoad"
         />
@@ -224,7 +234,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         ref="filmstrip"
         class="m-0 flex shrink-0 list-none gap-1.5 overflow-x-auto scrollbar-hide px-4 py-3"
       >
-        <li v-for="(item, i) in assets" :key="item.id" class="shrink-0">
+        <li v-for="(item, i) in assets" :key="`${item.installationId}:${item.id}`" class="shrink-0">
           <button
             type="button"
             class="flex size-14 items-center justify-center overflow-hidden rounded-md bg-secondary text-muted-foreground outline-offset-2"
@@ -282,9 +292,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </dl>
       <div v-if="asset.tags.length > 0" class="flex flex-col gap-2.5">
-        <div
-          class="flex items-center text-xs font-medium tracking-wide text-subtle-foreground uppercase"
-        >
+        <div class="flex items-center text-ui text-subtle-foreground">
           {{ t('assets.detail.tags') }}
           <InfoTooltip :text="t('assets.detail.tagsHint')" icon="info" />
         </div>

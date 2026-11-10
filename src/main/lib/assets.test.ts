@@ -27,8 +27,12 @@ vi.mock('electron', () => ({
   dialog: { showSaveDialog: (...args: unknown[]) => showSaveDialog(...args) },
   ipcMain: { handle: vi.fn() }
 }))
+const removeFile = vi.fn(async (_path: string, _options: { force: boolean }) => {})
 vi.mock('fs', () => ({
-  default: { createWriteStream: (filePath: string) => createWriteStream(filePath) }
+  default: {
+    createWriteStream: (filePath: string) => createWriteStream(filePath),
+    promises: { rm: (path: string, options: { force: boolean }) => removeFile(path, options) }
+  }
 }))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
@@ -218,6 +222,24 @@ describe('downloadAsset', () => {
 
     await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow('HTTP 503')
     expect(createWriteStream).not.toHaveBeenCalled()
+  })
+
+  it('removes the half-written file when the download breaks off', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    const broken = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('part'))
+        controller.error(new Error('connection reset'))
+      }
+    })
+    fetchMock.mockResolvedValue(new Response(broken))
+
+    await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow(
+      'connection reset'
+    )
+    expect(removeFile).toHaveBeenCalledWith('/picked/still.png', { force: true })
   })
 
   it('writes nothing when the save dialog is cancelled', async () => {

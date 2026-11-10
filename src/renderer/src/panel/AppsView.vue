@@ -62,9 +62,8 @@ const showName = useLocalStorage('comfy.desktop.assets.showName', false)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 
 const assets = ref<GalleryAsset[]>([])
-const detailIndex = ref<number | null>(null)
+const detailKey = ref<string | null>(null)
 const cardMenuOpenKey = ref<string | null>(null)
-const lastOpenedKey = ref<string | null>(null)
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
@@ -189,8 +188,16 @@ watch(
   },
   { immediate: true }
 )
-watch(visibleAssets, (list) => {
-  if (detailIndex.value !== null && detailIndex.value >= list.length) detailIndex.value = null
+const detailIndex = computed<number | null>({
+  get: () => {
+    if (detailKey.value === null) return null
+    const index = visibleAssets.value.findIndex((asset) => cardKey(asset) === detailKey.value)
+    return index >= 0 ? index : null
+  },
+  set: (index) => {
+    const asset = index === null ? undefined : visibleAssets.value[index]
+    detailKey.value = asset ? cardKey(asset) : null
+  }
 })
 
 function warmNameTooltips(): void {
@@ -218,16 +225,14 @@ async function signIn(): Promise<void> {
 }
 
 function openDetail(asset: GalleryAsset): void {
-  lastOpenedKey.value = cardKey(asset)
-  detailIndex.value = visibleAssets.value.indexOf(asset)
+  detailKey.value = cardKey(asset)
 }
 
 async function closeDetail(): Promise<void> {
-  detailIndex.value = null
+  const viewedKey = detailKey.value ?? ''
+  detailKey.value = null
   await nextTick()
-  scroller.value
-    ?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(lastOpenedKey.value ?? '')}"]`)
-    ?.focus()
+  scroller.value?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(viewedKey)}"]`)?.focus()
 }
 
 async function download(asset: GalleryAsset): Promise<void> {

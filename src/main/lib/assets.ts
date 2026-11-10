@@ -190,7 +190,12 @@ export async function downloadAsset(
   if (!url) throw new Error('The asset has no download link.')
   const res = await fetch(url)
   if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
-  await pipeline(Readable.fromWeb(res.body as WebReadableStream), fs.createWriteStream(filePath))
+  try {
+    await pipeline(Readable.fromWeb(res.body as WebReadableStream), fs.createWriteStream(filePath))
+  } catch (error) {
+    await fs.promises.rm(filePath, { force: true }).catch(() => {})
+    throw error
+  }
   return true
 }
 
