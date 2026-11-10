@@ -1,5 +1,6 @@
 import { reactive, watch } from 'vue'
 import type { MarAsset } from '../pages/assetsStore'
+import { collection } from '../pages/collection'
 import { graphStyle } from './graphStyle'
 
 /** What ComfyUI's view stands for (UI Playground › Graph editor): Proposal,
@@ -38,6 +39,8 @@ export const assetTab = reactive<{
 /** Proposal: Media Assets expanded from its panel to a whole tab (the
  *  library, as on Desktop's Assets page); `on` while it's the tab shown. */
 export const assetsTab = reactive({ open: false, on: false })
+/** The files the tab browses: the panel's own, handed over on expand. */
+export const graphLibrary = collection<MarAsset>([], 'asset')
 
 watch(
   () => comfyLook.id,

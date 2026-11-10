@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, h, ref, watch, type FunctionalComponent } from 'vue'
 import { useElementSize, useEventListener } from '@vueuse/core'
 import {
   Box,
@@ -12,6 +12,10 @@ import {
   Music,
   Minimize2,
   Play,
+  Sparkles,
+  Tag,
+  Library,
+  ArrowDownToLine,
   RefreshCw,
   RotateCw,
   Trash2,
@@ -25,6 +29,9 @@ import { ComfyAssets } from '../icons/comfyIcons'
 import { thumb } from '../../mock'
 import { go, hostActions, instances, toast } from '../../useProto'
 import { graphOpen } from '../graph/graphOpen'
+import { graphLibrary } from '../graph/comfyLook'
+import { LABELS, labelColor, labelOf, setLabel, type AssetLabel } from '../assets/assetLabels'
+import { tagsOf } from '../assets/assetTags'
 import { saveFile } from '../assets/saveFile'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import AssetDetail from '../assets/AssetDetail.vue'
@@ -51,7 +58,7 @@ import { assets, type MarAsset } from './assetsStore'
 import { useLibrary } from './library'
 import { pageState } from './pageState'
 import { notify } from './undo'
-import type { MenuLine } from './menu'
+import type { MenuAction, MenuLine } from './menu'
 
 /**
  * Assets (Mar's proposal): everything your runs made and everything you
@@ -79,18 +86,24 @@ const filter = ref(noFilter())
 const project = ref('all')
 const sort = ref('newest')
 const query = ref('')
+/** ComfyUI's tab: one color label at a time narrows the wall. */
+const label = ref<AssetLabel | ''>('')
+// In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
+const store = inGraph ? graphLibrary : assets
 
 // Everywhere reads every running build at once; each card names its own.
 const running = computed(() =>
   assetBuilds.value.filter((b) => buildStatus(b) === 'running').map((b) => b.id)
 )
 const base = computed(() =>
-  assets.items.filter((a) =>
-    fixedProject
-      ? a.project === fixedProject
-      : build.value === 'all'
-        ? running.value.includes(a.envId ?? '')
-        : a.envId === build.value
+  store.items.filter(
+    (a) =>
+      inGraph ||
+      (fixedProject
+        ? a.project === fixedProject
+        : build.value === 'all'
+          ? running.value.includes(a.envId ?? '')
+          : a.envId === build.value)
   )
 )
 const current = computed(() => assetBuilds.value.find((b) => b.id === build.value))
@@ -98,9 +111,9 @@ const buildName = (a: MarAsset): string =>
   assetBuilds.value.find((b) => b.id === a.envId)?.name ?? ''
 const status = computed(() => (current.value ? buildStatus(current.value) : 'running'))
 const browsable = computed(
-  () => !!fixedProject || (build.value !== '' && status.value === 'running')
+  () => inGraph || !!fixedProject || (build.value !== '' && status.value === 'running')
 )
-const unpicked = computed(() => !fixedProject && build.value === '')
+const unpicked = computed(() => !inGraph && !fixedProject && build.value === '')
 const count = (k: Kind): number => base.value.filter((a) => k === 'all' || a.type === k).length
 const KINDS = computed(() =>
   (
@@ -147,6 +160,7 @@ const shown = computed(() => {
         filter.value.types.includes(a.type)) &&
       (!fixedProject || where.value === 'all' || a.source === where.value) &&
       passes(a, filter.value) &&
+      (!label.value || labelOf(a.id) === label.value) &&
       (fixedProject ||
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
@@ -164,6 +178,7 @@ const filtered = computed(
   () =>
     kind.value !== 'all' ||
     where.value !== 'all' ||
+    !!label.value ||
     JSON.stringify(filter.value) !== JSON.stringify(noFilter()) ||
     project.value !== 'all' ||
     !!query.value
@@ -171,12 +186,66 @@ const filtered = computed(
 function clear(): void {
   kind.value = 'all'
   where.value = 'all'
+  label.value = ''
   filter.value = noFilter()
   project.value = 'all'
   query.value = ''
 }
 
-const lib = useLibrary(assets, shown)
+const lib = useLibrary(store, shown)
+
+/** The tab's sidebar (Alex Tov's media-assets proto): where files came
+ *  from, then tags and color labels, each with how many it holds. Every
+ *  row narrows the same wall the toolbar does. */
+const done = computed(() => base.value.filter((a) => !a.status))
+const SOURCES = computed(() =>
+  (
+    [
+      ['all', 'All', Library],
+      ['generated', 'Generated', Sparkles],
+      ['imported', 'Imported', ArrowDownToLine]
+    ] as const
+  ).map(([value, name, icon]) => ({
+    value,
+    label: name,
+    icon,
+    count:
+      value === 'all'
+        ? done.value.length
+        : done.value.filter((a) => factsFor(a).imported === (value === 'imported')).length
+  }))
+)
+const TAG_ROWS = computed(() =>
+  TAGS.value.map((t) => ({ tag: t, count: done.value.filter((a) => tagsOf(a).includes(t)).length }))
+)
+const LABEL_ROWS = computed(() =>
+  LABELS.map((l) => ({ ...l, count: done.value.filter((a) => labelOf(a.id) === l.value).length }))
+)
+function toggleTag(t: string): void {
+  const on = filter.value.tags.includes(t)
+  filter.value = {
+    ...filter.value,
+    tags: on ? filter.value.tags.filter((x) => x !== t) : [...filter.value.tags, t]
+  }
+}
+/** A label's color as a menu icon. */
+const dotOf =
+  (color: string): FunctionalComponent =>
+  () =>
+    h('i', { class: 'mar-anav-dot', style: { background: color } })
+/** Label ›, for one file or the selection. */
+function labelLine(ids: () => string[]): MenuAction {
+  return {
+    label: 'Label',
+    icon: Tag,
+    sub: LABELS.map((l) => ({
+      label: l.label,
+      icon: dotOf(l.color),
+      checked: ids().length > 0 && ids().every((id) => labelOf(id) === l.value),
+      run: () => setLabel(ids(), l.value)
+    }))
+  }
+}
 // Its own view: masonry first, remembered per viewer.
 type View = 'masonry' | 'grid'
 const VIEW_KEY = 'comfy.design.mar.assetsPageView'
@@ -252,17 +321,20 @@ function refresh(): void {
  *  local build that's running takes files; nothing starts on its own. */
 const uploadable = computed(
   () =>
+    inGraph ||
     !!fixedProject ||
     (!!current.value && current.value.kind !== 'cloud' && status.value === 'running')
 )
 const uploadTitle = computed(() =>
-  fixedProject || uploadable.value
-    ? `Add files to ${fixedProject ?? current.value?.name} inputs`
-    : build.value === 'all' || build.value === ''
-      ? 'Pick a build to add files to'
-      : current.value?.kind === 'cloud'
-        ? 'Upload to Comfy Cloud from Comfy Cloud'
-        : `Start ${current.value?.name} to add files`
+  inGraph
+    ? 'Upload files'
+    : fixedProject || uploadable.value
+      ? `Add files to ${fixedProject ?? current.value?.name} inputs`
+      : build.value === 'all' || build.value === ''
+        ? 'Pick a build to add files to'
+        : current.value?.kind === 'cloud'
+          ? 'Upload to Comfy Cloud from Comfy Cloud'
+          : `Start ${current.value?.name} to add files`
 )
 const picker = ref<HTMLInputElement>()
 const dropping = ref(false)
@@ -297,12 +369,12 @@ function upload(files: FileList | null | undefined): void {
       status: 'running',
       statusLabel: 'Uploading'
     }
-    assets.items.unshift(a)
+    store.items.unshift(a)
     return a
   })
   setTimeout(() => {
     for (const a of added) {
-      const live = assets.items.find((x) => x.id === a.id)
+      const live = store.items.find((x) => x.id === a.id)
       if (live) Object.assign(live, { status: undefined, statusLabel: undefined, age: 0 })
     }
     const hidden = added.filter((a) => !shown.value.some((s) => s.id === a.id)).length
@@ -337,6 +409,12 @@ function openWorkflow(a: MarAsset): void {
   graphOpen.assets = true
   hostActions.launch(inst, a.name.replace(/_\d+\.[^.]+$/, ''))
 }
+/** In ComfyUI the workflow opens in a new tab beside this one. */
+function workflowOf(a: MarAsset): void {
+  if (!inGraph) return openWorkflow(a)
+  detail.value = null
+  toast(`Opened ${a.name} as a workflow`)
+}
 function retry(a: MarAsset): void {
   const before = { status: a.status, statusLabel: a.statusLabel }
   a.status = 'queued'
@@ -344,7 +422,7 @@ function retry(a: MarAsset): void {
   notify(`Queued “${a.name}” again`, () => Object.assign(a, before))
 }
 function cancel(a: MarAsset): void {
-  assets.remove([a.id])
+  store.remove([a.id])
 }
 
 function lines(a: MarAsset): MenuLine[] {
@@ -365,7 +443,7 @@ function lines(a: MarAsset): MenuLine[] {
       { label: 'Open workflow', icon: Workflow, run: () => go('workflows') },
       { label: 'Copy error', icon: Copy, run: () => toast('Error copied') },
       'sep',
-      { label: 'Dismiss', icon: Trash2, danger: true, run: () => assets.remove([a.id]) }
+      { label: 'Dismiss', icon: Trash2, danger: true, run: () => store.remove([a.id]) }
     ]
   return [
     // A click opens it and Download sits on the card, so neither is here.
@@ -374,12 +452,14 @@ function lines(a: MarAsset): MenuLine[] {
       : [{ label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${a.name}`) }]),
     // Only when the file kept its workflow: an import or a sound has none.
     ...(factsFor(a).workflow === 'available'
-      ? [{ label: 'Open workflow', icon: Workflow, run: () => openWorkflow(a) }]
+      ? [{ label: 'Open workflow', icon: Workflow, run: () => workflowOf(a) }]
       : []),
+    ...(inGraph ? [labelLine(() => [a.id])] : []),
     { label: 'Copy', icon: Copy, hint: '⌘C', run: () => toast('Copied to the clipboard') },
-    lib.moveLine(() => [a.id], a.project),
+    // Projects are Desktop's; in ComfyUI a file takes a color label.
+    ...(inGraph ? [] : [lib.moveLine(() => [a.id], a.project)]),
     'sep',
-    { label: 'Delete', icon: Trash2, danger: true, hint: '⌫', run: () => assets.remove([a.id]) }
+    { label: 'Delete', icon: Trash2, danger: true, hint: '⌫', run: () => store.remove([a.id]) }
   ]
 }
 
@@ -388,7 +468,7 @@ function lines(a: MarAsset): MenuLine[] {
 // grid when you scroll.
 function markStuck(): void {
   const bar = document.querySelector<HTMLElement>('.mar-page-bar:has(.mar-asset-tools)')
-  const scroller = bar?.closest<HTMLElement>('.proto-main')
+  const scroller = bar?.closest<HTMLElement>(inGraph ? '.mg-assets-main' : '.proto-main')
   if (!bar || !scroller) return
   const stuck =
     scroller.scrollTop > 0 &&
@@ -400,7 +480,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 
 <template>
   <MarPage
-    title="Assets"
+    :title="inGraph ? 'Media Assets' : 'Assets'"
     skeleton="grid"
     :no-results="browsable && shown.length === 0 && filtered"
     :embedded="!!fixedProject"
@@ -427,6 +507,19 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     @second="pick()"
     @clear="clear"
   >
+    <template v-if="inGraph" #meta>
+      <span class="mar-anav-total"
+        >{{ shown.length }} {{ shown.length === 1 ? 'asset' : 'assets' }}</span
+      >
+      <button
+        v-if="shown.length"
+        type="button"
+        class="mar-anav-all"
+        @click="lib.sel.all(lib.order.value)"
+      >
+        Select all
+      </button>
+    </template>
     <template #actions="{ state }">
       <Button
         v-if="state === 'live' || state === 'loading'"
@@ -459,7 +552,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 
     <template #toolbar>
       <div class="mar-asset-tools">
-        <AssetBuildPicker v-if="!fixedProject" v-model="build" />
+        <AssetBuildPicker v-if="!fixedProject && !inGraph" v-model="build" />
         <MarSeg
           v-if="!fixedProject && browsable"
           v-model="kind"
@@ -480,7 +573,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           />
           <Select v-if="fixedProject" v-model="where" :options="WHERE" class="w-36" />
           <button
-            v-if="!fixedProject"
+            v-if="!fixedProject && !inGraph"
             type="button"
             class="mar-asset-refresh"
             aria-label="Refresh"
@@ -592,6 +685,12 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             <span v-else-if="a.type === 'video' && !a.status" class="mar-asset-len"
               ><Play :size="10" />{{ factsFor(a).duration }}</span
             >
+            <i
+              v-if="labelOf(a.id)"
+              class="mar-asset-label"
+              :style="{ background: labelColor(labelOf(a.id)) }"
+              :aria-label="`${labelOf(a.id)} label`"
+            />
           </template>
         </MarItem>
       </div>
@@ -637,8 +736,16 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             <Download :size="14" />
           </button>
         </template>
-        <template v-if="a.status === 'running'" #overlay>
-          <span class="mar-asset-progress"><i style="width: 62%" /></span>
+        <template v-if="a.status === 'running' || labelOf(a.id)" #overlay>
+          <span v-if="a.status === 'running'" class="mar-asset-progress"
+            ><i style="width: 62%"
+          /></span>
+          <i
+            v-if="labelOf(a.id)"
+            class="mar-asset-label"
+            :style="{ background: labelColor(labelOf(a.id)) }"
+            :aria-label="`${labelOf(a.id)} label`"
+          />
         </template>
       </MarItem>
     </div>
@@ -651,13 +758,11 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           label: 'Download',
           icon: Download,
           run: () => (
-            assets.items
-              .filter((x) => lib.sel.has(x.id))
-              .forEach((x) => saveFile(picOf(x), x.name)),
+            store.items.filter((x) => lib.sel.has(x.id)).forEach((x) => saveFile(picOf(x), x.name)),
             lib.sel.clear()
           )
         },
-        lib.moveLine(() => lib.selected.value),
+        inGraph ? labelLine(() => lib.selected.value) : lib.moveLine(() => lib.selected.value),
         { label: 'Delete', icon: Trash2, danger: true, run: lib.removeSelected }
       ]"
       @clear="lib.sel.clear()"
@@ -667,11 +772,59 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       v-if="detail"
       :asset="detail"
       :list="finished"
-      :build="fixedProject ? fixedProject : buildName(detail)"
+      :build="fixedProject ? fixedProject : inGraph ? 'ComfyUI' : buildName(detail)"
+      :editable="inGraph"
+      :on-workflow="inGraph ? undefined : openWorkflow"
       @go="detail = $event"
       @close="detail = null"
-      @workflow="openWorkflow"
     />
+    <!-- ComfyUI's tab: the sidebar, in the tab's own left column. -->
+    <Teleport v-if="inGraph" defer to="#mg-assets-nav">
+      <nav class="mar-anav" aria-label="Media Assets">
+        <button
+          v-for="s in SOURCES"
+          :key="s.value"
+          type="button"
+          class="mar-anav-row"
+          :class="filter.source === s.value && 'is-on'"
+          :aria-pressed="filter.source === s.value"
+          @click="filter = { ...filter, source: s.value }"
+        >
+          <component :is="s.icon" :size="15" /><span class="mar-anav-name">{{ s.label }}</span
+          ><span class="mar-anav-n">{{ s.count }}</span>
+        </button>
+        <template v-if="TAG_ROWS.length">
+          <p class="mar-anav-label">Tags</p>
+          <button
+            v-for="t in TAG_ROWS"
+            :key="t.tag"
+            type="button"
+            class="mar-anav-row is-sub"
+            :class="filter.tags.includes(t.tag) && 'is-on'"
+            :aria-pressed="filter.tags.includes(t.tag)"
+            @click="toggleTag(t.tag)"
+          >
+            <span class="mar-anav-name">{{ t.tag }}</span
+            ><span class="mar-anav-n">{{ t.count }}</span>
+          </button>
+        </template>
+        <p class="mar-anav-label">Labels</p>
+        <button
+          v-for="l in LABEL_ROWS"
+          :key="l.value"
+          type="button"
+          class="mar-anav-row is-sub"
+          :class="label === l.value && 'is-on'"
+          :aria-pressed="label === l.value"
+          @click="label = label === l.value ? '' : l.value"
+        >
+          <i class="mar-anav-dot" :style="{ background: l.color }" /><span class="mar-anav-name">{{
+            l.label
+          }}</span
+          ><span class="mar-anav-n">{{ l.count }}</span>
+        </button>
+      </nav>
+    </Teleport>
   </MarPage>
 </template>
 
@@ -785,6 +938,90 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   flex: 1;
   flex-direction: column;
   gap: 14px;
+}
+/* A color label (ComfyUI's tab): a dot in the picture's corner. */
+.mar-asset-label {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.35);
+}
+/* ComfyUI's Media Assets tab: its sidebar and the count by the title. */
+.mar-anav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 16px 10px;
+}
+.mar-anav-label {
+  padding: 18px 10px 6px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-row {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-row:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-row.is-on {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-row.is-sub {
+  height: 30px;
+}
+.mar-anav-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-anav-n {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mar-anav-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 999px;
+}
+.mar-anav-total {
+  color: var(--color-subtle-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-all {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-all:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
 }
 .mar-asset-len {
   position: absolute;

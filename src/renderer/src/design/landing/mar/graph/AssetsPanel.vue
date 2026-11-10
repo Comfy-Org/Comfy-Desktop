@@ -32,6 +32,7 @@ import RailPanel from './panels/RailPanel.vue'
 import { PICTURES } from './panels/panelData'
 import { savedAssets } from './savedAssets'
 import MarSearchField from '../pages/MarSearchField.vue'
+import Tooltip from '../../ui/Tooltip.vue'
 import MarItem from '../pages/MarItem.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import { pageState } from '../pages/pageState'
@@ -44,7 +45,7 @@ import AssetLightbox from './AssetLightbox.vue'
 import AssetSidePanel from './AssetSidePanel.vue'
 import { saveFile } from '../assets/saveFile'
 import BulkTagMenu from './BulkTagMenu.vue'
-import { assetTab, comfyLook } from './comfyLook'
+import { assetTab, comfyLook, graphLibrary } from './comfyLook'
 import { graphStyle } from './graphStyle'
 import { graphOpen } from './graphOpen'
 import { RAIL_DEFAULT, railWidth } from './panels/railWidth'
@@ -242,6 +243,12 @@ watch(
   { immediate: true }
 )
 const inTab = computed(() => ALL.value.filter((a) => !a.status))
+/** Open in tab: the same files, now with room to organize them. */
+function expand(): void {
+  const keep = ALL.value.filter((a) => !deleted.value.has(a.id))
+  graphLibrary.items.splice(0, graphLibrary.items.length, ...keep)
+  emit('expand')
+}
 const TAGS = computed(() => tagsIn(inTab.value))
 const shown = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -494,25 +501,16 @@ function upload(files: FileList | null | undefined): void {
 <template>
   <RailPanel title="Media Assets" :closable="prod" @close="$emit('close')">
     <template #tools>
-      <button
-        type="button"
-        class="rp-icon"
-        title="Upload files"
-        aria-label="Upload files"
-        @click="picker?.click()"
-      >
-        <Upload :size="15" />
-      </button>
-      <button
-        v-if="!prod"
-        type="button"
-        class="rp-icon"
-        title="Open in tab"
-        aria-label="Open in tab"
-        @click="emit('expand')"
-      >
-        <Maximize2 :size="15" />
-      </button>
+      <Tooltip content="Upload files" side="bottom">
+        <button type="button" class="rp-icon" aria-label="Upload files" @click="picker?.click()">
+          <Upload :size="15" />
+        </button>
+      </Tooltip>
+      <Tooltip v-if="!prod" content="Open in tab" side="bottom">
+        <button type="button" class="rp-icon" aria-label="Open in tab" @click="expand">
+          <Maximize2 :size="15" />
+        </button>
+      </Tooltip>
     </template>
     <template #header>
       <div v-if="prod" class="mar-pseg ap-tabs" role="tablist" aria-label="Assets">

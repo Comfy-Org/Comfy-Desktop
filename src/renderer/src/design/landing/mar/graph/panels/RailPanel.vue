@@ -40,7 +40,7 @@ function nudge(e: KeyboardEvent): void {
 <template>
   <aside
     class="rp"
-    :class="dragging && 'is-resizing'"
+    :class="[dragging && 'is-resizing', !closable && 'no-close']"
     :style="{ width: `${width}px` }"
     :aria-label="label ?? title"
     @pointerdown.stop
@@ -216,7 +216,8 @@ function nudge(e: KeyboardEvent): void {
   align-items: center;
   gap: 2px;
 }
-.rp-tools:not(:empty)::after {
+/* The hairline sets the panel's tools apart from Close; no Close, none. */
+.rp:not(.no-close) .rp-tools:not(:empty)::after {
   width: 1px;
   height: 16px;
   margin: 0 4px;

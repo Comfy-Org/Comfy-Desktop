@@ -890,6 +890,16 @@ function collapseAssets(): void {
   Object.assign(assetsTab, { open: false, on: false })
   panel.value = 'assets'
 }
+// While the library is a tab, Assets on the rail brings that tab forward;
+// any other panel acts on the workflow, so the workflow comes forward.
+watch(panel, (id) => {
+  if (!id || !assetsTab.open) return
+  if (id === 'assets') {
+    panel.value = ''
+    Object.assign(assetsTab, { on: true })
+    assetTab.on = false
+  } else assetsTab.on = false
+})
 /** The workflow on show: the tab's, or one opened from Workflows. */
 const shownWorkflow = ref(workflow)
 const agent = ref(false)
@@ -1253,7 +1263,11 @@ function addFromPanel(kind: NodeKind): void {
   <div
     ref="host"
     class="mg"
-    :class="[`is-${graphStyle.id}`, (panel || agent) && 'has-panel']"
+    :class="[
+      `is-${graphStyle.id}`,
+      (panel || agent) && 'has-panel',
+      assetsTab.open && assetsTab.on && comfyLook.id === 'proposal' && 'on-assets'
+    ]"
     :style="{ '--mg-top': `${top}px` }"
   >
     <!-- Current: ComfyUI's top bar, its menu and its workflow tabs. -->
@@ -1295,7 +1309,7 @@ function addFromPanel(kind: NodeKind): void {
       ></span>
       <span
         v-if="assetsTab.open"
-        class="mg-tab is-asset"
+        class="mg-tab is-asset is-library"
         :class="assetsTab.on && 'is-on'"
         role="button"
         tabindex="0"
@@ -1899,7 +1913,45 @@ function addFromPanel(kind: NodeKind): void {
       v-if="assetsTab.open && assetsTab.on && comfyLook.id === 'proposal'"
       class="mg-assets-tab proto-ui"
     >
-      <MarAssetsPage in-graph @collapse="collapseAssets" />
+      <aside id="mg-assets-nav" class="mg-assets-nav" />
+      <div class="mg-assets-main"><MarAssetsPage in-graph @collapse="collapseAssets" /></div>
+    </div>
+    <!-- Glass has no workflow tabs: once Media Assets opens as one, a
+         strip at the top holds it and the workflow, to switch between. -->
+    <div
+      v-if="!current && assetsTab.open && comfyLook.id === 'proposal'"
+      class="mg-gtabs proto-ui"
+      role="tablist"
+      aria-label="Tabs"
+    >
+      <button
+        type="button"
+        role="tab"
+        class="mg-gtab"
+        :aria-selected="!assetsTab.on"
+        @click="assetsTab.on = false"
+      >
+        <span class="mg-tab-name">{{ shownWorkflow }}</span>
+      </button>
+      <span class="mg-gtab is-assets" :class="assetsTab.on && 'is-on'">
+        <button
+          type="button"
+          role="tab"
+          class="mg-gtab-go"
+          :aria-selected="assetsTab.on"
+          @click="assetsTab.on = true"
+        >
+          <ComfyAssets class="mg-tab-icon" /><span class="mg-tab-name">Media Assets</span>
+        </button>
+        <button
+          type="button"
+          class="mg-tab-x"
+          aria-label="Close Media Assets"
+          @click="Object.assign(assetsTab, { open: false, on: false })"
+        >
+          <X :size="12" />
+        </button>
+      </span>
     </div>
     <AssetDetail
       v-if="viewNode && comfyLook.id !== 'production' && viewList.length"
@@ -2901,6 +2953,10 @@ function addFromPanel(kind: NodeKind): void {
   gap: 6px;
   font-style: italic;
 }
+/* The library is a tab of its own, not a preview: upright. */
+.mg-tab.is-library {
+  font-style: normal;
+}
 .mg-tab-icon {
   width: 13px;
   height: 13px;
@@ -2928,20 +2984,82 @@ function addFromPanel(kind: NodeKind): void {
   margin-left: max(0px, calc(var(--mg-panel-edge, 0px) - 52px));
 }
 /* The library over the canvas: Run, the tools and the Agent belong to a
-   workflow, so it covers them. */
+   workflow, so it covers them. Its sidebar on the left, the wall beside. */
 .mg-assets-tab {
   position: relative;
   z-index: 10;
+  display: grid;
   grid-row: 2;
   grid-column: 2;
+  grid-template-columns: 216px minmax(0, 1fr);
   min-width: 0;
-  overflow: auto;
-  padding-top: 8px;
+  min-height: 0;
   background: var(--mg-canvas);
 }
+.mg-assets-nav {
+  overflow-y: auto;
+  box-shadow: inset -1px 0 0 var(--mg-chrome-line, transparent);
+}
+.mg-assets-main {
+  min-width: 0;
+  overflow-y: auto;
+  padding-top: 20px;
+}
+/* The toolbar sticks to the tab's top, not the app's scroller. */
+.mg-assets-main .mar-page-bar:has(.mar-asset-tools) {
+  top: 0;
+}
+/* Run, the canvas tools and the Agent act on a workflow: off while the
+   library is the tab in front. */
+.mg.on-assets :is(.mg-runblock, .mg-tools, .mg-agent-btn, .mg-map) {
+  visibility: hidden;
+}
+/* Glass: the tab fills under the strip, past the floating rail. */
 .is-glass .mg-assets-tab {
   position: absolute;
-  inset: 0 0 0 52px;
+  inset: calc(var(--mg-top) + 56px) 0 0 76px;
+  border-radius: var(--mar-tab-radius) 0 0 0;
+}
+.mg-gtabs {
+  position: absolute;
+  top: calc(var(--mg-top) + 14px);
+  left: 76px;
+  z-index: 11;
+  display: flex;
+  /* A grid child: without this it stretches down the whole canvas. */
+  height: max-content;
+  gap: 2px;
+  padding: 4px;
+  border-radius: var(--mar-tab-radius);
+  background: var(--mg-float);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+:root .proto-ui.proto-ui.proto-ui .mg-gtab,
+:root .proto-ui.proto-ui.proto-ui .mg-gtab-go {
+  display: inline-flex;
+  height: 28px;
+  max-width: 220px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: var(--mar-tab-item-radius);
+  background: transparent;
+  color: var(--mg-muted);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mg-gtab-go {
+  padding: 0;
+  color: inherit;
+}
+:root .proto-ui.proto-ui.proto-ui .mg-gtab.is-assets {
+  padding-right: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .mg-gtab:hover {
+  color: var(--mg-text);
+}
+:root .proto-ui.proto-ui.proto-ui .mg-gtab:is([aria-selected='true'], .is-on) {
+  background: var(--mg-hover);
+  color: var(--mg-text);
 }
 .mg-tab-add {
   margin: 0 0 9px 6px;
