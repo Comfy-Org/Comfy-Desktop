@@ -204,7 +204,7 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('[data-testid="benchmark-row-13"]').text()).toContain('13')
     expect(wrapper.find('.benchmarks__selection-tray').exists()).toBe(false)
     expect(wrapper.get('[data-testid="benchmark-row-13"]').attributes('style')).toContain(
-      '--series-color: #55e0d1'
+      '--series-color: #e8e8ee'
     )
     expect(wrapper.findAll('.benchmarks__best').map((cell) => cell.text())).toEqual([
       '0.8 s',
@@ -297,7 +297,7 @@ describe('BenchmarksView', () => {
 
     await setChecked(wrapper.get('[data-testid="benchmark-row-10"] [role="checkbox"]'), true)
     expect(wrapper.get('[data-testid="benchmark-row-10"]').attributes('style')).toContain(
-      '--series-color: #ff8a65'
+      '--series-color: #9ece6a'
     )
     expect(wrapper.get('.benchmarks__comparison').text()).toContain('landscape.json')
 
@@ -546,7 +546,7 @@ describe('BenchmarksView', () => {
     const averageMarkerX = svg.match(
       /<circle cx="([^"]+)"[^>]+r="5"[^>]+class="chart-average"/
     )?.[1]
-    expect(svg).toContain('r="5" fill="#55e0d1" class="chart-average"')
+    expect(svg).toContain('r="5" fill="#e8e8ee" class="chart-average"')
     const averageLabelX = svg.match(
       /<text x="([^"]+)"[^>]+class="chart-point-label" text-anchor="middle">45\.83 s<\/text>/
     )?.[1]

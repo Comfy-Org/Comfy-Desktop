@@ -99,7 +99,7 @@ function setComparisonVisualization(value: unknown): void {
 }
 const UNMANAGED_WORKSPACE_FILTER = '__unmanaged__'
 
-const seriesColors = ['#55e0d1', '#a970ff', '#f6f31b', '#ff8a65', '#62a8ff']
+const seriesColors = ['#e8e8ee', '#7aa2f7', '#e0af68', '#9ece6a', '#bb9af7', '#7dcfff']
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short'
@@ -828,7 +828,7 @@ onActivated(() => {
 
 <template>
   <BrandBackground
-    class="benchmarks min-w-0 min-h-0 [--benchmark-baseline:#e5e86d] [--benchmark-best:#3ecf8e] [--benchmark-faster:#54d890] [--benchmark-faster-text:#6ed8a0] [--benchmark-slower:#ef6f69] [--benchmark-slower-text:#ef8a85] [&_.brand-outer-frame]:min-w-0 [&_.brand-inner-frame]:min-w-0"
+    class="benchmarks min-w-0 min-h-0 [--benchmark-baseline:#e8e8ee] [--benchmark-best:#3ecf8e] [--benchmark-faster:#54d890] [--benchmark-faster-text:#6ed8a0] [--benchmark-slower:#ef6f69] [--benchmark-slower-text:#ef8a85] [&_.brand-outer-frame]:min-w-0 [&_.brand-inner-frame]:min-w-0"
     data-testid="benchmarks"
   >
     <div
@@ -945,29 +945,27 @@ onActivated(() => {
 
         <div
           v-if="loading"
-          class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted"
+          class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
         >
           {{ t('common.loading') }}
         </div>
         <div
           v-else-if="loadError"
-          class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
+          class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
         >
           {{ t('benchmarks.loadError') }}
         </div>
         <div
           v-else-if="benchmarks.length === 0"
-          class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted"
+          class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
         >
           <ChartColumn :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
           {{ t('benchmarks.empty') }}
         </div>
         <template v-else>
-          <div
-            class="benchmarks__table-scroll max-h-[320px] overflow-auto border-t border-solid border-[var(--chooser-surface-border)]"
-          >
+          <div class="benchmarks__table-scroll max-h-[320px] overflow-auto">
             <table
-              class="benchmarks__table w-full border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-900 [&_thead_th]:font-normal [&_thead_th]:text-text-muted [&_tbody_tr:hover>td]:bg-[color-mix(in_srgb,white_3%,transparent)]"
+              class="benchmarks__table w-full border-collapse text-left text-[12px] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-900 [&_thead_th]:font-normal [&_thead_th]:text-text-muted [&_tbody_tr:hover>td]:bg-[color-mix(in_srgb,white_3%,transparent)]"
             >
               <thead>
                 <tr>
@@ -1003,7 +1001,7 @@ onActivated(() => {
                   v-for="benchmark in filteredBenchmarks"
                   :key="benchmark.id"
                   :class="{
-                    'benchmarks__row--selected [&>td]:bg-[color-mix(in_srgb,var(--series-color)_10%,transparent)] [&>td:first-child]:[box-shadow:inset_3px_0_var(--series-color)]':
+                    'benchmarks__row--selected [&>td]:bg-[color-mix(in_srgb,white_5%,transparent)]':
                       selectedIds.has(benchmark.id)
                   }"
                   :style="
@@ -1016,7 +1014,7 @@ onActivated(() => {
                   <td class="benchmarks__check-cell w-11 text-center">
                     <label class="benchmarks__checkbox inline-flex items-center justify-center">
                       <Checkbox
-                        class="data-[state=checked]:border-[var(--series-color)] data-[state=checked]:bg-[var(--series-color)]"
+                        class="data-[state=checked]:border-neutral-100 data-[state=checked]:bg-neutral-100 data-[state=checked]:text-neutral-900"
                         :model-value="selectedIds.has(benchmark.id)"
                         :aria-label="
                           t('benchmarks.selectRun', { workflow: benchmark.workflowName })
@@ -1109,9 +1107,7 @@ onActivated(() => {
       <div
         class="benchmarks__comparison-section flex flex-col gap-4 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
       >
-        <div
-          class="benchmarks__comparison-head flex items-center border-b border-solid border-[var(--chooser-surface-border)] pb-3"
-        >
+        <div class="benchmarks__comparison-head flex items-center">
           <CollapsibleSectionToggle
             id="comparison-title"
             :expanded="comparisonExpanded"
@@ -1240,7 +1236,7 @@ onActivated(() => {
 
           <div
             v-if="selectedBenchmarks.length === 0"
-            class="benchmarks__state flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center text-[13px] text-text-muted"
+            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
           >
             {{ t('benchmarks.selectPrompt') }}
           </div>
@@ -1249,10 +1245,10 @@ onActivated(() => {
             class="benchmarks__comparison-grid grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
           >
             <div
-              class="benchmarks__matrix-scroll overflow-auto rounded-lg border border-solid border-[var(--chooser-surface-border)]"
+              class="benchmarks__matrix-scroll overflow-auto rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)]"
             >
               <table
-                class="benchmarks__matrix [&_.benchmarks\_\_matrix-column--baseline]:[box-shadow:inset_0_3px_var(--benchmark-baseline)] [&_.benchmarks\_\_matrix-column--baseline_.benchmarks\_\_matrix-title]:pr-[58px] w-full border-collapse text-left text-[12px] [&_th]:border-b [&_th]:border-solid [&_th]:border-[var(--chooser-surface-border)] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:border-b [&_td]:border-solid [&_td]:border-[var(--chooser-surface-border)] [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_tbody_tr:last-child>*]:border-b-0 [&_th:not(:first-child)]:min-w-[190px] [&_th:not(:first-child)]:text-center [&_td]:min-w-[190px] [&_td]:text-center [&_thead_th]:relative [&_thead_th]:bg-neutral-800 [&_thead_th]:align-top [&_thead_th:first-child]:align-bottom [&_tbody_th]:font-medium [&_tbody_th]:text-neutral-200"
+                class="benchmarks__matrix [&_.benchmarks\_\_matrix-column--baseline]:[box-shadow:inset_0_3px_var(--benchmark-baseline)] [&_.benchmarks\_\_matrix-column--baseline_.benchmarks\_\_matrix-title]:pr-[58px] w-full border-collapse text-left text-[12px] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_th:not(:first-child)]:min-w-[190px] [&_th:not(:first-child)]:text-center [&_td]:min-w-[190px] [&_td]:text-center [&_thead_th]:relative [&_thead_th]:bg-[color-mix(in_srgb,white_3%,transparent)] [&_thead_th]:align-top [&_thead_th:first-child]:align-bottom [&_tbody_th]:font-medium [&_tbody_th]:text-neutral-200"
                 :style="{ minWidth: `max(100%, ${130 + selectedBenchmarks.length * 190}px)` }"
               >
                 <thead>
@@ -1264,7 +1260,7 @@ onActivated(() => {
                       :class="{
                         'benchmarks__matrix-column--dragging opacity-55':
                           draggedBenchmarkId === benchmark.id,
-                        'benchmarks__matrix-column--drop-target [box-shadow:inset_3px_0_var(--action)]':
+                        'benchmarks__matrix-column--drop-target [box-shadow:inset_3px_0_var(--color-neutral-100,#e8e8ee)]':
                           dropTargetBenchmarkId === benchmark.id,
                         'benchmarks__matrix-column--baseline': isBaselineColumn(benchmark.id)
                       }"
@@ -1363,7 +1359,7 @@ onActivated(() => {
             </div>
 
             <div
-              class="benchmarks__chart min-w-0 overflow-x-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3.5 [&_h3]:m-0 [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-neutral-100 [&_p]:mt-1 [&_p]:mr-0 [&_p]:mb-[18px] [&_p]:ml-0 [&_p]:min-h-[2lh] [&_p]:text-[11px] [&_p]:text-text-muted"
+              class="benchmarks__chart min-w-0 overflow-x-auto rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] p-4 [&_h3]:m-0 [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-neutral-100 [&_p]:mt-1 [&_p]:mr-0 [&_p]:mb-[18px] [&_p]:ml-0 [&_p]:min-h-[2lh] [&_p]:text-[11px] [&_p]:text-text-muted"
             >
               <h3>
                 {{
@@ -1400,7 +1396,7 @@ onActivated(() => {
                 <div
                   v-for="benchmark in selectedBenchmarks"
                   :key="benchmark.id"
-                  class="benchmarks__chart-row box-border grid min-h-20 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 border-t border-solid border-[var(--chooser-surface-border)] py-2 [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-faster)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-slower)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-l-[3px] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-solid [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-[var(--benchmark-baseline)] [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-faster-text)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-slower-text)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-baseline)]"
+                  class="benchmarks__chart-row box-border grid min-h-20 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 py-2 [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-faster)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-slower)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-l-[3px] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-solid [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-[var(--benchmark-baseline)] [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-faster-text)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-slower-text)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-baseline)]"
                   :class="
                     isRelativeView
                       ? [
