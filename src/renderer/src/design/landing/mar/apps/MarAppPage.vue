@@ -8,8 +8,10 @@ import {
   Check,
   ChevronLeft,
   Coins,
+  Dices,
   Download,
   Ellipsis,
+  Film,
   Image as ImageIcon,
   ImageUp,
   Link2,
@@ -24,6 +26,9 @@ import Badge from '../../ui/Badge.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import MarSearchField from '../pages/MarSearchField.vue'
 import Select from '../../ui/Select.vue'
+import NumberField from '../../ui/NumberField.vue'
+import Switch from '../../ui/Switch.vue'
+import Input from '../../ui/Input.vue'
 import MarEmpty from '../pages/MarEmpty.vue'
 import ExampleTile from './ExampleTile.vue'
 import ImageGlyph from './ImageGlyph.vue'
@@ -117,10 +122,24 @@ function pickExample(x: AppExample): void {
   comparing.value = false
   load(x)
 }
-const pick = (f: Field): string => values[f.id] ?? f.options?.[0] ?? ''
+const pick = (f: Field): string => values[f.id] ?? f.value ?? f.options?.[0] ?? ''
 const count = computed(() =>
-  Number(pick(fields.find((f) => f.kind === 'count') ?? ({} as Field)) || 1)
+  Number(pick(fields.find((f) => f.kind === 'count' && !f.control) ?? ({} as Field)) || 1)
 )
+/** The panel's sections: a field on its own, or a run of fields under one
+ *  heading (Direction, New camera, Format), as the hub's panels group them. */
+const blocks = computed(() =>
+  shown.value.reduce<{ group?: string; fields: Field[] }[]>((all, f) => {
+    const last = all[all.length - 1]
+    if (f.group && last?.group === f.group) last.fields.push(f)
+    else all.push({ group: f.group, fields: [f] })
+    return all
+  }, [])
+)
+/** A list, a number, a switch or a seed sits on one line, its label left;
+ *  so does every setting under a heading. */
+const inline = (f: Field): boolean =>
+  Boolean(f.control) || (Boolean(f.group) && f.kind !== 'image' && f.kind !== 'text')
 
 const state = ref<'idle' | 'running' | 'done'>('idle')
 const progress = ref(0)
@@ -412,44 +431,104 @@ function back(): void {
                 </button>
               </div>
             </section>
-            <section v-for="f in shown" :key="f.id" class="mar-app-editor-field">
-              <h2 class="mar-app-editor-label">{{ f.label }}</h2>
-              <button
-                v-if="f.kind === 'image' && f.id === firstImage"
-                type="button"
-                class="mar-app-editor-source group"
-                :aria-label="`Replace ${f.label.toLowerCase()}`"
-                @click="toast('Pick an image')"
+            <section
+              v-for="(b, i) in blocks"
+              :key="b.group ?? `${b.fields[0]?.id}-${i}`"
+              class="mar-app-editor-field"
+            >
+              <h2 v-if="b.group" class="mar-app-editor-group">{{ b.group }}</h2>
+              <div
+                v-for="f in b.fields"
+                :key="f.id"
+                :class="inline(f) ? 'mar-app-editor-row' : 'mar-app-editor-stack'"
               >
-                <img :src="input" alt="" class="size-full object-cover" />
-                <span class="mar-app-editor-replace"><ImageUp :size="14" />Replace</span>
-              </button>
-              <button
-                v-else-if="f.kind === 'image'"
-                type="button"
-                class="mar-app-editor-drop"
-                @click="toast('Pick an image')"
-              >
-                <ImageUp :size="16" />
-                <span>Add {{ f.label.toLowerCase() }}</span>
-              </button>
-              <textarea
-                v-else-if="f.kind === 'text'"
-                :value="values[f.id] ?? ''"
-                :placeholder="f.placeholder ?? ''"
-                rows="3"
-                class="mar-app-editor-text"
-                @input="values[f.id] = ($event.target as HTMLTextAreaElement).value"
-              />
-              <SegmentedControl
-                v-else
-                :model-value="pick(f)"
-                variant="contained"
-                size="sm"
-                class="self-start"
-                :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
-                @update:model-value="(v: string) => (values[f.id] = v)"
-              />
+                <h3 class="mar-app-editor-label">
+                  {{ f.label
+                  }}<span
+                    v-if="f.kind === 'image' && f.hint === 'Optional'"
+                    class="mar-app-editor-opt"
+                  >
+                    Optional</span
+                  >
+                </h3>
+                <button
+                  v-if="f.kind === 'image' && f.id === firstImage"
+                  type="button"
+                  class="mar-app-editor-source group"
+                  :aria-label="`Replace ${f.label.toLowerCase()}`"
+                  @click="toast(f.accept === 'video' ? 'Pick a video' : 'Pick an image')"
+                >
+                  <img :src="input" alt="" class="size-full object-cover" />
+                  <span class="mar-app-editor-replace"><ImageUp :size="14" />Replace</span>
+                </button>
+                <button
+                  v-else-if="f.kind === 'image'"
+                  type="button"
+                  class="mar-app-editor-drop"
+                  @click="toast(f.accept === 'video' ? 'Pick a video' : 'Pick an image')"
+                >
+                  <Film v-if="f.accept === 'video'" :size="16" />
+                  <ImageUp v-else :size="16" />
+                  <span>Add {{ f.label.toLowerCase() }}</span>
+                  <span v-if="f.hint && f.hint !== 'Optional'" class="mar-app-editor-hint">{{
+                    f.hint
+                  }}</span>
+                </button>
+                <textarea
+                  v-else-if="f.kind === 'text'"
+                  :value="values[f.id] ?? ''"
+                  :placeholder="f.placeholder ?? ''"
+                  rows="3"
+                  class="mar-app-editor-text"
+                  @input="values[f.id] = ($event.target as HTMLTextAreaElement).value"
+                />
+                <Select
+                  v-else-if="f.control === 'select'"
+                  :model-value="pick(f)"
+                  size="sm"
+                  class="mar-app-editor-select"
+                  :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
+                  @update:model-value="(v: string) => (values[f.id] = v)"
+                />
+                <NumberField
+                  v-else-if="f.control === 'number'"
+                  :model-value="Number(pick(f))"
+                  :min="f.min"
+                  :max="f.max"
+                  :step="f.step"
+                  :unit="f.unit"
+                  :aria-label="f.label"
+                  class="w-28"
+                  @update:model-value="(v: number) => (values[f.id] = String(v))"
+                />
+                <Switch
+                  v-else-if="f.control === 'switch'"
+                  :model-value="pick(f) === 'On'"
+                  :aria-label="f.label"
+                  @update:model-value="(v: boolean) => (values[f.id] = v ? 'On' : 'Off')"
+                />
+                <Input
+                  v-else-if="f.control === 'seed'"
+                  :model-value="values[f.id] ?? ''"
+                  size="sm"
+                  mono
+                  placeholder="Random"
+                  :aria-label="f.label"
+                  class="w-28"
+                  @update:model-value="(v: string) => (values[f.id] = v.replace(/\D/g, ''))"
+                >
+                  <template #trailing><Dices :size="13" class="text-subtle-foreground" /></template>
+                </Input>
+                <SegmentedControl
+                  v-else
+                  :model-value="pick(f)"
+                  variant="contained"
+                  size="sm"
+                  :class="!inline(f) && 'self-start'"
+                  :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
+                  @update:model-value="(v: string) => (values[f.id] = v)"
+                />
+              </div>
             </section>
             <slot name="place" />
           </div>
@@ -841,6 +920,37 @@ function back(): void {
 }
 .mar-app-editor-field + .mar-app-editor-field {
   border-top: 1px solid var(--color-border-default);
+}
+.mar-app-editor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mar-app-editor-row {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mar-app-editor-group {
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  font-weight: 600;
+  color: var(--color-base-foreground);
+}
+.mar-app-editor-opt {
+  font-weight: 400;
+  color: var(--color-subtle-foreground);
+}
+.mar-app-editor-hint {
+  padding: 0 12px;
+  text-align: center;
+  color: var(--color-subtle-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-select {
+  width: auto;
+  max-width: 60%;
 }
 .mar-app-editor-label {
   font-size: var(--text-ui);

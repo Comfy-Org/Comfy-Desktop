@@ -69,7 +69,7 @@ const removed = reactive<Record<string, boolean>>({})
 const values = reactive<Record<string, string>>({})
 const pick = (f: Field): string => values[f.id] ?? f.options?.[0] ?? ''
 const count = computed(() =>
-  Number(pick(fields.find((f) => f.kind === 'count') ?? ({} as Field)) || 1)
+  Number(pick(fields.find((f) => f.kind === 'count' && !f.control) ?? ({} as Field)) || 1)
 )
 
 const state = ref<'idle' | 'running' | 'done'>('idle')
