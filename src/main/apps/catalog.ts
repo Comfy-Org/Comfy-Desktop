@@ -5,13 +5,6 @@ const DESKTOP_SURFACE = 'desktop_starters'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
 const CATALOG_TIMEOUT_MS = 8000
 const THUMBNAIL_FIELDS = ['$.static_thumb', '$.hero_poster']
-const SLUGS_WITHOUT_PAGE = new Set([
-  'make-image',
-  'restyle',
-  'sticker',
-  'motion-to-video',
-  'faceless-channel'
-])
 
 interface CatalogItem {
   uid?: unknown
@@ -46,7 +39,7 @@ export function toCatalogApp(item: CatalogItem, listUrl: string): CatalogApp | n
   const title = item.data?.title
   if (typeof uid !== 'string' || typeof title !== 'string' || title.trim() === '') return null
   const slug = item.data?.slug
-  if (typeof slug !== 'string' || slug.trim() === '' || SLUGS_WITHOUT_PAGE.has(slug)) return null
+  if (typeof slug !== 'string' || slug.trim() === '') return null
   const url = new URL(`#/${encodeURIComponent(slug)}`, listUrl).href
   const description = item.data?.description
   return {

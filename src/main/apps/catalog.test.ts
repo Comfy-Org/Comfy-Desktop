@@ -80,12 +80,6 @@ describe('toCatalogApp', () => {
     expect(toCatalogApp(item('b', { title: 'No slug' }), LIST)).toBeNull()
     expect(toCatalogApp(item('c', { title: 'Blank slug', slug: ' ' }), LIST)).toBeNull()
   })
-
-  it('hides the apps that have no page on the apps site', () => {
-    for (const slug of ['make-image', 'restyle', 'sticker', 'motion-to-video', 'faceless-channel'])
-      expect(toCatalogApp(catalogApp(slug, slug, 0), LIST)).toBeNull()
-    expect(toCatalogApp(catalogApp('upscale', 'Upscale 4x', 0), LIST)).not.toBeNull()
-  })
 })
 
 describe('listCatalogApps', () => {
