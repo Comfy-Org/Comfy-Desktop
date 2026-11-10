@@ -152,6 +152,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // truth for `getEntryByInstallationId(id)` — keep it in lockstep
   // with `entry.installationId` (detach symmetrically clears both).
   entry.installationId = installationId
+  entry.sourceId = installation.sourceId
   entry.comfyUrl = comfyUrl
   entry.titleBarText = installation.name
   entry.sourceCategory = sourceMap[installation.sourceId]?.category ?? null
@@ -214,6 +215,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   // release-cache resolves in the background).
   const onInstallationUpdated = (updated: InstallationRecord): void => {
     if (updated.id !== entry.installationId) return
+    entry.sourceId = updated.sourceId
     const nextTabText = updated.name
     if (nextTabText !== entry.titleBarText) {
       entry.titleBarText = nextTabText
@@ -704,6 +706,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       entry.installationId = null
     }
     entry.comfyUrl = ''
+    delete entry.sourceId
   }
   return true
 }

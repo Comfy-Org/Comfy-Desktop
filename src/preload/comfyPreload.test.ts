@@ -78,6 +78,60 @@ describe('comfyPreload model access bridge', () => {
     mocks.send.mockReset()
   })
 
+  it('queries current host enrollment eligibility and forwards identity proof when requested', async () => {
+    const admission = hostedBridge().Telemetry.getProactiveGreetingAdmission!
+    mocks.invoke.mockResolvedValueOnce('verify-firebase').mockResolvedValueOnce('allowed')
+    expect(await admission('user-a')).toBe('verify-firebase')
+    expect(await admission('user-a', 'id-token')).toBe('allowed')
+    expect(mocks.invoke).toHaveBeenNthCalledWith(
+      1,
+      'telemetry:get-proactive-greeting-admission',
+      'user-a',
+      undefined
+    )
+    expect(mocks.invoke).toHaveBeenNthCalledWith(
+      2,
+      'telemetry:get-proactive-greeting-admission',
+      'user-a',
+      'id-token'
+    )
+    expect(mocks.send).not.toHaveBeenCalled()
+  })
+
+  it('advertises acknowledged enrollment and preserves the ordinary capture channel', async () => {
+    const bridge = hostedBridge()
+    expect(bridge.Telemetry.proactiveGreetingExperimentVersion).toBe(2)
+    const properties = {
+      proactive_greeting_user_id: 'user-a',
+      proactive_greeting_workspace_id: 'workspace-a',
+      proactive_greeting_group_key: '["user-a","workspace-a"]',
+      proactive_greeting_variant: 'control',
+      canvas_state: 'empty'
+    }
+    mocks.invoke.mockResolvedValue(true)
+    expect(await bridge.Telemetry.enrollProactiveGreeting!(properties)).toBe(true)
+    expect(mocks.invoke).toHaveBeenCalledWith('telemetry:enroll-proactive-greeting', properties)
+    expect(mocks.send).not.toHaveBeenCalled()
+    bridge.Telemetry.capture('app:agent_message_sent', properties)
+    expect(mocks.send).toHaveBeenCalledWith('telemetry:capture', {
+      event: 'app:agent_message_sent',
+      properties
+    })
+  })
+
+  it('relays admission invalidations without exposing IPC data and unsubscribes', () => {
+    const callback = vi.fn()
+    const unsubscribe = hostedBridge().Telemetry.onProactiveGreetingAdmissionChanged!(callback)
+    const channel = 'telemetry:proactive-greeting-admission-changed'
+    const handler = mocks.on.mock.calls.find(([name]) => name === channel)?.[1] as (
+      event: unknown
+    ) => void
+    handler({ sender: 'internal' })
+    expect(callback).toHaveBeenCalledExactlyOnceWith()
+    unsubscribe()
+    expect(mocks.removeListener).toHaveBeenCalledWith(channel, handler)
+  })
+
   it('forwards hosted frontend exceptions through the scrubbed Desktop telemetry channel', () => {
     const bridge = hostedBridge()
     const error = new Error('boom')

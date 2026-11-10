@@ -10,6 +10,11 @@ import {
   readVerifiedLocalFirebaseUser
 } from './verifiedLocalFirebaseAuth'
 
+interface LocalFirebaseSignInReport {
+  readonly userId: string
+  readonly origin: string
+}
+
 interface Reporter {
   eligible: boolean
   active: boolean
@@ -18,6 +23,7 @@ interface Reporter {
   pendingExpired: boolean
   localReportingAuthorized: boolean
   localExpectedUserId: string | null
+  localSignInReport: LocalFirebaseSignInReport | null
   /** Where this view was last seen signed in; storage is per origin, and a view can navigate. */
   signedInOrigin: string | null
   awaitingCommittedFrame: boolean
@@ -252,6 +258,24 @@ function currentMainFrame(webContents: WebContents): FirebaseAuthFrameIdentity {
     processId: webContents.mainFrame.processId,
     routingId: webContents.mainFrame.routingId
   }
+}
+
+/** A current report is only a candidate for verification, never proof of identity. */
+export function getUnverifiedLocalFirebaseSignInReport(
+  webContents: WebContents
+): LocalFirebaseSignInReport | null {
+  const reporter = reporters.get(webContents)
+  if (!reporter?.eligible || reporter.localReportingAuthorized || webContents.isDestroyed()) {
+    return null
+  }
+  const report = reporter.localSignInReport
+  return report &&
+    report.origin === originOf(webContents.getURL()) &&
+    !reporter.awaitingCommittedFrame &&
+    reporter.mainFrameNavigationsInFlight === 0 &&
+    isSameFrame(reporter.committedFrame, currentMainFrame(webContents))
+    ? report
+    : null
 }
 
 function failureTerminalKey(
@@ -610,6 +634,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
     pendingExpired: false,
     localReportingAuthorized: false,
     localExpectedUserId: null,
+    localSignInReport: null,
     signedInOrigin: null,
     awaitingCommittedFrame: true,
     mainFrameNavigationsInFlight: 0,
@@ -620,6 +645,7 @@ export function trackFirebaseAuthReporter(webContents: WebContents): void {
     state: { status: 'pending' },
     onDidStartNavigation: (details) => {
       if (!details.isMainFrame || details.isSameDocument) return
+      reporter.localSignInReport = null
       if (
         reporter.mainFrameNavigationsInFlight === 0 &&
         !reporter.awaitingCommittedFrame &&
@@ -745,6 +771,7 @@ export function activateFirebaseAuthReporter(webContents: WebContents): void {
   reporter.pendingExpired = false
   reporter.awaitingCommittedFrame = true
   reporter.committedFrame = null
+  reporter.localSignInReport = null
   reporter.recoverableState = null
   reporter.committedCandidate = null
   reporter.active = refreshReporterAuthScope(reporter, webContents.getURL())
@@ -758,6 +785,7 @@ export function deactivateFirebaseAuthReporter(webContents: WebContents): void {
   if (!reporter) return
   reporter.eligible = false
   reporter.active = false
+  reporter.localSignInReport = null
   reporter.state = { status: 'pending' }
   mainVerifiedStates.delete(webContents)
   reconcile()
@@ -773,6 +801,18 @@ export function reportFirebaseAuthState(
   const reporter = reporters.get(webContents)
   if (!reporter?.eligible) return
   const currentOrigin = originOf(webContents.getURL())
+  if (
+    currentOrigin !== null &&
+    isLoopbackOrigin(currentOrigin) &&
+    !reporter.awaitingCommittedFrame &&
+    reporter.mainFrameNavigationsInFlight === 0 &&
+    isSameFrame(reporter.committedFrame, frame)
+  ) {
+    if (state.status !== 'signed_in') reporter.localSignInReport = null
+    else if (reporter.localSignInReport?.userId !== state.userId) {
+      reporter.localSignInReport = { userId: state.userId, origin: currentOrigin }
+    }
+  }
   const trustedCloud = isTrustedCloudUrl(webContents.getURL())
   const trustedLocal =
     currentOrigin !== null && isLoopbackOrigin(currentOrigin) && reporter.localReportingAuthorized

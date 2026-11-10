@@ -110,6 +110,12 @@
  */
 import { app } from 'electron'
 import { PostHog } from 'posthog-node'
+import {
+  parseProactiveGreetingAttribution,
+  proactiveGreetingExposureKey,
+  proactiveGreetingProperties,
+  PROACTIVE_GREETING_FLAG
+} from './proactiveGreetingTelemetry'
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 // PostHog's `FeatureFlagValue` lives in `@posthog/core` and is not
@@ -190,6 +196,11 @@ export function _resetTelemetryRelayTargets(): void {
  * close an in-flight PostHog client - tests bring their own mocked one.
  */
 export function _resetForTest(): void {
+  proactiveGreetingExposures.clear()
+  proactiveGreetingAdmissionObservers.clear()
+  observedProactiveGreetingActor = null
+  observedProactiveGreetingConsentRevision = null
+  consentRevision = 0
   client = null
   distinctId = null
   anonymousDistinctId = null
@@ -681,18 +692,21 @@ export function _test_resetVolumeGuards(): void {
  */
 export function setConsentState(state: ConsentState): void {
   const previous = consentState
+  if (state !== previous) ++consentRevision
   consentState = state
   if (state !== 'granted') {
     // Best-effort flush so already-queued events still go out before we
     // start suppressing.
     void client?.flush().catch(() => {})
     if (state === 'denied') discardDeferredTelemetry()
+    publishProactiveGreetingAdmission()
     return
   }
   // Transitioned to granted. Ship anything we held back.
   if (previous !== 'granted') {
     tryFlushDeferred()
   }
+  publishProactiveGreetingAdmission()
 }
 
 /**
@@ -1092,8 +1106,8 @@ export function bindAnonymousId(
       ...properties
     }
   }
-  if (!canEmit()) return
-  tryFlushDeferred()
+  if (canEmit()) tryFlushDeferred()
+  publishProactiveGreetingAdmission()
 }
 
 /**
@@ -1161,6 +1175,15 @@ function applyFirebaseUserBinding(
   userId: string,
   emitLoginEvent: boolean,
   properties: Record<string, TelemetryValue> = {}
+): void {
+  updateFirebaseUserBinding(userId, emitLoginEvent, properties)
+  publishProactiveGreetingAdmission()
+}
+
+function updateFirebaseUserBinding(
+  userId: string,
+  emitLoginEvent: boolean,
+  properties: Record<string, TelemetryValue>
 ): void {
   // Resolved consensus always ends the pending quarantine, even when this
   // binding cannot proceed (denied consent, unusable UID) — otherwise
@@ -1285,6 +1308,7 @@ export function bindUserId(userId: string, properties: Record<string, TelemetryV
  */
 export function applyFirebasePendingConsensus(): void {
   firebaseConsensusPending = true
+  publishProactiveGreetingAdmission()
 }
 
 /**
@@ -1296,6 +1320,7 @@ export function applyFirebasePendingConsensus(): void {
 export function releaseFirebasePendingConsensus(): void {
   endFirebaseWriteQuarantine('replay')
   tryFlushDeferred()
+  publishProactiveGreetingAdmission()
 }
 
 /**
@@ -1335,6 +1360,7 @@ function detachFromBoundUser(): void {
 export function applyFirebaseAnonymousConsensus(): void {
   pendingLoginAttribution = null
   detachFromBoundUser()
+  publishProactiveGreetingAdmission()
 }
 
 /**
@@ -1415,6 +1441,83 @@ function capturePersonProperties(
   return capture('comfy.desktop.person.set', properties)
 }
 
+// Process-local dedup only: this is not a cross-install enrollment ledger.
+const proactiveGreetingExposures = new Set<string>()
+const proactiveGreetingAdmissionObservers = new Set<() => void>()
+let observedProactiveGreetingActor: string | null = null
+let observedProactiveGreetingConsentRevision: number | null = null
+let consentRevision = 0
+
+export function getProactiveGreetingConsentRevision(): number | null {
+  return canEmit() && consentState === 'granted' ? consentRevision : null
+}
+
+/** Read-only eligibility: never bind an identity or bypass the host's consent owner. */
+export function getProactiveGreetingActor(): string | null {
+  if (
+    getProactiveGreetingConsentRevision() === null ||
+    boundUserId !== distinctId ||
+    firebaseWritesQuarantined()
+  )
+    return null
+  return boundUserId
+}
+
+export function canEnrollProactiveGreeting(userId: string): boolean {
+  return getProactiveGreetingActor() === userId
+}
+
+export function observeProactiveGreetingAdmissionChanged(observer: () => void): () => void {
+  proactiveGreetingAdmissionObservers.add(observer)
+  return () => proactiveGreetingAdmissionObservers.delete(observer)
+}
+
+function publishProactiveGreetingAdmission(): void {
+  const actor = getProactiveGreetingActor()
+  const revision = getProactiveGreetingConsentRevision()
+  if (
+    actor === observedProactiveGreetingActor &&
+    revision === observedProactiveGreetingConsentRevision
+  )
+    return
+  observedProactiveGreetingActor = actor
+  observedProactiveGreetingConsentRevision = revision
+  for (const observer of proactiveGreetingAdmissionObservers) observer()
+}
+
+export function canCaptureVerifiedProactiveGreeting(userId: string): boolean {
+  return (
+    getProactiveGreetingConsentRevision() !== null &&
+    !firebaseConsensusPending &&
+    (boundUserId === null || boundUserId === userId)
+  )
+}
+
+/** Acknowledge local SDK handoff only. Pending identity cannot admit an exposure. */
+export function enrollProactiveGreeting(
+  properties: TelemetryContext,
+  verifiedActor?: string
+): boolean {
+  const event = '$experiment_exposure'
+  const attribution = parseProactiveGreetingAttribution(event, properties)
+  if (!attribution) return false
+  const allowed = verifiedActor
+    ? attribution.userId === verifiedActor && canCaptureVerifiedProactiveGreeting(verifiedActor)
+    : canEnrollProactiveGreeting(attribution.userId)
+  if (!allowed) return false
+  if (proactiveGreetingExposures.has(proactiveGreetingExposureKey(attribution))) return true
+  return captureEvent(event, properties, false, verifiedActor)
+}
+
+/** Captures only scoped experiment events, without altering the ordinary telemetry actor. */
+export function captureVerifiedProactiveGreeting(
+  event: string,
+  properties: TelemetryContext,
+  verifiedActor: string
+): boolean {
+  return captureEvent(event, properties, false, verifiedActor)
+}
+
 /**
  * Returns whether the event was admitted. A `false` means it was dropped
  * (consent gate, volume guard, or SDK failure); one-shot callers use this to
@@ -1427,12 +1530,25 @@ export function capture(event: string, properties: TelemetryContext = {}): boole
   return captureEvent(event, properties, false)
 }
 
-function captureEvent(event: string, properties: TelemetryContext, forward: boolean): boolean {
+function captureEvent(
+  event: string,
+  properties: TelemetryContext,
+  forward: boolean,
+  verifiedActor?: string
+): boolean {
   // E2E only (no-op otherwise): lets a spec assert an event was raised without consent or a
   // reachable PostHog.
   recordIpcInvocation(`telemetry:${event}`, properties)
-  if (!canEmit() || !distinctId) return false
+  if (!canEmit() || !(verifiedActor ?? distinctId)) return false
   if (!isAllowedToFire(event)) return false
+  const attribution = parseProactiveGreetingAttribution(event, properties)
+  if (
+    attribution === null ||
+    (attribution && attribution.userId !== (verifiedActor ?? boundUserId))
+  )
+    return false
+  if (verifiedActor && (!attribution || !canCaptureVerifiedProactiveGreeting(verifiedActor)))
+    return false
   if (!_checkRateLimit(event)) return false
   if (firebaseWritesQuarantined()) {
     if (
@@ -1442,7 +1558,7 @@ function captureEvent(event: string, properties: TelemetryContext, forward: bool
     _recordCapturedEvent(event)
     return true
   }
-  if (!deliverEvent(event, properties, forward, null)) return false
+  if (!deliverEvent(event, properties, forward, null, verifiedActor)) return false
   _recordCapturedEvent(event)
   return true
 }
@@ -1451,9 +1567,22 @@ function deliverEvent(
   event: string,
   properties: TelemetryContext,
   forward: boolean,
-  timestamp: Date | null
+  timestamp: Date | null,
+  verifiedActor?: string
 ): boolean {
   try {
+    // Recheck after quarantine as well. A delayed event must never acquire a new actor.
+    const attribution = parseProactiveGreetingAttribution(event, properties)
+    if (
+      attribution === null ||
+      (attribution && attribution.userId !== (verifiedActor ?? boundUserId))
+    )
+      return false
+    const exposureKey =
+      attribution && event === '$experiment_exposure'
+        ? proactiveGreetingExposureKey(attribution)
+        : null
+    if (exposureKey && proactiveGreetingExposures.has(exposureKey)) return false
     // Per-call properties override defaults on key collision - callers
     // that explicitly pass `app_version` (e.g. session-start payload,
     // legacy event re-emitters) win.
@@ -1461,13 +1590,26 @@ function deliverEvent(
     // to derive country (`disableGeoip: false` at init). The raw IP and all
     // sub-country geo are then discarded by an ingestion transformation, so
     // only the country code/name is retained. See the init comment.
-    const merged = enforcePersonProcessingPolicy({ ...defaultEventProperties, ...properties })
+    const merged = { ...defaultEventProperties, ...properties }
+    const policyProperties = verifiedActor ? merged : enforcePersonProcessingPolicy(merged)
     client!.capture({
-      distinctId: distinctId!,
+      distinctId: (verifiedActor ?? distinctId)!,
       event,
-      properties: scrubProperties(merged),
+      ...(attribution ? { groups: { user_workspace: attribution.groupKey } } : {}),
+      properties: {
+        ...scrubProperties(policyProperties),
+        ...(attribution ? proactiveGreetingProperties(attribution) : {}),
+        ...(exposureKey
+          ? {
+              $feature_flag: PROACTIVE_GREETING_FLAG,
+              $feature_flag_response: attribution!.variant
+            }
+          : {})
+      },
       ...(timestamp ? { timestamp } : {})
     })
+    // An SDK rejection or consent/quarantine rejection must not consume enrollment.
+    if (exposureKey) proactiveGreetingExposures.add(exposureKey)
     if (forward) forwardToRenderer(event, properties)
     return true
   } catch {
@@ -2084,6 +2226,7 @@ export async function shutdown(reason: string): Promise<void> {
   } finally {
     client = null
     initialized = false
+    publishProactiveGreetingAdmission()
   }
 }
 
@@ -2116,7 +2259,7 @@ export function installAppHooks(): void {
   beforeQuitHooked = true
 
   app.on('before-quit', (event) => {
-    if (drainingForQuit || !client) return
+    if (event.defaultPrevented || drainingForQuit || !client) return
     drainingForQuit = true
     event.preventDefault()
     const drainPromise = shutdown('quit').catch(() => {})

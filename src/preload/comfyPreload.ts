@@ -101,6 +101,17 @@ const captureException: NonNullable<ComfyDesktop2TelemetryBridge['captureExcepti
   })
 
 const Telemetry: ComfyDesktop2TelemetryBridge = {
+  proactiveGreetingExperimentVersion: 2,
+  getProactiveGreetingAdmission: (userId, firebaseIdToken) =>
+    ipcRenderer.invoke('telemetry:get-proactive-greeting-admission', userId, firebaseIdToken),
+  enrollProactiveGreeting: (properties): Promise<boolean> =>
+    ipcRenderer.invoke('telemetry:enroll-proactive-greeting', properties),
+  onProactiveGreetingAdmissionChanged: (callback) => {
+    const channel = 'telemetry:proactive-greeting-admission-changed'
+    const handler = (): void => callback()
+    ipcRenderer.on(channel, handler)
+    return () => ipcRenderer.removeListener(channel, handler)
+  },
   capture: (event, properties): void => sendTelemetry('telemetry:capture', { event, properties }),
   captureException,
   reportFirebaseAuthState

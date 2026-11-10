@@ -159,7 +159,20 @@ export interface ComfyDesktop2LogsBridge {
   onOutput(callback: (msg: LogsOutputMsg) => void): () => void
 }
 
+export type ComfyDesktop2ProactiveGreetingAdmission = 'allowed' | 'denied' | 'verify-firebase'
+
 export interface ComfyDesktop2TelemetryBridge {
+  /** Supports validated user/workspace attribution for the proactive greeting experiment. */
+  readonly proactiveGreetingExperimentVersion?: 1 | 2
+  /** Current analytics eligibility. Pass Firebase proof only in response to verify-firebase. */
+  getProactiveGreetingAdmission?(
+    userId: string,
+    firebaseIdToken?: string
+  ): Promise<ComfyDesktop2ProactiveGreetingAdmission>
+  /** Acknowledges local handoff to analytics, including a previously admitted pair and arm. */
+  enrollProactiveGreeting?(properties: ComfyDesktop2TelemetryProperties): Promise<boolean>
+  /** Signals that the hosted view should recheck its current actor's eligibility. */
+  onProactiveGreetingAdmissionChanged?(callback: () => void): () => void
   capture(event: string, properties?: ComfyDesktop2TelemetryProperties): void
   /** Capture a hosted-frontend exception through Desktop's privacy and release-context boundary. */
   captureException?(error: ComfyDesktop2Error, properties?: ComfyDesktop2TelemetryProperties): void

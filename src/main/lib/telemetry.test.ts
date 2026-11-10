@@ -3,14 +3,20 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
+import type { PostHog } from 'posthog-node'
 import type { TelemetryValue } from './telemetry'
 import { DEFAULT_POSTHOG_API_KEY, DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
+
+const electronAppMock = vi.hoisted(() => ({
+  on: vi.fn<(event: string, listener: (event: Electron.Event) => void) => void>(),
+  quit: vi.fn()
+}))
 
 vi.mock('electron', () => ({
   app: {
     getPath: () => path.join(os.tmpdir(), 'launcher-test'),
     isPackaged: true,
-    on: () => {}
+    ...electronAppMock
   },
   BrowserWindow: { getAllWindows: () => [] }
 }))
@@ -45,12 +51,7 @@ function makeStubWebContents(): {
   }
 }
 
-interface CapturedCall {
-  distinctId: string
-  event: string
-  properties?: Record<string, unknown>
-  timestamp?: Date
-}
+type CapturedCall = Parameters<PostHog['capture']>[0]
 const captured: CapturedCall[] = []
 
 interface IdentifyCall {
@@ -88,6 +89,7 @@ const posthogConstructorCalls: Array<{ apiKey: string; options: Record<string, u
 const posthogClientMock = vi.hoisted(() => ({
   failNextCaptures: 0,
   failNextFlushes: 0,
+  shutdown: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   autoFailNextIdentifies: 0,
   featureFlagResult: undefined as
     | { enabled: boolean; variant?: string; payload?: unknown }
@@ -167,7 +169,7 @@ vi.mock('posthog-node', () => ({
       return Promise.resolve()
     }
     shutdown(): Promise<void> {
-      return Promise.resolve()
+      return posthogClientMock.shutdown()
     }
     getFeatureFlagResult(
       key: string,
@@ -339,11 +341,305 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   telemetry._test_resetVolumeGuards()
 }
 
+describe('proactive greeting pair attribution', () => {
+  const exposure = '$experiment_exposure'
+  function pair(workspace = 'workspace-a', user = 'firebase-user'): Record<string, string> {
+    return {
+      proactive_greeting_user_id: user,
+      proactive_greeting_workspace_id: workspace,
+      proactive_greeting_group_key: JSON.stringify([user, workspace]),
+      proactive_greeting_variant: 'control',
+      canvas_state: 'empty'
+    }
+  }
+  function signIn(): void {
+    setupTelemetry()
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    captured.length = 0
+  }
+  const exposures = () => captured.filter((call) => call.event === exposure)
+
+  it('only permits enrollment for the current authenticated actor with granted analytics consent', () => {
+    setupTelemetry()
+    expect(telemetry.canEnrollProactiveGreeting('test-distinct-id')).toBe(false)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(true)
+    expect(telemetry.canEnrollProactiveGreeting('other-user')).toBe(false)
+    for (const consent of ['denied', 'undecided'] as const) {
+      telemetry.setConsentState(consent)
+      expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+    }
+    telemetry.setConsentState('granted')
+    telemetry.applyFirebasePendingConsensus()
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(true)
+    setupTelemetry({ env: { COMFY_DESKTOP_POSTHOG_ENABLED: '0' } })
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+  })
+
+  it.each(['control', 'generic', 'canvas-prefill', 'canvas-only'])(
+    'attributes %s exposure and send to the canonical user and frozen workspace',
+    (variant) => {
+      signIn()
+      const properties = {
+        ...pair(),
+        proactive_greeting_variant: variant,
+        distinct_id: 'spoofed-user',
+        $user_id: 'spoofed-user'
+      }
+      telemetry.capture(exposure, properties)
+      telemetry.capture('app:agent_message_sent', properties)
+      expect(captured).toHaveLength(2)
+      for (const call of captured) {
+        expect(call.distinctId).toBe('firebase-user')
+        expect(call.groups).toEqual({
+          user_workspace: '["firebase-user","workspace-a"]'
+        })
+        expect(call.properties).toMatchObject({
+          $groups: { user_workspace: '["firebase-user","workspace-a"]' },
+          '$feature/agent-proactive-greeting-v1': variant,
+          user_id: 'firebase-user',
+          distinct_id: 'firebase-user',
+          $user_id: 'firebase-user',
+          workspace_id: 'workspace-a'
+        })
+      }
+      expect(exposures()[0]?.properties).toMatchObject({
+        $feature_flag: 'agent-proactive-greeting-v1',
+        $feature_flag_response: variant
+      })
+    }
+  )
+
+  it.each([
+    { proactive_greeting_group_key: '["different-user","workspace-a"]' },
+    { proactive_greeting_workspace_id: '' },
+    { proactive_greeting_variant: 'unknown' },
+    { proactive_greeting_user_id: ' firebase-user ' },
+    { canvas_state: 'unknown' }
+  ])('rejects malformed attribution %j', (invalid) => {
+    signIn()
+    expect(telemetry.capture(exposure, { ...pair(), ...invalid })).toBe(false)
+    expect(exposures()).toHaveLength(0)
+  })
+
+  it('deduplicates only successful exposure admission per pair and variant in this process', () => {
+    signIn()
+    posthogClientMock.failNextCaptures = 1
+    expect(telemetry.capture(exposure, pair())).toBe(false)
+    expect(telemetry.capture(exposure, pair())).toBe(true)
+    expect(telemetry.capture(exposure, pair())).toBe(false)
+    telemetry.capture(exposure, pair('workspace-b'))
+    expect(exposures()).toHaveLength(2)
+    telemetry.capture('app:agent_message_sent', pair())
+    telemetry.capture('app:agent_message_sent', pair())
+    expect(captured.filter((call) => call.event === 'app:agent_message_sent')).toHaveLength(2)
+  })
+
+  it('acknowledges an exposure only after handoff and rechecks consent on duplicates', () => {
+    signIn()
+    posthogClientMock.failNextCaptures = 1
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+    expect(exposures()).toHaveLength(1)
+
+    telemetry.setConsentState('denied')
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    telemetry.setConsentState('granted')
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+    telemetry.applyFirebaseUserConsensus('other-user')
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    expect(exposures()).toHaveLength(1)
+  })
+
+  it('rejects rather than queues enrollment during pending identity consensus', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(false)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(exposures()).toHaveLength(0)
+    expect(telemetry.enrollProactiveGreeting(pair())).toBe(true)
+  })
+
+  it('reports admission changes on binding, consent changes and quarantine', () => {
+    setupTelemetry()
+    const observed: boolean[] = []
+    const unsubscribe = telemetry.observeProactiveGreetingAdmissionChanged(() =>
+      observed.push(telemetry.canEnrollProactiveGreeting('firebase-user'))
+    )
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('denied')
+    telemetry.setConsentState('granted')
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    bindTestAnonymous('replacement-anonymous-id')
+    unsubscribe()
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(observed).toEqual([true, false, true, false, true, false])
+  })
+
+  it('notifies consent transitions without a bound user and changes proof revision on regrant', () => {
+    setupTelemetry({ consent: 'denied' })
+    const changes = vi.fn()
+    const unsubscribe = telemetry.observeProactiveGreetingAdmissionChanged(changes)
+    expect(telemetry.getProactiveGreetingConsentRevision()).toBeNull()
+    telemetry.setConsentState('granted')
+    const revision = telemetry.getProactiveGreetingConsentRevision()
+    expect(revision).not.toBeNull()
+    telemetry.setConsentState('denied')
+    expect(telemetry.getProactiveGreetingConsentRevision()).toBeNull()
+    telemetry.setConsentState('granted')
+    expect(telemetry.getProactiveGreetingConsentRevision()).not.toBe(revision)
+    expect(changes).toHaveBeenCalledTimes(3)
+    unsubscribe()
+  })
+
+  it('honors a canceled quit, then drains and reissues a confirmed quit once', async () => {
+    vi.useFakeTimers()
+    try {
+      signIn()
+      telemetry.installAppHooks()
+      const onBeforeQuit = electronAppMock.on.mock.calls.find(
+        ([event]) => event === 'before-quit'
+      )![1]
+      const canceled = { defaultPrevented: true, preventDefault: vi.fn() }
+      onBeforeQuit(canceled)
+      await vi.runAllTimersAsync()
+      expect(posthogClientMock.shutdown).not.toHaveBeenCalled()
+      expect(electronAppMock.quit).not.toHaveBeenCalled()
+      expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(true)
+      expect(telemetry.capture('after.canceled.quit')).toBe(true)
+
+      const drain = Promise.withResolvers<void>()
+      posthogClientMock.shutdown.mockReturnValueOnce(drain.promise)
+      const confirmed = { defaultPrevented: false, preventDefault: vi.fn() }
+      const reissued = { defaultPrevented: false, preventDefault: vi.fn() }
+      electronAppMock.quit.mockImplementationOnce(() => onBeforeQuit(reissued))
+      onBeforeQuit(confirmed)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(confirmed.preventDefault).toHaveBeenCalledTimes(1)
+      expect(posthogClientMock.shutdown).toHaveBeenCalledTimes(1)
+      expect(electronAppMock.quit).not.toHaveBeenCalled()
+
+      drain.resolve()
+      await vi.runAllTimersAsync()
+      expect(electronAppMock.quit).toHaveBeenCalledTimes(1)
+      expect(posthogClientMock.shutdown).toHaveBeenCalledTimes(1)
+      expect(reissued.preventDefault).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['success', 'failure'])(
+    'shutdown invalidates admission after an SDK drain %s',
+    async (outcome) => {
+      signIn()
+      const changes: boolean[] = []
+      const unsubscribe = telemetry.observeProactiveGreetingAdmissionChanged(() =>
+        changes.push(telemetry.canEnrollProactiveGreeting('firebase-user'))
+      )
+      if (outcome === 'failure') {
+        posthogClientMock.shutdown.mockRejectedValueOnce(new Error('offline'))
+      }
+      await telemetry.shutdown('quit')
+      expect(posthogClientMock.shutdown).toHaveBeenCalledTimes(1)
+      expect(changes).toEqual([false])
+      expect(telemetry.canEnrollProactiveGreeting('firebase-user')).toBe(false)
+      unsubscribe()
+    }
+  )
+
+  it('attributes a verified Local experiment without binding or identifying ordinary telemetry', () => {
+    setupTelemetry()
+    captured.length = 0
+    const treatment = { ...pair(), proactive_greeting_variant: 'generic', copy_locale: 'en' }
+    expect(telemetry.enrollProactiveGreeting(treatment, 'firebase-user')).toBe(true)
+    expect(
+      telemetry.captureVerifiedProactiveGreeting(
+        'app:agent_message_sent',
+        treatment,
+        'firebase-user'
+      )
+    ).toBe(true)
+    expect(telemetry.capture('ordinary:event')).toBe(true)
+    expect(captured.map((call) => call.distinctId)).toEqual([
+      'firebase-user',
+      'firebase-user',
+      'test-distinct-id'
+    ])
+    expect(exposures()[0]).toMatchObject({
+      groups: { user_workspace: '["firebase-user","workspace-a"]' },
+      properties: { copy_locale: 'en' }
+    })
+    expect(identifies).toHaveLength(0)
+    expect(telemetry.getProactiveGreetingActor()).toBeNull()
+  })
+
+  it.each(['denied', 'undecided'] as const)(
+    'does not consume exposure while consent is %s',
+    (consent) => {
+      signIn()
+      telemetry.setConsentState(consent)
+      expect(telemetry.capture(exposure, pair())).toBe(false)
+      expect(exposures()).toHaveLength(0)
+      telemetry.setConsentState('granted')
+      expect(telemetry.capture(exposure, pair())).toBe(true)
+    }
+  )
+
+  it('drops old-user events after account switch rather than attributing them to the new user', () => {
+    signIn()
+    telemetry.applyFirebaseUserConsensus('other-user')
+    expect(telemetry.capture('app:agent_message_sent', pair())).toBe(false)
+    expect(telemetry.capture(exposure, pair())).toBe(false)
+    expect(exposures()).toHaveLength(0)
+  })
+
+  it('holds and deduplicates exposure during quarantine, retaining originating workspace', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture(exposure, pair())
+    telemetry.capture(exposure, pair())
+    telemetry.capture('app:agent_message_sent', pair('workspace-b'))
+    expect(exposures()).toHaveLength(0)
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(exposures()).toHaveLength(1)
+    expect(
+      captured.find((call) => call.event === 'app:agent_message_sent')?.properties
+    ).toMatchObject({
+      $groups: { user_workspace: '["firebase-user","workspace-b"]' }
+    })
+  })
+
+  it('does not replay quarantined exposure after consent is revoked', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture(exposure, pair())
+    telemetry.setConsentState('denied')
+    telemetry.applyFirebaseUserConsensus('firebase-user')
+    expect(exposures()).toHaveLength(0)
+  })
+
+  it('discards quarantined old-user attribution when consensus changes account', () => {
+    signIn()
+    telemetry.applyFirebasePendingConsensus()
+    telemetry.capture(exposure, pair())
+    telemetry.applyFirebaseUserConsensus('other-user')
+    expect(exposures()).toHaveLength(0)
+  })
+})
+
 afterEach(() => {
   anonymousIdentityMock.index = 0
   anonymousIdentityMock.fail = false
   posthogClientMock.failNextCaptures = 0
   posthogClientMock.failNextFlushes = 0
+  posthogClientMock.shutdown.mockReset().mockResolvedValue(undefined)
   posthogClientMock.autoFailNextIdentifies = 0
   posthogClientMock.featureFlagResult = undefined
   posthogClientMock.featureFlagBehavior = 'resolve'
