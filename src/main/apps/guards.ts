@@ -1,7 +1,7 @@
 export const DEFAULT_APPS_URL = 'https://apps.comfy.org/'
 
-export function appsUrl(env: NodeJS.ProcessEnv = process.env): string {
-  return env['COMFY_APPS_URL'] || DEFAULT_APPS_URL
+export function appsUrl(env: NodeJS.ProcessEnv, packaged: boolean): string {
+  return (!packaged && env['COMFY_APPS_URL']) || DEFAULT_APPS_URL
 }
 
 export function appsOrigin(url: string): string | null {

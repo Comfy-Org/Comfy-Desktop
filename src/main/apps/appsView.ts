@@ -1,4 +1,4 @@
-import { ipcMain, shell, WebContentsView } from 'electron'
+import { app, ipcMain, shell, WebContentsView } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
 import { promises as fsp } from 'fs'
 import path from 'path'
@@ -42,7 +42,7 @@ import {
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
 
-const APPS_URL = appsUrl()
+const APPS_URL = appsUrl(process.env, app.isPackaged)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
 const APPS_PARTITION = 'persist:comfy-apps'
 

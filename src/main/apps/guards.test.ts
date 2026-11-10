@@ -42,9 +42,15 @@ import {
 } from './guards'
 
 describe('appsUrl', () => {
-  it('defaults to the hosted site and takes an override', () => {
-    expect(appsUrl({})).toBe(DEFAULT_APPS_URL)
-    expect(appsUrl({ COMFY_APPS_URL: 'http://127.0.0.1:5310/' })).toBe('http://127.0.0.1:5310/')
+  it('defaults to the hosted site and takes an override in a development build', () => {
+    expect(appsUrl({}, false)).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl({ COMFY_APPS_URL: 'http://127.0.0.1:5310/' }, false)).toBe(
+      'http://127.0.0.1:5310/'
+    )
+  })
+
+  it('ignores the override in a packaged build', () => {
+    expect(appsUrl({ COMFY_APPS_URL: 'https://evil.example/' }, true)).toBe(DEFAULT_APPS_URL)
   })
 })
 
