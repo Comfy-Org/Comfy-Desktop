@@ -7,10 +7,42 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AssetSummary, Installation } from '../types/ipc'
+import type { AppCard, AssetSummary, Installation } from '../types/ipc'
 
 const listAssets = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
+const showApps = vi.fn()
+const hideApps = vi.fn()
+const listApps = vi.fn()
+const getAppCover = vi.fn()
+let appsLoadFailed: ((info: { url: string }) => void) | null = null
+const onAppsLoadFailed = vi.fn((callback: (info: { url: string }) => void) => {
+  appsLoadFailed = callback
+  return () => {
+    appsLoadFailed = null
+  }
+})
+let appsBack: (() => void) | null = null
+const onAppsBack = vi.fn((callback: () => void) => {
+  appsBack = callback
+  return () => {
+    appsBack = null
+  }
+})
+
+function appCard(id: string, over: Partial<AppCard> = {}): AppCard {
+  return {
+    id,
+    title: 'Doodle to Image',
+    description: 'Draw the shapes, say what it is, and get a finished picture.',
+    page: `/apps/${id}/desktop.html`,
+    runsOn: ['cloud', 'local'],
+    accent: ['#f472b6', '#d7fd52'],
+    sortOrder: 17,
+    hasCover: true,
+    ...over
+  }
+}
 
 function asset(id: string, name: string, kind: AssetSummary['kind']): AssetSummary {
   return {
@@ -57,9 +89,18 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
 
 beforeEach(() => {
   vi.clearAllMocks()
+  listApps.mockResolvedValue({ source: 'website', apps: [appCard('doodle-to-image')] })
+  getAppCover.mockResolvedValue('data:image/jpeg;base64,AQID')
   window.localStorage.clear()
+  window.localStorage.setItem('comfy.desktop.apps.tab', 'files')
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
+    showApps,
+    hideApps,
+    listApps,
+    getAppCover,
+    onAppsLoadFailed,
+    onAppsBack,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -72,6 +113,136 @@ beforeEach(() => {
 })
 
 describe('AppsView', () => {
+  it('opens on All apps the first time, showing the app grid', async () => {
+    window.localStorage.clear()
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(showApps).not.toHaveBeenCalled()
+    expect(listAssets).not.toHaveBeenCalled()
+  })
+
+  it('shows each app with its cover, title, one line and where it runs', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listApps.mockResolvedValue({
+      source: 'catalog',
+      apps: [
+        appCard('doodle-to-image'),
+        appCard('make-image', {
+          title: 'Make an image',
+          description: 'Describe it and get a picture in a few seconds.',
+          runsOn: ['cloud'],
+          hasCover: false
+        })
+      ]
+    })
+
+    const wrapper = await mountAssets([])
+
+    const doodle = wrapper.get('[data-testid="app-doodle-to-image"]')
+    expect(doodle.get('img').attributes('src')).toBe('data:image/jpeg;base64,AQID')
+    expect(doodle.text()).toContain('Doodle to Image')
+    expect(doodle.get('[data-testid="app-description"]').text()).toBe(
+      'Draw the shapes, say what it is, and get a finished picture.'
+    )
+    expect(doodle.get('[data-testid="app-runs-on"]').text()).toMatch(/Cloud\s*This computer/)
+
+    const make = wrapper.get('[data-testid="app-make-image"]')
+    expect(make.find('img').exists()).toBe(false)
+    expect(make.get('[data-testid="app-cover"]').attributes('style')).toContain('#f472b6')
+    expect(make.get('[data-testid="app-runs-on"]').text()).toBe('Cloud')
+    expect(getAppCover).toHaveBeenCalledExactlyOnceWith('doodle-to-image')
+  })
+
+  it('shows skeleton cards while the app list loads', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listApps.mockReturnValue(new Promise(() => {}))
+
+    const wrapper = await mountAssets([])
+
+    expect(wrapper.findAll('[data-testid="apps-skeleton"] > li')).toHaveLength(8)
+  })
+
+  it('shows Coming soon when no app list loads, and tries again on request', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listApps.mockRejectedValueOnce(new Error('offline'))
+
+    const wrapper = await mountAssets([])
+
+    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.get('[data-testid="apps-empty"]').text()).toContain(
+      "Couldn't load the list of apps."
+    )
+
+    await wrapper.get('[data-testid="apps-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(listApps).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(true)
+  })
+
+  it('opens an app page from its card and returns to the grid with the back button', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    const wrapper = await mountAssets([])
+
+    await wrapper.get('[data-testid="app-open-doodle-to-image"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="apps-open-title"]').text()).toBe('Doodle to Image')
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({ page: '/apps/doodle-to-image/desktop.html', fresh: true })
+    )
+
+    await wrapper.get('[data-testid="apps-back"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(true)
+    expect(hideApps).toHaveBeenCalled()
+  })
+
+  it('returns to the grid when the app page links back to the app list', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    const wrapper = await mountAssets([])
+    await wrapper.get('[data-testid="app-open-doodle-to-image"]').trigger('click')
+    await flushPromises()
+
+    appsBack!()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(true)
+  })
+
+  it('shows Coming soon and the address when an app page cannot load, and retries on reopening', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    const wrapper = await mountAssets([])
+    await wrapper.get('[data-testid="app-open-doodle-to-image"]').trigger('click')
+    await flushPromises()
+
+    appsLoadFailed!({ url: 'https://apps.example/apps/doodle-to-image/desktop.html' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.get('[data-testid="apps-load-failed"]').text()).toContain(
+      'https://apps.example/apps/doodle-to-image/desktop.html'
+    )
+    expect(hideApps).toHaveBeenCalled()
+
+    showApps.mockClear()
+    await wrapper.get('[data-testid="apps-back"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-open-doodle-to-image"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-load-failed"]').exists()).toBe(false)
+    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
+  })
+
   it('starts in masonry with file names and details hidden', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
@@ -188,17 +359,18 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
     expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
+    await flushPromises()
 
-    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(true)
   })
 
-  it('shows Coming soon under All apps without loading assets, then loads Generated Files', async () => {
+  it('shows the app grid under All apps without loading assets, then loads Generated Files', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(listAssets).not.toHaveBeenCalled()
 
@@ -210,6 +382,7 @@ describe('AppsView', () => {
 
     expect(listAssets).toHaveBeenCalledOnce()
     expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(wrapper.find('[data-testid="apps-grid"]').exists()).toBe(false)
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {

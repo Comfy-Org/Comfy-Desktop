@@ -64,6 +64,14 @@
     "browseApps": "Browse apps"
   },
   "apps": {
+    "loadFailed": "The apps page at {url} could not load.",
+    "listFailed": "Couldn't load the list of apps.",
+    "back": "Back to all apps",
+    "open": "Open {name}",
+    "runsOn": {
+      "cloud": "Cloud",
+      "local": "This computer"
+    },
     "tabsLabel": "Apps view",
     "tabs": {
       "all": "All apps",

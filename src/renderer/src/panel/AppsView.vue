@@ -4,13 +4,16 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
 import {
+  ArrowLeft,
   AudioLines,
   Box,
   Check,
+  Cloud,
   File,
   LayoutGrid,
   LayoutDashboard,
   ListFilter,
+  Monitor,
   Play,
   RefreshCw,
   Search
@@ -23,14 +26,16 @@ import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import StatusChip from '../components/ui/StatusChip.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AppsHost from './AppsHost.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type { AppCard, AppRunsOn, AssetKind, AssetSummary, Installation } from '../types/ipc'
 
 interface GalleryAsset extends AssetSummary {
   installationId: string
@@ -44,13 +49,24 @@ type SortOrder = 'newest' | 'oldest'
 
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
+const APPS_GRID_CLASS = 'grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4'
+const RUNS_ON = {
+  cloud: { label: 'apps.runsOn.cloud', icon: Cloud },
+  local: { label: 'apps.runsOn.local', icon: Monitor }
+} as const satisfies Record<AppRunsOn, { label: string; icon: unknown }>
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
-const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'files')
+const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
+const appsLoadFailedUrl = ref<string | null>(null)
+const appCards = ref<AppCard[]>([])
+const appCovers = ref<Record<string, string>>({})
+const appsLoading = ref(false)
+const appsListFailed = ref(false)
+const openApp = ref<AppCard | null>(null)
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -66,6 +82,60 @@ const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
+
+let appsRequestId = 0
+async function loadApps(): Promise<void> {
+  const current = ++appsRequestId
+  appsLoading.value = true
+  appsListFailed.value = false
+  try {
+    const listing = await window.api.listApps()
+    if (current !== appsRequestId) return
+    appCards.value = listing.apps
+    appsListFailed.value = listing.apps.length === 0
+    loadCovers(listing.apps)
+  } catch {
+    if (current === appsRequestId) appsListFailed.value = true
+  } finally {
+    if (current === appsRequestId) appsLoading.value = false
+  }
+}
+
+function loadCovers(cards: AppCard[]): void {
+  for (const card of cards) {
+    if (!card.hasCover || appCovers.value[card.id]) continue
+    window.api
+      .getAppCover(card.id)
+      .then((url) => {
+        if (url) appCovers.value[card.id] = url
+      })
+      .catch(() => {})
+  }
+}
+
+watch(
+  tab,
+  (next) => {
+    if (next !== 'all') return
+    appsLoadFailedUrl.value = null
+    if (appCards.value.length === 0 && !appsLoading.value) void loadApps()
+  },
+  { immediate: true }
+)
+
+function openAppPage(card: AppCard): void {
+  appsLoadFailedUrl.value = null
+  openApp.value = card
+}
+
+function backToApps(): void {
+  openApp.value = null
+  appsLoadFailedUrl.value = null
+}
+
+function coverStyle(card: AppCard): Record<string, string> {
+  return card.accent ? { '--app-accent-a': card.accent[0], '--app-accent-b': card.accent[1] } : {}
+}
 
 function isCloudBuild(inst: Installation): boolean {
   return inst.sourceCategory === 'cloud'
@@ -243,7 +313,26 @@ function extensionOf(name: string): string {
       data-testid="assets-toolbar"
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
-        <SegmentedControl v-model="tab" :options="tabOptions" :label="t('apps.tabsLabel')" />
+        <template v-if="tab === 'all' && openApp">
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            class="gap-1.5 px-3 text-[13px]/5"
+            :aria-label="t('apps.back')"
+            data-testid="apps-back"
+            @click="backToApps"
+          >
+            <ArrowLeft :size="15" aria-hidden="true" />
+            {{ t('apps.tabs.all') }}
+          </Button>
+          <span
+            class="min-w-0 truncate text-ui font-medium text-foreground"
+            data-testid="apps-open-title"
+            >{{ openApp.title }}</span
+          >
+        </template>
+        <SegmentedControl v-else v-model="tab" :options="tabOptions" :label="t('apps.tabsLabel')" />
 
         <div v-if="tab === 'files'" class="ml-auto flex items-center gap-2">
           <Button
@@ -388,14 +477,123 @@ function extensionOf(name: string): string {
       </div>
     </div>
 
-    <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <p
-        v-if="tab === 'all'"
-        class="m-0 text-ui text-muted-foreground"
-        data-testid="apps-coming-soon"
-      >
-        {{ t('sidebar.comingSoon') }}
-      </p>
+    <AppsHost
+      v-if="tab === 'all' && openApp && !appsLoadFailedUrl"
+      :page="openApp.page"
+      @failed="appsLoadFailedUrl = $event"
+      @back="backToApps"
+    />
+    <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <template v-if="tab === 'all'">
+        <section
+          v-if="appsLoadFailedUrl"
+          class="flex flex-col items-center gap-1.5 px-6 py-16 text-center"
+          data-testid="apps-page-failed"
+        >
+          <h2 class="m-0 text-heading font-semibold text-foreground" data-testid="apps-coming-soon">
+            {{ t('sidebar.comingSoon') }}
+          </h2>
+          <p class="m-0 text-ui text-muted-foreground" data-testid="apps-load-failed">
+            {{ t('apps.loadFailed', { url: appsLoadFailedUrl }) }}
+          </p>
+        </section>
+        <div
+          v-else-if="appsLoading && appCards.length === 0"
+          role="status"
+          :aria-label="t('common.loading')"
+        >
+          <ul class="m-0 list-none p-0" :class="APPS_GRID_CLASS" data-testid="apps-skeleton">
+            <li
+              v-for="n in SKELETON_COUNT"
+              :key="n"
+              class="flex flex-col overflow-hidden rounded-lg bg-secondary"
+            >
+              <Skeleton class="aspect-video w-full rounded-none" />
+              <div class="flex flex-col gap-2 px-3 py-3">
+                <Skeleton class="h-2.5 w-3/4 rounded-full" />
+                <Skeleton class="h-2 w-full rounded-full" />
+                <Skeleton class="h-2 w-2/5 rounded-full" />
+              </div>
+            </li>
+          </ul>
+        </div>
+        <section
+          v-else-if="appsListFailed || appCards.length === 0"
+          class="flex flex-col items-center gap-1.5 px-6 py-16 text-center"
+          data-testid="apps-empty"
+        >
+          <h2 class="m-0 text-heading font-semibold text-foreground" data-testid="apps-coming-soon">
+            {{ t('sidebar.comingSoon') }}
+          </h2>
+          <p class="m-0 text-ui text-muted-foreground">{{ t('apps.listFailed') }}</p>
+          <Button
+            type="button"
+            variant="inverted"
+            size="md"
+            class="mt-6 px-4 text-[13px]/5"
+            :disabled="appsLoading"
+            data-testid="apps-retry"
+            @click="loadApps"
+          >
+            {{ t('common.retry') }}
+          </Button>
+        </section>
+        <ul
+          v-else
+          class="m-0 list-none p-0"
+          :class="APPS_GRID_CLASS"
+          data-testid="apps-grid"
+          @pointerenter="warmNameTooltips"
+          @pointerleave="coolNameTooltips"
+        >
+          <li v-for="card in appCards" :key="card.id" class="group" :data-testid="`app-${card.id}`">
+            <Tooltip
+              :text="card.description"
+              side="bottom"
+              :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
+              class="w-full align-top"
+            >
+              <button
+                type="button"
+                class="flex w-full cursor-pointer flex-col overflow-hidden rounded-lg bg-secondary text-left"
+                :aria-label="t('apps.open', { name: card.title })"
+                :data-testid="`app-open-${card.id}`"
+                @click="openAppPage(card)"
+              >
+                <span
+                  class="relative block aspect-video overflow-hidden bg-secondary bg-[linear-gradient(135deg,var(--app-accent-a),var(--app-accent-b))]"
+                  :style="coverStyle(card)"
+                  data-testid="app-cover"
+                >
+                  <img
+                    v-if="appCovers[card.id]"
+                    :src="appCovers[card.id]"
+                    alt=""
+                    class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  />
+                </span>
+                <span class="flex min-w-0 flex-col gap-1 px-3 py-2.5">
+                  <span class="truncate text-ui font-medium text-foreground">{{ card.title }}</span>
+                  <span
+                    v-if="card.description"
+                    class="truncate text-ui text-muted-foreground"
+                    data-testid="app-description"
+                    >{{ card.description }}</span
+                  >
+                  <span class="flex flex-wrap gap-1 pt-1" data-testid="app-runs-on">
+                    <StatusChip v-for="where in card.runsOn" :key="where" tone="quiet">
+                      <template #icon>
+                        <component :is="RUNS_ON[where].icon" :size="11" aria-hidden="true" />
+                      </template>
+                      {{ t(RUNS_ON[where].label) }}
+                    </StatusChip>
+                  </span>
+                </span>
+              </button>
+            </Tooltip>
+          </li>
+        </ul>
+      </template>
       <div
         v-else-if="loading && assets.length === 0"
         role="status"
