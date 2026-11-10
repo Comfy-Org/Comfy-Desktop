@@ -3,8 +3,8 @@
  * local ComfyUI view, so an SSO user (who has no Firebase account) can sign in
  * there and run partner nodes.
  *
- * Only a workspace token minted for the view's allowed workspace and the
- * identity read from Desktop's grant cross to the renderer; the OAuth
+ * Only workspace and partner-node tokens minted for the view's allowed
+ * workspace and the identity read from Desktop's grant cross to the renderer; the OAuth
  * grant stays in main. Only the main frame of a
  * registered comfyView, still on the loopback ComfyUI Desktop loaded into it,
  * is served. Remote and LAN servers never receive the token.
@@ -22,6 +22,7 @@ import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
   getWorkspaceToken: 'desktop2-auth:get-workspace-token',
+  getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   switchWorkspace: 'desktop2-auth:switch-workspace',
@@ -104,8 +105,26 @@ export async function workspaceTokenForSender(
   workspaceId: unknown
 ): Promise<string | null> {
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
-  if (!isTrustedSender(event) || !(await isEmbeddedSessionEnabled())) return null
-  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId)
+  if (!isTrustedSender(event)) return null
+  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId, isEmbeddedSessionEnabled)
+}
+
+/**
+ * The partner-node token for a trusted view, under the same rules as
+ * {@link workspaceTokenForSender}. Main mints and renews it; the view only
+ * ever gets the current token.
+ */
+export async function partnerNodeTokenForSender(
+  event: EmbeddedSessionSender,
+  workspaceId: unknown
+): Promise<string | null> {
+  if (typeof workspaceId !== 'string' || workspaceId === '') return null
+  if (!isTrustedSender(event)) return null
+  return getViewWorkspaceGrants().partnerNodeTokenFor(
+    event.sender,
+    workspaceId,
+    isEmbeddedSessionEnabled
+  )
 }
 
 /**

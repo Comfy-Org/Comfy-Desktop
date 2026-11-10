@@ -9,6 +9,9 @@ const DEFAULT_CLIENT_ID = 'comfy-desktop'
 /** Lets a grant mint workspace tokens at `POST /api/auth/token`. Placeholder until Cloud names it. */
 export const WORKSPACE_MINT_SCOPE = 'comfy-cloud:workspace-token:mint'
 
+/** Lets a grant mint partner-node tokens, which spend the workspace's credits on partner nodes. */
+export const PARTNER_NODE_MINT_SCOPE = 'comfy-cloud:jobs:write'
+
 export const CLOUD_ISSUER = process.env.COMFY_CLOUD_ISSUER || DEFAULT_ISSUER
 
 export const CLOUD_CONFIG = {
@@ -19,7 +22,7 @@ export const CLOUD_CONFIG = {
   /** Workspace REST base (same host as the issuer). */
   apiBase: `${CLOUD_ISSUER}/api`,
   clientId: process.env.COMFY_CLOUD_CLIENT_ID || DEFAULT_CLIENT_ID,
-  scope: `comfy-cloud:user:read ${WORKSPACE_MINT_SCOPE}`,
+  scope: `comfy-cloud:user:read ${PARTNER_NODE_MINT_SCOPE} ${WORKSPACE_MINT_SCOPE}`,
   resource: `${CLOUD_ISSUER}/api`,
   audience: 'comfy-cloud'
 } as const

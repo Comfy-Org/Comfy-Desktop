@@ -9,7 +9,7 @@
 import type { TokenProvider } from '../comfybuilder'
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
-import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from './claims'
+import { canMintWorkspaceTokens, grantFamilyOf, subjectOf, workspaceIdOf } from './claims'
 import { openAuthorizePage, refresh, signIn } from './oauth'
 import { SignInFailure } from './signInFailure'
 import {
@@ -202,6 +202,12 @@ export class CloudSession {
   currentSubject(): string | null {
     const grant = loadGrant()
     return grant ? subjectOf(grant.accessToken) : null
+  }
+
+  /** The grant's refresh family, which a new sign-in replaces even for the same account. */
+  currentGrantFamily(): string | null {
+    const grant = loadGrant()
+    return grant ? grantFamilyOf(grant.accessToken) : null
   }
 
   /** The active workspace, or null when signed out. */

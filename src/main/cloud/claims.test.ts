@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { identityOf, statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import {
+  canMintPartnerNodeTokens,
+  identityOf,
+  statusFromAccessToken,
+  subjectOf,
+  workspaceIdOf
+} from './claims'
+import { CLOUD_CONFIG, WORKSPACE_MINT_SCOPE } from './config'
 
 function jwt(payload: Record<string, unknown>): string {
   const b64 = (o: unknown): string => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -50,5 +57,14 @@ describe('claims', () => {
     expect(identityOf(jwt({ sub: 'u-1' }))).toEqual({ userId: 'u-1' })
     expect(identityOf(jwt({ email: 'a@b.co' }))).toBeNull()
     expect(identityOf('not-a-jwt')).toBeNull()
+  })
+
+  it.each([
+    ['a grant from a sign-in Desktop requests today', CLOUD_CONFIG.scope, true],
+    ['a grant from before jobs:write', `comfy-cloud:user:read ${WORKSPACE_MINT_SCOPE}`, false],
+    ['a grant without the mint scope', 'comfy-cloud:user:read comfy-cloud:jobs:write', false],
+    ['a token with no scope', undefined, false]
+  ])('canMintPartnerNodeTokens for %s', (_name, scope, expected) => {
+    expect(canMintPartnerNodeTokens(jwt({ sub: 'u', ...(scope ? { scope } : {}) }))).toBe(expected)
   })
 })

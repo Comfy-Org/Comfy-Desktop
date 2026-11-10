@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 
-import { WORKSPACE_MINT_SCOPE } from './config'
+import { PARTNER_NODE_MINT_SCOPE, WORKSPACE_MINT_SCOPE } from './config'
 import type { AuthStatus } from './types'
 
 /** Claims read (never verified here; the server does that) from the access-token JWT. */
@@ -11,6 +11,7 @@ interface AccessTokenClaims {
   workspace_type?: string
   role?: string
   scope?: string
+  fam?: unknown
   iat?: unknown
   exp?: unknown
 }
@@ -54,8 +55,17 @@ export function workspaceIdOf(accessToken: string): string | null {
 
 /** The grant behind this token can mint workspace tokens; false for grants from before the mint scope. */
 export function canMintWorkspaceTokens(accessToken: string): boolean {
+  return hasScope(accessToken, WORKSPACE_MINT_SCOPE)
+}
+
+/** The grant can mint partner-node tokens for any workspace it can mint for; false for grants from before `jobs:write`. */
+export function canMintPartnerNodeTokens(accessToken: string): boolean {
+  return canMintWorkspaceTokens(accessToken) && hasScope(accessToken, PARTNER_NODE_MINT_SCOPE)
+}
+
+function hasScope(accessToken: string, wanted: string): boolean {
   const scope = decodeJwtPayload(accessToken)?.scope
-  return typeof scope === 'string' && scope.split(' ').includes(WORKSPACE_MINT_SCOPE)
+  return typeof scope === 'string' && scope.split(' ').includes(wanted)
 }
 
 /** How long a token was issued for, in seconds, independent of any clock; null without usable claims. */
@@ -64,6 +74,12 @@ export function lifetimeSecondsOf(accessToken: string): number | null {
   if (typeof iat !== 'number' || typeof exp !== 'number') return null
   const lifetime = exp - iat
   return Number.isFinite(lifetime) ? lifetime : null
+}
+
+/** The refresh family (`fam`) behind an access token: the same across refreshes, new at every sign-in. */
+export function grantFamilyOf(accessToken: string): string | null {
+  const fam = decodeJwtPayload(accessToken)?.fam
+  return typeof fam === 'string' ? fam : null
 }
 
 /** The account subject a token belongs to, or null for malformed/legacy tokens. */

@@ -3,26 +3,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   enabled: true,
+  generation: 0,
+  flagRead: null as Promise<boolean> | null,
   getGrantAccessToken: vi.fn<() => Promise<string | null>>(),
   mint: vi.fn(),
+  partnerMint: vi.fn(),
   current: 'ws-1',
   entries: [] as unknown[]
 }))
 
 vi.mock('./embeddedSessionFlag', () => ({
-  isEmbeddedSessionEnabled: async () => mocks.enabled
+  isEmbeddedSessionEnabled: async () => (mocks.flagRead ? mocks.flagRead : mocks.enabled)
 }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({
     getGrantAccessToken: mocks.getGrantAccessToken,
     currentWorkspaceId: () => mocks.current,
     currentSubject: () => (mocks.current ? 'user-1' : null),
-    currentAuthGeneration: () => 0,
+    currentGrantFamily: () => null,
+    currentAuthGeneration: () => mocks.generation,
     isWorkspaceMintAllowed: async () => true
   })
 }))
 vi.mock('../cloud/workspaceToken', () => ({
-  mintWorkspaceToken: mocks.mint
+  mintWorkspaceToken: mocks.mint,
+  mintPartnerNodeToken: mocks.partnerMint,
+  renewPartnerNodeToken: vi.fn()
 }))
 vi.mock('../host/registry', () => ({
   get comfyWindows() {
@@ -36,6 +42,7 @@ vi.mock('../host/registry', () => ({
 
 import {
   EMBEDDED_SESSION_CHANNELS,
+  partnerNodeTokenForSender,
   workspaceTokenForSender,
   broadcastEmbeddedSessionChanged,
   stateForSender,
@@ -56,6 +63,10 @@ function mintedFor(workspaceId: string): string {
 }
 
 const MINTED = mintedFor('ws-1')
+
+function partnerNodeFor(workspaceId: string): string {
+  return jwt({ sub: 'user-1', workspace_id: workspaceId, aud: 'comfy-partner-node', sid: 's-1' })
+}
 
 interface ViewOptions {
   frameUrl?: string
@@ -84,12 +95,19 @@ function view(comfyUrl: string, options: ViewOptions = {}) {
 
 beforeEach(() => {
   mocks.enabled = true
+  mocks.generation = 0
+  mocks.flagRead = null
   mocks.entries = []
   mocks.getGrantAccessToken.mockReset().mockResolvedValue(ACCESS)
   mocks.mint.mockReset().mockImplementation(async (_grant: string, workspaceId: string) => ({
     kind: 'minted',
     token: mintedFor(workspaceId),
     expiresAt: Date.now() + 900_000
+  }))
+  mocks.partnerMint.mockReset().mockImplementation(async (_grant: string, workspaceId: string) => ({
+    kind: 'minted',
+    token: partnerNodeFor(workspaceId),
+    expiresAt: Date.now() + 90 * 60_000
   }))
   mocks.current = 'ws-1'
   resetViewGrants()
@@ -110,6 +128,7 @@ describe('embeddedSession', () => {
       workspaceId: 'ws-1'
     })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBe(MINTED)
+    await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBe(partnerNodeFor('ws-1'))
   })
 
   it.each([
@@ -123,7 +142,54 @@ describe('embeddedSession', () => {
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['its own workspace', 'ws-1', partnerNodeFor('ws-1')],
+    ['no workspace', undefined, null],
+    ['an empty workspace', '', null],
+    ['another workspace', 'ws-2', null],
+    ['a non-string workspace', 42, null]
+  ])(
+    'releases the partner-node token for %s only on an exact match',
+    async (_name, workspaceId, expected) => {
+      const { event } = view('http://127.0.0.1:8000')
+
+      await expect(partnerNodeTokenForSender(event, workspaceId)).resolves.toBe(expected)
+    }
+  )
+
+  it.each([
+    ['workspace', workspaceTokenForSender],
+    ['partner-node', partnerNodeTokenForSender]
+  ])('drops a %s token request whose flag read spans a sign-in', async (_name, tokenForSender) => {
+    let release: (enabled: boolean) => void = () => {}
+    mocks.flagRead = new Promise((resolve) => {
+      release = resolve
+    })
+    const { event } = view('http://127.0.0.1:8000')
+    const pending = tokenForSender(event, 'ws-1')
+    mocks.generation += 1
+    release(true)
+
+    await expect(pending).resolves.toBeNull()
+    expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('T-V6: hands a view switched to B a partner-node token for B, and a bystander none', async () => {
+    const switcher = view('http://127.0.0.1:8000')
+    const bystander = view('http://127.0.0.1:8001')
+    await switchWorkspaceForSender(switcher.event, 'ws-2', async () => {
+      mocks.current = 'ws-2'
+    })
+
+    await expect(partnerNodeTokenForSender(switcher.event, 'ws-2')).resolves.toBe(
+      partnerNodeFor('ws-2')
+    )
+    await expect(partnerNodeTokenForSender(bystander.event, 'ws-2')).resolves.toBeNull()
+    expect(mocks.partnerMint).toHaveBeenCalledExactlyOnceWith(ACCESS, 'ws-2')
   })
 
   it.each([
@@ -213,6 +279,7 @@ describe('embeddedSession', () => {
 
     await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
   })
 

@@ -306,6 +306,8 @@ const Auth: ComfyDesktop2AuthBridge = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
   getWorkspaceToken: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:get-workspace-token', workspaceId),
+  getPartnerNodeToken: (workspaceId) =>
+    ipcRenderer.invoke('desktop2-auth:get-partner-node-token', workspaceId),
   requestSignIn: () => ipcRenderer.invoke('desktop2-auth:request-sign-in'),
   signOut: () => ipcRenderer.invoke('desktop2-auth:sign-out'),
   switchWorkspace: (workspaceId) =>

@@ -199,6 +199,30 @@ describe('oauth.signIn', () => {
     expect(status.signedIn).toBe(true)
   })
 
+  it('asks for the partner-node and workspace mint scopes by default', async () => {
+    stub(200, { access_token: 'tok', refresh_token: 'r1', expires_in: 3600 })
+    let requested: string[] = []
+    vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
+      const u = new URL(authorizeUrl)
+      requested = (u.searchParams.get('scope') ?? '').split(' ')
+      get(
+        `${u.searchParams.get('redirect_uri')}?code=abc&state=${u.searchParams.get('state')}`,
+        (res) => res.resume()
+      )
+    })
+    const { scope: _scope, ...defaults } = opts
+
+    await signIn({ ...defaults, timeoutMs: 5000 })
+
+    expect(requested).toEqual(
+      expect.arrayContaining([
+        'comfy-cloud:user:read',
+        'comfy-cloud:jobs:write',
+        'comfy-cloud:workspace-token:mint'
+      ])
+    )
+  })
+
   it('rejects on the callback timeout even when openExternal never settles', async () => {
     // A wedged OS shell handler must not strand the sign-in (and with it the
     // single-flight login promise) forever.

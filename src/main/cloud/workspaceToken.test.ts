@@ -1,7 +1,12 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { classifyMint, mintWorkspaceToken } from './workspaceToken'
+import {
+  classifyMint,
+  mintPartnerNodeToken,
+  mintWorkspaceToken,
+  renewPartnerNodeToken
+} from './workspaceToken'
 import type { WorkspaceTokenMint } from './workspaceToken'
 
 function respond(status: number, body: unknown, headers: Record<string, string> = {}): void {
@@ -95,6 +100,51 @@ describe('mintWorkspaceToken', () => {
     await expect(mintWorkspaceToken('oauth-access', 'ws-1')).resolves.toEqual({
       kind: 'failed',
       status: null
+    })
+  })
+})
+
+describe('partner-node tokens', () => {
+  it('mints with the access token, naming the workspace and the partner-node resource', async () => {
+    const expiresAt = new Date(Date.now() + 90 * 60_000).toISOString()
+    respond(200, { token: 'partner-jwt', expires_at: expiresAt })
+
+    await expect(
+      mintPartnerNodeToken('oauth-access', 'ws-2', { apiBase: 'https://cloud.test/api' })
+    ).resolves.toEqual({ kind: 'minted', token: 'partner-jwt', expiresAt: Date.parse(expiresAt) })
+    expect(fetch).toHaveBeenCalledWith(
+      'https://cloud.test/api/auth/token',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer oauth-access' }),
+        body: JSON.stringify({ workspace_id: 'ws-2', resource: 'partner-node' })
+      })
+    )
+  })
+
+  it('renews with the partner-node token as Bearer and no body', async () => {
+    const expiresAt = new Date(Date.now() + 90 * 60_000).toISOString()
+    respond(200, { token: 'renewed-jwt', expires_at: expiresAt })
+
+    await expect(
+      renewPartnerNodeToken('partner-jwt', { apiBase: 'https://cloud.test/api' })
+    ).resolves.toEqual({ kind: 'minted', token: 'renewed-jwt', expiresAt: Date.parse(expiresAt) })
+    const [url, init] = vi.mocked(fetch).mock.calls[0] ?? []
+    expect(url).toBe('https://cloud.test/api/auth/partner-node/renew')
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: { Authorization: 'Bearer partner-jwt' }
+    })
+    expect(init?.body).toBeUndefined()
+  })
+
+  it('carries a refused renewal code', async () => {
+    respond(403, { code: 'partner_node_session_ended', message: 'ended' })
+
+    await expect(renewPartnerNodeToken('partner-jwt')).resolves.toEqual({
+      kind: 'failed',
+      status: 403,
+      code: 'partner_node_session_ended'
     })
   })
 })

@@ -240,4 +240,35 @@ describe('view token path through a real session', () => {
     await expect(pending).resolves.toBeNull()
     expect(mintRequests).toEqual([])
   })
+
+  it('keeps the partner-node session across a refresh and starts a new one after a new sign-in', async () => {
+    const grantIn = (family: string): AuthTokens => ({
+      ...GRANT,
+      accessToken: jwt({
+        sub: 'user-1',
+        workspace_id: 'w1',
+        scope: CLOUD_CONFIG.scope,
+        fam: family
+      })
+    })
+    mintReply = (workspaceId) =>
+      new Response(
+        JSON.stringify({
+          token: mintedJwt(workspaceId),
+          expires_at: new Date(Date.now() + 90 * 60_000).toISOString()
+        }),
+        { status: 200 }
+      )
+    saveGrant(grantIn('fam-1'))
+    await grants.partnerNodeTokenFor(view, 'w1')
+    saveGrant({ ...grantIn('fam-1'), refreshToken: 'refreshed' })
+    await grants.partnerNodeTokenFor(view, 'w1')
+    expect(mintRequests).toEqual(['w1'])
+
+    saveGrant(grantIn('fam-2'))
+
+    await expect(grants.partnerNodeTokenFor(view, 'w1')).resolves.toBe(mintedJwt('w1'))
+    expect(mintRequests).toEqual(['w1', 'w1'])
+    expect(session.currentGrantFamily()).toBe('fam-2')
+  })
 })
