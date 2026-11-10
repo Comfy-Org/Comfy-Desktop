@@ -194,7 +194,7 @@ const browsable = computed(
   () => inGraph || !!fixedProject || (build.value !== '' && status.value === 'running')
 )
 const unpicked = computed(() => !inGraph && !fixedProject && build.value === '')
-const count = (k: Kind): number => base.value.filter((a) => k === 'all' || a.type === k).length
+const count = (k: Kind): number => scoped.value.filter((a) => k === 'all' || a.type === k).length
 const KINDS = computed(() =>
   (
     [
@@ -237,14 +237,12 @@ const showDetails = ref(true)
 /** The narrowest a card gets at each size. */
 const CARD = [0, 200, 264, 340]
 
-const shown = computed(() => {
+/** Everything picked but the type: the tabs count this, so a folder or a
+ *  filter shows its own numbers in them. */
+const scoped = computed(() => {
   const q = query.value.trim().toLowerCase()
-  const list = base.value.filter(
+  return base.value.filter(
     (a) =>
-      // The type tabs and More types add up: either may match.
-      ((kind.value === 'all' && !filter.value.types.length) ||
-        a.type === kind.value ||
-        filter.value.types.includes(a.type)) &&
       (!fixedProject || where.value === 'all' || a.source === where.value) &&
       passes(a, filter.value) &&
       (!label.value || labelOf(a.id) === label.value) &&
@@ -254,6 +252,15 @@ const shown = computed(() => {
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
       (!q || a.name.toLowerCase().includes(q))
+  )
+})
+const shown = computed(() => {
+  const list = scoped.value.filter(
+    (a) =>
+      // The type tabs and More types add up: either may match.
+      (kind.value === 'all' && !filter.value.types.length) ||
+      a.type === kind.value ||
+      filter.value.types.includes(a.type)
   )
   const by: Record<string, (a: MarAsset, b: MarAsset) => number> = {
     newest: (a, b) => a.age - b.age,
