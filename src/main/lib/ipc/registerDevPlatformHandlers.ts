@@ -20,7 +20,7 @@ import {
 } from '../../devplatform/builds'
 import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
-import type { AuthStatus, Workspace } from '../../cloud'
+import type { AuthStatus, Workspace, WorkspaceSwitchOutcome } from '../../cloud'
 import {
   installations,
   defaultInstallDir,
@@ -102,12 +102,12 @@ export async function signInToCloud(): Promise<AuthStatus> {
   return status
 }
 
-export async function switchCloudWorkspace(workspaceId: string): Promise<AuthStatus> {
+export async function switchCloudWorkspace(workspaceId: string): Promise<WorkspaceSwitchOutcome> {
   clearVersionCache()
-  const status = await getCloudSession().switchWorkspace(workspaceId)
+  const outcome = await getCloudSession().switchWorkspace(workspaceId)
   clearVersionCache()
-  broadcastAuthChanged(status)
-  return status
+  broadcastAuthChanged(outcome.status)
+  return outcome
 }
 
 export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
@@ -195,10 +195,8 @@ export function registerDevPlatformHandlers(): void {
   )
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, async (_event, workspaceId: string) => {
-    const status = await switchCloudWorkspace(workspaceId)
-    if (status.signedIn && status.workspaceId === workspaceId) {
-      getViewWorkspaceGrants().allowDesktop(workspaceId)
-    }
+    const { status, reached } = await switchCloudWorkspace(workspaceId)
+    if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
     return status
   })
 
@@ -229,13 +227,11 @@ export function registerDevPlatformHandlers(): void {
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
           clearVersionCache()
-          const switched = await session.switchWorkspace(workspaceId)
+          const { status: switched, reached } = await session.switchWorkspace(workspaceId)
           clearVersionCache()
-          if (switched.signedIn && switched.workspaceId === workspaceId) {
-            getViewWorkspaceGrants().allowDesktop(workspaceId)
-          }
+          if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
           broadcastAuthChanged(switched)
-          if (!switched.signedIn || switched.workspaceId !== workspaceId) {
+          if (!reached) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
         }

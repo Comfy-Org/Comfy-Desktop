@@ -163,7 +163,7 @@ describe('CloudSession access tokens', () => {
     const switching = session.switchWorkspace('w2')
     expect(refresh).toHaveBeenCalledTimes(2)
     refreshes.get(staleTwo.refreshToken!)!(freshTwo)
-    await expect(switching).resolves.toMatchObject({ workspaceId: 'w2' })
+    await expect(switching).resolves.toMatchObject({ status: { workspaceId: 'w2' }, reached: true })
     refreshes.get(staleOne.refreshToken!)!(freshOne)
 
     await expect(oldRequest).resolves.toBeNull()
@@ -273,8 +273,14 @@ describe('CloudSession workspaces', () => {
     cache(workspaceTwo)
     const session = new CloudSession()
 
-    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
-    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ workspaceId: 'w1' })
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      status: { workspaceId: 'w2' },
+      reached: true
+    })
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({
+      status: { workspaceId: 'w1' },
+      reached: true
+    })
 
     expect(activateWorkspace).toHaveBeenNthCalledWith(1, 'w2')
     expect(activateWorkspace).toHaveBeenNthCalledWith(2, 'w1')
@@ -290,7 +296,8 @@ describe('CloudSession workspaces', () => {
     mocked(refresh).mockResolvedValue(freshTwo)
 
     await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
-      workspaceId: 'w2'
+      status: { workspaceId: 'w2' },
+      reached: true
     })
 
     expect(refresh).toHaveBeenCalledExactlyOnceWith(staleTwo.refreshToken)
@@ -309,7 +316,8 @@ describe('CloudSession workspaces', () => {
     })
 
     await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
-      workspaceId: 'w1'
+      status: { workspaceId: 'w1' },
+      reached: true
     })
 
     expect(refresh).toHaveBeenCalledExactlyOnceWith(stale.refreshToken)
@@ -326,10 +334,51 @@ describe('CloudSession workspaces', () => {
     })
 
     await expect(new CloudSession().switchWorkspace('w2')).resolves.toMatchObject({
-      workspaceId: 'w1'
+      status: { workspaceId: 'w1' },
+      reached: false
     })
 
     expect(signIn).toHaveBeenCalledExactlyOnceWith({ workspaceId: 'w2' })
+    expect(saveTokens).not.toHaveBeenCalled()
+  })
+
+  it('reports a switch superseded during its refresh as unreached', async () => {
+    const workspaceOne = makeTokens('w1')
+    const staleTwo = makeTokens('w2', past)
+    const freshTwo = makeTokens('w2', future, '-fresh')
+    cache(workspaceOne, true)
+    cache(staleTwo)
+    let finishRefresh: (tokens: typeof freshTwo) => void = () => {}
+    mocked(refresh).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishRefresh = resolve
+        })
+    )
+    const session = new CloudSession()
+
+    const superseded = session.switchWorkspace('w2')
+    const newer = session.switchWorkspace('w1')
+    finishRefresh(freshTwo)
+
+    await expect(superseded).resolves.toMatchObject({ reached: false })
+    await expect(newer).resolves.toMatchObject({ status: { workspaceId: 'w1' }, reached: true })
+  })
+
+  it('reports an unreached switch when browser auth for the expired active workspace picks another', async () => {
+    const stale = makeTokens('w1', past)
+    const other = makeTokens('w2')
+    cache(stale, true)
+    mocked(refresh).mockRejectedValue(new Error('revoked'))
+    mocked(signIn).mockResolvedValue({
+      tokens: other,
+      status: statusFromAccessToken(other.accessToken)
+    })
+
+    await expect(new CloudSession().switchWorkspace('w1')).resolves.toMatchObject({
+      status: { workspaceId: 'w1' },
+      reached: false
+    })
     expect(saveTokens).not.toHaveBeenCalled()
   })
 
@@ -343,9 +392,18 @@ describe('CloudSession workspaces', () => {
     })
     const session = new CloudSession()
 
-    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
-    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ workspaceId: 'w1' })
-    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({ workspaceId: 'w2' })
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      status: { workspaceId: 'w2' },
+      reached: true
+    })
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({
+      status: { workspaceId: 'w1' },
+      reached: true
+    })
+    await expect(session.switchWorkspace('w2')).resolves.toMatchObject({
+      status: { workspaceId: 'w2' },
+      reached: true
+    })
 
     expect(signIn).toHaveBeenCalledOnce()
     expect(saveTokens).toHaveBeenCalledExactlyOnceWith(workspaceTwo)

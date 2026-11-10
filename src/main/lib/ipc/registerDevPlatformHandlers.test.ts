@@ -479,9 +479,8 @@ describe('registerDevPlatformHandlers', () => {
     const win = { webContents: { isDestroyed: () => false, send: vi.fn() } }
     mocks.getAllWindows.mockReturnValue([win])
     mocks.switchWorkspace.mockResolvedValue({
-      signedIn: true,
-      workspaceId: 'w2',
-      workspaceType: 'team'
+      status: { signedIn: true, workspaceId: 'w2', workspaceType: 'team' },
+      reached: true
     })
 
     const status = await handler('comfybuilder:switchWorkspace')({}, 'w2')
@@ -493,14 +492,18 @@ describe('registerDevPlatformHandlers', () => {
 
   it.for([
     ['signed out', { signedIn: false }],
-    ['still on another workspace', { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }]
-  ] as const)('a dashboard switch that ends %s lets no view hold the target', async ([, reply]) => {
-    mocks.switchWorkspace.mockResolvedValue(reply)
+    ['still on another workspace', { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }],
+    ['unreached on a session that names the target', { signedIn: true, workspaceId: 'w2' }]
+  ] as const)(
+    'a dashboard switch that ends %s lets no view hold the target',
+    async ([, status]) => {
+      mocks.switchWorkspace.mockResolvedValue({ status, reached: false })
 
-    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+      await handler('comfybuilder:switchWorkspace')({}, 'w2')
 
-    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
-  })
+      expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
+    }
+  )
 
   it('captures fresh state, creates a draft, and opens the validated Platform URL', async () => {
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
@@ -598,7 +601,7 @@ describe('registerDevPlatformHandlers', () => {
     mocks.switchWorkspace.mockImplementationOnce(async () => {
       const status = { signedIn: true, workspaceId: 'w2', workspaceType: 'team' }
       mocks.status.mockReturnValue(status)
-      return status
+      return { status, reached: true }
     })
     mocks.createBuildDraft.mockResolvedValue({
       buildId: 'build-2',
@@ -628,9 +631,8 @@ describe('registerDevPlatformHandlers', () => {
       installPath: '/installs/local-1'
     })
     mocks.switchWorkspace.mockResolvedValueOnce({
-      signedIn: true,
-      workspaceId: 'w1',
-      workspaceType: 'team'
+      status: { signedIn: true, workspaceId: 'w1', workspaceType: 'team' },
+      reached: false
     })
 
     await expect(handler('comfybuilder:promoteLocalInstance')({}, 'local-1')).resolves.toEqual({
