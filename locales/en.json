@@ -85,8 +85,7 @@
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
     "signIn": "Log in to Comfy Cloud",
-    "browseApps": "Browse apps",
-    "retry": "Try again"
+    "browseApps": "Browse apps"
   },
   "apps": {
     "tabsLabel": "Apps view",

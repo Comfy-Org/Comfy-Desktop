@@ -140,13 +140,7 @@ interface EmptyState {
 }
 
 const emptyState = computed<EmptyState>(() => {
-  if (failed.value) {
-    return {
-      title: t('assets.loadFailed'),
-      body: '',
-      action: { label: t('assets.retry'), run: () => void loadAssets() }
-    }
-  }
+  if (failed.value) return { title: t('assets.loadFailed'), body: '' }
   if (assets.value.length > 0) {
     return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   }
