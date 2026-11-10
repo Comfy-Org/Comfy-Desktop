@@ -26,6 +26,7 @@ vi.mock('electron', () => ({
 vi.mock('../../cloud/oauth', () => ({
   signIn: vi.fn(),
   refresh: vi.fn(),
+  revoke: vi.fn(async () => 'settled'),
   openAuthorizePage: vi.fn(async () => {})
 }))
 vi.mock('../../devplatform/session', () => ({
@@ -61,7 +62,7 @@ vi.mock('../embeddedSessionFlag', () => ({ isEmbeddedSessionEnabled: async () =>
 vi.mock('../workspaceMintSwitchFlag', () => ({ isWorkspaceMintSwitchEnabled: async () => true }))
 
 import { CLOUD_CONFIG } from '../../cloud/config'
-import { refresh, signIn } from '../../cloud/oauth'
+import { refresh, revoke, signIn } from '../../cloud/oauth'
 import { CloudSession } from '../../cloud/session'
 import { SignInFailure } from '../../cloud/signInFailure'
 import { _resetForTest, clearTokens, saveGrant } from '../../cloud/tokenStore'
@@ -164,6 +165,11 @@ describe('switchCloudWorkspace with a real session, vault and view grants', () =
     mintReply = minted
 
     await expect(getViewWorkspaceGrants().tokenFor(otherView, 'X')).resolves.toBe(mintedJwt('X'))
+    expect(revoke).toHaveBeenCalledExactlyOnceWith(
+      grantOn('A').refreshToken,
+      CLOUD_CONFIG.clientId,
+      expect.any(String)
+    )
   })
 
   it('a view switch that mints stays isolated to that view', async () => {
