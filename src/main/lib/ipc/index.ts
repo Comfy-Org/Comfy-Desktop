@@ -35,6 +35,7 @@ import { registerLogsHandlers } from './registerLogsHandlers'
 import { registerCrashHandlers } from './registerCrashHandlers'
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
 import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
+import { registerAssetsHandlers } from '../assets'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
 import {
@@ -278,6 +279,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerCrashHandlers()
   registerTelemetryHandlers()
   registerDevPlatformHandlers()
+  registerAssetsHandlers()
   registerEmbeddedSessionHandlers()
   return startupRecovery.then(() => undefined)
 }

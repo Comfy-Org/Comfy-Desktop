@@ -116,6 +116,19 @@ export interface Installation {
 
 export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
 
+export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export interface AssetSummary {
+  id: string
+  name: string
+  kind: AssetKind | null
+  sizeBytes: number | null
+  createdAt: string | null
+  mimeType: string | null
+  tags: string[]
+  previewUrl: string | null
+}
+
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
   modelsDirs: { path: string; isPrimary: boolean }[]
@@ -1101,6 +1114,7 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  listAssets(installationId: string): Promise<AssetSummary[]>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

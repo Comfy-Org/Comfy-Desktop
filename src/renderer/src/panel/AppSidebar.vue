@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ChartColumn, Gauge, Server } from 'lucide-vue-next'
+import { AppWindow, ChartColumn, Gauge, House, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -10,17 +10,19 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import type { DashboardPage } from '../types/ipc'
+import { isDashboardSection } from './dashboardSection'
+import type { SidebarPage } from './dashboardSection'
 
 const { activePage } = defineProps<{
-  activePage: DashboardPage
+  activePage: SidebarPage
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: DashboardPage]
+  navigate: [page: SidebarPage]
 }>()
 
 interface SidebarRow {
-  page: DashboardPage
+  page: SidebarPage
   label: string
   icon: Component
 }
@@ -31,6 +33,8 @@ const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
 
 const mainRows = computed<SidebarRow[]>(() => [
+  { page: 'home', label: t('sidebar.home'), icon: House },
+  { page: 'apps', label: t('sidebar.apps'), icon: AppWindow },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const toolRows = computed<SidebarRow[]>(() => [
@@ -42,9 +46,10 @@ const groups = computed(() => [
   { key: 'tools', title: t('sidebar.tools'), rows: toolRows.value }
 ])
 
-function navigate(page: DashboardPage): void {
+function navigate(page: SidebarPage): void {
   emit('navigate', page)
-  window.api.navigatePanel(page)
+  const panel: DashboardPage = isDashboardSection(page) ? 'chooser' : page
+  window.api.navigatePanel(panel)
 }
 </script>
 

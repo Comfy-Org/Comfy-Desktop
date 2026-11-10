@@ -19,11 +19,56 @@
     "builds": "构建",
     "navigation": "导航",
     "home": "主页",
+    "apps": "应用",
+    "comingSoon": "即将推出",
     "tools": "工具",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "signInTitle": "登录 Comfy",
     "signInBody": "同步你的作品，并在 Comfy Cloud 上运行。"
+  },
+  "assets": {
+    "kindLabel": "资产类型",
+    "kind": {
+      "all": "全部",
+      "image": "图片",
+      "video": "视频",
+      "3d": "3D",
+      "audio": "音频"
+    },
+    "refresh": "刷新资产",
+    "search": "按名称搜索...",
+    "viewOptions": "视图选项",
+    "layoutLabel": "布局",
+    "layout": {
+      "masonry": "瀑布流",
+      "grid": "网格"
+    },
+    "sortLabel": "排序方式",
+    "sort": {
+      "newest": "最新优先",
+      "oldest": "最早优先"
+    },
+    "showLabel": "显示",
+    "showName": "文件名",
+    "showDetails": "文件详情",
+    "emptyTitle": "暂无资产",
+    "emptyBody": "打开一个应用来生成资产。",
+    "loadFailed": "无法加载资产",
+    "noMatches": "没有匹配的资产",
+    "noMatchesHint": "试试其他类型或搜索词。",
+    "filter": "筛选",
+    "signedOutTitle": "登录以查看你的资产",
+    "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
+    "signIn": "登录 Comfy Cloud",
+    "browseApps": "浏览应用"
+  },
+  "apps": {
+    "tabsLabel": "应用视图",
+    "tabs": {
+      "all": "所有应用",
+      "files": "生成的文件"
+    }
   },
   "installType": {
     "standalone": "独立版",

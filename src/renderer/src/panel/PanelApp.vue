@@ -9,6 +9,7 @@ import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
+import AppsView from './AppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -45,7 +46,10 @@ import {
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import type { DashboardPage, Installation } from '../types/ipc'
+import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import type { Installation } from '../types/ipc'
+import { isDashboardSection } from './dashboardSection'
+import type { DashboardSection, SidebarPage } from './dashboardSection'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -159,12 +163,18 @@ if (params.get('e2e') === '1') {
   })
 }
 
-const sidebarPage = computed<DashboardPage | null>(() => {
+const dashboardSection = ref<DashboardSection | null>(null)
+
+const sidebarPage = computed<SidebarPage | null>(() => {
   const panel = activePanel.value
-  return panel === 'chooser' || panel === 'benchmarks' || panel === 'performance-test'
-    ? panel
-    : null
+  if (panel === 'chooser') return dashboardSection.value ?? panel
+  return panel === 'benchmarks' || panel === 'performance-test' ? panel : null
 })
+
+function handleSidebarNavigate(page: SidebarPage): void {
+  dashboardSection.value = isDashboardSection(page) ? page : null
+  closeBuildDetails()
+}
 
 const buildDetailsId = ref<string | null>(null)
 const buildDetailsInstall = computed(() =>
@@ -180,6 +190,9 @@ function closeBuildDetails(): void {
 }
 
 watch(activePanel, closeBuildDetails)
+watch(activePanel, (panel) => {
+  if (panel !== 'chooser') dashboardSection.value = null
+})
 
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
@@ -432,7 +445,7 @@ onUnmounted(() => {
       <AppSidebar
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
-        @navigate="closeBuildDetails"
+        @navigate="handleSidebarNavigate"
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
@@ -454,15 +467,29 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
+            <AppsView v-if="dashboardSection === 'apps'" />
+            <section
+              v-else-if="dashboardSection"
+              class="flex min-h-0 flex-1 flex-col"
+              :class="PAGE_SPOTLIGHT_CLASS"
+              :data-testid="`dashboard-${dashboardSection}`"
+            >
+              <div class="mx-auto w-full max-w-300 px-10 pt-9">
+                <h1 class="m-0 font-display text-display font-semibold text-foreground">
+                  {{ t(`sidebar.${dashboardSection}`) }}
+                </h1>
+                <p class="mt-2 mb-0 text-ui text-muted-foreground">{{ t('sidebar.comingSoon') }}</p>
+              </div>
+            </section>
             <BuildDetailsView
-              v-if="buildDetailsInstall"
+              v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
               @back="closeBuildDetails"
               @launch="launchFromBuildDetails"
               @show-progress="handleShowProgress"
             />
             <ChooserView
-              :visible="!buildDetailsInstall"
+              :visible="!buildDetailsInstall && !dashboardSection"
               @pick="handleChooserPick"
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"

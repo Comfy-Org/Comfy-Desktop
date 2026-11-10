@@ -19,11 +19,56 @@
     "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
+    "apps": "Apps",
+    "comingSoon": "Coming soon",
     "tools": "Tools",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
     "signInBody": "Sync your work and run it on Comfy Cloud."
+  },
+  "assets": {
+    "kindLabel": "Asset type",
+    "kind": {
+      "all": "All",
+      "image": "Images",
+      "video": "Videos",
+      "3d": "3D",
+      "audio": "Audio"
+    },
+    "refresh": "Refresh assets",
+    "search": "Search by name...",
+    "viewOptions": "View options",
+    "layoutLabel": "Layout",
+    "layout": {
+      "masonry": "Masonry",
+      "grid": "Grid"
+    },
+    "sortLabel": "Sort by",
+    "sort": {
+      "newest": "Newest first",
+      "oldest": "Oldest first"
+    },
+    "showLabel": "Show",
+    "showName": "File name",
+    "showDetails": "File details",
+    "emptyTitle": "No assets yet",
+    "emptyBody": "Open an app to make assets.",
+    "loadFailed": "Couldn't load assets",
+    "noMatches": "No matching assets",
+    "noMatchesHint": "Try another type or search.",
+    "filter": "Filter",
+    "signedOutTitle": "Log in to see your assets",
+    "signedOutBody": "Assets that you make in Comfy Cloud show here.",
+    "signIn": "Log in to Comfy Cloud",
+    "browseApps": "Browse apps"
+  },
+  "apps": {
+    "tabsLabel": "Apps view",
+    "tabs": {
+      "all": "All apps",
+      "files": "Generated Files"
+    }
   },
   "installType": {
     "standalone": "Standalone",
