@@ -1703,3 +1703,13 @@
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-base-foreground);
 }
+
+/* Section titles are uppercase labels (UI-RULES › Type), on every Mar
+   page that uses the shared SectionHeader (Home's Builds, Recently used…). */
+:root .proto-ui .mar-sec > h2 {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}

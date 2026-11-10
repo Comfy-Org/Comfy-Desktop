@@ -138,7 +138,12 @@ function copy(): void {
 
       <!-- Needs you: only what failed, right under the health numbers. -->
       <section v-if="FAILURES.length" class="mt-8">
-        <SectionHeader title="Needs attention" link="Open logs" @link="go('logs')" />
+        <SectionHeader
+          class="mar-sec"
+          title="Needs attention"
+          link="Open logs"
+          @link="go('logs')"
+        />
         <div class="grid grid-cols-3 gap-3">
           <button
             v-for="f in FAILURES"
@@ -161,7 +166,12 @@ function copy(): void {
 
       <!-- What's running: the busiest deployments as cards. -->
       <section class="mt-10">
-        <SectionHeader title="Deployments" link="See all" @link="go('deployments')" />
+        <SectionHeader
+          class="mar-sec"
+          title="Deployments"
+          link="See all"
+          @link="go('deployments')"
+        />
         <div class="grid grid-cols-3 gap-3">
           <button
             v-for="d in busiest"
@@ -195,7 +205,7 @@ function copy(): void {
 
       <!-- How to call it, in your language. -->
       <section class="mt-10">
-        <SectionHeader title="Call your API" link="API keys" @link="go('keys')" />
+        <SectionHeader class="mar-sec" title="Call your API" link="API keys" @link="go('keys')" />
         <div class="mar-build-code-card mar-surface">
           <div class="flex items-center justify-between">
             <MarSeg v-model="lang" :options="LANG_OPTIONS" label="Language" />

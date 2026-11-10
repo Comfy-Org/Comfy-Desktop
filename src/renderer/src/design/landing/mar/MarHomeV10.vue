@@ -156,6 +156,7 @@ const recent = computed(() =>
            examples). -->
       <section v-if="firstTime && !recent.length && !setupOn" class="mt-10">
         <SectionHeader
+          class="mar-sec"
           title="Start from an example"
           :link="can.explore ? 'All examples' : undefined"
           @link="go('explore')"
@@ -171,6 +172,7 @@ const recent = computed(() =>
       </section>
       <section v-if="parts.examples === 'mar'" class="mx-auto mt-8 w-full max-w-180">
         <SectionHeader
+          class="mar-sec"
           title="Example workflows"
           :link="can.explore ? 'All examples' : undefined"
           @link="go('explore')"
@@ -189,6 +191,7 @@ const recent = computed(() =>
            Learn. -->
       <section v-if="recent.length && (can.explore || !can.exploreApps)" class="mt-10">
         <SectionHeader
+          class="mar-sec"
           title="Recently used"
           :link="can.projects ? 'All workflows' : undefined"
           @link="go('workflows')"
@@ -210,6 +213,7 @@ const recent = computed(() =>
 
       <section v-if="parts.examples === 'rows'" class="mt-10">
         <SectionHeader
+          class="mar-sec"
           title="Example workflows"
           :link="can.explore ? 'All examples' : undefined"
           @link="go('explore')"

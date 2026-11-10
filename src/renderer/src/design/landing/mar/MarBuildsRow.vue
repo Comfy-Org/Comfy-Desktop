@@ -27,7 +27,7 @@ const detail = (i: (typeof shown.value)[number]): string =>
 
 <template>
   <section class="mt-10">
-    <SectionHeader title="Builds" link="All builds" @link="go('environments')" />
+    <SectionHeader class="mar-sec" title="Builds" link="All builds" @link="go('environments')" />
     <!-- One, two or three builds always fill the row. -->
     <div
       class="grid gap-3.5"

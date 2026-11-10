@@ -12,7 +12,7 @@ const shown = computed(() => SPACES.filter((s) => s.status !== 'draft').slice(0,
 
 <template>
   <section class="mt-10">
-    <SectionHeader title="Spaces" link="All spaces" @link="go('spaces')" />
+    <SectionHeader class="mar-sec" title="Spaces" link="All spaces" @link="go('spaces')" />
     <div class="grid grid-cols-3 gap-3.5">
       <SpaceCard v-for="s in shown" :key="s.id" :space="s" />
     </div>

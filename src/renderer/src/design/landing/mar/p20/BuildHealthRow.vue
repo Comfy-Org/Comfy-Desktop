@@ -70,7 +70,7 @@ const vram = (n: number): string => (Number.isInteger(n) ? `${n}` : n.toFixed(1)
 
 <template>
   <section class="mx-auto mt-8 w-full">
-    <SectionHeader title="Your builds" link="All builds" @link="go('environments')">
+    <SectionHeader class="mar-sec" title="Your builds" link="All builds" @link="go('environments')">
       <template #controls>
         <span class="text-ui text-subtle-foreground">{{ instances.length }}</span>
       </template>

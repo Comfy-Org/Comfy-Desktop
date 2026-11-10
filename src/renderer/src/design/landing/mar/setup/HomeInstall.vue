@@ -83,7 +83,7 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
   <section class="mt-8" aria-label="Local install">
     <!-- The section is Builds from the first launch: the card under it is
          the first build, waiting to be installed. -->
-    <SectionHeader :title="ready ? 'ComfyUI is ready' : 'Builds'" />
+    <SectionHeader class="mar-sec" :title="ready ? 'ComfyUI is ready' : 'Builds'" />
     <div class="mss-machine is-hero mss-home-inst">
       <SetupLaptop :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">

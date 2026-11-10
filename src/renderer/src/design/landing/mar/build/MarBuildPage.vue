@@ -518,7 +518,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       </Card>
       <SectionHeader
         title="Recent workflows"
-        class="mt-7"
+        class="mar-sec mt-7"
         :link="wfs.length > recent.length ? 'See all' : undefined"
         @link="tab = 'workflows'"
       />

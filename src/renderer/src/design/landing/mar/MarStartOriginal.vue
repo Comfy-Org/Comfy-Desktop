@@ -31,6 +31,7 @@ function openCloud(): void {
 <template>
   <section class="mt-10">
     <SectionHeader
+      class="mar-sec"
       title="Run an example on Comfy Cloud"
       :link="can.explore ? 'See all' : undefined"
       @link="go('explore')"
@@ -46,7 +47,7 @@ function openCloud(): void {
   </section>
 
   <section class="mt-10">
-    <SectionHeader v-if="editorEntry.id !== 'banner'" title="For ComfyUI users" />
+    <SectionHeader v-if="editorEntry.id !== 'banner'" class="mar-sec" title="For ComfyUI users" />
     <EditorEntry v-if="editorEntry.id !== 'rows'" />
     <!-- From Milestone 2, the same cards as a returning Home's Builds
          (MarBuildsRow.vue): the machine drawn, where it stands, its name,

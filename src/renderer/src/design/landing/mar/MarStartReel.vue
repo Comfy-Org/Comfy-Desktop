@@ -74,6 +74,7 @@ function tryIdea(p: Piece): void {
 <template>
   <section class="mar-rise mt-10" style="--i: 0">
     <SectionHeader
+      class="mar-sec"
       title="Made with Comfy"
       :link="can.explore ? 'See all' : undefined"
       @link="go('explore')"
@@ -120,7 +121,7 @@ function tryIdea(p: Piece): void {
   </section>
 
   <section class="mar-rise mt-10" style="--i: 1">
-    <SectionHeader title="Where should Comfy run?" />
+    <SectionHeader class="mar-sec" title="Where should Comfy run?" />
     <MarStartWhere />
   </section>
 </template>

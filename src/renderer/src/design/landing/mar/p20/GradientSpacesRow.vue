@@ -30,7 +30,7 @@ const people = (n: number): string => (n === 1 ? '1 person' : `${n} people`)
 
 <template>
   <section class="mt-10">
-    <SectionHeader title="Spaces" link="All spaces" @link="go('spaces')">
+    <SectionHeader class="mar-sec" title="Spaces" link="All spaces" @link="go('spaces')">
       <template #controls>
         <span class="text-ui text-subtle-foreground">{{ SPACES.length }}</span>
       </template>
