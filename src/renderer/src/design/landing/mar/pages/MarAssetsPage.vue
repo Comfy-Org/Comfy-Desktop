@@ -7,8 +7,14 @@ import {
   Download,
   File as FileIcon,
   FileText,
+  Folder,
+  FolderInput,
+  FolderMinus,
   FolderOpen,
+  FolderPlus,
   ImagePlus,
+  Pencil,
+  Plus,
   Music,
   Minimize2,
   Play,
@@ -31,7 +37,19 @@ import { go, hostActions, instances, toast } from '../../useProto'
 import { graphOpen } from '../graph/graphOpen'
 import { graphLibrary } from '../graph/comfyLook'
 import { LABELS, labelColor, labelOf, setLabel, type AssetLabel } from '../assets/assetLabels'
+import {
+  addFolder,
+  folderName,
+  folderOf,
+  moveToFolder,
+  removeFolder,
+  renameFolder,
+  tree,
+  within
+} from '../assets/assetFolders'
 import { tagsOf } from '../assets/assetTags'
+import Tooltip from '../../ui/Tooltip.vue'
+import MarItemMenu from './MarItemMenu.vue'
 import { saveFile } from '../assets/saveFile'
 import AssetBuildPicker from '../assets/AssetBuildPicker.vue'
 import AssetDetail from '../assets/AssetDetail.vue'
@@ -88,6 +106,8 @@ const sort = ref('newest')
 const query = ref('')
 /** ComfyUI's tab: one color label at a time narrows the wall. */
 const label = ref<AssetLabel | ''>('')
+/** And a folder, with every folder inside it. */
+const folder = ref('')
 // In ComfyUI the tab browses the panel's own files; Desktop, the builds'.
 const store = inGraph ? graphLibrary : assets
 
@@ -161,6 +181,7 @@ const shown = computed(() => {
       (!fixedProject || where.value === 'all' || a.source === where.value) &&
       passes(a, filter.value) &&
       (!label.value || labelOf(a.id) === label.value) &&
+      (!folder.value || within(folder.value).has(folderOf(a.id) ?? '')) &&
       (fixedProject ||
         project.value === 'all' ||
         (project.value === 'none' ? !a.project : a.project === project.value)) &&
@@ -179,6 +200,7 @@ const filtered = computed(
     kind.value !== 'all' ||
     where.value !== 'all' ||
     !!label.value ||
+    !!folder.value ||
     JSON.stringify(filter.value) !== JSON.stringify(noFilter()) ||
     project.value !== 'all' ||
     !!query.value
@@ -187,6 +209,7 @@ function clear(): void {
   kind.value = 'all'
   where.value = 'all'
   label.value = ''
+  folder.value = ''
   filter.value = noFilter()
   project.value = 'all'
   query.value = ''
@@ -221,6 +244,17 @@ const TAG_ROWS = computed(() =>
 const LABEL_ROWS = computed(() =>
   LABELS.map((l) => ({ ...l, count: done.value.filter((a) => labelOf(a.id) === l.value).length }))
 )
+/** All is everything: a folder or a label picked, it isn't lit, and a
+ *  click on it lets them go. */
+const sourceOn = (v: string): boolean =>
+  filter.value.source === v && (v !== 'all' || (!folder.value && !label.value))
+function pickSource(v: (typeof filter.value)['source']): void {
+  filter.value = { ...filter.value, source: v }
+  if (v === 'all') {
+    folder.value = ''
+    label.value = ''
+  }
+}
 function toggleTag(t: string): void {
   const on = filter.value.tags.includes(t)
   filter.value = {
@@ -246,6 +280,107 @@ function labelLine(ids: () => string[]): MenuAction {
     }))
   }
 }
+/** Folders beside tags (Better Asset Management): each row counts what
+ *  it holds, folders inside it included. */
+const FOLDER_ROWS = computed(() =>
+  tree().map(({ folder: f, depth }) => {
+    const inside = within(f.id)
+    return { ...f, depth, count: done.value.filter((a) => inside.has(folderOf(a.id) ?? '')).length }
+  })
+)
+/** A new folder, or a renamed one, is typed in place in the sidebar. */
+const naming = ref<{ id?: string; parent?: string; name: string } | null>(null)
+const vFocus = {
+  mounted: (el: HTMLInputElement) => requestAnimationFrame(() => (el.focus(), el.select()))
+}
+function startNaming(n: { id?: string; parent?: string; name: string }): void {
+  naming.value = n
+}
+function endNaming(keep: boolean): void {
+  const n = naming.value
+  naming.value = null
+  if (!n || !keep) return
+  if (n.id) renameFolder(n.id, n.name)
+  else if (n.name.trim()) folder.value = addFolder(n.name, n.parent).id
+}
+const folderMenu = ref('')
+function folderLines(id: string): MenuLine[] {
+  return [
+    {
+      label: 'New subfolder',
+      icon: FolderPlus,
+      run: () => startNaming({ parent: id, name: 'New folder' })
+    },
+    {
+      label: 'Rename',
+      icon: Pencil,
+      run: () => startNaming({ id, name: folderName(id) ?? '' })
+    },
+    'sep',
+    {
+      label: 'Delete folder',
+      icon: Trash2,
+      danger: true,
+      run: () => {
+        if (within(id).has(folder.value)) folder.value = ''
+        removeFolder(id)
+      }
+    }
+  ]
+}
+/** Move to folder ›, for one file or the selection; a new folder takes
+ *  them right away. */
+function folderLine(ids: () => string[]): MenuAction {
+  const into = (f?: string): void => {
+    moveToFolder(ids(), f)
+    lib.sel.clear()
+  }
+  return {
+    label: 'Move to folder',
+    icon: FolderInput,
+    sub: [
+      ...tree().map(({ folder: f, depth }) => ({
+        label: `${'\u00a0\u00a0\u00a0'.repeat(depth)}${f.name}`,
+        icon: Folder,
+        checked: ids().length > 0 && ids().every((id) => folderOf(id) === f.id),
+        run: () => into(f.id)
+      })),
+      {
+        label: 'No folder',
+        icon: FolderMinus,
+        disabled: ids().every((id) => !folderOf(id)),
+        run: () => into()
+      },
+      {
+        label: 'New folder…',
+        icon: FolderPlus,
+        run: () => {
+          const f = addFolder('New folder')
+          into(f.id)
+          startNaming({ id: f.id, name: f.name })
+        }
+      }
+    ]
+  }
+}
+// Cards drag onto a folder row: the selection when the card is in it.
+const dragged = ref<string[]>([])
+const dropOn = ref('')
+function dragCard(e: DragEvent, a: MarAsset): void {
+  dragged.value = lib.sel.has(a.id) ? [...lib.selected.value] : [a.id]
+  e.dataTransfer?.setData('text/plain', a.name)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+function dropCards(id: string): void {
+  dropOn.value = ''
+  const n = dragged.value.length
+  if (!n) return
+  moveToFolder(dragged.value, id)
+  dragged.value = []
+  lib.sel.clear()
+  toast(`Moved ${n === 1 ? '1 file' : `${n} files`} to ${folderName(id)}`)
+}
+
 // Its own view: masonry first, remembered per viewer.
 type View = 'masonry' | 'grid'
 const VIEW_KEY = 'comfy.design.mar.assetsPageView'
@@ -454,7 +589,7 @@ function lines(a: MarAsset): MenuLine[] {
     ...(factsFor(a).workflow === 'available'
       ? [{ label: 'Open workflow', icon: Workflow, run: () => workflowOf(a) }]
       : []),
-    ...(inGraph ? [labelLine(() => [a.id])] : []),
+    ...(inGraph ? [folderLine(() => [a.id]), labelLine(() => [a.id])] : []),
     { label: 'Copy', icon: Copy, hint: '⌘C', run: () => toast('Copied to the clipboard') },
     // Projects are Desktop's; in ComfyUI a file takes a color label.
     ...(inGraph ? [] : [lib.moveLine(() => [a.id], a.project)]),
@@ -660,6 +795,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
           :selecting="lib.sel.ids.value.size > 0"
           :renaming="lib.renaming.value === a.id"
           :class="a.status === 'running' && 'mar-asset-running'"
+          :draggable="inGraph && !a.status"
+          @dragstart="dragCard($event, a)"
           @open="open(a)"
           @select="lib.pick(a.id, $event)"
           @start-rename="lib.renaming.value = a.id"
@@ -718,6 +855,8 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         :selecting="lib.sel.ids.value.size > 0"
         :renaming="lib.renaming.value === a.id"
         :class="a.status === 'running' && 'mar-asset-running'"
+        :draggable="inGraph && !a.status"
+        @dragstart="dragCard($event, a)"
         @open="open(a)"
         @select="lib.pick(a.id, $event)"
         @start-rename="lib.renaming.value = a.id"
@@ -762,7 +901,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             lib.sel.clear()
           )
         },
-        inGraph ? labelLine(() => lib.selected.value) : lib.moveLine(() => lib.selected.value),
+        ...(inGraph
+          ? [folderLine(() => lib.selected.value), labelLine(() => lib.selected.value)]
+          : [lib.moveLine(() => lib.selected.value)]),
         { label: 'Delete', icon: Trash2, danger: true, run: lib.removeSelected }
       ]"
       @clear="lib.sel.clear()"
@@ -778,54 +919,147 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
       @go="detail = $event"
       @close="detail = null"
     />
-    <!-- ComfyUI's tab: the sidebar, in the tab's own left column. -->
-    <Teleport v-if="inGraph" defer to="#mg-assets-nav">
-      <nav class="mar-anav" aria-label="Media Assets">
-        <button
-          v-for="s in SOURCES"
-          :key="s.value"
-          type="button"
-          class="mar-anav-row"
-          :class="filter.source === s.value && 'is-on'"
-          :aria-pressed="filter.source === s.value"
-          @click="filter = { ...filter, source: s.value }"
-        >
-          <component :is="s.icon" :size="15" /><span class="mar-anav-name">{{ s.label }}</span
-          ><span class="mar-anav-n">{{ s.count }}</span>
-        </button>
-        <template v-if="TAG_ROWS.length">
-          <p class="mar-anav-label">Tags</p>
+  </MarPage>
+  <!-- ComfyUI's tab: the sidebar, in the tab's own left column. -->
+  <Teleport v-if="inGraph" defer to="#mg-assets-nav">
+    <nav class="mar-anav" aria-label="Media Assets">
+      <button
+        v-for="s in SOURCES"
+        :key="s.value"
+        type="button"
+        class="mar-anav-row"
+        :class="sourceOn(s.value) && 'is-on'"
+        :aria-pressed="sourceOn(s.value)"
+        @click="pickSource(s.value)"
+      >
+        <component :is="s.icon" :size="15" /><span class="mar-anav-name">{{ s.label }}</span
+        ><span class="mar-anav-n">{{ s.count }}</span>
+      </button>
+      <div class="mar-anav-head">
+        <p class="mar-anav-label">Folders</p>
+        <Tooltip content="New folder" side="bottom">
           <button
-            v-for="t in TAG_ROWS"
-            :key="t.tag"
+            type="button"
+            class="mar-anav-add"
+            aria-label="New folder"
+            @click="startNaming({ name: 'New folder' })"
+          >
+            <Plus :size="14" />
+          </button>
+        </Tooltip>
+      </div>
+      <template v-for="f in FOLDER_ROWS" :key="f.id">
+        <div
+          v-if="naming?.id === f.id"
+          class="mar-anav-naming"
+          :style="{ paddingLeft: `${10 + f.depth * 14}px` }"
+        >
+          <Folder :size="15" /><input
+            v-model="naming.name"
+            v-focus
+            aria-label="Folder name"
+            @keydown.enter="endNaming(true)"
+            @keydown.esc="endNaming(false)"
+            @blur="endNaming(true)"
+          />
+        </div>
+        <div
+          v-else
+          class="mar-anav-folder"
+          :class="[folder === f.id && 'is-on', dropOn === f.id && 'is-drop']"
+          @dragover.prevent="dragged.length && (dropOn = f.id)"
+          @dragleave="dropOn === f.id && (dropOn = '')"
+          @drop.prevent="dropCards(f.id)"
+          @contextmenu.prevent="folderMenu = f.id"
+        >
+          <button
             type="button"
             class="mar-anav-row is-sub"
-            :class="filter.tags.includes(t.tag) && 'is-on'"
-            :aria-pressed="filter.tags.includes(t.tag)"
-            @click="toggleTag(t.tag)"
+            :class="folder === f.id && 'is-on'"
+            :style="{ paddingLeft: `${10 + f.depth * 14}px` }"
+            :aria-pressed="folder === f.id"
+            @click="folder = folder === f.id ? '' : f.id"
+            @dblclick="startNaming({ id: f.id, name: f.name })"
           >
-            <span class="mar-anav-name">{{ t.tag }}</span
-            ><span class="mar-anav-n">{{ t.count }}</span>
+            <Folder :size="15" /><span class="mar-anav-name">{{ f.name }}</span
+            ><span class="mar-anav-n">{{ f.count }}</span>
           </button>
-        </template>
-        <p class="mar-anav-label">Labels</p>
+          <span class="mar-anav-folder-tools">
+            <Tooltip content="New subfolder" side="bottom">
+              <button
+                type="button"
+                class="mar-anav-add"
+                aria-label="New subfolder"
+                @click="startNaming({ parent: f.id, name: 'New folder' })"
+              >
+                <Plus :size="14" />
+              </button>
+            </Tooltip>
+            <MarItemMenu
+              :open="folderMenu === f.id"
+              :lines="folderLines(f.id)"
+              label="Folder actions"
+              @update:open="folderMenu = $event ? f.id : ''"
+            />
+          </span>
+        </div>
+        <div
+          v-if="naming && !naming.id && naming.parent === f.id"
+          class="mar-anav-naming"
+          :style="{ paddingLeft: `${24 + f.depth * 14}px` }"
+        >
+          <Folder :size="15" /><input
+            v-model="naming.name"
+            v-focus
+            aria-label="Folder name"
+            @keydown.enter="endNaming(true)"
+            @keydown.esc="endNaming(false)"
+            @blur="endNaming(true)"
+          />
+        </div>
+      </template>
+      <div v-if="naming && !naming.id && !naming.parent" class="mar-anav-naming">
+        <Folder :size="15" /><input
+          v-model="naming.name"
+          v-focus
+          aria-label="Folder name"
+          @keydown.enter="endNaming(true)"
+          @keydown.esc="endNaming(false)"
+          @blur="endNaming(true)"
+        />
+      </div>
+      <template v-if="TAG_ROWS.length">
+        <p class="mar-anav-label">Tags</p>
         <button
-          v-for="l in LABEL_ROWS"
-          :key="l.value"
+          v-for="t in TAG_ROWS"
+          :key="t.tag"
           type="button"
           class="mar-anav-row is-sub"
-          :class="label === l.value && 'is-on'"
-          :aria-pressed="label === l.value"
-          @click="label = label === l.value ? '' : l.value"
+          :class="filter.tags.includes(t.tag) && 'is-on'"
+          :aria-pressed="filter.tags.includes(t.tag)"
+          @click="toggleTag(t.tag)"
         >
-          <i class="mar-anav-dot" :style="{ background: l.color }" /><span class="mar-anav-name">{{
-            l.label
-          }}</span
-          ><span class="mar-anav-n">{{ l.count }}</span>
+          <span class="mar-anav-name">{{ t.tag }}</span
+          ><span class="mar-anav-n">{{ t.count }}</span>
         </button>
-      </nav>
-    </Teleport>
-  </MarPage>
+      </template>
+      <p class="mar-anav-label">Labels</p>
+      <button
+        v-for="l in LABEL_ROWS"
+        :key="l.value"
+        type="button"
+        class="mar-anav-row is-sub"
+        :class="label === l.value && 'is-on'"
+        :aria-pressed="label === l.value"
+        @click="label = label === l.value ? '' : l.value"
+      >
+        <i class="mar-anav-dot" :style="{ background: l.color }" /><span class="mar-anav-name">{{
+          l.label
+        }}</span
+        ><span class="mar-anav-n">{{ l.count }}</span>
+      </button>
+    </nav>
+  </Teleport>
 </template>
 
 <style>
@@ -1005,6 +1239,86 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   height: 9px;
   flex: none;
   border-radius: 999px;
+}
+/* FOLDERS, with + by its label; a row shows + and ⋯ on hover. */
+.mar-anav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 4px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-add {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-add:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+}
+.mar-anav-head .mar-anav-add {
+  margin-top: 12px;
+}
+.mar-anav-folder {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-control);
+}
+.mar-anav-folder-tools {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  translate: 0 -50%;
+  transition: opacity 120ms ease;
+}
+.mar-anav-folder:is(:hover, :focus-within) .mar-anav-folder-tools,
+.mar-anav-folder-tools:has([data-state='open']) {
+  opacity: 1;
+}
+.mar-anav-folder:is(:hover, :focus-within) .mar-anav-n {
+  visibility: hidden;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-anav-folder-tools .mar-kebab {
+  width: 24px;
+  height: 24px;
+}
+/* A card dragged over a folder: it lights up to take it. */
+:root .proto-ui.proto-ui.proto-ui .mar-anav-folder.is-drop .mar-anav-row {
+  background: color-mix(in oklch, var(--color-base-foreground) 16%, transparent);
+  color: var(--color-base-foreground);
+}
+.mar-anav-naming {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 0 10px;
+  color: var(--color-muted-foreground);
+}
+.mar-anav-naming input {
+  min-width: 0;
+  flex: 1;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  outline: none;
+}
+.mar-anav-naming input:focus {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
 }
 .mar-anav-total {
   color: var(--color-subtle-foreground);
