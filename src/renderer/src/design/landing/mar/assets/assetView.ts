@@ -18,7 +18,8 @@ export const WALLS: { value: AssetWall; label: string; title: string; icon: Comp
   { value: 'grid', label: 'Grid', title: 'Grid', icon: LayoutGrid }
 ]
 
-const KEY = 'comfy.design.mar.assetView'
+// v2: everyone starts again on masonry, the wall Assets opens with.
+const KEY = 'comfy.design.mar.assetView.v2'
 const DEFAULTS = {
   layout: 'grid' as AssetLayout,
   size: 'm' as AssetSize,
