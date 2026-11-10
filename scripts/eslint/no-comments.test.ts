@@ -143,3 +143,29 @@ describe('no comments', () => {
     expect(lint(source, 'vue')).toEqual([])
   })
 })
+
+describe('no comments with allowDocComments', () => {
+  const apiSpec = {
+    ...configs.ts,
+    rules: { [ruleId]: ['error', { allowDocComments: true }] }
+  } satisfies Linter.Config
+
+  function lintApiSpec(source: string) {
+    return linter.verify(source, apiSpec, { filename: 'file.ts' })
+  }
+
+  it.each([
+    ['multi-line JSDoc', '/**\n * Adds.\n */\nexport function add() {}\n'],
+    ['one-line JSDoc on a member', 'export interface A {\n  /** The id. */\n  id: string\n}\n']
+  ])('keeps a %s', (_, source) => {
+    expect(lintApiSpec(source)).toEqual([])
+  })
+
+  it.each([
+    ['line comment', 'const a = 1\n// note\nconst b = 2\n'],
+    ['block comment', '/* note */\nconst a = 1\n'],
+    ['empty block comment', 'const a =/**/1\n']
+  ])('still rejects a %s', (_, source) => {
+    expect(lintApiSpec(source)).toEqual([expect.objectContaining({ ruleId, severity: 2 })])
+  })
+})
