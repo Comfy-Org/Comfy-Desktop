@@ -499,6 +499,17 @@ describe('registerDevPlatformHandlers', () => {
     expect(win.webContents.send).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
+  it.for([
+    ['signed out', { signedIn: false }],
+    ['still on another workspace', { signedIn: true, workspaceId: 'w1', workspaceType: 'team' }]
+  ] as const)('a dashboard switch that ends %s lets no view hold the target', async ([, reply]) => {
+    mocks.switchWorkspace.mockResolvedValue(reply)
+
+    await handler('comfybuilder:switchWorkspace')({}, 'w2')
+
+    expect(mocks.allowDesktopWorkspace).not.toHaveBeenCalled()
+  })
+
   it('captures fresh state, creates a draft, and opens the validated Platform URL', async () => {
     const result = await handler('comfybuilder:promoteLocalInstance')({}, 'local-1')
 

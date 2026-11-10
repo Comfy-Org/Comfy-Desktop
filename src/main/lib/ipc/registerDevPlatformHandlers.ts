@@ -254,9 +254,12 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) => {
-    getViewWorkspaceGrants().allowDesktop(workspaceId)
-    return switchCloudWorkspace(workspaceId)
+  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, async (_event, workspaceId: string) => {
+    const status = await switchCloudWorkspace(workspaceId)
+    if (status.signedIn && status.workspaceId === workspaceId) {
+      getViewWorkspaceGrants().allowDesktop(workspaceId)
+    }
+    return status
   })
 
   ipcMain.handle(
