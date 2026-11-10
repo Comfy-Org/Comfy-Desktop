@@ -30,7 +30,7 @@ async function settleClose(): Promise<void> {
 }
 
 test("closing What's New stays on the Performance Tests page @windows @macos @linux", async () => {
-  expect(await ctx.panel.click('[data-testid="app-sidebar-performance-test"]')).toBe(true)
+  await ctx.panel.evaluate(`window.api.navigatePanel('performance-test')`)
   await ctx.panel.waitForVisible(PERFORMANCE_TEST)
 
   await openWhatsNew()

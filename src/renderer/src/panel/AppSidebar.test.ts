@@ -33,37 +33,38 @@ async function mountSidebar(activePage: SidebarPage = 'chooser') {
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Apps, Builds, Performance Tests, then Benchmarks', async () => {
+  it('lists Home, Apps, then Builds, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
       'Apps',
-      'Builds',
-      'Performance Tests',
-      'Benchmarks'
+      'Builds'
     ])
   })
 
   it('marks only the current page', async () => {
+    const wrapper = await mountSidebar('chooser')
+
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Builds'])
+  })
+
+  it('marks no row while a tool page from the menu is open', async () => {
     const wrapper = await mountSidebar('benchmarks')
 
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual([
-      'Benchmarks'
-    ])
+    expect(wrapper.findAll('[aria-current="page"]')).toHaveLength(0)
   })
 
-  it.each<[string, DashboardPage]>([
-    ['app-sidebar-chooser', 'chooser'],
-    ['app-sidebar-benchmarks', 'benchmarks'],
-    ['app-sidebar-performance-test', 'performance-test']
-  ])('navigates from %s', async (testId, page) => {
-    const wrapper = await mountSidebar()
+  it.each<[string, DashboardPage]>([['app-sidebar-chooser', 'chooser']])(
+    'navigates from %s',
+    async (testId, page) => {
+      const wrapper = await mountSidebar()
 
-    await wrapper.get(`[data-testid="${testId}"]`).trigger('click')
+      await wrapper.get(`[data-testid="${testId}"]`).trigger('click')
 
-    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith(page)
-  })
+      expect(navigatePanel).toHaveBeenCalledExactlyOnceWith(page)
+    }
+  )
 
   it.each<SidebarPage>(['home', 'apps'])(
     'opens the %s section inside the dashboard',
@@ -93,15 +94,15 @@ describe('AppSidebar', () => {
 
   it('collapses to icons with tooltips and stays collapsed when reopened', async () => {
     const wrapper = await mountSidebar()
-    const benchmarks = wrapper.get('[data-testid="app-sidebar-benchmarks"]')
-    expect(benchmarks.text()).toBe('Benchmarks')
-    expect(benchmarks.attributes('title')).toBeUndefined()
+    const builds = wrapper.get('[data-testid="app-sidebar-chooser"]')
+    expect(builds.text()).toBe('Builds')
+    expect(builds.attributes('title')).toBeUndefined()
 
     await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
     await flushPromises()
 
-    expect(benchmarks.text()).toBe('')
-    expect(benchmarks.attributes('title')).toBe('Benchmarks')
+    expect(builds.text()).toBe('')
+    expect(builds.attributes('title')).toBe('Builds')
     expect(wrapper.get('[data-testid="app-sidebar-toggle"]').attributes('aria-expanded')).toBe(
       'false'
     )

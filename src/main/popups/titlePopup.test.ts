@@ -134,11 +134,14 @@ describe('buildTitlePopupMenuItems', () => {
   })
 
   it.each([null, 'inst-1'] as const)(
-    'keeps settings and window actions without duplicate dashboard shortcuts on host %s',
+    'lists the tools, settings and window actions on host %s',
     (installationId) => {
       const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
       expect(items.map((item) => item.id ?? 'separator')).toEqual([
         'new-window',
+        'separator',
+        'performance-test',
+        'benchmarks',
         'separator',
         'settings',
         'separator',
@@ -153,6 +156,8 @@ describe('buildTitlePopupMenuItems', () => {
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
       'new-window',
+      'performance-test',
+      'benchmarks',
       'settings',
       'reset-zoom',
       'exit-window',
