@@ -247,7 +247,7 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-scrim" />
         <!-- App, as a badge up top; its name and what it does, below. -->
         <span class="mar-arc-text">
-          <span class="mar-arc-app"><PanelsTopLeft :size="12" />App</span>
+          <span class="mar-arc-app"><PanelsTopLeft :size="10" />App</span>
         </span>
         <span class="mar-arc-dim" />
         <!-- As on the app cards: the name and what it does on the left,
@@ -281,7 +281,7 @@ function wheel(e: WheelEvent): void {
 }
 .mar-arc-stage {
   position: relative;
-  height: 300px;
+  height: 328px;
   overflow-x: clip;
   perspective: 1400px;
   perspective-origin: 50% 45%;
@@ -357,16 +357,16 @@ function wheel(e: WheelEvent): void {
    any picture. */
 .mar-arc-app {
   display: inline-flex;
-  height: 22px;
+  height: 18px;
   align-items: center;
   align-self: flex-start;
-  gap: 5px;
-  padding: 0 8px 0 7px;
+  gap: 4px;
+  padding: 0 6px 0 5px;
   border-radius: 999px;
   background: rgb(14 14 16 / 0.5);
   backdrop-filter: blur(16px) saturate(1.6);
   color: #fff;
-  font-size: 11px;
+  font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -480,7 +480,7 @@ function wheel(e: WheelEvent): void {
   top: 12px;
   left: 50%;
   width: 256px;
-  height: 272px;
+  height: 300px;
   margin-left: -128px;
   overflow: hidden;
   padding: 0;
