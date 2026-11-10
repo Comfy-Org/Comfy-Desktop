@@ -506,7 +506,7 @@ function upload(files: FileList | null | undefined): void {
           <Upload :size="15" />
         </button>
       </Tooltip>
-      <Tooltip v-if="!prod" content="Open in tab" side="bottom">
+      <Tooltip v-if="!prod && !tabs" content="Open in tab" side="bottom">
         <button type="button" class="rp-icon" aria-label="Open in tab" @click="expand">
           <Maximize2 :size="15" />
         </button>

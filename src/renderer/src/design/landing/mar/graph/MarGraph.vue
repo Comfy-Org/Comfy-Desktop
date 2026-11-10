@@ -890,6 +890,10 @@ function collapseAssets(): void {
   Object.assign(assetsTab, { open: false, on: false })
   panel.value = 'assets'
 }
+// Current keeps Media Assets a panel: switching to it closes the tab.
+watch(current, (on) => {
+  if (on && assetsTab.open) collapseAssets()
+})
 // While the library is a tab, Assets on the rail brings that tab forward;
 // any other panel acts on the workflow, so the workflow comes forward.
 watch(panel, (id) => {
@@ -1266,7 +1270,7 @@ function addFromPanel(kind: NodeKind): void {
     :class="[
       `is-${graphStyle.id}`,
       (panel || agent) && 'has-panel',
-      assetsTab.open && assetsTab.on && comfyLook.id === 'proposal' && 'on-assets'
+      !current && assetsTab.open && assetsTab.on && comfyLook.id === 'proposal' && 'on-assets'
     ]"
     :style="{ '--mg-top': `${top}px` }"
   >
@@ -1304,22 +1308,6 @@ function addFromPanel(kind: NodeKind): void {
           class="mg-tab-x"
           aria-label="Close tab"
           @click.stop="assetTab.asset = null"
-        >
-          <X :size="12" /></button
-      ></span>
-      <span
-        v-if="assetsTab.open"
-        class="mg-tab is-asset is-library"
-        :class="assetsTab.on && 'is-on'"
-        role="button"
-        tabindex="0"
-        @click="((assetsTab.on = true), (assetTab.on = false))"
-        ><ComfyAssets class="mg-tab-icon" /><span class="mg-tab-name">Media Assets</span
-        ><button
-          type="button"
-          class="mg-tab-x"
-          aria-label="Close tab"
-          @click.stop="Object.assign(assetsTab, { open: false, on: false })"
         >
           <X :size="12" /></button
       ></span>
@@ -1908,9 +1896,10 @@ function addFromPanel(kind: NodeKind): void {
         @close="assetTab.asset = null"
       />
     </div>
-    <!-- Proposal: Media Assets as a whole tab, the library as on Desktop. -->
+    <!-- Proposal, Glass: Media Assets as a whole tab, the library as on
+         Desktop. Current keeps it a panel. -->
     <div
-      v-if="assetsTab.open && assetsTab.on && comfyLook.id === 'proposal'"
+      v-if="!current && assetsTab.open && assetsTab.on && comfyLook.id === 'proposal'"
       class="mg-assets-tab proto-ui"
     >
       <aside id="mg-assets-nav" class="mg-assets-nav" />
@@ -3014,16 +3003,27 @@ function addFromPanel(kind: NodeKind): void {
 .mg.on-assets :is(.mg-runblock, .mg-tools, .mg-agent-btn, .mg-map) {
   visibility: hidden;
 }
-/* Glass: the tab fills under the strip, past the floating rail. */
+/* Glass: the tab takes the whole window under the strip, as in Alex
+   Tov's media-assets proto. ComfyUI's rail is the workflow's, so it
+   steps aside; the strip brings the workflow back. */
 .is-glass .mg-assets-tab {
   position: absolute;
-  inset: calc(var(--mg-top) + 56px) 0 0 76px;
-  border-radius: var(--mar-tab-radius) 0 0 0;
+  inset: calc(var(--mg-top) + 56px) 0 0 0;
+}
+.mg-rail {
+  transition:
+    opacity 160ms ease,
+    translate 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.mg.on-assets .mg-rail {
+  opacity: 0;
+  pointer-events: none;
+  translate: -8px 0;
 }
 .mg-gtabs {
   position: absolute;
   top: calc(var(--mg-top) + 14px);
-  left: 76px;
+  left: 16px;
   z-index: 11;
   display: flex;
   /* A grid child: without this it stretches down the whole canvas. */
