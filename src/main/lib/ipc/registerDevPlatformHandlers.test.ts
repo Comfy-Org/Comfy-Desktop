@@ -578,7 +578,7 @@ describe('registerDevPlatformHandlers', () => {
           getGrantAccessToken: async () =>
             jwt({ sub: 'user-1', workspace_id: 'w1', scope: CLOUD_CONFIG.scope }),
           isWorkspaceMintAllowed: async () => true,
-          getAccessToken: async () => null,
+          heldWorkspaceToken: () => null,
           endGrantFamily: () => {}
         },
         async (_grant, workspaceId) => ({
@@ -676,7 +676,7 @@ describe('registerDevPlatformHandlers', () => {
               ? jwt({ sub: auth.subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope })
               : null,
           isWorkspaceMintAllowed: async () => true,
-          getAccessToken: async () => null,
+          heldWorkspaceToken: () => null,
           endGrantFamily: () => {}
         },
         async (_grant, workspaceId) => ({
@@ -856,7 +856,7 @@ describe('registerDevPlatformHandlers', () => {
         getGrantAccessToken: async () =>
           jwt({ sub: subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope }),
         isWorkspaceMintAllowed: async () => true,
-        getAccessToken: async () => null,
+        heldWorkspaceToken: () => null,
         endGrantFamily: () => {}
       },
       async (_grant, workspaceId) => ({

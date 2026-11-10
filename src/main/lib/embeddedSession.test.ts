@@ -16,7 +16,7 @@ vi.mock('./embeddedSessionFlag', () => ({
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({
     getGrantAccessToken: mocks.getGrantAccessToken,
-    getAccessToken: mocks.getGrantAccessToken,
+    heldWorkspaceToken: () => null,
     currentWorkspaceId: () => mocks.current,
     currentSubject: () => (mocks.current ? 'user-1' : null),
     currentAuthGeneration: () => 0,

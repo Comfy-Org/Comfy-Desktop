@@ -1660,6 +1660,24 @@ describe('CloudSession regressions', () => {
   })
 })
 
+describe('CloudSession.heldWorkspaceToken', () => {
+  it('reads a held token without minting, refreshing or moving Desktop', async () => {
+    saveGrant(grantOn('w1', { scope: READ_ONLY_SCOPE }))
+    saveWorkspaceToken('w2', { accessToken: mintedJwt('w2'), expiresAt: FUTURE })
+    saveWorkspaceToken('w3', { accessToken: mintedJwt('w3'), expiresAt: PAST })
+    const session = new CloudSession()
+    await session.switchWorkspace('w3', 'restored')
+    const active = session.currentWorkspaceId()
+
+    expect(session.heldWorkspaceToken('w2')).toBe(mintedJwt('w2'))
+    expect(session.heldWorkspaceToken('w3')).toBeNull()
+
+    expect(session.currentWorkspaceId()).toBe(active)
+    expect(mintRequests).toEqual([])
+    expect(signIn).not.toHaveBeenCalled()
+  })
+})
+
 describe('CloudSession switches a local ComfyUI view requests', () => {
   it('asks the browser for a new workspace instead of minting silently', async () => {
     saveGrant(grantOn('w1'))

@@ -221,6 +221,11 @@ export class CloudSession {
     return loadActiveWorkspaceId()
   }
 
+  heldWorkspaceToken(workspaceId: string): string | null {
+    const held = loadWorkspaceToken(workspaceId)
+    return held && held.expiresAt > Date.now() ? held.accessToken : null
+  }
+
   async getGrantAccessToken(): Promise<string | null> {
     const grant = loadGrant()
     if (!grant) return null
