@@ -1288,7 +1288,7 @@ defineExpose({ open })
                   class="workspace-build-refresh"
                   :title="$t('newInstall.refreshWorkspaceBuilds')"
                   :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
-                  :disabled="authStore.loadingBuilds"
+                  :disabled="authStore.loadingBuilds || authorizingWorkspace"
                   @click="refreshManagedBuilds"
                 >
                   <RefreshCw
@@ -1317,7 +1317,7 @@ defineExpose({ open })
               variant="destructive-textonly"
               type="button"
               class="wizard-build-retry whitespace-normal text-left"
-              :disabled="authStore.loadingBuilds"
+              :disabled="authStore.loadingBuilds || authorizingWorkspace"
               @click="refreshManagedBuilds"
             >
               {{ $t('devPlatform.build.loadError') }}

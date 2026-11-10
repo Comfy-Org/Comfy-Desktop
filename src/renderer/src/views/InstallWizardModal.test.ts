@@ -759,6 +759,26 @@ describe('InstallWizardModal workspace Builds', () => {
       ])
     })
 
+    it.each(['.workspace-build-refresh', '.wizard-build-retry'])(
+      '%s is disabled while the target workspace is being re-established',
+      async (button) => {
+        const { wrapper, switchWorkspace } = await openOnW2ThenReturnToAnchor()
+        useAuthStore().buildsError = true
+        await flushPromises()
+        let finish: (status: unknown) => void = () => {}
+        switchWorkspace.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+
+        await wrapper.get(button).trigger('click')
+        await flushPromises()
+        expect(wrapper.get(button).attributes('disabled')).toBeDefined()
+        await wrapper.get(button).trigger('click')
+
+        finish({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+        await flushPromises()
+        expect(switchWorkspace).toHaveBeenCalledOnce()
+      }
+    )
+
     it('Refresh fetches nothing for the anchor when the target cannot be re-established', async () => {
       const { wrapper, switchWorkspace, listBuilds } = await openOnW2ThenReturnToAnchor()
       switchWorkspace.mockResolvedValue({
