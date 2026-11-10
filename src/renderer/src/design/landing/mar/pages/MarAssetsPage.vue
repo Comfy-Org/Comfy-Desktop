@@ -10,6 +10,7 @@ import {
   FolderOpen,
   ImagePlus,
   Music,
+  Minimize2,
   Play,
   RefreshCw,
   RotateCw,
@@ -63,7 +64,12 @@ import type { MenuLine } from './menu'
  * details (AssetDetail), tags read-only. Inside a project the page keeps
  * the project's own scope.
  */
-const { project: fixedProject } = defineProps<{ project?: string }>()
+const { project: fixedProject, inGraph = false } = defineProps<{
+  project?: string
+  /** ComfyUI: Media Assets expanded into a tab; it can go back to its panel. */
+  inGraph?: boolean
+}>()
+const emit = defineEmits<{ collapse: [] }>()
 
 type Kind = 'all' | MarAsset['type']
 const kind = ref<Kind>('all')
@@ -430,6 +436,15 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         @click="pick()"
         ><Upload :size="15" />Upload</Button
       >
+      <Button
+        v-if="inGraph"
+        variant="secondary"
+        size="icon"
+        title="Back to panel"
+        aria-label="Back to panel"
+        @click="emit('collapse')"
+        ><Minimize2 :size="15"
+      /></Button>
       <input
         ref="picker"
         type="file"

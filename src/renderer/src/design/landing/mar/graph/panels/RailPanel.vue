@@ -11,7 +11,9 @@ import { RAIL_DEFAULT, railWidth, setRailWidth } from './railWidth'
  * stay in view: tools that wait for the pointer are hard to find.
  * The right edge drags the width; a double-click puts it back.
  */
-const props = defineProps<{ title: string; label?: string }>()
+const props = withDefaults(defineProps<{ title: string; label?: string; closable?: boolean }>(), {
+  closable: true
+})
 defineEmits<{ close: [] }>()
 
 const width = computed(() => railWidth[props.title] ?? RAIL_DEFAULT)
@@ -60,6 +62,7 @@ function nudge(e: KeyboardEvent): void {
       <h2 class="rp-title">{{ title }}<slot name="alt-title" /></h2>
       <span class="rp-tools"><slot name="tools" /></span>
       <button
+        v-if="closable"
         type="button"
         class="rp-icon rp-close"
         aria-label="Close sidebar"

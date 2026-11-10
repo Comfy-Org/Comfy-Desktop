@@ -50,7 +50,8 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { proto } from '../../useProto'
 import { graphStyle } from './graphStyle'
-import { assetTab, comfyLook } from './comfyLook'
+import { assetTab, assetsTab, comfyLook } from './comfyLook'
+import MarAssetsPage from '../pages/MarAssetsPage.vue'
 import type { MarAsset } from '../pages/assetsStore'
 import AssetDetail from '../assets/AssetDetail.vue'
 import { brandMotif } from '../brand/brandMotif'
@@ -879,6 +880,16 @@ const assets = computed({
     else if (panel.value === 'assets') panel.value = ''
   }
 })
+/** Proposal: Media Assets grows from its panel into a whole tab. */
+function expandAssets(): void {
+  panel.value = ''
+  assetTab.on = false
+  Object.assign(assetsTab, { open: true, on: true })
+}
+function collapseAssets(): void {
+  Object.assign(assetsTab, { open: false, on: false })
+  panel.value = 'assets'
+}
 /** The workflow on show: the tab's, or one opened from Workflows. */
 const shownWorkflow = ref(workflow)
 const agent = ref(false)
@@ -1256,10 +1267,10 @@ function addFromPanel(kind: NodeKind): void {
            workflows (italic, the next one takes its place). -->
       <span
         class="mg-tab"
-        :class="!(assetTab.asset && assetTab.on) && 'is-on'"
+        :class="!(assetTab.asset && assetTab.on) && !assetsTab.on && 'is-on'"
         role="button"
         tabindex="0"
-        @click="assetTab.on = false"
+        @click="((assetTab.on = false), (assetsTab.on = false))"
         >{{ shownWorkflow }}<X :size="12"
       /></span>
       <span class="mg-tab">Untitled<X :size="12" /></span>
@@ -1270,7 +1281,7 @@ function addFromPanel(kind: NodeKind): void {
         :title="assetTab.asset.name"
         role="button"
         tabindex="0"
-        @click="assetTab.on = true"
+        @click="((assetTab.on = true), (assetsTab.on = false))"
         ><ComfyAssets class="mg-tab-icon" /><span class="mg-tab-name">{{
           assetTab.asset.name
         }}</span
@@ -1279,6 +1290,22 @@ function addFromPanel(kind: NodeKind): void {
           class="mg-tab-x"
           aria-label="Close tab"
           @click.stop="assetTab.asset = null"
+        >
+          <X :size="12" /></button
+      ></span>
+      <span
+        v-if="assetsTab.open"
+        class="mg-tab is-asset"
+        :class="assetsTab.on && 'is-on'"
+        role="button"
+        tabindex="0"
+        @click="((assetsTab.on = true), (assetTab.on = false))"
+        ><ComfyAssets class="mg-tab-icon" /><span class="mg-tab-name">Media Assets</span
+        ><button
+          type="button"
+          class="mg-tab-x"
+          aria-label="Close tab"
+          @click.stop="Object.assign(assetsTab, { open: false, on: false })"
         >
           <X :size="12" /></button
       ></span>
@@ -1579,6 +1606,7 @@ function addFromPanel(kind: NodeKind): void {
       :cloud="onCloud"
       @close="panel = ''"
       @insert="insertAsset"
+      @expand="expandAssets"
     />
     <NodesPanel
       v-else-if="panel === 'nodes'"
@@ -1865,6 +1893,13 @@ function addFromPanel(kind: NodeKind): void {
         @go="assetTab.asset = $event"
         @close="assetTab.asset = null"
       />
+    </div>
+    <!-- Proposal: Media Assets as a whole tab, the library as on Desktop. -->
+    <div
+      v-if="assetsTab.open && assetsTab.on && comfyLook.id === 'proposal'"
+      class="mg-assets-tab proto-ui"
+    >
+      <MarAssetsPage in-graph @collapse="collapseAssets" />
     </div>
     <AssetDetail
       v-if="viewNode && comfyLook.id !== 'production' && viewList.length"
@@ -2891,6 +2926,22 @@ function addFromPanel(kind: NodeKind): void {
   grid-column: 2;
   min-width: 0;
   margin-left: max(0px, calc(var(--mg-panel-edge, 0px) - 52px));
+}
+/* The library over the canvas: Run, the tools and the Agent belong to a
+   workflow, so it covers them. */
+.mg-assets-tab {
+  position: relative;
+  z-index: 10;
+  grid-row: 2;
+  grid-column: 2;
+  min-width: 0;
+  overflow: auto;
+  padding-top: 8px;
+  background: var(--mg-canvas);
+}
+.is-glass .mg-assets-tab {
+  position: absolute;
+  inset: 0 0 0 52px;
 }
 .mg-tab-add {
   margin: 0 0 9px 6px;

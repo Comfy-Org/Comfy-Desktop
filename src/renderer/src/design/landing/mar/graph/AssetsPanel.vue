@@ -68,7 +68,12 @@ import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
  * Tag, which tags every selected asset at once.
  */
 const { cloud } = defineProps<{ cloud: boolean }>()
-const emit = defineEmits<{ close: []; insert: [asset: { src: string; name: string }] }>()
+const emit = defineEmits<{
+  close: []
+  insert: [asset: { src: string; name: string }]
+  /** Proposal: the panel grows into a whole tab. */
+  expand: []
+}>()
 
 type View = 'list' | 'small' | 'large' | 'masonry'
 type Tab = 'Generated' | 'Imported'
@@ -487,7 +492,7 @@ function upload(files: FileList | null | undefined): void {
 </script>
 
 <template>
-  <RailPanel title="Media Assets" @close="$emit('close')">
+  <RailPanel title="Media Assets" :closable="prod" @close="$emit('close')">
     <template #tools>
       <button
         type="button"
@@ -497,6 +502,16 @@ function upload(files: FileList | null | undefined): void {
         @click="picker?.click()"
       >
         <Upload :size="15" />
+      </button>
+      <button
+        v-if="!prod"
+        type="button"
+        class="rp-icon"
+        title="Open in tab"
+        aria-label="Open in tab"
+        @click="emit('expand')"
+      >
+        <Maximize2 :size="15" />
       </button>
     </template>
     <template #header>
