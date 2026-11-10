@@ -187,6 +187,19 @@ describe('AppsView', () => {
     expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
   })
 
+  it('loads the Cloud assets once when the account has several Cloud builds', async () => {
+    const cloud = (id: string) => ({ ...build(id, id), sourceCategory: 'cloud' })
+    useInstallationStore().installations = [cloud('cloud-a'), cloud('cloud-b')]
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = mount(AppsView)
+    await flushPromises()
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+
+    expect(listAssets.mock.calls.map(([id]) => id)).toEqual(['cloud-a'])
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+  })
+
   it('filters by asset type and by name', async () => {
     listAssets.mockResolvedValue([
       asset('a', 'surfer.mp4', 'video'),
@@ -369,6 +382,30 @@ describe('AppsView', () => {
 
     expect(assetNames(wrapper)).toEqual(['forest.png'])
     expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
+  })
+
+  it('keeps showing the same file when the assets reload in a new order', async () => {
+    const newer = (id: string, name: string, at: string) => ({
+      ...asset(id, name, 'image'),
+      createdAt: at
+    })
+    listAssets.mockResolvedValue([
+      newer('a', 'first.png', '2026-01-02T00:00:00Z'),
+      newer('b', 'second.png', '2026-01-01T00:00:00Z')
+    ])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="asset-open-b"]').trigger('click')
+    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('second.png')
+
+    listAssets.mockResolvedValue([
+      newer('c', 'brand-new.png', '2026-01-03T00:00:00Z'),
+      newer('a', 'first.png', '2026-01-02T00:00:00Z'),
+      newer('b', 'second.png', '2026-01-01T00:00:00Z')
+    ])
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('second.png')
   })
 
   it('reloads when the signed-in workspace changes', async () => {

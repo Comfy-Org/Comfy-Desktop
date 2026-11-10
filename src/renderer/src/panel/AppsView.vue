@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useScroll } from '@vueuse/core'
+import { DropdownMenuRadioGroup } from 'reka-ui'
 import {
   AudioLines,
   Box,
@@ -21,6 +22,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
@@ -70,9 +72,8 @@ const showName = useLocalStorage('comfy.desktop.assets.showName', false)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 
 const assets = ref<GalleryAsset[]>([])
-const detailIndex = ref<number | null>(null)
+const detailKey = ref<string | null>(null)
 const cardMenuOpenKey = ref<string | null>(null)
-const lastOpenedKey = ref<string | null>(null)
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
@@ -88,9 +89,11 @@ function isReachable(inst: Installation): boolean {
   return isCloudBuild(inst) ? authStore.isSignedIn : sessionStore.isRunning(inst.id)
 }
 
-const reachableBuildIds = computed(() =>
-  installationStore.installations.filter(isReachable).map((b) => b.id)
-)
+const reachableBuildIds = computed(() => {
+  const reachable = installationStore.installations.filter(isReachable)
+  const accountCloud = reachable.find(isCloudBuild)
+  return reachable.filter((b) => !isCloudBuild(b) || b === accountCloud).map((b) => b.id)
+})
 
 const kindOptions = computed(() => [
   { value: 'all' as const, label: t('assets.kind.all') },
@@ -195,8 +198,16 @@ watch(
   },
   { immediate: true }
 )
-watch(visibleAssets, (list) => {
-  if (detailIndex.value !== null && detailIndex.value >= list.length) detailIndex.value = null
+const detailIndex = computed<number | null>({
+  get: () => {
+    if (detailKey.value === null) return null
+    const index = visibleAssets.value.findIndex((asset) => cardKey(asset) === detailKey.value)
+    return index >= 0 ? index : null
+  },
+  set: (index) => {
+    const asset = index === null ? undefined : visibleAssets.value[index]
+    detailKey.value = asset ? cardKey(asset) : null
+  }
 })
 
 function warmNameTooltips(): void {
@@ -224,16 +235,14 @@ async function signIn(): Promise<void> {
 }
 
 function openDetail(asset: GalleryAsset): void {
-  lastOpenedKey.value = cardKey(asset)
-  detailIndex.value = visibleAssets.value.indexOf(asset)
+  detailKey.value = cardKey(asset)
 }
 
 async function closeDetail(): Promise<void> {
-  detailIndex.value = null
+  const viewedKey = detailKey.value ?? ''
+  detailKey.value = null
   await nextTick()
-  scroller.value
-    ?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(lastOpenedKey.value ?? '')}"]`)
-    ?.focus()
+  scroller.value?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(viewedKey)}"]`)?.focus()
 }
 
 async function download(asset: GalleryAsset): Promise<void> {
@@ -324,18 +333,21 @@ function extensionOf(name: string): string {
                 {{ filterLabel }}
               </Button>
             </template>
-            <MenuItem
-              v-for="option in kindOptions"
-              :key="option.value"
-              as="button"
-              type="button"
-              class="w-full"
-              :data-testid="`assets-filter-${option.value}`"
-              @select="kindFilter = option.value"
-            >
-              <span class="flex-1 text-left">{{ option.label }}</span>
-              <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
-            </MenuItem>
+            <DropdownMenuRadioGroup :model-value="kindFilter">
+              <MenuRadioItem
+                v-for="option in kindOptions"
+                :key="option.value"
+                as="button"
+                type="button"
+                :value="option.value"
+                class="w-full"
+                :data-testid="`assets-filter-${option.value}`"
+                @select="kindFilter = option.value"
+              >
+                <span class="flex-1 text-left">{{ option.label }}</span>
+                <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
+              </MenuRadioItem>
+            </DropdownMenuRadioGroup>
           </Menu>
           <div class="w-[220px]">
             <BaseInput
@@ -365,45 +377,45 @@ function extensionOf(name: string): string {
                 <LayoutGrid :size="15" aria-hidden="true" />
               </Button>
             </template>
-            <div
-              class="px-3 pt-2 pb-1 text-xs font-medium tracking-wide text-subtle-foreground uppercase"
-            >
+            <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
               {{ t('assets.layoutLabel') }}
             </div>
-            <MenuItem
-              v-for="option in layoutOptions"
-              :key="option.value"
-              as="button"
-              type="button"
-              class="w-full gap-2.5"
-              :data-testid="`assets-layout-${option.value}`"
-              @select.prevent="layout = option.value"
-            >
-              <component :is="option.icon" :size="15" aria-hidden="true" />
-              <span class="flex-1 text-left">{{ option.label }}</span>
-              <Check v-if="layout === option.value" :size="15" aria-hidden="true" />
-            </MenuItem>
+            <DropdownMenuRadioGroup :model-value="layout">
+              <MenuRadioItem
+                v-for="option in layoutOptions"
+                :key="option.value"
+                as="button"
+                type="button"
+                :value="option.value"
+                class="w-full gap-2.5"
+                :data-testid="`assets-layout-${option.value}`"
+                @select.prevent="layout = option.value"
+              >
+                <component :is="option.icon" :size="15" aria-hidden="true" />
+                <span class="flex-1 text-left">{{ option.label }}</span>
+                <Check v-if="layout === option.value" :size="15" aria-hidden="true" />
+              </MenuRadioItem>
+            </DropdownMenuRadioGroup>
             <MenuSeparator />
-            <div
-              class="px-3 pt-2 pb-1 text-xs font-medium tracking-wide text-subtle-foreground uppercase"
-            >
+            <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
               {{ t('assets.sortLabel') }}
             </div>
-            <MenuItem
-              v-for="option in sortOptions"
-              :key="option.value"
-              as="button"
-              type="button"
-              class="w-full"
-              @select.prevent="sortOrder = option.value"
-            >
-              <span class="flex-1 text-left">{{ option.label }}</span>
-              <Check v-if="sortOrder === option.value" :size="15" aria-hidden="true" />
-            </MenuItem>
+            <DropdownMenuRadioGroup :model-value="sortOrder">
+              <MenuRadioItem
+                v-for="option in sortOptions"
+                :key="option.value"
+                as="button"
+                type="button"
+                :value="option.value"
+                class="w-full"
+                @select.prevent="sortOrder = option.value"
+              >
+                <span class="flex-1 text-left">{{ option.label }}</span>
+                <Check v-if="sortOrder === option.value" :size="15" aria-hidden="true" />
+              </MenuRadioItem>
+            </DropdownMenuRadioGroup>
             <MenuSeparator />
-            <div
-              class="px-3 pt-2 pb-1 text-xs font-medium tracking-wide text-subtle-foreground uppercase"
-            >
+            <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
               {{ t('assets.showLabel') }}
             </div>
             <MenuItem
