@@ -1,6 +1,6 @@
 import type { WebContents, WebFrameMain } from 'electron'
 
-import { canMintWorkspaceTokens, identityOf } from '../cloud/claims'
+import { identityOf } from '../cloud/claims'
 import { getCloudSession } from '../devplatform/session'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
@@ -64,7 +64,7 @@ export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender):
 async function sessionState(): Promise<ComfyDesktop2AuthState> {
   if (!(await isEmbeddedSessionEnabled())) return DISABLED
   const token = await getCloudSession().getAccessToken()
-  const identity = token && canMintWorkspaceTokens(token) ? identityOf(token) : null
+  const identity = token ? identityOf(token) : null
   return identity ? { status: 'signed_in', ...identity } : { status: 'signed_out' }
 }
 

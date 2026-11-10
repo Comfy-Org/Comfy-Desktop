@@ -3,7 +3,7 @@ import type { WebContents } from 'electron'
 import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from '../cloud/claims'
 import { mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
-import { getCloudSession } from '../devplatform/session'
+import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import * as mainTelemetry from './telemetry'
 
 const MINT_REFRESH_SKEW_MS = 60_000
@@ -57,7 +57,8 @@ export class ViewWorkspaceGrants {
 
   constructor(
     private readonly session: GrantSession,
-    private readonly mint: MintWorkspaceToken = mintWorkspaceToken
+    private readonly mint: MintWorkspaceToken = mintWorkspaceToken,
+    private readonly onUnauthorized: (accessToken: string) => void = () => {}
   ) {}
 
   allowDesktop(workspaceId: string | undefined): void {
@@ -108,9 +109,9 @@ export class ViewWorkspaceGrants {
     const accessToken = await this.session.getAccessToken()
     if (epoch !== this.epoch) return null
     if (!accessToken || workspaceIdOf(accessToken) !== workspaceId) return null
-    if (!canMintWorkspaceTokens(accessToken)) return null
     const subject = subjectOf(accessToken)
     if (!subject) return null
+    if (!canMintWorkspaceTokens(accessToken)) return { token: accessToken, subject }
     const key = mintKey(subject, workspaceId)
     const cached = this.minted.get(key)
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now())
@@ -134,6 +135,7 @@ export class ViewWorkspaceGrants {
     const pending = this.mint(accessToken, workspaceId)
       .then((result) => {
         reportMint(result)
+        if (result.kind === 'failed' && result.status === 401) this.onUnauthorized(accessToken)
         return result
       })
       .finally(() => {
@@ -147,7 +149,8 @@ export class ViewWorkspaceGrants {
 let grants: ViewWorkspaceGrants | null = null
 
 export function getViewWorkspaceGrants(): ViewWorkspaceGrants {
-  if (!grants) grants = new ViewWorkspaceGrants(getCloudSession())
+  if (!grants)
+    grants = new ViewWorkspaceGrants(getCloudSession(), mintWorkspaceToken, rejectAccessToken)
   return grants
 }
 
