@@ -11,7 +11,8 @@ export const FULL_ASSETS: { value: FullAssets; label: string }[] = [
   { value: 'tab', label: 'Tab' }
 ]
 
-const KEY = 'comfy.design.mar.fullAssets'
+// v2: Home became the default; a Tab saved before that doesn't carry over.
+const KEY = 'comfy.design.mar.fullAssets.v2'
 
 export const fullAssets = reactive<{ id: FullAssets }>({
   id: (() => {
