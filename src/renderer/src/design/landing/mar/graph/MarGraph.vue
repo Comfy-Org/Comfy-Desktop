@@ -2950,21 +2950,14 @@ function addFromPanel(kind: NodeKind): void {
   min-height: 0;
   background: var(--mg-canvas);
 }
-/* The sidebar floats inside the tab, the tab's full height, as Home's
-   Floating sidebar does (shell/MarSidebar.vue): inset, rounded, glass. */
+/* The sidebar floats inside the tab, its full height: a fill a step
+   lighter than the tab, no line, no shadow, as the asset view's details
+   panel (assets/AssetDetail.vue .mad-side). */
 .mg-assets-nav {
   margin: 8px 0 8px 8px;
   overflow-y: auto;
-  border-radius: 20px;
-  background: color-mix(
-    in oklch,
-    color-mix(in oklch, var(--color-base-foreground) 4%, var(--color-content-background)) 82%,
-    transparent
-  );
-  backdrop-filter: blur(40px) saturate(1.3);
-  box-shadow:
-    0 24px 64px -24px rgb(0 0 0 / 0.7),
-    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
 }
 .mg-assets-main {
   min-width: 0;

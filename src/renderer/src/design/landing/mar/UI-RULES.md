@@ -1,0 +1,100 @@
+# UI rules
+
+The rules every screen of the New UI follows. Check here before building or
+changing anything; add a line when a new rule is decided. Product questions
+and their status live in [DECISIONS.md](DECISIONS.md); motion rules in the
+DS's Motion page (`ds/motion.ts`).
+
+## Surfaces
+
+- **No lines.** No borders, strokes or dividers to separate things. Space
+  and a fill do it.
+- **Panels a step lighter.** A panel beside content (a sidebar, the asset
+  view's details) is a fill a step lighter than what's behind it:
+  `color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background))`,
+  radius 14px, no stroke, no shadow. References: `assets/AssetDetail.vue`
+  `.mad-side`, the Assets tab's sidebar (`graph/MarGraph.vue` `.mg-assets-nav`).
+- **Sidebars float.** Inset 8px from the edges, the full height of their
+  area, never flush to the window.
+- **Text blocks go in a box.** Free text (a prompt, a note) sits in a
+  surface with padding and radius, never loose on a panel.
+- **Glass only over pictures.** Badges, chips and scrims over imagery use
+  the light dark glass (`rgb(14 14 16 / 0.28)`, `blur(14px) saturate(1.5)`).
+
+## Type
+
+- **Section titles are uppercase labels.** Small, letter-spaced, subtle
+  colour, like "ASSET DETAILS", for every section and sub-section title in
+  panels, menus and details. Field names in key/value rows stay sentence
+  case.
+- **English only** in the prototype, Figma, Linear and the repo.
+- **No em dashes** in product copy.
+
+## Buttons and actions
+
+- **Primary is white, never blue.** One per screen. To make something
+  stand out, use the white primary, order and size, not colour.
+- **One tool per header.** A section header has one tool: + when you can
+  add, ⋯ when there's more. If the ⋯ menu already has Add, no + beside it.
+  A row's hover tools follow the same rule (a folder row: only ⋯, with New
+  subfolder inside).
+- **Single click opens.** Cards and rows open on one click; selection is
+  the check on hover.
+- **More (⋯) sits at the right** of the row it belongs to (the asset view:
+  beside Open workflow, under Download).
+
+## Menus
+
+- **One submenu open at a time** (controlled `DropdownMenuSub`, see
+  `graph/AssetFilterMenu.vue`).
+- **A filter shows as a chip** under the toolbar, removable, with Clear
+  filters (⌘⌫).
+- **Nothing empty to pick.** A type tab, filter group or option with nothing
+  in it isn't shown; if the one you're on empties, fall back to All.
+
+## Feedback
+
+- **Toasts only when you stay** on the page and something changes state.
+  No toast after a redirect, on opening things, or for pickers.
+- **Media badges bottom left**, the glass pill, 8px in: a video's icon and
+  length, counting while it plays. Only where they tell something (no
+  badge on a plain image in Assets). On hover a title can take the corner
+  (Apps tiles fade the badge).
+- **Files without a picture** (sound, 3D, text) draw their kind: the icon and
+  extension on a soft tile, the same on Desktop and in ComfyUI.
+
+## Libraries (Assets, Apps)
+
+- **Default view: masonry, 5 columns, ungrouped.** Apps and Assets have the
+  same column count unless the person changes size.
+- **Video plays on hover**, muted; the bar along the bottom scrubs.
+- **One build at a time** in Desktop's Assets, the last used running one
+  (else the local one); Everywhere is only a Playground tweak.
+- **Folders nest** with a chevron, folded by default, the way to the open
+  folder kept open; indent stops at the fourth level; a nested folder's
+  title is a breadcrumb (top › … › parent). Desktop reaches folders from
+  Filters › Folder.
+
+## Motion
+
+- **Icon tabs grow:** only the picked tab shows its name, with the sliding
+  pill (`.mar-tab-grow`).
+- **Tools that depend on a tab** slide (the ones that stay) and fade (the
+  ones that change).
+- Respect `prefers-reduced-motion` on every transition.
+
+## Links
+
+- **Every screen has a view code** in the address bar (`?view=…`, see
+  `shareLink.ts`). The address opens the screen; Copy link adds the tweaks.
+- **A new tweak** lives in its own store, `tunerContext.ts` (where it shows),
+  `UiTuner.vue` (its row) and `shareLink.ts` (its parameter).
+
+## Working on it
+
+- **Don't re-add what was redesigned.** Check `git log -p` before porting
+  from a reference; never bring back a removed control or duplicate one.
+- **Pablo's files** (outside `mar/`) get only minimal hooks; his Figma
+  frames are never touched.
+- **Figma is editable layers**, faithful to the prototype; never
+  screenshots.

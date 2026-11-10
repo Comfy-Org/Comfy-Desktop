@@ -4,7 +4,8 @@ The look of every prototype milestone from 1 on (`milestones.ts` decides what
 is there; this folder decides how it looks). Milestone 0 is Desktop as it ships
 and takes nothing from here: everything that writes to `<html>` or watches the
 document follows `can.design`. What changed and why is in
-[DECISIONS.md](DECISIONS.md).
+[DECISIONS.md](DECISIONS.md); the rules every screen follows are in
+[UI-RULES.md](UI-RULES.md).
 
 Milestone 1 keeps today's dashboard layout (`parts/milestones/ClassicDashboard.vue`)
 and draws it with this folder's parts. Pablo's earlier designs are on the
