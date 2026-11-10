@@ -1,24 +1,33 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
 import {
   AppWindow,
   Box,
   Check,
   ChevronDown,
+  ChevronRight,
   Copy,
   Download,
+  FileOutput,
   FolderOpen,
+  ImagePlus,
   Info,
   MoreHorizontal,
+  Pause,
+  Play,
   Plus,
+  Trash2,
+  Volume2,
+  VolumeX,
   Workflow,
   X
 } from 'lucide-vue-next'
 import { onClickOutside, useResizeObserver } from '@vueuse/core'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
-import type { MarAsset } from '../pages/assetsStore'
-import { factsFor } from './assetFacts'
+import { assets as desktopAssets, type MarAsset } from '../pages/assetsStore'
+import { graphLibrary } from '../graph/comfyLook'
+import { createdAt, factsFor } from './assetFacts'
 import { saveFile } from './saveFile'
 import AssetCover from './AssetCover.vue'
 import GenerationInfo from './GenerationInfo.vue'
@@ -117,9 +126,12 @@ function tagKey(e: KeyboardEvent): void {
   else return
   e.preventDefault()
 }
-const pic = computed(() => asset.src ?? (asset.thumbId ? thumb(asset.thumbId) : undefined))
+/** A src that is a clip, not a picture (a canvas result's video). */
+const isClip = (src?: string): boolean => !!src && /^data:video|\.(mp4|webm|mov)(\?|#|$)/i.test(src)
+const pic = computed(() => picOf(asset))
+// From the words the card shows ("Yesterday"), so card and details agree.
 const added = computed(() =>
-  new Date(Date.now() - Math.max(0, asset.age) * 60000).toLocaleString('en-US', {
+  createdAt(asset).toLocaleString('en-US', {
     month: 'numeric',
     day: 'numeric',
     year: 'numeric',
@@ -128,8 +140,10 @@ const added = computed(() =>
   })
 )
 const at = computed(() => list.findIndex((a) => a.id === asset.id))
-const picOf = (a: MarAsset): string | undefined =>
-  a.src ?? (a.thumbId ? thumb(a.thumbId) : undefined)
+function picOf(a: MarAsset): string | undefined {
+  if (a.src && !isClip(a.src)) return a.src
+  return a.thumbId ? thumb(a.thumbId) : undefined
+}
 
 /** Zoom: `zoom` scales the fitted picture (100 = fit, back to fit on
  *  every asset). The control reads in real size: the fitted picture's
@@ -238,27 +252,198 @@ function pickLabel(l?: (typeof LABELS)[number]['value']): void {
   labelMenu.value = false
 }
 
-// More, beside Download: what the file has beyond the labeled actions.
+// More, beside Download: what the file has beyond the labeled actions,
+// the same as its card's right-click.
 const moreMenu = ref(false)
 const moreBox = ref<HTMLElement>()
 onClickOutside(moreBox, () => (moreMenu.value = false))
+/** Insert into workflow opens its two ways in place, under the row. */
+const insertOpen = ref(false)
+watch(moreMenu, (on) => on || (insertOpen.value = false))
 function copyText(text: string, what: string): void {
   navigator.clipboard?.writeText(text).catch(() => {})
   toast(`Copied ${what}`)
   moreMenu.value = false
 }
+/** Show in Finder: only a file on this computer, never a Comfy Cloud one. */
+const onDisk = computed(() => asset.source !== 'cloud')
+function reveal(): void {
+  toast(`Revealed ${asset.name}`)
+  moreMenu.value = false
+}
+/** A loader node for its type, as Insert into workflow › on the card. */
+const LOADER: Partial<Record<MarAsset['type'], string>> = {
+  image: 'Load Image',
+  video: 'Load Video',
+  audio: 'Load Audio',
+  '3d': 'Load 3D'
+}
+const loader = computed(() => LOADER[asset.type] ?? 'Load File')
+function insert(into: 'new' | 'selected'): void {
+  toast(
+    into === 'new'
+      ? `Added ${asset.name} as a ${loader.value} node`
+      : `${asset.name} is in the selected node`
+  )
+  moreMenu.value = false
+}
+function openWorkflow(): void {
+  moreMenu.value = false
+  if (onWorkflow) onWorkflow(asset)
+  else toast(editable ? `Opened ${asset.name} as a workflow` : `Opening the workflow in ${build}`)
+}
+/** Export workflow: the run's workflow as a file, saved by the browser. */
+function exportWorkflow(): void {
+  moreMenu.value = false
+  const f = facts.value
+  const json = f.json ?? JSON.stringify({ workflow: f.workflowName }, null, 2)
+  saveFile(
+    URL.createObjectURL(new Blob([json], { type: 'application/json' })),
+    f.workflowName ?? `${asset.name.replace(/\.[^.]+$/, '')}.json`
+  )
+}
+/** Delete: off the list it came from, with Undo; the view steps on to
+ *  the next file, or closes on the last one. */
+function remove(): void {
+  moreMenu.value = false
+  const to = next.value ?? prev.value
+  const me = toRaw(asset)
+  const store = [desktopAssets, graphLibrary].find((s) => s.items.some((i) => toRaw(i) === me))
+  if (store) store.remove([asset.id])
+  else toast(`Deleted “${asset.name}”`)
+  if (to) emit('go', to)
+  else emit('close')
+}
+
+/** Video and audio play here. A video without a file of its own plays one
+ *  of the proto's clips, picked by name like its cover; a sound has none,
+ *  so its player runs on the clock, over the length on record. */
+const CLIPS = Object.values(
+  import.meta.glob<string>(['./*.mp4', './examples/gv-*.mp4'], { eager: true, import: 'default' })
+)
+const nameHash = (s: string): number => [...s].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 7)
+const isVideo = computed(() => asset.type === 'video')
+const isAudio = computed(() => asset.type === 'audio')
+const clip = computed(() =>
+  !isVideo.value
+    ? undefined
+    : isClip(asset.src)
+      ? asset.src
+      : CLIPS[nameHash(asset.name) % CLIPS.length]
+)
+const secondsOf = (d?: string): number =>
+  (d ?? '0:00').split(':').reduce((n, p) => n * 60 + Number(p), 0)
+const vid = ref<HTMLVideoElement>()
+const playing = ref(false)
+const cur = ref(0)
+const dur = ref(0)
+const muted = ref(false)
+const clock = (s: number): string =>
+  `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+/** Bars of the sound's waveform, the same for the same file. */
+const WAVE = computed(() => {
+  const h = nameHash(asset.name)
+  return Array.from({ length: 56 }, (_, i) => {
+    const env = 0.35 + 0.65 * Math.sin(((i + 0.5) / 56) * Math.PI)
+    const n = (((h + i * 2654435761) >>> 0) % 1000) / 1000
+    return Math.round((0.18 + 0.82 * env * (0.45 + 0.55 * n)) * 100)
+  })
+})
+const played = computed(() => (dur.value ? cur.value / dur.value : 0))
+function toggle(): void {
+  if (isVideo.value && vid.value) {
+    if (vid.value.paused) void vid.value.play().catch(() => {})
+    else vid.value.pause()
+  } else if (isAudio.value) {
+    if (!playing.value && cur.value >= dur.value) cur.value = 0
+    playing.value = !playing.value
+  }
+}
+function seek(e: Event): void {
+  const t = Number((e.target as HTMLInputElement).value)
+  cur.value = t
+  if (vid.value) vid.value.currentTime = t
+}
+function toggleMute(): void {
+  muted.value = !muted.value
+  if (vid.value) vid.value.muted = muted.value
+}
+let raf = 0
+let last = 0
+function tick(now: number): void {
+  if (!playing.value) return
+  if (isAudio.value) {
+    cur.value = Math.min(dur.value, cur.value + (now - last) / 1000)
+    if (cur.value >= dur.value) playing.value = false
+  } else if (vid.value) cur.value = vid.value.currentTime
+  last = now
+  raf = requestAnimationFrame(tick)
+}
+watch(playing, (on) => {
+  cancelAnimationFrame(raf)
+  if (on) {
+    last = performance.now()
+    raf = requestAnimationFrame(tick)
+  }
+})
+watch(
+  () => asset.id,
+  () => {
+    playing.value = false
+    cur.value = 0
+    dur.value = isAudio.value ? secondsOf(facts.value.duration) : 0
+  },
+  { immediate: true }
+)
+
 const root = ref<HTMLElement>()
+const addBtn = ref<HTMLButtonElement>()
 const opener = document.activeElement as HTMLElement | null
+const menuOpen = (): boolean => moreMenu.value || labelMenu.value || zoomMenu.value
+/** Escape closes what's open, innermost first, and hands focus back to
+ *  the button that opened it. */
+function closeMenus(): boolean {
+  if (insertOpen.value) {
+    insertOpen.value = false
+    return true
+  }
+  const box = moreMenu.value
+    ? moreBox
+    : labelMenu.value
+      ? labelBox
+      : zoomMenu.value
+        ? zoomBox
+        : null
+  if (!box) return false
+  moreMenu.value = labelMenu.value = zoomMenu.value = false
+  box.value?.querySelector<HTMLElement>('[aria-haspopup]')?.focus()
+  return true
+}
+const typing = (t: EventTarget | null): boolean =>
+  t instanceof HTMLElement && (t.isContentEditable || t.matches('input, textarea, select'))
 function key(e: KeyboardEvent): void {
-  // The tag field keeps its own keys, Escape included.
-  if (e.target === field.value) return
-  if (e.target instanceof HTMLInputElement && e.key !== 'Escape') return
-  if (e.key === 'Escape' && !tab) emit('close')
-  else if (e.key === 'ArrowLeft' && prev.value) emit('go', prev.value)
-  else if (e.key === 'ArrowRight' && next.value) emit('go', next.value)
-  else return
+  if (e.key === 'Escape') {
+    // A menu or the tag field closes first; the view only once none is open.
+    if (adding.value) {
+      closeAdd()
+      void nextTick(() => addBtn.value?.focus())
+    } else if (!closeMenus()) {
+      if (tab) return
+      emit('close')
+    }
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    // Never while a menu or the tag field is open, or in a field or slider.
+    if (adding.value || menuOpen() || typing(e.target)) return
+    const to = e.key === 'ArrowLeft' ? prev.value : next.value
+    if (!to) return
+    emit('go', to)
+  } else if (e.key === ' ' && (isVideo.value || isAudio.value)) {
+    if (adding.value || menuOpen() || typing(e.target)) return
+    if (e.target instanceof HTMLButtonElement) return
+    toggle()
+  } else return
   e.preventDefault()
-  e.stopPropagation()
+  e.stopImmediatePropagation()
 }
 onMounted(async () => {
   window.addEventListener('keydown', key, true)
@@ -268,6 +453,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', key, true)
   clearTimeout(timer)
+  cancelAnimationFrame(raf)
   if (!tab) opener?.focus?.()
 })
 </script>
@@ -292,11 +478,81 @@ onBeforeUnmount(() => {
           <!-- The picture is clipped to its own area: zoomed in, it never
                runs under the bar or the filmstrip. -->
           <div class="mad-view">
-            <div ref="media" class="mad-media" :style="{ '--r': facts.ratio, scale: zoom / 100 }">
-              <img v-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
-              <AssetCover v-else :name="asset.name" :type="asset.type" />
-              <span v-if="asset.type === 'video'" class="mad-play">{{ facts.duration }}</span>
-              <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
+            <!-- The frame holds the player's bar outside the zoom, so it keeps
+                 its size while the picture scales. -->
+            <div class="mad-fit" :style="{ '--r': facts.ratio }">
+              <div ref="media" class="mad-media" :style="{ scale: zoom / 100 }">
+                <video
+                  v-if="clip"
+                  ref="vid"
+                  :key="asset.id"
+                  :src="clip"
+                  :poster="pic"
+                  :muted="muted"
+                  playsinline
+                  preload="metadata"
+                  @click="toggle"
+                  @loadedmetadata="dur = vid?.duration || 0"
+                  @play="playing = true"
+                  @pause="playing = false"
+                  @ended="playing = false"
+                  @timeupdate="cur = vid?.currentTime ?? 0"
+                />
+                <img v-else-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
+                <AssetCover v-else :name="asset.name" :type="asset.type" />
+                <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
+              </div>
+              <!-- The player: play, the time along a track (a sound's waveform),
+                   and the sound. -->
+              <div
+                v-if="clip || isAudio"
+                class="mad-player"
+                :class="[playing && 'is-playing', isAudio && 'is-audio']"
+                role="group"
+                :aria-label="isAudio ? 'Audio player' : 'Video player'"
+              >
+                <button
+                  type="button"
+                  class="mad-player-btn"
+                  :aria-label="playing ? 'Pause' : 'Play'"
+                  :title="playing ? 'Pause' : 'Play'"
+                  @click="toggle"
+                >
+                  <Pause v-if="playing" :size="15" /><Play v-else :size="15" />
+                </button>
+                <div class="mad-track" :style="{ '--p': played }">
+                  <span v-if="isAudio" class="mad-wave" aria-hidden="true"
+                    ><i
+                      v-for="(h, i) in WAVE"
+                      :key="i"
+                      :class="(i + 0.5) / WAVE.length <= played && 'is-on'"
+                      :style="{ height: `${h}%` }"
+                  /></span>
+                  <span v-else class="mad-rail" aria-hidden="true" />
+                  <input
+                    class="mad-seek"
+                    type="range"
+                    min="0"
+                    :max="dur || 0"
+                    step="0.01"
+                    :value="cur"
+                    aria-label="Seek"
+                    :aria-valuetext="`${clock(cur)} of ${clock(dur)}`"
+                    @input="seek"
+                  />
+                </div>
+                <span class="mad-time">{{ clock(cur) }} / {{ clock(dur) }}</span>
+                <button
+                  v-if="clip"
+                  type="button"
+                  class="mad-player-btn"
+                  :aria-label="muted ? 'Unmute' : 'Mute'"
+                  :title="muted ? 'Unmute' : 'Mute'"
+                  @click="toggleMute"
+                >
+                  <VolumeX v-if="muted" :size="15" /><Volume2 v-else :size="15" />
+                </button>
+              </div>
             </div>
           </div>
           <footer v-if="!tab" class="mad-foot">
@@ -365,16 +621,6 @@ onBeforeUnmount(() => {
               <div class="mad-head-text">
                 <h2 class="mad-name">{{ asset.name }}</h2>
               </div>
-              <button
-                v-if="!editable"
-                type="button"
-                class="mad-icon"
-                aria-label="Show in Finder"
-                title="Show in Finder"
-                @click="toast(`Revealed ${asset.name}`)"
-              >
-                <FolderOpen :size="15" />
-              </button>
             </header>
 
             <section class="mad-sec">
@@ -455,7 +701,13 @@ onBeforeUnmount(() => {
                     <X :size="11" /></button
                 ></span>
                 <template v-if="editable">
-                  <button v-if="!adding" type="button" class="mad-tag-add" @click="openAdd">
+                  <button
+                    v-if="!adding"
+                    ref="addBtn"
+                    type="button"
+                    class="mad-tag-add"
+                    @click="openAdd"
+                  >
                     <Plus :size="12" />Add tag
                   </button>
                   <div v-else class="mad-tag-pick">
@@ -516,15 +768,7 @@ onBeforeUnmount(() => {
               type="button"
               class="mad-btn"
               :title="editable ? 'Open as workflow in new tab' : `Open the workflow in ${build}`"
-              @click="
-                onWorkflow
-                  ? onWorkflow(asset)
-                  : toast(
-                      editable
-                        ? `Opened ${asset.name} as a workflow`
-                        : `Opening the workflow in ${build}`
-                    )
-              "
+              @click="openWorkflow"
             >
               <Workflow :size="14" /><span>{{
                 editable ? 'Open as workflow' : 'Open workflow'
@@ -556,15 +800,39 @@ onBeforeUnmount(() => {
                 >
                   <MoreHorizontal :size="16" />
                 </button>
-                <div v-if="moreMenu" class="mad-menu is-up is-end" role="menu">
-                  <button
-                    v-if="!editable"
-                    type="button"
-                    role="menuitem"
-                    @click="(toast(`Revealed ${asset.name}`), (moreMenu = false))"
-                  >
+                <div v-if="moreMenu" class="mad-menu is-up is-end is-more" role="menu">
+                  <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
                     <FolderOpen :size="14" />Show in Finder
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    :aria-expanded="insertOpen"
+                    @click="insertOpen = !insertOpen"
+                  >
+                    <Plus :size="14" />Insert into workflow<ChevronRight
+                      :size="14"
+                      class="mad-menu-chev"
+                      :class="insertOpen && 'is-open'"
+                    />
+                  </button>
+                  <div v-if="insertOpen" class="mad-menu-sub" role="menu">
+                    <button type="button" role="menuitem" @click="insert('new')">
+                      <Plus :size="14" />As a new {{ loader }} node
+                    </button>
+                    <button type="button" role="menuitem" @click="insert('selected')">
+                      <ImagePlus :size="14" />Into the selected node
+                    </button>
+                  </div>
+                  <template v-if="facts.workflow === 'available'">
+                    <button type="button" role="menuitem" @click="openWorkflow">
+                      <Workflow :size="14" />Open as workflow in new tab
+                    </button>
+                    <button type="button" role="menuitem" @click="exportWorkflow">
+                      <FileOutput :size="14" />Export workflow
+                    </button>
+                  </template>
                   <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
                     <Copy :size="14" />Copy file name
                   </button>
@@ -575,6 +843,10 @@ onBeforeUnmount(() => {
                     @click="copyText(facts.prompt, 'prompt')"
                   >
                     <Copy :size="14" />Copy prompt
+                  </button>
+                  <span class="mad-menu-gap" role="separator" />
+                  <button type="button" role="menuitem" class="is-danger" @click="remove">
+                    <Trash2 :size="14" />Delete
                   </button>
                 </div>
               </div>
@@ -721,21 +993,132 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mad-media {
+.mad-fit {
   position: relative;
-  transition: scale 0.16s ease-out;
   width: min(100%, calc(100cqh * var(--r)));
   min-width: 0;
   flex: 0 1 auto;
   aspect-ratio: var(--r);
+}
+.mad-media {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: scale 0.16s ease-out;
   overflow: hidden;
   border-radius: 10px;
   background: var(--color-secondary-background);
 }
-.mad-media img {
+.mad-media img,
+.mad-media video {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.mad-media video {
+  cursor: pointer;
+}
+/* The player: a dark pill over the bottom of the frame, like the system's
+ * own, gone while a video plays until the pointer comes back. */
+.mad-player {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 8px 0 4px;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  transition: opacity 0.18s ease;
+}
+.mad-player.is-playing:not(.is-audio) {
+  opacity: 0;
+}
+.mad-fit:hover .mad-player,
+.mad-player:focus-within {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-player-btn {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-player-btn:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+.mad-player-btn svg {
+  fill: currentColor;
+}
+.mad-player-btn svg[class*='volume'] {
+  fill: none;
+}
+.mad-track {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  height: 28px;
+  flex: 1;
+  align-items: center;
+}
+.mad-rail {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #fff calc(var(--p) * 100%),
+    rgb(255 255 255 / 0.28) calc(var(--p) * 100%)
+  );
+}
+.mad-wave {
+  display: flex;
+  width: 100%;
+  height: 24px;
+  align-items: center;
+  gap: 2px;
+}
+.mad-wave i {
+  min-width: 1px;
+  flex: 1;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.32);
+}
+.mad-wave i.is-on {
+  background: #fff;
+}
+/* The range sits over the track, invisible, so seeking works by pointer
+ * and by keys. */
+:root .proto-ui.proto-ui.proto-ui .mad-seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.mad-track:has(.mad-seek:focus-visible) {
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 0.5);
+}
+.mad-time {
+  flex: none;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .mad-play {
   position: absolute;
@@ -846,6 +1229,29 @@ onBeforeUnmount(() => {
 }
 :root .proto-ui.proto-ui.proto-ui .mad-menu button:hover {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mad-menu.is-more {
+  min-width: 220px;
+}
+.mad-menu-chev {
+  margin-left: auto;
+  color: var(--color-muted-foreground);
+  transition: rotate 0.12s ease;
+}
+.mad-menu-chev.is-open {
+  rotate: 90deg;
+}
+/* Insert into workflow's two ways, in place under the row. */
+.mad-menu-sub {
+  display: grid;
+  padding-left: 14px;
+}
+/* Delete sits apart by space, not a line. */
+.mad-menu-gap {
+  height: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-menu button.is-danger {
+  color: var(--color-status-danger);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-icon:disabled {
   opacity: 0.35;

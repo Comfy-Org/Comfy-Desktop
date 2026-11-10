@@ -187,3 +187,52 @@ export function factsFor(a: MarAsset): AssetFacts {
     workflowName: workflow === 'available' ? `${template || stem}.json` : undefined
   }
 }
+
+const DAY = 86400000
+const dayStart = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+/** Calendar days between two dates, local time. */
+const daysBack = (then: Date, now: Date): number =>
+  Math.round((dayStart(now) - dayStart(then)) / DAY)
+
+/**
+ * When the file came to be, read from its "when", the words its card
+ * shows, so the details never disagree with the card. Some mock assets
+ * keep `age` in minutes, others only as a rank for sorting: `age` is used
+ * when it lands on the same day the words name, else the time is made up,
+ * the same every time for that file, on that day.
+ */
+export function createdAt(a: Pick<MarAsset, 'name' | 'age' | 'when'>, now = new Date()): Date {
+  const w = a.when.trim().toLowerCase()
+  const t = now.getTime()
+  const fromAge = new Date(t - Math.max(0, a.age) * 60000)
+  if (/now/.test(w)) return now
+  const mins = w.match(/(\d+)\s*min/)
+  if (mins) return new Date(t - Number(mins[1]) * 60000)
+  const hours = w.match(/(\d+)\s*h/)
+  if (hours) return new Date(t - Number(hours[1]) * 3600000)
+  const days = w.match(/(\d+)\s*days?/)
+  const weeks = w.match(/(\d+)\s*weeks?/)
+  const months = w.match(/(\d+)\s*months?/)
+  // [fewest, most] calendar days back the words allow.
+  const range: [number, number] | undefined = /today/.test(w)
+    ? [0, 0]
+    : /yesterday/.test(w)
+      ? [1, 1]
+      : days
+        ? [Number(days[1]), Number(days[1])]
+        : /last week/.test(w)
+          ? [5, 13]
+          : weeks
+            ? [Number(weeks[1]) * 7, Number(weeks[1]) * 7 + 6]
+            : months
+              ? [Number(months[1]) * 30, Number(months[1]) * 30 + 29]
+              : undefined
+  if (!range) return fromAge
+  const back = daysBack(fromAge, now)
+  if (back >= range[0] && back <= range[1]) return fromAge
+  // A made-up time on the named day: daytime, never later than now.
+  const day = dayStart(new Date(t - range[0] * DAY))
+  const h = hash(a.name)
+  const at = day + (9 * 60 + (h % 600)) * 60000
+  return new Date(at <= t ? at : day + (h % Math.max(1, Math.floor((t - day) / 60000))) * 60000)
+}
