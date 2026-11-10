@@ -40,6 +40,72 @@ export function isWorkflow(value: unknown): value is Record<string, unknown> {
   )
 }
 
+const MAX_OPEN_NODES = 500
+const CREDENTIAL_INPUTS = /^(api_key_comfy_org|auth_token_comfy_org)$/i
+
+export interface OpenRequest {
+  prompt: Record<string, unknown>
+  where: 'local' | 'cloud'
+  name: string
+}
+
+export function workflowName(value: unknown): string {
+  const v = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
+  return /^[A-Za-z0-9 .,()-]{1,80}$/.test(v) ? v : 'Comfy app'
+}
+
+function carriesCredentials(prompt: Record<string, unknown>): boolean {
+  return Object.values(prompt).some((node) =>
+    Object.keys((node as { inputs: object | null }).inputs ?? {}).some((k) =>
+      CREDENTIAL_INPUTS.test(k)
+    )
+  )
+}
+
+export function openRequest(input: unknown): OpenRequest | { error: string } {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { error: 'That is not a workflow.' }
+  }
+  const { prompt, where, name } = input as Record<string, unknown>
+  if (where !== 'local' && where !== 'cloud') {
+    return { error: 'Open it on Comfy Cloud or this computer.' }
+  }
+  if (!isWorkflow(prompt)) return { error: 'That is not a workflow.' }
+  const count = Object.keys(prompt).length
+  if (count < 1 || count > MAX_OPEN_NODES) return { error: 'That is not a workflow.' }
+  if (carriesCredentials(prompt)) return { error: 'Leave keys out of the workflow.' }
+  return { prompt, where, name: workflowName(name) }
+}
+
+const FIND_COMFY_APP =
+  `var app=window.app||(window.comfyAPI&&window.comfyAPI.app&&window.comfyAPI.app.app);` +
+  `if(!app||!app.graph||!app.canvas||typeof app.loadApiJson!=='function')return false;` +
+  `var busy=document.querySelector('[data-testid="app-loading-overlay"]');` +
+  `if(busy&&busy.getAttribute('aria-busy')==='true')return false;`
+
+export const COMFY_READY_SCRIPT = `(function(){${FIND_COMFY_APP}return true})()`
+
+export function openWorkflowScript(req: OpenRequest): string {
+  const prompt = JSON.stringify(req.prompt)
+  const name = JSON.stringify(req.name)
+  return (
+    `(function(prompt,name){` +
+    FIND_COMFY_APP +
+    `return Promise.resolve(app.loadApiJson(prompt,name)).then(function(r){return r!==false},function(){return false});` +
+    `})(${prompt},${name})`
+  )
+}
+
+export function isComfyPage(pageUrl: string, comfyUrl: string): boolean {
+  try {
+    const page = new URL(pageUrl)
+    const comfy = new URL(comfyUrl)
+    return /^https?:$/.test(page.protocol) && page.origin === comfy.origin
+  } catch {
+    return false
+  }
+}
+
 export function isRunId(value: unknown): value is string {
   return typeof value === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(value)
 }

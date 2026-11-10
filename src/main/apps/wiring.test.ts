@@ -29,7 +29,8 @@ describe('Apps bridge wiring', () => {
       'localFetch',
       'onLocalEvent',
       'localDownload',
-      'cancelRun'
+      'cancelRun',
+      'openInComfy'
     ]) {
       expect(calls).toContain(c)
     }

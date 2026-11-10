@@ -43,6 +43,10 @@ const FETCH_TIMEOUT_MS = 60_000
 let appsPages: () => WebContents[] = () => []
 let starting: Promise<LocalState> | null = null
 
+export function runningLocalId(): string | null {
+  return runningLocal()?.id ?? null
+}
+
 function runningLocal(): { id: string; name: string; port: number } | null {
   let best: { id: string; name: string; port: number; startedAt: number } | null = null
   for (const [key, s] of _runningSessions) {
@@ -116,16 +120,23 @@ function shortError(message: string | undefined): string {
   return line ? line.slice(0, 200) : 'ComfyUI did not start.'
 }
 
+export function launchInstall(
+  install: InstallationRecord
+): Promise<{ ok: boolean; message?: string }> {
+  const sender = { isDestroyed: () => false, send: () => {} } as unknown as WebContents
+  const event = { sender } as unknown as IpcMainInvokeEvent
+  const ctx = { event, installationId: install.id, inst: install }
+  return dispatchSessionAction(ctx, 'launch').catch((err: unknown) => ({
+    ok: false,
+    message: (err as Error)?.message
+  }))
+}
+
 async function start(): Promise<LocalState> {
   const { state, install } = await currentState()
   if (state.state === 'none') return state
   if (state.state === 'stopped' && install) {
-    const sender = { isDestroyed: () => false, send: () => {} } as unknown as WebContents
-    const event = { sender } as unknown as IpcMainInvokeEvent
-    const result = await dispatchSessionAction(
-      { event, installationId: install.id, inst: install },
-      'launch'
-    ).catch((err: unknown) => ({ ok: false, message: (err as Error)?.message }))
+    const result = await launchInstall(install)
     if (!result.ok && !runningLocal()) {
       return { state: 'stopped', name: install.name, error: shortError(result.message) }
     }

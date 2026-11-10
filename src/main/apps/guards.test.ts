@@ -1,15 +1,18 @@
 // @vitest-environment node
+import { runInNewContext } from 'vm'
 import { describe, expect, it } from 'vitest'
 
 import {
   appsOrigin,
   appsUrl,
   cleanSaveName,
+  COMFY_READY_SCRIPT,
   collectOutputs,
   downloadRequest,
   interruptJson,
   DEFAULT_APPS_URL,
   isAppsFrameUrl,
+  isComfyPage,
   isDocumentFailure,
   isInside,
   isPageLoadFailure,
@@ -19,6 +22,8 @@ import {
   localEvent,
   localInstalls,
   localRequest,
+  openRequest,
+  openWorkflowScript,
   outputKind,
   queueJson,
   readable,
@@ -30,7 +35,8 @@ import {
   textAnswer,
   toOutputFile,
   uploadForm,
-  viewQuery
+  viewQuery,
+  workflowName
 } from './guards'
 
 describe('appsUrl', () => {
@@ -550,5 +556,119 @@ describe('apps page load failures', () => {
     expect([404, 500, 503, 199, 304].map(isDocumentFailure)).toEqual([true, true, true, true, true])
     expect(isDocumentFailure(-1)).toBe(false)
     expect(isDocumentFailure(0)).toBe(false)
+  })
+})
+
+describe('opening a workflow in ComfyUI', () => {
+  const prompt = {
+    pos: { class_type: 'CLIPTextEncode', inputs: { text: 'a fox', clip: ['clip', 0] } },
+    save: { class_type: 'SaveImage', inputs: { images: ['decode', 0] } }
+  }
+
+  it('takes a graph, where it ran and a readable name', () => {
+    expect(openRequest({ prompt, where: 'local', name: 'Text to Image - 2026-11-09' })).toEqual({
+      prompt,
+      where: 'local',
+      name: 'Text to Image - 2026-11-09'
+    })
+    expect(openRequest({ prompt, where: 'cloud', name: '  Same   Face ' })).toMatchObject({
+      where: 'cloud',
+      name: 'Same Face'
+    })
+  })
+
+  it('names it Comfy app when the name is odd', () => {
+    for (const name of [undefined, '', 'a/b', '../x', '<script>', 'x'.repeat(81), 7]) {
+      expect(workflowName(name), String(name)).toBe('Comfy app')
+    }
+  })
+
+  it('refuses anything but a graph opened on Comfy Cloud or this computer', () => {
+    for (const input of [
+      null,
+      'x',
+      [],
+      { prompt, where: 'browser' },
+      { prompt, where: 'https://evil.example/' },
+      { prompt: {}, where: 'local' },
+      { prompt: [], where: 'local' },
+      { prompt: { a: { inputs: {} } }, where: 'local' },
+      { prompt: 'alert(1)', where: 'local' }
+    ]) {
+      expect(openRequest(input), JSON.stringify(input)).toHaveProperty('error')
+    }
+  })
+
+  it('refuses more than 500 nodes or a graph over 1 MB', () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 501 }, (_, i) => [`n${i}`, { class_type: 'X', inputs: {} }])
+    )
+    expect(openRequest({ prompt: many, where: 'local' })).toHaveProperty('error')
+    const big = { a: { class_type: 'X', inputs: { t: 'a'.repeat(1_100_000) } } }
+    expect(openRequest({ prompt: big, where: 'cloud' })).toHaveProperty('error')
+  })
+
+  it('refuses a graph that carries a Comfy key or token', () => {
+    for (const key of ['api_key_comfy_org', 'auth_token_comfy_org']) {
+      const withKey = { a: { class_type: 'X', inputs: { [key]: 'secret' } } }
+      expect(openRequest({ prompt: withKey, where: 'cloud' })).toHaveProperty('error')
+    }
+  })
+
+  function page(app: unknown, busy = 'false') {
+    return {
+      window: { app },
+      document: { querySelector: () => ({ getAttribute: () => busy }) },
+      Promise
+    }
+  }
+
+  it('waits until ComfyUI has its canvas and has finished starting', () => {
+    const app = { graph: {}, canvas: {}, loadApiJson: () => {} }
+    expect(runInNewContext(COMFY_READY_SCRIPT, page(undefined))).toBe(false)
+    expect(runInNewContext(COMFY_READY_SCRIPT, page({ ...app, canvas: undefined }))).toBe(false)
+    expect(runInNewContext(COMFY_READY_SCRIPT, page(app, 'true'))).toBe(false)
+    expect(runInNewContext(COMFY_READY_SCRIPT, page(app))).toBe(true)
+  })
+
+  it('hands the graph to loadApiJson as data, never as code', async () => {
+    const sneaky = {
+      a: {
+        class_type: 'CLIPTextEncode',
+        inputs: { text: '"});globalThis.hacked=1;//</script>\u2028' }
+      }
+    }
+    const req = openRequest({ prompt: sneaky, where: 'local', name: 'Text to Image' })
+    if ('error' in req) throw new Error(req.error)
+    const calls: unknown[][] = []
+    const app = {
+      graph: {},
+      canvas: {},
+      loadApiJson: (...args: unknown[]) => {
+        calls.push(args)
+      }
+    }
+    const ctx = page(app) as Record<string, unknown>
+    expect(await runInNewContext(openWorkflowScript(req), ctx)).toBe(true)
+    expect(calls).toEqual([[sneaky, 'Text to Image']])
+    expect(ctx['hacked']).toBeUndefined()
+  })
+
+  it('says it did not open when ComfyUI refuses the graph', async () => {
+    const req = openRequest({ prompt, where: 'local', name: 'x' })
+    if ('error' in req) throw new Error(req.error)
+    const app = { graph: {}, canvas: {}, loadApiJson: () => false }
+    expect(await runInNewContext(openWorkflowScript(req), page(app))).toBe(false)
+  })
+
+  it('loads only into the ComfyUI page itself', () => {
+    expect(isComfyPage('http://127.0.0.1:8188/?x=1', 'http://127.0.0.1:8188')).toBe(true)
+    expect(isComfyPage('https://cloud.comfy.org/', 'https://cloud.comfy.org/?utm_source=a')).toBe(
+      true
+    )
+    expect(isComfyPage('data:text/html,splash', 'http://127.0.0.1:8188')).toBe(false)
+    expect(isComfyPage('http://127.0.0.1:8189/', 'http://127.0.0.1:8188')).toBe(false)
+    expect(isComfyPage('https://cloud.comfy.org.evil.com/', 'https://cloud.comfy.org/')).toBe(false)
+    expect(isComfyPage('not a url', 'http://127.0.0.1:8188')).toBe(false)
   })
 })

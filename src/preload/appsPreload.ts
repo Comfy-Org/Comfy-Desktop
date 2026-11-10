@@ -22,7 +22,8 @@ const CALLS = [
   'localFetch',
   'onLocalEvent',
   'localDownload',
-  'cancelRun'
+  'cancelRun',
+  'openInComfy'
 ]
 
 contextBridge.exposeInMainWorld('comfyDesktopApps', {
@@ -32,6 +33,8 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
   run: (workflow: unknown) => ipcRenderer.invoke('comfy-apps:run', workflow),
   getRun: (runId: string) => ipcRenderer.invoke('comfy-apps:get-run', runId),
   cancelRun: (runId: string) => ipcRenderer.invoke('comfy-apps:cancel-run', runId),
+  openInComfy: (req: { prompt: unknown; where: 'local' | 'cloud'; name: string }) =>
+    ipcRenderer.invoke('comfy-apps:open-in-comfy', req),
   getOutput: (file: unknown, save: { app: string; label: string }) =>
     ipcRenderer.invoke('comfy-apps:get-output', file, save),
   uploadImage: (bytes: Uint8Array, name: string) =>

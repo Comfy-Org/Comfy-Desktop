@@ -38,6 +38,7 @@ import {
   startLocal,
   syncLocalSocket
 } from './localComfy'
+import { openInComfy } from './openInComfy'
 
 const APPS_URL = appsUrl()
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -462,4 +463,5 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:start-local', startLocal)
   handleFromApps('comfy-apps:local-fetch', localFetch)
   handleFromApps('comfy-apps:local-download', localDownload)
+  handleFromApps('comfy-apps:open-in-comfy', openInComfy)
 }
