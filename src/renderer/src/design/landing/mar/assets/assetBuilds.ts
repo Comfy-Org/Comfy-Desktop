@@ -1,6 +1,7 @@
 import { computed, reactive } from 'vue'
 import { instances, proto } from '../../useProto'
 import type { ProtoInstance } from '../../mock'
+import { assetsEverywhere } from './assetsEverywhere'
 
 /**
  * The builds Assets can browse (Better Asset Management PRD, Phase 2):
@@ -31,6 +32,7 @@ const KEY = 'comfy.design.mar.assetBuild'
 export function defaultBuild(): string {
   try {
     const v = localStorage.getItem(KEY) ?? ''
+    if (v === 'all' && assetsEverywhere.id === 'on') return v
     const last = assetBuilds.value.find((b) => b.id === v)
     if (last && buildStatus(last) === 'running') return last.id
   } catch {

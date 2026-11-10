@@ -12,6 +12,7 @@ import { cover } from './cover'
 import { buildCard } from './pages/buildCard'
 import { buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
+import { assetsEverywhere } from './assets/assetsEverywhere'
 import { can } from '../milestones'
 import { appsStage } from './apps/appsStage'
 import { appExamplesAt, appPage } from './apps/appPage'
@@ -98,6 +99,8 @@ export const when = {
       (proto.page.startsWith('environment:') || ['workflows', 'overview'].includes(proto.page))
   ),
   pageState: computed(() => inShell.value && (LIBRARY.includes(proto.page) || marOwns(proto.page))),
+  // Desktop's Assets page.
+  assetsEverywhere: computed(() => inShell.value && proto.page === 'assets'),
   // Credits: the sidebar foot; Tabs has no sidebar.
   credits: computed(() => sidebarShown.value && !!shownCredits.value && marNav.id !== 'tabs'),
   graph: inGraph,
@@ -209,6 +212,7 @@ export const TWEAKS = {
   buildCard: one(buildCard, 'rows'),
   buildPage: one(buildPage, 'production'),
   syncPrevious: one(syncPrevious, 'off'),
+  assetsEverywhere: one(assetsEverywhere, 'off'),
   pageState: one(pageState, 'live'),
   credits: one(creditsState, 'active'),
   // The modal opens on Configure (or Needs upload for an unreleased version).

@@ -13,6 +13,7 @@ import { COVERS, cover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
+import { assetsEverywhere } from './assets/assetsEverywhere'
 import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
@@ -138,6 +139,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'buildCard', show: () => when.buildCard.value },
   { id: 'buildPage', show: () => when.buildPage.value },
   { id: 'syncPrevious', show: () => when.syncPrevious.value },
+  { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
   { id: 'cover', show: () => when.cover.value },
   { id: 'comfyLook', show: () => when.graph.value },
   { id: 'graph', show: () => when.graph.value },
@@ -366,6 +368,19 @@ const linkSays = computed(() => {
             </div>
             <span class="text-ui text-subtle-foreground"
               >Adds what Builds already has: Settings, build problems and Remote.</span
+            >
+          </Row>
+          <Row :show="shows('assetsEverywhere')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Everywhere in Assets</span>
+              <Switch
+                :model-value="assetsEverywhere.id === 'on'"
+                aria-label="Everywhere in Assets"
+                @update:model-value="assetsEverywhere.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >Adds Everywhere to the build picker: every running build at once.</span
             >
           </Row>
           <Row :show="shows('cover')" label="Workflow cover">

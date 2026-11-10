@@ -19,6 +19,7 @@ import { COVERS, cover } from './cover'
 import { BUILD_CARDS, buildCard } from './pages/buildCard'
 import { BUILD_PAGES, buildPage } from './build/buildPage'
 import { syncPrevious } from './build/syncPrevious'
+import { assetsEverywhere } from './assets/assetsEverywhere'
 import { PAGE_STATES, pageState } from './pages/pageState'
 import { CREDITS_STATES, creditsState } from './credits'
 import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
@@ -137,6 +138,7 @@ const PARTS: Part[] = [
   one('buildCard', buildCard, 'rows', BUILD_CARDS),
   one('buildPage', buildPage, 'production', BUILD_PAGES),
   one('syncPrevious', syncPrevious, 'off', OFF_ON),
+  one('assetsEverywhere', assetsEverywhere, 'off', OFF_ON),
   one('pageState', pageState, 'live', PAGE_STATES),
   one('credits', creditsState, 'active', CREDITS_STATES),
   one('graph', graphStyle, 'glass', GRAPH_STYLES),
