@@ -7,6 +7,7 @@ import {
   cleanSaveName,
   collectOutputs,
   downloadRequest,
+  interruptJson,
   DEFAULT_APPS_URL,
   isAppsFrameUrl,
   isInside,
@@ -17,6 +18,7 @@ import {
   localInstalls,
   localRequest,
   outputKind,
+  queueJson,
   readable,
   readCapped,
   reconnectDelay,
@@ -222,6 +224,8 @@ describe('localRequest', () => {
       { method: 'GET', path: '/history/' + 'a'.repeat(65) },
       { method: 'GET', path: '/history/a_b' },
       { method: 'POST', path: '/interrupt' },
+      { method: 'POST', path: '/interrupt', body: {} },
+      { method: 'POST', path: '/queue', body: { clear: true } },
       { method: 'POST', path: '/free' },
       { method: 'DELETE', path: '/history/abc' },
       { method: 'GET', path: '//evil.example/system_stats' },
@@ -413,7 +417,14 @@ describe('downloadRequest', () => {
       folder: 'upscale_models',
       name: '4x-Ultra_v2.pth'
     })
-    for (const folder of ['controlnet', 'loras', 'vae', 'clip_vision', 'text_encoders']) {
+    for (const folder of [
+      'controlnet',
+      'loras',
+      'vae',
+      'clip_vision',
+      'text_encoders',
+      'model_patches'
+    ]) {
       expect(downloadRequest({ ...ok, folder })).not.toHaveProperty('error')
     }
     expect(downloadRequest({ ...ok, folder: 'diffusion_models' })).not.toHaveProperty('error')
@@ -465,5 +476,57 @@ describe('downloadRequest', () => {
   it('refuses a missing request', () => {
     expect(downloadRequest(null)).toHaveProperty('error')
     expect(downloadRequest('x')).toHaveProperty('error')
+  })
+})
+
+describe('stopping local runs', () => {
+  it('passes /interrupt with one run id, as an object or JSON text', () => {
+    expect(
+      localRequest({ method: 'POST', path: '/interrupt', body: { prompt_id: 'ab-12' } })
+    ).toEqual({ kind: 'json', path: '/interrupt', json: '{"prompt_id":"ab-12"}' })
+    expect(interruptJson('{"prompt_id":"ab-12"}')).toBe('{"prompt_id":"ab-12"}')
+  })
+
+  it('refuses an /interrupt that would stop whatever runs, or carries more', () => {
+    for (const body of [
+      undefined,
+      {},
+      { prompt_id: '' },
+      { prompt_id: 'a b' },
+      { prompt_id: 'a'.repeat(65) },
+      { prompt_id: 7 },
+      { prompt_id: 'ab', extra: 1 },
+      [],
+      'not json',
+      JSON.stringify({ prompt_id: 'ab', pad: 'x'.repeat(10_001) })
+    ]) {
+      expect(interruptJson(body), JSON.stringify(body)).toBeNull()
+    }
+    expect(
+      localRequest({ method: 'POST', path: '/interrupt?x=1', body: { prompt_id: 'a' } })
+    ).toMatchObject({ status: 404 })
+  })
+
+  it('passes /queue deleting up to 50 run ids', () => {
+    expect(
+      localRequest({ method: 'POST', path: '/queue', body: { delete: ['a1', 'b-2'] } })
+    ).toEqual({ kind: 'json', path: '/queue', json: '{"delete":["a1","b-2"]}' })
+    const fifty = Array.from({ length: 50 }, (_, i) => `id-${i}`)
+    expect(queueJson({ delete: fifty })).toBe(JSON.stringify({ delete: fifty }))
+  })
+
+  it('refuses a /queue clear, other keys, bad ids and more than 50', () => {
+    for (const body of [
+      { clear: true },
+      { delete: ['a'], clear: true },
+      { delete: [] },
+      { delete: 'a' },
+      { delete: ['a', 'b c'] },
+      { delete: ['a', 3] },
+      { delete: Array.from({ length: 51 }, (_, i) => `id-${i}`) },
+      {}
+    ]) {
+      expect(queueJson(body), JSON.stringify(body)).toBeNull()
+    }
   })
 })

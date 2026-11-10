@@ -211,6 +211,7 @@ export function textAnswer(status: number, text: string): LocalAnswer {
 export type LocalRequest =
   | { kind: 'get'; path: string }
   | { kind: 'prompt'; path: '/prompt'; json: string }
+  | { kind: 'json'; path: '/interrupt' | '/queue'; json: string }
   | { kind: 'upload'; path: '/upload/image'; bytes: Uint8Array; fileName: string }
 
 export interface LocalRefusal {
@@ -239,6 +240,37 @@ export function viewQuery(params: URLSearchParams): string | null {
   return new URLSearchParams({ filename, subfolder, type }).toString()
 }
 
+/** A small JSON body as an object: the page sends an object or JSON text of at most 10 KB. */
+function smallObject(body: unknown): Record<string, unknown> | null {
+  let value = body
+  if (typeof body === 'string') {
+    if (body.length > 10_000) return null
+    try {
+      value = JSON.parse(body)
+    } catch {
+      return null
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return JSON.stringify(value).length > 10_000 ? null : (value as Record<string, unknown>)
+}
+
+/** POST /interrupt stops one run: only `prompt_id`. Without it ComfyUI stops whatever runs. */
+export function interruptJson(body: unknown): string | null {
+  const v = smallObject(body)
+  if (!v || Object.keys(v).join() !== 'prompt_id' || !isRunId(v['prompt_id'])) return null
+  return JSON.stringify({ prompt_id: v['prompt_id'] })
+}
+
+/** POST /queue takes runs off the queue: only `delete`, up to 50 ids; never `clear`. */
+export function queueJson(body: unknown): string | null {
+  const v = smallObject(body)
+  if (!v || Object.keys(v).join() !== 'delete') return null
+  const ids = v['delete']
+  if (!Array.isArray(ids) || ids.length < 1 || ids.length > 50 || !ids.every(isRunId)) return null
+  return JSON.stringify({ delete: ids })
+}
+
 function promptJson(body: unknown): string | null {
   let value = body
   if (typeof body === 'string') {
@@ -258,7 +290,8 @@ function promptJson(body: unknown): string | null {
 /**
  * Check one call the page makes to the local ComfyUI. Only these pass: GET /system_stats,
  * /object_info/<class>, /history/<id> and /view (filename, subfolder, type); POST /prompt with
- * a JSON graph; POST /upload/image with the file's bytes and name.
+ * a JSON graph; POST /interrupt with one run's id; POST /queue deleting up to 50 runs; POST
+ * /upload/image with the file's bytes and name.
  */
 export function localRequest(input: unknown): LocalRequest | LocalRefusal {
   if (!input || typeof input !== 'object') return { status: 400, error: 'Not a request.' }
@@ -292,6 +325,18 @@ export function localRequest(input: unknown): LocalRequest | LocalRefusal {
       return json
         ? { kind: 'prompt', path: p, json }
         : { status: 400, error: 'That is not a workflow.' }
+    }
+    if (p === '/interrupt' && !query) {
+      const json = interruptJson(body)
+      return json
+        ? { kind: 'json', path: p, json }
+        : { status: 400, error: 'Name the run to stop.' }
+    }
+    if (p === '/queue' && !query) {
+      const json = queueJson(body)
+      return json
+        ? { kind: 'json', path: p, json }
+        : { status: 400, error: 'Name the runs to remove.' }
     }
     if (p === '/upload/image' && !query) {
       if (!(body instanceof Uint8Array)) return { status: 400, error: 'Not a file.' }
@@ -407,7 +452,8 @@ export const DOWNLOAD_FOLDERS = [
   'upscale_models',
   'clip_vision',
   'text_encoders',
-  'diffusion_models'
+  'diffusion_models',
+  'model_patches'
 ]
 
 export interface DownloadRequest {

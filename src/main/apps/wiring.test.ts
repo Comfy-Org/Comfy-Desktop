@@ -26,7 +26,14 @@ describe('Apps bridge wiring', () => {
   })
 
   it('has the local ComfyUI calls', () => {
-    for (const c of ['getLocal', 'startLocal', 'localFetch', 'onLocalEvent', 'localDownload']) {
+    for (const c of [
+      'getLocal',
+      'startLocal',
+      'localFetch',
+      'onLocalEvent',
+      'localDownload',
+      'cancelRun'
+    ]) {
       expect(calls).toContain(c)
     }
   })

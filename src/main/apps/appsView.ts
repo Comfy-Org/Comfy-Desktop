@@ -278,6 +278,21 @@ async function getRun(runId: unknown): Promise<RunStatus> {
   return { state: 'done', outputs: files, text }
 }
 
+/**
+ * Ask Cloud to stop a run. Cloud answers 200 for a run already finished and 404 for one it
+ * does not know, so asking twice is safe; the page reads the outcome from getRun as before.
+ */
+async function cancelRun(runId: unknown): Promise<{ ok: boolean; status: number }> {
+  if (!isRunId(runId)) throw new Error('Unknown run.')
+  const res = await cloudFetch(`/jobs/${runId}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}'
+  })
+  await res.body?.cancel().catch(() => {})
+  return { ok: res.ok, status: res.status }
+}
+
 interface HistoryEntry {
   status?: { status_str?: string; completed?: boolean; messages?: Array<[string, unknown]> }
   outputs?: unknown
@@ -458,6 +473,7 @@ export function registerAppsIpc(): void {
   })
   handleFromApps('comfy-apps:run', run)
   handleFromApps('comfy-apps:get-run', getRun)
+  handleFromApps('comfy-apps:cancel-run', cancelRun)
   handleFromApps('comfy-apps:get-output', getOutput)
   handleFromApps('comfy-apps:upload-image', uploadImage)
   handleFromApps('comfy-apps:save-file', saveFile)

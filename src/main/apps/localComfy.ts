@@ -173,7 +173,7 @@ export async function localFetch(input: unknown): Promise<LocalAnswer> {
   syncLocalSocket()
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
   const init: RequestInit =
-    req.kind === 'prompt'
+    req.kind === 'prompt' || req.kind === 'json'
       ? {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
