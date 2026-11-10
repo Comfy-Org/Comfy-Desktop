@@ -226,6 +226,19 @@ describe('view token path through a real session', () => {
     expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
+  it('a partner-node mint told the grant ended never lets the grant be refreshed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    mintReply = () => new Response(JSON.stringify({ code: 'oauth_grant_ended' }), { status: 401 })
+
+    await expect(grants.partnerNodeTokenFor(view, 'w1')).resolves.toBeNull()
+    vi.setSystemTime(GRANT.expiresAt + 1)
+    await expect(grants.partnerNodeTokenFor(view, 'w1')).resolves.toBeNull()
+
+    expect(refresh).not.toHaveBeenCalled()
+    expect(signIn).not.toHaveBeenCalled()
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+  })
+
   it('a server kill refuses a view mint with no browser', async () => {
     await activeOnW2()
     mintReply = () =>

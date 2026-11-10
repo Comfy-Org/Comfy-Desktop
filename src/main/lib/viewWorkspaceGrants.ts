@@ -219,9 +219,7 @@ export class ViewWorkspaceGrants {
     const result = await this.once(['workspace', key], fence, () =>
       this.mint(accessToken, workspaceId).then((minted) => {
         reportMint(minted)
-        const outcome = classifyMint(minted)
-        if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended')
-          this.session.endGrantFamily(accessToken)
+        this.endAnEndedGrant(accessToken, minted)
         if (minted.kind === 'failed' && minted.status === 401) this.onUnauthorized(accessToken)
         return minted
       })
@@ -255,7 +253,7 @@ export class ViewWorkspaceGrants {
     const result = await this.once(['partner-node', key], fence, () =>
       cached
         ? this.renewOrMint(key, cached.token, accessToken, workspaceId, fence)
-        : this.partnerNode.mint(accessToken, workspaceId)
+        : this.mintPartnerNode(accessToken, workspaceId)
     )
     const usable =
       result.kind === 'minted' &&
@@ -300,7 +298,22 @@ export class ViewWorkspaceGrants {
     if (renewed.kind === 'failed' && !isRetryableFailure(renewed))
       this.forgetPartnerNodeToken(key, partnerNodeToken)
     if (isRetryableFailure(renewed) || !this.isCurrent(fence)) return renewed
-    return this.partnerNode.mint(accessToken, workspaceId)
+    return this.mintPartnerNode(accessToken, workspaceId)
+  }
+
+  private async mintPartnerNode(
+    accessToken: string,
+    workspaceId: string
+  ): Promise<WorkspaceTokenMint> {
+    const minted = await this.partnerNode.mint(accessToken, workspaceId)
+    this.endAnEndedGrant(accessToken, minted)
+    return minted
+  }
+
+  private endAnEndedGrant(accessToken: string, result: WorkspaceTokenMint): void {
+    const outcome = classifyMint(result)
+    if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended')
+      this.session.endGrantFamily(accessToken)
   }
 
   private forgetPartnerNodeToken(key: string, token: string): void {
