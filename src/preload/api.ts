@@ -1,12 +1,3 @@
-/**
- * Builds the `window.api` bridge exposed to renderer surfaces, shared by the panel
- * and title-bar preloads via a Rollup chunk.
- *
- * Hosts loading this preload MUST set `sandbox: false`: sandboxed preloads can only
- * `require()` the electron whitelist, so the chunked `require("./chunks/...")` would
- * fail silently and leave `window.api` undefined. `contextIsolation` /
- * `nodeIntegration: false` stay enabled.
- */
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
@@ -15,7 +6,6 @@ export function buildElectronApi(): ElectronApi {
   return {
     platform: process.platform,
 
-    // Sources / New Install
     getSources: () => ipcRenderer.invoke('get-sources'),
     getFieldOptions: (sourceId, fieldId, selections, context) =>
       ipcRenderer.invoke('get-field-options', sourceId, fieldId, selections, context),
@@ -26,7 +16,6 @@ export function buildElectronApi(): ElectronApi {
     validateHardware: () => ipcRenderer.invoke('validate-hardware'),
     checkNvidiaDriver: () => ipcRenderer.invoke('check-nvidia-driver'),
 
-    // File/URL
     browseFolder: (defaultPath?) => ipcRenderer.invoke('browse-folder', defaultPath),
     importPerformanceTestWorkflow: (filePath?) =>
       ipcRenderer.invoke('import-performance-test-workflow', filePath),
@@ -57,10 +46,9 @@ export function buildElectronApi(): ElectronApi {
     exportResultsImage: (png, imageType, defaultPath?) =>
       ipcRenderer.invoke('export-results-image', png, imageType, defaultPath),
     openPath: (targetPath) => ipcRenderer.invoke('open-path', targetPath),
+    revealPath: (targetPath) => ipcRenderer.send('reveal-path', targetPath),
     openExternal: (url) => ipcRenderer.invoke('open-external', url),
     getDiskSpace: (targetPath) => ipcRenderer.invoke('get-disk-space', targetPath),
-    /** Read-only snapshot of an install's durable log buffer, as one joined
-     *  string. Seeds a chained launch op's terminal with install-leg lines. */
     logsSnapshot: (installationId: string): Promise<string> =>
       ipcRenderer.invoke('logs-snapshot', installationId),
     validateInstallPath: (targetPath) => ipcRenderer.invoke('validate-install-path', targetPath),
@@ -68,15 +56,12 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('get-installation-size', installationId),
     cancelInstallationSize: () => ipcRenderer.invoke('cancel-installation-size'),
 
-    // Locale
     getLocaleMessages: () => ipcRenderer.invoke('get-locale-messages'),
     getAvailableLocales: () => ipcRenderer.invoke('get-available-locales'),
     getLocale: () => ipcRenderer.invoke('get-locale'),
 
-    // First-use takeover state
     getFirstUseState: () => ipcRenderer.invoke('get-first-use-state'),
 
-    // Installations
     getInstallations: () => ipcRenderer.invoke('get-installations'),
     getInstallationsSummary: () => ipcRenderer.invoke('get-installations-summary'),
     addInstallation: (data) => ipcRenderer.invoke('add-installation', data),
@@ -90,11 +75,9 @@ export function buildElectronApi(): ElectronApi {
     updateInstallation: (installationId, data) =>
       ipcRenderer.invoke('update-installation', installationId, data),
 
-    // Running
     stopComfyUI: (installationId) => ipcRenderer.invoke('stop-comfyui', installationId),
     focusComfyWindow: (installationId) => ipcRenderer.invoke('focus-comfy-window', installationId),
 
-    // Interactive console
     terminalSubscribe: (installationId) => ipcRenderer.invoke('terminal-subscribe', installationId),
     terminalUnsubscribe: (installationId) =>
       ipcRenderer.invoke('terminal-unsubscribe', installationId),
@@ -103,6 +86,8 @@ export function buildElectronApi(): ElectronApi {
     terminalResize: (installationId, cols, rows) =>
       ipcRenderer.invoke('terminal-resize', installationId, cols, rows),
     terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
+    openInstallInNewWindow: (installationId) =>
+      ipcRenderer.send('comfy-window:open-install-new-window', installationId),
     openInstallWindow: (installationId) =>
       ipcRenderer.invoke('open-install-window', installationId),
     closeComfyWindow: (installationId, opts) =>
@@ -110,9 +95,10 @@ export function buildElectronApi(): ElectronApi {
     closeHostWindow: () => ipcRenderer.invoke('close-host-window'),
     returnToDashboard: () => ipcRenderer.invoke('return-to-dashboard'),
     closeCurrentPanel: () => ipcRenderer.send('comfy-window:close-current-panel'),
-    /** Signal that an overlay panel (feedback / mcp-setup) has painted, so main
-     *  can reveal the until-now-hidden panel view without an opaque flash. */
+    closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
+    navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),
     openGlobalSettings: (tab, opts) =>
@@ -179,7 +165,6 @@ export function buildElectronApi(): ElectronApi {
     cancelOperation: (installationId) => ipcRenderer.invoke('cancel-operation', installationId),
     killPortProcess: (port) => ipcRenderer.invoke('kill-port-process', port),
 
-    // Actions
     getListActions: (installationId) => ipcRenderer.invoke('get-list-actions', installationId),
     getDetailSections: (installationId) =>
       ipcRenderer.invoke('get-detail-sections', installationId),
@@ -189,7 +174,6 @@ export function buildElectronApi(): ElectronApi {
     runAction: (installationId, actionId, actionData?) =>
       ipcRenderer.invoke('run-action', installationId, actionId, actionData),
 
-    // Snapshots
     getSnapshots: (installationId) => ipcRenderer.invoke('get-snapshots', installationId),
     getSnapshotDetail: (installationId, filename) =>
       ipcRenderer.invoke('get-snapshot-detail', installationId, filename),
@@ -217,7 +201,6 @@ export function buildElectronApi(): ElectronApi {
     ) => ipcRenderer.invoke('create-from-snapshot', filePath, name, releaseTag, variantId),
     getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
-    // Settings
     getSettingsSections: () => ipcRenderer.invoke('get-settings-sections'),
     getModelsSections: () => ipcRenderer.invoke('get-models-sections'),
     getUniqueName: (baseName: string) => ipcRenderer.invoke('get-unique-name', baseName),
@@ -229,10 +212,8 @@ export function buildElectronApi(): ElectronApi {
     acknowledgeBetaNotice: (installationId, shownArgs) =>
       ipcRenderer.invoke('acknowledge-beta-notice', installationId, shownArgs),
 
-    // Theme
     getResolvedTheme: () => ipcRenderer.invoke('get-resolved-theme'),
 
-    // App
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     getStableTags: (): Promise<string[]> => ipcRenderer.invoke('get-stable-tags'),
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
@@ -246,8 +227,6 @@ export function buildElectronApi(): ElectronApi {
     getInstallsInventory: () => ipcRenderer.invoke('get-installs-inventory'),
     getDeviceId: () => ipcRenderer.invoke('get-device-id'),
 
-    // Dev platform (cloud auth + comfy-builder). Tokens never cross IPC; these
-    // only ever carry AuthStatus / Workspace / build display rows.
     comfybuilder: {
       signIn: () => ipcRenderer.invoke('comfybuilder:signIn'),
       signOut: () => ipcRenderer.invoke('comfybuilder:signOut'),
@@ -269,10 +248,7 @@ export function buildElectronApi(): ElectronApi {
         ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)
     },
 
-    // Model downloads
     listModelDownloads: () => ipcRenderer.invoke('model-download-list'),
-    // Controls take a download ref: the row's stable job id, or its URL for
-    // rows that predate ids. Main resolves either.
     pauseModelDownload: (ref) => ipcRenderer.invoke('model-download-pause', { ref }),
     resumeModelDownload: (ref) => ipcRenderer.invoke('model-download-resume', { ref }),
     cancelModelDownload: (ref) => ipcRenderer.invoke('model-download-cancel', { ref }),
@@ -282,14 +258,12 @@ export function buildElectronApi(): ElectronApi {
     showDownloadInFolder: (savePath) => ipcRenderer.invoke('show-download-in-folder', { savePath }),
     getDownloadThumbnail: (savePath) => ipcRenderer.invoke('download-thumbnail', { savePath }),
 
-    // Updates
     checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
     downloadUpdate: () => ipcRenderer.invoke('download-update'),
     installUpdate: () => ipcRenderer.invoke('install-update'),
     getUpdateCapabilities: () => ipcRenderer.invoke('get-update-capabilities'),
     getAppUpdateState: () => ipcRenderer.invoke('get-app-update-state'),
 
-    // Adopt prompts (in-app modal bridge; replaces native message boxes)
     onAdoptPrompt: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
         callback(data as AdoptPromptRequest)
@@ -299,7 +273,6 @@ export function buildElectronApi(): ElectronApi {
     ackAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-ack', payload),
     respondAdoptPrompt: (payload) => ipcRenderer.send('adopt-prompt-response', payload),
 
-    // Event listeners (return unsubscribe functions)
     onInstallProgress: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>
         callback(data as Parameters<typeof callback>[0])
@@ -485,31 +458,23 @@ export function buildElectronApi(): ElectronApi {
     captureTelemetry: (event, properties) => {
       try {
         ipcRenderer.send('telemetry:capture', { event, properties })
-      } catch {
-        // ignore: telemetry must never break the renderer
-      }
+      } catch {}
     },
     captureExceptionTelemetry: (payload) => {
       try {
         ipcRenderer.send('telemetry:captureException', payload)
-      } catch {
-        // ignore
-      }
+      } catch {}
     },
     registerTelemetryProperties: (properties) => {
       try {
         ipcRenderer.send('telemetry:registerProperties', properties)
-      } catch {
-        // ignore
-      }
+      } catch {}
     },
     telemetryGetExperimentFlag: (key) => ipcRenderer.invoke('telemetry:getExperimentFlag', key),
     telemetryRecordExposure: (payload) => {
       try {
         ipcRenderer.send('telemetry:recordExposure', payload)
-      } catch {
-        // ignore
-      }
+      } catch {}
     },
     onDatadogError: (callback) => {
       const handler = (_event: IpcRendererEvent, data: unknown) =>

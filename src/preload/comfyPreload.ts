@@ -31,17 +31,11 @@ const EMPTY_TERMINAL_RESTORE: TerminalRestore = {
 function sendTelemetry(channel: string, payload: unknown): void {
   try {
     ipcRenderer.send(channel, payload)
-  } catch {
-    // Telemetry must never break hosted frontend code.
-  }
+  } catch {}
 }
 
 function openTerminal(): Promise<boolean> {
   return ipcRenderer.invoke('desktop2-open-terminal')
-}
-
-function openMcpSetup(): Promise<boolean> {
-  return ipcRenderer.invoke('desktop2-open-mcp-setup')
 }
 
 function openTerminalPopout(): Promise<void> {
@@ -65,23 +59,11 @@ const Terminal: LegacyTerminalBridge = {
   restore: openTerminalWithEmptyRestore
 }
 
-/**
- * Read-only logs bridge. Subscribes to the shared per-install log
- * broadcast that mirrors every `comfy-output` IPC send. Used by the
- * pop-out logs window and (eventually) any other surface that wants the
- * raw stdout/stderr stream without owning the launcher.
- */
 const Logs: ComfyDesktop2LogsBridge = {
-  /** Register as a subscriber and return the current ring-buffer
-   *  contents for an immediate paint. Subsequent chunks arrive on
-   *  the `onOutput` channel. */
   subscribe: (installationId?: string): Promise<LogsRestore> =>
     ipcRenderer.invoke('logs-subscribe', installationId ?? null),
   unsubscribe: (installationId?: string): Promise<void> =>
     ipcRenderer.invoke('logs-unsubscribe', installationId ?? null),
-  /** Open a separate Electron window subscribed to the same broadcast.
-   *  Main resolves the installationId from the caller's comfyView sender
-   *  so the inline injection doesn't need to know its own ID. */
   openPopout: (): Promise<void> => ipcRenderer.invoke('logs-popout-open', null),
   onOutput: (callback: (msg: LogsOutputMsg) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, payload: LogsOutputMsg) => callback(payload)
@@ -126,10 +108,6 @@ function templateInputReferenceKey({ templateId, assetId }: ComfyTemplateInputRe
   return `${templateId}\u0000${assetId}`
 }
 
-/**
- * Stable per asset so a renderer that de-duplicates terminal events by id
- * sees one completion per file, however often a template is reopened.
- */
 function alreadyPresentDownloadId(templateId: string, assetId: string): string {
   return `already-present:${templateId}:${assetId}`
 }
@@ -175,12 +153,6 @@ function removeTemplateInputProgressHandler(): void {
   templateInputProgressHandler = undefined
 }
 
-/**
- * A download invoke can resolve after its last subscriber has gone. Until it
- * does, the handler has to stay attached and the identity maps have to keep
- * their entries, or a transfer that finishes in that window loses its
- * terminal event and the handler it re-attaches is never released.
- */
 let templateInputInvokesInFlight = 0
 
 function maybeRemoveTemplateInputProgressHandler(): void {
@@ -197,9 +169,6 @@ function ensureTemplateInputProgressHandler(): void {
     if (!download) return
     const isTerminal = isTerminalTemplateInputDownload(download)
     if (isTerminal) rememberTerminalTemplateInputDownload(download)
-    // Prefer what the host named: a retry mints a new job id, and the mapping
-    // for the old one was dropped on its terminal event. The map remains for
-    // desktop builds that do not send `templateInputs`.
     const named = data.templateInputs
     const references =
       named && named.length > 0
@@ -265,9 +234,6 @@ const downloadTemplateInputAsset: NonNullable<
     if (result.status === 'accepted' || result.status === 'joined') {
       trackTemplateInputDownload({ templateId, assetId }, result.download, true)
     } else if (result.status === 'already-present') {
-      // No job will ever report this file, so say so once here. Renderers
-      // watch this stream and nothing else, and a file that arrived between
-      // the availability answer and this call still needs rebinding.
       emitTemplateInputProgress(
         {
           downloadId: alreadyPresentDownloadId(templateId, assetId),
@@ -296,8 +262,6 @@ const onTemplateInputDownloadProgress: NonNullable<
     subscribed = false
     templateInputProgressCallbacks.delete(callback)
     if (templateInputProgressCallbacks.size === 0 && templateInputInvokesInFlight === 0) {
-      // A future detail view reconstructs active ownership from its metadata
-      // snapshot. Do not retain identities for a renderer with no consumers.
       templateInputsByDownloadId.clear()
       terminalTemplateInputDownloadsById.clear()
     }
@@ -305,7 +269,6 @@ const onTemplateInputDownloadProgress: NonNullable<
   }
 }
 
-/** Read-only view of Desktop's account session. Main decides trust and never sends a refresh token. */
 const Auth: ComfyDesktop2AuthBridge = {
   getState: () => ipcRenderer.invoke('desktop2-auth:get-state'),
   getWorkspaceToken: (workspaceId) =>
@@ -321,8 +284,12 @@ const Auth: ComfyDesktop2AuthBridge = {
   }
 }
 
+let installId: string | undefined
+
 const bridge = {
   isRemote: (): boolean => ipcRenderer.sendSync('desktop2-is-remote') as boolean,
+  getInstallId: (): string | undefined =>
+    (installId ??= ipcRenderer.sendSync('desktop2-get-install-id') as string | undefined),
   openModelAccessPage: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('desktop2-open-model-access-page', { url })
   },
@@ -358,7 +325,6 @@ const bridge = {
     ipcRenderer.send('desktop2-theme-report', { bg, text })
   },
   openTerminal,
-  openMcpSetup,
   Terminal,
   Logs,
   Telemetry,

@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { compatibleArtifactsForHost, hostOs, selectArtifactForHost } from './targets'
 import type { Artifact, Host } from './types'

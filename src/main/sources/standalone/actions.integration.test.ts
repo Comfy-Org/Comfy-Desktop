@@ -1,10 +1,3 @@
-// @vitest-environment node
-/**
- * Integration test for the standalone `migrate-from` handler. No UI dispatches it
- * directly (it's only reachable via `handleReleaseUpdate`), so a Playwright test is
- * the wrong shape; this drives `handleAction` against a real temp filesystem with
- * Electron/settings/installations/i18n/pip/envPaths mocked.
- */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'fs'
 import os from 'os'
@@ -47,14 +40,11 @@ vi.mock('../../lib/pip', () => ({
   installFilteredRequirementsDetailed: vi.fn(async () => ({ code: 0, output: '' }))
 }))
 
-// `installations.get` is the only entry point handleMigrateFrom uses here.
 const installationsStore: Record<string, InstallationRecord> = {}
 vi.mock('../../installations', () => ({
   get: vi.fn(async (id: string) => installationsStore[id] ?? null)
 }))
 
-// Shared paths are never read with both toggles off, but stub anyway so future drift
-// surfaces a missing field instead of crashing.
 vi.mock('../../settings', () => ({
   get: vi.fn(() => undefined),
   defaults: {
@@ -65,7 +55,6 @@ vi.mock('../../settings', () => ({
   getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false }))
 }))
 
-// Import the SUT after all mocks are declared.
 import { handleAction } from './actions'
 import * as installationsModule from '../../installations'
 import type { ActionTools } from '../../types/sources'
@@ -78,8 +67,6 @@ function makeInstallation(
     sourceId: 'standalone',
     status: 'installed',
     createdAt: new Date(0).toISOString(),
-    // Isolate models / input / output to per-install dirs for this test
-    // (no shared injection from global settings).
     useSharedModels: false,
     useSharedInput: false,
     useSharedOutput: false,
@@ -138,7 +125,6 @@ describe('standalone handleAction(migrate-from)', () => {
     dst = makeInstallation({ id: 'dst-1', installPath: dstRoot })
     installationsStore[src.id] = src
     installationsStore[dst.id] = dst
-    // Make sure the mocked `installations.get` reflects the per-test store.
     vi.mocked(installationsModule.get).mockImplementation(
       async (id: string) => installationsStore[id] ?? null
     )
@@ -233,8 +219,6 @@ describe('standalone handleAction(migrate-from)', () => {
         makeTools()
       )
       expect(result.ok).toBe(false)
-      // `findComfyUIDir` failure raises the localized `migrate.noComfyUIDir`
-      // key — under the mocked i18n.t that's emitted verbatim.
       expect(result.message).toMatch(/noComfyUIDir/i)
     } finally {
       fs.rmSync(orphanRoot, { recursive: true, force: true })

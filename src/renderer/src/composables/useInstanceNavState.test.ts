@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref, shallowRef, triggerRef } from 'vue'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: (_key: string, fallback?: string) => fallback ?? _key })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const sessionState = vi.hoisted(() => ({
   running: new Set<string>(),
@@ -86,8 +86,6 @@ describe('useInstanceNavState — run-state derivation', () => {
       currentCategory: 'remote' as Category,
       activeInstallationId: null
     })
-    // A remote connection is a non-local URL backend exactly like Cloud — the
-    // remote⇒cloud fold applies to the TARGET, so it lands the cloud rows.
     expect(navState.targetClass.value).toBe('cloud')
     expect(navState.targetKind.value).toBe('cloud')
     expect(navState.currentClass.value).toBe('cloud')
@@ -167,8 +165,6 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
     const cloud = decideNavigation(
       useInstanceNavState(ref(installation('C', 'cloud')), sources).navInput('primary')
     )
-    // Case-4 regression: a remote must NOT get the local→local in-place "Switch"
-    // 3-way — it opens in a new window (A keeps running), exactly like cloud.
     expect(remote).toMatchObject({ window: 'new', verb: 'open-new' })
     expect(remote).toEqual(cloud)
   })

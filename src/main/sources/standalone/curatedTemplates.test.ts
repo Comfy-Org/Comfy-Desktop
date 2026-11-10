@@ -77,8 +77,6 @@ describe('thumbnailUrlFor', () => {
 })
 
 describe('CURATED_TEMPLATES manifest', () => {
-  // Must match the frontend deeplink validator so the auto-open can't be
-  // rejected for a malformed id.
   const ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
 
   it('offers exactly 4 templates per modality', () => {
@@ -123,7 +121,7 @@ describe('CURATED_TEMPLATES manifest', () => {
     }
   })
 
-  it('never auto-selects a template that spends credits', () => {
+  it('never recommends a template that spends credits', () => {
     for (const t of CURATED_TEMPLATES) {
       if (t.apiNode) expect(t.recommended, t.id).toBeFalsy()
     }

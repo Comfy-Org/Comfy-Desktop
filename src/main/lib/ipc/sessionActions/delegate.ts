@@ -1,6 +1,7 @@
 import { installations, i18n, sourceMap, _operationAborts, MSG_CANCELLED } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { appendLog } from '../../logsBroadcast'
+import { holdAgentPrefetch } from '../../agentRequirementsLaunch'
 
 export async function handleDelegateToSource(
   { event, installationId, inst, actionData }: ActionContext,
@@ -28,17 +29,15 @@ export async function handleDelegateToSource(
     _operationAborts.delete(installationId)
     return { ok: false, message: i18n.t('errors.unknownSource') }
   }
-  // Failures surfaced to the UI must also land in the app log (#1250) —
-  // sendOutput covers per-step output, but the final failure summary is
-  // otherwise only returned to the renderer.
   const logFailure = (message: string): void => {
-    // Best-effort: a diagnostic write must never mask the original failure.
     try {
       appendLog(installationId, `\n⚠ ${actionId} failed: ${message}\n`)
     } catch (logErr) {
       console.warn('Failed to append action failure to app log:', logErr)
     }
   }
+  const releasePrefetch =
+    typeof inst.installPath === 'string' ? await holdAgentPrefetch(inst.installPath) : () => {}
   try {
     const result = await source.handleAction(actionId, inst, actionData, {
       update,
@@ -55,6 +54,7 @@ export async function handleDelegateToSource(
     logFailure((err as Error).message)
     return { ok: false, message: (err as Error).message }
   } finally {
+    releasePrefetch()
     _operationAborts.delete(installationId)
   }
 }

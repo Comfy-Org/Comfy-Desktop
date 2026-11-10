@@ -3,11 +3,6 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-// `installer.ts` -> `download.ts` -> `../settings` -> `models.ts` -> `paths.ts`
-// pulls in electron's `app.getPath` at module-load time. The download function
-// here is dependency-injected through `ctx`, so none of that code actually
-// runs in this suite — but the import chain still has to resolve, so stub
-// the surface used by `paths.ts`.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -107,7 +102,6 @@ describe('downloadAndExtract', () => {
     expect(resultA).toBeUndefined()
     expect(resultB).toBeUndefined()
 
-    // Only one real download; the second caller hits the cache after the lock releases.
     expect(mockDownload).toHaveBeenCalledTimes(1)
     expect(mockExtract).toHaveBeenCalledTimes(2)
 
@@ -138,7 +132,6 @@ describe('downloadAndExtract', () => {
     const mockExtract = vi.fn(async () => {})
     const cache = makeCache(cacheDir)
 
-    // Different cache keys → different lock paths → should run concurrently
     await Promise.all([
       downloadAndExtract(
         'https://example.com/a.7z',
@@ -155,7 +148,6 @@ describe('downloadAndExtract', () => {
     ])
 
     expect(mockDownload).toHaveBeenCalledTimes(2)
-    // Both downloads should have been in-flight simultaneously
     expect(maxConcurrent).toBe(2)
   })
 
@@ -167,7 +159,6 @@ describe('downloadAndExtract', () => {
     const abortController = new AbortController()
 
     const mockDownload = vi.fn<DownloadFn>(async (_url, dest) => {
-      // Simulate a slow download; abort the waiting caller mid-wait
       setTimeout(() => abortController.abort(), 10)
       await new Promise((r) => setTimeout(r, 50))
       fs.mkdirSync(path.dirname(dest), { recursive: true })
@@ -178,14 +169,11 @@ describe('downloadAndExtract', () => {
     const mockExtract = vi.fn(async () => {})
     const cache = makeCache(cacheDir)
 
-    // A starts first — acquires the lock and begins the slow download
     const ctxA = makeCtx({ download: mockDownload, cache, extract: mockExtract })
     const resultA = downloadAndExtract('https://example.com/env.7z', destA, 'v1_nvidia', ctxA)
 
-    // Yield so A enters withDownloadLock and acquires the lock
     await new Promise((r) => setTimeout(r, 0))
 
-    // B starts second — will wait on the lock, but has an abort signal
     const ctxB = makeCtx({
       download: mockDownload,
       cache,
@@ -193,12 +181,9 @@ describe('downloadAndExtract', () => {
       signal: abortController.signal
     })
     const resultB = downloadAndExtract('https://example.com/env.7z', destB, 'v1_nvidia', ctxB)
-    // Suppress unhandled rejection warning — we assert on it below
     resultB.catch(() => {})
 
-    // A should succeed (it holds the lock)
     await expect(resultA).resolves.toBeUndefined()
-    // B was waiting for the lock when abort fired — should reject immediately
     await expect(resultB).rejects.toThrow('Download cancelled')
     expect(mockDownload).toHaveBeenCalledTimes(1)
   })
@@ -211,7 +196,6 @@ describe('downloadAndExtract', () => {
     const abortA = new AbortController()
 
     const mockDownload = vi.fn<DownloadFn>(async (_url, dest, _onProgress, opts) => {
-      // A will be cancelled after 10ms; B will run to completion
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
           fs.mkdirSync(path.dirname(dest), { recursive: true })
@@ -233,7 +217,6 @@ describe('downloadAndExtract', () => {
     const mockExtract = vi.fn(async () => {})
     const cache = makeCache(cacheDir)
 
-    // A starts first, acquires lock
     const ctxA = makeCtx({
       download: mockDownload,
       cache,
@@ -243,21 +226,15 @@ describe('downloadAndExtract', () => {
     const resultA = downloadAndExtract('https://example.com/env.7z', destA, 'v1_nvidia', ctxA)
     resultA.catch(() => {})
 
-    // Let A acquire the lock
     await new Promise((r) => setTimeout(r, 0))
 
-    // B starts, waits on the lock
     const ctxB = makeCtx({ download: mockDownload, cache, extract: mockExtract })
     const resultB = downloadAndExtract('https://example.com/env.7z', destB, 'v1_nvidia', ctxB)
 
-    // Cancel A while B is waiting
     setTimeout(() => abortA.abort(), 10)
 
-    // A should fail
     await expect(resultA).rejects.toThrow('Download cancelled')
-    // B should succeed — it acquires the lock after A releases it, then downloads
     await expect(resultB).resolves.toBeUndefined()
-    // B must have done its own download (A's was cancelled, no cache file)
     expect(mockDownload).toHaveBeenCalledTimes(2)
     expect(mockExtract).toHaveBeenCalledTimes(1)
   })
@@ -271,10 +248,8 @@ describe('downloadAndExtract', () => {
     const mockDownload = vi.fn<DownloadFn>(async (_url, dest) => {
       callCount++
       if (callCount === 1) {
-        // First call fails with a network error
         throw new Error('Network error')
       }
-      // Second call succeeds
       await new Promise((r) => setTimeout(r, 10))
       fs.mkdirSync(path.dirname(dest), { recursive: true })
       fs.writeFileSync(dest, 'fake-data')
@@ -284,7 +259,6 @@ describe('downloadAndExtract', () => {
     const mockExtract = vi.fn(async () => {})
     const cache = makeCache(cacheDir)
 
-    // A starts, acquires lock, download throws
     const resultA = downloadAndExtract(
       'https://example.com/env.7z',
       destA,
@@ -295,7 +269,6 @@ describe('downloadAndExtract', () => {
 
     await new Promise((r) => setTimeout(r, 0))
 
-    // B starts, waits on lock
     const resultB = downloadAndExtract(
       'https://example.com/env.7z',
       destB,
@@ -304,7 +277,6 @@ describe('downloadAndExtract', () => {
     )
 
     await expect(resultA).rejects.toThrow('Network error')
-    // B should proceed and succeed — lock was released despite the error
     await expect(resultB).resolves.toBeUndefined()
     expect(mockDownload).toHaveBeenCalledTimes(2)
   })
@@ -320,7 +292,6 @@ describe('downloadAndExtract', () => {
     const mockExtract = vi.fn(async () => {})
     const cache = makeCache(cacheDir)
 
-    // First download
     await downloadAndExtract(
       'https://example.com/env.7z',
       tmpDir(),
@@ -328,7 +299,6 @@ describe('downloadAndExtract', () => {
       makeCtx({ download: mockDownload, cache, extract: mockExtract })
     )
 
-    // Second download to same cache key — should work (lock fully released)
     await downloadAndExtract(
       'https://example.com/env.7z',
       tmpDir(),
@@ -336,7 +306,6 @@ describe('downloadAndExtract', () => {
       makeCtx({ download: mockDownload, cache, extract: mockExtract })
     )
 
-    // First was downloaded, second was a cache hit — no deadlock
     expect(mockDownload).toHaveBeenCalledTimes(1)
     expect(mockExtract).toHaveBeenCalledTimes(2)
   })
@@ -375,7 +344,6 @@ describe('downloadAndExtractMulti', () => {
       )
     ])
 
-    // Only one download — second caller sees cache hit
     expect(mockDownload).toHaveBeenCalledTimes(1)
     expect(mockExtract).toHaveBeenCalledTimes(2)
   })

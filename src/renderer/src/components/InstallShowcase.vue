@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowRight } from 'lucide-vue-next'
+import Button from '@comfyorg/design-system/button/Button'
 import { useShowcaseCarousel } from '../composables/useShowcaseCarousel'
 import { TID } from '../../../shared/testIds'
 
@@ -23,7 +24,7 @@ function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
 
 <template>
   <section
-    class="showcase"
+    class="showcase flex flex-nowrap items-center justify-end gap-2.5 whitespace-nowrap [&.showcase]:min-h-[1.5em]"
     :data-testid="TID.installShowcase"
     :aria-label="$t('installShowcase.label')"
     @mouseenter="setPaused('hover', true)"
@@ -31,109 +32,41 @@ function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
     @focusin="setPaused('focus', true)"
     @focusout="setPaused('focus', false)"
   >
-    <Transition name="showcase-swap" mode="out-in">
-      <p :key="carousel.card.value.id" class="showcase__line">
-        <span class="showcase__title" :data-testid="TID.installShowcaseTitle">
+    <Transition
+      name="showcase-swap"
+      mode="out-in"
+      enter-active-class="showcase-swap-enter-active [transition:opacity_200ms_ease,transform_260ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+      leave-active-class="showcase-swap-leave-active [transition:opacity_200ms_ease,transform_260ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
+      enter-from-class="showcase-swap-enter-from opacity-0 [transform:translateY(3px)]"
+      leave-to-class="showcase-swap-leave-to opacity-0 [transform:translateY(-3px)]"
+    >
+      <p
+        :key="carousel.card.value.id"
+        class="showcase__line m-0 block min-w-0 overflow-hidden text-center text-[12.5px] leading-[1.35] text-ellipsis"
+      >
+        <span
+          class="showcase__title font-medium text-neutral-100 [text-shadow:0_1px_3px_rgba(0,0,0,0.8)] after:mx-[7px] after:font-normal after:text-neutral-600 after:content-['-']"
+          :data-testid="TID.installShowcaseTitle"
+        >
           {{ $t(carousel.card.value.title) }}
         </span>
-        <span class="showcase__body">{{ $t(carousel.card.value.body) }}</span>
+        <span class="showcase__body text-neutral-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.75)]">{{
+          $t(carousel.card.value.body)
+        }}</span>
       </p>
     </Transition>
 
-    <button
+    <Button
       v-if="canOfferCloud"
+      size="unset"
+      variant="textonly"
       type="button"
-      class="showcase__cta"
+      class="showcase__cta static inline-flex appearance-auto items-center justify-normal gap-[3px] rounded-lg border-0 bg-transparent p-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-nowrap text-comfy-yellow opacity-85 touch-auto transition-opacity duration-160 ease-[ease] [&]:[appearance:button] hover:bg-transparent hover:opacity-100 hover:underline hover:underline-offset-[3px] focus-visible:rounded-[3px] focus-visible:opacity-100 focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-[3px] motion-reduce:transition-none"
       :data-testid="TID.installShowcaseCloud"
       @click="emit('open-cloud')"
     >
       {{ $t('installShowcase.cloudCta') }}
       <ArrowRight :size="11" stroke-width="2.2" aria-hidden="true" />
-    </button>
+    </Button>
   </section>
 </template>
-
-<style scoped>
-.showcase {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: nowrap;
-  gap: 10px;
-  min-height: 1.5em;
-  white-space: nowrap;
-}
-.showcase__line {
-  display: block;
-  margin: 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: center;
-  font-size: 12.5px;
-  line-height: 1.35;
-}
-.showcase__title {
-  font-weight: 500;
-  color: var(--neutral-100);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-}
-.showcase__title::after {
-  content: '-';
-  margin-inline: 7px;
-  font-weight: 400;
-  color: var(--neutral-600);
-}
-.showcase__body {
-  color: var(--neutral-200);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
-}
-.showcase__cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--comfy-yellow);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  opacity: 0.85;
-  transition: opacity 160ms ease;
-}
-.showcase__cta:hover {
-  opacity: 1;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.showcase__cta:focus-visible {
-  opacity: 1;
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 3px;
-  border-radius: 3px;
-}
-.showcase-swap-enter-active,
-.showcase-swap-leave-active {
-  transition:
-    opacity 200ms ease,
-    transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-.showcase-swap-enter-from {
-  opacity: 0;
-  transform: translateY(3px);
-}
-.showcase-swap-leave-to {
-  opacity: 0;
-  transform: translateY(-3px);
-}
-@media (prefers-reduced-motion: reduce) {
-  .showcase-swap-enter-active,
-  .showcase-swap-leave-active,
-  .showcase__cta {
-    transition: none;
-  }
-}
-</style>

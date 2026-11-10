@@ -1,13 +1,3 @@
-/**
- * Shares Desktop's Comfy account session (`CloudSession`) with the hosted
- * local ComfyUI view, so an SSO user (who has no Firebase account) can sign in
- * there and run partner nodes.
- *
- * Only a short-lived access token and the identity read from it cross to the
- * renderer; the refresh token stays in main. Only the main frame of a
- * registered comfyView, still on the loopback ComfyUI Desktop loaded into it,
- * is served. Remote and LAN servers never receive the token.
- */
 import type { WebContents, WebFrameMain } from 'electron'
 
 import { identityOf } from '../cloud/claims'
@@ -57,7 +47,6 @@ function servesEntry(entry: ComfyWindowEntry, currentUrl: string): boolean {
   return expected !== null && originOf(currentUrl) === expected
 }
 
-/** The sender is the main frame of a registered comfyView, on its own loopback ComfyUI. */
 export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender): boolean {
   const entry = findEntryByComfySender(sender)
   if (!entry || !senderFrame) return false
@@ -83,12 +72,6 @@ export async function stateForSender(
   return isTrustedSender(event) ? sessionState() : DISABLED
 }
 
-/**
- * The workspace credential for a trusted view: released only for an exact,
- * non-empty workspace that Desktop's session is scoped to. Absent, malformed
- * or mismatched scope gets nothing, so a view never runs as a workspace it
- * did not name.
- */
 export async function workspaceTokenForSender(
   event: EmbeddedSessionSender,
   workspaceId: unknown
@@ -103,10 +86,6 @@ async function trustedSessionToken(event: EmbeddedSessionSender): Promise<string
   return getCloudSession().getAccessToken()
 }
 
-/**
- * Re-scopes Desktop's session to `workspaceId` for a trusted, signed-in view,
- * then reads the state back. Anything else returns its state untouched.
- */
 export async function switchWorkspaceForSender(
   event: EmbeddedSessionSender,
   workspaceId: unknown,
@@ -119,10 +98,8 @@ export async function switchWorkspaceForSender(
   return stateForSender(event)
 }
 
-/** Bumped per broadcast, so a slower earlier read never overwrites a newer state. */
 let broadcastGeneration = 0
 
-/** Push the current session to every comfyView Desktop would serve. No-op while disabled. */
 export async function broadcastEmbeddedSessionChanged(): Promise<void> {
   const generation = ++broadcastGeneration
   const state = await sessionState()

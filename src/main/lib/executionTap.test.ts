@@ -43,10 +43,18 @@ describe('executionTap', () => {
     })
   })
 
+  it('tags every event with the session kind it was given, normal by default', () => {
+    createExecutionTap({ installationId: 'inst-1', sessionKind: 'performance_test' }).flushSummary()
+    createExecutionTap({ installationId: 'inst-2' }).flushSummary()
+
+    expect(captured.map((c) => [c.ctx.installation_id, c.ctx.session_kind])).toEqual([
+      ['inst-1', 'performance_test'],
+      ['inst-2', 'normal']
+    ])
+  })
+
   it('emits validation_failed errors with the reason lines as the message', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
-    // ComfyUI logs the header, then `* node:` / `- reason` detail lines, then
-    // an unrelated line that terminates the block.
     tap.ingest(
       [
         'Failed to validate prompt for output 42:',
@@ -63,17 +71,13 @@ describe('executionTap', () => {
       error_bucket: 'validation',
       node_id: '42'
     })
-    // The reason detail is captured, not just the header.
     expect(String(err!.ctx.error_message)).toContain('Value not in list')
-    // The signature normalizes user-specific values so distinct reasons still
-    // group by shape.
     expect(String(err!.ctx.error_signature)).toContain('validation_failed|')
   })
 
   it('defers the validation error until the block ends and flushes on exit', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     tap.ingest('Failed to validate prompt for output 7:\n', 'stdout')
-    // No terminating line yet — nothing emitted.
     expect(captured.filter((c) => c.event === 'comfy.desktop.execution.error')).toHaveLength(0)
     tap.flushSummary()
     const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')
@@ -81,9 +85,6 @@ describe('executionTap', () => {
   })
 
   it('parses current ComfyUI log lines carrying a colored [LEVEL] prefix', () => {
-    // ComfyUI's ColoredFormatter emits `\x1b[32m[INFO]\x1b[0m got prompt` etc.,
-    // not the bare strings the anchored patterns expect — ANSI must be stripped
-    // before the level tag for the aggregate counters and errors to update.
     const tap = createExecutionTap({ installationId: 'inst-1' })
     tap.ingest('\u001b[32m[INFO]\u001b[0m got prompt\n', 'stdout')
     tap.ingest('\u001b[32m[INFO]\u001b[0m Prompt executed in 7.78 seconds\n', 'stdout')
@@ -91,7 +92,6 @@ describe('executionTap', () => {
       '\u001b[1m\u001b[31m[ERROR]\u001b[0m Failed to validate prompt for output 9:\n',
       'stdout'
     )
-    // Deferred validation error flushes when the block ends.
     tap.flushSummary()
 
     const summary = captured.find((c) => c.event === 'comfy.desktop.execution.session_summary')
@@ -102,9 +102,6 @@ describe('executionTap', () => {
 
   it('captures Python tracebacks from stderr and emits a single error', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
-    // Trailing line after the blank-line boundary so the parser sees the
-    // boundary as a complete line (mirrors real ComfyUI output where logs
-    // continue after a failure).
     tap.ingest(
       [
         'Traceback (most recent call last):',
@@ -276,7 +273,6 @@ describe('executionTap', () => {
 
   it('flushSummary drains a pending traceback so errors are not lost on exit', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
-    // No trailing blank line — process died before traceback ended.
     tap.ingest(
       [
         'Traceback (most recent call last):',
@@ -285,7 +281,6 @@ describe('executionTap', () => {
       ].join('\n') + '\n',
       'stderr'
     )
-    // Without flush, no error emitted yet (no blank-line boundary).
     expect(captured.filter((c) => c.event === 'comfy.desktop.execution.error')).toHaveLength(0)
     tap.flushSummary()
     expect(captured.filter((c) => c.event === 'comfy.desktop.execution.error')).toHaveLength(1)
@@ -322,14 +317,12 @@ describe('executionTap', () => {
 
   it('flushSummary parses a final line written without a trailing newline', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
-    // The fatal exception line is the LAST thing written and has no trailing
-    // newline (process died mid-line), so it sits unparsed in `pending`.
     tap.ingest(
       [
         'Traceback (most recent call last):',
         '  File "z.py", line 3, in run',
         '    raise KeyError("gone")',
-        'KeyError: gone' // no trailing '\n'
+        'KeyError: gone'
       ].join('\n'),
       'stderr'
     )
@@ -343,7 +336,6 @@ describe('executionTap', () => {
   it('flushSummary captures a validation reason line written without a trailing newline', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
     tap.ingest('Failed to validate prompt for output 3:\n', 'stdout')
-    // Reason line is the final write and has no trailing newline.
     tap.ingest("  - Value not in list: ckpt_name: 'x' not in ['y']", 'stdout')
     tap.flushSummary()
     const err = captured.find((c) => c.event === 'comfy.desktop.execution.error')
@@ -353,7 +345,6 @@ describe('executionTap', () => {
 
   it('retains error wall-clock tracking after many unpaired starts', () => {
     const tap = createExecutionTap({ installationId: 'inst-1' })
-    // Far more than the cap (256).
     for (let i = 0; i < 1000; i++) tap.ingest('got prompt\n', 'stdout')
     tap.ingest(
       ['Traceback (most recent call last):', 'RuntimeError: boom', '', 'next-line'].join('\n'),

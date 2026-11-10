@@ -115,8 +115,6 @@ describe('closeAllHostWindows', () => {
     const entryB = makeEntry(b)
     comfyWindows.set(entryA.windowKey, entryA)
     comfyWindows.set(entryB.windowKey, entryB)
-    // Synchronous closed handler that deletes mid-iteration; without the
-    // snapshot in the impl, the second entry would be skipped.
     a.close = () => {
       a.closed = true
       comfyWindows.delete(entryA.windowKey)

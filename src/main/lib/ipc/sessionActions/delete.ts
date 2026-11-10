@@ -13,18 +13,14 @@ import {
 } from '../shared'
 import type { ActionContext, ActionResult } from './types'
 import { withAbortableSessionAction } from './withAbortable'
+import { holdAgentPrefetch } from '../../agentRequirementsLaunch'
 
-/** Best-effort removal of an install's per-instance model-paths YAML, which
- *  lives under dataDir() rather than inside the install directory. */
 function removeInstanceModelPathsYaml(installationId: string): void {
   try {
     fs.rmSync(instanceModelPathsYaml(installationId), { force: true })
   } catch {}
 }
 
-// Wipe the launcher-owned parts of an adopted install (.venv + marker) at
-// adoptedBaseDir, leaving the user's data. Best-effort: a locked venv must not
-// block the primary wrapper deletion.
 async function cleanupAdoptedLegacyDir(
   adoptedBaseDir: string,
   sendProgress: (phase: string, detail: Record<string, unknown>) => void,
@@ -62,7 +58,6 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
   const adopted = inst.adopted === true
   const adoptedBaseDir = adopted ? (inst.adoptedBaseDir as string | undefined) : undefined
   if (!fs.existsSync(inst.installPath)) {
-    // Wrapper already gone; still clean the legacy venv so re-adopt starts fresh.
     if (adopted && adoptedBaseDir) {
       const noopProgress = (): void => {}
       await cleanupAdoptedLegacyDir(adoptedBaseDir, noopProgress)
@@ -98,6 +93,7 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
   sendProgress('delete', { percent: 0, status: 'Counting files…' })
 
   return withAbortableSessionAction(ctx, async (signal) => {
+    const release = await holdAgentPrefetch(inst.installPath)
     try {
       await deleteDir(
         inst.installPath,
@@ -110,8 +106,6 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
         await cleanupAdoptedLegacyDir(adoptedBaseDir, sendProgress, signal)
       }
     } catch (err) {
-      // Restore the marker (so retry passes the check) and flag partial-delete;
-      // re-throw so the wrapper maps the error.
       try {
         fs.mkdirSync(inst.installPath, { recursive: true })
         fs.writeFileSync(markerPath, markerContent)
@@ -125,10 +119,6 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
             .then((probe) => {
               if (sender.isDestroyed()) return
               if (!probe.ok) {
-                // The probe never finished, so having no names is not evidence
-                // that nothing holds the file. Staying silent here would leave
-                // the generic message standing, which reads as though we looked
-                // and found nothing; say we could not tell instead.
                 console.warn(`Lock probe did not complete (${probe.reason}) for`, lockedPath)
                 const detail = i18n.t('errors.deleteLockedUnidentified', {
                   path: lockedPath
@@ -151,6 +141,8 @@ export async function handleDelete(ctx: ActionContext): Promise<ActionResult> {
         throw new Error(i18n.t('errors.deleteLocked', { path: raw.path ?? '' }), { cause: err })
       }
       throw err
+    } finally {
+      release()
     }
     removeInstanceModelPathsYaml(installationId)
     await installations.remove(installationId)

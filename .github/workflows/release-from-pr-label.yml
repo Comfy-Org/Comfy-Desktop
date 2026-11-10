@@ -126,9 +126,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Pass the release PR's number so build-release.yml can pull
-          # the PR body as the GitHub Release notes (replaces the
-          # auto-generated PR-titles dump).
           gh workflow run build-release.yml \
             --repo "${GITHUB_REPOSITORY}" \
             --ref "${TAG}" \

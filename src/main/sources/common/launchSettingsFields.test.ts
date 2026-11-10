@@ -6,21 +6,12 @@ import type * as ModelsModule from '../../lib/models'
 import type { ResolvedExtraPath } from '../../lib/models'
 import { lookupEnMessage } from '../../lib/localeTestHelper'
 
-// `buildExtraModelPathsView` groups the flat per-type dirs from
-// `resolveExtraModelPaths` (tested in models.test.ts) by section, and stamps
-// on-disk existence. Mock the resolver + comfy-dir lookup so the test controls
-// the shape, and use real temp dirs for the `fs.existsSync` checks.
 const holder = vi.hoisted(() => ({ comfyDir: '', resolved: [] as ResolvedExtraPath[] }))
 
-// models.ts reads `dataDir()` at module load (for YAML_PATH); the real one calls
-// electron `app.getPath`, which crashes outside Electron. Stub it to a temp dir.
 vi.mock('../../lib/paths', () => ({
   dataDir: () => os.tmpdir()
 }))
 
-// Real English strings so label/tooltip assertions catch missing locale keys
-// (see lookupEnMessage). Dynamic import: vi.mock factories are hoisted, so
-// they can't reference top-level static imports.
 vi.mock('../../lib/i18n', async () => {
   const { lookupEnMessage } = await import('../../lib/localeTestHelper')
   return { t: (key: string) => lookupEnMessage(key) }
@@ -63,8 +54,8 @@ describe('buildExtraModelPathsView — grouping', () => {
     fs.writeFileSync(path.join(tmp, 'extra_model_paths.yaml'), 'x')
     const base = path.join(tmp, 'base')
     const ckpt = path.join(base, 'checkpoints')
-    fs.mkdirSync(ckpt, { recursive: true }) // exists
-    const missing = path.join(base, 't2i_adapter') // not created
+    fs.mkdirSync(ckpt, { recursive: true })
+    const missing = path.join(base, 't2i_adapter')
 
     holder.resolved = [
       {
@@ -134,7 +125,7 @@ describe('buildExtraModelPathsView — grouping', () => {
     expect(view.sections[0]!.isDefault).toBe(true)
     expect(view.sections[0]!.basePath).toBeNull()
     expect(view.sections[0]!.basePathExists).toBe(false)
-    expect(view.sections[0]!.dirs).toHaveLength(2) // both 'first' entries grouped
+    expect(view.sections[0]!.dirs).toHaveLength(2)
     expect(view.sections[1]!.dirs).toHaveLength(1)
   })
 })
@@ -170,7 +161,6 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
       'Permissive'
     ])
     expect(field.label).toBe('Manager Security Level')
-    // Guard against a raw key leaking into the UI if the locale entry is removed.
     expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerSecurityLevel'))
     expect(String(field.tooltip)).not.toContain('tooltips.')
   })
@@ -180,7 +170,6 @@ describe('buildLaunchSettingsFields - managerSecurityLevel (per-install)', () =>
     for (const opt of field.options ?? []) {
       expect(opt.description, `option ${opt.value} has no description`).toBeTruthy()
       expect(opt.description).toBe(lookupEnMessage(`common.managerSecurityLevel_${opt.value}_desc`))
-      // Guard against a raw key leaking into the UI if the locale entry is removed.
       expect(opt.description).not.toContain('common.')
       expect(opt.description).toContain('--listen')
     }
@@ -237,7 +226,6 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
       'Personal cloud'
     ])
     expect(field.label).toBe('Manager Network Mode')
-    // Guard against a raw key leaking into the UI if the locale entry is removed.
     expect(field.tooltip).toBe(lookupEnMessage('tooltips.managerNetworkMode'))
     expect(String(field.tooltip)).not.toContain('tooltips.')
   })
@@ -247,7 +235,6 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
     for (const opt of field.options ?? []) {
       expect(opt.description, `option ${opt.value} has no description`).toBeTruthy()
       expect(opt.description).toBe(lookupEnMessage(`common.managerNetworkMode_${opt.value}_desc`))
-      // Guard against a raw key leaking into the UI if the locale entry is removed.
       expect(opt.description).not.toContain('common.')
     }
   })
@@ -284,8 +271,6 @@ describe('buildLaunchSettingsFields - managerNetworkMode (per-install)', () => {
     const partition = fields.find((f) => f.id === 'browserPartition')
     expect(launchMode?.rowGroup).toBeTruthy()
     expect(partition?.rowGroup).toBe(launchMode?.rowGroup)
-    // A shared name across both pairs would merge them into one 4-wide row
-    // if they ever became adjacent.
     const security = fields.find((f) => f.id === 'managerSecurityLevel')
     expect(launchMode?.rowGroup).not.toBe(security?.rowGroup)
   })

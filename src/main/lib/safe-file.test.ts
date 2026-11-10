@@ -10,14 +10,6 @@ import {
   writeFileSafeAsync
 } from './safe-file'
 
-/**
- * Pins the `.bak` semantics that keep the startup-update loop-breaker marker
- * alive (issue #1367): transient locks are retried, a locked primary is served
- * from `.bak` WITHOUT restoring it (the primary is typically newer, so a
- * restore would roll back the most recent writes), and `.bak` is only restored
- * when the primary is genuinely missing or empty.
- */
-
 function errnoError(code: string): NodeJS.ErrnoException {
   const err = new Error(`fake ${code}`) as NodeJS.ErrnoException
   err.code = code
@@ -62,9 +54,6 @@ describe('writeFileSafe', () => {
 
     writeFileSafe(filePath, 'data', { durable: true })
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('data')
-    // The temp-file fsync must land BEFORE the rename publishes the file;
-    // fsyncing only after would leave a window where a power cut publishes
-    // unsynced bytes. (A post-rename directory fsync may add more entries.)
     expect(order[0]).toBe('fsync')
     expect(order).toContain('rename')
   })
@@ -107,7 +96,6 @@ describe('readFileSafe', () => {
     fs.writeFileSync(bakPath, 'backup')
     expect(readFileSafe(filePath, { restore: false })).toEqual({ kind: 'data', data: 'backup' })
     expect(fs.existsSync(filePath)).toBe(false)
-    // The default still restores.
     expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'backup' })
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('backup')
   })
@@ -141,21 +129,16 @@ describe('readFileSafe', () => {
       p: fs.PathOrFileDescriptor,
       opts?: unknown
     ) => {
-      if (p === filePath) throw errnoError('EPERM') // lock never clears
+      if (p === filePath) throw errnoError('EPERM')
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
     const copySpy = vi.spyOn(fs, 'copyFileSync')
 
-    // `primaryUnreadable` tells read-modify-write callers to fail closed:
-    // saving state derived from this stale backup would overwrite the newer
-    // locked primary once the lock clears.
     expect(readFileSafe(filePath)).toEqual({
       kind: 'data',
       data: 'stale backup',
       primaryUnreadable: true
     })
-    // The primary still exists and is newer - restoring .bak over it would
-    // roll back the most recent writes (the bug behind the update loop).
     expect(copySpy).not.toHaveBeenCalled()
     vi.restoreAllMocks()
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('newer primary')
@@ -182,8 +165,6 @@ describe('readFileSafe', () => {
 
   it('restores .bak over a genuinely missing primary and counts the fallback', () => {
     fs.writeFileSync(bakPath, 'backup')
-    // The counter is process-wide and monotonic, so assert the delta - it is
-    // the field signal (telemetry `bakFallbacks`) for issue #1367 machines.
     const before = getSafeFileDiagnostics().bakFallbacks
     expect(readFileSafe(filePath)).toEqual({ kind: 'data', data: 'backup' })
     expect(getSafeFileDiagnostics().bakFallbacks).toBe(before + 1)
@@ -202,15 +183,13 @@ describe('readFileSafe', () => {
   })
 
   it('reports unreadable - NOT absent - when the primary stays locked and no .bak exists', () => {
-    // The file's real content is unknown; treating it as absent would let a
-    // later save overwrite the intact file with reconstructed defaults.
     fs.writeFileSync(filePath, 'locked content')
     const realRead = fs.readFileSync.bind(fs) as typeof fs.readFileSync
     vi.spyOn(fs, 'readFileSync').mockImplementation(((
       p: fs.PathOrFileDescriptor,
       opts?: unknown
     ) => {
-      if (p === filePath) throw errnoError('EPERM') // lock never clears
+      if (p === filePath) throw errnoError('EPERM')
       return realRead(p, opts as BufferEncoding)
     }) as typeof fs.readFileSync)
 
@@ -258,6 +237,15 @@ describe('readFileSafeAsync', () => {
     expect(copySpy).not.toHaveBeenCalled()
     vi.restoreAllMocks()
     expect(fs.readFileSync(filePath, 'utf-8')).toBe('newer primary')
+  })
+
+  it('serves .bak for an absent primary without restoring it when asked not to', async () => {
+    fs.writeFileSync(bakPath, 'backup')
+    expect(await readFileSafeAsync(filePath, { restore: false })).toEqual({
+      kind: 'data',
+      data: 'backup'
+    })
+    expect(fs.existsSync(filePath)).toBe(false)
   })
 
   it('restores .bak over a genuinely missing primary and counts the fallback', async () => {

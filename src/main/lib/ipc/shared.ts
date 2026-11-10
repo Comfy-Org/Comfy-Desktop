@@ -1,6 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
+import { randomUUID } from 'crypto'
 import { EventEmitter } from 'events'
 import { app, ipcMain, dialog, shell, BrowserWindow, nativeTheme, session } from 'electron'
 import { execFile, spawn, execFileSync } from 'child_process'
@@ -29,6 +30,7 @@ import * as settings from '../../settings'
 import { defaultInstallDir, sanitizeDirName, allocateUniqueDir } from '../paths'
 import { download } from '../download'
 import { createCache } from '../cache'
+import { holdAgentPrefetch } from '../agentRequirementsLaunch'
 import { extractNested as extract } from '../extract'
 import { deleteDir, formatDeleteStatus } from '../delete'
 import { deleteAction, untrackAction } from '../actions'
@@ -124,8 +126,8 @@ import { getComfyArgsSchema, filterUnsupportedArgs } from '../comfy-args'
 import type { ComfyArgDef } from '../comfy-args'
 import { getComfyFeatureFlagRegistry } from '../comfy-feature-flags'
 import type { FeatureFlagRegistry } from '../comfy-feature-flags'
+import { sessionKindOf, type SessionKind } from '../../../shared/performanceTestSession'
 
-// Re-export frequently used imports so handler modules can import from shared
 export {
   path,
   fs,
@@ -271,8 +273,11 @@ export const RESERVED_ENV_VARS = new Set([
   'PYTHONIOENCODING',
   'PYTHONFAULTHANDLER',
   '__COMFY_CLI_SESSION__',
-  'CM_USE_PYGIT2'
+  'CM_USE_PYGIT2',
+  '__COMFYUI_DESKTOP_VERSION__'
 ])
+
+const DESKTOP_MANAGED_SOURCES = new Set(['standalone', 'comfybuilder'])
 export const SENSITIVE_ARG_RE = /^--(api[-_]?key|token|secret|password|auth)$/i
 
 export interface SessionInfo {
@@ -283,11 +288,8 @@ export interface SessionInfo {
   installationName: string
   sourceInstallationId?: string
   startedAt: number
-  /** Synchronously queue final telemetry before app-level shutdown drains the SDK. */
   flushTelemetry?: () => void
-  /** Latest accelerator details parsed from this session's ComfyUI startup logs. */
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
-  /** Core beta grants on this session's command line, for the settings view's beta-args pill. */
   coreBetaArgs?: readonly BetaArgView[]
 }
 
@@ -305,8 +307,6 @@ export interface StopCallbackInfo {
 
 export interface ExitCallbackInfo {
   installationId?: string
-  /** True when the process exited unexpectedly (non-zero code or a signal),
-   *  as opposed to a clean user-initiated stop. */
   crashed?: boolean
 }
 
@@ -315,13 +315,12 @@ export interface RestartCallbackInfo {
   process?: ChildProcess
 }
 
-/** Fired from `_addSession` on every ComfyUI instance boot; drives the
- *  main-process `instance_started` / `snapshot_history` telemetry. */
 export interface InstanceStartedCallbackInfo {
   installationId: string
   bootTimeMs?: number
   portRetries: number
   rebootRetries: number
+  sessionKind: SessionKind
 }
 
 export type LaunchCallback = (info: LaunchCallbackInfo) => void
@@ -341,8 +340,6 @@ export interface RegisterCallbacks {
   onComfyRestarted?: RestartCallback
   onModelFolderRelaunch?: ModelFolderRelaunchCallback
   onLocaleChanged?: LocaleCallback
-  /** Fires when the resolved theme flips. Index repaints install-less host title bars +
-   *  OS overlays; install-backed comfy windows track ComfyUI's own theme observer. */
   onThemeChanged?: ThemeChangedCallback
 }
 
@@ -365,26 +362,8 @@ export const _operationAborts = new Map<string, AbortController>()
 export const _runningSessions = new Map<string, SessionInfo>()
 export const _pendingPorts = new Map<number, string>()
 
-/**
- * Installs mid-launch (between `instance-launching` and `instance-started` /
- * `instance-launch-failed`), keyed by id → name. Mirrors the renderer's
- * `sessionStore.launchingInstances` so the picker popup (which can't subscribe to
- * `instance-launching` itself) and freshly-opened windows hydrate from a snapshot.
- */
 const _launchingInstances = new Map<string, { installationName: string }>()
 
-/**
- * Launch operations currently in flight, keyed by installation id, covering the
- * ENTIRE `handleLaunch` handler - from entry (before any prep work) until the
- * session registers or the handler returns. `_launchingInstances` only covers
- * the spawn->port-ready window; the handler does seconds of cancellable prep
- * (dir checks, interrupted-op recovery, arg-schema discovery, port probes)
- * before that marker, and a restart clicked in that window must still be able
- * to cancel the launch. `abort` is the launch's own controller (the same one
- * stored in `_operationAborts` once the launch claims the slot); `settled`
- * resolves when the handler has fully unwound - process killed, port
- * released, markers cleared - so `cancelLaunching` can await a safe relaunch.
- */
 interface ActiveLaunch {
   abort: AbortController
   settled: Promise<void>
@@ -392,7 +371,6 @@ interface ActiveLaunch {
 }
 const _activeLaunches = new Map<string, ActiveLaunch>()
 
-/** Register a launch operation at handler entry. Caller must pair with `_endLaunch`. */
 export function _beginLaunch(installationId: string): { abort: AbortController } {
   let resolveSettled!: () => void
   const settled = new Promise<void>((resolve) => {
@@ -407,8 +385,6 @@ export function _beginLaunch(installationId: string): { abort: AbortController }
   return launch
 }
 
-/** Unregister a launch operation; ownership-guarded and idempotent, so the
- *  success-path early end and the handler's finally can both call it. */
 export function _endLaunch(installationId: string, launch: { abort: AbortController }): void {
   const current = _activeLaunches.get(installationId)
   if (current && current.abort === launch.abort) {
@@ -421,21 +397,17 @@ export function _hasActiveLaunch(installationId: string): boolean {
   return _activeLaunches.has(installationId)
 }
 
-/**
- * Internal bus emitted whenever the launching set or `_runningSessions` mutates, so the
- * picker popup repaints its "Current" pill / running-dot live during the launching window.
- */
+export function _getActiveLaunchIds(): string[] {
+  return Array.from(_activeLaunches.keys())
+}
+
 export const sessionLifecycleEvents = new EventEmitter()
 
-/** A snapshot restore failed after the install itself succeeded (#1255): the
- *  install is bootable, so surface the failure to the caller and record it in
- *  the app log (#1250) instead of condemning the install. */
 export function snapshotRestoreFailureResult(
   installationId: string,
   restoreError: string
 ): { ok: false; message: string } {
   const message = i18n.t('standalone.snapshotRestoreAfterInstallFailed', { message: restoreError })
-  // Best-effort: a diagnostic write must never mask the failure it records.
   try {
     appendLog(installationId, `\n${message}\n`)
   } catch (err) {
@@ -448,8 +420,6 @@ export function _getLaunchingInstallationIds(): string[] {
   return Array.from(_launchingInstances.keys())
 }
 
-/** Snapshot of launching installs (id + name), so a window opened mid-launch can
- *  hydrate `sessionStore.launchingInstances` instead of missing the live event. */
 export function _getLaunchingInstances(): { installationId: string; installationName: string }[] {
   return Array.from(_launchingInstances.entries()).map(
     ([installationId, { installationName }]) => ({
@@ -459,7 +429,6 @@ export function _getLaunchingInstances(): { installationId: string; installation
   )
 }
 
-/** Mark `installationId` mid-launch and broadcast `instance-launching`. Idempotent. */
 export function _markLaunching(installationId: string, installationName: string): void {
   const wasNew = !_launchingInstances.has(installationId)
   _launchingInstances.set(installationId, { installationName })
@@ -467,56 +436,35 @@ export function _markLaunching(installationId: string, installationName: string)
   if (wasNew) sessionLifecycleEvents.emit('changed')
 }
 
-/** Failure-path clear for `_markLaunching`; broadcasts `instance-launch-failed`. The success
- *  path clears inline in `_addSession`. */
 export function _clearLaunchingFailed(installationId: string): void {
   const had = _launchingInstances.delete(installationId)
   _broadcastToRenderer('instance-launch-failed', { installationId })
   if (had) sessionLifecycleEvents.emit('changed')
 }
 
-/**
- * Installs currently being stopped (between `instance-stopping` and `instance-stopped`).
- * Lets a window opened mid-stop hydrate the "Stopping…" state instead of missing the
- * one-shot broadcast. Maintained by `stopRunning`; read via `_isStopping`. Exported
- * (like `_runningSessions`) so unit tests can seed body-mode scenarios.
- */
 export const _stoppingInstallationIds = new Set<string>()
 
 export function _getStoppingInstallationIds(): string[] {
   return Array.from(_stoppingInstallationIds)
 }
 
-/** O(1) membership test for the body-mode computation, which runs on every
- *  layout pass and shouldn't allocate an array. */
 export function _isStopping(installationId: string): boolean {
   return _stoppingInstallationIds.has(installationId)
 }
 
 export interface PickerOperationStatus {
-  /** Current phase label. Empty string while not yet started. */
   status: string
-  /** 0–100, or -1 for indeterminate. */
   percent: number
-  /** Download/transfer speed in bytes per second, if known. */
   speedBytesPerSec?: number | null
-  /** True once the operation resolved (success, error, or cancel). */
   done: boolean
-  /** null while in-flight; true/false after done. */
   ok: boolean | null
-  /** Error message when done && !ok. */
   error: string | null
-  /** Whether the operation can be cancelled. */
   cancellable: boolean
-  /** Friendly title (e.g. "Update ComfyUI — My Install"). */
   title: string
-  /** The action id — preserved so the picker can retry on error. */
   actionId: string
   actionData?: Record<string, unknown>
 }
 
-/** Per-install state for background picker ops, pushed into the picker snapshot so the
- *  renderer gets live progress without its own IPC listener. */
 export const _activeOperationStatus = new Map<string, PickerOperationStatus>()
 
 export function setCallbacks(callbacks: RegisterCallbacks): void {
@@ -538,35 +486,12 @@ export async function syncOemSeedBestEffort(): Promise<void> {
   }
 }
 
-/**
- * Classify an install directory, keeping "gone" distinct from "empty":
- *  - `missing`      — the path does not exist (ENOENT), e.g. renamed folder or
- *                     an unplugged removable / disconnected network drive.
- *  - `no-permission`— the path exists but access is denied (EACCES/EPERM); a
- *                     real, persistent problem distinct from "not found".
- *  - `inaccessible` — the path exists but can't be read for a transient reason
- *                     (I/O error, or a probe that timed out on a slow drive).
- *  - `empty`        — readable but holds only ignorable bookkeeping files; the
- *                     leftover of an aborted install, safe to reclaim.
- *  - `populated`    — readable with real content.
- *
- * Only an `empty` dir may be discarded as an aborted install; a `missing`/
- * `no-permission`/`inaccessible` dir must be kept so a temporarily-offline drive
- * doesn't lose the tracked instance and its settings (issue #1155).
- */
 export type InstallDirState = 'missing' | 'no-permission' | 'inaccessible' | 'empty' | 'populated'
 
-/** Shared by the sync and async classifiers so they can't drift. */
 function classifyReadableEntries(entries: string[]): 'empty' | 'populated' {
   return entries.every((name) => IGNORE_FILES.has(name)) ? 'empty' : 'populated'
 }
 
-/** Map a readdir failure to a dir state. ENOENT means the folder is genuinely
- *  gone (renamed / unplugged); EACCES/EPERM means it exists but we're denied
- *  access (a real, persistent problem distinct from "not found"); anything else
- *  (EIO, EBUSY, a hung network mount surfaced as a timeout, …) is a transient
- *  `inaccessible` that may clear on its own, so callers must not treat it as
- *  fatal. Shared by the sync and async classifiers so they can't drift. */
 function classifyDirError(e: unknown): 'missing' | 'no-permission' | 'inaccessible' {
   const code = (e as NodeJS.ErrnoException | null)?.code
   if (code === 'ENOENT') return 'missing'
@@ -588,20 +513,10 @@ export function isEffectivelyEmptyInstallDir(dirPath: string): boolean {
   return state === 'missing' || state === 'empty'
 }
 
-/** Single source of the "folder is flagged unavailable in the dashboard" rule
- *  for the renderer's danger pill. Buckets `missing`, `no-permission`, and
- *  `inaccessible` together; the pill's label/detail still distinguish them.
- *  NOT the launch-block rule — launch only blocks on the persistent states
- *  (`missing`/`no-permission`), letting the transient `inaccessible` through. */
 export function isInstallDirUnavailable(state: InstallDirState | undefined): boolean {
   return state === 'missing' || state === 'inaccessible' || state === 'no-permission'
 }
 
-/** The danger pill the dashboard renders for a dir state. `missing` and the
- *  transient `inaccessible` share the "not found" pill; `no-permission` gets its
- *  own. The change-detection in `refreshInstallDirStates()` compares THIS (not
- *  the unavailable boolean) so a `missing`↔`no-permission` flip — same boolean,
- *  different pill — still re-broadcasts and updates the label. */
 export type InstallDirDashboardKind = 'available' | 'not-found' | 'no-permission'
 export function installDirDashboardKind(
   state: InstallDirState | undefined
@@ -611,12 +526,6 @@ export function installDirDashboardKind(
   return 'available'
 }
 
-/** Async `installDirState` that can't hang the caller on a dead network drive:
- *  a probe that doesn't settle within the timeout is reported `inaccessible`.
- *  Generous (8s) because a healthy-but-slow network/removable drive can be slow
- *  to wake, and a false `inaccessible` timeout is exactly what we want to avoid;
- *  the only cost is launch waiting this long before proceeding on a truly-dead
- *  path (which then falls through, never blocks). */
 const _DIR_STATE_PROBE_TIMEOUT_MS = 8000
 export async function installDirStateAsync(dirPath: string): Promise<InstallDirState> {
   if (!dirPath) return 'missing'
@@ -638,11 +547,6 @@ export async function installDirStateAsync(dirPath: string): Promise<InstallDirS
   }
 }
 
-/** Cached availability of each local install's directory, keyed by install id.
- *  Populated asynchronously by `refreshInstallDirStates()` so the synchronous
- *  renderer enrichment can surface an "offline" indicator without ever doing a
- *  (potentially blocking) filesystem read on the UI path. Only local sources
- *  (`skipInstall !== true`) with an `installPath` are tracked. */
 const _installDirStateCache = new Map<string, InstallDirState>()
 
 export function getCachedInstallDirState(id: string): InstallDirState | undefined {
@@ -650,10 +554,6 @@ export function getCachedInstallDirState(id: string): InstallDirState | undefine
 }
 
 let _refreshInstallDirStatesInFlight: Promise<void> | null = null
-/** Single-flight refresh of `_installDirStateCache` for all local installs;
- *  broadcasts `installations-changed` only when an install's rendered pill kind
- *  changes so the dashboard re-pulls and the indicator appears/clears/relabels
- *  on its own. */
 export function refreshInstallDirStates(): Promise<void> {
   if (_refreshInstallDirStatesInFlight) return _refreshInstallDirStatesInFlight
   _refreshInstallDirStatesInFlight = (async (): Promise<void> => {
@@ -666,8 +566,6 @@ export function refreshInstallDirStates(): Promise<void> {
           source && !source.skipInstall && typeof inst.installPath === 'string' && inst.installPath
         )
       })
-      // Probe in parallel so a few offline paths don't serialize their timeouts
-      // (worst-case refresh stays ~one timeout, not one per install).
       const probed = await Promise.all(
         local.map(async (inst) => ({
           id: inst.id,
@@ -679,13 +577,8 @@ export function refreshInstallDirStates(): Promise<void> {
         tracked.add(id)
         const prev = _installDirStateCache.get(id)
         _installDirStateCache.set(id, state)
-        // Compare the rendered pill, not the unavailable boolean: a
-        // missing↔inaccessible flip is the same pill (no broadcast → no refresh
-        // loop), but missing↔no-permission flips the label and must broadcast.
         if (installDirDashboardKind(prev) !== installDirDashboardKind(state)) changed = true
       }
-      // Drop cache entries for installs that are gone/no longer local. Their
-      // pill left with them, so this needs no broadcast of its own.
       for (const id of [..._installDirStateCache.keys()]) {
         if (!tracked.has(id)) _installDirStateCache.delete(id)
       }
@@ -700,9 +593,6 @@ export function refreshInstallDirStates(): Promise<void> {
 }
 
 export function openPath(targetPath: string): Promise<string> {
-  // E2E asserts the IPC fired, not the OS side effect; skipping the real open
-  // also keeps headless Linux CI from hanging on dbus-send/xdg-open children
-  // that block app exit.
   if (process.env['E2E'] === '1') return Promise.resolve('')
   if (process.platform === 'linux') {
     return new Promise((resolve) => {
@@ -730,9 +620,6 @@ export function openPath(targetPath: string): Promise<string> {
   return shell.openPath(targetPath)
 }
 
-// Memoized: the version cannot change mid-session, and the unpackaged-dev
-// fallback below is a SYNCHRONOUS git spawn that would otherwise block the
-// main thread on every telemetry event and IPC call that stamps a version.
 let _appVersion: string | null = null
 
 export function getAppVersion(): string {
@@ -740,7 +627,6 @@ export function getAppVersion(): string {
   let version = app.getVersion()
   if (!app.isPackaged) {
     try {
-      // Restrict to release tags so unrelated tags (e.g. `bootstrap-v1`) don't bleed in.
       version =
         execFileSync('git', ['describe', '--tags', '--always', '--match', 'v[0-9]*'], {
           cwd: __dirname,
@@ -784,27 +670,10 @@ export async function copyBrowserPartition(
   }
 }
 
-/** Delete the on-disk browser partition for a deleted install. Unique-partition
- *  installs each own a `persist:${id}` bucket under userData/Partitions/<id>
- *  (created lazily by Electron, deep-copied on install-copy); nothing else ever
- *  reuses it, so it must be removed when the install is deleted or it leaks
- *  forever. Never touches `persist:shared` (Partitions/shared), the bucket all
- *  shared-partition installs collectively own. Best-effort: clears the session
- *  first to release file handles (Windows locks LevelDB/IndexedDB while open). */
 export async function deleteBrowserPartition(id: string, browserPartition?: string): Promise<void> {
-  // Guard the shared bucket explicitly (ids are generated, so this never matches
-  // a real install, but it makes the invariant impossible to violate).
   if (id === 'shared') return
   const partitionDir = path.join(app.getPath('userData'), 'Partitions', id)
-  // The browserPartition setting is user-editable, so an install created as
-  // 'unique' (which already created Partitions/<id>) may now read as 'shared'.
-  // Clean up whenever the per-install dir exists, not just when the current
-  // setting is 'unique', or a toggled install's partition leaks forever.
   if (browserPartition !== 'unique' && !fs.existsSync(partitionDir)) return
-  // Best-effort, fully bounded: this runs after the install record is already
-  // removed, so it must never hang the delete operation or hold its lock.
-  // clearStorageData has no hard completion guarantee, so race it against a
-  // timeout; rm fails fast (force) with a few transient-lock retries.
   try {
     const cleared = session.fromPartition(`persist:${id}`).clearStorageData()
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
@@ -824,14 +693,6 @@ export async function deleteBrowserPartition(id: string, browserPartition?: stri
   }
 }
 
-/** Reclaim leftover per-install browser partitions at startup. Each unique
- *  install owns `Partitions/<id>`; deleting an install whose session is still
- *  alive can't remove that dir on Windows (the live session holds file locks),
- *  so the inline cleanup in deleteBrowserPartition can leak it. At startup no
- *  install session exists yet, so removing any `Partitions/inst-*` whose id is
- *  not a current install reliably reclaims those (and crash leftovers). Only
- *  touches install-id-shaped dirs; never `shared` (the collective bucket) or any
- *  other session dir. */
 export function sweepOrphanPartitions(knownIds: ReadonlySet<string>): void {
   const partitionsDir = path.join(app.getPath('userData'), 'Partitions')
   let names: string[]
@@ -841,7 +702,7 @@ export function sweepOrphanPartitions(knownIds: ReadonlySet<string>): void {
     return
   }
   for (const name of names) {
-    if (!name.startsWith('inst-')) continue // only per-install partitions
+    if (!name.startsWith('inst-')) continue
     if (knownIds.has(name)) continue
     try {
       fs.rmSync(path.join(partitionsDir, name), {
@@ -874,20 +735,25 @@ export async function performCopy(
 
   try {
     sendProgress('copy', { percent: 0, status: i18n.t('actions.copyingFiles') })
-    await copyDirWithProgress(
-      inst.installPath,
-      destPath,
-      (copied, total, elapsedSecs, etaSecs) => {
-        const percent = Math.round((copied / total) * 100)
-        const elapsed = formatTime(elapsedSecs)
-        const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
-        sendProgress('copy', {
-          percent,
-          status: `${i18n.t('actions.copyingFiles')}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-        })
-      },
-      { signal }
-    )
+    const release = await holdAgentPrefetch(inst.installPath)
+    try {
+      await copyDirWithProgress(
+        inst.installPath,
+        destPath,
+        (copied, total, elapsedSecs, etaSecs) => {
+          const percent = Math.round((copied / total) * 100)
+          const elapsed = formatTime(elapsedSecs)
+          const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
+          sendProgress('copy', {
+            percent,
+            status: `${i18n.t('actions.copyingFiles')}  ${copied} / ${total}  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+          })
+        },
+        { signal }
+      )
+    } finally {
+      release()
+    }
 
     const source = sourceMap[inst.sourceId]
     if (source?.fixupCopy) {
@@ -910,12 +776,9 @@ export async function performCopy(
       ...inherited
     } = inst
 
-    // Adopted copies are self-contained after `fixupCopy`. Re-home adopted-* fields to the
-    // new install so adopted-aware code keeps working; drop the metadata-only "where did
-    // this come from" fields since they describe the original adoption, not the copy.
     let recordData: Record<string, unknown> = {
       ...inherited,
-      name: '', // overwritten below
+      name: '',
       installPath: destPath,
       status: 'installed',
       seen: false,
@@ -926,8 +789,6 @@ export async function performCopy(
       copyReason
     }
 
-    // A promoted download target that names the source's own models dir is an
-    // absolute path inside the source install; point the copy at its own.
     if (typeof recordData.modelDirsPrimary === 'string') {
       recordData.modelDirsPrimary = rehomeOwnModelsPrimary(
         recordData.modelDirsPrimary,
@@ -960,10 +821,6 @@ export async function performCopy(
         adoptedAt: new Date().toISOString(),
         adoptedBaseDir: newComfyUI,
         adoptedPythonPath: newAdoptedPython,
-        // Use per-install I/O so launches write to the deep-copied data, not the
-        // legacy workspace. inputDir/outputDir are left unset so launch falls
-        // back to this copy's own `<comfyDir>/{input,output}` — keeping the
-        // record clone-safe (no absolute path pointing at a specific install).
         useSharedInput: false,
         useSharedOutput: false
       }
@@ -989,7 +846,7 @@ export async function performCopy(
 }
 
 export function createSessionPath(): string {
-  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}`)
+  return path.join(os.tmpdir(), `comfyui-desktop-2-${Date.now()}-${randomUUID()}`)
 }
 
 export function sanitizeEnvVars(raw: unknown): Record<string, string> {
@@ -1009,26 +866,20 @@ export function buildLaunchEnv(
   sessionPath?: string
 ): Record<string, string | undefined> {
   const userEnvVars = sanitizeEnvVars(inst.envVars)
-  return {
+  const desktopManaged = DESKTOP_MANAGED_SOURCES.has(inst.sourceId)
+  const env: Record<string, string | undefined> = {
     ...process.env,
     ...userEnvVars,
     PYTHONIOENCODING: 'utf-8',
-    // Install CPython's fatal-fault handler so a native crash (segfault /
-    // access violation in a C-extension) dumps the Python traceback — i.e. the
-    // import that died — to stderr instead of vanishing behind a bare
-    // `0xC0000005` exit code. We capture that stderr into the crash buffer.
-    // Cost is one-time handler install; zero overhead on the normal path.
     PYTHONFAULTHANDLER: '1',
     ...(sessionPath ? { __COMFY_CLI_SESSION__: sessionPath } : {}),
-    // Only force ComfyUI-Manager onto the pygit2 backend when a developer
-    // explicitly opts in via COMFY_FORCE_PYGIT2=1. Otherwise leave CM_USE_PYGIT2
-    // unset so Manager's git_compat prefers system git when available (honoring
-    // the user's full git config: proxy, insteadOf, ssh keys), and auto-falls
-    // back to its bundled pygit2 only when system git is absent.
+    ...(desktopManaged ? { __COMFYUI_DESKTOP_VERSION__: getAppVersion() } : {}),
     ...(inst.sourceId === 'standalone' && process.env.COMFY_FORCE_PYGIT2 === '1'
       ? { CM_USE_PYGIT2: '1' }
       : {})
   }
+  if (!desktopManaged) delete env.__COMFYUI_DESKTOP_VERSION__
+  return env
 }
 
 export function checkRebootMarker(sessionPath: string): boolean {
@@ -1050,8 +901,6 @@ export function _releasePort(port: number): void {
   _pendingPorts.delete(port)
 }
 
-// Re-exported from ./broadcast so leaf modules can register without importing this file's
-// whole IPC handler universe.
 export {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,
@@ -1071,12 +920,7 @@ export function _addSession(
     coreBetaArgs
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
-  /** Spawn-retry counts for THIS boot, folded onto the broadcast so the
-   *  renderer's `instance_started` telemetry can carry them without a
-   *  separate `server_ready` event. Omitted for the remote / skip-port paths
-   *  (no spawn retry there). */
   retries?: { portRetries: number; rebootRetries: number },
-  /** Durable installation identity when the runtime session uses an isolated key. */
   sourceInstallationId: string = installationId
 ): void {
   _runningSessions.set(installationId, {
@@ -1091,8 +935,6 @@ export function _addSession(
     coreBetaArgs,
     startedAt: Date.now()
   })
-  // Clear the launching marker first so subscribers never double-count this id across the
-  // transition.
   _launchingInstances.delete(installationId)
   _broadcastToRenderer('instance-started', {
     installationId,
@@ -1105,18 +947,15 @@ export function _addSession(
     rebootRetries: retries?.rebootRetries ?? 0
   })
   sessionLifecycleEvents.emit('changed')
-  // Per-instance-boot telemetry (instance_started / snapshot_history), emitted
-  // from main since Desktop 2 tears the panel down before the old renderer
-  // callback could fire. Fire-and-forget; never blocks the launch.
   if (_onInstanceStarted) {
     _onInstanceStarted({
       installationId: sourceInstallationId,
       bootTimeMs,
       portRetries: retries?.portRetries ?? 0,
-      rebootRetries: retries?.rebootRetries ?? 0
+      rebootRetries: retries?.rebootRetries ?? 0,
+      sessionKind: sessionKindOf(installationId)
     })
   }
-  // Stamps lastLaunchedAt + per-category recency so those surfaces needn't scan every record.
   installations
     .markLaunched(sourceInstallationId, (inst) => sourceMap[inst.sourceId]?.category)
     .then(() => _broadcastToRenderer('installations-changed', {}))
@@ -1128,9 +967,6 @@ export function _addSession(
 export function _removeSession(installationId: string): void {
   const session = _runningSessions.get(installationId)
   if (!session) return
-  // The session's output stream has ended: flush its buffered tail so a final
-  // unterminated line is durable and a later run for this id can't be appended
-  // onto it.
   flushOperationOutput(installationId)
   if (session.port) removePortLock(session.port)
   _runningSessions.delete(installationId)
@@ -1157,14 +993,6 @@ export function hasRunningSessionForInstallation(installationId: string): boolea
   ).some(Boolean)
 }
 
-/**
- * Build the installation snapshot/disk context for the
- * `get-installation-dd-context` IPC handler and the main-process
- * `instance_started` / `snapshot_history` telemetry. Returns the full latest
- * snapshot plus reconstructable per-transition diffs (capped to
- * `MAX_CONTEXT_BYTES`); callers scrub PII at the emit site. `null` when the
- * install is missing or has no install path.
- */
 export async function buildInstallationDdContext(installationId: string) {
   const MAX_CONTEXT_BYTES = 200 * 1024
   const inst = await installations.get(installationId)
@@ -1201,9 +1029,6 @@ export async function buildInstallationDdContext(installationId: string) {
           trigger: latest.trigger,
           label: latest.label,
           comfyui: {
-            // `ref`/`releaseTag` are static manifest values (the version the env
-            // shipped with) and don't move on in-place updates; read
-            // `formattedVersion` (resolved from `commit`) for what's running.
             ref: latest.comfyui.ref,
             commit: latest.comfyui.commit,
             releaseTag: latest.comfyui.releaseTag,
@@ -1261,8 +1086,6 @@ export async function buildInstallationDdContext(installationId: string) {
       updateChannelChanged: diff.updateChannelChanged
     }
     if (diff.comfyui) {
-      // `formattedVersion` is the resolved version per side; `ref` is the static
-      // manifest value. See the latest-snapshot comfyui note above.
       entry.comfyui = {
         from: {
           ref: diff.comfyui.from.ref,
@@ -1292,12 +1115,6 @@ export async function buildInstallationDdContext(installationId: string) {
   return result
 }
 
-// Git queries run through a bundled-Python (pygit2) subprocess per call, and
-// on Windows every process launch blocks the main thread in CreateProcess for
-// tens of milliseconds. A user with many installs would otherwise trigger a
-// burst of dozens of concurrent spawns at boot that freezes every window for
-// seconds, so the background version pass is capped to a small pool - it is a
-// ratchet with a 10-minute TTL, not latency-sensitive.
 const GIT_RESOLVE_CONCURRENCY = 1
 
 export async function _fetchAndResolveLatestTags(
@@ -1307,10 +1124,7 @@ export async function _fetchAndResolveLatestTags(
   await runPool(installs, GIT_RESOLVE_CONCURRENCY, async ({ comfyuiDir }) => {
     try {
       await ensureRemoteUrl(comfyuiDir, mirrorEnabled)
-    } catch {
-      // Best-effort: a repo whose remote cannot be reconciled still resolves
-      // against whatever tags it already has locally.
-    }
+    } catch {}
   })
 
   const originGroups = new Map<string, string[]>()
@@ -1332,16 +1146,11 @@ export async function _fetchAndResolveLatestTags(
       const sha = await revParseRef(representative, tagName)
       if (!sha) return
       result.set(origin, { name: tagName, sha })
-    } catch {
-      // Best-effort (e.g. offline): installs on this origin keep their
-      // stored versions; the TTL retries later.
-    }
+    } catch {}
   })
   return result
 }
 
-// Single-flight + TTL guard for the background resolver invoked from `get-installations`, so
-// repeated UI fetches don't churn the bundled Python interpreter with pygit2 bursts.
 let _resolveVersionsInFlight: Promise<void> | null = null
 let _lastResolveVersionsAt = 0
 const RESOLVE_VERSIONS_TTL_MS = 10 * 60 * 1000
@@ -1375,25 +1184,15 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
     const origin = readGitRemoteUrl(comfyuiDir)
     const override = origin ? tagOverrides.get(origin) : undefined
     try {
-      // Read actual HEAD; it may differ from cv.commit after external changes (manual pull, checkout).
       const actualHead = readGitHead(comfyuiDir) || cv.commit
 
       const resolved = await resolveLocalVersion(comfyuiDir, actualHead, undefined, override)
 
-      // Downgrade ratchet: tag-resolution can transiently fail and return a bare `{ commit }`.
-      // Persisting it would clobber a populated `{ commit, baseTag, commitsAhead }` for the
-      // same commit, so bail; a genuinely-new commit still writes through.
       if (cv?.baseTag && !resolved.baseTag && resolved.commit === cv.commit) {
         return
       }
       const resolvedStr = formatComfyVersion(resolved, 'short')
       const storedStr = formatComfyVersion(cv, 'short')
-      // `formatComfyVersion` ignores `baseTagVerified`, so without the second term a record
-      // written before that field existed would keep its fail-closed absence forever on an
-      // install whose displayed version never changes. Re-resolving is the only thing that
-      // can establish it, and the beta-grant gate refuses an unverified base. `ancestorTag` is
-      // the same case one field over: it is what the gate measures when the label is
-      // unverified, and a record written before it existed changes in no other field.
       const versionChanged =
         resolvedStr !== storedStr ||
         resolved.baseTagVerified !== cv.baseTagVerified ||
@@ -1424,9 +1223,7 @@ export async function _resolveAndBroadcastVersions(list: InstallationRecord[]): 
         await installations.update(inst.id, patch)
         updates.push({ id: inst.id, version: resolvedStr })
       }
-    } catch {
-      // ignore - keep stored version
-    }
+    } catch {}
   })
   if (updates.length > 0) {
     _broadcastToRenderer('installations-versions-updated', { updates })
@@ -1467,12 +1264,9 @@ export async function migrateDefaults(): Promise<void> {
 }
 
 export function resolveTheme(): ResolvedTheme {
-  // App is dark-only — ignore the `theme` setting and OS appearance.
   return 'dark'
 }
 
-// Single-flight: overlapping calls (boot, periodic timer, manual refresh) share one run
-// rather than firing parallel git/pygit2 bursts.
 let _checkInstallationUpdatesInFlight: Promise<void> | null = null
 
 export function checkInstallationUpdates(): Promise<void> {
@@ -1513,7 +1307,6 @@ async function _enrichLatestCommitsAhead(): Promise<void> {
   }
 }
 
-/** Helper to create a sendProgress callback from an IPC event sender */
 export function makeSendProgress(
   sender: Electron.WebContents,
   installationId: string
@@ -1525,14 +1318,11 @@ export function makeSendProgress(
   }
 }
 
-/** Helper to create a sendOutput callback from an IPC event sender */
 export function makeSendOutput(
   sender: Electron.WebContents,
   installationId: string
 ): (text: string) => void {
   return (text: string): void => {
-    // Strip ANSI: these are plain-text surfaces. The xterm.js terminal keeps
-    // its colors via the separate `terminal-output` channel.
     const clean = stripAnsi(text)
     try {
       if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text: clean })
@@ -1541,15 +1331,6 @@ export function makeSendOutput(
   }
 }
 
-/**
- * Stop running session(s) and kill their process tree(s).
- *
- * @param onEnterStopping Fires once an install is flagged stopping, before the
- *   slow `killProcessTree` await. The interactive `stop-comfyui` handler uses it
- *   to show the "Stopping…" panel up front (avoiding a black flash mid-kill);
- *   quit/detach/update callers omit it so the primitive stays free of host-
- *   layout side effects.
- */
 export async function stopRunning(
   installationId?: string,
   onEnterStopping?: (info: { installationId: string }) => void
@@ -1561,15 +1342,11 @@ export async function stopRunning(
     _broadcastToRenderer('instance-stopping', { installationId })
     onEnterStopping?.({ installationId })
     if (session.port) removePortLock(session.port)
-    // Before the kill: quit does not await it, so the record may outlive this Desktop and
-    // must say the process was already being stopped.
     markStopRequested(installationId)
     _runningSessions.delete(installationId)
     if (session.proc && !session.proc.killed) {
       await killProcessTree(session.proc)
     }
-    // Flush after the kill so shutdown output emitted while dying is captured
-    // and can't bleed into the next run for this id.
     flushOperationOutput(installationId)
     _stoppingInstallationIds.delete(installationId)
     _broadcastToRenderer('instance-stopped', { installationId })
@@ -1593,8 +1370,6 @@ export async function stopRunning(
       }
     }
     await Promise.all(kills)
-    // Flush after the kills so shutdown output is captured and can't bleed
-    // into the next run for these ids.
     for (const [id] of sessions) {
       flushOperationOutput(id)
     }
@@ -1606,34 +1381,11 @@ export async function stopRunning(
   }
 }
 
-/**
- * Abort an in-flight launch operation and wait for its teardown to drain.
- * Restart flows need this: `stopRunning` only knows registered sessions, so a
- * booting install has nothing to stop - its process is owned by the launch
- * operation, which must be aborted and allowed to kill the process tree and
- * release its port before a relaunch can pass the in-flight-operation guard
- * in `handleLaunch`.
- *
- * Targets `_activeLaunches`, which covers the ENTIRE launch handler - a
- * restart clicked during pre-spawn prep (dir checks, recovery, arg-schema
- * discovery, port probes) cancels just as reliably as one clicked during the
- * spawn->port-ready wait. It never touches `_operationAborts` directly, so a
- * non-launch operation (install / update / delete) can never be aborted by a
- * restart.
- *
- * Returns true when a launch was cancelled and fully torn down, false when
- * no launch was in flight (already running, or stopped). `settled` resolves
- * only after the handler has fully unwound - process killed, port released,
- * markers cleared - so a caller can relaunch immediately on true.
- */
 export async function cancelLaunching(
   installationId: string,
   timeoutMs = 60_000
 ): Promise<boolean> {
   const launch = _activeLaunches.get(installationId)
-  // A registered session means the boot already completed - the launch
-  // handler may still be running post-launch work, but the restart path
-  // owns a running session via `stopRunning`, not via launch cancellation.
   if (!launch || _runningSessions.has(installationId)) return false
   launch.abort.abort()
   const timedOut = Symbol('timeout')
@@ -1658,10 +1410,6 @@ export function getSessionProcess(installationId: string): ChildProcess | null {
   return _runningSessions.get(installationId)?.proc ?? null
 }
 
-/** Epoch ms when the running session was registered (`_addSession`), i.e. the
- *  server-ready moment. Used by the canvas-rendered telemetry to measure
- *  server-ready → first canvas paint. `null` if no session is running for the
- *  id (e.g. the page reloaded after a stop). */
 export function getSessionStartedAt(installationId: string): number | null {
   return _runningSessions.get(installationId)?.startedAt ?? null
 }
@@ -1689,9 +1437,6 @@ export async function getActiveDetails(): Promise<QuitActiveItem[]> {
   return items
 }
 
-/** Test-only: register a synthetic running session without spawning ComfyUI. Mirrors
- *  `_addSession`'s side effects so the REQUIRES_STOPPED guard fires; `stopRunning` handles
- *  the null `proc`. Called only via `__e2e.seedRunningSession`. */
 export function _test_addRunningSession(
   installationId: string,
   installationName: string,
@@ -1717,7 +1462,6 @@ export function _test_addRunningSession(
   })
 }
 
-/** Test-only: drop every synthetic session, broadcasting `instance-stopped` per entry. */
 export function _test_clearRunningSessions(): void {
   const ids = Array.from(_runningSessions.keys())
   _runningSessions.clear()
@@ -1728,21 +1472,14 @@ export function _test_clearRunningSessions(): void {
 
 export function cancelAll(): void {
   for (const [id, abort] of _operationAborts) {
-    // A booting launch's child is killed by its own abort handler, which quit does not wait
-    // for; the record says it was asked to stop.
     markStopRequested(id)
     abort.abort()
   }
   _operationAborts.clear()
-  // `before-quit` starts draining PostHog before asynchronous process kills
-  // settle. Queue each session's final summary synchronously so shutdown cannot
-  // clear the client before the process-exit handlers get a chance to flush.
   for (const session of _runningSessions.values()) {
     try {
       session.flushTelemetry?.()
-    } catch {
-      // Telemetry must never block application teardown.
-    }
+    } catch {}
   }
   void stopRunning()
 }

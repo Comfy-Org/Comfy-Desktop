@@ -1,11 +1,3 @@
-/**
- * Cloud user-tier cache. Holds the signed-in customer's subscription tier for billing
- * telemetry and free-tier offer UI.
- *
- * Sourced from comfy-api `GET /customers/me` (via the cloud webContents' Firebase token) and
- * persisted to `userData/cloud-user-tier.json` so the next launch's first render sees it.
- * Anomalies leave the cache alone rather than clobber a known-paid tier.
- */
 import { app, type WebContents } from 'electron'
 import * as fs from 'fs/promises'
 import * as path from 'path'
@@ -17,7 +9,6 @@ import {
 import * as telemetry from './telemetry'
 import type { CloudUserTier } from '../../types/ipc'
 
-/** Subscription tier names that map to `paid`; anything else (FREE, missing, malformed) maps to `free`. */
 const PAID_TIER_NAMES: ReadonlySet<string> = new Set([
   'STANDARD',
   'CREATOR',
@@ -38,7 +29,6 @@ function getPersistPath(): string {
   return persistPath
 }
 
-/** Boot-time read of the persisted tier. Idempotent; never rejects (missing/malformed stays `'unknown'`). */
 export function initUserTier(): Promise<void> {
   if (initPromise) return initPromise
   initPromise = (async () => {
@@ -53,10 +43,9 @@ export function initUserTier(): Promise<void> {
       ) {
         cached = parsed.tier
       }
-    } catch {
-      // first launch, missing file, or corrupt — stay 'unknown'
-    }
+    } catch {}
 
+    telemetry.setFlagEvaluationUserTier(cached)
     console.log('[user-tier] init: persisted=', cached)
   })()
   return initPromise
@@ -70,14 +59,11 @@ export async function getUserTierAsync(): Promise<CloudUserTier> {
   if (initPromise) {
     try {
       await initPromise
-    } catch {
-      /* keep cached */
-    }
+    } catch {}
   }
   return cached
 }
 
-/** Update cache + persisted file from a raw `subscription_tier`; null/missing → `free`. No-op when unchanged. */
 async function setTier(rawTierName: string | null | undefined): Promise<void> {
   const next: CloudUserTier =
     typeof rawTierName === 'string' && PAID_TIER_NAMES.has(rawTierName.toUpperCase())
@@ -86,10 +72,7 @@ async function setTier(rawTierName: string | null | undefined): Promise<void> {
   if (next === cached) return
   const previous = cached
   cached = next
-  // Emit only on a real transition between two known tiers. The first
-  // resolution out of `unknown` is hydration, not a change, so it is not a
-  // conversion signal. A `free → paid` flip shortly after
-  // `billing.checkout_returned` is the desktop-visible conversion.
+  telemetry.setFlagEvaluationUserTier(next)
   if (previous === 'free' || previous === 'paid') {
     telemetry.capture('comfy.desktop.billing.tier_changed', {
       from_tier: previous,
@@ -103,11 +86,6 @@ async function setTier(rawTierName: string | null | undefined): Promise<void> {
   }
 }
 
-/**
- * Page-context script that reads the Firebase token from IndexedDB and calls `/customers/me`.
- * Returns `{tier}` on success, `{error}` on recoverable failure, or `null` if no signed-in user.
- * Runs in the cloud page's isolated context so main never handles a raw Firebase token.
- */
 export const FETCH_TIER_JS = `(async () => {
   const PREFIX = ${JSON.stringify(FIREBASE_AUTH_KEY_PREFIX)};
   const IDB_NAME = ${JSON.stringify(FIREBASE_IDB_NAME)};
@@ -272,32 +250,19 @@ export const FETCH_TIER_JS = `(async () => {
 })()`
 
 interface FetchResult {
-  /** The API's `subscription_tier` verbatim: `null` when the field is absent, never defaulted here. */
   tier?: string | null
   error?: string
-  /** Set only when the candidate cap dropped a distinct token, so "every candidate was rejected"
-   *  can be told apart from "we did not look at all of them". */
   truncated?: boolean
 }
 
-/** Fire-and-forget tier refresh against a cloud webContents. Errors never throw; leave cache alone. */
 export async function refreshCloudUserTier(webContents: WebContents): Promise<void> {
   try {
     const result = (await webContents.executeJavaScript(FETCH_TIER_JS)) as FetchResult | null
     if (!result) {
-      // No signed-in record; don't overwrite a known-paid cache (may be transient during sign-in).
-      // LOGGED, because the silence was the expensive part. A native run spent two boots unable to
-      // tell "no record found" from "the refresh never ran" - from outside the app they look
-      // identical, and the empty-result path emitted nothing at all.
-      // Deliberately does NOT claim both stores were read: when localStorage is readable and empty
-      // the script returns without consulting IndexedDB at all, so "either store" would be false
-      // in the commonest case this line fires.
       console.log('[user-tier] refresh: no usable auth record; cache left alone')
       return
     }
     if (result.error) {
-      // The truncation marker is appended rather than folded into the error, so an existing reader
-      // grepping for a known error value still matches.
       console.log(
         '[user-tier] refresh skipped:',
         result.error,
@@ -318,7 +283,6 @@ export async function refreshCloudUserTier(webContents: WebContents): Promise<vo
   }
 }
 
-/** @internal — exposed for tests. */
 export function _resetForTest(): void {
   cached = 'unknown'
   initPromise = null

@@ -6,7 +6,7 @@ export const useInstallationStore = defineStore('installation', () => {
   const installations = ref<Installation[]>([])
   const loading = ref(true)
 
-  async function fetchInstallations(): Promise<Installation[]> {
+  async function loadInstallations(): Promise<Installation[]> {
     loading.value = true
     try {
       installations.value = await window.api.getInstallations()
@@ -14,6 +14,25 @@ export const useInstallationStore = defineStore('installation', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  let inFlight: Promise<Installation[]> | null = null
+  let queued: Promise<Installation[]> | null = null
+
+  function fetchInstallations(): Promise<Installation[]> {
+    if (!inFlight) {
+      inFlight = loadInstallations().finally(() => {
+        inFlight = null
+      })
+      return inFlight
+    }
+    queued ??= inFlight
+      .catch(() => undefined)
+      .then(() => {
+        queued = null
+        return fetchInstallations()
+      })
+    return queued
   }
 
   window.api.onInstallationsChanged(() => {

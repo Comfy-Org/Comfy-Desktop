@@ -16,7 +16,6 @@ export { handleLaunch } from './launch'
 export { handleDelegateToSource } from './delegate'
 export { withAbortableSessionAction } from './withAbortable'
 
-// Action ids handled directly here; anything else delegates to the source plugin.
 const SESSION_ACTION_IDS = [
   'remove',
   'rename',
@@ -38,7 +37,6 @@ function isSessionActionId(id: string): id is SessionActionId {
   return SESSION_ACTION_ID_SET.has(id)
 }
 
-// Exhaustive over SessionActionId so a new union member fails to compile here.
 function dispatchToSessionHandler(
   ctx: ActionContext,
   actionId: SessionActionId
@@ -71,15 +69,8 @@ function dispatchToSessionHandler(
   }
 }
 
-// Live registry of the action currently running per install, mirrored to every
-// window through the `operation-changed` broadcast and the
-// `get-active-operations` snapshot. This is how a window that did NOT start an
-// operation (e.g. the dashboard, while an update runs from the picker popup)
-// still knows one is in flight. In-memory only: an app restart clears it, so a
-// crash mid-operation can never leave a stale "busy" state behind.
 const _activeActions = new Map<string, { actionId: string }>()
 
-/** Snapshot of installs with an action currently in flight (id + action id). */
 export function _getActiveOperations(): { installationId: string; actionId: string }[] {
   return Array.from(_activeActions, ([installationId, { actionId }]) => ({
     installationId,
@@ -87,16 +78,11 @@ export function _getActiveOperations(): { installationId: string; actionId: stri
   }))
 }
 
-// Single dispatch point for run-action and the picker's background-op path:
-// session ids route to the switch above, everything else to the source.
 export async function dispatchSessionAction(
   ctx: ActionContext,
   actionId: string
 ): Promise<ActionResult> {
   const { installationId } = ctx
-  // Only the outermost action per install owns the registry entry - a handler
-  // that dispatches a nested action must not clear its parent's entry (or
-  // re-announce over it) when the inner one finishes.
   const owned = !_activeActions.has(installationId)
   if (owned) {
     _activeActions.set(installationId, { actionId })

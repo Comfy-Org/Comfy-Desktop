@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import Input from '@comfyorg/design-system/input/Input'
+import Button from '@comfyorg/design-system/button/Button'
 import type { PathIssue, DiskSpaceInfo } from '../types/ipc'
 import PathDiskInfo from './PathDiskInfo.vue'
 
@@ -22,36 +24,49 @@ defineEmits<{
 </script>
 
 <template>
-  <div class="field">
-    <label for="inst-name">{{ $t('common.name') }}</label>
-    <input
+  <div class="install-name-field mt-4 flex flex-col">
+    <label class="text-[14px] text-text-muted" for="inst-name">{{ $t('common.name') }}</label>
+    <Input
       id="inst-name"
-      :value="name"
+      :model-value="name"
       type="text"
+      class="mt-1.5"
       :placeholder="$t('common.namePlaceholder')"
       @input="$emit('update:name', ($event.target as HTMLInputElement).value)"
     />
   </div>
 
-  <div v-if="!hideInstallPath" class="field">
-    <label>{{ $t('newInstall.installLocation') }}</label>
-    <div class="path-input">
-      <div class="path-open-wrap">
-        <button
+  <div v-if="!hideInstallPath" class="install-name-field mt-4 flex flex-col">
+    <label class="text-[14px] text-text-muted">{{ $t('newInstall.installLocation') }}</label>
+    <div class="install-path-input mt-1.5 flex gap-2">
+      <div
+        class="path-open-wrap flex min-w-0 flex-1 items-center rounded-lg bg-secondary px-3 py-2"
+      >
+        <Button
           v-if="path"
+          size="link"
+          variant="link"
           type="button"
-          class="open-folder-link path-open"
-          :title="$t('actions.openDirectory', 'Open Directory')"
-          :aria-label="`${$t('actions.openDirectory', 'Open Directory')}: ${path}`"
+          class="path-open block min-w-0 max-w-full truncate py-0 text-left"
+          :title="$t('actions.openDirectory')"
+          :aria-label="`${$t('actions.openDirectory')}: ${path}`"
           @click="$emit('open')"
         >
           {{ path }}
-        </button>
+        </Button>
       </div>
-      <button @click="$emit('browse')">{{ $t('common.browse') }}</button>
-      <button v-if="path !== defaultPath" @click="$emit('update:path', defaultPath)">
+      <Button type="button" size="lg" variant="secondary" @click="$emit('browse')">{{
+        $t('common.browse')
+      }}</Button>
+      <Button
+        v-if="path !== defaultPath"
+        type="button"
+        size="lg"
+        variant="secondary"
+        @click="$emit('update:path', defaultPath)"
+      >
         {{ $t('common.resetDefault') }}
-      </button>
+      </Button>
     </div>
     <PathDiskInfo
       :path-issues="pathIssues"
@@ -61,24 +76,3 @@ defineEmits<{
     />
   </div>
 </template>
-
-<style scoped>
-/* Replaces the old readonly <input>: a boxed path row whose text opens the
- *  folder in the OS file manager. Only the path text is the click target. */
-.path-open-wrap {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  margin-top: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-}
-
-/* Inherits .open-folder-link; matches the shared color/font, only caps width. */
-.path-open {
-  max-width: 100%;
-}
-</style>

@@ -8,13 +8,9 @@ import { fetchJSON } from '../../lib/fetch'
 
 const mockedFetchJSON = vi.mocked(fetchJSON)
 
-/** Index fetches only — the catalog also reads the starter list from R2, and
- *  these assertions are about how often the index is re-read. */
 const indexFetches = (): number =>
   mockedFetchJSON.mock.calls.filter(([url]) => String(url).includes('index.json')).length
 
-/** A live index with one category whose templates override the given curated
- *  ids' metadata. */
 function indexFor(overrides: Record<string, Record<string, unknown>>, category = 'Image'): unknown {
   return [
     {
@@ -83,7 +79,7 @@ describe('loadTemplateCatalog', () => {
   })
 
   it('falls back to a modality-default task when no task tag is present', async () => {
-    const first = CURATED_TEMPLATES[0]! // image modality
+    const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue(
       indexFor({ [first.id]: { title: 'SDXL Turbo', tags: ['Image'] } })
     )
@@ -93,7 +89,7 @@ describe('loadTemplateCatalog', () => {
   })
 
   it('ignores blank/whitespace tags and uses the modality default', async () => {
-    const first = CURATED_TEMPLATES[0]! // image modality
+    const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue(
       indexFor({ [first.id]: { title: 'X', tags: ['', '  ', 'Image'] } })
     )
@@ -189,16 +185,12 @@ describe('loadTemplateCatalog', () => {
     expect(indexFetches()).toBe(1)
   })
 
-  // --- Resilience: a renamed/removed template upstream can only shrink the
-  // offering, never break the picker. ---
-
-  /** A live image category with arbitrary template entries. */
   const imageCategory = (templates: Array<Record<string, unknown>>): unknown => [
     { title: 'Image', type: 'image', templates }
   ]
 
   it('substitutes a live same-modality template when a curated id has vanished', async () => {
-    const first = CURATED_TEMPLATES[0]! // image, recommended
+    const first = CURATED_TEMPLATES[0]!
     mockedFetchJSON.mockResolvedValue(
       imageCategory([
         {
@@ -241,12 +233,11 @@ describe('loadTemplateCatalog', () => {
     )
     const images = (await loadTemplateCatalog()).filter((c) => c.modality === 'image')
     const ids = images.map((c) => c.id)
-    expect(new Set(ids).size).toBe(ids.length) // no dupes across slots
+    expect(new Set(ids).size).toBe(ids.length)
   })
 
   it('falls back to the snapshot when online but no substitute exists', async () => {
     const first = CURATED_TEMPLATES[0]!
-    // Online (non-empty index) but only an unusable api/size-less image entry.
     mockedFetchJSON.mockResolvedValue(
       imageCategory([{ name: 'api_only', title: 'Cloud', size: 0 }])
     )
@@ -277,7 +268,7 @@ describe('loadTemplateCatalog', () => {
 
   it('keeps the curated snapshot card when offline (empty index → no substitution)', async () => {
     const first = CURATED_TEMPLATES[0]!
-    mockedFetchJSON.mockResolvedValue([]) // offline / empty
+    mockedFetchJSON.mockResolvedValue([])
     const catalog = await loadTemplateCatalog()
     expect(catalog.length).toBe(CURATED_TEMPLATES.length)
     expect(catalog.find((c) => c.id === first.id)!.title).toBe(first.snapshot.title)

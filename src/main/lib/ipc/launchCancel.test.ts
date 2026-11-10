@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// Stub the electron surface ./shared touches so the test needs no runtime.
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -30,8 +29,6 @@ import {
 const INSTALL = 'install-under-test'
 
 afterEach(() => {
-  // Drain shared state so cases stay independent. Each test ends the
-  // launches it begins (ownership-guarded), so only these two can leak.
   _operationAborts.delete(INSTALL)
   _test_clearRunningSessions()
   expect(_hasActiveLaunch(INSTALL)).toBe(false)
@@ -68,7 +65,6 @@ describe('launch tracking (_beginLaunch/_endLaunch/_hasActiveLaunch)', () => {
     const stale = _beginLaunch(INSTALL)
     _endLaunch(INSTALL, stale)
     const fresh = _beginLaunch(INSTALL)
-    // A leftover cleanup path from the stale generation fires late:
     _endLaunch(INSTALL, stale)
     expect(_hasActiveLaunch(INSTALL)).toBe(true)
     _endLaunch(INSTALL, fresh)
@@ -106,7 +102,6 @@ describe('cancelLaunching', () => {
 
   it('aborts an in-flight launch and resolves true once it settles', async () => {
     const launch = _beginLaunch(INSTALL)
-    // Simulate the handler: unwind (endLaunch) only after the abort fires.
     launch.abort.signal.addEventListener(
       'abort',
       () => {
@@ -121,8 +116,6 @@ describe('cancelLaunching', () => {
   })
 
   it('cancels a pre-marker launch: no launching marker, no _operationAborts entry needed', async () => {
-    // The regression: before the launch claims _operationAborts or sets the
-    // launching marker, cancelLaunching must still find and abort it.
     const launch = _beginLaunch(INSTALL)
     expect(_operationAborts.has(INSTALL)).toBe(false)
     launch.abort.signal.addEventListener('abort', () => _endLaunch(INSTALL, launch), { once: true })

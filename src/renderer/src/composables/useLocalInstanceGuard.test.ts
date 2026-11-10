@@ -1,12 +1,11 @@
 import { createTestingPinia } from '@pinia/testing'
+import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: (key: string) => key
-  })
-}))
+vi.mock('vue-i18n', async (importOriginal) =>
+  (await import('../lib/vueI18nWithAppMessages')).vueI18nWithAppMessages(importOriginal)
+)
 
 const mockConfirm = vi.fn()
 vi.mock('./useDialogs', () => ({
@@ -15,16 +14,13 @@ vi.mock('./useDialogs', () => ({
   })
 }))
 
-vi.stubGlobal('window', {
-  ...window,
-  api: {
-    getInstallations: vi.fn().mockResolvedValue([]),
-    onInstallationsChanged: vi.fn(),
-    onInstallationsVersionsUpdated: vi.fn(),
-    getSetting: vi.fn().mockResolvedValue(undefined),
-    stopComfyUI: vi.fn().mockResolvedValue(undefined),
-    closeComfyWindow: vi.fn().mockResolvedValue(true)
-  }
+stubWindowApi({
+  getInstallations: vi.fn().mockResolvedValue([]),
+  onInstallationsChanged: vi.fn(),
+  onInstallationsVersionsUpdated: vi.fn(),
+  getSetting: vi.fn().mockResolvedValue(undefined),
+  stopComfyUI: vi.fn().mockResolvedValue(undefined),
+  closeComfyWindow: vi.fn().mockResolvedValue(true)
 })
 
 import { useLocalInstanceGuard } from './useLocalInstanceGuard'
@@ -62,6 +58,65 @@ describe('useLocalInstanceGuard', () => {
     expect(result).toBe(true)
   })
 
+  it('lists a running Performance Test as one, not under its install name', async () => {
+    installationStore.installations.push(makeInstallation({ id: 'target' }))
+    sessionStore.runningInstances.set('performance-test:inst-1', {
+      installationId: 'performance-test:inst-1',
+      installationName: 'Test Install',
+      mode: 'console'
+    })
+    sessionStore.runningInstances.set('other', {
+      installationId: 'other',
+      installationName: 'Other',
+      mode: 'window'
+    })
+    mockConfirm.mockResolvedValue('secondary')
+    const guard = useLocalInstanceGuard()
+
+    await guard.checkBeforeLaunch('target')
+
+    expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
+      'Performance Test: Test Install',
+      'Other'
+    ])
+  })
+
+  it('lists a Performance Test that is still starting as one too', async () => {
+    installationStore.installations.push(makeInstallation({ id: 'target' }))
+    sessionStore.launchingInstances.set('performance-test:inst-1', {
+      installationName: 'Test Install'
+    })
+    mockConfirm.mockResolvedValue('secondary')
+    const guard = useLocalInstanceGuard()
+
+    await guard.checkBeforeLaunch('target')
+
+    expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual([
+      'Performance Test: Test Install'
+    ])
+  })
+
+  it("does not list a remote installation's Performance Test as a local instance", async () => {
+    installationStore.installations.push(makeInstallation({ id: 'target' }))
+    installationStore.installations.push(
+      makeInstallation({ id: 'remote-1', name: 'Remote Box', sourceCategory: 'remote' })
+    )
+    sessionStore.runningInstances.set('performance-test:remote-1', {
+      installationId: 'performance-test:remote-1',
+      installationName: 'Remote Box',
+      mode: 'console'
+    })
+    sessionStore.launchingInstances.set('performance-test:remote-1', {
+      installationName: 'Remote Box'
+    })
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target')
+
+    expect(result).toBe(true)
+    expect(mockConfirm).not.toHaveBeenCalled()
+  })
+
   it('allows launch without prompting for non-local (cloud) targets', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'cloud-1', sourceCategory: 'cloud' })
@@ -95,7 +150,7 @@ describe('useLocalInstanceGuard', () => {
     const result = await guard.checkBeforeLaunch('target')
 
     expect(mockConfirm).toHaveBeenCalledWith(
-      expect.objectContaining({ hint: 'launch.instanceRunningPreferencesHint' })
+      expect.objectContaining({ hint: 'You can turn off this warning in Preferences.' })
     )
     expect(result).toBe(true)
   })

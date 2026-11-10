@@ -10,10 +10,9 @@ vi.mock('electron', () => ({
 }))
 
 const telemetry = await import('./telemetry')
-const { refreshCloudUserTier, getUserTier, _resetForTest, FETCH_TIER_JS } =
+const { refreshCloudUserTier, getUserTier, initUserTier, _resetForTest, FETCH_TIER_JS } =
   await import('./userTier')
 
-/** Stub WebContents whose executeJavaScript resolves to a fixed tier result. */
 function stubContents(result: unknown): { wc: Electron.WebContents } {
   return {
     wc: {
@@ -21,6 +20,71 @@ function stubContents(result: unknown): { wc: Electron.WebContents } {
     } as unknown as Electron.WebContents
   }
 }
+
+describe('userTier ops-flag binding', () => {
+  let bound: string[]
+
+  beforeEach(async () => {
+    await fs.rm(userTierDataDir, { recursive: true, force: true })
+    await fs.mkdir(userTierDataDir, { recursive: true })
+    _resetForTest()
+    bound = []
+    vi.spyOn(telemetry, 'capture').mockReturnValue(true)
+    vi.spyOn(telemetry, 'setFlagEvaluationUserTier').mockImplementation((tier) => {
+      bound.push(tier)
+    })
+  })
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await fs.rm(userTierDataDir, { recursive: true, force: true })
+  })
+
+  it('binds the persisted tier at init', async () => {
+    await fs.writeFile(
+      path.join(userTierDataDir, 'cloud-user-tier.json'),
+      JSON.stringify({ tier: 'paid', ts: 1 })
+    )
+
+    await initUserTier()
+
+    expect(bound).toEqual(['paid'])
+  })
+
+  it('binds unknown at init when nothing is persisted', async () => {
+    await initUserTier()
+
+    expect(bound).toEqual(['unknown'])
+  })
+
+  it.each(['{not json', JSON.stringify({ tier: 'gold' })])(
+    'binds unknown at init for an unusable file (%s)',
+    async (contents) => {
+      await fs.writeFile(path.join(userTierDataDir, 'cloud-user-tier.json'), contents)
+
+      await expect(initUserTier()).resolves.toBeUndefined()
+
+      expect(bound).toEqual(['unknown'])
+    }
+  )
+
+  it('binds each refreshed tier', async () => {
+    await refreshCloudUserTier(stubContents({ tier: 'FREE' }).wc)
+    await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
+
+    expect(bound).toEqual(['free', 'paid'])
+  })
+
+  it.each([null, { error: 'network' }, { error: 'http_401' }])(
+    'leaves the binding alone when a refresh cannot answer (%j)',
+    async (result) => {
+      await refreshCloudUserTier(stubContents({ tier: 'PRO' }).wc)
+      await refreshCloudUserTier(stubContents(result).wc)
+
+      expect(bound).toEqual(['paid'])
+    }
+  )
+})
 
 describe('userTier tier_changed telemetry', () => {
   let captured: Array<{ event: string; ctx: Record<string, unknown> }>
@@ -82,21 +146,14 @@ describe('userTier tier_changed telemetry', () => {
   })
 })
 
-// The injected script itself, which the suite above never reaches: those cases stub
-// `executeJavaScript` wholesale, so FETCH_TIER_JS was entirely untested. That is how it shipped
-// reading only the store the frontend's SDK drains.
 describe('FETCH_TIER_JS', () => {
   const PROD_KEY = 'firebase:authUser:apikey:[DEFAULT]'
   const record = (token: string) => ({ stsTokenManager: { accessToken: token } })
 
-  /** localStorage for the script. `absent` models no object at all; `throws` models blocked site
-   *  data, where the object EXISTS and touching it raises — the distinction the reader turns on. */
   function fakeLocalStorage(
     entries: Array<[string, string]> | null,
     opts: { throws?: boolean } = {}
   ): unknown {
-    // `throws` is checked FIRST: a previous version returned undefined on the null guard before
-    // ever reaching it, so the throwing Proxy was unreachable and its test passed vacuously.
     if (opts.throws)
       return new Proxy(
         {},
@@ -116,8 +173,6 @@ describe('FETCH_TIER_JS', () => {
     }
   }
 
-  /** IndexedDB for the script, able to model a MISSING database and a STORE-LESS one — the two
-   *  states a versionless open would otherwise paper over by silently creating a database. */
   function fakeIndexedDB(opts: {
     entries?: unknown[]
     databases?: { name: string }[]
@@ -192,8 +247,6 @@ describe('FETCH_TIER_JS', () => {
   }
 
   it('reads the token from localStorage, where the session settles', async () => {
-    // The regression. Before this fix the script looked only in IndexedDB, which the SDK clears
-    // once the auth store moves the record — so every signed-in cloud session read as signed out.
     const { result, authHeaders } = await run({
       localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]]
     })
@@ -203,10 +256,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('returns null when localStorage is READABLE and holds no record', async () => {
-    // It does NOT fall through to IndexedDB. A record there is either the live user mid-boot or
-    // one the SDK discarded at sign-out, and nothing distinguishes them — a discarded token still
-    // inside its hour would fetch the former account's tier and persist it. The tier resolves on
-    // a later refresh instead.
     const { result, authHeaders } = await run({
       localStorage: [],
       entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
@@ -217,7 +266,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('falls back to IndexedDB only when localStorage is ABSENT', async () => {
-    // No localStorage object at all: the frontend cannot be using it, so IndexedDB is the store.
     const { result, authHeaders } = await run({
       localStorage: null,
       entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
@@ -228,8 +276,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('falls back when localStorage EXISTS but access throws', async () => {
-    // Blocked or partitioned storage — the case whose test previously never ran, because the stub
-    // returned undefined before it reached the throwing branch.
     const { result } = await run({
       localStorageThrows: true,
       entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
@@ -239,10 +285,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('does not create the database when none exists', async () => {
-    // A versionless open SILENTLY CREATES an empty version-1 database, and the transaction below
-    // then throws NotFoundError. The harm is the side effect, so that is what this asserts:
-    // `open()` must never be called when the database is not listed. Checking only the return
-    // value cannot see it — a created-then-empty database also yields null.
     const { result, opened } = await run({ localStorage: null, databases: [] })
 
     expect(opened).toBe(0)
@@ -256,7 +298,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('closes the database connection it opened', async () => {
-    // An unclosed handle blocks a later Firebase versionchange.
     const { closed } = await run({
       localStorage: null,
       entries: [{ fbase_key: PROD_KEY, value: record('tok-idb') }]
@@ -266,8 +307,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('tries a second record when the first token is stale, instead of giving up', async () => {
-    // Not hypothetical: a Firebase project switch leaves the old apiKey's record behind, and the
-    // key embeds the apiKey, so two records coexist. Enumeration order must not decide.
     const tried: string[] = []
     const { result } = await run({
       localStorage: [
@@ -290,8 +329,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('reports an error rather than null when every candidate is rejected', async () => {
-    // Distinct from "nobody is signed in": records exist and none was accepted. null would tell
-    // the caller there is no user, which is a different and wrong claim.
     const { result } = await run({
       localStorage: [[PROD_KEY, JSON.stringify(record('tok-dead'))]],
       fetchImpl: (() => Promise.resolve({ ok: false, status: 403 })) as unknown as typeof fetch
@@ -301,10 +338,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('does NOT try the next candidate when the failure is transient', async () => {
-    // The trap: two records, the FIRST is the live user and the second a leftover still inside its
-    // hour. If a 5xx on the live token promoted the next candidate, the leftover would be accepted
-    // and the FORMER ACCOUNT'S tier persisted — during an outage, which is when it is least
-    // noticeable. A 5xx is the server, not the credential.
     const tried: string[] = []
     const { result } = await run({
       localStorage: [
@@ -322,7 +355,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('does NOT try the next candidate when the request throws', async () => {
-    // Same reasoning for a network failure or a timeout: it says nothing about the token.
     const tried: string[] = []
     const { result } = await run({
       localStorage: [
@@ -340,7 +372,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('does NOT try the next candidate on a malformed body', async () => {
-    // The server answered, so the credential was accepted; the next token is not a remedy.
     const tried: string[] = []
     const { result } = await run({
       localStorage: [
@@ -358,7 +389,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('stops after a bounded number of candidates', async () => {
-    // The records are page-controlled, so the candidate list must not be.
     const tried: string[] = []
     const { result } = await run({
       localStorage: Array.from({ length: 6 }, (_, i) => [
@@ -372,15 +402,10 @@ describe('FETCH_TIER_JS', () => {
     })
 
     expect(tried).toHaveLength(4)
-    // `truncated` rides alongside the error: six records existed, four were tried. Without it this is
-    // indistinguishable from an install where all four of its only four records were rejected.
     expect(result).toEqual({ error: 'http_401', truncated: true })
   })
 
   it('does NOT claim truncation when the cap was not actually hit', async () => {
-    // The control for the test above. Exactly MAX_CANDIDATES records, every one tried and rejected —
-    // same error, same tried-count, and `truncated` must be absent. Without this, a `truncated` that
-    // was always set would pass the previous test and mean nothing.
     const tried: string[] = []
     const { result } = await run({
       localStorage: Array.from({ length: 4 }, (_, i) => [
@@ -398,8 +423,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('does not mark truncation when a DUPLICATE token is dropped rather than a distinct one', async () => {
-    // `addToken` de-duplicates before it checks the cap, so five records holding four DISTINCT tokens
-    // fill the list exactly and drop only a repeat. Nothing was missed, so nothing should be claimed.
     const tried: string[] = []
     const ls: Array<[string, string]> = Array.from({ length: 4 }, (_, i) => [
       `firebase:authUser:key${i}:[DEFAULT]`,
@@ -419,11 +442,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('reports an ABSENT subscription_tier as absent, not as FREE', async () => {
-    // The real shape for at least one live account: /customers/me answers 200 with no
-    // `subscription_tier` field at all. Defaulting it to 'FREE' inside the page script made the
-    // log print `raw= FREE`, indistinguishable from the API actually saying FREE — so the log
-    // asserted an observation it had never made. `setTier` already maps null/missing to 'free',
-    // so the field is passed through verbatim and the defaulting happens in exactly one place.
     const { result } = await run({
       localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]],
       fetchImpl: (() =>
@@ -437,7 +455,6 @@ describe('FETCH_TIER_JS', () => {
   })
 
   it('passes a real subscription_tier through unchanged', async () => {
-    // The control for the above: a present field must not be flattened either.
     const { result } = await run({
       localStorage: [[PROD_KEY, JSON.stringify(record('tok-ls'))]],
       fetchImpl: (() =>

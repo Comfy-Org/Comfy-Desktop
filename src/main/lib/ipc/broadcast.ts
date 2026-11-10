@@ -1,8 +1,5 @@
 import { BrowserWindow } from 'electron'
 
-// Extra WebContents (panels, custom title bars) that also receive broadcasts;
-// getAllWindows() only surfaces top-level windows. Auto-cleaned on destroy.
-// Kept tiny and dependency-free so leaf modules can import it.
 const _extraBroadcastTargets = new Set<Electron.WebContents>()
 
 export function _registerExtraBroadcastTarget(wc: Electron.WebContents): void {

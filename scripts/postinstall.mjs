@@ -41,7 +41,6 @@ if (isToDesktopCI) {
 try {
   process.exit(runInstallAppDeps())
 } catch {
-  // Some CI/build environments install prod deps only, which excludes electron-builder.
   console.log('[postinstall] electron-builder not installed; skipping install-app-deps')
   process.exit(0)
 }

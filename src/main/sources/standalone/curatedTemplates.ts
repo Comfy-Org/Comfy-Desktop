@@ -1,44 +1,21 @@
-/**
- * Hand-maintained selection of starter-template ids per modality for the
- * post-install picker. `templateCatalog.ts` hydrates display metadata from the
- * live index at runtime; the inline `snapshot` is the offline fallback.
- */
-
-/** Output modality a template showcases — also the picker's tab grouping. */
 export type TemplateModality = 'image' | 'video' | 'audio' | '3d'
 
-/** Offline display metadata, mirrored from the live index. Live values win at
- *  runtime; these fill gaps and stand in fully when the index is unreachable. */
 export interface TemplateSnapshot {
-  /** Card title — verbatim from the index `title`. */
   title: string
-  /** Card subtitle — verbatim from the index `description`. */
   description: string
-  /** Coarse total download estimate (bytes), from the index `size`. */
   sizeBytes: number
-  /** Thumbnail file extension, from the index `mediaSubtype` (`webp` | `mp3`). */
   mediaSubtype: string
 }
 
 interface CuratedTemplateBase {
-  /** Real `comfyui_workflow_templates` id; matches the frontend deeplink
-   *  validator `^[a-zA-Z0-9_.-]+$`. */
   id: string
-  /** Output modality this template showcases. */
   modality: TemplateModality
-  /** Offline display metadata; superseded by the live index when available. */
   snapshot: TemplateSnapshot
 }
 
-/**
- * `recommended` is the auto-selected pick for its modality (at most one each);
- * `apiNode` runs on API nodes, downloading nothing but spending credits per run.
- * Mutually exclusive by type — the auto-selected pick must never cost money.
- */
 export type CuratedTemplate = CuratedTemplateBase &
   ({ recommended?: true; apiNode?: never } | { apiNode: true; recommended?: never })
 
-/** Tab order in the picker — one tab per modality that has ≥1 curated template. */
 export const TEMPLATE_MODALITY_ORDER: readonly TemplateModality[] = [
   'video',
   'image',
@@ -50,33 +27,16 @@ const RAW_TEMPLATES_REPO = 'https://raw.githubusercontent.com/Comfy-Org/workflow
 export const RAW_TEMPLATES_BASE = `${RAW_TEMPLATES_REPO}/templates`
 export const TEMPLATE_INPUT_BASE = `${RAW_TEMPLATES_REPO}/input`
 
-/** The catalog index: every template grouped by category, with display metadata
- *  and the coarse `size` estimate. One fetch hydrates the whole picker. */
 export const INDEX_URL = `${RAW_TEMPLATES_BASE}/index.json`
 
-/** Subtypes whose `<id>-1.<sub>` preview is an actual image the picker can show
- *  in an `<img>`. Audio templates report `mp3` (the preview is the audio clip,
- *  not an image), so they render the modality glyph instead. */
 const IMAGE_SUBTYPES = new Set(['webp', 'png', 'jpg', 'jpeg', 'gif', 'avif'])
 
-/**
- * Card thumbnail URL for a template — the index's `<id>-1.<mediaSubtype>`
- * preview, served straight from the templates repo. Returns `null` when the
- * subtype isn't an image (e.g. `mp3`), so the caller falls back to the glyph
- * without a doomed network request. Pure + exported for reuse and tests.
- */
 export function thumbnailUrlFor(id: string, mediaSubtype: string): string | null {
   const ext = (mediaSubtype || 'webp').toLowerCase()
   if (!IMAGE_SUBTYPES.has(ext)) return null
   return `${RAW_TEMPLATES_BASE}/${id}-1.${ext}`
 }
 
-/**
- * Decorate the ComfyUI URL so the frontend auto-opens `templateId` on first
- * launch (`?template=<id>&source=default`, read by `useTemplateUrlLoader`).
- * Returns the URL unchanged if it can't be parsed, so a malformed address still
- * launches (just without the auto-open). Pure + exported for unit testing.
- */
 export function buildTemplateDeeplink(comfyUrl: string, templateId: string): string {
   try {
     const url = new URL(comfyUrl)
@@ -88,23 +48,11 @@ export function buildTemplateDeeplink(comfyUrl: string, templateId: string): str
   }
 }
 
-/** Sentinel "skip" option value — keeps the wizard step optional. */
 export const NO_TEMPLATE_VALUE = 'none'
 
-/** A template id is a single path-safe segment: the frontend deeplink validator
- *  pattern (`^[a-zA-Z0-9_.-]+$`). No `/` or `\`, so it can't escape the templates
- *  dir when joined into a filesystem path or interpolated into a fetch URL. */
 const TEMPLATE_ID_PATTERN = /^[a-zA-Z0-9_.-]+$/
-/** Match the pattern but name a directory, not a template. */
 const RESERVED_TEMPLATE_IDS = new Set(['.', '..'])
 
-/**
- * Whether `value` is a persistable starter-template id. Accepts any
- * format-valid id (curated *or* a live-index substitute), not just the static
- * curated set, so a substituted card still installs; rejects the "skip"
- * sentinel and anything that could escape a path/URL. A bogus-but-valid id
- * degrades gracefully downstream (the template JSON just 404s).
- */
 export function isPersistableTemplateId(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -114,16 +62,7 @@ export function isPersistableTemplateId(value: unknown): value is string {
   )
 }
 
-/**
- * 4 templates per modality:
- * - Slot 1 (`recommended`): default open-source pick
- * - Slot 2: API-node demo
- * - Slots 3-4: remaining open-source picks, lightest first
- * To update, change the id and sync the template's
- * title/description/size/mediaSubtype into `snapshot`.
- */
 export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
-  // --- Image ---
   {
     id: 'image_z_image_turbo',
     modality: 'image',
@@ -170,7 +109,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     }
   },
 
-  // --- Video ---
   {
     id: 'video_minimax_h3_t2v',
     modality: 'video',
@@ -217,7 +155,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     }
   },
 
-  // --- 3D ---
   {
     id: '3d_triposplat_image_to_gaussian_splat',
     modality: '3d',
@@ -264,7 +201,6 @@ export const CURATED_TEMPLATES: readonly CuratedTemplate[] = [
     }
   },
 
-  // --- Audio ---
   {
     id: 'audio_stable_audio_3_medium',
     modality: 'audio',

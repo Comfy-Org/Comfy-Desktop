@@ -1,232 +1,101 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, useSlots, watch } from 'vue'
-import { useTooltip, type TooltipAlign, type TooltipSide } from '../../composables/useTooltip'
+import { computed, onBeforeUnmount, onMounted, ref, useId, useSlots } from 'vue'
+import SharedTooltip from '@comfyorg/design-system/tooltip/Tooltip'
+import TooltipContent from '@comfyorg/design-system/tooltip/TooltipContent'
+import TooltipProvider from '@comfyorg/design-system/tooltip/TooltipProvider'
+import TooltipTrigger from '@comfyorg/design-system/tooltip/TooltipTrigger'
 
-interface Props {
-  text?: string
-  side?: TooltipSide
-  align?: TooltipAlign
-  delayMs?: number
-  disabled?: boolean
-  interactive?: boolean
-}
+export type TooltipSide = 'top' | 'bottom' | 'left' | 'right'
+export type TooltipAlign = 'start' | 'center' | 'end'
 
-const props = withDefaults(defineProps<Props>(), {
-  text: undefined,
-  side: 'top',
-  align: 'center',
-  delayMs: 100,
-  disabled: false,
-  interactive: false
-})
-
-const slots = useSlots()
-
-const triggerRef = ref<HTMLElement | null>(null)
-const bubbleRef = ref<HTMLElement | null>(null)
-const bubbleId = `tooltip-${useId()}`
-
-const { visible, show, hide, bubbleStyle, resolvedSide, arrowStyle } = useTooltip(
-  triggerRef,
-  bubbleRef,
+const props = withDefaults(
+  defineProps<{
+    text?: string
+    side?: TooltipSide
+    align?: TooltipAlign
+    delayMs?: number
+    disabled?: boolean
+    interactive?: boolean
+    keepOpenOnClick?: boolean
+    shouldOpen?: () => boolean
+  }>(),
   {
-    side: () => props.side,
-    align: () => props.align,
-    canShow: () => !props.disabled && (!!props.text || !!slots.content)
+    text: undefined,
+    side: 'top',
+    align: 'center',
+    delayMs: 100,
+    disabled: false,
+    interactive: false,
+    keepOpenOnClick: false,
+    shouldOpen: undefined
   }
 )
-
-const describedBy = computed(() => (visible.value ? bubbleId : undefined))
-
-let openTimer: ReturnType<typeof setTimeout> | null = null
-let closeTimer: ReturnType<typeof setTimeout> | null = null
-
-function onEnter(): void {
-  if (closeTimer) {
-    clearTimeout(closeTimer)
-    closeTimer = null
-  }
-  if (visible.value) return
-  if (openTimer) clearTimeout(openTimer)
-  if (props.delayMs <= 0) {
-    show()
-    return
-  }
-  openTimer = setTimeout(() => {
-    show()
-    openTimer = null
-  }, props.delayMs)
+defineOptions({ inheritAttrs: false })
+const slots = useSlots()
+const open = ref(false)
+const labelId = useId()
+const unavailable = computed(() => props.disabled || (!props.text && !slots.content))
+function setOpen(next: boolean): void {
+  open.value = next && !unavailable.value && (props.shouldOpen?.() ?? true)
 }
-
-function onLeave(): void {
-  if (openTimer) {
-    clearTimeout(openTimer)
-    openTimer = null
-  }
-  if (!props.interactive) {
-    hide()
-    return
-  }
-  closeTimer = setTimeout(() => {
-    hide()
-    closeTimer = null
-  }, 100)
+function onFocusOut(event: FocusEvent): void {
+  setOpen(
+    props.interactive &&
+      event.relatedTarget instanceof Element &&
+      event.relatedTarget.closest('.tooltip-bubble--interactive') !== null
+  )
 }
-
-function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && visible.value) {
-    e.stopPropagation()
-    hide()
-  }
+function close(): void {
+  open.value = false
 }
-
-// Disabling hides a bubble that is already up (and cancels a pending open), not just future
-// ones: a trigger that opens its own popover disables its tooltip at the moment of the click.
-watch(
-  () => props.disabled,
-  (disabled) => {
-    if (!disabled) return
-    if (openTimer) {
-      clearTimeout(openTimer)
-      openTimer = null
-    }
-    hide()
-  }
-)
-
-onBeforeUnmount(() => {
-  if (openTimer) clearTimeout(openTimer)
-  if (closeTimer) clearTimeout(closeTimer)
-})
+function onKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape' || !open.value) return
+  event.stopPropagation()
+  close()
+}
+onMounted(() => window.addEventListener('blur', close))
+onBeforeUnmount(() => window.removeEventListener('blur', close))
 </script>
 
 <template>
-  <span
-    ref="triggerRef"
-    class="tooltip-wrap"
-    :aria-describedby="describedBy"
-    @mouseenter="onEnter"
-    @mouseleave="onLeave"
-    @focusin="onEnter"
-    @focusout="onLeave"
-    @keydown="onKeydown"
-  >
-    <slot />
-    <Teleport to="body">
-      <span
-        v-if="visible"
-        :id="bubbleId"
-        ref="bubbleRef"
-        class="tooltip-bubble"
-        :class="{ 'tooltip-bubble--interactive': interactive }"
-        :data-side="resolvedSide"
-        :style="bubbleStyle"
-        :role="interactive ? 'dialog' : 'tooltip'"
-        :aria-label="interactive ? text : undefined"
-        @mouseenter="onEnter"
-        @mouseleave="onLeave"
-        @focusin="onEnter"
-        @focusout="onLeave"
-        @keydown="onKeydown"
-      >
-        <slot name="content">{{ text }}</slot>
-        <span class="tooltip-arrow" :style="arrowStyle" aria-hidden="true">
-          <span class="tooltip-arrow__fill" />
+  <TooltipProvider :delay-duration="delayMs" :skip-delay-duration="0">
+    <SharedTooltip
+      :open="open"
+      :disabled="unavailable"
+      :delay-duration="delayMs"
+      :ignore-non-keyboard-focus="false"
+      :disable-hoverable-content="!interactive"
+      :disable-closing-trigger="keepOpenOnClick"
+      @update:open="setOpen"
+    >
+      <TooltipTrigger as-child>
+        <span
+          v-bind="$attrs"
+          class="tooltip-wrap inline-flex"
+          @focusin="setOpen(true)"
+          @focusout="onFocusOut"
+          @keydown="onKeydown"
+        >
+          <slot />
         </span>
-      </span>
-    </Teleport>
-  </span>
+      </TooltipTrigger>
+      <TooltipContent
+        class="tooltip-bubble z-[10001] max-w-[256px] rounded-[var(--radius-control)] border-[var(--tooltip-border)] bg-[var(--tooltip-bg)] px-[9px] py-[5px] text-[12px]/[16.2px] font-medium text-[var(--tooltip-fg)] shadow-[0_8px_12px_rgb(0_0_0/0.5)] backdrop-blur-[10px] [&>span:has(>svg)]:hidden"
+        :class="
+          interactive ? 'tooltip-bubble--interactive pointer-events-auto' : 'pointer-events-none'
+        "
+        :side="side"
+        :align="align"
+        :role="interactive ? 'dialog' : undefined"
+        :aria-label="interactive ? text : undefined"
+        :aria-labelledby="interactive && text ? labelId : undefined"
+        :collision-padding="8"
+        @keydown.capture="onKeydown"
+        @focusout="onFocusOut"
+      >
+        <span v-if="interactive && text" :id="labelId" hidden>{{ text }}</span>
+        <slot name="content">{{ text }}</slot>
+      </TooltipContent>
+    </SharedTooltip>
+  </TooltipProvider>
 </template>
-
-<style scoped>
-.tooltip-wrap {
-  display: inline-flex;
-}
-</style>
-
-<style>
-.tooltip-bubble {
-  position: fixed;
-  z-index: var(--z-tooltip);
-  padding: 8px 16px;
-  border-radius: var(--primitive-border-radius-rounded-lg, 8px);
-  border: 1px solid var(--tooltip-border);
-  background: var(--tooltip-bg);
-  color: var(--tooltip-fg);
-  font-size: 12px;
-  line-height: 1.4;
-  font-weight: 400;
-  max-width: 260px;
-  pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-  white-space: normal;
-  text-align: left;
-}
-.tooltip-bubble--interactive {
-  pointer-events: auto;
-}
-
-.tooltip-arrow {
-  position: absolute;
-  width: 12px;
-  height: 6px;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-.tooltip-bubble[data-side='top'] .tooltip-arrow {
-  bottom: -5px;
-}
-.tooltip-bubble[data-side='bottom'] .tooltip-arrow {
-  top: -5px;
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow,
-.tooltip-bubble[data-side='right'] .tooltip-arrow {
-  width: 6px;
-  height: 12px;
-  transform: translateY(-50%);
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow {
-  right: -5px;
-}
-.tooltip-bubble[data-side='right'] .tooltip-arrow {
-  left: -5px;
-}
-
-.tooltip-arrow::before,
-.tooltip-arrow__fill {
-  content: '';
-  position: absolute;
-  inset: 0;
-}
-.tooltip-arrow::before {
-  background: var(--tooltip-border);
-  clip-path: polygon(50% 100%, 0 0, 100% 0);
-}
-.tooltip-bubble[data-side='bottom'] .tooltip-arrow::before {
-  clip-path: polygon(50% 0, 0 100%, 100% 100%);
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow::before {
-  clip-path: polygon(100% 50%, 0 0, 0 100%);
-}
-.tooltip-bubble[data-side='right'] .tooltip-arrow::before {
-  clip-path: polygon(0 50%, 100% 0, 100% 100%);
-}
-
-.tooltip-arrow__fill {
-  background: var(--tooltip-bg);
-  inset: -1px 0 0 0;
-  clip-path: polygon(50% 85%, 8% 0, 92% 0);
-}
-.tooltip-bubble[data-side='bottom'] .tooltip-arrow__fill {
-  inset: 0 0 -1px 0;
-  clip-path: polygon(50% 15%, 8% 100%, 92% 100%);
-}
-.tooltip-bubble[data-side='left'] .tooltip-arrow__fill {
-  inset: 0 0 0 -1px;
-  clip-path: polygon(85% 50%, 0 8%, 0 92%);
-}
-.tooltip-bubble[data-side='right'] .tooltip-arrow__fill {
-  inset: 0 -1px 0 0;
-  clip-path: polygon(15% 50%, 100% 8%, 100% 92%);
-}
-</style>

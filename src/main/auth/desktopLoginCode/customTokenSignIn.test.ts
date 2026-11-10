@@ -8,8 +8,6 @@ import {
 import { hangingFetch, jsonResponse } from './testHelpers'
 import { getFirebaseConfig } from '../firebaseBridge/config'
 
-// postJson goes through Chromium's net.fetch; delegate to the current global
-// fetch so the vi.stubGlobal('fetch', ...) stubs below keep driving it.
 vi.mock('electron', () => ({
   net: { fetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args) }
 }))

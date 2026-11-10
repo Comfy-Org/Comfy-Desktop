@@ -4,46 +4,26 @@ import path from 'path'
 import { _registerExtraBroadcastTarget } from '../lib/ipc/broadcast'
 import { attachContextMenu } from '../lib/contextMenu'
 
-/**
- * Lifecycle primitive for a transparent popup `WebContentsView` attached to a host BrowserWindow's
- * content area (title-bar tooltip, system modal, title-bar dropdown). Construction costs ~100ms, so
- * consumers cache one per parent and reuse it. This class owns construct/attach/load/teardown and
- * tracks `rendererReady` / `isOpen` / `pendingShowTimer`.
- */
 export interface EmbeddedPopupViewOpts {
   parent: BrowserWindow
-  /** HTML basename without extension, resolved to the dev URL or packaged renderer file. */
   htmlName: string
-  /** Preload basename, resolved against `__dirname/../preload/`. */
   preloadName: string
-  /** Initial bounds; almost always overwritten by the consumer's first show. */
   initialBounds: Electron.Rectangle
-  /** Parent events that should call `hide()` (click-outside / drag-to-move dismiss). */
   hideOnParentEvents?: ReadonlyArray<'blur' | 'will-move' | 'move' | 'resize'>
-  /** Also `hide()` when the popup webContents loses focus. */
   hideOnPopupBlur?: boolean
-  /** Called from the parent's `closed` event before teardown, to drop consumer index entries. */
   onParentClosed?: () => void
-  /** Called from the popup's `destroyed` event (fires on independent destruction, e.g. renderer crash). */
   onDestroyed?: () => void
-  /** Called from `hide()` on any transition out of open/pending (manual or auto-dismiss). */
   onHide?: () => void
 }
 
 export class EmbeddedPopupView {
   readonly popup: WebContentsView
   readonly parentWindow: BrowserWindow
-  /** Snapshotted at construction: the parent's `closed` event fires after child webContents are
-   *  destroyed, so reading `popup.webContents.id` there would throw. */
   readonly popupWebContentsId: number
   readonly parentWindowId: number
-  /** True once the consumer has observed the renderer's `:ready` IPC. */
   rendererReady = false
-  /** True between `showOnTop()` and `hide()`. */
   isOpen = false
-  /** Open-in-flight timer waiting for the renderer `:rendered` ack; shows anyway so it never sticks invisible. */
   pendingShowTimer: NodeJS.Timeout | null = null
-  /** Opt-out of blur-dismiss (the picker owns its own outside-click; blur-dismiss would cause open→reopen flicker). */
   suppressBlurDismiss = false
   private readonly onHideCallback?: () => void
 
@@ -60,7 +40,6 @@ export class EmbeddedPopupView {
         preload: path.join(__dirname, '../preload/', opts.preloadName)
       }
     })
-    // Per-pixel transparency so only the popup's card paints; the rest alpha-blends to the body view.
     popup.setBackgroundColor('#00000000')
     popup.setVisible(false)
     popup.setBounds(opts.initialBounds)
@@ -68,14 +47,8 @@ export class EmbeddedPopupView {
     this.popup = popup
     this.popupWebContentsId = popup.webContents.id
 
-    // Opt the popup into main's broadcast fan-out (getAllWindows only reaches top-level windows).
     _registerExtraBroadcastTarget(popup.webContents)
 
-    // Native right-click Copy/Paste for selectable text + inputs inside popups
-    // (pill-drawer settings, system modals, etc.). The native menu blurs the
-    // popup webContents, which would normally auto-dismiss it, so suspend
-    // blur-dismiss while the menu is open and restore the prior value after —
-    // never unconditionally re-enable it, since the picker keeps it suppressed.
     {
       let priorSuppress = false
       attachContextMenu(parent, popup.webContents, {
@@ -98,11 +71,9 @@ export class EmbeddedPopupView {
     void loadPromise.catch(() => {})
 
     const dismiss = (): void => {
-      // `suppressBlurDismiss` covers every auto-dismiss path; see the field docstring.
       if (this.suppressBlurDismiss) return
       this.hide()
     }
-    // Cast through a minimal emitter shape: BrowserWindow's overloaded `on` typings don't unify in a loop.
     type DismissEmitter = {
       on(event: string, listener: () => void): void
       removeListener(event: string, listener: () => void): void
@@ -139,12 +110,10 @@ export class EmbeddedPopupView {
     })
   }
 
-  /** True when either the popup or its parent has been destroyed. */
   isDestroyed(): boolean {
     return this.popup.webContents.isDestroyed() || this.parentWindow.isDestroyed()
   }
 
-  /** Re-add the popup as the top-most child view so it paints above other views, then show it. */
   showOnTop(opts: { focus?: boolean } = {}): void {
     if (this.pendingShowTimer) {
       clearTimeout(this.pendingShowTimer)
@@ -162,7 +131,6 @@ export class EmbeddedPopupView {
     this.isOpen = true
   }
 
-  /** Hide the popup (safe when not visible). Fires `onHide` on an actual transition. */
   hide(opts: { focusParent?: boolean } = {}): void {
     if (!this.isOpen && !this.pendingShowTimer) return
     this.isOpen = false
@@ -179,7 +147,6 @@ export class EmbeddedPopupView {
     this.onHideCallback?.()
   }
 
-  /** Run `callback()` after `timeoutMs` (clears any prior timer); a fallback for when the `:rendered` ack never arrives. */
   scheduleShowFallback(timeoutMs: number, callback: () => void): void {
     if (this.pendingShowTimer) clearTimeout(this.pendingShowTimer)
     this.pendingShowTimer = setTimeout(() => {
@@ -188,7 +155,6 @@ export class EmbeddedPopupView {
     }, timeoutMs)
   }
 
-  /** Cancel the pending show-fallback timer, if any. */
   cancelPendingShow(): void {
     if (this.pendingShowTimer) {
       clearTimeout(this.pendingShowTimer)

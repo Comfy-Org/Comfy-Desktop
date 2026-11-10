@@ -4,25 +4,14 @@ import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
 import type { PopupTheme, TerminalRestore } from '../types/ipc'
 
-/** Bridge for the title-bar dropdown popup (waffle menu, downloads tray,
- *  instance-picker, global-settings), which share one reused child
- *  WebContentsView per parent window. */
-
 export interface TitlePopupMenuItem {
   id?: string
-  /** English fallback when `labelKey` is set; rendered verbatim otherwise. */
   label?: string
-  /** vue-i18n key the popup resolves against the shared en catalog, so
-   *  main-built labels participate in i18n. */
   labelKey?: string
   checked?: boolean
   kind?: 'separator'
 }
 
-/** Single install row pushed to the picker. MUST stay a superset of
- *  `Installation` in `src/types/ipc.ts`, and mirror `InstancePickerInstall`
- *  in `src/main/popups/titlePopup.ts` (the popup's tsconfig can't see main's
- *  types). */
 export interface PopupInstancePickerInstall {
   id: string
   name: string
@@ -39,32 +28,16 @@ export interface PopupInstancePickerInstall {
 export interface PopupInstancePickerSnapshot {
   installs: PopupInstancePickerInstall[]
   activeInstallationId: string | null
-  /** Host view-kind for the navigation matrix (`'cloud'` covers cloud AND
-   *  remote). Optional for back-compat with older bundles. */
   currentView?: ViewKind
-  /** Raw active-install source category (`null` on a dashboard host); navigation
-   *  collapses remote ⇒ cloud. Optional for back-compat with older bundles. */
   currentCategory?: Category | null
   runningInstallationIds: string[]
-  /** Selected install in the picker's right pane; defaults to the host's active
-   *  install on open. */
   selectedInstallationId: string | null
-  /** Bumped only on a main-initiated selection retarget. The picker applies the
-   *  snapshot's `selectedInstallationId` only when this advances, so a stale
-   *  broadcast can't override the user's local click. Optional for older bundles. */
   pickerSelectionEpoch?: number
-  /** Detail sections for the selected install (`getDetailSections` shape);
-   *  `null` when no selection. */
   selectedSettings: Record<string, unknown>[] | null
-  /** Snapshot list for the selected install (`get-snapshots` shape); `null` when
-   *  no selection. */
   selectedSnapshots: Record<string, unknown> | null
-  /** Tab the settings UI opens on; `null` = picker view default. */
   initialTab: string | null
-  /** Action id auto-fired after the settings UI mounts; `null` once consumed. */
   autoAction: string | null
   autoActionNonce: number
-  /** Installs with an inline background op in flight; drives the spinner dot. */
   operatingInstallationIds: string[]
   installOperationStatus: Record<
     string,
@@ -82,17 +55,12 @@ export interface PopupInstancePickerSnapshot {
   >
 }
 
-/** Mirrors `GlobalSettingsModelsDir` in `src/main/popups/titlePopup.ts`. */
 export interface PopupGlobalSettingsModelsDir {
   path: string
   isPrimary: boolean
 }
 
-/** Snapshot for the global-settings popup; field arrays are loose-typed (the
- *  renderer casts to `DetailField` on receipt). */
 export interface PopupGlobalSettingsSnapshot {
-  /** Tab to land on; non-null only on the open push (rebroadcasts carry
-   *  null so live data refreshes never retarget the user's tab). */
   initialTab: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
   languageFields: Record<string, unknown>[]
   generalFields: Record<string, unknown>[]
@@ -104,7 +72,6 @@ export interface PopupGlobalSettingsSnapshot {
   installLocationFields: Record<string, unknown>[]
   modelsDirs: PopupGlobalSettingsModelsDir[]
   modelsSystemDefault: string
-  /** Mirrors `GlobalSettingsSnapshot.telemetryGranted`. */
   telemetryGranted: boolean
   appUpdate: {
     state: Record<string, unknown>
@@ -144,10 +111,7 @@ export type TitlePopupConfig =
       theme: PopupTheme
     }
 
-/** Mirrors `DownloadProgress` in `src/main/lib/comfyDownloadManager.ts`. */
 export interface PopupDownloadEntry {
-  /** Stable per-job identifier. The download-action IPC accepts it in place
-   *  of the URL (the `url` action fields remain supported). */
   id?: string
   url: string
   filename: string
@@ -160,10 +124,7 @@ export interface PopupDownloadEntry {
   etaSeconds?: number
   status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
   error?: string
-  /** First-seen timestamp (ms), stable across status transitions so terminal
-   *  entries keep their slot in a single insertion-ordered list. */
   createdAt?: number
-  /** Set on a completed image asset; the popup lazily requests a thumbnail. */
   isImage?: boolean
 }
 
@@ -172,9 +133,6 @@ export interface PopupDownloadsState {
   recent: PopupDownloadEntry[]
 }
 
-/** Per-entry actions address a download by stable job id (`ref`), falling
- *  back to the URL for entries that predate ids. `url` rides along for
- *  compatibility with older mains that only understand URL keys. */
 export type PopupDownloadAction =
   | { action: 'pause'; ref?: string; url: string }
   | { action: 'resume'; ref?: string; url: string }
@@ -184,78 +142,40 @@ export type PopupDownloadAction =
   | { action: 'retry'; ref?: string; url: string }
   | { action: 'clear-finished' }
 
-/** Settings tabs the popup can deep-link the host's panelView into.
- *  `'global-storage'` opens Global Desktop Settings on its Storage tab. */
 export type PopupSettingsTab = 'comfy' | 'directories' | 'downloads' | 'global' | 'global-storage'
 
 export interface ComfyTitlePopupBridge {
-  /** Host OS, for OS-conditional copy without IPC. */
   platform: NodeJS.Platform
-  /** A menu item was clicked — main routes by id and hides the popup. */
   activate(id: string): void
   close(): void
-  /** Renderer mounted; main flushes any config queued before ready. */
   ready(): void
-  /** Renderer applied a config update and the new DOM painted; main waits for
-   *  this before showing so no frame of the previous open's content is seen. */
   notifyRendered(): void
-  /** Config push (one per open). */
   onConfig(cb: (config: TitlePopupConfig) => void): () => void
   onDownloadsChanged(cb: (state: PopupDownloadsState) => void): () => void
-  /** Per-entry action (pause/resume/cancel/show-in-folder) routed to the
-   *  download-manager API. */
   downloadsAction(action: PopupDownloadAction): void
-  /** Close and open the unified Settings modal at the given tab. */
   openSettingsTab(tab: PopupSettingsTab): void
-  /** Close and mount the standalone "View All Downloads" modal — for monitoring
-   *  large downloads without the popup auto-dismissing on focus loss. */
   openDownloadsModal(): void
-  /** Resize the popup to the given natural content height (CSS px); main clamps
-   *  to a band. Only the `'downloads'`/`'instance-picker'` kinds use this. */
   requestSize(height: number): void
-  /** Live picker snapshot pushes while a picker is open. */
   onInstancePickerSnapshot(cb: (snapshot: PopupInstancePickerSnapshot) => void): () => void
-  /** Picker → pick install (focus-or-launch). Dismissed before launch. `confirmed`
-   *  signals the renderer already prompted in-drawer, so main skips its modal. */
   pickInstall(installationId: string, opts?: { confirmed?: boolean }): void
-  /** Picker → open install in its OWN window (focus-existing else spawn a fresh
-   *  chooser host), leaving the picker's host untouched. `allowDuplicate` opens
-   *  a second window for an install that already owns one (cloud-self only). */
   openInstallNewWindow(installationId: string, opts?: { allowDuplicate?: boolean }): void
-  /** Picker → "+ New Install" row, landing on the same surface as the file
-   *  menu's New Install. */
   openNewInstall(): void
-  /** Picker → restart a running install (stop, then focus-or-launch). Pass
-   *  `{ confirmed: true }` when an in-drawer confirm already ran so main skips
-   *  its system-modal. */
   restartInstall(installationId: string, opts?: { confirmed?: boolean }): void
-  /** Downscaled `data:` URL preview of a completed image download (the popup
-   *  has no `window.api`); null for non-images / unreadable files. */
   getDownloadThumbnail(savePath: string): Promise<string | null>
-  /** Tell main the right pane switched to this install; main re-resolves its
-   *  Settings + Snapshots and pushes a fresh snapshot. Idempotent. */
   setPickerSelectedInstall(installationId: string | null): void
-  /** Picker → mutate a settings field via the drawer's allowlist + handler. */
   pickerUpdateField(
     installationId: string,
     fieldId: string,
     value: unknown
   ): Promise<{ ok: boolean; message?: string }>
-  /** Picker → run a snapshot-lifecycle action; main enforces an allowlist. */
   pickerRunAction(
     installationId: string,
     actionId: 'snapshot-save' | 'snapshot-restore' | 'snapshot-delete',
     actionData?: Record<string, unknown>
   ): Promise<{ ok: boolean; message?: string }>
-  /** Picker → install-level action forwarded to the parent panel's
-   *  `useInstallContextMenu` dispatch. */
   openInstallAction(installationId: string, actionId: string): void
-  /** Fires before every show, including the fast path that skips `set-config`,
-   *  so views can reset transient per-open state that `onConfig` would miss. */
   onWillShow(cb: (info: { kind: TitlePopupConfig['kind'] }) => void): () => void
-  /** Live global-settings snapshot pushes while that popup is open. */
   onGlobalSettingsSnapshot(cb: (snapshot: PopupGlobalSettingsSnapshot) => void): () => void
-  /** Global Settings → write a setting (the popup lacks `window.api`). */
   globalSettingsUpdateField(
     fieldId: string,
     value: unknown
@@ -263,23 +183,14 @@ export interface ComfyTitlePopupBridge {
   globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
   globalSettingsBrowseFolder(defaultPath?: string): Promise<string | null>
   globalSettingsOpenPath(path: string): void
-  /** Open the global app-log folder in the OS file manager. */
   globalSettingsOpenLogsFolder(): void
-  /** Reveal a file in the OS file manager (highlights it in its parent folder). */
   globalSettingsRevealPath(path: string): void
-  /** http/https only (enforced main-side). */
   globalSettingsOpenExternal(url: string): void
   globalSettingsCheckForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>
   globalSettingsDownloadUpdate(): Promise<void>
   globalSettingsInstallUpdate(): void
-  /** Renderer mirrors `localStorage.lastCheckedAt` back so the next snapshot
-   *  shows the freshest timestamp. */
   globalSettingsSetLastCheckedAt(value: number): void
 
-  // Per-install settings (picker's expanded Manage). Each is a 1:1 pass-through
-  // to the main-side IPC; `pickerSettings*` keeps them distinct from
-  // `globalSettings*`. The `window.api` shim in `comfyTitlePopup/main.ts`
-  // re-exports these under their original names so the settings UI runs unchanged.
   pickerSettingsGetDetailSections(installationId: string): Promise<Record<string, unknown>[]>
   pickerSettingsGetDiskSpace(path: string): Promise<{ total: number; free: number }>
   pickerSettingsUpdateInstallation(
@@ -347,8 +258,6 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsBrowseFolder(opts?: { defaultPath?: string }): Promise<string | null>
   pickerSettingsCancelOperation(installationId: string): Promise<void>
   pickerSettingsPreviewLocalMigration(installationId: string): Promise<Record<string, unknown>>
-  /** Interactive per-install console. The popup's settings UI hits the same
-   *  generic `terminal-*` IPC the panel does, with an explicit installationId. */
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>
   terminalWrite(installationId: string, data: string): Promise<void>
@@ -356,30 +265,17 @@ export interface ComfyTitlePopupBridge {
   terminalRestart(installationId: string): Promise<TerminalRestore>
   onTerminalOutput(callback: (data: { installationId: string; data: string }) => void): () => void
   onTerminalExited(callback: (data: { installationId: string }) => void): () => void
-  /** Relaunch the app (`app.relaunch()` main-side). */
   pickerSettingsRelaunchApp(): void
-  /** Switch this popup to Global Settings, optionally on a tab and flashing a field. Same
-   *  contract as the panel's `window.api.openGlobalSettings`, which the settings UI calls. */
   pickerSettingsOpenGlobalSettings(
     tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
     opts?: { highlightField?: string }
   ): void
-  /** Pull the panel-side i18n catalog; the popup boots with a minimal static
-   *  one and merges this on top once the expanded settings UI opens. */
   pickerSettingsGetLocaleMessages(): Promise<Record<string, unknown>>
-  /** Active locale resolved by main, so the merged catalog lands under the
-   *  right vue-i18n locale key (not always 'en'). */
   pickerSettingsGetLocale(): Promise<string>
-  /** Fires when main switches locale (e.g. the language picker in this very
-   *  popup), so the open popup re-renders instead of needing a reopen. */
   pickerSettingsOnLocaleChanged(
     cb: (payload: { locale: string; messages: Record<string, unknown> }) => void
   ): () => void
-  /** Fires when `enrichCommitsAhead` writes a new `commitsAhead`, so the open
-   *  pane upgrades the "Latest from GitHub" card in place. */
   pickerSettingsOnReleaseCacheEnriched(callback: (data: { repo: string }) => void): () => void
-  /** Forward a `show-progress` request to the parent panel renderer, which
-   *  rebuilds the apiCall closure and routes through its ProgressModal. */
   pickerForwardShowProgress(payload: {
     installationId: string
     actionId: string
@@ -392,8 +288,6 @@ export interface ComfyTitlePopupBridge {
     routing?: 'same-host' | 'target-host' | 'inline-picker'
     successChoice?: boolean
   }): void
-  /** Start a long-running action as an inline background op; the picker stays
-   *  open and gets live progress via snapshot broadcasts. */
   pickerStartBackgroundOp(payload: {
     installationId: string
     actionId: string
@@ -402,11 +296,7 @@ export interface ComfyTitlePopupBridge {
     cancellable: boolean
   }): void
   pickerCancelBackgroundOp(installationId: string): void
-  /** Dismiss a completed background op so the right pane returns to settings. */
   pickerDismissBackgroundOp(installationId: string): void
-  /** Main wants the renderer to cancel open modal/dialog state (e.g. before a
-   *  kind-switch hide) so a half-open confirm doesn't survive as orphaned
-   *  state. The handler should resolve open entries as if a backdrop was clicked. */
   onDismissModals(cb: () => void): () => void
 }
 
@@ -487,7 +377,6 @@ function isInstancePickerSnapshot(value: unknown): value is PopupInstancePickerS
   if (!Array.isArray(v.installs)) return false
   if (v.activeInstallationId !== null && typeof v.activeInstallationId !== 'string') return false
   if (!Array.isArray(v.runningInstallationIds)) return false
-  // Selected fields are optional on the wire so older bundles' snapshots validate.
   if (
     v.selectedInstallationId !== undefined &&
     v.selectedInstallationId !== null &&
@@ -659,8 +548,6 @@ const bridge: ComfyTitlePopupBridge = {
   globalSettingsSetLastCheckedAt: (value) => {
     ipcRenderer.send('comfy-titlepopup:global-settings-set-last-checked', { value })
   },
-  // Per-install settings: 1:1 pass-throughs to the main-side IPC, namespaced so
-  // they don't collide with the panel's `window.api` IPCs.
   pickerSettingsGetDetailSections: (installationId) =>
     ipcRenderer.invoke(CH.getDetailSections, { installationId }),
   pickerSettingsGetDiskSpace: (path) => ipcRenderer.invoke(CH.getDiskSpace, { path }),

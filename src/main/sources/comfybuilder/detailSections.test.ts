@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
@@ -80,19 +79,10 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('declares NO snapshots section, which is what hides the tab', () => {
-    // Snapshots are admin/owner only (Jul 24 dev-platform standup). A tab
-    // appears iff a section declares it, so this absence IS the policy gate —
-    // copying another source's sections wholesale would silently re-open it.
     expect(tabsOf(sectionsFor(record()))).not.toContain('snapshots')
   })
 
   it('declares NO storage section, because a reduced one shows shared models', () => {
-    // Shared models are off for builds at MVP - each carries its own
-    // allowed list. Declaring a storage section with the toggles omitted does
-    // NOT achieve that: StoragePane reads an absent `useSharedModels` as
-    // enabled (`f ? f.value !== false : true`) and renders the global
-    // shared-models directory list. Declaring it `false` is no better, since
-    // BooleanToggle ignores `editable` and would render a live switch.
     expect(tabsOf(sectionsFor(record()))).not.toContain('storage')
   })
 
@@ -104,8 +94,6 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('labels the build version apart from the ComfyUI version', () => {
-    // A bare "7" in a slot every other install fills with "v0.28.2" reads as a
-    // ComfyUI version and is not one.
     const status = sectionsFor(record()).find((s) => s.tab === 'status')
     const ids = fieldIds(status)
     expect(ids).toContain('build-version')
@@ -142,8 +130,6 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('renders the update tab as a version-stats table, like a local install', () => {
-    // Same component the local-install Update tab uses, so the two read as one
-    // surface rather than merely saying the same words.
     setCachedVersions('d1', [3, 7, 9])
     const field = statsField(record({ version: '7' }))
     expect(field?.editType).toBe('version-stats')
@@ -151,7 +137,6 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('omits the published-version list until the catalog has been read', () => {
-    // "No versions found" is a different claim from "not looked yet".
     const update = sectionsFor(record()).find((s) => s.tab === 'update')
     expect(rowIds(record())).not.toContain('latest')
     expect(rowIds(record())).not.toContain('last-checked')
@@ -159,7 +144,6 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('states installed and latest as bare versions once the cache is warm', () => {
-    // Newest wins whatever order the catalog returned.
     setCachedVersions('d1', [3, 7, 9])
     const rows = statsValue(record({ version: '7' })).rows
     expect(rows.find((r) => r.id === 'installed')?.value).toBe('v7')
@@ -167,8 +151,6 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('offers the update action only when a newer version exists', () => {
-    // An always-present Update that no-ops on the newest version teaches the
-    // user to distrust it.
     setCachedVersions('d1', [3, 7, 9])
     const behind = updateActions(record({ version: '7' }))
     const update = behind.find((a) => a.id === 'update-comfyui')
@@ -188,8 +170,6 @@ describe('comfybuilder.getDetailSections', () => {
   })
 
   it('offers no update when the installed version is unknown', () => {
-    // `Number('')` is 0, which would read as "behind everything" and offer an
-    // update from a blank version.
     setCachedVersions('d1', [9, 7])
     const blank = record({ version: '' })
     expect(updateActions(blank).find((a) => a.id === 'update-comfyui')).toBeUndefined()
@@ -231,7 +211,6 @@ describe('comfybuilder.getDetailSections', () => {
   it('drops the update tab for a record with no build link', () => {
     const tabs = tabsOf(sectionsFor(record({ distributionId: undefined })))
     expect(tabs).not.toContain('update')
-    // The rest of the manage view still stands.
     expect(tabs).toContain('settings')
   })
 })

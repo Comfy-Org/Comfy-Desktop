@@ -2,11 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
-// At runtime __dirname is <projectRoot>/out/main, so the dev-mode formula must
-// resolve from there to <projectRoot>/lib/<script>.
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..')
 
-/** Simulate the dev-mode path resolution as it runs inside the bundle. */
 function devScriptPath(scriptName: string): string {
   const bundledDir = path.join(PROJECT_ROOT, 'out', 'main')
   return path.join(bundledDir, '..', '..', 'lib', scriptName)

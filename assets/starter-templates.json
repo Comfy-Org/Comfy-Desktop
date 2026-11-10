@@ -44,13 +44,13 @@
       }
     },
     {
-      "id": "image_z_image_turbo",
+      "id": "image_moss_image_t2i",
       "modality": "image",
       "recommended": true,
       "snapshot": {
-        "title": "Z-Image-Turbo: Text to Image",
-        "description": "An Efficient Image Generation Foundation Model with Single-Stream Diffusion Transformer, supports English & Chinese.",
-        "sizeBytes": 20830591386,
+        "title": "MOSS-Image: Text to Image",
+        "description": "Generate an image from a text prompt with MOSS-Image, an open-weights model that reads a full scene caption and returns one finished image. A prompt upsampler expands a short request into that caption first, so a one-line description is enough. Ideal for editorial photography, product shots, and concept art.",
+        "sizeBytes": 22222122562,
         "mediaSubtype": "webp"
       }
     },

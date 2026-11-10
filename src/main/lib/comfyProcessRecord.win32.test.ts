@@ -6,7 +6,6 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { ChildProcess } from 'child_process'
 import type * as ProcessIdentity from './processIdentity'
 
-/** The Windows bookkeeping paths of `trackSpawn`, with the process table faked. */
 const fake = vi.hoisted(() => ({
   state: '',
   rows: [] as Array<{ pid: number; ppid: number; created: string; commandLine: string }>,
@@ -25,7 +24,6 @@ vi.mock('./processIdentity', async (importOriginal) => {
       fake.rowCalls++
       fake.rowsInFlight++
       fake.maxRowsInFlight = Math.max(fake.maxRowsInFlight, fake.rowsInFlight)
-      // A snapshot takes a while (PowerShell), so overlapping triggers would overlap here.
       await new Promise((r) => setTimeout(r, 20))
       fake.rowsInFlight--
       return fake.rows.map(({ pid, ppid, created }) => ({ pid, ppid, created }))
@@ -69,8 +67,6 @@ const info = {
 const realPlatform = process.platform
 
 type FakeChild = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; pid: number }
-/** Every child a test created, so cleanup can end them: a child that never exits keeps its
- *  tree-snapshot timers (3, 10, 30 s) alive into later tests. */
 const created: FakeChild[] = []
 function child(pid: number): FakeChild {
   const c = new EventEmitter() as FakeChild
@@ -96,7 +92,6 @@ beforeEach(() => {
   fake.rowsInFlight = 0
   fake.maxRowsInFlight = 0
   fake.tableFails = 0
-  // Launcher 100 and its interpreter 101, both from well before the exit.
   fake.rows = [
     {
       pid: 100,
@@ -116,7 +111,6 @@ afterEach(async () => {
   fs.rmSync(fake.state, { recursive: true, force: true })
 })
 
-/** What a ComfyUI that replaced itself leaves: a new venv launcher under the dead interpreter. */
 function restartedCopy(): void {
   fake.rows = [
     {
@@ -175,7 +169,6 @@ describe('trackSpawn on Windows', () => {
     await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
 
     restartedCopy()
-    // Pipes held by the restarted copy: no `close`. Desktop respawns before the scan runs.
     c.emit('exit', 0, null)
     trackSpawn(asProc(child(500)), info)
     await vi.waitFor(
@@ -202,7 +195,6 @@ describe('trackSpawn on Windows: races and failures', () => {
     c.stdout.emit('data', Buffer.from('x'))
     c.stderr.emit('data', Buffer.from('y'))
     await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
-    // Counted as concurrency, not calls: a slow run can also see the 3 s timer fire first.
     expect(fake.maxRowsInFlight).toBe(1)
   })
 
@@ -211,7 +203,7 @@ describe('trackSpawn on Windows: races and failures', () => {
     c.stderr.emit('data', Buffer.from('x'))
     await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
     restartedCopy()
-    c.emit('exit', 0, null) // pipes held: no close
+    c.emit('exit', 0, null)
     const kills: number[] = []
     const out = await resolvePriorProcess(
       'inst-1',
@@ -223,7 +215,6 @@ describe('trackSpawn on Windows: races and failures', () => {
           new Map(pids.filter((p) => p === 200).map((p) => [p, fake.rows[0]!.created])),
         ownStartTime: async () => 'desktop-start',
         isPidAlive: (pid) => pid === 200,
-        // The restarted copy serves the recorded port and is idle.
         portListeners: async () => [200],
         probeQueue: async () => ({ running: 0, pending: 0 }),
         killPidTree: async (pid) => {

@@ -12,11 +12,6 @@ import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
-/**
- * Panel body modes available in the WebContentsView.
- * Mirrors main's `BodyMode`. Includes `'comfy'` so the renderer
- * can reflect main's `activePanel` after closing a drawer.
- */
 export type PanelKey =
   | 'comfy'
   | 'comfy-lifecycle'
@@ -28,19 +23,7 @@ export type PanelKey =
   | 'track'
   | 'load-snapshot'
   | 'quick-install'
-  /** Mirror of main's `'progress'` ComfyPanelKey. Forwarded to the
-   *  renderer so `onPanelSwitch` doesn't silently drop the IPC when
-   *  the picker-driven ProgressModal flips main into progress-takeover
-   *  layout (panel visible, comfy hidden). Renderer-side has no body
-   *  branch for this key — the takeover is driven by `currentOverlay`
-   *  separately — but accepting it keeps `isValidPanel` from
-   *  swallowing the event. */
   | 'progress'
-  | 'mcp-setup'
-  /** Mirror of main's `'announcement'` ComfyPanelKey. Overlay mode; the
-   *  announcement modal renders via its own ref (like feedback), so there's
-   *  no body branch. Accepting the key keeps `isValidPanel` from swallowing
-   *  the panel-switch so the overlay transparency watcher still fires. */
   | 'announcement'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
@@ -55,19 +38,9 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'mcp-setup',
   'announcement'
 ])
 
-/**
- * Panels that wrap a `*Modal` component with an imperative `open()`
- * reset. These mount in the host's takeover overlay slot (Tier 3) via
- * `useOverlay` rather than as a body branch. Still keyed on `PanelKey`
- * because main addresses these as panel-switch requests (URL
- * `?panel=…` and the `panel-switch` IPC) — `switchPanel` diverts them
- * into `openOverlay({ kind: 'takeover', component })` instead of
- * assigning `activePanel`.
- */
 const FLOW_PANELS: ReadonlySet<PanelKey> = new Set([
   'new-install',
   'track',
@@ -75,7 +48,6 @@ const FLOW_PANELS: ReadonlySet<PanelKey> = new Set([
   'quick-install'
 ])
 
-/** Stable `flow:` strings for `comfy.desktop.install.flow.opened`. */
 const FLOW_TELEMETRY_NAMES: Record<FlowComponent, string> = {
   'new-install': 'new_install',
   'quick-install': 'quick_install',
@@ -92,37 +64,18 @@ export function isFlowPanel(panel: PanelKey): boolean {
 }
 
 export interface FirstUseChainHooks {
-  /** True when the first-use → new-install chain is in flight. Forces
-   *  opaque takeover chrome on the next progress overlay so the dashboard
-   *  doesn't flash through the Tier 3 → Tier 2 swap. */
   shouldForceTakeover: () => boolean
-  /** Capture the first chained op's installationId and flip the
-   *  persisted first-use gate. Called once per chain at the moment the
-   *  install/migrate op begins. */
   onShowProgress: (opts: ShowProgressOpts) => void
-  /** Read-and-clear: returns true if the next new-install takeover open
-   *  should surface a Back link in its Configure footer (chain reached
-   *  the new-install screen via Local → Start Fresh). Called by
-   *  `openFlowTakeover` right before `newInstallRef.value?.open(...)`. */
   consumeCameFromLocalBranch: () => boolean
 }
 
 export interface UsePanelOverlaysOpts {
   installationId: string
-  /** Hand-off helper used by `handleShowProgress` to claim the chooser
-   *  host for any chooser-originated op. The second arg signals whether
-   *  the op ends in a launch (true) so the fallback path subscribes to
-   *  `instance-started`. Optional: install-backed hosts pass nothing. */
   prepareChooserHostHandoff?: (
     installationId: string,
     triggersInstanceStart?: boolean
   ) => Promise<void>
-  /** Optional first-use chain integration — see `FirstUseChainHooks`. */
   firstUseChain?: FirstUseChainHooks
-  // Template refs declared by the parent and bound via `ref="…"`.
-  // Owned by the parent so vue-tsc can see them as used by the
-  // template (destructuring out of the composable hides the binding
-  // and trips `noUnusedLocals`).
   progressRef: Ref<InstanceType<typeof ProgressModal> | null>
   newInstallRef: Ref<InstanceType<typeof InstallWizardModal> | null>
   trackRef: Ref<InstanceType<typeof TrackModal> | null>
@@ -132,7 +85,6 @@ export interface UsePanelOverlaysOpts {
 }
 
 export interface UsePanelOverlaysApi {
-  // State / overlay slot proxied from `useOverlay`.
   activePanel: Ref<PanelKey>
   initialPanel: PanelKey
   defaultBodyPanel: () => PanelKey
@@ -140,7 +92,6 @@ export interface UsePanelOverlaysApi {
   openOverlay: ReturnType<typeof useOverlay>['openOverlay']
   closeOverlay: ReturnType<typeof useOverlay>['closeOverlay']
 
-  // Helpers.
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
   handleProgressClose: () => void
   openFlowTakeover: (component: FlowComponent, entrypoint: string) => Promise<void>
@@ -154,19 +105,6 @@ const isProgressTakeover = (o: Overlay | null | undefined): boolean =>
 const isFirstUseTakeover = (o: Overlay | null | undefined): boolean =>
   o?.kind === 'takeover' && o.component === 'first-use'
 
-/**
- * First-use / lockdown mode to push for an overlay transition, or null
- * to leave the current mode untouched.
- *
- * - ProgressModal takeover mounting → `'loading-lockdown'`.
- * - First-use chain handoff (first-use takeover silently swapped for
- *   another takeover while the chain is active): the chain handler
- *   asserted `'post-consent'` so the file menu stays locked to Skip
- *   Onboarding while the wizard loads — don't clobber it. Scoped to
- *   the takeover → takeover swap so a stale chain flag can't suppress
- *   the `'none'` push on ordinary overlay closes.
- * - Any other transition away from progress/first-use → `'none'`.
- */
 export function firstUseModeForOverlaySwap(
   next: Overlay | null | undefined,
   prev: Overlay | null | undefined,
@@ -181,15 +119,6 @@ export function firstUseModeForOverlaySwap(
   return isChainHandoff ? null : 'none'
 }
 
-/**
- * Owns the panel host's overlay slot and the Tier 2 / Tier 3 helpers
- * that mount things into it. Composed by `PanelApp.vue` so the
- * progress + takeover plumbing isn't redeclared inline.
- *
- * The `useOverlay()` slot is a module singleton, so `useChooserHandoff`
- * and `useFirstUseChain` can also call `useOverlay()` and operate on
- * the same `currentOverlay` without threading it through opts.
- */
 export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysApi {
   const {
     installationId,
@@ -204,21 +133,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
   const dashboardScope = useDashboardScopeStore()
   const { current: currentOverlay, openOverlay, closeOverlay } = useOverlay()
 
-  /**
-   * Title-bar chrome lockdown for the ProgressModal takeover. Push
-   * `'loading-lockdown'` when ProgressModal mounts, restore `'none'`
-   * when it leaves. FirstUseTakeover.vue owns its own consent / post-
-   * consent pushes, so we no-op while a first-use takeover is on
-   * screen.
-   *
-   * `immediate: true` also covers the chooser → install-host handoff:
-   * the title-bar WebContentsView persists across attach/detach but
-   * the panel renderer reloads, so the module-level overlay singleton
-   * resets to `null` while main's entry can still hold a stale
-   * `'loading-lockdown'`. The initial fire on mount clears that drift
-   * — unless a first-use takeover is up, in which case
-   * FirstUseTakeover.vue's own step watcher is the source of truth.
-   */
   watch(
     currentOverlay,
     (next, prev) => {
@@ -245,41 +159,12 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     FLOW_PANELS.has(initialPanel) ? defaultBodyPanel() : initialPanel
   )
 
-  /**
-   * `show-progress` from any panel body. Routes through the host's
-   * overlay slot so the Tier 2 collision rules apply; an in-flight
-   * progress op being replaced prompts the user via the standardised
-   * cancel-prompt copy.
-   *
-   * If the install is currently running, the operation must end in
-   * the running app (Update Now restarts after applying), so route as
-   * a Tier 3 takeover. Both branches mount the same `ProgressModal`
-   * (one ref, since the v-if/v-else-if slots are mutually exclusive)
-   * — only the wrapper tier and full-window styling differ.
-   */
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
-    // Manage→Progress restoration relies on the title carrying the
-    // operation name (e.g. `"Updating ComfyUI — Local install"`); strip
-    // the install suffix for the cancel-prompt copy so the prompt reads
-    // `Cancel "Updating ComfyUI"?` instead of leaking the install name.
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
     opts.firstUseChain?.onShowProgress(showOpts)
-    // Window-close consult or any other slot-clearing transition that
-    // fires the cancel-prompt routes through here so the in-flight op
-    // is actually cancelled in main rather than orphaned via window
-    // destruction.
     const onCancel = (): void => {
       progressStore.cancelOperation(showOpts.installationId)
     }
-    // Pre-seed the operation in the progress store BEFORE swapping the
-    // overlay so `ProgressModal` paints fully populated on its first
-    // frame (op title, "Starting…" status, brand loader). Without this
-    // the modal mounts on a still-empty operation map and renders a
-    // blank/placeholder frame for one tick — the visible flicker users
-    // saw between Continue and the loader. The IPC `apiCall` fires
-    // synchronously from `progressStore.startOperation`, so the install
-    // begins a tick earlier than before; that's fine since the loader
-    // appears in the same swap.
     const existing = progressStore.operations.get(showOpts.installationId)
     if (!existing || existing.finished) {
       progressStore.startOperation({
@@ -295,12 +180,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
         actionId: showOpts.actionId
       })
     }
-    // Every show-progress op renders as a Tier 3 brand takeover now —
-    // delete, copy, migrate, install, update, launch, and snapshot ops
-    // share the same loader chrome (BrandTakeoverLayout + glyph +
-    // wordmark + brand progress bar + brand finished-state banner).
-    // The legacy ModalShell variant of ProgressModal was removed in
-    // the same phase; `brandChrome` is no longer a toggle.
     const ok = await openOverlay({
       kind: 'takeover',
       component: 'update',
@@ -309,15 +188,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       onCancel
     })
     if (!ok) return
-    // Install-less host: claim the chooser host for any op that doesn't
-    // remove the install on success, so the host becomes the install-
-    // backed window once the op completes (launch consumes the claim in
-    // main's `onLaunch`; install / update / migrate / copy / load-
-    // snapshot-as-new ops complete in place via the claim and any
-    // subsequent launch lands in the same host). Destroy ops stay in
-    // the initiating window — there's nothing to attach. The
-    // `triggersInstanceStart` flag drives the fallback close-on-instance-
-    // started subscription (launch-class only) when the claim is rejected.
     if (!installationId && opts.prepareChooserHostHandoff && !showOpts.destroysInstance) {
       await opts.prepareChooserHostHandoff(
         showOpts.installationId,
@@ -325,40 +195,15 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       )
     }
     await nextTick()
-    // After the overlay swap, ProgressModal exists — point it at the
-    // (already running) operation so its internal `currentId` ref tracks
-    // it for showOperation/auto-close logic.
     progressRef.value?.showOperation(showOpts.installationId)
   }
 
   function handleProgressClose(): void {
-    // Direct close (✕ on a finished op, or auto-close via the
-    // window-mode launch watcher) — bypass `openOverlay`'s cancel
-    // prompt because the op has already finished. Cancellation of an
-    // in-flight op flows through `progressStore.cancelOperation`.
     currentOverlay.value = null
-    // Restore the host's body to the comfy view. Picker-driven progress
-    // ops main-side flip activePanel to 'progress' so the panel can
-    // render the takeover on top of the running comfy canvas; closing
-    // the modal must return the layout to 'comfy' or the user is
-    // stranded on an empty panel after dismissing. No-op on hosts where
-    // 'progress' was never set (main's setActivePanel short-circuits on
-    // same-key writes).
     window.api.closeCurrentPanel()
   }
 
-  /**
-   * Open one of the four flow modals as a Tier 3 takeover overlay.
-   * The imperative `open()` reset on each *Modal ref runs after the
-   * takeover mounts so form state always starts fresh.
-   */
   async function openFlowTakeover(component: FlowComponent, entrypoint: string): Promise<void> {
-    // Opt the install-flow wizards into the dedicated "Discard install
-    // setup?" cancel-prompt copy. The wizards have no destructive op
-    // in flight (the install kicks off after the wizard's final step,
-    // routed through `handleShowProgress`), so the generic "Cancel
-    // current operation?" copy is misleading. No `onCancel` is set —
-    // there is no main-side rollback to fire, just a wizard to dismiss.
     const ok = await openOverlay({ kind: 'takeover', component, cancelCopyKey: 'discard-setup' })
     if (!ok) return
     const openedOverlay = currentOverlay.value
@@ -366,13 +211,8 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       flow: FLOW_TELEMETRY_NAMES[component],
       entrypoint
     })
-    // Wait for the v-if branch in the takeover slot to mount the
-    // component before reaching for its ref.
     await nextTick()
     if (component === 'new-install') {
-      // Surface a Back link in the Configure footer when the chain
-      // arrived via Local → Start Fresh. Read-and-clear so a subsequent
-      // dashboard-initiated open() doesn't inherit the flag.
       const cameFromLocalBranch = opts.firstUseChain
         ? opts.firstUseChain.consumeCameFromLocalBranch() === true
         : false
@@ -388,25 +228,12 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     else if (component === 'quick-install') await quickInstallRef.value?.open()
   }
 
-  /**
-   * Open the first-use takeover. Auto-mounted from `onMounted` when
-   * `launcherPrefs.firstUseCompleted` is false; not routed through
-   * `switchPanel` because there's no URL/IPC entry point for it (the
-   * gate is purely the persisted pref).
-   *
-   * Fetches the categorised first-use state from main so the takeover
-   * can suppress the cloud-vs-local pick step for returning users. The
-   * fetch runs in parallel with the overlay mount.
-   */
   async function openFirstUseTakeover(firstUseOpts?: {
     initialStep?: 'start' | 'localBranch'
   }): Promise<void> {
     const statePromise = window.api
       .getFirstUseState()
       .catch(() => ({ skipPick: false, hasLegacyDesktop: false }))
-    // Opt into the "Quit setup?" cancel-prompt copy so the OS-X
-    // consult reads as a binding-flow exit dialog rather than the
-    // generic `overlay.cancelCurrentTitle`.
     const ok = await openOverlay({
       kind: 'takeover',
       component: 'first-use',
@@ -422,40 +249,13 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     })
   }
 
-  /**
-   * Bypass the takeover→null cancel-prompt for renderer-internal
-   * intentional close paths (✕ on a takeover, post-completion auto-
-   * close). The prompt belongs to the consult-from-main
-   * `onCloseRequest` path; firing it on a user's own ✕ click would
-   * be a redundant double-confirm.
-   */
   function dismissTakeoverDirect(): void {
-    // Whenever a Tier 3 overlay is cleared from the renderer side,
-    // the host's first-use mode must drop back to `'none'`. Covers
-    // both explicit completion paths (Cloud / chain-local close) AND
-    // pure-dismiss paths (Track / LoadSnapshot / QuickInstall /
-    // Manage / Progress ✕). FirstUseTakeover.vue's own
-    // watch(step, …, immediate) handles the consent → post-consent
-    // transitions; the renderer-internal dismiss is the only path
-    // that can take the host from a non-'none' mode to 'none'
-    // without a step change inside the takeover.
     if (
       currentOverlay.value?.kind === 'takeover' &&
       currentOverlay.value.component === 'first-use'
     ) {
       window.api.setFirstUseMode('none')
     }
-    // Any overlay opened via `setActivePanel` in main (the unified
-    // settings overlay, and the four flow takeovers fired from the
-    // file menu) flipped `entry.activePanel` away from `'comfy'`.
-    // Closing the overlay only clears the renderer-side slot —
-    // without IPC'ing main back to `'comfy'` two things break:
-    //   - For settings: the live comfy WebContentsView stays hidden
-    //     and the user perceives the running instance as "shut down".
-    //   - For flow takeovers: `entry.activePanel` is stuck on the
-    //     wizard key, so re-picking the same item from the file menu
-    //     hits `setActivePanel`'s same-panel early-return and the
-    //     modal never reopens.
     const cur = currentOverlay.value
     const isFlowTakeover =
       cur?.kind === 'takeover' && (FLOW_PANELS as ReadonlySet<string>).has(cur.component)
@@ -465,21 +265,12 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     currentOverlay.value = null
   }
 
-  /**
-   * Switch the underlying panel body. Flow keys divert into the Tier 3
-   * takeover overlay slot instead of swapping the body. Per-install settings
-   * is no longer a panel key — it's reached via `openInstancePicker(mode:
-   * 'expanded')`. Global Settings is reached via `openGlobalSettings()`.
-   */
   async function switchPanel(panel: PanelKey, entrypoint: string = 'titlebar'): Promise<void> {
     const fromView = activePanel.value
     if (FLOW_PANELS.has(panel)) {
       await openFlowTakeover(panel as FlowComponent, entrypoint)
       return
     }
-    // No-op guard so a redundant `panel-switch` IPC (e.g. main re-
-    // confirms `'comfy-lifecycle'` after an instance stop while we're
-    // already there) doesn't generate a noise event.
     if (panel === fromView) return
     activePanel.value = panel
     emitTelemetryAction('comfy.desktop.view.opened', { view: panel, from_view: fromView })

@@ -7,25 +7,14 @@ import { fetchJSON } from '../../lib/fetch'
 import { RAW_TEMPLATES_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
 
-/**
- * A single model file a template needs, ready to download into the shared
- * models dir at `<modelsBaseDir>/<directory>/<filename>`.
- */
 export interface TemplateModelDownload {
-  /** Final on-disk filename (query params stripped). */
   filename: string
-  /** Source URL (whitelisted host, model file extension). */
   url: string
-  /** Models subdirectory, e.g. `checkpoints`, `vae`, `text_encoders`. */
   directory: string
 }
 
-/** Hosts the ComfyUI frontend whitelists for model downloads. We mirror that
- *  list so the install-time pre-download can't be pointed at an arbitrary host
- *  by a malformed template JSON. */
 const ALLOWED_HOSTS = ['huggingface.co', 'civitai.com', 'civitai.red']
 
-/** Raw embedded-model shape (matches the frontend's `zModelFile`). */
 interface RawModel {
   name?: unknown
   url?: unknown
@@ -34,18 +23,6 @@ interface RawModel {
 
 const RAW_TEMPLATES_REMOTE_BASE = RAW_TEMPLATES_BASE
 
-/**
- * Resolve the workflow JSON for `templateId` — preferring the copy bundled in
- * the just-installed `comfyui_workflow_templates` package (no network), falling
- * back to the public repo when the package layout isn't found.
- */
-/**
- * Packages that ship the per-template workflow JSONs. The templates were split
- * out of the monolithic `comfyui_workflow_templates` into per-modality media
- * packages (`…_media_image` / `_video` / `_other` / …), so we must probe all of
- * them — checking only the legacy single package made local resolution always
- * miss and fall back to the (slow, hang-prone) remote path.
- */
 const TEMPLATE_PACKAGE_DIRS = [
   'comfyui_workflow_templates',
   'comfyui_workflow_templates_media_image',
@@ -66,15 +43,10 @@ export async function loadTemplateJson(
       try {
         const raw = await fs.promises.readFile(local, 'utf-8')
         return JSON.parse(raw)
-      } catch {
-        // try the next package, then fall through to remote
-      }
+      } catch {}
     }
   }
-  // Remote fallback uses the codebase's Electron `net.request` helper (NOT
   // global fetch — which can hang in the Electron main process), so it shares
-  // the same proven network stack, timeout, and retry behaviour as every other
-  // main-side HTTP call.
   try {
     return await fetchJSON(`${RAW_TEMPLATES_REMOTE_BASE}/${templateId}.json`, { refresh: true })
   } catch {
@@ -82,9 +54,6 @@ export async function loadTemplateJson(
   }
 }
 
-/** True when `url` is a syntactically valid HTTPS URL on a whitelisted host
- *  whose path ends in an allowed model extension. Plain `http:` is rejected so a
- *  template can't point a model download at a tamperable transport. */
 function isAcceptableModelUrl(url: string): boolean {
   let parsed: URL
   try {
@@ -99,22 +68,11 @@ function isAcceptableModelUrl(url: string): boolean {
   return ALLOWED_EXTENSIONS.some((ext) => lowerPath.endsWith(ext))
 }
 
-/**
- * Reject template-provided path traversal: a model's `directory` must be a
- * relative path with no `..` segment and its `name` a bare filename (no
- * separator), so a crafted template can't escape the models dir. Returns the
- * normalized `{ directory, filename }` or `null` to drop the entry.
- */
 export function sanitizeModelPath(
   directory: string,
   name: string
 ): { directory: string; filename: string } | null {
   const normalizedDir = path.posix.normalize(directory.replace(/\\/g, '/'))
-  // Trailing-slash-stripped form for the root check only: `''`, `'.'`, and
-  // `'./'` all normalize to a current-dir reference that would drop the model
-  // into the models ROOT instead of a typed subfolder (e.g. `checkpoints/`).
-  // Reject so a malformed/empty directory is skipped rather than scattering
-  // files at the root.
   const dirNoTrail = normalizedDir.replace(/\/+$/, '')
   if (
     dirNoTrail === '' ||
@@ -133,7 +91,6 @@ export function sanitizeModelPath(
   return { directory: normalizedDir, filename }
 }
 
-/** Collect every `{name,url,directory}` from a raw `models[]` array. */
 function collectModels(arr: unknown, out: RawModel[]): void {
   if (Array.isArray(arr)) {
     for (const m of arr) {
@@ -142,8 +99,6 @@ function collectModels(arr: unknown, out: RawModel[]): void {
   }
 }
 
-/** Recursively walk nodes (incl. nested subgraph nodes) collecting
- *  `node.properties.models[]`. */
 function walkNodes(nodes: unknown, out: RawModel[]): void {
   if (!Array.isArray(nodes)) return
   for (const node of nodes) {
@@ -154,15 +109,6 @@ function walkNodes(nodes: unknown, out: RawModel[]): void {
   }
 }
 
-/**
- * Extract the de-duplicated, validated set of models a template needs.
- *
- * Scans both the top-level `models[]` and every `node.properties.models[]`
- * (including subgraph definitions) — mirroring the frontend's missing-model
- * scan — then drops anything missing a name/directory or pointing at a
- * non-whitelisted URL. Returns `[]` for model-free templates or when the JSON
- * can't be resolved (caller treats both as "nothing to download").
- */
 export async function resolveTemplateModels(
   installation: InstallationRecord | null,
   templateId: string
@@ -171,7 +117,6 @@ export async function resolveTemplateModels(
   return resolveTemplateModelsFromJson(json)
 }
 
-/** Extract model downloads from an already-resolved editor workflow. */
 export function resolveTemplateModelsFromJson(json: unknown): TemplateModelDownload[] {
   if (!json || typeof json !== 'object') return []
 
@@ -184,7 +129,6 @@ export function resolveTemplateModelsFromJson(json: unknown): TemplateModelDownl
   const raw: RawModel[] = []
   collectModels(doc.models, raw)
   walkNodes(doc.nodes, raw)
-  // Subgraph definitions carry their own node arrays.
   const subgraphs = doc.definitions?.subgraphs
   if (Array.isArray(subgraphs)) {
     for (const sg of subgraphs) {

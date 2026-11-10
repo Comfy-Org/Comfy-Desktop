@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { X } from 'lucide-vue-next'
-import { useModalOverlay } from '../../composables/useModalOverlay'
-
-// Reusable modal primitive. Owns teleport, dismiss, focus capture/restore,
-// body scroll lock, and a11y attrs. One of aria-label / aria-labelledby is
-// required (it is the modal element for assistive tech).
+import Button from '@comfyorg/design-system/button/Button'
+import DesktopDialogSurface from './DesktopDialogSurface.vue'
 
 type Size = 'sm' | 'md' | 'lg' | 'xl'
 
@@ -18,7 +15,6 @@ interface Props {
   dismissOnOutside?: boolean
   showCloseButton?: boolean
   preventScroll?: boolean
-  /** Opt-in: backdrop-filter is GPU-bound and costly on Electron. */
   blurOverlay?: boolean
   contentClass?: string | string[] | Record<string, boolean>
 }
@@ -43,229 +39,67 @@ if (!props.ariaLabel && !props.ariaLabelledby) {
   )
 }
 
-const dialogRef = ref<HTMLElement | null>(null)
-// Pre-open focus owner, restored on close so focus returns to the trigger.
-let returnFocusTo: HTMLElement | null = null
-// Prior body `overflow`, restored so we don't clobber a host-set value.
-let previousBodyOverflow: string | null = null
-
-const { handleOverlayMouseDown, handleOverlayClick } = useModalOverlay(
-  // Re-checks the prop so a same-tick dismiss flip still wins.
-  () => props.open && props.dismissOnEscape,
-  () => emit('close')
-)
-
-function onOverlayMouseDown(e: MouseEvent) {
-  if (!props.dismissOnOutside) return
-  handleOverlayMouseDown(e)
-}
-function onOverlayClick(e: MouseEvent) {
-  if (!props.dismissOnOutside) return
-  handleOverlayClick(e)
-}
-
-function onCloseClick(): void {
-  emit('close')
-}
-
-function lockBodyScroll(): void {
-  if (!props.preventScroll) return
-  previousBodyOverflow = document.body.style.overflow
-  document.body.style.overflow = 'hidden'
-}
-
-function unlockBodyScroll(): void {
-  if (previousBodyOverflow === null) return
-  document.body.style.overflow = previousBodyOverflow
-  previousBodyOverflow = null
-}
-
-function captureAndFocus(): void {
-  returnFocusTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-  // Focus the dialog container, not the close button — keeps focus trapped for
-  // keyboard/AT without painting a focus-visible ring on open.
-  void nextTick(() => dialogRef.value?.focus())
-}
-
-function restoreFocus(): void {
-  try {
-    returnFocusTo?.focus()
-  } catch {
-    // Original trigger may have been removed from the DOM while open.
-  }
-  returnFocusTo = null
-}
-
-// Focus + scroll-lock flip synchronously (not via the Transition) so they
-// don't leak past dismiss or overlap an immediate re-open.
-watch(
-  () => props.open,
-  (isOpen, wasOpen) => {
-    if (isOpen && !wasOpen) {
-      lockBodyScroll()
-      captureAndFocus()
-    } else if (!isOpen && wasOpen) {
-      unlockBodyScroll()
-      restoreFocus()
-    }
-  },
-  { immediate: true }
-)
-
-onBeforeUnmount(() => {
-  // Defensive: parent may unmount us while still open.
-  unlockBodyScroll()
-  restoreFocus()
-})
-
 const sizeClass = computed(() => `is-size-${props.size}`)
+const sizeStyleClass = computed(() => {
+  switch (props.size) {
+    case 'sm':
+      return '[--base-modal-width:var(--base-modal-width-sm)] min-h-auto'
+    case 'lg':
+      return '[--base-modal-width:var(--base-modal-width-lg)] min-h-[clamp(360px,50vh,540px)]'
+    case 'xl':
+      return '[--base-modal-width:var(--base-modal-width-xl)] min-h-[clamp(360px,50vh,540px)]'
+    default:
+      return '[--base-modal-width:var(--base-modal-width-md)] min-h-[clamp(360px,50vh,540px)]'
+  }
+})
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="modal-fade" appear>
-      <div
-        v-if="open"
-        ref="dialogRef"
-        class="base-modal-overlay"
-        :class="{ 'base-modal-overlay--blur': blurOverlay }"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="ariaLabel"
-        :aria-labelledby="ariaLabelledby"
-        tabindex="-1"
-        @mousedown="onOverlayMouseDown"
-        @click="onOverlayClick"
-      >
-        <div class="base-modal-panel modal-fade-panel" :class="[sizeClass, contentClass]">
-          <button
-            v-if="showCloseButton"
-            type="button"
-            class="base-modal-close"
-            :aria-label="$t('common.close')"
-            data-testid="base-modal-close"
-            @click="onCloseClick"
-          >
-            <X :size="18" />
-          </button>
-          <header v-if="$slots.header" class="base-modal-header">
-            <slot name="header" />
-          </header>
-          <div class="base-modal-body">
-            <slot />
-          </div>
-          <footer v-if="$slots.footer" class="base-modal-footer">
-            <slot name="footer" />
-          </footer>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+  <DesktopDialogSurface
+    :open="open"
+    :aria-label="ariaLabel"
+    :aria-labelledby="ariaLabelledby"
+    :dismiss-on-escape="dismissOnEscape"
+    :dismiss-on-outside="dismissOnOutside"
+    :prevent-scroll="preventScroll"
+    :overlay-class="[
+      'base-modal-overlay fixed inset-0 z-60 grid place-items-center bg-neutral-800/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]',
+      { 'base-modal-overlay--blur backdrop-blur-[8px] backdrop-saturate-[115%]': blurOverlay }
+    ]"
+    :content-class="[
+      'base-modal-panel relative flex w-[var(--base-modal-width,var(--base-modal-width-md))] max-w-full flex-col overflow-hidden rounded-panel border border-solid border-border bg-[var(--modal-surface-bg)] text-neutral-100 shadow-[var(--modal-surface-shadow)] [--base-modal-width-sm:480px] [--base-modal-width-md:640px] [--base-modal-width-lg:800px] [--base-modal-width-xl:min(1080px,92vw)] max-h-[clamp(360px,80vh,920px)]',
+      sizeClass,
+      sizeStyleClass,
+      contentClass
+    ]"
+    @close="emit('close')"
+  >
+    <Button
+      v-if="showCloseButton"
+      type="button"
+      variant="muted-textonly"
+      size="icon"
+      class="base-modal-close absolute top-3.5 right-3.5 z-2"
+      :aria-label="$t('common.close')"
+      data-testid="base-modal-close"
+      @click="emit('close')"
+    >
+      <X :size="18" />
+    </Button>
+    <header
+      v-if="$slots.header"
+      class="base-modal-header border-b border-solid border-neutral-100/8 pt-5 pr-14 pb-3 pl-6"
+    >
+      <slot name="header" />
+    </header>
+    <div class="base-modal-body min-h-0 flex-auto overflow-y-auto px-6 py-4">
+      <slot />
+    </div>
+    <footer
+      v-if="$slots.footer"
+      class="base-modal-footer flex items-center justify-end gap-2 border-t border-solid border-neutral-100/8 px-6 pt-3 pb-4"
+    >
+      <slot name="footer" />
+    </footer>
+  </DesktopDialogSurface>
 </template>
-
-<style scoped>
-.base-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: grid;
-  place-items: center;
-  padding: clamp(32px, 6vh, 72px) clamp(16px, 4vw, 48px);
-  background: color-mix(in oklab, var(--neutral-800) 70%, transparent);
-}
-.base-modal-overlay:focus {
-  outline: none;
-}
-.base-modal-overlay--blur {
-  backdrop-filter: blur(8px) saturate(115%);
-  -webkit-backdrop-filter: blur(8px) saturate(115%);
-}
-
-.base-modal-panel {
-  --base-modal-width-sm: 480px;
-  --base-modal-width-md: 640px;
-  --base-modal-width-lg: 800px;
-  --base-modal-width-xl: min(1080px, 92vw);
-
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: var(--base-modal-width, var(--base-modal-width-md));
-  max-width: 100%;
-  min-height: clamp(360px, 50vh, 540px);
-  max-height: clamp(360px, 80vh, 920px);
-  border-radius: 14px;
-  overflow: hidden;
-  background: var(--modal-surface-bg);
-  border: 1px solid var(--modal-surface-border);
-  box-shadow: var(--modal-surface-shadow);
-  color: var(--neutral-100);
-}
-.base-modal-panel.is-size-sm {
-  --base-modal-width: var(--base-modal-width-sm);
-  /* Small dialogs hug their content instead of the tall shared min-height. */
-  min-height: auto;
-}
-.base-modal-panel.is-size-md {
-  --base-modal-width: var(--base-modal-width-md);
-}
-.base-modal-panel.is-size-lg {
-  --base-modal-width: var(--base-modal-width-lg);
-}
-.base-modal-panel.is-size-xl {
-  --base-modal-width: var(--base-modal-width-xl);
-}
-
-.base-modal-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--text) 4%, transparent);
-  border: 1px solid transparent;
-  opacity: 0.7;
-  color: var(--neutral-100);
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
-}
-.base-modal-close:hover {
-  opacity: 1;
-  background: color-mix(in oklab, var(--neutral-950) 85%, transparent);
-  border-color: color-mix(in oklab, var(--neutral-100) 44%, transparent);
-}
-.base-modal-close:focus-visible {
-  outline: 2px solid var(--focus-ring, var(--neutral-50));
-  outline-offset: 2px;
-}
-
-.base-modal-header {
-  padding: 20px 56px 12px 24px;
-  border-bottom: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-
-.base-modal-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 16px 24px;
-}
-
-.base-modal-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 24px 16px;
-  border-top: 1px solid color-mix(in oklab, var(--neutral-100) 8%, transparent);
-}
-</style>

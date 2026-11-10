@@ -1,22 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { createI18n } from 'vue-i18n'
 
-import { en } from '../../lib/i18nMessages.ts'
 import ChannelPicker from './ChannelPicker.vue'
 import type { DetailField } from '../../types/ipc'
-
-function makeI18n() {
-  return createI18n({ legacy: false, locale: 'en', messages: { en } })
-}
 
 function mountPicker(field: DetailField) {
   return mount(ChannelPicker, {
     props: { field },
     global: {
-      plugins: [makeI18n()],
       stubs: {
-        // Teleports its listbox to <body>; the headline under test doesn't need it.
         BaseSelect: true,
         InfoTooltip: true
       }
@@ -249,13 +241,11 @@ describe('ChannelPicker — cascading group dropdowns', () => {
     const wrapper = mountPicker(groupedField())
     const all = selects(wrapper)
     expect(all).toHaveLength(2)
-    // Group dropdown lists the unique series and follows the current value's path.
     expect(all[0].props('modelValue')).toBe('cu130')
     expect((all[0].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
       'cu130',
       'cu128'
     ])
-    // Concrete dropdown only shows the selected group's options.
     expect(all[1].props('modelValue')).toBe('s-cu130-2.9')
     expect((all[1].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
       's-cu130-2.10',
@@ -280,7 +270,6 @@ describe('ChannelPicker — cascading group dropdowns', () => {
     await selects(wrapper)[0].vm.$emit('update:modelValue', 'cu128')
     const all = selects(wrapper)
     expect(all[1].props('modelValue')).toBe('s-cu128-2.11')
-    // Preview follows the concrete selection.
     expect(wrapper.find('.channel-picker-headline-version').text()).toBe('v2.11.0+cu128')
   })
 
@@ -299,9 +288,6 @@ describe('ChannelPicker — cascading group dropdowns', () => {
   })
 
   it('keeps the cascade coherent when the field value matches no option', () => {
-    // e.g. the draft's option vanished in an options refresh: every surface
-    // (group dropdown, concrete dropdown, preview) must agree on the
-    // fallback (first) option instead of showing a blank concrete select.
     const wrapper = mountPicker(groupedField('gone-stack'))
     const all = selects(wrapper)
     expect(all[0].props('modelValue')).toBe('cu130')
@@ -345,12 +331,10 @@ describe('ChannelPicker — cascading group dropdowns', () => {
       'nv',
       'amd'
     ])
-    // Second level only shows series under the selected vendor.
     expect((all[1].props('options') as Array<{ value: string }>).map((o) => o.value)).toEqual([
       'cu130',
       'cu128'
     ])
-    // Switching the outermost level cascades to a concrete option.
     await all[0].vm.$emit('update:modelValue', 'amd')
     const after = selects(wrapper)
     expect(after[1].props('modelValue')).toBe('rocm7')
@@ -406,7 +390,7 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
     const button = wrapper.find('[data-testid="update-action-change-pytorch"]')
     expect(button.exists()).toBe(true)
-    expect(button.classes()).toContain('accent')
+    expect(button.attributes('data-variant')).toBe('accent')
     expect(button.text()).toContain('Change PyTorch')
   })
 
@@ -427,9 +411,8 @@ describe('ChannelPicker - change-pytorch footer action', () => {
     const wrapper = mountPicker(pytorchField('s-cpu-2.11'))
     const copyButton = wrapper.find('[data-testid="update-action-copy-pytorch"]')
     expect(copyButton.exists()).toBe(true)
-    expect(copyButton.classes()).not.toContain('accent')
+    expect(copyButton.attributes('data-variant')).not.toBe('accent')
     expect(copyButton.text()).toContain('Copy & Change PyTorch')
-    // Safe alternative sits before the primary action, mirroring Copy & Update.
     const ids = wrapper
       .findAll('[data-testid^="update-action-"]')
       .map((b) => b.attributes('data-testid'))

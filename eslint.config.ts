@@ -7,7 +7,16 @@ import globals from 'globals'
 import { configs as tseslintConfigs, parser as tseslintParser } from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
+import noComments from './scripts/eslint/no-comments'
+import noNewVueStyleBlocks from './scripts/eslint/no-new-vue-style-blocks'
+
 const extraFileExtensions = ['.vue']
+
+const publishedApiSpecs = ['./src/types/comfyDesktopBridge.ts']
+
+const desktop = {
+  rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
+}
 
 const commonParserOptions = {
   parser: tseslintParser,
@@ -49,6 +58,8 @@ export default defineConfig([
   },
   {
     files: ['./**/*.vue'],
+    plugins: { desktop },
+    rules: { 'desktop/no-new-vue-style-blocks': 'error' },
     languageOptions: {
       globals: { ...globals.browser },
       parser: vueParser,
@@ -61,9 +72,12 @@ export default defineConfig([
   eslintConfigPrettier,
   {
     plugins: {
+      desktop,
       'unused-imports': unusedImports
     },
     rules: {
+      'desktop/no-comments': 'error',
+      '@typescript-eslint/ban-ts-comment': ['error', { 'ts-expect-error': false }],
       'no-empty': ['error', { allowEmptyCatch: true }],
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': 'off',
@@ -82,5 +96,14 @@ export default defineConfig([
       'vue/no-use-v-else-with-v-for': 'error',
       'vue/one-component-per-file': 'error'
     }
+  },
+  {
+    files: publishedApiSpecs,
+    rules: { 'desktop/no-comments': ['error', { allowDocComments: true }] }
+  },
+  {
+    files: ['./e2e/support/**/*.cjs'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' }
   }
 ])

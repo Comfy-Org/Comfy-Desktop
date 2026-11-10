@@ -8,10 +8,6 @@ import StorageDirRow from '../../views/comfyUISettings/StorageDirRow.vue'
 import { samePath } from '../../lib/pathCompare'
 import type { DetailField } from '../../types/ipc'
 
-// Shared global-storage UI rendered identically by the Global Settings
-// popup and StoragePane.vue so the two can't drift. Writes persist
-// immediately (no save step); `touched` is emitted on any mutation.
-
 interface ModelsDir {
   path: string
   isPrimary: boolean
@@ -49,8 +45,6 @@ const modal = useModal()
 
 const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge }).__comfyTitlePopup
 
-/** Shared input/output fields from the snapshot, keyed by id so they render as
- *  the same readonly path rows used in the per-instance Storage tab. */
 const sharedDirFields = computed<Record<string, DetailField>>(() => {
   const map: Record<string, DetailField> = {}
   for (const f of props.snapshot.sharedDirectoriesFields as unknown as DetailField[]) {
@@ -61,8 +55,6 @@ const sharedDirFields = computed<Record<string, DetailField>>(() => {
 const sharedInputField = computed(() => sharedDirFields.value.inputDir)
 const sharedOutputField = computed(() => sharedDirFields.value.outputDir)
 
-/** Every dir here is globally shared, so flag them all to render the shared
- *  glyph — matching the per-instance Storage tab (StoragePane.vue). */
 const sharedModelDirs = computed(() =>
   props.snapshot.modelsDirs.map((d) => ({ ...d, shared: true }))
 )
@@ -95,7 +87,6 @@ function handleOpenModelsDir(index: number): void {
   if (dir) bridge?.globalSettingsOpenPath(dir.path)
 }
 
-/** Whether a picked path already appears in the shared models list. */
 function isListedModelsDir(path: string): boolean {
   const win = bridge?.platform === 'win32'
   return props.snapshot.modelsDirs.some((d) => samePath(d.path, path, win))
@@ -114,12 +105,9 @@ async function handleRemoveModelsDir(index: number): Promise<void> {
   const dir = props.snapshot.modelsDirs[index]
   if (!dir) return
   const ok = await modal.confirm({
-    title: t('models.removeDirTitle', 'Remove shared models directory?'),
-    message: t(
-      'models.removeDirConfirm',
-      "This won't delete any files. You can re-add the directory later from this list."
-    ),
-    confirmLabel: t('models.removeDir', 'Remove'),
+    title: t('models.removeDirTitle'),
+    message: t('models.removeDirConfirm'),
+    confirmLabel: t('models.removeDir'),
     confirmStyle: 'danger'
   })
   if (!ok) return
@@ -150,10 +138,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
 </script>
 
 <template>
-  <GlobalSettingsMicroSection
-    :title="t('settings.models', 'Shared Models')"
-    :tooltip="t('tooltips.sharedModels')"
-  >
+  <GlobalSettingsMicroSection :title="t('settings.models')" :tooltip="t('tooltips.sharedModels')">
     <ModelsDirList
       :dirs="sharedModelDirs"
       @change="handleChangeModelsDir"
@@ -165,12 +150,12 @@ async function handleChangeModelsDir(index: number): Promise<void> {
   </GlobalSettingsMicroSection>
 
   <GlobalSettingsMicroSection
-    :title="t('settings.sharedDirectories', 'Shared Directories')"
+    :title="t('settings.sharedDirectories')"
     :tooltip="t('tooltips.sharedDirectories')"
   >
     <StorageDirRow
       v-if="sharedInputField"
-      :label="sharedInputField.label || t('media.inputDir', 'Shared Input')"
+      :label="sharedInputField.label || t('media.inputDir')"
       :path="sharedFieldPath(sharedInputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedInputField))"
@@ -178,7 +163,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     />
     <StorageDirRow
       v-if="sharedOutputField"
-      :label="sharedOutputField.label || t('media.outputDir', 'Shared Output')"
+      :label="sharedOutputField.label || t('media.outputDir')"
       :path="sharedFieldPath(sharedOutputField)"
       shared
       @open="handleOpenPath(sharedFieldPath(sharedOutputField))"

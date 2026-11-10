@@ -2,12 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { installPickerSettingsApiShim } from './pickerSettingsApiShim'
 
-// The settings UI runs inside the title-popup WebContents, which has the
-// `__comfyTitlePopup` bridge instead of `window.api`. The shim must forward
-// every method the settings UI calls — including the interactive console —
-// or the Console tab mounts xterm against undefined APIs and wedges the tab
-// transition (regression: the whole settings UI appeared to freeze).
-
 afterEach(() => {
   delete (window as unknown as { api?: unknown }).api
   delete (window as unknown as { __comfyTitlePopup?: unknown }).__comfyTitlePopup
@@ -32,8 +26,6 @@ function installBridge(overrides: Record<string, unknown> = {}): Record<string, 
     onTerminalExited: vi.fn(() => () => {}),
     ...overrides
   }
-  // Auto-stub any other mapped bridge method the shim binds, so the test only
-  // has to declare the terminal methods it asserts on.
   const bridge = new Proxy(explicit, {
     get(target, prop: string) {
       if (!(prop in target)) target[prop] = vi.fn()
@@ -111,5 +103,30 @@ describe('installPickerSettingsApiShim — Global Settings deep link', () => {
     expect(bridge.pickerSettingsOpenGlobalSettings).toHaveBeenCalledExactlyOnceWith('general', {
       highlightField: 'betaFeaturesEnabled'
     })
+  })
+})
+
+describe('installPickerSettingsApiShim — folder actions', () => {
+  it('gives the Storage tab the same folder actions the panel has', () => {
+    const bridge = installBridge({ platform: 'win32' })
+    installPickerSettingsApiShim()
+
+    const api = (
+      window as unknown as {
+        api: {
+          platform: string
+          openPath: (path: string) => void
+          revealPath: (path: string) => void
+        }
+      }
+    ).api
+    api.openPath('/models')
+    api.revealPath('/models/extra_model_paths.yaml')
+
+    expect(api.platform).toBe('win32')
+    expect(bridge.globalSettingsOpenPath).toHaveBeenCalledExactlyOnceWith('/models')
+    expect(bridge.globalSettingsRevealPath).toHaveBeenCalledExactlyOnceWith(
+      '/models/extra_model_paths.yaml'
+    )
   })
 })

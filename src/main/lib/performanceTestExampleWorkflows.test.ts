@@ -38,7 +38,6 @@ import {
 const REPO = 'https://raw.githubusercontent.com/Comfy-Org/workflow_templates/main'
 const INDEX_URL = `${REPO}/templates/index.json`
 const bundledIds = benchmarkTemplates.templates.map(({ id }) => id)
-/** Any bundled image example; the list content changes with upstream `benchmarks/`. */
 const SAMPLE_ID = benchmarkTemplates.templates.find(({ modality }) => modality === 'image')!.id
 const liveIndex = [
   {
@@ -243,11 +242,9 @@ describe('performance test example workflows', () => {
       ...patch
     })
 
-    /** Start a download for a fresh session, followed by a fake page. */
     async function startDownload(sessionId: string) {
       serveRepo()
       const artifacts = await loadPerformanceTestExampleArtifacts(SAMPLE_ID)
-      // Platform-native, like the paths the main process stores (CI runs on Linux).
       const workflowFilePath = path.join('benchmarks', sessionId, `${SAMPLE_ID}.json`)
       let publish: (summary: TemplateDownloadSummary) => void = () => {}
       vi.mocked(subscribeTemplateDownload).mockImplementation((_id, listener) => {
@@ -294,7 +291,6 @@ describe('performance test example workflows', () => {
         editorWorkflow
       )
       expect(subscribeTemplateDownload).toHaveBeenCalledWith(taskId, expect.any(Function))
-      // The summary reported at subscribe time is returned, not sent.
       expect(initial).toEqual({ status: 'resolving', percent: -1, message: expect.any(String) })
       expect(page.send).not.toHaveBeenCalled()
 
@@ -308,7 +304,6 @@ describe('performance test example workflows', () => {
           error: 'insufficient-disk'
         }
       })
-      // A settled download no longer depends on its page.
       expect(watchers(page)).toBe(0)
       page.emit('destroyed')
       expect(onPageGone).not.toHaveBeenCalled()

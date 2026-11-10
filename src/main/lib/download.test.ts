@@ -121,9 +121,6 @@ describe('download — R2 mirror fallback for binaries', () => {
   })
 
   it('does not retry the mirror when the recursive _skipMirror is set (no bounce-back)', async () => {
-    // Internal contract: when download is called from inside the mirror-retry
-    // branch, _skipMirror=true prevents infinite ping-pong if the mirror itself
-    // happens to live under R2_MIRROR_BASE_URL (it doesn't today, but lock it).
     const dest = path.join(tmpDir, 'bundle.7z')
     const p = download(MIRROR_BIN, dest, null, { _skipMirror: true } as unknown as {
       _skipMirror: boolean
@@ -150,7 +147,6 @@ describe('download — no-progress watchdog', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  /** Open response with a Content-Length but emit no `end` — caller controls bytes. */
   function openStreaming(req: FakeRequest, totalLen: number): EventEmitter {
     const res = Object.assign(new EventEmitter(), {
       statusCode: 200,
@@ -165,7 +161,7 @@ describe('download — no-progress watchdog', () => {
     const p = download(URL, dest, null, { idleTimeoutMs: 1000 })
     const rejection = expect(p).rejects.toThrow(/stalled/i)
     const res = openStreaming(requests[0]!, 100)
-    res.emit('data', Buffer.from('ab')) // one chunk, then silence
+    res.emit('data', Buffer.from('ab'))
     await vi.advanceTimersByTimeAsync(1000)
     await rejection
     expect(requests[0]!.abort).toHaveBeenCalled()
@@ -188,7 +184,6 @@ describe('download — no-progress watchdog', () => {
     const body = Buffer.from('hello world bytes!!!')
     const p = download(URL, dest, null, { idleTimeoutMs: 1000, expectedSize: body.length })
     const res = openStreaming(requests[0]!, body.length)
-    // Drip chunks 800ms apart — never idle for the full second.
     for (const ch of [body.subarray(0, 7), body.subarray(7, 14), body.subarray(14)]) {
       res.emit('data', ch)
       await vi.advanceTimersByTimeAsync(800)

@@ -17,11 +17,8 @@ const { createAssetsTap, ASSETS_EVENT_LINE, ALLOWED_EVENTS, ALLOWED_FIELD_NAMES 
 const telemetry = await import('./telemetry')
 const { DATADOG_GLOBAL_CONTEXT_KEYS } = await import('../../shared/datadogMirroredEvents')
 
-// Resolved against cwd (not import.meta.url, which happy-dom can mangle) — the
-// same idiom ProgressModal.test.ts uses for reading a source file.
 const FIXTURE_PATH = path.resolve('src/main/lib/__fixtures__/assets-event-lines.txt')
 
-/** The core-side event names this tap is willing to forward. */
 const CORE_EVENTS = [
   'assets.enabled',
   'seeder.scan_started',
@@ -81,7 +78,6 @@ const FIELD_VALUES: Array<{ field: string; value: LogfmtValue }> = [
   { field: 'exc_line', value: 184 }
 ]
 
-/** Fields core added with its failure classification. */
 const CLASSIFICATION_FIELDS = [
   'reason',
   'errno_name',
@@ -102,11 +98,6 @@ function taggedLine(event: string, fields: Readonly<Record<string, LogfmtValue>>
   return `[assets-event] ${event}${tail ? ` ${tail}` : ''}\n`
 }
 
-/**
- * Makes the `phase` membership lookup throw. Set membership keeps prototype
- * keys safe, so the per-line fault isolation needs its own throw to be proven.
- * Undone by the `vi.restoreAllMocks()` in `afterEach`.
- */
 function withExplodingPhaseLookup(): void {
   const fieldNames = new Set(ALLOWED_FIELD_NAMES)
   vi.spyOn(ALLOWED_FIELD_NAMES, 'has').mockImplementation((key) => {
@@ -122,11 +113,16 @@ describe('assetsTap', () => {
     installationId: 'inst-1',
     variant: 'desktop',
     release: '1.0.47-rc.1',
-    coreBetaFlags: ['--enable-assets']
+    coreBetaFlags: ['--enable-assets'],
+    sessionKind: 'performance_test' as const
   }
+
+  let consent: ReturnType<typeof telemetry.getConsentState> = 'granted'
 
   beforeEach(() => {
     captured = []
+    consent = 'granted'
+    vi.spyOn(telemetry, 'getConsentState').mockImplementation(() => consent)
     vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
       captured.push({ event, ctx: ctx as Record<string, unknown> })
     })
@@ -275,6 +271,7 @@ describe('assetsTap', () => {
         variant: 'desktop',
         release: '1.0.47-rc.1',
         core_beta_flags: ['--enable-assets'],
+        session_kind: 'performance_test',
         root: 'models',
         created: 12
       })
@@ -288,6 +285,7 @@ describe('assetsTap', () => {
         variant: null,
         release: null,
         core_beta_flags: [],
+        session_kind: 'normal',
         hashing_enabled: true
       })
     })
@@ -343,7 +341,8 @@ describe('assetsTap', () => {
         installation_id: 'inst-1',
         variant: 'desktop',
         release: '1.0.47-rc.1',
-        core_beta_flags: ['--enable-assets']
+        core_beta_flags: ['--enable-assets'],
+        session_kind: 'performance_test'
       })
     })
   })
@@ -389,6 +388,60 @@ describe('assetsTap', () => {
       expect(JSON.stringify(captured[0]!.ctx)).not.toContain('scan_exploded')
     })
 
+    it.each(['denied', 'undecided'] as const)(
+      'does not count what it saw while consent was %s, once consent is granted',
+      (declined) => {
+        consent = declined
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
+        tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+
+        expect(captured).toEqual([])
+
+        consent = 'granted'
+        tap.flushSummary()
+
+        expect(captured.map((c) => c.event)).not.toContain(
+          'comfy.desktop.comfyui.assets.unknown_events_dropped'
+        )
+        expect(captured.map((c) => c.event)).not.toContain(
+          'comfy.desktop.comfyui.assets.unknown_enum_values_omitted'
+        )
+
+        tap.ingest(taggedLine('seeder.scan_exploded', { phase: 'fast' }), 'stdout')
+        tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
+        tap.flushSummary()
+        const counts = Object.fromEntries(
+          captured
+            .filter(
+              (c) =>
+                c.event.endsWith('unknown_events_dropped') ||
+                c.event.endsWith('unknown_enum_values_omitted')
+            )
+            .map((c) => [c.event, c.ctx.count])
+        )
+        expect(counts).toEqual({
+          'comfy.desktop.comfyui.assets.unknown_events_dropped': 1,
+          'comfy.desktop.comfyui.assets.unknown_enum_values_omitted': 1
+        })
+      }
+    )
+
+    it('spends no rate-cap budget on lines seen without consent', () => {
+      consent = 'denied'
+      const tap = createAssetsTap(baseOpts)
+      for (let i = 0; i < 61; i++) {
+        tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
+      }
+
+      consent = 'granted'
+      tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
+
+      expect(captured.map((c) => c.event)).toEqual([
+        'comfy.desktop.comfyui.assets.seeder.scan_started'
+      ])
+    })
+
     it('reports omitted enum values as a bare count, never the values', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(
@@ -396,7 +449,6 @@ describe('assetsTap', () => {
         'stdout'
       )
       tap.ingest(taggedLine('scanner.hash_failed', { reason: 'quantum_flux' }), 'stdout')
-      // A line rejected for another reason contributes nothing.
       tap.ingest(taggedLine('scanner.hash_failed', { reason: 'new_one', root: 'cache' }), 'stdout')
       expect(captured).toHaveLength(2)
 
@@ -461,10 +513,6 @@ describe('assetsTap', () => {
     })
 
     it('rejects a field name inherited from the allowlist\u2019s prototype', () => {
-      // `constructor` is the one prototype key that clears the lowercase-only
-      // FIELD_NAME filter and, against an object literal, resolves up the
-      // prototype chain to a truthy *callable* returning a truthy value — so
-      // the field sails through the allowlist gate and ships to PostHog.
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_started constructor=x\n', 'stdout')
       expect(captured).toHaveLength(0)
@@ -477,7 +525,6 @@ describe('assetsTap', () => {
       }
       expect(captured).toHaveLength(0)
 
-      // And the base context of a later, legitimate line is untouched.
       tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({
@@ -493,13 +540,10 @@ describe('assetsTap', () => {
     })
 
     it('omits a key colliding with a telemetry default property but keeps the event', () => {
-      // Per-event fields win telemetry's merge over its defaults, and
-      // `is_packaged` fits the `is_*` convention, so without this a forged
-      // `is_packaged=false` would relabel a packaged build's event.
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { is_packaged: false }), 'stdout')
       for (const key of telemetry.DEFAULT_EVENT_PROPERTY_NAMES) {
-        if (key === 'installation_id') continue // base context: rejects the line
+        if (key === 'installation_id') continue
         tap.ingest(taggedLine('seeder.scan_completed', { phase: 'fast', [key]: 1 }), 'stdout')
       }
       expect(captured).toHaveLength(telemetry.DEFAULT_EVENT_PROPERTY_NAMES.size)
@@ -512,8 +556,6 @@ describe('assetsTap', () => {
     })
 
     it('omits a key colliding with Datadog global context but keeps the event', () => {
-      // Mirrored failure events reach datadogRum.addAction, where the action's
-      // context wins over the renderer's global cohort context.
       const forged = {
         telemetry_enabled: false,
         has_launched_cloud: true,
@@ -562,11 +604,6 @@ describe('assetsTap', () => {
     })
 
     it('rejects a base-context collision the field allowlist would otherwise admit', () => {
-      // The two vocabularies are disjoint today, so the collision guard is only
-      // reachable once they overlap. Simulate that future to prove the guard —
-      // not the field allowlist — is what rejects a context-spoofing line.
-      // Routed through a local copy rather than written into the exported
-      // vocabulary, which every other test in this file shares.
       const widened = new Set(ALLOWED_FIELD_NAMES)
       widened.add('installation_id')
       const lookup = vi
@@ -605,8 +642,6 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
-    // The line buffer splits on LF and CRLF, so only a lone CR can reach a
-    // value through ingest; LF is rejected too, for parity with core.
     it('rejects a value carrying a lone carriage return', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest('[assets-event] seeder.scan_failed error_type=Value\rError\n', 'stdout')
@@ -716,7 +751,6 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(0)
     })
 
-    // A newer core may add a reason or a call site; the event must survive it.
     it.each([
       ['site', 'finalize'],
       ['reason', 'disk_on_fire']
@@ -786,8 +820,6 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject(fields)
     })
 
-    // One fingerprint in about 280 is all decimal digits; coercing it to a
-    // number would drop every line from that failure site.
     it('keeps an all-digit exc_fp as a string', () => {
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('scanner.stat_failed', { exc_fp: '012345678901' }), 'stdout')
@@ -795,7 +827,6 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx.exc_fp).toBe('012345678901')
     })
 
-    // Every event core sends through its failure classifier.
     it.each([
       ...CORE_EVENTS.filter((event) => event.endsWith('_failed')),
       'scanner.root_unreachable'
@@ -902,7 +933,6 @@ describe('assetsTap', () => {
     })
 
     it('silently omits new names past 64 per tap, but keeps forwarding seen ones', () => {
-      // `aa_count`, `ab_count`, ...: distinct and digit-free.
       const nameFor = (i: number): string =>
         `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}_count`
       const tap = createAssetsTap(baseOpts)
@@ -912,7 +942,6 @@ describe('assetsTap', () => {
       }
       expect(captured).toHaveLength(8)
       expect(captured[7]!.ctx[nameFor(63)]).toBe(1)
-      // Survives a core restart; a new name is dropped, a seen one still forwards.
       tap.beginBoot()
       tap.ingest(
         taggedLine('seeder.scan_completed', { [nameFor(64)]: 1, [nameFor(0)]: 2, phase: 'fast' }),
@@ -921,7 +950,6 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(9)
       expect(captured[8]!.ctx).not.toHaveProperty(nameFor(64))
       expect(captured[8]!.ctx).toMatchObject({ [nameFor(0)]: 2, phase: 'fast' })
-      // Silent: no counter event.
       tap.flushSummary()
       expect(captured).toHaveLength(9)
     })
@@ -934,9 +962,20 @@ describe('assetsTap', () => {
         ])
       )
 
+      it('not by a line seen without consent', () => {
+        consent = 'denied'
+        const tap = createAssetsTap(baseOpts)
+        tap.ingest(taggedLine('seeder.scan_completed', sixtyFourNames), 'stdout')
+
+        consent = 'granted'
+        tap.ingest(taggedLine('seeder.scan_completed', { zz_count: 7 }), 'stdout')
+
+        expect(captured).toHaveLength(1)
+        expect(captured[0]!.ctx).toMatchObject({ zz_count: 7 })
+      })
+
       it('not by a line rejected after its convention fields', () => {
         const tap = createAssetsTap(baseOpts)
-        // `installation_id` sorts last and rejects the whole line.
         tap.ingest(
           taggedLine('seeder.scan_completed', { ...sixtyFourNames, installation_id: 'forged' }),
           'stdout'
@@ -958,11 +997,9 @@ describe('assetsTap', () => {
 
     it('leaves allowlisted fields that fit a convention on their own validators', () => {
       const tap = createAssetsTap(baseOpts)
-      // A negative elapsed_ms passes its own (signed) validator...
       tap.ingest(taggedLine('seeder.scan_completed', { elapsed_ms: -5 }), 'stdout')
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx.elapsed_ms).toBe(-5)
-      // ...and a wrong-typed allowlisted value still rejects the line.
       tap.ingest(taggedLine('seeder.scan_completed', { elapsed_ms: true }), 'stdout')
       tap.ingest(taggedLine('assets.enabled', { hashing_enabled: 1 }), 'stdout')
       expect(captured).toHaveLength(1)
@@ -1005,7 +1042,6 @@ describe('assetsTap', () => {
         recovered_count: 3,
         missing_marked_count: 1
       }
-      // Not allowlisted: they reach telemetry through the convention alone.
       for (const field of Object.keys(perf)) expect(ALLOWED_FIELD_NAMES.has(field)).toBe(false)
       const tap = createAssetsTap(baseOpts)
       tap.ingest(
@@ -1024,7 +1060,6 @@ describe('assetsTap', () => {
   })
 
   describe('error_kind', () => {
-    /** Mirror of ComfyUI `ERROR_KINDS`. */
     const ERROR_KINDS = [
       'expression_tree_too_large',
       'too_many_variables',
@@ -1038,7 +1073,6 @@ describe('assetsTap', () => {
       'read_only',
       'other'
     ]
-    /** The core events that carry `error_kind`, always next to `error_type`. */
     const ERROR_KIND_EVENTS = [
       'seeder.scan_failed',
       'scanner.fast_scan_failed',
@@ -1069,7 +1103,6 @@ describe('assetsTap', () => {
     })
 
     it('validates error_kind per field, so it forwards on any allowed event', () => {
-      // Like reason and site: core decides which events carry it.
       const tap = createAssetsTap(baseOpts)
       tap.ingest(taggedLine('seeder.scan_completed', { error_kind: 'disk_full' }), 'stdout')
       expect(captured).toHaveLength(1)
@@ -1120,8 +1153,6 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(61)
     })
 
-    // Pins the accepted limitation documented on PER_EVENT_HOURLY_CAP: a
-    // later scan's new classification waits for the next window.
     it('hour-samples failure_bucket, so the first failing scan wins', () => {
       vi.useFakeTimers()
       vi.setSystemTime(new Date('2026-09-03T10:00:00Z'))
@@ -1193,13 +1224,21 @@ describe('assetsTap', () => {
       expect(captured[0]!.ctx).toMatchObject({ phase: 'fast' })
     })
 
-    it('flushes a trailing unterminated line on flushSummary', () => {
+    it('never forwards an unterminated line on flushSummary', () => {
       const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started phase=full', 'stdout')
-      expect(captured).toHaveLength(0)
+      tap.ingest('[assets-event] seeder.scan_completed count=1', 'stdout')
+      tap.ingest('[assets-event] seeder.scan_started phase=full', 'stderr')
       tap.flushSummary()
+      expect(captured).toHaveLength(0)
+    })
+
+    it('forwards a value split across chunks whole after a mid-line flushSummary', () => {
+      const tap = createAssetsTap(baseOpts)
+      tap.ingest('[assets-event] seeder.scan_completed count=1', 'stdout')
+      tap.flushSummary()
+      tap.ingest('2\n', 'stdout')
       expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx).toMatchObject({ phase: 'full' })
+      expect(captured[0]!.ctx).toMatchObject({ count: 12 })
     })
 
     it('drops an oversized unterminated line and keeps the stream working', () => {
@@ -1269,15 +1308,6 @@ describe('assetsTap', () => {
       expect(captured).toHaveLength(1)
     })
 
-    it('contains malformed buffered logfmt hit by flushSummary', () => {
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started phase=', 'stdout')
-      expect(() => tap.flushSummary()).not.toThrow()
-      expect(captured).toHaveLength(0)
-      tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
-      expect(captured).toHaveLength(1)
-    })
-
     it('contains a telemetry.emit failure, in ingest and in flushSummary', () => {
       let calls = 0
       vi.spyOn(telemetry, 'emit').mockImplementation((event, ctx) => {
@@ -1290,7 +1320,7 @@ describe('assetsTap', () => {
         tap.ingest(taggedLine('seeder.scan_started', { phase: 'fast' }), 'stdout')
       ).not.toThrow()
 
-      tap.ingest('[assets-event] seeder.scan_started phase=enrich', 'stdout')
+      tap.ingest(taggedLine('seeder.scan_exploded', {}), 'stdout')
       expect(() => tap.flushSummary()).not.toThrow()
 
       expect(captured).toHaveLength(0)
@@ -1312,8 +1342,6 @@ describe('assetsTap', () => {
     })
 
     it('keeps processing later lines after a prototype-key field', () => {
-      // Set membership rejects `__proto__` without consulting the prototype;
-      // the later line must still be processed from the same chunk.
       const tap = createAssetsTap(baseOpts)
       const chunk = [
         '[assets-event] seeder.scan_started __proto__=1',
@@ -1334,16 +1362,6 @@ describe('assetsTap', () => {
         ''
       ].join('\n')
       expect(() => tap.ingest(chunk, 'stdout')).not.toThrow()
-      expect(captured).toHaveLength(1)
-      expect(captured[0]!.ctx).toMatchObject({ count: 3 })
-    })
-
-    it('flushes the stderr tail even when the stdout tail throws', () => {
-      withExplodingPhaseLookup()
-      const tap = createAssetsTap(baseOpts)
-      tap.ingest('[assets-event] seeder.scan_started phase=fast', 'stdout')
-      tap.ingest('[assets-event] seeder.scan_completed count=3', 'stderr')
-      expect(() => tap.flushSummary()).not.toThrow()
       expect(captured).toHaveLength(1)
       expect(captured[0]!.ctx).toMatchObject({ count: 3 })
     })

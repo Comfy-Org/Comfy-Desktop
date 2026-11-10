@@ -39,31 +39,10 @@ function closeServers(servers: net.Server[]): Promise<void[]> {
   return Promise.all(servers.map(closeServer))
 }
 
-/** Highest valid TCP port. Nothing above this can be bound or probed. */
 const MAX_PORT = 65535
 
-/** How far above a held run these tests let `findAvailablePort` search. */
 const SEARCH_SPAN = 100
 
-/**
- * Bind `count` consecutive ports, letting the OS pick the base, and keep the
- * whole `SEARCH_SPAN` window above it inside the valid port space.
- *
- * Hardcoding the base is a flake: the ephemeral range (32768-60999 on Linux,
- * 49152-65535 on Windows and macOS) swallows the "high" ports a test is
- * tempted to pick, so any transient outbound connection can already own one
- * and the bind dies with EADDRINUSE. Port 0 hands back something the OS knows
- * is free, and we keep holding it.
- *
- * Two ways an OS-assigned base is still unusable, both re-asked rather than
- * failed. A neighbour above it may be taken. Or the base may sit so close to
- * MAX_PORT that the search window runs off the end of the port space - on the
- * ranges that reach 65535 (Windows, macOS) `listen(0)` really can return it,
- * and `isPortListening` reports every out-of-range port as *unavailable*
- * (`canBind` catches the throw and resolves false), so the search would walk
- * to the end of the range and fail with "No available ports found" instead of
- * landing.
- */
 async function listenConsecutive(
   host: string,
   count: number,
@@ -82,10 +61,6 @@ async function listenConsecutive(
         return { servers, basePort: base.port }
       }
     } catch (err) {
-      // Usually a neighbour taken between the base bind and this one, which is
-      // worth another base. Keep it anyway: a deterministic failure (EACCES,
-      // say) otherwise burns every attempt and surfaces as a bare "could not
-      // bind", with the one useful detail thrown away 50 times.
       lastError = err
     }
     await closeServers(servers)
@@ -140,11 +115,6 @@ describe('findAvailablePort', () => {
     }
   })
 
-  // Regression for #806: when a port is reported "free" by a flawed
-  // single-bind probe but is actually owned by a process listening on a
-  // wildcard or different-family interface, the old logic returned the busy
-  // port. `findAvailablePort` must walk past *every* busy port in sequence,
-  // not just the first one.
   it('skips multiple sequentially-busy ports', async () => {
     const { servers, basePort } = await listenConsecutive('127.0.0.1', 2)
     try {
@@ -155,11 +125,6 @@ describe('findAvailablePort', () => {
     }
   })
 
-  // Wildcard `0.0.0.0` listener: the original isPortListening only bound on
-  // the requested host (127.0.0.1), which on some platforms succeeds even
-  // when a peer owns the port via 0.0.0.0. The connect+multi-host bind
-  // probe must catch it via the connect leg (the listener is reachable on
-  // loopback) regardless of the platform's specific bind semantics.
   it('skips a port occupied by a wildcard 0.0.0.0 listener', async () => {
     const { servers, basePort } = await listenConsecutive('0.0.0.0', 1)
     try {
@@ -191,16 +156,12 @@ describe('isPortListening', () => {
   })
 
   it('returns false for a port that nothing owns', async () => {
-    // Allocate-then-release to find a port that is genuinely free.
     const { server, port } = await listenOn('127.0.0.1')
     await closeServer(server)
     expect(await isPortListening(port, '127.0.0.1')).toBe(false)
   })
 })
 
-// A server that accepts TCP connections but never sends an HTTP response,
-// so the poller's request stays in flight until aborted or timed out.
-// Tracks its sockets so close() can settle without waiting on them.
 function listenHanging(): Promise<{ close: () => Promise<void>; port: number }> {
   return new Promise((resolve, reject) => {
     const sockets = new Set<net.Socket>()
@@ -231,9 +192,6 @@ describe('waitForPort abort settlement', () => {
     const { close, port } = await listenHanging()
     const controller = new AbortController()
     try {
-      // The in-flight request never ends on its own, and no later poll pass can run: only the
-      // abort listener can settle this. Without it, the test times out instead of passing slowly,
-      // so no wall-clock bound is needed.
       const wait = waitForPort(port, '127.0.0.1', {
         timeoutMs: 600_000,
         requestTimeoutMs: 600_000,
@@ -261,7 +219,6 @@ describe('waitForUrl abort settlement', () => {
     const { close, port } = await listenHanging()
     const controller = new AbortController()
     try {
-      // As for waitForPort: only the abort listener can settle this.
       const wait = waitForUrl(`http://127.0.0.1:${port}/`, {
         timeoutMs: 600_000,
         requestTimeoutMs: 600_000,
@@ -298,8 +255,6 @@ describe('waitForPortFree', () => {
     const { server, port } = await listenOn('127.0.0.1')
     const frozen = vi.spyOn(Date, 'now').mockReturnValue(0)
     try {
-      // A deadline on the frozen wall clock would never pass: this would hang past the test's
-      // own timeout instead of returning.
       expect(await waitForPortFree(port, '127.0.0.1', 150, 20)).toBe(false)
     } finally {
       frozen.mockRestore()
@@ -318,7 +273,6 @@ describe('waitForPortFree', () => {
 })
 
 describe.runIf(process.platform !== 'win32')('kills that wait for exit (real processes)', () => {
-  // A detached parent with a child of its own: the shape Desktop spawns ComfyUI in.
   const TREE = `
     const { spawn } = require('child_process')
     const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' })
@@ -358,7 +312,6 @@ describe.runIf(process.platform !== 'win32')('kills that wait for exit (real pro
       const result = await killPidTree(proc.pid!, start)
       expect(result).toMatchObject({ killed: true, exited: true })
       expect(isPidAlive(grandchild)).toBe(false)
-      // The log names what the group stop covered.
       expect(result.killed && result.members).toEqual(
         expect.arrayContaining([proc.pid!, grandchild])
       )
@@ -404,8 +357,6 @@ describe('isSafeToSignal (never signal what a forged record names)', () => {
 })
 
 describe('requestTimeoutMs reaches the probe request', () => {
-  // The abort tests rely on it: a probe that ignored the option would end at the 2 s default and
-  // let a later poll pass settle the wait, which is what those tests must rule out.
   it.each([
     ['waitForPort', 1234, 1234],
     ['waitForPort', undefined, 2000],
@@ -429,7 +380,7 @@ describe('requestTimeoutMs reaches the probe request', () => {
         fn === 'waitForPort'
           ? waitForPort(port, '127.0.0.1', opts)
           : waitForUrl(`http://127.0.0.1:${port}/`, opts)
-      wait.catch(() => {}) // settled by the abort, in the test or in cleanup
+      wait.catch(() => {})
       await vi.waitFor(() => expect(get).toHaveBeenCalled())
       const timeouts = get.mock.calls.map(
         (call) =>
@@ -442,7 +393,6 @@ describe('requestTimeoutMs reaches the probe request', () => {
       controller.abort()
       await expect(wait).rejects.toThrow('Launch cancelled.')
     } finally {
-      // Even when an assertion threw first: a live waiter would keep polling for minutes.
       controller.abort()
       get.mockRestore()
       await close()
@@ -466,7 +416,7 @@ describe('a probe never outlasts the overall deadline', () => {
         fn === 'waitForPort'
           ? waitForPort(port, '127.0.0.1', opts)
           : waitForUrl(`http://127.0.0.1:${port}/`, opts)
-      wait.catch(() => {}) // settled by the abort, in the test or in cleanup
+      wait.catch(() => {})
       await vi.waitFor(() => expect(get).toHaveBeenCalled())
       const timeout = get.mock.calls[0]!.find(
         (arg): arg is { timeout: number } =>
@@ -477,7 +427,6 @@ describe('a probe never outlasts the overall deadline', () => {
       controller.abort()
       await expect(wait).rejects.toThrow('Launch cancelled.')
     } finally {
-      // Even when an assertion threw first: a live waiter would keep polling for minutes.
       controller.abort()
       get.mockRestore()
       await close()
@@ -486,8 +435,6 @@ describe('a probe never outlasts the overall deadline', () => {
 })
 
 describe('a spent budget still ends the wait', () => {
-  // With nothing left of timeoutMs the probe's timeout must not become 0, which Node reads as
-  // "no timeout": the probe would hang on a silent peer and the wait would never time out.
   it.each(['waitForPort', 'waitForUrl'] as const)('%s with timeoutMs 0', async (fn) => {
     const { close, port } = await listenHanging()
     try {

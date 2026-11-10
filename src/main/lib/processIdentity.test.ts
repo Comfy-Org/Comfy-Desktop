@@ -15,7 +15,6 @@ import {
 } from './processIdentity'
 
 describe('parseLinuxStat', () => {
-  // Fields after the command: state(3) ... starttime(22) is the 20th.
   const tail = (state: string, start: string): string =>
     `${state} 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 ${start} 20 21`
 
@@ -83,7 +82,6 @@ describe('descendantsOf', () => {
 
 describe('treeFromRows', () => {
   it('still finds the descendants of a root that has already exited', () => {
-    // taskkill ran first: the launcher (10) is gone, its interpreter (11) is still terminating.
     const rows = [
       { pid: 11, ppid: 10, created: '110' },
       { pid: 12, ppid: 11, created: '120' },
@@ -108,11 +106,11 @@ describe.runIf(process.platform !== 'win32')('readStartTimes (real processes)', 
     })
     try {
       const pid = child.pid!
-      const first = await readStartTimes([pid, process.pid])
+      const first = await readStartTimes([pid, 1])
       const second = await readStartTimes([pid])
       expect(first?.get(pid)).toBeTruthy()
-      expect(first?.get(process.pid)).toBeTruthy()
-      expect(first?.get(pid)).not.toBe(first?.get(process.pid))
+      expect(first?.get(1)).toBeTruthy()
+      expect(first?.get(pid)).not.toBe(first?.get(1))
       expect(second?.get(pid)).toBe(first?.get(pid))
       const exited = new Promise((r) => child.once('exit', r))
       child.kill('SIGKILL')
@@ -147,7 +145,6 @@ describe.runIf(process.platform !== 'win32')('groupHasLiveMembers (real processe
 
 describe('startTokenToEpochMs', () => {
   it('converts a Windows FILETIME', () => {
-    // 2026-09-28T17:02:03Z
     const ms = Date.UTC(2026, 8, 28, 17, 2, 3)
     const filetime = (BigInt(ms) + 11_644_473_600_000n) * 10_000n
     expect(startTokenToEpochMs(String(filetime), 'win32')).toBe(ms)
@@ -158,21 +155,36 @@ describe('startTokenToEpochMs', () => {
     expect(startTokenToEpochMs('boot-id:12345', 'linux', null)).toBeNull()
   })
 
-  it('parses macOS lstart text, and rejects junk', () => {
+  it('parses macOS lstart text as UTC, and rejects junk', () => {
     expect(startTokenToEpochMs('Mon Sep 28 10:02:03 2026', 'darwin')).toBe(
-      new Date(2026, 8, 28, 10, 2, 3).getTime()
+      Date.UTC(2026, 8, 28, 10, 2, 3)
+    )
+    expect(startTokenToEpochMs('Tue Sep  1 10:02:03 2026', 'darwin')).toBe(
+      Date.UTC(2026, 8, 1, 10, 2, 3)
     )
     expect(startTokenToEpochMs('not a date', 'darwin')).toBeNull()
     expect(startTokenToEpochMs('abc', 'win32')).toBeNull()
   })
+
+  it.runIf(process.platform !== 'win32')('reads macOS lstart text as UTC in any local zone', () => {
+    const saved = process.env.TZ
+    process.env.TZ = 'America/Los_Angeles'
+    try {
+      expect(new Date(2026, 8, 28).getTimezoneOffset()).toBe(420)
+      expect(startTokenToEpochMs('Mon Sep 28 10:02:03 2026', 'darwin')).toBe(
+        Date.UTC(2026, 8, 28, 10, 2, 3)
+      )
+    } finally {
+      if (saved === undefined) delete process.env.TZ
+      else process.env.TZ = saved
+    }
+  })
 })
 
-describe.runIf(process.platform === 'linux')('startTokenToEpochMs (this process)', () => {
+describe.runIf(process.platform !== 'win32')('startTokenToEpochMs (this process)', () => {
   it('puts this process start near what node reports', async () => {
     const token = (await readStartTimes([process.pid]))!.get(process.pid)!
     const expected = Date.now() - process.uptime() * 1000
-    // Both measure the same start, so load does not move this: the slack covers the kernel's
-    // whole-second boot time and node's own startup. A unit mistake would be off by far more.
     expect(Math.abs(startTokenToEpochMs(token)! - expected)).toBeLessThan(5_000)
   })
 })
