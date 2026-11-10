@@ -858,11 +858,21 @@ function togglePlay(a: MarAsset): void {
 }
 function hoverPlay(a: MarAsset, on: boolean): void {
   if (a.type !== 'video' || !playable(a)) return
+  clip.value = { at: 0, of: 0 }
   if (on && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
     stopSound()
     playing.value = a.id
   } else if (playing.value === a.id) playing.value = ''
 }
+/** While a clip plays, its badge counts the time and a bar along the
+ *  top edge follows it; off the card, the badge says the length again. */
+const clip = ref({ at: 0, of: 0 })
+function onClipTime(e: Event): void {
+  const v = e.target as HTMLVideoElement
+  clip.value = { at: v.currentTime, of: v.duration || 0 }
+}
+const clock = (t: number): string =>
+  `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`
 const playable = (a: MarAsset): boolean =>
   !a.status && (a.type === 'audio' || (a.type === 'video' && !!clipOf(a)))
 // Gone from the wall, or the page left: it stops.
@@ -1453,7 +1463,14 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                         muted
                         loop
                         playsinline
+                        @timeupdate="onClipTime"
                       />
+                      <span
+                        v-if="playing === a.id && a.type === 'video'"
+                        class="mar-asset-seek"
+                        aria-hidden="true"
+                        ><i :style="{ width: `${clip.of ? (clip.at / clip.of) * 100 : 0}%` }"
+                      /></span>
                       <Tooltip
                         v-if="playable(a) && a.type === 'audio'"
                         :content="playing === a.id ? 'Pause' : 'Play'"
@@ -1475,7 +1492,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                         ><i style="width: 62%"
                       /></span>
                       <span v-else-if="a.type === 'video' && !a.status" class="mar-asset-len"
-                        ><Video :size="12" />{{ factsFor(a).duration }}</span
+                        ><template v-if="playing === a.id">{{ clock(clip.at) }}</template
+                        ><template v-else
+                          ><Video :size="12" />{{ factsFor(a).duration }}</template
+                        ></span
                       >
                       <i
                         v-if="labelOf(a.id)"
@@ -2241,6 +2261,21 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 }
 /* A run in flight: the progress is the cover's bottom edge, clipped by
    the picture's own corners, so it reads as the picture filling in. */
+/* A clip playing on hover: how far it is, along the top edge. */
+.mar-asset-seek {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: rgb(255 255 255 / 0.18);
+}
+.mar-asset-seek i {
+  display: block;
+  height: 100%;
+  background: #fff;
+  transition: width 250ms linear;
+}
 .mar-asset-progress {
   position: absolute;
   right: 0;
