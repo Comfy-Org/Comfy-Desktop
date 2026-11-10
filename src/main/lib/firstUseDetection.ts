@@ -1,4 +1,5 @@
 import * as installations from '../installations'
+import { isAppsBuild } from '../../shared/appsBuild'
 
 export interface FirstUseDetection {
   skipPick: boolean
@@ -14,7 +15,7 @@ export async function detectFirstUseState(): Promise<FirstUseDetection> {
       hasLegacyDesktop = true
       continue
     }
-    if (inst.sourceId === 'cloud') continue
+    if (inst.sourceId === 'cloud' || isAppsBuild(inst)) continue
     skipPick = true
   }
   return { skipPick, hasLegacyDesktop }

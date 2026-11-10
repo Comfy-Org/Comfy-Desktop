@@ -117,6 +117,68 @@ describe('useLocalInstanceGuard', () => {
     expect(mockConfirm).not.toHaveBeenCalled()
   })
 
+  it('lets the person own build run next to a running Apps build without asking', async () => {
+    installationStore.installations.push(
+      makeInstallation({ id: 'target' }),
+      makeInstallation({ id: 'apps', name: 'Apps', appsBuild: true })
+    )
+    sessionStore.runningInstances.set('apps', {
+      installationId: 'apps',
+      installationName: 'Apps',
+      mode: 'console'
+    })
+    sessionStore.launchingInstances.set('apps', { installationName: 'Apps' })
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('target')
+
+    expect(result).toBe(true)
+    expect(mockConfirm).not.toHaveBeenCalled()
+  })
+
+  it('launches the Apps build without stopping the person own build', async () => {
+    installationStore.installations.push(
+      makeInstallation({ id: 'apps', name: 'Apps', appsBuild: true }),
+      makeInstallation({ id: 'running-1', name: 'Running Install' })
+    )
+    sessionStore.runningInstances.set('running-1', {
+      installationId: 'running-1',
+      installationName: 'Running Install',
+      mode: 'window'
+    })
+    const guard = useLocalInstanceGuard()
+
+    const result = await guard.checkBeforeLaunch('apps')
+
+    expect(result).toBe(true)
+    expect(mockConfirm).not.toHaveBeenCalled()
+    expect(window.api.stopComfyUI).not.toHaveBeenCalled()
+  })
+
+  it('still lists the person other builds when the Apps build also runs', async () => {
+    installationStore.installations.push(
+      makeInstallation({ id: 'target' }),
+      makeInstallation({ id: 'apps', name: 'Apps', appsBuild: true }),
+      makeInstallation({ id: 'running-1', name: 'Running Install' })
+    )
+    sessionStore.runningInstances.set('apps', {
+      installationId: 'apps',
+      installationName: 'Apps',
+      mode: 'console'
+    })
+    sessionStore.runningInstances.set('running-1', {
+      installationId: 'running-1',
+      installationName: 'Running Install',
+      mode: 'window'
+    })
+    mockConfirm.mockResolvedValue('secondary')
+    const guard = useLocalInstanceGuard()
+
+    await guard.checkBeforeLaunch('target')
+
+    expect(mockConfirm.mock.calls[0]![0].messageDetails[0].items).toEqual(['Running Install'])
+  })
+
   it('allows launch without prompting for non-local (cloud) targets', async () => {
     installationStore.installations.push(
       makeInstallation({ id: 'cloud-1', sourceCategory: 'cloud' })

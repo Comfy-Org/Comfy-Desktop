@@ -88,6 +88,7 @@
     "browseApps": "浏览应用"
   },
   "apps": {
+    "loadFailed": "无法加载应用页面：{url}",
     "tabsLabel": "应用视图",
     "tabs": {
       "all": "所有应用",

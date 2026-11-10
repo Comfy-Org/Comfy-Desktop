@@ -25,6 +25,7 @@ import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import AppsHost from './AppsHost.vue'
 import AssetDetailView from './AssetDetailView.vue'
 import type { GalleryAsset } from './AssetDetailView.vue'
 import { useModal } from '../composables/useModal'
@@ -50,7 +51,11 @@ const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
-const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'files')
+const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'all')
+const appsLoadFailedUrl = ref<string | null>(null)
+watch(tab, (next) => {
+  if (next === 'all') appsLoadFailedUrl.value = null
+})
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -418,14 +423,16 @@ function extensionOf(name: string): string {
       </div>
     </div>
 
-    <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <p
-        v-if="tab === 'all'"
-        class="m-0 text-ui text-muted-foreground"
-        data-testid="apps-coming-soon"
-      >
-        {{ t('sidebar.comingSoon') }}
-      </p>
+    <AppsHost v-if="tab === 'all' && !appsLoadFailedUrl" @failed="appsLoadFailedUrl = $event" />
+    <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+      <template v-if="tab === 'all'">
+        <p class="m-0 text-ui text-muted-foreground" data-testid="apps-coming-soon">
+          {{ t('sidebar.comingSoon') }}
+        </p>
+        <p class="mt-2 mb-0 text-ui text-muted-foreground" data-testid="apps-load-failed">
+          {{ t('apps.loadFailed', { url: appsLoadFailedUrl }) }}
+        </p>
+      </template>
       <div
         v-else-if="loading && assets.length === 0"
         role="status"

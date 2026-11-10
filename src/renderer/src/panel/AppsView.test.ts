@@ -13,6 +13,15 @@ const listAssets = vi.fn()
 const downloadAsset = vi.fn()
 const alert = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
+const showApps = vi.fn()
+const hideApps = vi.fn()
+let appsLoadFailed: ((info: { url: string }) => void) | null = null
+const onAppsLoadFailed = vi.fn((callback: (info: { url: string }) => void) => {
+  appsLoadFailed = callback
+  return () => {
+    appsLoadFailed = null
+  }
+})
 
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert })
@@ -63,9 +72,13 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
+  window.localStorage.setItem('comfy.desktop.apps.tab', 'files')
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
     downloadAsset,
+    showApps,
+    hideApps,
+    onAppsLoadFailed,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -78,6 +91,42 @@ beforeEach(() => {
 })
 
 describe('AppsView', () => {
+  it('opens on All apps the first time, showing the hosted Apps page', async () => {
+    window.localStorage.clear()
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
+    expect(listAssets).not.toHaveBeenCalled()
+  })
+
+  it('shows Coming soon and the address when the apps page cannot load, and retries on reopening', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listAssets.mockResolvedValue([])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    appsLoadFailed!({ url: 'https://apps.example/apps/' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.get('[data-testid="apps-load-failed"]').text()).toContain(
+      'https://apps.example/apps/'
+    )
+    expect(hideApps).toHaveBeenCalled()
+
+    showApps.mockClear()
+    const tabButton = (label: string) => wrapper.findAll('button').find((n) => n.text() === label)!
+    await tabButton('Generated Files').trigger('click')
+    await flushPromises()
+    await tabButton('All apps').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-load-failed"]').exists()).toBe(false)
+    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }))
+  })
+
   it('starts in masonry with file names and details hidden', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
@@ -182,16 +231,16 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
 
-    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
   })
 
-  it('shows Coming soon under All apps without loading assets, then loads Generated Files', async () => {
+  it('shows the hosted Apps page under All apps without loading assets, then loads Generated Files', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(listAssets).not.toHaveBeenCalled()
 
@@ -203,6 +252,7 @@ describe('AppsView', () => {
 
     expect(listAssets).toHaveBeenCalledOnce()
     expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(hideApps).toHaveBeenCalled()
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {

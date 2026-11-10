@@ -1116,6 +1116,9 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   downloadAsset(installationId: string, assetId: string, fileName: string): Promise<boolean>
+  showApps(rect: { x: number; y: number; width: number; height: number; fresh?: boolean }): void
+  hideApps(): void
+  onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
