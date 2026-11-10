@@ -7,7 +7,6 @@ import {
   ArrowRight,
   Check,
   ChevronLeft,
-  ChevronsLeftRight,
   Coins,
   Download,
   Ellipsis,
@@ -36,6 +35,7 @@ import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import AssetDetail from '../assets/AssetDetail.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
+import CompareSplit from '../assets/CompareSplit.vue'
 import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
@@ -177,7 +177,6 @@ const credits = computed(() =>
 
 // Compare: the before over the result, split where you drag.
 const comparing = ref(false)
-const split = ref(50)
 
 // While it runs: how far along, and for how long.
 const RUN_MS = 250 + (STEPS.length + 1) * 650
@@ -329,6 +328,7 @@ function saveToAssets(src: string, n: number): MarAsset {
     type: video ? 'video' : 'image',
     source: 'cloud',
     src,
+    before: input.value,
     envId: 'cloud',
     size: video ? '8.4 MB' : '2.1 MB',
     sizeMb: video ? 8.4 : 2.1,
@@ -681,27 +681,7 @@ function back(): void {
               :style="{ filter: shownFilter, scale: state === 'done' ? zoom / 100 : 1 }"
               @load="measure"
             />
-            <template v-if="comparing && state !== 'running'">
-              <img
-                :src="input"
-                alt=""
-                class="mar-app-editor-before"
-                :style="{ clipPath: `inset(0 ${100 - split}% 0 0)` }"
-              />
-              <span class="mar-app-editor-handle" :style="{ left: `${split}%` }">
-                <span><ChevronsLeftRight :size="14" /></span>
-              </span>
-              <input
-                v-model.number="split"
-                type="range"
-                min="0"
-                max="100"
-                aria-label="Before and after"
-                class="mar-app-editor-split"
-              />
-              <Badge variant="overlay" size="md" class="absolute bottom-3 left-3">Before</Badge>
-              <Badge variant="overlay" size="md" class="absolute right-3 bottom-3">After</Badge>
-            </template>
+            <CompareSplit v-if="comparing && state !== 'running'" :before="input" />
             <!-- No examples over it (one example, or they're in the panel):
                  the picture says it's an example. -->
             <Badge
@@ -1418,44 +1398,6 @@ function back(): void {
 }
 .mar-app-editor-pic.is-running {
   filter: blur(14px) brightness(0.55);
-}
-.mar-app-editor-before {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.mar-app-editor-handle {
-  pointer-events: none;
-  position: absolute;
-  inset-block: 0;
-  width: 2px;
-  translate: -50% 0;
-  background: white;
-}
-.mar-app-editor-handle > span {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: flex;
-  width: 28px;
-  height: 28px;
-  translate: -50% -50%;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: white;
-  color: black;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.3);
-}
-.mar-app-editor-split {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  cursor: ew-resize;
-  opacity: 0;
 }
 .mar-app-editor-empty {
   display: flex;

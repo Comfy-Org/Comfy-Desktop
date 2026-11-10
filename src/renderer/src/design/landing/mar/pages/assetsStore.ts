@@ -13,6 +13,8 @@ export interface MarAsset {
   thumbId?: string
   /** A picture of its own (a file just uploaded), over the mock's. */
   src?: string
+  /** What it was made from (an app's input), for Compare in the details. */
+  before?: string
   project?: string
   size: string
   sizeMb: number

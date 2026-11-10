@@ -24,6 +24,7 @@ import {
 } from 'lucide-vue-next'
 import { onClickOutside, useResizeObserver } from '@vueuse/core'
 import ZoomControl from './ZoomControl.vue'
+import CompareSplit from './CompareSplit.vue'
 import { thumb } from '../../mock'
 import { toast } from '../../useProto'
 import { assets as desktopAssets, type MarAsset } from '../pages/assetsStore'
@@ -157,6 +158,16 @@ function measure(): void {
   if (media.value && w) fit.value = media.value.clientWidth / w
 }
 const zoomCtl = ref<InstanceType<typeof ZoomControl>>()
+/** Compare: only for a picture made from another (an app's output). */
+const comparing = ref(false)
+const compareModel = computed({
+  get: () => (asset.before && !clip.value ? comparing.value : undefined),
+  set: (v) => (comparing.value = Boolean(v))
+})
+watch(
+  () => asset.id,
+  () => (comparing.value = false)
+)
 /** The details panel folds away for the picture alone. */
 const side = ref(true)
 // The fit changes with the stage: the window, or Details folding.
@@ -487,6 +498,7 @@ onBeforeUnmount(() => {
                   @timeupdate="cur = vid?.currentTime ?? 0"
                 />
                 <img v-else-if="pic" :key="asset.id" :src="pic" alt="" @load="measure" />
+                <CompareSplit v-if="comparing && asset.before && !clip" :before="asset.before" />
                 <AssetCover v-else :name="asset.name" :type="asset.type" />
                 <span v-if="asset.type === '3d'" class="mad-play"><Box :size="12" />3D</span>
               </div>
@@ -566,7 +578,13 @@ onBeforeUnmount(() => {
               </button>
             </nav>
             <!-- Zoom: the real-size percentage, as on ComfyUI's canvas. -->
-            <ZoomControl ref="zoomCtl" v-model="zoom" :fit="fit" keys />
+            <ZoomControl
+              ref="zoomCtl"
+              v-model="zoom"
+              v-model:compare="compareModel"
+              :fit="fit"
+              keys
+            />
           </footer>
         </section>
 
