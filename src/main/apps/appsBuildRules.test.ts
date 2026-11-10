@@ -6,14 +6,19 @@ import {
   APPS_BUILD_IDLE_MS,
   APPS_BUILD_RELEASE,
   APPS_SETUP_STAGE,
+  appsLaunchArgs,
   appsModelDirs,
   appsOutputDir,
   downloadBytes,
+  FREE_IDLE_MS,
   FREE_JSON,
   findAppsBuild,
+  freeWait,
   isRunEnd,
   LINUX_NO_GPU,
   localOff,
+  MAC_GPU_ONLY_ARG,
+  MAC_GPU_ONLY_MIN_BYTES,
   MAC_NO_GPU,
   pickOpenTarget,
   pickVariant,
@@ -254,6 +259,46 @@ describe('freeing memory after an app run', () => {
 
   it('asks ComfyUI to unload models and free memory', () => {
     expect(JSON.parse(FREE_JSON)).toEqual({ unload_models: true, free_memory: true })
+  })
+
+  it('keeps models loaded until the build has been idle for a few minutes', () => {
+    const now = 1_000_000_000
+    expect(freeWait(now, now)).toBe(FREE_IDLE_MS)
+    expect(freeWait(now - 60_000, now)).toBe(FREE_IDLE_MS - 60_000)
+    expect(freeWait(now - FREE_IDLE_MS, now)).toBe(0)
+    expect(freeWait(now - FREE_IDLE_MS - 1, now)).toBe(0)
+  })
+
+  it('waits long enough for the next run to reuse the loaded models, and frees before the build stops', () => {
+    expect(FREE_IDLE_MS).toBeGreaterThanOrEqual(2 * 60_000)
+    expect(FREE_IDLE_MS).toBeLessThan(APPS_BUILD_IDLE_MS)
+  })
+})
+
+describe('Apps build launch arguments', () => {
+  const big = 48 * 1024 ** 3
+  const small = 16 * 1024 ** 3
+
+  it('runs text encoders on the GPU on a Mac with room for them', () => {
+    expect(appsLaunchArgs('--enable-manager', '', 'darwin', big)).toBe(
+      `--enable-manager ${MAC_GPU_ONLY_ARG}`
+    )
+    expect(appsLaunchArgs(undefined, '--enable-manager', 'darwin', MAC_GPU_ONLY_MIN_BYTES)).toBe(
+      `--enable-manager ${MAC_GPU_ONLY_ARG}`
+    )
+    expect(appsLaunchArgs('', '--enable-manager', 'darwin', big)).toBe(MAC_GPU_ONLY_ARG)
+  })
+
+  it('adds the flag once', () => {
+    const once = appsLaunchArgs('--enable-manager', '', 'darwin', big)
+    expect(appsLaunchArgs(once, '', 'darwin', big)).toBe(once)
+  })
+
+  it('leaves smaller Macs and other systems as they are', () => {
+    expect(appsLaunchArgs('--enable-manager', '', 'darwin', small)).toBe('--enable-manager')
+    expect(appsLaunchArgs('--enable-manager', '', 'linux', big)).toBe('--enable-manager')
+    expect(appsLaunchArgs('--enable-manager', '', 'win32', big)).toBe('--enable-manager')
+    expect(appsLaunchArgs(42, '--enable-manager', 'linux', big)).toBe('--enable-manager')
   })
 })
 

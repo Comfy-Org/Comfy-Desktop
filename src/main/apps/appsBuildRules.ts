@@ -7,7 +7,9 @@ export const APPS_BUILD_LAST_PORT = 8388
 export const APPS_BUILD_IDLE_MS = 10 * 60_000
 export const APPS_SETUP_STAGE = 'Setting up ComfyUI for apps'
 export const FREE_JSON = JSON.stringify({ unload_models: true, free_memory: true })
-export const FREE_DELAY_MS = 2000
+export const FREE_IDLE_MS = 5 * 60_000
+export const MAC_GPU_ONLY_ARG = '--gpu-only'
+export const MAC_GPU_ONLY_MIN_BYTES = 36 * 1024 ** 3
 
 export const LINUX_NO_GPU = 'This computer needs an NVIDIA, AMD or Intel Arc GPU on Linux.'
 export const MAC_NO_GPU = 'This computer needs a Mac with Apple Silicon.'
@@ -18,6 +20,18 @@ export function localOff(platform: string, gpu: string | null | undefined): stri
   if (platform === 'linux' && !LINUX_GPUS.includes(gpu ?? '')) return LINUX_NO_GPU
   if (platform === 'darwin' && gpu !== 'mps') return MAC_NO_GPU
   return null
+}
+
+export function appsLaunchArgs(
+  launchArgs: unknown,
+  fallback: string,
+  platform: string,
+  totalBytes: number
+): string {
+  const args = typeof launchArgs === 'string' ? launchArgs.trim() : fallback
+  const wanted = platform === 'darwin' && totalBytes >= MAC_GPU_ONLY_MIN_BYTES
+  if (!wanted || args.split(/\s+/).includes(MAC_GPU_ONLY_ARG)) return args
+  return `${args} ${MAC_GPU_ONLY_ARG}`.trim()
 }
 
 export function findAppsBuild<T extends object>(list: readonly T[]): T | null {
@@ -142,6 +156,10 @@ const RUN_ENDS = ['execution_success', 'execution_error', 'execution_interrupted
 
 export function isRunEnd(type: unknown): boolean {
   return typeof type === 'string' && RUN_ENDS.includes(type)
+}
+
+export function freeWait(lastUse: number, now: number, idleMs = FREE_IDLE_MS): number {
+  return Math.max(0, lastUse + idleMs - now)
 }
 
 export function queueEmpty(json: unknown): boolean {
