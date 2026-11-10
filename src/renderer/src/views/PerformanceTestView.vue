@@ -2,7 +2,17 @@
 import Input from '@comfyorg/design-system/input/Input'
 import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FolderOpen, ImageDown, Trash2 } from 'lucide-vue-next'
+import {
+  FileJson,
+  FolderOpen,
+  Gauge,
+  ImageDown,
+  LayoutTemplate,
+  Play,
+  Square,
+  SquareTerminal,
+  Trash2
+} from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
@@ -656,41 +666,61 @@ watch(performanceTestLogs, async () => {
       class="performance-test__layout @container relative h-full min-h-0 w-full overflow-x-hidden overflow-y-auto"
     >
       <div
-        class="performance-test__intro flex min-h-full w-full flex-col items-start gap-6 text-left"
+        class="performance-test__intro flex min-h-full w-full flex-col items-start gap-8 text-left"
       >
         <BrandedPageHeader
           :title="t('performanceTest.title')"
           :description="t('performanceTest.description')"
-        />
-        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-3">
-          <div
-            class="performance-test__columns grid min-h-0 w-full flex-none grid-cols-[minmax(240px,3fr)_repeat(2,minmax(0,3.5fr))] gap-3 @max-[800px]:grid-cols-1"
-          >
-            <section
-              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&>h2]:m-0 [&>h2]:text-text-muted [&>h2]:text-[11px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h2]:tracking-[0.04em] [&>h2]:uppercase"
+        >
+          <template #actions>
+            <Button
+              v-if="ownsRun"
+              class="performance-test__stop min-w-24"
+              variant="destructive"
+              size="lg"
+              type="button"
+              :disabled="!canStop"
+              @click="stopPerformanceTestFromUser"
             >
-              <h2>{{ t('performanceTest.selectInstance') }}</h2>
-              <div class="performance-test__selection-row flex w-full items-center gap-3">
-                <span
-                  class="performance-test__selection-label flex-[0_0_68px] text-[13px] text-neutral-200"
-                >
+              <Square :size="12" fill="currentColor" aria-hidden="true" />
+              {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
+            </Button>
+            <Button
+              class="performance-test__run min-w-24"
+              variant="inverted"
+              size="lg"
+              type="button"
+              :disabled="!canRun"
+              @click="runPerformanceTest"
+            >
+              <Play v-if="!isLaunching" :size="12" fill="currentColor" aria-hidden="true" />
+              {{ isLaunching ? t('performanceTest.running') : t('performanceTest.run') }}
+            </Button>
+          </template>
+        </BrandedPageHeader>
+        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-8">
+          <div
+            class="performance-test__setup grid w-full flex-none grid-cols-[minmax(220px,1fr)_minmax(0,1.3fr)_minmax(220px,1fr)] overflow-hidden rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] [&>section+section]:border-l [&>section+section]:border-solid [&>section+section]:border-[var(--chooser-surface-border)] @max-[800px]:grid-cols-1 @max-[800px]:[&>section+section]:border-l-0 @max-[800px]:[&>section+section]:border-t"
+          >
+            <section class="performance-test__step flex min-w-0 flex-col gap-4 p-5">
+              <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
+                {{ t('performanceTest.selectInstance') }}
+              </h2>
+              <div class="performance-test__field flex flex-col gap-1.5">
+                <span class="performance-test__field-label text-[12px] text-text-muted">
                   {{ t('performanceTest.workspaceLabel') }}
                 </span>
                 <div
-                  class="performance-test__selection-control min-w-0 w-full max-w-80 flex-auto performance-test__workspace-select [&_.workspace-selector]:w-full [&_.workspace-selector\_\_face]:box-border [&_.workspace-selector\_\_face]:w-full [&_.workspace-selector\_\_face]:min-w-0 [&_.workspace-selector\_\_face]:px-2 [&_.workspace-selector\_\_face]:py-0 [&_.workspace-selector\_\_face]:[--dp-avatar-size:20px]"
+                  class="performance-test__workspace-select min-w-0 w-full [&_.workspace-selector]:w-full [&_.workspace-selector\_\_face]:box-border [&_.workspace-selector\_\_face]:w-full [&_.workspace-selector\_\_face]:min-w-0 [&_.workspace-selector\_\_face]:h-10 [&_.workspace-selector\_\_face]:max-w-none [&_.workspace-selector\_\_face]:rounded-lg [&_.workspace-selector\_\_face]:bg-secondary [&_.workspace-selector\_\_face]:px-3 [&_.workspace-selector\_\_face]:py-0 [&_.workspace-selector\_\_face]:[--dp-avatar-size:20px]"
                 >
                   <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
                 </div>
               </div>
-              <div class="performance-test__selection-row flex w-full items-center gap-3">
-                <span
-                  class="performance-test__selection-label flex-[0_0_68px] text-[13px] text-neutral-200"
-                >
+              <div class="performance-test__field flex flex-col gap-1.5">
+                <span class="performance-test__field-label text-[12px] text-text-muted">
                   {{ t('performanceTest.instanceLabel') }}
                 </span>
-                <div
-                  class="performance-test__selection-control min-w-0 w-full max-w-80 flex-auto performance-test__instance-select [&_.ui-select-trigger]:h-[30px] [&_.ui-select-trigger]:px-2 [&_.ui-select-trigger]:py-1"
-                >
+                <div class="performance-test__instance-select min-w-0 w-full">
                   <BaseSelect
                     :model-value="selectedInstallationId ?? ''"
                     :options="instanceOptions"
@@ -703,15 +733,14 @@ watch(performanceTestLogs, async () => {
               </div>
             </section>
 
-            <section
-              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&>h2]:m-0 [&>h2]:text-text-muted [&>h2]:text-[11px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h2]:tracking-[0.04em] [&>h2]:uppercase"
-            >
-              <h2>{{ t('performanceTest.chooseWorkflow') }}</h2>
+            <section class="performance-test__step flex min-w-0 flex-col gap-4 p-5">
+              <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
+                {{ t('performanceTest.chooseWorkflow') }}
+              </h2>
               <Button
-                class="performance-test__example-workflow box-border h-[30px] w-full px-2 py-1 text-[length:var(--takeover-fs-caption)]"
+                class="performance-test__example-workflow w-full"
                 variant="secondary"
                 size="lg"
-                :class="['h-[30px] px-2 py-1 text-[length:var(--takeover-fs-caption)]']"
                 type="button"
                 :disabled="
                   !selectedInstallationId ||
@@ -721,6 +750,7 @@ watch(performanceTestLogs, async () => {
                 "
                 @click="openExampleWorkflowPicker"
               >
+                <LayoutTemplate :size="16" aria-hidden="true" />
                 {{
                   isExamplePickerLoading
                     ? t('performanceTest.loadingExampleWorkflows')
@@ -728,12 +758,12 @@ watch(performanceTestLogs, async () => {
                 }}
               </Button>
               <div
-                class="performance-test__workflow-divider flex w-full items-center gap-2.5 text-[11px] text-[var(--text-faint)] uppercase before:h-px before:flex-1 before:bg-[var(--chooser-surface-border)] before:content-[''] after:h-px after:flex-1 after:bg-[var(--chooser-surface-border)] after:content-['']"
+                class="performance-test__workflow-divider flex w-full items-center gap-2.5 text-[12px] text-[var(--text-faint)] before:h-px before:flex-1 before:bg-[var(--chooser-surface-border)] before:content-[''] after:h-px after:flex-1 after:bg-[var(--chooser-surface-border)] after:content-['']"
               >
                 <span>{{ t('performanceTest.orImportApiWorkflow') }}</span>
               </div>
               <div
-                class="performance-test__drop-zone relative min-h-[104px] w-full flex-none rounded-lg border border-dotted p-0 text-text-muted transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--chooser-surface-border-hover)] hover:bg-[var(--chooser-surface-bg-hover)] focus-within:border-[var(--chooser-surface-border-hover)] focus-within:bg-[var(--chooser-surface-bg-hover)] focus-within:outline-none"
+                class="performance-test__drop-zone relative min-h-[96px] w-full flex-none rounded-lg border border-dashed p-0 text-text-muted transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--chooser-surface-border-hover)] hover:bg-[var(--chooser-surface-bg-hover)] focus-within:border-[var(--chooser-surface-border-hover)] focus-within:bg-[var(--chooser-surface-bg-hover)] focus-within:outline-none"
                 :class="[
                   isWorkflowDragging
                     ? 'border-[var(--chooser-surface-border-hover)] bg-[var(--chooser-surface-bg-hover)]'
@@ -753,7 +783,7 @@ watch(performanceTestLogs, async () => {
                 <Button
                   variant="textonly"
                   size="lg"
-                  class="performance-test__drop-content h-auto min-h-[102px] w-full whitespace-normal p-5"
+                  class="performance-test__drop-content h-auto min-h-[94px] w-full whitespace-normal p-4"
                   type="button"
                   :class="
                     workflowFilePath || pendingExampleWorkflowLabel
@@ -763,7 +793,11 @@ watch(performanceTestLogs, async () => {
                   :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
-                  <span v-if="!workflowFilePath && !pendingExampleWorkflowLabel">
+                  <span
+                    v-if="!workflowFilePath && !pendingExampleWorkflowLabel"
+                    class="flex flex-col items-center gap-2 text-[12px] leading-[1.4]"
+                  >
+                    <FileJson :size="18" class="text-[var(--text-faint)]" aria-hidden="true" />
                     {{
                       isWorkflowImporting
                         ? t('performanceTest.importingWorkflow')
@@ -834,86 +868,71 @@ watch(performanceTestLogs, async () => {
               </p>
             </section>
 
-            <section
-              class="performance-test__column flex min-h-0 min-w-0 flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&>h2]:m-0 [&>h2]:text-text-muted [&>h2]:text-[11px] [&>h2]:font-semibold [&>h2]:leading-[1.4] [&>h2]:tracking-[0.04em] [&>h2]:uppercase"
-            >
-              <h2>{{ t('performanceTest.measurementSettings') }}</h2>
+            <section class="performance-test__step flex min-w-0 flex-col gap-4 p-5">
+              <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
+                {{ t('performanceTest.measurementSettings') }}
+              </h2>
               <div
-                class="performance-test__setting flex w-full items-center gap-3 [&_label]:text-neutral-200 [&_label]:text-[13px] [&_label]:whitespace-nowrap"
+                class="performance-test__settings flex flex-col [&>div+div]:border-t [&>div+div]:border-solid [&>div+div]:border-[var(--chooser-surface-border)]"
               >
-                <span class="performance-test__setting-label inline-flex flex-none items-center">
-                  <label for="performance-test-warmup-runs">
-                    {{ t('performanceTest.warmupRuns') }}
-                  </label>
-                  <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
-                </span>
                 <div
-                  class="performance-test__setting-input ml-auto w-[140px] min-w-[80px] flex-[0_1_140px]"
+                  class="performance-test__setting flex w-full items-center gap-3 py-2.5 first:pt-0"
                 >
-                  <Input
-                    id="performance-test-warmup-runs"
-                    v-model="warmupRuns"
-                    type="number"
-                    min="0"
-                    max="5"
-                    step="1"
-                    @change="correctWarmupRuns"
-                    @blur="correctWarmupRuns"
-                  />
+                  <span class="performance-test__setting-label inline-flex min-w-0 items-center">
+                    <label
+                      for="performance-test-warmup-runs"
+                      class="text-[13px] whitespace-nowrap text-neutral-200"
+                    >
+                      {{ t('performanceTest.warmupRuns') }}
+                    </label>
+                    <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
+                  </span>
+                  <div
+                    class="performance-test__setting-input ml-auto w-20 flex-none [&_input]:text-center"
+                  >
+                    <Input
+                      id="performance-test-warmup-runs"
+                      v-model="warmupRuns"
+                      type="number"
+                      min="0"
+                      max="5"
+                      step="1"
+                      @change="correctWarmupRuns"
+                      @blur="correctWarmupRuns"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div
-                class="performance-test__setting flex w-full items-center gap-3 [&_label]:text-neutral-200 [&_label]:text-[13px] [&_label]:whitespace-nowrap"
-              >
-                <span class="performance-test__setting-label inline-flex flex-none items-center">
-                  <label for="performance-test-measured-runs">
-                    {{ t('performanceTest.measuredRuns') }}
-                  </label>
-                  <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
-                </span>
-                <div
-                  class="performance-test__setting-input ml-auto w-[140px] min-w-[80px] flex-[0_1_140px]"
-                >
-                  <Input
-                    id="performance-test-measured-runs"
-                    v-model="measuredRuns"
-                    type="number"
-                    min="1"
-                    max="100"
-                    step="1"
-                    @change="correctMeasuredRuns"
-                    @blur="correctMeasuredRuns"
-                  />
+                <div class="performance-test__setting flex w-full items-center gap-3 py-2.5">
+                  <span class="performance-test__setting-label inline-flex min-w-0 items-center">
+                    <label
+                      for="performance-test-measured-runs"
+                      class="text-[13px] whitespace-nowrap text-neutral-200"
+                    >
+                      {{ t('performanceTest.measuredRuns') }}
+                    </label>
+                    <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
+                  </span>
+                  <div
+                    class="performance-test__setting-input ml-auto w-20 flex-none [&_input]:text-center"
+                  >
+                    <Input
+                      id="performance-test-measured-runs"
+                      v-model="measuredRuns"
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      @change="correctMeasuredRuns"
+                      @blur="correctMeasuredRuns"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div class="performance-test__run-actions mt-auto flex self-end gap-2">
-                <Button
-                  class="performance-test__stop min-w-24"
-                  variant="destructive"
-                  size="lg"
-                  :class="['whitespace-normal']"
-                  type="button"
-                  :disabled="!canStop"
-                  @click="stopPerformanceTestFromUser"
-                >
-                  {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
-                </Button>
-                <Button
-                  class="performance-test__run min-w-24"
-                  variant="inverted"
-                  size="lg"
-                  type="button"
-                  :disabled="!canRun"
-                  @click="runPerformanceTest"
-                >
-                  {{ isLaunching ? t('performanceTest.running') : t('performanceTest.run') }}
-                </Button>
               </div>
             </section>
           </div>
 
           <section
-            class="performance-test__results-section flex w-full flex-none flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
+            class="performance-test__results-section flex w-full flex-none flex-col gap-4 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
           >
             <CollapsibleSectionToggle
               :expanded="resultsExpanded"
@@ -922,7 +941,7 @@ watch(performanceTestLogs, async () => {
             />
             <div
               v-show="resultsExpanded"
-              class="performance-test__results text-[13px] text-text-muted [&>h3]:mt-5 [&>h3]:mb-3 [&>h3]:text-neutral-200 [&>h3]:text-[13px] [&>h3]:font-normal"
+              class="performance-test__results text-[13px] text-text-muted [&>h3]:mt-6 [&>h3]:mb-3 [&>h3]:text-[11px] [&>h3]:font-semibold [&>h3]:tracking-[0.04em] [&>h3]:text-text-muted [&>h3]:uppercase"
             >
               <div
                 v-if="isLaunching && totalProgressRuns > 0"
@@ -1035,9 +1054,13 @@ watch(performanceTestLogs, async () => {
                   </dl>
                 </div>
               </template>
-              <p v-else class="performance-test__results-placeholder m-0">
-                {{ t('performanceTest.resultsPlaceholder') }}
-              </p>
+              <div
+                v-else
+                class="performance-test__results-placeholder flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--chooser-surface-border)] px-6 py-7 text-center"
+              >
+                <Gauge :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
+                <p class="m-0">{{ t('performanceTest.resultsPlaceholder') }}</p>
+              </div>
 
               <template v-if="performanceTestResult?.hardware">
                 <h3>{{ t('performanceTest.systemInformation') }}</h3>
@@ -1145,18 +1168,30 @@ watch(performanceTestLogs, async () => {
             </div>
           </section>
           <section
-            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col gap-4 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
+            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col overflow-hidden rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,black_40%,transparent)] [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
             :class="{ 'performance-test__logs-section--collapsed': !logsExpanded }"
           >
-            <CollapsibleSectionToggle
-              :expanded="logsExpanded"
-              :label="t('settings.logs')"
-              @toggle="toggleLogs"
-            />
+            <div
+              class="performance-test__logs-head flex items-center gap-2 px-4 py-3"
+              :class="{
+                'border-b border-solid border-[var(--chooser-surface-border)]': logsExpanded
+              }"
+            >
+              <CollapsibleSectionToggle
+                :expanded="logsExpanded"
+                :label="t('settings.logs')"
+                @toggle="toggleLogs"
+              />
+              <SquareTerminal
+                :size="14"
+                class="ml-auto text-[var(--text-faint)]"
+                aria-hidden="true"
+              />
+            </div>
             <div
               v-show="logsExpanded"
               ref="logsElement"
-              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto rounded-lg bg-[color-mix(in_srgb,black_35%,transparent)] px-4 py-3 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
+              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto px-4 py-3 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
               aria-live="polite"
             >
               {{ performanceTestLogs || t('performanceTest.logsPlaceholder') }}
