@@ -31,6 +31,7 @@ import {
   VERSIONS_FILE
 } from './guards'
 import {
+  cancelSetup,
   getLocal,
   initLocalComfy,
   localDownload,
@@ -38,7 +39,7 @@ import {
   startLocal,
   syncLocalSocket
 } from './localComfy'
-import { openInComfy } from './openInComfy'
+import { localBuilds, openInComfy } from './openInComfy'
 
 const APPS_URL = appsUrl()
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -334,11 +335,10 @@ async function savedPath(file: unknown): Promise<string> {
 
 async function getOutput(
   file: unknown,
-  save: unknown
-): Promise<{ type: string; bytes: Uint8Array; path: string }> {
+  save?: unknown
+): Promise<{ type: string; bytes: Uint8Array; path?: string }> {
   const f = toOutputFile(file)
   if (!f) throw new Error('Unknown output.')
-  const s = (save ?? {}) as { app?: unknown; label?: unknown }
   const ext = saveExt(f.filename.split('.').pop())
   if (!ext) throw new Error('Apps cannot save that kind of file.')
   const query = new URLSearchParams({ filename: f.filename, subfolder: f.subfolder, type: f.type })
@@ -346,6 +346,8 @@ async function getOutput(
   if (!res.ok) throw await failure(res)
   const bytes = new Uint8Array(await res.arrayBuffer())
   const type = res.headers.get('content-type') ?? 'application/octet-stream'
+  if (save === undefined) return { type, bytes }
+  const s = (save ?? {}) as { app?: unknown; label?: unknown }
   return { type, bytes, path: await saveResult(s.app, s.label, ext, bytes) }
 }
 
@@ -461,6 +463,8 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:get-node-price', getNodePrice)
   handleFromApps('comfy-apps:get-local', getLocal)
   handleFromApps('comfy-apps:start-local', startLocal)
+  handleFromApps('comfy-apps:cancel-setup', cancelSetup)
+  handleFromApps('comfy-apps:local-builds', localBuilds)
   handleFromApps('comfy-apps:local-fetch', localFetch)
   handleFromApps('comfy-apps:local-download', localDownload)
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)

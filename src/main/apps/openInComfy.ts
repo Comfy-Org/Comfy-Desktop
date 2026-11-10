@@ -4,13 +4,21 @@ import type { ComfyWindowEntry } from '../host/registry'
 import * as installations from '../installations'
 import { _runningSessions } from '../lib/ipc/shared'
 import {
+  categoryOf,
+  findApps,
+  launchAppsBuild,
+  launchInstall,
+  showAppsBuildWindow
+} from './appsBuild'
+import { pickOpenTarget } from './appsBuildRules'
+import {
   COMFY_READY_SCRIPT,
   isComfyPage,
+  localInstalls,
   type OpenRequest,
   openRequest,
   openWorkflowScript
 } from './guards'
-import { launchInstall, runningLocalId, startLocal } from './localComfy'
 
 export type OpenResult = { opened: true } | { opened: false; error: string }
 
@@ -19,11 +27,42 @@ const READY_TIMEOUT_MS = 180_000
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-async function localInstallId(): Promise<string | null> {
-  const running = runningLocalId()
-  if (running) return running
-  const s = await startLocal()
-  return s.state === 'running' ? runningLocalId() : null
+export type LocalBuild = { id: string; name: string }
+
+async function ownBuilds(): Promise<installations.InstallationRecord[]> {
+  return localInstalls(await installations.list(), categoryOf)
+}
+
+export async function localBuilds(): Promise<LocalBuild[]> {
+  return (await ownBuilds()).map((inst) => ({ id: inst.id, name: inst.name }))
+}
+
+function startedAt(): Map<string, number> {
+  const at = new Map<string, number>()
+  for (const [id, s] of _runningSessions) {
+    if (!s.url && (s.sourceInstallationId ?? id) === id) at.set(id, s.startedAt)
+  }
+  return at
+}
+
+async function running(inst: installations.InstallationRecord): Promise<string | null> {
+  if (_runningSessions.has(inst.id)) return inst.id
+  const result = await launchInstall(inst)
+  return result.ok || _runningSessions.has(inst.id) ? inst.id : null
+}
+
+async function appsBuildWindow(): Promise<string | null> {
+  const apps = await findApps()
+  if (apps?.status !== 'installed') return null
+  if (_runningSessions.has(apps.id)) return showAppsBuildWindow(apps) ? apps.id : null
+  const result = await launchAppsBuild(apps, true)
+  return result.ok || _runningSessions.has(apps.id) ? apps.id : null
+}
+
+async function localInstallId(build?: string): Promise<string | null> {
+  const target = pickOpenTarget(await ownBuilds(), startedAt(), build)
+  if (target) return running(target)
+  return build === undefined ? appsBuildWindow() : null
 }
 
 async function cloudInstallId(): Promise<string | null> {
@@ -80,7 +119,7 @@ async function loadInto(installationId: string, req: OpenRequest): Promise<boole
 export async function openInComfy(input: unknown): Promise<OpenResult> {
   const req = openRequest(input)
   if ('error' in req) throw new Error(req.error)
-  const id = req.where === 'local' ? await localInstallId() : await cloudInstallId()
+  const id = req.where === 'local' ? await localInstallId(req.build) : await cloudInstallId()
   if (!id) {
     return {
       opened: false,

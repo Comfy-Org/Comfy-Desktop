@@ -47,6 +47,11 @@ export interface OpenRequest {
   prompt: Record<string, unknown>
   where: 'local' | 'cloud'
   name: string
+  build?: string
+}
+
+export function isBuildId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(value)
 }
 
 export function workflowName(value: unknown): string {
@@ -66,15 +71,18 @@ export function openRequest(input: unknown): OpenRequest | { error: string } {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return { error: 'That is not a workflow.' }
   }
-  const { prompt, where, name } = input as Record<string, unknown>
+  const { prompt, where, name, build } = input as Record<string, unknown>
   if (where !== 'local' && where !== 'cloud') {
     return { error: 'Open it on Comfy Cloud or this computer.' }
+  }
+  if (build !== undefined && (where !== 'local' || !isBuildId(build))) {
+    return { error: 'Pick one of your builds on this computer.' }
   }
   if (!isWorkflow(prompt)) return { error: 'That is not a workflow.' }
   const count = Object.keys(prompt).length
   if (count < 1 || count > MAX_OPEN_NODES) return { error: 'That is not a workflow.' }
   if (carriesCredentials(prompt)) return { error: 'Leave keys out of the workflow.' }
-  return { prompt, where, name: workflowName(name) }
+  return { prompt, where, name: workflowName(name), ...(build !== undefined ? { build } : {}) }
 }
 
 const FIND_COMFY_APP =
@@ -438,6 +446,7 @@ export interface LocalInstall {
   status?: string
   lastLaunchedAt?: number
   lastLaunchedAtByCategory?: Record<string, number>
+  appsBuild?: unknown
 }
 
 export function localInstalls<T extends LocalInstall>(
@@ -448,6 +457,7 @@ export function localInstalls<T extends LocalInstall>(
     (inst) =>
       categoryOf(inst) === 'local' &&
       inst.sourceId !== 'desktop' &&
+      inst.appsBuild !== true &&
       (inst.status === undefined || inst.status === 'installed')
   )
   const at = (inst: T) => inst.lastLaunchedAtByCategory?.['local'] ?? inst.lastLaunchedAt ?? -1

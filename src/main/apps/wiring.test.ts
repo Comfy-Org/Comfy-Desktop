@@ -26,6 +26,8 @@ describe('Apps bridge wiring', () => {
     for (const c of [
       'getLocal',
       'startLocal',
+      'cancelSetup',
+      'localBuilds',
       'localFetch',
       'onLocalEvent',
       'localDownload',

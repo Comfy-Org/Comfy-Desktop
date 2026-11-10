@@ -31,6 +31,7 @@ import {
   COMFYUI_REPO,
   snapshotRestoreFailureResult
 } from './shared'
+import type { WebContents } from 'electron'
 import type { ComfyVersion, ComfyArgDef, InstallationRecord } from './shared'
 import { allocateInstallIdentity } from './installIdentity'
 import * as releaseCache from '../release-cache'
@@ -138,6 +139,224 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
   return { visible, enriched }
 }
 
+export async function addInstallation(data: Record<string, unknown>) {
+  const identity = await allocateInstallIdentity(
+    (data.name as string) || DEFAULT_INSTALL_NAME,
+    (data.installPath as string | undefined) || undefined
+  )
+  if (!identity.ok) return identity
+  data.name = identity.name
+  if (identity.installPath) data.installPath = identity.installPath
+  const entry = await installations.add({
+    ...data,
+    status: data.status ?? 'installing',
+    seen: false
+  })
+  return { ok: true, entry }
+}
+
+export async function installInstance(
+  sender: WebContents,
+  installationId: string,
+  express?: boolean
+) {
+  const inst = await installations.get(installationId)
+  if (!inst) return { ok: false, message: 'Installation not found.' }
+  const source = sourceMap[inst.sourceId]
+  if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
+  if (_operationAborts.has(installationId)) {
+    return { ok: false, message: 'Another operation is already running for this installation.' }
+  }
+
+  const sendProgress = (phase: string, detail: Record<string, unknown>): void => {
+    if (!sender.isDestroyed()) {
+      sender.send('install-progress', { installationId, phase, ...detail })
+    }
+  }
+
+  const priorComfyVersion = inst.comfyVersion as ComfyVersion | undefined
+  const isComfyUpdate = priorComfyVersion != null
+
+  if (source.install) {
+    if (!isComfyUpdate) {
+      mainTelemetry.registerPersonPropertiesOnce({
+        first_local_install_dispatched_at: new Date().toISOString()
+      })
+    }
+    fs.mkdirSync(inst.installPath, { recursive: true })
+    fs.writeFileSync(path.join(inst.installPath, MARKER_FILE), installationId)
+    if (source.installSteps) {
+      let steps = [...source.installSteps]
+      if (!inst.autoUpdateComfyUI) {
+        steps = steps.filter((s) => s.phase !== 'update')
+      }
+      if (inst.pendingSnapshotRestore) {
+        steps.push(
+          { phase: 'restore-nodes', label: i18n.t('standalone.snapshotRestoreNodesPhase') },
+          { phase: 'restore-pip', label: i18n.t('standalone.snapshotRestorePipPhase') }
+        )
+      }
+      sendProgress('steps', { steps })
+    }
+    const abort = new AbortController()
+    _operationAborts.set(installationId, abort)
+
+    invalidateModelDownloadStartupPass()
+
+    let snapshotRestoreError: string | null = null
+
+    if (inst.bundledTemplateId && inst.downloadTemplateModels && inst.pendingTemplateOpen) {
+      const sendTemplateOutput = (text: string): void => {
+        try {
+          if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
+        } catch {}
+        appendLog(installationId, text)
+      }
+      const sizeBytes = inst.bundledTemplateSizeBytes ?? 0
+      startTemplateDownload(inst, sizeBytes, { sendOutput: sendTemplateOutput })
+    }
+
+    const cache = createCache(
+      settings.get('cacheDir') as string,
+      settings.get('maxCachedDownloads') as number
+    )
+    try {
+      await source.install(inst, { sendProgress, download, cache, extract, signal: abort.signal })
+      if (source.postInstall) {
+        const update = (data: Record<string, unknown>): Promise<void> =>
+          installations.update(installationId, data).then(() => {})
+        await source.postInstall(inst, { sendProgress, update, signal: abort.signal })
+      }
+
+      const freshInst = await installations.get(installationId)
+      const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined
+      if (freshInst && pendingFile) {
+        const sendOutput = (text: string): void => {
+          try {
+            if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
+          } catch {}
+          appendLog(installationId, text)
+        }
+        const update = (data: Record<string, unknown>): Promise<void> =>
+          installations.update(installationId, data).then(() => {})
+        try {
+          await restoreSnapshotIntoInstallation(
+            freshInst,
+            pendingFile,
+            true,
+            { sendProgress, sendOutput, signal: abort.signal },
+            update
+          )
+        } catch (err) {
+          if (abort.signal.aborted) throw err
+          snapshotRestoreError = (err as Error).message
+          await installations.update(installationId, { pendingSnapshotRestore: undefined })
+          await fs.promises.unlink(pendingFile).catch(() => {})
+        }
+      }
+
+      if (!snapshotRestoreError) sendProgress('done', { percent: 100, status: 'Complete' })
+    } catch (err) {
+      _operationAborts.delete(installationId)
+      abortTemplateDownload(installationId)
+      abortModelStaging(installationId)
+      if (abort.signal.aborted) {
+        if (isComfyUpdate) {
+          mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
+            installation_id: installationId,
+            from_version: formatComfyVersion(priorComfyVersion, 'short'),
+            to_version: null,
+            result: 'cancelled'
+          })
+        }
+        let cleaned = !fs.existsSync(inst.installPath)
+        if (!cleaned) {
+          try {
+            fs.rmSync(inst.installPath, { recursive: true, force: true })
+            cleaned = true
+          } catch {}
+        }
+        if (cleaned) {
+          await installations.remove(installationId)
+          return { ok: true, navigate: 'list' }
+        }
+        const markerPath = path.join(inst.installPath, MARKER_FILE)
+        try {
+          fs.writeFileSync(markerPath, installationId)
+        } catch {}
+        await installations.update(installationId, { status: 'partial-delete' })
+        const deleteAbort = new AbortController()
+        _operationAborts.set(installationId, deleteAbort)
+        sendProgress('delete', { percent: 0, status: 'Counting files…' })
+        try {
+          await deleteDir(
+            inst.installPath,
+            (p) => {
+              sendProgress('delete', { percent: p.percent, status: formatDeleteStatus(p) })
+            },
+            { signal: deleteAbort.signal }
+          )
+          _operationAborts.delete(installationId)
+          await installations.remove(installationId)
+        } catch (_delErr) {
+          _operationAborts.delete(installationId)
+          if (deleteAbort.signal.aborted) {
+            if (isEffectivelyEmptyInstallDir(inst.installPath)) {
+              try {
+                fs.rmSync(inst.installPath, { recursive: true, force: true })
+              } catch {}
+              await installations.remove(installationId)
+            } else {
+              try {
+                fs.writeFileSync(markerPath, installationId)
+              } catch {}
+              await installations.update(installationId, { status: 'partial-delete' })
+            }
+          }
+        }
+        return { ok: true, navigate: 'list' }
+      }
+      await installations.update(installationId, { status: 'failed' })
+      if (isComfyUpdate) {
+        mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
+          installation_id: installationId,
+          from_version: formatComfyVersion(priorComfyVersion, 'short'),
+          to_version: null,
+          result: 'error',
+          ...buildErrorFields(err)
+        })
+      }
+      return { ok: false, message: (err as Error).message }
+    }
+    _operationAborts.delete(installationId)
+    await installations.update(installationId, { status: 'installed' })
+    await syncOemSeedBestEffort()
+    if (isComfyUpdate) {
+      const freshInst = await installations.get(installationId)
+      const newComfyVersion = freshInst?.comfyVersion as ComfyVersion | undefined
+      mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
+        installation_id: installationId,
+        from_version: formatComfyVersion(priorComfyVersion, 'short'),
+        to_version: newComfyVersion ? formatComfyVersion(newComfyVersion, 'short') : null,
+        result: 'success'
+      })
+    } else {
+      mainTelemetry.captureInstallCompleted({
+        installationId,
+        method: express ? 'express' : 'manual',
+        express: !!express
+      })
+    }
+    if (snapshotRestoreError) {
+      return snapshotRestoreFailureResult(installationId, snapshotRestoreError)
+    }
+    return { ok: true }
+  }
+
+  await installations.update(installationId, { status: 'failed' })
+  return { ok: false, message: 'This source does not support installation.' }
+}
+
 export function registerInstallationHandlers(): void {
   ipcMain.handle('get-installations', async () => {
     const allInstalls = await installations.list()
@@ -165,21 +384,9 @@ export function registerInstallationHandlers(): void {
     }
   })
 
-  ipcMain.handle('add-installation', async (_event, data: Record<string, unknown>) => {
-    const identity = await allocateInstallIdentity(
-      (data.name as string) || DEFAULT_INSTALL_NAME,
-      (data.installPath as string | undefined) || undefined
-    )
-    if (!identity.ok) return identity
-    data.name = identity.name
-    if (identity.installPath) data.installPath = identity.installPath
-    const entry = await installations.add({
-      ...data,
-      status: data.status ?? 'installing',
-      seen: false
-    })
-    return { ok: true, entry }
-  })
+  ipcMain.handle('add-installation', (_event, data: Record<string, unknown>) =>
+    addInstallation(data)
+  )
 
   ipcMain.handle('reorder-installations', async (_event, orderedIds: string[]) => {
     await installations.reorder(orderedIds)
@@ -216,204 +423,9 @@ export function registerInstallationHandlers(): void {
     return { ok: true, entry }
   })
 
-  ipcMain.handle('install-instance', async (_event, installationId: string, express?: boolean) => {
-    const inst = await installations.get(installationId)
-    if (!inst) return { ok: false, message: 'Installation not found.' }
-    const source = sourceMap[inst.sourceId]
-    if (!source) return { ok: false, message: i18n.t('errors.unknownSource') }
-    if (_operationAborts.has(installationId)) {
-      return { ok: false, message: 'Another operation is already running for this installation.' }
-    }
-    const sender = _event.sender
-
-    const sendProgress = (phase: string, detail: Record<string, unknown>): void => {
-      if (!sender.isDestroyed()) {
-        sender.send('install-progress', { installationId, phase, ...detail })
-      }
-    }
-
-    const priorComfyVersion = inst.comfyVersion as ComfyVersion | undefined
-    const isComfyUpdate = priorComfyVersion != null
-
-    if (source.install) {
-      if (!isComfyUpdate) {
-        mainTelemetry.registerPersonPropertiesOnce({
-          first_local_install_dispatched_at: new Date().toISOString()
-        })
-      }
-      fs.mkdirSync(inst.installPath, { recursive: true })
-      fs.writeFileSync(path.join(inst.installPath, MARKER_FILE), installationId)
-      if (source.installSteps) {
-        let steps = [...source.installSteps]
-        if (!inst.autoUpdateComfyUI) {
-          steps = steps.filter((s) => s.phase !== 'update')
-        }
-        if (inst.pendingSnapshotRestore) {
-          steps.push(
-            { phase: 'restore-nodes', label: i18n.t('standalone.snapshotRestoreNodesPhase') },
-            { phase: 'restore-pip', label: i18n.t('standalone.snapshotRestorePipPhase') }
-          )
-        }
-        sendProgress('steps', { steps })
-      }
-      const abort = new AbortController()
-      _operationAborts.set(installationId, abort)
-
-      invalidateModelDownloadStartupPass()
-
-      let snapshotRestoreError: string | null = null
-
-      if (inst.bundledTemplateId && inst.downloadTemplateModels && inst.pendingTemplateOpen) {
-        const sendTemplateOutput = (text: string): void => {
-          try {
-            if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
-          } catch {}
-          appendLog(installationId, text)
-        }
-        const sizeBytes = inst.bundledTemplateSizeBytes ?? 0
-        startTemplateDownload(inst, sizeBytes, { sendOutput: sendTemplateOutput })
-      }
-
-      const cache = createCache(
-        settings.get('cacheDir') as string,
-        settings.get('maxCachedDownloads') as number
-      )
-      try {
-        await source.install(inst, { sendProgress, download, cache, extract, signal: abort.signal })
-        if (source.postInstall) {
-          const update = (data: Record<string, unknown>): Promise<void> =>
-            installations.update(installationId, data).then(() => {})
-          await source.postInstall(inst, { sendProgress, update, signal: abort.signal })
-        }
-
-        const freshInst = await installations.get(installationId)
-        const pendingFile = freshInst?.pendingSnapshotRestore as string | undefined
-        if (freshInst && pendingFile) {
-          const sendOutput = (text: string): void => {
-            try {
-              if (!sender.isDestroyed()) sender.send('comfy-output', { installationId, text })
-            } catch {}
-            appendLog(installationId, text)
-          }
-          const update = (data: Record<string, unknown>): Promise<void> =>
-            installations.update(installationId, data).then(() => {})
-          try {
-            await restoreSnapshotIntoInstallation(
-              freshInst,
-              pendingFile,
-              true,
-              { sendProgress, sendOutput, signal: abort.signal },
-              update
-            )
-          } catch (err) {
-            if (abort.signal.aborted) throw err
-            snapshotRestoreError = (err as Error).message
-            await installations.update(installationId, { pendingSnapshotRestore: undefined })
-            await fs.promises.unlink(pendingFile).catch(() => {})
-          }
-        }
-
-        if (!snapshotRestoreError) sendProgress('done', { percent: 100, status: 'Complete' })
-      } catch (err) {
-        _operationAborts.delete(installationId)
-        abortTemplateDownload(installationId)
-        abortModelStaging(installationId)
-        if (abort.signal.aborted) {
-          if (isComfyUpdate) {
-            mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
-              installation_id: installationId,
-              from_version: formatComfyVersion(priorComfyVersion, 'short'),
-              to_version: null,
-              result: 'cancelled'
-            })
-          }
-          let cleaned = !fs.existsSync(inst.installPath)
-          if (!cleaned) {
-            try {
-              fs.rmSync(inst.installPath, { recursive: true, force: true })
-              cleaned = true
-            } catch {}
-          }
-          if (cleaned) {
-            await installations.remove(installationId)
-            return { ok: true, navigate: 'list' }
-          }
-          const markerPath = path.join(inst.installPath, MARKER_FILE)
-          try {
-            fs.writeFileSync(markerPath, installationId)
-          } catch {}
-          await installations.update(installationId, { status: 'partial-delete' })
-          const deleteAbort = new AbortController()
-          _operationAborts.set(installationId, deleteAbort)
-          sendProgress('delete', { percent: 0, status: 'Counting files…' })
-          try {
-            await deleteDir(
-              inst.installPath,
-              (p) => {
-                sendProgress('delete', { percent: p.percent, status: formatDeleteStatus(p) })
-              },
-              { signal: deleteAbort.signal }
-            )
-            _operationAborts.delete(installationId)
-            await installations.remove(installationId)
-          } catch (_delErr) {
-            _operationAborts.delete(installationId)
-            if (deleteAbort.signal.aborted) {
-              if (isEffectivelyEmptyInstallDir(inst.installPath)) {
-                try {
-                  fs.rmSync(inst.installPath, { recursive: true, force: true })
-                } catch {}
-                await installations.remove(installationId)
-              } else {
-                try {
-                  fs.writeFileSync(markerPath, installationId)
-                } catch {}
-                await installations.update(installationId, { status: 'partial-delete' })
-              }
-            }
-          }
-          return { ok: true, navigate: 'list' }
-        }
-        await installations.update(installationId, { status: 'failed' })
-        if (isComfyUpdate) {
-          mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
-            installation_id: installationId,
-            from_version: formatComfyVersion(priorComfyVersion, 'short'),
-            to_version: null,
-            result: 'error',
-            ...buildErrorFields(err)
-          })
-        }
-        return { ok: false, message: (err as Error).message }
-      }
-      _operationAborts.delete(installationId)
-      await installations.update(installationId, { status: 'installed' })
-      await syncOemSeedBestEffort()
-      if (isComfyUpdate) {
-        const freshInst = await installations.get(installationId)
-        const newComfyVersion = freshInst?.comfyVersion as ComfyVersion | undefined
-        mainTelemetry.emit('comfy.desktop.comfyui.update.applied', {
-          installation_id: installationId,
-          from_version: formatComfyVersion(priorComfyVersion, 'short'),
-          to_version: newComfyVersion ? formatComfyVersion(newComfyVersion, 'short') : null,
-          result: 'success'
-        })
-      } else {
-        mainTelemetry.captureInstallCompleted({
-          installationId,
-          method: express ? 'express' : 'manual',
-          express: !!express
-        })
-      }
-      if (snapshotRestoreError) {
-        return snapshotRestoreFailureResult(installationId, snapshotRestoreError)
-      }
-      return { ok: true }
-    }
-
-    await installations.update(installationId, { status: 'failed' })
-    return { ok: false, message: 'This source does not support installation.' }
-  })
+  ipcMain.handle('install-instance', (_event, installationId: string, express?: boolean) =>
+    installInstance(_event.sender, installationId, express)
+  )
 
   ipcMain.handle('get-list-actions', async (_event, installationId: string) => {
     const inst = await installations.get(installationId)

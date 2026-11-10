@@ -12,6 +12,7 @@ import {
   interruptJson,
   DEFAULT_APPS_URL,
   isAppsFrameUrl,
+  isBuildId,
   isComfyPage,
   isDocumentFailure,
   isInside,
@@ -415,6 +416,22 @@ describe('localInstalls', () => {
     ]
     expect(localInstalls(list, category)).toEqual([])
   })
+
+  it('leaves out the Apps build, even when it was launched last', () => {
+    const list = [
+      { id: 'mine', name: 'Mine', sourceId: 'standalone', status: 'installed', lastLaunchedAt: 1 },
+      {
+        id: 'apps',
+        name: 'Apps',
+        sourceId: 'standalone',
+        status: 'installed',
+        appsBuild: true,
+        lastLaunchedAt: 9,
+        lastLaunchedAtByCategory: { local: 9 }
+      }
+    ]
+    expect(localInstalls(list, category).map((i) => i.id)).toEqual(['mine'])
+  })
 })
 
 describe('downloadRequest', () => {
@@ -541,6 +558,13 @@ describe('stopping local runs', () => {
       expect(queueJson(body), JSON.stringify(body)).toBeNull()
     }
   })
+
+  it('leaves /free to Desktop: a page cannot unload models', () => {
+    for (const body of [undefined, {}, { unload_models: true, free_memory: true }]) {
+      expect(localRequest({ method: 'POST', path: '/free', body })).toMatchObject({ status: 404 })
+    }
+    expect(localRequest({ method: 'GET', path: '/free' })).toMatchObject({ status: 404 })
+  })
 })
 
 describe('apps page load failures', () => {
@@ -597,6 +621,28 @@ describe('opening a workflow in ComfyUI', () => {
     ]) {
       expect(openRequest(input), JSON.stringify(input)).toHaveProperty('error')
     }
+  })
+
+  it('takes one of the person own builds by id, for a This computer run only', () => {
+    expect(openRequest({ prompt, where: 'local', name: 'x', build: 'inst-1731-2' })).toMatchObject({
+      where: 'local',
+      build: 'inst-1731-2'
+    })
+    expect(openRequest({ prompt, where: 'local', name: 'x' })).not.toHaveProperty('build')
+  })
+
+  it('refuses a build that is not a plain id, or one given for Comfy Cloud', () => {
+    for (const build of ['', 'a b', '../inst', 'x'.repeat(65), 7, null, {}, ['inst-1']]) {
+      expect(
+        openRequest({ prompt, where: 'local', name: 'x', build }),
+        String(build)
+      ).toHaveProperty('error')
+    }
+    expect(openRequest({ prompt, where: 'cloud', name: 'x', build: 'inst-1' })).toHaveProperty(
+      'error'
+    )
+    expect(isBuildId('inst-1731-2')).toBe(true)
+    expect(isBuildId('C:\\x')).toBe(false)
   })
 
   it('refuses more than 500 nodes or a graph over 1 MB', () => {

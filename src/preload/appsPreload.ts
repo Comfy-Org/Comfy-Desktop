@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
-const BRIDGE = 1
+const BRIDGE = 2
 const CALLS = [
   'getInfo',
   'getAuthState',
@@ -19,6 +19,8 @@ const CALLS = [
   'getNodePrice',
   'getLocal',
   'startLocal',
+  'cancelSetup',
+  'localBuilds',
   'localFetch',
   'onLocalEvent',
   'localDownload',
@@ -33,10 +35,12 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
   run: (workflow: unknown) => ipcRenderer.invoke('comfy-apps:run', workflow),
   getRun: (runId: string) => ipcRenderer.invoke('comfy-apps:get-run', runId),
   cancelRun: (runId: string) => ipcRenderer.invoke('comfy-apps:cancel-run', runId),
-  openInComfy: (req: { prompt: unknown; where: 'local' | 'cloud'; name: string }) =>
+  openInComfy: (req: { prompt: unknown; where: 'local' | 'cloud'; name: string; build?: string }) =>
     ipcRenderer.invoke('comfy-apps:open-in-comfy', req),
-  getOutput: (file: unknown, save: { app: string; label: string }) =>
-    ipcRenderer.invoke('comfy-apps:get-output', file, save),
+  getOutput: (file: unknown, save?: { app: string; label: string }) =>
+    save === undefined
+      ? ipcRenderer.invoke('comfy-apps:get-output', file)
+      : ipcRenderer.invoke('comfy-apps:get-output', file, save),
   uploadImage: (bytes: Uint8Array, name: string) =>
     ipcRenderer.invoke('comfy-apps:upload-image', bytes, name),
   uploadFile: (bytes: Uint8Array, name: string) =>
@@ -51,6 +55,8 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
   getNodePrice: (node: string) => ipcRenderer.invoke('comfy-apps:get-node-price', node),
   getLocal: () => ipcRenderer.invoke('comfy-apps:get-local'),
   startLocal: () => ipcRenderer.invoke('comfy-apps:start-local'),
+  cancelSetup: () => ipcRenderer.invoke('comfy-apps:cancel-setup'),
+  localBuilds: () => ipcRenderer.invoke('comfy-apps:local-builds'),
   localFetch: (req: { method: string; path: string; body?: unknown; fileName?: string }) =>
     ipcRenderer.invoke('comfy-apps:local-fetch', req),
   localDownload: (req: { url: string; folder: string; name: string }) =>
