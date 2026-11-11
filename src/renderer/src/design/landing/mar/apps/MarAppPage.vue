@@ -445,7 +445,12 @@ function back(): void {
                 :key="f.id"
                 :class="inline(f) ? 'mar-app-editor-row' : 'mar-app-editor-stack'"
               >
-                <h3 class="mar-app-editor-label">
+                <!-- The picture needs no title; a field on its own titles its
+                     section, as Cinematic Studio's do. -->
+                <h3
+                  v-if="!(f.kind === 'image' && f.id === firstImage)"
+                  :class="!b.group && !inline(f) ? 'mar-app-editor-group' : 'mar-app-editor-label'"
+                >
                   {{ f.label
                   }}<span
                     v-if="f.kind === 'image' && f.hint === 'Optional'"
@@ -488,8 +493,7 @@ function back(): void {
                 <Select
                   v-else-if="f.control === 'select'"
                   :model-value="pick(f)"
-                  size="sm"
-                  class="mar-app-editor-select"
+                  class="mar-app-editor-select mar-app-editor-ctl"
                   :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
                   @update:model-value="(v: string) => (values[f.id] = v)"
                 />
@@ -501,7 +505,7 @@ function back(): void {
                   :step="f.step"
                   :unit="f.unit"
                   :aria-label="f.label"
-                  class="w-28"
+                  class="mar-app-editor-ctl"
                   @update:model-value="(v: number) => (values[f.id] = String(v))"
                 />
                 <Switch
@@ -513,11 +517,10 @@ function back(): void {
                 <Input
                   v-else-if="f.control === 'seed'"
                   :model-value="values[f.id] ?? ''"
-                  size="sm"
                   mono
                   placeholder="Random"
                   :aria-label="f.label"
-                  class="w-28"
+                  class="mar-app-editor-ctl"
                   @update:model-value="(v: string) => (values[f.id] = v.replace(/\D/g, ''))"
                 >
                   <template #trailing><Dices :size="13" class="text-subtle-foreground" /></template>
@@ -527,7 +530,7 @@ function back(): void {
                   :model-value="pick(f)"
                   variant="contained"
                   size="sm"
-                  :class="!inline(f) && 'self-start'"
+                  :class="inline(f) ? 'mar-app-editor-ctl mar-app-editor-seg' : 'mar-app-editor-seg'"
                   :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
                   @update:model-value="(v: string) => (values[f.id] = v)"
                 />
@@ -907,40 +910,41 @@ function back(): void {
   border-radius: var(--radius-panel) var(--radius-panel) 0 0;
   background: color-mix(in oklch, var(--color-base-foreground) 4%, var(--color-card-background));
 }
+/* As Cinematic Studio: 20px between sections, 12px inside one. */
 .mar-app-editor-fields {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  gap: 20px;
+  padding: 20px 20px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .mar-app-editor-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px 20px 14px;
-}
-.mar-app-editor-field + .mar-app-editor-field {
-  border-top: 1px solid var(--color-border-default);
+  gap: 12px;
 }
 .mar-app-editor-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .mar-app-editor-row {
   display: flex;
-  min-height: 32px;
+  min-height: 36px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
+/* Section titles: the uppercase label (UI-RULES). */
 .mar-app-editor-group {
-  font-size: var(--text-ui);
-  line-height: var(--text-ui--line-height);
-  font-weight: 600;
-  color: var(--color-base-foreground);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-subtle-foreground);
 }
 .mar-app-editor-opt {
   font-weight: 400;
@@ -952,8 +956,8 @@ function back(): void {
   color: var(--color-subtle-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-select {
-  width: auto;
-  max-width: 60%;
+  height: 36px;
+  padding-inline: 12px;
 }
 .mar-app-editor-label {
   font-size: var(--text-ui);
@@ -1706,5 +1710,24 @@ function back(): void {
   .mar-app-editor-sweep {
     animation: none;
   }
+}
+</style>
+
+<style>
+/* Every control on a row: one width and height, so the column lines up
+   (scoped styles don't reach the controls' own buttons). */
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-ctl {
+  width: 152px;
+  height: 36px;
+  flex-shrink: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-seg > button {
+  height: 30px;
+  flex: 1;
+  justify-content: center;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-seg:not(.mar-app-editor-ctl) {
+  width: 100%;
+  height: 36px;
 }
 </style>
