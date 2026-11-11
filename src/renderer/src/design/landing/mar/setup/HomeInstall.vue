@@ -147,8 +147,12 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
           <Button v-if="failed" variant="secondary" :size="size" @click="changeFromHome"
             >Change</Button
           >
-          <Button v-if="!failed" variant="secondary" :size="size" @click="flow.confirmCancel = true"
-            >Cancel install</Button
+          <Button
+            v-if="!failed"
+            variant="secondary"
+            :size="size"
+            @click="flow.confirmCancel = true"
+            >{{ props.bare ? 'Cancel' : 'Cancel install' }}</Button
           >
         </template>
         <template v-else>
@@ -173,19 +177,16 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </template>
 
 <style scoped>
-/* One of the Builds row's cards: the actions sit under the words, the bar
- * keeps the card's width. */
-.mbr-install {
-  flex-wrap: wrap;
-}
-.mbr-install > :last-child {
-  width: 100%;
-  justify-content: flex-end;
-  margin-top: -4px;
-}
+/* One of the Builds row's cards, the height of the others whatever its
+ * state: the actions stay on the right, small, and the bar is a line along
+ * the card's bottom edge instead of a row of its own. */
 .mbr-install .mss-home-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
   max-width: none;
-  margin-top: 8px;
+  margin-top: 0;
+  border-radius: 0;
 }
 .mss-home-builds {
   display: grid;
