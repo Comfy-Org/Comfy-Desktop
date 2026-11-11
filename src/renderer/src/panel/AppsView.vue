@@ -28,6 +28,7 @@ const openApp = ref<CatalogApp | null>(null)
 const appEntered = ref(false)
 const appOutputs = ref<ShownAppOutputs | null>(null)
 const appOutputIndex = ref(0)
+const appOutputsShown = ref(0)
 
 watch(openApp, (app) => {
   if (!app) {
@@ -77,6 +78,7 @@ function showAppOutputs(outputs: AppOutputs): void {
       : null
   }
   appOutputIndex.value = outputs.index
+  appOutputsShown.value++
 }
 
 function closeAppOutputs(): void {
@@ -102,6 +104,7 @@ onBeforeUnmount(() => {
 <template>
   <OutputDetailDialog
     v-if="appOutputs"
+    :key="appOutputsShown"
     v-model:index="appOutputIndex"
     :items="appOutputs.items"
     @close="closeAppOutputs"

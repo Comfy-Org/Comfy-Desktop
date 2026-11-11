@@ -71,6 +71,7 @@
       "createdAt": "Created {date}",
       "fit": "Fit",
       "zoom": "Zoom",
+      "zoomLevel": "Zoom: {level}",
       "generationInfo": "Generation info",
       "workflow": "Workflow",
       "available": "Available",

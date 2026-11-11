@@ -231,6 +231,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               variant="secondary"
               size="md"
               class="min-w-20 justify-between gap-1.5 px-3 text-ui tabular-nums"
+              :aria-label="t('assets.detail.zoomLevel', { level: zoomLabel })"
               data-testid="output-detail-zoom"
             >
               {{ zoomLabel }}
@@ -274,7 +275,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           class="flex items-center text-xs font-medium tracking-wide text-subtle-foreground uppercase"
         >
           {{ t('assets.detail.tags') }}
-          <InfoTooltip :text="t('assets.detail.tagsHint')" icon="info" />
+          <InfoTooltip
+            v-if="item.workflow === null"
+            :text="t('assets.detail.tagsHint')"
+            icon="info"
+          />
         </div>
         <div class="flex flex-wrap gap-1.5">
           <Tag v-for="tag in item.tags" :key="tag" :label="tag" />

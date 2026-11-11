@@ -71,6 +71,7 @@
       "createdAt": "创建于 {date}",
       "fit": "适应",
       "zoom": "缩放",
+      "zoomLevel": "缩放：{level}",
       "generationInfo": "生成信息",
       "workflow": "工作流",
       "available": "可用",
