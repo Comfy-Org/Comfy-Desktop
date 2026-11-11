@@ -1505,9 +1505,15 @@
   text-align: left;
   outline: none;
   cursor: pointer;
+  /* The pick switches at once, ring and check together; only the hover
+     fill eases, so a tap never looks like a fade. */
+  transition: background-color 120ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .mss-opt:hover {
   background: oklch(0.6 0 0 / 0.09);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt:active {
+  transition: none;
 }
 :root .proto-ui.proto-ui.proto-ui .mss-opt[data-state='checked'] {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
