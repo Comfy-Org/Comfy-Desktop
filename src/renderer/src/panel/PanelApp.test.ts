@@ -604,9 +604,7 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="benchmarks"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Benchmarks')
-    expect(wrapper.get('.branded-page-header__description').text()).toBe(
-      'Compare results from your performance tests.'
-    )
+    expect(wrapper.find('.branded-page-header__description').exists()).toBe(false)
   })
 
   it('preserves the dashboard workspace when opening Performance Test', async () => {
