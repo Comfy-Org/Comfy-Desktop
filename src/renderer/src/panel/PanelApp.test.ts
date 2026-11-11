@@ -604,7 +604,9 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="benchmarks"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Benchmarks')
-    expect(wrapper.find('.branded-page-header__description').exists()).toBe(false)
+    expect(wrapper.get('.branded-page-header__description').text()).toBe(
+      'How fast each build runs the same workflow on the same hardware.'
+    )
   })
 
   it('preserves the dashboard workspace when opening Performance Test', async () => {
