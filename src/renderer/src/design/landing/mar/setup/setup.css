@@ -1152,8 +1152,8 @@
   z-index: 70;
 }
 /* The very first open: the wordmark alone, centred on the frame. The
- * light comes on: the mark resolves out of a soft glow as the ambient
- * light above brightens with it. Then it travels up to its place,
+ * light comes on: the mark comes into focus as the ambient light above
+ * brightens with it. Then it travels up to its place,
  * transform only, and Set up rises under it. No scale in the entrance:
  * scaling a translated mark would move it too. */
 .mss-first.is-backdrop.is-alone .mss-first-mark {
@@ -1167,16 +1167,16 @@
 .mss-first.is-backdrop.is-arriving .mss-first-mark {
   transform: translate(-50%, calc(50vh - 34px)) scale(2);
   /* Not quite white yet: the glint completes it. */
-  opacity: 0.7;
-  animation: mss-arrive 760ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  opacity: 0.82;
+  animation: mss-arrive 600ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 /* One white glint crosses the mark at its 16°. */
 .mss-first.is-backdrop.is-arriving .mss-first-glint {
   opacity: 1;
-  mask-image: linear-gradient(106deg, transparent 42%, #000 50%, transparent 58%);
+  mask-image: linear-gradient(106deg, transparent 30%, #000 50%, transparent 70%);
   mask-size: 300% 100%;
   mask-repeat: no-repeat;
-  animation: mss-glint 560ms 380ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: mss-glint 800ms 300ms cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 .mss-first.is-backdrop.is-arriving .mss-ambient {
   animation: mss-light 1100ms cubic-bezier(0.23, 1, 0.32, 1) both;
@@ -1184,14 +1184,11 @@
 @keyframes mss-arrive {
   from {
     opacity: 0;
-    filter: blur(12px) drop-shadow(0 0 24px rgb(255 255 255 / 0.9));
-  }
-  55% {
-    opacity: 0.7;
-    filter: blur(0) drop-shadow(0 0 14px rgb(255 255 255 / 0.5));
+    filter: blur(10px);
   }
   to {
-    filter: blur(0) drop-shadow(0 0 0 rgb(255 255 255 / 0));
+    opacity: 0.82;
+    filter: blur(0);
   }
 }
 @keyframes mss-glint {
