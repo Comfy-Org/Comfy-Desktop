@@ -93,7 +93,7 @@ onUnmounted(() => unsubscribeSettings?.())
           <div class="flex min-w-0 items-center gap-2">
             <h1
               :id="TITLE_ID"
-              class="m-0 flex min-w-0 text-[30px]/[1.15] font-semibold tracking-[-0.02em] text-foreground"
+              class="m-0 flex min-w-0 font-display text-display font-semibold text-foreground"
             />
             <StatusChip v-if="status" class="build-details-status" :tone="status.tone">
               <template v-if="status.tone === 'bad'" #icon>
