@@ -1,15 +1,25 @@
+import { createHash } from 'crypto'
 import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
 import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import { CLOUD_CONFIG, CLOUD_REFRESH_TOKEN_LIFETIME_MS } from './config'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
+const REVOCATIONS_DIRNAME = 'comfy-cloud-revocations'
 const VAULT_VERSION = 2
+
+export interface GrantOrigin {
+  issuer: string
+  clientId: string
+}
 
 interface TokenVault {
   version: typeof VAULT_VERSION
+  issuer?: string
+  clientId?: string
   subject?: string
   grant: AuthTokens
   activeWorkspaceId: string | null
@@ -25,7 +35,13 @@ interface LegacyVault {
   workspaceNames?: Record<string, string>
 }
 
+export interface PendingRevocation extends GrantOrigin {
+  refreshToken: string
+  queuedAt: number
+}
+
 let cachedVault: TokenVault | null = null
+const unsavedRevocations = new Map<string, PendingRevocation>()
 let authFilePath: string | null = null
 let secureStorageUnavailable = false
 
@@ -74,6 +90,8 @@ function isVault(v: unknown): v is TokenVault {
     isTokens(v.grant) &&
     (v.activeWorkspaceId === null || typeof v.activeWorkspaceId === 'string') &&
     (v.subject === undefined || typeof v.subject === 'string') &&
+    (v.issuer === undefined || typeof v.issuer === 'string') &&
+    (v.clientId === undefined || typeof v.clientId === 'string') &&
     isRecord(v.workspaceTokens) &&
     Object.values(v.workspaceTokens).every(isTokens) &&
     isWorkspaceNames(v.workspaceNames)
@@ -111,17 +129,22 @@ function migratedVault(legacy: LegacyVault): TokenVault | null {
   }
 }
 
-function persistVault(vault: TokenVault): void {
+function persistVault(vault: TokenVault): boolean {
   cachedVault = vault
   if (!encryptionAvailable()) {
     try {
       fs.rmSync(filePath(), { force: true })
-    } catch {}
-    return
+      return true
+    } catch {
+      return false
+    }
   }
   try {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(vault)))
-  } catch {}
+    return true
+  } catch {
+    return false
+  }
 }
 
 function loadVault(): TokenVault | null {
@@ -152,12 +175,11 @@ function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
   )
 }
 
-export function saveGrant(grant: AuthTokens): void {
+export function saveGrant(grant: AuthTokens): boolean {
   const current = loadVault()
   const subject = subjectOf(grant.accessToken)
   if (!current || !subject || current.subject !== subject) {
-    persistVault(vaultFor(grant))
-    return
+    return persistVault({ ...vaultFor(grant), ...configuredOrigin() })
   }
   const previous = current.grant
   const previousAnchor = workspaceIdOf(previous.accessToken)
@@ -172,13 +194,25 @@ export function saveGrant(grant: AuthTokens): void {
     }
   }
   current.grant = grant
+  Object.assign(current, configuredOrigin())
   if (!holdsToken(current, current.activeWorkspaceId))
     current.activeWorkspaceId = workspaceIdOf(grant.accessToken)
-  persistVault(current)
+  return persistVault(current)
 }
 
 export function loadGrant(): AuthTokens | null {
   return loadVault()?.grant ?? null
+}
+
+function configuredOrigin(): GrantOrigin {
+  return { issuer: CLOUD_CONFIG.issuer, clientId: CLOUD_CONFIG.clientId }
+}
+
+export function loadGrantOrigin(): GrantOrigin | null {
+  const vault = loadVault()
+  if (!vault) return null
+  if (!vault.issuer || !vault.clientId) return configuredOrigin()
+  return { issuer: vault.issuer, clientId: vault.clientId }
 }
 
 export function loadActiveWorkspaceId(): string | null {
@@ -246,6 +280,7 @@ export function replaceGrant(
     return false
   }
   vault.grant = grant
+  Object.assign(vault, configuredOrigin())
   persistVault(vault)
   return true
 }
@@ -262,6 +297,111 @@ export function clearTokens(): void {
   cachedVault = null
   try {
     fs.rmSync(filePath(), { force: true })
+  } catch {}
+}
+
+function revocationsDir(): string {
+  return path.join(app.getPath('userData'), REVOCATIONS_DIRNAME)
+}
+
+function revocationPath(refreshToken: string): string {
+  const name = createHash('sha256').update(refreshToken).digest('hex')
+  return path.join(revocationsDir(), `${name}.bin`)
+}
+
+function isSavedRevocation(
+  v: unknown
+): v is Omit<PendingRevocation, 'queuedAt'> & { queuedAt?: number } {
+  return (
+    isRecord(v) &&
+    typeof v.issuer === 'string' &&
+    typeof v.clientId === 'string' &&
+    typeof v.refreshToken === 'string' &&
+    (v.queuedAt === undefined || typeof v.queuedAt === 'number')
+  )
+}
+
+function writeRevocation(revocation: PendingRevocation): boolean {
+  if (!encryptionAvailable()) return false
+  const target = revocationPath(revocation.refreshToken)
+  try {
+    fs.mkdirSync(revocationsDir(), { recursive: true })
+    fs.writeFileSync(`${target}.tmp`, safeStorage.encryptString(JSON.stringify(revocation)))
+    fs.renameSync(`${target}.tmp`, target)
+    return true
+  } catch {
+    removeQuietly(`${target}.tmp`)
+    return false
+  }
+}
+
+export interface PendingRevocations {
+  pending: PendingRevocation[]
+  complete: boolean
+}
+
+function dropIfOutlived(file: string): boolean {
+  try {
+    if (fs.statSync(file).mtimeMs + CLOUD_REFRESH_TOKEN_LIFETIME_MS > Date.now()) return false
+    fs.rmSync(file, { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function readSavedRevocations(): PendingRevocations {
+  let names: string[]
+  try {
+    names = fs.readdirSync(revocationsDir()).filter((name) => name.endsWith('.bin'))
+  } catch (error) {
+    return { pending: [], complete: (error as NodeJS.ErrnoException).code === 'ENOENT' }
+  }
+  if (names.length > 0 && !encryptionAvailable()) return { pending: [], complete: false }
+  let unreadable = 0
+  const pending = names.flatMap((name) => {
+    const file = path.join(revocationsDir(), name)
+    try {
+      const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(file)))
+      if (isSavedRevocation(parsed))
+        return [{ ...parsed, queuedAt: parsed.queuedAt ?? fs.statSync(file).mtimeMs }]
+    } catch {}
+    if (!dropIfOutlived(file)) unreadable += 1
+    return []
+  })
+  return { pending, complete: unreadable === 0 }
+}
+
+export function loadPendingRevocations(): PendingRevocations {
+  for (const [refreshToken, revocation] of unsavedRevocations) {
+    if (writeRevocation(revocation)) unsavedRevocations.delete(refreshToken)
+  }
+  const saved = readSavedRevocations()
+  const savedTokens = new Set(saved.pending.map((entry) => entry.refreshToken))
+  const unsaved = [...unsavedRevocations.values()].filter(
+    (entry) => !savedTokens.has(entry.refreshToken)
+  )
+  return { pending: [...saved.pending, ...unsaved], complete: saved.complete }
+}
+
+export function addPendingRevocation(revocation: PendingRevocation): void {
+  if (!writeRevocation(revocation)) unsavedRevocations.set(revocation.refreshToken, revocation)
+}
+
+export function removePendingRevocation(refreshToken: string): boolean {
+  unsavedRevocations.delete(refreshToken)
+  removeQuietly(`${revocationPath(refreshToken)}.tmp`)
+  try {
+    fs.rmSync(revocationPath(refreshToken), { force: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function removeQuietly(file: string): void {
+  try {
+    fs.rmSync(file, { force: true })
   } catch {}
 }
 
@@ -288,6 +428,7 @@ export function getAuthStatus(): AuthStatus {
 
 export function _resetForTest(): void {
   cachedVault = null
+  unsavedRevocations.clear()
   authFilePath = null
   secureStorageUnavailable = false
 }
