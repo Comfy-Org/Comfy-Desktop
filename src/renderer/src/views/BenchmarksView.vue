@@ -1008,7 +1008,7 @@ onActivated(() => {
         <div class="benchmarks__toolbar flex flex-wrap items-center gap-2">
           <BaseInput
             v-model="searchQuery"
-            class="benchmarks__search w-48"
+            class="benchmarks__search w-44"
             :placeholder="t('benchmarks.searchPlaceholder')"
             :aria-label="t('benchmarks.searchPlaceholder')"
             :spellcheck="false"
@@ -1017,28 +1017,28 @@ onActivated(() => {
           </BaseInput>
           <BaseSelect
             v-model="workspaceFilter"
-            class="benchmarks__filter max-w-45"
+            class="benchmarks__filter w-auto max-w-40"
             :options="workspaceOptions"
             :aria-label="t('benchmarks.allWorkspaces')"
             compact
           />
           <BaseSelect
             v-model="instanceFilter"
-            class="benchmarks__filter max-w-45"
+            class="benchmarks__filter w-auto max-w-40"
             :options="instanceOptions"
             :aria-label="t('benchmarks.allInstances')"
             compact
           />
           <BaseSelect
             v-model="hardwareFilter"
-            class="benchmarks__filter max-w-45"
+            class="benchmarks__filter w-auto max-w-40"
             :options="hardwareOptions"
             :aria-label="t('benchmarks.allHardware')"
             compact
           />
           <BaseSelect
             v-model="workflowFilter"
-            class="benchmarks__filter max-w-45"
+            class="benchmarks__filter w-auto max-w-40"
             :options="workflowOptions"
             :aria-label="t('benchmarks.allWorkflows')"
             compact
