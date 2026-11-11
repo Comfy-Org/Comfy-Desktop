@@ -39,7 +39,8 @@ import {
  */
 /** Bare: the card alone, one of the Builds row's cards (MarBuildsRow.vue),
  *  the size of the others; no header, no apps under it. */
-const props = defineProps<{ bare?: boolean; wide?: boolean }>()
+/** Narrow: one of three in the row; the kicker and the actions shorten. */
+const props = defineProps<{ bare?: boolean; narrow?: boolean }>()
 const size = computed(() => (props.bare ? 'sm' : 'lg'))
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
@@ -52,7 +53,12 @@ const blocked = computed(() => lowSpace.value || unsupported.value)
 const state = computed(() => {
   if (ready.value) return { label: 'Ready', icon: Check, bad: false }
   if (failed.value) return { label: 'Operation failed', icon: TriangleAlert, bad: true }
-  if (installing.value) return { label: 'Installing ComfyUI', icon: LoaderCircle, bad: false }
+  if (installing.value)
+    return {
+      label: props.narrow ? 'Installing' : 'Installing ComfyUI',
+      icon: LoaderCircle,
+      bad: false
+    }
   if (unsupported.value) return { label: 'Unsupported Hardware', icon: TriangleAlert, bad: true }
   if (lowSpace.value) return { label: 'Low Disk Space', icon: TriangleAlert, bad: true }
   return { label: 'Detected', icon: Check, bad: false }
@@ -93,16 +99,14 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
       :title="ready ? 'ComfyUI is ready' : 'Builds'"
     />
     <div
-      :class="
-        props.bare
-          ? ['mbr-card mbr-install', props.wide && 'is-wide']
-          : 'mss-machine is-hero mss-home-inst'
-      "
+      :class="props.bare ? 'mbr-card mbr-install' : 'mss-machine is-hero mss-home-inst'"
       :style="props.bare ? { '--h': 48 } : undefined"
-      :role="props.bare && ready ? 'button' : undefined"
-      :tabindex="props.bare && ready ? 0 : undefined"
-      @click="props.bare && ready && openComfyUI()"
-      @keydown.enter="props.bare && ready && openComfyUI()"
+      :role="props.bare && (ready || (installing && props.narrow)) ? 'button' : undefined"
+      :tabindex="props.bare && (ready || (installing && props.narrow)) ? 0 : undefined"
+      @click="props.bare && (ready ? openComfyUI() : installing && props.narrow && showInstall())"
+      @keydown.enter="
+        props.bare && (ready ? openComfyUI() : installing && props.narrow && showInstall())
+      "
     >
       <span v-if="props.bare" class="mbr-device">
         <SetupLaptop :os="localSetup.os" :bad="unsupported" />
@@ -148,6 +152,9 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
           <Button variant="ghost" :size="size" @click="dismissReady">Not now</Button>
           <Button variant="primary" :size="size" @click="openComfyUI()">Open ComfyUI</Button>
         </template>
+        <!-- Narrow (one of three): no room for buttons; the card itself
+             opens the install, where View logs and Cancel are. -->
+        <template v-else-if="installing && props.narrow"></template>
         <template v-else-if="installing">
           <Button variant="ghost" :size="size" @click="showInstall">View logs</Button>
           <Button v-if="failed" variant="secondary" :size="size" @click="changeFromHome"
@@ -183,11 +190,6 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </template>
 
 <style scoped>
-/* With two other builds beside it the row is too tight for its actions:
- * it takes the first line on its own, the others go under. */
-.mbr-install.is-wide {
-  grid-column: 1 / -1;
-}
 /* One of the Builds row's cards, the height of the others whatever its
  * state: the actions stay on the right, small, and the bar is a line along
  * the card's bottom edge instead of a row of its own. */
