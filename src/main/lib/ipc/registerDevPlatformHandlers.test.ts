@@ -574,6 +574,7 @@ describe('registerDevPlatformHandlers', () => {
         {
           currentWorkspaceId: active,
           currentSubject: () => 'user-1',
+          currentGrantFamily: () => null,
           currentAuthGeneration: () => 1,
           getGrantAccessToken: async () =>
             jwt({ sub: 'user-1', workspace_id: 'w1', scope: CLOUD_CONFIG.scope }),
@@ -670,6 +671,7 @@ describe('registerDevPlatformHandlers', () => {
         {
           currentWorkspaceId: () => auth.active,
           currentSubject: () => auth.subject,
+          currentGrantFamily: () => null,
           currentAuthGeneration: () => auth.generation,
           getGrantAccessToken: async () =>
             auth.subject
@@ -852,6 +854,7 @@ describe('registerDevPlatformHandlers', () => {
       {
         currentWorkspaceId: () => active,
         currentSubject: () => subject,
+        currentGrantFamily: () => null,
         currentAuthGeneration: () => generation,
         getGrantAccessToken: async () =>
           jwt({ sub: subject, workspace_id: 'home', scope: CLOUD_CONFIG.scope }),

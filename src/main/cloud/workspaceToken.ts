@@ -84,31 +84,60 @@ function mintedFrom(body: unknown, requestedAt: number): WorkspaceTokenMint | nu
   return expiresAtMs > Date.now() ? { kind: 'minted', token, expiresAt: expiresAtMs } : null
 }
 
-export async function mintWorkspaceToken(
+export function mintWorkspaceToken(
   accessToken: string,
   workspaceId: string,
   options: MintWorkspaceTokenOptions = {}
+): Promise<WorkspaceTokenMint> {
+  return postForToken('/auth/token', accessToken, { workspace_id: workspaceId }, options)
+}
+
+export function mintPartnerNodeToken(
+  accessToken: string,
+  workspaceId: string,
+  options: MintWorkspaceTokenOptions = {}
+): Promise<WorkspaceTokenMint> {
+  return postForToken(
+    '/auth/token',
+    accessToken,
+    { workspace_id: workspaceId, resource: 'partner-node' },
+    options
+  )
+}
+
+export function renewPartnerNodeToken(
+  partnerNodeToken: string,
+  options: MintWorkspaceTokenOptions = {}
+): Promise<WorkspaceTokenMint> {
+  return postForToken('/auth/partner-node/renew', partnerNodeToken, undefined, options)
+}
+
+async function postForToken(
+  route: string,
+  bearer: string,
+  body: Record<string, string> | undefined,
+  options: MintWorkspaceTokenOptions
 ): Promise<WorkspaceTokenMint> {
   const base = (options.apiBase ?? CLOUD_CONFIG.apiBase).replace(/\/+$/, '')
   const requestedAt = Date.now()
   let res: Response
   try {
-    res = await fetch(`${base}/auth/token`, {
+    res = await fetch(`${base}${route}`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        Authorization: `Bearer ${bearer}`
       },
-      body: JSON.stringify({ workspace_id: workspaceId }),
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     })
   } catch {
     return { kind: 'failed', status: null }
   }
-  const body: unknown = await res.json().catch(() => null)
-  if (res.ok) return mintedFrom(body, requestedAt) ?? { kind: 'failed', status: res.status }
-  const code = errorCodeOf(body)
+  const reply: unknown = await res.json().catch(() => null)
+  if (res.ok) return mintedFrom(reply, requestedAt) ?? { kind: 'failed', status: res.status }
+  const code = errorCodeOf(reply)
   const retryAfterSeconds = retryAfterSecondsOf(res)
   return {
     kind: 'failed',

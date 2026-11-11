@@ -1,7 +1,7 @@
 import type { TokenProvider } from '../comfybuilder'
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
-import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from './claims'
+import { canMintWorkspaceTokens, grantFamilyOf, subjectOf, workspaceIdOf } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { openAuthorizePage, refresh, signIn } from './oauth'
 import { Revocations } from './revocation'
@@ -217,6 +217,11 @@ export class CloudSession {
   currentSubject(): string | null {
     const grant = loadGrant()
     return grant ? subjectOf(grant.accessToken) : null
+  }
+
+  currentGrantFamily(): string | null {
+    const grant = loadGrant()
+    return grant ? grantFamilyOf(grant.accessToken) : null
   }
 
   currentWorkspaceId(): string | null {

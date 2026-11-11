@@ -4,6 +4,7 @@ import { findEntryByComfySender } from '../../host/registry'
 import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
 import {
   EMBEDDED_SESSION_CHANNELS,
+  partnerNodeTokenForSender,
   stateForSender,
   switchWorkspaceForSender,
   workspaceTokenForSender
@@ -16,6 +17,10 @@ export function registerEmbeddedSessionHandlers(): void {
 
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getWorkspaceToken, (event, workspaceId: unknown) =>
     workspaceTokenForSender(event, workspaceId)
+  )
+
+  ipcMain.handle(EMBEDDED_SESSION_CHANNELS.getPartnerNodeToken, (event, workspaceId: unknown) =>
+    partnerNodeTokenForSender(event, workspaceId)
   )
 
   ipcMain.handle(

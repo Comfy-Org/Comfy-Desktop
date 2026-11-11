@@ -22,10 +22,12 @@ vi.mock('../embeddedSession', () => ({
   EMBEDDED_SESSION_CHANNELS: {
     getState: 'desktop2-auth:get-state',
     getWorkspaceToken: 'desktop2-auth:get-workspace-token',
+    getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
     requestSignIn: 'desktop2-auth:request-sign-in',
     signOut: 'desktop2-auth:sign-out',
     switchWorkspace: 'desktop2-auth:switch-workspace'
   },
+  partnerNodeTokenForSender: vi.fn(),
   stateForSender: mocks.stateForSender,
   switchWorkspaceForSender: mocks.switchWorkspaceForSender,
   workspaceTokenForSender: vi.fn()

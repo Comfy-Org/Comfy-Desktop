@@ -12,6 +12,7 @@ import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
   getWorkspaceToken: 'desktop2-auth:get-workspace-token',
+  getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   switchWorkspace: 'desktop2-auth:switch-workspace',
@@ -88,8 +89,21 @@ export async function workspaceTokenForSender(
   workspaceId: unknown
 ): Promise<string | null> {
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
-  if (!isTrustedSender(event) || !(await isEmbeddedSessionEnabled())) return null
-  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId)
+  if (!isTrustedSender(event)) return null
+  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId, isEmbeddedSessionEnabled)
+}
+
+export async function partnerNodeTokenForSender(
+  event: EmbeddedSessionSender,
+  workspaceId: unknown
+): Promise<string | null> {
+  if (typeof workspaceId !== 'string' || workspaceId === '') return null
+  if (!isTrustedSender(event)) return null
+  return getViewWorkspaceGrants().partnerNodeTokenFor(
+    event.sender,
+    workspaceId,
+    isEmbeddedSessionEnabled
+  )
 }
 
 export async function switchWorkspaceForSender(

@@ -247,6 +247,19 @@ describe('view token path through a real session', () => {
     expect(openAuthorizePage).not.toHaveBeenCalled()
   })
 
+  it('a partner-node mint told the grant ended never lets the grant be refreshed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    mintReply = () => new Response(JSON.stringify({ code: 'oauth_grant_ended' }), { status: 401 })
+
+    await expect(grants.partnerNodeTokenFor(view, 'w1')).resolves.toBeNull()
+    vi.setSystemTime(GRANT.expiresAt + 1)
+    await expect(grants.partnerNodeTokenFor(view, 'w1')).resolves.toBeNull()
+
+    expect(refresh).not.toHaveBeenCalled()
+    expect(signIn).not.toHaveBeenCalled()
+    expect(openAuthorizePage).not.toHaveBeenCalled()
+  })
+
   it('a server kill refuses a view mint with no browser', async () => {
     await activeOnW2()
     mintReply = () =>
@@ -273,5 +286,36 @@ describe('view token path through a real session', () => {
 
     await expect(pending).resolves.toBeNull()
     expect(mintRequests).toEqual([])
+  })
+
+  it('keeps the partner-node session across a refresh and starts a new one after a new sign-in', async () => {
+    const grantIn = (family: string): AuthTokens => ({
+      ...GRANT,
+      accessToken: jwt({
+        sub: 'user-1',
+        workspace_id: 'w1',
+        scope: CLOUD_CONFIG.scope,
+        fam: family
+      })
+    })
+    mintReply = (workspaceId) =>
+      new Response(
+        JSON.stringify({
+          token: mintedJwt(workspaceId),
+          expires_at: new Date(Date.now() + 90 * 60_000).toISOString()
+        }),
+        { status: 200 }
+      )
+    saveGrant(grantIn('fam-1'))
+    await grants.partnerNodeTokenFor(view, 'w1')
+    saveGrant({ ...grantIn('fam-1'), refreshToken: 'refreshed' })
+    await grants.partnerNodeTokenFor(view, 'w1')
+    expect(mintRequests).toEqual(['w1'])
+
+    saveGrant(grantIn('fam-2'))
+
+    await expect(grants.partnerNodeTokenFor(view, 'w1')).resolves.toBe(mintedJwt('w1'))
+    expect(mintRequests).toEqual(['w1', 'w1'])
+    expect(session.currentGrantFamily()).toBe('fam-2')
   })
 })

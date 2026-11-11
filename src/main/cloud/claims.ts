@@ -10,6 +10,7 @@ interface AccessTokenClaims {
   workspace_type?: string
   role?: string
   scope?: string
+  fam?: unknown
   iat?: unknown
   exp?: unknown
 }
@@ -51,6 +52,11 @@ export function lifetimeSecondsOf(accessToken: string): number | null {
   if (typeof iat !== 'number' || typeof exp !== 'number') return null
   const lifetime = exp - iat
   return Number.isFinite(lifetime) ? lifetime : null
+}
+
+export function grantFamilyOf(accessToken: string): string | null {
+  const fam = decodeJwtPayload(accessToken)?.fam
+  return typeof fam === 'string' ? fam : null
 }
 
 export function subjectOf(accessToken: string): string | null {
