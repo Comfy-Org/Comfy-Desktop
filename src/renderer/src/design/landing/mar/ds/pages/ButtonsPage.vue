@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUp, Bell, Mic, Play, Plus } from 'lucide-vue-next'
+import { ArrowUp, Bell, Download, MoreHorizontal, Mic, Play, Plus, Workflow } from 'lucide-vue-next'
 import Button from '../../../ui/Button.vue'
 import portraitSun from '../../assets/portrait-sun.jpg'
 import Cell from '../kit/Cell.vue'
@@ -7,7 +7,11 @@ import Cells from '../kit/Cells.vue'
 import Section from '../kit/Section.vue'
 
 const VARIANTS = [
-  { v: 'primary', label: 'Create', note: 'The one white CTA per surface (Create, Try it).' },
+  {
+    v: 'primary',
+    label: 'Create',
+    note: 'The one white CTA per screen (Create, Try it). Never blue: to make something stand out, use the white primary, order and size, not colour.'
+  },
   { v: 'secondary', label: 'Invite', note: 'A lifted surface (Invite, Connect, Docs).' },
   { v: 'ghost', label: 'Credits', note: 'Rows and icon buttons: no fill until hovered.' },
   { v: 'subtle', label: 'Filter', note: 'A soft fill.' },
@@ -67,6 +71,47 @@ const STATES = [
       </Cell>
     </Cells>
   </Section>
+  <Section
+    title="Full width"
+    note="A full-width button centres its label, primary or not; an icon goes before the label, centred with it (the asset view's Download and Open workflow, a modal's main action). Only menu rows and pickers start at the left."
+  >
+    <Cells :min="280">
+      <Cell label="primary · icon and label centred">
+        <div class="ds-btn-wide">
+          <Button variant="primary" class="w-full"><Download :size="14" />Download</Button>
+        </div>
+      </Cell>
+      <Cell label="secondary · centred">
+        <div class="ds-btn-wide">
+          <Button variant="subtle" class="w-full"><Workflow :size="14" />Open workflow</Button>
+        </div>
+      </Cell>
+      <Cell label="hover" force="hover" target="button">
+        <div class="ds-btn-wide">
+          <Button variant="subtle" class="w-full"><Workflow :size="14" />Open workflow</Button>
+        </div>
+      </Cell>
+    </Cells>
+  </Section>
+  <Section
+    title="Icon buttons hover square"
+    note="In panels and headers an icon button hovers square, radius 8, never a circle (a modal's More, a header's + or ⋯). One tool per header: + when you can add, ⋯ when there's more; if ⋯ already has Add, no + beside it."
+  >
+    <Cells :min="140">
+      <Cell label="idle"
+        ><Button variant="ghost" size="icon-sm" aria-label="More"
+          ><MoreHorizontal :size="16" /></Button
+      ></Cell>
+      <Cell label="hover" force="hover" target="button"
+        ><Button variant="ghost" size="icon-sm" aria-label="More"
+          ><MoreHorizontal :size="16" /></Button
+      ></Cell>
+      <Cell label="focus" force="focus" target="button"
+        ><Button variant="ghost" size="icon-sm" aria-label="More"
+          ><MoreHorizontal :size="16" /></Button
+      ></Cell>
+    </Cells>
+  </Section>
   <Section title="Sizes and icons" note="sm 28, md 32, lg 36; icon buttons are square.">
     <Cells :min="140">
       <Cell label="sm"><Button variant="secondary" size="sm">Invite</Button></Cell>
@@ -92,6 +137,9 @@ const STATES = [
 </template>
 
 <style>
+.ds-btn-wide {
+  width: 240px;
+}
 .ds-btn-photo {
   min-height: 64px;
   align-items: center;
