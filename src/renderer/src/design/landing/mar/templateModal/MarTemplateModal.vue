@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { onClickOutside } from '@vueuse/core'
 import {
   ArrowDownToLine,
   BadgeCheck,
@@ -7,6 +8,7 @@ import {
   Check,
   Coins,
   Link2,
+  MoreHorizontal,
   Plug,
   Star,
   TriangleAlert,
@@ -29,7 +31,7 @@ import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import { templateById } from '../../fit'
 import { isFavorite, toggleFavorite } from '../favorites'
-import { ComfyModel, ComfyTemplate, ComfyWorkflow } from '../icons/comfyIcons'
+import { ComfyModel } from '../icons/comfyIcons'
 import {
   MACHINE,
   aboutFor,
@@ -46,14 +48,18 @@ import {
 import { graphFor } from './graphSpec'
 import TplGraph from './TplGraph.vue'
 import MarSeg from '../pages/MarSeg.vue'
+// The asset view's frame, panel, sections and buttons (.mad-*): the modal
+// wears them, so the two read as one view. Imported for its styles.
+import '../assets/AssetDetail.vue'
 import './templateModal.css'
 
 /**
- * Mar's template modal: what it makes (a hero of the output, or its
- * graph), what it needs, and where it runs. The picker puts the best build
- * first with the reason, shows what every other one would cost, and the
- * one primary action follows the choice. Templates only; saved workflows
- * keep Pablo's DetailSheet.
+ * Mar's template modal, in the asset view's format: the output (or its
+ * graph) on the left, the details on a panel a step lighter on the right.
+ * The panel says what it needs and where it runs; the picker puts the best
+ * build first with the reason, shows what every other one would cost, and
+ * the one primary action at the bottom follows the choice, More beside it.
+ * Templates only; saved workflows keep Pablo's DetailSheet.
  */
 const template = computed(() =>
   proto.detail?.kind === 'template' ? templateById(proto.detail.id) : undefined
@@ -84,6 +90,18 @@ const reason = computed(() =>
 )
 
 const selectedId = ref<string>()
+/** The picture's own shape, so it fits the stage like an asset does. */
+const ratio = ref(16 / 9)
+function measure(e: Event): void {
+  const img = e.target as HTMLImageElement
+  if (img.naturalWidth && img.naturalHeight) ratio.value = img.naturalWidth / img.naturalHeight
+}
+const moreMenu = ref(false)
+const moreBox = ref<HTMLElement>()
+onClickOutside(moreBox, () => (moreMenu.value = false))
+const favorited = computed(() =>
+  template.value ? isFavorite(template.value.id, 'template') : false
+)
 const selected = computed(() => targets.value.find((x) => x.inst.id === selectedId.value))
 const view = ref<'result' | 'graph'>('result')
 const phase = ref<'idle' | 'busy'>('idle')
@@ -95,6 +113,8 @@ watch(
   () => {
     selectedId.value = (best.value ?? targets.value.find((x) => !x.disabled))?.inst.id
     view.value = 'result'
+    moreMenu.value = false
+    ratio.value = 16 / 9
     stop()
   },
   { immediate: true }
@@ -151,7 +171,12 @@ function confirm(): void {
   }, 40)
 }
 
+function favorite(): void {
+  moreMenu.value = false
+  if (template.value) toggleFavorite(template.value.id, 'template')
+}
 function share(): void {
+  moreMenu.value = false
   void navigator.clipboard
     ?.writeText(`https://comfy.org/templates/${template.value?.id}`)
     .catch(() => {})
@@ -167,6 +192,12 @@ function focusPicker(e: Event): void {
       preventScroll: true
     })
   })
+}
+/** Escape closes an open menu first, then the modal. */
+function onEscape(e: KeyboardEvent): void {
+  if (!moreMenu.value) return
+  e.preventDefault()
+  moreMenu.value = false
 }
 /** Enter launches from the picker (or from nowhere in particular); on any
  *  other control it keeps its own meaning. */
@@ -188,95 +219,66 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
 <template>
   <DialogRoot v-model:open="open">
     <DialogPortal :to="PORTAL_TO" defer>
-      <DialogOverlay class="proto-ui mar-tpl-scrim" />
+      <DialogOverlay class="proto-ui mad-scrim mar-tpl-dim" />
       <DialogContent
         v-if="template && info && media"
         ref="content"
-        class="proto-ui mar-tpl"
+        class="proto-ui mad mar-tpl"
         :data-busy="phase === 'busy' || undefined"
         @open-auto-focus="focusPicker"
+        @escape-key-down="onEscape"
         @keydown="onKey"
       >
-        <div class="mar-tpl-main">
-          <header class="mar-tpl-head">
-            <div class="min-w-0">
-              <p class="mar-tpl-eyebrow">
-                <ComfyTemplate :size="13" />Template<i />{{ info.useCase }}<i />
-                <ComfyWorkflow :size="13" />Node graph
-              </p>
-              <DialogTitle class="mar-tpl-title">{{ template.title }}</DialogTitle>
-              <DialogDescription class="mar-tpl-meta">
-                <span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>
-                <b>ComfyUI</b><i />{{ info.uses }} uses<i />Added {{ info.added }}<i />{{
-                  info.license
-                }}
-              </DialogDescription>
-            </div>
+        <section class="mad-stage" @pointerdown.self="open = false">
+          <header class="mad-bar">
+            <MarSeg v-model="view" :options="VIEWS" label="Preview" class="mar-tpl-views" />
           </header>
-
-          <div class="mar-tpl-stage" :data-view="view">
-            <MarSeg
-              v-model="view"
-              :options="VIEWS"
-              label="Preview"
-              on-media
-              class="mar-tpl-views"
-            />
-            <template v-if="view === 'result'">
-              <img :src="media.hero" alt="" class="mar-tpl-hero" draggable="false" />
-              <template v-if="media.quadrants">
-                <span v-for="(q, i) in media.quadrants" :key="q" class="mar-tpl-quad" :data-q="i">{{
-                  q
-                }}</span>
-              </template>
-              <span class="mar-tpl-caption">Example output</span>
-            </template>
-            <TplGraph v-else-if="graph" :spec="graph" />
-          </div>
-
-          <section class="mar-tpl-about">
-            <h3 class="mar-tpl-label">What it makes</h3>
-            <p v-for="(para, i) in aboutFor(template)" :key="i">{{ para }}</p>
-            <div class="mar-tpl-tags">
-              <span v-for="t in info.tags" :key="t" class="mar-tpl-tag">{{ t }}</span>
-              <a
-                class="mar-tpl-tutorial"
-                href="https://docs.comfy.org/tutorials"
-                target="_blank"
-                rel="noreferrer"
-                @click.prevent="toast('Opens the tutorial on docs.comfy.org')"
-                ><BookOpen :size="13" />Tutorial</a
-              >
+          <div v-if="view === 'result'" class="mad-view">
+            <div class="mad-fit" :style="{ '--r': ratio }">
+              <div class="mad-media">
+                <img :src="media.hero" alt="" draggable="false" @load="measure" />
+                <template v-if="media.quadrants">
+                  <span
+                    v-for="(q, i) in media.quadrants"
+                    :key="q"
+                    class="mar-tpl-quad"
+                    :data-q="i"
+                    >{{ q }}</span
+                  >
+                </template>
+                <span class="mar-tpl-caption">Example output</span>
+              </div>
             </div>
-          </section>
-        </div>
-
-        <aside class="mar-tpl-side">
-          <div class="mar-tpl-social">
-            <!-- Keep it: the app's one way to keep a template (Favorites).
-                 Templates have no likes or copies in the product. -->
-            <button
-              v-if="template"
-              type="button"
-              class="mar-tpl-chip"
-              data-tpl-like
-              :aria-pressed="isFavorite(template.id, 'template')"
-              @click="toggleFavorite(template.id, 'template')"
-            >
-              <Star
-                :size="14"
-                :fill="isFavorite(template.id, 'template') ? 'currentColor' : 'none'"
-              />{{ isFavorite(template.id, 'template') ? 'Favorited' : 'Favorite' }}
-            </button>
-            <button type="button" class="mar-tpl-chip" @click="share">
-              <Link2 :size="14" />Share
-            </button>
           </div>
+          <div v-else-if="graph" class="mar-tpl-canvas"><TplGraph :spec="graph" /></div>
+        </section>
 
-          <div class="mar-tpl-side-scroll">
-            <section class="mar-tpl-panel">
-              <h3 class="mar-tpl-label">
-                What it needs<span>{{ total ? fmtGb(total) : 'No downloads' }}</span>
+        <aside class="mad-side" aria-label="Template details">
+          <div class="mad-body">
+            <header class="mad-head">
+              <div class="mad-head-text">
+                <DialogTitle class="mad-name">{{ template.title }}</DialogTitle>
+                <DialogDescription class="mar-tpl-by">
+                  <span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>ComfyUI<i />{{
+                    info.useCase
+                  }}
+                  template
+                </DialogDescription>
+              </div>
+              <span
+                v-if="favorited"
+                class="mar-tpl-fav"
+                title="In your favorites"
+                aria-label="In your favorites"
+                ><Star :size="14" fill="currentColor"
+              /></span>
+            </header>
+
+            <section class="mad-sec">
+              <h3 class="mad-label">
+                What it needs<span class="mar-tpl-total">{{
+                  total ? fmtGb(total) : 'No downloads'
+                }}</span>
               </h3>
               <ul class="mar-tpl-needs">
                 <li v-for="m in needs" :key="m.name">
@@ -334,8 +336,8 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
               </ul>
             </section>
 
-            <section class="mar-tpl-where">
-              <h3 class="mar-tpl-label">Open in</h3>
+            <section class="mad-sec">
+              <h3 class="mad-label">Open in</h3>
               <p v-if="best && reason" class="mar-tpl-reason">
                 <BadgeCheck :size="14" /><span
                   ><b>{{ best.inst.name }}</b> is the best fit. {{ reason }}</span
@@ -376,28 +378,106 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                 </RadioGroupItem>
               </RadioGroupRoot>
             </section>
+
+            <section class="mad-sec">
+              <h3 class="mad-label">Template details</h3>
+              <dl class="mad-rows">
+                <div>
+                  <dt>Type</dt>
+                  <dd>Template · Node graph</dd>
+                </div>
+                <div>
+                  <dt>Use case</dt>
+                  <dd>{{ info.useCase }}</dd>
+                </div>
+                <div>
+                  <dt>Author</dt>
+                  <dd>ComfyUI</dd>
+                </div>
+                <div>
+                  <dt>Uses</dt>
+                  <dd>{{ info.uses }}</dd>
+                </div>
+                <div>
+                  <dt>Added</dt>
+                  <dd>{{ info.added }}</dd>
+                </div>
+                <div>
+                  <dt>License</dt>
+                  <dd :title="info.license">{{ info.license }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="mad-sec">
+              <h3 class="mad-label">What it makes</h3>
+              <div class="mar-tpl-about">
+                <p v-for="(para, i) in aboutFor(template)" :key="i">{{ para }}</p>
+              </div>
+              <div class="mad-tags">
+                <span v-for="t in info.tags" :key="t" class="mad-tag" :title="t"
+                  ><span class="mad-tag-t">{{ t }}</span></span
+                >
+                <a
+                  class="mar-tpl-tutorial"
+                  href="https://docs.comfy.org/tutorials"
+                  target="_blank"
+                  rel="noreferrer"
+                  @click.prevent="toast('Opens the tutorial on docs.comfy.org')"
+                  ><BookOpen :size="13" />Tutorial</a
+                >
+              </div>
+            </section>
           </div>
 
-          <footer class="mar-tpl-foot">
-            <p class="mar-tpl-note">{{ selected?.note }}</p>
-            <div class="mar-tpl-buttons">
-              <DialogClose class="mar-tpl-cancel">Cancel</DialogClose>
+          <!-- At the bottom: what happens, then the one action; More (the
+               favorite and the link) at its right. -->
+          <footer class="mad-actions">
+            <p v-if="selected?.note" class="mar-tpl-note">{{ selected.note }}</p>
+            <button
+              type="button"
+              class="mad-btn is-primary mar-tpl-go"
+              data-tpl-primary
+              :disabled="!selected || selected.disabled"
+              :style="{ '--p': progress }"
+              @click="confirm"
+            >
+              <span>{{ phase === 'busy' ? busyLabel : selected?.action }}</span>
+              <kbd v-if="phase === 'idle' && selected && !selected.disabled">↵</kbd>
+            </button>
+            <div ref="moreBox" class="mad-pick">
               <button
                 type="button"
-                class="mar-tpl-primary"
-                data-tpl-primary
-                :disabled="!selected || selected.disabled"
-                :style="{ '--p': progress }"
-                @click="confirm"
+                class="mad-btn is-more"
+                aria-label="More"
+                title="More"
+                aria-haspopup="menu"
+                :aria-expanded="moreMenu"
+                @click="moreMenu = !moreMenu"
               >
-                <span>{{ phase === 'busy' ? busyLabel : selected?.action }}</span>
-                <kbd v-if="phase === 'idle'">↵</kbd>
+                <MoreHorizontal :size="16" />
               </button>
+              <div v-if="moreMenu" class="mad-menu is-up is-end is-more" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-tpl-like
+                  :aria-pressed="favorited"
+                  @click="favorite"
+                >
+                  <Star :size="14" :fill="favorited ? 'currentColor' : 'none'" />{{
+                    favorited ? 'Remove from favorites' : 'Add to favorites'
+                  }}
+                </button>
+                <button type="button" role="menuitem" @click="share">
+                  <Link2 :size="14" />Copy link
+                </button>
+              </div>
             </div>
           </footer>
         </aside>
 
-        <DialogClose class="mar-tpl-close" aria-label="Close"><X :size="16" /></DialogClose>
+        <DialogClose class="mad-x" aria-label="Close"><X :size="18" /></DialogClose>
       </DialogContent>
     </DialogPortal>
   </DialogRoot>
