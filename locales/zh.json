@@ -645,6 +645,7 @@
     "community": "社区",
     "storageTab": "存储",
     "sharedDirectories": "共享目录",
+    "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“存储”标签页中选择是否使用。",
     "installLocation": "默认安装位置",
     "updatesTab": "更新",
     "diagnostics": "诊断",

@@ -138,11 +138,13 @@ async function handleChangeModelsDir(index: number): Promise<void> {
 </script>
 
 <template>
+  <p class="gs-storage-hint m-0 mb-2 text-[12.5px] text-text-muted">
+    {{ t('settings.storageSharedHint') }}
+  </p>
   <GlobalSettingsMicroSection :title="t('settings.models')" :tooltip="t('tooltips.sharedModels')">
     <ModelsDirList
       :dirs="sharedModelDirs"
       hide-shared-tag
-      class="bg-[color-mix(in_srgb,var(--text)_6%,transparent)]!"
       @change="handleChangeModelsDir"
       @remove="handleRemoveModelsDir"
       @make-primary="handleMakePrimary"
@@ -155,25 +157,28 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     :title="t('settings.sharedDirectories')"
     :tooltip="t('tooltips.sharedDirectories')"
   >
-    <StorageDirRow
-      v-if="sharedInputField"
-      :label="sharedInputField.label || t('media.inputDir')"
-      :path="sharedFieldPath(sharedInputField)"
-      shared
-      hide-shared-tag
-      class="[&_.storage-dir-row]:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]"
-      @open="handleOpenPath(sharedFieldPath(sharedInputField))"
-      @browse="handleBrowseSharedInput"
-    />
-    <StorageDirRow
-      v-if="sharedOutputField"
-      :label="sharedOutputField.label || t('media.outputDir')"
-      :path="sharedFieldPath(sharedOutputField)"
-      shared
-      hide-shared-tag
-      class="[&_.storage-dir-row]:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]"
-      @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
-      @browse="handleBrowseSharedOutput"
-    />
+    <div
+      v-if="sharedInputField || sharedOutputField"
+      class="gs-shared-dirs flex flex-col rounded-[14px] bg-white/5 p-1.5 [&_.storage-dir-row]:min-h-12 [&_.storage-dir-row]:rounded-[10px] [&_.storage-dir-row]:bg-transparent [&_.storage-dir-row]:pl-3"
+    >
+      <StorageDirRow
+        v-if="sharedInputField"
+        :tag="sharedInputField.label || t('media.inputDir')"
+        :path="sharedFieldPath(sharedInputField)"
+        shared
+        hide-shared-tag
+        @open="handleOpenPath(sharedFieldPath(sharedInputField))"
+        @browse="handleBrowseSharedInput"
+      />
+      <StorageDirRow
+        v-if="sharedOutputField"
+        :tag="sharedOutputField.label || t('media.outputDir')"
+        :path="sharedFieldPath(sharedOutputField)"
+        shared
+        hide-shared-tag
+        @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
+        @browse="handleBrowseSharedOutput"
+      />
+    </div>
   </GlobalSettingsMicroSection>
 </template>

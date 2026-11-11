@@ -122,7 +122,7 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <div class="models-dir-list flex flex-col rounded-[14px] bg-card p-1.5" @click="closeMenu()">
+  <div class="models-dir-list flex flex-col rounded-[14px] bg-white/5 p-1.5" @click="closeMenu()">
     <div
       v-for="row in rows"
       :key="row.path"

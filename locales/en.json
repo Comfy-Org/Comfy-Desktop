@@ -645,6 +645,7 @@
     "community": "Community",
     "storageTab": "Storage",
     "sharedDirectories": "Shared Directories",
+    "storageSharedHint": "These folders are shared by every build. Each build chooses in its own Storage tab whether to use them.",
     "installLocation": "Default Install Location",
     "updatesTab": "Updates",
     "diagnostics": "Diagnostics",

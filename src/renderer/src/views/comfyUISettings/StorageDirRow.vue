@@ -43,7 +43,7 @@ const actionClass =
   <div class="storage-dir-field flex flex-col gap-1.5">
     <label v-if="label" class="storage-dir-label text-[12px] text-text-muted">{{ label }}</label>
     <div
-      class="storage-dir-row flex min-h-14 min-w-0 items-center gap-2.5 rounded-[14px] bg-card py-1.5 pr-3 pl-[18px]"
+      class="storage-dir-row flex min-h-14 min-w-0 items-center gap-2.5 rounded-[14px] bg-white/5 py-1.5 pr-3 pl-[18px]"
     >
       <StorageItemIcon :icon="Folder" :shared="shared" />
       <div class="storage-dir-main flex min-w-0 flex-auto items-center">
