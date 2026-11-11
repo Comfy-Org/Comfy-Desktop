@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Check, MoreHorizontal } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuSub, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
@@ -27,6 +27,15 @@ const {
   align?: 'start' | 'end'
 }>()
 const open = defineModel<boolean>('open', { default: false })
+// A red line always has a divider over it (UI-RULES › Menus), added here so
+// no menu has to remember it.
+const shown = computed<MenuLine[]>(() =>
+  lines.flatMap((l, i) =>
+    l !== 'sep' && 'danger' in l && l.danger && i > 0 && lines[i - 1] !== 'sep'
+      ? (['sep', l] as MenuLine[])
+      : [l]
+  )
+)
 // One submenu at a time: a quick sweep down the list could leave the
 // ones it crossed open, stacked beside each other (as AssetFilterMenu).
 const sub = ref(-1)
@@ -88,7 +97,7 @@ watch(open, (o) => {
         </span>
       </div>
       <template v-else
-        ><template v-for="(l, i) in lines" :key="i">
+        ><template v-for="(l, i) in shown" :key="i">
           <DropdownMenuSeparator v-if="l === 'sep'" />
           <p v-else-if="'note' in l" class="mar-menu-note">{{ l.note }}</p>
           <DropdownMenuSub v-else-if="l.sub" :open="sub === i" @update:open="only(i, $event)">

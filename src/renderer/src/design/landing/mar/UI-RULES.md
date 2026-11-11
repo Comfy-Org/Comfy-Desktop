@@ -38,21 +38,31 @@ DS's Motion page (`ds/motion.ts`).
 
 - **Primary is white, never blue.** One per screen. To make something
   stand out, use the white primary, order and size, not colour.
+- **Labels are centred** in every full-width button, primary or not
+  (an icon goes before the label, centred with it). Only menu rows and
+  pickers start at the left.
 - **One tool per header.** A section header has one tool: + when you can
   add, ⋯ when there's more. If the ⋯ menu already has Add, no + beside it.
   A row's hover tools follow the same rule (a folder row: only ⋯, with New
   subfolder inside). Tags: ⋯ › New tag, Sort by.
 - **Single click opens.** Cards and rows open on one click; selection is
   the check on hover.
-- **More (⋯) sits at the right** of the row it belongs to (the asset view:
-  beside Open workflow, under Download).
-
-## Menus
-
+- **More (⋯) sits at the top right** of a modal's panel, by the name
+  (the asset view, the workflow view). A menu with only a couple of quick
+  actions isn't a menu: they go there as icons (a workflow's Favorite and
+  Copy link). The foot keeps only the main action.
+- **What a pick changes sits right under it.** Open in comes first, What
+  it needs straight under it (it changes with the build) and unfolds
+  downward; the foot keeps only the main action.
 - **Confirm inside the menu.** A destructive line that asks first turns the
   same menu into the question (`confirm` on a `MenuLine`, see
   `pages/MarItemMenu.vue`); never a box in the page. Nothing to lose
   (a tag on 0 files), no question.
+- **A red line has a divider over it.** Delete, Remove, Stop or anything
+  red in a menu always sits under a hairline divider, the one other line
+  No lines allows. `MarItemMenu` adds it on its own for a `danger` line.
+- **Icon buttons hover square** (radius 8), never a circle, in panels and
+  headers.
 - **One choice marks its row.** A single-choice dropdown fills the picked
   row; no check and no column kept for one. A check is only for a
   multi-select (`ui/Select.vue`).

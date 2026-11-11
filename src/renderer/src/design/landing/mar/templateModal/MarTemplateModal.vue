@@ -8,7 +8,6 @@ import {
   Check,
   ChevronDown,
   Link2,
-  MoreHorizontal,
   Plug,
   Star,
   TriangleAlert,
@@ -45,6 +44,7 @@ import {
 } from './templateData'
 import { graphFor } from './graphSpec'
 import TplGraph from './TplGraph.vue'
+import Tooltip from '../../ui/Tooltip.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import MarSeg from '../pages/MarSeg.vue'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
@@ -136,9 +136,6 @@ function pickBuild(x: Target): void {
   selectedId.value = x.inst.id
   buildMenu.value = false
 }
-const moreMenu = ref(false)
-const moreBox = ref<HTMLElement>()
-onClickOutside(moreBox, () => (moreMenu.value = false))
 const favorited = computed(() =>
   template.value ? isFavorite(template.value.id, 'template') : false
 )
@@ -153,7 +150,6 @@ watch(
   () => {
     selectedId.value = (best.value ?? targets.value.find((x) => !x.disabled))?.inst.id
     view.value = 'result'
-    moreMenu.value = false
     buildMenu.value = false
     ratio.value = 16 / 9
     stop()
@@ -213,11 +209,9 @@ function confirm(): void {
 }
 
 function favorite(): void {
-  moreMenu.value = false
   if (template.value) toggleFavorite(template.value.id, 'template')
 }
 function share(): void {
-  moreMenu.value = false
   void navigator.clipboard
     ?.writeText(`https://comfy.org/templates/${template.value?.id}`)
     .catch(() => {})
@@ -243,9 +237,9 @@ function onEscape(e: KeyboardEvent): void {
     zoomCtl.value.open = false
     return
   }
-  if (!moreMenu.value && !buildMenu.value) return
+  if (!buildMenu.value) return
   e.preventDefault()
-  moreMenu.value = buildMenu.value = false
+  buildMenu.value = false
 }
 /** Enter launches from nowhere in particular; on a control it keeps its
  *  own meaning (on the primary, it is the primary). */
@@ -366,13 +360,35 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   }}
                 </DialogDescription>
               </div>
-              <span
-                v-if="favorited"
-                class="mar-tpl-fav"
-                title="In your favorites"
-                aria-label="In your favorites"
-                ><Star :size="14" fill="currentColor"
-              /></span>
+              <!-- Favorite and the link, out in the open at the top right. -->
+              <Tooltip :content="favorited ? 'Remove from favorites' : 'Add to favorites'">
+                <button
+                  type="button"
+                  class="mad-icon mar-tpl-head-btn"
+                  :class="favorited && 'is-on'"
+                  data-tpl-like
+                  :aria-label="favorited ? 'Remove from favorites' : 'Add to favorites'"
+                  :aria-pressed="favorited"
+                  @click="favorite"
+                >
+                  <Star
+                    :key="String(favorited)"
+                    :size="15"
+                    :fill="favorited ? 'currentColor' : 'none'"
+                    :class="favorited && 'mar-tpl-fav'"
+                  />
+                </button>
+              </Tooltip>
+              <Tooltip content="Copy link">
+                <button
+                  type="button"
+                  class="mad-icon mar-tpl-head-btn"
+                  aria-label="Copy link"
+                  @click="share"
+                >
+                  <Link2 :size="15" />
+                </button>
+              </Tooltip>
             </header>
 
             <!-- What it does, short: the first paragraph. -->
@@ -394,46 +410,11 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               </div>
             </section>
 
-            <section class="mad-sec">
-              <h3 class="mad-label">Details</h3>
-              <dl class="mad-rows">
-                <div>
-                  <dt>Author</dt>
-                  <dd>ComfyUI</dd>
-                </div>
-                <div v-if="info.model">
-                  <dt>Model</dt>
-                  <dd>{{ info.model }}</dd>
-                </div>
-                <div>
-                  <dt>Uses</dt>
-                  <dd>{{ info.uses }}</dd>
-                </div>
-                <div>
-                  <dt>License</dt>
-                  <dd :title="info.license">{{ info.license }}</dd>
-                </div>
-                <!-- Only when the catalog has one: no row pointing nowhere. -->
-                <div v-if="info.tutorial">
-                  <dt>Tutorial</dt>
-                  <dd>
-                    <a
-                      class="mar-tpl-tutorial"
-                      :href="info.tutorial"
-                      target="_blank"
-                      rel="noreferrer"
-                      ><BookOpen :size="13" />docs.comfy.org</a
-                    >
-                  </dd>
-                </div>
-              </dl>
-            </section>
-
-            <!-- Open in, last and pushed down to the button it sets: the build it opens on, as one filled row that is
+            <!-- Open in, with What it needs right under it (it follows the pick): the build it opens on, as one filled row that is
                  the picker (the other builds open under it), then why in
                  one line. What blocks it is one line and one action at the
                  bottom, in place of the primary. -->
-            <section class="mad-sec mar-tpl-openin">
+            <section class="mad-sec">
               <h3 class="mad-label">Open in</h3>
               <div v-if="shown" ref="buildBox" class="mad-pick">
                 <button
@@ -462,7 +443,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   }}</span>
                   <ChevronDown v-if="targets.length > 1" :size="14" class="mar-tpl-chev" />
                 </button>
-                <div v-if="buildMenu" class="mad-menu is-up mar-tpl-builds" role="menu">
+                <div v-if="buildMenu" class="mad-menu is-down mar-tpl-builds" role="menu">
                   <button
                     v-for="x in targets"
                     :key="x.inst.id"
@@ -553,10 +534,44 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                 </li>
               </ul>
             </details>
+
+            <section class="mad-sec">
+              <h3 class="mad-label">Details</h3>
+              <dl class="mad-rows">
+                <div>
+                  <dt>Author</dt>
+                  <dd>ComfyUI</dd>
+                </div>
+                <div v-if="info.model">
+                  <dt>Model</dt>
+                  <dd>{{ info.model }}</dd>
+                </div>
+                <div>
+                  <dt>Uses</dt>
+                  <dd>{{ info.uses }}</dd>
+                </div>
+                <div>
+                  <dt>License</dt>
+                  <dd :title="info.license">{{ info.license }}</dd>
+                </div>
+                <!-- Only when the catalog has one: no row pointing nowhere. -->
+                <div v-if="info.tutorial">
+                  <dt>Tutorial</dt>
+                  <dd>
+                    <a
+                      class="mar-tpl-tutorial"
+                      :href="info.tutorial"
+                      target="_blank"
+                      rel="noreferrer"
+                      ><BookOpen :size="13" />docs.comfy.org</a
+                    >
+                  </dd>
+                </div>
+              </dl>
+            </section>
           </div>
 
-          <!-- At the bottom: what happens, then the one action; More (the
-               favorite and the link) at its right. -->
+          <!-- At the bottom: what happens, then the one action. -->
           <footer class="mad-actions">
             <p v-if="line" class="mar-tpl-note">{{ line }}</p>
             <button
@@ -571,35 +586,6 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               <span>{{ phase === 'busy' ? busyLabel : shown?.action || 'Open' }}</span>
               <kbd v-if="phase === 'idle' && selected && !selected.disabled">↵</kbd>
             </button>
-            <div ref="moreBox" class="mad-pick">
-              <button
-                type="button"
-                class="mad-btn is-more"
-                aria-label="More"
-                title="More"
-                aria-haspopup="menu"
-                :aria-expanded="moreMenu"
-                @click="moreMenu = !moreMenu"
-              >
-                <MoreHorizontal :size="16" />
-              </button>
-              <div v-if="moreMenu" class="mad-menu is-up is-end is-more" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-tpl-like
-                  :aria-pressed="favorited"
-                  @click="favorite"
-                >
-                  <Star :size="14" :fill="favorited ? 'currentColor' : 'none'" />{{
-                    favorited ? 'Remove from favorites' : 'Add to favorites'
-                  }}
-                </button>
-                <button type="button" role="menuitem" @click="share">
-                  <Link2 :size="14" />Copy link
-                </button>
-              </div>
-            </div>
           </footer>
         </aside>
 

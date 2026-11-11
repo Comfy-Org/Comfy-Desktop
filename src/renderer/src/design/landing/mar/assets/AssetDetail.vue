@@ -594,6 +594,69 @@ onBeforeUnmount(() => {
               <div class="mad-head-text">
                 <h2 class="mad-name">{{ asset.name }}</h2>
               </div>
+              <!-- More, at the name's right: everything past the actions below. -->
+              <div ref="moreBox" class="mad-pick">
+                <button
+                  type="button"
+                  class="mad-icon mad-head-more"
+                  aria-label="More"
+                  title="More"
+                  aria-haspopup="menu"
+                  :aria-expanded="moreMenu"
+                  @click="moreMenu = !moreMenu"
+                >
+                  <MoreHorizontal :size="16" />
+                </button>
+                <div v-if="moreMenu" class="mad-menu is-down is-end is-more" role="menu">
+                  <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
+                    <FolderOpen :size="14" />Show in Finder
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-haspopup="menu"
+                    :aria-expanded="insertOpen"
+                    @click="insertOpen = !insertOpen"
+                  >
+                    <Plus :size="14" />Insert into workflow<ChevronRight
+                      :size="14"
+                      class="mad-menu-chev"
+                      :class="insertOpen && 'is-open'"
+                    />
+                  </button>
+                  <div v-if="insertOpen" class="mad-menu-sub" role="menu">
+                    <button type="button" role="menuitem" @click="insert('new')">
+                      <Plus :size="14" />As a new {{ loader }} node
+                    </button>
+                    <button type="button" role="menuitem" @click="insert('selected')">
+                      <ImagePlus :size="14" />Into the selected node
+                    </button>
+                  </div>
+                  <template v-if="facts.workflow === 'available'">
+                    <button type="button" role="menuitem" @click="openWorkflow">
+                      <Workflow :size="14" />Open as workflow in new tab
+                    </button>
+                    <button type="button" role="menuitem" @click="exportWorkflow">
+                      <FileOutput :size="14" />Export workflow
+                    </button>
+                  </template>
+                  <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
+                    <Copy :size="14" />Copy file name
+                  </button>
+                  <button
+                    v-if="facts.prompt"
+                    type="button"
+                    role="menuitem"
+                    @click="copyText(facts.prompt, 'prompt')"
+                  >
+                    <Copy :size="14" />Copy prompt
+                  </button>
+                  <span class="mad-menu-gap" role="separator" />
+                  <button type="button" role="menuitem" class="is-danger" @click="remove">
+                    <Trash2 :size="14" />Delete
+                  </button>
+                </div>
+              </div>
             </header>
 
             <section class="mad-sec">
@@ -734,8 +797,7 @@ onBeforeUnmount(() => {
             </section>
           </div>
           <!-- At the bottom, labeled: only the actions this file has. Download
-               leads; More sits at the right of Open workflow (of Download
-               when there is no workflow). -->
+               leads; More is at the top right, by the name. -->
           <footer class="mad-actions">
             <button
               v-if="facts.workflow === 'available'"
@@ -761,68 +823,6 @@ onBeforeUnmount(() => {
             >
               <Download :size="14" /><span>Download</span>
             </button>
-            <div ref="moreBox" class="mad-pick">
-              <button
-                type="button"
-                class="mad-btn is-more"
-                aria-label="More"
-                title="More"
-                aria-haspopup="menu"
-                :aria-expanded="moreMenu"
-                @click="moreMenu = !moreMenu"
-              >
-                <MoreHorizontal :size="16" />
-              </button>
-              <div v-if="moreMenu" class="mad-menu is-up is-end is-more" role="menu">
-                <button v-if="onDisk" type="button" role="menuitem" @click="reveal">
-                  <FolderOpen :size="14" />Show in Finder
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-haspopup="menu"
-                  :aria-expanded="insertOpen"
-                  @click="insertOpen = !insertOpen"
-                >
-                  <Plus :size="14" />Insert into workflow<ChevronRight
-                    :size="14"
-                    class="mad-menu-chev"
-                    :class="insertOpen && 'is-open'"
-                  />
-                </button>
-                <div v-if="insertOpen" class="mad-menu-sub" role="menu">
-                  <button type="button" role="menuitem" @click="insert('new')">
-                    <Plus :size="14" />As a new {{ loader }} node
-                  </button>
-                  <button type="button" role="menuitem" @click="insert('selected')">
-                    <ImagePlus :size="14" />Into the selected node
-                  </button>
-                </div>
-                <template v-if="facts.workflow === 'available'">
-                  <button type="button" role="menuitem" @click="openWorkflow">
-                    <Workflow :size="14" />Open as workflow in new tab
-                  </button>
-                  <button type="button" role="menuitem" @click="exportWorkflow">
-                    <FileOutput :size="14" />Export workflow
-                  </button>
-                </template>
-                <button type="button" role="menuitem" @click="copyText(asset.name, 'file name')">
-                  <Copy :size="14" />Copy file name
-                </button>
-                <button
-                  v-if="facts.prompt"
-                  type="button"
-                  role="menuitem"
-                  @click="copyText(facts.prompt, 'prompt')"
-                >
-                  <Copy :size="14" />Copy prompt
-                </button>
-                <span class="mad-menu-gap" role="separator" />
-                <button type="button" role="menuitem" class="is-danger" @click="remove">
-                  <Trash2 :size="14" />Delete
-                </button>
-              </div>
-            </div>
           </footer>
         </aside>
       </div>
@@ -1194,9 +1194,11 @@ onBeforeUnmount(() => {
   display: grid;
   padding-left: 14px;
 }
-/* Delete sits apart by space, not a line. */
+/* A red line always has a divider over it (UI-RULES › Menus). */
 .mad-menu-gap {
-  height: 6px;
+  height: 1px;
+  margin: 4px 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mad-menu button.is-danger {
   color: var(--color-status-danger);
@@ -1288,7 +1290,7 @@ onBeforeUnmount(() => {
 }
 .mad-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px 8px;
   margin: 0 16px;
   padding: 14px 0 16px;
@@ -1296,12 +1298,12 @@ onBeforeUnmount(() => {
 .mad-actions > * {
   grid-column: 1 / -1;
 }
-/* Download on top, the rest under it as quieter rows: a soft fill, no
-   line, no divider above. */
+/* Download on top, the rest under it as quieter buttons: a soft fill, no
+   line, no divider above; every label centred, like the primary. */
 :root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn {
   height: 36px;
   flex: none;
-  justify-content: flex-start;
+  justify-content: center;
   padding: 0 12px;
   border-radius: 10px;
   box-shadow: none;
@@ -1316,22 +1318,20 @@ onBeforeUnmount(() => {
   order: -2;
   justify-content: center;
 }
-.mad-actions:not(:has(.is-wf)) > .is-primary {
-  grid-column: 1;
-}
 .mad-actions > .is-wf {
   order: -1;
-  grid-column: 1;
 }
-.mad-actions > .mad-pick {
-  order: -1;
-  grid-column: 2;
+/* More, by the name at the top right. */
+:root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-more {
+  width: 28px;
+  height: 28px;
+  margin-top: -4px;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
 }
-:root .proto-ui.proto-ui.proto-ui .mad-actions .mad-btn.is-more {
-  width: 36px;
-  flex: none;
-  justify-content: center;
-  padding: 0;
+:root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-more:hover,
+:root .proto-ui.proto-ui.proto-ui .mad-head .mad-head-more[aria-expanded='true'] {
+  color: var(--color-base-foreground);
 }
 .mad-side {
   --mad-line: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);

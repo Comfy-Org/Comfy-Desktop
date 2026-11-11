@@ -196,10 +196,6 @@
 }
 /* Favorited: a quiet star by the name, full ink like on cards. */
 .mar-tpl-fav {
-  display: inline-flex;
-  flex: none;
-  padding: 3px;
-  color: var(--color-base-foreground);
   animation: mar-tpl-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 @keyframes mar-tpl-pop {
@@ -464,17 +460,20 @@
 /* The other builds: one row each, the pick filled (one choice marks its
    row), what blocks one in its own line, greyed. */
 /* Open in sits at the panel's foot, right over the button it sets. */
-.mar-tpl-openin {
-  margin-top: auto;
-}
-/* The foot reads as one block: What it needs runs straight into the
-   button, and the button lines up with the sections' edges. */
-.mar-tpl .mad-body {
-  padding-bottom: 0;
-}
+/* The foot: the one action, lined up with the sections' edges. */
 .mar-tpl .mad-actions {
   margin: 0 20px;
-  padding-top: 6px;
+  padding-top: 12px;
+}
+/* Favorite and Copy link, quiet icons at the name's right. */
+:root .proto-ui.proto-ui.proto-ui .mad-head .mar-tpl-head-btn {
+  width: 28px;
+  height: 28px;
+  margin-top: -4px;
+  border-radius: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-head .mar-tpl-head-btn.is-on {
+  color: var(--color-base-foreground);
 }
 .mad-menu.mar-tpl-builds {
   right: 0;
