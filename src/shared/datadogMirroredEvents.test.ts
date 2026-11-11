@@ -14,6 +14,11 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_completed')).toBe(false)
   })
 
+  it('mirrors view_token_mint_failed but not view_token_minted', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.view_token_mint_failed')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.view_token_minted')).toBe(false)
+  })
+
   it('mirrors install.not_started but not install.dispatched', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.install.not_started')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.install.dispatched')).toBe(false)

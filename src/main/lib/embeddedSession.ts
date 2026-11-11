@@ -4,8 +4,10 @@ import { identityOf } from '../cloud/claims'
 import { getCloudSession } from '../devplatform/session'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
+import type { WorkspaceSwitchOutcome } from '../cloud/types'
 import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
+import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
 
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
@@ -77,24 +79,22 @@ export async function workspaceTokenForSender(
   workspaceId: unknown
 ): Promise<string | null> {
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
-  const token = await trustedSessionToken(event)
-  return token && identityOf(token)?.workspaceId === workspaceId ? token : null
-}
-
-async function trustedSessionToken(event: EmbeddedSessionSender): Promise<string | null> {
   if (!isTrustedSender(event) || !(await isEmbeddedSessionEnabled())) return null
-  return getCloudSession().getAccessToken()
+  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId)
 }
 
 export async function switchWorkspaceForSender(
   event: EmbeddedSessionSender,
   workspaceId: unknown,
-  switchWorkspace: (workspaceId: string) => Promise<unknown>
+  switchWorkspace: (workspaceId: string) => Promise<WorkspaceSwitchOutcome>
 ): Promise<ComfyDesktop2AuthState> {
   const state = await stateForSender(event)
   if (state.status !== 'signed_in' || typeof workspaceId !== 'string' || workspaceId === '')
     return state
-  await switchWorkspace(workspaceId)
+  const grants = getViewWorkspaceGrants()
+  grants.seed()
+  const { reached } = await switchWorkspace(workspaceId)
+  if (reached) grants.allowView(event.sender, workspaceId)
   return stateForSender(event)
 }
 

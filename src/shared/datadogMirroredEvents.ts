@@ -1,4 +1,6 @@
 export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
+  'comfy.desktop.auth.view_token_mint_failed',
+
   'comfy.desktop.execution.error',
   'comfy.desktop.comfyui.exited',
   'comfy.desktop.app_update.error',

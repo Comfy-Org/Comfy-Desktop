@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer'
 
+import { WORKSPACE_MINT_SCOPE } from './config'
 import type { AuthStatus } from './types'
 
 interface AccessTokenClaims {
@@ -8,6 +9,7 @@ interface AccessTokenClaims {
   workspace_id?: string
   workspace_type?: string
   role?: string
+  scope?: string
 }
 
 function decodeJwtPayload(token: string): AccessTokenClaims | null {
@@ -35,6 +37,11 @@ export function statusFromAccessToken(accessToken: string): AuthStatus {
 
 export function workspaceIdOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.workspace_id ?? null
+}
+
+export function canMintWorkspaceTokens(accessToken: string): boolean {
+  const scope = decodeJwtPayload(accessToken)?.scope
+  return typeof scope === 'string' && scope.split(' ').includes(WORKSPACE_MINT_SCOPE)
 }
 
 export function subjectOf(accessToken: string): string | null {

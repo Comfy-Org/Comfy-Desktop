@@ -3,6 +3,7 @@ import { BrowserWindow, ipcMain, shell } from 'electron'
 import { comfyWindows } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
+import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
@@ -19,7 +20,7 @@ import {
 } from '../../devplatform/builds'
 import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
-import type { AuthStatus, Workspace } from '../../cloud'
+import type { AuthStatus, Workspace, WorkspaceSwitchOutcome } from '../../cloud'
 import {
   installations,
   defaultInstallDir,
@@ -89,18 +90,24 @@ export function broadcastAuthChanged(status: AuthStatus): void {
 export async function signInToCloud(): Promise<AuthStatus> {
   const session = getCloudSession()
   clearVersionCache()
-  const status = await session.login()
+  const login = session.login()
+  const generation = session.currentAuthGeneration()
+  const status = await login
   clearVersionCache()
+  if (session.currentAuthGeneration() === generation) {
+    getViewWorkspaceGrants().endAll()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  }
   broadcastAuthChanged(status)
   return status
 }
 
-export async function switchCloudWorkspace(workspaceId: string): Promise<AuthStatus> {
+export async function switchCloudWorkspace(workspaceId: string): Promise<WorkspaceSwitchOutcome> {
   clearVersionCache()
-  const status = await getCloudSession().switchWorkspace(workspaceId)
+  const outcome = await getCloudSession().switchWorkspace(workspaceId)
   clearVersionCache()
-  broadcastAuthChanged(status)
-  return status
+  broadcastAuthChanged(outcome.status)
+  return outcome
 }
 
 export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
@@ -137,6 +144,7 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
     }
   }
   session.logout()
+  getViewWorkspaceGrants().endAll()
   clearVersionCache()
   broadcastAuthChanged(SIGNED_OUT)
   return SIGNED_OUT
@@ -145,6 +153,7 @@ export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promis
 export function registerDevPlatformHandlers(): void {
   const session = getCloudSession()
   setUnauthorizedHandler(() => {
+    getViewWorkspaceGrants().endAll()
     clearVersionCache()
     broadcastAuthChanged(SIGNED_OUT)
   })
@@ -185,9 +194,11 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, (_event, workspaceId: string) =>
-    switchCloudWorkspace(workspaceId)
-  )
+  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, async (_event, workspaceId: string) => {
+    const { status, reached } = await switchCloudWorkspace(workspaceId)
+    if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
+    return status
+  })
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.promoteLocalInstance,
@@ -216,10 +227,11 @@ export function registerDevPlatformHandlers(): void {
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
           clearVersionCache()
-          const switched = await session.switchWorkspace(workspaceId)
+          const { status: switched, reached } = await session.switchWorkspace(workspaceId)
           clearVersionCache()
+          if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
           broadcastAuthChanged(switched)
-          if (!switched.signedIn || switched.workspaceId !== workspaceId) {
+          if (!reached) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
         }

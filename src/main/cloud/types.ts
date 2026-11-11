@@ -13,6 +13,11 @@ export interface AuthStatus {
   role?: string
 }
 
+export interface WorkspaceSwitchOutcome {
+  status: AuthStatus
+  reached: boolean
+}
+
 export interface Workspace {
   id: string
   name: string

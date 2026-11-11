@@ -1,5 +1,5 @@
 import type { TokenProvider } from '../comfybuilder'
-import { workspaceIdOf } from './claims'
+import { subjectOf, workspaceIdOf } from './claims'
 import type { OAuthOptions } from './oauth'
 import { openAuthorizePage, refresh, signIn } from './oauth'
 import {
@@ -12,7 +12,13 @@ import {
   saveTokens,
   saveWorkspaceNames
 } from './tokenStore'
-import type { AuthStatus, AuthTokens, Workspace, WorkspaceMember } from './types'
+import type {
+  AuthStatus,
+  AuthTokens,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceSwitchOutcome
+} from './types'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
 const REFRESH_SKEW_MS = 60_000
@@ -34,9 +40,11 @@ export class CloudSession {
       onAuthorizeUrl: (url) => {
         if (generation === this.authGeneration) this.loginAuthorizeUrl = url
       }
-    }).finally(() => {
-      if (this.loginInFlight === login) this.clearPendingLogin()
     })
+      .then(({ status }) => status)
+      .finally(() => {
+        if (this.loginInFlight === login) this.clearPendingLogin()
+      })
     this.loginInFlight = login
     return login
   }
@@ -58,6 +66,15 @@ export class CloudSession {
 
   isSignedIn(): boolean {
     return getAuthStatus().signedIn
+  }
+
+  currentAuthGeneration(): number {
+    return this.authGeneration
+  }
+
+  currentSubject(): string | null {
+    const t = loadTokens()
+    return t ? subjectOf(t.accessToken) : null
   }
 
   currentWorkspaceId(): string | null {
@@ -123,7 +140,7 @@ export class CloudSession {
     return listWorkspaceMembers(token)
   }
 
-  async switchWorkspace(workspaceId: string): Promise<AuthStatus> {
+  async switchWorkspace(workspaceId: string): Promise<WorkspaceSwitchOutcome> {
     this.clearPendingLogin()
     const generation = ++this.authGeneration
     const current = loadTokens()
@@ -134,10 +151,10 @@ export class CloudSession {
     if (cached?.refreshToken && cached.expiresAt - REFRESH_SKEW_MS <= Date.now()) {
       cached = await this.refreshWorkspaceTokens(workspaceId, cached)
     }
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) return { status: this.status(), reached: false }
     if (cached && cached.expiresAt > Date.now()) {
       if (cached !== current) activateWorkspace(workspaceId)
-      return this.status()
+      return { status: this.status(), reached: true }
     }
     return this.authenticateAtGeneration(generation, { workspaceId })
   }
@@ -145,13 +162,14 @@ export class CloudSession {
   private async authenticateAtGeneration(
     generation: number,
     options: OAuthOptions
-  ): Promise<AuthStatus> {
+  ): Promise<WorkspaceSwitchOutcome> {
     const { workspaceId } = options
     const { tokens, status } = await signIn(options)
-    if (generation !== this.authGeneration) return this.status()
-    if (workspaceId && status.workspaceId !== workspaceId) return this.status()
+    if (generation !== this.authGeneration) return { status: this.status(), reached: false }
+    if (workspaceId && status.workspaceId !== workspaceId)
+      return { status: this.status(), reached: false }
     saveTokens(tokens)
-    return status
+    return { status, reached: true }
   }
 
   asTokenProvider(onSignedOut?: () => void): TokenProvider {
