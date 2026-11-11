@@ -26,6 +26,7 @@ import { FIRST_RUNS, firstRun } from './firstRun'
 import {
   ONBOARDINGS,
   AFTER_INSTALLS,
+  CARD_ATS,
   NODES_AT,
   SETUP_SCOPES,
   MACHINES,
@@ -248,6 +249,11 @@ const linkSays = computed(() => {
             </Row>
             <Row v-if="localSetup.scope === 'next'" label="After install">
               <Select v-model="localSetup.after" :options="AFTER_INSTALLS" class="w-full" />
+            </Row>
+            <!-- Home first: the install card on its own at the top, or
+                 inside Builds where it stays. -->
+            <Row v-if="localSetup.scope === 'next'" label="Install card">
+              <Seg v-model="localSetup.card" label="Install card" :options="CARD_ATS" />
             </Row>
             <!-- DESK-243: where a new user gets the recommended node packs. -->
             <Row label="Custom nodes">

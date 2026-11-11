@@ -37,6 +37,9 @@ import {
  * subject. Under it, the apps: they run on Comfy Cloud, so they work before
  * ComfyUI is installed (Milestone 2).
  */
+/** Bare: the card alone, for the Builds section to draw as its first build
+ *  (MarBuildsRow.vue); no header, no apps under it. */
+const props = defineProps<{ bare?: boolean }>()
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
 // After install › Ready: the same card says ComfyUI is there, with the one
@@ -80,10 +83,14 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </script>
 
 <template>
-  <section class="mt-8" aria-label="Local install">
+  <section :class="props.bare ? 'mb-3.5' : 'mt-8'" aria-label="Local install">
     <!-- The section is Builds from the first launch: the card under it is
          the first build, waiting to be installed. -->
-    <SectionHeader class="mar-sec" :title="ready ? 'ComfyUI is ready' : 'Builds'" />
+    <SectionHeader
+      v-if="!props.bare"
+      class="mar-sec"
+      :title="ready ? 'ComfyUI is ready' : 'Builds'"
+    />
     <div class="mss-machine is-hero mss-home-inst">
       <SetupLaptop :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">
@@ -140,7 +147,7 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
     <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
          there. The first-run Home's own examples (Milestone 2), in the look
          UI Playground picks; with the Home open they are already there. -->
-    <div v-if="!homeOpen && !ready" class="mt-10">
+    <div v-if="!props.bare && !homeOpen && !ready" class="mt-10">
       <ExampleShowcase />
     </div>
     <!-- The install modal carries its own confirm while it is open. -->

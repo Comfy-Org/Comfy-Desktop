@@ -82,6 +82,17 @@ export const AFTER_INSTALLS: { value: AfterInstall; label: string }[] = [
   { value: 'comfyui', label: 'Open ComfyUI (as today)' }
 ]
 
+/** Where the Home draws the first install's card (Home first). Top: its
+ *  own section under the greeting, the apps under it; when ComfyUI is
+ *  ready the section says so. Builds: inside the Builds section, where it
+ *  always sits, as the first build, large while it installs or waits to be
+ *  opened and small once opened. One place for the build, never two. */
+export type CardAt = 'top' | 'builds'
+export const CARD_ATS: { value: CardAt; label: string }[] = [
+  { value: 'top', label: 'Top' },
+  { value: 'builds', label: 'In Builds' }
+]
+
 export const LOCAL_SETUPS: { value: LocalSetup; label: string }[] = [
   { value: 'off', label: 'Today' },
   { value: 'on', label: 'Proposal' }
@@ -115,6 +126,7 @@ function load(): {
   scope: SetupScope
   onboarding: Onboarding
   after: AfterInstall
+  card: CardAt
   os: SetupOs
   gpu: SetupGpu
   nodes: NodesAt
@@ -129,6 +141,7 @@ function load(): {
       scope: v.scope === 'next' ? 'next' : 'm1',
       onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'install',
       after: AFTER_INSTALLS.some((a) => a.value === v.after) ? v.after : 'home',
+      card: v.card === 'builds' ? 'builds' : 'top',
       os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac',
       gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia',
       nodes: NODES_AT.some((n) => n.value === v.nodes) ? v.nodes : 'off'
@@ -141,6 +154,7 @@ function load(): {
       scope: 'm1',
       onboarding: 'install',
       after: 'home',
+      card: 'top',
       os: 'mac',
       gpu: 'nvidia',
       nodes: 'off'
@@ -555,6 +569,12 @@ export const packsMb = computed(() => pickedPacks.value.reduce((n, p) => n + p.m
 export const installPending = computed(
   () => homeFirst.value && flow.homeCard && !instances.value.some((i) => i.kind === 'local')
 )
+/** The install card drawn inside the Builds section (UI Playground › Local
+ *  setup › Install card): while the install waits or runs, and once ComfyUI
+ *  is ready until it is opened. */
+export const cardInBuilds = computed(
+  () => localSetup.card === 'builds' && (installPending.value || flow.ready)
+)
 /** The install runs (or failed) behind the Home: the sidebar's Builds show it. */
 export const installingBehind = computed(
   () => flow.background && (flow.running || flow.step === 'error')
@@ -617,6 +637,9 @@ function tick(): void {
 function finish(): void {
   stop()
   marUser.local = 'one'
+  // Builds lists the build just installed as the card said it: this
+  // version, nothing to update.
+  proto.installedVersion = DETECTED.version
   flow.open = false
   const picked = flow.picked
   const m1 = localSetup.scope === 'm1'

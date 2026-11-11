@@ -96,6 +96,9 @@ export const proto = reactive({
   newUser: null as boolean | null,
   /** Mar's proposal: a single local build, the one just set up. */
   oneLocal: false,
+  /** The version the local setup just installed (mar/setup): the build
+   *  shows it, ready, instead of the mock's older one. */
+  installedVersion: '',
   /** Projects (Milestone 8, set from milestones.ts). */
   projects: false,
   live: saved.live,
@@ -220,7 +223,11 @@ export const instances = computed<ProtoInstance[]>(() => {
     })
     .map((i) =>
       // A build a new user just set up is ready, with nothing to update.
-      proto.newUser && i.kind === 'local' ? { ...i, state: 'stopped' as const } : i
+      i.kind === 'local' && proto.installedVersion
+        ? { ...i, state: 'stopped' as const, version: proto.installedVersion }
+        : proto.newUser && i.kind === 'local'
+          ? { ...i, state: 'stopped' as const }
+          : i
     )
 })
 

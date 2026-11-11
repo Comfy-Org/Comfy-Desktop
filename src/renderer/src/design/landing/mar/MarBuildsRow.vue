@@ -9,13 +9,18 @@ import { go, hostActions, recentInstances } from '../useProto'
 import { can } from '../milestones'
 import SetupLaptop from './setup/SetupLaptop.vue'
 import SetupCloud from './setup/SetupCloud.vue'
-import { localSetup } from './setup/setupFlow'
+import HomeInstall from './setup/HomeInstall.vue'
+import { cardInBuilds, localSetup } from './setup/setupFlow'
 import './setup/setup.css'
 
 /** Home's builds in Mar's proposal (UI Playground › Build on Home): what
  *  Pablo's Home shows (three recent builds, their state, click to launch
  *  ComfyUI on one), as one row of cards like Spaces. */
-const shown = computed(() => recentInstances.value.slice(0, 3))
+// With the install card in this section (setup/HomeInstall.vue, bare) the
+// local build is that card, large, until ComfyUI is opened: not listed twice.
+const shown = computed(() =>
+  recentInstances.value.filter((i) => !(cardInBuilds.value && i.kind === 'local')).slice(0, 3)
+)
 /** From Milestone 2 on, each build is the install card made small:
  *  the machine drawn, its state, its name, what it runs on. Each one is
  *  its own, lit in the build's hue. */
@@ -28,8 +33,11 @@ const detail = (i: (typeof shown.value)[number]): string =>
 <template>
   <section class="mt-10">
     <SectionHeader class="mar-sec" title="Builds" link="All builds" @link="go('environments')" />
+    <!-- Home first: the first build, installing or ready, leads the section. -->
+    <HomeInstall v-if="cardInBuilds" bare />
     <!-- One, two or three builds always fill the row. -->
     <div
+      v-if="shown.length"
       class="grid gap-3.5"
       :style="{ gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))` }"
     >

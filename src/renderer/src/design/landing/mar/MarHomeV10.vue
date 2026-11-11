@@ -14,7 +14,7 @@ import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
 import HomeInstall from './setup/HomeInstall.vue'
-import { flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
+import { cardInBuilds, flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
@@ -79,7 +79,10 @@ const firstRun = computed(() => firstTime.value && noLocal.value)
 // ComfyUI never shows before there is one. With the card only, the rest
 // that needs ComfyUI waits: the prompt, which could only run on Comfy
 // Cloud, and the first-run examples. With pick to install they stay.
-const gated = computed(() => installPending.value && !homeOpen.value)
+// With the card in Builds (UI Playground › Local setup › Install card) the
+// Home is the usual one: the apps, then Builds with the install as its
+// first build.
+const gated = computed(() => installPending.value && !homeOpen.value && !cardInBuilds.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
 const tight = computed(() => parts.value.top === 'tight')
 
@@ -143,9 +146,9 @@ const recent = computed(() =>
     <!-- First run: the same sections, filled with ways to start instead of
          your work (UI Playground › First run). -->
     <!-- Home first: Local was picked on Run on, so the install waits here. -->
-    <HomeInstall v-if="installPending || flow.ready" />
+    <HomeInstall v-if="(installPending || flow.ready) && !cardInBuilds" />
     <template v-if="gated"></template>
-    <MarStart v-else-if="firstRun" />
+    <MarStart v-else-if="firstRun && !cardInBuilds" />
     <div v-else>
       <!-- The Apps stage: the examples arc leads for everyone, from
            Milestone 2 on. -->
