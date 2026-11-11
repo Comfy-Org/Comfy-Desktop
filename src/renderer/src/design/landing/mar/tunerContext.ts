@@ -234,14 +234,17 @@ export const TWEAKS = {
     isDefault: () => PORTS.every((p) => !ports[p.key]),
     reset: () => PORTS.forEach((p) => (ports[p.key] = false))
   },
-  // Local setup: Today's toast until the proposal is switched on.
+  // Local setup: Today's toast until the proposal is switched on; the
+  // proposal opens on the one-click install, as setupFlow.ts and the link do.
   localSetup: {
     isDefault: () =>
       localSetup.mode === 'off' &&
       localSetup.machine === 'ready' &&
       localSetup.cards === 'glow' &&
-      localSetup.scope === 'm1' &&
-      localSetup.onboarding === 'install' &&
+      localSetup.scope === 'next' &&
+      localSetup.onboarding === 'oneclick' &&
+      localSetup.after === 'ready' &&
+      localSetup.card === 'top' &&
       localSetup.os === 'mac' &&
       localSetup.gpu === 'nvidia' &&
       localSetup.nodes === 'off',
@@ -250,9 +253,10 @@ export const TWEAKS = {
         mode: 'off',
         machine: 'ready',
         cards: 'glow',
-        scope: 'm1',
-        onboarding: 'install',
-        after: 'home',
+        scope: 'next',
+        onboarding: 'oneclick',
+        after: 'ready',
+        card: 'top',
         os: 'mac',
         gpu: 'nvidia',
         nodes: 'off'
