@@ -84,9 +84,9 @@ const firstRun = computed(() => firstTime.value && noLocal.value)
 // first build.
 const gated = computed(() => installPending.value && !homeOpen.value && !cardInBuilds.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
-// With the install card in Builds the top sits tight, so Builds and the
-// card stay on screen at 1280 × 800 while it installs.
-const tight = computed(() => parts.value.top === 'tight' || cardInBuilds.value)
+// The top keeps the same room whether or not a build is installing: the
+// Home never changes height between states.
+const tight = computed(() => parts.value.top === 'tight')
 
 // Example workflows as compact rows (Exploration 17): photo, title, what it does.
 const EXAMPLE_ART = [1, 2, 3, 4, 5].map((n) => mock(`home-example-${n}`))
