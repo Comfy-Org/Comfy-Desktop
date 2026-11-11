@@ -48,7 +48,11 @@ vi.mock('../../views/comfyUISettings/SnapshotsView.vue', () => ({
   }
 }))
 vi.mock('../../views/comfyUISettings/SettingsSectionList.vue', () => ({
-  default: { template: '<div data-testid="settings-section-list-stub"></div>' }
+  default: {
+    name: 'SettingsSectionList',
+    props: ['columns'],
+    template: '<div data-testid="settings-section-list-stub"></div>'
+  }
 }))
 vi.mock('../../views/comfyUISettings/StatusFactPanel.vue', () => ({
   default: { template: '<div />' }
@@ -729,6 +733,58 @@ describe('ComfyUISettingsContent', () => {
 
       useComfyUISettingsState.sections.value = priorSections
       useComfyUISettingsState.sectionsFresh.value = true
+    })
+  })
+
+  describe('Startup Args two-column layout', () => {
+    let priorSections: unknown[]
+    let target: HTMLElement
+
+    beforeEach(() => {
+      priorSections = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        { tab: 'update', fields: [] },
+        { tab: 'settings', fields: [] },
+        { tab: 'status', fields: [] }
+      ]
+      target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+    })
+
+    afterEach(() => {
+      useComfyUISettingsState.sections.value = priorSections
+      target.remove()
+    })
+
+    async function columnsFor(props: Record<string, unknown>): Promise<unknown> {
+      const w = await mountContent({ initialTab: 'config', ...props })
+      const columns = w.findComponent({ name: 'SettingsSectionList' }).props('columns')
+      w.unmount()
+      return columns
+    }
+
+    it('lays out the Startup Args tab in two columns on the build page', async () => {
+      expect(await columnsFor({ pageActionsTarget: '#page-actions' })).toBe(true)
+    })
+
+    it('keeps the settings modal single-column', async () => {
+      expect(await columnsFor({})).toBe(false)
+    })
+
+    it('keeps a cloud build single-column, where that tab is labelled Storage', async () => {
+      expect(
+        await columnsFor({
+          pageActionsTarget: '#page-actions',
+          installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
+        })
+      ).toBe(false)
+    })
+
+    it('keeps the Update tab single-column on the build page', async () => {
+      expect(await columnsFor({ pageActionsTarget: '#page-actions', initialTab: 'update' })).toBe(
+        false
+      )
     })
   })
 
