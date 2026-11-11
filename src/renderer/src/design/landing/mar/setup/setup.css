@@ -1401,8 +1401,11 @@
 
 :root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
   width: var(--mss-col-w);
-  height: var(--mss-col-h);
-  max-height: none;
+  /* The column's height at least; a longer screen (Change setup) shows
+     whole, the window allowing, rather than scrolling inside. */
+  height: auto;
+  min-height: var(--mss-col-h);
+  max-height: calc(100vh - 96px);
 }
 :root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body {
   flex: 1;
@@ -1429,8 +1432,22 @@
   grid-template-columns: 148px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
+  /* One line is 40px tall whatever the control (an input, a segmented
+     control, a note), so a row that swaps its control doesn't move the rest. */
+  min-height: 64px;
   padding-block: 12px;
   box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+/* The last row of the sheet: the action bar draws the line under it. */
+.mss-form-row:last-child {
+  box-shadow: none;
+}
+.mss-form-row:has(+ .mss-form-aside) {
+  box-shadow: none;
+}
+.mss-form-aside-sep {
+  margin: 0 4px;
+  opacity: 0.5;
 }
 .mss-form-row:first-child {
   padding-top: 0;
@@ -1455,9 +1472,10 @@
   font-size: var(--text-ui);
 }
 .mss-form-aside {
-  margin: 20px 0 16px;
+  margin: 24px 0 20px;
   color: var(--color-subtle-foreground);
-  font-size: var(--text-ui);
+  font-size: 12.5px;
+  line-height: 18px;
 }
 .mss-form-aside .mss-link {
   color: var(--color-base-foreground);
@@ -1480,9 +1498,15 @@
   text-align: left;
   outline: none;
   cursor: pointer;
+  /* The pick switches at once, ring and check together; only the hover
+     fill eases, so a tap never looks like a fade. */
+  transition: background-color 120ms ease;
 }
 :root .proto-ui.proto-ui.proto-ui .mss-opt:hover {
   background: oklch(0.6 0 0 / 0.09);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-opt:active {
+  transition: none;
 }
 :root .proto-ui.proto-ui.proto-ui .mss-opt[data-state='checked'] {
   background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
@@ -2025,10 +2049,6 @@
 .mss-opts.is-list {
   grid-template-columns: minmax(0, 1fr);
 }
-.mss-form-aside.is-more {
-  margin-top: -8px;
-}
-
 /* The cancel confirmation sits over the takeover, which is itself above the
    usual dialog layer; its scrim is the sibling just before it. */
 .proto-ui.mss-confirm,
