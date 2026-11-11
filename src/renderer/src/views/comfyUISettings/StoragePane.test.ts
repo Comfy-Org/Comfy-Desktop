@@ -247,6 +247,30 @@ describe('StoragePane', () => {
     expect(api.openGlobalSettingsCalls).toEqual(['storage'])
   })
 
+  it('puts the manage-shared link in the Models panel footer next to Add Directory', async () => {
+    installMockApi()
+    const wrapper = mountPane()
+    await nextTick()
+    const foot = wrapper.find('.models-dir-list .models-dir-foot')
+    expect(foot.find('.models-dir-add').exists()).toBe(true)
+    expect(foot.find('.storage-manage-link').text()).toBe(
+      'Manage Shared Directories in Desktop Settings'
+    )
+  })
+
+  it('tags shared model dirs as Shared and leaves build-only dirs untagged', async () => {
+    installMockApi()
+    const wrapper = mountPaneWithSections(makeStorageSections(['/b/models'], { sharedOn: true }))
+    await nextTick()
+    const rows = wrapper.findAll('.models-dir-row')
+    const sharedRows = rows.filter((r) => r.find('.storage-item-icon.is-shared').exists())
+    const ownRows = rows.filter((r) => !r.find('.storage-item-icon.is-shared').exists())
+    expect(sharedRows.length).toBeGreaterThan(0)
+    expect(ownRows.length).toBeGreaterThan(0)
+    expect(sharedRows.every((r) => r.find('.tag-shared').text() === 'Shared')).toBe(true)
+    expect(ownRows.every((r) => !r.find('.tag-shared').exists())).toBe(true)
+  })
+
   it('hides the manage-shared link while shared models is off', async () => {
     installMockApi()
     const wrapper = mountPaneWithSections(makeStorageSections([]))
@@ -818,6 +842,22 @@ describe('StoragePane', () => {
       await flushPromises()
       expect(api.openGlobalSettingsCalls).toEqual(['storage'])
       expect(wrapper.emitted('update-field')).toBeUndefined()
+    })
+
+    it('tags shared input and output rows as Shared with a text Manage action', async () => {
+      installMockApi()
+      const wrapper = mountPaneWithSections(
+        makeIoSections({ sharedInput: true, sharedOutput: false }),
+        makeSharedIoSnapshot()
+      )
+      await nextTick()
+      const [sharedRow, ownRow] = wrapper.findAll('.storage-dir-row')
+      expect(sharedRow!.find('.storage-dir-shared-tag').text()).toBe('Shared')
+      expect(
+        sharedRow!.find('.storage-dir-action[aria-label^="Manage Shared Directories"]').text()
+      ).toBe('Manage')
+      expect(ownRow!.find('.storage-dir-shared-tag').exists()).toBe(false)
+      expect(ownRow!.find('.storage-dir-tag').text()).toBe('default')
     })
 
     it('browsing a per-instance output updates only the install outputDir field', async () => {
