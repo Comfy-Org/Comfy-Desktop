@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { appExamplesAt } from './appPage'
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch, type Component } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import {
   Folder,
@@ -14,10 +14,13 @@ import {
   Film,
   Image as ImageIcon,
   ImageUp,
+  ImageUpscale,
   Link2,
   Loader2,
   Plus,
-  Share2
+  RectangleHorizontal,
+  Share2,
+  Volume2
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
@@ -143,6 +146,14 @@ const blocks = computed(() =>
  *  so does every setting under a heading. */
 const inline = (f: Field): boolean =>
   Boolean(f.control) || (Boolean(f.group) && f.kind !== 'image' && f.kind !== 'text')
+
+/** Format reads as one row of pills, as in Cinematic Studio: each opens its
+ *  options above it. */
+const PILL_ICON: Record<string, Component> = {
+  aspect: RectangleHorizontal,
+  size: ImageUpscale,
+  sound: Volume2
+}
 
 const state = ref<'idle' | 'running' | 'done'>('idle')
 const progress = ref(0)
@@ -455,8 +466,28 @@ function back(): void {
               class="mar-app-editor-field"
             >
               <h2 v-if="b.group" class="mar-app-editor-group">{{ b.group }}</h2>
+              <div v-if="b.group === 'Format'" class="mar-app-pills">
+                <DropdownMenuRoot v-for="f in b.fields" :key="f.id">
+                  <DropdownMenuTrigger as-child>
+                    <button type="button" class="mar-app-pill" :aria-label="f.label">
+                      <component :is="PILL_ICON[f.id]" v-if="PILL_ICON[f.id]" :size="14" />
+                      <span class="truncate">{{ pick(f) }}</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="top" align="end" :side-offset="8" class="mar-app-menu">
+                    <DropdownMenuItem
+                      v-for="o in f.options ?? []"
+                      :key="o"
+                      :class="o === pick(f) && 'bg-secondary-background font-medium'"
+                      @select="values[f.id] = o"
+                    >
+                      {{ o }}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenuRoot>
+              </div>
               <div
-                v-for="f in b.fields"
+                v-for="f in b.group === 'Format' ? [] : b.fields"
                 :key="f.id"
                 :class="inline(f) ? 'mar-app-editor-row' : 'mar-app-editor-stack'"
               >
@@ -545,7 +576,9 @@ function back(): void {
                   :model-value="pick(f)"
                   variant="contained"
                   size="sm"
-                  :class="inline(f) ? 'mar-app-editor-ctl mar-app-editor-seg' : 'mar-app-editor-seg'"
+                  :class="
+                    inline(f) ? 'mar-app-editor-ctl mar-app-editor-seg' : 'mar-app-editor-seg'
+                  "
                   :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
                   @update:model-value="(v: string) => (values[f.id] = v)"
                 />
@@ -1781,5 +1814,41 @@ function back(): void {
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-seg:not(.mar-app-editor-ctl) {
   width: 100%;
   height: 36px;
+}
+/* Format: one row of pills, as in Cinematic Studio */
+.mar-app-pills {
+  display: flex;
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-pill {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-secondary-background);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-base-foreground);
+  outline: none;
+  transition: background-color 150ms;
+}
+.mar-app-pill > svg {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-pill:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-app-pill[data-state='open'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+.mar-app-pill:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui.mar-app-menu {
+  width: 208px;
 }
 </style>
