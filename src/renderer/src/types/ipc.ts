@@ -1,6 +1,10 @@
 export type {
   DashboardPage,
   CatalogWorkflow,
+  TemplateSearchCandidate,
+  TemplateSearchResponse,
+  TemplateSearchResult,
+  OpenTemplateOutcome,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

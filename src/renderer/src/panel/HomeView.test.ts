@@ -11,6 +11,8 @@ const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 const openCatalogWorkflowHub = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
+const searchTemplates = vi.fn()
+const openTemplateInBuild = vi.fn()
 
 function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
   return { id, title, description: '', thumbnailUrl }
@@ -63,6 +65,8 @@ beforeEach(() => {
   getInstallations.mockResolvedValue([])
   ;(window as unknown as { api: unknown }).api = {
     listHomeWorkflows,
+    searchTemplates,
+    openTemplateInBuild,
     openCatalogWorkflow,
     openCatalogWorkflowHub,
     getInstallations,
@@ -419,5 +423,85 @@ describe('Home builds', () => {
 
     expect(wrapper.find('[data-testid="home-builds"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
+  })
+})
+
+describe('Home template search', () => {
+  it('shows the search bar under the title', async () => {
+    const wrapper = await openHome()
+    const search = wrapper.get('[data-testid="home-template-search"]')
+    const title = wrapper.get('h1')
+    expect(
+      title.element.compareDocumentPosition(search.element) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('runs a template in the most recent local build and opens that build', async () => {
+    getInstallations.mockResolvedValue([CLOUD, RUNNING, OLDEST])
+    searchTemplates.mockResolvedValue({
+      kind: 'result',
+      result: {
+        outcome: 'template',
+        reply: null,
+        run: [{ templateId: 'poster_template', title: 'Poster', thumbnailUrl: null, missing: [] }],
+        download: []
+      }
+    })
+    openTemplateInBuild.mockResolvedValue('launch')
+    const wrapper = await openHome()
+    const input = wrapper.get('[data-testid="home-template-search-input"]')
+    await input.setValue('a poster for a bake sale')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(openTemplateInBuild).toHaveBeenCalledWith('running', 'poster_template')
+    expect(wrapper.emitted('pick')).toEqual([[expect.objectContaining({ id: 'running' })]])
+  })
+
+  it('does not open a build the template was refused by', async () => {
+    getInstallations.mockResolvedValue([RUNNING])
+    searchTemplates.mockResolvedValue({
+      kind: 'result',
+      result: {
+        outcome: 'template',
+        reply: null,
+        run: [{ templateId: 'poster_template', title: 'Poster', thumbnailUrl: null, missing: [] }],
+        download: []
+      }
+    })
+    openTemplateInBuild.mockResolvedValue('refused')
+    const wrapper = await openHome()
+    const input = wrapper.get('[data-testid="home-template-search-input"]')
+    await input.setValue('a poster for a bake sale')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(wrapper.emitted('pick')).toBeUndefined()
+  })
+
+  it('asks for a local build before templates can run when there is only Comfy Cloud', async () => {
+    getInstallations.mockResolvedValue([CLOUD])
+    searchTemplates.mockResolvedValue({
+      kind: 'result',
+      result: {
+        outcome: 'template',
+        reply: null,
+        run: [{ templateId: 'poster_template', title: 'Poster', thumbnailUrl: null, missing: [] }],
+        download: []
+      }
+    })
+    const wrapper = await openHome()
+    const input = wrapper.get('[data-testid="home-template-search-input"]')
+    await input.setValue('a poster for a bake sale')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="home-template-search-results"]').text()).toContain(
+      'Install a local build to run templates'
+    )
   })
 })

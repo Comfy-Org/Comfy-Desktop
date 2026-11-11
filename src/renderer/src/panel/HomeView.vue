@@ -5,7 +5,9 @@ import { ArrowRight, ChevronRight } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
+import HomeTemplateSearch from './home/HomeTemplateSearch.vue'
 import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
+import type { TemplateSearchClient } from './home/templateSearch'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
@@ -43,6 +45,24 @@ const workspaceBuilds = computed(() =>
 const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
 const buildTones = computed(() => homeBuildTones(builds.value))
 const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
+const mostRecentLocalBuild = computed(
+  () => workspaceBuilds.value.find((build) => build.sourceCategory === 'local') ?? null
+)
+const templateSearchBlockedReason = computed(() =>
+  mostRecentLocalBuild.value ? null : t('home.search.needsLocalBuild')
+)
+
+const templateSearchClient: TemplateSearchClient = {
+  search: (query) => window.api.searchTemplates(query),
+  async open(candidate) {
+    const build = mostRecentLocalBuild.value
+    if (!build) return false
+    const outcome = await window.api.openTemplateInBuild(build.id, candidate.templateId)
+    if (outcome === 'refused') return false
+    emit('pick', build)
+    return true
+  }
+}
 
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
@@ -98,7 +118,13 @@ onMounted(() => {
         {{ t('home.title') }}
       </h1>
 
-      <section class="mt-[74px]" :aria-label="t('home.exampleWorkflows')">
+      <HomeTemplateSearch
+        class="mt-8"
+        :client="templateSearchClient"
+        :blocked-reason="templateSearchBlockedReason"
+      />
+
+      <section class="mt-12" :aria-label="t('home.exampleWorkflows')">
         <HomeWorkflowCarousel
           v-if="state === 'ready'"
           :workflows="workflows"

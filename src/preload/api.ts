@@ -101,6 +101,9 @@ export function buildElectronApi(): ElectronApi {
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
     openCatalogWorkflowHub: () => ipcRenderer.invoke('catalog:open-workflow-hub'),
+    searchTemplates: (query) => ipcRenderer.invoke('template-search:search', query),
+    openTemplateInBuild: (installationId, templateId) =>
+      ipcRenderer.invoke('template-search:open', installationId, templateId),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),

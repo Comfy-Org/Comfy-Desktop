@@ -39,7 +39,26 @@
     "showWorkflow": "显示 {title}",
     "openWorkflow": "在 Comfy Hub 打开 {title}",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",
-    "retry": "重试"
+    "retry": "重试",
+    "search": {
+      "label": "查找模板",
+      "placeholder": "描述你想创作的内容，例如学校舞会的海报",
+      "searching": "正在查找模板…",
+      "failed": "模板搜索暂时没有响应，请稍后再试。",
+      "noMatch": "暂时没有合适的模板。",
+      "run": "运行",
+      "downloadAndRun": "下载并运行",
+      "agentGroup": "智能体",
+      "agentTitle": "让智能体来构建",
+      "askAgent": "询问",
+      "agentSoon": "即将推出",
+      "bestMatch": "最佳匹配",
+      "template": "模板",
+      "needsDownload": "需下载 {items}",
+      "needsTemplateDownload": "需要下载",
+      "needsLocalBuild": "安装本地版本后即可运行模板",
+      "openFailed": "无法在你的版本中打开此模板。"
+    }
   },
   "installType": {
     "standalone": "独立版",
