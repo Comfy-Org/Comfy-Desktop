@@ -121,16 +121,23 @@ export const titleBarState = computed<TitleBarState>(() => ({
 const kindOf = (id: string): 'local' | 'cloud' =>
   instanceById(id)?.kind === 'cloud' ? 'cloud' : 'local'
 
-/** What Mar's tabs title bar adds: each open workflow as a tab (named
- *  after the workflow - or its build while it is untitled, so two new tabs
- *  aren't both "Untitled workflow" - its build in the tooltip), where Home
- *  runs next, and whether the agent is open. */
+/** What Mar's tabs title bar adds: each open workflow as a tab, named
+ *  after the workflow (never its build: the pill already says where it
+ *  runs). New ones are "Untitled workflow", numbered from the second, its
+ *  build in the tooltip; where Home runs next, and whether the agent is
+ *  open. */
 function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'> {
   const runs = instanceById(proto.activeInstanceId)
+  let untitled = 0
   return {
     tabs: proto.tabs.map((t) => ({
       id: t.id,
-      name: t.workflow === 'Untitled workflow' ? t.title : t.workflow,
+      name:
+        t.workflow === 'Untitled workflow'
+          ? ++untitled > 1
+            ? `Untitled workflow ${untitled}`
+            : t.workflow
+          : t.workflow,
       build: t.title,
       kind: kindOf(t.instanceId)
     })),

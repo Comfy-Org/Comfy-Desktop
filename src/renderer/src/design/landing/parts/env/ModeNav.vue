@@ -159,9 +159,9 @@ function open(i: Item): void {
     <template v-for="(i, idx) in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
       <!-- The global search (⌘K) right under the first place (Home), by
            default. Search finds Create things: not in Build, and not before
-           Explore & Learn (Milestone 2 ships without it). -->
+           Learn (Milestones 2 and 3 ship without it). -->
       <Button
-        v-if="idx === 1 && mode !== 'build' && can.explore"
+        v-if="idx === 1 && mode !== 'build' && can.search"
         variant="ghost"
         class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
         @click="search.open = true"

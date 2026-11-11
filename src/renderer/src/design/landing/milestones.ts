@@ -80,6 +80,8 @@ export const can = computed(() => {
     /** Explore arrives with Workflows (Milestone 3); Learn after. */
     explore: m >= 4.7,
     learn: m >= 5,
+    /** Search (⌘K) comes with Learn, not with Explore. */
+    search: m >= 5,
     builder: m >= 6,
     oneWindow: m >= 7,
     projects: m >= 8,

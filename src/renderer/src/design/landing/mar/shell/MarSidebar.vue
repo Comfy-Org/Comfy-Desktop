@@ -204,9 +204,9 @@ function newChat(): void {
     <RailFlyout v-if="!open && p20.rail === 'flyout'" />
     <nav class="mar-side-scroll">
       <!-- Search finds media and workflows: a Create thing, not in Build, and
-           not before Explore & Learn (Milestone 2 ships without it). -->
+           not before Learn (Milestones 2 and 3 ship without it). -->
       <button
-        v-if="proto.mode !== 'build' && can.explore"
+        v-if="proto.mode !== 'build' && can.search"
         type="button"
         class="mar-side-row"
         :title="open ? undefined : 'Search · ⌘K'"

@@ -74,7 +74,7 @@ import '../motion/pageTransition'
     <MarSidebar v-if="marSideOn" />
     <MarCloudBar v-if="onCloud" />
     <!-- Search finds what Explore brings: from Explore & Learn on. -->
-    <MarSearch v-if="can.explore" />
+    <MarSearch v-if="can.search" />
     <QueuePanel v-if="p20.panel === 'queue'" />
     <InspectorPanel v-else-if="p20.panel === 'inspector'" />
     <ShortcutBar v-if="p20.density === 'dense'" />
