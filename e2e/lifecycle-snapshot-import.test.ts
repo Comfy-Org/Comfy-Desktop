@@ -81,7 +81,7 @@ test.afterAll(async () => {
   if (envelopeDir) await rm(envelopeDir, { recursive: true, force: true })
 })
 
-test('Import via the toolbar stages a restore target without touching history @lifecycle', async () => {
+test('Import via the toolbar stages a restore target without touching history @windows @macos @linux', async () => {
   const initialCount = await ctx.panel.evaluate<number>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)}).then(d => d.snapshots.length)`
   )

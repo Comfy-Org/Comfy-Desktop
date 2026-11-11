@@ -1,4 +1,16 @@
 import { ref, computed } from 'vue'
+import {
+  ArrowRightLeft,
+  ArrowUpCircle,
+  CircleStop,
+  CloudUpload,
+  Copy,
+  Download,
+  FolderOpen,
+  History,
+  Settings2,
+  Trash2
+} from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -102,13 +114,15 @@ export function useInstallContextMenu(
     if (opts.onManage) {
       items.push({
         id: 'manage',
-        label: t('chooser.manageInstall')
+        label: t('chooser.manageInstall'),
+        icon: Settings2
       })
 
       if (isInstalled(inst) && hasUpdateTag(inst)) {
         items.push({
           id: 'update',
           label: t('chooser.menuUpdate'),
+          icon: ArrowUpCircle,
           disabled: stoppedActionGated,
           title: gatedTitle
         })
@@ -117,6 +131,7 @@ export function useInstallContextMenu(
         items.push({
           id: 'migrate',
           label: t('chooser.menuMigrate'),
+          icon: ArrowRightLeft,
           disabled: stoppedActionGated,
           title: gatedTitle
         })
@@ -127,6 +142,7 @@ export function useInstallContextMenu(
       items.push({
         id: 'copy-install',
         label: t('actions.copyInstallation'),
+        icon: Copy,
         disabled: stoppedActionGated,
         title: gatedTitle
       })
@@ -135,7 +151,8 @@ export function useInstallContextMenu(
     if (hasInstallPath(inst) && isLocalLikeInstall(inst)) {
       items.push({
         id: 'reveal-in-folder',
-        label: revealInFolderLabel(window.api?.platform)
+        label: revealInFolderLabel(window.api?.platform),
+        icon: FolderOpen
       })
     }
 
@@ -144,7 +161,8 @@ export function useInstallContextMenu(
     if (supportsSnapshotActions) {
       snapshotCluster.push({
         id: 'share',
-        label: t('chooser.menuExportSnapshot')
+        label: t('chooser.menuExportSnapshot'),
+        icon: Download
       })
     }
 
@@ -152,6 +170,7 @@ export function useInstallContextMenu(
       snapshotCluster.push({
         id: 'restore-snapshot',
         label: t('chooser.menuRestoreSnapshot'),
+        icon: History,
         disabled: stoppedActionGated,
         title: gatedTitle
       })
@@ -161,6 +180,7 @@ export function useInstallContextMenu(
       const promoting = isPromotingToWorkspace(inst)
       snapshotCluster.push({
         id: 'promote-to-workspace',
+        icon: CloudUpload,
         label: promoting
           ? t('devPlatform.workspace.promoting')
           : t('devPlatform.workspace.promoteToWorkspace'),
@@ -179,12 +199,13 @@ export function useInstallContextMenu(
 
     const cluster: ContextMenuItem[] = []
     if (isLocalLikeInstall(inst) && sessionStore.isRunning(inst.id)) {
-      cluster.push({ id: 'stop', label: t('actions.stop'), style: 'danger' })
+      cluster.push({ id: 'stop', label: t('actions.stop'), icon: CircleStop, style: 'danger' })
     }
     if (isLocalLikeInstall(inst) && (isInstalled(inst) || isBuildInstall(inst))) {
       cluster.push({
         id: 'delete',
         label: t('chooser.menuDelete'),
+        icon: Trash2,
         disabled: stoppedActionGated,
         title: gatedTitle,
         style: 'danger'

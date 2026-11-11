@@ -253,7 +253,8 @@ export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[])
 }
 
 export function getCachedWorkspaceName(workspaceId: string): string | null {
-  return loadVault()?.workspaceNames?.[workspaceId] ?? null
+  const names = loadVault()?.workspaceNames
+  return names && Object.hasOwn(names, workspaceId) ? (names[workspaceId] ?? null) : null
 }
 
 export function activateWorkspace(workspaceId: string): boolean {

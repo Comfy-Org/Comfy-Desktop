@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ChartColumn, Gauge, Server } from 'lucide-vue-next'
+import { ChartColumn, Gauge, House, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -31,6 +31,7 @@ const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
 
 const mainRows = computed<SidebarRow[]>(() => [
+  { page: 'home', label: t('sidebar.home'), icon: House },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const toolRows = computed<SidebarRow[]>(() => [
@@ -68,7 +69,7 @@ function navigate(page: DashboardPage): void {
         class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
         :aria-label="t('sidebar.home')"
         :title="t('sidebar.home')"
-        @click="navigate('chooser')"
+        @click="navigate('home')"
       >
         <ComfyCLogo v-if="collapsed" :size="20" />
         <ComfyWordmark v-else class="h-[22px] w-auto" />

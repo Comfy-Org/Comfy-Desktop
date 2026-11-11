@@ -374,6 +374,9 @@ function installMockApi(initial?: {
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
     navigatePanel: vi.fn(),
+    listHomeWorkflows: vi.fn(async () => []),
+    openCatalogWorkflow: vi.fn(async () => true),
+    openCatalogWorkflowHub: vi.fn(async () => true),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     getFieldOptions: vi.fn(async () => []),
@@ -488,6 +491,11 @@ function mountPanel() {
     attachTo: document.body,
     global: { plugins: [createPinia()] }
   })
+}
+
+async function showBuilds(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
+  await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+  await flushPromises()
 }
 
 const telemetryListeners = new Set<EventListener>()
@@ -1169,6 +1177,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
+    await showBuilds(wrapper)
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
     await wrapper.find('[data-testid="chooser-new-install"]').trigger('click')
     await flushPromises()
@@ -1188,6 +1197,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
+    await showBuilds(wrapper)
 
     wrapper.getComponent({ name: 'ChooserView' }).vm.$emit('show-build-import', flow)
     await flushPromises()
@@ -1223,6 +1233,7 @@ describe('PanelApp', () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
+    await showBuilds(wrapper)
     const chooser = wrapper.findComponent({ name: 'ChooserView' })
 
     chooser.vm.$emit('open-details', SAMPLE_INSTALL)
@@ -1238,10 +1249,78 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
+  it('opens on Home, with the list of builds hidden until Builds is picked', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar-home"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('false')
+  })
+
+  it('opens Home from the sidebar and returns to the list of builds', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await showBuilds(wrapper)
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('false')
+    expect(wrapper.get('[data-testid="app-sidebar-home"]').attributes('aria-current')).toBe('page')
+
+    await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it('returns to the list of builds from All builds on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-all-builds"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it("leaves a build's details for Home when Home is picked in the sidebar", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await showBuilds(wrapper)
+    wrapper.findComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+  })
+
   it("leaves a build's details when the window switches screens", async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
     await flushPromises()
+    await showBuilds(wrapper)
     wrapper.findComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
     await flushPromises()
 
@@ -1268,6 +1347,7 @@ describe('PanelApp', () => {
     const scope = useDashboardScopeStore()
     await scope.initialize()
     await flushPromises()
+    await showBuilds(wrapper)
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.mocked(window.api.setSetting).mockRejectedValueOnce(new Error('disk unavailable'))
     scope.selectWorkspace('w2')
@@ -2638,6 +2718,7 @@ describe('PanelApp', () => {
       window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
       const wrapper = mountPanel()
       await flushPromises()
+      await showBuilds(wrapper)
       const events = captureTelemetry()
       await wrapper.find('[data-testid="chooser-new-install"]').trigger('click')
       await flushPromises()

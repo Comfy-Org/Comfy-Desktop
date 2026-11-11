@@ -126,7 +126,14 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage = 'home' | 'chooser' | 'benchmarks' | 'performance-test'
+
+export interface CatalogWorkflow {
+  id: string
+  title: string
+  description: string
+  thumbnailUrl: string | null
+}
 
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
@@ -1113,6 +1120,9 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  openCatalogWorkflow(id: string): Promise<boolean>
+  openCatalogWorkflowHub(): Promise<boolean>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
