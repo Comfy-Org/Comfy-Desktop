@@ -21,7 +21,8 @@ import './setup/setup.css'
 const shown = computed(() =>
   recentInstances.value
     .filter((i) => !(cardInBuilds.value && !flow.another && i.kind === 'local'))
-    .slice(0, 3)
+    // Three cards at most, the one installing first among them.
+    .slice(0, cardInBuilds.value ? 2 : 3)
 )
 /** From Milestone 2 on, each build is the install card made small:
  *  the machine drawn, its state, its name, what it runs on. Each one is
@@ -45,11 +46,11 @@ const detail = (i: (typeof shown.value)[number]): string =>
     <div
       class="grid gap-3.5"
       :style="{
-        gridTemplateColumns: `repeat(${shown.length + (cardInBuilds && shown.length < 2 ? 1 : 0)}, minmax(0, 1fr))`
+        gridTemplateColumns: `repeat(${shown.length + (cardInBuilds ? 1 : 0)}, minmax(0, 1fr))`
       }"
     >
       <!-- Home first: the first build, installing or ready, is the first card. -->
-      <HomeInstall v-if="cardInBuilds" bare :wide="shown.length >= 2" />
+      <HomeInstall v-if="cardInBuilds" bare :narrow="shown.length >= 2" />
       <template v-if="machine">
         <button
           v-for="i in shown"
@@ -68,8 +69,12 @@ const detail = (i: (typeof shown.value)[number]): string =>
             </template>
           </span>
           <span class="grid min-w-0 flex-1">
+            <!-- A build that isn't running is ready to: the Home launches,
+                 it doesn't manage, so no "Stopped" here. -->
             <span class="mss-machine-kicker"
-              ><StatusDot v-if="envStatus(i).live" status="running" />{{ envStatus(i).label }}</span
+              ><StatusDot v-if="envStatus(i).live" status="running" />{{
+                envStatus(i).label === 'Stopped' ? 'Ready' : envStatus(i).label
+              }}</span
             >
             <span class="mbr-name">{{ i.name }}</span>
             <span class="mbr-meta">{{ detail(i) }}</span>
