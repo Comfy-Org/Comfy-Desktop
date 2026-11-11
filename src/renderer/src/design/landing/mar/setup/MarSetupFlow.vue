@@ -11,6 +11,7 @@ import {
   Crown,
   Ellipsis,
   FolderArchive,
+  Gpu,
   HardDrive,
   LoaderCircle,
   Package,
@@ -348,7 +349,7 @@ const HARDWARE = computed(() =>
           meta: hardwareDetail(Math.round(DETECTED.downloadGb * 1000)),
           summary: 'Detected',
           recommended: true,
-          icon: Zap
+          icon: Gpu
         },
         {
           value: 'cpu' as const,
@@ -646,7 +647,10 @@ function rowState(i: number): string {
               <div class="mss-row">
                 <dt><Package :size="15" />Version</dt>
                 <dd>
-                  <span class="text-base-foreground">ComfyUI {{ DETECTED.version }} · Stable</span>
+                  <span class="text-base-foreground"
+                    >ComfyUI {{ channel === 'stable' ? version : 'latest' }} ·
+                    {{ channel === 'stable' ? 'Stable' : 'Latest on GitHub' }}</span
+                  >
                   <span class="mss-row-meta">{{ DETECTED.downloadGb }} GB download</span>
                 </dd>
               </div>
@@ -745,14 +749,21 @@ function rowState(i: number): string {
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <DialogTitle as="h3" class="text-title font-semibold">Change setup</DialogTitle>
           <DialogDescription
-            >Everything here is already set to what fits this computer.</DialogDescription
+            >Everything here is already set to what fits this computer. Back keeps it as it
+            was.</DialogDescription
           >
           <!-- A settings sheet: label on the left, control on the right,
                a hairline between rows. Picks are radio cards. -->
           <div v-if="method !== 'remote'" class="mss-form">
             <div v-if="!simple" class="mss-form-row">
               <span id="mss-from" class="mss-form-label">Get ComfyUI from</span>
-              <RadioGroupRoot v-model="method" class="mss-opts" aria-labelledby="mss-from">
+              <!-- Cards, not tabs: no sliding pill (tabSlide). -->
+              <RadioGroupRoot
+                v-model="method"
+                class="mss-opts"
+                aria-labelledby="mss-from"
+                data-no-pill
+              >
                 <RadioGroupItem
                   v-for="m in SOURCES"
                   :key="m.value"
@@ -814,7 +825,12 @@ function rowState(i: number): string {
             </div>
             <div class="mss-form-row">
               <span id="mss-hw" class="mss-form-label">Hardware</span>
-              <RadioGroupRoot v-model="hardware" class="mss-opts is-list" aria-labelledby="mss-hw">
+              <RadioGroupRoot
+                v-model="hardware"
+                class="mss-opts is-list"
+                aria-labelledby="mss-hw"
+                data-no-pill
+              >
                 <RadioGroupItem
                   v-for="h in HARDWARE"
                   :key="h.value"
@@ -837,15 +853,14 @@ function rowState(i: number): string {
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
+            <!-- The other ways in, one quiet line under the sheet: a remote
+                 server, and today's two from the File menu. -->
             <p v-if="!simple" class="mss-form-aside">
-              Already running ComfyUI on another machine?
+              Already have ComfyUI?
               <button type="button" class="mss-link" @click="method = 'remote'">
-                Connect to a server instead
+                Connect to a server
               </button>
-            </p>
-            <!-- Today's other two ways in, from the File menu. -->
-            <p v-if="!simple" class="mss-form-aside is-more">
-              Already have ComfyUI on {{ DETECTED.noun }}?
+              <span class="mss-form-aside-sep">·</span>
               <button
                 type="button"
                 class="mss-link"
@@ -853,7 +868,7 @@ function rowState(i: number): string {
               >
                 {{ say('fileMenu.addExistingInstall') }}
               </button>
-              or
+              <span class="mss-form-aside-sep">·</span>
               <button
                 type="button"
                 class="mss-link"
@@ -886,7 +901,10 @@ function rowState(i: number): string {
           </div>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button variant="ghost" size="lg" @click="discardChanges">Discard changes</Button>
+          <!-- Back is the way out: it leaves things as they were. -->
+          <Button variant="ghost" size="lg" @click="discardChanges"
+            ><ArrowLeft :size="16" />Back</Button
+          >
           <span class="mr-auto"></span>
           <Button
             v-if="method === 'remote'"

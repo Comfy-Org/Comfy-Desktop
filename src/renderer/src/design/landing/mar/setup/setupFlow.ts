@@ -903,8 +903,11 @@ export function closeSetup(): void {
   if (flow.background && (flow.running || flow.step === 'error')) flow.open = false
   else if (flow.running) flow.confirmCancel = true
   // Before the first install there is no Home yet: back to the first screen.
-  else if (flow.takeover) flow.step = 'first'
-  else flow.open = false
+  // One-click install: Set up is the first screen, so a click outside or
+  // Escape leaves it where it is.
+  else if (flow.takeover) {
+    if (!homeOneClick.value) flow.step = 'first'
+  } else flow.open = false
 }
 
 if (linkFirst) {
