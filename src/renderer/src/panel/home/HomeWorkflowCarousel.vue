@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ImageOff, Workflow } from 'lucide-vue-next'
+import { ImageOff } from 'lucide-vue-next'
 import type { CatalogWorkflow } from '../../types/ipc'
 
 interface ArcSlot {
@@ -12,6 +12,8 @@ interface ArcSlot {
 }
 
 const ARC_REACH = 2
+const DRAG_PIXELS_PER_CARD = 150
+const DRAG_START_PIXELS = 6
 const ARC_SLOTS: Record<number, ArcSlot> = {
   0: { transform: 'translateX(0) rotateY(0deg) scale(1)', opacity: 1, dim: 0, layer: 3 },
   1: {
@@ -81,30 +83,71 @@ function markThumbnailBroken(workflow: CatalogWorkflow): void {
   brokenThumbnails.value = new Set(brokenThumbnails.value).add(workflow.id)
 }
 
-function activate(card: { workflow: CatalogWorkflow; index: number; offset: number }): void {
-  if (card.offset === 0) emit('open', card.workflow)
-  else frontIndex.value = card.index
+function indexAt(position: number): number {
+  const count = workflows.length
+  if (wraps.value) return ((position % count) + count) % count
+  return Math.min(Math.max(position, 0), count - 1)
 }
 
 function step(direction: 1 | -1): void {
-  const count = workflows.length
-  const next = frontIndex.value + direction
-  if (wraps.value) frontIndex.value = ((next % count) + count) % count
-  else if (next >= 0 && next < count) frontIndex.value = next
+  frontIndex.value = indexAt(frontIndex.value + direction)
+}
+
+const dragging = ref(false)
+let dragStartX = 0
+let dragStartIndex = 0
+let clickBelongsToDrag = false
+
+function onDragMove(event: PointerEvent): void {
+  const distance = event.clientX - dragStartX
+  if (!dragging.value && Math.abs(distance) < DRAG_START_PIXELS) return
+  dragging.value = true
+  frontIndex.value = indexAt(dragStartIndex - Math.round(distance / DRAG_PIXELS_PER_CARD))
+}
+
+function stopDrag(): void {
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', stopDrag)
+  window.removeEventListener('pointercancel', stopDrag)
+  if (!dragging.value) return
+  dragging.value = false
+  clickBelongsToDrag = true
+  setTimeout(() => {
+    clickBelongsToDrag = false
+  }, 0)
+}
+
+function startDrag(event: PointerEvent): void {
+  if (event.button !== 0) return
+  dragStartX = event.clientX
+  dragStartIndex = frontIndex.value
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', stopDrag)
+  window.addEventListener('pointercancel', stopDrag)
+}
+
+onBeforeUnmount(stopDrag)
+
+function activate(card: { workflow: CatalogWorkflow; index: number; offset: number }): void {
+  if (clickBelongsToDrag) return
+  if (card.offset === 0) emit('open', card.workflow)
+  else frontIndex.value = card.index
 }
 </script>
 
 <template>
   <ul
-    class="relative m-0 h-75 w-full list-none p-0 [perspective:3000px]"
+    class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
+    :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
     data-testid="home-workflow-carousel"
+    @pointerdown="startDrag"
     @keydown.left.prevent="step(-1)"
     @keydown.right.prevent="step(1)"
   >
     <li v-for="card in arcCards" :key="card.workflow.id" class="contents">
       <button
         type="button"
-        class="absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-pointer overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+        class="absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
         :style="slotStyle(card.offset)"
         :aria-label="
           card.offset === 0
@@ -120,6 +163,7 @@ function step(direction: 1 | -1): void {
           v-if="showsThumbnail(card.workflow)"
           :src="card.workflow.thumbnailUrl ?? undefined"
           alt=""
+          draggable="false"
           class="absolute inset-0 size-full object-cover"
           @error="markThumbnailBroken(card.workflow)"
         />
@@ -137,12 +181,6 @@ function step(direction: 1 | -1): void {
           class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
           aria-hidden="true"
         />
-        <span
-          class="absolute top-[17px] left-4 flex items-center gap-1.5 text-xs/[17px] font-semibold tracking-[0.06em] text-white/78 uppercase"
-        >
-          <Workflow :size="12" aria-hidden="true" />
-          {{ t('home.workflowBadge') }}
-        </span>
         <span class="absolute inset-x-3.5 bottom-4 flex flex-col">
           <span class="truncate text-sm/[17px] font-medium text-white">
             {{ card.workflow.title }}

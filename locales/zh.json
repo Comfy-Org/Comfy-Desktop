@@ -35,7 +35,6 @@
     "buildAlwaysOn": "始终在线",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "示例工作流",
-    "workflowBadge": "工作流",
     "seeAllWorkflows": "查看全部工作流",
     "showWorkflow": "显示 {title}",
     "openWorkflow": "在 Comfy Hub 打开 {title}",

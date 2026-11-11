@@ -82,11 +82,17 @@ async function openHome() {
 function arc(wrapper: VueWrapper): string[] {
   return wrapper
     .findAll('[data-testid="home-workflow-card"]')
-    .map((card) => `${card.attributes('data-arc-offset')}:${card.text().replace('Workflow', '')}`)
+    .map((card) => `${card.attributes('data-arc-offset')}:${card.text()}`)
 }
 
 function cardAt(wrapper: VueWrapper, offset: number) {
   return wrapper.get(`[data-testid="home-workflow-card"][data-arc-offset="${offset}"]`)
+}
+
+function pressCarouselAt(wrapper: VueWrapper, clientX: number): void {
+  wrapper
+    .get('[data-testid="home-workflow-carousel"]')
+    .element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX, bubbles: true }))
 }
 
 describe('Home example workflows', () => {
@@ -134,6 +140,50 @@ describe('Home example workflows', () => {
 
     await carousel.trigger('keydown', { key: 'ArrowLeft' })
     expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+  })
+
+  it('turns the carousel when it is dragged, and does not open the card the drag ends on', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+
+    pressCarouselAt(wrapper, 600)
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX: 290 }))
+    await flushPromises()
+
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+
+    window.dispatchEvent(new PointerEvent('pointerup', { clientX: 290 }))
+    await cardAt(wrapper, 0).trigger('click')
+
+    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await cardAt(wrapper, 0).trigger('click')
+
+    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-2')
+  })
+
+  it('drags back the other way to earlier cards', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+
+    pressCarouselAt(wrapper, 600)
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX: 760 }))
+    await flushPromises()
+
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 6')
+    window.dispatchEvent(new PointerEvent('pointerup'))
+  })
+
+  it('still opens the front card after a press that does not move', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+
+    pressCarouselAt(wrapper, 600)
+    window.dispatchEvent(new PointerEvent('pointerup', { clientX: 601 }))
+    await cardAt(wrapper, 0).trigger('click')
+
+    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
   })
 
   it('shows a short list once, without repeating cards around the arc', async () => {
