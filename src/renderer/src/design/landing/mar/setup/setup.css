@@ -1442,20 +1442,12 @@
 .mss-form-row:last-child {
   box-shadow: none;
 }
-.mss-form-row.is-aside {
-  align-items: start;
-  padding-block: 16px 4px;
+.mss-form-row:has(+ .mss-form-aside) {
+  box-shadow: none;
 }
-.mss-form-row.is-aside .mss-form-label {
-  padding-top: 1px;
-}
-.mss-form-asides {
-  display: grid;
-  gap: 6px;
-}
-.mss-form-asides .mss-form-aside {
-  margin: 0;
-  line-height: 18px;
+.mss-form-aside-sep {
+  margin: 0 4px;
+  opacity: 0.5;
 }
 .mss-form-row:first-child {
   padding-top: 0;
@@ -1480,9 +1472,10 @@
   font-size: var(--text-ui);
 }
 .mss-form-aside {
-  margin: 20px 0 16px;
+  margin: 4px 0 20px;
   color: var(--color-subtle-foreground);
-  font-size: var(--text-ui);
+  font-size: 12.5px;
+  line-height: 18px;
 }
 .mss-form-aside .mss-link {
   color: var(--color-base-foreground);

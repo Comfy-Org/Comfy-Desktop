@@ -11,6 +11,7 @@ import {
   Crown,
   Ellipsis,
   FolderArchive,
+  Gpu,
   HardDrive,
   LoaderCircle,
   Package,
@@ -348,7 +349,7 @@ const HARDWARE = computed(() =>
           meta: hardwareDetail(Math.round(DETECTED.downloadGb * 1000)),
           summary: 'Detected',
           recommended: true,
-          icon: Zap
+          icon: Gpu
         },
         {
           value: 'cpu' as const,
@@ -756,7 +757,13 @@ function rowState(i: number): string {
           <div v-if="method !== 'remote'" class="mss-form">
             <div v-if="!simple" class="mss-form-row">
               <span id="mss-from" class="mss-form-label">Get ComfyUI from</span>
-              <RadioGroupRoot v-model="method" class="mss-opts" aria-labelledby="mss-from">
+              <!-- Cards, not tabs: no sliding pill (tabSlide). -->
+              <RadioGroupRoot
+                v-model="method"
+                class="mss-opts"
+                aria-labelledby="mss-from"
+                data-no-pill
+              >
                 <RadioGroupItem
                   v-for="m in SOURCES"
                   :key="m.value"
@@ -818,7 +825,12 @@ function rowState(i: number): string {
             </div>
             <div class="mss-form-row">
               <span id="mss-hw" class="mss-form-label">Hardware</span>
-              <RadioGroupRoot v-model="hardware" class="mss-opts is-list" aria-labelledby="mss-hw">
+              <RadioGroupRoot
+                v-model="hardware"
+                class="mss-opts is-list"
+                aria-labelledby="mss-hw"
+                data-no-pill
+              >
                 <RadioGroupItem
                   v-for="h in HARDWARE"
                   :key="h.value"
@@ -841,37 +853,30 @@ function rowState(i: number): string {
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
-            <!-- The other ways in, as one more row of the sheet: a remote
+            <!-- The other ways in, one quiet line under the sheet: a remote
                  server, and today's two from the File menu. -->
-            <div v-if="!simple" class="mss-form-row is-aside">
-              <span class="mss-form-label">Other ways</span>
-              <div class="mss-form-asides">
-                <p class="mss-form-aside">
-                  Already running ComfyUI on another machine?
-                  <button type="button" class="mss-link" @click="method = 'remote'">
-                    Connect to a server instead
-                  </button>
-                </p>
-                <p class="mss-form-aside">
-                  Already have ComfyUI on {{ DETECTED.noun }}?
-                  <button
-                    type="button"
-                    class="mss-link"
-                    @click="toast(`Opening ${say('fileMenu.addExistingInstall')}`)"
-                  >
-                    {{ say('fileMenu.addExistingInstall') }}
-                  </button>
-                  or
-                  <button
-                    type="button"
-                    class="mss-link"
-                    @click="toast(`Opening ${say('fileMenu.loadSnapshot')}`)"
-                  >
-                    {{ say('fileMenu.loadSnapshot') }}
-                  </button>
-                </p>
-              </div>
-            </div>
+            <p v-if="!simple" class="mss-form-aside">
+              Already have ComfyUI?
+              <button type="button" class="mss-link" @click="method = 'remote'">
+                Connect to a server
+              </button>
+              <span class="mss-form-aside-sep">·</span>
+              <button
+                type="button"
+                class="mss-link"
+                @click="toast(`Opening ${say('fileMenu.addExistingInstall')}`)"
+              >
+                {{ say('fileMenu.addExistingInstall') }}
+              </button>
+              <span class="mss-form-aside-sep">·</span>
+              <button
+                type="button"
+                class="mss-link"
+                @click="toast(`Opening ${say('fileMenu.loadSnapshot')}`)"
+              >
+                {{ say('fileMenu.loadSnapshot') }}
+              </button>
+            </p>
           </div>
 
           <!-- Remote Connection: today's third method, behind the link. -->
