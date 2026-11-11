@@ -8,7 +8,7 @@ export const COMFY_BG_LIGHT = '#f5f5f5'
 
 export const COMFY_BG = '#171717'
 
-export const TITLEBAR_BG = '#050506'
+export const TITLEBAR_BG = '#050505'
 
 export function readableSymbolColor(bg: string): string {
   const rgb = parseColor(bg)
