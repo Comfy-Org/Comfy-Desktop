@@ -1472,7 +1472,7 @@
   font-size: var(--text-ui);
 }
 .mss-form-aside {
-  margin: 4px 0 20px;
+  margin: 24px 0 20px;
   color: var(--color-subtle-foreground);
   font-size: 12.5px;
   line-height: 18px;
