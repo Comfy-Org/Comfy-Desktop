@@ -96,7 +96,6 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 
       <!-- The character, large, as the app's picture -->
       <div class="cine-field">
-        <h2 class="cine-title">Character reference</h2>
         <button
           v-if="hasReference"
           type="button"
@@ -311,7 +310,7 @@ const hasReference = computed(() => Boolean(reference) && get('character') !== '
 .cine {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
   padding: 20px 20px 12px;
 }
 .cine-block {
