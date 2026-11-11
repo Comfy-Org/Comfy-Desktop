@@ -38,17 +38,6 @@ watch(
   },
   { immediate: true }
 )
-// Milestone 2 has no Assets page: generated files are Apps' Generated
-// Files tab, as Desktop ships it. An address that names Assets lands there.
-watch(
-  page,
-  (p) => {
-    if (p !== 'assets' || !can.value.exploreApps || can.value.explore) return
-    exploreStart.value = 'files'
-    proto.page = 'apps'
-  },
-  { immediate: true }
-)
 </script>
 
 <template>

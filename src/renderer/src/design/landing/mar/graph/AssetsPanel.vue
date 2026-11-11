@@ -51,7 +51,6 @@ import { graphStyle } from './graphStyle'
 import { graphOpen } from './graphOpen'
 import { dropAssetLink, holdAssetLink, linkedAsset } from '../assets/assetLink'
 import { fullAssets } from './fullAssets'
-import { can } from '../../milestones'
 import { RAIL_DEFAULT, railWidth } from './panels/railWidth'
 import { factsFor } from '../assets/assetFacts'
 import { activeFilters, noFilter, passes, tagsIn } from '../assets/assetFilters'
@@ -555,13 +554,7 @@ function upload(files: FileList | null | undefined): void {
           <Upload :size="15" />
         </button>
       </Tooltip>
-      <!-- Milestone 2 has no Assets page to open (Generated Files lives in
-           Desktop's Apps), so the expand waits for Milestone 3. -->
-      <Tooltip
-        v-if="!prod && !tabs && (fullAssets.id === 'tab' || can.explore)"
-        :content="growLabel"
-        side="bottom"
-      >
+      <Tooltip v-if="!prod && !tabs" :content="growLabel" side="bottom">
         <button type="button" class="rp-icon" :aria-label="growLabel" @click="grow">
           <Maximize2 :size="15" />
         </button>
