@@ -162,7 +162,7 @@ if (params.get('e2e') === '1') {
 
 type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser'>
 
-const dashboardHomePage = ref<DashboardHomePage>('chooser')
+const dashboardHomePage = ref<DashboardHomePage>('home')
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value

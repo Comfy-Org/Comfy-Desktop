@@ -7,6 +7,7 @@ import {
   type WebContentsPage
 } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
+import { showBuildsPage } from './support/chooserHelpers'
 
 async function waitForChooserWebContents(
   app: ElectronApplication,
@@ -39,7 +40,16 @@ export interface AppContext {
   cleanup: () => Promise<void>
 }
 
-export async function launchApp(options?: SeedOptions): Promise<AppContext> {
+export interface LaunchOptions {
+  stayOnHome?: boolean
+}
+
+const HOME_VIEW = '[data-testid="home-view"]'
+
+export async function launchApp(
+  options?: SeedOptions,
+  launchOptions: LaunchOptions = {}
+): Promise<AppContext> {
   const { application, homeDir, cleanup: cleanupHarness } = await launchLauncherApp(options)
 
   await waitForChooserWebContents(application)
@@ -53,6 +63,10 @@ export async function launchApp(options?: SeedOptions): Promise<AppContext> {
   await panel.waitForSelector('.panel-shell', { timeout: 30_000 })
   await panel.waitForSelector('.chooser-view, .panel-chooser, .start-hero', { timeout: 15_000 })
   await titleBar.waitForSelector('.title-bar', { timeout: 15_000 })
+
+  if (!launchOptions.stayOnHome && (await panel.isVisible(HOME_VIEW))) {
+    await showBuildsPage(panel)
+  }
 
   return {
     app: application,

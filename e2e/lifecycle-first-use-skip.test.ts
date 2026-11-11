@@ -54,7 +54,7 @@ test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals t
   await popup.waitForVisible('li.item', { timeout: 10_000 })
   expect(await popup.clickByText('li.item', 'Skip Onboarding')).toBe(true)
 
-  await ctx.panel.waitForVisible('.chooser-view', { timeout: 10_000 })
+  await ctx.panel.waitForVisible('[data-testid="home-view"]', { timeout: 10_000 })
 
   await expect
     .poll(
