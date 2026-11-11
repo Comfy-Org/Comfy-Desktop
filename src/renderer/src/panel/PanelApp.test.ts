@@ -484,6 +484,51 @@ function dataTransferWith(file: File): DataTransfer {
   return dataTransfer
 }
 
+async function openWorkflowMenu(wrapper: ReturnType<typeof mountPanel>) {
+  const trigger = wrapper.get('.performance-test__workflow-trigger')
+  ;(trigger.element as HTMLButtonElement).focus()
+  await trigger.trigger('keydown', { key: 'ArrowDown' })
+  await flushPromises()
+}
+
+async function waitForBuildMenuFocusReturn() {
+  await vi.waitFor(() =>
+    expect(document.activeElement).toBe(
+      document.querySelector('.performance-test__instance-select button')
+    )
+  )
+}
+
+function workflowMenuItem(selector: string): HTMLElement | null {
+  return document.body.querySelector<HTMLElement>(`[role="menu"] ${selector}`)
+}
+
+async function chooseWorkflowItem(wrapper: ReturnType<typeof mountPanel>, selector: string) {
+  await openWorkflowMenu(wrapper)
+  const item = workflowMenuItem(selector)
+  expect(item).not.toBeNull()
+  item!.click()
+  await flushPromises()
+  await settleWorkflowMenu(wrapper)
+}
+
+async function settleWorkflowMenu(wrapper: ReturnType<typeof mountPanel>) {
+  const trigger = wrapper.get('.performance-test__workflow-trigger').element
+  await vi.waitFor(() =>
+    expect(
+      document.activeElement === trigger || document.querySelector('[role="dialog"]') !== null
+    ).toBe(true)
+  )
+}
+
+async function closeWorkflowMenu(wrapper: ReturnType<typeof mountPanel>) {
+  document.activeElement?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+  )
+  await flushPromises()
+  await settleWorkflowMenu(wrapper)
+}
+
 function mountPanel() {
   return mount(PanelApp, {
     attachTo: document.body,
@@ -803,31 +848,26 @@ describe('PanelApp', () => {
     expect(measuredRunsInput.element).toHaveProperty('value', '5')
     const logsToggle = wrapper.get('.performance-test__logs-section button')
     expect(logsToggle.text()).toBe('Logs')
-    expect(logsToggle.attributes('aria-expanded')).toBe('true')
-    const resultsToggle = wrapper.get('.performance-test__results-section button')
-    expect(resultsToggle.text()).toBe('Results')
-    expect(resultsToggle.attributes('aria-expanded')).toBe('true')
+    expect(logsToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('.performance-test__logs-summary').text()).toBe(
+      'Build logs will appear here.'
+    )
+    expect(wrapper.get('.performance-test__results-section h2').text()).toBe('Results')
     expect(
       wrapper.findAll('.performance-test__content > section').map((section) => section.classes()[0])
     ).toEqual(['performance-test__results-section', 'performance-test__logs-section'])
     expect(wrapper.find('.performance-test__system-section').exists()).toBe(false)
-    expect(wrapper.get('.performance-test__results').text()).toContain(
-      'Performance test results will appear here.'
-    )
-    await resultsToggle.trigger('click')
-    expect(resultsToggle.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.get('.performance-test__results').attributes('style')).toContain('display: none')
-    await resultsToggle.trigger('click')
-    expect(wrapper.get('.branded-page-header .performance-test__run').exists()).toBe(true)
-    expect(wrapper.find('.performance-test__drop-zone').text()).toContain(
-      'Import API workflowor drop the .json'
+    expect(wrapper.get('.performance-test__results').text()).toContain('No results yet')
+    expect(wrapper.get('.performance-test__setup .performance-test__run').exists()).toBe(true)
+    expect(wrapper.get('.performance-test__workflow-trigger').text()).toBe(
+      'WorkflowChoose a workflow'
     )
     expect(wrapper.find('.performance-test__run').text()).toBe('Run')
+    expect(wrapper.get('.performance-test__logs').attributes('style')).toContain('display: none')
+    await logsToggle.trigger('click')
+    expect(logsToggle.attributes('aria-expanded')).toBe('true')
     expect(wrapper.find('.performance-test__logs').text()).toBe('Build logs will appear here.')
     expect(wrapper.get('.performance-test__logs').classes()).toContain('scroll-visible')
-    await logsToggle.trigger('click')
-    expect(logsToggle.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.get('.performance-test__logs').attributes('style')).toContain('display: none')
     await logsToggle.trigger('click')
     const instanceSelect = wrapper.get('.performance-test__instance-select button')
     expect(instanceSelect.attributes()).toMatchObject({
@@ -835,7 +875,7 @@ describe('PanelApp', () => {
       'aria-label': 'Select a build',
       'aria-expanded': 'false'
     })
-    expect(instanceSelect.text()).toBe('Select a build')
+    expect(instanceSelect.text()).toBe('BuildSelect a build')
     await instanceSelect.trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(
@@ -855,7 +895,8 @@ describe('PanelApp', () => {
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
     )
     await flushPromises()
-    expect(instanceSelect.text()).toBe('Workspace Install')
+    await waitForBuildMenuFocusReturn()
+    expect(instanceSelect.text()).toBe('BuildWorkspace Install')
 
     const api = (
       window as unknown as {
@@ -875,14 +916,16 @@ describe('PanelApp', () => {
         }
       }
     ).api
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
     await flushPromises()
     expect(api.importPerformanceTestWorkflow).toHaveBeenCalledWith(undefined)
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+    expect(wrapper.get('.performance-test__workflow-trigger').attributes('title')).toBe(
       'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
     )
-    expect(wrapper.get('.performance-test__drop-zone').text()).not.toContain('Import API workflow')
+    expect(wrapper.get('.performance-test__workflow-trigger').text()).not.toContain(
+      'Choose a workflow'
+    )
 
     api.importPerformanceTestWorkflow.mockResolvedValueOnce({
       ok: true,
@@ -895,7 +938,7 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(api.getPathForFile).toHaveBeenCalledWith(droppedFile)
     expect(api.importPerformanceTestWorkflow).toHaveBeenLastCalledWith('C:\\incoming\\dropped.json')
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+    expect(wrapper.get('.performance-test__workflow-trigger').attributes('title')).toBe(
       'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
     )
 
@@ -984,7 +1027,9 @@ describe('PanelApp', () => {
       telemetryEvents.some((event) => event.actionName === 'comfy.desktop.performance_test.stopped')
     ).toBe(false)
     const results = wrapper.get('.performance-test__results').text()
-    expect(wrapper.get('.performance-test__result-workflow').text()).toBe('cat-workflow.json')
+    expect(wrapper.get('.performance-test__run-label').text()).toBe(
+      'cat-workflow.json on Workspace Install'
+    )
     expect(results).toContain('Fastest run')
     expect(results).toContain('1.250 s')
     expect(results).toContain('Slowest run')
@@ -993,33 +1038,20 @@ describe('PanelApp', () => {
     expect(results).not.toContain('prompt-7')
     expect(results).toContain('Average run')
     expect(results).toContain('2.000 s')
-    expect(results).toContain('Median run')
     expect(results).toContain('1.875 s')
-    expect(results).toContain('Measured runs')
-    expect(results).toContain('5')
-    expect(results).toContain('Failed runs')
-    expect(results).toContain('0')
+    expect(results).toContain('Median run · 5 measured · 0 failed')
     expect(wrapper.get('.performance-test__summary').findAll(':scope > *')).toHaveLength(2)
     expect(
       wrapper
         .get('.performance-test__timing-list')
         .findAll('dt')
         .map((label) => label.text())
-    ).toEqual([
-      'Fastest run',
-      'Average run',
-      'Median run',
-      'Slowest run',
-      'Measured runs',
-      'Failed runs'
-    ])
+    ).toEqual(['Fastest run', 'Average run', 'Slowest run'])
     expect(wrapper.get('.performance-test__aggregate-chart').attributes('aria-label')).toBe(
       'Run duration aggregates'
     )
-    expect(wrapper.get('.performance-test__aggregate-chart').text()).toContain('1.250 s – 2.750 s')
-    expect(wrapper.findAll('.performance-test__aggregate-track')).toHaveLength(1)
     const systemSection = wrapper.get('.performance-test__system-section')
-    expect(systemSection.get('h2').text()).toBe('System information')
+    expect(systemSection.get('h3').text()).toBe('System information')
     const system = systemSection.get('.performance-test__system').text()
     expect(system).toContain('NVIDIA GeForce RTX 4090')
     expect(system).not.toContain('Top-level fallback should not be displayed')
@@ -1105,7 +1137,7 @@ describe('PanelApp', () => {
         })
     )
     const runActionCalls = api.runAction.mock.calls.length
-    await wrapper.get('.performance-test__delete-workflow').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__delete-workflow')
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBe('')
     await wrapper.get('.performance-test__run').trigger('click')
     expect(api.runAction).toHaveBeenCalledTimes(runActionCalls)
@@ -1119,7 +1151,7 @@ describe('PanelApp', () => {
       'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
     )
     expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
-    expect(wrapper.get('.performance-test__drop-zone').text()).toContain('Import API workflow')
+    expect(wrapper.get('.performance-test__workflow-trigger').text()).toContain('Choose a workflow')
     expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
       'This workflow belongs to a completed test and was kept with its results.'
     )
@@ -1127,7 +1159,7 @@ describe('PanelApp', () => {
     useDashboardScopeStore().selectWorkspace(PERSONAL_WORKSPACE_ID)
     await flushPromises()
 
-    expect(instanceSelect.text()).toBe('Select a build')
+    expect(instanceSelect.text()).toBe('BuildSelect a build')
     await instanceSelect.trigger('keydown', { key: 'ArrowDown' })
     await flushPromises()
     expect(
@@ -1139,6 +1171,7 @@ describe('PanelApp', () => {
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
     )
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
   })
 
   it('opens the new-install takeover above the chooser body when show-new-install fires', async () => {
@@ -1392,11 +1425,12 @@ describe('PanelApp', () => {
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
     )
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
     return { wrapper, api }
   }
 
   async function chooseExampleWorkflow(wrapper: ReturnType<typeof mountPanel>): Promise<void> {
-    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__example-workflow')
     await flushPromises()
     ;(
       document.querySelector('[data-testid="performance-test-use-example"]') as HTMLButtonElement
@@ -1451,7 +1485,7 @@ describe('PanelApp', () => {
   it('prepares an example workflow and blocks the run until its models are downloaded', async () => {
     const { wrapper, api } = await mountWithInstance()
 
-    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__example-workflow')
     await flushPromises()
     expect(api.getPerformanceTestExampleWorkflows).toHaveBeenCalledWith('workspace-install')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Z-Image Int8')
@@ -1467,25 +1501,29 @@ describe('PanelApp', () => {
       'workspace-install',
       'image_z_image_int8'
     )
-    const workflow = wrapper.get('.performance-test__workflow-file')
-    expect(workflow.text()).toContain('Z-Image Int8: Text to Image')
-    expect(workflow.text()).toContain(downloading.message)
-    expect(workflow.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
-    expect(wrapper.get('.performance-test__delete-workflow').attributes('aria-label')).toBe(
+    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
+      'Z-Image Int8: Text to Image'
+    )
+    const status = wrapper.get('.performance-test__status')
+    expect(status.text()).toContain(downloading.message)
+    expect(status.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
+    await openWorkflowMenu(wrapper)
+    expect(workflowMenuItem('.performance-test__delete-workflow')?.textContent).toContain(
       'Cancel download'
     )
+    await closeWorkflowMenu(wrapper)
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
 
     await emitExampleDownload({ ...downloading, percent: 80 })
     expect(
-      wrapper
-        .get('.performance-test__workflow-file [role="progressbar"]')
-        .attributes('aria-valuenow')
+      wrapper.get('.performance-test__status [role="progressbar"]').attributes('aria-valuenow')
     ).toBe('80')
 
     await emitExampleDownload({ status: 'done', percent: 100, message: 'Template models ready' })
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(EXAMPLE_PATH)
+    expect(wrapper.get('.performance-test__workflow-trigger').attributes('title')).toBe(
+      EXAMPLE_PATH
+    )
     expect(wrapper.find('[role="progressbar"]').exists()).toBe(false)
   })
 
@@ -1516,7 +1554,7 @@ describe('PanelApp', () => {
       download: { status: 'done', percent: 100, message: 'Template models ready' }
     })
     await chooseExampleWorkflow(wrapper)
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
     await flushPromises()
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain('cat-workflow.json')
     const telemetryEvents = captureTelemetry()
@@ -1539,7 +1577,7 @@ describe('PanelApp', () => {
       'C:\\ComfyUI\\performance-tests\\20260907220000\\image_z_image_int8.json'
     )
 
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(downloading.message)
+    expect(wrapper.get('.performance-test__status').text()).toContain(downloading.message)
     expect(wrapper.get('.performance-test__run').attributes('disabled')).toBeDefined()
   })
 
@@ -1603,7 +1641,7 @@ describe('PanelApp', () => {
       }
     ])
     const importedPath = 'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
     await flushPromises()
     let resolvePrepare!: (result: unknown) => void
     api.preparePerformanceTestExampleWorkflow.mockImplementationOnce(
@@ -1621,13 +1659,16 @@ describe('PanelApp', () => {
       .find((option) => option.textContent?.includes('Other Install'))!
       .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
 
     resolvePrepare({ ok: true, filePath: EXAMPLE_PATH, download: downloading })
     await flushPromises()
 
     expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
     expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalledWith(importedPath)
-    expect(wrapper.get('.performance-test__workflow-file').text()).toContain(importedPath)
+    expect(wrapper.get('.performance-test__workflow-trigger').attributes('title')).toBe(
+      importedPath
+    )
   })
 
   it('removes an example prepared for another instance once a launching test releases it', async () => {
@@ -1666,6 +1707,7 @@ describe('PanelApp', () => {
       .find((option) => option.textContent?.includes('Other Install'))!
       .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
     expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
 
     resolveLaunch({ ok: false, message: 'Launch failed' })
@@ -1704,6 +1746,7 @@ describe('PanelApp', () => {
       .find((option) => option.textContent?.includes('Other Install'))!
       .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
 
     expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
     expect(wrapper.get('.performance-test__workflow-file').exists()).toBe(true)
@@ -1712,7 +1755,7 @@ describe('PanelApp', () => {
 
   it('explains that example workflows need an installed instance', async () => {
     const { wrapper, api } = await mountWithInstance('installing')
-    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__example-workflow')
     await flushPromises()
 
     expect(api.getPerformanceTestExampleWorkflows).not.toHaveBeenCalled()
@@ -1741,7 +1784,7 @@ describe('PanelApp', () => {
     const { wrapper, api } = await mountWithInstance()
     await chooseExampleWorkflow(wrapper)
 
-    await wrapper.get('.performance-test__delete-workflow').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__delete-workflow')
     await flushPromises()
 
     expect(api.deletePerformanceTestWorkflow).toHaveBeenCalledWith(EXAMPLE_PATH)
@@ -1781,7 +1824,7 @@ describe('PanelApp', () => {
       diskSpace: { free: 1_000_000_000, total: 1_000_000_000_000 }
     })
 
-    await wrapper.get('.performance-test__example-workflow').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__example-workflow')
     await flushPromises()
 
     expect(document.querySelector('.performance-test__example-disk-error')).not.toBeNull()
@@ -1797,7 +1840,7 @@ describe('PanelApp', () => {
 
     const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
     try {
-      await wrapper.get('.performance-test__example-workflow').trigger('click')
+      await chooseWorkflowItem(wrapper, '.performance-test__example-workflow')
       await flushPromises()
       expect(api.getPerformanceTestExampleWorkflows).not.toHaveBeenCalled()
       expect(wrapper.get('.performance-test__workflow-error').text()).toBe(offlineMessage)
@@ -1866,7 +1909,7 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
     await wrapper
       .get('.performance-test__instance-select button')
       .trigger('keydown', { key: 'ArrowDown' })
@@ -1875,6 +1918,7 @@ describe('PanelApp', () => {
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
     )
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
 
@@ -1885,7 +1929,7 @@ describe('PanelApp', () => {
           resolveImport = resolve
         })
     )
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
     expect(runButton.attributes('disabled')).toBe('')
     await runButton.trigger('click')
     expect(api.runAction).not.toHaveBeenCalled()
@@ -1900,15 +1944,15 @@ describe('PanelApp', () => {
     await flushPromises()
 
     const workflowImportCalls = api.importPerformanceTestWorkflow.mock.calls.length
-    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    expect(wrapper.get('.performance-test__workflow-trigger').attributes('disabled')).toBe('')
+    await openWorkflowMenu(wrapper)
+    expect(workflowMenuItem('.performance-test__drop-content')).toBeNull()
     await wrapper.get('.performance-test__drop-zone').trigger('drop', {
       dataTransfer: dataTransferWith(
         new File(['{}'], 'replacement.json', { type: 'application/json' })
       )
     })
     expect(api.importPerformanceTestWorkflow).toHaveBeenCalledTimes(workflowImportCalls)
-    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)
     expect(api.deletePerformanceTestWorkflow).not.toHaveBeenCalled()
     expect(api.stopComfyUI).not.toHaveBeenCalledWith('workspace-install')
     expect(api.runAction).toHaveBeenCalledWith('workspace-install', 'launch', {
@@ -1920,8 +1964,7 @@ describe('PanelApp', () => {
     resolveLaunch({ ok: true })
     await flushPromises()
     expect(api.runPerformanceTestWorkflow).toHaveBeenCalled()
-    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
-    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__workflow-trigger').attributes('disabled')).toBe('')
 
     resolveSubmission({
       ok: true,
@@ -1933,7 +1976,9 @@ describe('PanelApp', () => {
       resultPath: 'C:\\ComfyUI\\performance-tests\\20260907225600\\jobs.json'
     })
     await flushPromises()
-    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(true)
+    await openWorkflowMenu(wrapper)
+    expect(workflowMenuItem('.performance-test__delete-workflow')).not.toBeNull()
+    await closeWorkflowMenu(wrapper)
   })
 
   it('restarts an already-running performance test session before running', async () => {
@@ -1972,7 +2017,7 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
     await wrapper
       .get('.performance-test__instance-select button')
       .trigger('keydown', { key: 'ArrowDown' })
@@ -1981,6 +2026,7 @@ describe('PanelApp', () => {
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
     )
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
 
     const runButton = wrapper.get('.performance-test__run')
     expect(runButton.attributes('disabled')).toBeUndefined()
@@ -2035,7 +2081,7 @@ describe('PanelApp', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    await wrapper.get('.performance-test__drop-content').trigger('click')
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
     await wrapper
       .get('.performance-test__instance-select button')
       .trigger('keydown', { key: 'ArrowDown' })
@@ -2044,11 +2090,12 @@ describe('PanelApp', () => {
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
     )
     await flushPromises()
+    await waitForBuildMenuFocusReturn()
     const telemetryEvents = captureTelemetry()
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
     expect(wrapper.find('.performance-test__run').exists()).toBe(false)
-    expect(wrapper.get('.branded-page-header .performance-test__stop').text()).toBe('Stop')
+    expect(wrapper.get('.performance-test__setup .performance-test__stop').text()).toBe('Stop')
 
     mockState.performanceTestProgressCallbacks.forEach((callback) =>
       callback({ sessionId: 'different-session', completedRuns: 5, totalRuns: 6 })
@@ -2061,12 +2108,12 @@ describe('PanelApp', () => {
       })
     )
     await flushPromises()
-    expect(wrapper.get('.performance-test__progress').text()).toContain('Progress')
-    expect(wrapper.get('.performance-test__progress').text()).toContain('2 of 6 runs completed')
-    const progressBar = wrapper.get('[role="progressbar"]')
+    expect(wrapper.get('.performance-test__progress').text()).toContain('Run 3 of 6')
+    expect(wrapper.get('.performance-test__progress').text()).toContain('measured run 2 of 5')
+    const progressBar = wrapper.get('.performance-test__progress-track')
     expect(progressBar.attributes('aria-valuenow')).toBe('2')
     expect(progressBar.attributes('aria-valuemax')).toBe('6')
-    expect(progressBar.get('i').attributes('style')).toContain('width: 33%')
+    expect(progressBar.findAll('i')).toHaveLength(6)
 
     const exitedCallback = api.onComfyExited.mock.calls[0]![0] as (data: {
       installationId: string
@@ -2123,15 +2170,18 @@ describe('PanelApp', () => {
       resultPath: 'C:\\ComfyUI\\performance-tests\\late-result\\jobs.json'
     })
     await flushPromises()
-    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBe('')
-    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__workflow-trigger').attributes('disabled')).toBe('')
 
     resolveStop()
     await flushPromises()
     expect(wrapper.find('.performance-test__stop').exists()).toBe(false)
-    expect(wrapper.find('.branded-page-header .performance-test__run').exists()).toBe(true)
-    expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(true)
+    expect(wrapper.find('.performance-test__setup .performance-test__run').exists()).toBe(true)
+    expect(
+      wrapper.get('.performance-test__workflow-trigger').attributes('disabled')
+    ).toBeUndefined()
+    await openWorkflowMenu(wrapper)
+    expect(workflowMenuItem('.performance-test__delete-workflow')).not.toBeNull()
+    await closeWorkflowMenu(wrapper)
     expect(
       telemetryEvents.some(
         (event) => event.actionName === 'comfy.desktop.performance_test.completed'
