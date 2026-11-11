@@ -216,8 +216,9 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
     return {
       ...base,
       state: 'running',
-      status: 'Running now · every model here',
-      cost: 'Free',
+      status: 'Running · every model here',
+      // A local build costs nothing: no price beside it, only Cloud's.
+      cost: '',
       action: `Open in ${inst.name}`,
       note: `Opens as a new tab in ${inst.name}. Runs free on this Mac.`
     }
@@ -225,8 +226,8 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
     return {
       ...base,
       state: 'ready',
-      status: 'Every model here',
-      cost: 'Free',
+      status: 'Stopped · every model here',
+      cost: '',
       action: `Launch ${inst.name}`,
       note: `Starts ComfyUI (about 20 s), then opens this graph. Runs free on this Mac.`
     }

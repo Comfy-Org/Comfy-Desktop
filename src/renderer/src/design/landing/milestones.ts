@@ -20,10 +20,10 @@ import { appsProto } from './appFlow'
  *                   (use cases); an app opens in a tab, as its user. Shown
  *                   as "5" in the menu; the later ones are shown one up.
  *                   (The value stays 4.5 so every `m >= n` check holds.)
- * 4.7  Workflows  - Milestone 3: Explore and the Workflows library join
- *                   Apps and Assets in the sidebar (no Projects yet).
- *                   Shown as "6".
- *   5  Learn      - Learn.
+ * 4.7  Explore    - Milestone 3: Explore, the Hub's apps and workflows
+ *                   in one place (Apps moves inside it). Shown as "6".
+ *   5  Learn      - Learn, and the person's own work: Recently used on
+ *                   Home and the Workflows library.
  *   6  Builder    - the Build lens (deploy builds as APIs).
  *   7  One window - the long-term vision: builds open in the same window,
  *                   switched from the breadcrumb, still running.
@@ -45,8 +45,8 @@ export const MILESTONES = [
   { value: '3', label: '3 · Breadcrumb' },
   { value: '4', label: '4 · Home' },
   { value: '4.5', label: '5 · Explore apps (Milestone 2)' },
-  { value: '4.7', label: '6 · Workflows & Explore (Milestone 3)' },
-  { value: '5', label: '7 · Learn' },
+  { value: '4.7', label: '6 · Explore (Milestone 3)' },
+  { value: '5', label: '7 · Learn & Recents' },
   { value: '6', label: '8 · Builder' },
   { value: '7', label: '9 · One window' },
   { value: '8', label: '10 · Projects (future)' },
@@ -75,9 +75,9 @@ export const can = computed(() => {
     home: m >= 4,
     /** Explore, leading with apps; apps open in their own tabs. */
     exploreApps: m >= 4.5,
-    /** Milestone 3: the Workflows library in the sidebar. */
-    workflows: m >= 4.7,
-    /** Explore arrives with Workflows (Milestone 3); Learn after. */
+    /** The person's own workflows: the library and Recently used. */
+    workflows: m >= 5,
+    /** Explore (Milestone 3), with the Hub's apps and workflows; Learn after. */
     explore: m >= 4.7,
     learn: m >= 5,
     /** Search (⌘K) comes with Learn, not with Explore. */

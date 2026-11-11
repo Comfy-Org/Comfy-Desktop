@@ -59,12 +59,12 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
           }
         ]
       : []),
-    // Workflows (Milestone 3) and the library of added apps (Milestone 2),
-    // before Projects brings the Libraries group.
+    // Workflows (with Learn) and the apps (Milestone 2 only: from Explore
+    // on they live inside it), before Projects brings the Libraries group.
     ...(can.value.workflows && !can.value.projects
       ? [{ page: 'workflows' as Page, label: 'Workflows', icon: Workflow }]
       : []),
-    ...(can.value.exploreApps && !can.value.projects && proto.signedIn
+    ...(can.value.exploreApps && !can.value.explore && proto.signedIn
       ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
       : []),
     ...(can.value.learn

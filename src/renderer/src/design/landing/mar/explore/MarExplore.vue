@@ -21,11 +21,10 @@ import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
 import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import Select from '../../ui/Select.vue'
-import TemplateCard from '../../parts/TemplateCard.vue'
 import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
 import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
-import { goIn, toast } from '../../useProto'
+import { goIn, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
 import { ComfyModel, ComfyWorkflow } from '../icons/comfyIcons'
 import MarPage from '../pages/MarPage.vue'
@@ -72,8 +71,24 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
       },
       // Icons on every tab, like Apps' own row.
       { value: 'templates', label: 'Workflows', count: TEMPLATES.length, icon: ComfyWorkflow },
-      { value: 'models', label: 'Models', count: ROUTER_MODELS.length, icon: ComfyModel },
-      { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length, icon: GraduationCap }
+      // Models and Tutorials come with Learn (Milestone 3 is the Hub's apps
+      // and workflows only).
+      ...(can.value.learn
+        ? [
+            {
+              value: 'models' as const,
+              label: 'Models',
+              count: ROUTER_MODELS.length,
+              icon: ComfyModel
+            },
+            {
+              value: 'tutorials' as const,
+              label: 'Tutorials',
+              count: TUTORIALS.length,
+              icon: GraduationCap
+            }
+          ]
+        : [])
     ]
 // Examples narrow by the app that made them.
 const appName = (id: string): string => libApp(id)?.name ?? ''
@@ -115,6 +130,12 @@ const templates = computed(() =>
     has(t.title)
   )
 )
+// A Hub workflow reads like an app: its name, then one line on what it
+// does (the part after the colon, else its kind).
+const KIND: Record<string, string> = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' }
+const wfName = (t: { title: string }): string => t.title.split(':')[0]!.trim()
+const wfLine = (t: { title: string; category: string }): string =>
+  t.title.split(':')[1]?.trim() || `${KIND[t.category] ?? 'Image'} workflow`
 const models = computed(() =>
   ROUTER_MODELS.filter(
     (m) => type.value === 'all' || m.kind.toLowerCase().includes(type.value)
@@ -399,9 +420,28 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     <!-- My apps: the ones you made, live, draft or with changes. -->
     <MarAppsPage v-else-if="tab === 'mine'" embedded toolbar-to="#mar-ex-lib-tools" />
 
-    <!-- Templates -->
+    <!-- Workflows (the Hub's): the same card as an app. -->
     <div v-else-if="tab === 'templates'" class="mar-ex-grid is-four">
-      <TemplateCard v-for="t in templates" :key="t.id" :t />
+      <div
+        v-for="t in templates"
+        :key="t.id"
+        role="button"
+        tabindex="0"
+        class="mar-ex-card group"
+        :aria-label="`Open ${t.title}`"
+        @click="openDetail('template', t.id)"
+        @keydown.enter="openDetail('template', t.id)"
+      >
+        <span class="mar-ex-media"><img :src="thumb(t.id)" alt="" loading="lazy" /></span>
+        <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
+          <span class="block min-w-0 flex-1">
+            <span class="block truncate text-ui font-medium text-base-foreground">{{
+              wfName(t)
+            }}</span>
+            <span class="block truncate text-ui text-subtle-foreground">{{ wfLine(t) }}</span>
+          </span>
+        </span>
+      </div>
     </div>
 
     <!-- Models: what each costs, from whom. -->

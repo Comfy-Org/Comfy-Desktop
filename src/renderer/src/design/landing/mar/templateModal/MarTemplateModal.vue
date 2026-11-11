@@ -101,8 +101,11 @@ const shown = computed(() => selected.value ?? targets.value[0])
 /** Why the default is the default, in one short line: the first sentence
  *  of the reason. Only while the default is the pick. */
 const fit = computed(() =>
-  reason.value && shown.value?.inst.id === best.value?.inst.id
-    ? `Best fit. ${reason.value.split(/(?<=\.) /)[0]}`
+  reason.value &&
+  shown.value?.inst.id === best.value?.inst.id &&
+  shown.value?.state !== 'running' &&
+  shown.value?.state !== 'ready'
+    ? reason.value.split(/(?<=\.) /)[0]!
     : ''
 )
 /** The one line over the action: what happens, or what's in the way. */
@@ -110,7 +113,8 @@ const line = computed(() => {
   const s = shown.value
   if (!s) return ''
   if (s.state === 'blocked') return `${s.status}. Pick another build to open it.`
-  return s.note
+  // The plain cases need no line: the button says it.
+  return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
 const buildMenu = ref(false)
 const buildBox = ref<HTMLElement>()
@@ -214,8 +218,10 @@ function focusPicker(e: Event): void {
   void nextTick(() => {
     const el = content.value?.$el as HTMLElement | undefined
     ;(el?.querySelector<HTMLElement>('[data-tpl-primary]:not(:disabled)') ?? el)?.focus({
-      preventScroll: true
-    })
+      preventScroll: true,
+      // Enter runs it; no ring until the keyboard moves.
+      focusVisible: false
+    } as FocusOptions)
   })
 }
 /** Escape closes an open menu first, then the modal. */
@@ -278,7 +284,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
           <div v-else-if="graph" class="mar-tpl-canvas"><TplGraph :spec="graph" /></div>
         </section>
 
-        <aside class="mad-side" aria-label="Template details">
+        <aside class="mad-side" aria-label="Workflow details">
           <div class="mad-body">
             <header class="mad-head">
               <div class="mad-head-text">
@@ -287,7 +293,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                   <span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>ComfyUI<i />{{
                     info.useCase
                   }}
-                  template
+                  workflow
                 </DialogDescription>
               </div>
               <span
@@ -298,6 +304,13 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                 ><Star :size="14" fill="currentColor"
               /></span>
             </header>
+
+            <!-- What it does, short: the first paragraph. -->
+            <section class="mad-sec">
+              <div class="mar-tpl-about">
+                <p>{{ aboutFor(template)[0] }}</p>
+              </div>
+            </section>
 
             <!-- Open in: the build it opens on, why in one line, and the
                  others behind one quiet picker. What blocks it is one line
@@ -358,12 +371,14 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
               </div>
             </section>
 
-            <section class="mad-sec">
-              <h3 class="mad-label">
-                What it needs<span class="mar-tpl-total">{{
-                  total ? fmtGb(total) : 'No downloads'
-                }}</span>
-              </h3>
+            <!-- What it needs: one line; the files fold under it. -->
+            <details class="mad-sec mar-tpl-needs-box">
+              <summary class="mad-label">
+                What it needs<span class="mar-tpl-total"
+                  >{{ needs.length }} {{ needs.length === 1 ? 'model' : 'models' }} ·
+                  {{ total ? fmtGb(total) : 'No downloads' }}</span
+                ><ChevronDown :size="13" class="mar-tpl-fold" />
+              </summary>
               <ul class="mar-tpl-needs">
                 <li v-for="m in needs" :key="m.name">
                   <ComfyModel :size="14" />
@@ -418,19 +433,11 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                   </span>
                 </li>
               </ul>
-            </section>
+            </details>
 
             <section class="mad-sec">
-              <h3 class="mad-label">Template details</h3>
+              <h3 class="mad-label">Details</h3>
               <dl class="mad-rows">
-                <div>
-                  <dt>Type</dt>
-                  <dd>Template · Node graph</dd>
-                </div>
-                <div>
-                  <dt>Use case</dt>
-                  <dd>{{ info.useCase }}</dd>
-                </div>
                 <div>
                   <dt>Author</dt>
                   <dd>ComfyUI</dd>
@@ -440,34 +447,23 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                   <dd>{{ info.uses }}</dd>
                 </div>
                 <div>
-                  <dt>Added</dt>
-                  <dd>{{ info.added }}</dd>
-                </div>
-                <div>
                   <dt>License</dt>
                   <dd :title="info.license">{{ info.license }}</dd>
                 </div>
+                <div>
+                  <dt>Tutorial</dt>
+                  <dd>
+                    <a
+                      class="mar-tpl-tutorial"
+                      href="https://docs.comfy.org/tutorials"
+                      target="_blank"
+                      rel="noreferrer"
+                      @click.prevent="toast('Opens the tutorial on docs.comfy.org')"
+                      ><BookOpen :size="13" />docs.comfy.org</a
+                    >
+                  </dd>
+                </div>
               </dl>
-            </section>
-
-            <section class="mad-sec">
-              <h3 class="mad-label">What it makes</h3>
-              <div class="mar-tpl-about">
-                <p v-for="(para, i) in aboutFor(template)" :key="i">{{ para }}</p>
-              </div>
-              <div class="mad-tags">
-                <span v-for="t in info.tags" :key="t" class="mad-tag" :title="t"
-                  ><span class="mad-tag-t">{{ t }}</span></span
-                >
-                <a
-                  class="mar-tpl-tutorial"
-                  href="https://docs.comfy.org/tutorials"
-                  target="_blank"
-                  rel="noreferrer"
-                  @click.prevent="toast('Opens the tutorial on docs.comfy.org')"
-                  ><BookOpen :size="13" />Tutorial</a
-                >
-              </div>
             </section>
           </div>
 
