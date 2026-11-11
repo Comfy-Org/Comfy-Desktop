@@ -1134,14 +1134,16 @@ onActivated(() => {
         </div>
         <div
           v-else-if="loadError"
-          class="benchmarks__state benchmarks__state--error flex flex-col items-center gap-1.5 rounded-[14px] bg-card px-6 py-10 text-center"
+          class="benchmarks__state benchmarks__state--error flex flex-col items-center gap-1.5 px-6 py-16 text-center"
         >
-          <strong class="text-[14px] font-semibold">{{ t('benchmarks.loadError') }}</strong>
-          <span class="text-[13px] text-muted-foreground">{{ t('benchmarks.loadErrorHint') }}</span>
+          <h2 class="m-0 text-heading font-semibold text-foreground">
+            {{ t('benchmarks.loadError') }}
+          </h2>
+          <p class="m-0 text-ui text-muted-foreground">{{ t('benchmarks.loadErrorHint') }}</p>
           <Button
             variant="secondary"
             size="md"
-            class="benchmarks__retry mt-2 text-[13px]"
+            class="benchmarks__retry mt-6 px-4 text-[13px]/5"
             type="button"
             @click="refreshBenchmarks"
           >
@@ -1151,14 +1153,16 @@ onActivated(() => {
         </div>
         <div
           v-else-if="benchmarks.length === 0"
-          class="benchmarks__state benchmarks__state--empty flex flex-col items-center gap-1.5 rounded-[14px] bg-card px-6 py-10 text-center"
+          class="benchmarks__state benchmarks__state--empty flex flex-col items-center gap-1.5 px-6 py-16 text-center"
         >
-          <strong class="text-[14px] font-semibold">{{ t('benchmarks.emptyTitle') }}</strong>
-          <span class="text-[13px] text-muted-foreground">{{ t('benchmarks.emptyHint') }}</span>
+          <h2 class="m-0 text-heading font-semibold text-foreground">
+            {{ t('benchmarks.emptyTitle') }}
+          </h2>
+          <p class="m-0 text-ui text-muted-foreground">{{ t('benchmarks.emptyHint') }}</p>
           <Button
             variant="inverted"
             size="md"
-            class="benchmarks__open-performance-test mt-2 text-[13px]"
+            class="benchmarks__open-performance-test mt-6 px-4 text-[13px]/5"
             type="button"
             @click="openPerformanceTest"
           >
@@ -1167,10 +1171,12 @@ onActivated(() => {
         </div>
         <div
           v-else-if="groups.length === 0"
-          class="benchmarks__no-results flex flex-col items-center gap-1.5 rounded-[14px] bg-card px-6 py-10 text-center"
+          class="benchmarks__no-results flex flex-col items-center gap-1.5 px-6 py-16 text-center"
         >
-          <strong class="text-[14px] font-semibold">{{ t('benchmarks.noMatches') }}</strong>
-          <span class="text-[13px] text-muted-foreground">{{ t('benchmarks.noMatchesHint') }}</span>
+          <h2 class="m-0 text-heading font-semibold text-foreground">
+            {{ t('benchmarks.noMatches') }}
+          </h2>
+          <p class="m-0 text-ui text-muted-foreground">{{ t('benchmarks.noMatchesHint') }}</p>
         </div>
         <div v-else class="benchmarks__groups flex flex-col gap-2">
           <section
