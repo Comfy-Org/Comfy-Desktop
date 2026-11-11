@@ -4,7 +4,6 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import AppSidebar from './AppSidebar.vue'
 import type { DashboardPage } from '../types/ipc'
-import type { SidebarPage } from './dashboardSection'
 
 const navigatePanel = vi.fn()
 
@@ -24,7 +23,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-async function mountSidebar(activePage: SidebarPage = 'chooser') {
+async function mountSidebar(activePage: DashboardPage = 'chooser') {
   const wrapper = mount(AppSidebar, {
     props: { activePage }
   })
@@ -33,12 +32,12 @@ async function mountSidebar(activePage: SidebarPage = 'chooser') {
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Apps, Builds, Performance Tests, then Benchmarks', async () => {
+  it('lists Home, Assets, Builds, Performance Tests, then Benchmarks', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
-      'Apps',
+      'Assets',
       'Builds',
       'Performance Tests',
       'Benchmarks'
@@ -54,6 +53,8 @@ describe('AppSidebar', () => {
   })
 
   it.each<[string, DashboardPage]>([
+    ['app-sidebar-home', 'home'],
+    ['app-sidebar-assets', 'assets'],
     ['app-sidebar-chooser', 'chooser'],
     ['app-sidebar-benchmarks', 'benchmarks'],
     ['app-sidebar-performance-test', 'performance-test']
@@ -65,30 +66,12 @@ describe('AppSidebar', () => {
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith(page)
   })
 
-  it.each<SidebarPage>(['home', 'apps'])(
-    'opens the %s section inside the dashboard',
-    async (section) => {
-      const wrapper = await mountSidebar('benchmarks')
-
-      await wrapper.get(`[data-testid="app-sidebar-${section}"]`).trigger('click')
-
-      expect(wrapper.emitted('navigate')).toEqual([[section]])
-      expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('chooser')
-    }
-  )
-
-  it('marks a dashboard section as the current page', async () => {
-    const wrapper = await mountSidebar('apps')
-
-    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
-  })
-
   it('returns Home from the Comfy mark', async () => {
     const wrapper = await mountSidebar('benchmarks')
 
     await wrapper.get('button[title="Home"]').trigger('click')
 
-    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('chooser')
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('home')
   })
 
   it('collapses to icons with tooltips and stays collapsed when reopened', async () => {

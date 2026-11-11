@@ -19,8 +19,7 @@
     "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
-    "apps": "Apps",
-    "comingSoon": "Coming soon",
+    "assets": "Assets",
     "tools": "Tools",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
@@ -60,15 +59,23 @@
     "filter": "Filter",
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
-    "signIn": "Log in to Comfy Cloud",
-    "browseApps": "Browse apps"
+    "signIn": "Log in to Comfy Cloud"
   },
-  "apps": {
-    "tabsLabel": "Apps view",
-    "tabs": {
-      "all": "All apps",
-      "files": "Generated Files"
-    }
+  "home": {
+    "title": "Welcome. Let's create!",
+    "openComfyUI": "Open ComfyUI",
+    "allBuilds": "All builds",
+    "buildRunning": "Running",
+    "buildStarting": "Starting",
+    "buildReady": "Ready",
+    "buildAlwaysOn": "Always on",
+    "cloudHardware": "RTX 6000 Pro · 96 GB",
+    "exampleWorkflows": "Example workflows",
+    "seeAllWorkflows": "See all workflows",
+    "showWorkflow": "Show {title}",
+    "openWorkflow": "Open {title} on Comfy Hub",
+    "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
+    "retry": "Try again"
   },
   "installType": {
     "standalone": "Standalone",

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
-import AppsView from './AppsView.vue'
+import AssetsView from './AssetsView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -29,11 +29,7 @@ function build(id: string, name: string): Installation {
   return { id, name, sourceLabel: 'Standalone', sourceCategory: 'local' }
 }
 
-async function mountAssets(
-  running: Installation[],
-  stopped: Installation[] = [],
-  options: { attachTo?: HTMLElement } = {}
-) {
+async function mountAssets(running: Installation[], stopped: Installation[] = []) {
   useInstallationStore().installations = [...running, ...stopped]
   const sessions = useSessionStore()
   for (const inst of running) {
@@ -43,7 +39,7 @@ async function mountAssets(
       mode: 'app'
     })
   }
-  const wrapper = mount(AppsView, options)
+  const wrapper = mount(AssetsView)
   await flushPromises()
   return wrapper
 }
@@ -71,7 +67,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-describe('AppsView', () => {
+describe('AssetsView', () => {
   it('starts in masonry with file names and details hidden', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
@@ -110,7 +106,7 @@ describe('AppsView', () => {
     const cloud = (id: string) => ({ ...build(id, id), sourceCategory: 'cloud' })
     useInstallationStore().installations = [cloud('cloud-a'), cloud('cloud-b')]
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
     useAuthStore().status = { signedIn: true }
     await flushPromises()
@@ -140,7 +136,7 @@ describe('AppsView', () => {
   it('asks a signed-out user to log in to Comfy Cloud', async () => {
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
 
     expect(listAssets).not.toHaveBeenCalled()
@@ -165,7 +161,7 @@ describe('AppsView', () => {
     signIn.mockRejectedValueOnce(new Error('cancelled'))
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
 
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
@@ -176,40 +172,18 @@ describe('AppsView', () => {
     ).toBeUndefined()
   })
 
-  it('points a signed-in user with no assets to the apps', async () => {
+  it('tells a signed-in user with no assets where they come from', async () => {
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
     listAssets.mockResolvedValue([])
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
     useAuthStore().status = { signedIn: true }
     await flushPromises()
 
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
     expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
-    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
-
-    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
-  })
-
-  it('shows Coming soon under All apps without loading assets, then loads Generated Files', async () => {
-    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
-    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-
-    const wrapper = await mountAssets([build('lab', 'Video Lab')])
-
-    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
-    expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
-    expect(listAssets).not.toHaveBeenCalled()
-
-    await wrapper
-      .findAll('button')
-      .find((n) => n.text() === 'Generated Files')!
-      .trigger('click')
-    await flushPromises()
-
-    expect(listAssets).toHaveBeenCalledOnce()
-    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(wrapper.find('[data-testid="assets-empty-action"]').exists()).toBe(false)
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {

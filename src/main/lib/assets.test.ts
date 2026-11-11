@@ -47,7 +47,8 @@ describe('assetKind', () => {
     ['still.png', undefined, 'image'],
     ['narration.WAV', undefined, 'audio'],
     ['mesh.glb', undefined, '3d'],
-    ['notes.txt', undefined, null]
+    ['notes.txt', undefined, null],
+    ['png', undefined, null]
   ])('classifies %s (%s) as %s', (name, mimeType, kind) => {
     expect(assetKind(name, mimeType)).toBe(kind)
   })
@@ -127,6 +128,23 @@ describe('listAssets', () => {
     )
   })
 
+  it('serves local previews only from the build API', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'still.png', preview_url: '/extensions/evil.png', size: 0 }]
+      })
+    )
+
+    const [summary] = await listAssets('local-1')
+
+    expect(summary!.previewUrl).toBe(
+      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
+    )
+    expect(summary!.sizeBytes, 'an empty file keeps its size').toBe(0)
+  })
+
   it('returns nothing for a local build that is not running', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
 
@@ -152,7 +170,7 @@ describe('listAssets', () => {
           new Response(null, {
             status: 302,
             headers: {
-              Location: `https://storage.googleapis.com/bucket/${url.split('/')[5]}?sig=1`
+              Location: `https://storage.googleapis.com/bucket/${/\/assets\/([^/]+)\/content/.exec(url)?.[1]}?sig=1`
             }
           })
       )

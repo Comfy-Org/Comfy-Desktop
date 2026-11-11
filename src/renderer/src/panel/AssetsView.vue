@@ -22,7 +22,6 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
-import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -37,7 +36,6 @@ interface GalleryAsset extends AssetSummary {
   buildName: string
 }
 
-type AppsTab = 'all' | 'files'
 type KindFilter = 'all' | AssetKind
 type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
@@ -50,7 +48,6 @@ const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
-const tab = useLocalStorage<AppsTab>('comfy.desktop.apps.tab', 'files')
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -87,10 +84,6 @@ const kindOptions = computed(() => [
   { value: 'video' as const, label: t('assets.kind.video') },
   { value: '3d' as const, label: t('assets.kind.3d') },
   { value: 'audio' as const, label: t('assets.kind.audio') }
-])
-const tabOptions = computed(() => [
-  { value: 'all' as const, label: t('apps.tabs.all') },
-  { value: 'files' as const, label: t('apps.tabs.files') }
 ])
 const filterLabel = computed(() =>
   kindFilter.value === 'all'
@@ -151,8 +144,7 @@ const emptyState = computed<EmptyState>(() => {
   }
   return {
     title: t('assets.emptyTitle'),
-    body: t('assets.emptyBody'),
-    action: { label: t('assets.browseApps'), run: () => (tab.value = 'all') }
+    body: t('assets.emptyBody')
   }
 })
 
@@ -178,10 +170,8 @@ async function loadAssets(): Promise<void> {
 }
 
 watch(
-  () => [tab.value, ...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
-  () => {
-    if (tab.value === 'files') void loadAssets()
-  },
+  () => [...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
+  () => void loadAssets(),
   { immediate: true }
 )
 
@@ -229,11 +219,11 @@ function extensionOf(name: string): string {
     ref="scroller"
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
     :class="PAGE_SPOTLIGHT_CLASS"
-    data-testid="apps-view"
+    data-testid="assets-view"
   >
     <header class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
       <h1 class="m-0 font-display text-display font-semibold text-foreground">
-        {{ t('sidebar.apps') }}
+        {{ t('sidebar.assets') }}
       </h1>
     </header>
 
@@ -243,9 +233,7 @@ function extensionOf(name: string): string {
       data-testid="assets-toolbar"
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
-        <SegmentedControl v-model="tab" :options="tabOptions" :label="t('apps.tabsLabel')" />
-
-        <div v-if="tab === 'files'" class="ml-auto flex items-center gap-2">
+        <div class="ml-auto flex items-center gap-2">
           <Button
             variant="muted-textonly"
             size="icon"
@@ -273,7 +261,7 @@ function extensionOf(name: string): string {
                 type="button"
                 variant="secondary"
                 size="md"
-                class="gap-1.5 px-3 text-[13px]/5"
+                class="gap-1.5 px-3 text-ui"
                 data-testid="assets-filter"
               >
                 <ListFilter :size="15" aria-hidden="true" />
@@ -389,18 +377,7 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <p
-        v-if="tab === 'all'"
-        class="m-0 text-ui text-muted-foreground"
-        data-testid="apps-coming-soon"
-      >
-        {{ t('sidebar.comingSoon') }}
-      </p>
-      <div
-        v-else-if="loading && assets.length === 0"
-        role="status"
-        :aria-label="t('common.loading')"
-      >
+      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
         <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
             <Skeleton
@@ -431,7 +408,7 @@ function extensionOf(name: string): string {
           type="button"
           variant="inverted"
           size="md"
-          class="mt-6 px-4 text-[13px]/5"
+          class="mt-6 px-4 text-ui"
           :disabled="signingIn"
           data-testid="assets-empty-action"
           @click="emptyState.action.run"

@@ -47,8 +47,9 @@ export function assetKind(name: string, mimeType?: string): AssetKind | null {
   const mimeKind = mimeType?.split('/')[0]
   if (mimeKind === 'image' || mimeKind === 'video' || mimeKind === 'audio') return mimeKind
   if (mimeType?.startsWith('model/')) return '3d'
-  const extension = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
-  return KIND_BY_EXTENSION[extension] ?? null
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return null
+  return KIND_BY_EXTENSION[name.slice(dot + 1).toLowerCase()] ?? null
 }
 
 function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
@@ -56,7 +57,7 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
     id: row.id,
     name: row.name.slice(row.name.lastIndexOf('/') + 1),
     kind: assetKind(row.name, row.mime_type),
-    sizeBytes: row.size ? row.size : null,
+    sizeBytes: typeof row.size === 'number' ? row.size : null,
     createdAt: row.created_at ?? null,
     mimeType: row.mime_type ?? null,
     tags: Array.isArray(row.tags)
@@ -141,7 +142,9 @@ function localPreviewUrl(row: AssetRow, origin: string): string {
   const fallback = new URL(contentPath(row.id, 'inline'), origin)
   if (!row.preview_url) return fallback.toString()
   const preview = new URL(row.preview_url, origin)
-  return (preview.origin === origin ? preview : fallback).toString()
+  return (
+    preview.origin === origin && preview.pathname.startsWith('/api/') ? preview : fallback
+  ).toString()
 }
 
 async function listLocalAssets(origin: string): Promise<AssetSummary[]> {
