@@ -63,6 +63,8 @@ const launchHarness = vi.hoisted(() => ({
   schemaThrows: false,
   registryThrows: false,
   registryCalls: 0,
+  registry: {} as FeatureFlagRegistry,
+  agentChatRedesign: false,
   betaEnabled: true,
   betaEnabledThrows: false,
   readSettled: null as null | ((signal?: AbortSignal) => Promise<unknown>),
@@ -162,7 +164,7 @@ vi.mock('../shared', async (importOriginal) => {
     getComfyFeatureFlagRegistry: async () => {
       launchHarness.registryCalls += 1
       if (launchHarness.registryThrows) throw new Error('feature registry unavailable')
-      return {}
+      return launchHarness.registry
     },
     findAvailablePort: async () => launchHarness.nextPort,
     installations: new Proxy(actual.installations, {
@@ -299,6 +301,10 @@ const prefetchHarness = vi.hoisted(() => ({
   onStart: null as null | ((request: unknown) => void)
 }))
 
+vi.mock('../../agentChatRedesignFlag', () => ({
+  isAgentChatRedesignEnabled: async () => launchHarness.agentChatRedesign
+}))
+
 vi.mock('../../agentPrefetch', () => ({
   startAgentPrefetch: (installationId: string, request: unknown) => {
     prefetchHarness.requests.push({ installationId, request })
@@ -374,6 +380,7 @@ import type { createExecutionTap } from '../../executionTap'
 import type { createHardwareTap } from '../../hardwareTap'
 import type { LaunchProgressTracker } from '../../launchProgress'
 import type { ComfyArgsSchema } from '../../comfy-args'
+import type { FeatureFlagRegistry } from '../../comfy-feature-flags'
 import type { LaunchCommand } from '../../../types/sources'
 import { ASSETS_MIN_CORE_COMMIT, NO_CORE_COMMITS } from '../../coreBetaGrants'
 import { appliedPassThrough, parseCampaignAnswer } from '../../coreBetaCampaigns'
@@ -443,6 +450,33 @@ describe('desktopFeatureFlags', () => {
     expect(desktopFeatureFlags(installOf('portable'), true)).not.toHaveProperty('enable_telemetry')
     expect(desktopFeatureFlags(installOf('git'), true)).not.toHaveProperty('enable_telemetry')
   })
+
+  it('injects agent-chat-redesign when the ops flag grants it', () => {
+    expect(desktopFeatureFlags(installOf('standalone'), false, true)['agent-chat-redesign']).toBe(
+      'true'
+    )
+  })
+
+  it('omits agent-chat-redesign when the ops flag does not grant it', () => {
+    expect(desktopFeatureFlags(installOf('standalone'), false, false)).not.toHaveProperty(
+      'agent-chat-redesign'
+    )
+  })
+
+  it('omits agent-chat-redesign when the grant is not given', () => {
+    expect(desktopFeatureFlags(installOf('standalone'), false)).not.toHaveProperty(
+      'agent-chat-redesign'
+    )
+  })
+
+  it.each([['portable'], ['git'], ['comfybuilder']])(
+    'injects agent-chat-redesign for %s installs when granted',
+    (sourceId) => {
+      expect(desktopFeatureFlags(installOf(sourceId), false, true)['agent-chat-redesign']).toBe(
+        'true'
+      )
+    }
+  )
 })
 
 describe('_resolveLaunchMode', () => {
@@ -1420,6 +1454,35 @@ describe('core beta report placement', () => {
     proc.kill = () => true
     return proc
   }
+
+  describe('agent-chat-redesign injection', () => {
+    const REGISTERED: FeatureFlagRegistry = {
+      'agent-chat-redesign': { type: 'bool', default: false, description: '' }
+    }
+    const OLDER_CORE: FeatureFlagRegistry = {}
+    const injectedFeatureFlags = (args: string[]): string[] =>
+      args.filter((_, i) => i > 0 && args[i - 1] === '--feature-flag')
+
+    beforeEach(() => {
+      launchHarness.schemaNames = ['enable-assets', 'listen', 'feature-flag', 'list-feature-flags']
+    })
+
+    afterEach(() => {
+      launchHarness.registry = {}
+      launchHarness.agentChatRedesign = false
+    })
+
+    it.each([
+      ['granted-registered', true, REGISTERED, ['agent-chat-redesign=true']],
+      ['granted-older-core', true, OLDER_CORE, []],
+      ['not-granted-registered', false, REGISTERED, []]
+    ])('%s', async (id, granted, registry, expected) => {
+      launchHarness.agentChatRedesign = granted
+      launchHarness.registry = registry
+      expect((await handleLaunch(ctxFor(`redesign-${id}`))).ok).toBe(true)
+      expect(injectedFeatureFlags(spawnArgs)).toEqual(expected)
+    })
+  })
 
   describe('campaigns', () => {
     const KEY = 'desktop_core_beta_agent'

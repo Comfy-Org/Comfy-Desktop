@@ -167,11 +167,13 @@ import {
   writeCampaignRecord
 } from '../../coreBetaCampaignFlags'
 import { getIdClass } from '../../deviceId'
+import { isAgentChatRedesignEnabled } from '../../agentChatRedesignFlag'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 export function desktopFeatureFlags(
   inst: InstallationRecord,
-  telemetryEnabled: boolean
+  telemetryEnabled: boolean,
+  agentChatRedesign = false
 ): Record<string, string> {
   const flags: Record<string, string> = {
     show_signin_button: 'true',
@@ -179,6 +181,9 @@ export function desktopFeatureFlags(
   }
   if (inst.sourceId === 'standalone' && telemetryEnabled) {
     flags.enable_telemetry = 'true'
+  }
+  if (agentChatRedesign) {
+    flags['agent-chat-redesign'] = 'true'
   }
   return flags
 }
@@ -1215,7 +1220,11 @@ async function runLaunch(
             revision
           )
           const flagEntries = Object.entries(
-            desktopFeatureFlags(inst, settings.get('telemetryEnabled') === true)
+            desktopFeatureFlags(
+              inst,
+              settings.get('telemetryEnabled') === true,
+              await isAgentChatRedesignEnabled()
+            )
           )
           for (const [key, value] of flagEntries) {
             if (key in registry) {
