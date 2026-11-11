@@ -598,9 +598,7 @@ async function handleImport(): Promise<void> {
       </div>
     </header>
 
-    <div
-      class="snapshots-panel flex flex-col rounded-[14px] bg-card p-1.5"
-    >
+    <div class="snapshots-panel flex flex-col rounded-[14px] bg-card p-1.5">
       <div
         v-if="showRestoreCard"
         ref="topCardRef"
