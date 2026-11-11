@@ -919,6 +919,11 @@ onBeforeUnmount(() => {
   justify-content: center;
   overflow: hidden;
 }
+/* In the modal the stage runs to the frame's own edges, so a zoomed
+   picture is cut by the frame's rounded corners, not a box inside it. */
+.mad:not(.is-tab) .mad-stage {
+  margin: -8px 0 -8px -8px;
+}
 .mad.is-tab .mad-view {
   bottom: 16px;
 }
