@@ -26,13 +26,17 @@
     "signInBody": "Sync your work and run it on Comfy Cloud."
   },
   "home": {
-    "title": "Let's create",
+    "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
     "allBuilds": "All builds",
     "buildRunning": "Running",
     "buildStarting": "Starting",
+    "buildReady": "Ready",
+    "buildAlwaysOn": "Always on",
     "exampleWorkflows": "Example workflows",
-    "exploreAll": "Explore all",
+    "workflowBadge": "Workflow",
+    "seeAllWorkflows": "See all workflows",
+    "showWorkflow": "Show {title}",
     "openWorkflow": "Open {title} on Comfy Hub",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
     "retry": "Try again"

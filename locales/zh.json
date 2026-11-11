@@ -26,13 +26,17 @@
     "signInBody": "同步你的作品，并在 Comfy Cloud 上运行。"
   },
   "home": {
-    "title": "开始创作",
+    "title": "欢迎。开始创作吧！",
     "openComfyUI": "打开 ComfyUI",
     "allBuilds": "全部构建",
     "buildRunning": "运行中",
     "buildStarting": "启动中",
+    "buildReady": "就绪",
+    "buildAlwaysOn": "始终在线",
     "exampleWorkflows": "示例工作流",
-    "exploreAll": "浏览全部",
+    "workflowBadge": "工作流",
+    "seeAllWorkflows": "查看全部工作流",
+    "showWorkflow": "显示 {title}",
     "openWorkflow": "在 Comfy Hub 打开 {title}",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",
     "retry": "重试"

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
@@ -19,21 +19,30 @@ function build(over: Partial<Installation> & { id: string; name: string }): Inst
   return { sourceLabel: 'Standalone', sourceCategory: 'local', ...over }
 }
 
-const UPSCALE = workflow(
-  'upscale',
-  'Upscale and restore detail',
-  'https://comfy.org/catalog-media/upscale/v1'
-)
+const UPSCALE: CatalogWorkflow = {
+  id: 'upscale',
+  title: 'Upscale and restore detail',
+  description: 'Enlarge an image and restore fine detail.',
+  thumbnailUrl: 'https://comfy.org/catalog-media/upscale/v1'
+}
 const TALK = workflow('talk', 'Make your character talk')
 const SEVEN_WORKFLOWS = Array.from({ length: 7 }, (_, index) =>
   workflow(`workflow-${index}`, `Workflow ${index}`)
 )
 
-const OLDEST = build({ id: 'oldest', name: 'Flux Sandbox', lastLaunchedAt: 100 })
+const OLDEST = build({
+  id: 'oldest',
+  name: 'Flux Sandbox',
+  lastLaunchedAt: 100,
+  version: 'v0.42.4',
+  installPath: '/Users/pablo/ComfyUI-Installs/Flux'
+})
 const CLOUD = build({
   id: 'cloud',
   name: 'Comfy Cloud',
+  sourceLabel: 'Cloud',
   sourceCategory: 'cloud',
+  listPreview: 'https://cloud.comfy.org/',
   lastLaunchedAt: 200
 })
 const RUNNING = build({ id: 'running', name: 'Video Lab', lastLaunchedAt: 300 })
@@ -69,65 +78,107 @@ async function openHome() {
   return wrapper
 }
 
+function arc(wrapper: VueWrapper): string[] {
+  return wrapper
+    .findAll('[data-testid="home-workflow-card"]')
+    .map((card) => `${card.attributes('data-arc-offset')}:${card.text().replace('Workflow', '')}`)
+}
+
+function cardAt(wrapper: VueWrapper, offset: number) {
+  return wrapper.get(`[data-testid="home-workflow-card"][data-arc-offset="${offset}"]`)
+}
+
 describe('Home example workflows', () => {
-  it('fans out the first five catalog workflows and opens the one that is clicked', async () => {
+  it('puts the first catalog workflow in front with its neighbours on either side', async () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
 
-    const cards = wrapper.findAll('[data-testid="home-workflow-card"]')
-    expect(cards.map((card) => card.text())).toEqual([
-      'Workflow 0',
-      'Workflow 1',
-      'Workflow 2',
-      'Workflow 3',
-      'Workflow 4'
+    expect(arc(wrapper)).toEqual([
+      '-2:Workflow 5',
+      '-1:Workflow 6',
+      '0:Workflow 0',
+      '1:Workflow 1',
+      '2:Workflow 2'
     ])
-    expect(wrapper.get('[data-testid="home-workflow-count"]').text()).toBe('7')
-
-    await cards[3]!.trigger('click')
-
-    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-3')
   })
 
-  it('keeps a short list centred in the fan', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK, workflow('third', 'Third')])
+  it('brings a side card to the front when it is clicked, without opening it', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
 
-    const lefts = wrapper
-      .findAll<HTMLElement>('[data-testid="home-workflow-card"]')
-      .map((card) => card.element.style.left)
+    await cardAt(wrapper, 1).trigger('click')
 
-    expect(lefts).toEqual(['122px', '244px', '346px'])
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('opens the workflow in front when it is clicked', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    await cardAt(wrapper, -1).trigger('click')
+
+    await cardAt(wrapper, 0).trigger('click')
+
+    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-6')
+  })
+
+  it('turns the carousel with the arrow keys', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    const carousel = wrapper.get('[data-testid="home-workflow-carousel"]')
+
+    await carousel.trigger('keydown', { key: 'ArrowRight' })
+    await carousel.trigger('keydown', { key: 'ArrowRight' })
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+
+    await carousel.trigger('keydown', { key: 'ArrowLeft' })
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+  })
+
+  it('shows a short list once, without repeating cards around the arc', async () => {
+    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    const wrapper = await openHome()
+
+    expect(arc(wrapper)).toEqual([
+      '0:Upscale and restore detailEnlarge an image and restore fine detail.',
+      '1:Make your character talk'
+    ])
+
+    await wrapper
+      .get('[data-testid="home-workflow-carousel"]')
+      .trigger('keydown', { key: 'ArrowLeft' })
+
+    expect(cardAt(wrapper, 0).text()).toContain('Upscale and restore detail')
   })
 
   it('shows the catalog picture on a card and a plain card when there is none', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
-    const [withPicture, withoutPicture] = wrapper.findAll('[data-testid="home-workflow-card"]')
 
-    expect(withPicture!.get('img').attributes('src')).toBe(UPSCALE.thumbnailUrl)
-    expect(withoutPicture!.find('img').exists()).toBe(false)
+    expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(UPSCALE.thumbnailUrl)
+    expect(cardAt(wrapper, 1).find('img').exists()).toBe(false)
 
-    await withPicture!.get('img').trigger('error')
+    await cardAt(wrapper, 0).get('img').trigger('error')
 
-    expect(withPicture!.find('img').exists()).toBe(false)
-    expect(withPicture!.text()).toBe('Upscale and restore detail')
+    expect(cardAt(wrapper, 0).find('img').exists()).toBe(false)
+    expect(cardAt(wrapper, 0).text()).toContain('Upscale and restore detail')
   })
 
-  it('names each card by what opening it does, for screen readers', async () => {
-    listHomeWorkflows.mockResolvedValue([UPSCALE])
+  it('tells screen readers which card opens and which only comes forward', async () => {
+    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-workflow-card"]').attributes('aria-label')).toBe(
+    expect(cardAt(wrapper, 0).attributes('aria-label')).toBe(
       'Open Upscale and restore detail on Comfy Hub'
     )
+    expect(cardAt(wrapper, 1).attributes('aria-label')).toBe('Show Make your character talk')
   })
 
-  it('opens the full list of workflows on Comfy Hub from Explore all', async () => {
+  it('opens the full list of workflows on Comfy Hub from See all workflows', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE])
     const wrapper = await openHome()
 
-    await wrapper.get('[data-testid="home-explore-workflows"]').trigger('click')
+    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
 
     expect(openCatalogWorkflowHub).toHaveBeenCalledOnce()
   })
@@ -169,11 +220,20 @@ describe('Home builds', () => {
     })
     await flushPromises()
 
-    expect(wrapper.findAll('[data-testid="home-build"]').map((row) => row.text())).toEqual([
-      'My Local 1Update available',
-      'Video LabRunning',
-      'Comfy CloudCloud'
+    expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
+      'Update availableMy Local 1Standalone',
+      'RunningVideo LabStandalone',
+      'Always onComfy Cloudcloud.comfy.org'
     ])
+  })
+
+  it('shows a stopped local build as ready, with its ComfyUI version and folder', async () => {
+    getInstallations.mockResolvedValue([OLDEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
+      'ReadyFlux SandboxComfyUI v0.42.4 · /Users/pablo/ComfyUI-Installs/Flux'
+    )
   })
 
   it('opens the build that is clicked', async () => {
