@@ -63,9 +63,18 @@ export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender):
 
 async function sessionState(): Promise<ComfyDesktop2AuthState> {
   if (!(await isEmbeddedSessionEnabled())) return DISABLED
-  const token = await getCloudSession().getAccessToken()
-  const identity = token ? identityOf(token) : null
-  return identity ? { status: 'signed_in', ...identity } : { status: 'signed_out' }
+  const session = getCloudSession()
+  const grant = await session.getGrantAccessToken()
+  const identity = grant ? identityOf(grant) : null
+  if (!identity) return { status: 'signed_out' }
+  const { userId, email } = identity
+  const workspaceId = session.currentWorkspaceId()
+  return {
+    status: 'signed_in',
+    userId,
+    ...(email ? { email } : {}),
+    ...(workspaceId ? { workspaceId } : {})
+  }
 }
 
 export async function stateForSender(

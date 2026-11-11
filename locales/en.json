@@ -1355,6 +1355,8 @@
       "personalLabel": "Personal",
       "switchLabel": "Workspace",
       "currentFallback": "Current workspace",
+      "switchUnavailable": "This workspace is unavailable.",
+      "switchRetryable": "Couldn't switch workspace. Check your connection and try again.",
       "instanceCountLabel": "INSTANCES",
       "loadError": "Couldn't load workspaces. Retry",
       "refresh": "Refresh workspaces",

@@ -6,11 +6,19 @@ import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
 
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
-const VAULT_VERSION = 1
-const DEFAULT_WORKSPACE_KEY = 'default'
+const VAULT_VERSION = 2
 
 interface TokenVault {
   version: typeof VAULT_VERSION
+  subject?: string
+  grant: AuthTokens
+  activeWorkspaceId: string | null
+  workspaceTokens: Record<string, AuthTokens>
+  workspaceNames?: Record<string, string>
+}
+
+interface LegacyVault {
+  version: 1
   activeKey: string
   subject?: string
   bundles: Record<string, AuthTokens>
@@ -50,44 +58,56 @@ function isTokens(v: unknown): v is AuthTokens {
   )
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
+function isWorkspaceNames(v: unknown): boolean {
+  return (
+    v === undefined || (isRecord(v) && Object.values(v).every((name) => typeof name === 'string'))
+  )
+}
+
 function isVault(v: unknown): v is TokenVault {
-  const vault = v as TokenVault
-  if (
-    !v ||
-    typeof v !== 'object' ||
-    vault.version !== VAULT_VERSION ||
-    typeof vault.activeKey !== 'string' ||
-    (vault.subject !== undefined && typeof vault.subject !== 'string') ||
-    !vault.bundles ||
-    typeof vault.bundles !== 'object' ||
-    Array.isArray(vault.bundles) ||
-    (vault.workspaceNames !== undefined &&
-      (!vault.workspaceNames ||
-        typeof vault.workspaceNames !== 'object' ||
-        Array.isArray(vault.workspaceNames) ||
-        !Object.values(vault.workspaceNames).every((name) => typeof name === 'string')))
-  ) {
-    return false
-  }
-  return isTokens(vault.bundles[vault.activeKey]) && Object.values(vault.bundles).every(isTokens)
+  if (!isRecord(v) || v.version !== VAULT_VERSION) return false
+  return (
+    isTokens(v.grant) &&
+    (v.activeWorkspaceId === null || typeof v.activeWorkspaceId === 'string') &&
+    (v.subject === undefined || typeof v.subject === 'string') &&
+    isRecord(v.workspaceTokens) &&
+    Object.values(v.workspaceTokens).every(isTokens) &&
+    isWorkspaceNames(v.workspaceNames)
+  )
 }
 
-function workspaceKey(workspaceId: string | null): string {
-  return workspaceId === null ? DEFAULT_WORKSPACE_KEY : `workspace:${workspaceId}`
+function isLegacyVault(v: unknown): v is LegacyVault {
+  if (!isRecord(v) || v.version !== 1 || typeof v.activeKey !== 'string') return false
+  return (
+    (v.subject === undefined || typeof v.subject === 'string') &&
+    isRecord(v.bundles) &&
+    Object.values(v.bundles).every(isTokens) &&
+    isWorkspaceNames(v.workspaceNames)
+  )
 }
 
-function tokensKey(tokens: AuthTokens): string {
-  return workspaceKey(workspaceIdOf(tokens.accessToken))
-}
-
-function vaultFor(tokens: AuthTokens): TokenVault {
-  const key = tokensKey(tokens)
-  const subject = subjectOf(tokens.accessToken)
+function vaultFor(grant: AuthTokens): TokenVault {
+  const subject = subjectOf(grant.accessToken)
   return {
     version: VAULT_VERSION,
-    activeKey: key,
     ...(subject ? { subject } : {}),
-    bundles: { [key]: tokens }
+    grant,
+    activeWorkspaceId: workspaceIdOf(grant.accessToken),
+    workspaceTokens: {}
+  }
+}
+
+function migratedVault(legacy: LegacyVault): TokenVault | null {
+  const active = legacy.bundles[legacy.activeKey]
+  if (!active) return null
+  return {
+    ...vaultFor(active),
+    ...(legacy.subject ? { subject: legacy.subject } : {}),
+    ...(legacy.workspaceNames ? { workspaceNames: legacy.workspaceNames } : {})
   }
 }
 
@@ -113,36 +133,79 @@ function loadVault(): TokenVault | null {
       cachedVault = parsed
       return cachedVault
     }
-    if (isTokens(parsed)) {
-      const migrated = vaultFor(parsed)
-      persistVault(migrated)
-      return migrated
-    }
-    return null
+    const migrated = isLegacyVault(parsed)
+      ? migratedVault(parsed)
+      : isTokens(parsed)
+        ? vaultFor(parsed)
+        : null
+    if (migrated) persistVault(migrated)
+    return migrated
   } catch {
     return null
   }
 }
 
-export function saveTokens(tokens: AuthTokens): void {
+function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
+  return (
+    workspaceId === workspaceIdOf(vault.grant.accessToken) ||
+    (workspaceId !== null && workspaceId in vault.workspaceTokens)
+  )
+}
+
+export function saveGrant(grant: AuthTokens): void {
   const current = loadVault()
-  const nextSubject = subjectOf(tokens.accessToken)
-  const accountChanged = current !== null && (!nextSubject || current.subject !== nextSubject)
-  const vault = accountChanged || !current ? vaultFor(tokens) : current
-  const key = tokensKey(tokens)
-  vault.activeKey = key
-  vault.bundles[key] = tokens
-  if (nextSubject) vault.subject = nextSubject
+  const subject = subjectOf(grant.accessToken)
+  if (!current || !subject || current.subject !== subject) {
+    persistVault(vaultFor(grant))
+    return
+  }
+  const previous = current.grant
+  const previousAnchor = workspaceIdOf(previous.accessToken)
+  if (
+    previousAnchor &&
+    previousAnchor !== workspaceIdOf(grant.accessToken) &&
+    previous.expiresAt > Date.now()
+  ) {
+    current.workspaceTokens[previousAnchor] = {
+      accessToken: previous.accessToken,
+      expiresAt: previous.expiresAt
+    }
+  }
+  current.grant = grant
+  if (!holdsToken(current, current.activeWorkspaceId))
+    current.activeWorkspaceId = workspaceIdOf(grant.accessToken)
+  persistVault(current)
+}
+
+export function loadGrant(): AuthTokens | null {
+  return loadVault()?.grant ?? null
+}
+
+export function loadActiveWorkspaceId(): string | null {
+  return loadVault()?.activeWorkspaceId ?? null
+}
+
+export function loadWorkspaceToken(workspaceId: string): AuthTokens | null {
+  return loadVault()?.workspaceTokens[workspaceId] ?? null
+}
+
+export function saveWorkspaceToken(workspaceId: string, tokens: AuthTokens): void {
+  const vault = loadVault()
+  if (!vault) return
+  vault.workspaceTokens[workspaceId] = tokens
   persistVault(vault)
 }
 
-export function loadTokens(): AuthTokens | null {
+export function dropWorkspaceToken(accessToken: string): boolean {
   const vault = loadVault()
-  return vault?.bundles[vault.activeKey] ?? null
-}
-
-export function loadWorkspaceTokens(workspaceId: string | null): AuthTokens | null {
-  return loadVault()?.bundles[workspaceKey(workspaceId)] ?? null
+  if (!vault) return false
+  const entry = Object.entries(vault.workspaceTokens).find(
+    ([, tokens]) => tokens.accessToken === accessToken
+  )
+  if (!entry) return false
+  delete vault.workspaceTokens[entry[0]]
+  persistVault(vault)
+  return true
 }
 
 export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[]): void {
@@ -156,42 +219,44 @@ export function saveWorkspaceNames(accessToken: string, workspaces: Workspace[])
 }
 
 export function getCachedWorkspaceName(workspaceId: string): string | null {
-  return loadVault()?.workspaceNames?.[workspaceId] ?? null
+  const names = loadVault()?.workspaceNames
+  return names && Object.hasOwn(names, workspaceId) ? (names[workspaceId] ?? null) : null
 }
 
-export function activateWorkspace(workspaceId: string): AuthTokens | null {
+export function activateWorkspace(workspaceId: string): boolean {
   const vault = loadVault()
-  if (!vault) return null
-  const key = workspaceKey(workspaceId)
-  const tokens = vault.bundles[key]
-  if (!tokens) return null
-  vault.activeKey = key
+  if (!vault || !holdsToken(vault, workspaceId)) return false
+  vault.activeWorkspaceId = workspaceId
   persistVault(vault)
-  return tokens
+  return true
 }
 
-export function replaceWorkspaceTokens(
-  workspaceId: string | null,
+export function replaceGrant(
   expectedAccessToken: string,
   expectedRefreshToken: string,
-  tokens: AuthTokens
+  grant: AuthTokens
 ): boolean {
   const vault = loadVault()
-  if (!vault) return false
-  const key = workspaceKey(workspaceId)
-  const current = vault.bundles[key]
   if (
-    !current ||
-    current.accessToken !== expectedAccessToken ||
-    current.refreshToken !== expectedRefreshToken ||
-    workspaceIdOf(tokens.accessToken) !== workspaceId ||
-    subjectOf(tokens.accessToken) !== subjectOf(current.accessToken)
+    !vault ||
+    vault.grant.accessToken !== expectedAccessToken ||
+    vault.grant.refreshToken !== expectedRefreshToken ||
+    workspaceIdOf(grant.accessToken) !== workspaceIdOf(expectedAccessToken) ||
+    subjectOf(grant.accessToken) !== subjectOf(expectedAccessToken)
   ) {
     return false
   }
-  vault.bundles[key] = tokens
+  vault.grant = grant
   persistVault(vault)
   return true
+}
+
+export function endGrant(expectedAccessToken: string): void {
+  const vault = loadVault()
+  if (!vault || vault.grant.accessToken !== expectedAccessToken) return
+  const { refreshToken: _ended, ...grant } = vault.grant
+  vault.grant = grant
+  persistVault(vault)
 }
 
 export function clearTokens(): void {
@@ -201,13 +266,24 @@ export function clearTokens(): void {
   } catch {}
 }
 
+function activeToken(vault: TokenVault): string | null {
+  const active = vault.activeWorkspaceId
+  if (active === workspaceIdOf(vault.grant.accessToken)) return vault.grant.accessToken
+  return (active && vault.workspaceTokens[active]?.accessToken) || null
+}
+
 export function getAuthStatus(): AuthStatus {
-  const t = loadTokens()
-  if (!t) return { signedIn: false }
-  const status = statusFromAccessToken(t.accessToken)
-  const workspaceName = status.workspaceId
-    ? loadVault()?.workspaceNames?.[status.workspaceId]
-    : undefined
+  const vault = loadVault()
+  if (!vault) return { signedIn: false }
+  const token = activeToken(vault)
+  const status: AuthStatus = token
+    ? statusFromAccessToken(token)
+    : {
+        signedIn: true,
+        email: statusFromAccessToken(vault.grant.accessToken).email,
+        workspaceId: vault.activeWorkspaceId ?? undefined
+      }
+  const workspaceName = status.workspaceId ? vault.workspaceNames?.[status.workspaceId] : undefined
   return workspaceName ? { ...status, workspaceName } : status
 }
 

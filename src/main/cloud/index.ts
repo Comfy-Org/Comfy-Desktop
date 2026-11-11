@@ -9,5 +9,8 @@ export type {
   AuthTokens,
   Workspace,
   WorkspaceMember,
-  WorkspaceSwitchOutcome
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchOutcome,
+  WorkspaceSwitchStatus
 } from './types'

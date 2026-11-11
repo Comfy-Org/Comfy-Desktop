@@ -19,6 +19,13 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.auth.view_token_minted')).toBe(false)
   })
 
+  it('mirrors workspace_switch_browser but not workspace_switch', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch_browser')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_returned_to_anchor')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.mint_scope_not_granted')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch')).toBe(false)
+  })
+
   it('mirrors install.not_started but not install.dispatched', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.install.not_started')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.install.dispatched')).toBe(false)

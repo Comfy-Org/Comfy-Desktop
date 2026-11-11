@@ -1,7 +1,7 @@
 import type { WebContents } from 'electron'
 
 import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from '../cloud/claims'
-import { mintWorkspaceToken } from '../cloud/workspaceToken'
+import { classifyMint, mintWorkspaceToken } from '../cloud/workspaceToken'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import * as mainTelemetry from './telemetry'
@@ -25,7 +25,11 @@ function reportMint(result: WorkspaceTokenMint): void {
 export interface GrantSession {
   currentWorkspaceId(): string | null
   currentSubject(): string | null
-  getAccessToken(): Promise<string | null>
+  currentAuthGeneration(): number
+  getGrantAccessToken(): Promise<string | null>
+  heldWorkspaceToken(workspaceId: string): string | null
+  isWorkspaceMintAllowed(workspaceId: string): Promise<boolean>
+  endGrantFamily(accessToken: string): void
 }
 
 export type MintWorkspaceToken = (
@@ -35,6 +39,11 @@ export type MintWorkspaceToken = (
 
 function mintKey(subject: string, workspaceId: string): string {
   return JSON.stringify([subject, workspaceId])
+}
+
+interface MintFence {
+  epoch: number
+  generation: number
 }
 
 interface HeldToken {
@@ -84,10 +93,18 @@ export class ViewWorkspaceGrants {
 
   async tokenFor(view: WebContents, workspaceId: string): Promise<string | null> {
     if (!this.mayHold(view, workspaceId)) return null
-    const epoch = this.epoch
-    const held = await this.workspaceToken(workspaceId, epoch)
-    if (!held || epoch !== this.epoch || !this.mayHold(view, workspaceId)) return null
+    const fence = this.currentFence()
+    const held = await this.workspaceToken(workspaceId, fence)
+    if (!held || !this.isCurrent(fence) || !this.mayHold(view, workspaceId)) return null
     return this.session.currentSubject() === held.subject ? held.token : null
+  }
+
+  private currentFence(): MintFence {
+    return { epoch: this.epoch, generation: this.session.currentAuthGeneration() }
+  }
+
+  private isCurrent(fence: MintFence): boolean {
+    return fence.epoch === this.epoch && fence.generation === this.session.currentAuthGeneration()
   }
 
   seed(): void {
@@ -105,21 +122,37 @@ export class ViewWorkspaceGrants {
     )
   }
 
-  private async workspaceToken(workspaceId: string, epoch: number): Promise<HeldToken | null> {
-    const accessToken = await this.session.getAccessToken()
-    if (epoch !== this.epoch) return null
-    if (!accessToken || workspaceIdOf(accessToken) !== workspaceId) return null
+  private unmintable(grant: string, workspaceId: string, subject: string): HeldToken | null {
+    const token =
+      workspaceIdOf(grant) === workspaceId ? grant : this.session.heldWorkspaceToken(workspaceId)
+    if (!token || canMintWorkspaceTokens(token)) return null
+    if (workspaceIdOf(token) !== workspaceId || subjectOf(token) !== subject) return null
+    return { token, subject }
+  }
+
+  private async workspaceToken(workspaceId: string, fence: MintFence): Promise<HeldToken | null> {
+    const accessToken = await this.session.getGrantAccessToken()
+    if (!this.isCurrent(fence) || !accessToken) return null
     const subject = subjectOf(accessToken)
     if (!subject) return null
-    if (!canMintWorkspaceTokens(accessToken)) return { token: accessToken, subject }
+    if (!canMintWorkspaceTokens(accessToken))
+      return this.unmintable(accessToken, workspaceId, subject)
     const key = mintKey(subject, workspaceId)
     const cached = this.minted.get(key)
     if (cached && cached.expiresAt - MINT_REFRESH_SKEW_MS > Date.now())
       return { token: cached.token, subject }
 
-    const result = await this.mintOnce(accessToken, key, workspaceId)
-    if (epoch !== this.epoch || this.session.currentSubject() !== subject) return null
+    const allowed = await this.session.isWorkspaceMintAllowed(workspaceId)
+    if (!allowed || !this.isCurrent(fence)) return null
+    const result = await this.mintOnce(accessToken, key, workspaceId, fence)
+    if (!this.isCurrent(fence) || this.session.currentSubject() !== subject) return null
     if (result.kind !== 'minted') return null
+    if (
+      workspaceIdOf(result.token) !== workspaceId ||
+      subjectOf(result.token) !== subject ||
+      canMintWorkspaceTokens(result.token)
+    )
+      return null
     this.minted.set(key, { token: result.token, expiresAt: result.expiresAt })
     return { token: result.token, subject }
   }
@@ -127,21 +160,26 @@ export class ViewWorkspaceGrants {
   private mintOnce(
     accessToken: string,
     key: string,
-    workspaceId: string
+    workspaceId: string,
+    fence: MintFence
   ): Promise<WorkspaceTokenMint> {
-    const inFlight = this.minting.get(key)
+    const flight = JSON.stringify([fence.generation, key])
+    const inFlight = this.minting.get(flight)
     if (inFlight) return inFlight
     const minting = this.minting
     const pending = this.mint(accessToken, workspaceId)
       .then((result) => {
         reportMint(result)
+        const outcome = classifyMint(result)
+        if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended')
+          this.session.endGrantFamily(accessToken)
         if (result.kind === 'failed' && result.status === 401) this.onUnauthorized(accessToken)
         return result
       })
       .finally(() => {
-        if (minting.get(key) === pending) minting.delete(key)
+        if (minting.get(flight) === pending) minting.delete(flight)
       })
-    minting.set(key, pending)
+    minting.set(flight, pending)
     return pending
   }
 }

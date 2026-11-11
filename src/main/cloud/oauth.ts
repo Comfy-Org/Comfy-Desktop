@@ -1,5 +1,6 @@
-import { shell } from 'electron'
+import { app, shell } from 'electron'
 
+import { recordShellOpenExternal } from '../lib/e2eOverrides'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
@@ -53,6 +54,17 @@ function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
   }
 }
 
+function oauthErrorOf(body: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body)
+    const error =
+      parsed && typeof parsed === 'object' ? (parsed as { error?: unknown }).error : null
+    return typeof error === 'string' ? error : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
@@ -74,7 +86,7 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       throw new SignInFailure(
         `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
         'server_error',
-        { httpStatus: resp.status }
+        { httpStatus: resp.status, oauthError: oauthErrorOf(detail) }
       )
     }
     const data = (await resp.json().catch((cause: unknown) => {
@@ -100,6 +112,10 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
 }
 
 export function openAuthorizePage(authorizeUrl: string): Promise<void> {
+  if (process.env['E2E'] === '1' && !app.isPackaged) {
+    recordShellOpenExternal(authorizeUrl)
+    return Promise.resolve()
+  }
   return shell.openExternal(authorizeUrl)
 }
 

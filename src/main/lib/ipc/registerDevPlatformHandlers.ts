@@ -20,7 +20,13 @@ import {
 } from '../../devplatform/builds'
 import type { BuildRow } from '../../devplatform/builds'
 import { clearVersionCache, getVersionCacheGeneration } from '../../devplatform/versionCache'
-import type { AuthStatus, Workspace, WorkspaceSwitchOutcome } from '../../cloud'
+import type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchOutcome,
+  WorkspaceSwitchStatus
+} from '../../cloud'
 import {
   installations,
   defaultInstallDir,
@@ -102,12 +108,35 @@ export async function signInToCloud(): Promise<AuthStatus> {
   return status
 }
 
-export async function switchCloudWorkspace(workspaceId: string): Promise<WorkspaceSwitchOutcome> {
+async function switchAndAnnounce(
+  workspaceId: string,
+  intent: WorkspaceSwitchIntent
+): Promise<{ reply: WorkspaceSwitchStatus; reached: boolean }> {
+  const session = getCloudSession()
+  const subjectBefore = session.currentSubject()
   clearVersionCache()
-  const outcome = await getCloudSession().switchWorkspace(workspaceId)
+  const switching = session.switchWorkspace(workspaceId, intent)
+  const generation = session.currentAuthGeneration()
+  const { reachedThroughConsent, reached, ...reply } = await switching
   clearVersionCache()
-  broadcastAuthChanged(outcome.status)
-  return outcome
+  const { workspaceSwitchFailure: _failure, ...status } = reply
+  const superseded = session.currentAuthGeneration() !== generation
+  if (!superseded && session.currentSubject() !== subjectBefore) {
+    getViewWorkspaceGrants().endAll()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  } else if (reachedThroughConsent) {
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+  }
+  broadcastAuthChanged(status)
+  return { reply, reached: reached && !superseded }
+}
+
+export async function switchCloudWorkspace(
+  workspaceId: string,
+  intent: WorkspaceSwitchIntent = 'chosen'
+): Promise<WorkspaceSwitchOutcome> {
+  const { reply, reached } = await switchAndAnnounce(workspaceId, intent)
+  return { status: reply, reached }
 }
 
 export async function signOutOfCloud(host: ComfyWindowEntry | undefined): Promise<AuthStatus> {
@@ -157,6 +186,12 @@ export function registerDevPlatformHandlers(): void {
     clearVersionCache()
     broadcastAuthChanged(SIGNED_OUT)
   })
+  session.setReturnedToAnchorHandler(() => {
+    const status = session.status()
+    getViewWorkspaceGrants().allowDesktop(status.workspaceId)
+    clearVersionCache()
+    broadcastAuthChanged(status)
+  })
 
   const installing = new Set<string>()
   const promoting = new Set<string>()
@@ -194,11 +229,17 @@ export function registerDevPlatformHandlers(): void {
     }
   )
 
-  ipcMain.handle(DEVPLATFORM_CHANNELS.switchWorkspace, async (_event, workspaceId: string) => {
-    const { status, reached } = await switchCloudWorkspace(workspaceId)
-    if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
-    return status
-  })
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.switchWorkspace,
+    async (_event, workspaceId: string, intent?: WorkspaceSwitchIntent) => {
+      const { reply: status, reached } = await switchAndAnnounce(
+        workspaceId,
+        intent === 'restored' ? 'restored' : 'chosen'
+      )
+      if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
+      return status
+    }
+  )
 
   ipcMain.handle(
     DEVPLATFORM_CHANNELS.promoteLocalInstance,
@@ -215,6 +256,7 @@ export function registerDevPlatformHandlers(): void {
         }
         const status = session.status()
         if (!status.signedIn) return { ok: false, message: 'Not signed in.' }
+        const subject = session.currentSubject()
         let workspaceId: string | undefined
         if (!inst.workspaceId || inst.workspaceId === PERSONAL_WORKSPACE_ID) {
           workspaceId =
@@ -226,14 +268,14 @@ export function registerDevPlatformHandlers(): void {
         }
         if (!workspaceId) return { ok: false, message: 'No active workspace.' }
         if (status.workspaceId !== workspaceId) {
-          clearVersionCache()
-          const { status: switched, reached } = await session.switchWorkspace(workspaceId)
-          clearVersionCache()
-          if (reached) getViewWorkspaceGrants().allowDesktop(workspaceId)
-          broadcastAuthChanged(switched)
+          if (session.currentSubject() !== subject) {
+            return { ok: false, message: 'Could not activate the instance workspace.' }
+          }
+          const { reached } = await switchAndAnnounce(workspaceId, 'chosen')
           if (!reached) {
             return { ok: false, message: 'Could not activate the instance workspace.' }
           }
+          getViewWorkspaceGrants().allowDesktop(workspaceId)
         }
 
         const filename = await saveSnapshot(inst.installPath, inst, 'manual')
@@ -249,7 +291,7 @@ export function registerDevPlatformHandlers(): void {
         ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
-        if (session.status().workspaceId !== workspaceId) {
+        if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
 
@@ -266,7 +308,7 @@ export function registerDevPlatformHandlers(): void {
         ) {
           return { ok: false, message: 'The instance changed. Try again.' }
         }
-        if (session.status().workspaceId !== workspaceId) {
+        if (session.status().workspaceId !== workspaceId || session.currentSubject() !== subject) {
           return { ok: false, message: 'The active workspace changed. Try again.' }
         }
         const url = new URL(

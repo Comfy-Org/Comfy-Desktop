@@ -1,7 +1,13 @@
 import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import type { AuthStatus, ElectronApi, Workspace } from '../../../types/ipc'
+import type {
+  AuthStatus,
+  ElectronApi,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent
+} from '../../../types/ipc'
 import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import type { Build } from '../devplatform/types'
 
@@ -18,6 +24,8 @@ export const useAuthStore = defineStore('auth', () => {
   const buildsLoaded = ref(false)
   const workspacesError = ref(false)
   const buildsError = ref(false)
+  const workspaceSwitchFailure = ref<WorkspaceSwitchFailure>()
+  let latestSwitch = 0
   const comfybuilderApi = (window as Window & { api: ElectronApi }).api.comfybuilder
 
   let revision = 0
@@ -42,6 +50,7 @@ export const useAuthStore = defineStore('auth', () => {
     loadingBuilds.value = false
     workspacesError.value = false
     buildsError.value = false
+    workspaceSwitchFailure.value = undefined
   }
 
   function sameIdentity(a: AuthStatus, b: AuthStatus): boolean {
@@ -124,9 +133,18 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function switchWorkspace(workspaceId: string): Promise<AuthStatus> {
-    const next = await comfybuilderApi.switchWorkspace(workspaceId)
+  async function switchWorkspace(
+    workspaceId: string,
+    intent: WorkspaceSwitchIntent = 'chosen'
+  ): Promise<AuthStatus> {
+    const thisSwitch = ++latestSwitch
+    workspaceSwitchFailure.value = undefined
+    const { workspaceSwitchFailure: failure, ...next } = await comfybuilderApi.switchWorkspace(
+      workspaceId,
+      intent
+    )
     applyAuthoritativeStatus(next)
+    if (thisSwitch === latestSwitch) workspaceSwitchFailure.value = failure
     return next
   }
 
@@ -179,6 +197,7 @@ export const useAuthStore = defineStore('auth', () => {
     buildsLoaded,
     workspacesError,
     buildsError,
+    workspaceSwitchFailure,
     isSignedIn,
     personalWorkspace,
     initializeWorkspaceContext,
