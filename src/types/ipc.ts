@@ -1157,6 +1157,7 @@ export interface ElectronApi {
   onAppsAppOpen(callback: (info: { open: boolean }) => void): Unsubscribe
   onAppsOutput(callback: (outputs: AppOutputs) => void): Unsubscribe
   appsOutputAction(action: AppOutputAction): void
+  onAppsSettled(callback: () => void): Unsubscribe
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

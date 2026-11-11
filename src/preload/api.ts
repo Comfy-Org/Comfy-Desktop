@@ -123,6 +123,11 @@ export function buildElectronApi(): ElectronApi {
       return () => ipcRenderer.removeListener('comfy-apps:output', handler)
     },
     appsOutputAction: (action) => ipcRenderer.send('comfy-apps:output-action', action),
+    onAppsSettled: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on('comfy-apps:settled', handler)
+      return () => ipcRenderer.removeListener('comfy-apps:settled', handler)
+    },
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),

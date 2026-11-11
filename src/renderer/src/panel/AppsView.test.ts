@@ -41,6 +41,14 @@ const onAppsAppOpen = vi.fn((callback: (info: { open: boolean }) => void) => {
   }
 })
 
+let appsSettled: (() => void) | null = null
+const onAppsSettled = vi.fn((callback: () => void) => {
+  appsSettled = callback
+  return () => {
+    appsSettled = null
+  }
+})
+
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert })
 }))
@@ -115,6 +123,7 @@ beforeEach(() => {
     onAppsAppOpen,
     onAppsOutput,
     appsOutputAction,
+    onAppsSettled,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -255,7 +264,7 @@ describe('AppsView', () => {
     expect(listCatalogApps).toHaveBeenCalledOnce()
   })
 
-  it('slides an app in from the right at its final width and keeps the cards visible until it is in', async () => {
+  it('slides in an empty surface and keeps the app off screen until its page settles', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountAssets([build('lab', 'Video Lab')], [], { props: { growBy: 172 } })
@@ -266,18 +275,45 @@ describe('AppsView', () => {
     const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
     const first = showApps.mock.calls[0]![0]
     expect(first.fresh).toBe(true)
-    expect(Math.round(first.x)).toBe(Math.round(slot.x + slot.width))
+    expect(first.x).toBe(window.innerWidth)
     expect(Math.round(first.width)).toBe(Math.round(slot.width + 172))
+    expect(wrapper.find('[data-testid="apps-host-surface"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
     expect(wrapper.find('h1').exists()).toBe(true)
 
     await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(showApps.mock.calls.every(([rect]) => rect.x === window.innerWidth)).toBe(true)
+
+    appsSettled!()
+    await flushPromises()
     const last = showApps.mock.calls.at(-1)![0]
     expect(Math.round(last.x)).toBe(Math.round(slot.x))
-    expect(wrapper.find('h1').exists()).toBe(false)
   })
 
-  it('shows an app in place at once when motion is reduced', async () => {
+  it('shows the app anyway when its page never says it settled', async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const matchMedia = vi
+      .spyOn(window, 'matchMedia')
+      .mockImplementation((query) => ({ matches: query.includes('reduce') }) as MediaQueryList)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const wrapper = await mountAssets([build('lab', 'Video Lab')])
+      await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+      await flushPromises()
+      expect(showApps.mock.calls.at(-1)![0].x).toBe(window.innerWidth)
+
+      await vi.advanceTimersByTimeAsync(4000)
+      const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
+      expect(Math.round(showApps.mock.calls.at(-1)![0].x)).toBe(Math.round(slot.x))
+    } finally {
+      vi.useRealTimers()
+      matchMedia.mockRestore()
+    }
+  })
+
+  it('shows an app in place without sliding when motion is reduced', async () => {
     window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const matchMedia = vi
@@ -288,9 +324,11 @@ describe('AppsView', () => {
       await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
       await flushPromises()
 
-      const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
-      expect(Math.round(showApps.mock.calls[0]![0].x)).toBe(Math.round(slot.x))
       expect(wrapper.emitted('app-entered')).toEqual([[true]])
+      appsSettled!()
+      await flushPromises()
+      const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
+      expect(Math.round(showApps.mock.calls.at(-1)![0].x)).toBe(Math.round(slot.x))
     } finally {
       matchMedia.mockRestore()
     }
