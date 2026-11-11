@@ -8,8 +8,9 @@ import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
+import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
-import AppsView from './AppsView.vue'
+import AssetsView from './AssetsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -46,10 +47,7 @@ import {
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type { Installation } from '../types/ipc'
-import { isDashboardSection } from './dashboardSection'
-import type { DashboardSection, SidebarPage } from './dashboardSection'
+import type { DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -163,18 +161,15 @@ if (params.get('e2e') === '1') {
   })
 }
 
-const dashboardSection = ref<DashboardSection | null>(null)
+type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser' | 'assets'>
 
-const sidebarPage = computed<SidebarPage | null>(() => {
+const dashboardHomePage = ref<DashboardHomePage>('home')
+
+const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
-  if (panel === 'chooser') return dashboardSection.value ?? panel
+  if (panel === 'chooser') return dashboardHomePage.value
   return panel === 'benchmarks' || panel === 'performance-test' ? panel : null
 })
-
-function handleSidebarNavigate(page: SidebarPage): void {
-  dashboardSection.value = isDashboardSection(page) ? page : null
-  closeBuildDetails()
-}
 
 const buildDetailsId = ref<string | null>(null)
 const buildDetailsInstall = computed(() =>
@@ -190,9 +185,11 @@ function closeBuildDetails(): void {
 }
 
 watch(activePanel, closeBuildDetails)
-watch(activePanel, (panel) => {
-  if (panel !== 'chooser') dashboardSection.value = null
-})
+
+function handleSidebarNavigate(page: DashboardPage): void {
+  closeBuildDetails()
+  if (page === 'home' || page === 'chooser' || page === 'assets') dashboardHomePage.value = page
+}
 
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
@@ -467,20 +464,12 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <AppsView v-if="dashboardSection === 'apps'" />
-            <section
-              v-else-if="dashboardSection"
-              class="flex min-h-0 flex-1 flex-col"
-              :class="PAGE_SPOTLIGHT_CLASS"
-              :data-testid="`dashboard-${dashboardSection}`"
-            >
-              <div class="mx-auto w-full max-w-300 px-10 pt-9">
-                <h1 class="m-0 font-display text-display font-semibold text-foreground">
-                  {{ t(`sidebar.${dashboardSection}`) }}
-                </h1>
-                <p class="mt-2 mb-0 text-ui text-muted-foreground">{{ t('sidebar.comingSoon') }}</p>
-              </div>
-            </section>
+            <HomeView
+              v-if="dashboardHomePage === 'home'"
+              @pick="handleChooserPick"
+              @show-builds="dashboardHomePage = 'chooser'"
+            />
+            <AssetsView v-else-if="dashboardHomePage === 'assets'" />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
@@ -489,7 +478,7 @@ onUnmounted(() => {
               @show-progress="handleShowProgress"
             />
             <ChooserView
-              :visible="!buildDetailsInstall && !dashboardSection"
+              :visible="dashboardHomePage === 'chooser' && !buildDetailsInstall"
               @pick="handleChooserPick"
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
-import AppsView from './AppsView.vue'
+import AssetsView from './AssetsView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -35,11 +35,7 @@ function build(id: string, name: string): Installation {
   return { id, name, sourceLabel: 'Standalone', sourceCategory: 'local' }
 }
 
-async function mountAssets(
-  running: Installation[],
-  stopped: Installation[] = [],
-  options: { attachTo?: HTMLElement } = {}
-) {
+async function mountAssets(running: Installation[], stopped: Installation[] = []) {
   useInstallationStore().installations = [...running, ...stopped]
   const sessions = useSessionStore()
   for (const inst of running) {
@@ -49,15 +45,16 @@ async function mountAssets(
       mode: 'app'
     })
   }
-  const wrapper = mount(AppsView, options)
+  const wrapper = mount(AssetsView)
   await flushPromises()
   return wrapper
 }
 
 function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] {
   return wrapper
-    .findAll('[data-testid^="asset-open-"]')
-    .map((card) => card.attributes('aria-label')!.replace('Inspect ', ''))
+    .get('[data-testid="assets-grid"]')
+    .findAllComponents(Tooltip)
+    .map((tip) => tip.props('text') as string)
 }
 
 beforeEach(() => {
@@ -77,7 +74,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-describe('AppsView', () => {
+describe('AssetsView', () => {
   it('starts in masonry with file names and details hidden', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 
@@ -116,7 +113,7 @@ describe('AppsView', () => {
     const cloud = (id: string) => ({ ...build(id, id), sourceCategory: 'cloud' })
     useInstallationStore().installations = [cloud('cloud-a'), cloud('cloud-b')]
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
     useAuthStore().status = { signedIn: true }
     await flushPromises()
@@ -146,7 +143,7 @@ describe('AppsView', () => {
   it('asks a signed-out user to log in to Comfy Cloud', async () => {
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
 
     expect(listAssets).not.toHaveBeenCalled()
@@ -171,7 +168,7 @@ describe('AppsView', () => {
     signIn.mockRejectedValueOnce(new Error('cancelled'))
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
 
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
@@ -182,40 +179,18 @@ describe('AppsView', () => {
     ).toBeUndefined()
   })
 
-  it('points a signed-in user with no assets to the apps', async () => {
+  it('tells a signed-in user with no assets where they come from', async () => {
     const cloud = { ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }
     useInstallationStore().installations = [cloud]
     listAssets.mockResolvedValue([])
-    const wrapper = mount(AppsView)
+    const wrapper = mount(AssetsView)
     await flushPromises()
     useAuthStore().status = { signedIn: true }
     await flushPromises()
 
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
     expect(wrapper.get('[data-testid="assets-empty"] p').text()).toBe('Open an app to make assets.')
-    await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
-
-    expect(wrapper.find('[data-testid="apps-coming-soon"]').exists()).toBe(true)
-  })
-
-  it('shows Coming soon under All apps without loading assets, then loads Generated Files', async () => {
-    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
-    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-
-    const wrapper = await mountAssets([build('lab', 'Video Lab')])
-
-    expect(wrapper.get('[data-testid="apps-coming-soon"]').text()).toBe('Coming soon')
-    expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
-    expect(listAssets).not.toHaveBeenCalled()
-
-    await wrapper
-      .findAll('button')
-      .find((n) => n.text() === 'Generated Files')!
-      .trigger('click')
-    await flushPromises()
-
-    expect(listAssets).toHaveBeenCalledOnce()
-    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(wrapper.find('[data-testid="assets-empty-action"]').exists()).toBe(false)
   })
 
   it('shows a skeleton card per slot while the first load is pending', async () => {
@@ -226,27 +201,16 @@ describe('AppsView', () => {
     expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
   })
 
-  it('opens an asset in the detail view, steps through assets and returns', async () => {
+  it('downloads a file from its card', async () => {
     listAssets.mockResolvedValue([
       asset('a', 'surfer.mp4', 'video'),
       asset('b', 'forest.png', 'image')
     ])
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
-    const detail = wrapper.get('[data-testid="asset-detail"]')
-    expect(detail.text()).toContain('Video Lab · 1 / 2')
+    await wrapper.get('[data-testid="asset-download-b"]').trigger('click')
 
-    await wrapper.get('[data-testid="asset-detail-next"]').trigger('click')
-    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('forest.png')
-
-    await wrapper.get('[data-testid="asset-detail-download"]').trigger('click')
     expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('lab', 'b', 'forest.png')
-
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    await flushPromises()
-    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
-    expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
   })
 
   it('tells the user when a download fails', async () => {
@@ -254,8 +218,7 @@ describe('AppsView', () => {
     downloadAsset.mockRejectedValue(new Error('offline'))
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
-    await wrapper.get('[data-testid="asset-detail-download"]').trigger('click')
+    await wrapper.get('[data-testid="asset-download-a"]').trigger('click')
     await flushPromises()
 
     expect(alert).toHaveBeenCalledExactlyOnceWith({
@@ -308,46 +271,6 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
   })
 
-  it('keeps showing the same file when the assets reload in a new order', async () => {
-    const newer = (id: string, name: string, at: string) => ({
-      ...asset(id, name, 'image'),
-      createdAt: at
-    })
-    listAssets.mockResolvedValue([
-      newer('a', 'first.png', '2026-01-02T00:00:00Z'),
-      newer('b', 'second.png', '2026-01-01T00:00:00Z')
-    ])
-    const wrapper = await mountAssets([build('lab', 'Video Lab')])
-    await wrapper.get('[data-testid="asset-open-b"]').trigger('click')
-    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('second.png')
-
-    listAssets.mockResolvedValue([
-      newer('c', 'brand-new.png', '2026-01-03T00:00:00Z'),
-      newer('a', 'first.png', '2026-01-02T00:00:00Z'),
-      newer('b', 'second.png', '2026-01-01T00:00:00Z')
-    ])
-    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('second.png')
-  })
-
-  it('closes the detail view for good when its file goes away on a reload', async () => {
-    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-    const wrapper = await mountAssets([build('lab', 'Video Lab')])
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
-
-    listAssets.mockResolvedValue([])
-    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
-    await flushPromises()
-    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
-
-    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-    useAuthStore().status = { signedIn: true, workspaceId: 'team-c' }
-    await flushPromises()
-    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
-  })
-
   it('reloads when the signed-in workspace changes', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
     await mountAssets([build('lab', 'Video Lab')])
@@ -365,18 +288,6 @@ describe('AppsView', () => {
     await wrapper.get('input').setValue('zzz')
 
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
-  })
-
-  it('returns focus to the opened card when the detail view closes', async () => {
-    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], { attachTo: document.body })
-
-    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
-    await wrapper.get('[data-testid="asset-detail-back"]').trigger('click')
-    await flushPromises()
-
-    expect(document.activeElement).toBe(wrapper.get('[data-testid="asset-open-a"]').element)
-    wrapper.unmount()
   })
 
   it('reports a failed load', async () => {

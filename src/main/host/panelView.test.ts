@@ -214,6 +214,7 @@ describe('comfy-window:navigate-panel', () => {
 
   it.each([
     ['chooser', 'comfy', 'benchmarks'],
+    ['assets', 'comfy', 'benchmarks'],
     ['benchmarks', 'benchmarks', 'comfy'],
     ['performance-test', 'performance-test', 'comfy']
   ] as const)('opens %s in a dashboard window', (page, panel, startingPanel) => {

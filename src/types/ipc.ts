@@ -114,7 +114,14 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage = 'home' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+
+export interface CatalogWorkflow {
+  id: string
+  title: string
+  description: string
+  thumbnailUrl: string | null
+}
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
@@ -1116,6 +1123,9 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   downloadAsset(installationId: string, assetId: string, fileName: string): Promise<boolean>
+  listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  openCatalogWorkflow(id: string): Promise<boolean>
+  openCatalogWorkflowHub(): Promise<boolean>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
