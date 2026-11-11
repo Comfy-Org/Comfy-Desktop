@@ -363,8 +363,10 @@ function readSavedRevocations(): PendingRevocations {
     const file = path.join(revocationsDir(), name)
     try {
       const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(file)))
-      if (isSavedRevocation(parsed))
-        return [{ ...parsed, queuedAt: parsed.queuedAt ?? fs.statSync(file).mtimeMs }]
+      if (isSavedRevocation(parsed)) {
+        const writtenAt = fs.statSync(file).mtimeMs
+        return [{ ...parsed, queuedAt: Math.min(parsed.queuedAt ?? writtenAt, writtenAt) }]
+      }
     } catch {}
     if (!dropIfOutlived(file)) unreadable += 1
     return []
