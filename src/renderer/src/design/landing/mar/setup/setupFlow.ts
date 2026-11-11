@@ -575,6 +575,10 @@ export const flow = reactive({
   /** First launch: Set up and the install stay full-window, before the
    *  Home exists, the way Desktop chains its first install today. */
   takeover: false,
+  /** One-click install, the very first open: a beat with only the wordmark,
+   *  centred on the empty frame, before Set up comes in. The app doesn't
+   *  open straight onto a form. */
+  arriving: false,
   /** Home first: the install runs behind the Home, on its card. Closing the
    *  install modal then only hides it. */
   background: false,
@@ -752,14 +756,29 @@ export function dismissReady(): void {
   flow.homeCard = false
 }
 
+/** The wordmark's beat before Set up: in, a breath, then it travels to
+ *  its place as Set up rises. Skipped under reduced motion. */
+const ARRIVE_MS = 1600
+let arriveTimer: ReturnType<typeof setTimeout> | undefined
+function arrive(): void {
+  clearTimeout(arriveTimer)
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  flow.arriving = true
+  arriveTimer = setTimeout(() => (flow.arriving = false), ARRIVE_MS)
+}
+
 /** Entry: the first launch, then every New Instance button. */
 export function openSetup(): boolean {
   if (!setupOn.value) return false
   // Today's New Instance opens the install wizard directly.
   flow.step = marUser.local === 'none' ? 'first' : 'setup'
   flow.takeover = flow.step === 'first'
-  // One-click install: the first launch opens on Set up, full window.
-  if (flow.takeover && homeOneClick.value) flow.step = 'setup'
+  // One-click install: the first launch opens on Set up, full window,
+  // after the wordmark's beat.
+  if (flow.takeover && homeOneClick.value) {
+    flow.step = 'setup'
+    arrive()
+  }
   flow.percent = 0
   flow.picked = null
   // A new build starts on the recommended packs, where they are offered.
@@ -974,8 +993,10 @@ export function showScreen(s: Screen): void {
   marUser.local = later ? 'one' : 'none'
   // The custom nodes step is a new build's: it shows with the tweak on.
   if (s === 'nodes' && !nodesInBuild.value) localSetup.nodes = 'both'
+  clearTimeout(arriveTimer)
   Object.assign(flow, {
     open: true,
+    arriving: false,
     takeover: !later,
     packs: s === 'nodes' ? recommendedPacks() : [],
     percent: 0,
@@ -1000,8 +1021,12 @@ export function showScreen(s: Screen): void {
     nodes: 'nodes'
   }
   flow.step = step[s]
-  // One-click install has no Run on: its first screen is Set up.
-  if (s === 'first' && homeOneClick.value) flow.step = 'setup'
+  // One-click install has no Run on: its first screen is Set up, after
+  // the wordmark's beat.
+  if (s === 'first' && homeOneClick.value) {
+    flow.step = 'setup'
+    arrive()
+  }
   if (s === 'error') flow.percent = 46
   if (s === 'installing' || s === 'cancel') {
     flow.percent = 58
