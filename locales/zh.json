@@ -57,7 +57,11 @@
       "needsDownload": "需下载 {items}",
       "needsTemplateDownload": "需要下载",
       "needsLocalBuild": "安装本地版本后即可运行模板",
-      "openFailed": "无法在你的版本中打开此模板。"
+      "openFailed": "无法在你的版本中打开此模板。",
+      "alsoTry": "也可以试试",
+      "partner": "合作伙伴",
+      "needsDownloadPill": "需要下载",
+      "rewritePill": "改写提示词"
     }
   },
   "installType": {

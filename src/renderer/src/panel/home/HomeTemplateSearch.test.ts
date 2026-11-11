@@ -17,6 +17,9 @@ function candidate(templateId: string, over: Partial<TemplateSearchCandidate> = 
     templateId,
     title: `${templateId} title`,
     thumbnailUrl: null,
+    family: null,
+    partner: false,
+    rewrite: false,
     missing: [],
     ...over
   }
@@ -29,7 +32,7 @@ const MURAL = candidate('mural_template', { missing: ['mural.safetensors'] })
 function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
   return {
     kind: 'result',
-    result: { outcome: 'template', reply: null, run: [], download: [], ...result }
+    result: { outcome: 'template', reply: null, run: [], download: [], alsoTry: [], ...result }
   }
 }
 
@@ -43,9 +46,9 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-function mountSearch(blockedReason: string | null = null) {
+function mountSearch(blockedReason: string | null = null, refreshKey = '') {
   return mount(HomeTemplateSearch, {
-    props: { client: { search, open }, blockedReason },
+    props: { client: { search, open }, blockedReason, refreshKey },
     attachTo: document.body
   })
 }
@@ -79,6 +82,72 @@ describe('HomeTemplateSearch', () => {
     ])
     expect(wrapper.findAll('[data-testid="home-template-search-row-run"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('Downloads mural.safetensors')
+  })
+
+  it('lists lower-confidence templates under Also try, after the download ones', async () => {
+    search.mockResolvedValue(answer({ run: [POSTER], download: [MURAL], alsoTry: [BANNER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster for a bake sale')
+
+    expect(rowTitles(wrapper)).toEqual([
+      'poster_template title',
+      'mural_template title',
+      'banner_template title',
+      'Build it with the agent'
+    ])
+    expect(wrapper.text()).toContain('Also try')
+    await wrapper.get('[data-testid="home-template-search-row-also"]').trigger('click')
+    await flushPromises()
+    expect(open.mock.calls[0]![1]).toMatchObject({ kind: 'also', position: 2, best: false })
+  })
+
+  it('labels partner templates and the ones that need a download', async () => {
+    const partner = candidate('api_partner_template', { partner: true })
+    search.mockResolvedValue(answer({ run: [partner], download: [MURAL] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster for a bake sale')
+
+    const [first, second] = wrapper.findAll('[role="option"]')
+    expect(first!.find('[data-testid="home-template-search-partner"]').text()).toBe('Partner')
+    expect(first!.find('[data-testid="home-template-search-needs-download"]').exists()).toBe(false)
+    expect(second!.find('[data-testid="home-template-search-partner"]').exists()).toBe(false)
+    expect(second!.find('[data-testid="home-template-search-needs-download"]').text()).toBe(
+      'Needs download'
+    )
+  })
+
+  it('labels templates whose prompt the service would rewrite', async () => {
+    search.mockResolvedValue(
+      answer({ run: [candidate('poster_template', { rewrite: true }), BANNER] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    const [first, second] = wrapper.findAll('[role="option"]')
+    expect(first!.find('[data-testid="home-template-search-rewrite"]').text()).toBe(
+      'Rewrites prompt'
+    )
+    expect(second!.find('[data-testid="home-template-search-rewrite"]').exists()).toBe(false)
+  })
+
+  it('shows the template family under its title', async () => {
+    search.mockResolvedValue(
+      answer({ run: [candidate('poster_template', { family: 'text-to-image' })] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    expect(wrapper.findAll('[role="option"]')[0]!.text()).toContain('text-to-image')
+  })
+
+  it('searches again when what it searches over changes', async () => {
+    const wrapper = mountSearch(null, 'cloud')
+    await searchFor(wrapper, 'a poster for a bake sale')
+    await wrapper.setProps({ refreshKey: 'local' })
+    await flushPromises()
+
+    expect(search).toHaveBeenCalledTimes(2)
+    expect(search).toHaveBeenLastCalledWith('a poster for a bake sale')
   })
 
   it('marks the first template as the best match', async () => {

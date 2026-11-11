@@ -141,6 +141,9 @@ export interface TemplateSearchCandidate {
   templateId: string
   title: string
   thumbnailUrl: string | null
+  family: string | null
+  partner: boolean
+  rewrite: boolean
   missing: string[]
 }
 
@@ -149,6 +152,7 @@ export interface TemplateSearchResult {
   reply: string | null
   run: TemplateSearchCandidate[]
   download: TemplateSearchCandidate[]
+  alsoTry: TemplateSearchCandidate[]
 }
 
 export type TemplateSearchResponse =

@@ -40,6 +40,10 @@ describe('fakeDecision', () => {
     expect(result.run[0]?.templateId).toBe(templateId)
   })
 
+  it('marks the partner template it suggests', () => {
+    expect(fakeDecision('remove the background from this photo').run[0]?.partner).toBe(true)
+  })
+
   it('sends a question to the agent', () => {
     expect(fakeDecision('how do I train a lora?').outcome).toBe('agent')
   })

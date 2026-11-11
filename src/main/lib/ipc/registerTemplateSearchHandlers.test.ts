@@ -33,7 +33,13 @@ function handler(channel: string): IpcHandler {
   return call![1] as IpcHandler
 }
 
-const RESULT: TemplateSearchResult = { outcome: 'agent', reply: null, run: [], download: [] }
+const RESULT: TemplateSearchResult = {
+  outcome: 'agent',
+  reply: null,
+  run: [],
+  download: [],
+  alsoTry: []
+}
 const LOCAL = { id: 'local-1', sourceId: 'standalone' }
 const REMOTE = { id: 'remote-1', sourceId: 'remote' }
 

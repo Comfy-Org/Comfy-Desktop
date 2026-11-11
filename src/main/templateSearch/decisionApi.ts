@@ -8,9 +8,11 @@ import type { FetchLike, TemplateSearchBackend } from './types'
 
 export const RUN_LIMIT = 3
 export const DOWNLOAD_LIMIT = 2
+export const ALSO_TRY_LIMIT = 3
 const REQUESTED_CANDIDATES = 8
 const TIMEOUT_MS = 3000
 const DECIDE_PATH = '/api/decide'
+const PARTNER_PREFIX = 'api_'
 const OUTCOMES: ReadonlySet<string> = new Set<TemplateSearchOutcome>([
   'template',
   'agent',
@@ -32,8 +34,17 @@ function asTexts(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => !!asText(item)) : []
 }
 
+function isUnmaskedOption(value: unknown): boolean {
+  const option = asRecord(value)
+  return option !== null && option.masked == null
+}
+
 function isOutcome(value: unknown): value is TemplateSearchOutcome {
   return typeof value === 'string' && OUTCOMES.has(value)
+}
+
+export function isPartnerTemplate(templateId: string): boolean {
+  return templateId.startsWith(PARTNER_PREFIX)
 }
 
 export function decisionEndpoint(base: string): string | null {
@@ -56,6 +67,9 @@ function candidateFrom(value: unknown): TemplateSearchCandidate | null {
     templateId,
     title: asText(variant.title) ?? templateId,
     thumbnailUrl: thumbnailUrlFor(templateId, 'webp'),
+    family: asText(candidate.family_id),
+    partner: isPartnerTemplate(templateId),
+    rewrite: candidate.kind === 'rewrite',
     missing: asTexts(candidate.download).filter((item) => item !== templateId)
   }
 }
@@ -88,7 +102,13 @@ export function parseDecision(body: unknown): TemplateSearchResult | null {
     DOWNLOAD_LIMIT,
     new Set(run.map((candidate) => candidate.templateId))
   )
-  return { outcome: outcome.kind, reply: asText(outcome.reply), run, download }
+  const options = Array.isArray(decision?.options) ? decision.options : []
+  const alsoTry = distinctCandidates(
+    options.filter(isUnmaskedOption),
+    ALSO_TRY_LIMIT,
+    new Set([...run, ...download].map((candidate) => candidate.templateId))
+  )
+  return { outcome: outcome.kind, reply: asText(outcome.reply), run, download, alsoTry }
 }
 
 export function createDecisionApiBackend(

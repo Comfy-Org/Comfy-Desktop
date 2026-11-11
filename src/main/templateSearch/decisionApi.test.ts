@@ -43,6 +43,17 @@ function decision(over: Record<string, unknown> = {}) {
         candidate('as_given', 'quilt_template', [])
       ]
     },
+    options: [
+      candidate('as_given', 'poster_template'),
+      { ...candidate('as_given', 'flyer_template'), masked: { code: 'needs_file' } },
+      candidate('as_given', 'mural_template'),
+      candidate('agent', null),
+      candidate('as_given', 'card_template'),
+      candidate('rewrite', 'card_template'),
+      candidate('as_given', 'badge_template'),
+      candidate('as_given', 'pennant_template'),
+      candidate('as_given', 'ticket_template')
+    ],
     nearest: { rows: [{ text: 'never read' }] },
     ...over
   }
@@ -64,6 +75,26 @@ describe('parseDecision', () => {
       expect.objectContaining({ templateId: 'mural_template', missing: ['mural.safetensors'] }),
       expect.objectContaining({ templateId: 'zine_template', missing: ['zine.safetensors'] })
     ])
+  })
+
+  it('suggests up to three more unmasked templates from the ranked list that are not shown already', () => {
+    expect(parseDecision(decision())?.alsoTry.map((c) => c.templateId)).toEqual([
+      'card_template',
+      'badge_template',
+      'pennant_template'
+    ])
+  })
+
+  it('suggests nothing more when the service sends no ranked list', () => {
+    expect(parseDecision(decision({ options: undefined }))?.alsoTry).toEqual([])
+  })
+
+  it('marks partner templates', () => {
+    const body = decision({
+      split: { run: [candidate('as_given', 'api_partner_template')], download: [] }
+    })
+    expect(parseDecision(body)?.run[0]).toMatchObject({ partner: true })
+    expect(parseDecision(decision())?.run[0]).toMatchObject({ partner: false })
   })
 
   it('takes thumbnails from the template repository, not the decision service', () => {

@@ -443,8 +443,19 @@ describe('Home template search', () => {
       result: {
         outcome: 'template',
         reply: null,
-        run: [{ templateId: 'poster_template', title: 'Poster', thumbnailUrl: null, missing: [] }],
-        download: []
+        run: [
+          {
+            templateId: 'poster_template',
+            title: 'Poster',
+            thumbnailUrl: null,
+            family: null,
+            partner: false,
+            rewrite: false,
+            missing: []
+          }
+        ],
+        download: [],
+        alsoTry: []
       }
     })
     openTemplateInBuild.mockResolvedValue('launch')
@@ -467,8 +478,19 @@ describe('Home template search', () => {
       result: {
         outcome: 'template',
         reply: null,
-        run: [{ templateId: 'poster_template', title: 'Poster', thumbnailUrl: null, missing: [] }],
-        download: []
+        run: [
+          {
+            templateId: 'poster_template',
+            title: 'Poster',
+            thumbnailUrl: null,
+            family: null,
+            partner: false,
+            rewrite: false,
+            missing: []
+          }
+        ],
+        download: [],
+        alsoTry: []
       }
     })
     openTemplateInBuild.mockResolvedValue('refused')
@@ -490,8 +512,19 @@ describe('Home template search', () => {
       result: {
         outcome: 'template',
         reply: null,
-        run: [{ templateId: 'poster_template', title: 'Poster', thumbnailUrl: null, missing: [] }],
-        download: []
+        run: [
+          {
+            templateId: 'poster_template',
+            title: 'Poster',
+            thumbnailUrl: null,
+            family: null,
+            partner: false,
+            rewrite: false,
+            missing: []
+          }
+        ],
+        download: [],
+        alsoTry: []
       }
     })
     const wrapper = await openHome()

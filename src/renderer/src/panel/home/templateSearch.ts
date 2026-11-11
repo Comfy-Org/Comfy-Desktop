@@ -4,7 +4,7 @@ import type {
   TemplateSearchResult
 } from '../../types/ipc'
 
-export type SearchRowKind = 'run' | 'download' | 'agent'
+export type SearchRowKind = 'run' | 'download' | 'also' | 'agent'
 
 export interface TemplateSearchPick {
   query: string
@@ -25,7 +25,10 @@ export interface SearchRow {
   best: boolean
 }
 
-function templateRow(kind: 'run' | 'download', candidate: TemplateSearchCandidate): SearchRow {
+function templateRow(
+  kind: Exclude<SearchRowKind, 'agent'>,
+  candidate: TemplateSearchCandidate
+): SearchRow {
   return { key: `${kind}:${candidate.templateId}`, kind, candidate, best: false }
 }
 
@@ -33,7 +36,8 @@ export function searchRows(result: TemplateSearchResult): SearchRow[] {
   if (result.outcome === 'bad_input') return []
   const templates = [
     ...result.run.map((candidate) => templateRow('run', candidate)),
-    ...result.download.map((candidate) => templateRow('download', candidate))
+    ...result.download.map((candidate) => templateRow('download', candidate)),
+    ...result.alsoTry.map((candidate) => templateRow('also', candidate))
   ]
   const agent: SearchRow = { key: 'agent', kind: 'agent', candidate: null, best: false }
   if (result.outcome === 'agent') return [{ ...agent, best: true }, ...templates]

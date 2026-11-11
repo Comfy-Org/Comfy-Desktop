@@ -57,7 +57,11 @@
       "needsDownload": "Downloads {items}",
       "needsTemplateDownload": "Needs a download",
       "needsLocalBuild": "Install a local build to run templates",
-      "openFailed": "This template couldn't be opened in your build."
+      "openFailed": "This template couldn't be opened in your build.",
+      "alsoTry": "Also try",
+      "partner": "Partner",
+      "needsDownloadPill": "Needs download",
+      "rewritePill": "Rewrites prompt"
     }
   },
   "installType": {
