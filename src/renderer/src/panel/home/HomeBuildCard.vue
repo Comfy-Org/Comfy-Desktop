@@ -49,16 +49,17 @@ const isLive = computed(() => status === 'running' || status === 'always-on')
 <template>
   <button
     type="button"
-    class="relative flex h-25 w-full cursor-pointer items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left outline-none transition-colors hover:bg-[rgb(137_137_137/0.09)] focus-visible:ring-2 focus-visible:ring-ring"
+    class="group relative flex h-25 w-full cursor-pointer items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left outline-none transition-colors hover:bg-[rgb(137_137_137/0.09)] focus-visible:ring-2 focus-visible:ring-ring"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     data-testid="home-build"
     @click="emit('open')"
   >
     <span
-      class="pointer-events-none absolute inset-0"
+      class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[2.6] group-focus-visible:scale-[2.6] motion-reduce:transition-none"
       :style="{
-        background: `radial-gradient(62% 130% at 6% 50%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
+        background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
       }"
+      data-testid="home-build-glow"
       aria-hidden="true"
     />
     <BuildDeviceArt
