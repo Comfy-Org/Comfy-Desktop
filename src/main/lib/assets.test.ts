@@ -308,6 +308,31 @@ describe('downloadAsset', () => {
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
   })
 
+  it('gives up and removes the partial file when the download stops sending data', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    fetchMock.mockImplementation(async (_url: string, init: { signal: AbortSignal }) => {
+      const stalled = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('part'))
+          init.signal.addEventListener('abort', () => controller.error(new Error('stalled')))
+        }
+      })
+      return new Response(stalled)
+    })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const download = downloadAsset(win, 'local-1', 'a1', 'still.png')
+      const failed = expect(download).rejects.toThrow('stalled')
+      await vi.advanceTimersByTimeAsync(20_000)
+      await failed
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(removeFile).toHaveBeenCalledWith('/picked/still.png.part', { force: true })
+  })
+
   it('writes nothing when the save dialog is cancelled', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
     runningSessions.set('local-1', { port: 8188 })
