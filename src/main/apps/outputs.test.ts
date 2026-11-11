@@ -34,6 +34,7 @@ describe('outputRequest', () => {
     expect(outputRequest({ items: [picture()], index: 1 })).toBeNull()
     expect(outputRequest({ items: [picture()], index: -1 })).toBeNull()
     expect(outputRequest({ items: [picture({ mimeType: 'text/html' })], index: 0 })).toBeNull()
+    expect(outputRequest({ items: [picture({ mimeType: 'image/svg+xml' })], index: 0 })).toBeNull()
     expect(outputRequest({ items: [picture({ bytes: 'abc' })], index: 0 })).toBeNull()
     expect(outputRequest({ items: [picture({ name: ' ' })], index: 0 })).toBeNull()
     expect(

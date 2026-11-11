@@ -16,6 +16,15 @@ export function appsOrigin(url: string): string | null {
   return parsed.protocol === 'http:' && loopback ? parsed.origin : null
 }
 
+const ALLOWED_APPS_PERMISSIONS: ReadonlySet<string> = new Set([
+  'clipboard-sanitized-write',
+  'fullscreen'
+])
+
+export function isAllowedAppsPermission(permission: string): boolean {
+  return ALLOWED_APPS_PERMISSIONS.has(permission)
+}
+
 export function isAppsFrameUrl(frameUrl: string, origin: string | null): boolean {
   if (!origin) return false
   try {
@@ -162,7 +171,9 @@ export function toOutputFile(value: unknown): OutputFile | null {
 export function safeUploadName(name: unknown): string {
   const base = typeof name === 'string' ? (name.split(/[\\/]/).pop() ?? '') : ''
   const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100)
-  return /\.(png|jpe?g|webp|mp4|webm|mov)$/i.test(cleaned) ? cleaned : 'upload.png'
+  return /\.(png|jpe?g|webp|mp4|webm|mov|mp3|wav|flac|ogg|m4a|opus)$/i.test(cleaned)
+    ? cleaned
+    : 'upload.png'
 }
 
 export type OutputKind = 'image' | 'video' | 'audio' | '3d' | 'text' | 'file'
@@ -624,7 +635,8 @@ export const DOWNLOAD_FOLDERS = [
   'model_patches',
   'background_removal',
   'frame_interpolation',
-  'geometry_estimation'
+  'geometry_estimation',
+  'audio_encoders'
 ]
 
 export interface DownloadRequest {

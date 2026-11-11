@@ -5,6 +5,7 @@ export type {
   AssetKind,
   AssetSummary,
   CatalogApp,
+  CatalogWorkflow,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

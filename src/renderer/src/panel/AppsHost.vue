@@ -118,17 +118,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="slot" class="panel-apps min-h-0 flex-1 overflow-hidden" data-testid="apps-host">
+  <div ref="slot" class="min-h-0 flex-1 overflow-hidden" data-testid="apps-host">
     <div
       ref="surface"
-      class="size-full rounded-[14px] bg-content-background"
+      class="size-full rounded-shell bg-content-background"
       data-testid="apps-host-surface"
     />
     <img
       v-if="covered && backdrop"
       :src="backdrop"
       alt=""
-      class="absolute inset-0 size-full rounded-[14px] object-cover"
+      class="absolute inset-0 size-full rounded-shell object-cover"
       data-testid="apps-host-backdrop"
     />
   </div>

@@ -7,6 +7,8 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import * as installations from '../installations'
+import * as settings from '../settings'
+import { buildSaveDialogFilters } from './comfyDownloadManager'
 import { _runningSessions, sourceMap } from './ipc/shared'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
@@ -53,8 +55,9 @@ export function assetKind(name: string, mimeType?: string): AssetKind | null {
   const mimeKind = mimeType?.split('/')[0]
   if (mimeKind === 'image' || mimeKind === 'video' || mimeKind === 'audio') return mimeKind
   if (mimeType?.startsWith('model/')) return '3d'
-  const extension = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
-  return KIND_BY_EXTENSION[extension] ?? null
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return null
+  return KIND_BY_EXTENSION[name.slice(dot + 1).toLowerCase()] ?? null
 }
 
 function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
@@ -62,7 +65,7 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
     id: row.id,
     name: row.name.slice(row.name.lastIndexOf('/') + 1),
     kind: assetKind(row.name, row.mime_type),
-    sizeBytes: row.size ? row.size : null,
+    sizeBytes: typeof row.size === 'number' ? row.size : null,
     createdAt: row.created_at ?? null,
     mimeType: row.mime_type ?? null,
     tags: Array.isArray(row.tags)
@@ -147,7 +150,9 @@ function localPreviewUrl(row: AssetRow, origin: string): string {
   const fallback = new URL(contentPath(row.id, 'inline'), origin)
   if (!row.preview_url) return fallback.toString()
   const preview = new URL(row.preview_url, origin)
-  return (preview.origin === origin ? preview : fallback).toString()
+  return (
+    preview.origin === origin && preview.pathname.startsWith('/api/') ? preview : fallback
+  ).toString()
 }
 
 async function listLocalAssets(origin: string): Promise<AssetSummary[]> {
@@ -169,6 +174,16 @@ async function downloadUrl(source: AssetSource, assetId: string): Promise<string
     : `${source.origin}${contentPath(assetId, 'attachment')}`
 }
 
+async function fetchHeaders(url: string): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(url, { signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function safeFileName(fileName: string, assetId: string): string {
   const base = path.basename(fileName)
   return base === '' || base === '.' || base === '..' ? assetId : base
@@ -182,18 +197,25 @@ export async function downloadAsset(
 ): Promise<boolean> {
   const source = await resolveSource(installationId)
   if (!source) throw new Error('This build is not running.')
+  const name = safeFileName(fileName, assetId)
+  const remembered = settings.get('lastSaveDialogDir')
+  const startDir = remembered && fs.existsSync(remembered) ? remembered : app.getPath('downloads')
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
-    defaultPath: path.join(app.getPath('downloads'), safeFileName(fileName, assetId))
+    defaultPath: path.join(startDir, name),
+    filters: buildSaveDialogFilters(name)
   })
   if (canceled || !filePath) return false
+  settings.set('lastSaveDialogDir', path.dirname(filePath))
   const url = await downloadUrl(source, assetId)
   if (!url) throw new Error('The asset has no download link.')
-  const res = await fetch(url)
+  const res = await fetchHeaders(url)
   if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+  const partPath = `${filePath}.part`
   try {
-    await pipeline(Readable.fromWeb(res.body as WebReadableStream), fs.createWriteStream(filePath))
+    await pipeline(Readable.fromWeb(res.body as WebReadableStream), fs.createWriteStream(partPath))
+    await fs.promises.rename(partPath, filePath)
   } catch (error) {
-    await fs.promises.rm(filePath, { force: true }).catch(() => {})
+    await fs.promises.rm(partPath, { force: true }).catch(() => {})
     throw error
   }
   return true

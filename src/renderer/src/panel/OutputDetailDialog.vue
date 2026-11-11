@@ -45,7 +45,6 @@ const { t, locale } = useI18n()
 const preferredMotion = usePreferredReducedMotion()
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const natural = ref<{ width: number; height: number } | null>(null)
-const shownWidth = ref<number | null>(null)
 const zoom = ref<Zoom>('fit')
 
 const item = computed(() => items[index.value]!)
@@ -73,11 +72,10 @@ const facts = computed(() =>
     item.value.sizeBytes === null ? null : formatBytes(item.value.sizeBytes)
   ].filter((fact): fact is string => !!fact)
 )
-const zoomLabel = computed(() => {
-  if (zoom.value !== 'fit') return `${Math.round(zoom.value * 100)}%`
-  if (!natural.value || !shownWidth.value) return t('assets.detail.fit')
-  return `${Math.round((shownWidth.value / natural.value.width) * 100)}%`
-})
+const percent = computed(() => new Intl.NumberFormat(locale.value, { style: 'percent' }))
+const zoomLabel = computed(() =>
+  zoom.value === 'fit' ? t('assets.detail.fit') : percent.value.format(zoom.value)
+)
 const zoomedWidth = computed(() =>
   zoom.value === 'fit' || !natural.value ? null : `${natural.value.width * zoom.value}px`
 )
@@ -86,7 +84,6 @@ watch(
   () => item.value.key,
   async () => {
     natural.value = null
-    shownWidth.value = null
     zoom.value = 'fit'
     await nextTick()
     filmstrip.value
@@ -99,7 +96,6 @@ watch(
 function onImageLoad(event: Event): void {
   const img = event.target as HTMLImageElement
   natural.value = { width: img.naturalWidth, height: img.naturalHeight }
-  shownWidth.value = img.clientWidth
 }
 
 function onVideoLoad(event: Event): void {
@@ -112,7 +108,7 @@ function step(delta: number): void {
 }
 
 function zoomOptionLabel(option: Zoom): string {
-  return option === 'fit' ? t('assets.detail.fit') : `${option * 100}%`
+  return option === 'fit' ? t('assets.detail.fit') : percent.value.format(option)
 }
 
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
@@ -234,7 +230,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               type="button"
               variant="secondary"
               size="md"
-              class="min-w-20 justify-between gap-1.5 px-3 text-[13px]/5 tabular-nums"
+              class="min-w-20 justify-between gap-1.5 px-3 text-ui tabular-nums"
               data-testid="output-detail-zoom"
             >
               {{ zoomLabel }}
@@ -290,12 +286,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           {{ t('assets.detail.generationInfo') }}
         </div>
         <div class="flex items-center justify-between gap-4 text-ui">
-          <span class="flex items-center gap-2 text-foreground">
-            <span
-              class="size-1.5 rounded-full"
-              :class="item.workflow ? 'bg-success' : 'bg-subtle-foreground'"
-              aria-hidden="true"
-            />
+          <span class="text-foreground">
             {{ t('assets.detail.workflow') }}
           </span>
           <span class="text-subtle-foreground">
@@ -309,7 +300,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           type="button"
           variant="inverted"
           size="md"
-          class="gap-1.5 text-[13px]/5"
+          class="gap-1.5 text-ui"
           data-testid="output-detail-download"
           @click="emit('download', index)"
         >
@@ -321,7 +312,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           type="button"
           variant="secondary"
           size="md"
-          class="gap-1.5 text-[13px]/5"
+          class="gap-1.5 text-ui"
           data-testid="output-detail-workflow"
           @click="emit('open-workflow', index)"
         >

@@ -3,7 +3,8 @@ import type { AppOutputAction, AppOutputItem } from '../../types/ipc'
 export const MAX_OUTPUTS = 40
 export const MAX_OUTPUTS_BYTES = 100_000_000
 const MAX_TAGS = 8
-const MEDIA_TYPE = /^(image|video|audio)\/[\w.+-]{1,60}$/
+const MEDIA_TYPE =
+  /^(image\/(png|jpeg|webp|gif|avif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|mp4|wav|x-wav|ogg|webm|flac|aac))$/
 
 function text(value: unknown, max: number): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : null

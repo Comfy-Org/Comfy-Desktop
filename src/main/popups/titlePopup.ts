@@ -862,6 +862,26 @@ export function requiresPerOpenConfigSync(
   return opts.snapshot?.initialTab != null || opts.snapshot?.highlightFieldId != null
 }
 
+export function syncTitlePopupConfig(
+  entry: TitlePopupEntry,
+  config: TitlePopupConfig,
+  syncEveryOpen: boolean
+): void {
+  const configJson = JSON.stringify(config)
+  const popupContents = entry.view.popup.webContents
+  if (!syncEveryOpen && entry.lastSyncedConfigJson === configJson && !popupContents.isDestroyed()) {
+    return
+  }
+
+  entry.lastConfigJson = configJson
+  entry.lastSyncedConfigJson = null
+  if (entry.view.rendererReady && !popupContents.isDestroyed()) {
+    popupContents.send('comfy-titlepopup:set-config', config)
+  } else {
+    entry.pendingConfig = config
+  }
+}
+
 function openTitlePopup(opts: OpenTitlePopupOpts): void {
   hideTitleTooltipPopup(getTitleTooltipForParent(opts.parent.id))
   const entry = ensureTitlePopup(opts.parent)
@@ -931,24 +951,7 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     config = { kind: POPUP_KIND.globalSettings, snapshot: opts.snapshot, theme: opts.theme }
     entry.lastGlobalSettingsBroadcastJson = JSON.stringify(opts.snapshot)
   }
-  const configJson = JSON.stringify(config)
-
-  if (
-    !requiresPerOpenConfigSync(opts) &&
-    entry.lastSyncedConfigJson === configJson &&
-    !entry.view.popup.webContents.isDestroyed()
-  ) {
-    showTitlePopupNow(entry)
-    return
-  }
-
-  entry.lastConfigJson = configJson
-  if (entry.view.rendererReady && !entry.view.popup.webContents.isDestroyed()) {
-    entry.view.popup.webContents.send('comfy-titlepopup:set-config', config)
-  } else {
-    entry.pendingConfig = config
-  }
-
+  syncTitlePopupConfig(entry, config, requiresPerOpenConfigSync(opts))
   showTitlePopupNow(entry)
 }
 

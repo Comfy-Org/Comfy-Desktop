@@ -49,6 +49,13 @@ describe('Apps bridge wiring', () => {
     expect(main).toContain('ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)')
   })
 
+  it('output actions reach the page on the channel the preload listens to', () => {
+    const action = main.match(/APPS_OUTPUT_ACTION_CHANNEL = '([\w:-]+)'/)![1]
+    expect(preload).toContain(`ipcRenderer.on('${action}'`)
+    expect(preload).toContain(`ipcRenderer.removeListener('${action}'`)
+    expect(main).toContain('ipcMain.on(APPS_OUTPUT_ACTION_CHANNEL, relayOutputAction)')
+  })
+
   it('local events go out on the channel the preload listens to', () => {
     const sent = local.match(/LOCAL_EVENT_CHANNEL = '([\w:-]+)'/)![1]
     expect(preload).toContain(`ipcRenderer.on('${sent}'`)

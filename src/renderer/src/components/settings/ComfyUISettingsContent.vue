@@ -33,7 +33,8 @@ import {
   EyeOff,
   Settings2,
   Repeat2,
-  Server
+  Server,
+  Ellipsis
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
@@ -557,9 +558,15 @@ function actionIcon(id: string): Component {
   }
 }
 
-const pinBottomMenuActions = computed<MenuAction[]>(() =>
-  pinBottomActions.value.map((action) => ({ ...action, icon: actionIcon(action.id) }))
-)
+const pinBottomMenuActions = computed<MenuAction[]>(() => {
+  const firstDanger = pinBottomActions.value.findIndex((action) => action.style === 'danger')
+  return pinBottomActions.value.map((action, index) => ({
+    ...action,
+    icon: actionIcon(action.id),
+    style: action.id === 'untrack' || action.id === 'remove' ? undefined : action.style,
+    separator: index === firstDanger
+  }))
+})
 
 function handlePrimaryAction(): void {
   const selectedInstall = installation.value
@@ -771,7 +778,10 @@ defineExpose({
               :data-testid="TID.settingsTab(tab.key)"
               @click="selectTab(tab.key)"
             >
-              <span class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center">
+              <span
+                v-if="!isPage || (tab.key === 'update' && showUpdateBadge)"
+                class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+              >
                 <component
                   :is="tab.icon"
                   v-if="!isPage"
@@ -1176,7 +1186,7 @@ defineExpose({
           <div class="settings-v2-more-wrap relative inline-flex">
             <Button
               variant="secondary"
-              size="md"
+              :size="isPage ? 'icon' : 'md'"
               type="button"
               class="settings-v2-more"
               data-more-trigger
@@ -1190,8 +1200,11 @@ defineExpose({
               :data-testid="TID.pickerMoreTrigger"
               @click="toggleMoreMenu"
             >
-              {{ t('comfyUISettings.more') }}
-              <component :is="menuChevron" :size="14" />
+              <Ellipsis v-if="isPage" :size="16" aria-hidden="true" />
+              <template v-else>
+                {{ t('comfyUISettings.more') }}
+                <component :is="menuChevron" :size="14" />
+              </template>
             </Button>
             <MoreMenu
               :open="moreMenuOpen"

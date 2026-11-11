@@ -43,23 +43,19 @@ onMounted(async () => {
     >
       {{ t('apps.loadFailed', { url: loadFailedUrl }) }}
     </p>
-    <ul
-      v-if="loading"
-      role="status"
-      :aria-label="t('common.loading')"
-      :class="GRID_CLASS"
-      data-testid="apps-gallery-skeleton"
-    >
-      <li
-        v-for="n in SKELETON_COUNT"
-        :key="n"
-        class="flex flex-col gap-2 rounded-xl bg-secondary p-1.5 pb-4"
-      >
-        <Skeleton class="aspect-video w-full rounded-lg" />
-        <Skeleton class="mx-2.5 mt-2 h-3 w-1/2 rounded-full" />
-        <Skeleton class="mx-2.5 h-2.5 w-3/4 rounded-full" />
-      </li>
-    </ul>
+    <div v-if="loading" role="status" :aria-label="t('common.loading')">
+      <ul :class="GRID_CLASS" data-testid="apps-gallery-skeleton">
+        <li
+          v-for="n in SKELETON_COUNT"
+          :key="n"
+          class="flex flex-col gap-2 rounded-xl bg-secondary p-1.5 pb-4"
+        >
+          <Skeleton class="aspect-video w-full rounded-lg" />
+          <Skeleton class="mx-2.5 mt-2 h-3 w-1/2 rounded-full" />
+          <Skeleton class="mx-2.5 h-2.5 w-3/4 rounded-full" />
+        </li>
+      </ul>
+    </div>
     <p
       v-else-if="failed"
       class="m-0 text-ui text-muted-foreground"
@@ -72,13 +68,15 @@ onMounted(async () => {
       class="m-0 text-ui text-muted-foreground"
       data-testid="apps-coming-soon"
     >
-      {{ t('sidebar.comingSoon') }}
+      {{ t('apps.comingSoon') }}
     </p>
     <ul v-else :class="GRID_CLASS" data-testid="apps-gallery">
       <li v-for="app in apps" :key="app.id">
         <button
           type="button"
           class="group block w-full cursor-pointer rounded-xl text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          :aria-label="app.title"
+          :aria-describedby="app.description ? `app-card-description-${app.id}` : undefined"
           :data-testid="`app-card-${app.id}`"
           @click="emit('open', app)"
         >
@@ -106,7 +104,11 @@ onMounted(async () => {
                   <span class="truncate text-ui font-medium text-foreground">
                     {{ app.title }}
                   </span>
-                  <span v-if="app.description" class="line-clamp-2 text-ui text-muted-foreground">
+                  <span
+                    v-if="app.description"
+                    :id="`app-card-description-${app.id}`"
+                    class="line-clamp-2 text-ui text-muted-foreground"
+                  >
                     {{ app.description }}
                   </span>
                 </span>
