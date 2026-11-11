@@ -659,19 +659,16 @@ watch(performanceTestLogs, async () => {
 
 <template>
   <BrandBackground
-    class="performance-test min-h-0 [&_.brand-outer-frame]:min-h-0 [&_.brand-inner-frame]:min-h-0"
+    class="performance-test min-h-0 [&_.brand-outer-frame]:min-h-0 [&_.brand-inner-frame]:min-h-0 [&_.brand-inner-frame]:p-0"
     data-testid="performance-test"
   >
     <div
       class="performance-test__layout @container relative h-full min-h-0 w-full overflow-x-hidden overflow-y-auto"
     >
       <div
-        class="performance-test__intro flex min-h-full w-full flex-col items-start gap-8 text-left"
+        class="performance-test__intro mx-auto flex min-h-full w-full max-w-300 flex-col items-start gap-6 px-10 pt-9 pb-24 text-left"
       >
-        <BrandedPageHeader
-          :title="t('performanceTest.title')"
-          :description="t('performanceTest.description')"
-        >
+        <BrandedPageHeader :title="t('performanceTest.title')">
           <template #actions>
             <Button
               v-if="ownsRun"
