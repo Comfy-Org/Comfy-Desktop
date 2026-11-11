@@ -316,9 +316,9 @@ describe('BenchmarksView', () => {
     await flushPromises()
 
     expect(group(wrapper).get('.benchmarks__summary').text()).toBe(
-      'Nightly 0.3.62 is the fastest, 1.11× faster than Stable 0.3.60.'
+      'Nightly 0.3.62 is the fastest, 10% ahead of Stable 0.3.60.'
     )
-    expect(group(wrapper).get('.benchmarks__summary .text-success').text()).toBe('1.11× faster')
+    expect(group(wrapper).get('.benchmarks__summary .text-success').text()).toBe('10% ahead')
     expect(vsLabels(wrapper)).toEqual(['Fastest', '1.11× slower', '1.53× slower'])
     expect(
       group(wrapper)
@@ -330,7 +330,7 @@ describe('BenchmarksView', () => {
         .findAll('.benchmarks__bar-fill--best')
         .map((fill) => fill.element.closest('tr')?.getAttribute('data-testid'))
     ).toEqual(['benchmark-row-13'])
-    expect(group(wrapper).get('.benchmarks__axis').text()).toBe('0 s3.7 s')
+    expect(group(wrapper).find('.benchmarks__axis').exists()).toBe(false)
     expect(
       Number.parseFloat(
         (
@@ -361,7 +361,7 @@ describe('BenchmarksView', () => {
     await chooseMenuItem('.benchmarks__set-baseline')
 
     expect(group(wrapper).get('.benchmarks__summary').text()).toBe(
-      'Compared with Stable 0.3.60, the baseline. Nightly 0.3.62 is 1.11× faster.'
+      'Nightly 0.3.62 is 10% ahead of Stable 0.3.60, the baseline.'
     )
     expect(vsLabels(wrapper)).toEqual(['1.11× faster', 'Baseline', '1.38× slower'])
     expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
@@ -441,7 +441,7 @@ describe('BenchmarksView', () => {
     expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
     expect(group(wrapper).get('.benchmarks__bar-head').text()).toBe('Fastest and range')
     expect(group(wrapper).get('.benchmarks__summary').text()).toBe(
-      'Stable 0.3.55 is the fastest, 1.60× faster than Nightly 0.3.62.'
+      'Stable 0.3.55 is the fastest, 38% ahead of Nightly 0.3.62.'
     )
 
     await group(wrapper).get('.benchmarks__metric-sort').trigger('click')

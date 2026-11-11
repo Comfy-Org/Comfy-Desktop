@@ -426,6 +426,11 @@ function buildGroup(key: string, members: PerformanceTestBenchmark[]): Benchmark
   }
 }
 
+function percentAhead(factor: number | null): number {
+  if (factor === null || factor <= 1) return 0
+  return Math.max(1, Math.round((1 - 1 / factor) * 100))
+}
+
 function groupSummary(
   measured: PerformanceTestBenchmark[],
   baseline: PerformanceTestBenchmark | null
@@ -441,7 +446,7 @@ function groupSummary(
     keypath: same ? `${prefix}Same` : prefix,
     lead: fastest.instance.name,
     other: other.instance.name,
-    factor: t('benchmarks.timesFaster', { factor: formatFactor(factor) })
+    factor: t('benchmarks.percentAhead', { percent: percentAhead(factor) })
   }
 }
 
@@ -1156,7 +1161,7 @@ onActivated(() => {
           <section
             v-for="group in groups"
             :key="group.key"
-            class="benchmarks__group min-w-0 rounded-[14px] bg-card px-4 pt-3 pb-3"
+            class="benchmarks__group min-w-0 rounded-[14px] bg-card pt-3 pr-4 pb-3 pl-12"
             :data-testid="`benchmark-group-${group.workflowName}-${group.hardware}`"
             :aria-label="group.workflowName"
           >
@@ -1164,14 +1169,14 @@ onActivated(() => {
               <Button
                 variant="textonly"
                 size="unset"
-                class="benchmarks__group-toggle -ml-1 gap-1.5 rounded-lg px-1 py-1 text-[11px] font-semibold tracking-[0.09em] text-muted-foreground uppercase hover:bg-transparent hover:text-foreground"
+                class="benchmarks__group-toggle -ml-6 gap-1.5 rounded-lg px-1 py-1 text-[14px] font-semibold text-foreground hover:bg-transparent"
                 type="button"
                 :aria-expanded="!collapsedGroupKeys.has(group.key)"
                 @click="toggleGroup(group.key)"
               >
                 <ChevronRight
                   :size="14"
-                  class="transition-transform duration-150"
+                  class="text-muted-foreground transition-transform duration-150"
                   :class="{ 'rotate-90': !collapsedGroupKeys.has(group.key) }"
                   aria-hidden="true"
                 />
@@ -1227,13 +1232,13 @@ onActivated(() => {
                 :keypath="group.summary?.keypath ?? ''"
                 tag="p"
                 scope="global"
-                class="benchmarks__summary m-0 mt-1 mb-3 text-[15px] font-medium text-foreground"
+                class="benchmarks__summary m-0 mt-0.5 mb-3 text-[13px] text-muted-foreground"
               >
                 <template #lead>
-                  <strong class="font-semibold">{{ group.summary.lead }}</strong>
+                  <strong class="font-medium text-foreground">{{ group.summary.lead }}</strong>
                 </template>
                 <template #other>
-                  <strong v-if="group.customBaseline" class="font-semibold">{{
+                  <strong v-if="group.customBaseline" class="font-medium text-foreground">{{
                     group.summary.other
                   }}</strong>
                   <template v-else>{{ group.summary.other }}</template>
@@ -1250,13 +1255,13 @@ onActivated(() => {
               </p>
               <div v-else class="h-2" />
 
-              <div class="benchmarks__table-scroll -mx-2 overflow-x-auto">
+              <div class="benchmarks__table-scroll -mr-2 -ml-10 overflow-x-auto">
                 <table
                   class="benchmarks__table w-full border-separate border-spacing-y-0.5 text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:px-2 [&_th]:pb-1.5 [&_th]:text-[10.5px] [&_th]:font-semibold [&_th]:tracking-[0.08em] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_th]:uppercase [&_tfoot_td]:py-1 [&_td:first-child]:rounded-l-[10px] [&_td:last-child]:rounded-r-[10px] [&_tbody_tr:hover>td]:bg-foreground/[0.035]"
                 >
                   <thead>
                     <tr>
-                      <th class="w-14" :aria-label="t('benchmarks.selection')" />
+                      <th class="w-8 !px-0" :aria-label="t('benchmarks.selection')" />
                       <th :aria-sort="sortState('id')">
                         <Button
                           variant="textonly"
@@ -1336,8 +1341,8 @@ onActivated(() => {
                       @dragover="dragOverRun($event, benchmark.id)"
                       @drop="dropRun($event, benchmark.id)"
                     >
-                      <td class="w-14">
-                        <div class="flex items-center gap-1">
+                      <td class="w-8 !px-0">
+                        <div class="flex items-center gap-0.5">
                           <span
                             class="benchmarks__grip inline-flex flex-none cursor-grab rounded text-subtle-foreground focus-visible:opacity-100 focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] active:cursor-grabbing"
                             :class="
@@ -1428,8 +1433,8 @@ onActivated(() => {
                               class="benchmarks__bar-fill absolute inset-y-0 left-0 rounded"
                               :class="
                                 group.measuredCount > 1 && group.fastestId === benchmark.id
-                                  ? 'benchmarks__bar-fill--best bg-foreground'
-                                  : 'bg-foreground/30'
+                                  ? 'benchmarks__bar-fill--best bg-foreground/65'
+                                  : 'bg-foreground/20'
                               "
                               :style="{
                                 width: `${barScale(group, metricValue(benchmark, comparisonMetric))}%`
@@ -1578,20 +1583,6 @@ onActivated(() => {
                       </td>
                     </tr>
                   </tbody>
-                  <tfoot>
-                    <tr class="benchmarks__axis text-[11px] text-subtle-foreground">
-                      <td :colspan="showBuildColumn ? 3 : 2" />
-                      <td>
-                        <span class="flex justify-between tabular-nums">
-                          <span>{{ formatDuration(0) }}</span>
-                          <span class="benchmarks__axis-max">{{
-                            formatDuration(group.scaleMaximum)
-                          }}</span>
-                        </span>
-                      </td>
-                      <td :colspan="extraColumns.length + 3" />
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
 
