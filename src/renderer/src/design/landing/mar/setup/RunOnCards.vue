@@ -117,7 +117,7 @@ const WAYS = [
   transform-origin: left bottom;
 }
 .mss-way:not([aria-checked='true']) .mss-way-device {
-  opacity: 0.8;
+  opacity: 0.9;
   transition: opacity 160ms ease;
 }
 .mss-way:hover .mss-way-device {
@@ -148,8 +148,10 @@ const WAYS = [
   line-height: 18px;
   text-wrap: pretty;
 }
+/* Not picked: a shade down, still readable; the ring and the fill say
+ * which one is picked. */
 .mss-way:not([aria-checked='true']) .mss-way-title {
-  color: var(--color-muted-foreground);
+  color: color-mix(in oklch, var(--color-base-foreground) 82%, transparent);
 }
 .mss-way-desc b {
   color: var(--color-muted-foreground);
@@ -172,6 +174,30 @@ const WAYS = [
 }
 .mss-way[aria-checked='true'] .mss-way-mark {
   visibility: visible;
+}
+
+/* Run on alone (setup.css, .is-alone): the cards are wide, so each reads
+ * as a row: the device on the left, the words beside it, the mark top
+ * right as before. Here, not in setup.css, so it outranks the card's own
+ * rules above. */
+.mss-first.is-alone .mss-way {
+  flex-direction: row;
+  align-items: center;
+  gap: 24px;
+  padding-right: 56px;
+}
+.mss-first.is-alone .mss-way-device {
+  height: auto;
+  align-self: center;
+}
+.mss-first.is-alone .mss-way .mss-laptop {
+  width: clamp(104px, 9vw, 136px);
+}
+.mss-first.is-alone .mss-way .mss-cloud {
+  transform: translate(-16%, 6px) scale(1.4);
+}
+.mss-first.is-alone .mss-way-desc {
+  margin-top: 8px;
 }
 
 /* Rows: the same cards stacked; the mark is a radio on the right. */
