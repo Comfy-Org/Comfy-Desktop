@@ -831,7 +831,7 @@ describe('PanelApp', () => {
     await logsToggle.trigger('click')
     const instanceSelect = wrapper.get('.performance-test__instance-select button')
     expect(instanceSelect.attributes()).toMatchObject({
-      role: 'combobox',
+      'aria-haspopup': 'menu',
       'aria-label': 'Select a build',
       'aria-expanded': 'false'
     })

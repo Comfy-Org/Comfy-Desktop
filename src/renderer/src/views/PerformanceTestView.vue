@@ -2,15 +2,26 @@
 import Input from '@comfyorg/design-system/input/Input'
 import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronDown, FileJson, FolderOpen, ImageDown, Play, Square, X } from 'lucide-vue-next'
+import {
+  Check,
+  ChevronDown,
+  FileJson,
+  FolderOpen,
+  ImageDown,
+  Play,
+  Square,
+  X
+} from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
+import { DropdownMenuRadioGroup } from 'reka-ui'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import CollapsibleSectionToggle from '../components/CollapsibleSectionToggle.vue'
 import InfoTooltip from '../components/InfoTooltip.vue'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import BaseModal from '../components/ui/BaseModal.vue'
-import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import { usePerformanceTestExampleWorkflow } from '../composables/usePerformanceTestExampleWorkflow'
 import { useWorkspaceInstallScope } from '../composables/useWorkspaceInstallScope'
 import { useAuthStore } from '../stores/authStore'
@@ -63,7 +74,7 @@ const performanceTestInstallations = computed(() =>
       (authStore.isSignedIn || installation.status === 'installed')
   )
 )
-const instanceOptions = computed<BaseSelectOption[]>(() =>
+const instanceOptions = computed<{ value: string; label: string; description: string }[]>(() =>
   performanceTestInstallations.value.map((installation) => ({
     value: installation.id,
     label: installation.name,
@@ -71,6 +82,9 @@ const instanceOptions = computed<BaseSelectOption[]>(() =>
   }))
 )
 const selectedInstallationId = ref<string | null>(null)
+const selectedInstance = computed(() =>
+  instanceOptions.value.find((option) => option.value === selectedInstallationId.value)
+)
 const workflowFilePath = ref<string | null>(null)
 const workflowImportError = ref<string | null>(null)
 const isWorkflowDragging = ref(false)
@@ -712,15 +726,57 @@ watch(performanceTestLogs, async () => {
             <section class="performance-test__step" :class="cardClass">
               <h2 :class="titleClass">{{ t('performanceTest.selectInstance') }}</h2>
               <div class="performance-test__instance-select min-w-0 w-full">
-                <BaseSelect
-                  class="h-8 px-3 text-[13px]/5"
-                  :model-value="selectedInstallationId ?? ''"
-                  :options="instanceOptions"
-                  :placeholder="t('performanceTest.selectInstancePlaceholder')"
+                <Menu
+                  :modal="false"
+                  align="start"
+                  class="z-20 min-w-[var(--reka-dropdown-menu-trigger-width)]"
                   :aria-label="t('performanceTest.selectInstancePlaceholder')"
-                  :disabled="instanceOptions.length === 0"
-                  @update:model-value="selectedInstallationId = $event"
-                />
+                >
+                  <template #trigger>
+                    <Button
+                      class="w-full justify-between gap-1.5 px-3 text-[13px]/5 font-normal"
+                      variant="secondary"
+                      size="md"
+                      type="button"
+                      :aria-label="t('performanceTest.selectInstancePlaceholder')"
+                      :disabled="instanceOptions.length === 0"
+                    >
+                      <span
+                        class="truncate"
+                        :class="{ 'text-muted-foreground': !selectedInstance }"
+                        >{{
+                          selectedInstance?.label ?? t('performanceTest.selectInstancePlaceholder')
+                        }}</span
+                      >
+                      <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
+                    </Button>
+                  </template>
+                  <DropdownMenuRadioGroup :model-value="selectedInstallationId ?? ''">
+                    <MenuRadioItem
+                      v-for="option in instanceOptions"
+                      :key="option.value"
+                      as="button"
+                      type="button"
+                      :value="option.value"
+                      class="ui-select-option w-full"
+                      @select="selectedInstallationId = option.value"
+                    >
+                      <span class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+                        <span class="ui-select-option-label">{{ option.label }}</span>
+                        <span
+                          v-if="option.description"
+                          class="ui-select-option-desc text-xs text-muted-foreground"
+                          >{{ option.description }}</span
+                        >
+                      </span>
+                      <Check
+                        v-if="selectedInstallationId === option.value"
+                        :size="15"
+                        aria-hidden="true"
+                      />
+                    </MenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </Menu>
               </div>
             </section>
 
