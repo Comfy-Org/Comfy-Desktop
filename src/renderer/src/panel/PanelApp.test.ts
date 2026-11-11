@@ -819,8 +819,8 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__results').attributes('style')).toContain('display: none')
     await resultsToggle.trigger('click')
     expect(wrapper.get('.branded-page-header .performance-test__run').exists()).toBe(true)
-    expect(wrapper.find('.performance-test__drop-zone').text()).toBe(
-      'Drop a workflow .json file in API format here, or click to browse'
+    expect(wrapper.find('.performance-test__drop-zone').text()).toContain(
+      'Import API workflowor drop the .json'
     )
     expect(wrapper.find('.performance-test__run').text()).toBe('Run')
     expect(wrapper.find('.performance-test__logs').text()).toBe('Build logs will appear here.')
@@ -882,9 +882,7 @@ describe('PanelApp', () => {
     expect(wrapper.get('.performance-test__workflow-file').text()).toContain(
       'C:\\ComfyUI\\performance-tests\\20260907225500\\cat-workflow.json'
     )
-    expect(wrapper.get('.performance-test__drop-zone').text()).not.toContain(
-      'Drop a workflow .json file in API format here, or click to browse'
-    )
+    expect(wrapper.get('.performance-test__drop-zone').text()).not.toContain('Import API workflow')
 
     api.importPerformanceTestWorkflow.mockResolvedValueOnce({
       ok: true,
@@ -1121,9 +1119,7 @@ describe('PanelApp', () => {
       'C:\\ComfyUI\\performance-tests\\20260907225600\\cat-workflow.json'
     )
     expect(wrapper.find('.performance-test__workflow-file').exists()).toBe(false)
-    expect(wrapper.get('.performance-test__drop-zone').text()).toContain(
-      'Drop a workflow .json file in API format here, or click to browse'
-    )
+    expect(wrapper.get('.performance-test__drop-zone').text()).toContain('Import API workflow')
     expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
       'This workflow belongs to a completed test and was kept with its results.'
     )

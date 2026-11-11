@@ -10,6 +10,7 @@ import {
   ImageDown,
   Play,
   Square,
+  Upload,
   X
 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -780,7 +781,18 @@ watch(performanceTestLogs, async () => {
               </div>
             </section>
 
-            <section class="performance-test__step flex min-w-0 flex-col">
+            <section
+              class="performance-test__step performance-test__workflow-step -m-2 flex min-w-0 flex-col rounded-[12px] p-2 outline-1 outline-offset-0 transition-[outline-color,background-color] duration-[140ms]"
+              :class="
+                isWorkflowDragging
+                  ? 'bg-white/3 outline-white/30 outline-dashed'
+                  : 'outline-transparent'
+              "
+              @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
+              @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
+              @dragleave.self.prevent="isWorkflowDragging = false"
+              @drop.prevent="dropWorkflow"
+            >
               <h2 :class="titleClass">{{ t('performanceTest.chooseWorkflow') }}</h2>
               <Button
                 class="performance-test__example-workflow w-full justify-between gap-1.5 px-3 text-[13px]/5 font-normal"
@@ -809,18 +821,10 @@ watch(performanceTestLogs, async () => {
               >
                 {{ t('performanceTest.exampleWorkflowPickerDescription') }}
               </p>
-              <p class="performance-test__workflow-divider mt-3 mb-0 text-[12px] text-text-muted">
-                {{ t('performanceTest.orImportApiWorkflow') }}
-              </p>
               <div
-                class="performance-test__drop-zone relative mt-2 w-full flex-none rounded-[10px] text-text-muted transition-[border-color,background-color] duration-[140ms] ease-[ease]"
+                class="performance-test__drop-zone relative mt-3 w-full flex-none rounded-[10px] text-text-muted"
                 :class="[
-                  workflowFilePath || pendingExampleWorkflowLabel
-                    ? 'bg-white/5'
-                    : [
-                        'min-h-[60px] border border-dashed hover:border-white/30 hover:bg-white/3 focus-within:border-white/30',
-                        isWorkflowDragging ? 'border-white/30 bg-white/3' : 'border-white/15'
-                      ],
+                  workflowFilePath || pendingExampleWorkflowLabel ? 'bg-white/5' : '',
                   {
                     'performance-test__drop-zone--dragging': isWorkflowDragging,
                     'performance-test__drop-zone--selected':
@@ -828,35 +832,33 @@ watch(performanceTestLogs, async () => {
                   }
                 ]"
                 :aria-busy="isWorkflowImporting || isWorkflowDeleting"
-                @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
-                @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
-                @dragleave.prevent="isWorkflowDragging = false"
-                @drop.prevent="dropWorkflow"
               >
                 <Button
-                  variant="textonly"
-                  size="lg"
-                  class="performance-test__drop-content h-auto w-full whitespace-normal font-normal hover:bg-transparent"
+                  :variant="
+                    workflowFilePath || pendingExampleWorkflowLabel ? 'textonly' : 'secondary'
+                  "
+                  :size="workflowFilePath || pendingExampleWorkflowLabel ? 'lg' : 'md'"
+                  class="performance-test__drop-content w-full font-normal"
                   type="button"
                   :class="
                     workflowFilePath || pendingExampleWorkflowLabel
-                      ? 'min-h-10 justify-start py-2 pr-10 pl-3 text-left'
-                      : 'min-h-[58px] justify-center px-3 py-2 text-center'
+                      ? 'h-auto min-h-10 justify-start py-2 pr-10 pl-3 text-left whitespace-normal hover:bg-transparent'
+                      : 'justify-start gap-2 px-3 text-[13px]/5'
                   "
                   :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
-                  <span
-                    v-if="!workflowFilePath && !pendingExampleWorkflowLabel"
-                    class="flex items-center gap-2 text-[12px] leading-[1.4]"
-                  >
-                    <FileJson :size="15" class="shrink-0 text-text-muted" aria-hidden="true" />
-                    {{
+                  <template v-if="!workflowFilePath && !pendingExampleWorkflowLabel">
+                    <Upload :size="14" class="shrink-0" aria-hidden="true" />
+                    <span class="truncate">{{
                       isWorkflowImporting
                         ? t('performanceTest.importingWorkflow')
-                        : t('performanceTest.dropWorkflowHint')
-                    }}
-                  </span>
+                        : t('performanceTest.importApiWorkflow')
+                    }}</span>
+                    <span class="ml-auto shrink-0 text-[12px] text-text-muted">{{
+                      t('performanceTest.orDropJson')
+                    }}</span>
+                  </template>
                   <span v-else class="flex min-w-0 grow items-center gap-2.5">
                     <FileJson :size="15" class="shrink-0 text-text-muted" aria-hidden="true" />
                     <span
