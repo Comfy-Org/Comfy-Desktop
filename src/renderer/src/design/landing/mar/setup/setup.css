@@ -1146,6 +1146,34 @@
 .mss-first.is-backdrop {
   z-index: 70;
 }
+/* The very first open: the wordmark alone, centred on the frame, comes in
+ * with one breath; then it travels up to its place as Set up rises. */
+.mss-first.is-backdrop.is-alone .mss-first-mark {
+  transition:
+    top 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mss-first.is-backdrop.is-arriving .mss-first-mark {
+  top: 50%;
+  height: 56px;
+  transform: translate(-50%, -50%);
+  animation: mss-arrive 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes mss-arrive {
+  0% {
+    opacity: 0;
+    scale: 0.94;
+  }
+  50% {
+    opacity: 1;
+    scale: 1.015;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+  }
+}
 :root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
   /* The first screen's column, so the takeover keeps one width. */
   width: min(704px, calc(100vw - 48px));

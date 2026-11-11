@@ -93,7 +93,7 @@ import './setup.css'
  * Copy is the product's, in English.
  */
 const open = computed({
-  get: () => setupOn.value && flow.open && flow.step !== 'first',
+  get: () => setupOn.value && flow.open && flow.step !== 'first' && !flow.arriving,
   set: (v: boolean) => {
     if (!v) closeSetup()
   }
@@ -557,12 +557,13 @@ function rowState(i: number): string {
   </Teleport>
 
   <!-- First launch: Set up and the install sit on the same full-window
-       frame, above the scrim, so the Home never shows behind them. -->
+       frame, above the scrim, so the Home never shows behind them. The
+       very first open starts with only the wordmark on it, centred. -->
   <Teleport :to="PORTAL_TO">
     <div
-      v-if="open && flow.takeover"
+      v-if="(open || flow.arriving) && flow.takeover"
       class="proto-ui mss-first is-backdrop"
-      :class="homeOneClick && 'is-alone'"
+      :class="[homeOneClick && 'is-alone', flow.arriving && 'is-arriving']"
       aria-hidden="true"
     >
       <div class="mss-first-frame">
