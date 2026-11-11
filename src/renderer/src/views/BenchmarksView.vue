@@ -1225,7 +1225,7 @@ onActivated(() => {
                   :modal="false"
                   align="end"
                   :side-offset="4"
-                  class="benchmarks__menu-list z-[9999] min-w-48 rounded-[14px] border-0 bg-popover p-1.5 shadow-[var(--shadow-popover)] [&_[role=menuitem]]:min-h-8 [&_[role=menuitem]]:gap-2.5 [&_[role=menuitem]]:rounded-lg [&_[role=menuitem]]:px-2.5 [&_[role=menuitem]]:text-[13px]"
+                  class="benchmarks__menu-list z-[9999] min-w-48"
                 >
                   <template #trigger>
                     <Button
@@ -1553,7 +1553,7 @@ onActivated(() => {
                             :modal="false"
                             align="end"
                             :side-offset="4"
-                            class="benchmarks__menu-list z-[9999] min-w-48 rounded-[14px] border-0 bg-popover p-1.5 shadow-[var(--shadow-popover)] [&_[role=menuitem]]:min-h-8 [&_[role=menuitem]]:gap-2.5 [&_[role=menuitem]]:rounded-lg [&_[role=menuitem]]:px-2.5 [&_[role=menuitem]]:text-[13px] [&_[role=separator]]:mx-1 [&_[role=separator]]:bg-foreground/8"
+                            class="benchmarks__menu-list z-[9999] min-w-48"
                             @close-auto-focus="keepRenameFocus"
                           >
                             <template #trigger>
