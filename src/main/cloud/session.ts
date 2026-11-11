@@ -478,7 +478,7 @@ export class CloudSession {
     }
     let browserOpened = false
     let tokens: AuthTokens
-    const viewConsent = reason === 'view_requested'
+    const viewConsent = this.switchIntent === 'requested'
     if (viewConsent) this.viewConsentOpen = true
     try {
       ;({ tokens } = await signIn({

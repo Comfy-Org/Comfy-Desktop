@@ -1737,6 +1737,31 @@ describe('CloudSession switches a local ComfyUI view requests', () => {
     consent.resolve(signedInResult(grantOn('w2')))
   })
 
+  it('keeps one view consent open when a view joined a restored switch', async () => {
+    saveGrant(grantOn('w1'))
+    const listed = mocked(listWorkspaces).getMockImplementation()
+    mocked(listWorkspaces).mockResolvedValue([member('w1'), member('w2'), member('w3')])
+    onTestFinished(() => void mocked(listWorkspaces).mockImplementation(listed!))
+    const slow = deferred<Response>()
+    mintReply = () => slow.promise
+    const consent = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(consent.promise)
+    const session = new CloudSession()
+
+    void session.switchWorkspace('w2', 'restored')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    void session.switchWorkspace('w2', 'requested')
+    slow.resolve(json(403, { code: 'sso_required' }))
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ reached: true })
+    await expect(session.switchWorkspace('w3', 'requested')).resolves.toMatchObject({
+      reached: false
+    })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    consent.resolve(signedInResult(grantOn('w2')))
+  })
+
   it('does not cancel a sign-in Desktop has in flight', async () => {
     saveGrant(grantOn('w1'))
     const signingIn = deferred<Awaited<ReturnType<typeof signIn>>>()
