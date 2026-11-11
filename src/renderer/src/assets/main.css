@@ -185,18 +185,18 @@
 :root[data-theme='dark'],
 :root.desktop-panel,
 :root [data-theme='dark'] {
-  --neutral-950: oklch(0.13 0.004 285);
-  --neutral-900: oklch(0.165 0.005 285);
-  --neutral-800: oklch(0.2 0.006 285);
-  --neutral-700: oklch(0.23 0.008 285);
-  --neutral-600: oklch(0.23 0.008 285);
-  --neutral-500: oklch(0.36 0.008 285);
-  --neutral-400: oklch(0.48 0.008 285);
-  --neutral-300: oklch(0.6 0.008 285);
-  --neutral-200: oklch(0.76 0.006 285);
-  --neutral-100: oklch(0.9 0.003 285);
+  --neutral-950: oklch(0.13 0 0);
+  --neutral-900: oklch(0.165 0 0);
+  --neutral-800: oklch(0.2 0 0);
+  --neutral-700: oklch(0.23 0 0);
+  --neutral-600: oklch(0.23 0 0);
+  --neutral-500: oklch(0.36 0 0);
+  --neutral-400: oklch(0.48 0 0);
+  --neutral-300: oklch(0.6 0 0);
+  --neutral-200: oklch(0.76 0 0);
+  --neutral-100: oklch(0.9 0 0);
 
-  --neutral-50: oklch(0.96 0.002 285);
+  --neutral-50: oklch(0.96 0 0);
   --comfy-yellow: var(--neutral-50);
   --surface-recessed: var(--neutral-900);
 
@@ -207,7 +207,7 @@
   --titlebar-icon: var(--color-muted-foreground);
   --surface: var(--color-card);
   --secondary-background: var(--color-secondary);
-  --terminal-bg: oklch(0.1 0.004 285);
+  --terminal-bg: oklch(0.1 0 0);
 
   --text: var(--color-foreground);
   --text-muted: var(--color-muted-foreground);
