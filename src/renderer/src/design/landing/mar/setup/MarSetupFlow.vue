@@ -58,6 +58,7 @@ import {
   flow,
   homeFirst,
   homeDirect,
+  homeOneClick,
   homeRunning,
   installInBackground,
   landHomeCloud,
@@ -140,6 +141,11 @@ const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 // offers the apps on the Home instead (setup/HomeInstall.vue).
 const workflowStep = computed(() => localSetup.scope === 'm1')
 function continueSetup(): void {
+  // One-click install: the consent sits on this screen; the terms gate.
+  if (homeOneClick.value && flow.takeover && !terms.value) {
+    termsAsk.value = true
+    return
+  }
   if (lowSpace.value) flow.confirmLowDisk = true
   else toTemplates()
 }
@@ -160,7 +166,7 @@ function skipNodes(): void {
 function afterNodes(): void {
   if (workflowStep.value) flow.step = 'template'
   // Home first › Install runs behind: Install lands on the Home, installing.
-  else if (homeRunning.value && flow.takeover) landHomeInstalling()
+  else if ((homeRunning.value || homeOneClick.value) && flow.takeover) landHomeInstalling()
   else installWith(null)
 }
 const stepNow = computed(() => {
@@ -539,11 +545,21 @@ function rowState(i: number): string {
   <!-- First launch: Set up and the install sit on the same full-window
        frame, above the scrim, so the Home never shows behind them. -->
   <Teleport :to="PORTAL_TO">
-    <div v-if="open && flow.takeover" class="proto-ui mss-first is-backdrop" aria-hidden="true">
+    <div
+      v-if="open && flow.takeover"
+      class="proto-ui mss-first is-backdrop"
+      :class="homeOneClick && 'is-alone'"
+      aria-hidden="true"
+    >
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
         <ComfyWordmark class="mss-first-mark" />
-        <SetupSteps :now="stepNow" :workflow="workflowStep" :short="homeRunning" />
+        <SetupSteps
+          v-if="!homeOneClick"
+          :now="stepNow"
+          :workflow="workflowStep"
+          :short="homeRunning"
+        />
       </div>
     </div>
   </Teleport>
@@ -623,6 +639,33 @@ function rowState(i: number): string {
                 </dd>
               </div>
             </dl>
+            <!-- One-click install: this is the first screen, so the consent
+                 sits here, under the list, the terms gating Install. -->
+            <div v-if="homeOneClick && flow.takeover" class="mss-first-consent mss-setup-consent">
+              <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
+                <Checkbox v-model="terms" />
+                <span
+                  >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
+                  <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.<span
+                    v-if="termsAsk && !terms"
+                    class="mss-terms-ask"
+                    role="alert"
+                    >Agree to install.</span
+                  ></span
+                >
+              </label>
+              <label class="mss-check">
+                <Checkbox v-model="usage" />
+                <span
+                  >Help improve ComfyUI by sharing anonymous usage data.
+                  <a href="#" class="mss-link" @click.prevent>Learn more</a></span
+                >
+              </label>
+              <label class="mss-check">
+                <Checkbox v-model="beta" :disabled="!usage" />
+                <span>Opt-in to beta features and help test what ships next</span>
+              </label>
+            </div>
           </template>
 
           <!-- Intel Mac: today's Unsupported Hardware alert. A local install
@@ -641,7 +684,11 @@ function rowState(i: number): string {
           </template>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button v-if="flow.takeover" variant="ghost" size="lg" @click="flow.step = 'first'"
+          <Button
+            v-if="flow.takeover && !homeOneClick"
+            variant="ghost"
+            size="lg"
+            @click="flow.step = 'first'"
             ><ArrowLeft :size="14" />Back</Button
           >
           <!-- Today's low-space warning: it asks, it doesn't block. -->

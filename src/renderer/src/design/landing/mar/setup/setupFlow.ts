@@ -50,11 +50,18 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  exists. Install card: only the card, nothing that needs ComfyUI. Home
  *  open: the first-run Home stays around the card. Off by default, and
  *  only where there is a Home. */
-export type Onboarding = 'install' | 'home-running' | 'home-direct' | 'home' | 'home-open'
+export type Onboarding =
+  | 'install'
+  | 'home-running'
+  | 'home-direct'
+  | 'oneclick'
+  | 'home'
+  | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'install', label: 'Install first (today)' },
   { value: 'home-running', label: 'Home first: install runs behind' },
   { value: 'home-direct', label: 'Home first: Run on only, install runs' },
+  { value: 'oneclick', label: 'Home first: one-click install' },
   { value: 'home', label: 'Home first: install card only' },
   { value: 'home-open', label: 'Home first: Home stays open' }
 ]
@@ -208,6 +215,11 @@ export const homeRunning = computed(
  *  up would have stopped on (no space, no supported hardware) stops the
  *  card instead, with its Change. */
 export const homeDirect = computed(() => homeFirst.value && localSetup.onboarding === 'home-direct')
+/** Home first › One-click install: no Run on. The first screen is Set up
+ *  itself, the detected computer and its list, with the consent under it
+ *  and one Install; then the Home, the install running in Builds. Cloud
+ *  is not asked: it is in Builds anyway. */
+export const homeOneClick = computed(() => homeFirst.value && localSetup.onboarding === 'oneclick')
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
 // landing; the next iterations land on Milestone 2 (Explore apps), the Home
@@ -579,7 +591,9 @@ export const installPending = computed(
  *  setup › Install card): while the install waits or runs, and once ComfyUI
  *  is ready until it is opened. */
 export const cardInBuilds = computed(
-  () => (localSetup.card === 'builds' || homeDirect.value) && (installPending.value || flow.ready)
+  () =>
+    (localSetup.card === 'builds' || homeDirect.value || homeOneClick.value) &&
+    (installPending.value || flow.ready)
 )
 /** The install runs (or failed) behind the Home: the sidebar's Builds show it. */
 export const installingBehind = computed(
@@ -720,6 +734,8 @@ export function openSetup(): boolean {
   // Today's New Instance opens the install wizard directly.
   flow.step = marUser.local === 'none' ? 'first' : 'setup'
   flow.takeover = flow.step === 'first'
+  // One-click install: the first launch opens on Set up, full window.
+  if (flow.takeover && homeOneClick.value) flow.step = 'setup'
   flow.percent = 0
   flow.picked = null
   // A new build starts on the recommended packs, where they are offered.
@@ -954,6 +970,8 @@ export function showScreen(s: Screen): void {
     nodes: 'nodes'
   }
   flow.step = step[s]
+  // One-click install has no Run on: its first screen is Set up.
+  if (s === 'first' && homeOneClick.value) flow.step = 'setup'
   if (s === 'error') flow.percent = 46
   if (s === 'installing' || s === 'cancel') {
     flow.percent = 58
