@@ -1019,11 +1019,12 @@
     display: flex;
     gap: 8px;
   }
-  /* One-click install: the consent under Set up's list, a hairline above. */
+  /* One-click install: the consent under Set up's list; the action bar's
+     own line is the only divider. */
   .mss-setup-consent {
-    margin-top: 20px;
-    padding-top: 18px;
-    border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+    margin-top: 24px;
+    /* The boxes line up with the rows' icons and the computer, 32px in. */
+    padding: 0 32px;
   }
   /* The Home's Spotlight (shell/homeBackgrounds.css): a neutral light from
    * the top centre, the same on every step. */
