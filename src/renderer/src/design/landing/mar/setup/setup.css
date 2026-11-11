@@ -903,6 +903,12 @@
   }
   /* Run on as the only screen: no steps to share the top with, so the
      wordmark sits centred where they would be. */
+  /* And its question sits in the middle of the room between the wordmark
+     and the action bar, wherever the window's height puts that. */
+  .mss-first.is-alone .mss-first-hero {
+    justify-content: center;
+    padding-bottom: 24px;
+  }
   .mss-first.is-alone .mss-first-mark {
     top: 20px;
     left: 50%;
