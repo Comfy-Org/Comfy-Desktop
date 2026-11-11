@@ -45,6 +45,7 @@ import {
 } from './templateData'
 import { graphFor } from './graphSpec'
 import TplGraph from './TplGraph.vue'
+import ZoomControl from '../assets/ZoomControl.vue'
 import MarSeg from '../pages/MarSeg.vue'
 // The asset view's frame, panel, sections and buttons (.mad-*): the modal
 // wears them, so the two read as one view. Imported for its styles.
@@ -230,6 +231,11 @@ function focusPicker(e: Event): void {
 }
 /** Escape closes an open menu first, then the modal. */
 function onEscape(e: KeyboardEvent): void {
+  if (zoomCtl.value?.open) {
+    e.preventDefault()
+    zoomCtl.value.open = false
+    return
+  }
   if (!moreMenu.value && !buildMenu.value) return
   e.preventDefault()
   moreMenu.value = buildMenu.value = false
@@ -272,6 +278,12 @@ watch(
   { immediate: true }
 )
 
+// The graph's zoom: a percentage of the fitted size, read in real size.
+const zoom = ref(100)
+const graphFit = ref(1)
+const zoomCtl = ref<InstanceType<typeof ZoomControl>>()
+watch(view, () => (zoom.value = 100))
+
 const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
   { value: 'result', label: 'Result' },
   { value: 'graph', label: 'Graph' }
@@ -312,7 +324,17 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
               </div>
             </div>
           </div>
-          <div v-else-if="graph" class="mar-tpl-canvas"><TplGraph :spec="graph" /></div>
+          <!-- The graph takes the picture's place, fitted to the same area;
+               the zoom sits where the asset view keeps it, bottom right. -->
+          <template v-else-if="graph">
+            <div class="mad-view is-graph">
+              <TplGraph v-model:zoom="zoom" v-model:fit="graphFit" :spec="graph" />
+            </div>
+            <footer class="mad-foot">
+              <span />
+              <ZoomControl ref="zoomCtl" v-model="zoom" :fit="graphFit" keys />
+            </footer>
+          </template>
         </section>
 
         <aside class="mad-side" aria-label="Workflow details">
@@ -354,43 +376,40 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
               </div>
             </section>
 
-            <!-- Open in: the build it opens on, why in one line, and the
-                 others behind one quiet picker. What blocks it is one line
-                 and one action at the bottom, in place of the primary. -->
+            <!-- Open in: the build it opens on, as one filled row that is
+                 the picker (the other builds open under it), then why in
+                 one line. What blocks it is one line and one action at the
+                 bottom, in place of the primary. -->
             <section class="mad-sec">
               <h3 class="mad-label">Open in</h3>
-              <div v-if="shown" class="mar-tpl-on" :data-s="shown.state">
-                <span class="mar-tpl-glyph">
-                  <LocationIcon
-                    :kind="shown.inst.kind === 'cloud' ? 'cloud' : 'local'"
-                    :size="18"
-                  />
-                  <i v-if="shown.inst.state === 'running' && !shown.disabled" />
-                </span>
-                <span class="mar-tpl-row-text">
-                  <span class="mar-tpl-row-name">{{ shown.inst.name }}</span>
-                  <span class="mar-tpl-row-status">{{ shown.status }}</span>
-                </span>
-                <span
-                  v-if="shown.cost && shown.state !== 'login'"
-                  class="mar-tpl-cost"
-                  :data-s="tone(shown)"
-                  >{{ shown.cost }}</span
-                >
-              </div>
-              <p v-if="fit" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
-              <div v-if="targets.length > 1" ref="buildBox" class="mad-pick">
+              <div v-if="shown" ref="buildBox" class="mad-pick">
                 <button
                   type="button"
-                  class="mar-tpl-other"
+                  class="mar-tpl-on"
+                  :data-s="shown.state"
+                  :aria-label="`Open in ${shown.inst.name}. Change build`"
                   aria-haspopup="menu"
                   :aria-expanded="buildMenu"
-                  :disabled="phase === 'busy'"
+                  :disabled="phase === 'busy' || targets.length < 2"
                   @click="buildMenu = !buildMenu"
                 >
-                  Open on another build<ChevronDown :size="13" />
+                  <span class="mar-tpl-glyph">
+                    <LocationIcon
+                      :kind="shown.inst.kind === 'cloud' ? 'cloud' : 'local'"
+                      :size="18"
+                    />
+                    <i v-if="shown.inst.state === 'running' && !shown.disabled" />
+                  </span>
+                  <span class="mar-tpl-row-text">
+                    <span class="mar-tpl-row-name">{{ shown.inst.name }}</span>
+                    <span class="mar-tpl-row-status">{{ shown.status }}</span>
+                  </span>
+                  <span v-if="shown.cost" class="mar-tpl-cost" :data-s="tone(shown)">{{
+                    shown.cost
+                  }}</span>
+                  <ChevronDown v-if="targets.length > 1" :size="14" class="mar-tpl-chev" />
                 </button>
-                <div v-if="buildMenu" class="mad-menu is-down is-wide mar-tpl-builds" role="menu">
+                <div v-if="buildMenu" class="mad-menu is-down mar-tpl-builds" role="menu">
                   <button
                     v-for="x in targets"
                     :key="x.inst.id"
@@ -411,6 +430,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                   </button>
                 </div>
               </div>
+              <p v-if="fit" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
             </section>
 
             <!-- What it needs: one line; the files fold under it. -->

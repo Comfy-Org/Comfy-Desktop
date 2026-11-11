@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Maximize, Minus, Plus } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   HEADER,
   ROW,
@@ -12,13 +11,17 @@ import {
   type GraphSpec
 } from './graphSpec'
 
-/** The template's graph, fitted to the stage. Drag to pan; the zoom
- *  controls step around the fitted size. */
+/** The template's graph, fitted to the stage like a picture in the asset
+ *  view. Drag to pan; the modal's ZoomControl (assets/ZoomControl.vue)
+ *  scales it: `zoom` is a percentage of the fitted size (100 = fit), and
+ *  `fit` reports the fitted scale so the control reads in real size. */
 const { spec } = defineProps<{ spec: GraphSpec }>()
+const zoomPct = defineModel<number>('zoom', { default: 100 })
+const fitOut = defineModel<number>('fit', { default: 1 })
 
 const box = ref<HTMLElement>()
 const size = ref({ w: 800, h: 450 })
-const zoom = ref(1)
+const zoom = computed(() => zoomPct.value / 100)
 const pan = ref({ x: 0, y: 0 })
 let ro: ResizeObserver | undefined
 onMounted(() => {
@@ -29,9 +32,13 @@ onMounted(() => {
 })
 onBeforeUnmount(() => ro?.disconnect())
 
+// A little air around it, like the picture's own margin.
 const fit = computed(() =>
-  Math.min((size.value.w - 28) / spec.width, (size.value.h - 64) / spec.height)
+  Math.min((size.value.w - 32) / spec.width, (size.value.h - 32) / spec.height, 1.6)
 )
+watch(fit, (f) => (fitOut.value = f), { immediate: true })
+// Back to fit (D, Zoom to fit) recentres it too.
+watch(zoomPct, (z) => z === 100 && (pan.value = { x: 0, y: 0 }))
 const scale = computed(() => fit.value * zoom.value)
 const transform = computed(() => {
   const x = (size.value.w - spec.width * scale.value) / 2 + pan.value.x
@@ -53,11 +60,7 @@ const wires = computed(() =>
 )
 
 function step(d: number): void {
-  zoom.value = Math.min(2, Math.max(0.6, +(zoom.value + d).toFixed(2)))
-}
-function reset(): void {
-  zoom.value = 1
-  pan.value = { x: 0, y: 0 }
+  zoomPct.value = Math.min(800, Math.max(10, zoomPct.value * (1 + d)))
 }
 
 let drag: { x: number; y: number; px: number; py: number } | undefined
@@ -155,17 +158,6 @@ function wheel(e: WheelEvent): void {
           draggable="false"
         />
       </div>
-    </div>
-
-    <div class="mar-tpl-zoom" role="group" aria-label="Zoom">
-      <button type="button" aria-label="Zoom out" @click="step(-0.1)">
-        <Minus :size="14" />
-      </button>
-      <span>{{ Math.round(zoom * 100) }}%</span>
-      <button type="button" aria-label="Zoom in" @click="step(0.1)">
-        <Plus :size="14" />
-      </button>
-      <button type="button" aria-label="Fit" @click="reset"><Maximize :size="13" /></button>
     </div>
   </div>
 </template>

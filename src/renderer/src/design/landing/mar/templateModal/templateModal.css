@@ -16,7 +16,6 @@
   --tpl-ok: var(--color-status-running);
   --tpl-warn: oklch(0.8 0.14 75);
   --tpl-gold: oklch(0.84 0.13 85);
-  --tpl-canvas: oklch(0.16 0.004 285);
   --tpl-node: oklch(0.235 0.006 285);
   --tpl-node-head: oklch(0.275 0.008 285);
 
@@ -67,7 +66,6 @@
   --tpl-ok: oklch(0.58 0.14 155);
   --tpl-warn: oklch(0.62 0.15 60);
   --tpl-gold: oklch(0.56 0.13 65);
-  --tpl-canvas: oklch(0.965 0.003 285);
   --tpl-node: oklch(0.995 0 0);
   --tpl-node-head: oklch(0.975 0.002 285);
   background-color: color-mix(in oklch, var(--color-card-background) 94%, transparent);
@@ -109,21 +107,19 @@
   outline: 2px solid var(--color-border-focus);
   outline-offset: 1px;
 }
-/* No filmstrip under a template: the picture takes the room. */
+/* No filmstrip under a template: the picture takes the room. The graph
+   leaves the zoom its row, where the asset view has it. */
 .mar-tpl .mad-view {
   bottom: 32px;
+}
+.mar-tpl .mad-view.is-graph {
+  bottom: 72px;
+  display: block;
 }
 
 /* ── Stage: the output, or its graph ─────────────────────────────── */
 .mar-tpl .mad-media img {
   user-select: none;
-}
-.mar-tpl-canvas {
-  position: absolute;
-  inset: 64px 32px 32px;
-  overflow: hidden;
-  border-radius: 10px;
-  background: var(--tpl-canvas);
 }
 .mar-tpl-quad,
 .mar-tpl-caption {
@@ -348,13 +344,45 @@
   background: color-mix(in oklch, var(--tpl-warn) 14%, transparent);
 }
 
-/* Open in: the build it opens on, a line on why, and the others behind
-   one quiet picker. Calm: one build in view, no list, no radios. */
-.mar-tpl-on {
+/* Open in: the build it opens on, one filled row that is the picker
+   (UI-RULES: a fill, no line), its chevron at the right; the other builds
+   open under it. */
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  width: 100%;
+  height: auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 10px;
+  background: var(--mad-fill);
+  color: var(--color-base-foreground);
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on:not(:disabled):hover,
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on:disabled {
+  cursor: default;
+}
+.mar-tpl-on:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+.mar-tpl-chev {
+  color: var(--color-muted-foreground);
+  transition: rotate 160ms ease;
+}
+.mar-tpl-on[aria-expanded='true'] .mar-tpl-chev {
+  rotate: 180deg;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-tpl-chev {
+    transition: none;
+  }
 }
 .mar-tpl-glyph {
   position: relative;
@@ -374,9 +402,10 @@
   height: 9px;
   border-radius: 50%;
   background: var(--tpl-ok);
-  /* A ring the panel's colour, so the dot sits off the tile. */
+  /* A ring the row's colour (panel plus its fill), so the dot sits off
+     the tile. */
   box-shadow: 0 0 0 2px
-    color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
+    color-mix(in oklch, var(--color-base-foreground) 11%, var(--color-content-background));
 }
 .mar-tpl-row-text {
   display: flex;
@@ -425,30 +454,11 @@
   flex: none;
   color: var(--tpl-ok);
 }
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-other {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 4px;
-  margin-left: -8px;
-  padding: 0 8px;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-other:hover,
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-other[aria-expanded='true'] {
-  background: var(--mad-fill);
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-other:disabled {
-  opacity: 0.4;
-}
 /* The other builds: one row each, the pick filled (one choice marks its
    row), what blocks one in its own line, greyed. */
-.mad-menu.is-wide.mar-tpl-builds {
+.mad-menu.mar-tpl-builds {
   right: 0;
+  left: 0;
   min-width: 0;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-tpl-builds button {
@@ -519,16 +529,11 @@
 
 /* ── Graph ───────────────────────────────────────────────────────── */
 .mar-tpl-graph {
+  /* On the stage itself, like the picture: no box, no grid. */
   position: absolute;
   inset: 0;
   overflow: hidden;
   cursor: grab;
-  background-color: var(--tpl-canvas);
-  background-image: radial-gradient(
-    color-mix(in oklch, var(--tpl-ink) 10%, transparent) 1px,
-    transparent 1.2px
-  );
-  background-size: 20px 20px;
   touch-action: none;
 }
 .mar-tpl-graph:active {
@@ -659,44 +664,8 @@
   border-radius: 8px;
   object-fit: cover;
 }
-.mar-tpl-zoom {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  border-radius: 11px;
-  padding: 3px;
-  color: oklch(1 0 0 / 0.75);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  background: oklch(0.16 0.004 285 / 0.62);
-  backdrop-filter: blur(16px) saturate(1.3);
-  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
-}
-.mar-tpl-zoom > span {
-  min-width: 40px;
-  text-align: center;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-zoom > button {
-  display: inline-flex;
-  width: 26px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: oklch(1 0 0 / 0.75);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-tpl-zoom > button:hover {
-  color: oklch(1 0 0);
-  background: oklch(1 0 0 / 0.12);
-}
-
 @media (max-height: 640px) {
-  .mar-tpl .mad-view,
-  .mar-tpl-canvas {
+  .mar-tpl .mad-view {
     top: 56px;
   }
 }
@@ -706,8 +675,4 @@
   .mar-tpl-fav {
     animation: none;
   }
-}
-.mar-tpl-zoom button:focus-visible {
-  outline: 2px solid var(--color-border-focus);
-  outline-offset: 1px;
 }
