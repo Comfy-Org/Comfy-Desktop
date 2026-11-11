@@ -87,9 +87,9 @@ describe('listCatalogApps', () => {
     fetchMock.mockResolvedValue(
       Response.json({
         items: [
-          catalogApp('second', 'Second', 1),
+          catalogApp('product-ads', 'Second', 1),
           item('x', { title: 'No slug' }),
-          catalogApp('first', 'First', 0)
+          catalogApp('genjutsu', 'First', 0)
         ]
       })
     )

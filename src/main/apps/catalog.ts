@@ -1,5 +1,6 @@
 import { CLOUD_CONFIG } from '../cloud/config'
 import type { CatalogApp } from '../../types/ipc'
+import { isTemporaryLaunchApp } from './temporaryLaunchApps'
 
 const DESKTOP_SURFACE = 'desktop_starters'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
@@ -62,6 +63,7 @@ export async function listCatalogApps(listUrl: string): Promise<CatalogApp[]> {
   const body = (await res.json()) as { items?: unknown }
   const items = Array.isArray(body.items) ? (body.items as CatalogItem[]) : []
   return [...items]
+    .filter((item) => isTemporaryLaunchApp(item.data?.slug))
     .sort((a, b) => sortOrder(a) - sortOrder(b))
     .map((item) => toCatalogApp(item, listUrl))
     .filter((entry): entry is CatalogApp => entry !== null)
