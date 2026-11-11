@@ -25,6 +25,16 @@ export function isAppsFrameUrl(frameUrl: string, origin: string | null): boolean
   }
 }
 
+export function isAppPage(pageUrl: string, listUrl: string): boolean {
+  try {
+    const page = new URL(pageUrl)
+    const list = new URL(listUrl)
+    return page.origin === list.origin && page.pathname !== list.pathname
+  } catch {
+    return false
+  }
+}
+
 export function isAppOpen(pageUrl: string, listUrl: string): boolean {
   let page: URL
   let list: URL

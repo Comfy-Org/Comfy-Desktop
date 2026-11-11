@@ -12,6 +12,7 @@ import {
   interruptJson,
   DEFAULT_APPS_URL,
   isAppOpen,
+  isAppPage,
   isAppsFrameUrl,
   isBuildId,
   isComfyPage,
@@ -55,6 +56,21 @@ describe('appsUrl', () => {
 
   it('ignores the override in a packaged build', () => {
     expect(appsUrl({ COMFY_APPS_URL: 'https://evil.example/' }, true)).toBe(DEFAULT_APPS_URL)
+  })
+})
+
+describe('isAppPage', () => {
+  const list = 'https://apps.example/apps/'
+
+  it('is an app page when it is on the apps site but not the list', () => {
+    expect(isAppPage('https://apps.example/apps/genjutsu-studio/desktop.html', list)).toBe(true)
+  })
+
+  it('is not an app page on the list, even with an app route, or on another site', () => {
+    expect(isAppPage('https://apps.example/apps/', list)).toBe(false)
+    expect(isAppPage('https://apps.example/apps/#/genjutsu', list)).toBe(false)
+    expect(isAppPage('https://other.example/apps/x/desktop.html', list)).toBe(false)
+    expect(isAppPage('', list)).toBe(false)
   })
 })
 

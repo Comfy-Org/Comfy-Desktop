@@ -43,6 +43,12 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
+  it('a page says it settled on the channel main relays to the panel', () => {
+    const settled = main.match(/APPS_PAGE_SETTLED_CHANNEL = '([\w:-]+)'/)![1]
+    expect(preload).toContain(`ipcRenderer.send('${settled}')`)
+    expect(main).toContain('ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)')
+  })
+
   it('local events go out on the channel the preload listens to', () => {
     const sent = local.match(/LOCAL_EVENT_CHANNEL = '([\w:-]+)'/)![1]
     expect(preload).toContain(`ipcRenderer.on('${sent}'`)

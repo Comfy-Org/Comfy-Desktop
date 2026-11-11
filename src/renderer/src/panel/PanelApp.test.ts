@@ -1255,7 +1255,8 @@ describe('PanelApp', () => {
       showApps: vi.fn(),
       hideApps: vi.fn(),
       onAppsLoadFailed: vi.fn(() => () => {}),
-      onAppsAppOpen: vi.fn(() => () => {})
+      onAppsAppOpen: vi.fn(() => () => {}),
+      onAppsSettled: vi.fn(() => () => {})
     })
     const wrapper = mountPanel()
     await flushPromises()
