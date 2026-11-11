@@ -467,6 +467,15 @@
 .mar-tpl-openin {
   margin-top: auto;
 }
+/* The foot reads as one block: What it needs runs straight into the
+   button, and the button lines up with the sections' edges. */
+.mar-tpl .mad-body {
+  padding-bottom: 0;
+}
+.mar-tpl .mad-actions {
+  margin: 0 20px;
+  padding-top: 6px;
+}
 .mad-menu.mar-tpl-builds {
   right: 0;
   left: 0;
