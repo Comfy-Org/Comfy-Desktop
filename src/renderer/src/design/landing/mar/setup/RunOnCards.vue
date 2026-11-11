@@ -180,24 +180,38 @@ const WAYS = [
  * as a row: the device on the left, the words beside it, the mark top
  * right as before. Here, not in setup.css, so it outranks the card's own
  * rules above. */
+/* Its measures are the Home's build card's (MarBuildsRow.vue, .mbr-card:
+ * 16px corners, 18px gap, 20px padding, the device 88px), a size up. */
 .mss-first.is-alone .mss-way {
   flex-direction: row;
   align-items: center;
-  gap: 24px;
-  padding-right: 56px;
+  gap: 22px;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-first.is-alone .mss-ways .mss-way {
+  padding: 24px 56px 24px 24px;
+  border-radius: 16px;
+}
+.mss-first.is-alone .mss-ways {
+  gap: 14px;
+  margin-top: 28px;
 }
 .mss-first.is-alone .mss-way-device {
   height: auto;
   align-self: center;
 }
 .mss-first.is-alone .mss-way .mss-laptop {
-  width: clamp(104px, 9vw, 136px);
+  width: clamp(96px, 7.6vw, 112px);
+  margin-left: 0;
 }
 .mss-first.is-alone .mss-way .mss-cloud {
-  transform: translate(-16%, 6px) scale(1.4);
+  transform: translate(-14%, 5px) scale(1.4);
+}
+.mss-first.is-alone .mss-way-text {
+  gap: 2px;
 }
 .mss-first.is-alone .mss-way-desc {
   margin-top: 8px;
+  max-width: 30ch;
 }
 
 /* Rows: the same cards stacked; the mark is a radio on the right. */

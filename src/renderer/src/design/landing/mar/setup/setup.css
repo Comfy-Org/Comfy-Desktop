@@ -913,7 +913,7 @@
      width (about 70%, between the shared column and 960px), and the
      question, the cards and the action bar fill it. */
   .mss-first.is-alone {
-    --mss-col-w: clamp(704px, 70vw, 960px);
+    --mss-col-w: clamp(704px, 62vw, 880px);
     /* Tall as the window allows: the question centres in it and the action
        bar settles near the bottom, 80px off the floor at most. */
     --mss-col-h: min(calc(100vh - 160px), 1040px);
