@@ -1201,7 +1201,9 @@ function findKey(e: KeyboardEvent): void {
 // so it sits clear at the start of the page and stays readable over the
 // grid when you scroll.
 function markStuck(): void {
-  const bar = document.querySelector<HTMLElement>('.mar-page-bar:has(.mar-asset-tools)')
+  const bar = document.querySelector<HTMLElement>(
+    '.mar-page-bar:not(.is-docked):has(.mar-asset-tools)'
+  )
   const scroller = bar?.closest<HTMLElement>(inGraph ? '.mg-assets-main' : '.proto-main')
   if (!bar || !scroller) return
   const stuck =
@@ -1907,8 +1909,9 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 </template>
 
 <style>
-/* The toolbar stays in reach while the wall scrolls. */
-.mar-page-bar:has(.mar-asset-tools) {
+/* The toolbar stays in reach while the wall scrolls. Docked in another
+   page's bar (a project, Apps) it is just tools in that bar's row. */
+.mar-page-bar:not(.is-docked):has(.mar-asset-tools) {
   position: sticky;
   /* The scroller's own top padding (pt-11), so nothing peeks above. */
   top: -44px;
@@ -1924,7 +1927,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 }
 /* Stuck: the page's own background, solid, with room under the tools,
    so the cards pass behind a clean edge instead of a blur. */
-.mar-page-bar.is-stuck:has(.mar-asset-tools) {
+.mar-page-bar.is-stuck:not(.is-docked):has(.mar-asset-tools) {
   background-color: var(--color-content-background);
 }
 .mar-asset-tools {

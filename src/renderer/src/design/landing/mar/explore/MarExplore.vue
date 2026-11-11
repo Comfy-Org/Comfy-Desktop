@@ -59,19 +59,20 @@ import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
  * its own tab, as its user. The frame (title, toolbar, Loading, Error,
  * Nothing matches) is MarPage; the catalogue is never empty.
  */
-/** At Milestone 2 this is the Apps page: Examples (everything the apps
- *  have made, whatever app made it) and Apps (the apps themselves). */
-/** From Explore & Learn on, Apps also keeps the library of your own: a
- *  third tab, My apps. Before that (Milestone 2) the third tab is
- *  Generated Files, what your apps and builds made, as Desktop ships it
- *  until local and Cloud files can live together in Assets. */
+/** At Milestone 2 this is the Apps page, as Desktop ships it: All apps
+ *  and Generated Files (what your apps and builds made, until local and
+ *  Cloud files can live together in Assets); examples live inside each
+ *  app. From Explore & Learn on, Apps is Inspiration (everything the apps
+ *  have made), All apps and My apps, the library of your own. */
 const { asApps = false, library = false } = defineProps<{ asApps?: boolean; library?: boolean }>()
 type Tab = 'examples' | 'apps' | 'mine' | 'files' | 'templates' | 'models' | 'tutorials'
 const tab = ref<Tab>(
   asApps
     ? exploreStart.value === 'files'
       ? 'files'
-      : 'examples'
+      : library
+        ? 'examples'
+        : 'apps'
     : exploreStart.value === 'templates'
       ? 'templates'
       : 'apps'
@@ -83,7 +84,17 @@ const query = ref('')
 const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
 const TABS: { value: Tab; label: string; count?: number; icon?: Component }[] = asApps
   ? [
-      { value: 'examples', label: 'Inspiration', count: APP_EXAMPLES.length, icon: StarsGlyph },
+      // Milestone 2 ships without Inspiration: examples live inside each app.
+      ...(library
+        ? [
+            {
+              value: 'examples' as const,
+              label: 'Inspiration',
+              count: APP_EXAMPLES.length,
+              icon: StarsGlyph
+            }
+          ]
+        : []),
       { value: 'apps', label: 'All apps', count: APPS_COUNT, icon: PanelsTopLeft },
       ...(library
         ? [{ value: 'mine' as const, label: 'My apps', count: 0, icon: UserRound }]
