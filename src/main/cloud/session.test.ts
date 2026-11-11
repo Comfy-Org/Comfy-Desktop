@@ -2126,6 +2126,82 @@ describe('CloudSession token provider', () => {
     expect(onSignedOut).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    ['a network error', () => refreshFailure('network')],
+    ['a 503', () => refreshFailure('http', 503)]
+  ])(
+    'stays signed in when a rejected grant token had expired and the refresh fails with %s',
+    async (_name, failure) => {
+      const grant = grantOn('w1', { expiresAt: PAST })
+      saveGrant(grant)
+      mocked(refresh).mockRejectedValue(failure())
+      const session = new CloudSession()
+      const onSignedOut = vi.fn()
+
+      session.asTokenProvider(onSignedOut).onUnauthorized?.(grant.accessToken)
+      await vi.waitFor(() => expect(refresh).toHaveBeenCalledOnce())
+      await new Promise<void>((resolve) => setImmediate(resolve))
+
+      expect(session.isSignedIn()).toBe(true)
+      expect(onSignedOut).not.toHaveBeenCalled()
+    }
+  )
+
+  it('signs out once Cloud refuses to refresh a rejected grant token that had expired', async () => {
+    const grant = grantOn('w1', { expiresAt: PAST })
+    saveGrant(grant)
+    mocked(refresh).mockRejectedValue(refreshRefused())
+    const session = new CloudSession()
+    const onSignedOut = vi.fn()
+
+    session.asTokenProvider(onSignedOut).onUnauthorized?.(grant.accessToken)
+
+    await vi.waitFor(() => expect(onSignedOut).toHaveBeenCalledOnce())
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(session.isSignedIn()).toBe(false)
+  })
+
+  it('leaves a newer sign-in alone when the refusal for a rejected expired grant lands late', async () => {
+    const grant = grantOn('w1', { expiresAt: PAST })
+    saveGrant(grant)
+    let refuse: (reason: unknown) => void = () => {}
+    mocked(refresh).mockReturnValue(
+      new Promise<AuthTokens>((_resolve, reject) => {
+        refuse = reject
+      })
+    )
+    const signingIn = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(signingIn.promise)
+    const fresh = grantOn('w1', { revision: '-fresh' })
+    const session = new CloudSession()
+    const onSignedOut = vi.fn()
+
+    session.asTokenProvider(onSignedOut).onUnauthorized?.(grant.accessToken)
+    const login = session.login()
+    refuse(refreshRefused())
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    signingIn.resolve(signedInResult(fresh))
+    await login
+
+    expect(onSignedOut).not.toHaveBeenCalled()
+    expect(vaultOnDisk().grant).toEqual(fresh)
+  })
+
+  it('keeps the refreshed grant when a rejected grant token had only expired', async () => {
+    const grant = grantOn('w1', { expiresAt: PAST })
+    const rotated = grantOn('w1', { revision: 'rotated' })
+    saveGrant(grant)
+    mocked(refresh).mockResolvedValue(rotated)
+    const session = new CloudSession()
+    const onSignedOut = vi.fn()
+
+    session.asTokenProvider(onSignedOut).onUnauthorized?.(grant.accessToken)
+
+    await vi.waitFor(() => expect(vaultOnDisk().grant).toEqual(rotated))
+    expect(session.isSignedIn()).toBe(true)
+    expect(onSignedOut).not.toHaveBeenCalled()
+  })
+
   it('drops only a rejected minted token, stays signed in, and re-mints with no browser', async () => {
     saveGrant(grantOn('w1'))
     const session = new CloudSession()

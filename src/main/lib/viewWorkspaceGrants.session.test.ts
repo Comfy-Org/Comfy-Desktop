@@ -134,6 +134,27 @@ describe('view token path through a real session', () => {
     expect(signIn).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['a network error', new Error('fetch failed')],
+    ['a 503', Object.assign(new Error('refresh failed: 503'), { status: 503 })]
+  ])(
+    'stays signed in when the refresh fails with %s and the mint rejects the expired grant',
+    async (_name, failure) => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      grants = new ViewWorkspaceGrants(session, undefined, (token) =>
+        session.asTokenProvider().onUnauthorized?.(token)
+      )
+      vi.setSystemTime(GRANT.expiresAt + 1)
+      vi.mocked(refresh).mockRejectedValue(failure)
+      mintReply = () => new Response(JSON.stringify({ code: 'UNAUTHORIZED' }), { status: 401 })
+
+      await expect(grants.tokenFor(view, 'w1')).resolves.toBeNull()
+      await new Promise<void>((resolve) => setImmediate(resolve))
+
+      expect(session.status().signedIn).toBe(true)
+    }
+  )
+
   it('refuses to deliver or cache a token that is already expired', async () => {
     const expired = (workspaceId: string): Response =>
       new Response(
