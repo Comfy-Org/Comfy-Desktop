@@ -106,6 +106,7 @@ export class CloudSession {
   private mintBlockedUntil = 0
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
+  private viewConsentOpen = false
   private returnedToAnchorHandler: (() => void) | null = null
 
   private authGeneration = 0
@@ -382,7 +383,7 @@ export class CloudSession {
       if (intent === 'chosen' || this.switchIntent === 'restored') this.switchIntent = intent
       return this.switching.result
     }
-    if (intent === 'requested' && (this.switching || this.loginInFlight)) {
+    if (intent === 'requested' && (this.switching || this.loginInFlight || this.viewConsentOpen)) {
       return Promise.resolve(this.unreached())
     }
     this.clearPendingLogin()
@@ -477,6 +478,8 @@ export class CloudSession {
     }
     let browserOpened = false
     let tokens: AuthTokens
+    const viewConsent = reason === 'view_requested'
+    if (viewConsent) this.viewConsentOpen = true
     try {
       ;({ tokens } = await signIn({
         workspaceId,
@@ -488,6 +491,8 @@ export class CloudSession {
     } catch {
       if (!browserOpened) reportSwitch('retryable', reason)
       return generation === this.authGeneration ? this.stayed('retryable') : this.unreached()
+    } finally {
+      if (viewConsent) this.viewConsentOpen = false
     }
     if (generation !== this.authGeneration) return this.unreached()
     this.storeSignedInGrant(tokens)

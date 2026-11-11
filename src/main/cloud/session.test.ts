@@ -1707,6 +1707,69 @@ describe('CloudSession switches a local ComfyUI view requests', () => {
     expect(signIn).toHaveBeenCalledOnce()
   })
 
+  it('checks membership for an id that names an object property', async () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    mocked(listWorkspaces).mockResolvedValueOnce([member('w1'), member('w2')])
+    await session.listWorkspaces()
+
+    await expect(session.switchWorkspace('toString', 'requested')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'unavailable'
+    })
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
+  it('keeps one view consent open even after Desktop moves meanwhile', async () => {
+    saveGrant(grantOn('w1'))
+    mocked(listWorkspaces).mockResolvedValueOnce([member('w1'), member('w2'), member('w3')])
+    const consent = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(consent.promise)
+    const session = new CloudSession()
+
+    void session.switchWorkspace('w2', 'requested')
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    await expect(session.switchWorkspace('w1')).resolves.toMatchObject({ reached: true })
+    await expect(session.switchWorkspace('w3', 'requested')).resolves.toMatchObject({
+      reached: false
+    })
+
+    expect(signIn).toHaveBeenCalledOnce()
+    consent.resolve(signedInResult(grantOn('w2')))
+  })
+
+  it('does not cancel a sign-in Desktop has in flight', async () => {
+    saveGrant(grantOn('w1'))
+    const signingIn = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(signingIn.promise)
+    const session = new CloudSession()
+
+    const login = session.login()
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    await expect(session.switchWorkspace('w2', 'requested')).resolves.toMatchObject({
+      reached: false
+    })
+    signingIn.resolve(signedInResult(grantOn('w1', { revision: '-fresh' })))
+
+    await login
+    expect(vaultOnDisk().grant).toEqual(grantOn('w1', { revision: '-fresh' }))
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('opens no browser when the membership check returns after sign-out', async () => {
+    saveGrant(grantOn('w1'))
+    const list = deferred<Awaited<ReturnType<typeof listWorkspaces>>>()
+    mocked(listWorkspaces).mockReturnValueOnce(list.promise)
+    const session = new CloudSession()
+
+    const requested = session.switchWorkspace('w2', 'requested')
+    await vi.waitFor(() => expect(listWorkspaces).toHaveBeenCalledOnce())
+    session.logout()
+    list.resolve([member('w1'), member('w2')])
+
+    await expect(requested).resolves.toMatchObject({ reached: false })
+    expect(signIn).not.toHaveBeenCalled()
+  })
+
   it('does not cancel a switch Desktop has in flight', async () => {
     saveGrant(grantOn('w1'))
     const slow = deferred<Response>()
