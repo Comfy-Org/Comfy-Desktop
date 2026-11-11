@@ -50,11 +50,18 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  exists. Install card: only the card, nothing that needs ComfyUI. Home
  *  open: the first-run Home stays around the card. Off by default, and
  *  only where there is a Home. */
-export type Onboarding = 'install' | 'home-running' | 'home-direct' | 'home' | 'home-open'
+export type Onboarding =
+  | 'install'
+  | 'home-running'
+  | 'home-direct'
+  | 'oneclick'
+  | 'home'
+  | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'install', label: 'Install first (today)' },
   { value: 'home-running', label: 'Home first: install runs behind' },
   { value: 'home-direct', label: 'Home first: Run on only, install runs' },
+  { value: 'oneclick', label: 'Home first: one-click install' },
   { value: 'home', label: 'Home first: install card only' },
   { value: 'home-open', label: 'Home first: Home stays open' }
 ]
@@ -208,6 +215,11 @@ export const homeRunning = computed(
  *  up would have stopped on (no space, no supported hardware) stops the
  *  card instead, with its Change. */
 export const homeDirect = computed(() => homeFirst.value && localSetup.onboarding === 'home-direct')
+/** Home first › One-click install: no Run on. The first screen is Set up
+ *  itself, the detected computer and its list, with the consent under it
+ *  and one Install; then the Home, the install running in Builds. Cloud
+ *  is not asked: it is in Builds anyway. */
+export const homeOneClick = computed(() => homeFirst.value && localSetup.onboarding === 'oneclick')
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
 // landing; the next iterations land on Milestone 2 (Explore apps), the Home
@@ -579,7 +591,9 @@ export const installPending = computed(
  *  setup › Install card): while the install waits or runs, and once ComfyUI
  *  is ready until it is opened. */
 export const cardInBuilds = computed(
-  () => (localSetup.card === 'builds' || homeDirect.value) && (installPending.value || flow.ready)
+  () =>
+    (localSetup.card === 'builds' || homeDirect.value || homeOneClick.value) &&
+    (installPending.value || flow.ready)
 )
 /** The install runs (or failed) behind the Home: the sidebar's Builds show it. */
 export const installingBehind = computed(
@@ -642,6 +656,28 @@ function tick(): void {
 /** Finished: ComfyUI opens on its own, on the template if one was picked. */
 function finish(): void {
   stop()
+  // Every build after the first joins the list as its own: My Local 2, 3…
+  // with what this install set. The first is the mock's My Local 1.
+  const another = instances.value.some((i) => i.kind === 'local')
+  if (another) {
+    const n = instances.value.filter((i) => i.kind === 'local').length + 1
+    proto.addedInstances.unshift({
+      id: `local-added-${n}`,
+      name: `My Local ${n}`,
+      kind: 'local',
+      channel: 'Stable',
+      version: DETECTED.version,
+      state: 'stopped',
+      lastUsed: 'Just now',
+      lastUsedRank: -1,
+      gpu: DETECTED.chip,
+      diskSize: `${(DETECTED.downloadGb * 2.25).toFixed(1)} GB`,
+      models: 0,
+      nodes: flow.packs.length,
+      workspace: 'personal',
+      hue: (48 + 70 * (n - 1)) % 360
+    })
+  }
   marUser.local = 'one'
   // Builds lists the build just installed as the card said it: this
   // version, nothing to update.
@@ -667,7 +703,10 @@ function finish(): void {
   }
   go('overview')
   // Home: no toast, the page changes and the new build shows in the sidebar.
-  if (localSetup.after === 'ready') {
+  // The Ready card is the first build's; another build is already in the
+  // list, so it only gets a word.
+  if (another) toast(`${proto.addedInstances[0]!.name} is ready`)
+  else if (localSetup.after === 'ready') {
     flow.homeCard = true
     flow.ready = true
   }
@@ -677,7 +716,8 @@ function finish(): void {
 export function openComfyUI(what?: string): void {
   flow.ready = false
   flow.homeCard = false
-  const inst = instances.value.find((i) => i.kind === 'local')
+  // The build just installed: the newest added one, else the first.
+  const inst = proto.addedInstances[0] ?? instances.value.find((i) => i.kind === 'local')
   if (inst) hostActions.launch(inst, what)
   else toast('Opening ComfyUI')
 }
@@ -694,6 +734,8 @@ export function openSetup(): boolean {
   // Today's New Instance opens the install wizard directly.
   flow.step = marUser.local === 'none' ? 'first' : 'setup'
   flow.takeover = flow.step === 'first'
+  // One-click install: the first launch opens on Set up, full window.
+  if (flow.takeover && homeOneClick.value) flow.step = 'setup'
   flow.percent = 0
   flow.picked = null
   // A new build starts on the recommended packs, where they are offered.
@@ -928,6 +970,8 @@ export function showScreen(s: Screen): void {
     nodes: 'nodes'
   }
   flow.step = step[s]
+  // One-click install has no Run on: its first screen is Set up.
+  if (s === 'first' && homeOneClick.value) flow.step = 'setup'
   if (s === 'error') flow.percent = 46
   if (s === 'installing' || s === 'cancel') {
     flow.percent = 58
