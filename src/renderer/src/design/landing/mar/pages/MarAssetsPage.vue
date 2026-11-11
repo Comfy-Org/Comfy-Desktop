@@ -94,6 +94,8 @@ import {
   tagsOf
 } from '../assets/assetTags'
 import { isStarred, toggleStar } from '../assets/assetFavorites'
+// Favorites in Assets (the star and its sidebar row) arrive with Milestone 3.
+import { can } from '../../milestones'
 import { GROUPS, groupAssets } from '../assets/assetGroups'
 import { assetView } from '../assets/assetView'
 import BulkTagMenu from '../graph/BulkTagMenu.vue'
@@ -1447,6 +1449,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
                   >
                     <template v-if="!a.status" #tools>
                       <button
+                        v-if="can.explore"
                         type="button"
                         class="mar-star"
                         :class="isStarred(a.id) && 'is-on'"
@@ -1669,6 +1672,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         ><span class="mar-anav-n">{{ s.count }}</span>
       </button>
       <button
+        v-if="can.explore"
         type="button"
         class="mar-anav-row"
         :class="favOnly && 'is-on'"
