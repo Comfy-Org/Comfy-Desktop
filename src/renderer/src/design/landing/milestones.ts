@@ -20,6 +20,8 @@ import { appsProto } from './appFlow'
  *                   (use cases); an app opens in a tab, as its user. Shown
  *                   as "5" in the menu; the later ones are shown one up.
  *                   (The value stays 4.5 so every `m >= n` check holds.)
+ * 4.7  Workflows  - Milestone 3: the Workflows library joins Apps and
+ *                   Assets in the sidebar (no Projects yet). Shown as "6".
  *   5  Explore    - Explore and Learn.
  *   6  Builder    - the Build lens (deploy builds as APIs).
  *   7  One window - the long-term vision: builds open in the same window,
@@ -42,12 +44,13 @@ export const MILESTONES = [
   { value: '3', label: '3 · Breadcrumb' },
   { value: '4', label: '4 · Home' },
   { value: '4.5', label: '5 · Explore apps (Milestone 2)' },
-  { value: '5', label: '6 · Explore & Learn' },
-  { value: '6', label: '7 · Builder' },
-  { value: '7', label: '8 · One window' },
-  { value: '8', label: '9 · Projects (future)' },
-  { value: '9', label: '10 · Spaces (future)' },
-  { value: '10', label: '11 · Agent (future)' }
+  { value: '4.7', label: '6 · Workflows (Milestone 3)' },
+  { value: '5', label: '7 · Explore & Learn' },
+  { value: '6', label: '8 · Builder' },
+  { value: '7', label: '9 · One window' },
+  { value: '8', label: '10 · Projects (future)' },
+  { value: '9', label: '11 · Spaces (future)' },
+  { value: '10', label: '12 · Agent (future)' }
 ]
 
 // Each run of the app opens on the latest milestone; within a run (a
@@ -71,6 +74,8 @@ export const can = computed(() => {
     home: m >= 4,
     /** Explore, leading with apps; apps open in their own tabs. */
     exploreApps: m >= 4.5,
+    /** Milestone 3: the Workflows library in the sidebar. */
+    workflows: m >= 4.7,
     explore: m >= 5,
     builder: m >= 6,
     oneWindow: m >= 7,
