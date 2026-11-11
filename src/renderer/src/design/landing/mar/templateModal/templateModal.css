@@ -16,8 +16,14 @@
   --tpl-ok: var(--color-status-running);
   --tpl-warn: oklch(0.8 0.14 75);
   --tpl-gold: oklch(0.84 0.13 85);
-  --tpl-node: oklch(0.235 0.006 285);
-  --tpl-node-head: oklch(0.275 0.008 285);
+  /* Nodes from the palette, as on ComfyUI's canvas (graph/CanvasNode.vue):
+     the foreground mixed into the page background, no hue of their own. */
+  --tpl-node: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
+  --tpl-node-head: color-mix(
+    in oklch,
+    var(--color-base-foreground) 9%,
+    var(--color-content-background)
+  );
 
   /* The modal glass material (DS › Materials keeps it as a specimen). */
   overflow: hidden;
@@ -66,8 +72,12 @@
   --tpl-ok: oklch(0.58 0.14 155);
   --tpl-warn: oklch(0.62 0.15 60);
   --tpl-gold: oklch(0.56 0.13 65);
-  --tpl-node: oklch(0.995 0 0);
-  --tpl-node-head: oklch(0.975 0.002 285);
+  --tpl-node: var(--color-content-background);
+  --tpl-node-head: color-mix(
+    in oklch,
+    var(--color-base-foreground) 4%,
+    var(--color-content-background)
+  );
   background-color: color-mix(in oklch, var(--color-card-background) 94%, transparent);
   box-shadow:
     inset 0 0 0 1px var(--tpl-line),

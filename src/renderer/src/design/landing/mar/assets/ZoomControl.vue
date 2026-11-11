@@ -93,40 +93,42 @@ defineExpose({ open })
         <path d="M2 3.5h6L5 7z" fill="currentColor" />
       </svg>
     </button>
-    <div v-if="open" class="zc-menu" role="menu">
-      <button
-        v-for="i in ITEMS"
-        :key="i.label"
-        type="button"
-        role="menuitem"
-        class="zc-row"
-        @click="i.run"
-      >
-        <span>{{ i.label }}</span>
-        <kbd class="zc-kbd"
-          ><span v-for="k in i.keys" :key="k">{{ k }}</span></kbd
+    <Transition name="zc-pop">
+      <div v-if="open" class="zc-menu" role="menu">
+        <button
+          v-for="i in ITEMS"
+          :key="i.label"
+          type="button"
+          role="menuitem"
+          class="zc-row"
+          @click="i.run"
         >
-      </button>
-      <div class="zc-slide">
-        <button type="button" class="zc-step" aria-label="Zoom out" @click="zoomOut">
-          <Minus :size="13" />
+          <span>{{ i.label }}</span>
+          <kbd class="zc-kbd"
+            ><span v-for="k in i.keys" :key="k">{{ k }}</span></kbd
+          >
         </button>
-        <input
-          class="zc-range"
-          type="range"
-          min="10"
-          max="400"
-          step="1"
-          :value="shown"
-          :style="{ '--zc-at': `${((shown - 10) / 390) * 100}%` }"
-          aria-label="Zoom"
-          @input="set(Number(($event.target as HTMLInputElement).value))"
-        />
-        <button type="button" class="zc-step" aria-label="Zoom in" @click="zoomIn">
-          <Plus :size="13" />
-        </button>
+        <div class="zc-slide">
+          <button type="button" class="zc-step" aria-label="Zoom out" @click="zoomOut">
+            <Minus :size="13" />
+          </button>
+          <input
+            class="zc-range"
+            type="range"
+            min="10"
+            max="400"
+            step="1"
+            :value="shown"
+            :style="{ '--zc-at': `${((shown - 10) / 390) * 100}%` }"
+            aria-label="Zoom"
+            @input="set(Number(($event.target as HTMLInputElement).value))"
+          />
+          <button type="button" class="zc-step" aria-label="Zoom in" @click="zoomIn">
+            <Plus :size="13" />
+          </button>
+        </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -187,18 +189,33 @@ defineExpose({ open })
   border-radius: 12px;
   background: var(--color-secondary-background);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
-  transform-origin: bottom right;
-  animation: zc-in 140ms ease-out;
 }
-@keyframes zc-in {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
+/* DS Motion › Menu enter, grown from the percentage below it (the shared
+   menu rise in motion.css drops from the top, so it is replaced here), and
+   a quicker fade back into it on close. */
+:root .zc .zc-menu[role='menu'] {
+  transform-origin: bottom right;
+  animation: none;
+}
+.zc-pop-enter-active {
+  transition:
+    opacity 180ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    transform 180ms var(--mar-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.zc-pop-leave-active {
+  transition:
+    opacity 120ms ease-in,
+    transform 120ms ease-in;
+}
+.zc-pop-enter-from,
+.zc-pop-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(0.96);
 }
 @media (prefers-reduced-motion: reduce) {
-  .zc-menu {
-    animation: none;
+  .zc-pop-enter-from,
+  .zc-pop-leave-to {
+    transform: none;
   }
 }
 /* − track +: the same round steps as the Layout menu's Size. Last, next to
