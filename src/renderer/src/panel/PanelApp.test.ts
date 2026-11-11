@@ -751,16 +751,13 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
-    expect(wrapper.findAll('.performance-test__field-label').map((label) => label.text())).toEqual([
-      'Build'
-    ])
     expect(wrapper.find('.performance-test__workspace-select').exists()).toBe(false)
     expect(wrapper.find('.performance-test__setup').exists()).toBe(true)
     expect(wrapper.findAll('.performance-test__step')).toHaveLength(3)
     expect(wrapper.findAll('.performance-test__step h2').map((heading) => heading.text())).toEqual([
-      '1. Select a build',
-      '2. Choose a workflow',
-      '3. Set measurement settings'
+      'Build',
+      'Workflow',
+      'Runs'
     ])
     const settings = wrapper.findAll('.performance-test__setting')
     expect(settings).toHaveLength(2)
@@ -813,6 +810,7 @@ describe('PanelApp', () => {
     expect(
       wrapper.findAll('.performance-test__content > section').map((section) => section.classes()[0])
     ).toEqual(['performance-test__results-section', 'performance-test__logs-section'])
+    expect(wrapper.find('.performance-test__system-section').exists()).toBe(false)
     expect(wrapper.get('.performance-test__results').text()).toContain(
       'Performance test results will appear here.'
     )
@@ -988,7 +986,7 @@ describe('PanelApp', () => {
       telemetryEvents.some((event) => event.actionName === 'comfy.desktop.performance_test.stopped')
     ).toBe(false)
     const results = wrapper.get('.performance-test__results').text()
-    expect(results).toContain('Workflow filecat-workflow.json')
+    expect(wrapper.get('.performance-test__result-workflow').text()).toBe('cat-workflow.json')
     expect(results).toContain('Fastest run')
     expect(results).toContain('1.250 s')
     expect(results).toContain('Slowest run')
@@ -1010,42 +1008,37 @@ describe('PanelApp', () => {
         .findAll('dt')
         .map((label) => label.text())
     ).toEqual([
-      'Measured runs',
-      'Failed runs',
       'Fastest run',
       'Average run',
+      'Median run',
       'Slowest run',
-      'Median run'
+      'Measured runs',
+      'Failed runs'
     ])
     expect(wrapper.get('.performance-test__aggregate-chart').attributes('aria-label')).toBe(
       'Run duration aggregates'
     )
-    expect(wrapper.findAll('.performance-test__aggregate-bar')).toHaveLength(4)
-    expect(wrapper.findAll('.performance-test__results h3')).toHaveLength(1)
-    expect(results).toContain('System information')
-    expect(results).toContain('NVIDIA GeForce RTX 4090')
-    expect(results).not.toContain('Top-level fallback should not be displayed')
-    expect(wrapper.find('.performance-test__result-list--compact').exists()).toBe(true)
-    expect(wrapper.findAll('.performance-test__system-group h4')).toHaveLength(0)
-    const systemGroups = wrapper.findAll('.performance-test__system-group')
-    expect(systemGroups[0]!.text()).toContain('NVIDIA GeForce RTX 4090')
-    expect(systemGroups[0]!.text()).toContain('VRAM24.0 GB')
-    expect(systemGroups[0]!.text()).toContain('RAM63.9 GB')
-    expect(systemGroups[0]!.text()).toContain('PyTorch version2.10.0+cu130')
-    expect(systemGroups[0]!.text()).toContain('xFormers version0.0.31')
-    expect(systemGroups[1]!.text()).toContain('CPUAMD Ryzen 9 7950X')
-    expect(systemGroups[1]!.text()).toContain('CPU cores32')
-    expect(systemGroups[1]!.text()).toContain('Architecturex64')
-    expect(systemGroups[1]!.text()).toContain('Operating systemMicrosoft Windows 11 Pro 10.0.26200')
-    expect(results).not.toContain('GPU driver')
-    expect(results).not.toContain('Device index')
-    expect(results).not.toContain('Backend')
-    expect(results).not.toContain('24576 MB')
-    expect(results).not.toContain('65461 MB')
+    expect(wrapper.get('.performance-test__aggregate-chart').text()).toContain('1.250 s – 2.750 s')
+    expect(wrapper.findAll('.performance-test__aggregate-track')).toHaveLength(1)
+    const systemSection = wrapper.get('.performance-test__system-section')
+    expect(systemSection.get('h2').text()).toBe('System information')
+    const system = systemSection.get('.performance-test__system').text()
+    expect(system).toContain('NVIDIA GeForce RTX 4090')
+    expect(system).not.toContain('Top-level fallback should not be displayed')
+    expect(system).toContain('VRAM24.0 GB')
+    expect(system).toContain('RAM63.9 GB')
+    expect(system).toContain('PyTorch version2.10.0+cu130')
+    expect(system).toContain('xFormers version0.0.31')
+    expect(system).toContain('CPUAMD Ryzen 9 7950X')
+    expect(system).toContain('CPU cores32')
+    expect(system).toContain('Architecturex64')
+    expect(system).toContain('Operating systemMicrosoft Windows 11 Pro 10.0.26200')
+    for (const hidden of ['GPU driver', 'Device index', 'Backend', '24576 MB', '65461 MB']) {
+      expect(results).not.toContain(hidden)
+      expect(system).not.toContain(hidden)
+    }
     expect(
-      wrapper
-        .get('.performance-test__results')
-        .element.lastElementChild?.classList.contains('performance-test__results-actions')
+      wrapper.get('.performance-test__results-head .performance-test__results-actions').exists()
     ).toBe(true)
     const openResultsFolder = wrapper.get('.performance-test__open-results')
     expect(openResultsFolder.text()).toBe('Open folder')
@@ -2058,7 +2051,8 @@ describe('PanelApp', () => {
     const telemetryEvents = captureTelemetry()
     await wrapper.get('.performance-test__run').trigger('click')
     await flushPromises()
-    expect(wrapper.get('.performance-test__run').text()).toBe('Running...')
+    expect(wrapper.find('.performance-test__run').exists()).toBe(false)
+    expect(wrapper.get('.branded-page-header .performance-test__stop').text()).toBe('Stop')
 
     mockState.performanceTestProgressCallbacks.forEach((callback) =>
       callback({ sessionId: 'different-session', completedRuns: 5, totalRuns: 6 })
@@ -2105,6 +2099,7 @@ describe('PanelApp', () => {
     await flushPromises()
     expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
     expect(stopButton.attributes('disabled')).toBe('')
+    expect(stopButton.text()).toBe('Stopping...')
     expect(
       telemetryEvents.filter(
         (event) => event.actionName === 'comfy.desktop.performance_test.stopped'
@@ -2137,6 +2132,8 @@ describe('PanelApp', () => {
 
     resolveStop()
     await flushPromises()
+    expect(wrapper.find('.performance-test__stop').exists()).toBe(false)
+    expect(wrapper.find('.branded-page-header .performance-test__run').exists()).toBe(true)
     expect(wrapper.get('.performance-test__drop-content').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('.performance-test__delete-workflow').exists()).toBe(true)
     expect(

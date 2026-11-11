@@ -2,17 +2,7 @@
 import Input from '@comfyorg/design-system/input/Input'
 import { computed, nextTick, onUnmounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  FileJson,
-  FolderOpen,
-  Gauge,
-  ImageDown,
-  LayoutTemplate,
-  Play,
-  Square,
-  SquareTerminal,
-  Trash2
-} from 'lucide-vue-next'
+import { ChevronDown, FileJson, FolderOpen, ImageDown, Play, Square, X } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
@@ -39,10 +29,13 @@ import {
 import { emitTelemetryAction } from '../lib/telemetry'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 
-const resultListClass =
-  'grid gap-x-6 m-0 [&>div]:min-w-0 [&_dt]:text-neutral-200 [&_dt]:[text-align:var(--perf-label-align,left)] [&_dd]:mt-[var(--perf-value-margin,4px)] [&_dd]:[overflow-wrap:anywhere] [&_dd]:[color:var(--perf-value-color,var(--text-primary))] [&_dd]:text-[length:var(--perf-value-size,24px)] [&_dd]:leading-[var(--perf-value-leading,1.25)] [&_dd]:[text-align:var(--perf-value-align,left)]'
-const compactResultListClass =
-  'grid-cols-1 gap-y-2 [--perf-value-margin:0px] [--perf-value-size:12px] [--perf-value-leading:1.3] [--perf-value-color:var(--text-muted)] [--perf-value-align:right] [--perf-label-align:left] [&>div]:flex [&>div]:items-baseline [&>div]:justify-between [&>div]:gap-2 [&>div]:pb-1 [&_dt]:flex-none [&_dt]:text-[12px]'
+const cardClass =
+  'flex w-full min-w-0 flex-none flex-col rounded-[14px] bg-card px-[18px] pt-1.5 pb-3.5'
+const titleClass =
+  'mt-1 mb-1 flex min-h-8 items-center gap-2 text-[11px] leading-[1.4] font-semibold tracking-[0.04em] text-text-muted uppercase'
+const toggleClass =
+  'text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase [&_.collapsible-section-toggle__chevron]:size-3.5'
+const factClass = 'grid min-h-10 grid-cols-[112px_minmax(0,1fr)] items-center gap-3'
 
 interface PerformanceTestRunTelemetry {
   readonly installationId: string
@@ -150,34 +143,51 @@ const computeDeviceNames = computed(() =>
     .flatMap((device) => (device.deviceName ? [device.deviceName] : []))
     .join(', ')
 )
-const aggregateChart = computed(() => {
+const statTiles = computed(() => {
+  const summary = performanceTestResult.value?.resultsSummary
   const statistics = performanceTestResult.value?.statistics
-  if (!statistics) return []
-
-  const aggregates = [
-    {
-      label: t('performanceTest.fastestRun'),
-      value: statistics.fastest.durationSeconds
-    },
-    {
-      label: t('performanceTest.slowestRun'),
-      value: statistics.slowest.durationSeconds
-    },
-    {
-      label: t('performanceTest.averageRunDuration'),
-      value: statistics.averageDurationSeconds
-    },
-    {
-      label: t('performanceTest.medianRunDuration'),
-      value: statistics.medianDurationSeconds
-    }
+  if (!summary) return []
+  const timings = statistics
+    ? [
+        {
+          label: t('performanceTest.fastestRun'),
+          value: formatDuration(statistics.fastest.durationSeconds)
+        },
+        {
+          label: t('performanceTest.averageRunDuration'),
+          value: formatDuration(statistics.averageDurationSeconds)
+        },
+        {
+          label: t('performanceTest.medianRunDuration'),
+          value: formatDuration(statistics.medianDurationSeconds)
+        },
+        {
+          label: t('performanceTest.slowestRun'),
+          value: formatDuration(statistics.slowest.durationSeconds)
+        }
+      ]
+    : []
+  return [
+    ...timings,
+    { label: t('performanceTest.measuredRunCount'), value: String(summary.measuredJobCount) },
+    { label: t('performanceTest.failedRunCount'), value: String(summary.failedRunCount) }
   ]
-  const maximum = Math.max(...aggregates.map(({ value }) => value), 0)
-
-  return aggregates.map((aggregate) => ({
-    ...aggregate,
-    width: maximum > 0 ? `${(aggregate.value / maximum) * 100}%` : '0%'
-  }))
+})
+const durationRange = computed(() => {
+  const statistics = performanceTestResult.value?.statistics
+  if (!statistics) return null
+  const fastest = statistics.fastest.durationSeconds
+  const slowest = statistics.slowest.durationSeconds
+  const pad = Math.max(0.05, (slowest - fastest) * 0.5)
+  const low = fastest - pad
+  const span = slowest + pad - low
+  const position = (value: number): number => ((value - low) / span) * 100
+  return {
+    left: `${position(fastest)}%`,
+    width: `${position(slowest) - position(fastest)}%`,
+    average: `${position(statistics.averageDurationSeconds)}%`,
+    label: `${formatDuration(fastest)} – ${formatDuration(slowest)}`
+  }
 })
 const workflowLabel = computed(
   () =>
@@ -672,7 +682,7 @@ watch(performanceTestLogs, async () => {
             <Button
               v-if="ownsRun"
               class="performance-test__stop min-w-24"
-              variant="destructive"
+              variant="secondary"
               size="lg"
               type="button"
               :disabled="!canStop"
@@ -682,6 +692,7 @@ watch(performanceTestLogs, async () => {
               {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
             </Button>
             <Button
+              v-else
               class="performance-test__run min-w-24"
               variant="inverted"
               size="lg"
@@ -689,42 +700,33 @@ watch(performanceTestLogs, async () => {
               :disabled="!canRun"
               @click="runPerformanceTest"
             >
-              <Play v-if="!isLaunching" :size="12" fill="currentColor" aria-hidden="true" />
-              {{ isLaunching ? t('performanceTest.running') : t('performanceTest.run') }}
+              <Play :size="12" fill="currentColor" aria-hidden="true" />
+              {{ t('performanceTest.run') }}
             </Button>
           </template>
         </BrandedPageHeader>
-        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-8">
+        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-3">
           <div
-            class="performance-test__setup grid w-full flex-none grid-cols-[minmax(200px,1fr)_minmax(0,1.3fr)_minmax(200px,1fr)] gap-x-10 gap-y-8 rounded-[14px] bg-card p-6 @max-[800px]:grid-cols-1"
+            class="performance-test__setup grid w-full flex-none grid-cols-3 gap-3 @max-[760px]:grid-cols-1"
           >
-            <section class="performance-test__step flex min-w-0 flex-col gap-4">
-              <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
-                {{ t('performanceTest.selectInstance') }}
-              </h2>
-              <div class="performance-test__field flex flex-col gap-1.5">
-                <span class="performance-test__field-label text-[12px] text-text-muted">
-                  {{ t('performanceTest.instanceLabel') }}
-                </span>
-                <div class="performance-test__instance-select min-w-0 w-full">
-                  <BaseSelect
-                    :model-value="selectedInstallationId ?? ''"
-                    :options="instanceOptions"
-                    :placeholder="t('performanceTest.selectInstancePlaceholder')"
-                    :aria-label="t('performanceTest.selectInstancePlaceholder')"
-                    :disabled="instanceOptions.length === 0"
-                    @update:model-value="selectedInstallationId = $event"
-                  />
-                </div>
+            <section class="performance-test__step" :class="cardClass">
+              <h2 :class="titleClass">{{ t('performanceTest.selectInstance') }}</h2>
+              <div class="performance-test__instance-select min-w-0 w-full">
+                <BaseSelect
+                  :model-value="selectedInstallationId ?? ''"
+                  :options="instanceOptions"
+                  :placeholder="t('performanceTest.selectInstancePlaceholder')"
+                  :aria-label="t('performanceTest.selectInstancePlaceholder')"
+                  :disabled="instanceOptions.length === 0"
+                  @update:model-value="selectedInstallationId = $event"
+                />
               </div>
             </section>
 
-            <section class="performance-test__step flex min-w-0 flex-col gap-4">
-              <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
-                {{ t('performanceTest.chooseWorkflow') }}
-              </h2>
+            <section class="performance-test__step" :class="cardClass">
+              <h2 :class="titleClass">{{ t('performanceTest.chooseWorkflow') }}</h2>
               <Button
-                class="performance-test__example-workflow w-full"
+                class="performance-test__example-workflow w-full justify-between font-normal"
                 variant="secondary"
                 size="lg"
                 type="button"
@@ -736,24 +738,34 @@ watch(performanceTestLogs, async () => {
                 "
                 @click="openExampleWorkflowPicker"
               >
-                <LayoutTemplate :size="16" aria-hidden="true" />
-                {{
-                  isExamplePickerLoading
-                    ? t('performanceTest.loadingExampleWorkflows')
-                    : t('performanceTest.chooseExampleWorkflow')
-                }}
+                <span class="truncate">
+                  {{
+                    isExamplePickerLoading
+                      ? t('performanceTest.loadingExampleWorkflows')
+                      : t('performanceTest.chooseExampleWorkflow')
+                  }}
+                </span>
+                <ChevronDown :size="16" class="shrink-0" aria-hidden="true" />
               </Button>
-              <div
-                class="performance-test__workflow-divider w-full text-center text-[12px] text-[var(--text-faint)]"
+              <p
+                class="performance-test__example-hint mt-0.5 mb-0 text-[12px] leading-[1.45] text-text-muted"
               >
-                <span>{{ t('performanceTest.orImportApiWorkflow') }}</span>
-              </div>
+                {{ t('performanceTest.exampleWorkflowPickerDescription') }}
+              </p>
+              <p
+                class="performance-test__workflow-divider mt-2.5 mb-0 text-center text-[11px] text-text-muted"
+              >
+                {{ t('performanceTest.orImportApiWorkflow') }}
+              </p>
               <div
-                class="performance-test__drop-zone relative min-h-[96px] w-full flex-none rounded-lg border border-dashed p-0 text-text-muted transition-[border-color,background-color] duration-[120ms] ease-[ease] hover:border-[var(--chooser-surface-border-hover)] hover:bg-[var(--chooser-surface-bg-hover)] focus-within:border-[var(--chooser-surface-border-hover)] focus-within:bg-[var(--chooser-surface-bg-hover)] focus-within:outline-none"
+                class="performance-test__drop-zone relative mt-2 w-full flex-none rounded-[10px] text-text-muted transition-[border-color,background-color] duration-[140ms] ease-[ease]"
                 :class="[
-                  isWorkflowDragging
-                    ? 'border-[var(--chooser-surface-border-hover)] bg-[var(--chooser-surface-bg-hover)]'
-                    : 'border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)]',
+                  workflowFilePath || pendingExampleWorkflowLabel
+                    ? 'bg-white/5'
+                    : [
+                        'min-h-[84px] border border-dashed hover:border-white/30 hover:bg-white/3 focus-within:border-white/30',
+                        isWorkflowDragging ? 'border-white/30 bg-white/3' : 'border-white/15'
+                      ],
                   {
                     'performance-test__drop-zone--dragging': isWorkflowDragging,
                     'performance-test__drop-zone--selected':
@@ -769,65 +781,80 @@ watch(performanceTestLogs, async () => {
                 <Button
                   variant="textonly"
                   size="lg"
-                  class="performance-test__drop-content h-auto min-h-[94px] w-full whitespace-normal p-4"
+                  class="performance-test__drop-content h-auto w-full whitespace-normal font-normal hover:bg-transparent"
                   type="button"
                   :class="
                     workflowFilePath || pendingExampleWorkflowLabel
-                      ? 'justify-start pr-14 text-left'
-                      : 'justify-center text-center'
+                      ? 'min-h-10 justify-start py-2 pr-11 pl-3 text-left'
+                      : 'min-h-[82px] justify-center p-3 text-center'
                   "
                   :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
                   <span
                     v-if="!workflowFilePath && !pendingExampleWorkflowLabel"
-                    class="flex flex-col items-center gap-2 text-[12px] leading-[1.4]"
+                    class="flex flex-col items-center gap-1 text-[12px] leading-[1.4]"
                   >
-                    <FileJson :size="18" class="text-[var(--text-faint)]" aria-hidden="true" />
+                    <FileJson :size="16" class="text-text-muted" aria-hidden="true" />
                     {{
                       isWorkflowImporting
                         ? t('performanceTest.importingWorkflow')
                         : t('performanceTest.dropWorkflowHint')
                     }}
                   </span>
-                  <span
-                    v-else
-                    class="performance-test__workflow-file flex min-w-0 flex-col gap-1.5 [&>strong]:truncate [&>strong]:text-[var(--text-primary)] [&>strong]:font-semibold [&>code]:[overflow-wrap:anywhere] [&>code]:text-[var(--text-faint)] [&>code]:text-[11px] [&>code]:font-[inherit]"
-                  >
-                    <strong>{{ workflowLabel }}</strong>
-                    <code v-if="pendingExampleWorkflowLabel">
-                      {{ t('performanceTest.preparingExampleWorkflow') }}
-                    </code>
-                    <template v-else-if="exampleDownload">
-                      <code>{{ exampleDownload.message }}</code>
-                      <span
-                        class="performance-test__example-download-bar block h-1 overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)] [&>span]:block [&>span]:h-full [&>span]:rounded-[inherit] [&>span]:bg-neutral-100 [&>span]:transition-[width] [&>span]:duration-[400ms] [&>span]:ease-[ease]"
-                        role="progressbar"
-                        :aria-valuenow="
-                          exampleDownload.percent >= 0 ? exampleDownload.percent : undefined
-                        "
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                        :aria-label="t('performanceTest.exampleModelsDownload')"
-                      >
+                  <span v-else class="flex min-w-0 grow items-start gap-2.5">
+                    <FileJson
+                      :size="15"
+                      class="mt-0.5 shrink-0 text-text-muted"
+                      aria-hidden="true"
+                    />
+                    <span
+                      class="performance-test__workflow-file flex min-w-0 grow flex-col gap-1 [&>strong]:truncate [&>strong]:text-[13px] [&>strong]:font-normal [&>strong]:text-[var(--text-primary)] [&>code]:[overflow-wrap:anywhere] [&>code]:text-[11px] [&>code]:font-[inherit] [&>code]:text-text-muted"
+                    >
+                      <strong>{{ workflowLabel }}</strong>
+                      <code v-if="pendingExampleWorkflowLabel">
+                        {{ t('performanceTest.preparingExampleWorkflow') }}
+                      </code>
+                      <template v-else-if="exampleDownload">
+                        <code>{{ exampleDownload.message }}</code>
                         <span
-                          v-if="exampleDownload.percent >= 0"
-                          :style="{ width: `${exampleDownload.percent}%` }"
-                        />
-                        <span
-                          v-else
-                          class="performance-test__example-download-bar--indeterminate w-[30%] animate-[performance-test-download-pulse_1.2s_ease-in-out_infinite_alternate]"
-                        />
-                      </span>
-                    </template>
-                    <code v-else>{{ workflowFilePath }}</code>
+                          class="performance-test__example-download-bar block h-1 overflow-hidden rounded-[2px] bg-white/10 [&>span]:block [&>span]:h-full [&>span]:rounded-[inherit] [&>span]:bg-neutral-100 [&>span]:transition-[width] [&>span]:duration-[400ms] [&>span]:ease-[ease]"
+                          role="progressbar"
+                          :aria-valuenow="
+                            exampleDownload.percent >= 0 ? exampleDownload.percent : undefined
+                          "
+                          aria-valuemin="0"
+                          aria-valuemax="100"
+                          :aria-label="t('performanceTest.exampleModelsDownload')"
+                        >
+                          <span
+                            v-if="exampleDownload.percent >= 0"
+                            :style="{ width: `${exampleDownload.percent}%` }"
+                          />
+                          <span
+                            v-else
+                            class="performance-test__example-download-bar--indeterminate w-[30%] animate-[performance-test-download-pulse_1.2s_ease-in-out_infinite_alternate]"
+                          />
+                        </span>
+                      </template>
+                      <code v-else>{{ workflowFilePath }}</code>
+                    </span>
+                    <span
+                      class="performance-test__workflow-tag mt-px shrink-0 rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] leading-[1.3] text-text-muted"
+                    >
+                      {{
+                        workflowDisplayName !== null || pendingExampleWorkflowLabel
+                          ? t('performanceTest.exampleTag')
+                          : t('performanceTest.apiTag')
+                      }}
+                    </span>
                   </span>
                 </Button>
                 <Button
                   v-if="workflowFilePath && !isWorkflowLocked"
-                  class="performance-test__delete-workflow absolute top-1/2 right-4 -translate-y-1/2"
-                  variant="destructive-textonly"
-                  size="icon"
+                  class="performance-test__delete-workflow absolute top-1.5 right-1"
+                  variant="textonly"
+                  size="icon-sm"
                   type="button"
                   :aria-label="
                     exampleDownload
@@ -842,35 +869,32 @@ watch(performanceTestLogs, async () => {
                   :disabled="isWorkflowDeleting"
                   @click="deleteWorkflow"
                 >
-                  <Trash2 :size="18" aria-hidden="true" />
+                  <X :size="14" aria-hidden="true" />
                 </Button>
               </div>
               <p
                 v-if="workflowImportError"
-                class="performance-test__workflow-error -mt-2 mr-0 mb-0 ml-0 text-[12px] leading-[1.4] text-[var(--accent-danger,#d92d20)]"
+                class="performance-test__workflow-error mt-2 mr-0 mb-0 ml-0 text-[12px] leading-[1.4] text-[var(--accent-danger,#d92d20)]"
                 role="alert"
               >
                 {{ workflowImportError }}
               </p>
             </section>
 
-            <section class="performance-test__step flex min-w-0 flex-col gap-4">
-              <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
-                {{ t('performanceTest.measurementSettings') }}
-              </h2>
-              <div class="performance-test__settings flex flex-col gap-3">
-                <div class="performance-test__setting flex w-full items-center gap-3">
-                  <span class="performance-test__setting-label inline-flex min-w-0 items-center">
-                    <label
-                      for="performance-test-warmup-runs"
-                      class="text-[13px] whitespace-nowrap text-neutral-200"
-                    >
+            <section class="performance-test__step" :class="cardClass">
+              <h2 :class="titleClass">{{ t('performanceTest.measurementSettings') }}</h2>
+              <div class="performance-test__settings flex flex-col">
+                <div class="performance-test__setting" :class="factClass">
+                  <span
+                    class="performance-test__setting-label inline-flex min-w-0 items-center text-[12px] text-text-muted"
+                  >
+                    <label for="performance-test-warmup-runs" class="whitespace-nowrap">
                       {{ t('performanceTest.warmupRuns') }}
                     </label>
                     <InfoTooltip :text="t('performanceTest.warmupRunsHint')" icon="info" />
                   </span>
                   <div
-                    class="performance-test__setting-input ml-auto w-20 flex-none [&_input]:text-center"
+                    class="performance-test__setting-input w-full [&_input]:h-8 [&_input]:text-center"
                   >
                     <Input
                       id="performance-test-warmup-runs"
@@ -884,18 +908,17 @@ watch(performanceTestLogs, async () => {
                     />
                   </div>
                 </div>
-                <div class="performance-test__setting flex w-full items-center gap-3">
-                  <span class="performance-test__setting-label inline-flex min-w-0 items-center">
-                    <label
-                      for="performance-test-measured-runs"
-                      class="text-[13px] whitespace-nowrap text-neutral-200"
-                    >
+                <div class="performance-test__setting" :class="factClass">
+                  <span
+                    class="performance-test__setting-label inline-flex min-w-0 items-center text-[12px] text-text-muted"
+                  >
+                    <label for="performance-test-measured-runs" class="whitespace-nowrap">
                       {{ t('performanceTest.measuredRuns') }}
                     </label>
                     <InfoTooltip :text="t('performanceTest.measuredRunsHint')" icon="info" />
                   </span>
                   <div
-                    class="performance-test__setting-input ml-auto w-20 flex-none [&_input]:text-center"
+                    class="performance-test__setting-input w-full [&_input]:h-8 [&_input]:text-center"
                   >
                     <Input
                       id="performance-test-measured-runs"
@@ -913,24 +936,66 @@ watch(performanceTestLogs, async () => {
             </section>
           </div>
 
-          <section
-            class="performance-test__results-section flex w-full flex-none flex-col gap-4 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
-          >
-            <CollapsibleSectionToggle
-              :expanded="resultsExpanded"
-              :label="t('performanceTest.results')"
-              @toggle="resultsExpanded = !resultsExpanded"
-            />
+          <section class="performance-test__results-section" :class="cardClass">
+            <div class="performance-test__results-head" :class="titleClass">
+              <CollapsibleSectionToggle
+                :class="toggleClass"
+                :expanded="resultsExpanded"
+                :label="t('performanceTest.results')"
+                @toggle="resultsExpanded = !resultsExpanded"
+              />
+              <div
+                v-if="resultsFolderPath"
+                class="performance-test__results-actions ml-auto flex items-center gap-1.5 tracking-normal normal-case"
+              >
+                <span
+                  v-if="exportResultsError"
+                  class="performance-test__export-error mr-2 text-[12px] font-normal text-danger"
+                >
+                  {{ exportResultsError }}
+                </span>
+                <Button
+                  class="performance-test__open-results inline-flex items-center gap-2"
+                  variant="textonly"
+                  size="sm"
+                  type="button"
+                  @click="openResultsFolder"
+                >
+                  <FolderOpen :size="14" aria-hidden="true" />
+                  {{ t('performanceTest.openResultsFolder') }}
+                </Button>
+                <Button
+                  v-if="
+                    performanceTestResult?.statistics &&
+                    performanceTestResult.systemInfo &&
+                    performanceTestResult.hardware
+                  "
+                  class="performance-test__export-results inline-flex items-center gap-2"
+                  variant="textonly"
+                  size="sm"
+                  type="button"
+                  :disabled="isExportingResults"
+                  @click="exportResultsImage"
+                >
+                  <ImageDown :size="14" aria-hidden="true" />
+                  {{
+                    isExportingResults
+                      ? t('performanceTest.exportingImage')
+                      : t('performanceTest.exportResultsImage')
+                  }}
+                </Button>
+              </div>
+            </div>
             <div
               v-show="resultsExpanded"
-              class="performance-test__results text-[13px] text-text-muted [&>h3]:mt-6 [&>h3]:mb-3 [&>h3]:text-[11px] [&>h3]:font-semibold [&>h3]:tracking-[0.04em] [&>h3]:text-text-muted [&>h3]:uppercase"
+              class="performance-test__results text-[13px] text-text-muted"
             >
               <div
                 v-if="isLaunching && totalProgressRuns > 0"
-                class="performance-test__progress grid gap-3"
+                class="performance-test__progress grid gap-2 pt-1.5 pb-1"
               >
                 <div
-                  class="performance-test__progress-heading flex items-center justify-between gap-4 text-neutral-200 [&>span:first-child]:text-[var(--text-primary)]"
+                  class="performance-test__progress-heading flex items-center justify-between gap-4"
                 >
                   <span>{{ t('performanceTest.runProgress') }}</span>
                   <span>
@@ -943,7 +1008,7 @@ watch(performanceTestLogs, async () => {
                   </span>
                 </div>
                 <div
-                  class="performance-test__progress-track h-2 overflow-hidden rounded-[999px] bg-[var(--chooser-surface-border)] [&>i]:block [&>i]:h-full [&>i]:rounded-[inherit] [&>i]:bg-neutral-100 [&>i]:transition-[width] [&>i]:duration-[180ms] [&>i]:ease-[ease]"
+                  class="performance-test__progress-track h-1.5 overflow-hidden rounded-[999px] bg-white/10 [&>i]:block [&>i]:h-full [&>i]:rounded-[inherit] [&>i]:bg-neutral-100 [&>i]:transition-[width] [&>i]:duration-[180ms] [&>i]:ease-[ease]"
                   role="progressbar"
                   :aria-label="t('performanceTest.runProgress')"
                   :aria-valuenow="completedProgressRuns"
@@ -953,222 +1018,135 @@ watch(performanceTestLogs, async () => {
                   <i :style="{ width: `${progressPercent}%` }" />
                 </div>
               </div>
-              <template v-else-if="performanceTestResult?.resultsSummary">
-                <div
-                  class="performance-test__summary grid grid-cols-2 gap-6 [--perf-label-align:right] [--perf-value-align:right] @max-[800px]:grid-cols-1"
+              <div
+                v-else-if="performanceTestResult?.resultsSummary"
+                class="performance-test__summary flex flex-col gap-3"
+              >
+                <dl
+                  class="performance-test__timing-list m-0 grid grid-cols-6 gap-2 @max-[760px]:grid-cols-3"
                 >
                   <div
-                    class="performance-test__summary-column [--perf-label-align:left] [--perf-value-align:left]"
+                    v-for="tile in statTiles"
+                    :key="tile.label"
+                    class="rounded-[10px] bg-white/4 px-3 py-2.5"
                   >
-                    <dl
-                      class="performance-test__result-list grid-cols-2 gap-y-3"
-                      :class="resultListClass"
+                    <dt class="text-[12px] text-text-muted">{{ tile.label }}</dt>
+                    <dd
+                      class="m-0 mt-0.5 text-[18px] font-semibold tracking-[-0.01em] text-[var(--text-primary)] tabular-nums [overflow-wrap:anywhere]"
                     >
-                      <div class="performance-test__result-workflow col-span-full">
-                        <dt>{{ t('performanceTest.workflowFileName') }}</dt>
-                        <dd>{{ performanceTestResult.resultsSummary.workflowName }}</dd>
-                      </div>
-                    </dl>
-                    <div
-                      v-if="performanceTestResult.statistics"
-                      class="performance-test__aggregate-chart mt-8 grid gap-[5px]"
-                      role="img"
-                      :aria-label="t('performanceTest.runDurationChart')"
-                    >
-                      <div
-                        v-for="aggregate in aggregateChart"
-                        :key="aggregate.label"
-                        class="performance-test__aggregate-bar grid grid-cols-[110px_minmax(40px,1fr)] items-center gap-2 text-[10px] leading-[1.2] text-text-muted [&>div]:h-[5px] [&>div]:overflow-hidden [&>div]:rounded-[999px] [&>div]:bg-[var(--chooser-surface-border)] [&_i]:block [&_i]:h-full [&_i]:rounded-[inherit] [&_i]:bg-neutral-100"
-                      >
-                        <span>{{ aggregate.label }}</span>
-                        <div aria-hidden="true">
-                          <i :style="{ width: aggregate.width }" />
-                        </div>
-                      </div>
-                    </div>
+                      {{ tile.value }}
+                    </dd>
                   </div>
-                  <dl
-                    class="performance-test__result-list performance-test__timing-list grid-cols-2 gap-y-3 content-start"
-                    :class="resultListClass"
+                </dl>
+                <div
+                  class="performance-test__aggregate-chart grid min-h-11 grid-cols-[minmax(0,220px)_minmax(0,1fr)_150px] items-center gap-3 rounded-lg px-2 @max-[800px]:grid-cols-[minmax(0,1fr)_120px]"
+                  role="img"
+                  :aria-label="t('performanceTest.runDurationChart')"
+                >
+                  <span
+                    class="performance-test__result-workflow flex min-w-0 items-center gap-2 text-[13px] text-[var(--text-primary)]"
                   >
-                    <div>
-                      <dt>{{ t('performanceTest.measuredRunCount') }}</dt>
-                      <dd>{{ performanceTestResult.resultsSummary.measuredJobCount }}</dd>
-                    </div>
-                    <div>
-                      <dt>{{ t('performanceTest.failedRunCount') }}</dt>
-                      <dd>{{ performanceTestResult.resultsSummary.failedRunCount }}</dd>
-                    </div>
-                    <template v-if="performanceTestResult.statistics">
-                      <div>
-                        <dt>{{ t('performanceTest.fastestRun') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.fastest.durationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.averageRunDuration') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.averageDurationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.slowestRun') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.slowest.durationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.medianRunDuration') }}</dt>
-                        <dd>
-                          {{
-                            formatDuration(performanceTestResult.statistics.medianDurationSeconds)
-                          }}
-                        </dd>
-                      </div>
-                    </template>
-                  </dl>
-                </div>
-              </template>
-              <div
-                v-else
-                class="performance-test__results-placeholder flex flex-col items-center justify-center gap-2 rounded-[14px] bg-card px-6 py-7 text-center"
-              >
-                <Gauge :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
-                <p class="m-0">{{ t('performanceTest.resultsPlaceholder') }}</p>
-              </div>
-
-              <template v-if="performanceTestResult?.hardware">
-                <h3>{{ t('performanceTest.systemInformation') }}</h3>
-                <div class="performance-test__system-groups grid grid-cols-2 gap-3">
-                  <section
-                    class="performance-test__system-group min-w-0 rounded-[14px] bg-card p-4"
-                  >
-                    <dl
-                      class="performance-test__result-list performance-test__result-list--compact"
-                      :class="[resultListClass, compactResultListClass]"
+                    <i class="size-2 shrink-0 rounded-full bg-neutral-100" aria-hidden="true" />
+                    <span class="truncate">{{
+                      performanceTestResult.resultsSummary.workflowName
+                    }}</span>
+                  </span>
+                  <template v-if="durationRange">
+                    <span
+                      class="performance-test__aggregate-track relative h-2 rounded-[999px] bg-white/6 @max-[800px]:hidden"
+                      aria-hidden="true"
                     >
-                      <div>
-                        <dt>{{ t('performanceTest.device') }}</dt>
-                        <dd>{{ computeDeviceNames }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.vramMb != null">
-                        <dt>{{ t('performanceTest.vram') }}</dt>
-                        <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.ramMb != null">
-                        <dt>{{ t('performanceTest.ram') }}</dt>
-                        <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.pytorchVersion">
-                        <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
-                        <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
-                      </div>
-                      <div v-if="performanceTestResult.hardware.xformersVersion">
-                        <dt>{{ t('performanceTest.xformersVersion') }}</dt>
-                        <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
-                      </div>
-                    </dl>
-                  </section>
-
-                  <section
-                    v-if="performanceTestResult.systemInfo"
-                    class="performance-test__system-group min-w-0 rounded-[14px] bg-card p-4"
-                  >
-                    <dl
-                      class="performance-test__result-list performance-test__result-list--compact"
-                      :class="[resultListClass, compactResultListClass]"
-                    >
-                      <div>
-                        <dt>{{ t('performanceTest.cpu') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.cpu_model }}</dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.cpuCores') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.architecture') }}</dt>
-                        <dd>{{ performanceTestResult.systemInfo.arch }}</dd>
-                      </div>
-                      <div>
-                        <dt>{{ t('performanceTest.operatingSystem') }}</dt>
-                        <dd>{{ formatOperatingSystem(performanceTestResult.systemInfo) }}</dd>
-                      </div>
-                    </dl>
-                  </section>
+                      <i
+                        class="absolute inset-y-0 min-w-1 rounded-[999px] bg-neutral-100 opacity-85"
+                        :style="{ left: durationRange.left, width: durationRange.width }"
+                      />
+                      <i
+                        class="absolute -inset-y-1 w-0.5 rounded-[1px] bg-neutral-100"
+                        :style="{ left: durationRange.average }"
+                      />
+                    </span>
+                    <span class="text-right text-[12px] tabular-nums">{{
+                      durationRange.label
+                    }}</span>
+                  </template>
                 </div>
-              </template>
-
-              <div
-                v-if="resultsFolderPath"
-                class="performance-test__results-actions mt-4 flex items-center justify-end gap-2"
-              >
-                <span
-                  v-if="exportResultsError"
-                  class="performance-test__export-error mr-auto text-[12px] text-danger"
-                >
-                  {{ exportResultsError }}
-                </span>
-                <Button
-                  class="performance-test__open-results inline-flex items-center gap-2"
-                  variant="secondary"
-                  size="lg"
-                  type="button"
-                  @click="openResultsFolder"
-                >
-                  <FolderOpen :size="16" aria-hidden="true" />
-                  {{ t('performanceTest.openResultsFolder') }}
-                </Button>
-                <Button
-                  v-if="
-                    performanceTestResult?.statistics &&
-                    performanceTestResult.systemInfo &&
-                    performanceTestResult.hardware
-                  "
-                  class="performance-test__export-results inline-flex items-center gap-2"
-                  variant="secondary"
-                  size="lg"
-                  type="button"
-                  :disabled="isExportingResults"
-                  @click="exportResultsImage"
-                >
-                  <ImageDown :size="16" aria-hidden="true" />
-                  {{
-                    isExportingResults
-                      ? t('performanceTest.exportingImage')
-                      : t('performanceTest.exportResultsImage')
-                  }}
-                </Button>
               </div>
+              <p v-else class="performance-test__results-placeholder mt-0 mb-1 text-[12px]">
+                {{ t('performanceTest.resultsPlaceholder') }}
+              </p>
             </div>
           </section>
+
           <section
-            class="performance-test__logs-section flex min-h-0 w-full flex-none flex-col overflow-hidden rounded-[14px] bg-[color-mix(in_srgb,black_40%,transparent)] [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
-            :class="{ 'performance-test__logs-section--collapsed': !logsExpanded }"
+            v-if="performanceTestResult?.hardware"
+            class="performance-test__system-section"
+            :class="cardClass"
           >
-            <div class="performance-test__logs-head flex items-center gap-2 px-4 py-3">
+            <h2 :class="titleClass">{{ t('performanceTest.systemInformation') }}</h2>
+            <dl
+              class="performance-test__system m-0 grid grid-cols-3 gap-x-6 @max-[800px]:grid-cols-1 [&>div]:grid [&>div]:min-h-10 [&>div]:grid-cols-[112px_minmax(0,1fr)] [&>div]:items-center [&>div]:gap-3 [&_dt]:text-[12px] [&_dt]:text-text-muted [&_dd]:m-0 [&_dd]:truncate [&_dd]:text-[13px] [&_dd]:text-[var(--text-primary)]"
+            >
+              <div>
+                <dt>{{ t('performanceTest.device') }}</dt>
+                <dd :title="computeDeviceNames">{{ computeDeviceNames }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.vramMb != null">
+                <dt>{{ t('performanceTest.vram') }}</dt>
+                <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.ramMb != null">
+                <dt>{{ t('performanceTest.ram') }}</dt>
+                <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.pytorchVersion">
+                <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
+                <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.xformersVersion">
+                <dt>{{ t('performanceTest.xformersVersion') }}</dt>
+                <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
+              </div>
+              <template v-if="performanceTestResult.systemInfo">
+                <div>
+                  <dt>{{ t('performanceTest.cpu') }}</dt>
+                  <dd :title="performanceTestResult.systemInfo.cpu_model">
+                    {{ performanceTestResult.systemInfo.cpu_model }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('performanceTest.cpuCores') }}</dt>
+                  <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('performanceTest.operatingSystem') }}</dt>
+                  <dd :title="formatOperatingSystem(performanceTestResult.systemInfo)">
+                    {{ formatOperatingSystem(performanceTestResult.systemInfo) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('performanceTest.architecture') }}</dt>
+                  <dd>{{ performanceTestResult.systemInfo.arch }}</dd>
+                </div>
+              </template>
+            </dl>
+          </section>
+
+          <section
+            class="performance-test__logs-section"
+            :class="[cardClass, { 'performance-test__logs-section--collapsed': !logsExpanded }]"
+          >
+            <div class="performance-test__logs-head" :class="titleClass">
               <CollapsibleSectionToggle
+                :class="toggleClass"
                 :expanded="logsExpanded"
                 :label="t('settings.logs')"
                 @toggle="toggleLogs"
-              />
-              <SquareTerminal
-                :size="14"
-                class="ml-auto text-[var(--text-faint)]"
-                aria-hidden="true"
               />
             </div>
             <div
               v-show="logsExpanded"
               ref="logsElement"
-              class="performance-test__logs min-h-0 flex-[0_0_clamp(210px,37.5vh,360px)] overflow-auto px-4 pt-0 pb-3 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.5] whitespace-pre-wrap scroll-visible"
+              class="performance-test__logs max-h-[min(360px,37.5vh)] min-h-0 overflow-auto rounded-[10px] bg-[color-mix(in_srgb,black_35%,transparent)] px-3.5 py-3 text-text-muted font-[ui-monospace,SFMono-Regular,Consolas,'Liberation_Mono',monospace] text-[12px] leading-[1.6] whitespace-pre-wrap scroll-visible"
               aria-live="polite"
             >
               {{ performanceTestLogs || t('performanceTest.logsPlaceholder') }}
