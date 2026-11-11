@@ -721,9 +721,9 @@ watch(performanceTestLogs, async () => {
         </BrandedPageHeader>
         <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-3">
           <div
-            class="performance-test__setup grid w-full flex-none grid-cols-3 gap-3 @max-[760px]:grid-cols-1"
+            class="performance-test__setup grid w-full flex-none grid-cols-[1fr_1.4fr_1fr] gap-x-8 gap-y-2 rounded-[14px] bg-card px-[18px] pt-1.5 pb-4 @max-[760px]:grid-cols-1"
           >
-            <section class="performance-test__step" :class="cardClass">
+            <section class="performance-test__step flex min-w-0 flex-col">
               <h2 :class="titleClass">{{ t('performanceTest.selectInstance') }}</h2>
               <div class="performance-test__instance-select min-w-0 w-full">
                 <Menu
@@ -780,7 +780,7 @@ watch(performanceTestLogs, async () => {
               </div>
             </section>
 
-            <section class="performance-test__step" :class="cardClass">
+            <section class="performance-test__step flex min-w-0 flex-col">
               <h2 :class="titleClass">{{ t('performanceTest.chooseWorkflow') }}</h2>
               <Button
                 class="performance-test__example-workflow w-full justify-between gap-1.5 px-3 text-[13px]/5 font-normal"
@@ -809,9 +809,7 @@ watch(performanceTestLogs, async () => {
               >
                 {{ t('performanceTest.exampleWorkflowPickerDescription') }}
               </p>
-              <p
-                class="performance-test__workflow-divider mt-2.5 mb-0 text-center text-[11px] text-text-muted"
-              >
+              <p class="performance-test__workflow-divider mt-3 mb-0 text-[12px] text-text-muted">
                 {{ t('performanceTest.orImportApiWorkflow') }}
               </p>
               <div
@@ -820,7 +818,7 @@ watch(performanceTestLogs, async () => {
                   workflowFilePath || pendingExampleWorkflowLabel
                     ? 'bg-white/5'
                     : [
-                        'min-h-[84px] border border-dashed hover:border-white/30 hover:bg-white/3 focus-within:border-white/30',
+                        'min-h-[60px] border border-dashed hover:border-white/30 hover:bg-white/3 focus-within:border-white/30',
                         isWorkflowDragging ? 'border-white/30 bg-white/3' : 'border-white/15'
                       ],
                   {
@@ -843,16 +841,16 @@ watch(performanceTestLogs, async () => {
                   :class="
                     workflowFilePath || pendingExampleWorkflowLabel
                       ? 'min-h-10 justify-start py-2 pr-10 pl-3 text-left'
-                      : 'min-h-[82px] justify-center p-3 text-center'
+                      : 'min-h-[58px] justify-center px-3 py-2 text-center'
                   "
                   :disabled="isWorkflowLocked"
                   @click="importWorkflow()"
                 >
                   <span
                     v-if="!workflowFilePath && !pendingExampleWorkflowLabel"
-                    class="flex flex-col items-center gap-1 text-[12px] leading-[1.4]"
+                    class="flex items-center gap-2 text-[12px] leading-[1.4]"
                   >
-                    <FileJson :size="16" class="text-text-muted" aria-hidden="true" />
+                    <FileJson :size="15" class="shrink-0 text-text-muted" aria-hidden="true" />
                     {{
                       isWorkflowImporting
                         ? t('performanceTest.importingWorkflow')
@@ -936,7 +934,7 @@ watch(performanceTestLogs, async () => {
               </p>
             </section>
 
-            <section class="performance-test__step" :class="cardClass">
+            <section class="performance-test__step flex min-w-0 flex-col">
               <h2 :class="titleClass">{{ t('performanceTest.measurementSettings') }}</h2>
               <div class="performance-test__settings flex flex-col">
                 <div class="performance-test__setting" :class="factClass">
