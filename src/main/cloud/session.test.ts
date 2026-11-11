@@ -1660,8 +1660,11 @@ describe('CloudSession.heldWorkspaceToken', () => {
 })
 
 describe('CloudSession switches a local ComfyUI view requests', () => {
+  const member = (id: string) => ({ id, name: id, type: 'team', role: 'member' })
+
   it('asks the browser for a new workspace instead of minting silently', async () => {
     saveGrant(grantOn('w1'))
+    mocked(listWorkspaces).mockResolvedValueOnce([member('w1'), member('w2')])
     browserSignInReturns(signedInResult(grantOn('w2')))
 
     await expect(new CloudSession().switchWorkspace('w2', 'requested')).resolves.toMatchObject({
@@ -1671,6 +1674,54 @@ describe('CloudSession switches a local ComfyUI view requests', () => {
     expect(signIn).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workspaceId: 'w2' }))
     expect(mintRequests).toEqual([])
     expect(browserEvents()).toEqual([{ reauthorize_reason: 'view_requested' }])
+  })
+
+  it('opens no browser for a workspace the user does not belong to', async () => {
+    saveGrant(grantOn('w1'))
+    mocked(listWorkspaces).mockResolvedValueOnce([member('w1'), member('w2')])
+
+    await expect(new CloudSession().switchWorkspace('w9', 'requested')).resolves.toMatchObject({
+      workspaceSwitchFailure: 'unavailable',
+      reached: false
+    })
+
+    expect(signIn).not.toHaveBeenCalled()
+    expect(mintRequests).toEqual([])
+  })
+
+  it('opens one browser at a time for view requests and leaves it pending', async () => {
+    saveGrant(grantOn('w1'))
+    mocked(listWorkspaces).mockResolvedValueOnce([member('w1'), member('w2'), member('w3')])
+    const consent = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(consent.promise)
+    const session = new CloudSession()
+
+    const first = session.switchWorkspace('w2', 'requested')
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    await expect(session.switchWorkspace('w3', 'requested')).resolves.toMatchObject({
+      reached: false
+    })
+    consent.resolve(signedInResult(grantOn('w2')))
+
+    await expect(first).resolves.toMatchObject({ workspaceId: 'w2', reached: true })
+    expect(signIn).toHaveBeenCalledOnce()
+  })
+
+  it('does not cancel a switch Desktop has in flight', async () => {
+    saveGrant(grantOn('w1'))
+    const slow = deferred<Response>()
+    mintReply = () => slow.promise
+    const session = new CloudSession()
+
+    const chosen = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(mintRequests).toHaveLength(1))
+    await expect(session.switchWorkspace('w3', 'requested')).resolves.toMatchObject({
+      reached: false
+    })
+    slow.resolve(minted('w2'))
+
+    await expect(chosen).resolves.toMatchObject({ workspaceId: 'w2', reached: true })
+    expect(signIn).not.toHaveBeenCalled()
   })
 
   it('lets a view request joining a restored switch still ask the browser', async () => {

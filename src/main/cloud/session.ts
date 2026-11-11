@@ -10,6 +10,7 @@ import {
   dropWorkspaceToken,
   endGrant,
   getAuthStatus,
+  getCachedWorkspaceName,
   loadActiveWorkspaceId,
   loadGrant,
   loadWorkspaceToken,
@@ -381,6 +382,9 @@ export class CloudSession {
       if (intent === 'chosen' || this.switchIntent === 'restored') this.switchIntent = intent
       return this.switching.result
     }
+    if (intent === 'requested' && (this.switching || this.loginInFlight)) {
+      return Promise.resolve(this.unreached())
+    }
     this.clearPendingLogin()
     this.switchIntent = intent
     const generation = ++this.authGeneration
@@ -400,6 +404,15 @@ export class CloudSession {
     const held = loadWorkspaceToken(workspaceId)
     if (held && held.expiresAt > Date.now()) return this.activated(workspaceId, 'cached')
     if (this.switchIntent === 'requested') {
+      if (getCachedWorkspaceName(workspaceId) === null) {
+        const workspaces = await this.listWorkspaces().catch(() => null)
+        if (generation !== this.authGeneration) return this.unreached()
+        if (!workspaces) return this.stayed('retryable')
+        if (!workspaces.some((workspace) => workspace.id === workspaceId)) {
+          reportSwitch('unavailable')
+          return this.stayed('unavailable')
+        }
+      }
       return this.reauthorize(workspaceId, generation, 'view_requested')
     }
 
