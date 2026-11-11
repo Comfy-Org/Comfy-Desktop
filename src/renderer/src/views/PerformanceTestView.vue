@@ -697,7 +697,7 @@ watch(performanceTestLogs, async () => {
         </BrandedPageHeader>
         <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-8">
           <div
-            class="performance-test__setup grid w-full flex-none grid-cols-[minmax(200px,1fr)_minmax(0,1.3fr)_minmax(200px,1fr)] gap-x-10 gap-y-8 rounded-[14px] bg-[color-mix(in_srgb,white_5%,transparent)] p-6 @max-[800px]:grid-cols-1"
+            class="performance-test__setup grid w-full flex-none grid-cols-[minmax(200px,1fr)_minmax(0,1.3fr)_minmax(200px,1fr)] gap-x-10 gap-y-8 rounded-[14px] bg-card p-6 @max-[800px]:grid-cols-1"
           >
             <section class="performance-test__step flex min-w-0 flex-col gap-4">
               <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
@@ -1049,7 +1049,7 @@ watch(performanceTestLogs, async () => {
               </template>
               <div
                 v-else
-                class="performance-test__results-placeholder flex flex-col items-center justify-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center"
+                class="performance-test__results-placeholder flex flex-col items-center justify-center gap-2 rounded-[14px] bg-card px-6 py-7 text-center"
               >
                 <Gauge :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
                 <p class="m-0">{{ t('performanceTest.resultsPlaceholder') }}</p>
@@ -1059,7 +1059,7 @@ watch(performanceTestLogs, async () => {
                 <h3>{{ t('performanceTest.systemInformation') }}</h3>
                 <div class="performance-test__system-groups grid grid-cols-2 gap-3">
                   <section
-                    class="performance-test__system-group min-w-0 rounded-[14px] bg-[color-mix(in_srgb,white_4%,transparent)] p-4"
+                    class="performance-test__system-group min-w-0 rounded-[14px] bg-card p-4"
                   >
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
@@ -1090,7 +1090,7 @@ watch(performanceTestLogs, async () => {
 
                   <section
                     v-if="performanceTestResult.systemInfo"
-                    class="performance-test__system-group min-w-0 rounded-[14px] bg-[color-mix(in_srgb,white_4%,transparent)] p-4"
+                    class="performance-test__system-group min-w-0 rounded-[14px] bg-card p-4"
                   >
                     <dl
                       class="performance-test__result-list performance-test__result-list--compact"
