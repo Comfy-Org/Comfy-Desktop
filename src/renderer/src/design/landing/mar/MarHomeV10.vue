@@ -12,7 +12,7 @@ import MarBuildsRow from './MarBuildsRow.vue'
 import ExampleArc from './userStates/ExampleArc.vue'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
-import { EXAMPLES } from './userStates/examples'
+import { EXAMPLES, runExample, type Example } from './userStates/examples'
 import HomeInstall from './setup/HomeInstall.vue'
 import { cardInBuilds, flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
 import { SPACES } from '../spaces'
@@ -99,20 +99,56 @@ const exampleRows = computed(() =>
     })
 )
 
-const recent = computed(() =>
-  [...allWorkflows.value]
-    .sort((a, b) => a.age - b.age)
-    .slice(0, 8)
-    .map((w) => {
+// Apps used lately (samples), in minutes ago like a workflow's age.
+const USED_APPS: { x: Example; age: number; when: string }[] = [
+  { x: EXAMPLES[3]!, age: 30, when: '30 min ago' },
+  { x: EXAMPLES[0]!, age: 1440, when: 'Yesterday' },
+  { x: EXAMPLES[2]!, age: 4320, when: '3 days ago' }
+]
+
+type Recent = {
+  id: string
+  src: string
+  title: string
+  meta: string
+  when: string
+  age: number
+  app?: boolean
+  open: () => void
+}
+const recent = computed<Recent[]>(() =>
+  [
+    ...allWorkflows.value.map((w): Recent => {
       const env = w.envId ? instanceById(w.envId) : undefined
       return {
-        w,
-        env,
+        id: w.id,
         // The workflow's own picture, the one it has everywhere.
         src: thumb(w.thumbId),
-        title: w.name.replace(/\.json$/, '')
+        title: w.name.replace(/\.json$/, ''),
+        meta: env?.name ?? '',
+        when: w.modified,
+        age: w.age,
+        open: () => env && openRecent(env, w.name)
       }
-    })
+    }),
+    // From Workflows (Milestone 3), the apps used lately mix in.
+    ...(can.value.workflows && !firstTime.value
+      ? USED_APPS.map(
+          ({ x, age, when }): Recent => ({
+            id: `app-${x.app}`,
+            src: x.after,
+            title: x.label,
+            meta: 'App',
+            when,
+            age,
+            app: true,
+            open: () => runExample(x)
+          })
+        )
+      : [])
+  ]
+    .sort((a, b) => a.age - b.age)
+    .slice(0, 8)
 )
 </script>
 
@@ -194,13 +230,13 @@ const recent = computed(() =>
         <StarterCards />
       </section>
 
-      <!-- Milestone 2 is apps only: Recently used comes back with Explore &
-           Learn. -->
-      <section v-if="recent.length && (can.explore || !can.exploreApps)" class="mt-10">
+      <!-- Milestone 2 is apps only: Recently used comes back with Workflows
+           (Milestone 3), apps and workflows together. -->
+      <section v-if="recent.length && (can.workflows || !can.exploreApps)" class="mt-10">
         <SectionHeader
           class="mar-sec"
           title="Recently used"
-          :link="can.projects ? 'All workflows' : undefined"
+          :link="can.workflows ? 'All workflows' : undefined"
           @link="go('workflows')"
         />
         <FilmstripRow v-if="p20.recent === 'filmstrip'" />
@@ -208,12 +244,13 @@ const recent = computed(() =>
         <ScrollRow v-else :columns="5" class="mar-recent-row">
           <WorkflowCard
             v-for="r in recent"
-            :key="r.w.id"
+            :key="r.id"
             :src="r.src"
             :title="r.title"
-            :meta="r.env?.name ?? ''"
-            :right="r.w.modified"
-            @open="r.env && openRecent(r.env, r.w.name)"
+            :meta="r.meta"
+            :right="r.when"
+            :app="r.app"
+            @open="r.open()"
           />
         </ScrollRow>
       </section>

@@ -11,6 +11,8 @@ defineProps<{
   title: string
   meta: string
   right?: string
+  /** An app keeps its own picture, never the workflow cover. */
+  app?: boolean
 }>()
 defineEmits<{ open: [] }>()
 </script>
@@ -18,7 +20,7 @@ defineEmits<{ open: [] }>()
 <template>
   <MediaCard @click="$emit('open')" @keydown.enter="$emit('open')">
     <template #media>
-      <WorkflowCover v-if="isBranded(cover.id)" :name="title" />
+      <WorkflowCover v-if="!app && isBranded(cover.id)" :name="title" />
       <img v-else :src alt="" loading="lazy" class="size-full object-cover" />
     </template>
     <p class="truncate text-ui font-medium">{{ title }}</p>
