@@ -293,11 +293,14 @@ export function endGrant(expectedAccessToken: string): void {
   persistVault(vault)
 }
 
-export function clearTokens(): void {
+export function clearTokens(): boolean {
   cachedVault = null
   try {
     fs.rmSync(filePath(), { force: true })
-  } catch {}
+    return true
+  } catch {
+    return false
+  }
 }
 
 function revocationsDir(): string {

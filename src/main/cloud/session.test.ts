@@ -1,3 +1,5 @@
+import * as storeFs from 'fs'
+import type * as FsModule from 'fs'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -6,6 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 const electronState = vi.hoisted(() => ({ userData: '' }))
 
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof FsModule>()
+  return { ...actual, rmSync: vi.fn(actual.rmSync) }
+})
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => electronState.userData) },
   safeStorage: {
@@ -46,7 +52,9 @@ import { openAuthorizePage, refresh, signIn } from './oauth'
 import type * as OAuthModule from './oauth'
 import {
   CloudSession,
+  EXPIRED_GRANT_REJECTED_EVENT,
   MINT_SCOPE_NOT_GRANTED_EVENT,
+  SIGNED_OUT_EVENT,
   WORKSPACE_RETURNED_TO_ANCHOR_EVENT,
   WORKSPACE_SWITCH_BROWSER_EVENT,
   WORKSPACE_SWITCH_EVENT
@@ -160,6 +168,12 @@ function deferred<T>() {
     resolve = r
   })
   return { promise, resolve }
+}
+
+function eventsNamed(name: string): unknown[] {
+  return mocked(mainTelemetry.emit)
+    .mock.calls.filter(([event]) => event === name)
+    .map(([, context]) => context)
 }
 
 function switchEvents(): unknown[] {
@@ -2113,6 +2127,56 @@ describe('CloudSession status and catalog', () => {
   })
 })
 
+describe('CloudSession sign-out telemetry', () => {
+  it('reports a sign-out the person asked for', () => {
+    saveGrant(grantOn('w1'))
+
+    new CloudSession().logout()
+
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([
+      { reason: 'user', stored_session_removed: true }
+    ])
+  })
+
+  it('says so when a sign-out could not remove the stored session', () => {
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    mocked(storeFs.rmSync).mockImplementationOnce(() => {
+      throw Object.assign(new Error('locked'), { code: 'EPERM' })
+    })
+
+    session.logout()
+
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([
+      { reason: 'user', stored_session_removed: false }
+    ])
+  })
+
+  it('says so when secure storage is unavailable and the stored session could not be removed', () => {
+    mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false)
+    onTestFinished(() => {
+      mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true)
+    })
+    saveGrant(grantOn('w1'))
+    const session = new CloudSession()
+    mocked(storeFs.rmSync).mockImplementationOnce(() => {
+      throw Object.assign(new Error('locked'), { code: 'EPERM' })
+    })
+
+    session.logout()
+
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([
+      { reason: 'user', stored_session_removed: false }
+    ])
+  })
+
+  it('reports nothing when nobody is signed in', () => {
+    new CloudSession().logout()
+
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([])
+  })
+})
+
 describe('CloudSession token provider', () => {
   it('logs out when the grant token is rejected', () => {
     const grant = grantOn('w1')
@@ -2124,6 +2188,10 @@ describe('CloudSession token provider', () => {
 
     expect(session.isSignedIn()).toBe(false)
     expect(onSignedOut).toHaveBeenCalledOnce()
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([
+      { reason: 'grant_rejected', stored_session_removed: true }
+    ])
+    expect(eventsNamed(EXPIRED_GRANT_REJECTED_EVENT)).toEqual([])
   })
 
   it.each([
@@ -2144,6 +2212,8 @@ describe('CloudSession token provider', () => {
 
       expect(session.isSignedIn()).toBe(true)
       expect(onSignedOut).not.toHaveBeenCalled()
+      expect(eventsNamed(EXPIRED_GRANT_REJECTED_EVENT)).toEqual([{ refresh: 'unavailable' }])
+      expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([])
     }
   )
 
@@ -2159,6 +2229,33 @@ describe('CloudSession token provider', () => {
     await vi.waitFor(() => expect(onSignedOut).toHaveBeenCalledOnce())
     expect(refresh).toHaveBeenCalledOnce()
     expect(session.isSignedIn()).toBe(false)
+    expect(eventsNamed(EXPIRED_GRANT_REJECTED_EVENT)).toEqual([{ refresh: 'ended' }])
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([
+      { reason: 'refresh_refused', stored_session_removed: true }
+    ])
+  })
+
+  it('reports each rejected request and signs out once when two share one refused refresh', async () => {
+    const grant = grantOn('w1', { expiresAt: PAST })
+    saveGrant(grant)
+    mocked(refresh).mockRejectedValue(refreshRefused())
+    const session = new CloudSession()
+    const onSignedOut = vi.fn()
+    const provider = session.asTokenProvider(onSignedOut)
+
+    provider.onUnauthorized?.(grant.accessToken)
+    provider.onUnauthorized?.(grant.accessToken)
+
+    await vi.waitFor(() => expect(eventsNamed(EXPIRED_GRANT_REJECTED_EVENT)).toHaveLength(2))
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(onSignedOut).toHaveBeenCalledOnce()
+    expect(eventsNamed(EXPIRED_GRANT_REJECTED_EVENT)).toEqual([
+      { refresh: 'ended' },
+      { refresh: 'ended' }
+    ])
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([
+      { reason: 'refresh_refused', stored_session_removed: true }
+    ])
   })
 
   it('leaves a newer sign-in alone when the refusal for a rejected expired grant lands late', async () => {
@@ -2185,6 +2282,8 @@ describe('CloudSession token provider', () => {
 
     expect(onSignedOut).not.toHaveBeenCalled()
     expect(vaultOnDisk().grant).toEqual(fresh)
+    expect(eventsNamed(EXPIRED_GRANT_REJECTED_EVENT)).toEqual([{ refresh: 'ended' }])
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([])
   })
 
   it('keeps the refreshed grant when a rejected grant token had only expired', async () => {
@@ -2200,6 +2299,10 @@ describe('CloudSession token provider', () => {
     await vi.waitFor(() => expect(vaultOnDisk().grant).toEqual(rotated))
     expect(session.isSignedIn()).toBe(true)
     expect(onSignedOut).not.toHaveBeenCalled()
+    await vi.waitFor(() =>
+      expect(eventsNamed(EXPIRED_GRANT_REJECTED_EVENT)).toEqual([{ refresh: 'refreshed' }])
+    )
+    expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([])
   })
 
   it('drops only a rejected minted token, stays signed in, and re-mints with no browser', async () => {

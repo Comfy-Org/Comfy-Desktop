@@ -17,16 +17,66 @@ const PARTNER_NODE_RETRY_MS = 60_000
 
 export const VIEW_TOKEN_MINTED_EVENT = 'comfy.desktop.auth.view_token_minted'
 export const VIEW_TOKEN_MINT_FAILED_EVENT = 'comfy.desktop.auth.view_token_mint_failed'
+export const PARTNER_NODE_TOKEN_ISSUED_EVENT = 'comfy.desktop.auth.partner_node_token_issued'
+export const PARTNER_NODE_TOKEN_FAILED_EVENT = 'comfy.desktop.auth.partner_node_token_failed'
+
+const REPORTABLE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'account_outside_organization',
+  'auth_type_not_allowed',
+  'insufficient_scope',
+  'internal_error',
+  'invalid_token',
+  'not_found',
+  'oauth_derived_mint_refused',
+  'oauth_grant_ended',
+  'oauth_token_mint_refused',
+  'oauth_workspace_mint_disabled',
+  'partner_node_job_ended',
+  'partner_node_renew_disabled',
+  'partner_node_requires_sign_in',
+  'partner_node_session_ended',
+  'partner_node_session_expired',
+  'partner_node_session_revoked',
+  'partner_node_token_disabled',
+  'personal_workspace_disabled',
+  'rate_limited',
+  'resource_invalid',
+  'session_expired',
+  'sso_required',
+  'token_revoked',
+  'unauthorized'
+])
+const UNLISTED_ERROR_CODE = 'other'
+
+function reportableErrorCode(code: string): string {
+  const known = code.toLowerCase()
+  return REPORTABLE_ERROR_CODES.has(known) ? known : UNLISTED_ERROR_CODE
+}
+
+function failureContext(
+  result: Extract<WorkspaceTokenMint, { kind: 'failed' }>
+): mainTelemetry.TelemetryContext {
+  if (result.status === null) return { reason: 'network' }
+  const { status, code } = result
+  return code
+    ? { reason: 'http', http_status: status, error_code: reportableErrorCode(code) }
+    : { reason: 'http', http_status: status }
+}
 
 function reportMint(result: WorkspaceTokenMint): void {
   if (result.kind === 'minted') {
     mainTelemetry.emit(VIEW_TOKEN_MINTED_EVENT)
     return
   }
-  mainTelemetry.emit(
-    VIEW_TOKEN_MINT_FAILED_EVENT,
-    result.status === null ? { reason: 'network' } : { reason: 'http', http_status: result.status }
-  )
+  mainTelemetry.emit(VIEW_TOKEN_MINT_FAILED_EVENT, failureContext(result))
+}
+
+function reportPartnerNodeToken(operation: 'mint' | 'renew', result: WorkspaceTokenMint): void {
+  if (result.kind === 'minted') {
+    mainTelemetry.emit(PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation })
+    return
+  }
+  mainTelemetry.emit(PARTNER_NODE_TOKEN_FAILED_EVENT, { operation, ...failureContext(result) })
 }
 
 export interface GrantSession {
@@ -286,6 +336,7 @@ export class ViewWorkspaceGrants {
     fence: MintFence
   ): Promise<WorkspaceTokenMint> {
     const renewed = await this.partnerNode.renew(partnerNodeToken)
+    reportPartnerNodeToken('renew', renewed)
     if (renewed.kind === 'minted' && renewed.expiresAt - PARTNER_NODE_RENEW_BEFORE_MS > Date.now())
       return renewed
     if (renewed.kind === 'failed' && !isRetryableFailure(renewed))
@@ -299,6 +350,7 @@ export class ViewWorkspaceGrants {
     workspaceId: string
   ): Promise<WorkspaceTokenMint> {
     const minted = await this.partnerNode.mint(accessToken, workspaceId)
+    reportPartnerNodeToken('mint', minted)
     this.endAnEndedGrant(accessToken, minted)
     return minted
   }

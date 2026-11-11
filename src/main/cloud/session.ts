@@ -42,6 +42,10 @@ export const WORKSPACE_SWITCH_EVENT = 'comfy.desktop.auth.workspace_switch'
 export const WORKSPACE_SWITCH_BROWSER_EVENT = 'comfy.desktop.auth.workspace_switch_browser'
 export const MINT_SCOPE_NOT_GRANTED_EVENT = 'comfy.desktop.auth.mint_scope_not_granted'
 export const WORKSPACE_RETURNED_TO_ANCHOR_EVENT = 'comfy.desktop.auth.workspace_returned_to_anchor'
+export const SIGNED_OUT_EVENT = 'comfy.desktop.auth.signed_out'
+export const EXPIRED_GRANT_REJECTED_EVENT = 'comfy.desktop.auth.expired_grant_rejected'
+
+type SignOutReason = 'user' | 'grant_rejected' | 'refresh_refused'
 
 export interface SessionSwitchReply extends WorkspaceSwitchStatus {
   reached: boolean
@@ -170,15 +174,16 @@ export class CloudSession {
     this.loginAuthorizeUrl = null
   }
 
-  logout(): void {
-    const refreshToken = loadGrant()?.refreshToken
+  logout(reason: SignOutReason = 'user'): void {
+    const grant = loadGrant()
     const origin = loadGrantOrigin()
     this.authGeneration += 1
     this.switching = null
     this.mintBlockedUntil = 0
     this.clearPendingLogin()
-    this.retireGrant(refreshToken, origin)
-    clearTokens()
+    this.retireGrant(grant?.refreshToken, origin)
+    const removed = clearTokens()
+    if (grant) mainTelemetry.emit(SIGNED_OUT_EVENT, { reason, stored_session_removed: removed })
   }
 
   private retireGrant(refreshToken: string | undefined, origin: GrantOrigin | null): void {
@@ -561,7 +566,7 @@ export class CloudSession {
           void this.signOutIfGrantEnded(grant, onSignedOut)
           return
         }
-        this.logout()
+        this.logout('grant_rejected')
         onSignedOut?.()
       }
     }
@@ -570,9 +575,10 @@ export class CloudSession {
   private async signOutIfGrantEnded(grant: AuthTokens, onSignedOut?: () => void): Promise<void> {
     const generation = this.authGeneration
     const refreshed = await this.refreshGrant(grant)
+    mainTelemetry.emit(EXPIRED_GRANT_REJECTED_EVENT, { refresh: refreshed })
     if (refreshed !== 'ended' || generation !== this.authGeneration) return
     if (loadGrant()?.accessToken !== grant.accessToken) return
-    this.logout()
+    this.logout('refresh_refused')
     onSignedOut?.()
   }
 }

@@ -1,7 +1,11 @@
+import * as mainTelemetry from '../lib/telemetry'
 import { CLOUD_REFRESH_TOKEN_LIFETIME_MS, revokeUrlOf } from './config'
 import { revoke } from './oauth'
+import type { RevokeResult } from './oauth'
 import { addPendingRevocation, loadPendingRevocations, removePendingRevocation } from './tokenStore'
 import type { PendingRevocation } from './tokenStore'
+
+export const GRANT_REVOCATION_EVENT = 'comfy.desktop.auth.grant_revocation'
 
 const FIRST_RETRY_MS = 5_000
 const MAX_RETRY_MS = 15 * 60_000
@@ -12,6 +16,7 @@ export class Revocations {
   private failures = 0
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private readonly settledButSaved = new Set<string>()
+  private readonly reportedWaiting = new Set<string>()
 
   add(revocation: Omit<PendingRevocation, 'queuedAt'>): void {
     addPendingRevocation({ ...revocation, queuedAt: Date.now() })
@@ -49,15 +54,26 @@ export class Revocations {
         return
       }
       const expired = next.queuedAt + CLOUD_REFRESH_TOKEN_LIFETIME_MS <= Date.now()
-      if (
-        !expired &&
-        (await revoke(next.refreshToken, next.clientId, revokeUrlOf(next.issuer))) === 'retry'
-      ) {
+      const outcome = expired
+        ? 'expired'
+        : await revoke(next.refreshToken, next.clientId, revokeUrlOf(next.issuer))
+      this.report(next.refreshToken, outcome)
+      if (outcome === 'retry') {
         failed.add(next.refreshToken)
       } else if (!removePendingRevocation(next.refreshToken)) {
         this.settledButSaved.add(next.refreshToken)
       }
     }
+  }
+
+  private report(refreshToken: string, outcome: RevokeResult | 'expired'): void {
+    if (outcome === 'retry') {
+      if (this.reportedWaiting.has(refreshToken)) return
+      this.reportedWaiting.add(refreshToken)
+    } else {
+      this.reportedWaiting.delete(refreshToken)
+    }
+    mainTelemetry.emit(GRANT_REVOCATION_EVENT, { outcome })
   }
 
   private scheduleRetry(): void {

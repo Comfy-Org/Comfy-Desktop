@@ -14,6 +14,8 @@ import { CLOUD_CONFIG, WORKSPACE_MINT_SCOPE } from '../cloud/config'
 import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
 import * as mainTelemetry from './telemetry'
 import {
+  PARTNER_NODE_TOKEN_FAILED_EVENT,
+  PARTNER_NODE_TOKEN_ISSUED_EVENT,
   VIEW_TOKEN_MINT_FAILED_EVENT,
   VIEW_TOKEN_MINTED_EVENT,
   ViewWorkspaceGrants
@@ -109,6 +111,22 @@ describe('ViewWorkspaceGrants', () => {
 
   it.each([
     [{ kind: 'failed', status: 403 } as const, { reason: 'http', http_status: 403 }],
+    [
+      { kind: 'failed', status: 401, code: 'oauth_grant_ended' } as const,
+      { reason: 'http', http_status: 401, error_code: 'oauth_grant_ended' }
+    ],
+    [
+      { kind: 'failed', status: 401, code: 'UNAUTHORIZED' } as const,
+      { reason: 'http', http_status: 401, error_code: 'unauthorized' }
+    ],
+    [
+      { kind: 'failed', status: 500, code: 'Internal error for a@example.com' } as const,
+      { reason: 'http', http_status: 500, error_code: 'other' }
+    ],
+    [
+      { kind: 'failed', status: 403, code: 'ws_3f9c2a71' } as const,
+      { reason: 'http', http_status: 403, error_code: 'other' }
+    ],
     [{ kind: 'failed', status: null } as const, { reason: 'network' }]
   ])('reports a failed mint %j', async (result, properties) => {
     mint.mockResolvedValueOnce(result)
@@ -472,6 +490,85 @@ describe('ViewWorkspaceGrants partner-node tokens', () => {
     await expect(grants.partnerNodeTokenFor(viewB, 'ws-2')).resolves.toBeNull()
     await expect(grants.partnerNodeTokenFor(viewA, 'ws-1')).resolves.toBeNull()
     expect(partnerMint).toHaveBeenLastCalledWith(accessToken('ws-1'), 'ws-2')
+  })
+
+  it('reports the partner-node token it minted and the one it renewed', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+    vi.setSystemTime(Date.now() + 31 * 60_000)
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation: 'mint' }],
+      [PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation: 'renew' }]
+    ])
+  })
+
+  it('reports a partner-node mint Cloud refused, with the code Cloud gave', async () => {
+    partnerMint.mockResolvedValueOnce({ kind: 'failed', status: 403, code: 'insufficient_scope' })
+
+    await expect(grants.partnerNodeTokenFor(viewA, 'ws-1')).resolves.toBeNull()
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [
+        PARTNER_NODE_TOKEN_FAILED_EVENT,
+        { operation: 'mint', reason: 'http', http_status: 403, error_code: 'insufficient_scope' }
+      ]
+    ])
+  })
+
+  it('reports a partner-node renewal that could not reach Cloud', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+    vi.mocked(mainTelemetry.emit).mockClear()
+    partnerRenew.mockResolvedValueOnce({ kind: 'failed', status: null })
+    vi.setSystemTime(Date.now() + 31 * 60_000)
+
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [PARTNER_NODE_TOKEN_FAILED_EVENT, { operation: 'renew', reason: 'network' }]
+    ])
+  })
+
+  it('reports a refused renewal and the new session that replaced it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+    vi.mocked(mainTelemetry.emit).mockClear()
+    partnerRenew.mockResolvedValueOnce({
+      kind: 'failed',
+      status: 403,
+      code: 'partner_node_session_ended'
+    })
+    partnerMint.mockResolvedValueOnce(partnerMinted(partnerToken('ws-1', 'sid-2')))
+    vi.setSystemTime(Date.now() + 31 * 60_000)
+
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [
+        PARTNER_NODE_TOKEN_FAILED_EVENT,
+        {
+          operation: 'renew',
+          reason: 'http',
+          http_status: 403,
+          error_code: 'partner_node_session_ended'
+        }
+      ],
+      [PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation: 'mint' }]
+    ])
+  })
+
+  it('reports one partner-node mint for views that shared it and none for a reused token', async () => {
+    await Promise.all([
+      grants.partnerNodeTokenFor(viewA, 'ws-1'),
+      grants.partnerNodeTokenFor(viewB, 'ws-1')
+    ])
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation: 'mint' }]
+    ])
   })
 
   it('mints once for concurrent requests and reuses the token while it has over an hour left', async () => {
