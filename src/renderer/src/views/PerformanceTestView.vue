@@ -41,8 +41,7 @@ import {
 import { emitTelemetryAction } from '../lib/telemetry'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 
-const cardClass =
-  'flex w-full min-w-0 flex-none flex-col rounded-[14px] bg-card px-[18px] pt-1.5 pb-3.5'
+const cardClass = 'flex w-full min-w-0 flex-none flex-col'
 const titleClass =
   'mt-1 mb-1 flex min-h-8 items-center gap-2 text-[11px] leading-[1.4] font-semibold tracking-[0.04em] text-subtle-foreground uppercase'
 const toggleClass =
@@ -720,7 +719,7 @@ watch(performanceTestLogs, async () => {
             </Button>
           </template>
         </BrandedPageHeader>
-        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-3">
+        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col gap-6">
           <div
             class="performance-test__setup grid w-full flex-none grid-cols-[1fr_1.4fr_1fr] gap-x-8 gap-y-2 rounded-[14px] bg-card px-[18px] pt-1.5 pb-4 @max-[760px]:grid-cols-1"
           >
