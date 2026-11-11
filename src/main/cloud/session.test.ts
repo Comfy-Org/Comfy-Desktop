@@ -53,11 +53,14 @@ import type * as OAuthModule from './oauth'
 import {
   CloudSession,
   EXPIRED_GRANT_REJECTED_EVENT,
+  GRANT_REFRESH_FAILED_EVENT,
   MINT_SCOPE_NOT_GRANTED_EVENT,
+  SESSION_SIGN_IN_EVENT,
   SIGNED_OUT_EVENT,
   WORKSPACE_RETURNED_TO_ANCHOR_EVENT,
   WORKSPACE_SWITCH_BROWSER_EVENT,
-  WORKSPACE_SWITCH_EVENT
+  WORKSPACE_SWITCH_EVENT,
+  WORKSPACE_TOKEN_MINT_FAILED_EVENT
 } from './session'
 import { SignInFailure } from './signInFailure'
 import {
@@ -2174,6 +2177,358 @@ describe('CloudSession sign-out telemetry', () => {
     new CloudSession().logout()
 
     expect(eventsNamed(SIGNED_OUT_EVENT)).toEqual([])
+  })
+})
+
+describe('CloudSession sign-in telemetry', () => {
+  const SIGNED_IN = {
+    purpose: 'sign_in',
+    outcome: 'completed',
+    mint_scope: true,
+    partner_node_scope: true,
+    session_saved: true
+  }
+
+  it('reports a completed sign-in once, however many callers asked for it', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const session = new CloudSession()
+
+    const logins = [session.login(), session.login()]
+    pending.resolve(signedInResult(grantOn('w1')))
+    await Promise.all(logins)
+
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([SIGNED_IN])
+  })
+
+  it.each<[string, string, boolean, boolean]>([
+    ['only the read scope', READ_ONLY_SCOPE, false, false],
+    ['no partner-node scope', `${READ_ONLY_SCOPE} comfy-cloud:workspace-token:mint`, true, false],
+    ['no mint scope', `${READ_ONLY_SCOPE} comfy-cloud:jobs:write`, false, true]
+  ])('reports the scopes of a grant with %s', async (_name, scope, mintScope, partnerNodeScope) => {
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1', { scope })))
+
+    await new CloudSession().login()
+
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([
+      { ...SIGNED_IN, mint_scope: mintScope, partner_node_scope: partnerNodeScope }
+    ])
+  })
+
+  it('says so when the signed-in session is kept in memory only', async () => {
+    mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false)
+    onTestFinished(() => {
+      mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true)
+    })
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1')))
+    const session = new CloudSession()
+
+    await session.login()
+
+    expect(session.isSignedIn()).toBe(true)
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([{ ...SIGNED_IN, session_saved: false }])
+  })
+
+  it('reports whether the sign-in itself was written, whatever a later write does', async () => {
+    mocked(safeStorage.encryptString).mockImplementationOnce(() => {
+      throw new Error('keychain locked')
+    })
+    onTestFinished(() => {
+      mocked(safeStorage.encryptString).mockReset()
+    })
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1')))
+
+    await new CloudSession().login()
+
+    expect(vaultOnDisk()).toMatchObject({ activeWorkspaceId: 'w1' })
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([{ ...SIGNED_IN, session_saved: false }])
+  })
+
+  it('reports the sign-in as saved when only the grant it replaced could not be queued', async () => {
+    saveGrant(grantOn('w1'))
+    mocked(signIn).mockResolvedValue(signedInResult(grantOn('w1', { revision: 'b' })))
+    mocked(safeStorage.isEncryptionAvailable).mockReturnValueOnce(true).mockReturnValue(false)
+    onTestFinished(() => {
+      mocked(safeStorage.isEncryptionAvailable).mockReset()
+    })
+
+    await new CloudSession().login()
+
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([SIGNED_IN])
+  })
+
+  it.each<[string, () => unknown, Record<string, unknown>]>([
+    [
+      'the person declined',
+      () => new SignInFailure('access_denied', 'cancelled', { oauthError: 'access_denied' }),
+      { reason: 'cancelled', oauth_error: 'access_denied' }
+    ],
+    [
+      'Cloud rejected the request',
+      () => new SignInFailure('invalid_scope', 'idp_error', { oauthError: 'invalid_scope' }),
+      { reason: 'idp_error', oauth_error: 'invalid_scope' }
+    ],
+    [
+      'nobody answered in time',
+      () => new SignInFailure('timed out', 'timeout'),
+      { reason: 'timeout' }
+    ],
+    [
+      'Cloud refused the code',
+      () => refreshRefused('invalid_grant', 400),
+      { reason: 'server_error', http_status: 400, oauth_error: 'invalid_grant' }
+    ],
+    [
+      'Cloud answered with an error this build does not know',
+      () => refreshRefused('account ws_3f9c2a71 is locked', 400),
+      { reason: 'server_error', http_status: 400, oauth_error: 'other' }
+    ],
+    ['the listener could not start', () => new Error('EADDRINUSE'), { reason: 'unknown' }]
+  ])('reports a sign-in that failed because %s', async (_name, failure, reported) => {
+    const error = failure()
+    mocked(signIn).mockRejectedValue(error)
+    const session = new CloudSession()
+
+    await expect(session.login()).rejects.toBe(error)
+
+    expect(session.isSignedIn()).toBe(false)
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([
+      { purpose: 'sign_in', outcome: 'failed', ...reported }
+    ])
+  })
+
+  it('reports a sign-in that finished after a sign-out as superseded', async () => {
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const session = new CloudSession()
+
+    const login = session.login()
+    session.logout()
+    pending.resolve(signedInResult(grantOn('w1')))
+    await login
+
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([
+      { purpose: 'sign_in', outcome: 'superseded' }
+    ])
+  })
+
+  it('reports the sign-in a workspace switch needed', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = ({ workspaceId }) =>
+      mintRequests.length === 1 ? json(403, { code: 'sso_required' }) : minted(workspaceId)
+    browserSignInReturns(signedInResult(grantOn('w2')))
+
+    const reply = await new CloudSession().switchWorkspace('w2')
+
+    expect(reply).toMatchObject({ workspaceId: 'w2', reached: true })
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([
+      { ...SIGNED_IN, purpose: 'workspace_switch' }
+    ])
+  })
+
+  it('reports a workspace switch whose sign-in the person abandoned', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    mocked(signIn).mockImplementation(async (options) => {
+      options?.onAuthorizeUrl?.('https://cloud.test/authorize')
+      throw new SignInFailure('timed out', 'timeout')
+    })
+
+    const reply = await new CloudSession().switchWorkspace('w2')
+
+    expect(reply).toMatchObject({ workspaceId: 'w1', workspaceSwitchFailure: 'retryable' })
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([
+      { purpose: 'workspace_switch', outcome: 'failed', reason: 'timeout' }
+    ])
+  })
+
+  it('reports a workspace switch sign-in that finished after a sign-out as superseded', async () => {
+    saveGrant(grantOn('w1'))
+    mintReply = () => json(403, { code: 'sso_required' })
+    const pending = deferred<Awaited<ReturnType<typeof signIn>>>()
+    mocked(signIn).mockReturnValue(pending.promise)
+    const session = new CloudSession()
+
+    const switching = session.switchWorkspace('w2')
+    await vi.waitFor(() => expect(signIn).toHaveBeenCalledOnce())
+    session.logout()
+    pending.resolve(signedInResult(grantOn('w2')))
+    await switching
+
+    expect(session.isSignedIn()).toBe(false)
+    expect(eventsNamed(SESSION_SIGN_IN_EVENT)).toEqual([
+      { purpose: 'workspace_switch', outcome: 'superseded' }
+    ])
+  })
+})
+
+describe('CloudSession refresh telemetry', () => {
+  const NEARLY_EXPIRED = Date.now() + 30_000
+
+  it.each<[string, () => SignInFailure, Record<string, unknown>]>([
+    [
+      'Cloud is unreachable',
+      () => refreshFailure('network'),
+      { outcome: 'unavailable', reason: 'network' }
+    ],
+    [
+      'Cloud is slow',
+      () => refreshFailure('timeout'),
+      { outcome: 'unavailable', reason: 'timeout' }
+    ],
+    [
+      'Cloud answers 503',
+      () => refreshFailure('http', 503),
+      { outcome: 'unavailable', reason: 'server_error', http_status: 503 }
+    ],
+    [
+      'Cloud ended the grant',
+      () => refreshRefused(),
+      { outcome: 'ended', reason: 'server_error', http_status: 400, oauth_error: 'invalid_grant' }
+    ]
+  ])('reports a refresh that failed because %s', async (_name, failure, reported) => {
+    saveGrant(grantOn('w1', { expiresAt: NEARLY_EXPIRED }))
+    mocked(refresh).mockRejectedValue(failure())
+
+    await new CloudSession().getGrantAccessToken()
+
+    expect(eventsNamed(GRANT_REFRESH_FAILED_EVENT)).toEqual([reported])
+  })
+
+  it('reports a refresh that keeps failing the same way once, and again after one works', async () => {
+    saveGrant(grantOn('w1', { expiresAt: NEARLY_EXPIRED }))
+    const session = new CloudSession()
+    mocked(refresh).mockRejectedValue(refreshFailure('network'))
+
+    await session.getGrantAccessToken()
+    await session.getGrantAccessToken()
+    await session.getGrantAccessToken()
+
+    expect(refresh).toHaveBeenCalledTimes(3)
+    expect(eventsNamed(GRANT_REFRESH_FAILED_EVENT)).toHaveLength(1)
+
+    mocked(refresh).mockResolvedValueOnce(
+      grantOn('w1', { expiresAt: NEARLY_EXPIRED, revision: 'b' })
+    )
+    await session.getGrantAccessToken()
+    await session.getGrantAccessToken()
+
+    expect(eventsNamed(GRANT_REFRESH_FAILED_EVENT)).toEqual([
+      { outcome: 'unavailable', reason: 'network' },
+      { outcome: 'unavailable', reason: 'network' }
+    ])
+  })
+
+  it('reports each way a refresh fails once while none works, even when they alternate', async () => {
+    saveGrant(grantOn('w1', { expiresAt: NEARLY_EXPIRED }))
+    const session = new CloudSession()
+    mocked(refresh)
+      .mockRejectedValueOnce(refreshFailure('network'))
+      .mockRejectedValueOnce(refreshFailure('http', 503))
+      .mockRejectedValueOnce(refreshFailure('network'))
+      .mockRejectedValueOnce(refreshFailure('http', 503))
+
+    await session.getGrantAccessToken()
+    await session.getGrantAccessToken()
+    await session.getGrantAccessToken()
+    await session.getGrantAccessToken()
+
+    expect(refresh).toHaveBeenCalledTimes(4)
+    expect(eventsNamed(GRANT_REFRESH_FAILED_EVENT)).toEqual([
+      { outcome: 'unavailable', reason: 'network' },
+      { outcome: 'unavailable', reason: 'server_error', http_status: 503 }
+    ])
+  })
+
+  it('reports the same failure again for the grant of a new sign-in', async () => {
+    saveGrant(grantOn('w1', { expiresAt: NEARLY_EXPIRED }))
+    const session = new CloudSession()
+    mocked(refresh).mockRejectedValue(refreshFailure('network'))
+    await session.getGrantAccessToken()
+    mocked(signIn).mockResolvedValue(
+      signedInResult(grantOn('w1', { expiresAt: NEARLY_EXPIRED, revision: 'b' }))
+    )
+
+    await session.login()
+    await session.getGrantAccessToken()
+
+    expect(eventsNamed(GRANT_REFRESH_FAILED_EVENT)).toHaveLength(2)
+  })
+
+  it('reports nothing for a refresh that works', async () => {
+    saveGrant(grantOn('w1', { expiresAt: NEARLY_EXPIRED }))
+    mocked(refresh).mockResolvedValue(grantOn('w1', { revision: 'b' }))
+
+    await new CloudSession().getGrantAccessToken()
+
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(eventsNamed(GRANT_REFRESH_FAILED_EVENT)).toEqual([])
+  })
+})
+
+describe('CloudSession workspace mint telemetry', () => {
+  it.each<[string, MintReply, Record<string, unknown>]>([
+    [
+      'a refusal Cloud names',
+      () => json(403, { code: 'insufficient_scope' }),
+      { reason: 'http', http_status: 403, error_code: 'insufficient_scope' }
+    ],
+    [
+      'a refusal this build does not know',
+      () => json(403, { code: 'ws_3f9c2a71' }),
+      { reason: 'http', http_status: 403, error_code: 'other' }
+    ],
+    ['an error with no code', () => json(500, {}), { reason: 'http', http_status: 500 }],
+    [
+      'no answer',
+      () => {
+        throw new TypeError('fetch failed')
+      },
+      { reason: 'network' }
+    ]
+  ])(
+    'reports a switch that Desktop could not mint for after %s',
+    async (_name, reply, reported) => {
+      saveGrant(grantOn('w1'))
+      mintReply = reply
+
+      const switched = await new CloudSession().switchWorkspace('w2')
+
+      expect(switched).toMatchObject({ workspaceId: 'w1', reached: false })
+      expect(eventsNamed(WORKSPACE_TOKEN_MINT_FAILED_EVENT)).toEqual([reported])
+    }
+  )
+
+  it.each<[string, () => string, string]>([
+    ['another workspace', () => mintedJwt('w3'), 'workspace_mismatch'],
+    ['another account', () => mintedJwt('w2', 'user-2'), 'subject_mismatch']
+  ])(
+    'reports a token Cloud minted for %s as a failed mint, once for the switches sharing it',
+    async (_name, token, problem) => {
+      saveGrant(grantOn('w1'))
+      mintReply = () => json(200, { token: token(), expires_at: new Date(FUTURE).toISOString() })
+      const session = new CloudSession()
+
+      const switches = await Promise.all([
+        session.switchWorkspace('w2'),
+        session.switchWorkspace('w2')
+      ])
+
+      expect(switches[0]).toMatchObject({ workspaceId: 'w1', workspaceSwitchFailure: 'retryable' })
+      expect(session.heldWorkspaceToken('w2')).toBeNull()
+      expect(eventsNamed(WORKSPACE_TOKEN_MINT_FAILED_EVENT)).toEqual([
+        { reason: 'unusable_token', problem }
+      ])
+    }
+  )
+
+  it('reports nothing for a switch Desktop minted for', async () => {
+    saveGrant(grantOn('w1'))
+
+    await new CloudSession().switchWorkspace('w2')
+
+    expect(mintRequests).toHaveLength(1)
+    expect(eventsNamed(WORKSPACE_TOKEN_MINT_FAILED_EVENT)).toEqual([])
   })
 })
 

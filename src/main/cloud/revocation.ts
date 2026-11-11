@@ -19,7 +19,8 @@ export class Revocations {
   private readonly reportedWaiting = new Set<string>()
 
   add(revocation: Omit<PendingRevocation, 'queuedAt'>): void {
-    addPendingRevocation({ ...revocation, queuedAt: Date.now() })
+    const saved = addPendingRevocation({ ...revocation, queuedAt: Date.now() })
+    if (!saved) mainTelemetry.emit(GRANT_REVOCATION_EVENT, { outcome: 'not_saved' })
     if (this.draining) this.drainAgain = true
     else void this.drain()
   }

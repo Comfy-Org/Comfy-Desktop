@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   entries: [] as unknown[]
 }))
 
+vi.mock('./telemetry', () => ({ emit: vi.fn() }))
 vi.mock('./embeddedSessionFlag', () => ({
   isEmbeddedSessionEnabled: async () => (mocks.flagRead ? mocks.flagRead : mocks.enabled)
 }))
@@ -47,6 +48,8 @@ vi.mock('../host/registry', () => ({
 
 import {
   EMBEDDED_SESSION_CHANNELS,
+  EMBEDDED_SESSION_DISABLED_EVENT,
+  _resetForTest as resetEmbeddedSession,
   partnerNodeTokenForSender,
   workspaceTokenForSender,
   broadcastEmbeddedSessionChanged,
@@ -55,6 +58,7 @@ import {
 } from './embeddedSession'
 import type { EmbeddedSessionSender } from './embeddedSession'
 import { CLOUD_CONFIG } from '../cloud/config'
+import * as mainTelemetry from './telemetry'
 import { _resetForTest as resetViewGrants } from './viewWorkspaceGrants'
 
 function jwt(claims: Record<string, unknown>): string {
@@ -116,7 +120,15 @@ beforeEach(() => {
   }))
   mocks.current = 'ws-1'
   resetViewGrants()
+  resetEmbeddedSession()
+  vi.mocked(mainTelemetry.emit).mockClear()
 })
+
+function disabledEvents(): unknown[] {
+  return vi
+    .mocked(mainTelemetry.emit)
+    .mock.calls.filter(([event]) => event === EMBEDDED_SESSION_DISABLED_EVENT)
+}
 
 describe('embeddedSession', () => {
   it.each([
@@ -305,6 +317,49 @@ describe('embeddedSession', () => {
     await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
     await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('reports once per process that the ops flag left a local view without the session', async () => {
+    mocks.enabled = false
+    const first = view('http://127.0.0.1:8000')
+    const second = view('http://localhost:8188')
+
+    await stateForSender(first.event)
+    await stateForSender(second.event)
+    await workspaceTokenForSender(second.event, 'ws-1')
+
+    expect(disabledEvents()).toEqual([[EMBEDDED_SESSION_DISABLED_EVENT]])
+  })
+
+  it.each<[string, (event: EmbeddedSessionSender) => Promise<unknown>]>([
+    ['a workspace token', (event) => workspaceTokenForSender(event, 'ws-1')],
+    ['a partner-node token', (event) => partnerNodeTokenForSender(event, 'ws-1')]
+  ])('reports a local view that only asks for %s while the ops flag is off', async (_name, ask) => {
+    mocks.enabled = false
+    const { event } = view('http://127.0.0.1:8000')
+
+    await expect(ask(event)).resolves.toBeNull()
+
+    expect(disabledEvents()).toEqual([[EMBEDDED_SESSION_DISABLED_EVENT]])
+  })
+
+  it('reports nothing for a change announced while the ops flag is off and no view asked', async () => {
+    mocks.enabled = false
+    view('http://127.0.0.1:8000')
+
+    await broadcastEmbeddedSessionChanged()
+
+    expect(disabledEvents()).toEqual([])
+  })
+
+  it('reports nothing while the ops flag is on, or for a view it does not trust', async () => {
+    const local = view('http://127.0.0.1:8000')
+    const remote = view('http://192.168.1.20:8188')
+
+    await stateForSender(local.event)
+    await expect(stateForSender(remote.event)).resolves.toEqual({ status: 'disabled' })
+
+    expect(disabledEvents()).toEqual([])
   })
 
   it('keeps a view signed in on the grant itself when Cloud did not grant the mint scope', async () => {

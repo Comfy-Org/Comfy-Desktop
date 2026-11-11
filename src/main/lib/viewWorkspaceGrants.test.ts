@@ -18,6 +18,7 @@ import {
   PARTNER_NODE_TOKEN_ISSUED_EVENT,
   VIEW_TOKEN_MINT_FAILED_EVENT,
   VIEW_TOKEN_MINTED_EVENT,
+  VIEW_TOKEN_REFUSED_EVENT,
   ViewWorkspaceGrants
 } from './viewWorkspaceGrants'
 
@@ -134,6 +135,93 @@ describe('ViewWorkspaceGrants', () => {
     expect(await grants.tokenFor(viewA, 'ws-1')).toBeNull()
 
     expect(mainTelemetry.emit).toHaveBeenCalledWith(VIEW_TOKEN_MINT_FAILED_EVENT, properties)
+  })
+
+  it.each<[string, () => string, string]>([
+    ['for another workspace', () => mintedToken('ws-2'), 'workspace_mismatch'],
+    ['for another account', () => jwt({ sub: 'user-2', workspace_id: 'ws-1' }), 'subject_mismatch'],
+    ['that can mint', () => accessToken('ws-1'), 'mint_scope']
+  ])(
+    'reports a token Cloud minted %s as a failed mint, once for the views that shared it',
+    async (_name, token, problem) => {
+      mint.mockResolvedValueOnce({
+        kind: 'minted',
+        token: token(),
+        expiresAt: Date.now() + 900_000
+      })
+
+      await expect(
+        Promise.all([grants.tokenFor(viewA, 'ws-1'), grants.tokenFor(viewB, 'ws-1')])
+      ).resolves.toEqual([null, null])
+
+      expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+        [VIEW_TOKEN_MINT_FAILED_EVENT, { reason: 'unusable_token', problem }]
+      ])
+    }
+  )
+
+  it('reports once a view that asks for the active workspace it was never let into', async () => {
+    grants.allowView(viewA, 'ws-2')
+    signInAt('ws-2')
+
+    await expect(grants.tokenFor(viewB, 'ws-2')).resolves.toBeNull()
+    await expect(grants.partnerNodeTokenFor(viewB, 'ws-2')).resolves.toBeNull()
+    await expect(grants.tokenFor(viewB, 'ws-2')).resolves.toBeNull()
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([[VIEW_TOKEN_REFUSED_EVENT]])
+  })
+
+  it('reports each view that was refused the active workspace', async () => {
+    const viewC = { id: 'c' } as unknown as WebContents
+    grants.allowView(viewA, 'ws-2')
+    signInAt('ws-2')
+
+    await grants.tokenFor(viewB, 'ws-2')
+    await grants.tokenFor(viewC, 'ws-2')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [VIEW_TOKEN_REFUSED_EVENT],
+      [VIEW_TOKEN_REFUSED_EVENT]
+    ])
+  })
+
+  it('reports a view refused again after it was handed a token in between', async () => {
+    grants.allowView(viewA, 'ws-2')
+    signInAt('ws-2')
+    await grants.tokenFor(viewB, 'ws-2')
+    grants.allowDesktop('ws-2')
+    await expect(grants.tokenFor(viewB, 'ws-2')).resolves.toBe(mintedToken('ws-2'))
+    grants.allowView(viewA, 'ws-3')
+    signInAt('ws-3')
+
+    await expect(grants.tokenFor(viewB, 'ws-3')).resolves.toBeNull()
+
+    expect(
+      vi
+        .mocked(mainTelemetry.emit)
+        .mock.calls.filter(([event]) => event === VIEW_TOKEN_REFUSED_EVENT)
+    ).toHaveLength(2)
+  })
+
+  it('reports a refused view again once every view was shut out and it is still refused', async () => {
+    grants.allowView(viewA, 'ws-2')
+    signInAt('ws-2')
+    await grants.tokenFor(viewB, 'ws-2')
+
+    grants.endAll()
+    await grants.tokenFor(viewB, 'ws-2')
+    await grants.tokenFor(viewB, 'ws-2')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [VIEW_TOKEN_REFUSED_EVENT],
+      [VIEW_TOKEN_REFUSED_EVENT]
+    ])
+  })
+
+  it('reports nothing for a view that asks for a workspace Desktop is not in', async () => {
+    await expect(grants.tokenFor(viewA, 'ws-2')).resolves.toBeNull()
+
+    expect(vi.mocked(mainTelemetry.emit)).not.toHaveBeenCalled()
   })
 
   it('hands a view the minted token for the workspace Desktop started in, never the access token', async () => {
@@ -554,6 +642,83 @@ describe('ViewWorkspaceGrants partner-node tokens', () => {
           http_status: 403,
           error_code: 'partner_node_session_ended'
         }
+      ],
+      [PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation: 'mint' }]
+    ])
+  })
+
+  it.each<[string, () => WorkspaceTokenMint, string]>([
+    ['for another workspace', () => partnerMinted(partnerToken('ws-2')), 'workspace_mismatch'],
+    [
+      'for another account',
+      () => partnerMinted(jwt({ sub: 'user-2', workspace_id: 'ws-1', aud: 'comfy-partner-node' })),
+      'subject_mismatch'
+    ],
+    [
+      'that expires within a minute',
+      () => partnerMinted(partnerToken('ws-1'), 30_000),
+      'expires_too_soon'
+    ]
+  ])(
+    'reports a partner-node token Cloud minted %s as a failed mint',
+    async (_name, issued, problem) => {
+      partnerMint.mockResolvedValueOnce(issued())
+
+      await expect(grants.partnerNodeTokenFor(viewA, 'ws-1')).resolves.toBeNull()
+
+      expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+        [PARTNER_NODE_TOKEN_FAILED_EVENT, { operation: 'mint', reason: 'unusable_token', problem }]
+      ])
+    }
+  )
+
+  it.each<[string, () => WorkspaceTokenMint, string]>([
+    [
+      'for another workspace',
+      () => partnerMinted(partnerToken('ws-2', 'sid-1', 1)),
+      'workspace_mismatch'
+    ],
+    [
+      'for another account',
+      () => partnerMinted(jwt({ sub: 'user-2', workspace_id: 'ws-1', aud: 'comfy-partner-node' })),
+      'subject_mismatch'
+    ],
+    [
+      'for another workspace that also leaves under an hour',
+      () => partnerMinted(partnerToken('ws-2', 'sid-1', 1), 40 * 60_000),
+      'expires_too_soon'
+    ]
+  ])('reports a renewal Cloud answered %s as failed', async (_name, renewed, problem) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+    vi.mocked(mainTelemetry.emit).mockClear()
+    partnerRenew.mockImplementationOnce(async () => renewed())
+    vi.setSystemTime(Date.now() + 31 * 60_000)
+
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls[0]).toEqual([
+      PARTNER_NODE_TOKEN_FAILED_EVENT,
+      { operation: 'renew', reason: 'unusable_token', problem }
+    ])
+  })
+
+  it('reports a renewal that left under an hour as failed, and the new session that replaced it', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+    vi.mocked(mainTelemetry.emit).mockClear()
+    partnerRenew.mockResolvedValueOnce(partnerMinted(partnerToken('ws-1', 'sid-1', 1), 40 * 60_000))
+    partnerMint.mockResolvedValueOnce(partnerMinted(partnerToken('ws-1', 'sid-2')))
+    vi.setSystemTime(Date.now() + 31 * 60_000)
+
+    await expect(grants.partnerNodeTokenFor(viewA, 'ws-1')).resolves.toBe(
+      partnerToken('ws-1', 'sid-2')
+    )
+
+    expect(vi.mocked(mainTelemetry.emit).mock.calls).toEqual([
+      [
+        PARTNER_NODE_TOKEN_FAILED_EVENT,
+        { operation: 'renew', reason: 'unusable_token', problem: 'expires_too_soon' }
       ],
       [PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation: 'mint' }]
     ])

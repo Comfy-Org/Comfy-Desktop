@@ -7,7 +7,10 @@ import type { ComfyWindowEntry } from '../host/registry'
 import type { WorkspaceSwitchOutcome } from '../cloud/types'
 import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
+import * as mainTelemetry from './telemetry'
 import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
+
+export const EMBEDDED_SESSION_DISABLED_EVENT = 'comfy.desktop.auth.embedded_session_disabled'
 
 export const EMBEDDED_SESSION_CHANNELS = {
   getState: 'desktop2-auth:get-state',
@@ -62,8 +65,24 @@ export function isTrustedSender({ sender, senderFrame }: EmbeddedSessionSender):
   return servesEntry(entry, senderFrame.url)
 }
 
-async function sessionState(): Promise<ComfyDesktop2AuthState> {
-  if (!(await isEmbeddedSessionEnabled())) return DISABLED
+let disabledReported = false
+
+function reportDisabledOncePerProcess(): void {
+  if (disabledReported) return
+  disabledReported = true
+  mainTelemetry.emit(EMBEDDED_SESSION_DISABLED_EVENT)
+}
+
+async function enabledForLocalView(): Promise<boolean> {
+  const enabled = await isEmbeddedSessionEnabled()
+  if (!enabled) reportDisabledOncePerProcess()
+  return enabled
+}
+
+async function sessionState(
+  enabled: () => Promise<boolean> = isEmbeddedSessionEnabled
+): Promise<ComfyDesktop2AuthState> {
+  if (!(await enabled())) return DISABLED
   const session = getCloudSession()
   const grant = await session.getGrantAccessToken()
   const identity = grant ? identityOf(grant) : null
@@ -81,7 +100,7 @@ async function sessionState(): Promise<ComfyDesktop2AuthState> {
 export async function stateForSender(
   event: EmbeddedSessionSender
 ): Promise<ComfyDesktop2AuthState> {
-  return isTrustedSender(event) ? sessionState() : DISABLED
+  return isTrustedSender(event) ? sessionState(enabledForLocalView) : DISABLED
 }
 
 export async function workspaceTokenForSender(
@@ -90,7 +109,7 @@ export async function workspaceTokenForSender(
 ): Promise<string | null> {
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
   if (!isTrustedSender(event)) return null
-  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId, isEmbeddedSessionEnabled)
+  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId, enabledForLocalView)
 }
 
 export async function partnerNodeTokenForSender(
@@ -102,7 +121,7 @@ export async function partnerNodeTokenForSender(
   return getViewWorkspaceGrants().partnerNodeTokenFor(
     event.sender,
     workspaceId,
-    isEmbeddedSessionEnabled
+    enabledForLocalView
   )
 }
 
@@ -132,4 +151,8 @@ export async function broadcastEmbeddedSessionChanged(): Promise<void> {
     if (contents.isDestroyed() || !servesEntry(entry, contents.getURL())) continue
     contents.send(EMBEDDED_SESSION_CHANNELS.changed, state)
   }
+}
+
+export function _resetForTest(): void {
+  disabledReported = false
 }

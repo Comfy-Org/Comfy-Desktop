@@ -7,6 +7,12 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   'comfy.desktop.auth.expired_grant_rejected',
   'comfy.desktop.auth.grant_revocation',
   'comfy.desktop.auth.partner_node_token_failed',
+  'comfy.desktop.auth.session_sign_in',
+  'comfy.desktop.auth.grant_refresh_failed',
+  'comfy.desktop.auth.workspace_token_mint_failed',
+  'comfy.desktop.auth.stored_session_failed',
+  'comfy.desktop.auth.embedded_session_disabled',
+  'comfy.desktop.auth.view_token_refused',
 
   'comfy.desktop.execution.error',
   'comfy.desktop.comfyui.exited',

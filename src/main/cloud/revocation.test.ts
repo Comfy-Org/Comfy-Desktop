@@ -415,6 +415,41 @@ describe('Revocations', () => {
     }
   })
 
+  it.each<[string, () => () => void]>([
+    [
+      'the disk is full',
+      () => {
+        vi.mocked(fs.renameSync).mockImplementation(() => {
+          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+        })
+        return () => vi.mocked(fs.renameSync).mockReset()
+      }
+    ],
+    [
+      'secure storage is unavailable',
+      () => {
+        vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false)
+        return () => vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true)
+      }
+    ]
+  ])(
+    'reports a revocation it could not save because %s, and still that Cloud confirmed it',
+    async (_name, breakStorage) => {
+      const repairStorage = breakStorage()
+      const revocations = new Revocations()
+
+      try {
+        revocations.add(revocation('refresh-1'))
+        await revocations.drain()
+
+        expect(requests.map((request) => request.token)).toEqual(['refresh-1'])
+        expect(revocationEvents()).toEqual([{ outcome: 'not_saved' }, { outcome: 'revoked' }])
+      } finally {
+        repairStorage()
+      }
+    }
+  )
+
   it('revokes a token queued by an earlier build, dating it by its file', async () => {
     const dir = path.join(electronState.userData, 'comfy-cloud-revocations')
     const monthAgo = new Date(Date.now() - 31 * 24 * 3_600_000)

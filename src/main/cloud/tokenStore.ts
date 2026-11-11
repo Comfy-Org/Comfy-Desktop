@@ -3,6 +3,7 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 
+import * as mainTelemetry from '../lib/telemetry'
 import { statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
 import { CLOUD_CONFIG, CLOUD_REFRESH_TOKEN_LIFETIME_MS } from './config'
 import type { AuthStatus, AuthTokens, Workspace } from './types'
@@ -10,6 +11,15 @@ import type { AuthStatus, AuthTokens, Workspace } from './types'
 const AUTH_FILENAME = 'comfy-cloud-auth.bin'
 const REVOCATIONS_DIRNAME = 'comfy-cloud-revocations'
 const VAULT_VERSION = 2
+
+export const STORED_SESSION_RESTORED_EVENT = 'comfy.desktop.auth.stored_session_restored'
+export const STORED_SESSION_FAILED_EVENT = 'comfy.desktop.auth.stored_session_failed'
+
+type StoredSessionFormat = 'current' | 'legacy'
+
+type StoredSessionFailure =
+  | { operation: 'load'; reason: 'unreadable' | 'undecryptable' | 'invalid' }
+  | { operation: 'save'; reason: 'write_failed' | 'secure_storage_unavailable' }
 
 export interface GrantOrigin {
   issuer: string
@@ -44,6 +54,22 @@ let cachedVault: TokenVault | null = null
 const unsavedRevocations = new Map<string, PendingRevocation>()
 let authFilePath: string | null = null
 let secureStorageUnavailable = false
+const reportedStoredSessions = new Set<string>()
+
+function reportOncePerProcess(event: string, context: mainTelemetry.TelemetryContext): void {
+  const report = JSON.stringify([event, context])
+  if (reportedStoredSessions.has(report)) return
+  reportedStoredSessions.add(report)
+  mainTelemetry.emit(event, context)
+}
+
+function reportRestored(format: StoredSessionFormat): void {
+  reportOncePerProcess(STORED_SESSION_RESTORED_EVENT, { format })
+}
+
+function reportStorageFailure(failure: StoredSessionFailure): void {
+  reportOncePerProcess(STORED_SESSION_FAILED_EVENT, failure)
+}
 
 export function isSecureStorageUnavailable(): boolean {
   return secureStorageUnavailable
@@ -132,6 +158,7 @@ function migratedVault(legacy: LegacyVault): TokenVault | null {
 function persistVault(vault: TokenVault): boolean {
   cachedVault = vault
   if (!encryptionAvailable()) {
+    reportStorageFailure({ operation: 'save', reason: 'secure_storage_unavailable' })
     try {
       fs.rmSync(filePath(), { force: true })
       return true
@@ -143,29 +170,58 @@ function persistVault(vault: TokenVault): boolean {
     fs.writeFileSync(filePath(), safeStorage.encryptString(JSON.stringify(vault)))
     return true
   } catch {
+    reportStorageFailure({ operation: 'save', reason: 'write_failed' })
     return false
+  }
+}
+
+type StoredVault =
+  | { kind: 'none' }
+  | { kind: 'failed'; reason: Extract<StoredSessionFailure, { operation: 'load' }>['reason'] }
+  | { kind: 'current'; vault: TokenVault }
+  | { kind: 'legacy'; vault: TokenVault }
+
+function readStoredVault(): StoredVault {
+  let sealed: Buffer
+  try {
+    sealed = fs.readFileSync(filePath())
+  } catch (error) {
+    const missing = (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+    return missing ? { kind: 'none' } : { kind: 'failed', reason: 'unreadable' }
+  }
+  let opened: string
+  try {
+    opened = safeStorage.decryptString(sealed)
+  } catch {
+    return { kind: 'failed', reason: 'undecryptable' }
+  }
+  try {
+    const parsed: unknown = JSON.parse(opened)
+    if (isVault(parsed)) return { kind: 'current', vault: parsed }
+    const migrated = isLegacyVault(parsed)
+      ? migratedVault(parsed)
+      : isTokens(parsed)
+        ? vaultFor(parsed)
+        : null
+    return migrated ? { kind: 'legacy', vault: migrated } : { kind: 'failed', reason: 'invalid' }
+  } catch {
+    return { kind: 'failed', reason: 'invalid' }
   }
 }
 
 function loadVault(): TokenVault | null {
   if (cachedVault) return cachedVault
   if (!encryptionAvailable()) return null
-  try {
-    const parsed: unknown = JSON.parse(safeStorage.decryptString(fs.readFileSync(filePath())))
-    if (isVault(parsed)) {
-      cachedVault = parsed
-      return cachedVault
-    }
-    const migrated = isLegacyVault(parsed)
-      ? migratedVault(parsed)
-      : isTokens(parsed)
-        ? vaultFor(parsed)
-        : null
-    if (migrated) persistVault(migrated)
-    return migrated
-  } catch {
+  const stored = readStoredVault()
+  if (stored.kind === 'none') return null
+  if (stored.kind === 'failed') {
+    reportStorageFailure({ operation: 'load', reason: stored.reason })
     return null
   }
+  if (stored.kind === 'current') cachedVault = stored.vault
+  else persistVault(stored.vault)
+  reportRestored(stored.kind)
+  return stored.vault
 }
 
 function holdsToken(vault: TokenVault, workspaceId: string | null): boolean {
@@ -387,8 +443,10 @@ export function loadPendingRevocations(): PendingRevocations {
   return { pending: [...saved.pending, ...unsaved], complete: saved.complete }
 }
 
-export function addPendingRevocation(revocation: PendingRevocation): void {
-  if (!writeRevocation(revocation)) unsavedRevocations.set(revocation.refreshToken, revocation)
+export function addPendingRevocation(revocation: PendingRevocation): boolean {
+  const saved = writeRevocation(revocation)
+  if (!saved) unsavedRevocations.set(revocation.refreshToken, revocation)
+  return saved
 }
 
 export function removePendingRevocation(refreshToken: string): boolean {
@@ -434,4 +492,5 @@ export function _resetForTest(): void {
   unsavedRevocations.clear()
   authFilePath = null
   secureStorageUnavailable = false
+  reportedStoredSessions.clear()
 }

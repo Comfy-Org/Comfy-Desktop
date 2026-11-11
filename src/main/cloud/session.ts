@@ -1,17 +1,25 @@
 import type { TokenProvider } from '../comfybuilder'
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
-import { canMintWorkspaceTokens, grantFamilyOf, subjectOf, workspaceIdOf } from './claims'
+import {
+  canMintWorkspaceTokens,
+  grantFamilyOf,
+  holdsPartnerNodeScope,
+  subjectOf,
+  workspaceIdOf
+} from './claims'
 import { CLOUD_CONFIG } from './config'
 import { openAuthorizePage, refresh, signIn } from './oauth'
+import type { OAuthOptions } from './oauth'
 import { Revocations } from './revocation'
-import { SignInFailure } from './signInFailure'
+import { SignInFailure, signInFailureReport } from './signInFailure'
 import {
   activateWorkspace,
   clearTokens,
   dropWorkspaceToken,
   endGrant,
   getAuthStatus,
+  isSecureStorageUnavailable,
   loadActiveWorkspaceId,
   loadGrant,
   loadGrantOrigin,
@@ -31,7 +39,12 @@ import type {
   WorkspaceSwitchIntent,
   WorkspaceSwitchStatus
 } from './types'
-import { classifyMint, mintWorkspaceToken } from './workspaceToken'
+import {
+  classifyMint,
+  mintedTokenProblem,
+  mintFailureReport,
+  mintWorkspaceToken
+} from './workspaceToken'
 import type { ReauthorizeReason, WorkspaceMintOutcome } from './workspaceToken'
 import { listWorkspaceMembers, listWorkspaces } from './workspaces'
 
@@ -44,8 +57,13 @@ export const MINT_SCOPE_NOT_GRANTED_EVENT = 'comfy.desktop.auth.mint_scope_not_g
 export const WORKSPACE_RETURNED_TO_ANCHOR_EVENT = 'comfy.desktop.auth.workspace_returned_to_anchor'
 export const SIGNED_OUT_EVENT = 'comfy.desktop.auth.signed_out'
 export const EXPIRED_GRANT_REJECTED_EVENT = 'comfy.desktop.auth.expired_grant_rejected'
+export const SESSION_SIGN_IN_EVENT = 'comfy.desktop.auth.session_sign_in'
+export const GRANT_REFRESH_FAILED_EVENT = 'comfy.desktop.auth.grant_refresh_failed'
+export const WORKSPACE_TOKEN_MINT_FAILED_EVENT = 'comfy.desktop.auth.workspace_token_mint_failed'
 
 type SignOutReason = 'user' | 'grant_rejected' | 'refresh_refused'
+
+type SignInPurpose = 'sign_in' | 'workspace_switch'
 
 export interface SessionSwitchReply extends WorkspaceSwitchStatus {
   reached: boolean
@@ -104,6 +122,22 @@ function reportBrowser(reason: ReauthorizeReason): void {
   mainTelemetry.emit(WORKSPACE_SWITCH_BROWSER_EVENT, { reauthorize_reason: reason })
 }
 
+function reportSignIn(purpose: SignInPurpose, result: mainTelemetry.TelemetryContext): void {
+  mainTelemetry.emit(SESSION_SIGN_IN_EVENT, { purpose, ...result })
+}
+
+async function reportedSignIn(
+  purpose: SignInPurpose,
+  options: OAuthOptions
+): ReturnType<typeof signIn> {
+  try {
+    return await signIn(options)
+  } catch (error) {
+    reportSignIn(purpose, { outcome: 'failed', ...signInFailureReport(error) })
+    throw error
+  }
+}
+
 export class CloudSession {
   private readonly refreshing = new Map<string, Promise<GrantRefresh>>()
   private readonly rotatedTo = new Map<string, string>()
@@ -116,6 +150,7 @@ export class CloudSession {
   private returnedToAnchorHandler: (() => void) | null = null
   private readonly revocations = new Revocations()
   private readonly retiredRefreshTokens = new Set<string>()
+  private readonly reportedRefreshFailures = new Set<string>()
 
   private authGeneration = 0
 
@@ -144,29 +179,38 @@ export class CloudSession {
   }
 
   private async signInAtGeneration(generation: number): Promise<AuthStatus> {
-    const { tokens, status } = await signIn({
+    const { tokens, status } = await reportedSignIn('sign_in', {
       onAuthorizeUrl: (url) => {
         if (generation === this.authGeneration) this.loginAuthorizeUrl = url
       }
     })
     if (generation !== this.authGeneration) {
       this.revokeUnstored(tokens.refreshToken)
+      reportSignIn('sign_in', { outcome: 'superseded' })
       return this.status()
     }
-    this.storeSignedInGrant(tokens)
+    this.storeSignedInGrant(tokens, 'sign_in')
     const anchor = workspaceIdOf(tokens.accessToken)
     if (anchor) activateWorkspace(anchor)
     return status
   }
 
-  private storeSignedInGrant(tokens: AuthTokens): void {
+  private storeSignedInGrant(tokens: AuthTokens, purpose: SignInPurpose): void {
     const replaced = loadGrant()?.refreshToken
     const origin = loadGrantOrigin()
     this.mintBlockedUntil = 0
+    this.reportedRefreshFailures.clear()
     const saved = saveGrant(tokens)
+    const sessionSaved = saved && !isSecureStorageUnavailable()
     if (saved && replaced !== tokens.refreshToken) this.retireGrant(replaced, origin)
-    if (!canMintWorkspaceTokens(tokens.accessToken))
-      mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
+    const mintScope = canMintWorkspaceTokens(tokens.accessToken)
+    if (!mintScope) mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
+    reportSignIn(purpose, {
+      outcome: 'completed',
+      mint_scope: mintScope,
+      partner_node_scope: holdsPartnerNodeScope(tokens.accessToken),
+      session_saved: sessionSaved
+    })
   }
 
   private clearPendingLogin(): void {
@@ -302,6 +346,7 @@ export class CloudSession {
   private async rotateGrant(grant: AuthTokens, refreshToken: string): Promise<GrantRefresh> {
     try {
       const rotated = await refresh(refreshToken)
+      this.reportedRefreshFailures.clear()
       const stored = replaceGrant(grant.accessToken, refreshToken, rotated)
       if (stored) this.rotatedTo.set(grant.accessToken, rotated.accessToken)
       if (!stored && this.retiredRefreshTokens.has(refreshToken)) {
@@ -309,10 +354,20 @@ export class CloudSession {
       }
       return 'refreshed'
     } catch (error) {
-      return isDefinitiveRefreshRefusal(error) ? 'ended' : 'unavailable'
+      const outcome = isDefinitiveRefreshRefusal(error) ? 'ended' : 'unavailable'
+      this.reportRefreshFailure(outcome, error)
+      return outcome
     } finally {
       this.retiredRefreshTokens.delete(refreshToken)
     }
+  }
+
+  private reportRefreshFailure(outcome: Exclude<GrantRefresh, 'refreshed'>, error: unknown): void {
+    const failure = { outcome, ...signInFailureReport(error) }
+    const report = JSON.stringify(failure)
+    if (this.reportedRefreshFailures.has(report)) return
+    this.reportedRefreshFailures.add(report)
+    mainTelemetry.emit(GRANT_REFRESH_FAILED_EVENT, failure)
   }
 
   private mintForWorkspace(workspaceId: string, generation: number): Promise<SettledMintOutcome> {
@@ -335,11 +390,10 @@ export class CloudSession {
   ): SettledMintOutcome {
     if (outcome.kind !== 'minted' || generation !== this.authGeneration) return outcome
     const grant = loadGrant()
-    if (
-      !grant ||
-      workspaceIdOf(outcome.token) !== workspaceId ||
-      subjectOf(outcome.token) !== subjectOf(grant.accessToken)
-    ) {
+    if (!grant) return RETRYABLE
+    const problem = mintedTokenProblem(outcome.token, workspaceId, subjectOf(grant.accessToken))
+    if (problem) {
+      mainTelemetry.emit(WORKSPACE_TOKEN_MINT_FAILED_EVENT, { reason: 'unusable_token', problem })
       return RETRYABLE
     }
     saveWorkspaceToken(workspaceId, { accessToken: outcome.token, expiresAt: outcome.expiresAt })
@@ -386,7 +440,10 @@ export class CloudSession {
       Date.now() < this.mintBlockedUntil
     )
       return RETRYABLE
-    const outcome = classifyMint(await mintWorkspaceToken(grant.accessToken, workspaceId))
+    const mint = await mintWorkspaceToken(grant.accessToken, workspaceId)
+    if (mint.kind === 'failed')
+      mainTelemetry.emit(WORKSPACE_TOKEN_MINT_FAILED_EVENT, mintFailureReport(mint))
+    const outcome = classifyMint(mint)
     if (outcome.kind === 'reauthorize' && outcome.reason === 'grant_ended') {
       this.endGrantFamily(grant.accessToken)
     }
@@ -514,7 +571,7 @@ export class CloudSession {
     let browserOpened = false
     let tokens: AuthTokens
     try {
-      ;({ tokens } = await signIn({
+      ;({ tokens } = await reportedSignIn('workspace_switch', {
         workspaceId,
         onAuthorizeUrl: () => {
           browserOpened = true
@@ -527,9 +584,10 @@ export class CloudSession {
     }
     if (generation !== this.authGeneration) {
       this.revokeUnstored(tokens.refreshToken)
+      reportSignIn('workspace_switch', { outcome: 'superseded' })
       return this.unreached()
     }
-    this.storeSignedInGrant(tokens)
+    this.storeSignedInGrant(tokens, 'workspace_switch')
 
     const canMint = canMintWorkspaceTokens(tokens.accessToken)
     const isAnchor = workspaceId === workspaceIdOf(tokens.accessToken)
