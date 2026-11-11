@@ -93,7 +93,7 @@ import './setup.css'
  * Copy is the product's, in English.
  */
 const open = computed({
-  get: () => setupOn.value && flow.open && flow.step !== 'first' && !flow.arriving,
+  get: () => setupOn.value && flow.open && flow.step !== 'first' && !flow.arriving && !flow.landing,
   set: (v: boolean) => {
     if (!v) closeSetup()
   }
@@ -561,15 +561,13 @@ function rowState(i: number): string {
        very first open starts with only the wordmark on it, centred. -->
   <Teleport :to="PORTAL_TO">
     <div
-      v-if="(open || flow.arriving) && flow.takeover"
+      v-if="(open || flow.arriving || flow.landing) && flow.takeover"
       class="proto-ui mss-first is-backdrop"
       :class="[homeOneClick && 'is-alone', flow.arriving && 'is-arriving']"
       aria-hidden="true"
     >
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
-        <!-- The beat: the mark's ghost, and the mark filling over it. -->
-        <ComfyWordmark v-if="flow.arriving" class="mss-first-mark mss-first-ghost" />
         <ComfyWordmark class="mss-first-mark" />
         <SetupSteps
           v-if="!homeOneClick"

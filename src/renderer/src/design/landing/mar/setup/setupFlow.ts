@@ -579,6 +579,8 @@ export const flow = reactive({
    *  centred on the empty frame, before Set up comes in. The app doesn't
    *  open straight onto a form. */
   arriving: false,
+  /** The beat's end: the wordmark on its way up; Set up waits for it. */
+  landing: false,
   /** Home first: the install runs behind the Home, on its card. Closing the
    *  install modal then only hides it. */
   background: false,
@@ -756,15 +758,24 @@ export function dismissReady(): void {
   flow.homeCard = false
 }
 
-/** The wordmark's beat before Set up: in, a breath, then it travels to
- *  its place as Set up rises. Skipped under reduced motion. */
-const ARRIVE_MS = 1600
+/** The wordmark's beat before Set up: in, a moment alone, then it travels
+ *  to its place as Set up rises. Skipped under reduced motion. */
+const ARRIVE_MS = 1100
+/** How far into the travel (650 ms) Set up starts to rise. */
+const LAND_MS = 380
 let arriveTimer: ReturnType<typeof setTimeout> | undefined
+let landTimer: ReturnType<typeof setTimeout> | undefined
 function arrive(): void {
   clearTimeout(arriveTimer)
+  clearTimeout(landTimer)
+  flow.landing = false
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
   flow.arriving = true
-  arriveTimer = setTimeout(() => (flow.arriving = false), ARRIVE_MS)
+  arriveTimer = setTimeout(() => {
+    flow.arriving = false
+    flow.landing = true
+    landTimer = setTimeout(() => (flow.landing = false), LAND_MS)
+  }, ARRIVE_MS)
 }
 
 /** Entry: the first launch, then every New Instance button. */
@@ -994,9 +1005,11 @@ export function showScreen(s: Screen): void {
   // The custom nodes step is a new build's: it shows with the tweak on.
   if (s === 'nodes' && !nodesInBuild.value) localSetup.nodes = 'both'
   clearTimeout(arriveTimer)
+  clearTimeout(landTimer)
   Object.assign(flow, {
     open: true,
     arriving: false,
+    landing: false,
     takeover: !later,
     packs: s === 'nodes' ? recommendedPacks() : [],
     percent: 0,
