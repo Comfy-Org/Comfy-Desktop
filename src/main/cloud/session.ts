@@ -12,6 +12,7 @@ import {
   dropWorkspaceToken,
   endGrant,
   getAuthStatus,
+  getCachedWorkspaceName,
   loadActiveWorkspaceId,
   loadGrant,
   loadGrantOrigin,
@@ -109,6 +110,7 @@ export class CloudSession {
   private mintBlockedUntil = 0
   private loginInFlight: Promise<AuthStatus> | null = null
   private loginAuthorizeUrl: string | null = null
+  private viewConsentOpen = false
   private returnedToAnchorHandler: (() => void) | null = null
   private readonly revocations = new Revocations()
   private readonly retiredRefreshTokens = new Set<string>()
@@ -425,6 +427,9 @@ export class CloudSession {
       if (intent === 'chosen' || this.switchIntent === 'restored') this.switchIntent = intent
       return this.switching.result
     }
+    if (intent === 'requested' && (this.switching || this.loginInFlight || this.viewConsentOpen)) {
+      return Promise.resolve(this.unreached())
+    }
     this.clearPendingLogin()
     this.switchIntent = intent
     const generation = ++this.authGeneration
@@ -444,6 +449,15 @@ export class CloudSession {
     const held = loadWorkspaceToken(workspaceId)
     if (held && held.expiresAt > Date.now()) return this.activated(workspaceId, 'cached')
     if (this.switchIntent === 'requested') {
+      if (getCachedWorkspaceName(workspaceId) === null) {
+        const workspaces = await this.listWorkspaces().catch(() => null)
+        if (generation !== this.authGeneration) return this.unreached()
+        if (!workspaces) return this.stayed('retryable')
+        if (!workspaces.some((workspace) => workspace.id === workspaceId)) {
+          reportSwitch('unavailable')
+          return this.stayed('unavailable')
+        }
+      }
       return this.reauthorize(workspaceId, generation, 'view_requested')
     }
 
@@ -508,6 +522,8 @@ export class CloudSession {
     }
     let browserOpened = false
     let tokens: AuthTokens
+    const viewConsent = reason === 'view_requested'
+    if (viewConsent) this.viewConsentOpen = true
     try {
       ;({ tokens } = await signIn({
         workspaceId,
@@ -519,6 +535,8 @@ export class CloudSession {
     } catch {
       if (!browserOpened) reportSwitch('retryable', reason)
       return generation === this.authGeneration ? this.stayed('retryable') : this.unreached()
+    } finally {
+      if (viewConsent) this.viewConsentOpen = false
     }
     if (generation !== this.authGeneration) {
       this.revokeUnstored(tokens.refreshToken)

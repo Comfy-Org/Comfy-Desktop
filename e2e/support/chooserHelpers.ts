@@ -7,7 +7,19 @@ import {
 } from './cdpPages'
 import { byTestId, TID } from './testIds'
 
+const HOME_VIEW = '[data-testid="home-view"]'
+const SIDEBAR_BUILDS = '[data-testid="app-sidebar-chooser"]'
+
+export async function showBuildsPage(panel: WebContentsPage): Promise<void> {
+  expect(await panel.click(SIDEBAR_BUILDS), 'Builds picked in the sidebar').toBe(true)
+  await panel.waitForVisible('.chooser-view')
+}
+
 export async function expectChooserVisible(panel: WebContentsPage): Promise<void> {
+  await panel.waitFor(
+    async () => (await panel.isVisible('.chooser-view')) || (await panel.isVisible(HOME_VIEW))
+  )
+  if (await panel.isVisible(HOME_VIEW)) await showBuildsPage(panel)
   await panel.waitForVisible('.chooser-view')
 }
 
