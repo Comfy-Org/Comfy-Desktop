@@ -198,6 +198,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     return
   const url = requestedUrl(r)
   let view = views.get(key)
+  if (view?.webContents.isDestroyed()) view = undefined
   if (view && failedViews.has(view)) {
     if (r.fresh !== true) return
     failedViews.delete(view)
@@ -205,7 +206,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   } else if (view && r.fresh === true && view.webContents.getURL() !== url) {
     openUrl(key, view, url)
   }
-  if (!view || view.webContents.isDestroyed()) {
+  if (!view) {
     view = createAppsView(key, url)
     views.set(key, view)
     entry.window.once('closed', () => {
