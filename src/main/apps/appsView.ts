@@ -41,6 +41,7 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { listCatalogApps } from './catalog'
+import { outputAction, outputRequest } from './outputs'
 import { localBuilds, openInComfy } from './openInComfy'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged)
@@ -54,6 +55,9 @@ const failedViews = new WeakSet<WebContentsView>()
 export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
 export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
 export const APPS_CATALOG_CHANNEL = 'comfy-apps:catalog'
+export const APPS_OUTPUT_CHANNEL = 'comfy-apps:output'
+export const APPS_OUTPUT_ACTION_CHANNEL = 'comfy-apps:output-action'
+const BACKDROP_QUALITY = 80
 
 const appOpen = new Map<number, boolean>()
 
@@ -198,6 +202,32 @@ function fromAppsPage(event: IpcMainInvokeEvent): boolean {
   return (
     ours && !!frame && frame === event.sender.mainFrame && isAppsFrameUrl(frame.url, APPS_ORIGIN)
   )
+}
+
+function keyForAppsPage(sender: WebContents): number | null {
+  for (const [key, view] of views) if (view.webContents === sender) return key
+  return null
+}
+
+async function showOutput(page: WebContents, request: unknown): Promise<void> {
+  const outputs = outputRequest(request)
+  if (!outputs) throw new Error('These outputs cannot be shown.')
+  const key = keyForAppsPage(page)
+  const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
+  if (!panel || panel.isDestroyed()) return
+  const backdrop = await page
+    .capturePage()
+    .then((image) => image.toJPEG(BACKDROP_QUALITY))
+    .catch(() => null)
+  panel.send(APPS_OUTPUT_CHANNEL, { ...outputs, backdrop })
+}
+
+function relayOutputAction(event: IpcMainEvent, input: unknown): void {
+  const found = entryForPanel(event.sender)
+  const action = outputAction(input)
+  if (!found || !action) return
+  const page = views.get(found[0])?.webContents
+  if (page && !page.isDestroyed()) page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
 }
 
 function authState(): AppsAuthState {
@@ -461,14 +491,21 @@ async function uploadImage(bytes: unknown, name: unknown): Promise<{ name: strin
   return { name: body.name }
 }
 
+function handleFromAppsPage<A extends unknown[], R>(
+  channel: string,
+  fn: (page: WebContents, ...args: A) => Promise<R> | R
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    if (!fromAppsPage(event)) throw new Error('Not allowed.')
+    return fn(event.sender, ...(args as A))
+  })
+}
+
 function handleFromApps<A extends unknown[], R>(
   channel: string,
   fn: (...args: A) => Promise<R> | R
 ): void {
-  ipcMain.handle(channel, async (event, ...args) => {
-    if (!fromAppsPage(event)) throw new Error('Not allowed.')
-    return fn(...(args as A))
-  })
+  handleFromAppsPage(channel, (_page, ...args: A) => fn(...args))
 }
 
 function appsPages(): WebContents[] {
@@ -481,6 +518,7 @@ export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
   ipcMain.handle(APPS_CATALOG_CHANNEL, () => listCatalogApps(APPS_URL))
+  ipcMain.on('comfy-apps:output-action', relayOutputAction)
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)
@@ -506,4 +544,5 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:local-fetch', localFetch)
   handleFromApps('comfy-apps:local-download', localDownload)
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)
+  handleFromAppsPage('comfy-apps:show-output', showOutput)
 }

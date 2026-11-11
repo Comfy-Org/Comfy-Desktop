@@ -29,8 +29,8 @@ import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
-import AssetDetailView from './AssetDetailView.vue'
-import type { GalleryAsset } from './AssetDetailView.vue'
+import OutputDetailDialog from './OutputDetailDialog.vue'
+import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -38,7 +38,24 @@ import { useSessionStore } from '../stores/sessionStore'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type { AssetKind, AssetSummary, CatalogApp, Installation } from '../types/ipc'
+import type {
+  AppOutputAction,
+  AppOutputs,
+  AssetKind,
+  AssetSummary,
+  CatalogApp,
+  Installation
+} from '../types/ipc'
+
+interface GalleryAsset extends AssetSummary {
+  installationId: string
+  buildName: string
+}
+
+interface ShownAppOutputs {
+  items: OutputDetailItem[]
+  backdropUrl: string | null
+}
 
 type AppsTab = 'all' | 'files'
 type KindFilter = 'all' | AssetKind
@@ -102,6 +119,8 @@ const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 const assets = ref<GalleryAsset[]>([])
 const detailKey = ref<string | null>(null)
 const cardMenuOpenKey = ref<string | null>(null)
+const appOutputs = ref<ShownAppOutputs | null>(null)
+const appOutputIndex = ref(0)
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
@@ -252,7 +271,61 @@ function coolNameTooltips(): void {
   nameTooltipsWarm.value = false
 }
 
-onBeforeUnmount(() => clearTimeout(warmTimer))
+const fileItems = computed<OutputDetailItem[]>(() =>
+  visibleAssets.value.map((asset) => ({
+    key: cardKey(asset),
+    name: asset.name,
+    kind: asset.kind,
+    sizeBytes: asset.sizeBytes,
+    createdAt: asset.createdAt,
+    tags: asset.tags,
+    previewUrl: asset.previewUrl,
+    workflow: null
+  }))
+)
+
+function outputKind(mimeType: string): AssetKind | null {
+  const kind = mimeType.split('/')[0]
+  return kind === 'image' || kind === 'video' || kind === 'audio' ? kind : null
+}
+
+function showAppOutputs(outputs: AppOutputs): void {
+  closeAppOutputs()
+  appOutputs.value = {
+    items: outputs.items.map((output, i) => ({
+      key: `${i}:${output.name}`,
+      name: output.name,
+      kind: outputKind(output.mimeType),
+      sizeBytes: output.bytes.byteLength,
+      createdAt: output.createdAt,
+      tags: output.tags,
+      previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
+      workflow: output.workflow
+    })),
+    backdropUrl: outputs.backdrop
+      ? URL.createObjectURL(new Blob([outputs.backdrop], { type: 'image/jpeg' }))
+      : null
+  }
+  appOutputIndex.value = outputs.index
+}
+
+function closeAppOutputs(): void {
+  const shown = appOutputs.value
+  if (!shown) return
+  for (const item of shown.items) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+  if (shown.backdropUrl) URL.revokeObjectURL(shown.backdropUrl)
+  appOutputs.value = null
+}
+
+function appOutputAction(action: AppOutputAction['action'], index: number): void {
+  window.api.appsOutputAction({ action, index })
+  if (action === 'open-workflow') closeAppOutputs()
+}
+
+onBeforeUnmount(() => {
+  clearTimeout(warmTimer)
+  closeAppOutputs()
+})
 
 async function signIn(): Promise<void> {
   if (signingIn.value) return
@@ -301,15 +374,22 @@ function extensionOf(name: string): string {
 </script>
 
 <template>
-  <AssetDetailView
+  <OutputDetailDialog
     v-if="detailIndex !== null && visibleAssets.length > 0"
     v-model:index="detailIndex"
-    :assets="visibleAssets"
+    :items="fileItems"
     @close="closeDetail"
-    @download="download"
+    @download="download(visibleAssets[$event]!)"
+  />
+  <OutputDetailDialog
+    v-if="appOutputs"
+    v-model:index="appOutputIndex"
+    :items="appOutputs.items"
+    @close="closeAppOutputs"
+    @download="appOutputAction('download', $event)"
+    @open-workflow="appOutputAction('open-workflow', $event)"
   />
   <div
-    v-show="detailIndex === null"
     ref="scroller"
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
     :class="PAGE_SPOTLIGHT_CLASS"
@@ -668,7 +748,10 @@ function extensionOf(name: string): string {
     class="absolute inset-0"
     :url="openApp.url"
     :grow-by="growBy"
+    :covered="appOutputs !== null"
+    :backdrop="appOutputs?.backdropUrl ?? null"
     @failed="appFailed"
+    @outputs="showAppOutputs"
     @app-open="closeApp"
     @entered="appEntered = true"
   />

@@ -137,6 +137,26 @@ export interface AssetSummary {
   previewUrl: string | null
 }
 
+export interface AppOutputItem {
+  name: string
+  mimeType: string
+  bytes: Uint8Array<ArrayBuffer>
+  tags: string[]
+  workflow: boolean
+  createdAt: string | null
+}
+
+export interface AppOutputs {
+  items: AppOutputItem[]
+  index: number
+  backdrop: Uint8Array<ArrayBuffer> | null
+}
+
+export interface AppOutputAction {
+  action: 'download' | 'open-workflow'
+  index: number
+}
+
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
   modelsDirs: { path: string; isPrimary: boolean }[]
@@ -1136,6 +1156,8 @@ export interface ElectronApi {
   hideApps(): void
   onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
   onAppsAppOpen(callback: (info: { open: boolean }) => void): Unsubscribe
+  onAppsOutput(callback: (outputs: AppOutputs) => void): Unsubscribe
+  appsOutputAction(action: AppOutputAction): void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

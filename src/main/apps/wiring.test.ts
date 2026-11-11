@@ -15,7 +15,7 @@ const exposed = all(
   /^ {2}(\w+):/gm
 )
 const invoked = all(preload, /ipcRenderer\.invoke\('([\w:-]+)'/g)
-const handled = all(main, /handleFromApps\('([\w:-]+)'/g)
+const handled = all(main, /handleFromApps(?:Page)?\('([\w:-]+)'/g)
 
 describe('Apps bridge wiring', () => {
   it('getInfo names exactly the calls the page gets', () => {

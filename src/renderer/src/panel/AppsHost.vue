@@ -1,24 +1,34 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
+import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import type { AppOutputs } from '../types/ipc'
 
 const SLIDE_MS = 480
 const HOLD_MAX_MS = 1000
 
-const { url, growBy = 0 } = defineProps<{
+const {
+  url,
+  growBy = 0,
+  covered = false,
+  backdrop = null
+} = defineProps<{
   url: string
   growBy?: number
+  covered?: boolean
+  backdrop?: string | null
 }>()
 
 const emit = defineEmits<{
   failed: [url: string]
   'app-open': [open: boolean]
   entered: []
+  outputs: [outputs: AppOutputs]
 }>()
 
 const slot = useTemplateRef<HTMLElement>('slot')
 let observer: ResizeObserver | null = null
 let stopListening: (() => void) | null = null
 let stopAppOpen: (() => void) | null = null
+let stopOutputs: (() => void) | null = null
 let offset = 0
 let holdWidth = 0
 let frame = 0
@@ -28,7 +38,7 @@ const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3)
 
 function report(fresh = false): void {
   const el = slot.value
-  if (!el) return
+  if (!el || covered) return
   const r = el.getBoundingClientRect()
   if (holdWidth && r.width >= holdWidth) holdWidth = 0
   const width = Math.max(r.width, holdWidth)
@@ -58,9 +68,15 @@ function releaseHoldLater(): void {
   }, HOLD_MAX_MS)
 }
 
+watch(
+  () => covered,
+  (isCovered) => (isCovered ? window.api.hideApps() : report())
+)
+
 onMounted(async () => {
   stopListening = window.api.onAppsLoadFailed(({ url: failed }) => emit('failed', failed))
   stopAppOpen = window.api.onAppsAppOpen(({ open }) => emit('app-open', open))
+  stopOutputs = window.api.onAppsOutput((outputs) => emit('outputs', outputs))
   observer = new ResizeObserver(reportResize)
   if (slot.value) observer.observe(slot.value)
   window.addEventListener('resize', reportResize)
@@ -79,6 +95,7 @@ onBeforeUnmount(() => {
   clearTimeout(holdTimer)
   stopListening?.()
   stopAppOpen?.()
+  stopOutputs?.()
   observer?.disconnect()
   window.removeEventListener('resize', reportResize)
   window.api.hideApps()
@@ -86,5 +103,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="slot" class="panel-apps min-h-0 flex-1" data-testid="apps-host" />
+  <div ref="slot" class="panel-apps min-h-0 flex-1" data-testid="apps-host">
+    <img
+      v-if="covered && backdrop"
+      :src="backdrop"
+      alt=""
+      class="size-full rounded-[14px] object-cover"
+      data-testid="apps-host-backdrop"
+    />
+  </div>
 </template>

@@ -25,7 +25,9 @@ const CALLS = [
   'onLocalEvent',
   'localDownload',
   'cancelRun',
-  'openInComfy'
+  'openInComfy',
+  'showOutput',
+  'onOutputAction'
 ]
 
 contextBridge.exposeInMainWorld('comfyDesktopApps', {
@@ -61,6 +63,14 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
     ipcRenderer.invoke('comfy-apps:local-fetch', req),
   localDownload: (req: { url: string; folder: string; name: string }) =>
     ipcRenderer.invoke('comfy-apps:local-download', req),
+  showOutput: (request: unknown) => ipcRenderer.invoke('comfy-apps:show-output', request),
+  onOutputAction: (callback: (action: unknown) => void) => {
+    const listener = (_e: IpcRendererEvent, msg: unknown) => callback(msg)
+    ipcRenderer.on('comfy-apps:output-action', listener)
+    return () => {
+      ipcRenderer.removeListener('comfy-apps:output-action', listener)
+    }
+  },
   onLocalEvent: (callback: (event: unknown) => void) => {
     const listener = (_e: IpcRendererEvent, msg: unknown) => callback(msg)
     ipcRenderer.on('comfy-apps:local-event', listener)

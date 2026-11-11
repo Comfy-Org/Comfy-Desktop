@@ -7,7 +7,7 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AssetSummary, CatalogApp, Installation } from '../types/ipc'
+import type { AppOutputs, AssetSummary, CatalogApp, Installation } from '../types/ipc'
 
 const listAssets = vi.fn()
 const downloadAsset = vi.fn()
@@ -20,6 +20,15 @@ const onAppsLoadFailed = vi.fn((callback: (info: { url: string }) => void) => {
   appsLoadFailed = callback
   return () => {
     appsLoadFailed = null
+  }
+})
+
+const appsOutputAction = vi.fn()
+let appsOutput: ((outputs: AppOutputs) => void) | null = null
+const onAppsOutput = vi.fn((callback: (outputs: AppOutputs) => void) => {
+  appsOutput = callback
+  return () => {
+    appsOutput = null
   }
 })
 
@@ -67,7 +76,10 @@ async function mountAssets(
       mode: 'app'
     })
   }
-  const wrapper = mount(AppsView, options)
+  const wrapper = mount(AppsView, {
+    ...options,
+    global: { stubs: { teleport: { template: '<div><slot /></div>' } } }
+  })
   await flushPromises()
   return wrapper
 }
@@ -101,6 +113,8 @@ beforeEach(() => {
     listCatalogApps,
     onAppsLoadFailed,
     onAppsAppOpen,
+    onAppsOutput,
+    appsOutputAction,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -130,6 +144,56 @@ describe('AppsView', () => {
     expect(cards[0]!.get('img').attributes('src')).toBe('https://comfy.org/catalog-media/studio/v1')
     expect(showApps).not.toHaveBeenCalled()
     expect(listAssets).not.toHaveBeenCalled()
+  })
+
+  it("shows an app's outputs in the output dialog over a still of the app and hands the actions back to it", async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    showApps.mockClear()
+
+    appsOutput!({
+      items: [
+        {
+          name: 'picture-1.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1, 2, 3]),
+          tags: ['This computer'],
+          workflow: true,
+          createdAt: null
+        },
+        {
+          name: 'picture-2.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([4]),
+          tags: [],
+          workflow: false,
+          createdAt: null
+        }
+      ],
+      index: 1,
+      backdrop: new Uint8Array([9])
+    })
+    await flushPromises()
+
+    expect(hideApps).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('picture-2.png')
+
+    await wrapper.get('[data-testid="output-detail-download"]').trigger('click')
+    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'download', index: 1 })
+
+    await wrapper.get('[data-testid="output-detail-thumb-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="output-detail-panel"]').text()).toContain('This computer')
+    await wrapper.get('[data-testid="output-detail-workflow"]').trigger('click')
+    await flushPromises()
+
+    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'open-workflow', index: 0 })
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
+    expect(showApps).toHaveBeenCalled()
   })
 
   it('opens an app from its card over the whole page and returns to the cards when the app goes back', async () => {
@@ -297,7 +361,7 @@ describe('AppsView', () => {
 
     await wrapper.get('[data-testid="assets-filter"]').trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    document.querySelector<HTMLElement>('[data-testid="assets-filter-image"]')!.click()
+    wrapper.get<HTMLElement>('[data-testid="assets-filter-image"]').element.click()
     await flushPromises()
     expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png'])
 
@@ -389,7 +453,7 @@ describe('AppsView', () => {
     expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
   })
 
-  it('opens an asset in the detail view, steps through assets and returns', async () => {
+  it('opens an asset in the output dialog over the cards, steps through assets and closes', async () => {
     listAssets.mockResolvedValue([
       asset('a', 'surfer.mp4', 'video'),
       asset('b', 'forest.png', 'image')
@@ -397,18 +461,20 @@ describe('AppsView', () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
     await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
-    const detail = wrapper.get('[data-testid="asset-detail"]')
-    expect(detail.text()).toContain('Video Lab · 1 / 2')
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('surfer.mp4')
+    expect(wrapper.get('[data-testid="asset-open-b"]').isVisible()).toBe(true)
 
-    await wrapper.get('[data-testid="asset-detail-next"]').trigger('click')
-    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('forest.png')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('forest.png')
+    expect(wrapper.find('[data-testid="output-detail-workflow"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="asset-detail-download"]').trigger('click')
+    await wrapper.get('[data-testid="output-detail-download"]').trigger('click')
     expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('lab', 'b', 'forest.png')
 
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.get('[data-testid="output-detail-close"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
     expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
   })
 
@@ -418,7 +484,7 @@ describe('AppsView', () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
     await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
-    await wrapper.get('[data-testid="asset-detail-download"]').trigger('click')
+    await wrapper.get('[data-testid="output-detail-download"]').trigger('click')
     await flushPromises()
 
     expect(alert).toHaveBeenCalledExactlyOnceWith({
@@ -482,7 +548,7 @@ describe('AppsView', () => {
     ])
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
     await wrapper.get('[data-testid="asset-open-b"]').trigger('click')
-    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('second.png')
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('second.png')
 
     listAssets.mockResolvedValue([
       newer('c', 'brand-new.png', '2026-01-03T00:00:00Z'),
@@ -492,7 +558,7 @@ describe('AppsView', () => {
     useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="asset-detail-panel"] h2').text()).toBe('second.png')
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('second.png')
   })
 
   it('closes the detail view for good when its file goes away on a reload', async () => {
@@ -503,12 +569,12 @@ describe('AppsView', () => {
     listAssets.mockResolvedValue([])
     useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
     await flushPromises()
-    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
 
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
     useAuthStore().status = { signedIn: true, workspaceId: 'team-c' }
     await flushPromises()
-    expect(wrapper.find('[data-testid="asset-detail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
   it('reloads when the signed-in workspace changes', async () => {
@@ -535,7 +601,7 @@ describe('AppsView', () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')], [], { attachTo: document.body })
 
     await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
-    await wrapper.get('[data-testid="asset-detail-back"]').trigger('click')
+    await wrapper.get('[data-testid="output-detail-close"]').trigger('click')
     await flushPromises()
 
     expect(document.activeElement).toBe(wrapper.get('[data-testid="asset-open-a"]').element)

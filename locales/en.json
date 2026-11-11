@@ -68,16 +68,16 @@
       "file": "File"
     },
     "detail": {
-      "type": "Type",
-      "dimensions": "Dimensions",
-      "duration": "Duration",
-      "created": "Created",
       "tags": "Tags",
       "tagsHint": "Tags are edited in ComfyUI.",
-      "togglePanel": "Toggle details panel",
-      "previous": "Previous asset",
-      "next": "Next asset",
-      "position": "{build} · {index} / {total}"
+      "createdAt": "Created {date}",
+      "fit": "Fit",
+      "zoom": "Zoom",
+      "generationInfo": "Generation info",
+      "workflow": "Workflow",
+      "available": "Available",
+      "notSaved": "Not saved",
+      "openWorkflow": "Open workflow"
     },
     "noMatches": "No matching assets",
     "noMatchesHint": "Try another type or search.",
