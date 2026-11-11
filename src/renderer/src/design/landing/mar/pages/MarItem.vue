@@ -508,5 +508,19 @@ function click(e: MouseEvent): void {
 .mar-grid.is-wide {
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
+/* Five across, like Apps and Assets; fewer only when the window is narrow. */
+.mar-grid.is-five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 1180px) {
+  .mar-grid.is-five {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 920px) {
+  .mar-grid.is-five {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 /* The list every library page shares is the one table: ../table/table.css. */
 </style>

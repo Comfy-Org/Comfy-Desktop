@@ -222,7 +222,7 @@ function lines(w: MarWorkflow): MenuLine[] {
       </div>
     </template>
 
-    <div v-if="view === 'grid'" class="mar-grid">
+    <div v-if="view === 'grid'" class="mar-grid is-five">
       <MarItem
         v-for="w in shown"
         :key="w.id"
