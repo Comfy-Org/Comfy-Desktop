@@ -165,9 +165,9 @@ const PARTS: Part[] = [
   },
   // Onboarding: the proposed local setup and the computer it runs on.
   field('setup', localSetup, 'mode', 'off', LOCAL_SETUPS),
-  field('setup.scope', localSetup, 'scope', 'm1', SETUP_SCOPES),
-  field('setup.onboarding', localSetup, 'onboarding', 'install', ONBOARDINGS),
-  field('setup.after', localSetup, 'after', 'home', AFTER_INSTALLS),
+  field('setup.scope', localSetup, 'scope', 'next', SETUP_SCOPES),
+  field('setup.onboarding', localSetup, 'onboarding', 'oneclick', ONBOARDINGS),
+  field('setup.after', localSetup, 'after', 'ready', AFTER_INSTALLS),
   field('setup.card', localSetup, 'card', 'top', CARD_ATS),
   field('setup.os', localSetup, 'os', 'mac', SETUP_OSES),
   field('setup.gpu', localSetup, 'gpu', 'nvidia', SETUP_GPUS),

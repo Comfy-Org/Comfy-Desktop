@@ -58,10 +58,10 @@ export type Onboarding =
   | 'home'
   | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
+  { value: 'oneclick', label: 'One-click install (proposed)' },
   { value: 'install', label: 'Install first (today)' },
   { value: 'home-running', label: 'Home first: install runs behind' },
   { value: 'home-direct', label: 'Home first: Run on only, install runs' },
-  { value: 'oneclick', label: 'Home first: one-click install' },
   { value: 'home', label: 'Home first: install card only' },
   { value: 'home-open', label: 'Home first: Home stays open' }
 ]
@@ -146,9 +146,9 @@ function load(): {
       machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
       // Decided: the first screen uses Cards.
       cards: 'glow',
-      scope: v.scope === 'next' ? 'next' : 'm1',
-      onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'install',
-      after: AFTER_INSTALLS.some((a) => a.value === v.after) ? v.after : 'home',
+      scope: v.scope === 'm1' ? 'm1' : 'next',
+      onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'oneclick',
+      after: AFTER_INSTALLS.some((a) => a.value === v.after) ? v.after : 'ready',
       card: v.card === 'builds' ? 'builds' : 'top',
       os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac',
       gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia',
@@ -159,9 +159,9 @@ function load(): {
       mode: 'off',
       machine: 'ready',
       cards: 'glow',
-      scope: 'm1',
-      onboarding: 'install',
-      after: 'home',
+      scope: 'next',
+      onboarding: 'oneclick',
+      after: 'ready',
       card: 'top',
       os: 'mac',
       gpu: 'nvidia',
@@ -177,13 +177,15 @@ export const localSetup = reactive(load())
 export const canvas = ref(new URLSearchParams(location.search).get('canvas') === 'first')
 
 // `?setup=first` links straight to the proposed flow, on first launch: the
-// first release, where the install lands on Builds. Every other pick travels
-// in the Playground's share link (shareLink.ts): `?share&m=4.5&step=first
-// &setup=on&setup.scope=next&setup.onboarding=home-running&setup.after=ready`.
+// one-click install (Set up with the consent, then the Home with the
+// install in Builds), the one the prototype proposes. Every other pick
+// travels in the Playground's share link (shareLink.ts).
 const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'
 if (linkFirst) {
   localSetup.mode = 'on'
-  localSetup.scope = 'm1'
+  localSetup.scope = 'next'
+  localSetup.onboarding = 'oneclick'
+  localSetup.after = 'ready'
 }
 
 watch(
