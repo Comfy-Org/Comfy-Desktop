@@ -7,6 +7,7 @@ import {
   HOME_BUILD_TONES,
   homeBuildDetail,
   isCloudBuild,
+  isComfyCloud,
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
@@ -39,6 +40,9 @@ const statusLabel = computed(() => {
       return status satisfies never
   }
 })
+const detail = computed(() =>
+  isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
+)
 const isLive = computed(() => status === 'running' || status === 'always-on')
 </script>
 
@@ -76,7 +80,7 @@ const isLive = computed(() => status === 'running' || status === 'always-on')
         {{ build.name }}
       </span>
       <span class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground">
-        {{ homeBuildDetail(build) }}
+        {{ detail }}
       </span>
     </span>
   </button>

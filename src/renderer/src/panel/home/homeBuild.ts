@@ -21,6 +21,10 @@ export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
 }
 
+export function isComfyCloud(build: Installation): boolean {
+  return build.sourceId === 'cloud'
+}
+
 export function homeBuildTones(builds: readonly Installation[]): HomeBuildTone[] {
   let localCount = 0
   return builds.map((build) =>

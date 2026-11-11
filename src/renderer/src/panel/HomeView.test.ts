@@ -40,6 +40,7 @@ const OLDEST = build({
 const CLOUD = build({
   id: 'cloud',
   name: 'Comfy Cloud',
+  sourceId: 'cloud',
   sourceLabel: 'Cloud',
   sourceCategory: 'cloud',
   listPreview: 'https://cloud.comfy.org/',
@@ -223,7 +224,7 @@ describe('Home builds', () => {
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
       'Update availableMy Local 1Standalone',
       'RunningVideo LabStandalone',
-      'Always onComfy Cloudcloud.comfy.org'
+      'Always onComfy CloudRTX 6000 Pro · 96 GB'
     ])
   })
 
@@ -233,6 +234,23 @@ describe('Home builds', () => {
 
     expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
       'ReadyFlux SandboxComfyUI v0.42.4 · /Users/pablo/ComfyUI-Installs/Flux'
+    )
+  })
+
+  it('shows the address of a remote ComfyUI instead of hardware', async () => {
+    getInstallations.mockResolvedValue([
+      build({
+        id: 'studio',
+        name: 'Studio server',
+        sourceId: 'remote',
+        sourceCategory: 'remote',
+        listPreview: 'http://studio.local:8188/'
+      })
+    ])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
+      'ReadyStudio serverstudio.local:8188'
     )
   })
 

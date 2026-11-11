@@ -33,6 +33,7 @@
     "buildStarting": "启动中",
     "buildReady": "就绪",
     "buildAlwaysOn": "始终在线",
+    "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "示例工作流",
     "workflowBadge": "工作流",
     "seeAllWorkflows": "查看全部工作流",

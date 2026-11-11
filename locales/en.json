@@ -33,6 +33,7 @@
     "buildStarting": "Starting",
     "buildReady": "Ready",
     "buildAlwaysOn": "Always on",
+    "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
     "workflowBadge": "Workflow",
     "seeAllWorkflows": "See all workflows",
