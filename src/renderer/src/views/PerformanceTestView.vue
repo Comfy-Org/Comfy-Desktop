@@ -176,8 +176,7 @@ const numberLine = computed(() => {
     average: formatDuration(statistics.averageDurationSeconds),
     median: formatDuration(statistics.medianDurationSeconds),
     medianAt: `${position(statistics.medianDurationSeconds)}%`,
-    averageAt: `${average}%`,
-    averageLabelAt: `${Math.min(88, Math.max(12, average))}%`
+    averageAt: `${average}%`
   }
 })
 const systemSummary = computed(() => {
@@ -368,6 +367,12 @@ async function deleteWorkflow(): Promise<void> {
   }
 }
 
+function leaveWorkflowDropZone(event: DragEvent): void {
+  const zone = event.currentTarget as HTMLElement
+  if (event.relatedTarget instanceof Node && zone.contains(event.relatedTarget)) return
+  isWorkflowDragging.value = false
+}
+
 async function dropWorkflow(event: DragEvent): Promise<void> {
   isWorkflowDragging.value = false
   const file = event.dataTransfer?.files[0]
@@ -543,6 +548,7 @@ async function runPerformanceTest(): Promise<void> {
     }
     activeLaunchPromise = null
     if (activeRunTelemetry === runTelemetry) activeRunTelemetry = null
+    if (!performanceTestResult.value) runLabel.value = null
     progressSessionId.value = null
     isLaunching.value = false
   }
@@ -810,7 +816,7 @@ watch(performanceTestLogs, async () => {
               :aria-busy="isWorkflowImporting || isWorkflowDeleting"
               @dragenter.prevent="isWorkflowDragging = !isWorkflowLocked"
               @dragover.prevent="isWorkflowDragging = !isWorkflowLocked"
-              @dragleave.self.prevent="isWorkflowDragging = false"
+              @dragleave.prevent="leaveWorkflowDropZone"
               @drop.prevent="dropWorkflow"
             >
               <h2 class="sr-only">{{ t('performanceTest.chooseWorkflow') }}</h2>
@@ -971,7 +977,7 @@ watch(performanceTestLogs, async () => {
             {{ workflowImportError }}
           </p>
           <div
-            v-else-if="pendingExampleWorkflowLabel || exampleDownload"
+            v-if="pendingExampleWorkflowLabel || exampleDownload"
             class="performance-test__status mt-2.5 flex min-w-0 items-center gap-2 text-[12px] leading-[1.4] text-text-muted"
           >
             <template v-if="pendingExampleWorkflowLabel">
@@ -1117,12 +1123,15 @@ watch(performanceTestLogs, async () => {
                     class="text-[44px] leading-none font-medium tracking-[-0.02em] text-foreground tabular-nums"
                     >{{ numberLine.median }}</span
                   >
-                  <span class="text-[12.5px]">
+                  <span class="performance-test__median-summary text-[12.5px]">
                     {{
-                      t('performanceTest.medianSummary', {
-                        count: performanceTestResult.resultsSummary.measuredJobCount,
-                        failed: performanceTestResult.resultsSummary.failedRunCount
-                      })
+                      t(
+                        numberLine ? 'performanceTest.medianSummary' : 'performanceTest.runCounts',
+                        {
+                          count: performanceTestResult.resultsSummary.measuredJobCount,
+                          failed: performanceTestResult.resultsSummary.failedRunCount
+                        }
+                      )
                     }}
                   </span>
                 </div>

@@ -2269,6 +2269,104 @@ describe('PanelApp', () => {
     ).toBe(false)
   })
 
+  it('reports a test whose measured runs all failed without showing a median', async () => {
+    const { wrapper } = await mountWithInstance()
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
+    const runApi = (
+      window as unknown as { api: { runPerformanceTestWorkflow: ReturnType<typeof vi.fn> } }
+    ).api
+    const successfulRun = runApi.runPerformanceTestWorkflow.getMockImplementation()!
+    runApi.runPerformanceTestWorkflow.mockImplementationOnce(async (...args: unknown[]) => {
+      const result = (await successfulRun(...args)) as RunPerformanceTestWorkflowResult
+      return {
+        ...result,
+        failedRuns: 5,
+        statistics: null,
+        resultsSummary: {
+          ...result.resultsSummary!,
+          fastestJobDurationSeconds: null,
+          slowestJobDurationSeconds: null,
+          averageJobDurationSeconds: null,
+          medianJobDurationSeconds: null,
+          measuredJobCount: 0,
+          failedRunCount: 5
+        }
+      }
+    })
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.performance-test__median-summary').text()).toBe('0 measured · 5 failed')
+    expect(wrapper.get('.performance-test__results').text()).not.toContain('Median run')
+    expect(wrapper.find('.performance-test__timing-list').exists()).toBe(false)
+  })
+
+  it('returns the results card to its empty state when a run is stopped before results', async () => {
+    const { wrapper } = await mountWithInstance()
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
+    const runApi = (window as unknown as { api: { runAction: ReturnType<typeof vi.fn> } }).api
+    let finishLaunch!: (result: { ok: boolean; cancelled: boolean }) => void
+    runApi.runAction.mockReturnValueOnce(new Promise((resolve) => (finishLaunch = resolve)))
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.performance-test__run-label').text()).toBe(
+      'cat-workflow.json on Workspace Install'
+    )
+
+    await wrapper.get('.performance-test__stop').trigger('click')
+    finishLaunch({ ok: false, cancelled: true })
+    await flushPromises()
+
+    expect(wrapper.find('.performance-test__stop').exists()).toBe(false)
+    expect(wrapper.find('.performance-test__run-label').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__results').text()).toContain('No results yet')
+  })
+
+  it('keeps the model download visible when importing another workflow fails', async () => {
+    const { wrapper, api } = await mountWithInstance()
+    await chooseExampleWorkflow(wrapper)
+    const importApi = (
+      window as unknown as { api: { importPerformanceTestWorkflow: ReturnType<typeof vi.fn> } }
+    ).api
+    importApi.importPerformanceTestWorkflow.mockResolvedValueOnce({
+      ok: false,
+      message: 'This file is not an API workflow.'
+    })
+
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
+
+    expect(api.preparePerformanceTestExampleWorkflow).toHaveBeenCalled()
+    expect(wrapper.get('.performance-test__workflow-error').text()).toBe(
+      'This file is not an API workflow.'
+    )
+    const download = wrapper.get('.performance-test__example-download-bar')
+    expect(download.attributes('aria-valuenow')).toBe('40')
+    expect(wrapper.text()).toContain(downloading.message)
+  })
+
+  it('clears the drop highlight once a dragged file leaves the workflow control', async () => {
+    window.history.replaceState({}, '', '/?panel=performance-test&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const zone = wrapper.get('.performance-test__drop-zone')
+    const trigger = wrapper.get('.performance-test__workflow-trigger').element
+    const drag = (type: string, relatedTarget?: EventTarget): Promise<void> => {
+      trigger.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, relatedTarget }))
+      return flushPromises()
+    }
+
+    await drag('dragenter')
+    expect(zone.classes()).toContain('performance-test__drop-zone--dragging')
+
+    await drag('dragleave', zone.element)
+    expect(zone.classes()).toContain('performance-test__drop-zone--dragging')
+
+    await drag('dragleave', document.body)
+    expect(zone.classes()).not.toContain('performance-test__drop-zone--dragging')
+  })
+
   it('returns to the underlying body when a takeover emits close', async () => {
     window.history.replaceState({}, '', '/?panel=new-install&firstUseCompleted=true')
     const wrapper = mountPanel()
