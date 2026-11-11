@@ -14,7 +14,7 @@ import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES } from './userStates/examples'
 import HomeInstall from './setup/HomeInstall.vue'
-import { flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
+import { cardInBuilds, flow, homeOpen, installPending, setupOn } from './setup/setupFlow'
 import { SPACES } from '../spaces'
 import { onCloud } from './shell/surface'
 import { p20 } from './p20/p20'
@@ -79,9 +79,14 @@ const firstRun = computed(() => firstTime.value && noLocal.value)
 // ComfyUI never shows before there is one. With the card only, the rest
 // that needs ComfyUI waits: the prompt, which could only run on Comfy
 // Cloud, and the first-run examples. With pick to install they stay.
-const gated = computed(() => installPending.value && !homeOpen.value)
+// With the card in Builds (UI Playground › Local setup › Install card) the
+// Home is the usual one: the apps, then Builds with the install as its
+// first build.
+const gated = computed(() => installPending.value && !homeOpen.value && !cardInBuilds.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
-const tight = computed(() => parts.value.top === 'tight')
+// With the install card in Builds the top sits tight, so Builds and the
+// card stay on screen at 1280 × 800 while it installs.
+const tight = computed(() => parts.value.top === 'tight' || cardInBuilds.value)
 
 // Example workflows as compact rows (Exploration 17): photo, title, what it does.
 const EXAMPLE_ART = [1, 2, 3, 4, 5].map((n) => mock(`home-example-${n}`))
@@ -113,7 +118,9 @@ const recent = computed(() =>
 
 <template>
   <div class="mar-top-actions absolute top-3.5 right-4 z-10 flex items-center gap-2">
-    <CreateMenu v-if="!installPending && !flow.ready" />
+    <!-- Open ComfyUI comes back with the build; the top card carries it
+         while it is there, the Builds card does not. -->
+    <CreateMenu v-if="!installPending && (!flow.ready || cardInBuilds)" />
   </div>
   <div class="mar-home mx-auto min-h-full w-full max-w-300 px-10 pb-16">
     <!-- First run or not, the top is the same: the greeting and the prompt
@@ -143,9 +150,9 @@ const recent = computed(() =>
     <!-- First run: the same sections, filled with ways to start instead of
          your work (UI Playground › First run). -->
     <!-- Home first: Local was picked on Run on, so the install waits here. -->
-    <HomeInstall v-if="installPending || flow.ready" />
+    <HomeInstall v-if="(installPending || flow.ready) && !cardInBuilds" />
     <template v-if="gated"></template>
-    <MarStart v-else-if="firstRun" />
+    <MarStart v-else-if="firstRun && !cardInBuilds" />
     <div v-else>
       <!-- The Apps stage: the examples arc leads for everyone, from
            Milestone 2 on. -->

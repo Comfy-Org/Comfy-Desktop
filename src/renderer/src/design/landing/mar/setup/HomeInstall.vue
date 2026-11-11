@@ -37,6 +37,10 @@ import {
  * subject. Under it, the apps: they run on Comfy Cloud, so they work before
  * ComfyUI is installed (Milestone 2).
  */
+/** Bare: the card alone, one of the Builds row's cards (MarBuildsRow.vue),
+ *  the size of the others; no header, no apps under it. */
+const props = defineProps<{ bare?: boolean; wide?: boolean }>()
+const size = computed(() => (props.bare ? 'sm' : 'lg'))
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
 // After install › Ready: the same card says ComfyUI is there, with the one
@@ -80,12 +84,31 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </script>
 
 <template>
-  <section class="mt-8" aria-label="Local install">
+  <section :class="props.bare ? 'contents' : 'mt-8'" aria-label="Local install">
     <!-- The section is Builds from the first launch: the card under it is
          the first build, waiting to be installed. -->
-    <SectionHeader class="mar-sec" :title="ready ? 'ComfyUI is ready' : 'Builds'" />
-    <div class="mss-machine is-hero mss-home-inst">
-      <SetupLaptop :os="localSetup.os" :bad="unsupported" />
+    <SectionHeader
+      v-if="!props.bare"
+      class="mar-sec"
+      :title="ready ? 'ComfyUI is ready' : 'Builds'"
+    />
+    <div
+      :class="
+        props.bare
+          ? ['mbr-card mbr-install', props.wide && 'is-wide']
+          : 'mss-machine is-hero mss-home-inst'
+      "
+      :style="props.bare ? { '--h': 48 } : undefined"
+      :role="props.bare && ready ? 'button' : undefined"
+      :tabindex="props.bare && ready ? 0 : undefined"
+      @click="props.bare && ready && openComfyUI()"
+      @keydown.enter="props.bare && ready && openComfyUI()"
+    >
+      <span v-if="props.bare" class="mbr-device">
+        <SetupLaptop :os="localSetup.os" :bad="unsupported" />
+        <span class="mbr-screen" aria-hidden="true"></span>
+      </span>
+      <SetupLaptop v-else :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">
         <span class="mss-machine-kicker" :class="state.bad && 'is-bad'"
           ><component
@@ -97,11 +120,13 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         >
         <!-- Named as Builds will list it: the Home already shows the thing
              to launch; the computer is its detail. -->
-        <span class="mss-machine-title">{{ BUILD_NAME }}</span>
-        <span class="mss-row-meta tabular-nums">{{ line }}</span>
+        <span :class="props.bare ? 'mbr-name' : 'mss-machine-title'">{{
+          flow.another ? flow.buildName : BUILD_NAME
+        }}</span>
+        <span :class="props.bare ? 'mbr-meta' : 'mss-row-meta tabular-nums'">{{ line }}</span>
         <!-- Custom nodes (DESK-243): one quiet line in the card, ticked for a
              new user. Unticked installs plain ComfyUI. -->
-        <span v-if="packsOn" class="mss-home-packs">
+        <span v-if="packsOn && !props.bare" class="mss-home-packs">
           <label class="mss-home-packs-pick">
             <Checkbox :model-value="recommended" @update:model-value="choose" />
             <span class="text-base-foreground">Add recommended node packs</span>
@@ -116,31 +141,40 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         ></span>
       </span>
       <span class="flex shrink-0 items-center gap-2">
-        <template v-if="ready">
-          <Button variant="ghost" size="lg" @click="dismissReady">Not now</Button>
-          <Button variant="primary" size="lg" @click="openComfyUI()">Open ComfyUI</Button>
+        <!-- In Builds, ready is a build like any other: Open ComfyUI is
+             the Home's, top right, and the card opens it too. -->
+        <template v-if="ready && props.bare"></template>
+        <template v-else-if="ready">
+          <Button variant="ghost" :size="size" @click="dismissReady">Not now</Button>
+          <Button variant="primary" :size="size" @click="openComfyUI()">Open ComfyUI</Button>
         </template>
         <template v-else-if="installing">
-          <Button variant="ghost" size="lg" @click="showInstall">View logs</Button>
-          <Button v-if="failed" variant="secondary" size="lg" @click="changeFromHome"
+          <Button variant="ghost" :size="size" @click="showInstall">View logs</Button>
+          <Button v-if="failed" variant="secondary" :size="size" @click="changeFromHome"
             >Change</Button
           >
-          <Button v-if="!failed" variant="secondary" size="lg" @click="flow.confirmCancel = true"
-            >Cancel install</Button
+          <Button
+            v-if="!failed"
+            variant="secondary"
+            :size="size"
+            @click="flow.confirmCancel = true"
+            >{{ props.bare ? 'Cancel' : 'Cancel install' }}</Button
           >
         </template>
         <template v-else>
-          <Button v-if="!unsupported" variant="secondary" size="lg" @click="changeFromHome"
+          <Button v-if="!unsupported" variant="secondary" :size="size" @click="changeFromHome"
             >Change</Button
           >
-          <Button v-if="!unsupported" variant="primary" size="lg" @click="install">Install</Button>
+          <Button v-if="!unsupported" variant="primary" :size="size" @click="install"
+            >Install</Button
+          >
         </template>
       </span>
     </div>
     <!-- Apps run on Comfy Cloud: the one thing to do before ComfyUI is
          there. The first-run Home's own examples (Milestone 2), in the look
          UI Playground picks; with the Home open they are already there. -->
-    <div v-if="!homeOpen && !ready" class="mt-10">
+    <div v-if="!props.bare && !homeOpen && !ready" class="mt-10">
       <ExampleShowcase />
     </div>
     <!-- The install modal carries its own confirm while it is open. -->
@@ -149,6 +183,22 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </template>
 
 <style scoped>
+/* With two other builds beside it the row is too tight for its actions:
+ * it takes the first line on its own, the others go under. */
+.mbr-install.is-wide {
+  grid-column: 1 / -1;
+}
+/* One of the Builds row's cards, the height of the others whatever its
+ * state: the actions stay on the right, small, and the bar is a line along
+ * the card's bottom edge instead of a row of its own. */
+.mbr-install .mss-home-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  max-width: none;
+  margin-top: 0;
+  border-radius: 0;
+}
 .mss-home-builds {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;

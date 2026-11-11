@@ -177,6 +177,13 @@ export const CINE_DEFAULTS: Record<string, string> = {
 }
 
 export const CINE_MODELS = ['Seedream 5.0 Pro', 'Nano Banana Pro', 'GPT Image 2', 'FLUX 2 Pro']
+/** Who makes each model, for its mark. */
+export const CINE_MODEL_AUTHOR: Record<string, string> = {
+  'Seedream 5.0 Pro': 'ByteDance Seed',
+  'Nano Banana Pro': 'Google',
+  'GPT Image 2': 'OpenAI',
+  'FLUX 2 Pro': 'Black Forest Labs'
+}
 export const CINE_ASPECTS: { value: string; label: string; hint: string }[] = [
   ['21:9', 'Scope'],
   ['16:9', 'Widescreen'],

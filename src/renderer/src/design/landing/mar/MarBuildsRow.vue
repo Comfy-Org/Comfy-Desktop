@@ -9,13 +9,20 @@ import { go, hostActions, recentInstances } from '../useProto'
 import { can } from '../milestones'
 import SetupLaptop from './setup/SetupLaptop.vue'
 import SetupCloud from './setup/SetupCloud.vue'
-import { localSetup } from './setup/setupFlow'
+import HomeInstall from './setup/HomeInstall.vue'
+import { cardInBuilds, flow, localSetup } from './setup/setupFlow'
 import './setup/setup.css'
 
 /** Home's builds in Mar's proposal (UI Playground › Build on Home): what
  *  Pablo's Home shows (three recent builds, their state, click to launch
  *  ComfyUI on one), as one row of cards like Spaces. */
-const shown = computed(() => recentInstances.value.slice(0, 3))
+// With the install card in this section (setup/HomeInstall.vue, bare) the
+// local build is that card, large, until ComfyUI is opened: not listed twice.
+const shown = computed(() =>
+  recentInstances.value
+    .filter((i) => !(cardInBuilds.value && !flow.another && i.kind === 'local'))
+    .slice(0, 3)
+)
 /** From Milestone 2 on, each build is the install card made small:
  *  the machine drawn, its state, its name, what it runs on. Each one is
  *  its own, lit in the build's hue. */
@@ -27,12 +34,22 @@ const detail = (i: (typeof shown.value)[number]): string =>
 
 <template>
   <section class="mt-10">
-    <SectionHeader class="mar-sec" title="Builds" link="All builds" @link="go('environments')" />
+    <!-- All builds only once the row can't show them all. -->
+    <SectionHeader
+      class="mar-sec"
+      title="Builds"
+      :link="recentInstances.length > shown.length ? 'All builds' : undefined"
+      @link="go('environments')"
+    />
     <!-- One, two or three builds always fill the row. -->
     <div
       class="grid gap-3.5"
-      :style="{ gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))` }"
+      :style="{
+        gridTemplateColumns: `repeat(${shown.length + (cardInBuilds && shown.length < 2 ? 1 : 0)}, minmax(0, 1fr))`
+      }"
     >
+      <!-- Home first: the first build, installing or ready, is the first card. -->
+      <HomeInstall v-if="cardInBuilds" bare :wide="shown.length >= 2" />
       <template v-if="machine">
         <button
           v-for="i in shown"
@@ -85,96 +102,3 @@ const detail = (i: (typeof shown.value)[number]): string =>
     </div>
   </section>
 </template>
-
-<style>
-/* The install card (HomeInstall.vue), small: a surface with a soft light
- * at its corner, the machine drawn on the left. */
-:root .proto-ui.proto-ui.proto-ui .mbr-card {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 18px;
-  padding: 20px 20px 20px 18px;
-  border-radius: 16px;
-  background: oklch(0.6 0 0 / 0.05);
-  box-shadow: inset 0 0 0 1px oklch(0.8 0.06 var(--h, 0) / 0.1);
-  text-align: left;
-  transition: background-color 0.15s;
-}
-/* Light: the card's own white surface, as the first-run cards, not a
- * grey wash; the corner light stays. */
-:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mbr-card {
-  background: var(--color-card-background, #fff);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.04);
-}
-/* Lit from its corner in the build's own hue; on hover that same light
- * grows from where it sits until it fills the card. */
-.mbr-card::before {
-  position: absolute;
-  z-index: -1;
-  background: radial-gradient(
-    ellipse 60% 130% at 8% 0%,
-    oklch(0.7 0.15 var(--h, 0) / 0.3),
-    transparent 70%
-  );
-  content: '';
-  inset: 0;
-  transform-origin: 8% 0%;
-  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.mbr-card:hover::before {
-  transform: scale(2.6);
-}
-@media (prefers-reduced-motion: reduce) {
-  .mbr-card::before {
-    transition-duration: 0s;
-  }
-}
-.mbr-card .mss-laptop {
-  width: 88px;
-  height: 57px;
-}
-.mbr-device {
-  position: relative;
-  display: block;
-  flex: none;
-}
-/* Over the laptop's screen (its box in SetupLaptop's 160 × 104 drawing). */
-.mbr-screen {
-  position: absolute;
-  top: 8.2%;
-  right: 14%;
-  bottom: 22.6%;
-  left: 14%;
-  border-radius: 2px;
-  background: radial-gradient(
-    ellipse 90% 90% at 30% 25%,
-    oklch(0.74 0.16 var(--h, 0) / 0.8),
-    oklch(0.55 0.14 var(--h, 0) / 0.3) 65%,
-    transparent
-  );
-  mix-blend-mode: screen;
-  pointer-events: none;
-}
-.mbr-name {
-  overflow: hidden;
-  color: var(--color-base-foreground);
-  margin-bottom: 2px;
-  font-size: 15px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mbr-meta {
-  overflow: hidden;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-</style>

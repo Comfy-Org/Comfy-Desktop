@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { appExamplesAt } from './appPage'
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch, type Component } from 'vue'
 import { useResizeObserver } from '@vueuse/core'
 import {
   Folder,
@@ -14,10 +14,13 @@ import {
   Film,
   Image as ImageIcon,
   ImageUp,
+  ImageUpscale,
   Link2,
   Loader2,
   Plus,
-  Share2
+  RectangleHorizontal,
+  Share2,
+  Volume2
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
@@ -38,13 +41,15 @@ import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
-import { toast } from '../../useProto'
+import { instances, toast } from '../../useProto'
 import AssetDetail from '../assets/AssetDetail.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import CompareSplit from '../assets/CompareSplit.vue'
 import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
+import { APP_RUNS } from './appsStage'
+import { flow, installingBehind, showInstall } from '../setup/setupFlow'
 
 /**
  * An app opens straight into its editor, as in the Hub's full-screen apps
@@ -142,6 +147,14 @@ const blocks = computed(() =>
 const inline = (f: Field): boolean =>
   Boolean(f.control) || (Boolean(f.group) && f.kind !== 'image' && f.kind !== 'text')
 
+/** Format reads as one row of pills, as in Cinematic Studio: each opens its
+ *  options above it. */
+const PILL_ICON: Record<string, Component> = {
+  aspect: RectangleHorizontal,
+  size: ImageUpscale,
+  sound: Volume2
+}
+
 const state = ref<'idle' | 'running' | 'done'>('idle')
 const progress = ref(0)
 const STEPS = ['Queued', 'Running on Comfy Cloud', 'Saving the result']
@@ -216,8 +229,21 @@ function startClock(): void {
 }
 const stepNow = computed(() => STEPS[Math.max(0, progress.value - 1)])
 
+// While ComfyUI installs behind the Home, an app that runs on this computer
+// can't run yet: Run shows the install instead (the progress, the logs,
+// Try Cloud free). Apps on Comfy Cloud run as usual.
+const needsLocal = computed(() => {
+  const r = APP_RUNS[appId]
+  return Boolean(r && r.kind !== 'cloud')
+})
+// Only while there is no local build yet: a second build installing
+// doesn't stop the first from running.
+const waitsForInstall = computed(
+  () =>
+    installingBehind.value && needsLocal.value && !instances.value.some((i) => i.kind === 'local')
+)
 function run(): void {
-  if (state.value === 'running') return
+  if (state.value === 'running' || waitsForInstall.value) return
   if (gate && !gate()) return
   comparing.value = false
   take.value = 0
@@ -440,12 +466,37 @@ function back(): void {
               class="mar-app-editor-field"
             >
               <h2 v-if="b.group" class="mar-app-editor-group">{{ b.group }}</h2>
+              <div v-if="b.group === 'Format'" class="mar-app-pills">
+                <DropdownMenuRoot v-for="f in b.fields" :key="f.id">
+                  <DropdownMenuTrigger as-child>
+                    <button type="button" class="mar-app-pill" :aria-label="f.label">
+                      <component :is="PILL_ICON[f.id]" v-if="PILL_ICON[f.id]" :size="14" />
+                      <span class="truncate">{{ pick(f) }}</span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="top" align="end" :side-offset="8" class="mar-app-menu">
+                    <DropdownMenuItem
+                      v-for="o in f.options ?? []"
+                      :key="o"
+                      :class="o === pick(f) && 'bg-secondary-background font-medium'"
+                      @select="values[f.id] = o"
+                    >
+                      {{ o }}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenuRoot>
+              </div>
               <div
-                v-for="f in b.fields"
+                v-for="f in b.group === 'Format' ? [] : b.fields"
                 :key="f.id"
                 :class="inline(f) ? 'mar-app-editor-row' : 'mar-app-editor-stack'"
               >
-                <h3 class="mar-app-editor-label">
+                <!-- The picture needs no title; a field on its own titles its
+                     section, as Cinematic Studio's do. -->
+                <h3
+                  v-if="!(f.kind === 'image' && f.id === firstImage)"
+                  :class="!b.group && !inline(f) ? 'mar-app-editor-group' : 'mar-app-editor-label'"
+                >
                   {{ f.label
                   }}<span
                     v-if="f.kind === 'image' && f.hint === 'Optional'"
@@ -488,8 +539,7 @@ function back(): void {
                 <Select
                   v-else-if="f.control === 'select'"
                   :model-value="pick(f)"
-                  size="sm"
-                  class="mar-app-editor-select"
+                  class="mar-app-editor-select mar-app-editor-ctl"
                   :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
                   @update:model-value="(v: string) => (values[f.id] = v)"
                 />
@@ -501,7 +551,7 @@ function back(): void {
                   :step="f.step"
                   :unit="f.unit"
                   :aria-label="f.label"
-                  class="w-28"
+                  class="mar-app-editor-ctl"
                   @update:model-value="(v: number) => (values[f.id] = String(v))"
                 />
                 <Switch
@@ -513,11 +563,10 @@ function back(): void {
                 <Input
                   v-else-if="f.control === 'seed'"
                   :model-value="values[f.id] ?? ''"
-                  size="sm"
                   mono
                   placeholder="Random"
                   :aria-label="f.label"
-                  class="w-28"
+                  class="mar-app-editor-ctl"
                   @update:model-value="(v: string) => (values[f.id] = v.replace(/\D/g, ''))"
                 >
                   <template #trailing><Dices :size="13" class="text-subtle-foreground" /></template>
@@ -527,7 +576,9 @@ function back(): void {
                   :model-value="pick(f)"
                   variant="contained"
                   size="sm"
-                  :class="!inline(f) && 'self-start'"
+                  :class="
+                    inline(f) ? 'mar-app-editor-ctl mar-app-editor-seg' : 'mar-app-editor-seg'
+                  "
                   :options="(f.options ?? []).map((o) => ({ value: o, label: o }))"
                   @update:model-value="(v: string) => (values[f.id] = v)"
                 />
@@ -538,10 +589,22 @@ function back(): void {
 
           <!-- Run: the label, and what a run costs in credits -->
           <footer class="mar-app-editor-foot">
+            <!-- ComfyUI still installing and no build yet: a strip above
+                 Run says so and opens the install; Run waits, disabled. -->
+            <button
+              v-if="waitsForInstall"
+              type="button"
+              class="mar-app-editor-wait"
+              @click="showInstall"
+            >
+              <Loader2 :size="13" class="animate-spin" />
+              <span class="flex-1 text-left">Installing ComfyUI · {{ flow.percent }}%</span>
+              <span class="mar-app-editor-wait-link">View progress</span>
+            </button>
             <button
               type="button"
               class="mar-app-editor-run"
-              :disabled="state === 'running'"
+              :disabled="state === 'running' || waitsForInstall"
               :title="payer"
               @click="run"
             >
@@ -907,40 +970,41 @@ function back(): void {
   border-radius: var(--radius-panel) var(--radius-panel) 0 0;
   background: color-mix(in oklch, var(--color-base-foreground) 4%, var(--color-card-background));
 }
+/* As Cinematic Studio: 20px between sections, 12px inside one. */
 .mar-app-editor-fields {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  gap: 20px;
+  padding: 20px 20px 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
 .mar-app-editor-field {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px 20px 14px;
-}
-.mar-app-editor-field + .mar-app-editor-field {
-  border-top: 1px solid var(--color-border-default);
+  gap: 12px;
 }
 .mar-app-editor-stack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 .mar-app-editor-row {
   display: flex;
-  min-height: 32px;
+  min-height: 36px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
+/* Section titles: the uppercase label (UI-RULES). */
 .mar-app-editor-group {
-  font-size: var(--text-ui);
-  line-height: var(--text-ui--line-height);
-  font-weight: 600;
-  color: var(--color-base-foreground);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-subtle-foreground);
 }
 .mar-app-editor-opt {
   font-weight: 400;
@@ -952,8 +1016,8 @@ function back(): void {
   color: var(--color-subtle-foreground);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-app-editor-select {
-  width: auto;
-  max-width: 60%;
+  height: 36px;
+  padding-inline: 12px;
 }
 .mar-app-editor-label {
   font-size: var(--text-ui);
@@ -1060,6 +1124,31 @@ function back(): void {
 .mar-app-editor-run:disabled {
   opacity: 0.6;
   pointer-events: none;
+}
+/* The strip above Run while ComfyUI installs: a quiet tab that opens the
+ * install's progress. */
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-wait {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  text-align: left;
+  transition: background-color 0.15s;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-wait:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+}
+.mar-app-editor-wait-link {
+  color: var(--color-subtle-foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .mar-app-editor-cost {
   display: inline-flex;
@@ -1706,5 +1795,60 @@ function back(): void {
   .mar-app-editor-sweep {
     animation: none;
   }
+}
+</style>
+
+<style>
+/* Every control on a row: one width and height, so the column lines up
+   (scoped styles don't reach the controls' own buttons). */
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-ctl {
+  width: 152px;
+  height: 36px;
+  flex-shrink: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-seg > button {
+  height: 30px;
+  flex: 1;
+  justify-content: center;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-seg:not(.mar-app-editor-ctl) {
+  width: 100%;
+  height: 36px;
+}
+/* Format: one row of pills, as in Cinematic Studio */
+.mar-app-pills {
+  display: flex;
+  gap: 6px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-pill {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-secondary-background);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-base-foreground);
+  outline: none;
+  transition: background-color 150ms;
+}
+.mar-app-pill > svg {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-pill:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-app-pill[data-state='open'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+.mar-app-pill:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+:root .proto-ui.proto-ui.proto-ui.mar-app-menu {
+  width: 208px;
 }
 </style>

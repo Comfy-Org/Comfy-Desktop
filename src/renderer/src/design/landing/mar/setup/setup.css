@@ -901,6 +901,38 @@
   .mss-first-mark path {
     fill: currentColor;
   }
+  /* Run on as the only screen: no steps to share the top with, so the
+     wordmark sits centred where they would be. */
+  /* And its question sits in the middle of the room between the wordmark
+     and the action bar, wherever the window's height puts that. */
+  .mss-first.is-alone .mss-first-hero {
+    justify-content: center;
+    padding-bottom: 24px;
+  }
+  /* The one screen takes more of the window: its column follows the
+     width (about 70%, between the shared column and 960px), and the
+     question, the cards and the action bar fill it. */
+  .mss-first.is-alone {
+    --mss-col-w: clamp(704px, 62vw, 880px);
+    /* Tall as the window allows: the question centres in it and the action
+       bar settles near the bottom, 80px off the floor at most. */
+    --mss-col-h: min(calc(100vh - 160px), 1040px);
+  }
+  .mss-first.is-alone .mss-first-hero,
+  .mss-first.is-alone .mss-first-bottom {
+    max-width: none;
+  }
+  @media (max-width: 752px) {
+    .mss-first.is-alone {
+      --mss-col-w: calc(100vw - 48px);
+    }
+  }
+  .mss-first.is-alone .mss-first-mark {
+    top: 20px;
+    left: 50%;
+    height: 28px;
+    transform: translateX(-50%);
+  }
   .mss-first-hero {
     display: flex;
     width: 100%;
@@ -913,7 +945,8 @@
   /* The Home pages' title (pages/MarPage.vue): 24px semibold, left. */
   .mss-first-title {
     color: var(--color-base-foreground);
-    font-size: var(--text-title, 24px);
+    font-size: 28px;
+    line-height: 34px;
     font-weight: 600;
     letter-spacing: -0.01em;
     text-wrap: balance;
@@ -985,6 +1018,32 @@
   .mss-first-actions {
     display: flex;
     gap: 8px;
+  }
+  /* New build: the name, a card of its own above the computer's, drawn
+     like the list under it (same corners, surface and label column). */
+  .mss-newbuild-name {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    margin-top: 16px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: oklch(0.6 0 0 / 0.06);
+    box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.07);
+  }
+  .mss-newbuild-name .mss-form-label {
+    padding-left: 24px;
+  }
+  .mss-newbuild-name + .mss-machine.is-hero {
+    margin-top: 12px;
+  }
+  /* One-click install: the consent under Set up's list; the action bar's
+     own line is the only divider. */
+  .mss-setup-consent {
+    margin-top: 36px;
+    /* The boxes line up with the rows' icons, 32px in. */
+    padding: 0 32px;
   }
   /* The Home's Spotlight (shell/homeBackgrounds.css): a neutral light from
    * the top centre, the same on every step. */
@@ -1743,6 +1802,50 @@
 .mss-body-inst .mss-inst-steps {
   margin-top: 0;
 }
+/* The modal's Close sits just outside its top-right corner, as the asset
+   detail's (assets/AssetDetail.vue, .mad-x): the frame stays clean. The
+   frame stops clipping for it, so its first and last parts keep its
+   corners. Not in the takeover, where there is no Close. */
+.mar-wizard.mss:not(.mss-in-takeover) {
+  overflow: visible;
+}
+.mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-body:first-child {
+  border-radius: var(--radius-panel, 16px) var(--radius-panel, 16px) 0 0;
+}
+.mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-foot {
+  border-radius: 0 0 var(--radius-panel, 16px) var(--radius-panel, 16px);
+}
+/* In the modal (every build after the first) the computer's card sits a
+   line under the lead and draws the computer a size down: the list under
+   it is the subject there. The takeover keeps it large. */
+.mar-wizard.mss:not(.mss-in-takeover) .mss-machine.is-hero {
+  margin-top: 16px;
+  padding: 24px 28px;
+}
+.mar-wizard.mss:not(.mss-in-takeover) .mss-machine.is-hero .mss-laptop {
+  width: 136px;
+  height: 88px;
+}
+/* Its sides line up with the body's. */
+:root[data-mar-ui='on'] .mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-foot {
+  padding-right: 32px;
+  padding-left: 32px;
+}
+:root .proto-ui.proto-ui.proto-ui.mar-wizard.mss:not(.mss-in-takeover) > [aria-label='Close'] {
+  top: 0;
+  right: -48px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+:root
+  .proto-ui.proto-ui.proto-ui.mar-wizard.mss:not(.mss-in-takeover)
+  > [aria-label='Close']:hover {
+  background: rgb(255 255 255 / 0.18);
+}
+
 /* The showcase panel tops with the title, not with the first step: up by
    the title's line (24px) and the section's gap (24px). */
 .mss-body-inst .mss-inst-media {
@@ -1972,4 +2075,98 @@ body:has(.mss-first) [data-reka-popper-content-wrapper] {
 }
 .proto-ui.mss-version-menu {
   min-width: 240px;
+}
+
+/* The Builds row's cards (MarBuildsRow.vue) and the install card drawn as
+   one of them (HomeInstall.vue, bare): here so the Builds page gets them
+   too. */
+/* The install card (HomeInstall.vue), small: a surface with a soft light
+ * at its corner, the machine drawn on the left. */
+:root .proto-ui.proto-ui.proto-ui .mbr-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 20px 20px 18px;
+  border-radius: 16px;
+  background: oklch(0.6 0 0 / 0.05);
+  box-shadow: inset 0 0 0 1px oklch(0.8 0.06 var(--h, 0) / 0.1);
+  text-align: left;
+  transition: background-color 0.15s;
+}
+/* Light: the card's own white surface, as the first-run cards, not a
+ * grey wash; the corner light stays. */
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mbr-card {
+  background: var(--color-card-background, #fff);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 8%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.04);
+}
+/* Lit from its corner in the build's own hue; on hover that same light
+ * grows from where it sits until it fills the card. */
+.mbr-card::before {
+  position: absolute;
+  z-index: -1;
+  background: radial-gradient(
+    ellipse 60% 130% at 8% 0%,
+    oklch(0.7 0.15 var(--h, 0) / 0.3),
+    transparent 70%
+  );
+  content: '';
+  inset: 0;
+  transform-origin: 8% 0%;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mbr-card:hover::before {
+  transform: scale(2.6);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mbr-card::before {
+    transition-duration: 0s;
+  }
+}
+.mbr-card .mss-laptop {
+  width: 88px;
+  height: 57px;
+}
+.mbr-device {
+  position: relative;
+  display: block;
+  flex: none;
+}
+/* Over the laptop's screen (its box in SetupLaptop's 160 × 104 drawing). */
+.mbr-screen {
+  position: absolute;
+  top: 8.2%;
+  right: 14%;
+  bottom: 22.6%;
+  left: 14%;
+  border-radius: 2px;
+  background: radial-gradient(
+    ellipse 90% 90% at 30% 25%,
+    oklch(0.74 0.16 var(--h, 0) / 0.8),
+    oklch(0.55 0.14 var(--h, 0) / 0.3) 65%,
+    transparent
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+.mbr-name {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  margin-bottom: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mbr-meta {
+  overflow: hidden;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -55,13 +55,17 @@ import {
   chooseCloud,
   chooseLocal,
   closeSetup,
+  createBuild,
   flow,
   homeFirst,
+  homeDirect,
+  homeOneClick,
   homeRunning,
   installInBackground,
   landHomeCloud,
   landHomeInstalling,
   landHomeLocal,
+  nextBuildName,
   localSetup,
   lowSpace,
   nodesInBuild,
@@ -116,6 +120,14 @@ function continueFirst(): void {
   // Home first: Run on is the only step, and Local lands on the Home with
   // the install waiting on its card; with the install running behind, Set up
   // still comes first.
+  // Run on only: Local installs right away, unless the computer needs a
+  // decision first; then the card waits in Builds with its Change.
+  else if (homeDirect.value)
+    (runOn.value === 'cloud'
+      ? landHomeCloud
+      : lowSpace.value || unsupported.value
+        ? landHomeLocal
+        : landHomeInstalling)()
   else if (homeFirst.value && !homeRunning.value)
     (runOn.value === 'cloud' ? landHomeCloud : landHomeLocal)()
   else if (homeFirst.value && runOn.value === 'cloud') landHomeCloud()
@@ -131,6 +143,11 @@ const REQUIRED_GB = (DETECTED.downloadGb * 2.25).toFixed(1)
 // offers the apps on the Home instead (setup/HomeInstall.vue).
 const workflowStep = computed(() => localSetup.scope === 'm1')
 function continueSetup(): void {
+  // One-click install: the consent sits on this screen; the terms gate.
+  if (homeOneClick.value && flow.takeover && !terms.value) {
+    termsAsk.value = true
+    return
+  }
   if (lowSpace.value) flow.confirmLowDisk = true
   else toTemplates()
 }
@@ -151,7 +168,7 @@ function skipNodes(): void {
 function afterNodes(): void {
   if (workflowStep.value) flow.step = 'template'
   // Home first › Install runs behind: Install lands on the Home, installing.
-  else if (homeRunning.value && flow.takeover) landHomeInstalling()
+  else if ((homeRunning.value || homeOneClick.value) && flow.takeover) landHomeInstalling()
   else installWith(null)
 }
 const stepNow = computed(() => {
@@ -219,6 +236,17 @@ const CLIPS = [
 
 // Change setup: the fields start on what fits this computer.
 const name = ref('ComfyUI')
+// New build (every build after the first): its name, the next number
+// unless renamed; Install closes the modal and installs in Builds.
+const newBuild = computed(() => flow.step === 'setup' && !flow.takeover && !flow.homeCard)
+const buildName = ref('')
+watch(
+  newBuild,
+  (v) => {
+    if (v) buildName.value = nextBuildName.value
+  },
+  { immediate: true }
+)
 const channel = ref<'stable' | 'latest'>('stable')
 const hardware = ref<'mps' | 'cpu'>('mps')
 // Today's install methods on a Mac (Portable is Windows only). Managed
@@ -385,6 +413,7 @@ function rowState(i: number): string {
       <div
         v-if="firstOpen"
         class="proto-ui mss-first"
+        :class="homeFirst && !homeRunning && 'is-alone'"
         role="dialog"
         aria-modal="true"
         aria-labelledby="mss-first-title"
@@ -529,11 +558,21 @@ function rowState(i: number): string {
   <!-- First launch: Set up and the install sit on the same full-window
        frame, above the scrim, so the Home never shows behind them. -->
   <Teleport :to="PORTAL_TO">
-    <div v-if="open && flow.takeover" class="proto-ui mss-first is-backdrop" aria-hidden="true">
+    <div
+      v-if="open && flow.takeover"
+      class="proto-ui mss-first is-backdrop"
+      :class="homeOneClick && 'is-alone'"
+      aria-hidden="true"
+    >
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
         <ComfyWordmark class="mss-first-mark" />
-        <SetupSteps :now="stepNow" :workflow="workflowStep" :short="homeRunning" />
+        <SetupSteps
+          v-if="!homeOneClick"
+          :now="stepNow"
+          :workflow="workflowStep"
+          :short="homeRunning"
+        />
       </div>
     </div>
   </Teleport>
@@ -549,13 +588,20 @@ function rowState(i: number): string {
       <template v-if="flow.step === 'setup'">
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <template v-if="!unsupported">
-            <DialogTitle as="h3" class="text-title font-semibold"
-              >Install ComfyUI on {{ DETECTED.noun }}</DialogTitle
-            >
-            <DialogDescription
-              >Checked for your {{ DETECTED.chip }}. Change anything before you
-              install.</DialogDescription
-            >
+            <DialogTitle as="h3" class="text-title font-semibold">{{
+              newBuild ? 'New build' : `Install ComfyUI on ${DETECTED.noun}`
+            }}</DialogTitle>
+            <DialogDescription>{{
+              newBuild
+                ? `Another ComfyUI on ${DETECTED.noun}, with its own version and nodes. It installs in Builds while you keep working.`
+                : `Checked for your ${DETECTED.chip}. Change anything before you install.`
+            }}</DialogDescription>
+            <!-- New build: the name, the one thing the first install never
+                 asked; the rest is the same list. -->
+            <div v-if="newBuild" class="mss-newbuild-name">
+              <span class="mss-form-label">Name</span>
+              <Input v-model="buildName" aria-label="Build name" />
+            </div>
 
             <!-- The machine it checked, drawn large: the subject of the
                  screen. What it gets is the list below. -->
@@ -613,6 +659,33 @@ function rowState(i: number): string {
                 </dd>
               </div>
             </dl>
+            <!-- One-click install: this is the first screen, so the consent
+                 sits here, under the list, the terms gating Install. -->
+            <div v-if="homeOneClick && flow.takeover" class="mss-first-consent mss-setup-consent">
+              <label class="mss-check mss-terms" :class="termsAsk && !terms && 'is-ask'">
+                <Checkbox v-model="terms" />
+                <span
+                  >I agree to the <a href="#" class="mss-link" @click.prevent>EULA</a> and
+                  <a href="#" class="mss-link" @click.prevent>Terms of Service</a>.<span
+                    v-if="termsAsk && !terms"
+                    class="mss-terms-ask"
+                    role="alert"
+                    >Agree to install.</span
+                  ></span
+                >
+              </label>
+              <label class="mss-check">
+                <Checkbox v-model="usage" />
+                <span
+                  >Help improve ComfyUI by sharing anonymous usage data.
+                  <a href="#" class="mss-link" @click.prevent>Learn more</a></span
+                >
+              </label>
+              <label class="mss-check">
+                <Checkbox v-model="beta" :disabled="!usage" />
+                <span>Opt-in to beta features and help test what ships next</span>
+              </label>
+            </div>
           </template>
 
           <!-- Intel Mac: today's Unsupported Hardware alert. A local install
@@ -631,7 +704,11 @@ function rowState(i: number): string {
           </template>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button v-if="flow.takeover" variant="ghost" size="lg" @click="flow.step = 'first'"
+          <Button
+            v-if="flow.takeover && !homeOneClick"
+            variant="ghost"
+            size="lg"
+            @click="flow.step = 'first'"
             ><ArrowLeft :size="14" />Back</Button
           >
           <!-- Today's low-space warning: it asks, it doesn't block. -->
@@ -653,6 +730,9 @@ function rowState(i: number): string {
               >{{ DETECTED.downloadGb }} GB download · ~{{ REQUIRED_GB }} GB required</span
             >
             <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
+            <Button v-else-if="newBuild" variant="primary" size="lg" @click="createBuild(buildName)"
+              >Install</Button
+            >
             <Button v-else variant="primary" size="lg" @click="continueSetup">{{
               workflowStep || nodesStep ? 'Continue' : 'Install'
             }}</Button>

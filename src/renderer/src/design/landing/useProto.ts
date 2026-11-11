@@ -96,6 +96,9 @@ export const proto = reactive({
   newUser: null as boolean | null,
   /** Mar's proposal: a single local build, the one just set up. */
   oneLocal: false,
+  /** The version the local setup just installed (mar/setup): the build
+   *  shows it, ready, instead of the mock's older one. */
+  installedVersion: '',
   /** Projects (Milestone 8, set from milestones.ts). */
   projects: false,
   live: saved.live,
@@ -131,6 +134,9 @@ export const proto = reactive({
   deploying: null as string | null,
   /** Live mode instances, injected by LandingPrototypes. */
   liveInstances: [] as ProtoInstance[],
+  /** Builds installed in this session after the first (mar/setup): listed
+   *  with the rest, newest first. */
+  addedInstances: [] as ProtoInstance[],
   toast: '' as string,
   /** Folders the user added on the Local tabs (Assets / Workflows). */
   extraAssetFolders: [] as LocalFolder[],
@@ -218,9 +224,14 @@ export const instances = computed<ProtoInstance[]>(() => {
       if (i.kind === 'cloud') return true
       return i.workspace === proto.workspaceId
     })
+    .concat(proto.addedInstances)
     .map((i) =>
       // A build a new user just set up is ready, with nothing to update.
-      proto.newUser && i.kind === 'local' ? { ...i, state: 'stopped' as const } : i
+      i.kind === 'local' && proto.installedVersion
+        ? { ...i, state: 'stopped' as const, version: proto.installedVersion }
+        : proto.newUser && i.kind === 'local'
+          ? { ...i, state: 'stopped' as const }
+          : i
     )
 })
 
@@ -238,7 +249,7 @@ export const activeInstance = computed(() => {
 })
 
 export function instanceById(id: string): ProtoInstance | undefined {
-  return [...INSTANCES, ...proto.liveInstances].find((i) => i.id === id)
+  return [...INSTANCES, ...proto.liveInstances, ...proto.addedInstances].find((i) => i.id === id)
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined

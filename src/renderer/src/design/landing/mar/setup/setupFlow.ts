@@ -50,10 +50,18 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  exists. Install card: only the card, nothing that needs ComfyUI. Home
  *  open: the first-run Home stays around the card. Off by default, and
  *  only where there is a Home. */
-export type Onboarding = 'install' | 'home-running' | 'home' | 'home-open'
+export type Onboarding =
+  | 'install'
+  | 'home-running'
+  | 'home-direct'
+  | 'oneclick'
+  | 'home'
+  | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
+  { value: 'oneclick', label: 'One-click install (proposed)' },
   { value: 'install', label: 'Install first (today)' },
   { value: 'home-running', label: 'Home first: install runs behind' },
+  { value: 'home-direct', label: 'Home first: Run on only, install runs' },
   { value: 'home', label: 'Home first: install card only' },
   { value: 'home-open', label: 'Home first: Home stays open' }
 ]
@@ -80,6 +88,17 @@ export const AFTER_INSTALLS: { value: AfterInstall; label: string }[] = [
   { value: 'home', label: 'Home, no message' },
   { value: 'ready', label: 'Home: ComfyUI is ready card' },
   { value: 'comfyui', label: 'Open ComfyUI (as today)' }
+]
+
+/** Where the Home draws the first install's card (Home first). Top: its
+ *  own section under the greeting, the apps under it; when ComfyUI is
+ *  ready the section says so. Builds: inside the Builds section, where it
+ *  always sits, as the first build, large while it installs or waits to be
+ *  opened and small once opened. One place for the build, never two. */
+export type CardAt = 'top' | 'builds'
+export const CARD_ATS: { value: CardAt; label: string }[] = [
+  { value: 'top', label: 'Top' },
+  { value: 'builds', label: 'In Builds' }
 ]
 
 export const LOCAL_SETUPS: { value: LocalSetup; label: string }[] = [
@@ -115,6 +134,7 @@ function load(): {
   scope: SetupScope
   onboarding: Onboarding
   after: AfterInstall
+  card: CardAt
   os: SetupOs
   gpu: SetupGpu
   nodes: NodesAt
@@ -126,9 +146,10 @@ function load(): {
       machine: MACHINES.some((m) => m.value === v.machine) ? v.machine : 'ready',
       // Decided: the first screen uses Cards.
       cards: 'glow',
-      scope: v.scope === 'next' ? 'next' : 'm1',
-      onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'install',
-      after: AFTER_INSTALLS.some((a) => a.value === v.after) ? v.after : 'home',
+      scope: v.scope === 'm1' ? 'm1' : 'next',
+      onboarding: ONBOARDINGS.some((o) => o.value === v.onboarding) ? v.onboarding : 'oneclick',
+      after: AFTER_INSTALLS.some((a) => a.value === v.after) ? v.after : 'ready',
+      card: v.card === 'builds' ? 'builds' : 'top',
       os: SETUP_OSES.some((o) => o.value === v.os) ? v.os : 'mac',
       gpu: SETUP_GPUS.some((g) => g.value === v.gpu) ? v.gpu : 'nvidia',
       nodes: NODES_AT.some((n) => n.value === v.nodes) ? v.nodes : 'off'
@@ -138,9 +159,10 @@ function load(): {
       mode: 'off',
       machine: 'ready',
       cards: 'glow',
-      scope: 'm1',
-      onboarding: 'install',
-      after: 'home',
+      scope: 'next',
+      onboarding: 'oneclick',
+      after: 'ready',
+      card: 'top',
       os: 'mac',
       gpu: 'nvidia',
       nodes: 'off'
@@ -155,13 +177,15 @@ export const localSetup = reactive(load())
 export const canvas = ref(new URLSearchParams(location.search).get('canvas') === 'first')
 
 // `?setup=first` links straight to the proposed flow, on first launch: the
-// first release, where the install lands on Builds. Every other pick travels
-// in the Playground's share link (shareLink.ts): `?share&m=4.5&step=first
-// &setup=on&setup.scope=next&setup.onboarding=home-running&setup.after=ready`.
+// one-click install (Set up with the consent, then the Home with the
+// install in Builds), the one the prototype proposes. Every other pick
+// travels in the Playground's share link (shareLink.ts).
 const linkFirst = new URLSearchParams(location.search).get('setup') === 'first'
 if (linkFirst) {
   localSetup.mode = 'on'
-  localSetup.scope = 'm1'
+  localSetup.scope = 'next'
+  localSetup.onboarding = 'oneclick'
+  localSetup.after = 'ready'
 }
 
 watch(
@@ -188,6 +212,16 @@ export const homeOpen = computed(() => homeFirst.value && localSetup.onboarding 
 export const homeRunning = computed(
   () => homeFirst.value && localSetup.onboarding === 'home-running'
 )
+/** Home first › Run on only: Local lands on the Home with the install
+ *  already running in Builds; the computer is detected, not shown. What Set
+ *  up would have stopped on (no space, no supported hardware) stops the
+ *  card instead, with its Change. */
+export const homeDirect = computed(() => homeFirst.value && localSetup.onboarding === 'home-direct')
+/** Home first › One-click install: no Run on. The first screen is Set up
+ *  itself, the detected computer and its list, with the consent under it
+ *  and one Install; then the Home, the install running in Builds. Cloud
+ *  is not asked: it is in Builds anyway. */
+export const homeOneClick = computed(() => homeFirst.value && localSetup.onboarding === 'oneclick')
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
 // landing; the next iterations land on Milestone 2 (Explore apps), the Home
@@ -534,6 +568,10 @@ export const flow = reactive({
   retried: false,
   /** Earlier install: bring its files over (asked once, inline). */
   bringOver: true,
+  /** New build › Install: a build after the first, installing in Builds on
+   *  its own card, under the name given. */
+  another: false,
+  buildName: '',
   /** First launch: Set up and the install stay full-window, before the
    *  Home exists, the way Desktop chains its first install today. */
   takeover: false,
@@ -552,8 +590,33 @@ export const pickedPacks = computed(() => NODE_PACKS.filter((p) => flow.packs.in
 export const packsMb = computed(() => pickedPacks.value.reduce((n, p) => n + p.mb, 0))
 /** Home first, Local picked and not installed yet: the install waits (or
  *  runs) on the Home's card. */
+/** The name a new build gets unless renamed: the next number. */
+export const nextBuildName = computed(
+  () => `My Local ${instances.value.filter((i) => i.kind === 'local').length + 1}`
+)
+/** New build › Install: the modal closes and the build installs in Builds,
+ *  on its card, as the first one did; no screen in the way. */
+export function createBuild(name: string): void {
+  flow.another = true
+  flow.buildName = name.trim() || nextBuildName.value
+  flow.open = false
+  flow.takeover = false
+  flow.background = true
+  // Wherever it was started from, the sidebar shows it; the Home's Builds
+  // carry the card.
+  startInstall()
+}
 export const installPending = computed(
   () => homeFirst.value && flow.homeCard && !instances.value.some((i) => i.kind === 'local')
+)
+/** The install card drawn inside the Builds section (UI Playground › Local
+ *  setup › Install card): while the install waits or runs, and once ComfyUI
+ *  is ready until it is opened. */
+export const cardInBuilds = computed(
+  () =>
+    ((localSetup.card === 'builds' || homeDirect.value || homeOneClick.value) &&
+      (installPending.value || flow.ready)) ||
+    (flow.another && (flow.running || flow.step === 'error'))
 )
 /** The install runs (or failed) behind the Home: the sidebar's Builds show it. */
 export const installingBehind = computed(
@@ -616,7 +679,33 @@ function tick(): void {
 /** Finished: ComfyUI opens on its own, on the template if one was picked. */
 function finish(): void {
   stop()
+  // Every build after the first joins the list as its own: My Local 2, 3…
+  // with what this install set. The first is the mock's My Local 1.
+  const another = instances.value.some((i) => i.kind === 'local')
+  if (another) {
+    const n = instances.value.filter((i) => i.kind === 'local').length + 1
+    proto.addedInstances.unshift({
+      id: `local-added-${n}`,
+      name: flow.another && flow.buildName ? flow.buildName : `My Local ${n}`,
+      kind: 'local',
+      channel: 'Stable',
+      version: DETECTED.version,
+      state: 'stopped',
+      lastUsed: 'Just now',
+      lastUsedRank: -1,
+      gpu: DETECTED.chip,
+      diskSize: `${(DETECTED.downloadGb * 2.25).toFixed(1)} GB`,
+      models: 0,
+      nodes: flow.packs.length,
+      workspace: 'personal',
+      hue: (48 + 70 * (n - 1)) % 360
+    })
+  }
+  flow.another = false
   marUser.local = 'one'
+  // Builds lists the build just installed as the card said it: this
+  // version, nothing to update.
+  proto.installedVersion = DETECTED.version
   flow.open = false
   const picked = flow.picked
   const m1 = localSetup.scope === 'm1'
@@ -638,7 +727,10 @@ function finish(): void {
   }
   go('overview')
   // Home: no toast, the page changes and the new build shows in the sidebar.
-  if (localSetup.after === 'ready') {
+  // The Ready card is the first build's; another build is already in the
+  // list, so it only gets a word.
+  if (another) toast(`${proto.addedInstances[0]!.name} is ready`)
+  else if (localSetup.after === 'ready') {
     flow.homeCard = true
     flow.ready = true
   }
@@ -648,7 +740,8 @@ function finish(): void {
 export function openComfyUI(what?: string): void {
   flow.ready = false
   flow.homeCard = false
-  const inst = instances.value.find((i) => i.kind === 'local')
+  // The build just installed: the newest added one, else the first.
+  const inst = proto.addedInstances[0] ?? instances.value.find((i) => i.kind === 'local')
   if (inst) hostActions.launch(inst, what)
   else toast('Opening ComfyUI')
 }
@@ -665,6 +758,8 @@ export function openSetup(): boolean {
   // Today's New Instance opens the install wizard directly.
   flow.step = marUser.local === 'none' ? 'first' : 'setup'
   flow.takeover = flow.step === 'first'
+  // One-click install: the first launch opens on Set up, full window.
+  if (flow.takeover && homeOneClick.value) flow.step = 'setup'
   flow.percent = 0
   flow.picked = null
   // A new build starts on the recommended packs, where they are offered.
@@ -675,6 +770,8 @@ export function openSetup(): boolean {
   flow.logs = false
   flow.background = false
   flow.ready = false
+  // A Ready card still on the Home is over: this is another build.
+  flow.homeCard = false
   flow.open = true
   return true
 }
@@ -784,6 +881,7 @@ export function backFromError(): void {
 /** Return to Dashboard, confirmed: the install stops and the Home shows. */
 export function cancelInstall(): void {
   stop()
+  flow.another = false
   flow.open = false
   flow.takeover = false
   flow.background = false
@@ -899,6 +997,8 @@ export function showScreen(s: Screen): void {
     nodes: 'nodes'
   }
   flow.step = step[s]
+  // One-click install has no Run on: its first screen is Set up.
+  if (s === 'first' && homeOneClick.value) flow.step = 'setup'
   if (s === 'error') flow.percent = 46
   if (s === 'installing' || s === 'cancel') {
     flow.percent = 58
