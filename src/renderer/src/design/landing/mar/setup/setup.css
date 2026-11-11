@@ -901,6 +901,13 @@
   .mss-first-mark path {
     fill: currentColor;
   }
+  /* Run on as the only screen: no steps to share the top with, so the
+     wordmark sits centred where they would be. */
+  .mss-first.is-alone .mss-first-mark {
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
   .mss-first-hero {
     display: flex;
     width: 100%;

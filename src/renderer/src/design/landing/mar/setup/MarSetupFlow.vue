@@ -394,6 +394,7 @@ function rowState(i: number): string {
       <div
         v-if="firstOpen"
         class="proto-ui mss-first"
+        :class="homeFirst && !homeRunning && 'is-alone'"
         role="dialog"
         aria-modal="true"
         aria-labelledby="mss-first-title"
