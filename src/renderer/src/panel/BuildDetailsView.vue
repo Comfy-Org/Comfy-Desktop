@@ -83,12 +83,6 @@ onUnmounted(() => unsubscribeSettings?.())
       </Button>
 
       <header class="flex shrink-0 flex-wrap items-center gap-x-[18px] gap-y-3 pb-6">
-        <span
-          class="flex size-16 shrink-0 items-center justify-center rounded-card bg-card text-muted-foreground shadow-[0_0_0_1px_oklch(1_0_0/0.1)]"
-          :title="t(typeMeta.labelKey)"
-        >
-          <component :is="typeMeta.icon" :size="26" aria-hidden="true" />
-        </span>
         <div class="min-w-0 flex-1 basis-60">
           <div class="flex min-w-0 items-center gap-2">
             <h1
@@ -109,8 +103,11 @@ onUnmounted(() => unsubscribeSettings?.())
               {{ t(status.label) }}
             </StatusChip>
           </div>
-          <p class="build-details-meta m-0 mt-1.5 truncate text-[13px]/5 text-muted-foreground">
-            {{ metaLine }}
+          <p
+            class="build-details-meta m-0 mt-1.5 flex min-w-0 items-center gap-1.5 text-[13px]/5 text-muted-foreground"
+          >
+            <component :is="typeMeta.icon" :size="14" class="shrink-0" aria-hidden="true" />
+            <span class="truncate">{{ metaLine }}</span>
           </p>
         </div>
         <div :id="ACTIONS_ID" class="flex shrink-0 items-center gap-2" />
