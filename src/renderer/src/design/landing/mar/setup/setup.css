@@ -904,8 +904,9 @@
   /* Run on as the only screen: no steps to share the top with, so the
      wordmark sits centred where they would be. */
   .mss-first.is-alone .mss-first-mark {
-    top: 22px;
+    top: 20px;
     left: 50%;
+    height: 28px;
     transform: translateX(-50%);
   }
   .mss-first-hero {
