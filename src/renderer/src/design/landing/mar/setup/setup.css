@@ -901,6 +901,14 @@
   .mss-first-mark path {
     fill: currentColor;
   }
+  /* Run on as the only screen: no steps to share the top with, so the
+     wordmark sits centred where they would be. */
+  .mss-first.is-alone .mss-first-mark {
+    top: 20px;
+    left: 50%;
+    height: 28px;
+    transform: translateX(-50%);
+  }
   .mss-first-hero {
     display: flex;
     width: 100%;
@@ -1743,6 +1751,50 @@
 .mss-body-inst .mss-inst-steps {
   margin-top: 0;
 }
+/* The modal's Close sits just outside its top-right corner, as the asset
+   detail's (assets/AssetDetail.vue, .mad-x): the frame stays clean. The
+   frame stops clipping for it, so its first and last parts keep its
+   corners. Not in the takeover, where there is no Close. */
+.mar-wizard.mss:not(.mss-in-takeover) {
+  overflow: visible;
+}
+.mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-body:first-child {
+  border-radius: var(--radius-panel, 16px) var(--radius-panel, 16px) 0 0;
+}
+.mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-foot {
+  border-radius: 0 0 var(--radius-panel, 16px) var(--radius-panel, 16px);
+}
+/* In the modal (every build after the first) the computer's card sits a
+   line under the lead and draws the computer a size down: the list under
+   it is the subject there. The takeover keeps it large. */
+.mar-wizard.mss:not(.mss-in-takeover) .mss-machine.is-hero {
+  margin-top: 16px;
+  padding: 24px 28px;
+}
+.mar-wizard.mss:not(.mss-in-takeover) .mss-machine.is-hero .mss-laptop {
+  width: 136px;
+  height: 88px;
+}
+/* Its sides line up with the body's. */
+:root[data-mar-ui='on'] .mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-foot {
+  padding-right: 32px;
+  padding-left: 32px;
+}
+:root .proto-ui.proto-ui.proto-ui.mar-wizard.mss:not(.mss-in-takeover) > [aria-label='Close'] {
+  top: 0;
+  right: -48px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  color: #fff;
+}
+:root
+  .proto-ui.proto-ui.proto-ui.mar-wizard.mss:not(.mss-in-takeover)
+  > [aria-label='Close']:hover {
+  background: rgb(255 255 255 / 0.18);
+}
+
 /* The showcase panel tops with the title, not with the first step: up by
    the title's line (24px) and the section's gap (24px). */
 .mss-body-inst .mss-inst-media {
