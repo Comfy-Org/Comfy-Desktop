@@ -13,8 +13,7 @@ import {
   PanelsTopLeft,
   Play,
   Video,
-  UserRound,
-  X
+  UserRound
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import { useEventListener } from '@vueuse/core'
@@ -54,7 +53,7 @@ import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
  * looking at (Apps, Workflows, Models, Tutorials), its type, and a search,
  * so there is one kind of tab, not two. It leads with apps, one catalogue
  * anyone can run, filtered like the hub's: Filter by use case, Sort, search,
- * and the chosen use cases as chips under the line. From Explore & Learn on,
+ * the picked ones on the menu's rows. From Explore & Learn on,
  * the rest follow as tabs. An app opens in
  * its own tab, as its user. The frame (title, toolbar, Loading, Error,
  * Nothing matches) is MarPage; the catalogue is never empty.
@@ -148,8 +147,8 @@ const WF_SORTS = [
   { value: 'az', label: 'Name A to Z' }
 ]
 const RUNS = [
-  { value: 'local', label: 'This computer', chip: 'Runs on this computer', icon: Cpu },
-  { value: 'cloud', label: 'Comfy Cloud', chip: 'Runs on Comfy Cloud', icon: Cloud }
+  { value: 'local', label: 'This computer', icon: Cpu },
+  { value: 'cloud', label: 'Comfy Cloud', icon: Cloud }
 ]
 const runsHere = (w: HubWorkflow, v: string): boolean =>
   v === 'local' ? w.runs !== 'cloud' : w.runs !== 'local'
@@ -201,8 +200,8 @@ const USES = computed(() =>
   }))
 )
 // MVP filters, one Filter menu per tab: what it makes (Type), then the
-// app that made it (Examples) or its use case (Apps). Picked ones show as
-// chips under the line; no Sort, the gallery keeps its curated order.
+// app that made it (Examples) or its use case (Apps). The gallery has no
+// Sort: it keeps its curated order.
 const VIDEO_APPS = ['s-reshoot', 's-jutsu', 'x-i2v', 'x-h3', 'x-wan', 'e-video']
 const KIND_ICON: Record<string, typeof Image> = { Image, Video, '3D': Box }
 const appKind = (id: string): string =>
@@ -233,15 +232,13 @@ const examples = computed(() =>
   searchedExamples.value.filter((x) => !kinds.value.length || kinds.value.includes(x.kind))
 )
 // What the Filter menu offers on this tab, with how many each would show.
-// The first group lies open in the menu; the others nest (one submenu
-// open at a time), so Apps and Workflows read the same: use case first.
+// Each group is a row with its value (Assets' Layout menu); a lone group
+// lists its choices. No chips: the menu's rows and its badge say what's on.
 interface FilterItem {
   value: string
   label: string
   count: number
   icon?: Component
-  /** The chip's words, when the label needs its group to read. */
-  chip?: string
 }
 interface FilterGroup {
   key: string
@@ -332,7 +329,7 @@ const isOn = (g: FilterGroup, v: string): boolean => g.list.value.includes(v)
 const flip = (g: FilterGroup, v: string): void => {
   g.list.value = toggle(g.list.value, v, !isOn(g, v))
 }
-/** The tabs with a Filter menu (and its chips). */
+/** The tabs with a Filter menu. */
 const filtered = computed(() => ['apps', 'examples', 'templates'].includes(tab.value))
 // One submenu at a time (UI-RULES › Menus).
 const sub = ref('')
@@ -340,11 +337,24 @@ const only = (key: string, open: boolean): void => {
   if (open) sub.value = key
   else if (sub.value === key) sub.value = ''
 }
+/** A row's value: All, the one picked, or the picked ones in a line. */
+const valueOf = (g: FilterGroup): string =>
+  g.list.value.length
+    ? g.items
+        .filter((i) => isOn(g, i.value))
+        .map((i) => i.label)
+        .join(', ')
+    : 'All'
 const picked = computed(() =>
   FILTER.value.flatMap((g) =>
     g.items.filter((i) => g.list.value.includes(i.value)).map((i) => ({ ...i, group: g }))
   )
 )
+// Apps and Workflows: one grid of cards; Size picks five, four or three
+// across.
+const cardView = ref<AssetView>('grid')
+const cardSize = ref(2)
+const COLS = [0, 5, 4, 3]
 // Inspiration's Layout: masonry or grid, at one size (no Size here).
 const view = ref<AssetView>('masonry')
 const size = ref(2)
@@ -425,14 +435,16 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
               <span v-if="picked.length" class="mar-ex-badge">{{ picked.length }}</span>
               <ChevronDown :size="13" class="ml-1 shrink-0 text-subtle-foreground" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" class="mar-ex-filter w-60">
-              <template v-for="(g, gi) in FILTER" :key="g.key">
-                <!-- The first group lies open: use case on Apps and
-                     Workflows, Type where it's the only one. -->
-                <template v-if="gi === 0">
+            <DropdownMenuContent
+              align="end"
+              :class="cn('mar-ex-filter', FILTER.length > 1 ? 'alm w-64' : 'w-60')"
+            >
+              <!-- A lone group (Type) lists its choices; more than one,
+                   each is a row with what's picked on it, as Assets'
+                   Layout menu, opening its list beside (one at a time). -->
+              <template v-if="FILTER.length === 1">
+                <template v-for="g in FILTER" :key="g.key">
                   <DropdownMenuLabel class="mar-ex-filter-label">{{ g.title }}</DropdownMenuLabel>
-                  <!-- Each choice leads with what it is (a type by its icon);
-                       picked, a check on the right, else how many it shows. -->
                   <DropdownMenuItem
                     v-for="i in g.items"
                     :key="i.value"
@@ -448,50 +460,51 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
                     <span v-else class="text-subtle-foreground tabular-nums">{{ i.count }}</span>
                   </DropdownMenuItem>
                 </template>
-                <!-- The rest nest, one open at a time; the row counts what's
-                     picked in it. -->
-                <template v-else>
-                  <DropdownMenuSeparator v-if="gi === 1" class="mar-ex-filter-sep" />
-                  <DropdownMenuSub :open="sub === g.key" @update:open="only(g.key, $event)">
-                    <DropdownMenuSubTrigger class="mar-ex-filter-row">
-                      <component :is="g.icon" v-if="g.icon" :size="15" />
-                      <span class="min-w-0 flex-1 truncate">{{ g.title }}</span>
-                      <span v-if="g.list.value.length" class="mar-ex-badge">{{
-                        g.list.value.length
-                      }}</span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuPortal :to="PORTAL_TO">
-                      <DropdownMenuSubContentRaw
-                        :side-offset="8"
-                        :align-offset="-4"
-                        :class="cn(floatingSurface, 'mar-ex-filter mar-ex-filter-sub w-56')"
+              </template>
+              <template v-else>
+                <DropdownMenuSub
+                  v-for="g in FILTER"
+                  :key="g.key"
+                  :open="sub === g.key"
+                  @update:open="only(g.key, $event)"
+                >
+                  <DropdownMenuSubTrigger class="alm-row"
+                    ><span class="alm-cap flex-1">{{ g.title }}</span
+                    ><span class="alm-val">{{ valueOf(g) }}</span></DropdownMenuSubTrigger
+                  >
+                  <DropdownMenuPortal :to="PORTAL_TO">
+                    <DropdownMenuSubContentRaw
+                      :side-offset="8"
+                      :align-offset="-4"
+                      :class="cn(floatingSurface, 'mar-ex-filter mar-ex-filter-sub w-56')"
+                    >
+                      <!-- Only what would show something: a long list
+                         (Model) stays short as other filters narrow. -->
+                      <DropdownMenuItem
+                        v-for="i in g.items.filter((x) => x.count || isOn(g, x.value))"
+                        :key="i.value"
+                        role="menuitemcheckbox"
+                        :aria-checked="isOn(g, i.value)"
+                        class="mar-ex-filter-row"
+                        @select.prevent="flip(g, i.value)"
                       >
-                        <!-- Only what would show something: a long list
-                             (Model) stays short as other filters narrow. -->
-                        <DropdownMenuItem
-                          v-for="i in g.items.filter((x) => x.count || isOn(g, x.value))"
-                          :key="i.value"
-                          role="menuitemcheckbox"
-                          :aria-checked="isOn(g, i.value)"
-                          :disabled="!i.count && !isOn(g, i.value)"
-                          class="mar-ex-filter-row"
-                          @select.prevent="flip(g, i.value)"
-                        >
-                          <component :is="i.icon" v-if="i.icon" :size="15" />
-                          <span class="min-w-0 flex-1 truncate">{{ i.label }}</span>
-                          <Check v-if="isOn(g, i.value)" :size="14" class="mar-ex-filter-on" />
-                          <span v-else class="text-subtle-foreground tabular-nums">{{
-                            i.count
-                          }}</span>
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContentRaw>
-                    </DropdownMenuPortal>
-                  </DropdownMenuSub>
-                </template>
+                        <component :is="i.icon" v-if="i.icon" :size="15" />
+                        <span class="min-w-0 flex-1 truncate">{{ i.label }}</span>
+                        <Check v-if="isOn(g, i.value)" :size="14" class="mar-ex-filter-on" />
+                        <span v-else class="text-subtle-foreground tabular-nums">{{
+                          i.count
+                        }}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContentRaw>
+                  </DropdownMenuPortal>
+                </DropdownMenuSub>
               </template>
               <template v-if="picked.length">
                 <DropdownMenuSeparator class="mar-ex-filter-sep" />
-                <DropdownMenuItem @select="clearFilters">Clear filters</DropdownMenuItem>
+                <DropdownMenuItem @select="clearFilters"
+                  ><span class="flex-1">Clear filters</span
+                  ><kbd class="mar-menu-hint">{{ MOD }}⌫</kbd></DropdownMenuItem
+                >
               </template>
             </DropdownMenuContent>
           </DropdownMenuRoot>
@@ -507,16 +520,25 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
             :placeholder="PLACEHOLDER[tab as Exclude<Tab, 'mine'>]"
           />
         </span>
-        <!-- Sort, last, in the same place on Apps and Workflows. -->
+        <!-- Layout, last, as on Assets: Size and Sort by on Apps and
+             Workflows (one grid, so no layouts to pick). -->
         <span v-if="tab === 'apps' || tab === 'templates'" key="sort" class="inline-flex">
-          <Select
+          <AssetLayoutMenu
             v-if="tab === 'apps'"
-            v-model="appSort"
-            :options="APP_SORTS"
-            label="Sort"
-            class="w-40"
+            v-model:view="cardView"
+            v-model:size="cardSize"
+            v-model:sort="appSort"
+            :sorts="APP_SORTS"
+            :views="['grid']"
           />
-          <Select v-else v-model="wfSort" :options="WF_SORTS" label="Sort" class="w-40" />
+          <AssetLayoutMenu
+            v-else
+            v-model:view="cardView"
+            v-model:size="cardSize"
+            v-model:sort="wfSort"
+            :sorts="WF_SORTS"
+            :views="['grid']"
+          />
         </span>
         <span v-if="tab === 'examples'" key="layout" class="inline-flex">
           <AssetLayoutMenu v-model:view="view" />
@@ -524,22 +546,6 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
       </TransitionGroup>
     </template>
 
-    <!-- The filters picked, as chips, over Examples and Apps. -->
-    <div v-if="picked.length && filtered" class="mar-ex-chips">
-      <button
-        v-for="c in picked"
-        :key="`${c.group.title}-${c.value}`"
-        type="button"
-        class="mar-ex-chip"
-        :aria-label="`Remove ${c.label}`"
-        @click="c.group.list.value = toggle(c.group.list.value, c.value, false)"
-      >
-        {{ c.chip ?? c.label }}<X :size="12" />
-      </button>
-      <button type="button" class="mar-ex-clear" @click="clearFilters">
-        Clear filters<kbd class="mar-menu-hint">{{ MOD }}⌫</kbd>
-      </button>
-    </div>
     <!-- Examples: what the apps made, as a masonry wall: each picture at
          its own height, its line under it, no card around it (Apps keeps
          the cards). One opens its app on it, like a template. -->
@@ -565,7 +571,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 
     <!-- Apps: one grid. -->
     <template v-else-if="tab === 'apps'">
-      <div class="mar-ex-grid is-apps">
+      <div class="mar-ex-grid is-apps" :style="{ '--cols': COLS[cardSize] }">
         <div
           v-for="a in apps"
           :key="a.id"
@@ -595,7 +601,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 
     <!-- Workflows (the Hub's): the same card as an app, its name and the
          first line of the catalog's description. -->
-    <div v-else-if="tab === 'templates'" class="mar-ex-grid is-four">
+    <div
+      v-else-if="tab === 'templates'"
+      class="mar-ex-grid is-four"
+      :style="{ '--cols': COLS[cardSize] }"
+    >
       <div
         v-for="t in templates"
         :key="t.id"
@@ -707,6 +717,12 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   margin-bottom: 0;
 }
 /* Filter: icon, name, then the count or a check. */
+/* Clear filters sits apart by space, not a line (UI-RULES › No lines). */
+:root .mar-ex-filter .mar-ex-filter-sep {
+  height: 6px;
+  margin: 0;
+  background: transparent;
+}
 :root .mar-ex-filter .mar-ex-filter-on {
   color: var(--color-base-foreground);
 }
@@ -714,16 +730,6 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-/* Groups sit apart by space, not a line (UI-RULES › No lines). */
-:root .mar-ex-filter .mar-ex-filter-sep {
-  height: 6px;
-  margin: 0;
-  background: transparent;
-}
-/* Clear filters, quiet, with its shortcut. */
-.mar-ex-clear .mar-menu-hint {
-  margin-left: 8px;
 }
 .mar-ex-grid {
   display: grid;
@@ -736,7 +742,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 }
 .mar-ex-grid.is-apps,
 .mar-ex-grid.is-four {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
 }
 /* Narrow windows: three across, so names and lines still read. */
 @media (max-width: 1100px) {
@@ -744,13 +750,6 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   .mar-ex-grid.is-four {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-}
-.mar-ex-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 16px;
 }
 .mar-ex-badge {
   display: inline-flex;
@@ -838,32 +837,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 .mar-ex-filter .mar-ex-filter-row[aria-checked='true'] {
   background-color: var(--color-secondary-background);
 }
-/* Global: cards and chips are buttons, past the prototype's button reset. */
-:root .proto-ui.proto-ui.proto-ui .mar-ex-chip {
-  display: inline-flex;
-  width: auto;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px 0 12px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
-  color: var(--color-base-foreground);
-  font-size: 12px;
-  transition: background-color 160ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ex-chip:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 14%, transparent);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ex-clear {
-  width: auto;
-  padding: 0 6px;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-ex-clear:hover {
-  color: var(--color-base-foreground);
-}
+/* Global: cards are buttons, past the prototype's button reset. */
 :root .proto-ui.proto-ui.proto-ui .mar-ex-card,
 :root .proto-ui.proto-ui.proto-ui .mar-ex-model {
   width: auto;

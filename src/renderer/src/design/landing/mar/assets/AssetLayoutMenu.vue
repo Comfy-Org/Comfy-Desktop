@@ -20,9 +20,10 @@ export type AssetView = AssetWall
 const view = defineModel<AssetView>('view', { required: true })
 const size = defineModel<number>('size')
 const sort = defineModel<string>('sort')
-const showName = defineModel<boolean>('showName')
-const showDetails = defineModel<boolean>('showDetails')
-const showLabels = defineModel<boolean>('showLabels')
+// Unset stays undefined (a Boolean prop would read false): no Show row.
+const showName = defineModel<boolean>('showName', { default: undefined })
+const showDetails = defineModel<boolean>('showDetails', { default: undefined })
+const showLabels = defineModel<boolean>('showLabels', { default: undefined })
 const group = defineModel<string>('group')
 const {
   sorts = [],
@@ -76,7 +77,8 @@ const showLabel = computed(() => {
       </button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" class="alm w-64">
-      <div class="alm-head">
+      <!-- One layout (Explore's cards): no LAYOUT line, Size leads. -->
+      <div v-if="VIEWS.length > 1" class="alm-head">
         <p class="alm-label">Layout</p>
         <div class="alm-views" role="radiogroup" aria-label="View">
           <button

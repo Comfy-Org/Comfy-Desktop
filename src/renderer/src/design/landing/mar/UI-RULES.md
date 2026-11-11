@@ -68,15 +68,14 @@ DS's Motion page (`ds/motion.ts`).
   multi-select (`ui/Select.vue`).
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
-- **A filter shows as a chip** under the toolbar, removable, with Clear
-  filters (⌘⌫).
-- **A Filter menu leads with its main group open** (use case on Explore's
-  Apps and Workflows); the other groups nest one level, one open at a
-  time. Each choice shows how many it would leave; in the open group a
-  choice that leaves none is dimmed, in a nested list it is left out.
-  Groups sit apart by space, not a separator line.
-- **A chip reads on its own:** when a choice only makes sense under its
-  group, the chip says both ("Runs on this computer", not "This computer").
+- **No filter chips in Explore** for now: the Filter menu's rows and its
+  badge say what's on; Clear filters (⌘⌫) is the menu's last line.
+- **A menu of groups is rows with values** (Assets' Layout menu): the
+  uppercase group name on the left, what's picked on the right (All, or
+  the names), a chevron opening its list, one level, one open at a time.
+  Explore's Filter (Use case, Model, Runs on) and Layout (Size, Sort by)
+  follow it. A lone group (Type) just lists its choices. Each choice
+  shows how many it would leave; a choice that leaves none is left out.
 - **Tabs stay.** Type tabs (All, Images, Videos, 3D, Audio) always show,
   empty or not, so the bar never shifts. An empty one says what lands there
   ("No 3D files yet"), never "Nothing matches", which is only for a search
