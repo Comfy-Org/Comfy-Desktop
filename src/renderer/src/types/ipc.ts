@@ -1,5 +1,6 @@
 export type {
   DashboardPage,
+  CatalogWorkflow,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,
