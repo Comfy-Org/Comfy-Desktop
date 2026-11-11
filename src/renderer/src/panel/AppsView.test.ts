@@ -22,6 +22,12 @@ async function mountApps(props: { growBy?: number } = {}) {
   return wrapper
 }
 
+const animate = vi.spyOn(Element.prototype, 'animate')
+
+function entrance(): Animation {
+  return animate.mock.results.at(-1)!.value as Animation
+}
+
 function catalogApp(id: string, title: string): CatalogApp {
   return {
     id,
@@ -182,7 +188,7 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
-  it('slides in a skeleton of the app page and keeps the app parked behind it until its page settles', async () => {
+  it('fades in a skeleton of the app page and keeps the app parked behind it until its page settles', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountApps({ growBy: 172 })
 
@@ -196,11 +202,14 @@ describe('AppsView', () => {
     expect(Math.round(first.width)).toBe(Math.round(slot.width + 172))
     const surface = wrapper.get('[data-testid="apps-host-surface"]')
     expect(surface.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
-    expect(wrapper.find('h1').exists()).toBe(true)
-
-    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    expect(wrapper.emitted('app-entered')).toEqual([[true]])
     expect(wrapper.find('h1').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="app-card-studio"]').element.closest('[style*="display: none"]')
+    ).not.toBeNull()
+
+    await entrance().finished
+    await flushPromises()
     expect(showApps.mock.calls.every(([rect]) => rect.parked)).toBe(true)
     expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
 
@@ -214,7 +223,7 @@ describe('AppsView', () => {
     )
   })
 
-  it('starts loading the app at open and reveals it as soon as the slide-in ends when the page settled first', async () => {
+  it('starts loading the app at open and reveals it as soon as the entrance ends when the page settled first', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountApps()
 
@@ -224,10 +233,9 @@ describe('AppsView', () => {
 
     appsSettled!()
     await flushPromises()
-    expect(wrapper.emitted('app-entered')).toBeUndefined()
     expect(showApps.mock.calls.every(([rect]) => rect.parked)).toBe(true)
 
-    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    await entrance().finished
     await flushPromises()
     expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
   })
@@ -243,8 +251,8 @@ describe('AppsView', () => {
       await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
       await flushPromises()
       expect(showApps.mock.calls.at(-1)![0].parked).toBe(true)
-
       expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
+      await entrance().finished
 
       await vi.advanceTimersByTimeAsync(3999)
       expect(showApps.mock.calls.at(-1)![0].parked).toBe(true)
@@ -261,7 +269,7 @@ describe('AppsView', () => {
     }
   })
 
-  it('shows an app in place without sliding when motion is reduced', async () => {
+  it('fades an app in without moving it when motion is reduced', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const matchMedia = vi
       .spyOn(window, 'matchMedia')
@@ -273,7 +281,10 @@ describe('AppsView', () => {
 
       expect(wrapper.emitted('app-entered')).toEqual([[true]])
       expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
+      expect(animate.mock.calls.at(-1)![0]).toEqual([{ opacity: 0 }, { opacity: 1 }])
+
       appsSettled!()
+      await entrance().finished
       await flushPromises()
       expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
     } finally {

@@ -3,8 +3,9 @@ import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import AppPageSkeleton from './AppPageSkeleton.vue'
 import type { AppOutputs } from '../types/ipc'
 
-const SLIDE_MS = 480
-const EASE_OUT_CUBIC = 'cubic-bezier(0.33, 1, 0.68, 1)'
+const ENTER_MS = 220
+const ENTER_NUDGE = 'translateX(48px)'
+const ENTER_EASING_TOKEN = '--ease-out-expo'
 const HOLD_MAX_MS = 1000
 const REVEAL_MAX_MS = 4000
 const SKELETON_LINGER_MS = 250
@@ -30,7 +31,7 @@ const emit = defineEmits<{
 
 const slot = useTemplateRef<HTMLElement>('slot')
 const surface = useTemplateRef<HTMLElement>('surface')
-const revealed = ref(false)
+const skeletonShown = ref(true)
 let observer: ResizeObserver | null = null
 let stopListening: (() => void) | null = null
 let stopAppOpen: (() => void) | null = null
@@ -54,10 +55,19 @@ function report(fresh = false): void {
 
 const reportResize = (): void => report()
 
-function slideIn(): Promise<void> {
+function enter(): Promise<void> {
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const easing =
+    getComputedStyle(document.documentElement).getPropertyValue(ENTER_EASING_TOKEN).trim() ||
+    'ease-out'
   const animation = surface.value?.animate(
-    [{ transform: 'translateX(100%)' }, { transform: 'none' }],
-    { duration: SLIDE_MS, easing: EASE_OUT_CUBIC }
+    reducedMotion
+      ? [{ opacity: 0 }, { opacity: 1 }]
+      : [
+          { transform: ENTER_NUDGE, opacity: 0 },
+          { transform: 'none', opacity: 1 }
+        ],
+    { duration: ENTER_MS, easing }
   )
   return animation
     ? animation.finished.then(
@@ -97,15 +107,15 @@ onMounted(async () => {
   const width = slot.value?.getBoundingClientRect().width ?? 0
   if (growBy > 0) holdWidth = width + growBy
   report(true)
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) await slideIn()
-  if (gone) return
   emit('entered')
+  await enter()
+  if (gone) return
   if (holdWidth) releaseHoldLater()
   await settled
   if (gone) return
   parked = false
   report()
-  lingerTimer = setTimeout(() => (revealed.value = true), SKELETON_LINGER_MS)
+  lingerTimer = setTimeout(() => (skeletonShown.value = false), SKELETON_LINGER_MS)
 })
 
 onBeforeUnmount(() => {
@@ -130,7 +140,7 @@ onBeforeUnmount(() => {
       class="size-full rounded-shell bg-content-background"
       data-testid="apps-host-surface"
     >
-      <AppPageSkeleton v-if="!revealed" />
+      <AppPageSkeleton v-if="skeletonShown" />
     </div>
     <img
       v-if="covered && backdrop"
