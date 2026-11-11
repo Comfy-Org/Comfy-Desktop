@@ -120,26 +120,29 @@ const WAYS = [
 .mss-way:hover .mss-way-device {
   opacity: 1;
 }
+/* Three sizes, one step apart: the name, its one line, the fine print. */
 .mss-way-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .mss-way-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 24px;
 }
 .mss-way-tag {
   color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
+  font-size: 14px;
+  line-height: 20px;
 }
 .mss-way-desc {
-  margin-top: 10px;
+  margin-top: 12px;
   max-width: 34ch;
   color: var(--color-subtle-foreground);
-  font-size: var(--text-ui);
-  line-height: var(--text-ui--line-height);
+  font-size: 12.5px;
+  line-height: 18px;
   text-wrap: pretty;
 }
 .mss-way:not([aria-checked='true']) .mss-way-title {

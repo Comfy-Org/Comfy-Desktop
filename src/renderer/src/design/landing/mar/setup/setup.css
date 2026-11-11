@@ -921,7 +921,8 @@
   /* The Home pages' title (pages/MarPage.vue): 24px semibold, left. */
   .mss-first-title {
     color: var(--color-base-foreground);
-    font-size: var(--text-title, 24px);
+    font-size: 28px;
+    line-height: 34px;
     font-weight: 600;
     letter-spacing: -0.01em;
     text-wrap: balance;
