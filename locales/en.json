@@ -1574,7 +1574,6 @@
     "title": "Performance Tests",
     "description": "Run performance tests against your ComfyUI builds.",
     "selectInstance": "1. Select a build",
-    "workspaceLabel": "Workspace",
     "instanceLabel": "Build",
     "selectInstancePlaceholder": "Select a build",
     "chooseWorkflow": "2. Choose a workflow",

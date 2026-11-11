@@ -38,7 +38,6 @@ import {
 } from '../lib/performanceTestResultsSvg'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
-import DevPlatformWorkspaceSelector from './devplatform/DevPlatformWorkspaceSelector.vue'
 
 const resultListClass =
   'grid gap-x-6 m-0 [&>div]:min-w-0 [&_dt]:text-neutral-200 [&_dt]:[text-align:var(--perf-label-align,left)] [&_dd]:mt-[var(--perf-value-margin,4px)] [&_dd]:[overflow-wrap:anywhere] [&_dd]:[color:var(--perf-value-color,var(--text-primary))] [&_dd]:text-[length:var(--perf-value-size,24px)] [&_dd]:leading-[var(--perf-value-leading,1.25)] [&_dd]:[text-align:var(--perf-value-align,left)]'
@@ -703,16 +702,6 @@ watch(performanceTestLogs, async () => {
               <h2 class="m-0 text-[13px] leading-[1.4] font-semibold text-neutral-100">
                 {{ t('performanceTest.selectInstance') }}
               </h2>
-              <div class="performance-test__field flex flex-col gap-1.5">
-                <span class="performance-test__field-label text-[12px] text-text-muted">
-                  {{ t('performanceTest.workspaceLabel') }}
-                </span>
-                <div
-                  class="performance-test__workspace-select min-w-0 w-full [&_.workspace-selector]:w-full [&_.workspace-selector\_\_face]:box-border [&_.workspace-selector\_\_face]:w-full [&_.workspace-selector\_\_face]:min-w-0 [&_.workspace-selector\_\_face]:h-10 [&_.workspace-selector\_\_face]:max-w-none [&_.workspace-selector\_\_face]:rounded-lg [&_.workspace-selector\_\_face]:bg-secondary [&_.workspace-selector\_\_face]:px-3 [&_.workspace-selector\_\_face]:py-0 [&_.workspace-selector\_\_face]:[--dp-avatar-size:20px]"
-                >
-                  <DevPlatformWorkspaceSelector v-model="selectedWorkspaceId" />
-                </div>
-              </div>
               <div class="performance-test__field flex flex-col gap-1.5">
                 <span class="performance-test__field-label text-[12px] text-text-muted">
                   {{ t('performanceTest.instanceLabel') }}

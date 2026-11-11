@@ -1574,7 +1574,6 @@
     "title": "性能测试",
     "description": "针对您的 ComfyUI 构建运行性能测量。",
     "selectInstance": "1. 选择构建",
-    "workspaceLabel": "工作区",
     "instanceLabel": "构建",
     "selectInstancePlaceholder": "选择构建",
     "chooseWorkflow": "2. 选择工作流",

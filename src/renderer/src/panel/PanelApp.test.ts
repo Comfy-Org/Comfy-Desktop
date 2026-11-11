@@ -124,13 +124,14 @@ vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
     methods: { open: vi.fn() }
   }
 }))
-import { mount, flushPromises, DOMWrapper } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import PanelApp from './PanelApp.vue'
 import { en } from '../lib/i18nMessages'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
 import { useOverlay } from '../composables/useOverlay'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { PERSONAL_WORKSPACE_ID } from '../../../shared/workspaces'
 import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 
 interface InstallationLike {
@@ -629,9 +630,12 @@ describe('PanelApp', () => {
     mockState.panelSwitchCallbacks.forEach((callback) => callback({ panel: 'performance-test' }))
     await flushPromises()
 
-    expect(
-      wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
-    ).toBe('Workspace Two')
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('workspace-2')
+    await wrapper
+      .get('.performance-test__instance-select button')
+      .trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    expect(document.querySelectorAll('.ui-select-option')).toHaveLength(1)
   })
 
   it('shows only installed Personal instances on Performance Test while signed out', async () => {
@@ -663,10 +667,6 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('.performance-test__content').exists()).toBe(true)
-    expect(
-      wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
-    ).toBe('Personal')
-
     await wrapper
       .get('.performance-test__instance-select button')
       .trigger('keydown', { key: 'ArrowDown' })
@@ -751,22 +751,17 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="performance-test"]').exists()).toBe(true)
     expect(wrapper.get('.branded-page-header h1').text()).toBe('Performance Tests')
     expect(wrapper.find('[data-testid="app-sidebar"]').exists()).toBe(true)
-    expect(wrapper.findAll('.performance-test__selection-row')).toHaveLength(2)
-    expect(
-      wrapper.findAll('.performance-test__selection-label').map((label) => label.text())
-    ).toEqual(['Workspace', 'Build'])
-    expect(wrapper.findAll('.performance-test__selection-control button')).toHaveLength(2)
-    expect(wrapper.find('.performance-test__workspace-select .ui-select-trigger').exists()).toBe(
-      false
-    )
-    expect(
-      wrapper.get('.performance-test__workspace-select .workspace-selector__name').text()
-    ).toBe('Workspace One')
-    expect(wrapper.find('.performance-test__columns').exists()).toBe(true)
-    expect(wrapper.findAll('.performance-test__column')).toHaveLength(3)
-    expect(
-      wrapper.findAll('.performance-test__column h2').map((heading) => heading.text())
-    ).toEqual(['1. Select a build', '2. Choose a workflow', '3. Set measurement settings'])
+    expect(wrapper.findAll('.performance-test__field-label').map((label) => label.text())).toEqual([
+      'Build'
+    ])
+    expect(wrapper.find('.performance-test__workspace-select').exists()).toBe(false)
+    expect(wrapper.find('.performance-test__setup').exists()).toBe(true)
+    expect(wrapper.findAll('.performance-test__step')).toHaveLength(3)
+    expect(wrapper.findAll('.performance-test__step h2').map((heading) => heading.text())).toEqual([
+      '1. Select a build',
+      '2. Choose a workflow',
+      '3. Set measurement settings'
+    ])
     const settings = wrapper.findAll('.performance-test__setting')
     expect(settings).toHaveLength(2)
     expect(settings.map((setting) => setting.find('label').text())).toEqual([
@@ -825,9 +820,7 @@ describe('PanelApp', () => {
     expect(resultsToggle.attributes('aria-expanded')).toBe('false')
     expect(wrapper.get('.performance-test__results').attributes('style')).toContain('display: none')
     await resultsToggle.trigger('click')
-    expect(
-      wrapper.get('.performance-test__column:nth-child(3) .performance-test__run').exists()
-    ).toBe(true)
+    expect(wrapper.get('.branded-page-header .performance-test__run').exists()).toBe(true)
     expect(wrapper.find('.performance-test__drop-zone').text()).toBe(
       'Drop a workflow .json file in API format here, or click to browse'
     )
@@ -858,9 +851,7 @@ describe('PanelApp', () => {
       )
     ).toEqual(['Standalone · 0.3.50', 'Standalone', 'Standalone'])
     expect(wrapper.text()).not.toContain('Other Workspace Install')
-    expect(wrapper.find('.branded-page-header__description').text()).toBe(
-      'Run performance tests against your ComfyUI builds.'
-    )
+    expect(wrapper.find('.branded-page-header__description').exists()).toBe(false)
     expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(false)
     ;(document.querySelectorAll('.ui-select-option')[0] as HTMLElement).dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
@@ -1111,7 +1102,7 @@ describe('PanelApp', () => {
     })
     await flushPromises()
     expect(wrapper.get('.performance-test__logs').text()).toContain('ComfyUI is ready')
-    expect(wrapper.get('.performance-test__stop').attributes('disabled')).toBe('')
+    expect(wrapper.find('.performance-test__stop').exists()).toBe(false)
     expect(api.stopComfyUI).toHaveBeenCalledWith('performance-test:workspace-install')
     expect(api.cancelOperation).toHaveBeenCalledWith('performance-test:workspace-install')
 
@@ -1144,11 +1135,7 @@ describe('PanelApp', () => {
       'This workflow belongs to a completed test and was kept with its results.'
     )
 
-    await wrapper.get('.performance-test__workspace-select button').trigger('click')
-    await flushPromises()
-    await new DOMWrapper(document.body)
-      .get('[data-testid="devplatform-workspace-personal"]')
-      .trigger('click')
+    useDashboardScopeStore().selectWorkspace(PERSONAL_WORKSPACE_ID)
     await flushPromises()
 
     expect(instanceSelect.text()).toBe('Select a build')
