@@ -980,6 +980,10 @@ export function isPygit2AuthFailure(result: ProcessResult): boolean {
     s.includes('unsupported url protocol') ||
     s.includes('remote authentication required') ||
     s.includes('callback returned unsupported credentials type') ||
+    s.includes('user rejected certificate') ||
+    s.includes('certificate') ||
+    s.includes('ssl') ||
+    s.includes('tls') ||
     (s.includes('ssh') && s.includes('credential'))
   )
 }
@@ -998,8 +1002,9 @@ async function withSystemGitFallback(
     error_bucket: telemetry.bucketError(result.stderr)
   })
   sendOutput(
-    '\npygit2 could not authenticate (your git config likely rewrites GitHub ' +
-      'HTTPS to SSH, which the bundled pygit2 cannot use); retrying with system git...\n'
+    '\npygit2 could not authenticate or validate the remote certificate (your git config may ' +
+      'rewrite GitHub HTTPS to SSH, or your system trust store may reject the certificate); ' +
+      'retrying with system git...\n'
   )
   return systemGitOp()
 }
