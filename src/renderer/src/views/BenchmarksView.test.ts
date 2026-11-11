@@ -315,10 +315,6 @@ describe('BenchmarksView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(group(wrapper).get('.benchmarks__summary').text()).toBe(
-      'Nightly 0.3.62 is the fastest, 10% ahead of Stable 0.3.60.'
-    )
-    expect(group(wrapper).get('.benchmarks__summary .text-success').text()).toBe('10% ahead')
     expect(vsLabels(wrapper)).toEqual(['Fastest', '1.11× slower', '1.53× slower'])
     expect(
       group(wrapper)
@@ -346,7 +342,6 @@ describe('BenchmarksView', () => {
     await flushPromises()
     const single = group(wrapper, 'benchmark-group-landscape.json-Apple M3 Max')
 
-    expect(single.find('.benchmarks__summary').exists()).toBe(false)
     expect(single.get('.benchmarks__single-note').text()).toBe(
       'Only one build ran this workflow here. Run it on another build to compare.'
     )
@@ -360,9 +355,6 @@ describe('BenchmarksView', () => {
     await openRowMenu(wrapper, '12')
     await chooseMenuItem('.benchmarks__set-baseline')
 
-    expect(group(wrapper).get('.benchmarks__summary').text()).toBe(
-      'Nightly 0.3.62 is 10% ahead of Stable 0.3.60, the baseline.'
-    )
     expect(vsLabels(wrapper)).toEqual(['1.11× faster', 'Baseline', '1.38× slower'])
     expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
     expect(group(wrapper).get('.benchmarks__baseline-foot').text()).toContain(
@@ -391,9 +383,6 @@ describe('BenchmarksView', () => {
     await flushPromises()
 
     expect(vsLabels(wrapper, 'benchmark-group-a.json-GPU')).toEqual(['Fastest', 'Same speed'])
-    expect(group(wrapper, 'benchmark-group-a.json-GPU').get('.benchmarks__summary').text()).toBe(
-      'Build A and Build B run at the same speed.'
-    )
   })
 
   it('shows runs without measurements as unavailable', async () => {
@@ -440,9 +429,6 @@ describe('BenchmarksView', () => {
     await compareBy(wrapper, 'fastestJobDurationSeconds')
     expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
     expect(group(wrapper).get('.benchmarks__bar-head').text()).toBe('Fastest and range')
-    expect(group(wrapper).get('.benchmarks__summary').text()).toBe(
-      'Stable 0.3.55 is the fastest, 38% ahead of Nightly 0.3.62.'
-    )
 
     await group(wrapper).get('.benchmarks__metric-sort').trigger('click')
     expect(rowIds(wrapper)).toEqual(['12', '13', '9'])
@@ -506,7 +492,6 @@ describe('BenchmarksView', () => {
     await toggle.trigger('click')
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(group(wrapper).find('table').exists()).toBe(false)
-    expect(group(wrapper).find('.benchmarks__summary').exists()).toBe(false)
     await toggle.trigger('click')
     expect(group(wrapper).find('table').exists()).toBe(true)
   })

@@ -50,12 +50,6 @@ interface RelativeSpeedResult {
   factor: number | null
   kind: RelativeSpeedKind
 }
-interface SummaryParts {
-  keypath: string
-  lead: string
-  other: string
-  factor: string
-}
 interface BenchmarkGroup {
   key: string
   workflowName: string
@@ -68,7 +62,6 @@ interface BenchmarkGroup {
   baselineId: string | null
   customBaseline: boolean
   results: Map<string, RelativeSpeedResult>
-  summary: SummaryParts | null
 }
 
 const { t } = useI18n()
@@ -421,32 +414,7 @@ function buildGroup(key: string, members: PerformanceTestBenchmark[]): Benchmark
     fastestId: fastest?.id ?? null,
     baselineId: baseline?.id ?? null,
     customBaseline,
-    results,
-    summary: groupSummary(measured, customBaseline ? baseline : null)
-  }
-}
-
-function percentAhead(factor: number | null): number {
-  if (factor === null || factor <= 1) return 0
-  return Math.max(1, Math.round((1 - 1 / factor) * 100))
-}
-
-function groupSummary(
-  measured: PerformanceTestBenchmark[],
-  baseline: PerformanceTestBenchmark | null
-): SummaryParts | null {
-  if (measured.length < 2) return null
-  const metric = comparisonMetric.value
-  const fastest = measured[0]!
-  const other = baseline ?? measured[1]!
-  const factor = calculateRelativeSpeedFactor(other[metric], fastest[metric])
-  const same = getRelativeSpeedKind(factor, false) === 'same'
-  const prefix = baseline ? 'benchmarks.summaryBaseline' : 'benchmarks.summaryFastest'
-  return {
-    keypath: same ? `${prefix}Same` : prefix,
-    lead: fastest.instance.name,
-    other: other.instance.name,
-    factor: t('benchmarks.percentAhead', { percent: percentAhead(factor) })
+    results
   }
 }
 
@@ -971,30 +939,8 @@ onActivated(() => {
       class="benchmarks__layout @container relative flex h-full min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto text-foreground"
     >
       <div class="mx-auto flex w-full max-w-300 flex-col gap-5 px-10 pt-9 pb-8">
-        <BrandedPageHeader
-          :title="t('benchmarks.title')"
-          :description="t('benchmarks.description')"
-        >
+        <BrandedPageHeader :title="t('benchmarks.title')">
           <template #actions>
-            <Button
-              variant="muted-textonly"
-              size="icon"
-              class="benchmarks__refresh"
-              type="button"
-              :disabled="loading"
-              :aria-label="t('benchmarks.refresh')"
-              :title="t('benchmarks.refresh')"
-              data-testid="benchmarks-refresh"
-              @click="refreshBenchmarks"
-            >
-              <RefreshCw
-                :size="16"
-                :class="{
-                  'benchmarks__refresh-icon--busy animate-spin [animation-duration:900ms]': loading
-                }"
-                aria-hidden="true"
-              />
-            </Button>
             <Button
               variant="secondary"
               size="lg"
@@ -1011,15 +957,6 @@ onActivated(() => {
         </BrandedPageHeader>
 
         <div class="benchmarks__toolbar flex flex-wrap items-center gap-2">
-          <BaseInput
-            v-model="searchQuery"
-            class="benchmarks__search w-44"
-            :placeholder="t('benchmarks.searchPlaceholder')"
-            :aria-label="t('benchmarks.searchPlaceholder')"
-            :spellcheck="false"
-          >
-            <template #leading><Search :size="16" aria-hidden="true" /></template>
-          </BaseInput>
           <BaseSelect
             v-model="workspaceFilter"
             class="benchmarks__filter w-auto max-w-40"
@@ -1049,6 +986,25 @@ onActivated(() => {
             compact
           />
           <div class="benchmarks__compare ml-auto flex items-center gap-2">
+            <Button
+              variant="muted-textonly"
+              size="icon"
+              class="benchmarks__refresh"
+              type="button"
+              :disabled="loading"
+              :aria-label="t('benchmarks.refresh')"
+              :title="t('benchmarks.refresh')"
+              data-testid="benchmarks-refresh"
+              @click="refreshBenchmarks"
+            >
+              <RefreshCw
+                :size="13"
+                :class="{
+                  'benchmarks__refresh-icon--busy animate-spin [animation-duration:900ms]': loading
+                }"
+                aria-hidden="true"
+              />
+            </Button>
             <div
               class="benchmarks__compare-by flex h-8 items-center rounded-lg bg-secondary pl-3 text-xs"
             >
@@ -1096,6 +1052,15 @@ onActivated(() => {
                 </label>
               </div>
             </details>
+            <BaseInput
+              v-model="searchQuery"
+              class="benchmarks__search h-8 w-[220px] [&_input]:text-[13px]"
+              :placeholder="t('benchmarks.searchPlaceholder')"
+              :aria-label="t('benchmarks.searchPlaceholder')"
+              :spellcheck="false"
+            >
+              <template #leading><Search :size="14" aria-hidden="true" /></template>
+            </BaseInput>
           </div>
         </div>
 
@@ -1161,7 +1126,7 @@ onActivated(() => {
           <section
             v-for="group in groups"
             :key="group.key"
-            class="benchmarks__group min-w-0 rounded-[14px] bg-card pt-3 pr-4 pb-3 pl-12"
+            class="benchmarks__group min-w-0 rounded-[14px] bg-card pt-3 pr-4 pb-3 pl-14"
             :data-testid="`benchmark-group-${group.workflowName}-${group.hardware}`"
             :aria-label="group.workflowName"
           >
@@ -1227,41 +1192,21 @@ onActivated(() => {
             </div>
 
             <template v-if="!collapsedGroupKeys.has(group.key)">
-              <i18n-t
-                v-if="group.summary"
-                :keypath="group.summary?.keypath ?? ''"
-                tag="p"
-                scope="global"
-                class="benchmarks__summary m-0 mt-0.5 mb-3 text-[13px] text-muted-foreground"
-              >
-                <template #lead>
-                  <strong class="font-medium text-foreground">{{ group.summary.lead }}</strong>
-                </template>
-                <template #other>
-                  <strong v-if="group.customBaseline" class="font-medium text-foreground">{{
-                    group.summary.other
-                  }}</strong>
-                  <template v-else>{{ group.summary.other }}</template>
-                </template>
-                <template #factor>
-                  <span class="text-success">{{ group.summary.factor }}</span>
-                </template>
-              </i18n-t>
               <p
-                v-else-if="group.rows.length === 1"
+                v-if="group.rows.length === 1"
                 class="benchmarks__single-note m-0 mt-1 mb-3 text-[13px] text-muted-foreground"
               >
                 {{ t('benchmarks.singleRun') }}
               </p>
               <div v-else class="h-2" />
 
-              <div class="benchmarks__table-scroll -mr-2 -ml-10 overflow-x-auto">
+              <div class="benchmarks__table-scroll -mr-2 -ml-12 overflow-x-auto">
                 <table
                   class="benchmarks__table w-full border-separate border-spacing-y-0.5 text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:px-2 [&_th]:pb-1.5 [&_th]:text-[10.5px] [&_th]:font-semibold [&_th]:tracking-[0.08em] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_th]:uppercase [&_tfoot_td]:py-1 [&_td:first-child]:rounded-l-[10px] [&_td:last-child]:rounded-r-[10px] [&_tbody_tr:hover>td]:bg-foreground/[0.035]"
                 >
                   <thead>
                     <tr>
-                      <th class="w-8 !px-0" :aria-label="t('benchmarks.selection')" />
+                      <th class="w-10 !px-0" :aria-label="t('benchmarks.selection')" />
                       <th :aria-sort="sortState('id')">
                         <Button
                           variant="textonly"
@@ -1341,8 +1286,8 @@ onActivated(() => {
                       @dragover="dragOverRun($event, benchmark.id)"
                       @drop="dropRun($event, benchmark.id)"
                     >
-                      <td class="w-8 !px-0">
-                        <div class="flex items-center gap-0.5">
+                      <td class="w-10 !pr-0 !pl-1.5">
+                        <div class="flex items-center gap-1">
                           <span
                             class="benchmarks__grip inline-flex flex-none cursor-grab rounded text-subtle-foreground focus-visible:opacity-100 focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] active:cursor-grabbing"
                             :class="
