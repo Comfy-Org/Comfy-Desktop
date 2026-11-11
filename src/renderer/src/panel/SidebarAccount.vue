@@ -111,7 +111,7 @@ async function onSignOut(): Promise<void> {
       v-else
       class="group/signin rounded-xl bg-[oklch(1_0_0/0.04)] p-1 text-[13px]/[1.35] text-pretty [box-shadow:inset_0_0_0_1px_oklch(1_0_0/0.06)]"
     >
-      <div class="relative h-[72px] overflow-hidden rounded-lg">
+      <div class="relative h-18 overflow-hidden rounded-lg">
         <img
           :src="hillsSunset"
           alt=""
