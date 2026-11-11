@@ -760,7 +760,7 @@ export function dismissReady(): void {
 
 /** The wordmark's beat before Set up: in, a moment alone, then it travels
  *  to its place as Set up rises. Skipped under reduced motion. */
-const ARRIVE_MS = 800
+const ARRIVE_MS = 900
 /** How far into the travel (600 ms) Set up starts to rise. */
 const LAND_MS = 260
 let arriveTimer: ReturnType<typeof setTimeout> | undefined

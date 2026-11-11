@@ -1151,9 +1151,11 @@
 .mss-first.is-backdrop {
   z-index: 70;
 }
-/* The very first open: the wordmark alone, centred on the frame, is the
- * first thing to appear (one object: opacity, a touch of scale and blur).
- * Then it travels up to its place, transform only, while Set up rises. */
+/* The very first open: the wordmark alone, centred on the frame. The
+ * light comes on: the mark resolves out of a soft glow as the ambient
+ * light above brightens, and one glint of Comfy yellow crosses it at the
+ * mark's 16°. Then it travels up to its place, transform only, while
+ * Set up rises. */
 .mss-first.is-backdrop.is-alone .mss-first-mark {
   transform: translate(-50%, 0) scale(1);
   /* iOS's drawer curve: it leaves at once and settles long. */
@@ -1162,13 +1164,44 @@
 }
 .mss-first.is-backdrop.is-arriving .mss-first-mark {
   transform: translate(-50%, calc(50vh - 34px)) scale(2);
-  animation: mss-arrive 500ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  animation: mss-arrive 760ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.mss-first.is-backdrop.is-arriving .mss-ambient {
+  animation: mss-light 1100ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.mss-first.is-backdrop.is-arriving .mss-first-glint {
+  color: #f2ff59;
+  mask-image: linear-gradient(106deg, transparent 44%, #000 50%, transparent 56%);
+  mask-size: 300% 100%;
+  mask-repeat: no-repeat;
+  animation: mss-glint 520ms 340ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 @keyframes mss-arrive {
   from {
     opacity: 0;
-    scale: 0.96;
-    filter: blur(4px);
+    scale: 0.92;
+    filter: blur(14px) drop-shadow(0 0 28px rgb(255 255 255 / 0.9));
+  }
+  55% {
+    opacity: 1;
+    scale: 1;
+    filter: blur(0) drop-shadow(0 0 18px rgb(255 255 255 / 0.5));
+  }
+  to {
+    filter: blur(0) drop-shadow(0 0 0 rgb(255 255 255 / 0));
+  }
+}
+@keyframes mss-light {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mss-glint {
+  from {
+    mask-position: 100% 0;
+  }
+  to {
+    mask-position: 0% 0;
   }
 }
 :root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {

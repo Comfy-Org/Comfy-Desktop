@@ -569,6 +569,8 @@ function rowState(i: number): string {
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
         <ComfyWordmark class="mss-first-mark" />
+        <!-- The beat: one glint of Comfy yellow across the mark. -->
+        <ComfyWordmark v-if="flow.arriving" class="mss-first-mark mss-first-glint" />
         <SetupSteps
           v-if="!homeOneClick"
           :now="stepNow"
