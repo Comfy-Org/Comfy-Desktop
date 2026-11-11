@@ -1019,11 +1019,19 @@
     display: flex;
     gap: 8px;
   }
+  /* New build: the name row above the computer's card. */
+  .mss-newbuild-name {
+    margin-top: 16px;
+  }
+  .mss-newbuild-name + .mss-machine.is-hero {
+    margin-top: 12px;
+  }
   /* One-click install: the consent under Set up's list; the action bar's
      own line is the only divider. */
   .mss-setup-consent {
-    /* The boxes line up with the title and the cards' left edge. */
     margin-top: 36px;
+    /* The boxes line up with the rows' icons, 32px in. */
+    padding: 0 32px;
   }
   /* The Home's Spotlight (shell/homeBackgrounds.css): a neutral light from
    * the top centre, the same on every step. */
