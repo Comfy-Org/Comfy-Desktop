@@ -4,6 +4,7 @@ import {
   Box,
   Check,
   Clock,
+  GraduationCap,
   Image,
   ListFilter,
   PanelsTopLeft,
@@ -26,6 +27,7 @@ import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { goIn, toast } from '../../useProto'
 import { can } from '../../milestones'
+import { ComfyModel, ComfyTemplate } from '../icons/comfyIcons'
 import MarPage from '../pages/MarPage.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
@@ -65,11 +67,13 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
       {
         value: 'apps',
         label: 'Apps',
-        count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
+        count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length,
+        icon: PanelsTopLeft
       },
-      { value: 'templates', label: 'Templates', count: TEMPLATES.length },
-      { value: 'models', label: 'Models', count: ROUTER_MODELS.length },
-      { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length }
+      // Icons on every tab, like Apps' own row.
+      { value: 'templates', label: 'Templates', count: TEMPLATES.length, icon: ComfyTemplate },
+      { value: 'models', label: 'Models', count: ROUTER_MODELS.length, icon: ComfyModel },
+      { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length, icon: GraduationCap }
     ]
 // Examples narrow by the app that made them.
 const appName = (id: string): string => libApp(id)?.name ?? ''
@@ -396,7 +400,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     <MarAppsPage v-else-if="tab === 'mine'" embedded toolbar-to="#mar-ex-lib-tools" />
 
     <!-- Templates -->
-    <div v-else-if="tab === 'templates'" class="mar-ex-grid">
+    <div v-else-if="tab === 'templates'" class="mar-ex-grid is-four">
       <TemplateCard v-for="t in templates" :key="t.id" :t />
     </div>
 
@@ -513,12 +517,14 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 10px;
 }
-.mar-ex-grid.is-apps {
+.mar-ex-grid.is-apps,
+.mar-ex-grid.is-four {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 /* Narrow windows: three across, so names and lines still read. */
 @media (max-width: 1100px) {
-  .mar-ex-grid.is-apps {
+  .mar-ex-grid.is-apps,
+  .mar-ex-grid.is-four {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
