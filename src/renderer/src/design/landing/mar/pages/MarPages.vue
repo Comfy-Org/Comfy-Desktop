@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { proto } from '../../useProto'
 import MarWorkflowsPage from './MarWorkflowsPage.vue'
 import MarAppsPage from './MarAppsPage.vue'
 import MarExplore from '../explore/MarExplore.vue'
+import { exploreStart } from '../explore/exploreStart'
 import { can } from '../../milestones'
 import MarAssetsPage from './MarAssetsPage.vue'
 import MarBuildsPage from './MarBuildsPage.vue'
@@ -24,6 +25,19 @@ import MarToolPage from './MarToolPage.vue'
  * states. ModePages hands these pages here.
  */
 const page = computed<string>(() => proto.page)
+// Milestone 3 has no Workflows library or Apps page: the Hub's workflows
+// and apps live in Explore. An address that still names them (a shared
+// link, view=workflows) lands on Explore's tab for it.
+watch(
+  page,
+  (p) => {
+    if (!can.value.explore || can.value.workflows) return
+    if (p !== 'workflows' && p !== 'apps') return
+    exploreStart.value = p === 'workflows' ? 'templates' : 'apps'
+    proto.page = 'explore'
+  },
+  { immediate: true }
+)
 </script>
 
 <template>

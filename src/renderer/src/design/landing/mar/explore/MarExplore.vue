@@ -34,6 +34,7 @@ import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import Select from '../../ui/Select.vue'
 import { ROUTER_MODELS, TUTORIALS, thumb } from '../../mock'
+import { exploreStart } from './exploreStart'
 import { HUB_USE_CASES, HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from './hubWorkflows'
 import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
@@ -64,7 +65,8 @@ import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
  *  third tab, My apps. */
 const { asApps = false, library = false } = defineProps<{ asApps?: boolean; library?: boolean }>()
 type Tab = 'examples' | 'apps' | 'mine' | 'templates' | 'models' | 'tutorials'
-const tab = ref<Tab>(asApps ? 'examples' : 'apps')
+const tab = ref<Tab>(asApps ? 'examples' : (exploreStart.value ?? 'apps'))
+exploreStart.value = null
 const type = ref('all')
 const query = ref('')
 
