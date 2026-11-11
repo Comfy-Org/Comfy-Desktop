@@ -133,8 +133,7 @@
 .mar-tpl .mad-media img {
   user-select: none;
 }
-.mar-tpl-quad,
-.mar-tpl-caption {
+.mar-tpl-quad {
   position: absolute;
   z-index: 2;
   display: inline-flex;
@@ -168,10 +167,6 @@
   bottom: 10px;
   left: calc(50% + 10px);
 }
-.mar-tpl-caption {
-  top: 10px;
-  right: 10px;
-}
 
 /* ── Panel ───────────────────────────────────────────────────────── */
 .mar-tpl-by {
@@ -198,7 +193,6 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: var(--tpl-well-2);
 }
 /* Favorited: a quiet star by the name, full ink like on cards. */
 .mar-tpl-fav {
@@ -304,25 +298,29 @@
 }
 
 /* What it needs: rows spaced, no lines between. */
+/* The files sit in one box (a fill, no lines), set like Details' rows:
+   the UI's type, the size and its mark lined up at the right. */
 .mar-tpl-needs {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: var(--mad-fill);
 }
 .mar-tpl-needs > li {
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto 18px;
+  grid-template-columns: 14px minmax(0, 1fr) auto 14px;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   height: 26px;
   color: var(--color-muted-foreground);
   font-size: 12px;
 }
 .mar-tpl-file {
   overflow: hidden;
-  color: var(--color-muted-foreground);
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
-  font-size: 11.5px;
+  color: var(--color-base-foreground);
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -336,16 +334,14 @@
 }
 .mar-tpl-mark {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
 }
 .mar-tpl-mark[data-m='here'],
 .mar-tpl-mark[data-m='cloud'] {
   color: var(--tpl-ok);
-  background: color-mix(in oklch, var(--tpl-ok) 14%, transparent);
 }
 .mar-tpl-mark[data-m='get'] {
   color: var(--tpl-ink);
@@ -353,7 +349,6 @@
 }
 .mar-tpl-mark[data-m='warn'] {
   color: var(--tpl-warn);
-  background: color-mix(in oklch, var(--tpl-warn) 14%, transparent);
 }
 
 /* Open in: the build it opens on, one filled row that is the picker
@@ -468,6 +463,10 @@
 }
 /* The other builds: one row each, the pick filled (one choice marks its
    row), what blocks one in its own line, greyed. */
+/* Open in sits at the panel's foot, right over the button it sets. */
+.mar-tpl-openin {
+  margin-top: auto;
+}
 .mad-menu.mar-tpl-builds {
   right: 0;
   left: 0;

@@ -335,7 +335,6 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                     >{{ q }}</span
                   >
                 </template>
-                <span class="mar-tpl-caption">Example output</span>
               </div>
             </div>
           </div>
@@ -395,11 +394,46 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               </div>
             </section>
 
-            <!-- Open in: the build it opens on, as one filled row that is
+            <section class="mad-sec">
+              <h3 class="mad-label">Details</h3>
+              <dl class="mad-rows">
+                <div>
+                  <dt>Author</dt>
+                  <dd>ComfyUI</dd>
+                </div>
+                <div v-if="info.model">
+                  <dt>Model</dt>
+                  <dd>{{ info.model }}</dd>
+                </div>
+                <div>
+                  <dt>Uses</dt>
+                  <dd>{{ info.uses }}</dd>
+                </div>
+                <div>
+                  <dt>License</dt>
+                  <dd :title="info.license">{{ info.license }}</dd>
+                </div>
+                <!-- Only when the catalog has one: no row pointing nowhere. -->
+                <div v-if="info.tutorial">
+                  <dt>Tutorial</dt>
+                  <dd>
+                    <a
+                      class="mar-tpl-tutorial"
+                      :href="info.tutorial"
+                      target="_blank"
+                      rel="noreferrer"
+                      ><BookOpen :size="13" />docs.comfy.org</a
+                    >
+                  </dd>
+                </div>
+              </dl>
+            </section>
+
+            <!-- Open in, last and pushed down to the button it sets: the build it opens on, as one filled row that is
                  the picker (the other builds open under it), then why in
                  one line. What blocks it is one line and one action at the
                  bottom, in place of the primary. -->
-            <section class="mad-sec">
+            <section class="mad-sec mar-tpl-openin">
               <h3 class="mad-label">Open in</h3>
               <div v-if="shown" ref="buildBox" class="mad-pick">
                 <button
@@ -428,7 +462,7 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                   }}</span>
                   <ChevronDown v-if="targets.length > 1" :size="14" class="mar-tpl-chev" />
                 </button>
-                <div v-if="buildMenu" class="mad-menu is-down mar-tpl-builds" role="menu">
+                <div v-if="buildMenu" class="mad-menu is-up mar-tpl-builds" role="menu">
                   <button
                     v-for="x in targets"
                     :key="x.inst.id"
@@ -452,8 +486,14 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               <p v-if="fit" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
             </section>
 
-            <!-- What it needs: one line; the files fold under it. -->
-            <details class="mad-sec mar-tpl-needs-box">
+            <!-- What it needs, on the build picked above: one line; the files fold under it. -->
+            <details
+              class="mad-sec mar-tpl-needs-box"
+              @toggle="
+                ($event.target as HTMLDetailsElement).open &&
+                ($event.target as HTMLElement).scrollIntoView({ block: 'nearest' })
+              "
+            >
               <summary class="mad-label">
                 What it needs<span class="mar-tpl-total">{{ needsLine }}</span
                 ><ChevronDown :size="13" class="mar-tpl-fold" />
@@ -513,41 +553,6 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
                 </li>
               </ul>
             </details>
-
-            <section class="mad-sec">
-              <h3 class="mad-label">Details</h3>
-              <dl class="mad-rows">
-                <div>
-                  <dt>Author</dt>
-                  <dd>ComfyUI</dd>
-                </div>
-                <div v-if="info.model">
-                  <dt>Model</dt>
-                  <dd>{{ info.model }}</dd>
-                </div>
-                <div>
-                  <dt>Uses</dt>
-                  <dd>{{ info.uses }}</dd>
-                </div>
-                <div>
-                  <dt>License</dt>
-                  <dd :title="info.license">{{ info.license }}</dd>
-                </div>
-                <!-- Only when the catalog has one: no row pointing nowhere. -->
-                <div v-if="info.tutorial">
-                  <dt>Tutorial</dt>
-                  <dd>
-                    <a
-                      class="mar-tpl-tutorial"
-                      :href="info.tutorial"
-                      target="_blank"
-                      rel="noreferrer"
-                      ><BookOpen :size="13" />docs.comfy.org</a
-                    >
-                  </dd>
-                </div>
-              </dl>
-            </section>
           </div>
 
           <!-- At the bottom: what happens, then the one action; More (the
