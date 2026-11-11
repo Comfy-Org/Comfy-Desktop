@@ -1218,13 +1218,17 @@ watch(performanceTestLogs, async () => {
       :open="isExamplePickerOpen"
       size="xl"
       :aria-label="t('performanceTest.exampleWorkflowPickerTitle')"
-      content-class="performance-test__example-modal [&_h2]:m-0 [&_h2+p]:mt-1.5 [&_h2+p]:mr-0 [&_h2+p]:mb-0 [&_h2+p]:ml-0 [&_h2+p]:text-[13px] [&_h2+p]:text-text-muted"
+      content-class="performance-test__example-modal"
       @close="isExamplePickerOpen = false"
     >
       <template #header>
         <div>
-          <h2>{{ t('performanceTest.exampleWorkflowPickerTitle') }}</h2>
-          <p>{{ t('performanceTest.exampleWorkflowPickerDescription') }}</p>
+          <h2 class="m-0 text-base leading-[1.3] font-semibold text-neutral-100">
+            {{ t('performanceTest.exampleWorkflowPickerTitle') }}
+          </h2>
+          <p class="m-0 mt-1.5 text-[13px] text-text-muted">
+            {{ t('performanceTest.exampleWorkflowPickerDescription') }}
+          </p>
         </div>
       </template>
       <p
