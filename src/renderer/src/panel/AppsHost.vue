@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import AppPageSkeleton from './AppPageSkeleton.vue'
 import type { AppOutputs } from '../types/ipc'
 
 const SLIDE_MS = 480
 const EASE_OUT_CUBIC = 'cubic-bezier(0.33, 1, 0.68, 1)'
 const HOLD_MAX_MS = 1000
 const REVEAL_MAX_MS = 4000
+const SKELETON_LINGER_MS = 250
 
 const {
   url,
@@ -28,6 +30,7 @@ const emit = defineEmits<{
 
 const slot = useTemplateRef<HTMLElement>('slot')
 const surface = useTemplateRef<HTMLElement>('surface')
+const revealed = ref(false)
 let observer: ResizeObserver | null = null
 let stopListening: (() => void) | null = null
 let stopAppOpen: (() => void) | null = null
@@ -38,6 +41,7 @@ let gone = false
 let holdWidth = 0
 let holdTimer: ReturnType<typeof setTimeout> | undefined
 let revealTimer: ReturnType<typeof setTimeout> | undefined
+let lingerTimer: ReturnType<typeof setTimeout> | undefined
 
 function report(fresh = false): void {
   const el = slot.value
@@ -45,8 +49,7 @@ function report(fresh = false): void {
   const r = el.getBoundingClientRect()
   if (holdWidth && r.width >= holdWidth) holdWidth = 0
   const width = Math.max(r.width, holdWidth)
-  const x = parked ? window.innerWidth : r.x
-  window.api.showApps({ x, y: r.y, width, height: r.height, fresh, url })
+  window.api.showApps({ x: r.x, y: r.y, width, height: r.height, fresh, parked, url })
 }
 
 const reportResize = (): void => report()
@@ -99,14 +102,17 @@ onMounted(async () => {
   emit('entered')
   if (holdWidth) releaseHoldLater()
   await settled
+  if (gone) return
   parked = false
   report()
+  lingerTimer = setTimeout(() => (revealed.value = true), SKELETON_LINGER_MS)
 })
 
 onBeforeUnmount(() => {
   gone = true
   clearTimeout(holdTimer)
   clearTimeout(revealTimer)
+  clearTimeout(lingerTimer)
   stopListening?.()
   stopAppOpen?.()
   stopOutputs?.()
@@ -123,7 +129,9 @@ onBeforeUnmount(() => {
       ref="surface"
       class="size-full rounded-shell bg-content-background"
       data-testid="apps-host-surface"
-    />
+    >
+      <AppPageSkeleton v-if="!revealed" />
+    </div>
     <img
       v-if="covered && backdrop"
       :src="backdrop"

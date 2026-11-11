@@ -45,6 +45,7 @@ import {
 import { listCatalogApps } from './catalog'
 import { outputAction, outputRequest } from './outputs'
 import { localBuilds, openInComfy } from './openInComfy'
+import { stackApps } from './stackApps'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -73,6 +74,7 @@ export interface AppsRect {
   width: number
   height: number
   fresh?: boolean
+  parked?: boolean
   url?: string
 }
 
@@ -225,7 +227,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     width: Math.round(r.width!),
     height: Math.round(r.height!)
   })
-  entry.window.contentView.addChildView(view)
+  stackApps(entry.window.contentView, view, entry.panelView!, r.parked === true)
   const uncovered = !view.getVisible()
   view.setVisible(true)
   if (r.fresh !== true) {
