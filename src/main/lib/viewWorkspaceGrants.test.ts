@@ -682,6 +682,20 @@ describe('ViewWorkspaceGrants partner-node tokens', () => {
     expect(partnerRenew).toHaveBeenCalledTimes(2)
   })
 
+  it('asks Cloud again after five minutes however long Retry-After is', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+    vi.setSystemTime(Date.now() + 31 * 60_000)
+    partnerRenew.mockResolvedValueOnce({ kind: 'failed', status: 429, retryAfterSeconds: 4 * 3600 })
+    await grants.partnerNodeTokenFor(viewA, 'ws-1')
+    vi.setSystemTime(Date.now() + 5 * 60_000 + 1_000)
+
+    await expect(grants.partnerNodeTokenFor(viewA, 'ws-1')).resolves.toBe(
+      partnerToken('ws-1', 'sid-1', 1)
+    )
+    expect(partnerRenew).toHaveBeenCalledTimes(2)
+  })
+
   it('does not ask Cloud again for a minute after a refused mint', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     partnerMint.mockResolvedValueOnce({

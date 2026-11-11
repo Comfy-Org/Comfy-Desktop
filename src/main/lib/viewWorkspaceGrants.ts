@@ -14,6 +14,7 @@ import * as mainTelemetry from './telemetry'
 const MINT_REFRESH_SKEW_MS = 60_000
 const PARTNER_NODE_RENEW_BEFORE_MS = 60 * 60_000
 const PARTNER_NODE_RETRY_MS = 60_000
+const PARTNER_NODE_MAX_RETRY_MS = 5 * 60_000
 
 export const VIEW_TOKEN_MINTED_EVENT = 'comfy.desktop.auth.view_token_minted'
 export const VIEW_TOKEN_MINT_FAILED_EVENT = 'comfy.desktop.auth.view_token_mint_failed'
@@ -258,7 +259,9 @@ export class ViewWorkspaceGrants {
         result.kind === 'failed' && result.retryAfterSeconds !== undefined
           ? result.retryAfterSeconds * 1000
           : 0
-      const retryAt = Date.now() + Math.max(PARTNER_NODE_RETRY_MS, retryAfterMs)
+      const retryAt =
+        Date.now() +
+        Math.min(Math.max(PARTNER_NODE_RETRY_MS, retryAfterMs), PARTNER_NODE_MAX_RETRY_MS)
       this.partnerNodeRetryAt.set(key, Math.max(retryAt, this.partnerNodeRetryAt.get(key) ?? 0))
       if (cached && !isRetryableFailure(result)) this.forgetPartnerNodeToken(key, cached.token)
     }
