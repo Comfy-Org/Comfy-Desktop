@@ -333,23 +333,20 @@ function handleRevealPath(path: string): void {
   <div class="storage-pane @container/build-settings flex flex-col gap-8">
     <div
       v-if="showRestartWarning"
-      class="storage-note is-warning m-0 flex items-center gap-2 rounded-lg border border-solid border-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-3 py-2.5 font-medium text-[var(--warning)] transition-[color,background-color,border-color] duration-[160ms] ease-[ease]"
+      class="storage-note is-warning m-0 flex items-center gap-2.5 rounded-[14px] bg-[color-mix(in_srgb,var(--text)_6%,transparent)] px-4 py-3 text-neutral-100"
       role="status"
     >
       <AlertTriangle
         :size="14"
-        class="storage-note-icon shrink-0 text-[var(--warning)] opacity-100"
+        class="storage-note-icon shrink-0 text-text-muted"
         aria-hidden="true"
       />
-      <p class="storage-note-text m-0 text-[12px] leading-[1.45]">
+      <p class="storage-note-text m-0 text-[13px] leading-[1.45]">
         {{ t('comfyUISettings.storageRestartNote') }}
       </p>
     </div>
 
-    <BuildSettingsSection
-      :title="t('settings.modelStorage')"
-      :tooltip="t('tooltips.instanceModels')"
-    >
+    <BuildSettingsSection :title="t('settings.modelStorage')" :hint="t('tooltips.instanceModels')">
       <template v-if="useSharedModelsField" #actions>
         <label
           class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
@@ -372,18 +369,19 @@ function handleRevealPath(path: string): void {
         @open="handleOpenModelDir"
         @details="handleModelDetails"
         @add="handleAddModelDir"
-      />
-
-      <Button
-        v-if="useSharedModelsEnabled"
-        type="button"
-        variant="textonly"
-        size="unset"
-        class="storage-manage-link static inline-block self-start gap-0 rounded-lg border-none bg-transparent p-0 text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline appearance-auto hover:bg-transparent hover:text-[var(--action)] focus-visible:bg-transparent focus-visible:text-[var(--action)] focus-visible:outline-none focus-visible:ring-0"
-        @click="handleManageSharedDirs"
       >
-        {{ t('comfyUISettings.manageSharedDirs') }}
-      </Button>
+        <template v-if="useSharedModelsEnabled" #footer>
+          <Button
+            type="button"
+            variant="textonly"
+            size="unset"
+            class="storage-manage-link static inline-block min-w-0 gap-0 rounded-none border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline underline-offset-2 appearance-auto hover:bg-transparent hover:text-neutral-100 focus-visible:bg-transparent focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
+            @click="handleManageSharedDirs"
+          >
+            {{ t('comfyUISettings.manageSharedDirs') }}
+          </Button>
+        </template>
+      </ModelsDirList>
     </BuildSettingsSection>
 
     <BuildSettingsSection :title="t('settings.inputStorage')">
