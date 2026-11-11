@@ -31,8 +31,8 @@ import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { hostActions, instances, proto, toast } from '../../useProto'
-import HomeInstall from '../setup/HomeInstall.vue'
-import { installingBehind } from '../setup/setupFlow'
+import SetupCancelConfirm from '../setup/SetupCancelConfirm.vue'
+import { BUILD_NAME, DETECTED, flow, installingBehind, showInstall } from '../setup/setupFlow'
 import { can } from '../../milestones'
 import { buildsAsM1 } from '../build/buildsAsM1'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
@@ -208,6 +208,10 @@ const outputs = computed(() => {
   return made
 })
 
+// A build installing (the first, or a new one): one row of its own, first,
+// in the install's state; View logs opens the install, Cancel asks.
+const installingName = computed(() => (flow.another ? flow.buildName : BUILD_NAME))
+const installFailed = computed(() => flow.step === 'error')
 const gpuName = (b: Build): string =>
   b.gpu?.split(' · ')[0] ?? (b.kind === 'cloud' ? 'Cloud GPU' : 'This computer')
 
@@ -588,15 +592,50 @@ const newLabel = computed(() =>
       </div>
     </template>
 
-    <!-- A build installing (the first, or a new one) leads the list as the
-         Home's card (progress, View logs, Cancel), then joins the list as
-         its own. -->
-    <div v-if="installingBehind" class="mar-bc-installing">
-      <HomeInstall bare />
-    </div>
     <!-- One build to a line: where as a small mark, the name and its specs,
          the state as a badge, then one action that says where it runs. -->
     <div v-if="rowsOnly" class="mar-bc-rows">
+      <!-- The build installing, first, in the install's state: the badge
+           spins with the percent, View logs opens the install, Cancel asks. -->
+      <MarItem
+        v-if="installingBehind"
+        key="installing"
+        layout="list"
+        :name="installingName"
+        :lines="[]"
+        :selectable="false"
+        class="mar-bc-row"
+        @open="showInstall"
+      >
+        <template #media><LocationIcon kind="local" :size="16" /></template>
+        <template #meta
+          ><span class="mar-bc-specs-text"
+            >This computer · {{ DETECTED.chip }} · ComfyUI {{ DETECTED.version }}</span
+          ></template
+        >
+        <template #cols>
+          <span class="mar-item-col mar-bc-row-state"
+            ><span class="mar-bc-badge" :class="installFailed ? 'is-bad' : 'is-idle is-spin'"
+              ><Loader2 v-if="!installFailed" :size="12" class="animate-spin" /><i
+                v-else
+                aria-hidden="true"
+              />{{ installFailed ? 'Install failed' : `Installing · ${flow.percent}%` }}</span
+            ></span
+          >
+        </template>
+        <template #actions>
+          <Button variant="ghost" size="md" class="mar-bc-second" @click.stop="showInstall"
+            ><ScrollText :size="13" />View logs</Button
+          >
+          <Button
+            variant="secondary"
+            size="md"
+            class="mar-bc-main"
+            @click.stop="flow.confirmCancel = true"
+            >Cancel</Button
+          >
+        </template>
+      </MarItem>
       <MarItem
         v-for="b in shown"
         :key="b.id"
@@ -714,6 +753,38 @@ const newLabel = computed(() =>
     <!-- Photos: the last things made on it, then what milestone 1 says and
          no more: name, specs, the state, one action that says where. -->
     <div v-else-if="view === 'grid'" class="mar-grid is-wide">
+      <!-- The build installing, first, in the install's state. -->
+      <MarItem
+        v-if="installingBehind"
+        key="installing"
+        :name="installingName"
+        :lines="[]"
+        :selectable="false"
+        ratio="2 / 1"
+        class="mar-build"
+        @open="showInstall"
+      >
+        <template #media>
+          <span class="mar-build-made is-launching" aria-hidden="true"></span>
+        </template>
+        <template #meta
+          ><span class="mar-bc-specs-text">{{
+            installFailed ? 'Install failed' : `Installing · ${flow.percent}%`
+          }}</span></template
+        >
+        <template #actions>
+          <Button variant="ghost" size="sm" class="mar-bc-second" @click.stop="showInstall"
+            ><ScrollText :size="13" />View logs</Button
+          >
+          <Button
+            variant="secondary"
+            size="sm"
+            class="mar-bc-main"
+            @click.stop="flow.confirmCancel = true"
+            ><Square :size="13" />Cancel</Button
+          >
+        </template>
+      </MarItem>
       <MarItem
         v-for="b in shown"
         :key="b.id"
@@ -795,6 +866,41 @@ const newLabel = computed(() =>
         ><template v-else><span>Runs on</span><span>Last used</span></template
         ><span class="is-end">State</span><span />
       </div>
+      <!-- The build installing, first, in the install's state. -->
+      <MarItem
+        v-if="installingBehind"
+        key="installing"
+        layout="list"
+        :name="installingName"
+        :meta="`Stable · ${DETECTED.version}`"
+        :status="installFailed ? 'failed' : 'launching'"
+        :status-label="installFailed ? 'Install failed' : `Installing · ${flow.percent}%`"
+        :lines="[]"
+        :selectable="false"
+        @open="showInstall"
+      >
+        <template #media>
+          <span class="mar-build-glyph"><LocationIcon kind="local" :size="20" /></span>
+        </template>
+        <template #actions>
+          <Button variant="ghost" size="sm" class="mar-bc-second" @click.stop="showInstall"
+            ><ScrollText :size="13" />View logs</Button
+          >
+          <Button
+            variant="secondary"
+            size="sm"
+            class="mar-bc-main"
+            @click.stop="flow.confirmCancel = true"
+            ><Square :size="13" />Cancel</Button
+          >
+        </template>
+        <template #cols>
+          <span class="mar-item-col"
+            ><span class="mar-build-where">This computer</span> · {{ DETECTED.chip }}</span
+          >
+          <span class="mar-item-col">Now</span>
+        </template>
+      </MarItem>
       <MarItem
         v-for="b in shown"
         :key="b.id"
@@ -856,6 +962,8 @@ const newLabel = computed(() =>
         </template>
       </MarItem>
     </div>
+    <!-- Cancel on the installing row asks, as the Home's card does. -->
+    <SetupCancelConfirm v-if="installingBehind && !flow.open" />
   </MarPage>
 </template>
 
@@ -1055,11 +1163,6 @@ const newLabel = computed(() =>
   background: color-mix(in oklch, var(--color-base-foreground) 5%, var(--color-card-background));
 }
 /* One build to a line, on the card's surface. */
-/* The build installing, above the list, the width of one Builds card. */
-.mar-bc-installing {
-  max-width: 560px;
-  margin-bottom: 16px;
-}
 .mar-bc-rows {
   display: flex;
   flex-direction: column;
