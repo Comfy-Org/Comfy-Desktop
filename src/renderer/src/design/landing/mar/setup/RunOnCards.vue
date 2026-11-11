@@ -180,7 +180,7 @@ const WAYS = [
  * Home's build card's measures (MarBuildsRow.vue, .mbr-card: 16px corners,
  * 20px padding, the device 88px), a size up. Here, not in setup.css, so it
  * outranks the card's own rules above. */
-:root .proto-ui.proto-ui.proto-ui .mss-first.is-alone .mss-ways .mss-way {
+:root .proto-ui.proto-ui.proto-ui.mss-first.is-alone .mss-ways .mss-way {
   padding: 32px 32px 34px;
   border-radius: 16px;
 }
