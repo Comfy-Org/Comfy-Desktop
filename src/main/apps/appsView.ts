@@ -164,12 +164,13 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   if (!r || ![r.x, r.y, r.width, r.height].every((n) => typeof n === 'number' && isFinite(n)))
     return
   let view = views.get(key)
+  if (view?.webContents.isDestroyed()) view = undefined
   if (view && failedViews.has(view)) {
     if (r.fresh !== true) return
     failedViews.delete(view)
     view.webContents.loadURL(APPS_URL).catch(() => {})
   }
-  if (!view || view.webContents.isDestroyed()) {
+  if (!view) {
     view = createAppsView(key)
     views.set(key, view)
     entry.window.once('closed', () => {
