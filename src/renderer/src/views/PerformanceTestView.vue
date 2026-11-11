@@ -32,9 +32,9 @@ import { performanceTestSessionKey } from '../../../shared/performanceTestSessio
 const cardClass =
   'flex w-full min-w-0 flex-none flex-col rounded-[14px] bg-card px-[18px] pt-1.5 pb-3.5'
 const titleClass =
-  'mt-1 mb-1 flex min-h-8 items-center gap-2 text-[11px] leading-[1.4] font-semibold tracking-[0.04em] text-text-muted uppercase'
+  'mt-1 mb-1 flex min-h-8 items-center gap-2 text-[11px] leading-[1.4] font-semibold tracking-[0.04em] text-subtle-foreground uppercase'
 const toggleClass =
-  'text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase [&_.collapsible-section-toggle__chevron]:size-3.5'
+  'self-center text-[11px] font-semibold tracking-[0.04em] text-subtle-foreground uppercase hover:text-foreground [&_.collapsible-section-toggle__chevron]:size-3.5'
 const factClass = 'grid min-h-10 grid-cols-[112px_minmax(0,1fr)] items-center gap-3'
 
 interface PerformanceTestRunTelemetry {
@@ -675,32 +675,32 @@ watch(performanceTestLogs, async () => {
       class="performance-test__layout @container relative h-full min-h-0 w-full overflow-x-hidden overflow-y-auto"
     >
       <div
-        class="performance-test__intro mx-auto flex min-h-full w-full max-w-300 flex-col items-start gap-6 px-10 pt-9 pb-24 text-left"
+        class="performance-test__intro mx-auto flex min-h-full w-full max-w-300 flex-col items-start gap-5 px-10 pt-9 pb-24 text-left"
       >
         <BrandedPageHeader :title="t('performanceTest.title')">
           <template #actions>
             <Button
               v-if="ownsRun"
-              class="performance-test__stop min-w-24"
+              class="performance-test__stop min-w-20 gap-1.5 px-3 text-[13px]/5"
               variant="secondary"
-              size="lg"
+              size="md"
               type="button"
               :disabled="!canStop"
               @click="stopPerformanceTestFromUser"
             >
-              <Square :size="12" fill="currentColor" aria-hidden="true" />
+              <Square :size="13" fill="currentColor" aria-hidden="true" />
               {{ isStopping ? t('performanceTest.stopping') : t('performanceTest.stop') }}
             </Button>
             <Button
               v-else
-              class="performance-test__run min-w-24"
+              class="performance-test__run min-w-20 gap-1.5 px-3 text-[13px]/5"
               variant="inverted"
-              size="lg"
+              size="md"
               type="button"
               :disabled="!canRun"
               @click="runPerformanceTest"
             >
-              <Play :size="12" fill="currentColor" aria-hidden="true" />
+              <Play :size="14" fill="currentColor" aria-hidden="true" />
               {{ t('performanceTest.run') }}
             </Button>
           </template>
@@ -713,6 +713,7 @@ watch(performanceTestLogs, async () => {
               <h2 :class="titleClass">{{ t('performanceTest.selectInstance') }}</h2>
               <div class="performance-test__instance-select min-w-0 w-full">
                 <BaseSelect
+                  class="h-8 px-3 text-[13px]/5"
                   :model-value="selectedInstallationId ?? ''"
                   :options="instanceOptions"
                   :placeholder="t('performanceTest.selectInstancePlaceholder')"
@@ -726,9 +727,9 @@ watch(performanceTestLogs, async () => {
             <section class="performance-test__step" :class="cardClass">
               <h2 :class="titleClass">{{ t('performanceTest.chooseWorkflow') }}</h2>
               <Button
-                class="performance-test__example-workflow w-full justify-between font-normal"
+                class="performance-test__example-workflow w-full justify-between gap-1.5 px-3 text-[13px]/5 font-normal"
                 variant="secondary"
-                size="lg"
+                size="md"
                 type="button"
                 :disabled="
                   !selectedInstallationId ||
@@ -745,7 +746,7 @@ watch(performanceTestLogs, async () => {
                       : t('performanceTest.chooseExampleWorkflow')
                   }}
                 </span>
-                <ChevronDown :size="16" class="shrink-0" aria-hidden="true" />
+                <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
               </Button>
               <p
                 class="performance-test__example-hint mt-0.5 mb-0 text-[12px] leading-[1.45] text-text-muted"
@@ -785,7 +786,7 @@ watch(performanceTestLogs, async () => {
                   type="button"
                   :class="
                     workflowFilePath || pendingExampleWorkflowLabel
-                      ? 'min-h-10 justify-start py-2 pr-11 pl-3 text-left'
+                      ? 'min-h-10 justify-start py-2 pr-10 pl-3 text-left'
                       : 'min-h-[82px] justify-center p-3 text-center'
                   "
                   :disabled="isWorkflowLocked"
@@ -802,14 +803,10 @@ watch(performanceTestLogs, async () => {
                         : t('performanceTest.dropWorkflowHint')
                     }}
                   </span>
-                  <span v-else class="flex min-w-0 grow items-start gap-2.5">
-                    <FileJson
-                      :size="15"
-                      class="mt-0.5 shrink-0 text-text-muted"
-                      aria-hidden="true"
-                    />
+                  <span v-else class="flex min-w-0 grow items-center gap-2.5">
+                    <FileJson :size="15" class="shrink-0 text-text-muted" aria-hidden="true" />
                     <span
-                      class="performance-test__workflow-file flex min-w-0 grow flex-col gap-1 [&>strong]:truncate [&>strong]:text-[13px] [&>strong]:font-normal [&>strong]:text-[var(--text-primary)] [&>code]:[overflow-wrap:anywhere] [&>code]:text-[11px] [&>code]:font-[inherit] [&>code]:text-text-muted"
+                      class="performance-test__workflow-file flex min-w-0 grow flex-col gap-1 [&>strong]:truncate [&>strong]:text-[13px] [&>strong]:font-medium [&>strong]:text-[var(--text-primary)] [&>code]:[overflow-wrap:break-word] [&>code]:text-[11px] [&>code]:font-[inherit] [&>code]:text-text-muted"
                     >
                       <strong>{{ workflowLabel }}</strong>
                       <code v-if="pendingExampleWorkflowLabel">
@@ -837,10 +834,12 @@ watch(performanceTestLogs, async () => {
                           />
                         </span>
                       </template>
-                      <code v-else>{{ workflowFilePath }}</code>
+                      <code v-else class="truncate" :title="workflowFilePath ?? undefined">{{
+                        workflowFilePath
+                      }}</code>
                     </span>
                     <span
-                      class="performance-test__workflow-tag mt-px shrink-0 rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] leading-[1.3] text-text-muted"
+                      class="performance-test__workflow-tag shrink-0 rounded-md bg-white/8 px-1.5 py-0.5 text-[11px] leading-[1.3] text-text-muted"
                     >
                       {{
                         workflowDisplayName !== null || pendingExampleWorkflowLabel
@@ -852,9 +851,9 @@ watch(performanceTestLogs, async () => {
                 </Button>
                 <Button
                   v-if="workflowFilePath && !isWorkflowLocked"
-                  class="performance-test__delete-workflow absolute top-1.5 right-1"
-                  variant="textonly"
-                  size="icon-sm"
+                  class="performance-test__delete-workflow absolute top-1/2 right-1.5 size-7 -translate-y-1/2 rounded-lg"
+                  variant="muted-textonly"
+                  size="icon"
                   type="button"
                   :aria-label="
                     exampleDownload
@@ -869,7 +868,7 @@ watch(performanceTestLogs, async () => {
                   :disabled="isWorkflowDeleting"
                   @click="deleteWorkflow"
                 >
-                  <X :size="14" aria-hidden="true" />
+                  <X :size="15" aria-hidden="true" />
                 </Button>
               </div>
               <p
@@ -946,7 +945,7 @@ watch(performanceTestLogs, async () => {
               />
               <div
                 v-if="resultsFolderPath"
-                class="performance-test__results-actions ml-auto flex items-center gap-1.5 tracking-normal normal-case"
+                class="performance-test__results-actions ml-auto flex items-center gap-1 tracking-normal normal-case"
               >
                 <span
                   v-if="exportResultsError"
@@ -955,13 +954,13 @@ watch(performanceTestLogs, async () => {
                   {{ exportResultsError }}
                 </span>
                 <Button
-                  class="performance-test__open-results inline-flex items-center gap-2"
-                  variant="textonly"
-                  size="sm"
+                  class="performance-test__open-results gap-1.5 px-2.5 text-[13px]/5 font-normal"
+                  variant="muted-textonly"
+                  size="md"
                   type="button"
                   @click="openResultsFolder"
                 >
-                  <FolderOpen :size="14" aria-hidden="true" />
+                  <FolderOpen :size="15" aria-hidden="true" />
                   {{ t('performanceTest.openResultsFolder') }}
                 </Button>
                 <Button
@@ -970,14 +969,14 @@ watch(performanceTestLogs, async () => {
                     performanceTestResult.systemInfo &&
                     performanceTestResult.hardware
                   "
-                  class="performance-test__export-results inline-flex items-center gap-2"
-                  variant="textonly"
-                  size="sm"
+                  class="performance-test__export-results gap-1.5 px-2.5 text-[13px]/5 font-normal"
+                  variant="muted-textonly"
+                  size="md"
                   type="button"
                   :disabled="isExportingResults"
                   @click="exportResultsImage"
                 >
-                  <ImageDown :size="14" aria-hidden="true" />
+                  <ImageDown :size="15" aria-hidden="true" />
                   {{
                     isExportingResults
                       ? t('performanceTest.exportingImage')
@@ -1071,7 +1070,10 @@ watch(performanceTestLogs, async () => {
                   </template>
                 </div>
               </div>
-              <p v-else class="performance-test__results-placeholder mt-0 mb-1 text-[12px]">
+              <p
+                v-else
+                class="performance-test__results-placeholder mt-0 mb-1 text-ui text-muted-foreground"
+              >
                 {{ t('performanceTest.resultsPlaceholder') }}
               </p>
             </div>
