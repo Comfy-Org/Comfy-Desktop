@@ -232,11 +232,7 @@ const waitsForInstall = computed(
     installingBehind.value && needsLocal.value && !instances.value.some((i) => i.kind === 'local')
 )
 function run(): void {
-  if (state.value === 'running') return
-  if (waitsForInstall.value) {
-    showInstall()
-    return
-  }
+  if (state.value === 'running' || waitsForInstall.value) return
   if (gate && !gate()) return
   comparing.value = false
   take.value = 0
@@ -557,26 +553,28 @@ function back(): void {
 
           <!-- Run: the label, and what a run costs in credits -->
           <footer class="mar-app-editor-foot">
+            <!-- ComfyUI still installing and no build yet: a strip above
+                 Run says so and opens the install; Run waits, disabled. -->
+            <button
+              v-if="waitsForInstall"
+              type="button"
+              class="mar-app-editor-wait"
+              @click="showInstall"
+            >
+              <Loader2 :size="13" class="animate-spin" />
+              <span class="flex-1 text-left">Installing ComfyUI · {{ flow.percent }}%</span>
+              <span class="mar-app-editor-wait-link">View progress</span>
+            </button>
             <button
               type="button"
               class="mar-app-editor-run"
-              :disabled="state === 'running'"
+              :disabled="state === 'running' || waitsForInstall"
               :title="payer"
               @click="run"
             >
               <span class="flex items-center gap-2">
-                <Loader2
-                  v-if="state === 'running' || waitsForInstall"
-                  :size="15"
-                  class="animate-spin"
-                />
-                {{
-                  state === 'running'
-                    ? 'Running'
-                    : waitsForInstall
-                      ? `Installing ComfyUI · ${flow.percent}%`
-                      : 'Run'
-                }}
+                <Loader2 v-if="state === 'running'" :size="15" class="animate-spin" />
+                {{ state === 'running' ? 'Running' : 'Run' }}
               </span>
               <span class="mar-app-editor-cost">
                 <template v-if="credits"><Coins :size="14" />{{ credits }}</template>
@@ -1089,6 +1087,31 @@ function back(): void {
 .mar-app-editor-run:disabled {
   opacity: 0.6;
   pointer-events: none;
+}
+/* The strip above Run while ComfyUI installs: a quiet tab that opens the
+ * install's progress. */
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-wait {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  text-align: left;
+  transition: background-color 0.15s;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-app-editor-wait:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+}
+.mar-app-editor-wait-link {
+  color: var(--color-subtle-foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .mar-app-editor-cost {
   display: inline-flex;

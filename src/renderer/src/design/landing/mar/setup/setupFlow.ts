@@ -770,6 +770,8 @@ export function openSetup(): boolean {
   flow.logs = false
   flow.background = false
   flow.ready = false
+  // A Ready card still on the Home is over: this is another build.
+  flow.homeCard = false
   flow.open = true
   return true
 }

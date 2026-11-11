@@ -31,6 +31,8 @@ import Button from '../../ui/Button.vue'
 import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { hostActions, instances, proto, toast } from '../../useProto'
+import HomeInstall from '../setup/HomeInstall.vue'
+import { installingBehind } from '../setup/setupFlow'
 import { can } from '../../milestones'
 import { buildsAsM1 } from '../build/buildsAsM1'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
@@ -100,7 +102,7 @@ const seed = (): Build[] =>
 const builds = collection<Build>(seed(), 'build')
 // The local setup finishes with this page already open behind it.
 watch(
-  () => [proto.oneLocal, proto.fresh],
+  () => [proto.oneLocal, proto.fresh, proto.addedInstances.length],
   () => builds.items.splice(0, builds.items.length, ...seed())
 )
 if (leaving.value) {
@@ -111,6 +113,8 @@ if (leaving.value) {
 // A first-time user's libraries are empty, but not Builds once they have
 // installed one (the local setup lands here in its M1 scope).
 const buildsState = computed<PageState | undefined>(() => {
+  // A build installing is a build: the page is live, the card leads it.
+  if (installingBehind.value) return 'live'
   if (shownState.value === 'live' && builds.items.length === 0) return 'empty'
   if (pageState.id === 'live' && !proto.fresh && builds.items.length) return 'live'
   return undefined
@@ -584,6 +588,12 @@ const newLabel = computed(() =>
       </div>
     </template>
 
+    <!-- A build installing (the first, or a new one) leads the list as the
+         Home's card (progress, View logs, Cancel), then joins the list as
+         its own. -->
+    <div v-if="installingBehind" class="mar-bc-installing">
+      <HomeInstall bare />
+    </div>
     <!-- One build to a line: where as a small mark, the name and its specs,
          the state as a badge, then one action that says where it runs. -->
     <div v-if="rowsOnly" class="mar-bc-rows">
@@ -1045,6 +1055,11 @@ const newLabel = computed(() =>
   background: color-mix(in oklch, var(--color-base-foreground) 5%, var(--color-card-background));
 }
 /* One build to a line, on the card's surface. */
+/* The build installing, above the list, the width of one Builds card. */
+.mar-bc-installing {
+  max-width: 560px;
+  margin-bottom: 16px;
+}
 .mar-bc-rows {
   display: flex;
   flex-direction: column;
