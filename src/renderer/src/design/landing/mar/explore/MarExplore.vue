@@ -3,6 +3,7 @@ import { computed, ref, watch, type Component, type Ref } from 'vue'
 import {
   Box,
   Check,
+  ChevronDown,
   Cloud,
   Clock,
   Cpu,
@@ -413,13 +414,14 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
               :class="
                 cn(
                   fieldVariants(),
-                  'w-auto cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-border-focus/30 data-[state=open]:border-border-strong'
+                  'w-auto cursor-pointer gap-2 pr-2 outline-none focus-visible:border-border-focus focus-visible:ring-2 focus-visible:ring-border-focus/30 data-[state=open]:border-border-strong'
                 )
               "
             >
-              <ListFilter :size="14" class="text-subtle-foreground" />
-              Filter
+              <ListFilter :size="14" class="shrink-0 text-subtle-foreground" />
+              <span>Filters</span>
               <span v-if="picked.length" class="mar-ex-badge">{{ picked.length }}</span>
+              <ChevronDown :size="13" class="ml-1 shrink-0 text-subtle-foreground" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="mar-ex-filter w-60">
               <template v-for="(g, gi) in FILTER" :key="g.key">
@@ -497,7 +499,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           <Select v-model="type" :options="TYPES[tab]" class="w-36" />
         </span>
         <span v-if="tab !== 'mine'" key="search" class="inline-flex">
-          <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab as Exclude<Tab, 'mine'>]" />
+          <MarSearchField
+            v-model="query"
+            shortcut
+            :placeholder="PLACEHOLDER[tab as Exclude<Tab, 'mine'>]"
+          />
         </span>
         <!-- Sort, last, in the same place on Apps and Workflows. -->
         <span v-if="tab === 'apps' || tab === 'templates'" key="sort" class="inline-flex">
@@ -817,6 +823,10 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   max-height: min(360px, var(--reka-dropdown-menu-content-available-height, 360px));
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+/* Picked: the row's fill as well as the check, as in Assets' Filters. */
+.mar-ex-filter .mar-ex-filter-row[aria-checked='true'] {
+  background-color: var(--color-secondary-background);
 }
 /* Global: cards and chips are buttons, past the prototype's button reset. */
 :root .proto-ui.proto-ui.proto-ui .mar-ex-chip {

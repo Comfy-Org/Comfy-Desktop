@@ -1,21 +1,43 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Search, X } from 'lucide-vue-next'
 
-/** The search field in Mar's toolbars: radius 10, clears with its ×. */
-const { placeholder } = defineProps<{ placeholder: string }>()
+/** The search field in Mar's toolbars: radius 10, clears with its ×.
+ *  `shortcut`: ⌘/ (Ctrl+/) finds it from anywhere on the page, its hint
+ *  in the field while empty, as Assets' search has it. */
+const { placeholder, shortcut = false } = defineProps<{
+  placeholder: string
+  shortcut?: boolean
+}>()
 const model = defineModel<string>({ required: true })
+
+const field = ref<HTMLInputElement>()
+const mac = /Mac|iPhone|iPad/.test(navigator.platform)
+function onKey(e: KeyboardEvent): void {
+  if (e.key !== '/' || !(e.metaKey || e.ctrlKey)) return
+  e.preventDefault()
+  field.value?.focus()
+}
+onMounted(() => shortcut && window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+function onEsc(e: KeyboardEvent): void {
+  if (model.value) model.value = ''
+  else (e.target as HTMLInputElement).blur()
+}
 </script>
 
 <template>
   <label class="mar-pfind">
     <Search :size="14" />
     <input
+      ref="field"
       v-model="model"
       type="search"
       :placeholder
       :aria-label="placeholder"
-      @keydown.esc="model = ''"
+      @keydown.esc="onEsc"
     />
+    <kbd v-if="shortcut && !model" class="mar-pfind-kbd">{{ mac ? '⌘' : 'Ctrl' }} /</kbd>
     <button
       v-if="model"
       type="button"
@@ -63,6 +85,15 @@ const model = defineModel<string>({ required: true })
 }
 :root .proto-ui.proto-ui.proto-ui .mar-pfind input::-webkit-search-cancel-button {
   display: none;
+}
+.mar-pfind-kbd {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-subtle-foreground);
+  font-family: inherit;
+  font-size: 11px;
 }
 :root .proto-ui.proto-ui.proto-ui .mar-pfind-x {
   display: inline-flex;
