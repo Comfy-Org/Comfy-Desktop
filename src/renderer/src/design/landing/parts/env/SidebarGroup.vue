@@ -92,7 +92,7 @@ const itemClass = (page: Page): string =>
     >
       <TriangleAlert v-if="flow.step === 'error'" :size="15" />
       <LoaderCircle v-else :size="15" class="mar-side-spin" />
-      <span class="sidebar-label text-left">{{ BUILD_NAME }}</span>
+      <span class="sidebar-label text-left">{{ flow.another ? flow.buildName : BUILD_NAME }}</span>
       <span class="text-ui text-subtle-foreground tabular-nums">{{
         flow.step === 'error' ? 'Failed' : `${flow.percent}%`
       }}</span>
