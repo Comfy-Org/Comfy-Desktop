@@ -55,6 +55,7 @@ import {
   chooseCloud,
   chooseLocal,
   closeSetup,
+  createBuild,
   flow,
   homeFirst,
   homeDirect,
@@ -64,6 +65,7 @@ import {
   landHomeCloud,
   landHomeInstalling,
   landHomeLocal,
+  nextBuildName,
   localSetup,
   lowSpace,
   nodesInBuild,
@@ -234,6 +236,17 @@ const CLIPS = [
 
 // Change setup: the fields start on what fits this computer.
 const name = ref('ComfyUI')
+// New build (every build after the first): its name, the next number
+// unless renamed; Install closes the modal and installs in Builds.
+const newBuild = computed(() => flow.step === 'setup' && !flow.takeover && !flow.homeCard)
+const buildName = ref('')
+watch(
+  newBuild,
+  (v) => {
+    if (v) buildName.value = nextBuildName.value
+  },
+  { immediate: true }
+)
 const channel = ref<'stable' | 'latest'>('stable')
 const hardware = ref<'mps' | 'cpu'>('mps')
 // Today's install methods on a Mac (Portable is Windows only). Managed
@@ -575,13 +588,22 @@ function rowState(i: number): string {
       <template v-if="flow.step === 'setup'">
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <template v-if="!unsupported">
-            <DialogTitle as="h3" class="text-title font-semibold"
-              >Install ComfyUI on {{ DETECTED.noun }}</DialogTitle
-            >
-            <DialogDescription
-              >Checked for your {{ DETECTED.chip }}. Change anything before you
-              install.</DialogDescription
-            >
+            <DialogTitle as="h3" class="text-title font-semibold">{{
+              newBuild ? 'New build' : `Install ComfyUI on ${DETECTED.noun}`
+            }}</DialogTitle>
+            <DialogDescription>{{
+              newBuild
+                ? `Another ComfyUI on ${DETECTED.noun}, with its own version and nodes. It installs in Builds while you keep working.`
+                : `Checked for your ${DETECTED.chip}. Change anything before you install.`
+            }}</DialogDescription>
+            <!-- New build: the name, the one thing the first install never
+                 asked; the rest is the same list. -->
+            <div v-if="newBuild" class="mss-form mss-newbuild-name">
+              <div class="mss-form-row">
+                <span class="mss-form-label">Name</span>
+                <Input v-model="buildName" aria-label="Build name" />
+              </div>
+            </div>
 
             <!-- The machine it checked, drawn large: the subject of the
                  screen. What it gets is the list below. -->
@@ -710,6 +732,9 @@ function rowState(i: number): string {
               >{{ DETECTED.downloadGb }} GB download · ~{{ REQUIRED_GB }} GB required</span
             >
             <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
+            <Button v-else-if="newBuild" variant="primary" size="lg" @click="createBuild(buildName)"
+              >Install</Button
+            >
             <Button v-else variant="primary" size="lg" @click="continueSetup">{{
               workflowStep || nodesStep ? 'Continue' : 'Install'
             }}</Button>

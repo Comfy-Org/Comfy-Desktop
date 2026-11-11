@@ -116,7 +116,9 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         >
         <!-- Named as Builds will list it: the Home already shows the thing
              to launch; the computer is its detail. -->
-        <span :class="props.bare ? 'mbr-name' : 'mss-machine-title'">{{ BUILD_NAME }}</span>
+        <span :class="props.bare ? 'mbr-name' : 'mss-machine-title'">{{
+          flow.another ? flow.buildName : BUILD_NAME
+        }}</span>
         <span :class="props.bare ? 'mbr-meta' : 'mss-row-meta tabular-nums'">{{ line }}</span>
         <!-- Custom nodes (DESK-243): one quiet line in the card, ticked for a
              new user. Unticked installs plain ComfyUI. -->

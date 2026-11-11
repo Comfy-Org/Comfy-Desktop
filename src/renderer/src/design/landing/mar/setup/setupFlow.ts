@@ -568,6 +568,10 @@ export const flow = reactive({
   retried: false,
   /** Earlier install: bring its files over (asked once, inline). */
   bringOver: true,
+  /** New build › Install: a build after the first, installing in Builds on
+   *  its own card, under the name given. */
+  another: false,
+  buildName: '',
   /** First launch: Set up and the install stay full-window, before the
    *  Home exists, the way Desktop chains its first install today. */
   takeover: false,
@@ -586,6 +590,22 @@ export const pickedPacks = computed(() => NODE_PACKS.filter((p) => flow.packs.in
 export const packsMb = computed(() => pickedPacks.value.reduce((n, p) => n + p.mb, 0))
 /** Home first, Local picked and not installed yet: the install waits (or
  *  runs) on the Home's card. */
+/** The name a new build gets unless renamed: the next number. */
+export const nextBuildName = computed(
+  () => `My Local ${instances.value.filter((i) => i.kind === 'local').length + 1}`
+)
+/** New build › Install: the modal closes and the build installs in Builds,
+ *  on its card, as the first one did; no screen in the way. */
+export function createBuild(name: string): void {
+  flow.another = true
+  flow.buildName = name.trim() || nextBuildName.value
+  flow.open = false
+  flow.takeover = false
+  flow.background = true
+  // Wherever it was started from, the sidebar shows it; the Home's Builds
+  // carry the card.
+  startInstall()
+}
 export const installPending = computed(
   () => homeFirst.value && flow.homeCard && !instances.value.some((i) => i.kind === 'local')
 )
@@ -594,8 +614,9 @@ export const installPending = computed(
  *  is ready until it is opened. */
 export const cardInBuilds = computed(
   () =>
-    (localSetup.card === 'builds' || homeDirect.value || homeOneClick.value) &&
-    (installPending.value || flow.ready)
+    ((localSetup.card === 'builds' || homeDirect.value || homeOneClick.value) &&
+      (installPending.value || flow.ready)) ||
+    (flow.another && (flow.running || flow.step === 'error'))
 )
 /** The install runs (or failed) behind the Home: the sidebar's Builds show it. */
 export const installingBehind = computed(
@@ -665,7 +686,7 @@ function finish(): void {
     const n = instances.value.filter((i) => i.kind === 'local').length + 1
     proto.addedInstances.unshift({
       id: `local-added-${n}`,
-      name: `My Local ${n}`,
+      name: flow.another && flow.buildName ? flow.buildName : `My Local ${n}`,
       kind: 'local',
       channel: 'Stable',
       version: DETECTED.version,
@@ -680,6 +701,7 @@ function finish(): void {
       hue: (48 + 70 * (n - 1)) % 360
     })
   }
+  flow.another = false
   marUser.local = 'one'
   // Builds lists the build just installed as the card said it: this
   // version, nothing to update.
@@ -857,6 +879,7 @@ export function backFromError(): void {
 /** Return to Dashboard, confirmed: the install stops and the Home shows. */
 export function cancelInstall(): void {
   stop()
+  flow.another = false
   flow.open = false
   flow.takeover = false
   flow.background = false

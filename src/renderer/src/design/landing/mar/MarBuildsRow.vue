@@ -10,7 +10,7 @@ import { can } from '../milestones'
 import SetupLaptop from './setup/SetupLaptop.vue'
 import SetupCloud from './setup/SetupCloud.vue'
 import HomeInstall from './setup/HomeInstall.vue'
-import { cardInBuilds, localSetup } from './setup/setupFlow'
+import { cardInBuilds, flow, localSetup } from './setup/setupFlow'
 import './setup/setup.css'
 
 /** Home's builds in Mar's proposal (UI Playground › Build on Home): what
@@ -19,7 +19,9 @@ import './setup/setup.css'
 // With the install card in this section (setup/HomeInstall.vue, bare) the
 // local build is that card, large, until ComfyUI is opened: not listed twice.
 const shown = computed(() =>
-  recentInstances.value.filter((i) => !(cardInBuilds.value && i.kind === 'local')).slice(0, 3)
+  recentInstances.value
+    .filter((i) => !(cardInBuilds.value && !flow.another && i.kind === 'local'))
+    .slice(0, 3)
 )
 /** From Milestone 2 on, each build is the install card made small:
  *  the machine drawn, its state, its name, what it runs on. Each one is

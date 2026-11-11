@@ -38,13 +38,15 @@ import Button from '../../ui/Button.vue'
 import SegmentedControl from '../../ui/SegmentedControl.vue'
 import { cn } from '../../ui/cn'
 import { thumb } from '../../mock'
-import { toast } from '../../useProto'
+import { instances, toast } from '../../useProto'
 import AssetDetail from '../assets/AssetDetail.vue'
 import ZoomControl from '../assets/ZoomControl.vue'
 import CompareSplit from '../assets/CompareSplit.vue'
 import { assets, type MarAsset } from '../pages/assetsStore'
 import { appsProto, isAdded, libApp, toggleAdded, type Field } from '../../appFlow'
 import { examplesOf, openOn, type AppExample } from './appExamples'
+import { APP_RUNS } from './appsStage'
+import { flow, installingBehind, showInstall } from '../setup/setupFlow'
 
 /**
  * An app opens straight into its editor, as in the Hub's full-screen apps
@@ -216,8 +218,25 @@ function startClock(): void {
 }
 const stepNow = computed(() => STEPS[Math.max(0, progress.value - 1)])
 
+// While ComfyUI installs behind the Home, an app that runs on this computer
+// can't run yet: Run shows the install instead (the progress, the logs,
+// Try Cloud free). Apps on Comfy Cloud run as usual.
+const needsLocal = computed(() => {
+  const r = APP_RUNS[appId]
+  return Boolean(r && r.kind !== 'cloud')
+})
+// Only while there is no local build yet: a second build installing
+// doesn't stop the first from running.
+const waitsForInstall = computed(
+  () =>
+    installingBehind.value && needsLocal.value && !instances.value.some((i) => i.kind === 'local')
+)
 function run(): void {
   if (state.value === 'running') return
+  if (waitsForInstall.value) {
+    showInstall()
+    return
+  }
   if (gate && !gate()) return
   comparing.value = false
   take.value = 0
@@ -546,8 +565,18 @@ function back(): void {
               @click="run"
             >
               <span class="flex items-center gap-2">
-                <Loader2 v-if="state === 'running'" :size="15" class="animate-spin" />
-                {{ state === 'running' ? 'Running' : 'Run' }}
+                <Loader2
+                  v-if="state === 'running' || waitsForInstall"
+                  :size="15"
+                  class="animate-spin"
+                />
+                {{
+                  state === 'running'
+                    ? 'Running'
+                    : waitsForInstall
+                      ? `Installing ComfyUI · ${flow.percent}%`
+                      : 'Run'
+                }}
               </span>
               <span class="mar-app-editor-cost">
                 <template v-if="credits"><Coins :size="14" />{{ credits }}</template>
