@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { AppWindow, ChartColumn, Gauge, House, Server } from 'lucide-vue-next'
+import { AppWindow, ChartColumn, Gauge, House, Images, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -10,19 +10,17 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import type { DashboardPage } from '../types/ipc'
-import { isDashboardSection } from './dashboardSection'
-import type { SidebarPage } from './dashboardSection'
 
 const { activePage } = defineProps<{
-  activePage: SidebarPage
+  activePage: DashboardPage
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: SidebarPage]
+  navigate: [page: DashboardPage]
 }>()
 
 interface SidebarRow {
-  page: SidebarPage
+  page: DashboardPage
   label: string
   icon: Component
 }
@@ -35,6 +33,7 @@ const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('s
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
   { page: 'apps', label: t('sidebar.apps'), icon: AppWindow },
+  { page: 'assets', label: t('sidebar.assets'), icon: Images },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const toolRows = computed<SidebarRow[]>(() => [
@@ -46,10 +45,9 @@ const groups = computed(() => [
   { key: 'tools', title: t('sidebar.tools'), rows: toolRows.value }
 ])
 
-function navigate(page: SidebarPage): void {
+function navigate(page: DashboardPage): void {
   emit('navigate', page)
-  const panel: DashboardPage = isDashboardSection(page) ? 'chooser' : page
-  window.api.navigatePanel(panel)
+  window.api.navigatePanel(page)
 }
 </script>
 
@@ -73,7 +71,7 @@ function navigate(page: SidebarPage): void {
         class="h-auto rounded-[7px] p-0.5 text-foreground hover:bg-transparent"
         :aria-label="t('sidebar.home')"
         :title="t('sidebar.home')"
-        @click="navigate('chooser')"
+        @click="navigate('home')"
       >
         <ComfyCLogo v-if="collapsed" :size="20" />
         <ComfyWordmark v-else class="h-[22px] w-auto" />

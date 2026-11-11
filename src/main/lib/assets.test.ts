@@ -28,11 +28,27 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
 }))
 const removeFile = vi.fn(async (_path: string, _options: { force: boolean }) => {})
+const renameFile = vi.fn(async (from: string, to: string) => {
+  written.set(to, written.get(from) ?? '')
+  written.delete(from)
+})
+const savedSettings = new Map<string, string>()
 vi.mock('fs', () => ({
   default: {
+    existsSync: (dir: string) => dir === '/remembered',
     createWriteStream: (filePath: string) => createWriteStream(filePath),
-    promises: { rm: (path: string, options: { force: boolean }) => removeFile(path, options) }
+    promises: {
+      rm: (path: string, options: { force: boolean }) => removeFile(path, options),
+      rename: (from: string, to: string) => renameFile(from, to)
+    }
   }
+}))
+vi.mock('../settings', () => ({
+  get: (key: string) => savedSettings.get(key),
+  set: (key: string, value: string) => savedSettings.set(key, value)
+}))
+vi.mock('./comfyDownloadManager', () => ({
+  buildSaveDialogFilters: (name: string) => [{ name, extensions: ['*'] }]
 }))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
@@ -62,6 +78,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   runningSessions.clear()
   written.clear()
+  savedSettings.clear()
 })
 
 afterEach(() => {
@@ -75,7 +92,8 @@ describe('assetKind', () => {
     ['still.png', undefined, 'image'],
     ['narration.WAV', undefined, 'audio'],
     ['mesh.glb', undefined, '3d'],
-    ['notes.txt', undefined, null]
+    ['notes.txt', undefined, null],
+    ['png', undefined, null]
   ])('classifies %s (%s) as %s', (name, mimeType, kind) => {
     expect(assetKind(name, mimeType)).toBe(kind)
   })
@@ -155,6 +173,23 @@ describe('listAssets', () => {
     )
   })
 
+  it('serves local previews only from the build API', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        assets: [{ id: 'a1', name: 'still.png', preview_url: '/extensions/evil.png', size: 0 }]
+      })
+    )
+
+    const [summary] = await listAssets('local-1')
+
+    expect(summary!.previewUrl).toBe(
+      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
+    )
+    expect(summary!.sizeBytes, 'an empty file keeps its size').toBe(0)
+  })
+
   it('returns nothing for a local build that is not running', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
 
@@ -180,7 +215,7 @@ describe('listAssets', () => {
           new Response(null, {
             status: 302,
             headers: {
-              Location: `https://storage.googleapis.com/bucket/${url.split('/')[5]}?sig=1`
+              Location: `https://storage.googleapis.com/bucket/${/\/assets\/([^/]+)\/content/.exec(url)?.[1]}?sig=1`
             }
           })
       )
@@ -212,6 +247,36 @@ describe('downloadAsset', () => {
       'http://127.0.0.1:8188/api/assets/a1/content?disposition=attachment'
     )
     expect(written.get('/picked/still.png')).toBe('bytes')
+    expect(savedSettings.get('lastSaveDialogDir')).toBe('/picked')
+  })
+
+  it('starts the save dialog in the folder the user picked last time', async () => {
+    savedSettings.set('lastSaveDialogDir', '/remembered')
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: true })
+
+    await downloadAsset(win, 'local-1', 'a1', 'still.png')
+
+    expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/remembered/still.png')
+  })
+
+  it('saves a Cloud asset through its signed storage link', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { Location: 'https://storage.googleapis.com/bucket/v1?sig=1' }
+        })
+      )
+      .mockResolvedValueOnce(new Response('video'))
+
+    expect(await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).toBe(true)
+    expect(fetchMock.mock.calls[1]![0]).toBe('https://storage.googleapis.com/bucket/v1?sig=1')
+    expect(written.get('/picked/clip.mp4')).toBe('video')
   })
 
   it('fails without writing a file when the build cannot serve the asset', async () => {
@@ -239,7 +304,8 @@ describe('downloadAsset', () => {
     await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow(
       'connection reset'
     )
-    expect(removeFile).toHaveBeenCalledWith('/picked/still.png', { force: true })
+    expect(removeFile).toHaveBeenCalledWith('/picked/still.png.part', { force: true })
+    expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
   })
 
   it('writes nothing when the save dialog is cancelled', async () => {

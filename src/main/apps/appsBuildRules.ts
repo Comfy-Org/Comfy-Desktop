@@ -1,4 +1,5 @@
 import path from 'path'
+import { isAppsBuild } from '../../shared/appsBuild'
 
 export const APPS_BUILD_NAME = 'Apps'
 export const APPS_BUILD_RELEASE = 'v0.42.1-env1'
@@ -35,7 +36,7 @@ export function appsLaunchArgs(
 }
 
 export function findAppsBuild<T extends object>(list: readonly T[]): T | null {
-  return list.find((inst) => (inst as { appsBuild?: unknown }).appsBuild === true) ?? null
+  return list.find(isAppsBuild) ?? null
 }
 
 function within(dir: string, root: string, p: typeof path): boolean {
@@ -79,7 +80,7 @@ export function appsModelDirs<T extends ModelSharingInstall>(
 ): string[] {
   const dirs: string[] = []
   for (const inst of list) {
-    if (inst.appsBuild === true || categoryOf(inst) !== 'local') continue
+    if (isAppsBuild(inst) || categoryOf(inst) !== 'local') continue
     if (inst.sourceId === 'desktop' || inst.useSharedModels !== false) continue
     if (inst.status !== undefined && inst.status !== 'installed') continue
     const own = inst.installPath ? [modelsDirOf(inst.installPath)] : []

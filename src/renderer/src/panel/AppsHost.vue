@@ -39,5 +39,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="slot" class="panel-apps min-h-0 flex-1" data-testid="apps-host" />
+  <div ref="slot" class="min-h-0 flex-1" data-testid="apps-host" />
 </template>

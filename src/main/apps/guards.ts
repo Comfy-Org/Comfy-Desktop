@@ -16,6 +16,15 @@ export function appsOrigin(url: string): string | null {
   return parsed.protocol === 'http:' && loopback ? parsed.origin : null
 }
 
+const ALLOWED_APPS_PERMISSIONS: ReadonlySet<string> = new Set([
+  'clipboard-sanitized-write',
+  'fullscreen'
+])
+
+export function isAllowedAppsPermission(permission: string): boolean {
+  return ALLOWED_APPS_PERMISSIONS.has(permission)
+}
+
 export function isAppsFrameUrl(frameUrl: string, origin: string | null): boolean {
   if (!origin) return false
   try {

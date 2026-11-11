@@ -89,6 +89,13 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <template v-for="(item, index) in entries" :key="item.id">
       <MenuSeparator v-if="item.separator && index > 0" class="context-menu-separator" />
       <MenuAction :item="item.action">
+        <component
+          :is="item.icon"
+          v-if="item.icon"
+          :size="15"
+          class="shrink-0"
+          aria-hidden="true"
+        />
         <span
           class="context-menu-item-action flex-1"
           :title="item.disabled ? item.title : undefined"

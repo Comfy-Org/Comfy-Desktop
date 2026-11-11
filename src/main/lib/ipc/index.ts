@@ -37,6 +37,7 @@ import { registerTelemetryHandlers } from './registerTelemetryHandlers'
 import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
 import { registerAssetsHandlers } from '../assets'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
+import { registerCatalogHandlers } from './registerCatalogHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
 import {
   finalizeComfyBuilderRecovery,
@@ -281,5 +282,6 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerDevPlatformHandlers()
   registerAssetsHandlers()
   registerEmbeddedSessionHandlers()
+  registerCatalogHandlers()
   return startupRecovery.then(() => undefined)
 }

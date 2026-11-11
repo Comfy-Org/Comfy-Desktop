@@ -1,5 +1,5 @@
-import { app, ipcMain, shell, WebContentsView } from 'electron'
-import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
+import { app, ipcMain, session, shell, WebContentsView } from 'electron'
+import type { IpcMainEvent, IpcMainInvokeEvent, Session, WebContents } from 'electron'
 import { promises as fsp } from 'fs'
 import path from 'path'
 
@@ -14,6 +14,7 @@ import {
   cleanSaveName,
   collectOutputs,
   isAppOpen,
+  isAllowedAppsPermission,
   isAppsFrameUrl,
   isDocumentFailure,
   isInside,
@@ -90,7 +91,28 @@ function markLoadFailed(key: number, view: WebContentsView, url: string): void {
   tellPanelLoadFailed(comfyWindows.get(key)?.panelView?.webContents, url || APPS_URL)
 }
 
+let securedSession: Session | null = null
+
+function secureAppsSession(): void {
+  const appsSession = session.fromPartition(APPS_PARTITION)
+  if (securedSession === appsSession) return
+  appsSession.setPermissionCheckHandler((_contents, permission) =>
+    isAllowedAppsPermission(permission)
+  )
+  appsSession.setPermissionRequestHandler((_contents, permission, callback) =>
+    callback(isAllowedAppsPermission(permission))
+  )
+  securedSession = appsSession
+}
+
+function keepOnAppsOrigin(event: { preventDefault(): void }, url: string): void {
+  if (isAppsFrameUrl(url, APPS_ORIGIN)) return
+  event.preventDefault()
+  openOutside(url)
+}
+
 function createAppsView(key: number): WebContentsView {
+  secureAppsSession()
   const view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, '../preload/appsPreload.js'),
@@ -102,10 +124,9 @@ function createAppsView(key: number): WebContentsView {
   })
   view.setBorderRadius(14)
   const wc = view.webContents
-  wc.on('will-navigate', (event, url) => {
-    if (isAppsFrameUrl(url, APPS_ORIGIN)) return
-    event.preventDefault()
-    openOutside(url)
+  wc.on('will-navigate', keepOnAppsOrigin)
+  wc.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) keepOnAppsOrigin(event, url)
   })
   wc.setWindowOpenHandler(({ url }) => {
     openOutside(url)

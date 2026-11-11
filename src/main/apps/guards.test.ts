@@ -3,6 +3,7 @@ import { runInNewContext } from 'vm'
 import { describe, expect, it } from 'vitest'
 
 import {
+  isAllowedAppsPermission,
   appsOrigin,
   appsUrl,
   cleanSaveName,
@@ -82,6 +83,19 @@ describe('appsOrigin', () => {
     expect(appsOrigin('file:///tmp/a.html')).toBeNull()
     expect(appsOrigin('not a url')).toBeNull()
   })
+})
+
+describe('isAllowedAppsPermission', () => {
+  it.each(['clipboard-sanitized-write', 'fullscreen'])('lets an app page use %s', (permission) => {
+    expect(isAllowedAppsPermission(permission)).toBe(true)
+  })
+
+  it.each(['media', 'geolocation', 'notifications', 'clipboard-read', 'openExternal'])(
+    'denies %s',
+    (permission) => {
+      expect(isAllowedAppsPermission(permission)).toBe(false)
+    }
+  )
 })
 
 describe('isAppsFrameUrl', () => {
