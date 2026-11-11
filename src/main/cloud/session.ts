@@ -2,7 +2,9 @@ import type { TokenProvider } from '../comfybuilder'
 import * as mainTelemetry from '../lib/telemetry'
 import { isWorkspaceMintSwitchEnabled } from '../lib/workspaceMintSwitchFlag'
 import { canMintWorkspaceTokens, subjectOf, workspaceIdOf } from './claims'
+import { CLOUD_CONFIG } from './config'
 import { openAuthorizePage, refresh, signIn } from './oauth'
+import { Revocations } from './revocation'
 import { SignInFailure } from './signInFailure'
 import {
   activateWorkspace,
@@ -13,12 +15,14 @@ import {
   getCachedWorkspaceName,
   loadActiveWorkspaceId,
   loadGrant,
+  loadGrantOrigin,
   loadWorkspaceToken,
   replaceGrant,
   saveGrant,
   saveWorkspaceNames,
   saveWorkspaceToken
 } from './tokenStore'
+import type { GrantOrigin } from './tokenStore'
 import type {
   AuthStatus,
   AuthTokens,
@@ -108,6 +112,8 @@ export class CloudSession {
   private loginAuthorizeUrl: string | null = null
   private viewConsentOpen = false
   private returnedToAnchorHandler: (() => void) | null = null
+  private readonly revocations = new Revocations()
+  private readonly retiredRefreshTokens = new Set<string>()
 
   private authGeneration = 0
 
@@ -141,7 +147,10 @@ export class CloudSession {
         if (generation === this.authGeneration) this.loginAuthorizeUrl = url
       }
     })
-    if (generation !== this.authGeneration) return this.status()
+    if (generation !== this.authGeneration) {
+      this.revokeUnstored(tokens.refreshToken)
+      return this.status()
+    }
     this.storeSignedInGrant(tokens)
     const anchor = workspaceIdOf(tokens.accessToken)
     if (anchor) activateWorkspace(anchor)
@@ -149,8 +158,11 @@ export class CloudSession {
   }
 
   private storeSignedInGrant(tokens: AuthTokens): void {
+    const replaced = loadGrant()?.refreshToken
+    const origin = loadGrantOrigin()
     this.mintBlockedUntil = 0
-    saveGrant(tokens)
+    const saved = saveGrant(tokens)
+    if (saved && replaced !== tokens.refreshToken) this.retireGrant(replaced, origin)
     if (!canMintWorkspaceTokens(tokens.accessToken))
       mainTelemetry.emit(MINT_SCOPE_NOT_GRANTED_EVENT)
   }
@@ -161,11 +173,33 @@ export class CloudSession {
   }
 
   logout(): void {
+    const refreshToken = loadGrant()?.refreshToken
+    const origin = loadGrantOrigin()
     this.authGeneration += 1
     this.switching = null
     this.mintBlockedUntil = 0
     this.clearPendingLogin()
+    this.retireGrant(refreshToken, origin)
     clearTokens()
+  }
+
+  private retireGrant(refreshToken: string | undefined, origin: GrantOrigin | null): void {
+    if (!refreshToken) return
+    if (this.refreshing.has(refreshToken)) this.retiredRefreshTokens.add(refreshToken)
+    if (origin) this.revocations.add({ ...origin, refreshToken })
+  }
+
+  private revokeUnstored(refreshToken: string | undefined): void {
+    if (!refreshToken || refreshToken === loadGrant()?.refreshToken) return
+    this.revocations.add({
+      issuer: CLOUD_CONFIG.issuer,
+      clientId: CLOUD_CONFIG.clientId,
+      refreshToken
+    })
+  }
+
+  resumeRevocations(): void {
+    void this.revocations.drain()
   }
 
   status(): AuthStatus {
@@ -260,11 +294,16 @@ export class CloudSession {
   private async rotateGrant(grant: AuthTokens, refreshToken: string): Promise<GrantRefresh> {
     try {
       const rotated = await refresh(refreshToken)
-      if (replaceGrant(grant.accessToken, refreshToken, rotated))
-        this.rotatedTo.set(grant.accessToken, rotated.accessToken)
+      const stored = replaceGrant(grant.accessToken, refreshToken, rotated)
+      if (stored) this.rotatedTo.set(grant.accessToken, rotated.accessToken)
+      if (!stored && this.retiredRefreshTokens.has(refreshToken)) {
+        this.revokeUnstored(rotated.refreshToken)
+      }
       return 'refreshed'
     } catch (error) {
       return isDefinitiveRefreshRefusal(error) ? 'ended' : 'unavailable'
+    } finally {
+      this.retiredRefreshTokens.delete(refreshToken)
     }
   }
 
@@ -494,7 +533,10 @@ export class CloudSession {
     } finally {
       if (viewConsent) this.viewConsentOpen = false
     }
-    if (generation !== this.authGeneration) return this.unreached()
+    if (generation !== this.authGeneration) {
+      this.revokeUnstored(tokens.refreshToken)
+      return this.unreached()
+    }
     this.storeSignedInGrant(tokens)
 
     const canMint = canMintWorkspaceTokens(tokens.accessToken)

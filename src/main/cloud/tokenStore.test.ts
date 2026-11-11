@@ -22,16 +22,21 @@ vi.mock('electron', () => ({
 
 import { safeStorage } from 'electron'
 
+import { CLOUD_CONFIG } from './config'
 import {
   _resetForTest,
   activateWorkspace,
+  addPendingRevocation,
   clearTokens,
   dropWorkspaceToken,
   getAuthStatus,
   getCachedWorkspaceName,
   loadActiveWorkspaceId,
   loadGrant,
+  loadGrantOrigin,
+  loadPendingRevocations,
   loadWorkspaceToken,
+  removePendingRevocation,
   replaceGrant,
   saveGrant,
   saveWorkspaceNames,
@@ -100,6 +105,8 @@ describe('grant vault', () => {
 
     expect(readVault()).toEqual({
       version: 2,
+      issuer: CLOUD_CONFIG.issuer,
+      clientId: CLOUD_CONFIG.clientId,
       subject: 'user-1',
       grant,
       activeWorkspaceId: 'w2',
@@ -302,6 +309,128 @@ describe('grant vault', () => {
 
     expect(loadGrant()).toEqual(grant)
     expect(fs.existsSync(vaultPath())).toBe(false)
+  })
+
+  it('records the Cloud a grant came from at sign-in and at each refresh, and assumes the configured Cloud for an older vault', () => {
+    const grant = tokens('user-1', 'w1')
+    saveGrant(grant)
+    expect(loadGrantOrigin()).toEqual({
+      issuer: CLOUD_CONFIG.issuer,
+      clientId: CLOUD_CONFIG.clientId
+    })
+
+    const { issuer: _issuer, clientId: _clientId, ...older } = readVault()
+    writeVault(older)
+    _resetForTest()
+    expect(loadGrantOrigin()).toEqual({
+      issuer: CLOUD_CONFIG.issuer,
+      clientId: CLOUD_CONFIG.clientId
+    })
+
+    replaceGrant(grant.accessToken, grant.refreshToken ?? '', tokens('user-1', 'w1', '-next'))
+    expect(loadGrantOrigin()).toEqual({
+      issuer: CLOUD_CONFIG.issuer,
+      clientId: CLOUD_CONFIG.clientId
+    })
+  })
+
+  it('keeps queued revocations encrypted, outside the vault, one file each', () => {
+    const first = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
+    const second = { ...first, refreshToken: 'refresh-2' }
+    saveGrant(tokens('user-1', 'w1'))
+
+    addPendingRevocation(first)
+    addPendingRevocation(second)
+    clearTokens()
+    _resetForTest()
+
+    expect(loadPendingRevocations()).toEqual({
+      pending: expect.arrayContaining([first, second]),
+      complete: true
+    })
+    const dir = path.join(electronState.userData, 'comfy-cloud-revocations')
+    const files = fs.readdirSync(dir)
+    expect(files).toHaveLength(2)
+    for (const file of files) {
+      expect(fs.readFileSync(path.join(dir, file), 'utf-8')).not.toMatch(/refresh-/)
+    }
+  })
+
+  it('dates a revocation queued with a clock running ahead no later than its file', () => {
+    const revocation = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: Date.now() + 365 * 24 * 3_600_000
+    }
+    addPendingRevocation(revocation)
+
+    expect(loadPendingRevocations().pending).toEqual([
+      { ...revocation, queuedAt: expect.toSatisfy((at: number) => at < Date.now() + 1_000) }
+    ])
+  })
+
+  it('drops an unreadable queue file once it has outlived the refresh token, and only then', () => {
+    const revocation = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
+    addPendingRevocation(revocation)
+    const dir = path.join(electronState.userData, 'comfy-cloud-revocations')
+    const unreadable = path.join(dir, 'unreadable.bin')
+    fs.writeFileSync(unreadable, 'garbage')
+    expect(loadPendingRevocations()).toEqual({ pending: [revocation], complete: false })
+
+    const monthAgo = new Date(Date.now() - 31 * 24 * 3_600_000)
+    fs.utimesSync(unreadable, monthAgo, monthAgo)
+
+    expect(loadPendingRevocations()).toEqual({ pending: [revocation], complete: true })
+    expect(fs.existsSync(unreadable)).toBe(false)
+  })
+
+  it('never loses a queued revocation to an unreadable sibling entry', () => {
+    const first = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
+    addPendingRevocation(first)
+    const dir = path.join(electronState.userData, 'comfy-cloud-revocations')
+    fs.writeFileSync(path.join(dir, 'unreadable.bin'), 'garbage')
+
+    addPendingRevocation({ ...first, refreshToken: 'refresh-2' })
+    removePendingRevocation('refresh-2')
+
+    expect(loadPendingRevocations()).toEqual({ pending: [first], complete: false })
+    expect(fs.readFileSync(path.join(dir, 'unreadable.bin'), 'utf-8')).toBe('garbage')
+  })
+
+  it('keeps a revocation in memory while it cannot be saved, and saves it once storage works', () => {
+    const revocation = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: 1
+    }
+    electronState.encryptionAvailable = false
+
+    addPendingRevocation(revocation)
+
+    expect(loadPendingRevocations().pending).toEqual([revocation])
+    expect(fs.existsSync(path.join(electronState.userData, 'comfy-cloud-revocations'))).toBe(false)
+
+    electronState.encryptionAvailable = true
+    expect(loadPendingRevocations().pending).toEqual([revocation])
+    _resetForTest()
+    expect(loadPendingRevocations()).toEqual({ pending: [revocation], complete: true })
   })
 
   it('migrates a version 1 vault: the active bundle becomes the grant, others are dropped', () => {
