@@ -37,9 +37,10 @@ import {
  * subject. Under it, the apps: they run on Comfy Cloud, so they work before
  * ComfyUI is installed (Milestone 2).
  */
-/** Bare: the card alone, for the Builds section to draw as its first build
- *  (MarBuildsRow.vue); no header, no apps under it. */
+/** Bare: the card alone, one of the Builds row's cards (MarBuildsRow.vue),
+ *  the size of the others; no header, no apps under it. */
 const props = defineProps<{ bare?: boolean }>()
+const size = computed(() => (props.bare ? 'sm' : 'lg'))
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
 // After install › Ready: the same card says ComfyUI is there, with the one
@@ -83,7 +84,7 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </script>
 
 <template>
-  <section :class="props.bare ? 'mb-3.5' : 'mt-8'" aria-label="Local install">
+  <section :class="props.bare ? 'contents' : 'mt-8'" aria-label="Local install">
     <!-- The section is Builds from the first launch: the card under it is
          the first build, waiting to be installed. -->
     <SectionHeader
@@ -91,8 +92,15 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
       class="mar-sec"
       :title="ready ? 'ComfyUI is ready' : 'Builds'"
     />
-    <div class="mss-machine is-hero mss-home-inst">
-      <SetupLaptop :os="localSetup.os" :bad="unsupported" />
+    <div
+      :class="props.bare ? 'mbr-card mbr-install' : 'mss-machine is-hero mss-home-inst'"
+      :style="props.bare ? { '--h': 48 } : undefined"
+    >
+      <span v-if="props.bare" class="mbr-device">
+        <SetupLaptop :os="localSetup.os" :bad="unsupported" />
+        <span class="mbr-screen" aria-hidden="true"></span>
+      </span>
+      <SetupLaptop v-else :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">
         <span class="mss-machine-kicker" :class="state.bad && 'is-bad'"
           ><component
@@ -104,11 +112,11 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         >
         <!-- Named as Builds will list it: the Home already shows the thing
              to launch; the computer is its detail. -->
-        <span class="mss-machine-title">{{ BUILD_NAME }}</span>
-        <span class="mss-row-meta tabular-nums">{{ line }}</span>
+        <span :class="props.bare ? 'mbr-name' : 'mss-machine-title'">{{ BUILD_NAME }}</span>
+        <span :class="props.bare ? 'mbr-meta' : 'mss-row-meta tabular-nums'">{{ line }}</span>
         <!-- Custom nodes (DESK-243): one quiet line in the card, ticked for a
              new user. Unticked installs plain ComfyUI. -->
-        <span v-if="packsOn" class="mss-home-packs">
+        <span v-if="packsOn && !props.bare" class="mss-home-packs">
           <label class="mss-home-packs-pick">
             <Checkbox :model-value="recommended" @update:model-value="choose" />
             <span class="text-base-foreground">Add recommended node packs</span>
@@ -124,23 +132,25 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
       </span>
       <span class="flex shrink-0 items-center gap-2">
         <template v-if="ready">
-          <Button variant="ghost" size="lg" @click="dismissReady">Not now</Button>
-          <Button variant="primary" size="lg" @click="openComfyUI()">Open ComfyUI</Button>
+          <Button variant="ghost" ::size="size" @click="dismissReady">Not now</Button>
+          <Button variant="primary" :size="size" @click="openComfyUI()">Open ComfyUI</Button>
         </template>
         <template v-else-if="installing">
-          <Button variant="ghost" size="lg" @click="showInstall">View logs</Button>
-          <Button v-if="failed" variant="secondary" size="lg" @click="changeFromHome"
+          <Button variant="ghost" ::size="size" @click="showInstall">View logs</Button>
+          <Button v-if="failed" variant="secondary" :size="size" @click="changeFromHome"
             >Change</Button
           >
-          <Button v-if="!failed" variant="secondary" size="lg" @click="flow.confirmCancel = true"
+          <Button v-if="!failed" variant="secondary" :size="size" @click="flow.confirmCancel = true"
             >Cancel install</Button
           >
         </template>
         <template v-else>
-          <Button v-if="!unsupported" variant="secondary" size="lg" @click="changeFromHome"
+          <Button v-if="!unsupported" variant="secondary" :size="size" @click="changeFromHome"
             >Change</Button
           >
-          <Button v-if="!unsupported" variant="primary" size="lg" @click="install">Install</Button>
+          <Button v-if="!unsupported" variant="primary" :size="size" @click="install"
+            >Install</Button
+          >
         </template>
       </span>
     </div>
@@ -156,6 +166,20 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </template>
 
 <style scoped>
+/* One of the Builds row's cards: the actions sit under the words, the bar
+ * keeps the card's width. */
+.mbr-install {
+  flex-wrap: wrap;
+}
+.mbr-install > :last-child {
+  width: 100%;
+  justify-content: flex-end;
+  margin-top: -4px;
+}
+.mbr-install .mss-home-bar {
+  max-width: none;
+  margin-top: 8px;
+}
 .mss-home-builds {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;

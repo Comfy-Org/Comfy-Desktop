@@ -33,14 +33,15 @@ const detail = (i: (typeof shown.value)[number]): string =>
 <template>
   <section class="mt-10">
     <SectionHeader class="mar-sec" title="Builds" link="All builds" @link="go('environments')" />
-    <!-- Home first: the first build, installing or ready, leads the section. -->
-    <HomeInstall v-if="cardInBuilds" bare />
     <!-- One, two or three builds always fill the row. -->
     <div
-      v-if="shown.length"
       class="grid gap-3.5"
-      :style="{ gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr))` }"
+      :style="{
+        gridTemplateColumns: `repeat(${shown.length + (cardInBuilds ? 1 : 0)}, minmax(0, 1fr))`
+      }"
     >
+      <!-- Home first: the first build, installing or ready, is the first card. -->
+      <HomeInstall v-if="cardInBuilds" bare />
       <template v-if="machine">
         <button
           v-for="i in shown"

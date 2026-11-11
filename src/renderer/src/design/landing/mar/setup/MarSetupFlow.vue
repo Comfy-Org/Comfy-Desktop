@@ -57,6 +57,7 @@ import {
   closeSetup,
   flow,
   homeFirst,
+  homeDirect,
   homeRunning,
   installInBackground,
   landHomeCloud,
@@ -116,6 +117,14 @@ function continueFirst(): void {
   // Home first: Run on is the only step, and Local lands on the Home with
   // the install waiting on its card; with the install running behind, Set up
   // still comes first.
+  // Run on only: Local installs right away, unless the computer needs a
+  // decision first; then the card waits in Builds with its Change.
+  else if (homeDirect.value)
+    (runOn.value === 'cloud'
+      ? landHomeCloud
+      : lowSpace.value || unsupported.value
+        ? landHomeLocal
+        : landHomeInstalling)()
   else if (homeFirst.value && !homeRunning.value)
     (runOn.value === 'cloud' ? landHomeCloud : landHomeLocal)()
   else if (homeFirst.value && runOn.value === 'cloud') landHomeCloud()

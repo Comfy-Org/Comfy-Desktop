@@ -50,10 +50,11 @@ export const SETUP_SCOPES: { value: SetupScope; label: string }[] = [
  *  exists. Install card: only the card, nothing that needs ComfyUI. Home
  *  open: the first-run Home stays around the card. Off by default, and
  *  only where there is a Home. */
-export type Onboarding = 'install' | 'home-running' | 'home' | 'home-open'
+export type Onboarding = 'install' | 'home-running' | 'home-direct' | 'home' | 'home-open'
 export const ONBOARDINGS: { value: Onboarding; label: string }[] = [
   { value: 'install', label: 'Install first (today)' },
   { value: 'home-running', label: 'Home first: install runs behind' },
+  { value: 'home-direct', label: 'Home first: Run on only, install runs' },
   { value: 'home', label: 'Home first: install card only' },
   { value: 'home-open', label: 'Home first: Home stays open' }
 ]
@@ -202,6 +203,11 @@ export const homeOpen = computed(() => homeFirst.value && localSetup.onboarding 
 export const homeRunning = computed(
   () => homeFirst.value && localSetup.onboarding === 'home-running'
 )
+/** Home first › Run on only: Local lands on the Home with the install
+ *  already running in Builds; the computer is detected, not shown. What Set
+ *  up would have stopped on (no space, no supported hardware) stops the
+ *  card instead, with its Change. */
+export const homeDirect = computed(() => homeFirst.value && localSetup.onboarding === 'home-direct')
 
 // The scope is a milestone: M1 is Builds · MVP, where All builds is the
 // landing; the next iterations land on Milestone 2 (Explore apps), the Home
@@ -573,7 +579,7 @@ export const installPending = computed(
  *  setup › Install card): while the install waits or runs, and once ComfyUI
  *  is ready until it is opened. */
 export const cardInBuilds = computed(
-  () => localSetup.card === 'builds' && (installPending.value || flow.ready)
+  () => (localSetup.card === 'builds' || homeDirect.value) && (installPending.value || flow.ready)
 )
 /** The install runs (or failed) behind the Home: the sidebar's Builds show it. */
 export const installingBehind = computed(
