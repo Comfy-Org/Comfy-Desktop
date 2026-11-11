@@ -1082,6 +1082,10 @@
   .mss-first-bottom {
     animation-delay: 230ms;
   }
+  /* First launch: the action bar is the last to come in, not the first. */
+  .mss-in-takeover .mss-foot {
+    animation: mss-rise 560ms 300ms cubic-bezier(0.19, 1, 0.22, 1) both;
+  }
   @keyframes mss-rise {
     from {
       opacity: 0;
@@ -1120,6 +1124,7 @@
     .mss-first-hero > *,
     .mss-first-bottom,
     .mss-body > *,
+    .mss-in-takeover .mss-foot,
     .mss-clip {
       animation: none;
     }
@@ -1146,32 +1151,55 @@
 .mss-first.is-backdrop {
   z-index: 70;
 }
-/* The very first open: the wordmark alone, centred on the frame, comes in
- * with one breath; then it travels up to its place as Set up rises. */
+/* The very first open: the wordmark alone, centred on the frame. The
+ * light comes on: the mark fades in as the ambient light above brightens
+ * with it. Then it travels up to its place,
+ * transform only, and Set up rises under it. No scale in the entrance:
+ * scaling a translated mark would move it too. */
 .mss-first.is-backdrop.is-alone .mss-first-mark {
+  transform: translate(-50%, 0) scale(1);
+  /* iOS's drawer curve: it leaves at once and settles long. */
   transition:
-    top 560ms cubic-bezier(0.22, 1, 0.36, 1),
-    height 560ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 600ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 300ms ease;
+  will-change: transform;
 }
 .mss-first.is-backdrop.is-arriving .mss-first-mark {
-  top: 50%;
-  height: 56px;
-  transform: translate(-50%, -50%);
-  animation: mss-arrive 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform: translate(-50%, calc(50vh - 34px)) scale(2);
+  /* Not quite white yet: the glint completes it. */
+  opacity: 0.82;
+  animation: mss-arrive 600ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+/* One white glint crosses the mark at its 16°. */
+.mss-first.is-backdrop.is-arriving .mss-first-glint {
+  opacity: 1;
+  mask-image: linear-gradient(106deg, transparent 30%, #000 50%, transparent 70%);
+  mask-size: 300% 100%;
+  mask-repeat: no-repeat;
+  animation: mss-glint 800ms 300ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.mss-first.is-backdrop.is-arriving .mss-ambient {
+  animation: mss-light 1100ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 @keyframes mss-arrive {
-  0% {
+  from {
     opacity: 0;
-    scale: 0.94;
   }
-  50% {
-    opacity: 1;
-    scale: 1.015;
+  to {
+    opacity: 0.82;
   }
-  100% {
-    opacity: 1;
-    scale: 1;
+}
+@keyframes mss-glint {
+  from {
+    mask-position: 100% 0;
+  }
+  to {
+    mask-position: 0% 0;
+  }
+}
+@keyframes mss-light {
+  from {
+    opacity: 0;
   }
 }
 :root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
