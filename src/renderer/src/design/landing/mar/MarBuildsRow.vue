@@ -32,7 +32,13 @@ const detail = (i: (typeof shown.value)[number]): string =>
 
 <template>
   <section class="mt-10">
-    <SectionHeader class="mar-sec" title="Builds" link="All builds" @link="go('environments')" />
+    <!-- All builds only once the row can't show them all. -->
+    <SectionHeader
+      class="mar-sec"
+      title="Builds"
+      :link="recentInstances.length > shown.length ? 'All builds' : undefined"
+      @link="go('environments')"
+    />
     <!-- One, two or three builds always fill the row. -->
     <div
       class="grid gap-3.5"
