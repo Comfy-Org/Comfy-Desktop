@@ -254,15 +254,22 @@ function onKey(e: KeyboardEvent): void {
 
 /** The needs, in one line, for the build picked: what it has, or what
  *  it downloads first. */
+/** What it needs, closed: how much on the left, where it stands on the right. */
 const needsLine = computed(() => {
   const n = needs.value.length
   if (!n)
     return template.value?.runs === 'cloud' ? 'Partner API on Comfy Cloud' : 'Nothing to download'
-  const models = `${n} ${n === 1 ? 'model' : 'models'}`
-  if (modelState.value === 'cloud') return `${models} · Ready on Cloud`
-  if (modelState.value === 'here') return `${models} · Installed`
-  return `${models} · ${fmtGb(total.value)}`
+  return `${n} ${n === 1 ? 'model' : 'models'} · ${fmtGb(total.value)}`
 })
+const needsState = computed(() =>
+  !needs.value.length
+    ? ''
+    : modelState.value === 'cloud'
+      ? 'Ready on Cloud'
+      : modelState.value === 'here'
+        ? 'Installed'
+        : 'Downloads first'
+)
 
 const aboutEl = ref<HTMLElement>()
 const aboutOpen = ref(false)
@@ -467,73 +474,80 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
               <p v-if="fit" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
             </section>
 
-            <!-- What it needs, on the build picked above: one line; the files fold under it. -->
-            <details
-              class="mad-sec mar-tpl-needs-box"
-              @toggle="
-                ($event.target as HTMLDetailsElement).open &&
-                ($event.target as HTMLElement).scrollIntoView({ block: 'nearest' })
-              "
-            >
-              <summary class="mad-label">
-                What it needs<span class="mar-tpl-total">{{ needsLine }}</span
-                ><ChevronDown :size="13" class="mar-tpl-fold" />
-              </summary>
-              <ul class="mar-tpl-needs">
-                <li v-for="m in needs" :key="m.name">
-                  <ComfyModel :size="14" />
-                  <span class="mar-tpl-file">{{ m.name.replace('.safetensors', '') }}</span>
-                  <span class="mar-tpl-size">{{ m.size }}</span>
-                  <span
-                    class="mar-tpl-mark"
-                    :data-m="modelState"
-                    :title="
-                      modelState === 'here'
-                        ? 'Installed'
-                        : modelState === 'get'
-                          ? 'Downloads first'
-                          : modelState === 'cloud'
-                            ? 'Ready on Cloud'
-                            : ''
-                    "
-                  >
-                    <Check v-if="modelState === 'here' || modelState === 'cloud'" :size="12" />
-                    <ArrowDownToLine v-else-if="modelState === 'get'" :size="12" />
-                  </span>
-                </li>
-                <li v-if="template.runs === 'cloud'">
-                  <Plug :size="14" />
-                  <span class="mar-tpl-file">Partner model API</span>
-                  <span class="mar-tpl-size">Comfy Cloud</span>
-                  <span class="mar-tpl-mark" />
-                </li>
-                <li v-if="info.vramGb">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <rect
-                      x="2.5"
-                      y="4"
-                      width="11"
-                      height="8"
-                      rx="1.5"
-                      stroke="currentColor"
-                      stroke-width="1.3"
-                    />
-                    <path
-                      d="M5 4V2.5M8 4V2.5M11 4V2.5M5 13.5V12M8 13.5V12M11 13.5V12"
-                      stroke="currentColor"
-                      stroke-width="1.3"
-                      stroke-linecap="round"
-                    />
-                  </svg>
-                  <span class="mar-tpl-file is-ui">GPU memory</span>
-                  <span class="mar-tpl-size">{{ info.vramGb }} GB</span>
-                  <span class="mar-tpl-mark" :data-m="memoryOk ? 'here' : 'warn'">
-                    <Check v-if="memoryOk" :size="12" />
-                    <TriangleAlert v-else :size="11" />
-                  </span>
-                </li>
-              </ul>
-            </details>
+            <!-- What it needs, on the build picked above: one box like Open
+                 in's, its line folding the files open inside it. -->
+            <section class="mad-sec">
+              <h3 class="mad-label">What it needs</h3>
+              <details
+                class="mar-tpl-needs-box"
+                @toggle="
+                  ($event.target as HTMLDetailsElement).open &&
+                  ($event.target as HTMLElement).scrollIntoView({ block: 'nearest' })
+                "
+              >
+                <summary>
+                  <span class="mar-tpl-total">{{ needsLine }}</span>
+                  <span v-if="needsState" class="mar-tpl-state" :data-m="modelState">{{
+                    needsState
+                  }}</span>
+                  <ChevronDown :size="14" class="mar-tpl-fold" />
+                </summary>
+                <ul class="mar-tpl-needs">
+                  <li v-for="m in needs" :key="m.name">
+                    <ComfyModel :size="14" />
+                    <span class="mar-tpl-file">{{ m.name.replace('.safetensors', '') }}</span>
+                    <span class="mar-tpl-size">{{ m.size }}</span>
+                    <span
+                      class="mar-tpl-mark"
+                      :data-m="modelState"
+                      :title="
+                        modelState === 'here'
+                          ? 'Installed'
+                          : modelState === 'get'
+                            ? 'Downloads first'
+                            : modelState === 'cloud'
+                              ? 'Ready on Cloud'
+                              : ''
+                      "
+                    >
+                      <Check v-if="modelState === 'here' || modelState === 'cloud'" :size="12" />
+                      <ArrowDownToLine v-else-if="modelState === 'get'" :size="12" />
+                    </span>
+                  </li>
+                  <li v-if="template.runs === 'cloud'">
+                    <Plug :size="14" />
+                    <span class="mar-tpl-file">Partner model API</span>
+                    <span class="mar-tpl-size">Comfy Cloud</span>
+                    <span class="mar-tpl-mark" />
+                  </li>
+                  <li v-if="info.vramGb">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <rect
+                        x="2.5"
+                        y="4"
+                        width="11"
+                        height="8"
+                        rx="1.5"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                      />
+                      <path
+                        d="M5 4V2.5M8 4V2.5M11 4V2.5M5 13.5V12M8 13.5V12M11 13.5V12"
+                        stroke="currentColor"
+                        stroke-width="1.3"
+                        stroke-linecap="round"
+                      />
+                    </svg>
+                    <span class="mar-tpl-file is-ui">GPU memory</span>
+                    <span class="mar-tpl-size">{{ info.vramGb }} GB</span>
+                    <span class="mar-tpl-mark" :data-m="memoryOk ? 'here' : 'warn'">
+                      <Check v-if="memoryOk" :size="12" />
+                      <TriangleAlert v-else :size="11" />
+                    </span>
+                  </li>
+                </ul>
+              </details>
+            </section>
 
             <section class="mad-sec">
               <h3 class="mad-label">Details</h3>

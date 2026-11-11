@@ -204,11 +204,11 @@
   }
 }
 .mar-tpl-total {
-  margin-left: auto;
-  color: var(--color-muted-foreground);
+  min-width: 0;
+  overflow: hidden;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
-  text-transform: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* What it makes: free text, so it sits in a box. */
 .mar-tpl-about {
@@ -260,24 +260,48 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-/* What it needs: one line that folds the files open. */
+/* What it needs: one box like Open in's row, its line (how much, where it
+   stands, a chevron) folding the files open inside the same box. */
+.mar-tpl-needs-box {
+  border-radius: 10px;
+  background: var(--mad-fill);
+}
 .mar-tpl-needs-box > summary {
   display: flex;
+  min-height: 40px;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--color-base-foreground);
+  font-size: 13px;
   cursor: default;
   list-style: none;
+}
+.mar-tpl-needs-box > summary:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
 }
 .mar-tpl-needs-box > summary::-webkit-details-marker {
   display: none;
 }
-.mar-tpl-needs-box > summary .mar-tpl-total {
+.mar-tpl-state {
   margin-left: auto;
+  white-space: nowrap;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-tpl-state[data-m='here'],
+.mar-tpl-state[data-m='cloud'] {
+  color: var(--tpl-ok);
 }
 .mar-tpl-fold {
   flex: none;
+  margin-left: auto;
   color: var(--color-muted-foreground);
   transition: transform 160ms ease;
+}
+.mar-tpl-state + .mar-tpl-fold {
+  margin-left: 0;
 }
 .mar-tpl-needs-box[open] .mar-tpl-fold {
   transform: rotate(180deg);
@@ -300,9 +324,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-radius: 10px;
-  padding: 6px 12px;
-  background: var(--mad-fill);
+  padding: 0 12px 8px;
 }
 .mar-tpl-needs > li {
   display: grid;
