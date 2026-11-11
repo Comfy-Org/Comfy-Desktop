@@ -110,6 +110,9 @@ DS's Motion page (`ds/motion.ts`).
   workflow and app, so an open workflow stays in view on Home. The one
   divider allowed by No lines. Pablo's
   breadcrumb is one pick away (Prototype menu › Title bar).
+- **A tab is named after its workflow**, never its build (the pill says
+  where it runs). A new one is "Untitled workflow", numbered from the
+  second ("Untitled workflow 2").
 
 ## Links
 
