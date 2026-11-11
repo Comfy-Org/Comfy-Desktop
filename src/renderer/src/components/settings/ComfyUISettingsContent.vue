@@ -369,10 +369,13 @@ function closeMoreMenu(): void {
   moreMenuOpen.value = false
 }
 
+const canRename = computed(() =>
+  pinBottomActions.value.some((action) => action.id === 'rename' && action.enabled !== false)
+)
+const renameHandler = computed(() => (canRename.value ? renameInstallation : undefined))
 const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
-const titleEditable = computed(() => installation.value?.sourceCategory !== 'cloud')
 function handleMorePick(action: ActionDef): void {
-  if (action.id === 'rename' && titleEdit.value && titleEditable.value) {
+  if (action.id === 'rename' && titleEdit.value) {
     titleEdit.value.focus()
     return
   }
@@ -904,7 +907,7 @@ defineExpose({
                     :installation="installation"
                     :sections="statusSections"
                     :disk-usage="diskUsageItem"
-                    :on-rename="renameInstallation"
+                    :on-rename="renameHandler"
                     :on-update-url="handleUrlUpdate"
                     :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
                     :hide-hero="!!pageTitleTarget"
@@ -1236,8 +1239,7 @@ defineExpose({
           ref="titleEdit"
           prefix="build-details-title"
           :name="installation.name"
-          :editable="titleEditable"
-          :on-rename="renameInstallation"
+          :on-rename="renameHandler"
           text-class=""
           :icon-size="18"
           pencil-width="24px"

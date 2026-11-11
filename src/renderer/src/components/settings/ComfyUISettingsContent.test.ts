@@ -28,6 +28,7 @@ vi.mock('../../composables/useComfyUISettings', () => ({
   useComfyUISettings: () => ({
     ...useComfyUISettingsState,
     updateField: vi.fn(),
+    renameInstallation: vi.fn().mockResolvedValue(true),
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
       computed(() => {
@@ -51,7 +52,7 @@ vi.mock('../../views/comfyUISettings/SettingsSectionList.vue', () => ({
   default: { template: '<div data-testid="settings-section-list-stub"></div>' }
 }))
 vi.mock('../../views/comfyUISettings/StatusFactPanel.vue', () => ({
-  default: { name: 'StatusFactPanel', props: ['hideHero'], template: '<div />' }
+  default: { name: 'StatusFactPanel', props: ['hideHero', 'onRename'], template: '<div />' }
 }))
 vi.mock('../../views/comfyUISettings/StoragePane.vue', () => ({
   default: { template: '<div />' }
@@ -813,17 +814,32 @@ describe('ComfyUISettingsContent', () => {
   })
 
   describe('rename from the page title', () => {
+    let titleTarget: HTMLElement | null = null
+
     function mountTitleTarget(): HTMLElement {
-      const target = document.createElement('div')
-      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
-      document.body.append(target)
-      return target
+      titleTarget = document.createElement('div')
+      titleTarget.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(titleTarget)
+      return titleTarget
     }
+
+    afterEach(() => {
+      titleTarget?.remove()
+      titleTarget = null
+    })
 
     function moreMenu(w: VueWrapper) {
       return w
         .findAllComponents({ name: 'MoreMenu' })
         .find((m) => (m.props('actions') as { id: string }[]).some((a) => a.id === 'rename'))!
+    }
+
+    function mountOnPage() {
+      return mountContent({
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
     }
 
     it('edits the name in the page title and points the Rename item at it', async () => {
@@ -833,11 +849,7 @@ describe('ComfyUISettingsContent', () => {
       ]
       useComfyUISettingsState.runActionStub.mockClear()
       const target = mountTitleTarget()
-      const w = await mountContent({
-        pageActionsTarget: '#page-actions-slot',
-        pageTitleTarget: '#page-title',
-        initialTab: 'status'
-      })
+      const w = await mountOnPage()
       await flushPromises()
 
       const name = target.querySelector<HTMLElement>('.build-details-title-name')!
@@ -855,9 +867,19 @@ describe('ComfyUISettingsContent', () => {
         id: 'untrack',
         label: 'Forget'
       })
+    })
 
-      w.unmount()
-      target.remove()
+    it('shows a read-only title when the build offers no Rename action', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'untrack', label: 'Forget' }]
+      const target = mountTitleTarget()
+      const w = await mountOnPage()
+      await flushPromises()
+
+      const name = target.querySelector<HTMLElement>('.build-details-title-name')!
+      expect(name.textContent).toBe('My Install')
+      expect(name.getAttribute('contenteditable')).toBeNull()
+      expect(target.querySelector('.build-details-title-edit-btn')).toBeNull()
+      expect(w.findComponent({ name: 'StatusFactPanel' }).props('onRename')).toBeUndefined()
     })
 
     it('keeps the About name and the Rename prompt outside the page', async () => {
@@ -865,7 +887,9 @@ describe('ComfyUISettingsContent', () => {
       useComfyUISettingsState.runActionStub.mockClear()
       const w = await mountContent({ initialTab: 'status' })
 
-      expect(w.findComponent({ name: 'StatusFactPanel' }).props('hideHero')).toBe(false)
+      const panel = w.findComponent({ name: 'StatusFactPanel' })
+      expect(panel.props('hideHero')).toBe(false)
+      expect(panel.props('onRename')).toBeTypeOf('function')
       expect(document.querySelector('.build-details-title-name')).toBeNull()
 
       moreMenu(w).vm.$emit('pick', { id: 'rename', label: 'Rename' })

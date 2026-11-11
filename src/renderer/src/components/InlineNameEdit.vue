@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { useTemplateRef, watch } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { Pencil } from 'lucide-vue-next'
+import { useInlineTextEdit } from '../composables/useInlineTextEdit'
 
 const props = withDefaults(
   defineProps<{
     name: string
-    editable: boolean
     prefix: string
     onRename?: (newName: string) => Promise<boolean>
     textClass?: string
@@ -24,66 +24,13 @@ const props = withDefaults(
 
 const { t } = useI18n()
 
+const editable = computed(() => !!props.onRename)
 const nameEl = useTemplateRef<HTMLElement>('nameEl')
 
-function syncName(): void {
-  const el = nameEl.value
-  if (!el) return
-  if (el.textContent !== props.name) el.textContent = props.name
-}
-
-watch(
-  [() => props.name, nameEl],
-  () => {
-    if (document.activeElement !== nameEl.value) syncName()
-  },
-  { immediate: true, flush: 'post' }
-)
-
-function focus(): void {
-  const el = nameEl.value
-  if (!el) return
-  el.focus()
-  const range = document.createRange()
-  range.selectNodeContents(el)
-  range.collapse(false)
-  const sel = window.getSelection()
-  sel?.removeAllRanges()
-  sel?.addRange(range)
-}
-
-function handleSelectAll(event: KeyboardEvent): void {
-  event.preventDefault()
-  const el = event.currentTarget as HTMLElement
-  const range = document.createRange()
-  range.selectNodeContents(el)
-  const sel = window.getSelection()
-  sel?.removeAllRanges()
-  sel?.addRange(range)
-}
-
-function handlePaste(event: ClipboardEvent): void {
-  event.preventDefault()
-  const text = event.clipboardData?.getData('text/plain') ?? ''
-  document.execCommand('insertText', false, text)
-}
-
-function handleEscape(): void {
-  syncName()
-  nameEl.value?.blur()
-}
-
-async function handleBlur(event: FocusEvent): Promise<void> {
-  const el = event.target as HTMLElement
-  const newName = el.textContent?.trim() ?? ''
-  if (newName && newName !== props.name) {
-    if (el.textContent !== newName) el.textContent = newName
-    const committed = await props.onRename?.(newName)
-    if (committed === false) syncName()
-    return
-  }
-  syncName()
-}
+const { focus, onKeydown, onPaste, onBlur } = useInlineTextEdit(nameEl, {
+  value: () => props.name,
+  commit: async (next) => (await props.onRename?.(next)) === true
+})
 
 defineExpose({ focus })
 </script>
@@ -104,12 +51,9 @@ defineExpose({ focus })
       :aria-label="t('statusFactPanel.editName')"
       contenteditable="plaintext-only"
       spellcheck="false"
-      @blur="handleBlur"
-      @keydown.enter.prevent="($event.target as HTMLElement).blur()"
-      @keydown.esc.prevent="handleEscape"
-      @keydown.ctrl.a.prevent="handleSelectAll"
-      @keydown.meta.a.prevent="handleSelectAll"
-      @paste="handlePaste"
+      @blur="onBlur"
+      @keydown="onKeydown"
+      @paste="onPaste"
     />
     <span
       v-else
