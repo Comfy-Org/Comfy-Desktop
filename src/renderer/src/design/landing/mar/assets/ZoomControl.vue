@@ -94,6 +94,19 @@ defineExpose({ open })
       </svg>
     </button>
     <div v-if="open" class="zc-menu" role="menu">
+      <button
+        v-for="i in ITEMS"
+        :key="i.label"
+        type="button"
+        role="menuitem"
+        class="zc-row"
+        @click="i.run"
+      >
+        <span>{{ i.label }}</span>
+        <kbd class="zc-kbd"
+          ><span v-for="k in i.keys" :key="k">{{ k }}</span></kbd
+        >
+      </button>
       <div class="zc-slide">
         <button type="button" class="zc-step" aria-label="Zoom out" @click="zoomOut">
           <Minus :size="13" />
@@ -113,19 +126,6 @@ defineExpose({ open })
           <Plus :size="13" />
         </button>
       </div>
-      <button
-        v-for="i in ITEMS"
-        :key="i.label"
-        type="button"
-        role="menuitem"
-        class="zc-row"
-        @click="i.run"
-      >
-        <span>{{ i.label }}</span>
-        <kbd class="zc-kbd"
-          ><span v-for="k in i.keys" :key="k">{{ k }}</span></kbd
-        >
-      </button>
     </div>
   </div>
 </template>
@@ -201,12 +201,13 @@ defineExpose({ open })
     animation: none;
   }
 }
-/* − track +: the same round steps as the Layout menu's Size. */
+/* − track +: the same round steps as the Layout menu's Size. Last, next to
+   the percentage that opened it, so the most used control is the closest. */
 .zc-slide {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 4px 8px;
+  padding: 8px 4px 6px;
 }
 :root .proto-ui.proto-ui.proto-ui .zc-step {
   display: inline-flex;
