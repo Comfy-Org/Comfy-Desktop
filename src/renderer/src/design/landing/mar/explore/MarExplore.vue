@@ -557,6 +557,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         :aria-label="`Use ${x.title} in ${appName(x.app)}`"
         @click="useExample(x)"
         @keydown.enter="useExample(x)"
+        @keydown.space.prevent="useExample(x)"
       />
     </div>
 
@@ -572,6 +573,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           :aria-label="`Open ${a.name}`"
           @click="openAppPage(a.id)"
           @keydown.enter="openAppPage(a.id)"
+          @keydown.space.prevent="openAppPage(a.id)"
         >
           <span class="mar-ex-media"><img :src="thumb(a.thumbId)" alt="" loading="lazy" /></span>
           <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
@@ -601,6 +603,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         :aria-label="`Open ${t.title}`"
         @click="openDetail('template', t.id)"
         @keydown.enter="openDetail('template', t.id)"
+        @keydown.space.prevent="openDetail('template', t.id)"
       >
         <span class="mar-ex-media"
           ><img :src="hubThumb(t.id) ?? thumb(t.id)" alt="" loading="lazy"
@@ -823,6 +826,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   max-height: min(360px, var(--reka-dropdown-menu-content-available-height, 360px));
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+/* Keyboard: a ring on the card, only when the keyboard got there. */
+:root .proto-ui.proto-ui.proto-ui :is(.mar-ex-card, .mar-ex-model, .mar-ex-tile):focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
 }
 /* Picked: the row's fill as well as the check, as in Assets' Filters. */
 .mar-ex-filter .mar-ex-filter-row[aria-checked='true'] {
