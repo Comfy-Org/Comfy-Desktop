@@ -56,6 +56,13 @@ DS's Motion page (`ds/motion.ts`).
   `graph/AssetFilterMenu.vue`).
 - **A filter shows as a chip** under the toolbar, removable, with Clear
   filters (⌘⌫).
+- **A Filter menu leads with its main group open** (use case on Explore's
+  Apps and Workflows); the other groups nest one level, one open at a
+  time. Each choice shows how many it would leave; in the open group a
+  choice that leaves none is dimmed, in a nested list it is left out.
+  Groups sit apart by space, not a separator line.
+- **A chip reads on its own:** when a choice only makes sense under its
+  group, the chip says both ("Runs on this computer", not "This computer").
 - **Tabs stay.** Type tabs (All, Images, Videos, 3D, Audio) always show,
   empty or not, so the bar never shifts. An empty one says what lands there
   ("No 3D files yet"), never "Nothing matches", which is only for a search
@@ -66,6 +73,9 @@ DS's Motion page (`ds/motion.ts`).
 
 ## Feedback
 
+- **Say only what the screen doesn't.** A note under a choice or over a
+  button appears only when something non-obvious happens (a download, a
+  wait, a risk); never to repeat a price, a state or the button's label.
 - **Toasts only when you stay** on the page and something changes state.
   No toast after a redirect, on opening things, or for pickers.
 - **Media badges bottom left**, the glass pill, 8px in: a video's icon and

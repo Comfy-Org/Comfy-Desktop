@@ -1,6 +1,7 @@
 import { reactive } from 'vue'
 import { thumb, type ProtoInstance, type Template } from '../../mock'
-import { modelsFor, templateAbout, templateStats, type ModelReq } from '../../fit'
+import { modelsFor, templateAbout, templateById, templateStats, type ModelReq } from '../../fit'
+import { hubById, hubTemplate, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
 import heroAngles from './angles-hero.jpg'
 import inputAngles from './angles-input.jpg'
 import outputAngles from './angles-output.jpg'
@@ -28,8 +29,17 @@ export interface TplMedia {
   quadrants?: string[]
 }
 
+/** The Hub's angles workflow: Mar's contact sheet and its graph. */
+export const ANGLES_ID = 'template_qwen_multiangle.app'
+
+/** A workflow by id: the Hub's (real), else the prototype's mock. */
+export function tplById(id: string): Template | undefined {
+  const h = hubById(id)
+  return h ? hubTemplate(h) : templateById(id)
+}
+
 const MEDIA: Record<string, TplMedia> = {
-  image_qwen_image_edit_2511: {
+  [ANGLES_ID]: {
     hero: heroAngles,
     input: inputAngles,
     output: outputAngles,
@@ -38,16 +48,46 @@ const MEDIA: Record<string, TplMedia> = {
 }
 
 export function mediaFor(t: Template): TplMedia {
-  return MEDIA[t.id] ?? { hero: thumb(t.id), output: thumb(t.id) }
+  const pic = hubThumb(t.id) ?? thumb(t.id)
+  return MEDIA[t.id] ?? { hero: pic, output: pic }
 }
 
 /** Loaders the graph uses beyond fit.ts's main weights. */
 const EXTRA_MODELS: Record<string, ModelReq[]> = {
-  image_qwen_image_edit_2511: [{ name: 'qwen_image_vae.safetensors', size: '254 MB', gb: 0.25 }]
+  [ANGLES_ID]: [{ name: 'qwen_image_vae.safetensors', size: '254 MB', gb: 0.25 }]
+}
+
+/** The angles workflow loads 2511's weights. */
+const SAME_MODELS: Record<string, string> = { [ANGLES_ID]: 'image_qwen_image_edit_2511' }
+
+const slug = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/_$/, '')
+
+/** A Hub workflow's download, split the way a graph usually loads it:
+ *  the main weights, a text encoder and a VAE. */
+function filesFor(w: HubWorkflow): ModelReq[] {
+  const gb = w.sizeGb
+  if (!gb) return []
+  const base = slug(w.family)
+  if (gb < 2) return [{ name: `${base}.safetensors`, size: fmtGb(gb), gb }]
+  const enc = Math.round(gb * 0.28 * 10) / 10
+  const vae = Math.min(0.3, Math.round(gb * 0.02 * 100) / 100)
+  const main = Math.round((gb - enc - vae) * 10) / 10
+  return [
+    { name: `${base}_fp8.safetensors`, size: fmtGb(main), gb: main },
+    { name: `${base}_text_encoder.safetensors`, size: fmtGb(enc), gb: enc },
+    { name: `${base}_vae.safetensors`, size: fmtGb(vae), gb: vae }
+  ]
 }
 
 export function needsFor(t: Template): ModelReq[] {
-  return [...modelsFor(t), ...(EXTRA_MODELS[t.id] ?? [])]
+  const known = modelsFor({ ...t, id: SAME_MODELS[t.id] ?? t.id })
+  const h = hubById(t.id)
+  const main = known.length || !h ? known : filesFor(h)
+  return [...main, ...(EXTRA_MODELS[t.id] ?? [])]
 }
 
 export const totalGb = (t: Template): number => needsFor(t).reduce((n, m) => n + m.gb, 0)
@@ -55,15 +95,10 @@ export const totalGb = (t: Template): number => needsFor(t).reduce((n, m) => n +
 export const fmtGb = (gb: number): string =>
   gb < 1 ? `${Math.round(gb * 1000)} MB` : `${gb.toFixed(1)} GB`
 
-const ABOUT: Record<string, string[]> = {
-  image_qwen_image_edit_2511: [
-    'Turn one photo into new camera angles. Rotate around the subject, look from above or below, or move in closer, while the product, light and background stay the same.',
-    'Write the angle you want in plain words. Lightning LoRA settings keep it to 4 steps, so each angle takes a few seconds.'
-  ]
-}
-
+/** What it does: the catalog's own description. */
 export function aboutFor(t: Template): string[] {
-  return ABOUT[t.id] ?? templateAbout(t)
+  const h = hubById(t.id)
+  return h ? [h.description] : templateAbout(t)
 }
 
 const LICENSE: Record<string, string> = {
@@ -76,6 +111,9 @@ const LICENSE: Record<string, string> = {
 
 export interface TplInfo {
   uses: string
+  /** The model family, as Filter names it. */
+  model?: string
+  tutorial?: string
   likes: number
   added: string
   tags: string[]
@@ -92,20 +130,42 @@ export function infoFor(t: Template): TplInfo {
     day: 'numeric',
     year: 'numeric'
   })
+  const h = hubById(t.id)
   return {
     ...s,
     added,
+    uses: h ? h.usage.toLocaleString('en-US') : s.uses,
+    model: h?.family,
+    tutorial: h?.tutorial,
     license: t.runs === 'cloud' ? 'Partner API' : (LICENSE[t.id] ?? 'Open source'),
     vramGb: t.vram ? parseInt(t.vram) : undefined,
-    useCase: t.category === '3d' ? '3D' : t.category[0]!.toUpperCase() + t.category.slice(1)
+    useCase:
+      h?.useCase ??
+      (t.category === '3d' ? '3D' : t.category[0]!.toUpperCase() + t.category.slice(1))
   }
 }
 
 /** Which templates each local build already has every model for. */
 const INSTALLED: Record<string, string[]> = {
-  'local-1': ['image_z_image_turbo', 'image_qwen_image_edit_2511', 'image_krea2_turbo_t2i'],
-  'local-video': ['video_ltx2_5_i2v', 'video_wan2_2_14B_i2v', 'video_minimax_h3_i2v'],
-  'local-flux': ['image_flux2', 'utility_seedvr2_image_upscale'],
+  'local-1': [
+    'image_z_image_turbo',
+    'image_qwen_image_edit_2511',
+    ANGLES_ID,
+    'image_krea2_turbo_t2i',
+    'image_qwen_image_2_1_image_edit',
+    'image_qwen_image_2_1_t2i'
+  ],
+  'local-video': [
+    'video_ltx2_5_i2v',
+    'video_wan2_2_14B_i2v',
+    'video_minimax_h3_i2v',
+    'video_ltx2_3_i2v'
+  ],
+  'local-flux': [
+    'image_flux2',
+    'utility_seedvr2_image_upscale',
+    'utility_seedvr2_7b_int8_upscale_image'
+  ],
   'team-build': ['templates_graphic_design_recomposer']
 }
 
@@ -145,18 +205,18 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
         state: 'offline',
         status: "You're offline",
         cost: '',
-        action: 'Offline',
-        note: 'Cloud needs a connection.',
+        action: 'Run on Comfy Cloud',
+        note: 'Comfy Cloud needs a connection.',
         disabled: true
       }
     if (!signedIn)
       return {
         ...base,
         state: 'login',
-        status: 'New accounts get free credits',
-        cost: 'Log in',
+        status: 'Needs a Comfy account',
+        cost: '',
         action: 'Log in to Comfy Cloud',
-        note: 'Log in to run this on cloud GPUs. New accounts get free credits.'
+        note: 'New accounts get free credits.'
       }
     if (t.runs === 'local')
       return {
@@ -177,9 +237,7 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
         status: awake ? `Running · ${inst.gpu}` : `Asleep · wakes in about 40 s`,
         cost: `${c} credits`,
         action: `Open in ${inst.name}`,
-        note: awake
-          ? `Opens in ${inst.name}, already running. About ${c} credits a run.`
-          : `Wakes ${inst.name} (about 40 s). About ${c} credits a run.`
+        note: awake ? '' : `Wakes ${inst.name} first, about 40 s.`
       }
     }
     return {
@@ -188,7 +246,8 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
       status: 'Every model ready',
       cost: `${c} credits`,
       action: 'Run on Comfy Cloud',
-      note: `Opens in a new window, nothing to download. About ${c} credits a run.`
+      // The price is on the row; nothing else to say.
+      note: ''
     }
   }
   if (t.runs === 'cloud')
@@ -202,7 +261,8 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
       disabled: true
     }
   const vram = t.vram ? parseInt(t.vram) : 0
-  const has = INSTALLED[inst.id]?.includes(t.id)
+  // Nothing to download (built-in nodes only): every build has it.
+  const has = INSTALLED[inst.id]?.includes(t.id) || !needsFor(t).length
   if (vram > MACHINE.memGb)
     return {
       ...base,
@@ -210,7 +270,7 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
       status: `Only ${MACHINE.memGb} of ${vram} GB memory`,
       cost: has ? 'May fail' : fmtGb(gb),
       action: 'Launch anyway',
-      note: `Runs out of memory on most settings. Try smaller sizes, or run it on Cloud.`
+      note: `It may run out of memory. Smaller sizes help, or run it on Cloud.`
     }
   if (has && inst.state === 'running')
     return {
@@ -231,7 +291,7 @@ export function targetFor(t: Template, inst: ProtoInstance, signedIn: boolean): 
       action: `Launch ${inst.name}`,
       note: `Starts ComfyUI (about 20 s), then opens this graph. Runs free on this Mac.`
     }
-  const missing = modelsFor(t).length + (EXTRA_MODELS[t.id]?.length ?? 0)
+  const missing = needsFor(t).length
   const mins = Math.max(1, Math.round(gb / 5))
   return {
     ...base,
@@ -278,9 +338,9 @@ export function reasonFor(best: Target, all: Target[], t: Template): string {
       if (all.some((x) => x.state === 'memory'))
         return `Needs ${t.vram} of GPU memory; this Mac has ${MACHINE.memGb} GB. Cloud has every model ready.`
       if (t.runs === 'cloud') return 'Uses a partner model that only runs on Comfy Cloud.'
-      return 'Fastest start. Every model ready, nothing to download.'
+      return 'Nothing to download, ready in seconds.'
     case 'download':
-      return `Closest fit. Downloads ${fmtGb(totalGb(t))} once, then runs free.`
+      return `Downloads ${fmtGb(totalGb(t))} once, then runs free.`
     default:
       return ''
   }

@@ -1,5 +1,5 @@
 import type { Template } from '../../mock'
-import { needsFor, type TplMedia } from './templateData'
+import { ANGLES_ID, needsFor, type TplMedia } from './templateData'
 
 /**
  * A tidy, hand-laid node graph for the template modal's Graph view: the
@@ -72,7 +72,7 @@ const short = (f: string): string => f.replace('.safetensors', '')
 
 export function graphFor(t: Template, media: TplMedia): GraphSpec {
   const models = needsFor(t)
-  if (t.id === 'image_qwen_image_edit_2511') {
+  if (t.id === ANGLES_ID) {
     return {
       width: 1064,
       height: 440,

@@ -12,7 +12,7 @@ export type FavoriteKind = 'template' | 'app' | 'asset'
 
 const KEY = 'comfy.design.mar.favorites.v2'
 const OLD_KEY = 'comfy.design.mar.favorites'
-const START = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'image_qwen_image_edit_2511'].map(
+const START = ['image_z_image_turbo', 'video_ltx2_5_i2v', 'template_qwen_multiangle.app'].map(
   (id) => `template:${id}`
 )
 

@@ -27,7 +27,6 @@ import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { PORTAL_TO } from '../../ui/portal'
 import { hostActions, instances, proto, toast } from '../../useProto'
-import { templateById } from '../../fit'
 import { isFavorite, toggleFavorite } from '../favorites'
 import { ComfyModel } from '../icons/comfyIcons'
 import {
@@ -40,6 +39,7 @@ import {
   rankTargets,
   reasonFor,
   targetFor,
+  tplById,
   totalGb,
   type Target
 } from './templateData'
@@ -61,7 +61,7 @@ import './templateModal.css'
  * Templates only; saved workflows keep Pablo's DetailSheet.
  */
 const template = computed(() =>
-  proto.detail?.kind === 'template' ? templateById(proto.detail.id) : undefined
+  proto.detail?.kind === 'template' ? tplById(proto.detail.id) : undefined
 )
 const open = computed({
   get: () => Boolean(template.value),
@@ -116,6 +116,10 @@ const line = computed(() => {
   // The plain cases need no line: the button says it.
   return s.state === 'running' || s.state === 'ready' ? '' : s.note
 })
+/** The cost's colour: a warning only for what may fail; a download stays
+ *  quiet, even on a build short of memory. */
+const tone = (x: Target): string =>
+  x.state === 'memory' && x.cost !== 'May fail' ? 'download' : x.state
 const buildMenu = ref(false)
 const buildBox = ref<HTMLElement>()
 onClickOutside(buildBox, () => (buildMenu.value = false))
@@ -241,6 +245,33 @@ function onKey(e: KeyboardEvent): void {
   }
 }
 
+/** The needs, in one line, for the build picked: what it has, or what
+ *  it downloads first. */
+const needsLine = computed(() => {
+  const n = needs.value.length
+  if (!n)
+    return template.value?.runs === 'cloud' ? 'Partner API on Comfy Cloud' : 'Nothing to download'
+  const models = `${n} ${n === 1 ? 'model' : 'models'}`
+  if (modelState.value === 'cloud') return `${models} · Ready on Cloud`
+  if (modelState.value === 'here') return `${models} · Installed`
+  return `${models} · ${fmtGb(total.value)}`
+})
+
+const aboutEl = ref<HTMLElement>()
+const aboutOpen = ref(false)
+const aboutLong = ref(false)
+watch(
+  [() => proto.detail, aboutEl],
+  () => {
+    aboutOpen.value = false
+    void nextTick(() => {
+      const el = aboutEl.value
+      aboutLong.value = Boolean(el && el.scrollHeight > el.clientHeight + 1)
+    })
+  },
+  { immediate: true }
+)
+
 const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
   { value: 'result', label: 'Result' },
   { value: 'graph', label: 'Graph' }
@@ -293,7 +324,6 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                   <span class="mar-tpl-author"><ComfyCLogo :size="10" /></span>ComfyUI<i />{{
                     info.useCase
                   }}
-                  workflow
                 </DialogDescription>
               </div>
               <span
@@ -307,8 +337,20 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
 
             <!-- What it does, short: the first paragraph. -->
             <section class="mad-sec">
+              <!-- Four lines at most; More opens the rest in place. -->
               <div class="mar-tpl-about">
-                <p>{{ aboutFor(template)[0] }}</p>
+                <p ref="aboutEl" :class="!aboutOpen && 'is-clamped'">
+                  {{ aboutFor(template)[0] }}
+                </p>
+                <button
+                  v-if="aboutLong"
+                  type="button"
+                  class="mar-tpl-more"
+                  :aria-expanded="aboutOpen"
+                  @click="aboutOpen = !aboutOpen"
+                >
+                  {{ aboutOpen ? 'Less' : 'More' }}
+                </button>
               </div>
             </section>
 
@@ -332,7 +374,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                 <span
                   v-if="shown.cost && shown.state !== 'login'"
                   class="mar-tpl-cost"
-                  :data-s="shown.state"
+                  :data-s="tone(shown)"
                   >{{ shown.cost }}</span
                 >
               </div>
@@ -365,7 +407,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                       <span class="mar-tpl-row-name">{{ x.inst.name }}</span>
                       <span class="mar-tpl-row-status">{{ x.status }}</span>
                     </span>
-                    <span class="mar-tpl-cost" :data-s="x.state">{{ x.cost }}</span>
+                    <span class="mar-tpl-cost" :data-s="tone(x)">{{ x.cost }}</span>
                   </button>
                 </div>
               </div>
@@ -374,9 +416,7 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
             <!-- What it needs: one line; the files fold under it. -->
             <details class="mad-sec mar-tpl-needs-box">
               <summary class="mad-label">
-                What it needs<span class="mar-tpl-total"
-                  >{{ needs.length }} {{ needs.length === 1 ? 'model' : 'models' }} ·
-                  {{ total ? fmtGb(total) : 'No downloads' }}</span
+                What it needs<span class="mar-tpl-total">{{ needsLine }}</span
                 ><ChevronDown :size="13" class="mar-tpl-fold" />
               </summary>
               <ul class="mar-tpl-needs">
@@ -442,6 +482,10 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                   <dt>Author</dt>
                   <dd>ComfyUI</dd>
                 </div>
+                <div v-if="info.model">
+                  <dt>Model</dt>
+                  <dd>{{ info.model }}</dd>
+                </div>
                 <div>
                   <dt>Uses</dt>
                   <dd>{{ info.uses }}</dd>
@@ -450,15 +494,15 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
                   <dt>License</dt>
                   <dd :title="info.license">{{ info.license }}</dd>
                 </div>
-                <div>
+                <!-- Only when the catalog has one: no row pointing nowhere. -->
+                <div v-if="info.tutorial">
                   <dt>Tutorial</dt>
                   <dd>
                     <a
                       class="mar-tpl-tutorial"
-                      href="https://docs.comfy.org/tutorials"
+                      :href="info.tutorial"
                       target="_blank"
                       rel="noreferrer"
-                      @click.prevent="toast('Opens the tutorial on docs.comfy.org')"
                       ><BookOpen :size="13" />docs.comfy.org</a
                     >
                   </dd>

@@ -1,8 +1,10 @@
 import { computed } from 'vue'
-import { APPS, TEMPLATES, thumb } from '../mock'
+import { APPS, thumb } from '../mock'
 import { allAssets } from '../gallery'
 import { openApp } from '../appFlow'
 import { openDetail, toast } from '../useProto'
+import { tplById } from './templateModal/templateData'
+import { hubThumb } from './explore/hubWorkflows'
 import { favorites, type FavoriteKind } from './favorites'
 
 /** What a starred key points at, for the sidebar and the Favorites page. */
@@ -19,14 +21,15 @@ function resolve(key: string): FavoriteItem | undefined {
   const [kind, ...rest] = key.split(':') as [FavoriteKind, ...string[]]
   const id = rest.join(':')
   if (kind === 'template') {
-    const t = TEMPLATES.find((x) => x.id === id)
+    // The Hub's workflows first (real names), then the mock's.
+    const t = tplById(id)
     return (
       t && {
         key,
         kind,
         id,
         title: t.title,
-        src: thumb(t.id),
+        src: hubThumb(t.id) ?? thumb(t.id),
         open: () => openDetail('template', t.id)
       }
     )

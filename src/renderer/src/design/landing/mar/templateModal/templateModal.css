@@ -227,6 +227,30 @@
   line-height: 19px;
   text-wrap: pretty;
 }
+.mar-tpl-about > p.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-more {
+  align-self: flex-start;
+  height: auto;
+  margin-top: -4px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mar-tpl-more:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
 .mar-tpl-tutorial {
   display: inline-flex;
   align-items: center;

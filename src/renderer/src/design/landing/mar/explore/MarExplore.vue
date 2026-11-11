@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch, type Component } from 'vue'
+import { computed, ref, watch, type Component, type Ref } from 'vue'
 import {
   Box,
   Check,
+  Cloud,
   Clock,
+  Cpu,
   GraduationCap,
   Image,
   ListFilter,
@@ -14,14 +16,24 @@ import {
   X
 } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
+import { useEventListener } from '@vueuse/core'
 import DropdownMenuContent from '../../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../../ui/DropdownMenuItem.vue'
 import DropdownMenuLabel from '../../ui/DropdownMenuLabel.vue'
 import DropdownMenuSeparator from '../../ui/DropdownMenuSeparator.vue'
+import DropdownMenuSubTrigger from '../../ui/DropdownMenuSubTrigger.vue'
+import {
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent as DropdownMenuSubContentRaw
+} from 'reka-ui'
+import { floatingSurface } from '../../ui/menu.styles'
+import { PORTAL_TO } from '../../ui/portal'
 import { cn } from '../../ui/cn'
 import { fieldVariants } from '../../ui/field.variants'
 import Select from '../../ui/Select.vue'
-import { ROUTER_MODELS, TEMPLATES, TUTORIALS, thumb } from '../../mock'
+import { ROUTER_MODELS, TUTORIALS, thumb } from '../../mock'
+import { HUB_USE_CASES, HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from './hubWorkflows'
 import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { goIn, openDetail, toast } from '../../useProto'
@@ -70,7 +82,7 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
         icon: PanelsTopLeft
       },
       // Icons on every tab, like Apps' own row.
-      { value: 'templates', label: 'Workflows', count: TEMPLATES.length, icon: ComfyWorkflow },
+      { value: 'templates', label: 'Workflows', count: HUB_WORKFLOWS.length, icon: ComfyWorkflow },
       // Models and Tutorials come with Learn (Milestone 3 is the Hub's apps
       // and workflows only).
       ...(can.value.learn
@@ -93,12 +105,7 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
 // Examples narrow by the app that made them.
 const appName = (id: string): string => libApp(id)?.name ?? ''
 const TYPES: Record<Tab, { value: string; label: string }[]> = {
-  templates: [
-    { value: 'all', label: 'All types' },
-    { value: 'image', label: 'Image' },
-    { value: 'video', label: 'Video' },
-    { value: '3d', label: '3D' }
-  ],
+  templates: [],
   models: [
     { value: 'all', label: 'All types' },
     { value: 'image', label: 'Image' },
@@ -119,23 +126,53 @@ watch(tab, clearFilters)
 const PLACEHOLDER: Record<Exclude<Tab, 'mine'>, string> = {
   templates: 'Search workflows',
   models: 'Search models or providers',
-  apps: 'Search',
+  apps: 'Search apps',
   examples: 'Search',
   tutorials: 'Search tutorials'
 }
 
 const has = (s: string): boolean => s.toLowerCase().includes(query.value.trim().toLowerCase())
-const templates = computed(() =>
-  TEMPLATES.filter((t) => type.value === 'all' || t.category === type.value).filter((t) =>
-    has(t.title)
-  )
+// Workflows: the Hub's catalog (hubWorkflows.ts). Filter by use case
+// (first, the catalog's own groups), model family and where it runs;
+// Sort by use or date; search reads the name and the description.
+const useCases = ref<string[]>([])
+const families = ref<string[]>([])
+const runsOn = ref<string[]>([])
+const wfSort = ref('popular')
+const WF_SORTS = [
+  { value: 'popular', label: 'Popular' },
+  { value: 'newest', label: 'Newest' },
+  { value: 'az', label: 'Name A to Z' }
+]
+const RUNS = [
+  { value: 'local', label: 'This computer', chip: 'Runs on this computer', icon: Cpu },
+  { value: 'cloud', label: 'Comfy Cloud', chip: 'Runs on Comfy Cloud', icon: Cloud }
+]
+const runsHere = (w: HubWorkflow, v: string): boolean =>
+  v === 'local' ? w.runs !== 'cloud' : w.runs !== 'local'
+const wfSearched = computed(() =>
+  HUB_WORKFLOWS.filter((w) => has(`${w.title} ${w.description} ${w.family} ${w.useCase}`))
 )
-// A Hub workflow reads like an app: its name, then one line on what it
-// does (the part after the colon, else its kind).
-const KIND: Record<string, string> = { image: 'Image', video: 'Video', '3d': '3D', audio: 'Audio' }
-const wfName = (t: { title: string }): string => t.title.split(':')[0]!.trim()
-const wfLine = (t: { title: string; category: string }): string =>
-  t.title.split(':')[1]?.trim() || `${KIND[t.category] ?? 'Image'} workflow`
+type Facet = 'use' | 'model' | 'runs'
+/** Passes every picked filter but `skip`'s, so each menu row counts what
+ *  picking it would show. */
+const wfPasses = (w: HubWorkflow, skip?: Facet): boolean =>
+  (skip === 'use' || !useCases.value.length || useCases.value.includes(w.useCase)) &&
+  (skip === 'model' || !families.value.length || families.value.includes(w.family)) &&
+  (skip === 'runs' || !runsOn.value.length || runsOn.value.some((v) => runsHere(w, v)))
+const templates = computed(() => {
+  const list = wfSearched.value.filter((w) => wfPasses(w))
+  if (wfSort.value === 'az') return [...list].sort((a, b) => a.title.localeCompare(b.title))
+  if (wfSort.value === 'newest') return [...list].sort((a, b) => b.date.localeCompare(a.date))
+  return [...list].sort((a, b) => b.usage - a.usage)
+})
+const facet = (skip: Facet): HubWorkflow[] => wfSearched.value.filter((w) => wfPasses(w, skip))
+// Every family in the catalog, the biggest first.
+const FAMILIES = [...new Set(HUB_WORKFLOWS.map((w) => w.family))].sort(
+  (a, b) =>
+    HUB_WORKFLOWS.filter((w) => w.family === b).length -
+      HUB_WORKFLOWS.filter((w) => w.family === a).length || a.localeCompare(b)
+)
 const models = computed(() =>
   ROUTER_MODELS.filter(
     (m) => type.value === 'all' || m.kind.toLowerCase().includes(type.value)
@@ -175,6 +212,9 @@ function clearFilters(): void {
   query.value = ''
   uses.value = []
   kinds.value = []
+  useCases.value = []
+  families.value = []
+  runsOn.value = []
 }
 const apps = computed(() => {
   const list = searched.value
@@ -190,41 +230,113 @@ const examples = computed(() =>
   searchedExamples.value.filter((x) => !kinds.value.length || kinds.value.includes(x.kind))
 )
 // What the Filter menu offers on this tab, with how many each would show.
-const FILTER = computed(() => {
+// The first group lies open in the menu; the others nest (one submenu
+// open at a time), so Apps and Workflows read the same: use case first.
+interface FilterItem {
+  value: string
+  label: string
+  count: number
+  icon?: Component
+  /** The chip's words, when the label needs its group to read. */
+  chip?: string
+}
+interface FilterGroup {
+  key: string
+  title: string
+  list: Ref<string[]>
+  items: FilterItem[]
+  icon?: Component
+}
+const FILTER = computed<FilterGroup[]>(() => {
+  if (tab.value === 'templates') {
+    const byUse = facet('use')
+    const byModel = facet('model')
+    const byRuns = facet('runs')
+    return [
+      {
+        key: 'use',
+        title: 'Use case',
+        list: useCases,
+        items: HUB_USE_CASES.map((u) => ({
+          value: u,
+          label: u,
+          count: byUse.filter((w) => w.useCase === u).length
+        }))
+      },
+      {
+        key: 'model',
+        title: 'Model',
+        icon: Box,
+        list: families,
+        items: FAMILIES.map((f) => ({
+          value: f,
+          label: f,
+          count: byModel.filter((w) => w.family === f).length
+        }))
+      },
+      {
+        key: 'runs',
+        title: 'Runs on',
+        icon: Cpu,
+        list: runsOn,
+        items: RUNS.map((r) => ({
+          ...r,
+          count: byRuns.filter((w) => runsHere(w, r.value)).length
+        }))
+      }
+    ]
+  }
   const ex = tab.value === 'examples'
   const kindOf = (k: string): number =>
     ex
       ? searchedExamples.value.filter((x) => x.kind === k).length
       : searched.value.filter((c) => appKind(c.app.id) === k).length
-  const groups = [
-    {
-      title: 'Type',
-      list: kinds,
-      items: (ex ? ['Image', 'Video'] : ['Image', 'Video', '3D']).map((k) => ({
-        value: k,
-        label: k,
-        count: kindOf(k),
-        icon: KIND_ICON[k],
-        thumb: undefined as string | undefined
-      }))
-    }
-  ]
+  const type: FilterGroup = {
+    key: 'type',
+    title: 'Type',
+    icon: Image,
+    list: kinds,
+    items: (ex ? ['Image', 'Video'] : ['Image', 'Video', '3D']).map((k) => ({
+      value: k,
+      label: k,
+      count: kindOf(k),
+      icon: KIND_ICON[k]
+    }))
+  }
   // The Gallery and the Milestone 2 Catalog filter by Type only: an app is
   // found from the search.
-  if (!ex && !asApps)
-    groups.push({
-      title: 'Category',
+  if (ex || asApps) return [type]
+  return [
+    {
+      key: 'use',
+      title: 'Use case',
       list: uses,
-      items: USES.value.map((u) => ({
-        value: u.value,
-        label: u.value,
-        count: u.count,
-        icon: undefined,
-        thumb: undefined as string | undefined
-      }))
-    })
-  return groups
+      items: USES.value.map((u) => ({ value: u.value, label: u.value, count: u.count }))
+    },
+    type
+  ]
 })
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+// ⌘⌫ / Ctrl+Backspace clears every filter, unless you're typing.
+useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+  if (e.key !== 'Backspace' || !(e.metaKey || e.ctrlKey) || !picked.value.length) return
+  const t = e.target as HTMLElement | null
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  e.preventDefault()
+  clearFilters()
+})
+const isOn = (g: FilterGroup, v: string): boolean => g.list.value.includes(v)
+const flip = (g: FilterGroup, v: string): void => {
+  g.list.value = toggle(g.list.value, v, !isOn(g, v))
+}
+/** The tabs with a Filter menu (and its chips). */
+const filtered = computed(() => ['apps', 'examples', 'templates'].includes(tab.value))
+// One submenu at a time (UI-RULES › Menus).
+const sub = ref('')
+const only = (key: string, open: boolean): void => {
+  if (open) sub.value = key
+  else if (sub.value === key) sub.value = ''
+}
 const picked = computed(() =>
   FILTER.value.flatMap((g) =>
     g.items.filter((i) => g.list.value.includes(i.value)).map((i) => ({ ...i, group: g }))
@@ -267,7 +379,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     :title="asApps ? 'Apps' : 'Explore'"
     :no-results="empty"
     :error-title="asApps ? `Can't load Apps` : `Can't load Explore`"
-    error-text="Example workflows, models and tutorials come from the internet. Your own workflows are still in Workflows."
+    :error-text="
+      can.learn
+        ? 'Example workflows, models and tutorials come from the internet. Your own workflows are still in Workflows.'
+        : 'Apps and workflows come from the internet. Check your connection and try again.'
+    "
     @clear="clearFilters"
   >
     <!-- One line: what, which kind, search. With no tabs to pick, the
@@ -291,7 +407,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           key="lib"
           class="inline-flex items-center gap-2"
         />
-        <span v-if="tab === 'apps' || tab === 'examples'" key="filter" class="inline-flex">
+        <span v-if="filtered" key="filter" class="inline-flex">
           <DropdownMenuRoot :modal="false">
             <DropdownMenuTrigger
               :class="
@@ -306,31 +422,68 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
               <span v-if="picked.length" class="mar-ex-badge">{{ picked.length }}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="mar-ex-filter w-60">
-              <template v-for="(g, gi) in FILTER" :key="g.title">
-                <DropdownMenuSeparator v-if="gi" class="mar-ex-filter-sep" />
-                <DropdownMenuLabel class="mar-ex-filter-label">{{ g.title }}</DropdownMenuLabel>
-                <!-- Each choice leads with what it is: a type by its icon, an
-                     app by its picture; picked, a check on the right. -->
-                <DropdownMenuItem
-                  v-for="i in g.items"
-                  :key="i.value"
-                  role="menuitemcheckbox"
-                  :aria-checked="g.list.value.includes(i.value)"
-                  class="mar-ex-filter-row"
-                  @select.prevent="
-                    g.list.value = toggle(g.list.value, i.value, !g.list.value.includes(i.value))
-                  "
-                >
-                  <img v-if="i.thumb" :src="i.thumb" alt="" class="mar-ex-filter-thumb" />
-                  <component :is="i.icon" v-else-if="i.icon" :size="15" />
-                  <span class="min-w-0 flex-1 truncate">{{ i.label }}</span>
-                  <Check
-                    v-if="g.list.value.includes(i.value)"
-                    :size="14"
-                    class="mar-ex-filter-on"
-                  />
-                  <span v-else class="text-subtle-foreground tabular-nums">{{ i.count }}</span>
-                </DropdownMenuItem>
+              <template v-for="(g, gi) in FILTER" :key="g.key">
+                <!-- The first group lies open: use case on Apps and
+                     Workflows, Type where it's the only one. -->
+                <template v-if="gi === 0">
+                  <DropdownMenuLabel class="mar-ex-filter-label">{{ g.title }}</DropdownMenuLabel>
+                  <!-- Each choice leads with what it is (a type by its icon);
+                       picked, a check on the right, else how many it shows. -->
+                  <DropdownMenuItem
+                    v-for="i in g.items"
+                    :key="i.value"
+                    role="menuitemcheckbox"
+                    :aria-checked="isOn(g, i.value)"
+                    :disabled="!i.count && !isOn(g, i.value)"
+                    class="mar-ex-filter-row"
+                    @select.prevent="flip(g, i.value)"
+                  >
+                    <component :is="i.icon" v-if="i.icon" :size="15" />
+                    <span class="min-w-0 flex-1 truncate">{{ i.label }}</span>
+                    <Check v-if="isOn(g, i.value)" :size="14" class="mar-ex-filter-on" />
+                    <span v-else class="text-subtle-foreground tabular-nums">{{ i.count }}</span>
+                  </DropdownMenuItem>
+                </template>
+                <!-- The rest nest, one open at a time; the row counts what's
+                     picked in it. -->
+                <template v-else>
+                  <DropdownMenuSeparator v-if="gi === 1" class="mar-ex-filter-sep" />
+                  <DropdownMenuSub :open="sub === g.key" @update:open="only(g.key, $event)">
+                    <DropdownMenuSubTrigger class="mar-ex-filter-row">
+                      <component :is="g.icon" v-if="g.icon" :size="15" />
+                      <span class="min-w-0 flex-1 truncate">{{ g.title }}</span>
+                      <span v-if="g.list.value.length" class="mar-ex-badge">{{
+                        g.list.value.length
+                      }}</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal :to="PORTAL_TO">
+                      <DropdownMenuSubContentRaw
+                        :side-offset="8"
+                        :align-offset="-4"
+                        :class="cn(floatingSurface, 'mar-ex-filter mar-ex-filter-sub w-56')"
+                      >
+                        <!-- Only what would show something: a long list
+                             (Model) stays short as other filters narrow. -->
+                        <DropdownMenuItem
+                          v-for="i in g.items.filter((x) => x.count || isOn(g, x.value))"
+                          :key="i.value"
+                          role="menuitemcheckbox"
+                          :aria-checked="isOn(g, i.value)"
+                          :disabled="!i.count && !isOn(g, i.value)"
+                          class="mar-ex-filter-row"
+                          @select.prevent="flip(g, i.value)"
+                        >
+                          <component :is="i.icon" v-if="i.icon" :size="15" />
+                          <span class="min-w-0 flex-1 truncate">{{ i.label }}</span>
+                          <Check v-if="isOn(g, i.value)" :size="14" class="mar-ex-filter-on" />
+                          <span v-else class="text-subtle-foreground tabular-nums">{{
+                            i.count
+                          }}</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContentRaw>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+                </template>
               </template>
               <template v-if="picked.length">
                 <DropdownMenuSeparator class="mar-ex-filter-sep" />
@@ -346,8 +499,16 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         <span v-if="tab !== 'mine'" key="search" class="inline-flex">
           <MarSearchField v-model="query" :placeholder="PLACEHOLDER[tab as Exclude<Tab, 'mine'>]" />
         </span>
-        <span v-if="tab === 'apps'" key="sort" class="inline-flex">
-          <Select v-model="appSort" :options="APP_SORTS" label="Sort" class="w-40" />
+        <!-- Sort, last, in the same place on Apps and Workflows. -->
+        <span v-if="tab === 'apps' || tab === 'templates'" key="sort" class="inline-flex">
+          <Select
+            v-if="tab === 'apps'"
+            v-model="appSort"
+            :options="APP_SORTS"
+            label="Sort"
+            class="w-40"
+          />
+          <Select v-else v-model="wfSort" :options="WF_SORTS" label="Sort" class="w-40" />
         </span>
         <span v-if="tab === 'examples'" key="layout" class="inline-flex">
           <AssetLayoutMenu v-model:view="view" />
@@ -356,7 +517,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     </template>
 
     <!-- The filters picked, as chips, over Examples and Apps. -->
-    <div v-if="picked.length && (tab === 'apps' || tab === 'examples')" class="mar-ex-chips">
+    <div v-if="picked.length && filtered" class="mar-ex-chips">
       <button
         v-for="c in picked"
         :key="`${c.group.title}-${c.value}`"
@@ -365,9 +526,11 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         :aria-label="`Remove ${c.label}`"
         @click="c.group.list.value = toggle(c.group.list.value, c.value, false)"
       >
-        {{ c.label }}<X :size="12" />
+        {{ c.chip ?? c.label }}<X :size="12" />
       </button>
-      <button type="button" class="mar-ex-clear" @click="clearFilters">Clear</button>
+      <button type="button" class="mar-ex-clear" @click="clearFilters">
+        Clear filters<kbd class="mar-menu-hint">{{ MOD }}⌫</kbd>
+      </button>
     </div>
     <!-- Examples: what the apps made, as a masonry wall: each picture at
          its own height, its line under it, no card around it (Apps keeps
@@ -420,7 +583,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     <!-- My apps: the ones you made, live, draft or with changes. -->
     <MarAppsPage v-else-if="tab === 'mine'" embedded toolbar-to="#mar-ex-lib-tools" />
 
-    <!-- Workflows (the Hub's): the same card as an app. -->
+    <!-- Workflows (the Hub's): the same card as an app, its name and the
+         first line of the catalog's description. -->
     <div v-else-if="tab === 'templates'" class="mar-ex-grid is-four">
       <div
         v-for="t in templates"
@@ -432,13 +596,15 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         @click="openDetail('template', t.id)"
         @keydown.enter="openDetail('template', t.id)"
       >
-        <span class="mar-ex-media"><img :src="thumb(t.id)" alt="" loading="lazy" /></span>
+        <span class="mar-ex-media"
+          ><img :src="hubThumb(t.id) ?? thumb(t.id)" alt="" loading="lazy"
+        /></span>
         <span class="flex min-w-0 items-start gap-1 px-1.5 pt-2.5 pb-1.5 text-left">
           <span class="block min-w-0 flex-1">
             <span class="block truncate text-ui font-medium text-base-foreground">{{
-              wfName(t)
+              t.title
             }}</span>
-            <span class="block truncate text-ui text-subtle-foreground">{{ wfLine(t) }}</span>
+            <span class="block truncate text-ui text-subtle-foreground">{{ hubLine(t) }}</span>
           </span>
         </span>
       </div>
@@ -529,14 +695,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 .mar-ex-wall.is-grid .mar-ex-tile {
   margin-bottom: 0;
 }
-/* Filter: icon or picture, name, then the count or a check. */
-.mar-ex-filter-thumb {
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border-radius: 5px;
-  object-fit: cover;
-}
+/* Filter: icon, name, then the count or a check. */
 :root .mar-ex-filter .mar-ex-filter-on {
   color: var(--color-base-foreground);
 }
@@ -545,8 +704,15 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* Groups sit apart by space, not a line (UI-RULES › No lines). */
 :root .mar-ex-filter .mar-ex-filter-sep {
-  margin-inline: -4px;
+  height: 6px;
+  margin: 0;
+  background: transparent;
+}
+/* Clear filters, quiet, with its shortcut. */
+.mar-ex-clear .mar-menu-hint {
+  margin-left: 8px;
 }
 .mar-ex-grid {
   display: grid;
@@ -645,6 +811,13 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 </style>
 
 <style>
+/* A long list (Model) scrolls inside its submenu, never off the window.
+   Global: the submenu is portaled out of this component. */
+.mar-ex-filter-sub {
+  max-height: min(360px, var(--reka-dropdown-menu-content-available-height, 360px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 /* Global: cards and chips are buttons, past the prototype's button reset. */
 :root .proto-ui.proto-ui.proto-ui .mar-ex-chip {
   display: inline-flex;
