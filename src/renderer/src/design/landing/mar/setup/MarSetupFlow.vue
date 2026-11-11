@@ -568,6 +568,8 @@ function rowState(i: number): string {
     >
       <div class="mss-first-frame">
         <div v-if="!failed" class="mss-ambient"></div>
+        <!-- The beat: the mark's ghost, and the mark filling over it. -->
+        <ComfyWordmark v-if="flow.arriving" class="mss-first-mark mss-first-ghost" />
         <ComfyWordmark class="mss-first-mark" />
         <SetupSteps
           v-if="!homeOneClick"

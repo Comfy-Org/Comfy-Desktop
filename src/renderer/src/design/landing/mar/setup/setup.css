@@ -1146,8 +1146,9 @@
 .mss-first.is-backdrop {
   z-index: 70;
 }
-/* The very first open: the wordmark alone, centred on the frame, comes in
- * with one breath; then it travels up to its place as Set up rises. */
+/* The very first open: the wordmark alone, centred on the frame. Its
+ * ghost comes in first; the mark fills over it, left to right, the way
+ * a load completes; then it travels up to its place as Set up rises. */
 .mss-first.is-backdrop.is-alone .mss-first-mark {
   transition:
     top 560ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -1158,20 +1159,24 @@
   top: 50%;
   height: 56px;
   transform: translate(-50%, -50%);
-  animation: mss-arrive 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: mss-fill 1050ms 250ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
-@keyframes mss-arrive {
-  0% {
+.mss-first.is-backdrop.is-arriving .mss-first-ghost {
+  opacity: 0.16;
+  animation: mss-ghost 320ms ease both;
+}
+/* The fill's edge leans at the mark's own 16°, as the motif's progress. */
+@keyframes mss-fill {
+  from {
+    clip-path: polygon(0 0, 8px 0, -8px 100%, 0 100%);
+  }
+  to {
+    clip-path: polygon(0 0, calc(100% + 8px) 0, calc(100% - 8px) 100%, 0 100%);
+  }
+}
+@keyframes mss-ghost {
+  from {
     opacity: 0;
-    scale: 0.94;
-  }
-  50% {
-    opacity: 1;
-    scale: 1.015;
-  }
-  100% {
-    opacity: 1;
-    scale: 1;
   }
 }
 :root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
