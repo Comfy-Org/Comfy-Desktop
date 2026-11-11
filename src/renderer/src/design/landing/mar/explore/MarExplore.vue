@@ -27,7 +27,7 @@ import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { goIn, toast } from '../../useProto'
 import { can } from '../../milestones'
-import { ComfyModel, ComfyTemplate } from '../icons/comfyIcons'
+import { ComfyModel, ComfyWorkflow } from '../icons/comfyIcons'
 import MarPage from '../pages/MarPage.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
@@ -38,7 +38,7 @@ import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
 
 /**
  * Explore. One line holds everything that narrows the page: what you're
- * looking at (Apps, Templates, Models, Tutorials), its type, and a search,
+ * looking at (Apps, Workflows, Models, Tutorials), its type, and a search,
  * so there is one kind of tab, not two. It leads with apps, one catalogue
  * anyone can run, filtered like the hub's: Filter by use case, Sort, search,
  * and the chosen use cases as chips under the line. From Explore & Learn on,
@@ -71,7 +71,7 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
         icon: PanelsTopLeft
       },
       // Icons on every tab, like Apps' own row.
-      { value: 'templates', label: 'Templates', count: TEMPLATES.length, icon: ComfyTemplate },
+      { value: 'templates', label: 'Workflows', count: TEMPLATES.length, icon: ComfyWorkflow },
       { value: 'models', label: 'Models', count: ROUTER_MODELS.length, icon: ComfyModel },
       { value: 'tutorials', label: 'Tutorials', count: TUTORIALS.length, icon: GraduationCap }
     ]
@@ -102,7 +102,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
 }
 watch(tab, clearFilters)
 const PLACEHOLDER: Record<Exclude<Tab, 'mine'>, string> = {
-  templates: 'Search templates',
+  templates: 'Search workflows',
   models: 'Search models or providers',
   apps: 'Search',
   examples: 'Search',
@@ -246,7 +246,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     :title="asApps ? 'Apps' : 'Explore'"
     :no-results="empty"
     :error-title="asApps ? `Can't load Apps` : `Can't load Explore`"
-    error-text="Templates, models and tutorials come from the internet. Your own workflows are still in Workflows."
+    error-text="Example workflows, models and tutorials come from the internet. Your own workflows are still in Workflows."
     @clear="clearFilters"
   >
     <!-- One line: what, which kind, search. With no tabs to pick, the
