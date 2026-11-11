@@ -95,6 +95,10 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
     <div
       :class="props.bare ? 'mbr-card mbr-install' : 'mss-machine is-hero mss-home-inst'"
       :style="props.bare ? { '--h': 48 } : undefined"
+      :role="props.bare && ready ? 'button' : undefined"
+      :tabindex="props.bare && ready ? 0 : undefined"
+      @click="props.bare && ready && openComfyUI()"
+      @keydown.enter="props.bare && ready && openComfyUI()"
     >
       <span v-if="props.bare" class="mbr-device">
         <SetupLaptop :os="localSetup.os" :bad="unsupported" />
@@ -131,12 +135,15 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         ></span>
       </span>
       <span class="flex shrink-0 items-center gap-2">
-        <template v-if="ready">
-          <Button variant="ghost" ::size="size" @click="dismissReady">Not now</Button>
+        <!-- In Builds, ready is a build like any other: Open ComfyUI is
+             the Home's, top right, and the card opens it too. -->
+        <template v-if="ready && props.bare"></template>
+        <template v-else-if="ready">
+          <Button variant="ghost" :size="size" @click="dismissReady">Not now</Button>
           <Button variant="primary" :size="size" @click="openComfyUI()">Open ComfyUI</Button>
         </template>
         <template v-else-if="installing">
-          <Button variant="ghost" ::size="size" @click="showInstall">View logs</Button>
+          <Button variant="ghost" :size="size" @click="showInstall">View logs</Button>
           <Button v-if="failed" variant="secondary" :size="size" @click="changeFromHome"
             >Change</Button
           >
