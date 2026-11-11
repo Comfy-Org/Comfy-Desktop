@@ -41,14 +41,23 @@ const fg = (n: string, use: string): Token => ({ name: n, use })
 
 export const CONTENT: Record<string, Content> = {
   buttons: {
-    pairs: [{ id: 'primary', do: 'One primary per surface.', dont: 'Two primaries compete.' }],
+    pairs: [
+      { id: 'primary', do: 'One primary per surface.', dont: 'Two primaries compete.' },
+      {
+        id: 'centred',
+        do: 'A full-width button centres its label, the icon before it.',
+        dont: 'A label starting at the left: that’s a menu row.'
+      },
+      { id: 'square', do: 'An icon button hovers square (radius 8).', dont: 'A round hover.' }
+    ],
     when: ['An action on this surface.', 'Ghost for rows, toolbars and icon-only actions.'],
     whenNot: ['Going to another page: a nav row or a link.', 'Picking one of a few options: tabs.'],
     rules: [
-      'One primary (inverted: white in dark, near-black in light) per surface.',
-      'Destructive only for what can’t be undone, and muted.',
-      'Icon-only buttons have a tooltip.',
-      'Pressed scales to 0.98; nothing else moves.'
+      'Primary is white, never blue: one per screen. Stand out with the white primary, order and size, not colour.',
+      'Labels are centred in every full-width button, an icon before the label. Only menu rows and pickers start at the left.',
+      'Icon buttons hover square (radius 8), never a circle, and have a tooltip.',
+      'One tool per header: + when you can add, ⋯ when there’s more; no + beside a ⋯ that has Add.',
+      'Destructive only for what can’t be undone, and muted. Pressed scales to 0.98.'
     ],
     tokens: [
       { name: 'height', selector: 'button', use: 'md; sm 28, lg 36' },
@@ -148,6 +157,7 @@ export const CONTENT: Record<string, Content> = {
     when: ['One thing in a library page, as a card or a list row.'],
     whenNot: ['Home’s recent work (Cards).', 'A short list of places or builds (Row cards).'],
     rules: [
+      'Single click opens; selection is the check on hover.',
       'Hover lightens the surface; the card never grows.',
       'The star and ⋯ show on hover.',
       'No picture yet: the canvas’s dot grid and the kind’s icon.',
@@ -197,15 +207,32 @@ export const CONTENT: Record<string, Content> = {
     ]
   },
   menus: {
-    pairs: [{ id: 'one', do: 'A menu for several choices.', dont: 'A menu with one option.' }],
+    pairs: [
+      { id: 'one', do: 'A menu for several choices.', dont: 'A menu with one option.' },
+      {
+        id: 'ask',
+        do: 'Ask inside the menu: it turns into the question.',
+        dont: 'A box in the page to confirm.'
+      },
+      {
+        id: 'red',
+        do: 'The red line last, under a divider.',
+        dont: 'A red line among the others.'
+      },
+      {
+        id: 'pick',
+        do: 'One choice fills its row.',
+        dont: 'A check (and its column) for a single choice.'
+      }
+    ],
     when: ['A list of actions or choices that opens from a trigger.'],
     whenNot: ['One option: a button or plain text.', 'Two or three always-visible choices: tabs.'],
     rules: [
-      'Smoked glass a step lighter than the page; radius 14 around 6, items at 8.',
-      'A summary (workspace, credits) on a raised panel at the top.',
-      'The current pick is raised.',
-      'It grows from its trigger in 180ms.',
-      'Destructive last, in red.'
+      'Smoked glass a step lighter than the page; radius 14 around 6, items at 8. It grows from its trigger in 180ms.',
+      'A menu of groups is rows with values: the uppercase name, what’s picked, a chevron. One level, one submenu open at a time.',
+      'One choice fills its row; a check only in a multi-select.',
+      'Red lines last, under a divider. One that asks first turns the menu into the question.',
+      'A summary (workspace, credits) on a raised panel at the top.'
     ],
     probe:
       '<div role="menu" data-state="open"><div role="menuitem">Open in Cloud</div><div role="menuitem">Duplicate</div></div>',
@@ -219,14 +246,27 @@ export const CONTENT: Record<string, Content> = {
   },
   'tabs-filters': {
     heroWidth: '100%',
-    pairs: [{ id: 'corner', do: 'Controls share one corner.', dont: 'Fully rounded controls.' }],
-    when: ['Narrowing a page: its scopes as tabs; filters, Sort, search and view on the right.'],
+    pairs: [
+      { id: 'corner', do: 'Controls share one corner.', dont: 'Fully rounded controls.' },
+      {
+        id: 'chips',
+        do: 'The Filters field and its badge say what’s on.',
+        dont: 'A row of filter chips under the toolbar.'
+      },
+      {
+        id: 'counts',
+        do: 'Counts in the type tabs.',
+        dont: 'A count beside the title.'
+      }
+    ],
+    when: ['Narrowing a page: its scopes as tabs; Filters, search and Layout on the right.'],
     whenNot: ['Moving between pages: the sidebar.', 'Settings: a select or a switch.'],
     rules: [
-      'Tabs left, the rest grouped right.',
-      'An indicator slides to the picked tab; counts hidden.',
-      'Tabs, filters, sort, search and view share one corner (Corners: Soft 10/7, Default 6/3); buttons keep --radius-control.',
-      'No fully rounded controls; Sort is an icon.'
+      'Tabs left; Filters, search and Layout grouped right, Layout last. All share one corner.',
+      'Tabs stay: every type shows, empty or not, so the bar never shifts. An empty one says what lands there.',
+      'Counts only in Assets’ type tabs; they follow the folder, filter and search.',
+      'No filter chips: the Filters menu and its badge say what’s on; Clear filters (⌘⌫) is its last line.',
+      'Sort lives in the Layout menu (Size, Sort by), not a select of its own.'
     ],
     tokens: [
       fg('--mar-tab-radius', 'Track and controls'),
@@ -263,8 +303,22 @@ export const CONTENT: Record<string, Content> = {
     ]
   },
   'title-bar': {
-    when: ['The window’s top: where you are, and switching builds.'],
-    rules: ['Solid in the app; the breadcrumb switches builds.']
+    heroWidth: '100%',
+    pairs: [
+      {
+        id: 'named',
+        do: 'A tab named after its workflow.',
+        dont: 'A tab named after its build.'
+      }
+    ],
+    when: ['The window’s top: Home, where things run, and every open workflow and app.'],
+    rules: [
+      'Tabs by default: Home as an icon, the build pill, a short divider, then one tab per open workflow and app.',
+      'The pill says where things run; picking a build there switches it, never opens a tab.',
+      'A tab is named after its workflow; a new one is “Untitled workflow”, numbered from the second.',
+      'The divider after the pill is the bar’s one line (UI-RULES › No lines).',
+      'Pablo’s breadcrumb is one pick away: Prototype menu › Title bar.'
+    ]
   },
   sidebar: {
     when: ['Moving between lenses, pages, projects and spaces.'],
@@ -299,6 +353,85 @@ export const CONTENT: Record<string, Content> = {
     heroWidth: '100%',
     when: ['One launch at a time on Home.'],
     rules: ['A wide banner, no section title.', 'Dots step through; the active one fills over 7s.']
+  },
+  toast: {
+    heroWidth: '100%',
+    when: ['Something changed state on the page you stay on: Restored, Stopped, a build updated.'],
+    whenNot: [
+      'After a redirect: the page you land on shows the change.',
+      'Opening things, or a pick in a picker.',
+      'Repeating what the screen already says.'
+    ],
+    rules: [
+      'Only when you stay on the page and something changes state.',
+      'Top right, under the title bar; one at a time.',
+      'Undo when it can be undone.',
+      'Glass in its tone, no border.'
+    ]
+  },
+  'template-modal': {
+    rules: [
+      'The stage runs to the frame’s edges: zoomed in, the picture or the graph is cut by its rounded corners.',
+      'Result / Graph and zoom take the menu glass, the same as the menu they open.',
+      'More (⋯) sits at the top right by the name; a couple of quick actions (Favorite, Copy link) sit there as icons.',
+      'Open in comes first, What it needs right under it (it changes with the build) and unfolds downward.',
+      'The foot keeps only the main action.'
+    ]
+  },
+  'asset-view': {
+    rules: [
+      'The picture fits the stage; zoomed, it fills it up to its rounded edges, never a box inside it.',
+      'Zoom (and Compare) bottom right in the menu glass; the percentage opens the slider and its shortcuts.',
+      'The details are a panel a step lighter, 14px corners, no stroke, no shadow.',
+      'More (⋯) at the top right by the name; the foot keeps Download and Open workflow.',
+      'Section titles are uppercase labels; field names stay sentence case.'
+    ]
+  },
+  'media-badge': {
+    heroWidth: '320px',
+    pairs: [
+      {
+        id: 'badge',
+        do: 'A badge that tells something: a video’s length.',
+        dont: 'A badge on a plain image.'
+      }
+    ],
+    when: ['A video’s length, or what a tile is, over its picture.'],
+    whenNot: ['A plain image in Assets: the picture says it.', 'A run’s state: Status chips.'],
+    rules: [
+      'Bottom left, 8px in: the light dark glass pill (rgb(14 14 16 / 0.28), blur 14px).',
+      'A video: its icon and length, counting while it plays on hover; the bar along the bottom scrubs.',
+      'On hover a title can take the corner (Apps tiles fade the badge).'
+    ],
+    tokens: [
+      { name: 'height', selector: '.mar-asset-len', use: 'Pill' },
+      { name: 'padding', selector: '.mar-asset-len', use: '' },
+      { name: 'border-radius', selector: '.mar-asset-len', use: '' },
+      { name: 'background-color', selector: '.mar-asset-len', use: 'Glass over pictures' },
+      { name: 'backdrop-filter', selector: '.mar-asset-len', use: '' }
+    ]
+  },
+  'file-tile': {
+    heroWidth: '240px',
+    when: ['A file with no picture of its own: sound, 3D, text, data.'],
+    whenNot: ['Anything with a picture: its picture.', 'An output still running: Status chips.'],
+    rules: [
+      'It draws its kind: the kind’s icon or a hint of what is inside, and the extension, on a soft tile.',
+      'Hue and strength are fixed per kind and mixed into the theme, so a wall of files sits at one level.',
+      'The same on Desktop and in ComfyUI.',
+      'Small tiles (a list row) keep the wash and the icon.'
+    ]
+  },
+  'select-bar': {
+    heroWidth: '100%',
+    when: ['What you can do to everything selected in a library page.'],
+    whenNot: ['One item: its own ⋯ menu.'],
+    rules: [
+      'Inverted, at the foot, centred on the page’s column.',
+      'The count, Select all, the common actions; Esc lets go.',
+      'A submenu opens upward (Move to project, Label).',
+      'Delete last, in red.'
+    ]
   },
   activity: {
     heroWidth: '720px',

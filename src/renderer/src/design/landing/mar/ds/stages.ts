@@ -1,5 +1,5 @@
-import { defineComponent, h, type Component } from 'vue'
-import { Bell, Download } from 'lucide-vue-next'
+import { defineComponent, h, ref, type Component } from 'vue'
+import { Bell, Copy, Download, FolderInput, Pencil, Trash2 } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import CreateMenu from '../CreateMenu.vue'
@@ -8,7 +8,11 @@ import PromptBox from '../../parts/PromptBox.vue'
 import DesktopTitleBar from '../../parts/DesktopTitleBar.vue'
 import SwitcherMenu from '../../parts/nav/SwitcherMenu.vue'
 import DeployedTo from '../../parts/space/DeployedTo.vue'
-import AssetViewMenu from '../assets/AssetViewMenu.vue'
+import Select from '../../ui/Select.vue'
+import AssetLayoutMenu from '../assets/AssetLayoutMenu.vue'
+import { GROUPS } from '../assets/assetGroups'
+import MarItemMenu from '../pages/MarItemMenu.vue'
+import type { MenuLine } from '../pages/menu'
 
 /**
  * Components shown open, each in its own frame (kit/Stage.vue). `open`
@@ -53,6 +57,111 @@ const tip = (content: string, icon: Component = Bell): Component =>
         )
       )
   )
+
+/** A Reka trigger opens on a click; a submenu row opens on →. */
+function clickThen(selector: string, then?: () => void) {
+  return (root: HTMLElement): void => {
+    root.querySelector<HTMLElement>(selector)?.click()
+    if (then) setTimeout(then, 250)
+  }
+}
+function subOpen(text: string): () => void {
+  return () => {
+    const row = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')].find(
+      (el) => el.textContent?.includes(text)
+    )
+    row?.focus()
+    row?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+  }
+}
+
+/** Assets' Layout menu (assets/AssetLayoutMenu.vue), with the page's own
+ *  sorts and groups: rows with values, one submenu at a time. */
+const SORTS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'largest', label: 'Largest first' },
+  { value: 'name', label: 'Name (A → Z)' }
+]
+const layoutMenu = defineComponent(() => {
+  const view = ref<'masonry' | 'rows' | 'grid'>('masonry')
+  const size = ref(2)
+  const sort = ref('newest')
+  const group = ref('none')
+  const name = ref(true)
+  const details = ref(true)
+  const labels = ref(false)
+  return () =>
+    h(
+      'div',
+      { class: 'mar-page is-embedded' },
+      h(
+        'div',
+        { class: 'mar-page-bar' },
+        h(AssetLayoutMenu, {
+          view: view.value,
+          'onUpdate:view': (v: typeof view.value) => (view.value = v),
+          size: size.value,
+          'onUpdate:size': (v?: number) => (size.value = v ?? 2),
+          sort: sort.value,
+          'onUpdate:sort': (v?: string) => (sort.value = v ?? 'newest'),
+          group: group.value,
+          'onUpdate:group': (v?: string) => (group.value = v ?? 'none'),
+          showName: name.value,
+          'onUpdate:showName': (v?: boolean) => (name.value = !!v),
+          showDetails: details.value,
+          'onUpdate:showDetails': (v?: boolean) => (details.value = !!v),
+          showLabels: labels.value,
+          'onUpdate:showLabels': (v?: boolean) => (labels.value = !!v),
+          sorts: SORTS,
+          groups: GROUPS,
+          views: ['masonry', 'rows', 'grid']
+        })
+      )
+    )
+})
+
+/** An item's ⋯ (pages/MarItemMenu.vue): a tag's, as in ComfyUI's Assets
+ *  sidebar (its Delete asks first, in the menu), and a card's, with
+ *  Move to project's second panel. The red line gets its divider on its own. */
+const TAG_LINES: MenuLine[] = [
+  { label: 'Rename tag', icon: Pencil },
+  {
+    label: 'Delete tag',
+    icon: Trash2,
+    danger: true,
+    confirm: { text: 'Remove “portrait” from 4 assets?', yes: 'Delete tag' }
+  }
+]
+const CARD_LINES: MenuLine[] = [
+  { label: 'Rename', icon: Pencil },
+  { label: 'Duplicate', icon: Copy },
+  {
+    label: 'Move to project',
+    icon: FolderInput,
+    sub: [{ label: 'Hero shots' }, { label: 'My first project' }, { label: 'Flux tests' }]
+  },
+  { label: 'Delete', icon: Trash2, danger: true }
+]
+const itemMenu = (lines: MenuLine[]): Component =>
+  defineComponent(() => () => h(MarItemMenu, { lines }))
+
+/** A single-choice dropdown (ui/Select.vue): the pick fills its row. */
+const PLACES = [
+  { value: 'all', label: 'All places' },
+  { value: 'local', label: 'This computer' },
+  { value: 'cloud', label: 'Comfy Cloud' }
+]
+const select = defineComponent(() => {
+  const v = ref('local')
+  return () =>
+    h(Select, {
+      modelValue: v.value,
+      'onUpdate:modelValue': (x: string) => (v.value = x),
+      options: PLACES,
+      class: 'w-44'
+    })
+})
 
 export const STAGES = {
   'create-menu': {
@@ -100,12 +209,9 @@ export const STAGES = {
     height: 420,
     place: 'top-left',
     on: 'bare',
-    open: (root) => {
-      const b = [...root.querySelectorAll<HTMLElement>('header button')].find((el) =>
-        el.textContent?.includes('Open a build')
-      )
-      b?.click()
-    }
+    // The build pill opens it (tabs title bar); the breadcrumb's crumb did.
+    open: (root) =>
+      root.querySelector<HTMLElement>('header button[title="Where your work runs"]')?.click()
   },
   'credits-flyout': {
     component: defineComponent(() => () => h('div', { class: 'w-55' }, h(WorkspaceMenu))),
@@ -114,18 +220,52 @@ export const STAGES = {
     on: 'sidebar',
     open: (root) => root.querySelector<HTMLElement>('.mar-credits-row')?.click()
   },
-  'view-menu': {
-    component: defineComponent(
-      () => () =>
-        h(
-          'div',
-          { class: 'mar-page is-embedded' },
-          h('div', { class: 'mar-page-bar' }, h(AssetViewMenu))
-        )
-    ),
-    height: 440,
+  'layout-menu': {
+    component: layoutMenu,
+    height: 300,
     place: 'top-right',
-    open: (root) => root.querySelector<HTMLElement>('.mar-view-trigger')?.click()
+    open: clickThen('.alm-trigger')
+  },
+  'layout-menu-sub': {
+    component: layoutMenu,
+    height: 300,
+    place: 'top-right',
+    open: clickThen('.alm-trigger', subOpen('Sort by'))
+  },
+  'item-menu': {
+    component: itemMenu(TAG_LINES),
+    height: 170,
+    place: 'top-left',
+    open: clickThen('.mar-kebab')
+  },
+  'item-menu-ask': {
+    component: itemMenu(TAG_LINES),
+    height: 170,
+    place: 'top-left',
+    open: clickThen('.mar-kebab', () =>
+      document.querySelector<HTMLElement>('[role="menu"] .mar-menu-danger')?.click()
+    )
+  },
+  'item-menu-card': {
+    component: itemMenu(CARD_LINES),
+    height: 220,
+    place: 'top-left',
+    open: clickThen('.mar-kebab')
+  },
+  'item-menu-sub': {
+    component: itemMenu(CARD_LINES),
+    height: 240,
+    place: 'top-left',
+    open: clickThen('.mar-kebab', subOpen('Move to project'))
+  },
+  'select-menu': {
+    component: select,
+    height: 190,
+    place: 'top-left',
+    open: (root) =>
+      root
+        .querySelector<HTMLElement>('button')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
   },
   'tip-short': { component: tip('Notifications'), height: 110, open: focusTip },
   'tip-shortcut': { component: tip('Downloads (⌘⇧D)', Download), height: 110, open: focusTip },
