@@ -778,7 +778,10 @@ defineExpose({
               :data-testid="TID.settingsTab(tab.key)"
               @click="selectTab(tab.key)"
             >
-              <span class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center">
+              <span
+                v-if="!isPage || (tab.key === 'update' && showUpdateBadge)"
+                class="settings-v2-tab-icon-wrap relative inline-flex shrink-0 items-center"
+              >
                 <component
                   :is="tab.icon"
                   v-if="!isPage"
