@@ -84,7 +84,7 @@ function build(id: string, name: string): Installation {
 async function mountAssets(
   running: Installation[],
   stopped: Installation[] = [],
-  options: { attachTo?: HTMLElement } = {}
+  options: { attachTo?: HTMLElement; props?: { focusName?: string } } = {}
 ) {
   useInstallationStore().installations = [...running, ...stopped]
   const sessions = useSessionStore()
@@ -96,7 +96,8 @@ async function mountAssets(
     })
   }
   const wrapper = mount(AssetsView, {
-    ...options,
+    attachTo: options.attachTo,
+    props: options.props,
     global: { stubs: { teleport: { template: '<div><slot /></div>' } } }
   })
   await flushPromises()
@@ -457,6 +458,40 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="output-detail-download"]').classes()).toContain(
       'text-background'
     )
+  })
+})
+
+describe('AssetsView opened for one Cloud file', () => {
+  it('shows the Comfy Cloud assets with the newest file of that name open, for this visit only', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
+    listOutputFolders.mockResolvedValue([])
+    listAssets.mockResolvedValue([
+      { ...asset('old', 'cloud-cutout.png', 'image'), createdAt: '2026-11-01T12:00:00Z' },
+      asset('a', 'forest.png', 'image'),
+      { ...asset('new', 'cloud-cutout.png', 'image'), createdAt: '2026-11-10T12:00:00Z' }
+    ])
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], {
+      props: { focusName: 'cloud-cutout.png' }
+    })
+
+    expect(wrapper.find('[data-testid="assets-grid"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('cloud-cutout.png')
+    expect(wrapper.get('[data-testid="output-detail-panel"]').text()).toContain('11/10/2026')
+    expect(wrapper.emitted('focus-used')).toHaveLength(1)
+    expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('computer')
+  })
+
+  it('just shows the Comfy Cloud assets when the file is not there', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], {
+      props: { focusName: 'missing.png' }
+    })
+
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+    expect(wrapper.emitted('focus-used')).toHaveLength(1)
   })
 })
 

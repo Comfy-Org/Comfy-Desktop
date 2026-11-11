@@ -77,7 +77,8 @@
       "available": "Available",
       "notSaved": "Not saved",
       "openWorkflow": "Open workflow",
-      "savedIn": "Saved in"
+      "savedIn": "Saved in",
+      "cloudAssets": "Comfy Cloud assets"
     },
     "noMatches": "No matching assets",
     "noMatchesHint": "Try another type or search.",
@@ -91,6 +92,7 @@
       "computer": "This computer"
     },
     "showInFolder": "Show in folder",
+    "viewInAssets": "View in Assets",
     "local": {
       "sharedOutput": "Shared output",
       "buildOutput": "{name} output",

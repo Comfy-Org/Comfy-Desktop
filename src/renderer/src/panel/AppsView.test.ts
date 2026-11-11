@@ -293,4 +293,54 @@ describe('AppsView', () => {
     expect(wrapper.emitted('app-open')!.at(-1)).toEqual([false])
     expect(wrapper.emitted('app-entered')!.at(-1)).toEqual([false])
   })
+
+  it('shows where an app saved each output and offers the way to it', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+
+    appsOutput!({
+      items: [
+        {
+          name: 'cutout.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1]),
+          tags: [],
+          workflow: false,
+          savedOn: 'computer',
+          folder: '/Users/me/ComfyUI-Shared/output/apps/remove-background'
+        },
+        {
+          name: 'cloud-cutout.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([2]),
+          tags: [],
+          workflow: false,
+          savedOn: 'cloud'
+        }
+      ],
+      index: 0,
+      backdrop: null
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="output-detail-saved-in"]').text()).toContain(
+      'remove-background'
+    )
+    expect(wrapper.find('[data-testid="output-detail-view-in-assets"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="output-detail-show-in-folder"]').trigger('click')
+    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'show-in-folder', index: 0 })
+
+    await wrapper.get('[data-testid="output-detail-thumb-1"]').trigger('click')
+    expect(wrapper.get('[data-testid="output-detail-saved-in"]').text()).toContain(
+      'Comfy Cloud assets'
+    )
+    expect(wrapper.find('[data-testid="output-detail-show-in-folder"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="output-detail-view-in-assets"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('view-in-assets')).toEqual([['cloud-cutout.png']])
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+  })
 })

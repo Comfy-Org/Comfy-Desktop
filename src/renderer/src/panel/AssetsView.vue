@@ -46,13 +46,17 @@ type SortOrder = 'newest' | 'oldest'
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
 
+const { focusName = null } = defineProps<{ focusName?: string | null }>()
+const emit = defineEmits<{ 'focus-used': [] }>()
+
 const { t } = useI18n()
 const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
-const place = useLocalStorage<Place>('comfy.desktop.assets.place', 'cloud')
+const savedPlace = useLocalStorage<Place>('comfy.desktop.assets.place', 'cloud')
+const place = ref<Place>(focusName ? 'cloud' : savedPlace.value)
 const localFolder = ref<string | null>(null)
 const localFolders = useTemplateRef<InstanceType<typeof LocalFolders>>('localFolders')
 const kindFilter = ref<KindFilter>('all')
@@ -192,6 +196,26 @@ watch(
   { immediate: true }
 )
 
+let pendingFocus = focusName
+
+watch(
+  [visibleAssets, loading],
+  ([list, busy]) => {
+    if (!pendingFocus || busy || reachableBuildIds.value.length === 0) return
+    const name = pendingFocus
+    pendingFocus = null
+    const newest = list
+      .filter((asset) => asset.name === name)
+      .reduce<GalleryAsset | null>(
+        (best, asset) => (best && createdMs(best) >= createdMs(asset) ? best : asset),
+        null
+      )
+    if (newest) openDetail(newest)
+    emit('focus-used')
+  },
+  { immediate: true }
+)
+
 watch(visibleAssets, (list) => {
   if (detailKey.value !== null && !list.some((asset) => cardKey(asset) === detailKey.value))
     detailKey.value = null
@@ -231,6 +255,11 @@ function coolNameTooltips(): void {
 }
 
 onBeforeUnmount(() => clearTimeout(warmTimer))
+
+function pickPlace(next: Place): void {
+  place.value = next
+  savedPlace.value = next
+}
 
 function refresh(): void {
   if (place.value === 'cloud') void loadAssets()
@@ -310,10 +339,11 @@ function assetDetails(asset: AssetSummary): string {
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
         <SegmentedControl
-          v-model="place"
+          :model-value="place"
           :options="placeOptions"
           :label="t('assets.place.label')"
           data-testid="assets-place"
+          @update:model-value="pickPlace"
         />
         <div class="ml-auto flex items-center gap-2">
           <Button

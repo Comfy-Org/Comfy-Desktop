@@ -20,6 +20,7 @@ const { growBy = 0 } = defineProps<{
 const emit = defineEmits<{
   'app-open': [open: boolean]
   'app-entered': [entered: boolean]
+  'view-in-assets': [name: string]
 }>()
 
 const { t } = useI18n()
@@ -71,7 +72,9 @@ function showAppOutputs(outputs: AppOutputs): void {
       createdAt: null,
       tags: output.tags,
       previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
-      workflow: output.workflow
+      workflow: output.workflow,
+      savedIn: output.savedOn === 'computer' ? (output.folder ?? null) : null,
+      inCloud: output.savedOn === 'cloud'
     })),
     backdropUrl: outputs.backdrop
       ? URL.createObjectURL(new Blob([outputs.backdrop], { type: 'image/jpeg' }))
@@ -94,6 +97,12 @@ function appOutputAction(action: AppOutputAction['action'], index: number): void
   if (action === 'open-workflow') closeAppOutputs()
 }
 
+function viewInAssets(index: number): void {
+  const name = appOutputs.value?.items[index]?.name
+  closeAppOutputs()
+  if (name) emit('view-in-assets', name)
+}
+
 onBeforeUnmount(() => {
   closeAppOutputs()
   if (openApp.value) emit('app-open', false)
@@ -110,6 +119,8 @@ onBeforeUnmount(() => {
     @close="closeAppOutputs"
     @download="appOutputAction('download', $event)"
     @open-workflow="appOutputAction('open-workflow', $event)"
+    @show-in-folder="appOutputAction('show-in-folder', $event)"
+    @view-in-assets="viewInAssets"
   />
   <div
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
