@@ -1764,6 +1764,22 @@
 .mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-foot {
   border-radius: 0 0 var(--radius-panel, 16px) var(--radius-panel, 16px);
 }
+/* In the modal (every build after the first) the computer's card sits a
+   line under the lead and draws the computer a size down: the list under
+   it is the subject there. The takeover keeps it large. */
+.mar-wizard.mss:not(.mss-in-takeover) .mss-machine.is-hero {
+  margin-top: 16px;
+  padding: 24px 28px;
+}
+.mar-wizard.mss:not(.mss-in-takeover) .mss-machine.is-hero .mss-laptop {
+  width: 136px;
+  height: 88px;
+}
+/* Its sides line up with the body's. */
+:root[data-mar-ui='on'] .mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-foot {
+  padding-right: 32px;
+  padding-left: 32px;
+}
 :root .proto-ui.proto-ui.proto-ui.mar-wizard.mss:not(.mss-in-takeover) > [aria-label='Close'] {
   top: 0;
   right: -48px;
