@@ -355,98 +355,18 @@ function labelKey(n: number, ids: string[]): void {
   if (n === 0) clearLabel(ids)
   else if (n <= 6 && LABELS[n - 1]) setLabel(ids, LABELS[n - 1]!.value)
 }
-/** The filters on, one chip each under the toolbar (only while any is
- *  on): its × lets just that one go; Clear filters ends the row. */
-const TYPE_NAMES: Record<string, string> = {
-  image: 'Images',
-  video: 'Videos',
-  '3d': '3D',
-  audio: 'Audio',
-  text: 'Text',
-  other: 'Other'
-}
-const stem = (x: string): string => x.replace(/\.(safetensors|ckpt|pt|pth|bin|gguf|json)$/i, '')
-const dayName = (d: string): string => {
-  const [y, m, n] = d.split('-').map(Number)
-  return new Date(y!, m! - 1, n!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-interface Chip {
-  key: string
-  label: string
-  icon?: FunctionalComponent | typeof Tag
-  remove: () => void
-}
-const without = <K extends 'types' | 'tags' | 'labels' | 'models' | 'loras' | 'workflows'>(
-  k: K,
-  v: string
-): void => {
-  filter.value = { ...filter.value, [k]: (filter.value[k] as string[]).filter((x) => x !== v) }
-}
 /** Desktop's Filters › Folder: the build's folders, in tree order. */
 const FOLDER_LIST = computed(() => tree().map(({ folder: f, depth }) => ({ ...f, depth })))
-const CHIPS = computed<Chip[]>(() => {
-  const f = filter.value
-  const out: Chip[] = []
-  // ComfyUI's tab names the folder in its title instead.
-  if (folder.value && !inGraph)
-    out.push({
-      key: 'folder',
-      label: folderName(folder.value) ?? 'Folder',
-      icon: Folder,
-      remove: () => (folder.value = '')
-    })
-  if (f.source !== 'all')
-    out.push({
-      key: 'source',
-      label: f.source === 'generated' ? 'Generated' : 'Imported',
-      icon: f.source === 'generated' ? Sparkles : ArrowDownToLine,
-      remove: () => (filter.value = { ...filter.value, source: 'all' })
-    })
-  for (const t of f.types)
-    out.push({ key: `type-${t}`, label: TYPE_NAMES[t] ?? t, remove: () => without('types', t) })
-  if (f.from || f.to)
-    out.push({
-      key: 'date',
-      label:
-        f.from && f.to
-          ? f.from === f.to
-            ? dayName(f.from)
-            : `${dayName(f.from)} to ${dayName(f.to)}`
-          : f.from
-            ? `From ${dayName(f.from)}`
-            : `Until ${dayName(f.to)}`,
-      remove: () => (filter.value = { ...filter.value, from: '', to: '' })
-    })
-  for (const t of f.tags)
-    out.push({ key: `tag-${t}`, label: t, icon: Tag, remove: () => without('tags', t) })
-  for (const l of f.labels)
-    out.push({
-      key: `label-${l}`,
-      label: labelName(l) ?? l,
-      icon: dotOf(labelColor(l) ?? 'transparent'),
-      remove: () => without('labels', l)
-    })
-  for (const m of f.models)
-    out.push({ key: `model-${m}`, label: `Model: ${stem(m)}`, remove: () => without('models', m) })
-  for (const m of f.loras)
-    out.push({ key: `lora-${m}`, label: `LoRA: ${stem(m)}`, remove: () => without('loras', m) })
-  for (const w of f.workflows)
-    out.push({
-      key: `flow-${w}`,
-      label: `Workflow: ${stem(w)}`,
-      remove: () => without('workflows', w)
-    })
-  return out
-})
+/** Any filter on (the folder too, on Desktop): what ⌘⌫ clears. */
+const filtered = computed(() => activeFilters(filter.value) > 0 || (!inGraph && !!folder.value))
 function clearFilters(): void {
   filter.value = noFilter()
   if (!inGraph) folder.value = ''
 }
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 // ⌘⌫ / Ctrl+Backspace clears every filter, ahead of the selection's own
 // Backspace (useLibrary), unless you're typing.
 useEventListener(window, 'keydown', (e: KeyboardEvent) => {
-  if (e.key !== 'Backspace' || !(e.metaKey || e.ctrlKey) || !CHIPS.value.length) return
+  if (e.key !== 'Backspace' || !(e.metaKey || e.ctrlKey) || !filtered.value) return
   const t = e.target as HTMLElement | null
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
   e.preventDefault()
@@ -1420,28 +1340,6 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
             :views="['masonry', 'rows', 'grid']"
           />
         </div>
-      </div>
-      <div v-if="browsable && CHIPS.length" class="mar-asset-chips" aria-label="Active filters">
-        <span v-if="!inGraph" class="mar-asset-chips-n"
-          >{{ shown.length }} of {{ base.length }}</span
-        >
-        <span v-for="c in CHIPS" :key="c.key" class="mar-asset-chip">
-          <component :is="c.icon" v-if="c.icon" :size="12" />
-          <span class="mar-asset-chip-name">{{ c.label }}</span>
-          <Tooltip :content="`Remove ${c.label}`" side="bottom">
-            <button
-              type="button"
-              class="mar-asset-chip-x"
-              :aria-label="`Remove ${c.label}`"
-              @click="c.remove()"
-            >
-              <X :size="12" />
-            </button>
-          </Tooltip>
-        </span>
-        <button type="button" class="mar-asset-chips-clear" @click="clearFilters">
-          Clear filters<kbd class="mar-menu-hint">{{ MOD }}⌫</kbd>
-        </button>
       </div>
     </template>
 
@@ -2600,67 +2498,5 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
 }
 .mar-asset-play.is-on ~ .mar-asset-len {
   display: none;
-}
-/* The filters on, under the toolbar: one chip each, then Clear filters. */
-.mar-page-bar > .mar-asset-chips {
-  display: flex;
-  flex-basis: 100%;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-}
-.mar-asset-chips-n {
-  margin-right: 4px;
-  color: var(--color-subtle-foreground);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.mar-asset-chip {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px 0 10px;
-  border-radius: 999px;
-  background: var(--color-secondary-background);
-  color: var(--color-base-foreground);
-  font-size: 12px;
-}
-.mar-asset-chip-name {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-asset-chip-x {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--color-muted-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-asset-chip-x:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-asset-chips-clear {
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 8px;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-asset-chips-clear:hover {
-  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
-  color: var(--color-base-foreground);
 }
 </style>

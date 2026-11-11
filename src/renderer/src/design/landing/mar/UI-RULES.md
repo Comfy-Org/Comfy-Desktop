@@ -68,7 +68,7 @@ DS's Motion page (`ds/motion.ts`).
   multi-select (`ui/Select.vue`).
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
-- **No filter chips in Explore** for now: the Filter menu's rows and its
+- **No filter chips** for now (Explore, Assets): the Filter menu and its
   badge say what's on; Clear filters (⌘⌫) is the menu's last line.
 - **A menu of groups is rows with values** (Assets' Layout menu): the
   uppercase group name on the left, what's picked on the right (All, or
