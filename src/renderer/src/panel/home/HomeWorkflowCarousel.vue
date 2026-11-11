@@ -12,6 +12,7 @@ interface ArcSlot {
 }
 
 const ARC_REACH = 2
+const OFFSTAGE = ARC_REACH + 1
 const DRAG_PIXELS_PER_CARD = 150
 const DRAG_START_PIXELS = 6
 const ARC_SLOTS: Record<number, ArcSlot> = {
@@ -27,6 +28,12 @@ const ARC_SLOTS: Record<number, ArcSlot> = {
     opacity: 0.17,
     dim: 0.72,
     layer: 1
+  },
+  [OFFSTAGE]: {
+    transform: 'translateX(500px) rotateY(72deg) scale(0.74)',
+    opacity: 0,
+    dim: 0.9,
+    layer: 0
   }
 }
 
@@ -38,32 +45,54 @@ const emit = defineEmits<{ open: [workflow: CatalogWorkflow] }>()
 
 const { t } = useI18n()
 
-const frontIndex = ref(0)
+const frontPosition = ref(0)
+const jumpedAcross = ref(new Set<string>())
+const loadedThumbnails = ref(new Set<string>())
 const brokenThumbnails = ref(new Set<string>())
-
-watch(
-  () => workflows.length,
-  (count) => {
-    if (frontIndex.value >= count) frontIndex.value = 0
-  }
-)
 
 const wraps = computed(() => workflows.length > ARC_REACH * 2)
 
-const arcCards = computed(() => {
+function offsetFrom(position: number, index: number): number {
   const count = workflows.length
-  const cards: { workflow: CatalogWorkflow; index: number; offset: number }[] = []
-  for (let offset = -ARC_REACH; offset <= ARC_REACH; offset++) {
-    const raw = frontIndex.value + offset
-    if (!wraps.value && (raw < 0 || raw >= count)) continue
-    const index = ((raw % count) + count) % count
-    cards.push({ workflow: workflows[index]!, index, offset })
+  const distance = index - position
+  if (!wraps.value) return distance
+  const turned = ((distance % count) + count) % count
+  return turned > count / 2 ? turned - count : turned
+}
+
+const arcCards = computed(() =>
+  workflows.map((workflow, index) => {
+    const offset = offsetFrom(frontPosition.value, index)
+    return { workflow, offset, onStage: Math.abs(offset) <= ARC_REACH }
+  })
+)
+
+function moveTo(position: number): void {
+  const last = workflows.length - 1
+  const next = wraps.value ? position : Math.min(Math.max(position, 0), last)
+  const moved = next - frontPosition.value
+  if (moved === 0) return
+  jumpedAcross.value = new Set(
+    workflows
+      .filter(
+        (_workflow, index) =>
+          offsetFrom(next, index) !== offsetFrom(frontPosition.value, index) - moved
+      )
+      .map((workflow) => workflow.id)
+  )
+  frontPosition.value = next
+}
+
+watch(
+  () => workflows.length,
+  () => {
+    jumpedAcross.value = new Set(workflows.map((workflow) => workflow.id))
+    frontPosition.value = 0
   }
-  return cards
-})
+)
 
 function slotStyle(offset: number): Record<string, string> {
-  const slot = ARC_SLOTS[Math.abs(offset)]!
+  const slot = ARC_SLOTS[Math.min(Math.abs(offset), OFFSTAGE)]!
   const mirrored = offset < 0
   return {
     transform: mirrored
@@ -79,30 +108,24 @@ function showsThumbnail(workflow: CatalogWorkflow): boolean {
   return workflow.thumbnailUrl !== null && !brokenThumbnails.value.has(workflow.id)
 }
 
+function markThumbnailLoaded(workflow: CatalogWorkflow): void {
+  loadedThumbnails.value = new Set(loadedThumbnails.value).add(workflow.id)
+}
+
 function markThumbnailBroken(workflow: CatalogWorkflow): void {
   brokenThumbnails.value = new Set(brokenThumbnails.value).add(workflow.id)
 }
 
-function indexAt(position: number): number {
-  const count = workflows.length
-  if (wraps.value) return ((position % count) + count) % count
-  return Math.min(Math.max(position, 0), count - 1)
-}
-
-function step(direction: 1 | -1): void {
-  frontIndex.value = indexAt(frontIndex.value + direction)
-}
-
 const dragging = ref(false)
 let dragStartX = 0
-let dragStartIndex = 0
+let dragStartPosition = 0
 let clickBelongsToDrag = false
 
 function onDragMove(event: PointerEvent): void {
   const distance = event.clientX - dragStartX
   if (!dragging.value && Math.abs(distance) < DRAG_START_PIXELS) return
   dragging.value = true
-  frontIndex.value = indexAt(dragStartIndex - Math.round(distance / DRAG_PIXELS_PER_CARD))
+  moveTo(dragStartPosition - Math.round(distance / DRAG_PIXELS_PER_CARD))
 }
 
 function stopDrag(): void {
@@ -120,7 +143,7 @@ function stopDrag(): void {
 function startDrag(event: PointerEvent): void {
   if (event.button !== 0) return
   dragStartX = event.clientX
-  dragStartIndex = frontIndex.value
+  dragStartPosition = frontPosition.value
   window.addEventListener('pointermove', onDragMove)
   window.addEventListener('pointerup', stopDrag)
   window.addEventListener('pointercancel', stopDrag)
@@ -128,10 +151,10 @@ function startDrag(event: PointerEvent): void {
 
 onBeforeUnmount(stopDrag)
 
-function activate(card: { workflow: CatalogWorkflow; index: number; offset: number }): void {
+function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
   if (clickBelongsToDrag) return
   if (card.offset === 0) emit('open', card.workflow)
-  else frontIndex.value = card.index
+  else moveTo(frontPosition.value + card.offset)
 }
 </script>
 
@@ -141,13 +164,19 @@ function activate(card: { workflow: CatalogWorkflow; index: number; offset: numb
     :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
     data-testid="home-workflow-carousel"
     @pointerdown="startDrag"
-    @keydown.left.prevent="step(-1)"
-    @keydown.right.prevent="step(1)"
+    @keydown.left.prevent="moveTo(frontPosition - 1)"
+    @keydown.right.prevent="moveTo(frontPosition + 1)"
   >
     <li v-for="card in arcCards" :key="card.workflow.id" class="contents">
       <button
         type="button"
-        class="absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+        class="absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        :class="[
+          jumpedAcross.has(card.workflow.id)
+            ? 'transition-none'
+            : 'transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+          !card.onStage && 'pointer-events-none'
+        ]"
         :style="slotStyle(card.offset)"
         :aria-label="
           card.offset === 0
@@ -155,6 +184,8 @@ function activate(card: { workflow: CatalogWorkflow; index: number; offset: numb
             : t('home.showWorkflow', { title: card.workflow.title })
         "
         :aria-current="card.offset === 0 ? 'true' : undefined"
+        :aria-hidden="card.onStage ? undefined : 'true'"
+        :tabindex="card.onStage ? undefined : -1"
         data-testid="home-workflow-card"
         :data-arc-offset="card.offset"
         @click="activate(card)"
@@ -164,7 +195,10 @@ function activate(card: { workflow: CatalogWorkflow; index: number; offset: numb
           :src="card.workflow.thumbnailUrl ?? undefined"
           alt=""
           draggable="false"
-          class="absolute inset-0 size-full object-cover"
+          class="absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none"
+          :class="loadedThumbnails.has(card.workflow.id) ? 'opacity-100' : 'opacity-0'"
+          :data-loaded="loadedThumbnails.has(card.workflow.id)"
+          @load="markThumbnailLoaded(card.workflow)"
           @error="markThumbnailBroken(card.workflow)"
         />
         <span

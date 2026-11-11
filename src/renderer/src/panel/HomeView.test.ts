@@ -81,8 +81,10 @@ async function openHome() {
 
 function arc(wrapper: VueWrapper): string[] {
   return wrapper
-    .findAll('[data-testid="home-workflow-card"]')
-    .map((card) => `${card.attributes('data-arc-offset')}:${card.text()}`)
+    .findAll('[data-testid="home-workflow-card"]:not([aria-hidden="true"])')
+    .map((card) => ({ offset: Number(card.attributes('data-arc-offset')), text: card.text() }))
+    .sort((left, right) => left.offset - right.offset)
+    .map((card) => `${card.offset}:${card.text}`)
 }
 
 function cardAt(wrapper: VueWrapper, offset: number) {
@@ -117,6 +119,57 @@ describe('Home example workflows', () => {
 
     expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
     expect(openCatalogWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('slides a card two places away to the front as the same card, with the next ones already waiting off stage', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    const twoAway = cardAt(wrapper, 2).element
+    const waitingOffStage = cardAt(wrapper, 3)
+    expect(waitingOffStage.text()).toBe('Workflow 3')
+    expect(waitingOffStage.attributes('aria-hidden')).toBe('true')
+
+    await cardAt(wrapper, 2).trigger('click')
+
+    expect(cardAt(wrapper, 0).element).toBe(twoAway)
+    expect(cardAt(wrapper, 1).element).toBe(waitingOffStage.element)
+    expect(arc(wrapper)).toEqual([
+      '-2:Workflow 0',
+      '-1:Workflow 1',
+      '0:Workflow 2',
+      '1:Workflow 3',
+      '2:Workflow 4'
+    ])
+    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('keeps cards that are off stage out of reach of the keyboard and screen readers', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+
+    const offStage = wrapper.findAll('[data-testid="home-workflow-card"][aria-hidden="true"]')
+
+    expect(offStage.map((card) => card.text())).toEqual(['Workflow 3', 'Workflow 4'])
+    expect(offStage.map((card) => card.attributes('tabindex'))).toEqual(['-1', '-1'])
+  })
+
+  it('loads every picture up front and fades each in once it has loaded', async () => {
+    listHomeWorkflows.mockResolvedValue(
+      SEVEN_WORKFLOWS.map((entry) => ({
+        ...entry,
+        thumbnailUrl: `https://comfy.org/catalog-media/${entry.id}/v1`
+      }))
+    )
+    const wrapper = await openHome()
+    const pictures = wrapper.findAll('[data-testid="home-workflow-card"] img')
+
+    expect(pictures).toHaveLength(7)
+    expect(pictures[4]!.attributes('data-loaded')).toBe('false')
+
+    await pictures[4]!.trigger('load')
+
+    expect(pictures[4]!.attributes('data-loaded')).toBe('true')
+    expect(pictures[5]!.attributes('data-loaded')).toBe('false')
   })
 
   it('opens the workflow in front when it is clicked', async () => {
