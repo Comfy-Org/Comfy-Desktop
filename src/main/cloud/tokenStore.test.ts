@@ -374,6 +374,20 @@ describe('grant vault', () => {
     }
   })
 
+  it('dates a revocation queued with a clock running ahead no later than its file', () => {
+    const revocation = {
+      issuer: 'https://cloud.test',
+      clientId: 'cid',
+      refreshToken: 'refresh-1',
+      queuedAt: Date.now() + 365 * 24 * 3_600_000
+    }
+    addPendingRevocation(revocation)
+
+    expect(loadPendingRevocations().pending).toEqual([
+      { ...revocation, queuedAt: expect.toSatisfy((at: number) => at < Date.now() + 1_000) }
+    ])
+  })
+
   it('drops an unreadable queue file once it has outlived the refresh token, and only then', () => {
     const revocation = {
       issuer: 'https://cloud.test',

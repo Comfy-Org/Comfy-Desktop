@@ -32,10 +32,11 @@ async function mountSidebar(activePage: DashboardPage = 'chooser') {
 }
 
 describe('AppSidebar', () => {
-  it('lists Builds, Performance Tests, then Benchmarks', async () => {
+  it('lists Home, Builds, Performance Tests, then Benchmarks', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
       'Builds',
       'Performance Tests',
       'Benchmarks'
@@ -51,6 +52,7 @@ describe('AppSidebar', () => {
   })
 
   it.each<[string, DashboardPage]>([
+    ['app-sidebar-home', 'home'],
     ['app-sidebar-chooser', 'chooser'],
     ['app-sidebar-benchmarks', 'benchmarks'],
     ['app-sidebar-performance-test', 'performance-test']
@@ -67,7 +69,7 @@ describe('AppSidebar', () => {
 
     await wrapper.get('button[title="Home"]').trigger('click')
 
-    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('chooser')
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('home')
   })
 
   it('collapses to icons with tooltips and stays collapsed when reopened', async () => {

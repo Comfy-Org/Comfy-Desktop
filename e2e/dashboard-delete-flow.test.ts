@@ -51,14 +51,14 @@ test.afterAll(async () => {
   if (installPath) await rm(installPath, { recursive: true, force: true })
 })
 
-test('chooser shows the seeded tile @lifecycle', async () => {
+test('chooser shows the seeded tile @windows @macos @linux', async () => {
   await ctx.panel.waitForSelector(byTestId(TID.dashboardTile(INSTALL_ID)), { timeout: 10_000 })
   expect(
     await ctx.panel.textOf(`${byTestId(TID.dashboardTile(INSTALL_ID))} .chooser-tile-name`)
   ).toBe(INSTALL_NAME)
 })
 
-test('Delete from kebab opens confirm without invoking get-detail-sections @lifecycle', async () => {
+test('Delete from kebab opens confirm without invoking get-detail-sections @windows @macos @linux', async () => {
   await resetIpcInvocations(ctx.app, 'get-detail-sections')
 
   const kebabClicked = await ctx.panel.click(byTestId(TID.dashboardTileKebab(INSTALL_ID)))
@@ -74,7 +74,7 @@ test('Delete from kebab opens confirm without invoking get-detail-sections @life
   expect(invocations, 'Delete dispatch must not call get-detail-sections').toEqual([])
 })
 
-test('Confirm removes the install directory and tile @lifecycle', async () => {
+test('Confirm removes the install directory and tile @windows @macos @linux', async () => {
   const confirmClicked = await ctx.panel.click(byTestId(TID.baseAlertAction))
   expect(confirmClicked, 'confirm button click dispatched').toBe(true)
 

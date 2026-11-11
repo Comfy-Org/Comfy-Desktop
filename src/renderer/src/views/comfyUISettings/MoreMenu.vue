@@ -2,10 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import { TID } from '../../../../shared/testIds'
 import type { ActionDef } from '../../types/ipc'
 
-export type MenuAction = ActionDef & { icon?: Component }
+export type MenuAction = ActionDef & { icon?: Component; separator?: boolean }
 const props = defineProps<{
   open: boolean
   actions: MenuAction[]
@@ -42,7 +43,10 @@ function onInteractOutside(event: Event): void {
 }
 function onCloseAutoFocus(event: Event): void {
   event.preventDefault()
-  if (restoreFocus.value) props.anchor?.focus()
+  const active = document.activeElement
+  const movedOn =
+    active instanceof HTMLElement && active !== document.body && !active.closest('.more-menu')
+  if (restoreFocus.value && !movedOn) props.anchor?.focus()
 }
 function onWindowBlur(): void {
   restoreFocus.value = false
@@ -68,28 +72,29 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     @close-auto-focus="onCloseAutoFocus"
   >
     <template #trigger><span hidden aria-hidden="true" /></template>
-    <MenuItem
-      v-for="action in actions"
-      :key="action.id"
-      as="button"
-      type="button"
-      :disabled="action.enabled === false"
-      class="more-menu-item w-full justify-start text-left"
-      :class="{
-        'is-danger text-destructive': action.style === 'danger',
-        'is-disabled': action.enabled === false
-      }"
-      :data-testid="TID.pinBottomAction(action.id)"
-      @select="handlePick(action)"
-    >
-      <span
-        v-if="hasIcons"
-        class="more-menu-item-icon inline-flex size-4 shrink-0 items-center justify-center"
-        aria-hidden="true"
+    <template v-for="(action, index) in actions" :key="action.id">
+      <MenuSeparator v-if="action.separator && index > 0" />
+      <MenuItem
+        as="button"
+        type="button"
+        :disabled="action.enabled === false"
+        class="more-menu-item w-full justify-start text-left"
+        :class="{
+          'is-danger text-destructive': action.style === 'danger',
+          'is-disabled': action.enabled === false
+        }"
+        :data-testid="TID.pinBottomAction(action.id)"
+        @select="handlePick(action)"
       >
-        <component :is="action.icon" v-if="action.icon" :size="15" />
-      </span>
-      <span class="more-menu-item-label flex-auto">{{ action.label }}</span>
-    </MenuItem>
+        <span
+          v-if="hasIcons"
+          class="more-menu-item-icon inline-flex size-4 shrink-0 items-center justify-center"
+          aria-hidden="true"
+        >
+          <component :is="action.icon" v-if="action.icon" :size="15" />
+        </span>
+        <span class="more-menu-item-label flex-auto">{{ action.label }}</span>
+      </MenuItem>
+    </template>
   </Menu>
 </template>

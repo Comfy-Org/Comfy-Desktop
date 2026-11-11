@@ -125,7 +125,7 @@ function expectLatestEnvelope(envelope: ShareEnvelope): void {
   expect(envelope.snapshots?.[0]?.comfyui?.commit).toBe(COMMIT_NEW)
 }
 
-test('dashboard kebab → Share exports the latest snapshot @lifecycle', async () => {
+test('dashboard kebab → Share exports the latest snapshot @windows @macos @linux', async () => {
   await clearExportDir()
   await ctx.panel.waitForSelector(byTestId(TID.dashboardTile(INSTALL_ID)), { timeout: 10_000 })
 
@@ -136,7 +136,7 @@ test('dashboard kebab → Share exports the latest snapshot @lifecycle', async (
   expectLatestEnvelope(await readSharedEnvelope())
 })
 
-test('picker footer More → Share exports the latest snapshot @lifecycle', async () => {
+test('picker footer More → Share exports the latest snapshot @windows @macos @linux', async () => {
   await clearExportDir()
 
   await ctx.panel.evaluate<boolean>(
