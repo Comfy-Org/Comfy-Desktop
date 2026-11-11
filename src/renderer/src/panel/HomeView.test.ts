@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { CatalogWorkflow, Installation } from '../types/ipc'
 
@@ -68,7 +69,12 @@ beforeEach(() => {
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     getSetting: vi.fn().mockResolvedValue(undefined),
-    onSettingsChanged: vi.fn(() => () => {})
+    setSetting: vi.fn().mockResolvedValue(undefined),
+    onSettingsChanged: vi.fn(() => () => {}),
+    comfybuilder: {
+      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      onAuthChanged: vi.fn(() => () => {})
+    }
   }
   setActivePinia(createPinia())
 })
@@ -355,6 +361,30 @@ describe('Home builds', () => {
     expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
       'ReadyStudio serverstudio.local:8188'
     )
+  })
+
+  it("lists only the builds of the workspace picked in the sidebar, and opens that workspace's latest", async () => {
+    const teamBuild = build({
+      id: 'team-build',
+      name: 'Studio pipeline',
+      workspaceId: 'team-1',
+      lastLaunchedAt: 50
+    })
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, teamBuild])
+    const wrapper = await openHome()
+    const names = () =>
+      wrapper.findAll('[data-testid="home-build"] .font-semibold').map((name) => name.text())
+
+    expect(names()).toEqual(['My Local 1', 'Flux Sandbox'])
+
+    useDashboardScopeStore().selectedWorkspaceId = 'team-1'
+    await flushPromises()
+
+    expect(names()).toEqual(['Studio pipeline'])
+
+    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
+
+    expect(wrapper.emitted('pick')).toEqual([[teamBuild]])
   })
 
   it('opens the build that is clicked', async () => {

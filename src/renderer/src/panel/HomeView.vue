@@ -9,9 +9,11 @@ import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { CatalogWorkflow, Installation } from '../types/ipc'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
 
@@ -31,9 +33,16 @@ const sessionStore = useSessionStore()
 const { visibleInstalls } = useInstallList({
   installations: toRef(installationStore, 'installations')
 })
-const builds = computed(() => visibleInstalls.value.slice(0, HOME_BUILD_LIMIT))
+const dashboardScope = useDashboardScopeStore()
+void dashboardScope.initialize()
+const workspaceBuilds = computed(() =>
+  visibleInstalls.value.filter((build) =>
+    isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
+  )
+)
+const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
 const buildTones = computed(() => homeBuildTones(builds.value))
-const mostRecentBuild = computed(() => visibleInstalls.value[0] ?? null)
+const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
 
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
