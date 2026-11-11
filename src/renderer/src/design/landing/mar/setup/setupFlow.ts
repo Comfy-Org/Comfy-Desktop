@@ -642,6 +642,28 @@ function tick(): void {
 /** Finished: ComfyUI opens on its own, on the template if one was picked. */
 function finish(): void {
   stop()
+  // Every build after the first joins the list as its own: My Local 2, 3…
+  // with what this install set. The first is the mock's My Local 1.
+  const another = instances.value.some((i) => i.kind === 'local')
+  if (another) {
+    const n = instances.value.filter((i) => i.kind === 'local').length + 1
+    proto.addedInstances.unshift({
+      id: `local-added-${n}`,
+      name: `My Local ${n}`,
+      kind: 'local',
+      channel: 'Stable',
+      version: DETECTED.version,
+      state: 'stopped',
+      lastUsed: 'Just now',
+      lastUsedRank: -1,
+      gpu: DETECTED.chip,
+      diskSize: `${(DETECTED.downloadGb * 2.25).toFixed(1)} GB`,
+      models: 0,
+      nodes: flow.packs.length,
+      workspace: 'personal',
+      hue: (48 + 70 * (n - 1)) % 360
+    })
+  }
   marUser.local = 'one'
   // Builds lists the build just installed as the card said it: this
   // version, nothing to update.
@@ -667,7 +689,10 @@ function finish(): void {
   }
   go('overview')
   // Home: no toast, the page changes and the new build shows in the sidebar.
-  if (localSetup.after === 'ready') {
+  // The Ready card is the first build's; another build is already in the
+  // list, so it only gets a word.
+  if (another) toast(`${proto.addedInstances[0]!.name} is ready`)
+  else if (localSetup.after === 'ready') {
     flow.homeCard = true
     flow.ready = true
   }
@@ -677,7 +702,8 @@ function finish(): void {
 export function openComfyUI(what?: string): void {
   flow.ready = false
   flow.homeCard = false
-  const inst = instances.value.find((i) => i.kind === 'local')
+  // The build just installed: the newest added one, else the first.
+  const inst = proto.addedInstances[0] ?? instances.value.find((i) => i.kind === 'local')
   if (inst) hostActions.launch(inst, what)
   else toast('Opening ComfyUI')
 }

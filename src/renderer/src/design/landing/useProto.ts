@@ -134,6 +134,9 @@ export const proto = reactive({
   deploying: null as string | null,
   /** Live mode instances, injected by LandingPrototypes. */
   liveInstances: [] as ProtoInstance[],
+  /** Builds installed in this session after the first (mar/setup): listed
+   *  with the rest, newest first. */
+  addedInstances: [] as ProtoInstance[],
   toast: '' as string,
   /** Folders the user added on the Local tabs (Assets / Workflows). */
   extraAssetFolders: [] as LocalFolder[],
@@ -221,6 +224,7 @@ export const instances = computed<ProtoInstance[]>(() => {
       if (i.kind === 'cloud') return true
       return i.workspace === proto.workspaceId
     })
+    .concat(proto.addedInstances)
     .map((i) =>
       // A build a new user just set up is ready, with nothing to update.
       i.kind === 'local' && proto.installedVersion
@@ -245,7 +249,7 @@ export const activeInstance = computed(() => {
 })
 
 export function instanceById(id: string): ProtoInstance | undefined {
-  return [...INSTANCES, ...proto.liveInstances].find((i) => i.id === id)
+  return [...INSTANCES, ...proto.liveInstances, ...proto.addedInstances].find((i) => i.id === id)
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
