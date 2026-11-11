@@ -25,6 +25,28 @@ DS's Motion page (`ds/motion.ts`).
   Graph, zoom) take the menu glass (`menus/layers.css`), the same as the
   menu they open, and blur what passes under them.
 
+## Pages and sections
+
+- **Sections have no fill.** A page's sections (Results, System
+  information, Logs, a Benchmarks group) sit on the page background. Only
+  controls (a setup bar, inputs, buttons) and free-text blocks (logs) get
+  a fill.
+- **One section header everywhere.** Uppercase label on the left, 32px
+  row, actions on the right as muted text buttons with a 15px icon. Every
+  section on a page uses the same one.
+- **Folding works the same in every section.** The chevron sits before the
+  label; a folded section's row shows a short summary of what's inside.
+- **One facts grid.** Label/value rows (label 12px muted, value 13px)
+  share the same label column and the same three columns wherever they
+  appear on a page (Runs, Results, System information).
+- **Numbers are tabular** and always carry their unit ("7.012 s"); the
+  number that matters is the brightest, never another colour.
+- **Rhythm:** 36px between sections, 10px from a header to its content,
+  36px rows. Space separates; no dividers.
+- **A tool page's setup is one bar** (Performance Tests): segments for
+  each choice, Run at the end, and one status line under it for the hint,
+  a download or an error.
+
 ## Type
 
 - **Section titles are uppercase labels.** Small, letter-spaced, subtle
