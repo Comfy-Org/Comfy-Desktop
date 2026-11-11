@@ -78,6 +78,8 @@ const {
   folders?: { id: string; name: string; depth: number }[]
 }>()
 const f = defineModel<AssetFilter>({ required: true })
+// Desktop's page clears every filter with ⌘⌫ (MarAssetsPage); the menu says so.
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
 const folder = defineModel<string>('folder', { default: '' })
 const count = computed(() => activeFilters(f.value) + (folder.value ? 1 : 0))
 const pickFolder = (id: string): void => {
@@ -213,7 +215,6 @@ const searching = computed(() => !!q.value.trim())
                 @select.prevent="setSource(x.value)"
               >
                 <span class="afm-grow">{{ x.label }}</span>
-                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </template>
@@ -241,7 +242,6 @@ const searching = computed(() => !!q.value.trim())
                 @select.prevent="setDate(d.value)"
               >
                 <span class="afm-grow">{{ d.label }}</span>
-                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </template>
@@ -256,7 +256,6 @@ const searching = computed(() => !!q.value.trim())
                 @select.prevent="pickFolder(x.id)"
               >
                 <span class="afm-grow truncate">{{ x.name }}</span>
-                <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
           </template>
@@ -339,7 +338,6 @@ const searching = computed(() => !!q.value.trim())
                     @select.prevent="setSource(x.value)"
                   >
                     <span class="afm-grow">{{ x.label }}</span>
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
@@ -381,7 +379,6 @@ const searching = computed(() => !!q.value.trim())
                     @select.prevent="setDate(d.value)"
                   >
                     <span class="afm-grow">{{ d.label }}</span>
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
                   </DropdownMenuRadioItem>
                   <DropdownMenuRadioItem
                     v-if="range"
@@ -390,7 +387,6 @@ const searching = computed(() => !!q.value.trim())
                     @select.prevent="toggleRange"
                   >
                     <span class="afm-grow">Custom range</span>
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
                     <ChevronDown
                       :size="16"
                       :class="['afm-icon afm-fold', showRange && 'is-open']"
@@ -440,7 +436,6 @@ const searching = computed(() => !!q.value.trim())
                       :title="x.name"
                       >{{ x.name }}</span
                     >
-                    <DropdownMenuItemIndicator><Check :size="16" /></DropdownMenuItemIndicator>
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
@@ -542,7 +537,8 @@ const searching = computed(() => !!q.value.trim())
         <template v-if="activeFilters(f)">
           <DropdownMenuSeparator class="afm-sep" />
           <DropdownMenuItem :class="[item, 'is-muted']" @select.prevent="f = noFilter()">
-            <X :size="16" class="afm-icon" /><span class="afm-grow">Clear filters</span>
+            <X :size="16" class="afm-icon" /><span class="afm-grow">Clear filters</span
+            ><kbd v-if="field" class="mar-menu-hint">{{ MOD }}⌫</kbd>
           </DropdownMenuItem>
         </template>
       </DropdownMenuContent>
@@ -612,7 +608,8 @@ const searching = computed(() => !!q.value.trim())
   outline: none;
   cursor: default;
 }
-/* Picked: the row's fill as well as the check, as in every menu. */
+/* Picked: the row's fill; a multi-select keeps its check too
+   (UI-RULES › One choice marks its row). */
 :root[data-mar-ui='on'] .afm .afm-item[data-state='checked'],
 .afm .afm-item[data-state='checked'] {
   background-color: var(--color-secondary-background);

@@ -64,7 +64,6 @@ onBeforeUnmount(() => watcher.disconnect())
       </button>
       <span class="mar-selbar-n">{{ n }} {{ noun }}{{ n === 1 ? '' : 's' }} selected</span>
       <button type="button" class="mar-selbar-btn is-quiet" @click="emit('all')">Select all</button>
-      <span class="mar-selbar-sep" />
       <template v-for="a in actions" :key="a.label">
         <MarItemMenu v-if="a.sub" :lines="a.sub" side="top">
           <template #trigger>
@@ -115,12 +114,6 @@ onBeforeUnmount(() => watcher.disconnect())
   font-weight: 500;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-.mar-selbar-sep {
-  width: 1px;
-  height: 20px;
-  margin: 0 4px;
-  background: color-mix(in oklch, var(--color-content-background) 16%, transparent);
 }
 :root .proto-ui.proto-ui.proto-ui .mar-selbar-btn,
 :root .proto-ui.proto-ui.proto-ui .mar-selbar-x {

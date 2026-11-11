@@ -141,11 +141,10 @@ const showLabel = computed(() => {
           <DropdownMenuItem
             v-for="o in sorts"
             :key="o.value"
-            :class="menuItem"
+            :class="cn(menuItem, sort === o.value && 'alm-picked')"
             @select="sort = o.value"
           >
-            <span class="flex-1">{{ o.label }}</span
-            ><Check v-if="sort === o.value" :size="14" />
+            <span class="flex-1">{{ o.label }}</span>
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
@@ -162,11 +161,10 @@ const showLabel = computed(() => {
           <DropdownMenuItem
             v-for="o in groups"
             :key="o.value"
-            :class="menuItem"
+            :class="cn(menuItem, group === o.value && 'alm-picked')"
             @select="group = o.value"
           >
-            <span class="flex-1">{{ o.label }}</span
-            ><Check v-if="group === o.value" :size="14" />
+            <span class="flex-1">{{ o.label }}</span>
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
@@ -196,6 +194,10 @@ const showLabel = computed(() => {
 </template>
 
 <style>
+/* One choice marks its row: the fill, no check (UI-RULES). */
+:root .alm-picked.alm-picked.alm-picked {
+  background-color: var(--color-secondary-background);
+}
 :root .proto-ui.proto-ui.proto-ui .alm-trigger {
   display: inline-flex;
   width: 32px;

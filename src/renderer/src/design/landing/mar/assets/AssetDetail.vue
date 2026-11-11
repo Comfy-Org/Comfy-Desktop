@@ -1120,7 +1120,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   color: var(--color-base-foreground);
 }
