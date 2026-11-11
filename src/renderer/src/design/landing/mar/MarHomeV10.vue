@@ -84,9 +84,9 @@ const firstRun = computed(() => firstTime.value && noLocal.value)
 // first build.
 const gated = computed(() => installPending.value && !homeOpen.value && !cardInBuilds.value)
 const builds = computed(() => recentInstances.value.slice(0, 3))
-// With the install card in Builds the top sits tight, so Builds and the
-// card stay on screen at 1280 × 800 while it installs.
-const tight = computed(() => parts.value.top === 'tight' || cardInBuilds.value)
+// The top keeps the same room whether or not a build is installing: the
+// Home never changes height between states.
+const tight = computed(() => parts.value.top === 'tight')
 
 // Example workflows as compact rows (Exploration 17): photo, title, what it does.
 const EXAMPLE_ART = [1, 2, 3, 4, 5].map((n) => mock(`home-example-${n}`))
@@ -196,8 +196,9 @@ const recent = computed<Recent[]>(() =>
       <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
-           examples). -->
-      <section v-if="firstTime && !recent.length && !setupOn" class="mt-10">
+           examples). Not once the apps arc leads the Home (Milestone 2):
+           it would be the same arc twice. -->
+      <section v-if="firstTime && !recent.length && !setupOn && !can.exploreApps" class="mt-10">
         <SectionHeader
           class="mar-sec"
           title="Start from an example"
