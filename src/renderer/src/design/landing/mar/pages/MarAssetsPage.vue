@@ -142,18 +142,28 @@ import type { MenuAction, MenuLine } from './menu'
  * details (AssetDetail), tags read-only. Inside a project the page keeps
  * the project's own scope.
  */
-const { project: fixedProject, inGraph = false } = defineProps<{
+const {
+  project: fixedProject,
+  inGraph = false,
+  inApps = false
+} = defineProps<{
   project?: string
   /** ComfyUI: Assets expanded into a tab; it can go back to its panel. */
   inGraph?: boolean
+  /** Milestone 2: Apps' Generated Files tab, as Desktop ships it. Every
+   *  reachable build at once (Cloud and the running local ones), no
+   *  picker, no Upload. */
+  inApps?: boolean
 }>()
-const emit = defineEmits<{ collapse: [] }>()
+const emit = defineEmits<{ collapse: []; browse: [] }>()
 
 type Kind = 'all' | MarAsset['type']
 const kind = ref<Kind>('all')
 const where = ref('all')
 // A shared link names the build first (mar/assets/assetLink.ts).
-const build = ref((assetLink.at === 'desktop' && assetLink.build) || defaultBuild())
+const build = ref(
+  inApps ? 'all' : (assetLink.at === 'desktop' && assetLink.build) || defaultBuild()
+)
 const filter = ref(noFilter())
 const project = ref('all')
 const sort = ref('newest')
@@ -186,7 +196,7 @@ const base = computed(() =>
 // The tweak off, Everywhere goes back to a build.
 watch(
   () => assetsEverywhere.id,
-  (id) => id === 'off' && build.value === 'all' && (build.value = defaultBuild())
+  (id) => !inApps && id === 'off' && build.value === 'all' && (build.value = defaultBuild())
 )
 const current = computed(() => assetBuilds.value.find((b) => b.id === build.value))
 const buildName = (a: MarAsset): string =>
@@ -1207,27 +1217,31 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     :title="title"
     skeleton="grid"
     :no-results="browsable && shown.length === 0 && searchOn"
-    :embedded="!!fixedProject"
-    :toolbar-to="fixedProject ? '#mar-proj-tools' : undefined"
+    :embedded="!!fixedProject || inApps"
+    :toolbar-to="fixedProject ? '#mar-proj-tools' : inApps ? '#mar-ex-files-tools' : undefined"
     :state="pageState.id === 'live' ? (!browsable || base.length ? 'live' : 'empty') : undefined"
     :empty="{
       icon: ComfyAssets,
       title: fixedProject
         ? 'No assets in this project yet'
-        : `Nothing made on ${current?.name ?? 'your running builds'} yet`,
+        : inApps
+          ? 'No generated files yet'
+          : `Nothing made on ${current?.name ?? 'your running builds'} yet`,
       text: fixedProject
         ? 'What this project’s workflows make lands here. Run one, or upload references to work from.'
-        : 'Every image, video and sound your runs make lands here, with the workflow that made it. Run a template to see your first one.',
+        : inApps
+          ? 'Open an app to make your first one.'
+          : 'Every image, video and sound your runs make lands here, with the workflow that made it. Run a template to see your first one.',
       pics: EMPTY_PICS.assets,
-      action: fixedProject ? 'Upload files' : 'Run a template',
-      second: fixedProject ? undefined : 'Upload files'
+      action: fixedProject ? 'Upload files' : inApps ? 'Browse apps' : 'Run a template',
+      second: fixedProject || inApps ? undefined : 'Upload files'
     }"
     :error-text="
       fixedProject
         ? 'Cloud assets are out of reach. The ones on this computer are all here.'
         : `${current?.name ?? 'This build'} stopped answering. Start it again, or pick another build.`
     "
-    @action="fixedProject ? pick() : go('explore')"
+    @action="fixedProject ? pick() : inApps ? emit('browse') : go('explore')"
     @second="pick()"
     @clear="clear"
   >
@@ -1255,7 +1269,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     </template>
     <template #actions="{ state }">
       <Button
-        v-if="state === 'live' || state === 'loading'"
+        v-if="!inApps && (state === 'live' || state === 'loading')"
         variant="primary"
         :disabled="!uploadable"
         :title="uploadTitle"
@@ -1284,10 +1298,10 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
     </template>
 
     <template #toolbar>
-      <div class="mar-asset-tools">
-        <AssetBuildPicker v-if="!fixedProject && !inGraph" v-model="build" />
+      <div :class="['mar-asset-tools', inApps && 'is-in-apps']">
+        <AssetBuildPicker v-if="!fixedProject && !inGraph && !inApps" v-model="build" />
         <MarSeg
-          v-if="!fixedProject && browsable"
+          v-if="!fixedProject && !inApps && browsable"
           v-model="kind"
           class="mar-asset-seg"
           :options="KINDS"
@@ -1296,7 +1310,7 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
         <div v-if="browsable" class="mar-asset-tools-end">
           <Select
             v-model="kind"
-            :class="['w-32', !fixedProject && 'mar-asset-kind']"
+            :class="['w-32', !fixedProject && !inApps && 'mar-asset-kind']"
             :options="
               KINDS.map((k) => ({
                 value: k.value,
@@ -1920,6 +1934,12 @@ useEventListener(window, 'scroll', markStuck, { capture: true, passive: true })
   align-items: center;
   gap: 8px;
   container-type: inline-size;
+}
+/* In Apps the tools sit beside the tabs: sized by what they hold, not by a
+   row of their own. */
+.mar-asset-tools.is-in-apps {
+  flex: none;
+  container-type: normal;
 }
 .mar-asset-tools-end {
   display: flex;

@@ -71,7 +71,9 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
       ? [{ page: 'tutorials' as Page, label: 'Learn', icon: GraduationCap }]
       : []),
     // Where an app's results land, before Projects brings the Libraries group.
-    ...(can.value.exploreApps && !can.value.projects
+    // Milestone 2 keeps them in Apps (Generated Files), as Desktop ships it;
+    // Assets gets its own row from Milestone 3.
+    ...(can.value.explore && !can.value.projects
       ? [{ page: 'assets' as Page, label: 'Assets', icon: ComfyAssets }]
       : []),
     ...(can.value.projects

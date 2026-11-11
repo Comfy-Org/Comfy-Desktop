@@ -39,9 +39,10 @@ import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { goIn, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
-import { ComfyModel, ComfyWorkflow } from '../icons/comfyIcons'
+import { ComfyAssets, ComfyModel, ComfyWorkflow } from '../icons/comfyIcons'
 import MarPage from '../pages/MarPage.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
+import MarAssetsPage from '../pages/MarAssetsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
 import ExampleTile from '../apps/ExampleTile.vue'
 import StarsGlyph from '../apps/StarsGlyph.vue'
@@ -61,20 +62,32 @@ import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
 /** At Milestone 2 this is the Apps page: Examples (everything the apps
  *  have made, whatever app made it) and Apps (the apps themselves). */
 /** From Explore & Learn on, Apps also keeps the library of your own: a
- *  third tab, My apps. */
+ *  third tab, My apps. Before that (Milestone 2) the third tab is
+ *  Generated Files, what your apps and builds made, as Desktop ships it
+ *  until local and Cloud files can live together in Assets. */
 const { asApps = false, library = false } = defineProps<{ asApps?: boolean; library?: boolean }>()
-type Tab = 'examples' | 'apps' | 'mine' | 'templates' | 'models' | 'tutorials'
-const tab = ref<Tab>(asApps ? 'examples' : (exploreStart.value ?? 'apps'))
+type Tab = 'examples' | 'apps' | 'mine' | 'files' | 'templates' | 'models' | 'tutorials'
+const tab = ref<Tab>(
+  asApps
+    ? exploreStart.value === 'files'
+      ? 'files'
+      : 'examples'
+    : exploreStart.value === 'templates'
+      ? 'templates'
+      : 'apps'
+)
 exploreStart.value = null
 const type = ref('all')
 const query = ref('')
 
 const APPS_COUNT = STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
-const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = asApps
+const TABS: { value: Tab; label: string; count?: number; icon?: Component }[] = asApps
   ? [
       { value: 'examples', label: 'Inspiration', count: APP_EXAMPLES.length, icon: StarsGlyph },
       { value: 'apps', label: 'All apps', count: APPS_COUNT, icon: PanelsTopLeft },
-      ...(library ? [{ value: 'mine' as const, label: 'My apps', count: 0, icon: UserRound }] : [])
+      ...(library
+        ? [{ value: 'mine' as const, label: 'My apps', count: 0, icon: UserRound }]
+        : [{ value: 'files' as const, label: 'Generated Files', icon: ComfyAssets }])
     ]
   : [
       {
@@ -115,6 +128,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
   ],
   apps: [],
   mine: [],
+  files: [],
   examples: [],
   tutorials: [
     { value: 'all', label: 'All topics' },
@@ -125,7 +139,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
   ]
 }
 watch(tab, clearFilters)
-const PLACEHOLDER: Record<Exclude<Tab, 'mine'>, string> = {
+const PLACEHOLDER: Record<Exclude<Tab, 'mine' | 'files'>, string> = {
   templates: 'Search workflows',
   models: 'Search models or providers',
   apps: 'Search apps',
@@ -379,6 +393,7 @@ const empty = computed(
       apps: apps.value,
       // My apps handles its own empty and no-match states.
       mine: [1],
+      files: [1],
       examples: examples.value,
       tutorials: tutorials.value
     })[tab.value].length === 0
@@ -414,6 +429,12 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
         <!-- Apps and Examples: one Filter menu; Sort for the apps and
              Layout for the examples, last, in the same place. -->
         <!-- My apps: its own tools (state, sort, search, view), from the library. -->
+        <span
+          v-if="tab === 'files'"
+          id="mar-ex-files-tools"
+          key="files"
+          class="inline-flex items-center gap-2"
+        />
         <span
           v-if="tab === 'mine'"
           id="mar-ex-lib-tools"
@@ -510,14 +531,18 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           </DropdownMenuRoot>
         </span>
         <!-- Keyed by tab, so its label follows the tab (All types, All topics). -->
-        <span v-else-if="tab !== 'mine'" :key="`type-${tab}`" class="inline-flex">
+        <span
+          v-else-if="tab !== 'mine' && tab !== 'files'"
+          :key="`type-${tab}`"
+          class="inline-flex"
+        >
           <Select v-model="type" :options="TYPES[tab]" class="w-36" />
         </span>
-        <span v-if="tab !== 'mine'" key="search" class="inline-flex">
+        <span v-if="tab !== 'mine' && tab !== 'files'" key="search" class="inline-flex">
           <MarSearchField
             v-model="query"
             shortcut
-            :placeholder="PLACEHOLDER[tab as Exclude<Tab, 'mine'>]"
+            :placeholder="PLACEHOLDER[tab as Exclude<Tab, 'mine' | 'files'>]"
           />
         </span>
         <!-- Layout, last, as on Assets: Size and Sort by on Apps and
@@ -598,6 +623,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
 
     <!-- My apps: the ones you made, live, draft or with changes. -->
     <MarAppsPage v-else-if="tab === 'mine'" embedded toolbar-to="#mar-ex-lib-tools" />
+    <!-- Generated Files (Milestone 2): what every reachable build made. -->
+    <MarAssetsPage v-else-if="tab === 'files'" in-apps @browse="tab = 'apps'" />
 
     <!-- Workflows (the Hub's): the same card as an app, its name and the
          first line of the catalog's description. -->

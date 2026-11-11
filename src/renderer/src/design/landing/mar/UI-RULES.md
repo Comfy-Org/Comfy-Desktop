@@ -134,6 +134,11 @@ DS's Motion page (`ds/motion.ts`).
   folder kept open; indent stops at the fourth level; a nested folder's
   title is a breadcrumb (top › … › parent). Desktop reaches folders from
   Filters › Folder.
+- **Milestone 2: Generated Files lives in Apps**, as Desktop ships it
+  (Pablo's Apps PRs): a third tab beside Inspiration and All apps, every
+  reachable build at once, no picker, no Upload, and no expand in
+  ComfyUI's panel. Assets gets its own sidebar row from Milestone 3, once
+  local and Cloud files can live together.
 - **One Assets.** ComfyUI's panel expand opens Desktop's Assets on that
   build (default); the tab is kept as Playground › Full Assets › Tab.
   The expand button reads "Open Assets page". Open workflow shows the
