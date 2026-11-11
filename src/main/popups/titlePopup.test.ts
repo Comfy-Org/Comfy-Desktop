@@ -37,6 +37,7 @@ import {
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
+  syncTitlePopupConfig,
   type FlowMenuItemId,
   type InstancePickerInstall,
   type TitlePopupEntry,
@@ -694,6 +695,104 @@ describe('title popup renderer readiness', () => {
     expect(entry.view.rendererReady).toBe(true)
     expect(entry.lastSyncedConfigJson).toBeNull()
     expect(send).toHaveBeenCalledExactlyOnceWith('comfy-titlepopup:set-config', config)
+  })
+})
+
+describe('title popup config sync', () => {
+  type IpcListener = (event: Electron.IpcMainEvent) => void
+  type PopupConfig = Parameters<typeof syncTitlePopupConfig>[1]
+
+  const POPUP_WEB_CONTENTS_ID = 405
+  const theme = { bg: '#111111', text: '#eeeeee' }
+  const menuConfig: PopupConfig = {
+    kind: 'menu',
+    items: [{ id: 'settings', label: 'Desktop Settings' }],
+    theme
+  }
+  const downloadsConfig: PopupConfig = { kind: 'downloads', theme }
+  const rendererAck = { sender: { id: POPUP_WEB_CONTENTS_ID } } as Electron.IpcMainEvent
+
+  let rendered: IpcListener
+
+  function registerEntrySyncedTo(config: PopupConfig): {
+    entry: TitlePopupEntry
+    send: ReturnType<typeof vi.fn>
+  } {
+    const send = vi.fn()
+    const entry = {
+      view: {
+        rendererReady: true,
+        pendingShowTimer: null,
+        popup: { webContents: { isDestroyed: () => false, send } }
+      },
+      pendingConfig: null,
+      lastConfigJson: JSON.stringify(config),
+      lastSyncedConfigJson: JSON.stringify(config)
+    } as unknown as TitlePopupEntry
+    _test_setTitlePopupEntry(POPUP_WEB_CONTENTS_ID, entry)
+    return { entry, send }
+  }
+
+  beforeAll(async () => {
+    const { ipcMain } = await import('electron')
+    registerTitlePopupIpc({} as TitlePopupHostBindings)
+    const call = vi
+      .mocked(ipcMain.on)
+      .mock.calls.find(([channel]) => channel === 'comfy-titlepopup:rendered')
+    if (!call) throw new Error('IPC listener not registered: comfy-titlepopup:rendered')
+    rendered = call[1] as IpcListener
+  })
+
+  afterEach(() => {
+    _test_deleteTitlePopupEntry(POPUP_WEB_CONTENTS_ID)
+  })
+
+  it('skips the resend while the renderer holds the acknowledged config', () => {
+    const { entry, send } = registerEntrySyncedTo(menuConfig)
+
+    syncTitlePopupConfig(entry, menuConfig, false)
+
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('resends an acknowledged config when every open must sync', () => {
+    const { entry, send } = registerEntrySyncedTo(menuConfig)
+
+    syncTitlePopupConfig(entry, menuConfig, true)
+
+    expect(send).toHaveBeenCalledExactlyOnceWith('comfy-titlepopup:set-config', menuConfig)
+  })
+
+  it('resends the earlier config after a replacement the renderer never acknowledged', () => {
+    const { entry, send } = registerEntrySyncedTo(menuConfig)
+
+    syncTitlePopupConfig(entry, downloadsConfig, false)
+    syncTitlePopupConfig(entry, menuConfig, false)
+
+    expect(send.mock.calls).toEqual([
+      ['comfy-titlepopup:set-config', downloadsConfig],
+      ['comfy-titlepopup:set-config', menuConfig]
+    ])
+  })
+
+  it('skips the resend again once the renderer acknowledges the replacement', () => {
+    const { entry, send } = registerEntrySyncedTo(menuConfig)
+
+    syncTitlePopupConfig(entry, downloadsConfig, false)
+    rendered(rendererAck)
+    syncTitlePopupConfig(entry, downloadsConfig, false)
+
+    expect(send).toHaveBeenCalledExactlyOnceWith('comfy-titlepopup:set-config', downloadsConfig)
+  })
+
+  it('queues the config until the popup renderer is ready', () => {
+    const { entry, send } = registerEntrySyncedTo(menuConfig)
+    entry.view.rendererReady = false
+
+    syncTitlePopupConfig(entry, downloadsConfig, false)
+
+    expect(send).not.toHaveBeenCalled()
+    expect(entry.pendingConfig).toEqual(downloadsConfig)
   })
 })
 
