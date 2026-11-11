@@ -17,9 +17,10 @@ import {
   MARKER_FILE,
   sourceMap
 } from '../lib/ipc/shared'
-import { installModelsDir } from '../lib/models'
+import { installModelsDir, resolveComfyDir } from '../lib/models'
 import { dataDir, defaultDataRoot, defaultInstallDir } from '../lib/paths'
 import { findAvailablePort } from '../lib/process'
+import { coreSemver, coreVerifiedSemver } from '../lib/version'
 import * as settings from '../settings'
 import { buildPinnedVariant } from '../sources/standalone'
 import { DEFAULT_LAUNCH_ARGS, variantMatchesHost } from '../sources/standalone/envPaths'
@@ -33,10 +34,12 @@ import {
   appsLaunchArgs,
   appsModelDirs,
   appsOutputDir,
+  comfyuiFileVersion,
   downloadBytes,
   findAppsBuild,
   localOff,
   pickVariant,
+  reusableInstalls,
   type SetupEvent,
   setupEnd,
   setupEvent
@@ -92,6 +95,17 @@ export async function findApps(): Promise<InstallationRecord | null> {
   if (inst) appsId = inst.id
   else if (!setup) appsId = null
   return inst
+}
+
+export async function reusableLocal(): Promise<InstallationRecord[]> {
+  return reusableInstalls(await installations.list(), categoryOf)
+}
+
+export async function installVersion(inst: InstallationRecord): Promise<string | null> {
+  const file = path.join(resolveComfyDir(inst.installPath), 'comfyui_version.py')
+  const text = await fsp.readFile(file, 'utf8').catch(() => null)
+  const onDisk = text === null ? null : comfyuiFileVersion(text)
+  return onDisk ?? coreVerifiedSemver(inst) ?? coreSemver(inst)
 }
 
 interface Plan {
@@ -263,11 +277,10 @@ export function cancelAppsSetup(): { cancelled: boolean } {
   return { cancelled: true }
 }
 
-export async function launchAppsBuild(
+export async function launchConsole(
   inst: InstallationRecord,
   withWindow = false
 ): Promise<{ ok: boolean; message?: string }> {
-  const fresh = (await installations.update(inst.id, await storageFor(inst))) ?? inst
   const taken = new Set<number>([
     ..._pendingPorts.keys(),
     ...[..._runningSessions.values()].map((s) => s.port)
@@ -279,13 +292,21 @@ export async function launchAppsBuild(
     taken
   ).catch(() => null)
   if (!port) return { ok: false, message: 'No free port for ComfyUI for apps.' }
-  return launchInstall(fresh, {
+  return launchInstall(inst, {
     portOverride: port,
     ...(withWindow ? {} : { launchModeOverride: 'console' })
   })
 }
 
-export function showAppsBuildWindow(inst: InstallationRecord): boolean {
+export async function launchAppsBuild(
+  inst: InstallationRecord,
+  withWindow = false
+): Promise<{ ok: boolean; message?: string }> {
+  const fresh = (await installations.update(inst.id, await storageFor(inst))) ?? inst
+  return launchConsole(fresh, withWindow)
+}
+
+export function showComfyWindow(inst: InstallationRecord): boolean {
   const session = _runningSessions.get(inst.id)
   if (!session || !_onLaunch) return false
   const entry = getEntryByInstallationId(inst.id)
