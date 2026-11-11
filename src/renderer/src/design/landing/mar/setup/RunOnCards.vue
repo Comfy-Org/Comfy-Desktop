@@ -98,19 +98,22 @@ const WAYS = [
 /* Both machines stand on the same floor, flush with the text's left edge:
  * the laptop fills its box, the cloud (drawn smaller, inset) is scaled up
  * from that corner to match. */
+/* The devices follow the window: a size between 92 and 124px wide. The
+ * cloud fills less of its box than the laptop, so it is drawn up to match. */
 .mss-way-device {
   display: flex;
-  height: 56px;
+  height: clamp(60px, 5.4vw, 80px);
   flex: none;
   align-items: flex-end;
 }
 .mss-way .mss-laptop {
-  width: 84px;
-  height: 55px;
+  width: clamp(92px, 8.2vw, 124px);
+  height: auto;
   margin-left: -4px;
+  aspect-ratio: 160 / 104;
 }
 .mss-way .mss-cloud {
-  transform: translate(-12px, 2px) scale(0.9);
+  transform: translate(-20%, 6px) scale(1.4);
   transform-origin: left bottom;
 }
 .mss-way:not([aria-checked='true']) .mss-way-device {
