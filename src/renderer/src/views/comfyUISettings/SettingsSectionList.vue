@@ -121,6 +121,10 @@ function toggleCollapsed(section: { title?: string }): void {
   }
 }
 
+function isTwoColumn(section: { title?: string; collapsed?: boolean }): boolean {
+  return props.columns && Boolean(section.title) && !isCollapsible(section)
+}
+
 const visibleSections = computed(() => props.sections)
 
 function isNestedField(field: DetailField): boolean {
@@ -216,7 +220,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         readonly
           ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
           : 'gap-4',
-        columns &&
+        isTwoColumn(section) &&
           '@2xl/build-settings:grid @2xl/build-settings:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] @2xl/build-settings:gap-x-12 @2xl/build-settings:gap-y-3',
         {
           'is-collapsible': isCollapsible(section),
@@ -226,7 +230,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       ]"
     >
       <header
-        v-if="columns && section.title && !isCollapsible(section)"
+        v-if="isTwoColumn(section)"
         class="settings-v2-section-head flex min-w-0 flex-col gap-1.5 @2xl/build-settings:pt-1"
       >
         <h3
@@ -269,7 +273,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       </p>
 
       <p
-        v-if="section.description && !isCollapsed(section) && !(columns && section.title)"
+        v-if="section.description && !isCollapsed(section) && !isTwoColumn(section)"
         class="settings-v2-section-desc -mt-1 mb-1 text-[length:var(--takeover-fs-caption)] leading-[1.4] text-text-muted"
       >
         {{ section.description }}
@@ -277,7 +281,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
       <div
         class="settings-v2-section-body"
-        :class="columns && section.title ? 'flex min-w-0 max-w-xl flex-col gap-4' : 'contents'"
+        :class="isTwoColumn(section) ? 'flex min-w-0 max-w-xl flex-col gap-4' : 'contents'"
       >
         <div
           v-for="(item, i) in section.items"

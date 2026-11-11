@@ -292,16 +292,21 @@ const showConsoleTab = computed(
     isTabAllowedForCategory('console', installation.value.sourceCategory)
 )
 
-const tabs = computed<TabDef[]>(() => {
-  const isCloud = installation.value?.sourceCategory === 'cloud'
-  return ALL_TABS.filter((tab) =>
+const isCloud = computed(() => installation.value?.sourceCategory === 'cloud')
+
+const tabs = computed<TabDef[]>(() =>
+  ALL_TABS.filter((tab) =>
     tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
   ).map((tab) =>
-    isCloud && tab.key === 'config'
+    isCloud.value && tab.key === 'config'
       ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
       : tab
   )
-})
+)
+
+const isStartupArgsPage = computed(
+  () => isPage.value && activeTab.value === 'config' && !isCloud.value
+)
 
 const showUpdateBadge = computed(() => {
   const inst = installation.value
@@ -1085,7 +1090,7 @@ defineExpose({
                     >
                       <SettingsSectionList
                         :sections="visibleSections"
-                        :columns="isPage && activeTab === 'config'"
+                        :columns="isStartupArgsPage"
                         :installation-id="installation?.id"
                         :running-action-ids="runningActionIds"
                         :pending-restart-field-ids="pendingRestartFieldIds"
