@@ -22,6 +22,7 @@ interface Props {
   loadingLabel?: string
   disabled?: boolean
   compact?: boolean
+  label?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -30,7 +31,8 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   loadingLabel: '',
   disabled: false,
-  compact: false
+  compact: false,
+  label: undefined
 })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 defineOptions({ inheritAttrs: false })
@@ -81,11 +83,16 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <SelectTrigger
       v-bind="$attrs"
       class="ui-select-trigger data-[state=open]:hover:bg-secondary"
-      :class="{ 'ui-select-trigger--compact': compact }"
+      :class="{ 'ui-select-trigger--compact': compact, 'gap-1.5': label }"
       :size="compact ? 'md' : 'lg'"
       :aria-label="ariaLabel"
       :aria-busy="loading || undefined"
     >
+      <span
+        v-if="label"
+        class="ui-select-prefix shrink-0 whitespace-nowrap text-subtle-foreground"
+        >{{ label }}</span
+      >
       <SelectValue class="ui-select-label" :placeholder="placeholder">{{
         triggerLabel
       }}</SelectValue>

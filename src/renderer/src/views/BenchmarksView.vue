@@ -174,7 +174,7 @@ function hardwareName(benchmark: PerformanceTestBenchmark): string {
 
 const workspaceOptions = computed(() =>
   entityOptions(
-    t('benchmarks.allWorkspaces'),
+    t('benchmarks.filterAll'),
     benchmarks.value.map((benchmark) => ({
       value: benchmark.workspace.id ?? UNMANAGED_WORKSPACE_FILTER,
       label: workspaceName(benchmark)
@@ -183,7 +183,7 @@ const workspaceOptions = computed(() =>
 )
 const instanceOptions = computed(() =>
   entityOptions(
-    t('benchmarks.allInstances'),
+    t('benchmarks.filterAll'),
     benchmarks.value.map((benchmark) => ({
       value: benchmark.instance.id,
       label: benchmark.instance.name
@@ -192,13 +192,13 @@ const instanceOptions = computed(() =>
 )
 const hardwareOptions = computed(() =>
   uniqueOptions(
-    t('benchmarks.allHardware'),
+    t('benchmarks.filterAll'),
     benchmarks.value.map((benchmark) => hardwareName(benchmark))
   )
 )
 const workflowOptions = computed(() =>
   uniqueOptions(
-    t('benchmarks.allWorkflows'),
+    t('benchmarks.filterAll'),
     benchmarks.value.map((benchmark) => benchmark.workflowName)
   )
 )
@@ -943,7 +943,7 @@ onActivated(() => {
           <template #actions>
             <Button
               variant="secondary"
-              size="lg"
+              size="md"
               class="benchmarks__open-folder"
               type="button"
               :disabled="loading"
@@ -959,31 +959,44 @@ onActivated(() => {
         <div class="benchmarks__toolbar flex flex-wrap items-center gap-2">
           <BaseSelect
             v-model="workspaceFilter"
-            class="benchmarks__filter w-auto max-w-40"
+            class="benchmarks__filter w-auto max-w-56"
             :options="workspaceOptions"
-            :aria-label="t('benchmarks.allWorkspaces')"
+            :label="t('benchmarks.filterWorkspace')"
+            :aria-label="t('benchmarks.filterWorkspace')"
             compact
           />
           <BaseSelect
             v-model="instanceFilter"
-            class="benchmarks__filter w-auto max-w-40"
+            class="benchmarks__filter w-auto max-w-56"
             :options="instanceOptions"
-            :aria-label="t('benchmarks.allInstances')"
+            :label="t('benchmarks.filterBuild')"
+            :aria-label="t('benchmarks.filterBuild')"
             compact
           />
           <BaseSelect
             v-model="hardwareFilter"
-            class="benchmarks__filter w-auto max-w-40"
+            class="benchmarks__filter w-auto max-w-56"
             :options="hardwareOptions"
-            :aria-label="t('benchmarks.allHardware')"
+            :label="t('benchmarks.filterHardware')"
+            :aria-label="t('benchmarks.filterHardware')"
             compact
           />
           <BaseSelect
             v-model="workflowFilter"
-            class="benchmarks__filter w-auto max-w-40"
+            class="benchmarks__filter w-auto max-w-56"
             :options="workflowOptions"
-            :aria-label="t('benchmarks.allWorkflows')"
+            :label="t('benchmarks.filterWorkflow')"
+            :aria-label="t('benchmarks.filterWorkflow')"
             compact
+          />
+          <BaseSelect
+            class="benchmarks__compare-by w-auto"
+            :model-value="compareByValue"
+            :options="compareByOptions"
+            :label="t('benchmarks.compareBy')"
+            :aria-label="t('benchmarks.compareBy')"
+            compact
+            @update:model-value="setCompareBy"
           />
           <div class="benchmarks__compare ml-auto flex items-center gap-2">
             <Button
@@ -1005,21 +1018,15 @@ onActivated(() => {
                 aria-hidden="true"
               />
             </Button>
-            <div
-              class="benchmarks__compare-by flex h-8 items-center rounded-lg bg-secondary pl-3 text-xs"
+            <BaseInput
+              v-model="searchQuery"
+              class="benchmarks__search h-8 w-40 [&_input]:text-[13px]"
+              :placeholder="t('benchmarks.searchPlaceholder')"
+              :aria-label="t('benchmarks.searchPlaceholder')"
+              :spellcheck="false"
             >
-              <span class="whitespace-nowrap text-muted-foreground">{{
-                t('benchmarks.compareBy')
-              }}</span>
-              <BaseSelect
-                class="bg-transparent pl-1.5 hover:bg-transparent"
-                :model-value="compareByValue"
-                :options="compareByOptions"
-                :aria-label="t('benchmarks.compareBy')"
-                compact
-                @update:model-value="setCompareBy"
-              />
-            </div>
+              <template #leading><Search :size="14" aria-hidden="true" /></template>
+            </BaseInput>
             <details
               ref="columnsPicker"
               class="benchmarks__columns-picker relative [&_summary]:list-none [&_summary::-webkit-details-marker]:hidden"
@@ -1052,15 +1059,6 @@ onActivated(() => {
                 </label>
               </div>
             </details>
-            <BaseInput
-              v-model="searchQuery"
-              class="benchmarks__search h-8 w-[220px] [&_input]:text-[13px]"
-              :placeholder="t('benchmarks.searchPlaceholder')"
-              :aria-label="t('benchmarks.searchPlaceholder')"
-              :spellcheck="false"
-            >
-              <template #leading><Search :size="14" aria-hidden="true" /></template>
-            </BaseInput>
           </div>
         </div>
 
@@ -1202,7 +1200,7 @@ onActivated(() => {
               <div class="benchmarks__group-box rounded-[14px] bg-card pt-3 pr-4 pb-2 pl-14">
                 <div class="benchmarks__table-scroll -mr-2 -ml-12 overflow-x-auto">
                   <table
-                    class="benchmarks__table w-full border-separate border-spacing-y-0.5 text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:px-2 [&_th]:pb-1.5 [&_th]:text-[10.5px] [&_th]:font-semibold [&_th]:tracking-[0.08em] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_th]:uppercase [&_tfoot_td]:py-1 [&_td:first-child]:rounded-l-[10px] [&_td:last-child]:rounded-r-[10px] [&_tbody_tr:hover>td]:bg-foreground/[0.035]"
+                    class="benchmarks__table w-full border-separate border-spacing-0 [--bench-line:color-mix(in_oklch,var(--color-foreground)_8%,transparent)] text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:px-2 [&_th]:h-9 [&_th]:text-[12px] [&_th]:font-medium [&_th]:tracking-[0.01em] [&_th]:shadow-[inset_0_-1px_0_var(--bench-line)] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_tfoot_td]:py-1 [&_td:first-child]:rounded-l-lg [&_td:last-child]:rounded-r-lg [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--bench-line)] [&_tbody_tr:hover>td]:shadow-none [&_tbody_tr:hover+tr>td]:shadow-none [&_tbody_tr.benchmarks__row--selected>td]:shadow-none [&_tbody_tr.benchmarks__row--selected+tr>td]:shadow-none [&_tbody_tr:hover>td]:bg-foreground/[0.035]"
                   >
                     <thead>
                       <tr>
@@ -1211,7 +1209,7 @@ onActivated(() => {
                           <Button
                             variant="textonly"
                             size="unset"
-                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[10.5px] font-semibold tracking-[0.08em] uppercase hover:bg-transparent hover:text-foreground"
+                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[12px] font-medium tracking-[0.01em] hover:bg-transparent hover:text-foreground"
                             type="button"
                             @click="setSort('id')"
                           >
@@ -1222,7 +1220,7 @@ onActivated(() => {
                           <Button
                             variant="textonly"
                             size="unset"
-                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[10.5px] font-semibold tracking-[0.08em] uppercase hover:bg-transparent hover:text-foreground"
+                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[12px] font-medium tracking-[0.01em] hover:bg-transparent hover:text-foreground"
                             type="button"
                             @click="setSort('instance.name')"
                           >
@@ -1241,7 +1239,7 @@ onActivated(() => {
                           <Button
                             variant="textonly"
                             size="unset"
-                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[10.5px] font-semibold tracking-[0.08em] uppercase hover:bg-transparent hover:text-foreground"
+                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[12px] font-medium tracking-[0.01em] hover:bg-transparent hover:text-foreground"
                             type="button"
                             @click="setSort(column.key)"
                           >
@@ -1252,7 +1250,7 @@ onActivated(() => {
                           <Button
                             variant="textonly"
                             size="unset"
-                            class="benchmarks__sort benchmarks__metric-sort gap-1 bg-transparent text-[10.5px] font-semibold tracking-[0.08em] text-muted-foreground uppercase hover:bg-transparent hover:text-foreground"
+                            class="benchmarks__sort benchmarks__metric-sort gap-1 bg-transparent text-[12px] font-medium tracking-[0.01em] text-muted-foreground hover:bg-transparent hover:text-foreground"
                             type="button"
                             @click="setSort(comparisonMetric)"
                           >

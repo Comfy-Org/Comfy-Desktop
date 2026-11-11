@@ -568,7 +568,7 @@ describe('BenchmarksView', () => {
     await wrapper.get('input[type="text"]').setValue('')
     const hardwareSelect = wrapper
       .findAllComponents(BaseSelect)
-      .find((select) => select.props('ariaLabel') === 'All hardware')!
+      .find((select) => select.props('ariaLabel') === 'Hardware')!
     hardwareSelect.vm.$emit('update:modelValue', 'Apple M3 Max')
     await flushPromises()
     expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
@@ -590,9 +590,9 @@ describe('BenchmarksView', () => {
     )
     const workspaceSelect = wrapper
       .findAllComponents(BaseSelect)
-      .find((select) => select.props('ariaLabel') === 'All workspaces')!
+      .find((select) => select.props('ariaLabel') === 'Workspace')!
     expect(workspaceSelect.props('options').map((option) => option.label)).toEqual([
-      'All workspaces',
+      'All',
       'Unmanaged'
     ])
     workspaceSelect.vm.$emit('update:modelValue', '__unmanaged__')
