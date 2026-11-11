@@ -6,7 +6,7 @@ import {
   BadgeCheck,
   BookOpen,
   Check,
-  Coins,
+  ChevronDown,
   Link2,
   MoreHorizontal,
   Plug,
@@ -21,9 +21,7 @@ import {
   DialogOverlay,
   DialogPortal,
   DialogRoot,
-  DialogTitle,
-  RadioGroupItem,
-  RadioGroupRoot
+  DialogTitle
 } from 'reka-ui'
 import ComfyCLogo from '../../../../components/icons/ComfyCLogo.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
@@ -56,9 +54,10 @@ import './templateModal.css'
 /**
  * Mar's template modal, in the asset view's format: the output (or its
  * graph) on the left, the details on a panel a step lighter on the right.
- * The panel says what it needs and where it runs; the picker puts the best
- * build first with the reason, shows what every other one would cost, and
- * the one primary action at the bottom follows the choice, More beside it.
+ * The panel says where it opens (the best build, why in one line, the
+ * others behind one quiet picker) and what it needs. At the bottom, one
+ * line and one action: what happens, or what's in the way and the way
+ * through it; More beside it.
  * Templates only; saved workflows keep Pablo's DetailSheet.
  */
 const template = computed(() =>
@@ -96,6 +95,31 @@ function measure(e: Event): void {
   const img = e.target as HTMLImageElement
   if (img.naturalWidth && img.naturalHeight) ratio.value = img.naturalWidth / img.naturalHeight
 }
+/** What the section and the action show: the pick, or, when nothing can
+ *  be picked (offline, Cloud only), the first build and why it can't. */
+const shown = computed(() => selected.value ?? targets.value[0])
+/** Why the default is the default, in one short line: the first sentence
+ *  of the reason. Only while the default is the pick. */
+const fit = computed(() =>
+  reason.value && shown.value?.inst.id === best.value?.inst.id
+    ? `Best fit. ${reason.value.split(/(?<=\.) /)[0]}`
+    : ''
+)
+/** The one line over the action: what happens, or what's in the way. */
+const line = computed(() => {
+  const s = shown.value
+  if (!s) return ''
+  if (s.state === 'blocked') return `${s.status}. Pick another build to open it.`
+  return s.note
+})
+const buildMenu = ref(false)
+const buildBox = ref<HTMLElement>()
+onClickOutside(buildBox, () => (buildMenu.value = false))
+function pickBuild(x: Target): void {
+  if (x.disabled) return
+  selectedId.value = x.inst.id
+  buildMenu.value = false
+}
 const moreMenu = ref(false)
 const moreBox = ref<HTMLElement>()
 onClickOutside(moreBox, () => (moreMenu.value = false))
@@ -114,6 +138,7 @@ watch(
     selectedId.value = (best.value ?? targets.value.find((x) => !x.disabled))?.inst.id
     view.value = 'result'
     moreMenu.value = false
+    buildMenu.value = false
     ratio.value = 16 / 9
     stop()
   },
@@ -188,23 +213,23 @@ function focusPicker(e: Event): void {
   e.preventDefault()
   void nextTick(() => {
     const el = content.value?.$el as HTMLElement | undefined
-    ;(el?.querySelector<HTMLElement>('[role="radio"][data-state="checked"]') ?? el)?.focus({
+    ;(el?.querySelector<HTMLElement>('[data-tpl-primary]:not(:disabled)') ?? el)?.focus({
       preventScroll: true
     })
   })
 }
 /** Escape closes an open menu first, then the modal. */
 function onEscape(e: KeyboardEvent): void {
-  if (!moreMenu.value) return
+  if (!moreMenu.value && !buildMenu.value) return
   e.preventDefault()
-  moreMenu.value = false
+  moreMenu.value = buildMenu.value = false
 }
-/** Enter launches from the picker (or from nowhere in particular); on any
- *  other control it keeps its own meaning. */
+/** Enter launches from nowhere in particular; on a control it keeps its
+ *  own meaning (on the primary, it is the primary). */
 function onKey(e: KeyboardEvent): void {
   if (e.key !== 'Enter' || e.isComposing) return
   const el = e.target as HTMLElement
-  if (el.closest('[role="radio"]') || !el.closest('button, a, input, textarea, [role="tab"]')) {
+  if (!el.closest('button, a, input, textarea, [role="tab"]')) {
     e.preventDefault()
     confirm()
   }
@@ -274,6 +299,65 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
               /></span>
             </header>
 
+            <!-- Open in: the build it opens on, why in one line, and the
+                 others behind one quiet picker. What blocks it is one line
+                 and one action at the bottom, in place of the primary. -->
+            <section class="mad-sec">
+              <h3 class="mad-label">Open in</h3>
+              <div v-if="shown" class="mar-tpl-on" :data-s="shown.state">
+                <span class="mar-tpl-glyph">
+                  <LocationIcon
+                    :kind="shown.inst.kind === 'cloud' ? 'cloud' : 'local'"
+                    :size="18"
+                  />
+                  <i v-if="shown.inst.state === 'running' && !shown.disabled" />
+                </span>
+                <span class="mar-tpl-row-text">
+                  <span class="mar-tpl-row-name">{{ shown.inst.name }}</span>
+                  <span class="mar-tpl-row-status">{{ shown.status }}</span>
+                </span>
+                <span
+                  v-if="shown.cost && shown.state !== 'login'"
+                  class="mar-tpl-cost"
+                  :data-s="shown.state"
+                  >{{ shown.cost }}</span
+                >
+              </div>
+              <p v-if="fit" class="mar-tpl-fit"><BadgeCheck :size="13" />{{ fit }}</p>
+              <div v-if="targets.length > 1" ref="buildBox" class="mad-pick">
+                <button
+                  type="button"
+                  class="mar-tpl-other"
+                  aria-haspopup="menu"
+                  :aria-expanded="buildMenu"
+                  :disabled="phase === 'busy'"
+                  @click="buildMenu = !buildMenu"
+                >
+                  Open on another build<ChevronDown :size="13" />
+                </button>
+                <div v-if="buildMenu" class="mad-menu is-down is-wide mar-tpl-builds" role="menu">
+                  <button
+                    v-for="x in targets"
+                    :key="x.inst.id"
+                    type="button"
+                    role="menuitemradio"
+                    :aria-checked="x.inst.id === selectedId"
+                    :class="x.inst.id === selectedId && 'is-on'"
+                    :disabled="x.disabled"
+                    :data-s="x.state"
+                    @click="pickBuild(x)"
+                  >
+                    <LocationIcon :kind="x.inst.kind === 'cloud' ? 'cloud' : 'local'" :size="15" />
+                    <span class="mar-tpl-row-text">
+                      <span class="mar-tpl-row-name">{{ x.inst.name }}</span>
+                      <span class="mar-tpl-row-status">{{ x.status }}</span>
+                    </span>
+                    <span class="mar-tpl-cost" :data-s="x.state">{{ x.cost }}</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
             <section class="mad-sec">
               <h3 class="mad-label">
                 What it needs<span class="mar-tpl-total">{{
@@ -337,49 +421,6 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
             </section>
 
             <section class="mad-sec">
-              <h3 class="mad-label">Open in</h3>
-              <p v-if="best && reason" class="mar-tpl-reason">
-                <BadgeCheck :size="14" /><span
-                  ><b>{{ best.inst.name }}</b> is the best fit. {{ reason }}</span
-                >
-              </p>
-              <RadioGroupRoot
-                v-model="selectedId"
-                class="mar-tpl-picker"
-                aria-label="Open in"
-                :disabled="phase === 'busy'"
-              >
-                <RadioGroupItem
-                  v-for="x in targets"
-                  :key="x.inst.id"
-                  :value="x.inst.id"
-                  :disabled="x.disabled"
-                  class="mar-tpl-row"
-                  :data-s="x.state"
-                  @focus="phase === 'idle' && (selectedId = x.inst.id)"
-                >
-                  <span class="mar-tpl-glyph">
-                    <LocationIcon :kind="x.inst.kind === 'cloud' ? 'cloud' : 'local'" :size="18" />
-                    <i v-if="x.inst.state === 'running' && !x.disabled" />
-                  </span>
-                  <span class="mar-tpl-row-text">
-                    <span class="mar-tpl-row-name"
-                      >{{ x.inst.name }}<em v-if="best?.inst.id === x.inst.id">Best fit</em></span
-                    >
-                    <span class="mar-tpl-row-status">{{ x.status }}</span>
-                  </span>
-                  <span class="mar-tpl-cost" :data-s="x.state">
-                    <Coins v-if="x.state === 'cloud'" :size="12" />
-                    <ArrowDownToLine v-else-if="x.state === 'download'" :size="12" />
-                    <TriangleAlert v-else-if="x.state === 'memory'" :size="12" />
-                    {{ x.cost }}
-                  </span>
-                  <span class="mar-tpl-radio" />
-                </RadioGroupItem>
-              </RadioGroupRoot>
-            </section>
-
-            <section class="mad-sec">
               <h3 class="mad-label">Template details</h3>
               <dl class="mad-rows">
                 <div>
@@ -433,16 +474,17 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
           <!-- At the bottom: what happens, then the one action; More (the
                favorite and the link) at its right. -->
           <footer class="mad-actions">
-            <p v-if="selected?.note" class="mar-tpl-note">{{ selected.note }}</p>
+            <p v-if="line" class="mar-tpl-note">{{ line }}</p>
             <button
               type="button"
               class="mad-btn is-primary mar-tpl-go"
               data-tpl-primary
               :disabled="!selected || selected.disabled"
+              :data-s="shown?.state"
               :style="{ '--p': progress }"
               @click="confirm"
             >
-              <span>{{ phase === 'busy' ? busyLabel : selected?.action }}</span>
+              <span>{{ phase === 'busy' ? busyLabel : shown?.action || 'Open' }}</span>
               <kbd v-if="phase === 'idle' && selected && !selected.disabled">↵</kbd>
             </button>
             <div ref="moreBox" class="mad-pick">
