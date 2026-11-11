@@ -1167,8 +1167,6 @@
   "snapshots": {
     "empty": "还没有快照。ComfyUI 启动时会自动捕获快照。",
     "createSnapshot": "创建快照",
-    "createNew": "创建快照",
-    "createLabel": "创建快照",
     "changesInSnapshot": "此快照中发生的更改",
     "ifYouRestore": "恢复此快照将改变的内容",
     "noSnapshotsToShare": "还没有可分享的快照。",
@@ -1261,6 +1259,7 @@
     "importPreviewLabel": "快照",
     "importedSnapshot": "导入的快照",
     "latestBadge": "最新",
+    "moreActions": "更多操作",
     "latestLabel": "最新：",
     "noneYet": "还没有快照",
     "restoreCancelled": "恢复已取消",

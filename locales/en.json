@@ -1167,8 +1167,6 @@
   "snapshots": {
     "empty": "No snapshots yet. Snapshots are captured automatically when ComfyUI starts.",
     "createSnapshot": "Create Snapshot",
-    "createNew": "Create Snapshot",
-    "createLabel": "Create Snapshot",
     "changesInSnapshot": "What changed in this snapshot",
     "ifYouRestore": "What restoring this would change",
     "noSnapshotsToShare": "There are no snapshots to share yet.",
@@ -1261,6 +1259,7 @@
     "importPreviewLabel": "Snapshots",
     "importedSnapshot": "Imported snapshot",
     "latestBadge": "Latest",
+    "moreActions": "More actions",
     "latestLabel": "Latest:",
     "noneYet": "No snapshots yet",
     "restoreCancelled": "Restore cancelled",
