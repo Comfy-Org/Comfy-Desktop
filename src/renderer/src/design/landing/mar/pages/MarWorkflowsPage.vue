@@ -33,6 +33,7 @@ import { notify } from './undo'
 import { shownState } from './pageState'
 import type { MenuLine } from './menu'
 import { FAVORITES_ON } from '../favorites'
+import { can } from '../../milestones'
 
 /**
  * Workflows (Mar's proposal): every workflow, on this computer and in
@@ -109,6 +110,9 @@ function clear(): void {
 }
 
 const lib = useLibrary(workflows, shown)
+// Projects come later (Milestone 8): until then no project filter, column,
+// meta or Move to project.
+const projects = computed(() => can.value.projects)
 
 function open(w: MarWorkflow): void {
   const env = w.envId ? instanceById(w.envId) : undefined
@@ -135,7 +139,11 @@ function newWorkflow(): void {
 }
 
 const where_ = (w: MarWorkflow): string =>
-  [w.source === 'cloud' ? 'Cloud' : 'This computer', !fixedProject && w.project, w.modified]
+  [
+    w.source === 'cloud' ? 'Cloud' : 'This computer',
+    !fixedProject && projects.value && w.project,
+    w.modified
+  ]
     .filter(Boolean)
     .join(' · ')
 
@@ -144,7 +152,7 @@ function lines(w: MarWorkflow): MenuLine[] {
     { label: 'Open', icon: ExternalLink, run: () => open(w) },
     { label: 'Rename', icon: Pencil, hint: 'F2', run: () => (lib.renaming.value = w.id) },
     { label: 'Duplicate', icon: Copy, hint: '⌘D', run: () => workflows.duplicate(w.id) },
-    lib.moveLine(() => [w.id], w.project),
+    ...(projects.value ? [lib.moveLine(() => [w.id], w.project)] : []),
     ...(FAVORITES_ON
       ? [
           {
@@ -202,7 +210,12 @@ function lines(w: MarWorkflow): MenuLine[] {
       <div class="ml-auto flex items-center gap-2">
         <Select v-if="fixedProject" v-model="where" :options="WHERE_SELECT" class="w-36" />
         <Select v-model="type" :options="TYPES" class="w-32" />
-        <Select v-if="!fixedProject" v-model="project" :options="PROJECTS" class="w-40" />
+        <Select
+          v-if="!fixedProject && projects"
+          v-model="project"
+          :options="PROJECTS"
+          class="w-40"
+        />
         <Select v-model="sort" :options="SORTS" label="Sort" class="w-40" />
         <MarSearchField v-model="query" placeholder="Search workflows" />
         <MarViewToggle v-model="view" />
@@ -245,10 +258,14 @@ function lines(w: MarWorkflow): MenuLine[] {
         @alt="toast('Pick a workflow file to import')"
       />
     </div>
-    <div v-else class="mar-table is-items" style="--mar-cols: minmax(0, 200px) 120px">
+    <div
+      v-else
+      class="mar-table is-items"
+      :style="{ '--mar-cols': projects ? 'minmax(0, 200px) 120px' : '120px' }"
+    >
       <div class="mar-table-head">
-        <span>Name</span><span>Project</span><span>Edited</span><span class="is-end">State</span
-        ><span />
+        <span>Name</span><span v-if="projects">Project</span><span>Edited</span
+        ><span class="is-end">State</span><span />
       </div>
       <MarItem
         v-for="w in shown"
@@ -273,7 +290,7 @@ function lines(w: MarWorkflow): MenuLine[] {
         @star="workflows.star(w.id)"
       >
         <template #cols>
-          <span class="mar-item-col">{{ w.project ?? '—' }}</span>
+          <span v-if="projects" class="mar-item-col">{{ w.project ?? '—' }}</span>
           <span class="mar-item-col">{{ w.modified }}</span>
         </template>
       </MarItem>
@@ -283,7 +300,7 @@ function lines(w: MarWorkflow): MenuLine[] {
       :n="lib.sel.ids.value.size"
       noun="workflow"
       :actions="[
-        lib.moveLine(() => lib.selected.value),
+        ...(projects ? [lib.moveLine(() => lib.selected.value)] : []),
         {
           label: 'Export',
           icon: Download,
