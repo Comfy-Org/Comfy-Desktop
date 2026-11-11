@@ -107,14 +107,10 @@
   outline: 2px solid var(--color-border-focus);
   outline-offset: 1px;
 }
-/* No filmstrip under a template: the picture takes the room. The graph
-   leaves the zoom its row, where the asset view has it. */
+/* No filmstrip under a template: the picture (or the graph) takes the
+   room down to the zoom's row, where the asset view has it. */
 .mar-tpl .mad-view {
-  bottom: 32px;
-}
-.mar-tpl .mad-view.is-graph {
   bottom: 72px;
-  display: block;
 }
 
 /* ── Stage: the output, or its graph ─────────────────────────────── */

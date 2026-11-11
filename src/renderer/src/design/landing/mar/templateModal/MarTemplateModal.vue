@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { onClickOutside } from '@vueuse/core'
+import { onClickOutside, useElementSize } from '@vueuse/core'
 import {
   ArrowDownToLine,
   BadgeCheck,
@@ -92,10 +92,17 @@ const reason = computed(() =>
 const selectedId = ref<string>()
 /** The picture's own shape, so it fits the stage like an asset does. */
 const ratio = ref(16 / 9)
+const natural = ref(0)
 function measure(e: Event): void {
   const img = e.target as HTMLImageElement
   if (img.naturalWidth && img.naturalHeight) ratio.value = img.naturalWidth / img.naturalHeight
+  natural.value = img.naturalWidth
 }
+/** The fitted picture's width over the file's, so the zoom reads in real
+ *  size as on an asset. */
+const mediaEl = ref<HTMLElement>()
+const { width: mediaW } = useElementSize(mediaEl)
+const picFit = computed(() => (natural.value && mediaW.value ? mediaW.value / natural.value : 1))
 /** What the section and the action show: the pick, or, when nothing can
  *  be picked (offline, Cloud only), the first build and why it can't. */
 const shown = computed(() => selected.value ?? targets.value[0])
@@ -308,8 +315,13 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
             <MarSeg v-model="view" :options="VIEWS" label="Preview" class="mar-tpl-views" />
           </header>
           <div v-if="view === 'result'" class="mad-view">
-            <div class="mad-fit" :style="{ '--r': ratio }">
-              <div class="mad-media">
+            <!-- Catalog pictures are small: never past 1.5× their size, so
+                 they stay crisp. -->
+            <div
+              class="mad-fit"
+              :style="{ '--r': ratio, maxWidth: natural ? `${natural * 1.5}px` : undefined }"
+            >
+              <div ref="mediaEl" class="mad-media" :style="{ scale: zoom / 100 }">
                 <img :src="media.hero" alt="" draggable="false" @load="measure" />
                 <template v-if="media.quadrants">
                   <span
@@ -324,17 +336,21 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
               </div>
             </div>
           </div>
-          <!-- The graph takes the picture's place, fitted to the same area;
-               the zoom sits where the asset view keeps it, bottom right. -->
-          <template v-else-if="graph">
-            <div class="mad-view is-graph">
-              <TplGraph v-model:zoom="zoom" v-model:fit="graphFit" :spec="graph" />
-            </div>
-            <footer class="mad-foot">
-              <span />
-              <ZoomControl ref="zoomCtl" v-model="zoom" :fit="graphFit" keys />
-            </footer>
-          </template>
+          <!-- The graph takes the picture's place, fitted to the same area. -->
+          <div v-else-if="graph" class="mad-view">
+            <TplGraph v-model:zoom="zoom" v-model:fit="graphFit" :spec="graph" />
+          </div>
+          <!-- Zoom, where the asset view keeps it, bottom right, for the
+               picture and the graph alike. -->
+          <footer class="mad-foot">
+            <span />
+            <ZoomControl
+              ref="zoomCtl"
+              v-model="zoom"
+              :fit="view === 'graph' ? graphFit : picFit"
+              keys
+            />
+          </footer>
         </section>
 
         <aside class="mad-side" aria-label="Workflow details">
