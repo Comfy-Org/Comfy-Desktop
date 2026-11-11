@@ -244,7 +244,8 @@ onBeforeUnmount(() => {
       </nav>
 
       <main ref="main" class="ds-main" :data-page="page.id">
-        <AboutPage v-if="kind === 'about'" />
+        <component :is="page.component" v-if="kind === 'about' && page.component" />
+        <AboutPage v-else-if="kind === 'about'" />
         <template v-else>
           <header class="ds-page-head proto-ui">
             <p class="ds-eyebrow">{{ sectionOf(page) }}</p>

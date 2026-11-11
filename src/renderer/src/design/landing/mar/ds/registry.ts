@@ -102,6 +102,15 @@ const LIBRARY: { page: string; label: string; source: string; use: string }[] = 
 export const PAGES: DsPage[] = [
   { id: 'about', label: 'About', group: '', title: 'Comfy Desktop · Design system' },
   {
+    id: 'rules',
+    label: 'UI rules',
+    group: '',
+    title: 'UI rules',
+    source: 'mar/UI-RULES.md',
+    use: 'The rules every screen follows, as written: the file itself, so it never drifts.',
+    component: lazy(() => import('./pages/RulesPage.vue'))
+  },
+  {
     id: 'colour',
     label: 'Colour',
     group: 'Foundations',
@@ -149,6 +158,16 @@ export const PAGES: DsPage[] = [
     component: lazy(() => import('./pages/MaterialsPage.vue')),
     doc: part('details'),
     code: part('code')
+  },
+  {
+    id: 'surfaces',
+    label: 'Surfaces',
+    group: 'Foundations',
+    title: 'Surfaces',
+    source:
+      'mar/assets/AssetDetail.vue (.mad-side), mar/graph/MarGraph.vue (.mg-assets-nav), mar/shell/MarSidebar.vue, mar/templateModal/templateModal.css, mar/menus/layers.css',
+    use: 'What separates things: space and a fill, never a line. Panels a step lighter, sidebars that float, text in a box, glass only over pictures.',
+    component: lazy(() => import('./pages/SurfacesPage.vue'))
   },
   {
     id: 'motion',
@@ -214,8 +233,8 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Title bar',
     source:
-      'parts/DesktopTitleBar.vue, parts/nav/TitleBarBreadcrumb.vue, parts/nav/SwitcherMenu.vue',
-    use: 'The browser stand-in for the app bar; the breadcrumb is where you switch builds (not on Comfy Cloud).',
+      'mar/shell/MarTitleTabs.vue (titleTabs.ts), parts/DesktopTitleBar.vue, parts/nav/TitleBarBreadcrumb.vue, parts/nav/SwitcherMenu.vue',
+    use: 'Tabs: Home, the build pill (where things run, and switching builds), then every open workflow and app.',
     component: lazy(() => import('./pages/TitleBarPage.vue'))
   },
   {
@@ -252,7 +271,7 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Toast',
     source: 'mar/pages/MarUndoToast.vue, mar/pages/undo.ts',
-    use: 'Say that something changed on the page you stay on. Never after a redirect.',
+    use: 'Say that something changed on the page you stay on. Never after a redirect, on opening things, or for pickers.',
     component: lazy(() => import('./pages/ToastPage.vue'))
   },
   {
@@ -316,7 +335,7 @@ export const PAGES: DsPage[] = [
     group: 'Components',
     title: 'Menus',
     source:
-      'mar/CreateMenu.vue, mar/MarWorkspaceMenu.vue, mar/MarCreditsFlyout.vue, mar/runOn/MarRunOn.vue, parts/PromptBox.vue, parts/nav/SwitcherMenu.vue (menu family in mar/shell/marShell.css, layers in mar/menus/layers.css)',
+      'mar/pages/MarItemMenu.vue (menu.ts), mar/assets/AssetLayoutMenu.vue, ui/Select.vue, mar/CreateMenu.vue, mar/MarWorkspaceMenu.vue, mar/MarCreditsFlyout.vue, mar/runOn/MarRunOn.vue, parts/PromptBox.vue, parts/nav/SwitcherMenu.vue (menu family in mar/shell/marShell.css, layers in mar/menus/layers.css)',
     use: 'Any list of actions or choices that opens from a trigger.',
     component: lazy(() => import('./pages/MenusPage.vue'))
   },
@@ -326,8 +345,8 @@ export const PAGES: DsPage[] = [
     group: 'Patterns',
     title: 'Filters bar',
     source:
-      'mar/pages/MarSeg.vue, ui/Select.vue, mar/pages/MarSearchField.vue, mar/pages/MarViewToggle.vue, mar/assets/AssetViewMenu.vue',
-    use: 'Narrow a page: tabs for its scopes on the left; filters, sort, search and view on the right.',
+      'mar/pages/MarSeg.vue, mar/graph/AssetFilterMenu.vue, mar/assets/AssetLayoutMenu.vue, mar/pages/MarSearchField.vue, mar/explore/MarExplore.vue, mar/pages/MarViewToggle.vue',
+    use: 'Narrow a page: tabs for its scopes on the left; Filters, search and Layout on the right.',
     component: lazy(() => import('./pages/TabsFiltersPage.vue'))
   },
   {
@@ -386,6 +405,34 @@ export const PAGES: DsPage[] = [
     component: lazy(() => import('./pages/MenusSummaryPage.vue'))
   },
   {
+    id: 'media-badge',
+    label: 'Media badges',
+    group: 'Components',
+    title: 'Media badges',
+    source:
+      'mar/pages/MarAssetsPage.vue (.mar-asset-len, .mar-asset-seek), mar/explore/hub (Apps tiles)',
+    use: 'A video’s length over its picture, bottom left; only where it tells something.',
+    component: lazy(() => import('./pages/MediaBadgePage.vue'))
+  },
+  {
+    id: 'file-tile',
+    label: 'Files without a picture',
+    group: 'Components',
+    title: 'Files without a picture',
+    source: 'mar/assets/AssetCover.vue',
+    use: 'Sound, 3D, text and data files: the kind drawn on a soft tile, the same on Desktop and in ComfyUI.',
+    component: lazy(() => import('./pages/FileTilePage.vue'))
+  },
+  {
+    id: 'select-bar',
+    label: 'Selection bar',
+    group: 'Components',
+    title: 'Selection bar',
+    source: 'mar/pages/MarSelectBar.vue (MarItemMenu.vue)',
+    use: 'What you can do to everything selected in a library page.',
+    component: lazy(() => import('./pages/SelectBarPage.vue'))
+  },
+  {
     id: 'activity',
     label: 'Recent activity',
     group: 'Components',
@@ -418,9 +465,19 @@ export const PAGES: DsPage[] = [
     label: 'Template modal',
     group: 'Patterns',
     title: 'Template modal',
-    source: 'mar/templateModal/ (MarTemplateModal.vue, TplGraph.vue, templateModal.css)',
-    use: 'Opening any example or template: see what it makes, then open it where it runs.',
+    source:
+      'mar/templateModal/ (MarTemplateModal.vue, TplGraph.vue, templateModal.css), mar/assets/ZoomControl.vue',
+    use: 'Opening any workflow from Explore: see what it makes, then open it where it runs.',
     component: lazy(() => import('./pages/TemplateModalPage.vue'))
+  },
+  {
+    id: 'asset-view',
+    label: 'Asset view',
+    group: 'Patterns',
+    title: 'Asset view',
+    source: 'mar/assets/AssetDetail.vue (ZoomControl.vue, CompareSplit.vue, GenerationInfo.vue)',
+    use: 'One asset, full screen: the picture or clip on the stage, its details beside it.',
+    component: lazy(() => import('./pages/AssetViewPage.vue'))
   },
   {
     id: 'build',
