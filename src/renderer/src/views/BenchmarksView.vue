@@ -1264,7 +1264,7 @@ onActivated(() => {
               </p>
 
               <div class="benchmarks__group-box rounded-[14px] bg-card pt-3 pr-4 pb-2 pl-14">
-                <div class="benchmarks__table-scroll -mr-2 -ml-12 overflow-x-auto">
+                <div class="benchmarks__table-scroll scroll-visible -mr-2 -ml-12 overflow-x-auto">
                   <table
                     class="benchmarks__table w-full border-separate border-spacing-0 [--bench-line:color-mix(in_oklch,var(--color-foreground)_8%,transparent)] text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:px-2 [&_th]:h-9 [&_th]:text-[12px] [&_th]:font-medium [&_th]:tracking-[0.01em] [&_th]:shadow-[inset_0_-1px_0_var(--bench-line)] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_tfoot_td]:py-1 [&_td:first-child]:rounded-l-lg [&_td:last-child]:rounded-r-lg [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--bench-line)] [&_tbody_tr:hover>td]:shadow-none [&_tbody_tr:hover+tr>td]:shadow-none [&_tbody_tr.benchmarks__row--selected>td]:shadow-none [&_tbody_tr.benchmarks__row--selected+tr>td]:shadow-none [&_tbody_tr:hover>td]:bg-foreground/[0.035]"
                   >
@@ -1293,7 +1293,9 @@ onActivated(() => {
                             {{ t('benchmarks.instance') }} {{ sortIndicator('instance.name') }}
                           </Button>
                         </th>
-                        <th class="benchmarks__bar-head w-[32%] min-w-36">
+                        <th
+                          class="benchmarks__bar-head w-[32%] min-w-36 @max-[900px]:w-auto @max-[900px]:min-w-14 @max-[900px]:!whitespace-normal @max-[900px]:leading-4"
+                        >
                           {{ t('benchmarks.metricAndRange', { metric: metricLabel }) }}
                         </th>
                         <th
@@ -1627,14 +1629,14 @@ onActivated(() => {
 
         <div
           v-if="selectedBenchmarks.length > 0 || exportResultsError"
-          class="benchmarks__selection-bar sticky bottom-6 z-30 flex w-max max-w-full items-center gap-2 self-center rounded-xl bg-popover py-1.5 pr-1.5 pl-3.5 text-[13px] shadow-[var(--shadow-popover)]"
+          class="benchmarks__selection-bar sticky bottom-6 z-30 flex w-max max-w-full items-center gap-2 self-center rounded-xl bg-neutral-100 py-1.5 pr-1.5 pl-3.5 text-[13px] text-neutral-900 shadow-[var(--shadow-popover)]"
           role="region"
           :aria-label="t('benchmarks.selection')"
         >
           <span v-if="selectedBenchmarks.length > 0" class="benchmarks__selected-count">
             {{ t('benchmarks.selectedCount', { count: selectedBenchmarks.length }) }}
           </span>
-          <span v-if="exportResultsError" class="benchmarks__export-error text-xs text-destructive">
+          <span v-if="exportResultsError" class="benchmarks__export-error text-xs text-red-600">
             {{ exportResultsError }}
           </span>
           <Tooltip
@@ -1644,7 +1646,7 @@ onActivated(() => {
             <Button
               variant="secondary"
               size="md"
-              class="benchmarks__export-results text-[13px]"
+              class="benchmarks__export-results bg-neutral-900/[0.07] text-[13px] text-neutral-900 hover:bg-neutral-900/[0.12]"
               type="button"
               :disabled="
                 isExportingResults || selectedBenchmarks.length === 0 || selectionOverLimit
@@ -1662,7 +1664,7 @@ onActivated(() => {
           <Button
             variant="muted-textonly"
             size="icon"
-            class="benchmarks__clear-selection size-7"
+            class="benchmarks__clear-selection size-7 text-neutral-600 hover:bg-neutral-900/[0.07] hover:text-neutral-900"
             type="button"
             :aria-label="t('benchmarks.clearSelection')"
             :title="t('benchmarks.clearSelection')"
