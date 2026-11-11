@@ -297,7 +297,7 @@ function showAppOutputs(outputs: AppOutputs): void {
       name: output.name,
       kind: outputKind(output.mimeType),
       sizeBytes: output.bytes.byteLength,
-      createdAt: output.createdAt,
+      createdAt: null,
       tags: output.tags,
       previewUrl: URL.createObjectURL(new Blob([output.bytes], { type: output.mimeType })),
       workflow: output.workflow

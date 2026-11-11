@@ -161,16 +161,14 @@ describe('AppsView', () => {
           mimeType: 'image/png',
           bytes: new Uint8Array([1, 2, 3]),
           tags: ['This computer'],
-          workflow: true,
-          createdAt: null
+          workflow: true
         },
         {
           name: 'picture-2.png',
           mimeType: 'image/png',
           bytes: new Uint8Array([4]),
           tags: [],
-          workflow: false,
-          createdAt: null
+          workflow: false
         }
       ],
       index: 1,

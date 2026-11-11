@@ -143,7 +143,6 @@ export interface AppOutputItem {
   bytes: Uint8Array<ArrayBuffer>
   tags: string[]
   workflow: boolean
-  createdAt: string | null
 }
 
 export interface AppOutputs {

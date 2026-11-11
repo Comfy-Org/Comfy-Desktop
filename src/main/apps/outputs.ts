@@ -9,12 +9,6 @@ function text(value: unknown, max: number): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : null
 }
 
-function createdAt(value: unknown): string | null {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? new Date(value).toISOString()
-    : null
-}
-
 function outputItem(value: unknown): AppOutputItem | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Record<string, unknown>
@@ -31,8 +25,7 @@ function outputItem(value: unknown): AppOutputItem | null {
     mimeType,
     bytes: bytes as Uint8Array<ArrayBuffer>,
     tags: tags.slice(0, MAX_TAGS),
-    workflow: item['workflow'] === true,
-    createdAt: createdAt(item['createdAt'])
+    workflow: item['workflow'] === true
   }
 }
 

@@ -14,7 +14,7 @@ describe('outputRequest', () => {
   it('keeps the outputs and the one to show first', () => {
     const request = outputRequest({
       items: [
-        picture({ tags: ['This computer', 7, ' '], workflow: true, createdAt: 1_700_000_000_000 }),
+        picture({ tags: ['This computer', 7, ' '], workflow: true }),
         picture({ name: 'clip.mp4', mimeType: 'video/mp4' })
       ],
       index: 1
@@ -23,10 +23,9 @@ describe('outputRequest', () => {
     expect(request?.items[0]).toMatchObject({
       name: 'picture-1.png',
       tags: ['This computer'],
-      workflow: true,
-      createdAt: '2023-11-14T22:13:20.000Z'
+      workflow: true
     })
-    expect(request?.items[1]).toMatchObject({ workflow: false, createdAt: null, tags: [] })
+    expect(request?.items[1]).toMatchObject({ workflow: false, tags: [] })
   })
 
   it('refuses outputs it cannot show', () => {
