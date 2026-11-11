@@ -98,6 +98,8 @@ export function buildElectronApi(): ElectronApi {
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
+    openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),

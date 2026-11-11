@@ -25,6 +25,13 @@
     "signInTitle": "Log in to Comfy",
     "signInBody": "Sync your work and run it on Comfy Cloud."
   },
+  "home": {
+    "title": "Let's create",
+    "exampleWorkflows": "Example workflows",
+    "openWorkflow": "Open {title} on Comfy Hub",
+    "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
+    "retry": "Try again"
+  },
   "installType": {
     "standalone": "Standalone",
     "cloud": "Cloud",

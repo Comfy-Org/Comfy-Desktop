@@ -8,6 +8,7 @@ import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
+import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
@@ -159,11 +160,14 @@ if (params.get('e2e') === '1') {
   })
 }
 
+type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser'>
+
+const dashboardHomePage = ref<DashboardHomePage>('chooser')
+
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
-  return panel === 'chooser' || panel === 'benchmarks' || panel === 'performance-test'
-    ? panel
-    : null
+  if (panel === 'chooser') return dashboardHomePage.value
+  return panel === 'benchmarks' || panel === 'performance-test' ? panel : null
 })
 
 const buildDetailsId = ref<string | null>(null)
@@ -180,6 +184,11 @@ function closeBuildDetails(): void {
 }
 
 watch(activePanel, closeBuildDetails)
+
+function handleSidebarNavigate(page: DashboardPage): void {
+  closeBuildDetails()
+  if (page === 'home' || page === 'chooser') dashboardHomePage.value = page
+}
 
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
@@ -432,7 +441,7 @@ onUnmounted(() => {
       <AppSidebar
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
-        @navigate="closeBuildDetails"
+        @navigate="handleSidebarNavigate"
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
@@ -454,15 +463,16 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
+            <HomeView v-if="dashboardHomePage === 'home'" />
             <BuildDetailsView
-              v-if="buildDetailsInstall"
+              v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
               @back="closeBuildDetails"
               @launch="launchFromBuildDetails"
               @show-progress="handleShowProgress"
             />
             <ChooserView
-              :visible="!buildDetailsInstall"
+              :visible="dashboardHomePage === 'chooser' && !buildDetailsInstall"
               @pick="handleChooserPick"
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"

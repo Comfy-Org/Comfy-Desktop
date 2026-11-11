@@ -374,6 +374,8 @@ function installMockApi(initial?: {
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
     navigatePanel: vi.fn(),
+    listHomeWorkflows: vi.fn(async () => []),
+    openCatalogWorkflow: vi.fn(async () => true),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     getFieldOptions: vi.fn(async () => []),
@@ -1236,6 +1238,43 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+  })
+
+  it('opens Home from the sidebar and returns to the list of builds', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('false')
+    expect(wrapper.get('[data-testid="app-sidebar-home"]').attributes('aria-current')).toBe('page')
+
+    await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it("leaves a build's details for Home when Home is picked in the sidebar", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    wrapper.findComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
   })
 
   it("leaves a build's details when the window switches screens", async () => {
