@@ -599,7 +599,7 @@ async function handleImport(): Promise<void> {
     </header>
 
     <div
-      class="snapshots-panel flex flex-col rounded-[14px] bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,transparent)] p-1.5"
+      class="snapshots-panel flex flex-col rounded-[14px] bg-card p-1.5"
     >
       <div
         v-if="showRestoreCard"
