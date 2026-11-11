@@ -376,7 +376,7 @@ const groups = computed<FactGroup[]>(() => {
     <section
       v-for="group in groups"
       :key="group.id"
-      class="status-fact-group flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-[18px] pt-1.5 pb-2"
+      class="status-fact-group flex flex-col rounded-[14px] bg-card px-[18px] pt-1.5 pb-2"
     >
       <h3
         class="status-fact-group-title mt-2 mb-1 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase opacity-70"
@@ -387,7 +387,7 @@ const groups = computed<FactGroup[]>(() => {
         <div
           v-for="row in group.rows"
           :key="row.id"
-          class="status-fact-row grid min-h-9 grid-cols-[160px_minmax(0,1fr)] items-center gap-4 border-t border-solid border-border-hover py-2 first:border-t-0"
+          class="status-fact-row grid min-h-9 grid-cols-[160px_minmax(0,1fr)] items-center gap-4 py-2"
         >
           <dt class="m-0 text-[12px] leading-4 text-text-muted">{{ row.label }}</dt>
           <dd
