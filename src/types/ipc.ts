@@ -1110,6 +1110,7 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
+  openCatalogWorkflowHub(): Promise<boolean>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

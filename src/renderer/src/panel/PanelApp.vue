@@ -463,7 +463,11 @@ onUnmounted(() => {
             v-else-if="activePanel === 'chooser'"
             class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
           >
-            <HomeView v-if="dashboardHomePage === 'home'" />
+            <HomeView
+              v-if="dashboardHomePage === 'home'"
+              @pick="handleChooserPick"
+              @show-builds="dashboardHomePage = 'chooser'"
+            />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"

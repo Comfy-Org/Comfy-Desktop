@@ -376,6 +376,7 @@ function installMockApi(initial?: {
     navigatePanel: vi.fn(),
     listHomeWorkflows: vi.fn(async () => []),
     openCatalogWorkflow: vi.fn(async () => true),
+    openCatalogWorkflowHub: vi.fn(async () => true),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     getFieldOptions: vi.fn(async () => []),
@@ -1254,6 +1255,23 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="app-sidebar-home"]').attributes('aria-current')).toBe('page')
 
     await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it('returns to the list of builds from All builds on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-all-builds"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)

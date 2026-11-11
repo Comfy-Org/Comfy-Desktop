@@ -27,7 +27,12 @@
   },
   "home": {
     "title": "Let's create",
+    "openComfyUI": "Open ComfyUI",
+    "allBuilds": "All builds",
+    "buildRunning": "Running",
+    "buildStarting": "Starting",
     "exampleWorkflows": "Example workflows",
+    "exploreAll": "Explore all",
     "openWorkflow": "Open {title} on Comfy Hub",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
     "retry": "Try again"
