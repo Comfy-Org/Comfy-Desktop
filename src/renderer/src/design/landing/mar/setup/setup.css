@@ -1432,8 +1432,30 @@
   grid-template-columns: 148px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
+  /* One line is 40px tall whatever the control (an input, a segmented
+     control, a note), so a row that swaps its control doesn't move the rest. */
+  min-height: 64px;
   padding-block: 12px;
   box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+/* The last row of the sheet: the action bar draws the line under it. */
+.mss-form-row:last-child {
+  box-shadow: none;
+}
+.mss-form-row.is-aside {
+  align-items: start;
+  padding-block: 16px 4px;
+}
+.mss-form-row.is-aside .mss-form-label {
+  padding-top: 1px;
+}
+.mss-form-asides {
+  display: grid;
+  gap: 6px;
+}
+.mss-form-asides .mss-form-aside {
+  margin: 0;
+  line-height: 18px;
 }
 .mss-form-row:first-child {
   padding-top: 0;
@@ -2028,10 +2050,6 @@
 .mss-opts.is-list {
   grid-template-columns: minmax(0, 1fr);
 }
-.mss-form-aside.is-more {
-  margin-top: -8px;
-}
-
 /* The cancel confirmation sits over the takeover, which is itself above the
    usual dialog layer; its scrim is the sibling just before it. */
 .proto-ui.mss-confirm,

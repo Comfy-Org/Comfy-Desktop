@@ -841,31 +841,37 @@ function rowState(i: number): string {
                 </RadioGroupItem>
               </RadioGroupRoot>
             </div>
-            <p v-if="!simple" class="mss-form-aside">
-              Already running ComfyUI on another machine?
-              <button type="button" class="mss-link" @click="method = 'remote'">
-                Connect to a server instead
-              </button>
-            </p>
-            <!-- Today's other two ways in, from the File menu. -->
-            <p v-if="!simple" class="mss-form-aside is-more">
-              Already have ComfyUI on {{ DETECTED.noun }}?
-              <button
-                type="button"
-                class="mss-link"
-                @click="toast(`Opening ${say('fileMenu.addExistingInstall')}`)"
-              >
-                {{ say('fileMenu.addExistingInstall') }}
-              </button>
-              or
-              <button
-                type="button"
-                class="mss-link"
-                @click="toast(`Opening ${say('fileMenu.loadSnapshot')}`)"
-              >
-                {{ say('fileMenu.loadSnapshot') }}
-              </button>
-            </p>
+            <!-- The other ways in, as one more row of the sheet: a remote
+                 server, and today's two from the File menu. -->
+            <div v-if="!simple" class="mss-form-row is-aside">
+              <span class="mss-form-label">Other ways</span>
+              <div class="mss-form-asides">
+                <p class="mss-form-aside">
+                  Already running ComfyUI on another machine?
+                  <button type="button" class="mss-link" @click="method = 'remote'">
+                    Connect to a server instead
+                  </button>
+                </p>
+                <p class="mss-form-aside">
+                  Already have ComfyUI on {{ DETECTED.noun }}?
+                  <button
+                    type="button"
+                    class="mss-link"
+                    @click="toast(`Opening ${say('fileMenu.addExistingInstall')}`)"
+                  >
+                    {{ say('fileMenu.addExistingInstall') }}
+                  </button>
+                  or
+                  <button
+                    type="button"
+                    class="mss-link"
+                    @click="toast(`Opening ${say('fileMenu.loadSnapshot')}`)"
+                  >
+                    {{ say('fileMenu.loadSnapshot') }}
+                  </button>
+                </p>
+              </div>
+            </div>
           </div>
 
           <!-- Remote Connection: today's third method, behind the link. -->
