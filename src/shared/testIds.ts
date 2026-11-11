@@ -37,6 +37,7 @@ export const TID = {
   snapshotRow: (filename: string) => `snapshot-row-${filename}`,
   snapshotRowRestore: (filename: string) => `snapshot-row-restore-${filename}`,
   snapshotRowExport: (filename: string) => `snapshot-row-export-${filename}`,
+  snapshotRowMore: (filename: string) => `snapshot-row-more-${filename}`,
   snapshotsImport: 'snapshots-import',
   snapshotsExportAll: 'snapshots-export-all',
   snapshotsOpCard: 'snapshots-op-card',

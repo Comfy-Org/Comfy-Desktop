@@ -1259,6 +1259,7 @@
     "importPreviewLabel": "Snapshots",
     "importedSnapshot": "Imported snapshot",
     "latestBadge": "Latest",
+    "moreActions": "More actions",
     "latestLabel": "Latest:",
     "noneYet": "No snapshots yet",
     "restoreCancelled": "Restore cancelled",

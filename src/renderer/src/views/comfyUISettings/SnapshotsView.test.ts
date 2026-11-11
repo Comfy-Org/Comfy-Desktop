@@ -397,6 +397,41 @@ describe('comfyUISettings/SnapshotsView', () => {
     expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeUndefined()
   })
 
+  it('rows: inline Restore on every row but the newest, a ⋯ trigger on each, all disabled during a restore', async () => {
+    const w = await mountView()
+    expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists()).toBe(
+      false
+    )
+    for (const f of ['snap-middle.json', 'snap-oldest.json']) {
+      const restore = w.find(`[data-testid="${TID.snapshotRowRestore(f)}"]`)
+      expect(restore.exists()).toBe(true)
+      expect(restore.attributes('disabled')).toBeUndefined()
+    }
+    for (const f of ['snap-newest.json', 'snap-middle.json', 'snap-oldest.json']) {
+      expect(w.find(`[data-testid="${TID.snapshotRowMore(f)}"]`).exists()).toBe(true)
+    }
+    expect(w.find('.snapshot-row.is-expanded').exists()).toBe(true)
+
+    await w.setProps({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: false,
+        ok: null,
+        error: null,
+        percent: 10,
+        status: 'Loading snapshot…',
+        actionData: { file: 'snap-middle.json' }
+      }
+    })
+    await flushPromises()
+    expect(
+      w.find(`[data-testid="${TID.snapshotRowRestore('snap-middle.json')}"]`).attributes('disabled')
+    ).toBeDefined()
+    expect(
+      w.find(`[data-testid="${TID.snapshotRowMore('snap-newest.json')}"]`).attributes('disabled')
+    ).toBeDefined()
+  })
+
   it('scrolls the top card into view when restore starts', async () => {
     const scrollSpy = vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {})
 
