@@ -100,8 +100,9 @@ DS's Motion page (`ds/motion.ts`).
 
 ## Libraries (Assets, Apps)
 
-- **Default view: masonry, 5 columns, ungrouped.** Apps and Assets have the
-  same column count unless the person changes size.
+- **Default view: masonry, ungrouped, 5 columns on wide screens** (fewer
+  as the window narrows). Apps and Assets have the same column count unless
+  the person changes size.
 - **Video plays on hover**, muted; the bar along the bottom scrubs.
 - **Upload is always on** once a build is picked, running or not (a local
   build's inputs are a folder on disk). Off only with no build picked.
