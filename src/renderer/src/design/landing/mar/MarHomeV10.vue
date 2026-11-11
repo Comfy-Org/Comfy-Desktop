@@ -160,8 +160,9 @@ const recent = computed(() =>
       <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
-           examples). -->
-      <section v-if="firstTime && !recent.length && !setupOn" class="mt-10">
+           examples). Not once the apps arc leads the Home (Milestone 2):
+           it would be the same arc twice. -->
+      <section v-if="firstTime && !recent.length && !setupOn && !can.exploreApps" class="mt-10">
         <SectionHeader
           class="mar-sec"
           title="Start from an example"
