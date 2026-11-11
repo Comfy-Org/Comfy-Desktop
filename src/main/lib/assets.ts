@@ -174,11 +174,26 @@ async function downloadUrl(source: AssetSource, assetId: string): Promise<string
     : `${source.origin}${contentPath(assetId, 'attachment')}`
 }
 
-async function fetchHeaders(url: string): Promise<Response> {
+async function saveDownload(url: string, filePath: string): Promise<void> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  let timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const keepAlive = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  }
+  const partPath = `${filePath}.part`
   try {
-    return await fetch(url, { signal: controller.signal })
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+    const body = Readable.fromWeb(res.body as WebReadableStream)
+    body.on('data', keepAlive)
+    try {
+      await pipeline(body, fs.createWriteStream(partPath))
+      await fs.promises.rename(partPath, filePath)
+    } catch (error) {
+      await fs.promises.rm(partPath, { force: true }).catch(() => {})
+      throw error
+    }
   } finally {
     clearTimeout(timer)
   }
@@ -208,16 +223,7 @@ export async function downloadAsset(
   settings.set('lastSaveDialogDir', path.dirname(filePath))
   const url = await downloadUrl(source, assetId)
   if (!url) throw new Error('The asset has no download link.')
-  const res = await fetchHeaders(url)
-  if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
-  const partPath = `${filePath}.part`
-  try {
-    await pipeline(Readable.fromWeb(res.body as WebReadableStream), fs.createWriteStream(partPath))
-    await fs.promises.rename(partPath, filePath)
-  } catch (error) {
-    await fs.promises.rm(partPath, { force: true }).catch(() => {})
-    throw error
-  }
+  await saveDownload(url, filePath)
   return true
 }
 
