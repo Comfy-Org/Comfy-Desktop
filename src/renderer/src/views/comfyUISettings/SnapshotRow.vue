@@ -87,13 +87,13 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
 <template>
   <div class="snapshot-row flex flex-col" :class="{ 'is-expanded': expanded }">
     <div
-      class="snapshot-row-line flex min-h-11 items-center gap-2 rounded-[10px] pr-1.5 pl-2.5 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[:focus-visible]:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)]"
+      class="snapshot-row-line flex min-h-11 items-center gap-2 rounded-[10px] pr-1.5 pl-2.5 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[:focus-visible]:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[.snapshot-row-head:focus-visible]:outline-2 has-[.snapshot-row-head:focus-visible]:-outline-offset-2 has-[.snapshot-row-head:focus-visible]:outline-[var(--accent-primary)]"
     >
       <Button
         type="button"
         variant="textonly"
         size="unset"
-        class="snapshot-row-head static flex h-11 min-w-0 flex-1 items-center justify-normal gap-2.5 rounded-none border-none bg-transparent p-0 text-left text-inherit whitespace-nowrap [font:inherit] appearance-auto hover:bg-transparent focus-visible:outline-none focus-visible:ring-0"
+        class="snapshot-row-head @container static flex h-11 min-w-0 flex-1 items-center overflow-hidden justify-normal gap-2.5 rounded-none border-none bg-transparent p-0 text-left text-inherit whitespace-nowrap [font:inherit] appearance-auto hover:bg-transparent focus-visible:outline-none focus-visible:ring-0"
         :aria-expanded="expanded"
         :data-testid="toggleTestId"
         @click="emit('toggle')"
@@ -137,7 +137,7 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
         </span>
         <span
           v-if="hasNodeChanges || hasPipChanges"
-          class="snapshot-row-delta inline-flex shrink-0 items-center gap-1.5 text-[12px] text-text-muted tabular-nums"
+          class="snapshot-row-delta hidden shrink-0 items-center @md:inline-flex gap-1.5 text-[12px] text-text-muted tabular-nums"
         >
           <span v-if="hasNodeChanges" class="snap-pill snap-pill--nodes inline-flex gap-1">
             <span v-if="nodeDelta.added" class="snap-delta is-add text-[var(--success)]"

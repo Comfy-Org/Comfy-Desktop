@@ -176,6 +176,7 @@ const showRestoreCard = computed<boolean>(
 const topCardRef = ref<HTMLElement | null>(null)
 watch(restoreInFlight, (yes) => {
   if (!yes) return
+  closeRowMenu()
   void nextTick(() => {
     topCardRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
@@ -259,6 +260,16 @@ onMounted(() => {
 
 const expandedFilenames = ref<Set<string>>(new Set())
 const openMenuFilename = ref<string | null>(null)
+function closeRowMenu(): void {
+  openMenuFilename.value = null
+}
+function onRowMenuKeydown(event: KeyboardEvent): void {
+  if (event.key !== 'Escape') return
+  event.stopPropagation()
+  closeRowMenu()
+}
+onMounted(() => window.addEventListener('blur', closeRowMenu))
+onUnmounted(() => window.removeEventListener('blur', closeRowMenu))
 
 type DiffMode = 'previous' | 'current'
 const diffCache = ref<Map<string, SnapshotDiffData | null>>(new Map())
@@ -587,7 +598,7 @@ async function handleImport(): Promise<void> {
           variant="secondary"
           size="md"
           class="snapshots-view-toolbtn gap-1.5 px-3"
-          :disabled="restoreInFlight"
+          :disabled="showRestoreCard"
           :aria-label="t('snapshots.createSnapshot')"
           :data-testid="TID.snapshotsSaveCta"
           @click="handleSave"
@@ -767,7 +778,10 @@ async function handleImport(): Promise<void> {
         </div>
       </div>
 
-      <p v-if="loading" class="snapshots-view-status m-0 px-3 py-3 text-[13px] text-text-muted">
+      <p
+        v-if="loading && timeline.length === 0"
+        class="snapshots-view-status m-0 px-3 py-3 text-[13px] text-text-muted"
+      >
         {{ t('common.loading') }}
       </p>
       <div
@@ -795,7 +809,6 @@ async function handleImport(): Promise<void> {
           variant="secondary"
           size="md"
           class="gap-1.5 px-3"
-          :disabled="restoreInFlight"
           @click="handleSave"
         >
           <Camera :size="14" aria-hidden="true" />
@@ -804,7 +817,7 @@ async function handleImport(): Promise<void> {
       </div>
 
       <ul
-        v-if="!loading && !loadError && timeline.length > 0"
+        v-if="timeline.length > 0"
         class="snapshots-rail relative m-0 flex list-none flex-col p-0"
       >
         <li
@@ -869,6 +882,7 @@ async function handleImport(): Promise<void> {
                 @update:open="
                   (isOpen: boolean) => (openMenuFilename = isOpen ? item.snapshot.filename : null)
                 "
+                @keydown.capture="onRowMenuKeydown"
               >
                 <template #trigger>
                   <Button
@@ -899,6 +913,7 @@ async function handleImport(): Promise<void> {
                   type="button"
                   class="snapshot-row-delete w-full justify-start gap-2 text-left text-destructive"
                   :disabled="restoreInFlight"
+                  :data-testid="TID.snapshotRowDelete(item.snapshot.filename)"
                   @select="handleDelete(item.snapshot.filename)"
                 >
                   <Trash2 :size="14" aria-hidden="true" />
@@ -922,7 +937,7 @@ async function handleImport(): Promise<void> {
                   type="button"
                   variant="textonly"
                   size="unset"
-                  class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-md border-none bg-transparent py-0.5 pr-1 pl-0 text-[12px] leading-[1.5] font-semibold text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-[var(--color-foreground)] focus-visible:bg-transparent focus-visible:outline-none focus-visible:ring-0"
+                  class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-md border-none bg-transparent py-0.5 pr-1 pl-0 text-[12px] leading-[1.5] font-semibold text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-[var(--color-foreground)] focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-primary)] focus-visible:ring-0"
                   :class="{ 'is-open': isDiffOpen(item.snapshot.filename, mode) }"
                   :aria-expanded="isDiffOpen(item.snapshot.filename, mode)"
                   @click="toggleDiff(item.snapshot.filename, mode)"
