@@ -142,6 +142,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
     <ModelsDirList
       :dirs="sharedModelDirs"
       hide-shared-tag
+      class="bg-[color-mix(in_srgb,var(--text)_6%,transparent)]!"
       @change="handleChangeModelsDir"
       @remove="handleRemoveModelsDir"
       @make-primary="handleMakePrimary"
@@ -160,6 +161,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
       :path="sharedFieldPath(sharedInputField)"
       shared
       hide-shared-tag
+      class="[&_.storage-dir-row]:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]"
       @open="handleOpenPath(sharedFieldPath(sharedInputField))"
       @browse="handleBrowseSharedInput"
     />
@@ -169,6 +171,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
       :path="sharedFieldPath(sharedOutputField)"
       shared
       hide-shared-tag
+      class="[&_.storage-dir-row]:bg-[color-mix(in_srgb,var(--text)_6%,transparent)]"
       @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
       @browse="handleBrowseSharedOutput"
     />
