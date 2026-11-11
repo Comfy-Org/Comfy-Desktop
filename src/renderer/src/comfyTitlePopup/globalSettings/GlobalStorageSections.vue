@@ -159,7 +159,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
   >
     <div
       v-if="sharedInputField || sharedOutputField"
-      class="gs-shared-dirs flex flex-col rounded-[14px] bg-white/5 p-1.5 [&_.storage-dir-row]:min-h-12 [&_.storage-dir-row]:rounded-[10px] [&_.storage-dir-row]:bg-transparent [&_.storage-dir-row]:pl-3"
+      class="gs-shared-dirs flex flex-col rounded-[14px] bg-white/5 p-1.5"
     >
       <StorageDirRow
         v-if="sharedInputField"
@@ -167,6 +167,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
         :path="sharedFieldPath(sharedInputField)"
         shared
         hide-shared-tag
+        variant="grouped"
         @open="handleOpenPath(sharedFieldPath(sharedInputField))"
         @browse="handleBrowseSharedInput"
       />
@@ -176,6 +177,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
         :path="sharedFieldPath(sharedOutputField)"
         shared
         hide-shared-tag
+        variant="grouped"
         @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
         @browse="handleBrowseSharedOutput"
       />

@@ -15,6 +15,7 @@ import {
 } from 'lucide-vue-next'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
+import StorageTag from '../../components/StorageTag.vue'
 
 interface ModelsDir {
   path: string
@@ -47,8 +48,6 @@ const { t } = useI18n()
 const actionClass = 'models-dir-action shrink-0'
 const nameClass =
   'models-dir-name static block min-w-0 max-w-full truncate gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
-const tagClass =
-  'models-dir-tag inline-flex h-5 shrink-0 items-center gap-0.5 rounded-[999px] px-2 text-[11px] leading-[14px] font-medium bg-[color-mix(in_srgb,var(--text)_8%,transparent)] text-text-muted'
 const openMenuIndex = ref<number | null>(null)
 
 function canPromote(dir: ModelsDir): boolean {
@@ -149,21 +148,21 @@ const rows = computed(() =>
           {{ row.path }}
         </Button>
       </div>
-      <span v-if="row.isPrimary" :class="[tagClass, 'tag-primary']">
+      <StorageTag v-if="row.isPrimary" class="models-dir-tag tag-primary">
         {{ t('models.primary') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
-      </span>
-      <span v-if="row.shared && !props.hideSharedTag" :class="[tagClass, 'tag-shared']">
+      </StorageTag>
+      <StorageTag v-if="row.shared && !props.hideSharedTag" class="models-dir-tag tag-shared">
         {{ t('models.sharedTag') }}
-      </span>
-      <span v-if="row.locked || row.isExtra" :class="[tagClass, 'tag-local']">
+      </StorageTag>
+      <StorageTag v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
         {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
         <InfoTooltip
           :text="
             row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
           "
         />
-      </span>
+      </StorageTag>
       <div class="models-dir-actions inline-flex shrink-0 items-center gap-0.5">
         <Button
           v-if="row.isExtra"

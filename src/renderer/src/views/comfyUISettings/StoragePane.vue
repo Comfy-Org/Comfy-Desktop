@@ -338,7 +338,7 @@ function handleRevealPath(path: string): void {
     >
       <AlertTriangle
         :size="14"
-        class="storage-note-icon shrink-0 text-text-muted"
+        class="storage-note-icon shrink-0 text-[var(--warning)]"
         aria-hidden="true"
       />
       <p class="storage-note-text m-0 text-[13px] leading-[1.45]">
