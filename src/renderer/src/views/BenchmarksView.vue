@@ -828,530 +828,271 @@ onActivated(() => {
 
 <template>
   <BrandBackground
-    class="benchmarks min-w-0 min-h-0 [--benchmark-baseline:#e8e8ee] [--benchmark-best:#3ecf8e] [--benchmark-faster:#54d890] [--benchmark-faster-text:#6ed8a0] [--benchmark-slower:#ef6f69] [--benchmark-slower-text:#ef8a85] [&_.brand-outer-frame]:min-w-0 [&_.brand-inner-frame]:min-w-0"
+    class="benchmarks min-w-0 min-h-0 [--benchmark-baseline:#e8e8ee] [--benchmark-best:#3ecf8e] [--benchmark-faster:#54d890] [--benchmark-faster-text:#6ed8a0] [--benchmark-slower:#ef6f69] [--benchmark-slower-text:#ef8a85] [&_.brand-outer-frame]:min-w-0 [&_.brand-inner-frame]:min-w-0 [&_.brand-inner-frame]:p-0"
     data-testid="benchmarks"
   >
     <div
-      class="benchmarks__layout @container relative flex h-full min-h-0 w-full flex-col gap-8 overflow-x-hidden overflow-y-auto text-neutral-100"
+      class="benchmarks__layout @container relative flex h-full min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto text-neutral-100"
     >
-      <BrandedPageHeader :title="t('benchmarks.title')" :description="t('benchmarks.description')">
-        <template #actions>
-          <Button
-            variant="secondary"
-            size="lg"
-            class="benchmarks__open-folder"
-            type="button"
-            :disabled="loading"
-            :title="benchmarksFolderPath"
-            @click="selectBenchmarksFolder"
-          >
-            <FolderOpen :size="16" aria-hidden="true" />
-            {{ t('benchmarks.openFolder') }}
-          </Button>
-        </template>
-      </BrandedPageHeader>
-
-      <section
-        class="benchmarks__card benchmarks__library flex min-w-0 flex-col gap-3"
-        :aria-label="t('benchmarks.runsLibrary')"
-      >
-        <div
-          class="benchmarks__filters flex flex-wrap items-center gap-2 @max-[860px]:[&>div]:w-full"
-        >
-          <div
-            class="benchmarks__filter-selects flex min-w-0 flex-1 items-center gap-2 [&>*]:min-w-0 [&>*]:flex-1 [&>*]:max-w-[170px]"
-          >
-            <BaseSelect
-              v-model="workspaceFilter"
-              :options="workspaceOptions"
-              :aria-label="t('benchmarks.allWorkspaces')"
-              compact
-            />
-            <BaseSelect
-              v-model="instanceFilter"
-              :options="instanceOptions"
-              :aria-label="t('benchmarks.allInstances')"
-              compact
-            />
-            <BaseSelect
-              v-model="hardwareFilter"
-              :options="hardwareOptions"
-              :aria-label="t('benchmarks.allHardware')"
-              compact
-            />
-            <BaseSelect
-              v-model="workflowFilter"
-              :options="workflowOptions"
-              :aria-label="t('benchmarks.allWorkflows')"
-              compact
-            />
-          </div>
-          <div class="benchmarks__folder-controls ml-auto flex items-center gap-2">
-            <Button
-              variant="muted-textonly"
-              size="icon"
-              class="benchmarks__refresh"
-              type="button"
-              :disabled="loading"
-              :aria-label="t('benchmarks.refresh')"
-              :title="t('benchmarks.refresh')"
-              data-testid="benchmarks-refresh"
-              @click="refreshBenchmarks"
-            >
-              <RefreshCw
-                :size="13"
-                :class="{
-                  'benchmarks__refresh-icon--busy animate-spin [animation-duration:900ms]': loading
-                }"
-                aria-hidden="true"
-              />
-            </Button>
-            <BaseInput
-              v-model="searchQuery"
-              class="benchmarks__search w-48 @max-[860px]:flex-1"
-              :placeholder="t('benchmarks.searchPlaceholder')"
-              :aria-label="t('benchmarks.searchPlaceholder')"
-              :spellcheck="false"
-            >
-              <template #leading><Search :size="16" aria-hidden="true" /></template>
-            </BaseInput>
-            <details
-              ref="libraryColumnsPicker"
-              class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
-            >
-              <Button as-child variant="secondary" size="icon-lg">
-                <summary class="secondary justify-center" :title="t('benchmarks.columns')">
-                  <SlidersHorizontal :size="16" aria-hidden="true" />
-                  <span class="sr-only">{{ t('benchmarks.columns') }}</span>
-                </summary>
-              </Button>
-              <div
-                class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
-              >
-                <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
-                <label v-for="key in availableColumnKeys" :key="key">
-                  <Switch
-                    :model-value="visibleColumnKeys.has(key)"
-                    :disabled="key === 'workflowName'"
-                    :data-testid="`benchmark-column-${key}`"
-                    @update:model-value="toggleColumn(key)"
-                  />
-                  <span>{{ columnLabel(key) }}</span>
-                </label>
-              </div>
-            </details>
-          </div>
-        </div>
-
-        <div
-          v-if="loading"
-          class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
-        >
-          {{ t('common.loading') }}
-        </div>
-        <div
-          v-else-if="loadError"
-          class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
-        >
-          {{ t('benchmarks.loadError') }}
-        </div>
-        <div
-          v-else-if="benchmarks.length === 0"
-          class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
-        >
-          <ChartColumn :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
-          {{ t('benchmarks.empty') }}
-        </div>
-        <template v-else>
-          <div class="benchmarks__table-scroll max-h-[320px] overflow-auto">
-            <table
-              class="benchmarks__table w-full border-collapse text-left text-[12px] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-1 [&_thead_th]:bg-neutral-900 [&_thead_th]:font-normal [&_thead_th]:text-text-muted [&_tbody_tr:hover>td]:bg-[color-mix(in_srgb,white_3%,transparent)]"
-            >
-              <thead>
-                <tr>
-                  <th class="benchmarks__check-cell w-11 text-center">
-                    <label class="benchmarks__checkbox inline-flex items-center justify-center">
-                      <Checkbox
-                        :model-value="allFilteredSelected"
-                        :aria-label="t('benchmarks.selectVisible')"
-                        @update:model-value="toggleAllFiltered"
-                      />
-                    </label>
-                  </th>
-                  <th v-for="column in visibleColumns" :key="column.key">
-                    <Button
-                      variant="muted-textonly"
-                      size="sm"
-                      class="-ml-2"
-                      type="button"
-                      @click="setSort(column.key)"
-                    >
-                      {{ column.label }}
-                      <span v-if="sortKey === column.key">{{ sortAscending ? '↑' : '↓' }}</span>
-                    </Button>
-                  </th>
-                  <th
-                    class="benchmarks__actions-cell w-11 text-center"
-                    :aria-label="t('benchmarks.actions')"
-                  />
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="benchmark in filteredBenchmarks"
-                  :key="benchmark.id"
-                  :class="{
-                    'benchmarks__row--selected [&>td]:bg-[color-mix(in_srgb,white_5%,transparent)]':
-                      selectedIds.has(benchmark.id)
-                  }"
-                  :style="
-                    selectedIds.has(benchmark.id)
-                      ? { '--series-color': seriesColor(benchmark) }
-                      : undefined
-                  "
-                  :data-testid="`benchmark-row-${benchmark.id}`"
-                >
-                  <td class="benchmarks__check-cell w-11 text-center">
-                    <label class="benchmarks__checkbox inline-flex items-center justify-center">
-                      <Checkbox
-                        class="data-[state=checked]:border-neutral-100 data-[state=checked]:bg-neutral-100 data-[state=checked]:text-neutral-900"
-                        :model-value="selectedIds.has(benchmark.id)"
-                        :aria-label="
-                          t('benchmarks.selectRun', { workflow: benchmark.workflowName })
-                        "
-                        @update:model-value="toggleBenchmark(benchmark.id)"
-                      />
-                    </label>
-                  </td>
-                  <td
-                    v-for="column in visibleColumns"
-                    :key="column.key"
-                    :class="{
-                      'benchmarks__strong font-semibold text-neutral-100':
-                        column.key === 'workflowName'
-                    }"
-                  >
-                    <template v-if="column.key === 'id'">
-                      <span
-                        class="benchmarks__session-name-editor relative inline-block align-middle"
-                      >
-                        <Button
-                          variant="muted-textonly"
-                          size="sm"
-                          class="benchmarks__session-name group/session-name -mx-2"
-                          :class="{
-                            'benchmarks__session-name--editing invisible':
-                              editingSessionId === benchmark.id
-                          }"
-                          type="button"
-                          :disabled="editingSessionId === benchmark.id"
-                          :aria-label="t('benchmarks.editSessionName', { session: benchmark.id })"
-                          :title="t('benchmarks.editSessionName', { session: benchmark.id })"
-                          @click="editSessionName(benchmark)"
-                        >
-                          <span>{{ benchmark.id }}</span>
-                          <Pencil
-                            class="benchmarks__session-name-icon shrink-0 opacity-0 transition-opacity group-hover/session-name:opacity-100 group-focus-visible/session-name:opacity-100"
-                            :size="12"
-                            aria-hidden="true"
-                          />
-                        </Button>
-                        <Input
-                          v-if="editingSessionId === benchmark.id"
-                          :ref="setSessionNameInput"
-                          v-model="sessionNameDraft"
-                          class="benchmarks__session-name-input absolute inset-0 box-border m-0 size-full min-w-0 px-0.5 py-px [font:inherit]"
-                          type="text"
-                          :disabled="renamingSessionId === benchmark.id"
-                          :aria-label="t('benchmarks.sessionName')"
-                          @blur="saveSessionName(benchmark)"
-                          @keydown.enter.prevent="saveSessionName(benchmark)"
-                          @keydown.escape.prevent="cancelSessionNameEdit"
-                        />
-                      </span>
-                    </template>
-                    <template v-else>
-                      {{ formatColumnValue(benchmark, column.key) }}
-                    </template>
-                  </td>
-                  <td class="benchmarks__actions-cell w-11 text-center">
-                    <Button
-                      variant="muted-textonly"
-                      size="icon"
-                      class="benchmarks__delete-record hover:text-danger focus-visible:text-danger"
-                      type="button"
-                      :disabled="deletingIds.has(benchmark.id) || editingSessionId === benchmark.id"
-                      :aria-label="
-                        t('benchmarks.deleteRecord', { workflow: benchmark.workflowName })
-                      "
-                      :title="t('benchmarks.deleteRecord', { workflow: benchmark.workflowName })"
-                      @click="confirmDeleteBenchmark(benchmark)"
-                    >
-                      <Trash2 :size="14" aria-hidden="true" />
-                    </Button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div
-            v-if="filteredBenchmarks.length === 0"
-            class="benchmarks__no-results px-4 py-8 text-center text-text-muted"
-          >
-            {{ t('benchmarks.noMatches') }}
-          </div>
-        </template>
-      </section>
-
-      <div
-        class="benchmarks__comparison-section flex flex-col gap-4 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase"
-      >
-        <div class="benchmarks__comparison-head flex items-center">
-          <CollapsibleSectionToggle
-            id="comparison-title"
-            :expanded="comparisonExpanded"
-            :label="t('benchmarks.comparison')"
-            @toggle="comparisonExpanded = !comparisonExpanded"
-          />
-        </div>
-
-        <section
-          v-show="comparisonExpanded"
-          class="benchmarks__card min-w-0 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__comparison"
-          aria-labelledby="comparison-title"
-        >
-          <span id="benchmark-reorder-instructions" class="benchmarks__visually-hidden sr-only">
-            {{ t('benchmarks.reorderComparisonHint') }}
-          </span>
-          <div
-            class="benchmarks__comparison-toolbar mb-4 flex flex-wrap items-center justify-end gap-2"
-          >
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              :allow-empty="false"
-              class="benchmarks__visualization-tabs mr-auto"
-              :model-value="comparisonVisualization"
-              :aria-label="t('benchmarks.visualization')"
-              @update:model-value="setComparisonVisualization"
-            >
-              <ToggleGroupItem value="range" size="sm">{{
-                t('benchmarks.duration')
-              }}</ToggleGroupItem>
-              <ToggleGroupItem value="relative" size="sm">{{
-                t('benchmarks.speed')
-              }}</ToggleGroupItem>
-            </ToggleGroup>
-            <span
-              v-if="exportResultsError"
-              class="benchmarks__export-error text-[12px] text-danger"
-            >
-              {{ exportResultsError }}
-            </span>
-            <div
-              class="benchmarks__comparison-metric flex w-[165px] [&_.ui-select-trigger]:min-w-0 [&_.ui-select-trigger]:flex-1"
-              :class="{
-                'benchmarks__comparison-metric--hidden invisible pointer-events-none':
-                  !isRelativeView
-              }"
-              :aria-hidden="!isRelativeView"
-            >
-              <BaseSelect
-                v-model="comparisonMetric"
-                :options="comparisonMetricOptions"
-                :aria-label="t('benchmarks.metric')"
-                compact
-              />
-            </div>
-            <div class="benchmarks__comparison-sort w-[220px]">
-              <BaseSelect
-                v-model="comparisonSortMetric"
-                :options="comparisonSortOptions"
-                :aria-label="t('benchmarks.sortComparison')"
-                compact
-              />
-            </div>
-            <Button
-              variant="secondary"
-              size="icon-lg"
-              class="benchmarks__sort-direction"
-              type="button"
-              :disabled="comparisonSortMetric === 'manual'"
-              :aria-label="
-                comparisonSortAscending
-                  ? t('benchmarks.switchSortDescending')
-                  : t('benchmarks.switchSortAscending')
-              "
-              :title="
-                comparisonSortAscending
-                  ? t('benchmarks.switchSortDescending')
-                  : t('benchmarks.switchSortAscending')
-              "
-              @click="comparisonSortAscending = !comparisonSortAscending"
-            >
-              <ArrowUpDown :size="16" aria-hidden="true" />
-            </Button>
+      <div class="mx-auto flex w-full max-w-300 flex-col gap-6 px-10 pt-9 pb-24">
+        <BrandedPageHeader :title="t('benchmarks.title')">
+          <template #actions>
             <Button
               variant="secondary"
               size="lg"
-              class="benchmarks__export-results"
+              class="benchmarks__open-folder"
               type="button"
-              :disabled="isExportingResults || selectedBenchmarks.length === 0"
-              @click="exportComparisonImage"
+              :disabled="loading"
+              :title="benchmarksFolderPath"
+              @click="selectBenchmarksFolder"
             >
-              <ImageDown :size="16" aria-hidden="true" />
-              {{
-                isExportingResults
-                  ? t('benchmarks.exportingImage')
-                  : t('benchmarks.exportResultsImage')
-              }}
+              <FolderOpen :size="16" aria-hidden="true" />
+              {{ t('benchmarks.openFolder') }}
             </Button>
-            <details
-              ref="comparisonColumnsPicker"
-              class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
+          </template>
+        </BrandedPageHeader>
+
+        <section
+          class="benchmarks__card benchmarks__library flex min-w-0 flex-col gap-3"
+          :aria-label="t('benchmarks.runsLibrary')"
+        >
+          <div
+            class="benchmarks__filters flex flex-wrap items-center gap-2 @max-[860px]:[&>div]:w-full"
+          >
+            <div
+              class="benchmarks__filter-selects flex min-w-0 flex-1 items-center gap-2 [&>*]:min-w-0 [&>*]:flex-1 [&>*]:max-w-[170px]"
             >
-              <Button as-child variant="secondary" size="icon-lg">
-                <summary class="secondary justify-center" :title="t('benchmarks.columns')">
-                  <SlidersHorizontal :size="16" aria-hidden="true" />
-                  <span class="sr-only">{{ t('benchmarks.columns') }}</span>
-                </summary>
-              </Button>
-              <div
-                class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
+              <BaseSelect
+                v-model="workspaceFilter"
+                :options="workspaceOptions"
+                :aria-label="t('benchmarks.allWorkspaces')"
+                compact
+              />
+              <BaseSelect
+                v-model="instanceFilter"
+                :options="instanceOptions"
+                :aria-label="t('benchmarks.allInstances')"
+                compact
+              />
+              <BaseSelect
+                v-model="hardwareFilter"
+                :options="hardwareOptions"
+                :aria-label="t('benchmarks.allHardware')"
+                compact
+              />
+              <BaseSelect
+                v-model="workflowFilter"
+                :options="workflowOptions"
+                :aria-label="t('benchmarks.allWorkflows')"
+                compact
+              />
+            </div>
+            <div class="benchmarks__folder-controls ml-auto flex items-center gap-2">
+              <Button
+                variant="muted-textonly"
+                size="icon"
+                class="benchmarks__refresh"
+                type="button"
+                :disabled="loading"
+                :aria-label="t('benchmarks.refresh')"
+                :title="t('benchmarks.refresh')"
+                data-testid="benchmarks-refresh"
+                @click="refreshBenchmarks"
               >
-                <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
-                <label v-for="key in availableColumnKeys" :key="key">
-                  <Switch
-                    :model-value="comparisonColumnKeys.has(key)"
-                    :disabled="key === 'workflowName'"
-                    :data-testid="`benchmark-comparison-column-${key}`"
-                    @update:model-value="toggleComparisonColumn(key)"
-                  />
-                  <span>{{ columnLabel(key) }}</span>
-                </label>
-              </div>
-            </details>
+                <RefreshCw
+                  :size="13"
+                  :class="{
+                    'benchmarks__refresh-icon--busy animate-spin [animation-duration:900ms]':
+                      loading
+                  }"
+                  aria-hidden="true"
+                />
+              </Button>
+              <BaseInput
+                v-model="searchQuery"
+                class="benchmarks__search w-48 @max-[860px]:flex-1"
+                :placeholder="t('benchmarks.searchPlaceholder')"
+                :aria-label="t('benchmarks.searchPlaceholder')"
+                :spellcheck="false"
+              >
+                <template #leading><Search :size="16" aria-hidden="true" /></template>
+              </BaseInput>
+              <details
+                ref="libraryColumnsPicker"
+                class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
+              >
+                <Button as-child variant="muted-textonly" size="icon">
+                  <summary class="secondary justify-center" :title="t('benchmarks.columns')">
+                    <SlidersHorizontal :size="16" aria-hidden="true" />
+                    <span class="sr-only">{{ t('benchmarks.columns') }}</span>
+                  </summary>
+                </Button>
+                <div
+                  class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
+                >
+                  <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
+                  <label v-for="key in availableColumnKeys" :key="key">
+                    <Switch
+                      :model-value="visibleColumnKeys.has(key)"
+                      :disabled="key === 'workflowName'"
+                      :data-testid="`benchmark-column-${key}`"
+                      @update:model-value="toggleColumn(key)"
+                    />
+                    <span>{{ columnLabel(key) }}</span>
+                  </label>
+                </div>
+              </details>
+            </div>
           </div>
 
           <div
-            v-if="selectedBenchmarks.length === 0"
+            v-if="loading"
             class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
           >
-            {{ t('benchmarks.selectPrompt') }}
+            {{ t('common.loading') }}
           </div>
           <div
-            v-else
-            class="benchmarks__comparison-grid grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
+            v-else-if="loadError"
+            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
           >
-            <div
-              class="benchmarks__matrix-scroll overflow-auto rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)]"
-            >
+            {{ t('benchmarks.loadError') }}
+          </div>
+          <div
+            v-else-if="benchmarks.length === 0"
+            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
+          >
+            <ChartColumn :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
+            {{ t('benchmarks.empty') }}
+          </div>
+          <template v-else>
+            <div class="benchmarks__table-scroll overflow-x-auto">
               <table
-                class="benchmarks__matrix [&_.benchmarks\_\_matrix-column--baseline]:[box-shadow:inset_0_3px_var(--benchmark-baseline)] [&_.benchmarks\_\_matrix-column--baseline_.benchmarks\_\_matrix-title]:pr-[58px] w-full border-collapse text-left text-[12px] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_th:not(:first-child)]:min-w-[190px] [&_th:not(:first-child)]:text-center [&_td]:min-w-[190px] [&_td]:text-center [&_thead_th]:relative [&_thead_th]:bg-[color-mix(in_srgb,white_3%,transparent)] [&_thead_th]:align-top [&_thead_th:first-child]:align-bottom [&_tbody_th]:font-medium [&_tbody_th]:text-neutral-200"
-                :style="{ minWidth: `max(100%, ${130 + selectedBenchmarks.length * 190}px)` }"
+                class="benchmarks__table w-full border-collapse text-left text-[12px] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_thead_th]:font-normal [&_thead_th]:text-text-muted [&_tbody_tr:hover>td]:bg-[color-mix(in_srgb,white_3%,transparent)] [&_tbody_td:first-child]:rounded-l-lg [&_tbody_td:last-child]:rounded-r-lg"
               >
                 <thead>
                   <tr>
-                    <th>{{ t('benchmarks.metric') }}</th>
-                    <th
-                      v-for="benchmark in selectedBenchmarks"
-                      :key="benchmark.id"
-                      :class="{
-                        'benchmarks__matrix-column--dragging opacity-55':
-                          draggedBenchmarkId === benchmark.id,
-                        'benchmarks__matrix-column--drop-target [box-shadow:inset_3px_0_var(--color-neutral-100,#e8e8ee)]':
-                          dropTargetBenchmarkId === benchmark.id,
-                        'benchmarks__matrix-column--baseline': isBaselineColumn(benchmark.id)
-                      }"
-                      :style="{ '--series-color': seriesColor(benchmark) }"
-                      :data-testid="`benchmark-comparison-column-title-${benchmark.id}`"
-                      @click="selectComparisonBaseline(benchmark.id)"
-                      @dragover="dragOverComparisonColumn($event, benchmark.id)"
-                      @drop="dropComparisonColumn($event, benchmark.id)"
-                    >
-                      <span
-                        class="benchmarks__matrix-title flex items-start gap-2 text-left select-none [&>span:not(.benchmarks\_\_series-dot)]:flex [&>span:not(.benchmarks\_\_series-dot)]:min-w-0 [&>span:not(.benchmarks\_\_series-dot)]:flex-col [&_strong]:truncate [&_small]:truncate [&_small]:text-[10px] [&_small]:font-normal [&_small]:text-text-muted focus-visible:rounded focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-[3px]"
-                        :class="{
-                          'benchmarks__matrix-title--selectable cursor-pointer [&:hover_strong]:text-[var(--action)]':
-                            isRelativeView
-                        }"
-                        tabindex="0"
-                        :role="isRelativeView ? 'button' : undefined"
-                        :aria-pressed="isRelativeView ? isBaselineColumn(benchmark.id) : undefined"
-                        :aria-label="
-                          isRelativeView
-                            ? selectBaselineLabel(benchmark)
-                            : t('benchmarks.reorderComparisonColumn', {
-                                workflow: benchmark.workflowName
-                              })
-                        "
-                        aria-describedby="benchmark-reorder-instructions"
-                        :title="
-                          isRelativeView
-                            ? selectBaselineLabel(benchmark)
-                            : t('benchmarks.reorderComparisonHint')
-                        "
-                        @keydown.enter.prevent="selectComparisonBaseline(benchmark.id)"
-                        @keydown.space.prevent="selectComparisonBaseline(benchmark.id)"
-                        @keydown.alt.left.prevent="moveComparisonColumn(benchmark.id, -1)"
-                        @keydown.alt.right.prevent="moveComparisonColumn(benchmark.id, 1)"
-                      >
-                        <span
-                          class="benchmarks__column-grip -ml-1.5 inline-flex flex-none cursor-grab text-text-muted active:cursor-grabbing"
-                          draggable="true"
-                          @click.stop
-                          @dragstart.stop="startComparisonColumnDrag($event, benchmark.id)"
-                          @dragend.stop="endComparisonColumnDrag"
-                        >
-                          <GripVertical :size="14" aria-hidden="true" />
-                        </span>
-                        <span
-                          class="benchmarks__series-dot size-3 flex-none rounded-[50%] bg-[var(--series-color)]"
+                    <th class="benchmarks__check-cell w-11 text-center">
+                      <label class="benchmarks__checkbox inline-flex items-center justify-center">
+                        <Checkbox
+                          :model-value="allFilteredSelected"
+                          :aria-label="t('benchmarks.selectVisible')"
+                          @update:model-value="toggleAllFiltered"
                         />
-                        <span>
-                          <template v-for="column in comparisonColumns" :key="column.key">
-                            <strong
-                              v-if="column.key === 'workflowName'"
-                              :data-testid="`benchmark-comparison-${benchmark.id}-${column.key}`"
-                            >
-                              {{ formatColumnValue(benchmark, column.key) }}
-                            </strong>
-                            <small
-                              v-else
-                              :data-testid="`benchmark-comparison-${benchmark.id}-${column.key}`"
-                            >
-                              <span>{{ column.label }}:</span>
-                              {{ formatColumnValue(benchmark, column.key) }}
-                            </small>
-                          </template>
-                        </span>
-                      </span>
-                      <small
-                        v-if="isBaselineColumn(benchmark.id)"
-                        class="benchmarks__baseline-badge absolute top-2 right-2 rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--benchmark-baseline)_55%,transparent)] bg-[color-mix(in_srgb,var(--benchmark-baseline)_12%,transparent)] px-[5px] py-0.5 text-[9px] font-semibold text-[var(--benchmark-baseline)]"
-                      >
-                        {{ t('benchmarks.baseline') }}
-                      </small>
+                      </label>
                     </th>
+                    <th v-for="column in visibleColumns" :key="column.key">
+                      <Button
+                        variant="muted-textonly"
+                        size="sm"
+                        class="-ml-2"
+                        type="button"
+                        @click="setSort(column.key)"
+                      >
+                        {{ column.label }}
+                        <span v-if="sortKey === column.key">{{ sortAscending ? '↑' : '↓' }}</span>
+                      </Button>
+                    </th>
+                    <th
+                      class="benchmarks__actions-cell w-11 text-center"
+                      :aria-label="t('benchmarks.actions')"
+                    />
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="metric in metricRows" :key="metric.key">
-                    <th>{{ metric.label }}</th>
+                  <tr
+                    v-for="benchmark in filteredBenchmarks"
+                    :key="benchmark.id"
+                    :class="{
+                      'benchmarks__row--selected [&>td]:bg-[color-mix(in_srgb,white_5%,transparent)]':
+                        selectedIds.has(benchmark.id)
+                    }"
+                    :style="
+                      selectedIds.has(benchmark.id)
+                        ? { '--series-color': seriesColor(benchmark) }
+                        : undefined
+                    "
+                    :data-testid="`benchmark-row-${benchmark.id}`"
+                  >
+                    <td class="benchmarks__check-cell w-11 text-center">
+                      <label class="benchmarks__checkbox inline-flex items-center justify-center">
+                        <Checkbox
+                          class="data-[state=checked]:border-neutral-100 data-[state=checked]:bg-neutral-100 data-[state=checked]:text-neutral-900"
+                          :model-value="selectedIds.has(benchmark.id)"
+                          :aria-label="
+                            t('benchmarks.selectRun', { workflow: benchmark.workflowName })
+                          "
+                          @update:model-value="toggleBenchmark(benchmark.id)"
+                        />
+                      </label>
+                    </td>
                     <td
-                      v-for="benchmark in selectedBenchmarks"
-                      :key="benchmark.id"
+                      v-for="column in visibleColumns"
+                      :key="column.key"
                       :class="{
-                        'benchmarks__best bg-[color-mix(in_srgb,var(--benchmark-best)_18%,transparent)] font-semibold text-[#78e7b6]':
-                          isBest(benchmark, metric.key)
+                        'benchmarks__strong font-semibold text-neutral-100':
+                          column.key === 'workflowName'
                       }"
                     >
-                      {{
-                        metric.key === 'measuredJobCount'
-                          ? metricValue(benchmark, metric.key)
-                          : formatDuration(metricValue(benchmark, metric.key))
-                      }}
+                      <template v-if="column.key === 'id'">
+                        <span
+                          class="benchmarks__session-name-editor relative inline-block align-middle"
+                        >
+                          <Button
+                            variant="muted-textonly"
+                            size="sm"
+                            class="benchmarks__session-name group/session-name -mx-2"
+                            :class="{
+                              'benchmarks__session-name--editing invisible':
+                                editingSessionId === benchmark.id
+                            }"
+                            type="button"
+                            :disabled="editingSessionId === benchmark.id"
+                            :aria-label="t('benchmarks.editSessionName', { session: benchmark.id })"
+                            :title="t('benchmarks.editSessionName', { session: benchmark.id })"
+                            @click="editSessionName(benchmark)"
+                          >
+                            <span>{{ benchmark.id }}</span>
+                            <Pencil
+                              class="benchmarks__session-name-icon shrink-0 opacity-0 transition-opacity group-hover/session-name:opacity-100 group-focus-visible/session-name:opacity-100"
+                              :size="12"
+                              aria-hidden="true"
+                            />
+                          </Button>
+                          <Input
+                            v-if="editingSessionId === benchmark.id"
+                            :ref="setSessionNameInput"
+                            v-model="sessionNameDraft"
+                            class="benchmarks__session-name-input absolute inset-0 box-border m-0 size-full min-w-0 px-0.5 py-px [font:inherit]"
+                            type="text"
+                            :disabled="renamingSessionId === benchmark.id"
+                            :aria-label="t('benchmarks.sessionName')"
+                            @blur="saveSessionName(benchmark)"
+                            @keydown.enter.prevent="saveSessionName(benchmark)"
+                            @keydown.escape.prevent="cancelSessionNameEdit"
+                          />
+                        </span>
+                      </template>
+                      <template v-else>
+                        {{ formatColumnValue(benchmark, column.key) }}
+                      </template>
+                    </td>
+                    <td class="benchmarks__actions-cell w-11 text-center">
+                      <Button
+                        variant="muted-textonly"
+                        size="icon"
+                        class="benchmarks__delete-record hover:text-danger focus-visible:text-danger"
+                        type="button"
+                        :disabled="
+                          deletingIds.has(benchmark.id) || editingSessionId === benchmark.id
+                        "
+                        :aria-label="
+                          t('benchmarks.deleteRecord', { workflow: benchmark.workflowName })
+                        "
+                        :title="t('benchmarks.deleteRecord', { workflow: benchmark.workflowName })"
+                        @click="confirmDeleteBenchmark(benchmark)"
+                      >
+                        <Trash2 :size="14" aria-hidden="true" />
+                      </Button>
                     </td>
                   </tr>
                 </tbody>
@@ -1359,154 +1100,417 @@ onActivated(() => {
             </div>
 
             <div
-              class="benchmarks__chart min-w-0 overflow-x-auto rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] p-4 [&_h3]:m-0 [&_h3]:text-[16px] [&_h3]:font-semibold [&_h3]:text-neutral-100 [&_p]:mt-1 [&_p]:mr-0 [&_p]:mb-[18px] [&_p]:ml-0 [&_p]:min-h-[2lh] [&_p]:text-[11px] [&_p]:text-text-muted"
+              v-if="filteredBenchmarks.length === 0"
+              class="benchmarks__no-results px-4 py-8 text-center text-text-muted"
             >
-              <h3>
-                {{
-                  isRelativeView
-                    ? t('benchmarks.relativePerformance')
-                    : t('benchmarks.durationRange')
-                }}
-              </h3>
-              <p>
-                {{
-                  isRelativeView
-                    ? t('benchmarks.relativePerformanceHint')
-                    : t('benchmarks.durationRangeHint')
-                }}
-              </p>
-              <div
-                class="benchmarks__chart-axis mb-2 grid min-h-3.5 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 text-[10px] text-text-muted"
-                aria-hidden="true"
+              {{ t('benchmarks.noMatches') }}
+            </div>
+          </template>
+        </section>
+
+        <div
+          class="benchmarks__comparison-section flex flex-col rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-5 pt-2 pb-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase [&_.collapsible-section-toggle]:self-center"
+        >
+          <div class="benchmarks__comparison-head flex min-h-11 flex-wrap items-center gap-2">
+            <CollapsibleSectionToggle
+              id="comparison-title"
+              :expanded="comparisonExpanded"
+              :label="t('benchmarks.comparison')"
+              @toggle="comparisonExpanded = !comparisonExpanded"
+            />
+            <div
+              v-show="comparisonExpanded"
+              class="benchmarks__comparison-toolbar ml-auto flex flex-wrap items-center justify-end gap-2"
+            >
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                :allow-empty="false"
+                class="benchmarks__visualization-tabs"
+                :model-value="comparisonVisualization"
+                :aria-label="t('benchmarks.visualization')"
+                @update:model-value="setComparisonVisualization"
               >
-                <template v-if="isRelativeView">
-                  <span
-                    class="benchmarks__relative-direction--slower col-3 row-1 justify-self-start text-[var(--benchmark-slower-text)]"
-                  >
-                    ← {{ t('benchmarks.slower') }}
-                  </span>
-                  <span
-                    class="benchmarks__relative-direction--faster col-3 row-1 justify-self-end text-[var(--benchmark-faster-text)]"
-                  >
-                    {{ t('benchmarks.faster') }} →
-                  </span>
-                </template>
+                <ToggleGroupItem value="range" size="sm">{{
+                  t('benchmarks.duration')
+                }}</ToggleGroupItem>
+                <ToggleGroupItem value="relative" size="sm">{{
+                  t('benchmarks.speed')
+                }}</ToggleGroupItem>
+              </ToggleGroup>
+              <span
+                v-if="exportResultsError"
+                class="benchmarks__export-error text-[12px] text-danger"
+              >
+                {{ exportResultsError }}
+              </span>
+              <div
+                class="benchmarks__comparison-metric flex w-[165px] [&_.ui-select-trigger]:min-w-0 [&_.ui-select-trigger]:flex-1"
+                :class="{
+                  'benchmarks__comparison-metric--hidden invisible pointer-events-none':
+                    !isRelativeView
+                }"
+                :aria-hidden="!isRelativeView"
+              >
+                <BaseSelect
+                  v-model="comparisonMetric"
+                  :options="comparisonMetricOptions"
+                  :aria-label="t('benchmarks.metric')"
+                  compact
+                />
               </div>
-              <div class="benchmarks__chart-rows grid">
+              <div class="benchmarks__comparison-sort w-44">
+                <BaseSelect
+                  v-model="comparisonSortMetric"
+                  :options="comparisonSortOptions"
+                  :aria-label="t('benchmarks.sortComparison')"
+                  compact
+                />
+              </div>
+              <Button
+                variant="muted-textonly"
+                size="icon"
+                class="benchmarks__sort-direction"
+                type="button"
+                :disabled="comparisonSortMetric === 'manual'"
+                :aria-label="
+                  comparisonSortAscending
+                    ? t('benchmarks.switchSortDescending')
+                    : t('benchmarks.switchSortAscending')
+                "
+                :title="
+                  comparisonSortAscending
+                    ? t('benchmarks.switchSortDescending')
+                    : t('benchmarks.switchSortAscending')
+                "
+                @click="comparisonSortAscending = !comparisonSortAscending"
+              >
+                <ArrowUpDown :size="16" aria-hidden="true" />
+              </Button>
+              <Button
+                variant="muted-textonly"
+                size="sm"
+                class="benchmarks__export-results"
+                type="button"
+                :disabled="isExportingResults || selectedBenchmarks.length === 0"
+                @click="exportComparisonImage"
+              >
+                <ImageDown :size="16" aria-hidden="true" />
+                {{
+                  isExportingResults
+                    ? t('benchmarks.exportingImage')
+                    : t('benchmarks.exportResultsImage')
+                }}
+              </Button>
+              <details
+                ref="comparisonColumnsPicker"
+                class="benchmarks__columns-picker relative [&_summary]:flex [&_summary]:min-h-9 [&_summary]:cursor-pointer [&_summary]:list-none [&_summary]:items-center [&_summary]:gap-2 [&_summary]:whitespace-nowrap [&_summary::-webkit-details-marker]:hidden"
+              >
+                <Button as-child variant="muted-textonly" size="icon">
+                  <summary class="secondary justify-center" :title="t('benchmarks.columns')">
+                    <SlidersHorizontal :size="16" aria-hidden="true" />
+                    <span class="sr-only">{{ t('benchmarks.columns') }}</span>
+                  </summary>
+                </Button>
                 <div
-                  v-for="benchmark in selectedBenchmarks"
-                  :key="benchmark.id"
-                  class="benchmarks__chart-row box-border grid min-h-20 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 py-2 [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-faster)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-slower)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-l-[3px] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-solid [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-[var(--benchmark-baseline)] [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-faster-text)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-slower-text)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-baseline)]"
-                  :class="
-                    isRelativeView
-                      ? [
-                          'benchmarks__relative-row',
-                          `benchmarks__relative-row--${relativeSpeedResult(benchmark).kind}`
-                        ]
-                      : undefined
-                  "
-                  :style="{ '--series-color': seriesColor(benchmark) }"
+                  class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-4 grid max-h-[360px] w-max min-w-60 max-w-90 gap-2 overflow-y-auto rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 p-3 shadow-[0_12px_30px_rgb(0_0_0/35%)] [&>strong]:text-[12px] [&>strong]:text-neutral-100 [&_label]:flex [&_label]:cursor-pointer [&_label]:items-center [&_label]:gap-2 [&_label]:text-[12px] [&_label]:text-neutral-200"
                 >
-                  <div
-                    class="benchmarks__chart-label flex min-w-0 items-center gap-2 [&>span:not(.benchmarks\_\_series-dot)]:flex [&>span:not(.benchmarks\_\_series-dot)]:min-w-0 [&>span:not(.benchmarks\_\_series-dot)]:flex-col [&_strong]:truncate [&_small]:truncate [&_small]:text-[10px] [&_small]:font-normal [&_small]:text-text-muted"
-                  >
-                    <span
-                      class="benchmarks__series-dot size-3 flex-none rounded-[50%] bg-[var(--series-color)]"
+                  <strong>{{ t('benchmarks.columnsToDisplay') }}</strong>
+                  <label v-for="key in availableColumnKeys" :key="key">
+                    <Switch
+                      :model-value="comparisonColumnKeys.has(key)"
+                      :disabled="key === 'workflowName'"
+                      :data-testid="`benchmark-comparison-column-${key}`"
+                      @update:model-value="toggleComparisonColumn(key)"
                     />
-                    <span>
-                      <template v-for="column in comparisonColumns" :key="column.key">
-                        <strong
-                          v-if="column.key === 'workflowName'"
-                          :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`"
-                        >
-                          {{ formatColumnValue(benchmark, column.key) }}
-                        </strong>
-                        <small
-                          v-else
-                          :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`"
-                        >
-                          <span>{{ column.label }}:</span>
-                          {{ formatColumnValue(benchmark, column.key) }}
-                        </small>
-                      </template>
-                    </span>
-                  </div>
+                    <span>{{ columnLabel(key) }}</span>
+                  </label>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <section
+            v-show="comparisonExpanded"
+            class="benchmarks__card min-w-0 pt-2 [&_h2]:m-0 [&_h2]:text-[16px] [&_h2]:font-semibold [&_h2]:text-neutral-100 benchmarks__comparison"
+            aria-labelledby="comparison-title"
+          >
+            <span id="benchmark-reorder-instructions" class="benchmarks__visually-hidden sr-only">
+              {{ t('benchmarks.reorderComparisonHint') }}
+            </span>
+            <div
+              v-if="selectedBenchmarks.length === 0"
+              class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
+            >
+              {{ t('benchmarks.selectPrompt') }}
+            </div>
+            <div
+              v-else
+              class="benchmarks__comparison-grid grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
+            >
+              <div
+                class="benchmarks__chart min-w-0 overflow-x-auto [&_h3]:m-0 [&_h3]:text-[13px] [&_h3]:font-semibold [&_h3]:text-neutral-100 [&_p]:mt-1 [&_p]:mr-0 [&_p]:mb-3 [&_p]:ml-0 [&_p]:text-[12px] [&_p]:text-text-muted"
+              >
+                <h3>
+                  {{
+                    isRelativeView
+                      ? t('benchmarks.relativePerformance')
+                      : t('benchmarks.durationRange')
+                  }}
+                </h3>
+                <p>
+                  {{
+                    isRelativeView
+                      ? t('benchmarks.relativePerformanceHint')
+                      : t('benchmarks.durationRangeHint')
+                  }}
+                </p>
+                <div
+                  class="benchmarks__chart-axis mb-2 grid min-h-3.5 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 text-[10px] text-text-muted"
+                  aria-hidden="true"
+                >
                   <template v-if="isRelativeView">
-                    <strong
-                      class="benchmarks__relative-duration text-right text-[12px] font-medium text-neutral-200"
+                    <span
+                      class="benchmarks__relative-direction--slower col-3 row-1 justify-self-start text-[var(--benchmark-slower-text)]"
                     >
-                      {{ formatDuration(metricValue(benchmark, comparisonMetric)) }}
-                    </strong>
-                    <div
-                      class="benchmarks__relative-plot relative h-7 rounded bg-[color-mix(in_srgb,var(--chooser-surface-border)_40%,transparent)]"
+                      ← {{ t('benchmarks.slower') }}
+                    </span>
+                    <span
+                      class="benchmarks__relative-direction--faster col-3 row-1 justify-self-end text-[var(--benchmark-faster-text)]"
                     >
-                      <span
-                        class="benchmarks__relative-center absolute -top-[5px] -bottom-[5px] left-1/2 z-1 border-l border-dashed border-neutral-300"
-                      />
-                      <span
-                        class="benchmarks__relative-bar absolute top-[7px] h-3.5 rounded-[3px]"
-                        :style="relativeBarStyle(relativeSpeedResult(benchmark).factor)"
-                      />
-                    </div>
-                    <div
-                      class="benchmarks__relative-result flex flex-col [&_strong]:text-[14px] [&_strong]:text-neutral-100 [&_span]:text-[10px] [&_span]:text-text-muted"
-                    >
-                      <strong>{{
-                        relativeFactorLabel(relativeSpeedResult(benchmark).factor)
-                      }}</strong>
-                      <span>
-                        {{ t(`benchmarks.${relativeSpeedResult(benchmark).kind}`) }}
-                      </span>
-                    </div>
+                      {{ t('benchmarks.faster') }} →
+                    </span>
                   </template>
+                </div>
+                <div class="benchmarks__chart-rows grid">
                   <div
-                    v-else
-                    class="benchmarks__chart-track relative col-[2/-1] h-16 before:absolute before:top-9 before:right-0 before:left-0 before:h-0.5 before:bg-[var(--chooser-surface-border)] before:content-['']"
+                    v-for="benchmark in selectedBenchmarks"
+                    :key="benchmark.id"
+                    class="benchmarks__chart-row box-border grid min-h-14 min-w-[760px] grid-cols-[minmax(220px,32%)_90px_minmax(260px,1fr)_105px] items-center gap-3.5 py-2 [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-faster)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-bar]:bg-[var(--benchmark-slower)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-l-[3px] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-solid [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-center]:border-[var(--benchmark-baseline)] [&.benchmarks\_\_relative-row--faster_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-faster-text)] [&.benchmarks\_\_relative-row--slower_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-slower-text)] [&.benchmarks\_\_relative-row--baseline_.benchmarks\_\_relative-result_strong]:text-[var(--benchmark-baseline)]"
+                    :class="
+                      isRelativeView
+                        ? [
+                            'benchmarks__relative-row',
+                            `benchmarks__relative-row--${relativeSpeedResult(benchmark).kind}`
+                          ]
+                        : undefined
+                    "
+                    :style="{ '--series-color': seriesColor(benchmark) }"
                   >
-                    <div class="benchmarks__chart-plot absolute inset-y-0 inset-x-[52px]">
+                    <div
+                      class="benchmarks__chart-label flex min-w-0 items-center gap-2 [&>span:not(.benchmarks\_\_series-dot)]:flex [&>span:not(.benchmarks\_\_series-dot)]:min-w-0 [&>span:not(.benchmarks\_\_series-dot)]:flex-col [&_strong]:truncate [&_strong]:text-[13px] [&_strong]:font-semibold [&_small]:truncate [&_small]:text-[11px] [&_small]:font-normal [&_small]:text-text-muted"
+                    >
                       <span
-                        class="benchmarks__chart-range absolute top-9 h-0.5 bg-[var(--series-color)] before:absolute before:top-1/2 before:left-0 before:size-[7px] before:[transform:translate(-50%,-50%)] before:rounded-[50%] before:border before:border-solid before:border-neutral-800 before:bg-[var(--series-color)] before:content-[''] after:absolute after:top-1/2 after:left-full after:size-[7px] after:[transform:translate(-50%,-50%)] after:rounded-[50%] after:border after:border-solid after:border-neutral-800 after:bg-[var(--series-color)] after:content-['']"
-                        :style="{
-                          left: chartPosition(benchmark.fastestJobDurationSeconds),
-                          width: chartWidth(benchmark)
-                        }"
+                        class="benchmarks__series-dot size-3 flex-none rounded-[50%] bg-[var(--series-color)]"
                       />
-                      <span
-                        v-if="benchmark.averageJobDurationSeconds !== null"
-                        class="benchmarks__chart-average absolute top-[37px] size-[9px] [transform:translate(-50%,-50%)] rounded-[50%] border border-solid border-neutral-800 bg-[var(--series-color)]"
-                        :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
-                      />
-                      <span
-                        v-if="benchmark.fastestJobDurationSeconds !== null"
-                        :data-testid="`benchmark-chart-${benchmark.id}-fastest-label`"
-                        class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--endpoint top-[30px] benchmarks__chart-point-label--fastest [transform:translateX(calc(-100%_-_5px))]"
-                        :style="{ left: chartPosition(benchmark.fastestJobDurationSeconds) }"
-                      >
-                        {{ formatDuration(benchmark.fastestJobDurationSeconds) }}
+                      <span>
+                        <template v-for="column in comparisonColumns" :key="column.key">
+                          <strong
+                            v-if="column.key === 'workflowName'"
+                            :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`"
+                          >
+                            {{ formatColumnValue(benchmark, column.key) }}
+                          </strong>
+                          <small
+                            v-else
+                            :data-testid="`benchmark-chart-${benchmark.id}-${column.key}`"
+                          >
+                            <span>{{ column.label }}:</span>
+                            {{ formatColumnValue(benchmark, column.key) }}
+                          </small>
+                        </template>
                       </span>
-                      <span
-                        v-if="benchmark.slowestJobDurationSeconds !== null"
-                        :data-testid="`benchmark-chart-${benchmark.id}-slowest-label`"
-                        class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--endpoint top-[30px] benchmarks__chart-point-label--slowest [transform:translateX(5px)]"
-                        :style="{ left: chartPosition(benchmark.slowestJobDurationSeconds) }"
+                    </div>
+                    <template v-if="isRelativeView">
+                      <strong
+                        class="benchmarks__relative-duration text-right text-[12px] font-medium text-neutral-200"
                       >
-                        {{ formatDuration(benchmark.slowestJobDurationSeconds) }}
-                      </span>
-                      <span
-                        v-if="benchmark.averageJobDurationSeconds !== null"
-                        :data-testid="`benchmark-chart-${benchmark.id}-average-label`"
-                        class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--below top-12 benchmarks__chart-point-label--center [transform:translateX(-50%)]"
-                        :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
+                        {{ formatDuration(metricValue(benchmark, comparisonMetric)) }}
+                      </strong>
+                      <div
+                        class="benchmarks__relative-plot relative h-7 rounded bg-[color-mix(in_srgb,var(--chooser-surface-border)_40%,transparent)]"
                       >
-                        {{ formatDuration(benchmark.averageJobDurationSeconds) }}
-                      </span>
+                        <span
+                          class="benchmarks__relative-center absolute -top-[5px] -bottom-[5px] left-1/2 z-1 border-l border-dashed border-neutral-300"
+                        />
+                        <span
+                          class="benchmarks__relative-bar absolute top-[7px] h-3.5 rounded-[3px]"
+                          :style="relativeBarStyle(relativeSpeedResult(benchmark).factor)"
+                        />
+                      </div>
+                      <div
+                        class="benchmarks__relative-result flex flex-col [&_strong]:text-[14px] [&_strong]:text-neutral-100 [&_span]:text-[10px] [&_span]:text-text-muted"
+                      >
+                        <strong>{{
+                          relativeFactorLabel(relativeSpeedResult(benchmark).factor)
+                        }}</strong>
+                        <span>
+                          {{ t(`benchmarks.${relativeSpeedResult(benchmark).kind}`) }}
+                        </span>
+                      </div>
+                    </template>
+                    <div
+                      v-else
+                      class="benchmarks__chart-track relative col-[2/-1] h-14 before:absolute before:top-7 before:right-0 before:left-0 before:h-0.5 before:bg-[var(--chooser-surface-border)] before:content-['']"
+                    >
+                      <div class="benchmarks__chart-plot absolute inset-y-0 inset-x-[52px]">
+                        <span
+                          class="benchmarks__chart-range absolute top-7 h-0.5 bg-[var(--series-color)] before:absolute before:top-1/2 before:left-0 before:size-[7px] before:[transform:translate(-50%,-50%)] before:rounded-[50%] before:border before:border-solid before:border-neutral-800 before:bg-[var(--series-color)] before:content-[''] after:absolute after:top-1/2 after:left-full after:size-[7px] after:[transform:translate(-50%,-50%)] after:rounded-[50%] after:border after:border-solid after:border-neutral-800 after:bg-[var(--series-color)] after:content-['']"
+                          :style="{
+                            left: chartPosition(benchmark.fastestJobDurationSeconds),
+                            width: chartWidth(benchmark)
+                          }"
+                        />
+                        <span
+                          v-if="benchmark.averageJobDurationSeconds !== null"
+                          class="benchmarks__chart-average absolute top-[29px] size-[9px] [transform:translate(-50%,-50%)] rounded-[50%] border border-solid border-neutral-800 bg-[var(--series-color)]"
+                          :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
+                        />
+                        <span
+                          v-if="benchmark.fastestJobDurationSeconds !== null"
+                          :data-testid="`benchmark-chart-${benchmark.id}-fastest-label`"
+                          class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--endpoint top-[22px] benchmarks__chart-point-label--fastest [transform:translateX(calc(-100%_-_5px))]"
+                          :style="{ left: chartPosition(benchmark.fastestJobDurationSeconds) }"
+                        >
+                          {{ formatDuration(benchmark.fastestJobDurationSeconds) }}
+                        </span>
+                        <span
+                          v-if="benchmark.slowestJobDurationSeconds !== null"
+                          :data-testid="`benchmark-chart-${benchmark.id}-slowest-label`"
+                          class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--endpoint top-[22px] benchmarks__chart-point-label--slowest [transform:translateX(5px)]"
+                          :style="{ left: chartPosition(benchmark.slowestJobDurationSeconds) }"
+                        >
+                          {{ formatDuration(benchmark.slowestJobDurationSeconds) }}
+                        </span>
+                        <span
+                          v-if="benchmark.averageJobDurationSeconds !== null"
+                          :data-testid="`benchmark-chart-${benchmark.id}-average-label`"
+                          class="benchmarks__chart-point-label absolute z-1 text-[12px] leading-[14px] whitespace-nowrap text-text-muted benchmarks__chart-point-label--below top-10 benchmarks__chart-point-label--center [transform:translateX(-50%)]"
+                          :style="{ left: chartPosition(benchmark.averageJobDurationSeconds) }"
+                        >
+                          {{ formatDuration(benchmark.averageJobDurationSeconds) }}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+              <div class="benchmarks__matrix-scroll overflow-auto">
+                <table
+                  class="benchmarks__matrix [&_.benchmarks\_\_matrix-column--baseline]:[box-shadow:inset_0_3px_var(--benchmark-baseline)] [&_.benchmarks\_\_matrix-column--baseline_.benchmarks\_\_matrix-title]:pr-[58px] w-full border-collapse text-left text-[12px] [&_th]:px-3 [&_th]:py-[9px] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-[9px] [&_td]:whitespace-nowrap [&_th:not(:first-child)]:min-w-[190px] [&_th:not(:first-child)]:text-center [&_td]:min-w-[190px] [&_td]:text-center [&_thead_th]:relative [&_thead_th]:align-top [&_thead_th]:font-normal [&_thead_th]:text-text-muted [&_thead_th_strong]:font-semibold [&_thead_th_strong]:text-neutral-100 [&_tbody_tr:hover>*]:bg-[color-mix(in_srgb,white_3%,transparent)] [&_thead_th:first-child]:align-bottom [&_tbody_th]:font-medium [&_tbody_th]:text-neutral-200"
+                  :style="{ minWidth: `max(100%, ${130 + selectedBenchmarks.length * 190}px)` }"
+                >
+                  <thead>
+                    <tr>
+                      <th>{{ t('benchmarks.metric') }}</th>
+                      <th
+                        v-for="benchmark in selectedBenchmarks"
+                        :key="benchmark.id"
+                        :class="{
+                          'benchmarks__matrix-column--dragging opacity-55':
+                            draggedBenchmarkId === benchmark.id,
+                          'benchmarks__matrix-column--drop-target [box-shadow:inset_3px_0_var(--color-neutral-100,#e8e8ee)]':
+                            dropTargetBenchmarkId === benchmark.id,
+                          'benchmarks__matrix-column--baseline': isBaselineColumn(benchmark.id)
+                        }"
+                        :style="{ '--series-color': seriesColor(benchmark) }"
+                        :data-testid="`benchmark-comparison-column-title-${benchmark.id}`"
+                        @click="selectComparisonBaseline(benchmark.id)"
+                        @dragover="dragOverComparisonColumn($event, benchmark.id)"
+                        @drop="dropComparisonColumn($event, benchmark.id)"
+                      >
+                        <span
+                          class="benchmarks__matrix-title flex items-start gap-2 text-left select-none [&>span:not(.benchmarks\_\_series-dot)]:flex [&>span:not(.benchmarks\_\_series-dot)]:min-w-0 [&>span:not(.benchmarks\_\_series-dot)]:flex-col [&_strong]:truncate [&_small]:truncate [&_small]:text-[10px] [&_small]:font-normal [&_small]:text-text-muted focus-visible:rounded focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-[3px]"
+                          :class="{
+                            'benchmarks__matrix-title--selectable cursor-pointer [&:hover_strong]:underline':
+                              isRelativeView
+                          }"
+                          tabindex="0"
+                          :role="isRelativeView ? 'button' : undefined"
+                          :aria-pressed="
+                            isRelativeView ? isBaselineColumn(benchmark.id) : undefined
+                          "
+                          :aria-label="
+                            isRelativeView
+                              ? selectBaselineLabel(benchmark)
+                              : t('benchmarks.reorderComparisonColumn', {
+                                  workflow: benchmark.workflowName
+                                })
+                          "
+                          aria-describedby="benchmark-reorder-instructions"
+                          :title="
+                            isRelativeView
+                              ? selectBaselineLabel(benchmark)
+                              : t('benchmarks.reorderComparisonHint')
+                          "
+                          @keydown.enter.prevent="selectComparisonBaseline(benchmark.id)"
+                          @keydown.space.prevent="selectComparisonBaseline(benchmark.id)"
+                          @keydown.alt.left.prevent="moveComparisonColumn(benchmark.id, -1)"
+                          @keydown.alt.right.prevent="moveComparisonColumn(benchmark.id, 1)"
+                        >
+                          <span
+                            class="benchmarks__column-grip -ml-1.5 inline-flex flex-none cursor-grab text-text-muted active:cursor-grabbing"
+                            draggable="true"
+                            @click.stop
+                            @dragstart.stop="startComparisonColumnDrag($event, benchmark.id)"
+                            @dragend.stop="endComparisonColumnDrag"
+                          >
+                            <GripVertical :size="14" aria-hidden="true" />
+                          </span>
+                          <span
+                            class="benchmarks__series-dot size-3 flex-none rounded-[50%] bg-[var(--series-color)]"
+                          />
+                          <span>
+                            <template v-for="column in comparisonColumns" :key="column.key">
+                              <strong
+                                v-if="column.key === 'workflowName'"
+                                :data-testid="`benchmark-comparison-${benchmark.id}-${column.key}`"
+                              >
+                                {{ formatColumnValue(benchmark, column.key) }}
+                              </strong>
+                              <small
+                                v-else
+                                :data-testid="`benchmark-comparison-${benchmark.id}-${column.key}`"
+                              >
+                                <span>{{ column.label }}:</span>
+                                {{ formatColumnValue(benchmark, column.key) }}
+                              </small>
+                            </template>
+                          </span>
+                        </span>
+                        <small
+                          v-if="isBaselineColumn(benchmark.id)"
+                          class="benchmarks__baseline-badge absolute top-2 right-2 rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--benchmark-baseline)_55%,transparent)] bg-[color-mix(in_srgb,var(--benchmark-baseline)_12%,transparent)] px-[5px] py-0.5 text-[9px] font-semibold text-[var(--benchmark-baseline)]"
+                        >
+                          {{ t('benchmarks.baseline') }}
+                        </small>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="metric in metricRows" :key="metric.key">
+                      <th>{{ metric.label }}</th>
+                      <td
+                        v-for="benchmark in selectedBenchmarks"
+                        :key="benchmark.id"
+                        :class="{
+                          'benchmarks__best bg-[color-mix(in_srgb,white_6%,transparent)] font-semibold text-neutral-100':
+                            isBest(benchmark, metric.key)
+                        }"
+                      >
+                        {{
+                          metric.key === 'measuredJobCount'
+                            ? metricValue(benchmark, metric.key)
+                            : formatDuration(metricValue(benchmark, metric.key))
+                        }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
     </div>
   </BrandBackground>
