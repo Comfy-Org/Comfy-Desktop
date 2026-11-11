@@ -947,19 +947,19 @@ onActivated(() => {
 
           <div
             v-if="loading"
-            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
+            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-card px-6 py-7 text-center text-[13px] text-text-muted"
           >
             {{ t('common.loading') }}
           </div>
           <div
             v-else-if="loadError"
-            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
+            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-card px-6 py-7 text-center text-[13px] text-text-muted benchmarks__state--error [&.benchmarks\_\_state--error]:text-danger"
           >
             {{ t('benchmarks.loadError') }}
           </div>
           <div
             v-else-if="benchmarks.length === 0"
-            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
+            class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-card px-6 py-7 text-center text-[13px] text-text-muted"
           >
             <ChartColumn :size="20" class="text-[var(--text-faint)]" aria-hidden="true" />
             {{ t('benchmarks.empty') }}
@@ -1109,7 +1109,7 @@ onActivated(() => {
         </section>
 
         <div
-          class="benchmarks__comparison-section flex flex-col rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-5 pt-2 pb-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase [&_.collapsible-section-toggle]:self-center"
+          class="benchmarks__comparison-section flex flex-col rounded-[14px] bg-card px-5 pt-2 pb-5 [&_.collapsible-section-toggle]:text-[11px] [&_.collapsible-section-toggle]:font-semibold [&_.collapsible-section-toggle]:tracking-[0.04em] [&_.collapsible-section-toggle]:text-text-muted [&_.collapsible-section-toggle]:uppercase [&_.collapsible-section-toggle]:self-center"
         >
           <div class="benchmarks__comparison-head flex min-h-11 flex-wrap items-center gap-2">
             <CollapsibleSectionToggle
@@ -1240,7 +1240,7 @@ onActivated(() => {
             </span>
             <div
               v-if="selectedBenchmarks.length === 0"
-              class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-[color-mix(in_srgb,white_3%,transparent)] px-6 py-7 text-center text-[13px] text-text-muted"
+              class="benchmarks__state flex flex-col items-center gap-2 rounded-[14px] bg-card px-6 py-7 text-center text-[13px] text-text-muted"
             >
               {{ t('benchmarks.selectPrompt') }}
             </div>
