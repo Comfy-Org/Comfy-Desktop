@@ -41,7 +41,7 @@ test.afterAll(async () => {
   if (legacyBasePath) await rm(legacyBasePath, { recursive: true, force: true })
 })
 
-test('cold start with legacy desktop lands on start screen and surfaces migrate sub-step @lifecycle', async () => {
+test('cold start with legacy desktop lands on start screen and surfaces migrate sub-step @nightly', async () => {
   await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
 
   expect(await ctx.panel.click('[data-testid="first-use-pick-local"]')).toBe(true)
@@ -66,7 +66,7 @@ test('cold start with legacy desktop lands on start screen and surfaces migrate 
   await ctx.panel.waitForVisible('[data-testid="first-use-local-migrate"]', { timeout: 10_000 })
 })
 
-test('migrate sub-step opens MigrateConfirmTakeover (takeover surface) @lifecycle', async () => {
+test('migrate sub-step opens MigrateConfirmTakeover (takeover surface) @nightly', async () => {
   await resetIpcInvocations(ctx.app, 'run-action')
   await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
 

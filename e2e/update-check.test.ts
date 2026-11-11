@@ -99,7 +99,7 @@ async function getChannelField(installationId: string): Promise<DetailField> {
   return channelField!
 }
 
-test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer release @lifecycle', async () => {
+test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer release @nightly', async () => {
   await openPickerOnUpdateTab(INSTALL_ID)
   const popup = titlePopupPage(ctx.app)
 
@@ -147,7 +147,7 @@ test('check-update hits the real Comfy-Org/ComfyUI remote and finds a newer rele
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('cross-channel fetch populates the latest channel card too @lifecycle', async () => {
+test('cross-channel fetch populates the latest channel card too @nightly', async () => {
   const sections = await ctx.panel.evaluate<DetailSection[]>(
     `window.api.getDetailSections(${JSON.stringify(INSTALL_ID)})`
   )
@@ -197,7 +197,7 @@ function countAutoCheckUpdateCalls(calls: unknown[], installationId: string): nu
   ).length
 }
 
-test('Update tab does NOT auto-refresh when the channel data is fresh @lifecycle', async () => {
+test('Update tab does NOT auto-refresh when the channel data is fresh @nightly', async () => {
   await resetIpcInvocations(ctx.app, 'run-action')
 
   await clickToUpdateTab(INSTALL_ID)
@@ -216,7 +216,7 @@ test('Update tab does NOT auto-refresh when the channel data is fresh @lifecycle
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('Update tab auto-refreshes when channel data is stale @lifecycle', async () => {
+test('Update tab auto-refreshes when channel data is stale @nightly', async () => {
   test.setTimeout(120_000)
 
   const stalenessTs = Date.now() - 30 * 60 * 1000

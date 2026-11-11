@@ -15,14 +15,14 @@ test.afterAll(async () => {
   await ctx?.cleanup()
 })
 
-test('cold start lands on first-use start screen with the waffle menu hidden @lifecycle', async () => {
+test('cold start lands on first-use start screen with the waffle menu hidden @nightly', async () => {
   await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
 
   expect(await ctx.titleBar.exists('.title-menu-button')).toBe(false)
 })
 
-test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals the chooser @lifecycle', async () => {
+test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals the chooser @nightly', async () => {
   expect(await ctx.panel.click('[data-testid="first-use-pick-local"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
   await ctx.panel.evaluate<void>(

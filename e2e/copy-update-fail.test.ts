@@ -67,7 +67,7 @@ test.afterAll(async () => {
   if (sourcePath) await rm(sourcePath, { recursive: true, force: true })
 })
 
-test('copy-update keeps the new install when the chained update fails @lifecycle', async () => {
+test('copy-update keeps the new install when the chained update fails @nightly', async () => {
   test.setTimeout(120_000)
 
   await ctx.panel.evaluate<void>(

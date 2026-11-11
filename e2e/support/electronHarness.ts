@@ -101,16 +101,16 @@ function buildIsolatedEnv(
 }
 
 export async function launchLauncherApp(options?: SeedOptions): Promise<LauncherAppHandle> {
-  const reuseDir = options?.profileDir ?? process.env['LIFECYCLE_REUSE_DIR']
+  const reuseDir = options?.profileDir ?? process.env['NIGHTLY_REUSE_DIR']
   const homeDir = reuseDir
     ? path.resolve(reuseDir)
     : await mkdtemp(path.join(os.tmpdir(), 'comfyui-launcher-e2e-'))
   if (reuseDir) {
-    console.log(`[lifecycle-harness] reusing profile dir: ${homeDir}`)
+    console.log(`[e2e-harness] reusing profile dir: ${homeDir}`)
   } else {
-    console.log(`[lifecycle-harness] fresh profile dir: ${homeDir}`)
+    console.log(`[e2e-harness] fresh profile dir: ${homeDir}`)
     console.log(
-      `[lifecycle-harness] re-export as LIFECYCLE_REUSE_DIR=${homeDir} to rerun individual tests against this profile`
+      `[e2e-harness] re-export as NIGHTLY_REUSE_DIR=${homeDir} to rerun individual tests against this profile`
     )
   }
 

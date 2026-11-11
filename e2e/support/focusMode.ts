@@ -10,4 +10,4 @@ export function isBackgroundRun(): boolean {
   )
 }
 
-export const FOREGROUND_PROJECTS: readonly string[] = ['windows-focus', 'macos-focus', 'lifecycle']
+export const FOREGROUND_PROJECTS: readonly string[] = ['windows-focus', 'macos-focus', 'nightly']

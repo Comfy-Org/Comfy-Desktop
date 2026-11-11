@@ -1,4 +1,4 @@
-name: Lifecycle Tests
+name: Nightly E2E
 
 on:
   workflow_dispatch:
@@ -11,13 +11,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: lifecycle-${{ github.workflow }}-${{ github.ref }}
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  lifecycle:
-    name: Lifecycle (windows)
-    if: github.event_name != 'pull_request' || github.event.label.name == 'run-lifecycle'
+  nightly:
+    name: Nightly E2E (windows)
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-nightly'
     runs-on: windows-latest
     timeout-minutes: 120
 
@@ -45,16 +45,16 @@ jobs:
       - name: Build app
         run: pnpm run build
 
-      - name: Run lifecycle tests
+      - name: Run nightly E2E tests
         env:
-          LIFECYCLE_VARIANT: cpu
-        run: pnpm run test:e2e:lifecycle
+          NIGHTLY_VARIANT: cpu
+        run: pnpm run test:e2e:nightly
 
       - name: Upload Playwright failure artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-lifecycle-failure
+          name: playwright-nightly-failure
           path: |
             test-results/
             playwright-report/

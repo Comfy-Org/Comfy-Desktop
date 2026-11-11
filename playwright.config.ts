@@ -28,6 +28,6 @@ export default defineConfig({
     ...platformProjects('macos', '@macos'),
     ...platformProjects('windows', '@windows'),
     { name: 'linux', grep: /@linux/ },
-    { name: 'lifecycle', grep: /@lifecycle/, timeout: 180_000 }
+    { name: 'nightly', grep: /@nightly/, timeout: 180_000 }
   ]
 })

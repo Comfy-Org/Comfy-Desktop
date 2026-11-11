@@ -14,13 +14,13 @@ test.afterAll(async () => {
   await ctx.cleanup()
 })
 
-test('cold start lands on first-use start screen @lifecycle', async () => {
+test('cold start lands on first-use start screen @nightly', async () => {
   await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="first-use-pick-cloud"]')
   await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
 })
 
-test('accept ToS + pick cloud auto-launches the seeded Cloud install @lifecycle', async () => {
+test('accept ToS + pick cloud auto-launches the seeded Cloud install @nightly', async () => {
   expect(await ctx.panel.click('[data-testid="first-use-pick-cloud"]')).toBe(true)
 
   expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)

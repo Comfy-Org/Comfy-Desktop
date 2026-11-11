@@ -75,7 +75,7 @@ test.afterAll(async () => {
   if (stagedInstallPath) await rm(stagedInstallPath, { recursive: true, force: true })
 })
 
-test('background timer re-fetches the release cache on its interval @lifecycle', async () => {
+test('background timer re-fetches the release cache on its interval @nightly', async () => {
   test.setTimeout(60_000)
 
   await expect
