@@ -377,6 +377,19 @@
   .mss-row + .mss-row {
     box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06);
   }
+  /* A row with its own Change: the button sits in a third column, on the
+     row's right edge, quiet until the pointer is near. */
+  .mss-row.has-change {
+    grid-template-columns: 132px minmax(0, 1fr) auto;
+    padding-right: 8px;
+  }
+  :root .proto-ui.proto-ui.proto-ui .mss-row-change {
+    color: var(--color-muted-foreground);
+  }
+  .mss-row.has-change:hover .mss-row-change,
+  .mss-row-change:focus-visible {
+    color: var(--color-base-foreground);
+  }
   .mss-row dt {
     display: flex;
     align-items: center;
@@ -1401,8 +1414,11 @@
 
 :root[data-mar-ui='on'] .proto-ui.mar-wizard.mss-in-takeover {
   width: var(--mss-col-w);
-  height: var(--mss-col-h);
-  max-height: none;
+  /* The column's height at least; a longer screen (Change setup) shows
+     whole, the window allowing, rather than scrolling inside. */
+  height: auto;
+  min-height: var(--mss-col-h);
+  max-height: calc(100vh - 96px);
 }
 :root[data-mar-ui='on'] .mar-wizard.mss-in-takeover .mar-wizard-body {
   flex: 1;
@@ -1434,6 +1450,20 @@
 }
 .mss-form-row:first-child {
   padding-top: 0;
+}
+/* Opened from one row's Change: that row lights for a moment. */
+.mss-form-row.is-focus {
+  animation: mss-row-focus 1.6s ease-out;
+  border-radius: 10px;
+}
+@keyframes mss-row-focus {
+  0%,
+  35% {
+    box-shadow:
+      inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+      0 0 0 6px color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+    background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  }
 }
 .mss-form-row:has(.mss-opts) {
   align-items: start;

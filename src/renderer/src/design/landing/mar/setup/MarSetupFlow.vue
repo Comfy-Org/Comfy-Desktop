@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -293,9 +293,19 @@ const draft = () => ({
   movedDisk: flow.movedDisk
 })
 let saved = draft()
-function changeSetup(): void {
+// One row's Change opens the same sheet on that field: most people only
+// want to move the install or pick a version.
+const focusField = ref<'location' | 'version' | null>(null)
+function changeSetup(field: 'location' | 'version' | null = null): void {
   saved = draft()
+  focusField.value = field
   flow.step = 'change'
+  if (!field) return
+  void nextTick(() => {
+    const row = document.querySelector<HTMLElement>(`[data-field="${field}"]`)
+    row?.querySelector<HTMLElement>('input, button, [role="combobox"]')?.focus()
+    setTimeout(() => (focusField.value = null), 1600)
+  })
 }
 // Home first: the Home's card opens Change setup on its own, and on a first
 // install it asks only what can be wrong for this computer: where it goes and
@@ -615,7 +625,7 @@ function rowState(i: number): string {
                 <span class="mss-row-meta">{{ DETECTED.memGb }} GB memory</span>
               </span>
               <!-- One Change: every setting opens the same sheet. -->
-              <Button variant="secondary" class="mss-machine-change" @click="changeSetup"
+              <Button variant="secondary" class="mss-machine-change" @click="changeSetup()"
                 >Change</Button
               >
             </div>
@@ -631,7 +641,9 @@ function rowState(i: number): string {
                   <span class="mss-row-meta">{{ pickedHardware.summary }}</span>
                 </dd>
               </div>
-              <div class="mss-row" :class="lowSpace && 'is-bad'">
+              <!-- Location and Version change on their own: the two things
+                   people most often want to change, a Change each. -->
+              <div class="mss-row has-change" :class="lowSpace && 'is-bad'">
                 <dt><HardDrive :size="15" />Location</dt>
                 <dd>
                   <span class="truncate text-base-foreground">{{ where }}</span>
@@ -642,13 +654,32 @@ function rowState(i: number): string {
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="mss-row-change"
+                  aria-label="Change location"
+                  @click="changeSetup('location')"
+                  >Change</Button
+                >
               </div>
-              <div class="mss-row">
+              <div class="mss-row has-change">
                 <dt><Package :size="15" />Version</dt>
                 <dd>
-                  <span class="text-base-foreground">ComfyUI {{ DETECTED.version }} · Stable</span>
+                  <span class="text-base-foreground"
+                    >ComfyUI {{ channel === 'stable' ? version : 'latest' }} ·
+                    {{ channel === 'stable' ? 'Stable' : 'Latest on GitHub' }}</span
+                  >
                   <span class="mss-row-meta">{{ DETECTED.downloadGb }} GB download</span>
                 </dd>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="mss-row-change"
+                  aria-label="Change version"
+                  @click="changeSetup('version')"
+                  >Change</Button
+                >
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
               <div v-if="localSetup.machine === 'legacy' && flow.bringOver" class="mss-row">
@@ -745,7 +776,8 @@ function rowState(i: number): string {
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <DialogTitle as="h3" class="text-title font-semibold">Change setup</DialogTitle>
           <DialogDescription
-            >Everything here is already set to what fits this computer.</DialogDescription
+            >Everything here is already set to what fits this computer. Back keeps it as it
+            was.</DialogDescription
           >
           <!-- A settings sheet: label on the left, control on the right,
                a hairline between rows. Picks are radio cards. -->
@@ -779,7 +811,12 @@ function rowState(i: number): string {
                 <Button size="sm" variant="secondary" @click="hostActions.signIn()">Sign in</Button>
               </div>
             </div>
-            <div v-else class="mss-form-row">
+            <div
+              v-else
+              class="mss-form-row"
+              :class="focusField === 'version' && 'is-focus'"
+              data-field="version"
+            >
               <span class="mss-form-label">Release</span>
               <div class="flex flex-wrap items-center gap-2">
                 <MarSeg v-model="channel" label="Release" :options="CHANNELS" />
@@ -795,7 +832,11 @@ function rowState(i: number): string {
               <span class="mss-form-label">Name</span>
               <Input v-model="name" aria-label="Name" />
             </div>
-            <div class="mss-form-row">
+            <div
+              class="mss-form-row"
+              :class="focusField === 'location' && 'is-focus'"
+              data-field="location"
+            >
               <span class="mss-form-label">Location</span>
               <Input :model-value="where" readonly aria-label="Location">
                 <template #trailing>
@@ -886,7 +927,10 @@ function rowState(i: number): string {
           </div>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <Button variant="ghost" size="lg" @click="discardChanges">Discard changes</Button>
+          <!-- Back is the way out: it leaves things as they were. -->
+          <Button variant="ghost" size="lg" @click="discardChanges"
+            ><ArrowLeft :size="16" />Back</Button
+          >
           <span class="mr-auto"></span>
           <Button
             v-if="method === 'remote'"
