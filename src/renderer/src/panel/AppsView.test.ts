@@ -202,6 +202,13 @@ describe('AppsView', () => {
     expect(Math.round(first.width)).toBe(Math.round(slot.width + 172))
     const surface = wrapper.get('[data-testid="apps-host-surface"]')
     expect(surface.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
+    expect(animate.mock.calls.at(-1)).toEqual([
+      [
+        { transform: 'translateX(48px)', opacity: 0 },
+        { transform: 'none', opacity: 1 }
+      ],
+      expect.objectContaining({ duration: 220 })
+    ])
     expect(wrapper.emitted('app-entered')).toEqual([[true]])
     expect(wrapper.find('h1').exists()).toBe(false)
     expect(
@@ -228,6 +235,7 @@ describe('AppsView', () => {
     const wrapper = await mountApps()
 
     await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    entrance().pause()
     await flushPromises()
     expect(showApps.mock.calls[0]![0]).toMatchObject({ fresh: true, parked: true })
 
@@ -235,6 +243,7 @@ describe('AppsView', () => {
     await flushPromises()
     expect(showApps.mock.calls.every(([rect]) => rect.parked)).toBe(true)
 
+    entrance().play()
     await entrance().finished
     await flushPromises()
     expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)

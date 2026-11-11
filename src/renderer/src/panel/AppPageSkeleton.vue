@@ -4,43 +4,38 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 
 const CONTROL_COUNT = 3
 const RESULT_COUNT = 3
-const NO_PULSE_WHEN_STILL = 'motion-reduce:animate-none'
 
 const { t } = useI18n()
 </script>
 
 <template>
   <div
-    class="flex size-full gap-2"
+    class="flex size-full gap-2 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
     role="status"
     :aria-label="t('common.loading')"
     data-testid="app-page-skeleton"
   >
     <div class="flex w-90 shrink-0 flex-col gap-5 rounded-shell bg-card px-5 pt-4 pb-5">
       <div class="flex h-8 items-center justify-between">
-        <Skeleton :class="[NO_PULSE_WHEN_STILL, 'h-4 w-16 rounded-full']" />
-        <Skeleton :class="[NO_PULSE_WHEN_STILL, 'h-4 w-28 rounded-full']" />
+        <Skeleton class="h-4 w-16 rounded-full" />
+        <Skeleton class="h-4 w-28 rounded-full" />
       </div>
       <div v-for="n in CONTROL_COUNT" :key="n" class="flex flex-col gap-2">
-        <Skeleton :class="[NO_PULSE_WHEN_STILL, 'h-3 w-20 rounded-full']" />
-        <Skeleton :class="[NO_PULSE_WHEN_STILL, 'h-8 w-full rounded-control']" />
+        <Skeleton class="h-3 w-20 rounded-full" />
+        <Skeleton class="h-8 w-full rounded-control" />
       </div>
       <div class="flex flex-col gap-2">
-        <Skeleton :class="[NO_PULSE_WHEN_STILL, 'h-3 w-32 rounded-full']" />
-        <Skeleton :class="[NO_PULSE_WHEN_STILL, 'h-22 w-full rounded-control']" />
+        <Skeleton class="h-3 w-32 rounded-full" />
+        <Skeleton class="h-22 w-full rounded-control" />
       </div>
-      <Skeleton :class="[NO_PULSE_WHEN_STILL, 'mt-auto h-10 w-full rounded-control']" />
+      <Skeleton class="mt-auto h-10 w-full rounded-control" />
     </div>
     <div
       class="flex min-w-0 flex-1 flex-col gap-5 overflow-hidden rounded-shell bg-card px-5 pt-4 pb-5"
     >
-      <Skeleton :class="[NO_PULSE_WHEN_STILL, 'h-8 w-80 max-w-full rounded-control']" />
+      <Skeleton class="h-8 w-80 max-w-full rounded-control" />
       <div class="grid grid-cols-3 gap-3">
-        <Skeleton
-          v-for="n in RESULT_COUNT"
-          :key="n"
-          :class="[NO_PULSE_WHEN_STILL, 'aspect-square w-full rounded-card']"
-        />
+        <Skeleton v-for="n in RESULT_COUNT" :key="n" class="aspect-square w-full rounded-card" />
       </div>
     </div>
   </div>

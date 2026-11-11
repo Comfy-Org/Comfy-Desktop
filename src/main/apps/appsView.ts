@@ -231,7 +231,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   const uncovered = !view.getVisible()
   view.setVisible(true)
   if (r.fresh !== true) {
-    if (uncovered) view.webContents.focus()
+    if (uncovered && r.parked !== true) view.webContents.focus()
     return
   }
   tellPanelAppOpen(key)
