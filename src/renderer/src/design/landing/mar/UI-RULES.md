@@ -20,6 +20,10 @@ DS's Motion page (`ds/motion.ts`).
   surface with padding and radius, never loose on a panel.
 - **Glass only over pictures.** Badges, chips and scrims over imagery use
   the light dark glass (`rgb(14 14 16 / 0.28)`, `blur(14px) saturate(1.5)`).
+- **Zoom runs to the edges.** A zoomed picture fills the whole stage up to
+  its rounded edges, never a box inside it. Controls on the stage (Result/
+  Graph, zoom) take the menu glass (`menus/layers.css`), the same as the
+  menu they open, and blur what passes under them.
 
 ## Type
 

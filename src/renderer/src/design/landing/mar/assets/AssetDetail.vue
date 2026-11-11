@@ -928,12 +928,13 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  /* The picture fits this area, not the window. */
+  /* The picture fits this area, not the window; zoomed in it runs to the
+     stage's edges (the stage clips), never to a box inside it. */
   container-type: size;
 }
 .mad-bar {
   position: absolute;
+  z-index: 1;
   top: 18px;
   right: 24px;
   left: 32px;
@@ -1202,6 +1203,7 @@ onBeforeUnmount(() => {
  * The resolution lives in Details. */
 .mad-foot {
   position: absolute;
+  z-index: 1;
   right: 32px;
   bottom: 20px;
   left: 32px;
@@ -1212,6 +1214,17 @@ onBeforeUnmount(() => {
 }
 .mad-foot .zc {
   justify-self: end;
+  background: transparent;
+  isolation: isolate;
+}
+/* A zoomed picture runs under the zoom: its glass (menus/layers.css) sits on
+   a layer behind it, so the menu it opens still blurs what is behind. */
+.mad-foot .zc::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  content: '';
 }
 .mad-strip {
   min-width: 0;

@@ -233,8 +233,11 @@ defineExpose({ open })
   background: transparent;
   cursor: pointer;
 }
-.zc-range:focus-visible {
+/* The thumb shows focus; the track never gets the page's focus outline. */
+:root .proto-ui.proto-ui.proto-ui .zc-range:focus,
+:root .proto-ui.proto-ui.proto-ui .zc-range:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 .zc-range::-webkit-slider-runnable-track {
   height: 4px;

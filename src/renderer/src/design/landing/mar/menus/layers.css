@@ -11,6 +11,26 @@
       the sidebar.
    Simple lists stay simple: glass and rows, no panel. */
 
+/* Controls that sit on a picture (the asset view's Result/Graph and zoom)
+   take the same glass as the menus they open, so both read as one. */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .mad-bar .mar-pseg,
+:root[data-mar-ui='on'] .mad-foot .zc::before {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-card-background) 80%, black) 86%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.2);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mad-bar .mar-pseg,
+:root[data-mar-ui='on'][data-ds-theme='light'] .mad-foot .zc::before {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 3%, var(--color-card-background)) 78%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.6);
+}
 :root[data-mar-ui='on']
   :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
   --mar-menu-radius: 14px;
