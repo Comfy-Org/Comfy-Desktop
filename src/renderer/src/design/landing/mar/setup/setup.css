@@ -912,17 +912,19 @@
   /* The one screen takes more of the window: its column follows the
      width (about 70%, between the shared column and 960px), and the
      question, the cards and the action bar fill it. */
-  .mss-first.is-alone .mss-col {
-    width: clamp(704px, 70vw, 960px);
-    height: min(640px, calc(100vh - 120px));
+  .mss-first.is-alone {
+    --mss-col-w: clamp(704px, 70vw, 960px);
+    /* Tall as the window allows: the question centres in it and the action
+       bar settles near the bottom, 80px off the floor at most. */
+    --mss-col-h: min(calc(100vh - 160px), 1040px);
   }
   .mss-first.is-alone .mss-first-hero,
   .mss-first.is-alone .mss-first-bottom {
     max-width: none;
   }
   @media (max-width: 752px) {
-    .mss-first.is-alone .mss-col {
-      width: calc(100vw - 48px);
+    .mss-first.is-alone {
+      --mss-col-w: calc(100vw - 48px);
     }
   }
   .mss-first.is-alone .mss-first-mark {
