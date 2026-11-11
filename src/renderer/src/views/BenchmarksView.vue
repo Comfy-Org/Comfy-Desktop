@@ -1172,15 +1172,23 @@ onActivated(() => {
           <strong class="text-[14px] font-semibold">{{ t('benchmarks.noMatches') }}</strong>
           <span class="text-[13px] text-muted-foreground">{{ t('benchmarks.noMatchesHint') }}</span>
         </div>
-        <div v-else class="benchmarks__groups flex flex-col gap-6">
+        <div v-else class="benchmarks__groups flex flex-col gap-2">
           <section
             v-for="group in groups"
             :key="group.key"
             class="benchmarks__group min-w-0"
+            :class="
+              collapsedGroupKeys.has(group.key)
+                ? 'benchmarks__group--collapsed rounded-[14px] bg-card pr-2 pl-4'
+                : 'not-first:mt-4'
+            "
             :data-testid="`benchmark-group-${group.workflowName}-${group.hardware}`"
             :aria-label="group.workflowName"
           >
-            <div class="benchmarks__group-head mb-1.5 flex min-h-8 items-center gap-2">
+            <div
+              class="benchmarks__group-head flex items-center gap-2"
+              :class="collapsedGroupKeys.has(group.key) ? 'min-h-12' : 'mb-1.5 min-h-8 pr-2 pl-4'"
+            >
               <Button
                 variant="textonly"
                 size="unset"
