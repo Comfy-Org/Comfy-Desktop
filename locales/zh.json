@@ -1645,13 +1645,10 @@
     "deleteFiles": "删除文件",
     "deleteErrorTitle": "无法删除基准测试",
     "deleteErrorMessage": "无法删除基准测试文件。",
-    "sessionName": "会话名称",
     "editSessionName": "编辑会话 {session}",
     "renameErrorTitle": "无法重命名会话",
     "renameErrorMessage": "无法重命名会话文件夹。",
-    "sessionNameRequired": "请输入会话名称。",
-    "manualSort": "手动",
-    "reorderComparisonHint": "拖动以重新排序。也可以按 Alt+左箭头或 Alt+右箭头。",
+    "reorderComparisonHint": "拖动以重新排序。也可以按 Alt+上箭头或 Alt+下箭头。",
     "comparisonImageTitle": "基准比较",
     "exportResultsImage": "导出结果",
     "exportingImage": "正在导出图像...",
@@ -1702,7 +1699,9 @@
     "resetBaseline": "重置基准",
     "selectedCount": "已选择 {count} 项",
     "exportLimit": "最多 {max} 次运行",
-    "clearSelection": "清除选择"
+    "clearSelection": "清除选择",
+    "memory": "{gigabytes} GB 内存",
+    "referenceHidden": "与会话 {session} 比较，该会话已被筛选条件隐藏。"
   },
   "downloadsPopup": {
     "title": "下载",

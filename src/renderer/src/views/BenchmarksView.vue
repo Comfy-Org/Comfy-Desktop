@@ -1,30 +1,24 @@
 <script setup lang="ts">
-import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
-import Input from '@comfyorg/design-system/input/Input'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
-import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
-import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
-import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import {
   Check,
   ChevronDown,
-  ChevronRight,
-  Ellipsis,
-  Flag,
   FolderOpen,
-  GripVertical,
   ImageDown,
-  Pencil,
   RefreshCw,
   Search,
   SlidersHorizontal,
-  Trash2,
   X
 } from 'lucide-vue-next'
-import { DropdownMenuRadioGroup } from 'reka-ui'
+import {
+  DropdownMenuCheckboxItem,
+  DropdownMenuItemIndicator,
+  DropdownMenuRadioGroup
+} from 'reka-ui'
 import { useI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark, PerformanceTestResultValue } from '../types/ipc'
 import BrandBackground from '../components/BrandBackground.vue'
@@ -35,181 +29,80 @@ import {
   createBenchmarkComparisonSvg,
   MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
 } from '../lib/benchmarkComparisonSvg'
-import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import {
-  calculateRelativeSpeedFactor,
-  getRelativeSpeedKind,
-  type RelativeSpeedKind
-} from '../lib/relativeSpeed'
+  benchmarkGroupKey,
+  buildBenchmarkGroups,
+  DURATION_KEYS,
+  DURATION_LABEL_KEYS,
+  formatSeconds,
+  isDurationKey,
+  machineKey,
+  machineLabels,
+  type ColumnSort,
+  type DurationKey
+} from '../lib/benchmarkGroups'
+import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import { useDialogs } from '../composables/useDialogs'
+import BenchmarkGroupCard from './benchmarks/BenchmarkGroupCard.vue'
 
-type DurationKey =
-  | 'fastestJobDurationSeconds'
-  | 'averageJobDurationSeconds'
-  | 'medianJobDurationSeconds'
-  | 'slowestJobDurationSeconds'
-type MetricKey = DurationKey | 'measuredJobCount'
-interface RelativeSpeedResult {
-  factor: number | null
-  kind: RelativeSpeedKind
-}
-interface BenchmarkGroup {
-  key: string
-  workflowName: string
-  hardware: string
-  rows: PerformanceTestBenchmark[]
-  runCount: number
-  scaleMaximum: number
-  measuredCount: number
-  fastestId: string | null
-  baselineId: string | null
-  customBaseline: boolean
-  results: Map<string, RelativeSpeedResult>
+interface MenuOption {
+  value: string
+  label: string
 }
 
-const { t } = useI18n()
-const dialogs = useDialogs()
-const benchmarks = ref<PerformanceTestBenchmark[]>([])
-const selectedOrderIds = ref<string[]>([])
-const selectedIds = computed(() => new Set(selectedOrderIds.value))
-const manualOrderIds = ref<string[]>([])
-const manualOrder = ref(false)
-const draggedBenchmarkId = ref<string | null>(null)
-const dropTargetBenchmarkId = ref<string | null>(null)
-const collapsedGroupKeys = ref<Set<string>>(new Set())
-const baselineIds = ref<Record<string, string>>({})
-const benchmarksFolderPath = ref('')
-const loading = ref(true)
-const loadError = ref(false)
-const isExportingResults = ref(false)
-const exportResultsError = ref<string | null>(null)
-const deletingIds = ref<Set<string>>(new Set())
-const editingSessionId = ref<string | null>(null)
-const renamingSessionId = ref<string | null>(null)
-const sessionNameDraft = ref('')
-const sessionNameInput = ref<Pick<HTMLInputElement, 'focus' | 'select'> | null>(null)
-const columnsPicker = ref<HTMLDetailsElement | null>(null)
-const searchQuery = ref('')
-const workspaceFilter = ref('')
-const instanceFilter = ref('')
-const hardwareFilter = ref('')
-const workflowFilter = ref('')
-const durationKeys: DurationKey[] = [
-  'fastestJobDurationSeconds',
-  'averageJobDurationSeconds',
-  'medianJobDurationSeconds',
-  'slowestJobDurationSeconds'
-]
-const fixedColumnKeys = ['workflowName', 'id']
-const exportIdentityColumnKeys = ['workflowName', 'id', 'hardware.deviceName']
-const pickerOrder = [
+const SERIES_COLORS = ['#e8e8ee', '#7aa2f7', '#9ece6a', '#bb9af7', '#7dcfff']
+const UNMANAGED_WORKSPACE = '__unmanaged__'
+const IDENTITY_COLUMN_KEYS = ['workflowName', 'id', 'hardware.deviceName']
+const COLUMN_PICKER_ORDER = [
   'instance.name',
   'workspace.name',
   'createdAt',
   'measuredJobCount',
-  ...durationKeys,
+  ...DURATION_KEYS,
   'hardware.deviceName'
 ]
-const visibleColumnKeys = ref(new Set(['instance.name']))
-const comparisonMetric = ref<DurationKey>('medianJobDurationSeconds')
-const sortKey = ref<string>('medianJobDurationSeconds')
-const sortAscending = ref(true)
-const UNMANAGED_WORKSPACE_FILTER = '__unmanaged__'
-const MANUAL_ORDER = 'manual'
 
-const seriesColors = ['#e8e8ee', '#7aa2f7', '#9ece6a', '#bb9af7', '#7dcfff']
+const { t } = useI18n()
+const dialogs = useDialogs()
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
   timeStyle: 'short'
 })
 
-function closeColumnsPickerOnOutsideClick(event: PointerEvent): void {
-  const target = event.target
-  if (!(target instanceof Node)) return
-  const picker = columnsPicker.value
-  if (picker?.open && !picker.contains(target)) picker.open = false
-}
-
-document.addEventListener('pointerdown', closeColumnsPickerOnOutsideClick, true)
-onBeforeUnmount(() => {
-  document.removeEventListener('pointerdown', closeColumnsPickerOnOutsideClick, true)
-})
-
-interface FilterOption {
-  value: string
-  label: string
-}
-
-function uniqueOptions(allLabel: string, values: Array<string | null>): FilterOption[] {
-  return [
-    { value: '', label: allLabel },
-    ...[...new Set(values.filter((value): value is string => Boolean(value)))]
-      .sort()
-      .map((value) => ({
-        value,
-        label: value
-      }))
-  ]
-}
-
-function entityOptions(
-  allLabel: string,
-  entries: Array<{ value: string; label: string }>
-): FilterOption[] {
-  const uniqueEntries = [...new Map(entries.map((entry) => [entry.value, entry])).values()]
-  const labelCounts = new Map<string, number>()
-  for (const entry of uniqueEntries) {
-    labelCounts.set(entry.label, (labelCounts.get(entry.label) ?? 0) + 1)
-  }
-  return [
-    { value: '', label: allLabel },
-    ...uniqueEntries
-      .sort((a, b) => a.label.localeCompare(b.label))
-      .map((entry) => ({
-        value: entry.value,
-        label: labelCounts.get(entry.label) === 1 ? entry.label : `${entry.label} (${entry.value})`
-      }))
-  ]
-}
+const benchmarks = ref<PerformanceTestBenchmark[]>([])
+const benchmarksFolderPath = ref('')
+const loading = ref(true)
+const loadError = ref(false)
+const searchQuery = ref('')
+const workspaceFilter = ref('')
+const buildFilter = ref('')
+const machineFilter = ref('')
+const workflowFilter = ref('')
+const metric = ref<DurationKey>('medianJobDurationSeconds')
+const columnSort = ref<ColumnSort>({ key: 'medianJobDurationSeconds', ascending: true })
+const manualOrders = ref<Record<string, string[]>>({})
+const baselineIds = ref<Record<string, string>>({})
+const collapsedGroupKeys = ref<ReadonlySet<string>>(new Set())
+const selectedIds = ref<ReadonlySet<string>>(new Set())
+const visibleColumnKeys = ref<ReadonlySet<string>>(new Set(['instance.name']))
+const deletingIds = ref<ReadonlySet<string>>(new Set())
+const isExporting = ref(false)
+const exportError = ref<string | null>(null)
 
 function workspaceName(benchmark: PerformanceTestBenchmark): string {
   return benchmark.workspace.name ?? t('benchmarks.unmanagedWorkspace')
 }
 
-function hardwareName(benchmark: PerformanceTestBenchmark): string {
-  return benchmark.hardwareName ?? t('benchmarks.unknownHardware')
-}
+const machineNames = computed(() =>
+  machineLabels(benchmarks.value, {
+    unknownHardware: t('benchmarks.unknownHardware'),
+    memory: (gigabytes) => t('benchmarks.memory', { gigabytes })
+  })
+)
 
-const workspaceOptions = computed(() =>
-  entityOptions(
-    t('benchmarks.filterAll'),
-    benchmarks.value.map((benchmark) => ({
-      value: benchmark.workspace.id ?? UNMANAGED_WORKSPACE_FILTER,
-      label: workspaceName(benchmark)
-    }))
-  )
-)
-const instanceOptions = computed(() =>
-  entityOptions(
-    t('benchmarks.filterAll'),
-    benchmarks.value.map((benchmark) => ({
-      value: benchmark.instance.id,
-      label: benchmark.instance.name
-    }))
-  )
-)
-const hardwareOptions = computed(() =>
-  uniqueOptions(
-    t('benchmarks.filterAll'),
-    benchmarks.value.map((benchmark) => hardwareName(benchmark))
-  )
-)
-const workflowOptions = computed(() =>
-  uniqueOptions(
-    t('benchmarks.filterAll'),
-    benchmarks.value.map((benchmark) => benchmark.workflowName)
-  )
-)
+function machineName(benchmark: PerformanceTestBenchmark): string {
+  return machineNames.value.get(machineKey(benchmark)) ?? t('benchmarks.unknownHardware')
+}
 
 function flattenResult(
   value: Record<string, PerformanceTestResultValue>,
@@ -229,7 +122,7 @@ function flattenResult(
 
 const benchmarkFields = computed(
   () =>
-    new Map<string, Record<string, PerformanceTestResultValue>>(
+    new Map(
       benchmarks.value.map((benchmark) => [
         benchmark.id,
         {
@@ -240,44 +133,22 @@ const benchmarkFields = computed(
           'instance.name': benchmark.instance.name,
           'workspace.name': workspaceName(benchmark),
           measuredJobCount: benchmark.measuredJobCount,
-          'hardware.deviceName': hardwareName(benchmark),
+          'hardware.deviceName': machineName(benchmark),
           fastestJobDurationSeconds: benchmark.fastestJobDurationSeconds,
           averageJobDurationSeconds: benchmark.averageJobDurationSeconds,
           medianJobDurationSeconds: benchmark.medianJobDurationSeconds,
           slowestJobDurationSeconds: benchmark.slowestJobDurationSeconds
-        }
+        } as Record<string, PerformanceTestResultValue>
       ])
     )
 )
 
-const availableColumnKeys = computed(() => {
-  const keys = new Set<string>()
-  for (const fields of benchmarkFields.value.values()) {
-    for (const key of Object.keys(fields)) keys.add(key)
-  }
-  for (const key of fixedColumnKeys) keys.delete(key)
-  const ordered = pickerOrder.filter((key) => keys.delete(key))
-  return [...ordered, ...[...keys].sort((a, b) => a.localeCompare(b))]
-})
-
-const showBuildColumn = computed(
-  () =>
-    visibleColumnKeys.value.has('instance.name') &&
-    availableColumnKeys.value.includes('instance.name')
-)
-const extraColumns = computed(() =>
-  availableColumnKeys.value
-    .filter((key) => key !== 'instance.name' && visibleColumnKeys.value.has(key))
-    .map((key) => ({ key, label: columnLabel(key) }))
-)
-const exportColumns = computed(() =>
-  [
-    ...exportIdentityColumnKeys,
-    ...availableColumnKeys.value.filter(
-      (key) => visibleColumnKeys.value.has(key) && !exportIdentityColumnKeys.includes(key)
-    )
-  ].map((key) => ({ key, label: columnLabel(key) }))
-)
+function fieldValue(
+  benchmark: PerformanceTestBenchmark,
+  key: string
+): PerformanceTestResultValue | undefined {
+  return benchmarkFields.value.get(benchmark.id)?.[key]
+}
 
 function columnLabel(key: string): string {
   const labels: Record<string, string> = {
@@ -287,12 +158,9 @@ function columnLabel(key: string): string {
     'instance.name': t('benchmarks.instance'),
     'workspace.name': t('benchmarks.workspace'),
     measuredJobCount: t('benchmarks.runs'),
-    'hardware.deviceName': t('benchmarks.hardware'),
-    fastestJobDurationSeconds: t('benchmarks.fastest'),
-    averageJobDurationSeconds: t('benchmarks.average'),
-    medianJobDurationSeconds: t('benchmarks.median'),
-    slowestJobDurationSeconds: t('benchmarks.slowest')
+    'hardware.deviceName': t('benchmarks.hardware')
   }
+  if (isDurationKey(key)) return t(DURATION_LABEL_KEYS[key])
   return (
     labels[key] ??
     key
@@ -307,444 +175,236 @@ function columnLabel(key: string): string {
   )
 }
 
-function fieldValue(
-  benchmark: PerformanceTestBenchmark,
-  key: string
-): PerformanceTestResultValue | undefined {
-  return benchmarkFields.value.get(benchmark.id)?.[key]
+function formatDate(value: string | null): string {
+  return value === null ? '—' : dateFormatter.format(new Date(value))
 }
 
 function formatColumnValue(benchmark: PerformanceTestBenchmark, key: string): string {
   const value = fieldValue(benchmark, key)
   if (value === undefined || value === null) return '—'
   if (key === 'createdAt' && typeof value === 'string') return formatDate(value)
-  if (key.endsWith('DurationSeconds') && typeof value === 'number') return formatDuration(value)
+  if (key.endsWith('DurationSeconds') && typeof value === 'number') return formatSeconds(value)
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }
 
-function toggleColumn(key: string): void {
+const availableColumnKeys = computed(() => {
+  const keys = new Set<string>()
+  for (const fields of benchmarkFields.value.values()) {
+    for (const key of Object.keys(fields)) keys.add(key)
+  }
+  keys.delete('workflowName')
+  keys.delete('id')
+  const ordered = COLUMN_PICKER_ORDER.filter((key) => keys.delete(key))
+  return [...ordered, ...[...keys].sort((a, b) => a.localeCompare(b))]
+})
+const buildColumnVisible = computed(() => visibleColumnKeys.value.has('instance.name'))
+const extraColumns = computed(() =>
+  availableColumnKeys.value
+    .filter((key) => key !== 'instance.name' && visibleColumnKeys.value.has(key))
+    .map((key) => ({ key, label: columnLabel(key) }))
+)
+const exportColumns = computed(() =>
+  [
+    ...IDENTITY_COLUMN_KEYS,
+    ...availableColumnKeys.value.filter(
+      (key) => visibleColumnKeys.value.has(key) && !IDENTITY_COLUMN_KEYS.includes(key)
+    )
+  ].map((key) => ({ key, label: columnLabel(key) }))
+)
+
+function setColumnVisible(key: string, visible: boolean): void {
   const next = new Set(visibleColumnKeys.value)
-  if (next.has(key)) next.delete(key)
-  else next.add(key)
+  if (visible) next.add(key)
+  else next.delete(key)
   visibleColumnKeys.value = next
 }
 
-const filteredBenchmarks = computed(() => {
-  const query = searchQuery.value.trim().toLocaleLowerCase()
-  return benchmarks.value.filter((benchmark) => {
-    const workspace = workspaceName(benchmark)
-    const hardware = hardwareName(benchmark)
-    const matchesSearch =
-      !query ||
-      [benchmark.id, benchmark.workflowName, benchmark.instance.name, workspace, hardware].some(
-        (value) => value.toLocaleLowerCase().includes(query)
-      )
-    return (
-      matchesSearch &&
-      (!workspaceFilter.value ||
-        (benchmark.workspace.id ?? UNMANAGED_WORKSPACE_FILTER) === workspaceFilter.value) &&
-      (!instanceFilter.value || benchmark.instance.id === instanceFilter.value) &&
-      (!hardwareFilter.value || hardware === hardwareFilter.value) &&
-      (!workflowFilter.value || benchmark.workflowName === workflowFilter.value)
-    )
-  })
-})
-
-function compareFieldValues(
-  aValue: PerformanceTestResultValue | undefined,
-  bValue: PerformanceTestResultValue | undefined,
-  ascending: boolean
-): number {
-  if (aValue === undefined || aValue === null) {
-    return bValue === undefined || bValue === null ? 0 : 1
-  }
-  if (bValue === undefined || bValue === null) return -1
-  const order =
-    typeof aValue === 'number' && typeof bValue === 'number'
-      ? aValue - bValue
-      : String(aValue).localeCompare(String(bValue))
-  return ascending ? order : -order
-}
-
-function sortRows(rows: PerformanceTestBenchmark[]): PerformanceTestBenchmark[] {
-  const sorted = [...rows].sort((a, b) =>
-    compareFieldValues(
-      fieldValue(a, sortKey.value),
-      fieldValue(b, sortKey.value),
-      sortAscending.value
-    )
-  )
-  if (!manualOrder.value) return sorted
-  const manualIndex = new Map(manualOrderIds.value.map((id, index) => [id, index]))
-  return sorted.sort(
-    (a, b) =>
-      (manualIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-      (manualIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER)
-  )
-}
-
-function groupKey(benchmark: PerformanceTestBenchmark): string {
-  return JSON.stringify([benchmark.workflowName, hardwareName(benchmark)])
-}
-
-function buildGroup(key: string, members: PerformanceTestBenchmark[]): BenchmarkGroup {
-  const metric = comparisonMetric.value
-  const rows = sortRows(members)
-  const measured = members
-    .filter((benchmark) => benchmark[metric] !== null)
-    .sort((a, b) => (a[metric] ?? 0) - (b[metric] ?? 0))
-  const fastest = measured[0] ?? null
-  const storedBaseline = measured.find((benchmark) => benchmark.id === baselineIds.value[key])
-  const customBaseline = Boolean(storedBaseline && fastest && storedBaseline.id !== fastest.id)
-  const baseline = customBaseline ? storedBaseline! : fastest
-  const results = new Map<string, RelativeSpeedResult>()
-  for (const benchmark of members) {
-    const factor = calculateRelativeSpeedFactor(baseline?.[metric] ?? null, benchmark[metric])
-    results.set(benchmark.id, {
-      factor,
-      kind: getRelativeSpeedKind(factor, benchmark.id === baseline?.id)
-    })
-  }
-  const scaleValues = members.flatMap((benchmark) =>
-    [benchmark.slowestJobDurationSeconds, benchmark[metric]].filter(
-      (value): value is number => value !== null && value > 0
-    )
-  )
-  return {
-    key,
-    workflowName: members[0]!.workflowName,
-    hardware: hardwareName(members[0]!),
-    rows,
-    runCount: members.reduce((total, benchmark) => total + benchmark.measuredJobCount, 0),
-    scaleMaximum: scaleValues.length > 0 ? Math.max(...scaleValues) : 1,
-    measuredCount: measured.length,
-    fastestId: fastest?.id ?? null,
-    baselineId: baseline?.id ?? null,
-    customBaseline,
-    results
-  }
-}
-
-const groups = computed<BenchmarkGroup[]>(() => {
-  const members = new Map<string, PerformanceTestBenchmark[]>()
-  for (const benchmark of filteredBenchmarks.value) {
-    const key = groupKey(benchmark)
-    members.set(key, [...(members.get(key) ?? []), benchmark])
-  }
-  const newest = (rows: PerformanceTestBenchmark[]): string =>
-    rows.reduce((latest, row) => {
-      const createdAt = row.createdAt ?? ''
-      return createdAt > latest ? createdAt : latest
-    }, '')
-  return [...members.entries()]
-    .sort(([, a], [, b]) => newest(b).localeCompare(newest(a)))
-    .map(([key, rows]) => buildGroup(key, rows))
-})
-
-const displayedIds = computed(() => groups.value.flatMap((group) => group.rows.map(({ id }) => id)))
-const selectedBenchmarks = computed(() => {
-  const benchmarksById = new Map(benchmarks.value.map((benchmark) => [benchmark.id, benchmark]))
-  const displayIndex = new Map(displayedIds.value.map((id, index) => [id, index]))
-  return [...selectedOrderIds.value]
-    .sort(
-      (a, b) =>
-        (displayIndex.get(a) ?? Number.MAX_SAFE_INTEGER) -
-        (displayIndex.get(b) ?? Number.MAX_SAFE_INTEGER)
-    )
-    .flatMap((id) => {
-      const benchmark = benchmarksById.get(id)
-      return benchmark ? [benchmark] : []
-    })
-})
-const selectionOverLimit = computed(
-  () => selectedBenchmarks.value.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
-)
-const metricRows = computed<Array<{ key: MetricKey; label: string }>>(() => [
-  { key: 'fastestJobDurationSeconds', label: t('benchmarks.fastest') },
-  { key: 'averageJobDurationSeconds', label: t('benchmarks.average') },
-  { key: 'medianJobDurationSeconds', label: t('benchmarks.median') },
-  { key: 'slowestJobDurationSeconds', label: t('benchmarks.slowest') },
-  { key: 'measuredJobCount', label: t('benchmarks.measuredRuns') }
-])
-const metricLabel = computed(() => columnLabel(comparisonMetric.value))
-const compareByOptions = computed<FilterOption[]>(() => [
-  ...(manualOrder.value ? [{ value: MANUAL_ORDER, label: t('benchmarks.manualSort') }] : []),
-  ...durationKeys.map((key) => ({ value: key, label: columnLabel(key) }))
-])
-const compareByValue = computed(() => (manualOrder.value ? MANUAL_ORDER : comparisonMetric.value))
-
-function setCompareBy(value: string): void {
-  const metric = durationKeys.find((key) => key === value)
-  if (!metric) return
-  comparisonMetric.value = metric
-  manualOrder.value = false
-  sortKey.value = metric
-  sortAscending.value = true
-}
-
-const toolbarMenus = computed(() =>
-  [
-    {
-      key: 'workspace',
-      label: t('benchmarks.filterWorkspace'),
-      options: workspaceOptions.value,
-      model: workspaceFilter
-    },
-    {
-      key: 'build',
-      label: t('benchmarks.filterBuild'),
-      options: instanceOptions.value,
-      model: instanceFilter
-    },
-    {
-      key: 'hardware',
-      label: t('benchmarks.filterHardware'),
-      options: hardwareOptions.value,
-      model: hardwareFilter
-    },
-    {
-      key: 'workflow',
-      label: t('benchmarks.filterWorkflow'),
-      options: workflowOptions.value,
-      model: workflowFilter
-    }
+function entityOptions(entries: MenuOption[]): MenuOption[] {
+  const unique = [...new Map(entries.map((entry) => [entry.value, entry])).values()]
+  const labelCounts = new Map<string, number>()
+  for (const entry of unique) labelCounts.set(entry.label, (labelCounts.get(entry.label) ?? 0) + 1)
+  return [
+    { value: '', label: t('benchmarks.filterAll') },
+    ...unique
+      .sort((a, b) => a.label.localeCompare(b.label))
+      .map((entry) => ({
+        value: entry.value,
+        label: labelCounts.get(entry.label) === 1 ? entry.label : `${entry.label} (${entry.value})`
+      }))
   ]
-    .map(({ model, ...menu }) => ({
-      ...menu,
-      value: model.value,
-      set: (value: string): void => {
-        model.value = value
-      }
-    }))
-    .concat({
-      key: 'compare-by',
-      label: t('benchmarks.compareBy'),
-      options: compareByOptions.value,
-      value: compareByValue.value,
-      set: setCompareBy
-    })
-    .map((menu) => ({
-      ...menu,
-      current: menu.options.find((option) => option.value === menu.value)?.label ?? ''
-    }))
+}
+
+const toolbarMenus = computed(() => [
+  {
+    key: 'workspace',
+    label: t('benchmarks.filterWorkspace'),
+    value: workspaceFilter.value,
+    set: (value: string) => (workspaceFilter.value = value),
+    options: entityOptions(
+      benchmarks.value.map((benchmark) => ({
+        value: benchmark.workspace.id ?? UNMANAGED_WORKSPACE,
+        label: workspaceName(benchmark)
+      }))
+    )
+  },
+  {
+    key: 'build',
+    label: t('benchmarks.filterBuild'),
+    value: buildFilter.value,
+    set: (value: string) => (buildFilter.value = value),
+    options: entityOptions(
+      benchmarks.value.map(({ instance }) => ({ value: instance.id, label: instance.name }))
+    )
+  },
+  {
+    key: 'hardware',
+    label: t('benchmarks.filterHardware'),
+    value: machineFilter.value,
+    set: (value: string) => (machineFilter.value = value),
+    options: entityOptions(
+      benchmarks.value.map((benchmark) => ({
+        value: machineKey(benchmark),
+        label: machineName(benchmark)
+      }))
+    )
+  },
+  {
+    key: 'workflow',
+    label: t('benchmarks.filterWorkflow'),
+    value: workflowFilter.value,
+    set: (value: string) => (workflowFilter.value = value),
+    options: entityOptions(
+      benchmarks.value.map(({ workflowName }) => ({ value: workflowName, label: workflowName }))
+    )
+  },
+  {
+    key: 'compare-by',
+    label: t('benchmarks.compareBy'),
+    value: metric.value,
+    set: setMetric,
+    options: DURATION_KEYS.map((key) => ({ value: key, label: t(DURATION_LABEL_KEYS[key]) }))
+  }
+])
+
+function currentOptionLabel(menu: { value: string; options: MenuOption[] }): string {
+  return menu.options.find((option) => option.value === menu.value)?.label ?? ''
+}
+
+function isVisible(benchmark: PerformanceTestBenchmark): boolean {
+  const query = searchQuery.value.trim().toLocaleLowerCase()
+  const matchesSearch =
+    !query ||
+    [
+      benchmark.id,
+      benchmark.workflowName,
+      benchmark.instance.name,
+      workspaceName(benchmark),
+      machineName(benchmark)
+    ].some((value) => value.toLocaleLowerCase().includes(query))
+  return (
+    matchesSearch &&
+    (!workspaceFilter.value ||
+      (benchmark.workspace.id ?? UNMANAGED_WORKSPACE) === workspaceFilter.value) &&
+    (!buildFilter.value || benchmark.instance.id === buildFilter.value) &&
+    (!machineFilter.value || machineKey(benchmark) === machineFilter.value) &&
+    (!workflowFilter.value || benchmark.workflowName === workflowFilter.value)
+  )
+}
+
+const groups = computed(() =>
+  buildBenchmarkGroups({
+    benchmarks: benchmarks.value,
+    isVisible,
+    metric: metric.value,
+    sort: columnSort.value,
+    valueOf: fieldValue,
+    manualOrders: manualOrders.value,
+    baselineIds: baselineIds.value
+  })
+)
+const selectedRuns = computed(() =>
+  groups.value.flatMap((group) => group.rows.filter(({ id }) => selectedIds.value.has(id)))
+)
+const selectionOverLimit = computed(
+  () => selectedRuns.value.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
 )
 
-function setSort(key: string): void {
-  if (!manualOrder.value && sortKey.value === key) sortAscending.value = !sortAscending.value
-  else {
-    sortKey.value = key
-    sortAscending.value = durationKeys.some((durationKey) => durationKey === key)
-  }
-  manualOrder.value = false
+function setMetric(value: string): void {
+  if (!isDurationKey(value)) return
+  if (columnSort.value.key === metric.value) columnSort.value = { ...columnSort.value, key: value }
+  metric.value = value
 }
 
-function sortIndicator(key: string): string {
-  if (manualOrder.value || sortKey.value !== key) return ''
-  return sortAscending.value ? '↑' : '↓'
+function sortBy(key: string, fromManualGroup: boolean): void {
+  const current = columnSort.value
+  columnSort.value =
+    current.key === key && !fromManualGroup
+      ? { key, ascending: !current.ascending }
+      : { key, ascending: isDurationKey(key) }
+  manualOrders.value = {}
 }
 
-function sortState(key: string): 'ascending' | 'descending' | 'none' {
-  if (!sortIndicator(key)) return 'none'
-  return sortAscending.value ? 'ascending' : 'descending'
+function setManualOrder(groupKey: string, order: string[]): void {
+  manualOrders.value = { ...manualOrders.value, [groupKey]: order }
 }
 
-function toggleGroup(key: string): void {
+function toggleCollapsed(groupKey: string): void {
   const next = new Set(collapsedGroupKeys.value)
-  if (next.has(key)) next.delete(key)
-  else next.add(key)
+  if (!next.delete(groupKey)) next.add(groupKey)
   collapsedGroupKeys.value = next
 }
 
-function toggleBenchmark(id: string): void {
-  if (selectedIds.value.has(id)) {
-    selectedOrderIds.value = selectedOrderIds.value.filter((selectedId) => selectedId !== id)
-  } else {
-    selectedOrderIds.value = [...selectedOrderIds.value, id]
-  }
+function toggleSelected(id: string): void {
+  const next = new Set(selectedIds.value)
+  if (!next.delete(id)) next.add(id)
+  selectedIds.value = next
 }
 
-function selectGroup(group: BenchmarkGroup): void {
-  const nextOrder = [...selectedOrderIds.value]
-  for (const benchmark of group.rows) {
-    if (!selectedIds.value.has(benchmark.id)) nextOrder.push(benchmark.id)
-  }
-  selectedOrderIds.value = nextOrder
+function selectRuns(runs: PerformanceTestBenchmark[]): void {
+  selectedIds.value = new Set([...selectedIds.value, ...runs.map(({ id }) => id)])
 }
 
 function clearSelection(): void {
-  selectedOrderIds.value = []
-  exportResultsError.value = null
+  selectedIds.value = new Set()
+  exportError.value = null
 }
 
-function setBaseline(group: BenchmarkGroup, id: string): void {
-  baselineIds.value = { ...baselineIds.value, [group.key]: id }
+function setBaseline(groupKey: string, id: string): void {
+  baselineIds.value = { ...baselineIds.value, [groupKey]: id }
 }
 
-function resetBaseline(group: BenchmarkGroup): void {
+function resetBaseline(groupKey: string): void {
   const next = { ...baselineIds.value }
-  delete next[group.key]
+  delete next[groupKey]
   baselineIds.value = next
-}
-
-function useManualOrder(): void {
-  if (manualOrder.value) return
-  manualOrderIds.value = [...displayedIds.value]
-  manualOrder.value = true
-}
-
-function reorderRun(id: string, newIndex: number): void {
-  const oldIndex = manualOrderIds.value.indexOf(id)
-  if (oldIndex < 0 || newIndex < 0 || newIndex >= manualOrderIds.value.length) return
-  const next = [...manualOrderIds.value]
-  next.splice(oldIndex, 1)
-  next.splice(newIndex, 0, id)
-  manualOrderIds.value = next
-}
-
-function moveRun(group: BenchmarkGroup, id: string, offset: -1 | 1): void {
-  useManualOrder()
-  const rowIndex = group.rows.findIndex((benchmark) => benchmark.id === id)
-  const neighbor = group.rows[rowIndex + offset]
-  if (rowIndex < 0 || !neighbor) return
-  reorderRun(id, manualOrderIds.value.indexOf(neighbor.id))
-}
-
-function startRunDrag(event: DragEvent, id: string): void {
-  useManualOrder()
-  draggedBenchmarkId.value = id
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', id)
-  }
-}
-
-function sameGroup(sourceId: string, targetId: string): boolean {
-  const source = benchmarks.value.find((benchmark) => benchmark.id === sourceId)
-  const target = benchmarks.value.find((benchmark) => benchmark.id === targetId)
-  return Boolean(source && target && groupKey(source) === groupKey(target))
-}
-
-function dragOverRun(event: DragEvent, id: string): void {
-  const sourceId = draggedBenchmarkId.value
-  if (!sourceId || sourceId === id || !sameGroup(sourceId, id)) return
-  event.preventDefault()
-  dropTargetBenchmarkId.value = id
-  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-}
-
-function dropRun(event: DragEvent, targetId: string): void {
-  event.preventDefault()
-  const sourceId = draggedBenchmarkId.value ?? event.dataTransfer?.getData('text/plain')
-  if (sourceId && sourceId !== targetId && sameGroup(sourceId, targetId)) {
-    const sourceIndex = manualOrderIds.value.indexOf(sourceId)
-    let newIndex = manualOrderIds.value.indexOf(targetId)
-    if (sourceIndex < newIndex) newIndex -= 1
-    reorderRun(sourceId, newIndex)
-  }
-  endRunDrag()
-}
-
-function endRunDrag(): void {
-  draggedBenchmarkId.value = null
-  dropTargetBenchmarkId.value = null
-}
-
-function formatDate(value: string | null): string {
-  if (value === null) return '—'
-  return dateFormatter.format(new Date(value))
-}
-
-function formatDuration(value: number | null): string {
-  if (value === null) return '—'
-  return `${value.toFixed(2).replace(/\.?0+$/, '')} s`
-}
-
-function formatFactor(factor: number | null): string {
-  return factor === null ? '—' : factor.toFixed(2)
-}
-
-function seriesColor(benchmark: PerformanceTestBenchmark): string {
-  const index = benchmarks.value.findIndex((candidate) => candidate.id === benchmark.id)
-  return seriesColors[Math.max(0, index) % seriesColors.length]!
-}
-
-function metricValue(benchmark: PerformanceTestBenchmark, key: MetricKey): number | null {
-  return benchmark[key]
-}
-
-function relativeSpeedResult(
-  group: BenchmarkGroup,
-  benchmark: PerformanceTestBenchmark
-): RelativeSpeedResult {
-  return group.results.get(benchmark.id) ?? { factor: null, kind: 'missing' }
-}
-
-function vsLabel(result: RelativeSpeedResult): string {
-  if (result.kind === 'faster') {
-    return t('benchmarks.timesFaster', { factor: formatFactor(result.factor) })
-  }
-  if (result.kind === 'slower' && result.factor) {
-    return t('benchmarks.timesSlower', { factor: formatFactor(1 / result.factor) })
-  }
-  return t(`benchmarks.${result.kind}`)
-}
-
-function barScale(group: BenchmarkGroup, value: number | null): number {
-  if (value === null) return 0
-  return Math.min(100, Math.max(0, (value / group.scaleMaximum) * 100))
-}
-
-function rangeStyle(group: BenchmarkGroup, benchmark: PerformanceTestBenchmark) {
-  const fastest = benchmark.fastestJobDurationSeconds
-  const slowest = benchmark.slowestJobDurationSeconds
-  if (fastest === null || slowest === null) return null
-  const left = barScale(group, fastest)
-  return { left: `${left}%`, width: `${Math.max(0, barScale(group, slowest) - left)}%` }
-}
-
-function isBestInGroup(group: BenchmarkGroup, benchmark: PerformanceTestBenchmark, key: string) {
-  if (!durationKeys.some((durationKey) => durationKey === key)) return false
-  return isBestAmong(group.rows, benchmark, key as DurationKey)
 }
 
 function isBestAmong(
   runs: PerformanceTestBenchmark[],
   benchmark: PerformanceTestBenchmark,
-  key: MetricKey
-): boolean {
-  if (key === 'measuredJobCount') return false
-  const value = metricValue(benchmark, key)
-  if (value === null) return false
-  const values = runs.flatMap((candidate) => {
-    const candidateValue = metricValue(candidate, key)
-    return candidateValue === null ? [] : [candidateValue]
-  })
-  return values.length > 1 && value === Math.min(...values)
+  key: DurationKey
+) {
+  const value = benchmark[key]
+  const values = runs.flatMap((run) => (run[key] === null ? [] : [run[key]]))
+  return value !== null && values.length > 1 && value === Math.min(...values)
 }
 
-function groupOf(benchmark: PerformanceTestBenchmark): BenchmarkGroup | undefined {
-  const key = groupKey(benchmark)
-  return groups.value.find((group) => group.key === key)
-}
-
-async function exportComparisonImage(runs: PerformanceTestBenchmark[]): Promise<void> {
-  if (runs.length === 0) return
-  if (runs.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) {
-    exportResultsError.value = t('benchmarks.exportImageFailed')
-    return
-  }
-  const runGroups = runs.map((benchmark) => groupOf(benchmark))
-  const relativeView = runGroups.some((group) => group?.customBaseline)
-  isExportingResults.value = true
-  exportResultsError.value = null
+async function exportRuns(runs: PerformanceTestBenchmark[]): Promise<void> {
+  if (runs.length === 0 || runs.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) return
+  const groupKeys = new Set(runs.map(benchmarkGroupKey))
+  const onlyGroup =
+    groupKeys.size === 1 ? groups.value.find((group) => groupKeys.has(group.key)) : undefined
+  const relativeGroup = onlyGroup?.customBaseline ? onlyGroup : undefined
+  isExporting.value = true
+  exportError.value = null
   try {
     const svg = createBenchmarkComparisonSvg({
       title: t('benchmarks.comparisonImageTitle'),
       metricTitle: t('benchmarks.metric'),
       durationRangeTitle: t('benchmarks.durationRange'),
       durationRangeHint: t('benchmarks.durationRangeHint'),
-      relativeSpeed: relativeView
+      relativeSpeed: relativeGroup
         ? {
             title: t('benchmarks.relativePerformance'),
             hint: t('benchmarks.relativePerformanceHint'),
@@ -752,67 +412,78 @@ async function exportComparisonImage(runs: PerformanceTestBenchmark[]): Promise<
             fasterLabel: t('benchmarks.faster')
           }
         : undefined,
-      exportDateTime: new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short'
-      }).format(new Date()),
+      exportDateTime: dateFormatter.format(new Date()),
       runs: runs.map((benchmark, index) => {
-        const group = runGroups[index]
-        const relative = group
-          ? relativeSpeedResult(group, benchmark)
-          : { factor: null, kind: 'missing' as const }
+        const comparison = relativeGroup?.comparisons.get(benchmark.id)
         return {
-          color: seriesColor(benchmark),
+          color: SERIES_COLORS[index % SERIES_COLORS.length]!,
           properties: exportColumns.value.map((column) => ({
             label: column.label,
             value: formatColumnValue(benchmark, column.key)
           })),
-          metrics: metricRows.value.map((metric) => ({
-            label: metric.label,
-            value:
-              metric.key === 'measuredJobCount'
-                ? String(metricValue(benchmark, metric.key))
-                : formatDuration(metricValue(benchmark, metric.key)),
-            highlighted: isBestAmong(runs, benchmark, metric.key)
-          })),
+          metrics: [
+            ...DURATION_KEYS.map((key) => ({
+              label: t(DURATION_LABEL_KEYS[key]),
+              value: formatSeconds(benchmark[key]),
+              highlighted: isBestAmong(runs, benchmark, key)
+            })),
+            {
+              label: t('benchmarks.measuredRuns'),
+              value: String(benchmark.measuredJobCount),
+              highlighted: false
+            }
+          ],
           fastestDurationSeconds: benchmark.fastestJobDurationSeconds,
           averageDurationSeconds: benchmark.averageJobDurationSeconds,
           slowestDurationSeconds: benchmark.slowestJobDurationSeconds,
-          relativeSpeed: relativeView
+          relativeSpeed: comparison
             ? {
-                durationSeconds: metricValue(benchmark, comparisonMetric.value),
-                factor: relative.factor,
-                kind: relative.kind,
-                status: t(`benchmarks.${relative.kind}`)
+                durationSeconds: benchmark[metric.value],
+                factor: comparison.factor,
+                kind: comparison.kind,
+                status: t(`benchmarks.${comparison.kind}`)
               }
             : undefined
         }
       })
     })
-    const png = await createResultsPng(svg)
     const exported = await window.api.exportResultsImage(
-      png,
+      await createResultsPng(svg),
       'benchmark-comparison',
       benchmarksFolderPath.value || undefined
     )
     if (!exported.ok && !exported.canceled) {
-      exportResultsError.value = exported.message || t('benchmarks.exportImageFailed')
+      exportError.value = exported.message || t('benchmarks.exportImageFailed')
     }
   } catch (error) {
-    exportResultsError.value = (error as Error)?.message || t('benchmarks.exportImageFailed')
+    exportError.value = (error as Error)?.message || t('benchmarks.exportImageFailed')
   } finally {
-    isExportingResults.value = false
+    isExporting.value = false
   }
+}
+
+function applyBenchmarks(list: PerformanceTestBenchmark[]): void {
+  benchmarks.value = list
+  const ids = new Set(list.map(({ id }) => id))
+  selectedIds.value = new Set([...selectedIds.value].filter((id) => ids.has(id)))
+}
+
+function resetViewState(): void {
+  selectedIds.value = new Set()
+  baselineIds.value = {}
+  manualOrders.value = {}
+  collapsedGroupKeys.value = new Set()
 }
 
 async function loadBenchmarks(folderPath?: string): Promise<void> {
   loading.value = true
   loadError.value = false
+  exportError.value = null
   try {
     const result = await window.api.listPerformanceTestBenchmarks(folderPath)
+    if (result.folderPath !== benchmarksFolderPath.value) resetViewState()
     benchmarksFolderPath.value = result.folderPath
-    benchmarks.value = result.benchmarks
-    selectedOrderIds.value = []
+    applyBenchmarks(result.benchmarks)
   } catch {
     loadError.value = true
   } finally {
@@ -829,10 +500,7 @@ async function syncBenchmarksOnReturn(): Promise<void> {
   }
   try {
     const result = await window.api.listPerformanceTestBenchmarks(folderPath)
-    if (benchmarksFolderPath.value !== folderPath) return
-    benchmarks.value = result.benchmarks
-    const remainingIds = new Set(result.benchmarks.map(({ id }) => id))
-    selectedOrderIds.value = selectedOrderIds.value.filter((id) => remainingIds.has(id))
+    if (benchmarksFolderPath.value === folderPath) applyBenchmarks(result.benchmarks)
   } catch {}
 }
 
@@ -849,34 +517,21 @@ function openPerformanceTest(): void {
   window.api.navigatePanel('performance-test')
 }
 
-function setSessionNameInput(element: unknown): void {
-  sessionNameInput.value =
-    element && typeof element === 'object' && 'focus' in element && 'select' in element
-      ? (element as Pick<HTMLInputElement, 'focus' | 'select'>)
-      : null
+function replaceSessionId(oldId: string, newId: string): void {
+  const swap = (id: string): string => (id === oldId ? newId : id)
+  benchmarks.value = benchmarks.value.map((benchmark) =>
+    benchmark.id === oldId ? { ...benchmark, id: newId } : benchmark
+  )
+  selectedIds.value = new Set([...selectedIds.value].map(swap))
+  baselineIds.value = Object.fromEntries(
+    Object.entries(baselineIds.value).map(([key, id]) => [key, swap(id)])
+  )
+  manualOrders.value = Object.fromEntries(
+    Object.entries(manualOrders.value).map(([key, order]) => [key, order.map(swap)])
+  )
 }
 
-function editSessionName(benchmark: PerformanceTestBenchmark): void {
-  if (renamingSessionId.value) return
-  editingSessionId.value = benchmark.id
-  sessionNameDraft.value = benchmark.id
-  void nextTick(() => {
-    sessionNameInput.value?.focus()
-    sessionNameInput.value?.select()
-  })
-}
-
-function keepRenameFocus(event: Event): void {
-  if (editingSessionId.value) event.preventDefault()
-}
-
-function cancelSessionNameEdit(): void {
-  if (renamingSessionId.value) return
-  editingSessionId.value = null
-  sessionNameDraft.value = ''
-}
-
-async function showSessionRenameError(message?: string): Promise<void> {
+async function showRenameError(message?: string): Promise<void> {
   await dialogs.alert({
     title: t('benchmarks.renameErrorTitle'),
     message: message || t('benchmarks.renameErrorMessage'),
@@ -884,60 +539,34 @@ async function showSessionRenameError(message?: string): Promise<void> {
   })
 }
 
-function replaceId(ids: string[], oldId: string, newId: string): string[] {
-  return ids.map((id) => (id === oldId ? newId : id))
-}
-
-async function saveSessionName(benchmark: PerformanceTestBenchmark): Promise<void> {
-  if (editingSessionId.value !== benchmark.id || renamingSessionId.value) return
-  const newSessionId = sessionNameDraft.value.trim()
-  if (newSessionId === benchmark.id) {
-    cancelSessionNameEdit()
-    return
-  }
-  if (!newSessionId) {
-    await showSessionRenameError(t('benchmarks.sessionNameRequired'))
-    await nextTick(() => sessionNameInput.value?.focus())
-    return
-  }
-
-  renamingSessionId.value = benchmark.id
+async function renameSession(benchmark: PerformanceTestBenchmark, name: string): Promise<boolean> {
   try {
     const result = await window.api.renamePerformanceTestBenchmark(
       benchmarksFolderPath.value,
       benchmark.id,
-      newSessionId
+      name
     )
     if (!result.ok) {
-      await showSessionRenameError(result.message)
-      return
+      await showRenameError(result.message)
+      return false
     }
-
-    const renamedId = result.sessionId ?? newSessionId
-    benchmarks.value = benchmarks.value.map((candidate) =>
-      candidate.id === benchmark.id ? { ...candidate, id: renamedId } : candidate
-    )
-    selectedOrderIds.value = replaceId(selectedOrderIds.value, benchmark.id, renamedId)
-    manualOrderIds.value = replaceId(manualOrderIds.value, benchmark.id, renamedId)
-    baselineIds.value = Object.fromEntries(
-      Object.entries(baselineIds.value).map(([key, id]) => [
-        key,
-        id === benchmark.id ? renamedId : id
-      ])
-    )
-    editingSessionId.value = null
-    sessionNameDraft.value = ''
+    replaceSessionId(benchmark.id, result.sessionId ?? name)
+    return true
   } catch (error) {
-    await showSessionRenameError((error as Error)?.message)
-  } finally {
-    renamingSessionId.value = null
-    if (editingSessionId.value === benchmark.id) {
-      await nextTick(() => sessionNameInput.value?.focus())
-    }
+    await showRenameError((error as Error)?.message)
+    return false
   }
 }
 
-async function confirmDeleteBenchmark(benchmark: PerformanceTestBenchmark): Promise<void> {
+async function showDeleteError(message?: string): Promise<void> {
+  await dialogs.alert({
+    title: t('benchmarks.deleteErrorTitle'),
+    message: message || t('benchmarks.deleteErrorMessage'),
+    tone: 'danger'
+  })
+}
+
+async function deleteSession(benchmark: PerformanceTestBenchmark): Promise<void> {
   const confirmed = await dialogs.confirm({
     title: t('benchmarks.deleteConfirmTitle', { workflow: benchmark.workflowName }),
     message: t('benchmarks.deleteConfirmMessage', { session: benchmark.id }),
@@ -946,34 +575,21 @@ async function confirmDeleteBenchmark(benchmark: PerformanceTestBenchmark): Prom
   })
   if (confirmed !== 'primary') return
 
-  deletingIds.value = new Set(deletingIds.value).add(benchmark.id)
+  deletingIds.value = new Set([...deletingIds.value, benchmark.id])
   try {
     const result = await window.api.deletePerformanceTestBenchmark(
       benchmarksFolderPath.value,
       benchmark.id
     )
     if (!result.ok) {
-      await dialogs.alert({
-        title: t('benchmarks.deleteErrorTitle'),
-        message: result.message || t('benchmarks.deleteErrorMessage'),
-        tone: 'danger'
-      })
+      await showDeleteError(result.message)
       return
     }
-    benchmarks.value = benchmarks.value.filter((candidate) => candidate.id !== benchmark.id)
-    selectedOrderIds.value = selectedOrderIds.value.filter(
-      (selectedId) => selectedId !== benchmark.id
-    )
+    applyBenchmarks(benchmarks.value.filter(({ id }) => id !== benchmark.id))
   } catch (error) {
-    await dialogs.alert({
-      title: t('benchmarks.deleteErrorTitle'),
-      message: (error as Error)?.message || t('benchmarks.deleteErrorMessage'),
-      tone: 'danger'
-    })
+    await showDeleteError((error as Error)?.message)
   } finally {
-    const next = new Set(deletingIds.value)
-    next.delete(benchmark.id)
-    deletingIds.value = next
+    deletingIds.value = new Set([...deletingIds.value].filter((id) => id !== benchmark.id))
   }
 }
 
@@ -987,7 +603,7 @@ onActivated(() => {
 
 <template>
   <BrandBackground
-    class="benchmarks min-w-0 min-h-0 [&_.brand-outer-frame]:min-w-0 [&_.brand-inner-frame]:min-w-0 [&_.brand-inner-frame]:p-0"
+    class="benchmarks min-h-0 min-w-0 [&_.brand-inner-frame]:min-w-0 [&_.brand-inner-frame]:p-0 [&_.brand-outer-frame]:min-w-0"
     data-testid="benchmarks"
   >
     <div
@@ -1013,12 +629,11 @@ onActivated(() => {
 
         <div class="benchmarks__toolbar flex flex-wrap items-center gap-2">
           <Menu
-            v-for="filter in toolbarMenus"
-            :key="filter.key"
+            v-for="menu in toolbarMenus"
+            :key="menu.key"
             :modal="false"
             align="start"
             class="z-20 min-w-[180px]"
-            :aria-label="filter.label"
           >
             <template #trigger>
               <Button
@@ -1026,31 +641,28 @@ onActivated(() => {
                 variant="secondary"
                 size="md"
                 class="benchmarks__filter max-w-64 gap-1.5 px-3 text-[13px]/5"
-                :aria-label="filter.label"
-                :data-testid="`benchmarks-filter-${filter.key}`"
+                :aria-label="`${menu.label}: ${currentOptionLabel(menu)}`"
+                :data-testid="`benchmarks-filter-${menu.key}`"
               >
-                <span class="shrink-0 text-subtle-foreground">{{ filter.label }}</span>
-                <span class="truncate">{{ filter.current }}</span>
+                <span class="shrink-0 text-subtle-foreground">{{ menu.label }}</span>
+                <span class="truncate">{{ currentOptionLabel(menu) }}</span>
                 <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
               </Button>
             </template>
-            <DropdownMenuRadioGroup :model-value="filter.value">
+            <DropdownMenuRadioGroup :model-value="menu.value">
               <MenuRadioItem
-                v-for="option in filter.options"
+                v-for="option in menu.options"
                 :key="option.value"
-                as="button"
-                type="button"
                 :value="option.value"
-                class="w-full"
                 :data-value="option.value"
-                @select="filter.set(option.value)"
+                @select="menu.set(option.value)"
               >
                 <span class="flex-1 text-left">{{ option.label }}</span>
-                <Check v-if="filter.value === option.value" :size="15" aria-hidden="true" />
+                <Check v-if="menu.value === option.value" :size="15" aria-hidden="true" />
               </MenuRadioItem>
             </DropdownMenuRadioGroup>
           </Menu>
-          <div class="benchmarks__compare ml-auto flex items-center gap-2">
+          <div class="ml-auto flex items-center gap-2">
             <Button
               variant="muted-textonly"
               size="icon"
@@ -1064,9 +676,7 @@ onActivated(() => {
             >
               <RefreshCw
                 :size="15"
-                :class="{
-                  'benchmarks__refresh-icon--busy animate-spin [animation-duration:900ms]': loading
-                }"
+                :class="{ 'animate-spin [animation-duration:900ms]': loading }"
                 aria-hidden="true"
               />
             </Button>
@@ -1079,38 +689,40 @@ onActivated(() => {
             >
               <template #leading><Search :size="14" aria-hidden="true" /></template>
             </BaseInput>
-            <details
-              ref="columnsPicker"
-              class="benchmarks__columns-picker relative [&_summary]:list-none [&_summary::-webkit-details-marker]:hidden"
+            <Menu
+              :modal="false"
+              align="end"
+              :label="t('benchmarks.columnsToDisplay')"
+              class="z-20 max-h-90 min-w-56"
             >
-              <Button as-child variant="muted-textonly" size="icon">
-                <summary class="cursor-pointer" :title="t('benchmarks.columns')">
+              <template #trigger>
+                <Button
+                  variant="muted-textonly"
+                  size="icon"
+                  type="button"
+                  class="benchmarks__columns data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                  :aria-label="t('benchmarks.columns')"
+                  :title="t('benchmarks.columns')"
+                  data-testid="benchmarks-columns"
+                >
                   <SlidersHorizontal :size="15" aria-hidden="true" />
-                  <span class="sr-only">{{ t('benchmarks.columns') }}</span>
-                </summary>
-              </Button>
-              <div
-                class="benchmarks__columns-menu absolute top-[calc(100%+6px)] right-0 z-40 flex max-h-[360px] w-max min-w-56 max-w-80 flex-col overflow-y-auto rounded-[14px] bg-popover p-1.5 shadow-[var(--shadow-popover)]"
+                </Button>
+              </template>
+              <DropdownMenuCheckboxItem
+                v-for="key in availableColumnKeys"
+                :key="key"
+                :model-value="visibleColumnKeys.has(key)"
+                class="flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-highlighted:bg-accent"
+                :data-testid="`benchmark-column-${key}`"
+                @update:model-value="(visible) => setColumnVisible(key, visible === true)"
+                @select="(event) => event.preventDefault()"
               >
-                <strong
-                  class="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold tracking-[0.06em] text-subtle-foreground uppercase"
-                  >{{ t('benchmarks.columnsToDisplay') }}</strong
-                >
-                <label
-                  v-for="key in availableColumnKeys"
-                  :key="key"
-                  class="flex min-h-8 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13px] text-foreground transition-colors hover:bg-foreground/6"
-                >
-                  <Checkbox
-                    class="border-foreground/30"
-                    :model-value="visibleColumnKeys.has(key)"
-                    :data-testid="`benchmark-column-${key}`"
-                    @update:model-value="toggleColumn(key)"
-                  />
-                  <span class="truncate">{{ columnLabel(key) }}</span>
-                </label>
-              </div>
-            </details>
+                <span class="flex-1 truncate text-left">{{ columnLabel(key) }}</span>
+                <DropdownMenuItemIndicator>
+                  <Check :size="15" aria-hidden="true" />
+                </DropdownMenuItemIndicator>
+              </DropdownMenuCheckboxItem>
+            </Menu>
           </div>
         </div>
 
@@ -1179,465 +791,46 @@ onActivated(() => {
           <p class="m-0 text-ui text-muted-foreground">{{ t('benchmarks.noMatchesHint') }}</p>
         </div>
         <div v-else class="benchmarks__groups flex flex-col gap-2">
-          <section
+          <BenchmarkGroupCard
             v-for="group in groups"
             :key="group.key"
-            class="benchmarks__group min-w-0"
-            :class="
-              collapsedGroupKeys.has(group.key)
-                ? 'benchmarks__group--collapsed rounded-[14px] bg-card pr-2 pl-4'
-                : 'not-first:mt-4'
-            "
-            :data-testid="`benchmark-group-${group.workflowName}-${group.hardware}`"
-            :aria-label="group.workflowName"
-          >
-            <div
-              class="benchmarks__group-head flex items-center gap-2"
-              :class="collapsedGroupKeys.has(group.key) ? 'min-h-12' : 'mb-1.5 min-h-8 pr-2 pl-4'"
-            >
-              <Button
-                variant="textonly"
-                size="unset"
-                class="benchmarks__group-toggle -ml-1 gap-1.5 rounded-lg px-1 py-1 text-[14px] font-semibold text-foreground hover:bg-transparent"
-                type="button"
-                :aria-expanded="!collapsedGroupKeys.has(group.key)"
-                @click="toggleGroup(group.key)"
-              >
-                <ChevronRight
-                  :size="14"
-                  class="text-muted-foreground transition-transform duration-150"
-                  :class="{ 'rotate-90': !collapsedGroupKeys.has(group.key) }"
-                  aria-hidden="true"
-                />
-                {{ group.workflowName }}
-              </Button>
-              <span class="benchmarks__group-meta min-w-0 truncate text-xs text-subtle-foreground">
-                {{
-                  t('benchmarks.groupMeta', {
-                    hardware: group.hardware,
-                    sessions: t('benchmarks.sessionCount', group.rows.length),
-                    runs: t('benchmarks.runCount', group.runCount)
-                  })
-                }}
-              </span>
-              <div class="ml-auto flex">
-                <Menu
-                  :modal="false"
-                  align="end"
-                  :side-offset="4"
-                  class="benchmarks__menu-list z-[9999] min-w-48"
-                >
-                  <template #trigger>
-                    <Button
-                      variant="muted-textonly"
-                      size="icon"
-                      class="benchmarks__group-menu data-[state=open]:bg-accent data-[state=open]:text-foreground"
-                      type="button"
-                      :aria-label="t('benchmarks.groupActions', { workflow: group.workflowName })"
-                    >
-                      <Ellipsis :size="16" aria-hidden="true" />
-                    </Button>
-                  </template>
-                  <MenuItem class="benchmarks__select-group" @select="selectGroup(group)">
-                    {{ t('benchmarks.selectGroup') }}
-                  </MenuItem>
-                  <MenuItem
-                    class="benchmarks__export-group"
-                    :disabled="
-                      isExportingResults || group.rows.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
-                    "
-                    @select="exportComparisonImage(group.rows)"
-                  >
-                    <ImageDown :size="14" class="text-muted-foreground" aria-hidden="true" />
-                    {{ t('benchmarks.exportGroup') }}
-                  </MenuItem>
-                </Menu>
-              </div>
-            </div>
-
-            <template v-if="!collapsedGroupKeys.has(group.key)">
-              <p
-                v-if="group.rows.length === 1"
-                class="benchmarks__single-note m-0 mb-2 text-[13px] text-muted-foreground"
-              >
-                {{ t('benchmarks.singleRun') }}
-              </p>
-
-              <div class="benchmarks__group-box rounded-[14px] bg-card pt-3 pr-4 pb-2 pl-14">
-                <div class="benchmarks__table-scroll scroll-visible -mr-2 -ml-12 overflow-x-auto">
-                  <table
-                    class="benchmarks__table w-full border-separate border-spacing-0 [--bench-line:color-mix(in_oklch,var(--color-foreground)_8%,transparent)] text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:px-2 [&_th]:h-9 [&_th]:text-[12px] [&_th]:font-medium [&_th]:tracking-[0.01em] [&_th]:shadow-[inset_0_-1px_0_var(--bench-line)] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_tfoot_td]:py-1 [&_td:first-child]:rounded-l-lg [&_td:last-child]:rounded-r-lg [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--bench-line)] [&_tbody_tr:hover>td]:shadow-none [&_tbody_tr:hover+tr>td]:shadow-none [&_tbody_tr.benchmarks__row--selected>td]:shadow-none [&_tbody_tr.benchmarks__row--selected+tr>td]:shadow-none [&_tbody_tr:hover>td]:bg-foreground/[0.035]"
-                  >
-                    <thead>
-                      <tr>
-                        <th class="w-10 !px-0" :aria-label="t('benchmarks.selection')" />
-                        <th :aria-sort="sortState('id')">
-                          <Button
-                            variant="textonly"
-                            size="unset"
-                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[12px] font-medium tracking-[0.01em] hover:bg-transparent hover:text-foreground"
-                            type="button"
-                            @click="setSort('id')"
-                          >
-                            {{ t('benchmarks.session') }} {{ sortIndicator('id') }}
-                          </Button>
-                        </th>
-                        <th v-if="showBuildColumn" :aria-sort="sortState('instance.name')">
-                          <Button
-                            variant="textonly"
-                            size="unset"
-                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[12px] font-medium tracking-[0.01em] hover:bg-transparent hover:text-foreground"
-                            type="button"
-                            @click="setSort('instance.name')"
-                          >
-                            {{ t('benchmarks.instance') }} {{ sortIndicator('instance.name') }}
-                          </Button>
-                        </th>
-                        <th
-                          class="benchmarks__bar-head w-[32%] min-w-36 @max-[900px]:w-auto @max-[900px]:min-w-14 @max-[900px]:!whitespace-normal @max-[900px]:leading-4"
-                        >
-                          {{ t('benchmarks.metricAndRange', { metric: metricLabel }) }}
-                        </th>
-                        <th
-                          v-for="column in extraColumns"
-                          :key="column.key"
-                          class="text-right"
-                          :aria-sort="sortState(column.key)"
-                        >
-                          <Button
-                            variant="textonly"
-                            size="unset"
-                            class="benchmarks__sort gap-1 bg-transparent text-subtle-foreground text-[12px] font-medium tracking-[0.01em] hover:bg-transparent hover:text-foreground"
-                            type="button"
-                            @click="setSort(column.key)"
-                          >
-                            {{ column.label }} {{ sortIndicator(column.key) }}
-                          </Button>
-                        </th>
-                        <th class="text-right" :aria-sort="sortState(comparisonMetric)">
-                          <Button
-                            variant="textonly"
-                            size="unset"
-                            class="benchmarks__sort benchmarks__metric-sort gap-1 bg-transparent text-[12px] font-medium tracking-[0.01em] text-muted-foreground hover:bg-transparent hover:text-foreground"
-                            type="button"
-                            @click="setSort(comparisonMetric)"
-                          >
-                            {{ metricLabel }} {{ sortIndicator(comparisonMetric) }}
-                          </Button>
-                        </th>
-                        <th class="benchmarks__vs-head w-28 text-right">
-                          {{
-                            group.customBaseline
-                              ? t('benchmarks.vsBaseline')
-                              : t('benchmarks.vsFastest')
-                          }}
-                        </th>
-                        <th class="w-10" :aria-label="t('benchmarks.actions')" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr
-                        v-for="benchmark in group.rows"
-                        :key="benchmark.id"
-                        class="benchmarks__row group/row [&>td]:transition-colors"
-                        :class="{
-                          'benchmarks__row--selected [&>td]:bg-foreground/[0.07]': selectedIds.has(
-                            benchmark.id
-                          ),
-                          'benchmarks__row--dragging opacity-55':
-                            draggedBenchmarkId === benchmark.id,
-                          'benchmarks__row--drop-target [&>td]:bg-foreground/10':
-                            dropTargetBenchmarkId === benchmark.id
-                        }"
-                        :data-testid="`benchmark-row-${benchmark.id}`"
-                        @dragover="dragOverRun($event, benchmark.id)"
-                        @drop="dropRun($event, benchmark.id)"
-                      >
-                        <td class="w-10 !pr-0 !pl-1.5">
-                          <div class="flex items-center gap-1">
-                            <span
-                              class="benchmarks__grip inline-flex flex-none cursor-grab rounded text-subtle-foreground focus-visible:opacity-100 focus-visible:outline-1 focus-visible:outline-[var(--focus-ring)] active:cursor-grabbing"
-                              :class="
-                                manualOrder
-                                  ? 'opacity-100'
-                                  : 'opacity-0 group-hover/row:opacity-100'
-                              "
-                              draggable="true"
-                              tabindex="0"
-                              role="button"
-                              :aria-label="t('benchmarks.reorderRun', { session: benchmark.id })"
-                              aria-describedby="benchmark-reorder-instructions"
-                              :title="t('benchmarks.reorderComparisonHint')"
-                              @dragstart="startRunDrag($event, benchmark.id)"
-                              @dragend="endRunDrag"
-                              @keydown.alt.left.prevent="moveRun(group, benchmark.id, -1)"
-                              @keydown.alt.right.prevent="moveRun(group, benchmark.id, 1)"
-                            >
-                              <GripVertical :size="14" aria-hidden="true" />
-                            </span>
-                            <Checkbox
-                              class="benchmarks__check data-[state=checked]:border-foreground data-[state=checked]:bg-foreground data-[state=checked]:text-background"
-                              :class="{
-                                'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100':
-                                  !selectedIds.has(benchmark.id)
-                              }"
-                              :model-value="selectedIds.has(benchmark.id)"
-                              :aria-label="t('benchmarks.selectRun', { session: benchmark.id })"
-                              @update:model-value="toggleBenchmark(benchmark.id)"
-                            />
-                          </div>
-                        </td>
-                        <td class="benchmarks__session max-w-65">
-                          <span class="relative block max-w-full">
-                            <Button
-                              variant="textonly"
-                              size="unset"
-                              class="benchmarks__session-name group/session-name -mx-1 max-w-full justify-start gap-1.5 rounded-md bg-transparent px-1 text-[13px] font-medium text-foreground hover:bg-transparent"
-                              :class="{
-                                'benchmarks__session-name--editing invisible':
-                                  editingSessionId === benchmark.id
-                              }"
-                              type="button"
-                              :disabled="editingSessionId === benchmark.id"
-                              :aria-label="
-                                t('benchmarks.editSessionName', { session: benchmark.id })
-                              "
-                              :title="t('benchmarks.editSessionName', { session: benchmark.id })"
-                              @click="editSessionName(benchmark)"
-                            >
-                              <span class="truncate">{{ benchmark.id }}</span>
-                              <Pencil
-                                class="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/session-name:opacity-100 group-focus-visible/session-name:opacity-100"
-                                :size="12"
-                                aria-hidden="true"
-                              />
-                            </Button>
-                            <Input
-                              v-if="editingSessionId === benchmark.id"
-                              :ref="setSessionNameInput"
-                              v-model="sessionNameDraft"
-                              class="benchmarks__session-name-input absolute inset-0 box-border m-0 size-full min-w-0 px-1 py-px [font:inherit]"
-                              type="text"
-                              :disabled="renamingSessionId === benchmark.id"
-                              :aria-label="t('benchmarks.sessionName')"
-                              @blur="saveSessionName(benchmark)"
-                              @keydown.enter.prevent="saveSessionName(benchmark)"
-                              @keydown.escape.prevent="cancelSessionNameEdit"
-                            />
-                          </span>
-                          <span
-                            class="benchmarks__session-meta block text-xs text-muted-foreground"
-                          >
-                            {{ formatDate(benchmark.createdAt) }} ·
-                            {{ t('benchmarks.runCount', benchmark.measuredJobCount) }}
-                          </span>
-                        </td>
-                        <td v-if="showBuildColumn" class="benchmarks__build max-w-50 truncate">
-                          {{ formatColumnValue(benchmark, 'instance.name') }}
-                        </td>
-                        <td class="benchmarks__bar-cell">
-                          <span
-                            v-if="metricValue(benchmark, comparisonMetric) === null"
-                            class="benchmarks__no-data text-xs text-subtle-foreground"
-                          >
-                            {{ t('benchmarks.noMeasuredRuns') }}
-                          </span>
-                          <Tooltip v-else class="flex w-full">
-                            <span
-                              class="benchmarks__bar relative block h-2 w-full rounded bg-foreground/6"
-                              :data-testid="`benchmark-bar-${benchmark.id}`"
-                            >
-                              <span
-                                class="benchmarks__bar-fill absolute inset-y-0 left-0 rounded"
-                                :class="
-                                  group.measuredCount > 1 && group.fastestId === benchmark.id
-                                    ? 'benchmarks__bar-fill--best bg-foreground/65'
-                                    : 'bg-foreground/20'
-                                "
-                                :style="{
-                                  width: `${barScale(group, metricValue(benchmark, comparisonMetric))}%`
-                                }"
-                              />
-                              <span
-                                v-if="rangeStyle(group, benchmark)"
-                                class="benchmarks__range absolute top-[3px] h-0.5 bg-foreground/35 before:absolute before:-top-[3px] before:left-0 before:h-2 before:w-0.5 before:bg-foreground/35 before:content-[''] after:absolute after:-top-[3px] after:right-0 after:h-2 after:w-0.5 after:bg-foreground/35 after:content-['']"
-                                :style="rangeStyle(group, benchmark)!"
-                              />
-                            </span>
-                            <template #content>
-                              <span class="benchmarks__bar-tip flex w-60 flex-col gap-0.5 py-1">
-                                <strong class="font-semibold">{{ benchmark.id }}</strong>
-                                <span class="font-normal text-muted-foreground">
-                                  {{ benchmark.instance.name }} ·
-                                  {{ formatDate(benchmark.createdAt) }} ·
-                                  {{ t('benchmarks.runCount', benchmark.measuredJobCount) }}
-                                </span>
-                                <span class="mt-1.5 grid grid-cols-2 gap-x-5 gap-y-0.5">
-                                  <span
-                                    v-for="key in durationKeys"
-                                    :key="key"
-                                    class="flex justify-between gap-3"
-                                  >
-                                    <span class="font-normal text-muted-foreground">{{
-                                      columnLabel(key)
-                                    }}</span>
-                                    <span class="tabular-nums">{{
-                                      formatDuration(benchmark[key])
-                                    }}</span>
-                                  </span>
-                                </span>
-                              </span>
-                            </template>
-                          </Tooltip>
-                        </td>
-                        <td
-                          v-for="column in extraColumns"
-                          :key="column.key"
-                          class="text-right tabular-nums"
-                          :class="{
-                            'benchmarks__best font-semibold text-success': isBestInGroup(
-                              group,
-                              benchmark,
-                              column.key
-                            )
-                          }"
-                          :data-testid="`benchmark-cell-${benchmark.id}-${column.key}`"
-                        >
-                          {{ formatColumnValue(benchmark, column.key) }}
-                        </td>
-                        <td class="benchmarks__value text-right font-semibold tabular-nums">
-                          <span
-                            v-if="metricValue(benchmark, comparisonMetric) === null"
-                            class="font-normal text-subtle-foreground"
-                            >—</span
-                          >
-                          <template v-else>{{
-                            formatDuration(metricValue(benchmark, comparisonMetric))
-                          }}</template>
-                        </td>
-                        <td class="benchmarks__vs text-right text-xs text-muted-foreground">
-                          <template
-                            v-if="relativeSpeedResult(group, benchmark).kind === 'baseline'"
-                          >
-                            <template v-if="group.measuredCount > 1">
-                              <span
-                                class="benchmarks__pill inline-flex h-5 items-center rounded-md px-2 text-[11px] font-semibold"
-                                :class="
-                                  group.customBaseline
-                                    ? 'benchmarks__pill--baseline bg-foreground/10 text-foreground'
-                                    : 'benchmarks__pill--fastest bg-success/14 text-success'
-                                "
-                              >
-                                {{
-                                  group.customBaseline
-                                    ? t('benchmarks.baseline')
-                                    : t('benchmarks.fastest')
-                                }}
-                              </span>
-                            </template>
-                          </template>
-                          <span
-                            v-else
-                            :class="{
-                              'text-success':
-                                relativeSpeedResult(group, benchmark).kind === 'faster',
-                              'text-subtle-foreground':
-                                relativeSpeedResult(group, benchmark).kind === 'missing'
-                            }"
-                          >
-                            {{ vsLabel(relativeSpeedResult(group, benchmark)) }}
-                          </span>
-                        </td>
-                        <td class="w-10 text-right">
-                          <Menu
-                            :modal="false"
-                            align="end"
-                            :side-offset="4"
-                            class="benchmarks__menu-list z-[9999] min-w-48"
-                            @close-auto-focus="keepRenameFocus"
-                          >
-                            <template #trigger>
-                              <Button
-                                variant="muted-textonly"
-                                size="icon"
-                                class="benchmarks__row-menu opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 data-[state=open]:bg-accent data-[state=open]:text-foreground data-[state=open]:opacity-100"
-                                type="button"
-                                :disabled="
-                                  deletingIds.has(benchmark.id) || editingSessionId === benchmark.id
-                                "
-                                :aria-label="t('benchmarks.moreActions', { session: benchmark.id })"
-                              >
-                                <Ellipsis :size="16" aria-hidden="true" />
-                              </Button>
-                            </template>
-                            <MenuItem
-                              class="benchmarks__set-baseline"
-                              :disabled="
-                                metricValue(benchmark, comparisonMetric) === null ||
-                                group.baselineId === benchmark.id
-                              "
-                              @select="setBaseline(group, benchmark.id)"
-                            >
-                              <Flag :size="14" class="text-muted-foreground" aria-hidden="true" />
-                              {{ t('benchmarks.setBaseline') }}
-                            </MenuItem>
-                            <MenuItem
-                              class="benchmarks__rename-session"
-                              :disabled="Boolean(renamingSessionId)"
-                              @select="editSessionName(benchmark)"
-                            >
-                              <Pencil :size="14" class="text-muted-foreground" aria-hidden="true" />
-                              {{ t('benchmarks.renameSession') }}
-                            </MenuItem>
-                            <MenuSeparator />
-                            <MenuItem
-                              class="benchmarks__delete-record text-destructive data-highlighted:bg-destructive/12 data-highlighted:text-destructive"
-                              :aria-label="
-                                t('benchmarks.deleteRecord', { workflow: benchmark.workflowName })
-                              "
-                              @select="confirmDeleteBenchmark(benchmark)"
-                            >
-                              <Trash2 :size="14" aria-hidden="true" />
-                              {{ t('benchmarks.deleteFiles') }}
-                            </MenuItem>
-                          </Menu>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div
-                  v-if="group.customBaseline"
-                  class="benchmarks__baseline-foot mt-1.5 flex items-center gap-3 text-xs text-subtle-foreground"
-                >
-                  <span>{{ t('benchmarks.speedFormula') }}</span>
-                  <Button
-                    variant="secondary"
-                    size="md"
-                    class="benchmarks__reset-baseline ml-auto text-xs"
-                    type="button"
-                    @click="resetBaseline(group)"
-                  >
-                    {{ t('benchmarks.resetBaseline') }}
-                  </Button>
-                </div>
-              </div>
-            </template>
-          </section>
+            :class="{ 'not-first:mt-4': !collapsedGroupKeys.has(group.key) }"
+            :group="group"
+            :machine-label="machineNames.get(group.machineKey) ?? t('benchmarks.unknownHardware')"
+            :metric="metric"
+            :sort="columnSort"
+            :build-column="buildColumnVisible"
+            :extra-columns="extraColumns"
+            :selected-ids="selectedIds"
+            :deleting-ids="deletingIds"
+            :collapsed="collapsedGroupKeys.has(group.key)"
+            :exporting="isExporting"
+            :format-date="formatDate"
+            :format-column-value="formatColumnValue"
+            :rename-session="renameSession"
+            @toggle-collapsed="toggleCollapsed(group.key)"
+            @sort="(key) => sortBy(key, group.manual)"
+            @toggle-selected="toggleSelected"
+            @select-all="selectRuns(group.rows)"
+            @export="exportRuns(group.rows)"
+            @set-baseline="(id) => setBaseline(group.key, id)"
+            @reset-baseline="resetBaseline(group.key)"
+            @reorder="(order) => setManualOrder(group.key, order)"
+            @delete="deleteSession"
+          />
         </div>
 
         <div
-          v-if="selectedBenchmarks.length > 0 || exportResultsError"
+          v-if="selectedRuns.length > 0 || exportError"
           class="benchmarks__selection-bar sticky bottom-6 z-30 flex w-max max-w-full items-center gap-2 self-center rounded-xl bg-neutral-100 py-1.5 pr-1.5 pl-3.5 text-[13px] text-neutral-900 shadow-[var(--shadow-popover)]"
           role="region"
           :aria-label="t('benchmarks.selection')"
         >
-          <span v-if="selectedBenchmarks.length > 0" class="benchmarks__selected-count">
-            {{ t('benchmarks.selectedCount', { count: selectedBenchmarks.length }) }}
+          <span v-if="selectedRuns.length > 0" class="benchmarks__selected-count">
+            {{ t('benchmarks.selectedCount', { count: selectedRuns.length }) }}
           </span>
-          <span v-if="exportResultsError" class="benchmarks__export-error text-xs text-red-600">
-            {{ exportResultsError }}
+          <span v-if="exportError" class="benchmarks__export-error text-xs text-red-600">
+            {{ exportError }}
           </span>
           <Tooltip
             :text="t('benchmarks.exportLimit', { max: MAX_BENCHMARK_COMPARISON_EXPORT_RUNS })"
@@ -1648,16 +841,12 @@ onActivated(() => {
               size="md"
               class="benchmarks__export-results bg-neutral-900/[0.07] text-[13px] text-neutral-900 hover:bg-neutral-900/[0.12]"
               type="button"
-              :disabled="
-                isExportingResults || selectedBenchmarks.length === 0 || selectionOverLimit
-              "
-              @click="exportComparisonImage(selectedBenchmarks)"
+              :disabled="isExporting || selectedRuns.length === 0 || selectionOverLimit"
+              @click="exportRuns(selectedRuns)"
             >
               <ImageDown :size="15" aria-hidden="true" />
               {{
-                isExportingResults
-                  ? t('benchmarks.exportingImage')
-                  : t('benchmarks.exportResultsImage')
+                isExporting ? t('benchmarks.exportingImage') : t('benchmarks.exportResultsImage')
               }}
             </Button>
           </Tooltip>

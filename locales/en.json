@@ -1645,13 +1645,10 @@
     "deleteFiles": "Delete files",
     "deleteErrorTitle": "Could not delete benchmark",
     "deleteErrorMessage": "The benchmark files could not be deleted.",
-    "sessionName": "Session name",
     "editSessionName": "Edit session {session}",
     "renameErrorTitle": "Could not rename session",
     "renameErrorMessage": "The session folder could not be renamed.",
-    "sessionNameRequired": "Enter a session name.",
-    "manualSort": "Manual",
-    "reorderComparisonHint": "Drag to reorder. You can also press Alt+Left or Alt+Right.",
+    "reorderComparisonHint": "Drag to reorder. You can also press Alt+Up or Alt+Down.",
     "comparisonImageTitle": "Benchmark Comparison",
     "exportResultsImage": "Export results",
     "exportingImage": "Exporting image...",
@@ -1702,7 +1699,9 @@
     "resetBaseline": "Reset baseline",
     "selectedCount": "{count} selected",
     "exportLimit": "Up to {max} runs",
-    "clearSelection": "Clear selection"
+    "clearSelection": "Clear selection",
+    "memory": "{gigabytes} GB RAM",
+    "referenceHidden": "Compared with session {session}, which the filters hide."
   },
   "downloadsPopup": {
     "title": "Downloads",

@@ -44,48 +44,56 @@ vi.mock('./devplatform/DevPlatformAccountChip.vue', () => ({
   default: { template: '<div data-testid="account-chip" />' }
 }))
 
-function benchmark(
+const DEFAULT_FOLDER = 'C:\\results\\performance-tests'
+
+interface RunOptions {
+  gpu?: string | null
+  cpu?: string
+  build?: string
+  fastest?: number
+}
+
+function run(
   id: string,
   workflowName: string,
   average: number,
-  hardwareName: string | null = 'NVIDIA RTX 4090',
-  build = 'Nightly 0.3.62'
+  { gpu = 'NVIDIA RTX 4090', cpu = 'Test CPU', build = 'Nightly 0.3.62', fastest }: RunOptions = {}
 ): PerformanceTestBenchmark {
   const createdAt = `2026-09-${id.padStart(2, '0')}T10:00:00.000Z`
   const instance = { id: `instance-${build}`, name: build }
   const workspace = { id: 'workspace-1', name: 'Comfy' }
+  const durations = {
+    fastestJobDurationSeconds: fastest ?? average - 0.4,
+    slowestJobDurationSeconds: average + 0.7,
+    averageJobDurationSeconds: average,
+    medianJobDurationSeconds: average - 0.1
+  }
   return {
     id,
     createdAt,
     instance,
     workspace,
     workflowName,
-    fastestJobDurationSeconds: average - 0.4,
-    slowestJobDurationSeconds: average + 0.7,
-    averageJobDurationSeconds: average,
-    medianJobDurationSeconds: average - 0.1,
+    ...durations,
     measuredJobCount: 5,
-    hardwareName,
+    machine: { gpu, cpu, memoryGb: 64, platform: 'win32' },
     result: {
       createdAt,
       instance,
       workspace,
       workflowName,
-      fastestJobDurationSeconds: average - 0.4,
-      slowestJobDurationSeconds: average + 0.7,
-      averageJobDurationSeconds: average,
-      medianJobDurationSeconds: average - 0.1,
+      ...durations,
       measuredJobCount: 5,
-      hardware: { deviceName: hardwareName },
-      systemInfo: { cpu_model: 'Test CPU' },
+      hardware: { deviceName: gpu },
+      systemInfo: { cpu_model: cpu },
       customScore: Number(id)
     }
   }
 }
 
-function emptyRun(id: string): PerformanceTestBenchmark {
+function unmeasuredRun(id: string): PerformanceTestBenchmark {
   return {
-    ...benchmark(id, 'portrait.json', 1, 'NVIDIA RTX 4090', 'Broken build'),
+    ...run(id, 'portrait.json', 1, { build: 'Broken build' }),
     fastestJobDurationSeconds: null,
     slowestJobDurationSeconds: null,
     averageJobDurationSeconds: null,
@@ -95,23 +103,22 @@ function emptyRun(id: string): PerformanceTestBenchmark {
 }
 
 const sampleBenchmarks = [
-  benchmark('13', 'portrait.json', 2),
-  benchmark('12', 'portrait.json', 2.2, 'NVIDIA RTX 4090', 'Stable 0.3.60'),
-  benchmark('11', 'portrait.json', 1.2, 'NVIDIA RTX 5090'),
-  benchmark('10', 'landscape.json', 8.7, 'Apple M3 Max', 'Stable 0.3.60'),
-  {
-    ...benchmark('9', 'portrait.json', 3, 'NVIDIA RTX 4090', 'Stable 0.3.55'),
-    fastestJobDurationSeconds: 1
-  }
+  run('13', 'portrait.json', 2),
+  run('12', 'portrait.json', 2.2, { build: 'Stable 0.3.60' }),
+  run('11', 'portrait.json', 1.2, { gpu: 'NVIDIA RTX 5090' }),
+  run('10', 'landscape.json', 8.7, { gpu: 'Apple M3 Max', build: 'Stable 0.3.60' }),
+  run('9', 'portrait.json', 3, { build: 'Stable 0.3.55', fastest: 1 })
 ]
 const PORTRAIT_4090 = 'benchmark-group-portrait.json-NVIDIA RTX 4090'
+const PORTRAIT_5090 = 'benchmark-group-portrait.json-NVIDIA RTX 5090'
+const LANDSCAPE_M3 = 'benchmark-group-landscape.json-Apple M3 Max'
 
 function listMock(): ReturnType<typeof vi.fn> {
   return window.api.listPerformanceTestBenchmarks as unknown as ReturnType<typeof vi.fn>
 }
 
-function useBenchmarks(list: PerformanceTestBenchmark[]): void {
-  listMock().mockResolvedValue({ folderPath: 'C:\\results\\performance-tests', benchmarks: list })
+function useBenchmarks(list: PerformanceTestBenchmark[], folderPath = DEFAULT_FOLDER): void {
+  listMock().mockResolvedValue({ folderPath, benchmarks: list })
 }
 
 function mountView() {
@@ -122,16 +129,24 @@ function group(wrapper: VueWrapper, testId = PORTRAIT_4090) {
   return wrapper.get(`[data-testid="${testId}"]`)
 }
 
+function row(wrapper: VueWrapper, id: string) {
+  return wrapper.get(`[data-testid="benchmark-row-${id}"]`)
+}
+
 function rowIds(wrapper: VueWrapper, testId = PORTRAIT_4090): Array<string | undefined> {
   return group(wrapper, testId)
     .findAll('[data-testid^="benchmark-row-"]')
-    .map((row) => row.attributes('data-testid')?.replace('benchmark-row-', ''))
+    .map((element) => element.attributes('data-testid')?.replace('benchmark-row-', ''))
+}
+
+function texts(wrapper: VueWrapper, selector: string, testId = PORTRAIT_4090): string[] {
+  return group(wrapper, testId)
+    .findAll(selector)
+    .map((element) => element.text())
 }
 
 function vsLabels(wrapper: VueWrapper, testId = PORTRAIT_4090): string[] {
-  return group(wrapper, testId)
-    .findAll('.benchmarks__vs')
-    .map((cell) => cell.text())
+  return texts(wrapper, '.benchmarks__vs', testId)
 }
 
 async function openMenu(wrapper: VueWrapper, selector: string): Promise<void> {
@@ -139,33 +154,13 @@ async function openMenu(wrapper: VueWrapper, selector: string): Promise<void> {
   await flushPromises()
 }
 
-async function filterOptions(wrapper: VueWrapper, key: string): Promise<string[]> {
-  await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
-  const labels = Array.from(
-    document.body.querySelectorAll('[role="menu"] [role="menuitemradio"]'),
-    (item) => item.textContent!.trim()
-  )
-  await wrapper
-    .get(`[data-testid="benchmarks-filter-${key}"]`)
-    .trigger('keydown', { key: 'Escape' })
-  document.body
-    .querySelector<HTMLElement>('[role="menu"]')
-    ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-  await vi.waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull())
-  return labels
+function openMenuElement(): HTMLElement | null {
+  return document.body.querySelector<HTMLElement>('[role="menu"]')
 }
 
-async function chooseFilter(wrapper: VueWrapper, key: string, value: string): Promise<void> {
-  await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
-  await chooseMenuItem(`[data-value="${value}"]`)
-}
-
-async function compareBy(wrapper: VueWrapper, value: string): Promise<void> {
-  await chooseFilter(wrapper, 'compare-by', value)
-}
-
-function compareByCurrent(wrapper: VueWrapper): string {
-  return wrapper.get('[data-testid="benchmarks-filter-compare-by"]').text()
+async function closeMenu(): Promise<void> {
+  openMenuElement()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await vi.waitFor(() => expect(openMenuElement()).toBeNull())
 }
 
 function menuItem(selector: string): HTMLElement | null {
@@ -174,20 +169,79 @@ function menuItem(selector: string): HTMLElement | null {
 
 async function chooseMenuItem(selector: string): Promise<void> {
   menuItem(selector)!.click()
-  await vi.waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull())
+  await vi.waitFor(() => expect(openMenuElement()).toBeNull())
   await flushPromises()
 }
 
-async function openRowMenu(wrapper: VueWrapper, id: string): Promise<void> {
+async function menuOptions(wrapper: VueWrapper, key: string): Promise<string[]> {
+  await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
+  const labels = Array.from(
+    document.body.querySelectorAll('[role="menu"] [role="menuitemradio"]'),
+    (item) => item.textContent!.trim()
+  )
+  await closeMenu()
+  return labels
+}
+
+async function chooseOption(wrapper: VueWrapper, key: string, label: string): Promise<void> {
+  await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
+  const option = Array.from(
+    document.body.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitemradio"]')
+  ).find((item) => item.textContent!.trim() === label)
+  expect(option, `option ${label}`).toBeDefined()
+  option!.click()
+  await vi.waitFor(() => expect(openMenuElement()).toBeNull())
+  await flushPromises()
+}
+
+async function rowAction(wrapper: VueWrapper, id: string, action: string): Promise<void> {
   await openMenu(wrapper, `[data-testid="benchmark-row-${id}"] .benchmarks__row-menu`)
+  await chooseMenuItem(action)
+}
+
+async function groupAction(wrapper: VueWrapper, action: string, testId = PORTRAIT_4090) {
+  await openMenu(wrapper, `[data-testid="${testId}"] .benchmarks__group-menu`)
+  await chooseMenuItem(action)
 }
 
 async function selectRow(wrapper: VueWrapper, id: string, checked = true): Promise<void> {
-  await setChecked(wrapper.get(`[data-testid="benchmark-row-${id}"] [role="checkbox"]`), checked)
+  await setChecked(row(wrapper, id).get('[role="checkbox"]'), checked)
 }
 
-function lastExportedSvg(): string {
+async function search(wrapper: VueWrapper, query: string): Promise<void> {
+  await wrapper.get<HTMLInputElement>('.benchmarks__search input').setValue(query)
+}
+
+async function drag(wrapper: VueWrapper, id: string, targetId: string): Promise<void> {
+  const dataTransfer = new DataTransfer()
+  await row(wrapper, id).get('.benchmarks__grip').trigger('dragstart', { dataTransfer })
+  await row(wrapper, targetId).trigger('dragover', { dataTransfer })
+  await row(wrapper, targetId).trigger('drop', { dataTransfer })
+  await row(wrapper, id).get('.benchmarks__grip').trigger('dragend', { dataTransfer })
+}
+
+async function pressOnGrip(wrapper: VueWrapper, id: string, key: string): Promise<void> {
+  const grip = row(wrapper, id).get<HTMLElement>('.benchmarks__grip')
+  grip.element.focus()
+  await grip.trigger('keydown', { key, altKey: true })
+  await flushPromises()
+}
+
+async function exportSelection(wrapper: VueWrapper): Promise<string> {
+  await wrapper.get('.benchmarks__export-results').trigger('click')
+  await flushPromises()
   return createResultsPngMock.mock.calls.at(-1)![0]
+}
+
+function sessionField(wrapper: VueWrapper, id: string): HTMLElement {
+  return row(wrapper, id).get<HTMLElement>('.benchmarks__session-name-text').element
+}
+
+async function typeSessionName(field: HTMLElement, name: string): Promise<void> {
+  field.focus()
+  field.textContent = name
+  field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await flushPromises()
 }
 
 function mountKeptAlive() {
@@ -196,9 +250,7 @@ function mountKeptAlive() {
     setup: (props) => () =>
       h(KeepAlive, null, { default: () => (props.visible ? h(BenchmarksView) : h('div')) })
   })
-  return mount(Page, {
-    props: { visible: true }
-  })
+  return mount(Page, { props: { visible: true } })
 }
 
 describe('BenchmarksView', () => {
@@ -222,16 +274,13 @@ describe('BenchmarksView', () => {
       deletePerformanceTestBenchmark: deletePerformanceTestBenchmarkMock,
       renamePerformanceTestBenchmark: renamePerformanceTestBenchmarkMock,
       listPerformanceTestBenchmarks: vi.fn(async () => ({
-        folderPath: 'C:\\results\\performance-tests',
+        folderPath: DEFAULT_FOLDER,
         benchmarks: sampleBenchmarks
       }))
     }
   })
 
   describe('returning to the page', () => {
-    const browseFolder = (): ReturnType<typeof vi.fn> =>
-      window.api.browseFolder as unknown as ReturnType<typeof vi.fn>
-
     async function leaveAndReturn(wrapper: ReturnType<typeof mountKeptAlive>): Promise<void> {
       await wrapper.setProps({ visible: false })
       await wrapper.setProps({ visible: true })
@@ -246,9 +295,9 @@ describe('BenchmarksView', () => {
     })
 
     it('keeps the folder, search and picked runs', async () => {
-      browseFolder().mockResolvedValue('D:\\other')
+      vi.mocked(window.api.browseFolder).mockResolvedValue('D:\\other')
       listMock().mockImplementation(async (folderPath?: string) => ({
-        folderPath: folderPath ?? 'C:\\results\\performance-tests',
+        folderPath: folderPath ?? DEFAULT_FOLDER,
         benchmarks: sampleBenchmarks
       }))
       const wrapper = mountKeptAlive()
@@ -256,18 +305,14 @@ describe('BenchmarksView', () => {
       await wrapper.get('.benchmarks__open-folder').trigger('click')
       await flushPromises()
       await selectRow(wrapper, '10')
-      await wrapper.get<HTMLInputElement>('input[type="text"]').setValue('json')
+      await wrapper.get<HTMLInputElement>('.benchmarks__search input').setValue('json')
 
       await leaveAndReturn(wrapper)
 
       expect(listMock()).toHaveBeenLastCalledWith('D:\\other')
-      expect(wrapper.get<HTMLInputElement>('input[type="text"]').element.value).toBe('json')
-      const checked = (id: string): string | undefined =>
-        wrapper
-          .get(`[data-testid="benchmark-row-${id}"] [role="checkbox"]`)
-          .attributes('aria-checked')
-      expect(checked('13')).toBe('false')
-      expect(checked('10')).toBe('true')
+      expect(wrapper.get<HTMLInputElement>('.benchmarks__search input').element.value).toBe('json')
+      expect(row(wrapper, '13').get('[role="checkbox"]').attributes('aria-checked')).toBe('false')
+      expect(row(wrapper, '10').get('[role="checkbox"]').attributes('aria-checked')).toBe('true')
     })
 
     it('shows runs that finished meanwhile and drops picks that are gone', async () => {
@@ -275,15 +320,13 @@ describe('BenchmarksView', () => {
       await flushPromises()
       await selectRow(wrapper, '13')
       await selectRow(wrapper, '12')
-      useBenchmarks([benchmark('14', 'new.json', 1), ...sampleBenchmarks.slice(1)])
+      useBenchmarks([run('14', 'new.json', 1), ...sampleBenchmarks.slice(1)])
 
       await leaveAndReturn(wrapper)
 
       expect(wrapper.find('[data-testid="benchmark-row-14"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(false)
-      expect(
-        wrapper.get('[data-testid="benchmark-row-14"] [role="checkbox"]').attributes('aria-checked')
-      ).toBe('false')
+      expect(row(wrapper, '14').get('[role="checkbox"]').attributes('aria-checked')).toBe('false')
       expect(wrapper.get('.benchmarks__selected-count').text()).toBe('1 selected')
     })
 
@@ -298,92 +341,123 @@ describe('BenchmarksView', () => {
     })
   })
 
-  it('groups runs by workflow and hardware, newest group first', async () => {
+  it('compares the builds that ran each workflow on each machine', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const groups = wrapper.findAll('.benchmarks__group')
-    expect(groups.map((card) => card.get('.benchmarks__group-toggle').text())).toEqual([
+    const cards = wrapper.findAll('.benchmarks__group')
+    expect(cards.map((card) => card.get('.benchmarks__group-toggle').text())).toEqual([
       'portrait.json',
       'portrait.json',
       'landscape.json'
     ])
-    expect(groups.map((card) => card.get('.benchmarks__group-meta').text())).toEqual([
+    expect(cards.map((card) => card.get('.benchmarks__group-meta').text())).toEqual([
       'NVIDIA RTX 4090 · 3 sessions · 15 runs',
       'NVIDIA RTX 5090 · 1 session · 5 runs',
       'Apple M3 Max · 1 session · 5 runs'
     ])
+    expect(texts(wrapper, 'thead th')).toEqual([
+      '',
+      'Session',
+      'Build',
+      'Median and range',
+      'Median ↑',
+      'Vs fastest',
+      ''
+    ])
     expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
-    expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
-    expect(
-      group(wrapper)
-        .findAll('thead th')
-        .map((header) => header.text())
-    ).toEqual(['', 'Session', 'Build', 'Median and range', 'Median ↑', 'Vs fastest', ''])
-    expect(group(wrapper).get('[data-testid="benchmark-row-13"]').text()).toContain(
-      'Nightly 0.3.62'
-    )
-    expect(
-      group(wrapper).get('[data-testid="benchmark-row-13"] .benchmarks__session-meta').text()
-    ).toContain('5 runs')
-  })
-
-  it('names the fastest build and compares it with the runner-up', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
+    expect(texts(wrapper, '.benchmarks__build')).toEqual([
+      'Nightly 0.3.62',
+      'Stable 0.3.60',
+      'Stable 0.3.55'
+    ])
+    expect(texts(wrapper, '.benchmarks__value')).toEqual(['1.9 s', '2.1 s', '2.9 s'])
     expect(vsLabels(wrapper)).toEqual(['Fastest', '1.11× slower', '1.53× slower'])
-    expect(
-      group(wrapper)
-        .findAll('.benchmarks__value')
-        .map((cell) => cell.text())
-    ).toEqual(['1.9 s', '2.1 s', '2.9 s'])
     expect(
       group(wrapper)
         .findAll('.benchmarks__bar-fill--best')
         .map((fill) => fill.element.closest('tr')?.getAttribute('data-testid'))
     ).toEqual(['benchmark-row-13'])
-    expect(group(wrapper).find('.benchmarks__axis').exists()).toBe(false)
     expect(
       Number.parseFloat(
-        (
-          group(wrapper).get('[data-testid="benchmark-bar-13"] .benchmarks__bar-fill')
-            .element as HTMLElement
-        ).style.width
+        (row(wrapper, '13').get('.benchmarks__bar-fill').element as HTMLElement).style.width
       )
     ).toBeCloseTo((1.9 / 3.7) * 100, 3)
-  })
-
-  it('describes a single-run group without a comparison', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-    const single = group(wrapper, 'benchmark-group-landscape.json-Apple M3 Max')
-
-    expect(single.get('.benchmarks__single-note').text()).toBe(
+    expect(group(wrapper).find('.benchmarks__single-note').exists()).toBe(false)
+    expect(group(wrapper, PORTRAIT_5090).get('.benchmarks__single-note').text()).toBe(
       'Only one build ran this workflow here. Run it on another build to compare.'
     )
-    expect(single.get('.benchmarks__vs').text()).toBe('')
+    expect(vsLabels(wrapper, PORTRAIT_5090)).toEqual([''])
+    expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
   })
 
-  it('compares against a chosen baseline and resets it', async () => {
+  it('keeps different computers with the same GPU in separate comparisons', async () => {
+    useBenchmarks([
+      run('21', 'a.json', 2, { cpu: 'AMD Ryzen 9 7950X' }),
+      run('22', 'a.json', 3, { cpu: 'Intel Core i9-14900K' }),
+      run('23', 'a.json', 2.5, { cpu: 'AMD Ryzen 9 7950X', build: 'Stable' })
+    ])
     const wrapper = mountView()
     await flushPromises()
 
-    await openRowMenu(wrapper, '12')
-    await chooseMenuItem('.benchmarks__set-baseline')
+    expect(texts(wrapper, '.benchmarks__group-meta', 'benchmarks')).toEqual([
+      'NVIDIA RTX 4090 · AMD Ryzen 9 7950X · 2 sessions · 10 runs',
+      'NVIDIA RTX 4090 · Intel Core i9-14900K · 1 session · 5 runs'
+    ])
+    expect(await menuOptions(wrapper, 'hardware')).toEqual([
+      'All',
+      'NVIDIA RTX 4090 · AMD Ryzen 9 7950X',
+      'NVIDIA RTX 4090 · Intel Core i9-14900K'
+    ])
+    await chooseOption(wrapper, 'hardware', 'NVIDIA RTX 4090 · Intel Core i9-14900K')
+    expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="benchmark-row-22"]').exists()).toBe(true)
+  })
 
+  it('compares filtered runs with the fastest run of the whole group', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await search(wrapper, 'stable 0.3.55')
+    expect(rowIds(wrapper)).toEqual(['9'])
+    expect(vsLabels(wrapper)).toEqual(['1.53× slower'])
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs fastest')
+    expect(group(wrapper).get('.benchmarks__reference-hidden').text()).toBe(
+      'Compared with session 13, which the filters hide.'
+    )
+    expect(group(wrapper).find('.benchmarks__single-note').exists()).toBe(false)
+
+    await search(wrapper, '')
+    await chooseOption(wrapper, 'build', 'Stable 0.3.60')
+    expect(rowIds(wrapper)).toEqual(['12'])
+    expect(vsLabels(wrapper)).toEqual(['1.11× slower'])
+    expect(group(wrapper).find('.benchmarks__single-note').exists()).toBe(false)
+    expect(group(wrapper, LANDSCAPE_M3).find('.benchmarks__single-note').exists()).toBe(true)
+  })
+
+  it('keeps a chosen baseline while filters hide it, and resets it', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await rowAction(wrapper, '12', '.benchmarks__set-baseline')
     expect(vsLabels(wrapper)).toEqual(['1.11× faster', 'Baseline', '1.38× slower'])
     expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
-    expect(group(wrapper).get('.benchmarks__baseline-foot').text()).toContain(
+    expect(group(wrapper).get('.benchmarks__group-foot').text()).toContain(
       'Speed = baseline time ÷ run time'
     )
-    expect(
-      group(wrapper, 'benchmark-group-portrait.json-NVIDIA RTX 5090')
-        .find('.benchmarks__baseline-foot')
-        .exists()
-    ).toBe(false)
+    expect(group(wrapper, PORTRAIT_5090).find('.benchmarks__group-foot').exists()).toBe(false)
 
-    await compareBy(wrapper, 'fastestJobDurationSeconds')
+    await search(wrapper, 'stable 0.3.55')
+    expect(vsLabels(wrapper)).toEqual(['1.38× slower'])
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
+    expect(group(wrapper).get('.benchmarks__reference-hidden').text()).toBe(
+      'Compared with session 12, which the filters hide.'
+    )
+    expect(group(wrapper).find('.benchmarks__reset-baseline').exists()).toBe(true)
+
+    await search(wrapper, '')
+    await chooseOption(wrapper, 'compare-by', 'Fastest')
+    expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
     expect(vsLabels(wrapper)).toEqual(['1.80× faster', '1.13× faster', 'Baseline'])
 
     await group(wrapper).get('.benchmarks__reset-baseline').trigger('click')
@@ -391,10 +465,10 @@ describe('BenchmarksView', () => {
     expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs fastest')
   })
 
-  it('does not label another equally fast run as the baseline', async () => {
+  it('calls equally fast runs the same speed', async () => {
     useBenchmarks([
-      benchmark('21', 'a.json', 2, 'GPU', 'Build A'),
-      benchmark('22', 'a.json', 2, 'GPU', 'Build B')
+      run('21', 'a.json', 2, { gpu: 'GPU', build: 'Build A' }),
+      run('22', 'a.json', 2, { gpu: 'GPU', build: 'Build B' })
     ])
     const wrapper = mountView()
     await flushPromises()
@@ -403,34 +477,35 @@ describe('BenchmarksView', () => {
   })
 
   it('shows runs without measurements as unavailable', async () => {
-    useBenchmarks([...sampleBenchmarks, emptyRun('8')])
+    useBenchmarks([...sampleBenchmarks, unmeasuredRun('8')])
     const wrapper = mountView()
     await flushPromises()
 
-    const row = wrapper.get('[data-testid="benchmark-row-8"]')
     expect(rowIds(wrapper)).toEqual(['13', '12', '9', '8'])
-    expect(row.get('.benchmarks__no-data').text()).toBe('No measured runs')
-    expect(row.find('.benchmarks__bar').exists()).toBe(false)
-    expect(row.get('.benchmarks__value').text()).toBe('—')
-    expect(row.get('.benchmarks__vs').text()).toBe('Unavailable')
-    await openRowMenu(wrapper, '8')
+    expect(row(wrapper, '8').get('.benchmarks__no-data').text()).toBe('No measured runs')
+    expect(row(wrapper, '8').find('.benchmarks__bar').exists()).toBe(false)
+    expect(row(wrapper, '8').get('.benchmarks__value').text()).toBe('—')
+    expect(row(wrapper, '8').get('.benchmarks__vs').text()).toBe('Unavailable')
+    await openMenu(wrapper, '[data-testid="benchmark-row-8"] .benchmarks__row-menu')
     expect(menuItem('.benchmarks__set-baseline')?.hasAttribute('data-disabled')).toBe(true)
   })
 
-  it('shows every time of a run when its bar is hovered', async () => {
+  it('shows every time of a run from its bar, by pointer or keyboard', async () => {
     const wrapper = mountView()
     await flushPromises()
+    const bar = row(wrapper, '12').get('.benchmarks__bar')
 
-    await group(wrapper).get('[data-testid="benchmark-row-12"] .tooltip-wrap').trigger('focusin')
+    expect(bar.attributes('tabindex')).toBe('0')
+    expect(bar.attributes('aria-label')).toBe(
+      'Fastest 1.8 s, Average 2.2 s, Median 2.1 s, Slowest 2.9 s'
+    )
+    await row(wrapper, '12').get('.tooltip-wrap').trigger('focusin')
     await flushPromises()
 
     const tip = document.body.querySelector('.benchmarks__bar-tip')!
-    expect(tip.textContent).toContain('12')
     expect(tip.textContent).toContain('Stable 0.3.60')
     expect(tip.textContent).toContain('5 runs')
     expect(tip.textContent).toContain('Fastest1.8 s')
-    expect(tip.textContent).toContain('Average2.2 s')
-    expect(tip.textContent).toContain('Median2.1 s')
     expect(tip.textContent).toContain('Slowest2.9 s')
   })
 
@@ -438,13 +513,16 @@ describe('BenchmarksView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(await filterOptions(wrapper, 'compare-by')).toEqual([
+    expect(await menuOptions(wrapper, 'compare-by')).toEqual([
       'Fastest',
       'Average',
       'Median',
       'Slowest'
     ])
-    await compareBy(wrapper, 'fastestJobDurationSeconds')
+    await chooseOption(wrapper, 'compare-by', 'Fastest')
+    expect(wrapper.get('[data-testid="benchmarks-filter-compare-by"]').text()).toBe(
+      'Compare byFastest'
+    )
     expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
     expect(group(wrapper).get('.benchmarks__bar-head').text()).toBe('Fastest and range')
 
@@ -456,49 +534,95 @@ describe('BenchmarksView', () => {
       .findAll('.benchmarks__sort')
       .find((header) => header.text().startsWith('Session'))!
     await sessionHeader.trigger('click')
-    expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
+    expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
     await sessionHeader.trigger('click')
-    expect(rowIds(wrapper)).toEqual(['12', '13', '9'])
+    expect(rowIds(wrapper)).toEqual(['9', '12', '13'])
   })
 
-  it('reorders rows by dragging and with Alt+arrow keys', async () => {
+  it('moves rows up and down by dragging and with Alt+arrow keys', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await drag(wrapper, '13', '12')
+    expect(rowIds(wrapper)).toEqual(['12', '13', '9'])
+    await drag(wrapper, '12', '9')
+    expect(rowIds(wrapper)).toEqual(['13', '9', '12'])
+    await drag(wrapper, '12', '13')
+    expect(rowIds(wrapper)).toEqual(['12', '13', '9'])
+    expect(group(wrapper).get('.benchmarks__metric-sort').text()).toBe('Median')
+    expect(vsLabels(wrapper)).toEqual(['1.11× slower', 'Fastest', '1.53× slower'])
+
+    await pressOnGrip(wrapper, '9', 'ArrowUp')
+    expect(rowIds(wrapper)).toEqual(['12', '9', '13'])
+    expect(document.activeElement).toBe(row(wrapper, '9').get('.benchmarks__grip').element)
+    await pressOnGrip(wrapper, '12', 'ArrowDown')
+    expect(rowIds(wrapper)).toEqual(['9', '12', '13'])
+
+    await drag(wrapper, '11', '12')
+    expect(rowIds(wrapper)).toEqual(['9', '12', '13'])
+    expect(rowIds(wrapper, PORTRAIT_5090)).toEqual(['11'])
+  })
+
+  it('clears the drop highlight when a drag leaves the table', async () => {
     const wrapper = mountView()
     await flushPromises()
     const dataTransfer = new DataTransfer()
 
-    await wrapper
-      .get('[data-testid="benchmark-row-9"] .benchmarks__grip')
-      .trigger('dragstart', { dataTransfer })
-    await wrapper.get('[data-testid="benchmark-row-13"]').trigger('dragover', { dataTransfer })
-    expect(
-      wrapper.get('[data-testid="benchmark-row-13"]').classes('benchmarks__row--drop-target')
-    ).toBe(true)
-    await wrapper.get('[data-testid="benchmark-row-13"]').trigger('drop', { dataTransfer })
+    await row(wrapper, '9').get('.benchmarks__grip').trigger('dragstart', { dataTransfer })
+    await row(wrapper, '13').trigger('dragover', { dataTransfer })
+    expect(row(wrapper, '13').classes()).toContain('benchmarks__row--drop-target')
 
+    group(wrapper)
+      .get('tbody')
+      .element.dispatchEvent(
+        new DragEvent('dragleave', {
+          bubbles: true,
+          dataTransfer,
+          relatedTarget: row(wrapper, '11').element
+        })
+      )
+    await flushPromises()
+    expect(row(wrapper, '13').classes()).not.toContain('benchmarks__row--drop-target')
+  })
+
+  it('keeps every row movable after filters change, runs arrive or another folder loads', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await search(wrapper, 'stable')
+    await drag(wrapper, '9', '12')
+    await search(wrapper, '')
+    expect(rowIds(wrapper)).toEqual(['13', '9', '12'])
+    await pressOnGrip(wrapper, '13', 'ArrowDown')
     expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
-    expect(compareByCurrent(wrapper)).toBe('Compare byManual')
-    expect((await filterOptions(wrapper, 'compare-by'))[0]).toBe('Manual')
-    expect(group(wrapper).get('.benchmarks__metric-sort').text()).toBe('Median')
-    expect(vsLabels(wrapper)).toEqual(['1.53× slower', 'Fastest', '1.11× slower'])
 
-    await wrapper
-      .get('[data-testid="benchmark-row-12"] .benchmarks__grip')
-      .trigger('keydown', { key: 'ArrowLeft', altKey: true })
-    expect(rowIds(wrapper)).toEqual(['9', '12', '13'])
-    await wrapper
-      .get('[data-testid="benchmark-row-9"] .benchmarks__grip')
-      .trigger('keydown', { key: 'ArrowRight', altKey: true })
-    expect(rowIds(wrapper)).toEqual(['12', '9', '13'])
+    useBenchmarks([...sampleBenchmarks, run('14', 'portrait.json', 5, { build: 'Old' })])
+    await wrapper.get('[data-testid="benchmarks-refresh"]').trigger('click')
+    await flushPromises()
+    expect(rowIds(wrapper)).toEqual(['9', '13', '12', '14'])
+    await pressOnGrip(wrapper, '14', 'ArrowUp')
+    expect(rowIds(wrapper)).toEqual(['9', '13', '14', '12'])
 
-    await wrapper
-      .get('[data-testid="benchmark-row-11"] .benchmarks__grip')
-      .trigger('dragstart', { dataTransfer })
-    await wrapper.get('[data-testid="benchmark-row-12"]').trigger('drop', { dataTransfer })
-    expect(rowIds(wrapper)).toEqual(['12', '9', '13'])
-
-    await compareBy(wrapper, 'medianJobDurationSeconds')
+    vi.mocked(window.api.browseFolder).mockResolvedValue('D:\\shared')
+    useBenchmarks(sampleBenchmarks, 'D:\\shared')
+    await wrapper.get('.benchmarks__open-folder').trigger('click')
+    await flushPromises()
     expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
-    expect(await filterOptions(wrapper, 'compare-by')).toHaveLength(4)
+    expect(group(wrapper).get('.benchmarks__metric-sort').text()).toBe('Median ↑')
+    await pressOnGrip(wrapper, '9', 'ArrowUp')
+    expect(rowIds(wrapper)).toEqual(['13', '9', '12'])
+  })
+
+  it('sorts again by any header after a manual order', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await drag(wrapper, '9', '13')
+    expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
+    await group(wrapper).get('.benchmarks__metric-sort').trigger('click')
+
+    expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
+    expect(group(wrapper).get('.benchmarks__metric-sort').text()).toBe('Median ↑')
   })
 
   it('collapses a group', async () => {
@@ -518,22 +642,21 @@ describe('BenchmarksView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="benchmark-column-systemInfo.cpu_model"]').exists()).toBe(
-      true
-    )
-    expect(wrapper.find('[data-testid="benchmark-column-workflowName"]').exists()).toBe(false)
-    await setChecked(
-      wrapper.get('[data-testid="benchmark-column-averageJobDurationSeconds"]'),
-      true
-    )
-    await setChecked(wrapper.get('[data-testid="benchmark-column-customScore"]'), true)
-    await setChecked(wrapper.get('[data-testid="benchmark-column-instance.name"]'), false)
-
+    await openMenu(wrapper, '[data-testid="benchmarks-columns"]')
+    expect(menuItem('[data-testid="benchmark-column-systemInfo.cpu_model"]')).not.toBeNull()
+    expect(menuItem('[data-testid="benchmark-column-workflowName"]')).toBeNull()
+    menuItem('[data-testid="benchmark-column-averageJobDurationSeconds"]')!.click()
+    await flushPromises()
+    expect(openMenuElement()).not.toBeNull()
+    menuItem('[data-testid="benchmark-column-customScore"]')!.click()
+    menuItem('[data-testid="benchmark-column-instance.name"]')!.click()
+    await flushPromises()
     expect(
-      group(wrapper)
-        .findAll('thead th')
-        .map((header) => header.text())
-    ).toEqual([
+      menuItem('[data-testid="benchmark-column-customScore"]')!.getAttribute('aria-checked')
+    ).toBe('true')
+    await closeMenu()
+
+    expect(texts(wrapper, 'thead th')).toEqual([
       '',
       'Session',
       'Median and range',
@@ -543,58 +666,41 @@ describe('BenchmarksView', () => {
       'Vs fastest',
       ''
     ])
-    expect(
-      group(wrapper)
-        .findAll('.benchmarks__best')
-        .map((cell) => cell.text())
-    ).toEqual(['2 s'])
-    expect(group(wrapper).get('[data-testid="benchmark-cell-12-customScore"]').text()).toBe('12')
+    expect(texts(wrapper, '.benchmarks__best')).toEqual(['2 s'])
+    expect(row(wrapper, '12').get('[data-testid="benchmark-cell-12-customScore"]').text()).toBe(
+      '12'
+    )
 
-    await openMenu(wrapper, `[data-testid="${PORTRAIT_4090}"] .benchmarks__group-menu`)
-    await chooseMenuItem('.benchmarks__export-group')
-    const svg = lastExportedSvg()
-    expect(svg).toContain('Custom Score')
-    expect(svg).toContain('GPU / Hardware')
+    await groupAction(wrapper, '.benchmarks__export-group')
+    const svg = createResultsPngMock.mock.calls.at(-1)![0]
+    expect(svg).toContain('Custom Score: 13')
+    expect(svg).toContain('GPU / Hardware: NVIDIA RTX 4090')
     expect(svg).toContain('Duration range')
   })
 
-  it('closes the columns menu when clicking outside', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-    const picker = wrapper.get('.benchmarks__columns-picker')
-    const details = picker.element as HTMLDetailsElement
-
-    details.open = true
-    await picker.get('[role="checkbox"]').trigger('pointerdown')
-    expect(details.open).toBe(true)
-
-    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
-    expect(details.open).toBe(false)
-  })
-
-  it('filters by search and the toolbar selects', async () => {
+  it('filters by search and the toolbar menus', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('input[type="text"]').setValue('stable 0.3.55')
+    await search(wrapper, 'stable 0.3.55')
     expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="benchmark-row-9"]').exists()).toBe(true)
 
-    await wrapper.get('input[type="text"]').setValue('nothing here')
+    await search(wrapper, 'nothing here')
     expect(wrapper.get('.benchmarks__no-results').text()).toContain('No runs match these filters')
 
-    await wrapper.get('input[type="text"]').setValue('')
-    await chooseFilter(wrapper, 'hardware', 'Apple M3 Max')
+    await search(wrapper, '')
+    await chooseOption(wrapper, 'hardware', 'Apple M3 Max')
     expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="benchmark-row-10"]').exists()).toBe(true)
+    await chooseOption(wrapper, 'hardware', 'All')
+    await chooseOption(wrapper, 'workflow', 'landscape.json')
+    expect(wrapper.findAll('.benchmarks__group')).toHaveLength(1)
   })
 
   it('labels unmanaged workspaces and unknown hardware', async () => {
     useBenchmarks([
-      {
-        ...benchmark('31', 'mystery.json', 1, null),
-        workspace: { id: null, name: null }
-      }
+      { ...run('31', 'mystery.json', 1, { gpu: null }), workspace: { id: null, name: null } }
     ])
     const wrapper = mountView()
     await flushPromises()
@@ -602,27 +708,20 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__group-meta').text()).toBe(
       'Unknown hardware · 1 session · 5 runs'
     )
-    expect(await filterOptions(wrapper, 'workspace')).toEqual(['All', 'Unmanaged'])
-    await chooseFilter(wrapper, 'workspace', '__unmanaged__')
+    expect(await menuOptions(wrapper, 'workspace')).toEqual(['All', 'Unmanaged'])
+    await chooseOption(wrapper, 'workspace', 'Unmanaged')
     expect(wrapper.find('[data-testid="benchmark-row-31"]').exists()).toBe(true)
   })
 
-  it('exports the selected runs from the selection bar', async () => {
+  it('exports the selected runs that are on screen', async () => {
     const wrapper = mountView()
     await flushPromises()
 
     await selectRow(wrapper, '12')
     await selectRow(wrapper, '13')
-    expect(wrapper.get('[data-testid="benchmark-row-12"]').classes()).toContain(
-      'benchmarks__row--selected'
-    )
+    expect(row(wrapper, '12').classes()).toContain('benchmarks__row--selected')
     expect(wrapper.get('.benchmarks__selected-count').text()).toBe('2 selected')
-    const exportButton = wrapper.get('.benchmarks__export-results')
-    expect(exportButton.text()).toBe('Export results')
-    await exportButton.trigger('click')
-    await flushPromises()
-
-    expect(exportResultsImageMock).toHaveBeenCalledTimes(1)
+    let svg = await exportSelection(wrapper)
     const [png, imageType, defaultPath] = exportResultsImageMock.mock.calls[0] as unknown as [
       ArrayBuffer,
       string,
@@ -630,56 +729,62 @@ describe('BenchmarksView', () => {
     ]
     expect(png).toBeInstanceOf(ArrayBuffer)
     expect(imageType).toBe('benchmark-comparison')
-    expect(defaultPath).toBe('C:\\results\\performance-tests')
-    const svg = lastExportedSvg()
-    expect(svg).toContain('Benchmark Comparison')
-    expect(svg).toContain('portrait.json')
-    expect(svg).toContain('Duration range')
+    expect(defaultPath).toBe(DEFAULT_FOLDER)
+    expect(svg).toContain('Session: 13')
+    expect(svg).toContain('Session: 12')
+    expect(svg.indexOf('Session: 13')).toBeLessThan(svg.indexOf('Session: 12'))
     expect(svg).toContain('Each line shows the fastest and slowest run, with the average marked.')
-    expect(svg.match(/class="table-cell best-cell"/g)).toHaveLength(4)
+    expect(svg.match(/fill="#e8e8ee"/g)?.length).toBeGreaterThan(0)
+    expect(svg.match(/fill="#7aa2f7"/g)?.length).toBeGreaterThan(0)
 
+    await search(wrapper, 'nightly')
+    expect(wrapper.get('.benchmarks__selected-count').text()).toBe('1 selected')
+    svg = await exportSelection(wrapper)
+    expect(svg).toContain('Session: 13')
+    expect(svg).not.toContain('Session: 12')
+
+    await search(wrapper, '')
+    expect(wrapper.get('.benchmarks__selected-count').text()).toBe('2 selected')
     await wrapper.get('.benchmarks__clear-selection').trigger('click')
     expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
   })
 
-  it('exports relative speed once a baseline is chosen', async () => {
+  it('exports relative speed only for one group with a chosen baseline', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await openRowMenu(wrapper, '12')
-    await chooseMenuItem('.benchmarks__set-baseline')
-    await openMenu(wrapper, `[data-testid="${PORTRAIT_4090}"] .benchmarks__group-menu`)
-    await chooseMenuItem('.benchmarks__select-group')
+    await rowAction(wrapper, '12', '.benchmarks__set-baseline')
+    await groupAction(wrapper, '.benchmarks__select-group')
     expect(wrapper.get('.benchmarks__selected-count').text()).toBe('3 selected')
-    await wrapper.get('.benchmarks__export-results').trigger('click')
-    await flushPromises()
-
-    const svg = lastExportedSvg()
-    expect(svg).toContain('Relative speed')
+    let svg = await exportSelection(wrapper)
     expect(svg).toContain('Relative speed factor = baseline duration / run duration.')
     expect(svg).toContain('1.11× Faster')
     expect(svg).toContain('1.00× Baseline')
-    expect(svg).not.toContain('>Duration range (min → max)</text>')
+
+    await selectRow(wrapper, '11')
+    svg = await exportSelection(wrapper)
+    expect(svg).not.toContain('Relative speed')
+    expect(svg).toContain('Duration range (min → max)')
   })
 
-  it('shows export errors in the selection bar', async () => {
+  it('shows export errors in the selection bar until the list reloads', async () => {
     exportResultsImageMock.mockResolvedValueOnce({ ok: false, message: 'Disk full' })
     const wrapper = mountView()
     await flushPromises()
 
-    await selectRow(wrapper, '13')
-    await wrapper.get('.benchmarks__export-results').trigger('click')
-    await flushPromises()
-
+    await groupAction(wrapper, '.benchmarks__export-group')
     expect(wrapper.get('.benchmarks__export-error').text()).toBe('Disk full')
-    await wrapper.get('.benchmarks__clear-selection').trigger('click')
+    expect(wrapper.find('.benchmarks__selected-count').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="benchmarks-refresh"]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
   })
 
   it('limits exports to twenty runs', async () => {
     useBenchmarks(
       Array.from({ length: 21 }, (_, index) =>
-        benchmark(String(index + 1), 'bulk.json', 2 + index / 10, 'GPU', `Build ${index}`)
+        run(String(index + 1), 'bulk.json', 2 + index / 10, { gpu: 'GPU', build: `Build ${index}` })
       )
     )
     const wrapper = mountView()
@@ -699,15 +804,54 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__export-results').attributes()).not.toHaveProperty('disabled')
   })
 
-  it('confirms before deleting all files for a benchmark record', async () => {
+  it('renames a session in place and keeps its selection, order and baseline', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await rowAction(wrapper, '12', '.benchmarks__set-baseline')
+    await selectRow(wrapper, '12')
+    await drag(wrapper, '9', '13')
+
+    await rowAction(wrapper, '12', '.benchmarks__rename-session')
+    await vi.waitFor(() => expect(document.activeElement).toBe(sessionField(wrapper, '12')))
+    await typeSessionName(sessionField(wrapper, '12'), 'gpu-baseline')
+
+    expect(renamePerformanceTestBenchmarkMock).toHaveBeenCalledWith(
+      DEFAULT_FOLDER,
+      '12',
+      'gpu-baseline'
+    )
+    expect(rowIds(wrapper)).toEqual(['9', '13', 'gpu-baseline'])
+    expect(vsLabels(wrapper)).toEqual(['1.38× slower', '1.11× faster', 'Baseline'])
+    expect(row(wrapper, 'gpu-baseline').get('[role="checkbox"]').attributes('aria-checked')).toBe(
+      'true'
+    )
+  })
+
+  it('puts the old name back when a rename is refused', async () => {
+    renamePerformanceTestBenchmarkMock.mockResolvedValueOnce({ ok: false, message: 'Name taken' })
+    const wrapper = mountView()
+    await flushPromises()
+    const dialogs = useDialogs()
+
+    expect(sessionField(wrapper, '13').getAttribute('aria-label')).toBe('Edit session 13')
+    await typeSessionName(sessionField(wrapper, '13'), '12')
+
+    expect(dialogs.state.kind).toBe('alert')
+    expect(dialogs.state.alert.title).toBe('Could not rename session')
+    expect(dialogs.state.alert.message).toBe('Name taken')
+    dialogs.cancel()
+    await flushPromises()
+    expect(sessionField(wrapper, '13').textContent).toBe('13')
+    expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
+  })
+
+  it('confirms before deleting all files for a session', async () => {
     const wrapper = mountView()
     await flushPromises()
     const dialogs = useDialogs()
     await selectRow(wrapper, '13')
 
-    await openRowMenu(wrapper, '13')
-    await chooseMenuItem('.benchmarks__delete-record')
-    expect(dialogs.state.open).toBe(true)
+    await rowAction(wrapper, '13', '.benchmarks__delete-record')
     expect(dialogs.state.kind).toBe('confirm')
     expect(dialogs.state.confirm.title).toBe('Delete portrait.json?')
     expect(dialogs.state.confirm.message).toContain('permanently delete all files for session 13')
@@ -716,22 +860,19 @@ describe('BenchmarksView', () => {
     dialogs.confirmPrimary()
     await flushPromises()
 
-    expect(deletePerformanceTestBenchmarkMock).toHaveBeenCalledWith(
-      'C:\\results\\performance-tests',
-      '13'
-    )
+    expect(deletePerformanceTestBenchmarkMock).toHaveBeenCalledWith(DEFAULT_FOLDER, '13')
     expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(false)
+    expect(vsLabels(wrapper)).toEqual(['Fastest', '1.38× slower'])
     expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
   })
 
-  it('shows an error when the benchmark delete bridge rejects', async () => {
+  it('shows an error when deleting a session fails', async () => {
     deletePerformanceTestBenchmarkMock.mockRejectedValueOnce(new Error('Delete IPC unavailable'))
     const wrapper = mountView()
     await flushPromises()
     const dialogs = useDialogs()
 
-    await openRowMenu(wrapper, '13')
-    await chooseMenuItem('.benchmarks__delete-record')
+    await rowAction(wrapper, '13', '.benchmarks__delete-record')
     dialogs.confirmPrimary()
     await flushPromises()
 
@@ -741,108 +882,26 @@ describe('BenchmarksView', () => {
     expect(wrapper.find('[data-testid="benchmark-row-13"]').exists()).toBe(true)
   })
 
-  it('renames a session inline and keeps its selection, order and baseline', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-    await openRowMenu(wrapper, '12')
-    await chooseMenuItem('.benchmarks__set-baseline')
-    await selectRow(wrapper, '12')
-
-    await openRowMenu(wrapper, '12')
-    await chooseMenuItem('.benchmarks__rename-session')
-    const input = wrapper.get<HTMLInputElement>('.benchmarks__session-name-input')
-    expect(input.element.value).toBe('12')
-    expect(
-      wrapper.get('[data-testid="benchmark-row-12"] .benchmarks__row-menu').attributes()
-    ).toHaveProperty('disabled')
-    await input.setValue('gpu-baseline')
-    await input.trigger('keydown', { key: 'Enter' })
-    await flushPromises()
-
-    expect(renamePerformanceTestBenchmarkMock).toHaveBeenCalledWith(
-      'C:\\results\\performance-tests',
-      '12',
-      'gpu-baseline'
-    )
-    expect(wrapper.find('[data-testid="benchmark-row-12"]').exists()).toBe(false)
-    expect(rowIds(wrapper)).toEqual(['13', 'gpu-baseline', '9'])
-    expect(vsLabels(wrapper)).toEqual(['1.11× faster', 'Baseline', '1.38× slower'])
-    expect(
-      wrapper
-        .get('[data-testid="benchmark-row-gpu-baseline"] [role="checkbox"]')
-        .attributes('aria-checked')
-    ).toBe('true')
-  })
-
-  it('edits a session name from the name itself and reports rename errors', async () => {
-    renamePerformanceTestBenchmarkMock.mockResolvedValueOnce({ ok: false, message: 'Name taken' })
-    const wrapper = mountView()
-    await flushPromises()
-    const dialogs = useDialogs()
-
-    const sessionButton = wrapper.get('[data-testid="benchmark-row-13"] .benchmarks__session-name')
-    expect(sessionButton.attributes('aria-label')).toBe('Edit session 13')
-    await sessionButton.trigger('click')
-    const input = wrapper.get<HTMLInputElement>('.benchmarks__session-name-input')
-    await input.setValue('12')
-    await input.trigger('keydown', { key: 'Enter' })
-    await flushPromises()
-
-    expect(dialogs.state.kind).toBe('alert')
-    expect(dialogs.state.alert.title).toBe('Could not rename session')
-    expect(dialogs.state.alert.message).toBe('Name taken')
-    dialogs.cancel()
-    await flushPromises()
-
-    await input.setValue('  ')
-    await input.trigger('keydown', { key: 'Enter' })
-    await flushPromises()
-    expect(dialogs.state.alert.message).toBe('Enter a session name.')
-    dialogs.cancel()
-    await flushPromises()
-
-    await input.trigger('keydown', { key: 'Escape' })
-    expect(wrapper.find('.benchmarks__session-name-input').exists()).toBe(false)
-    expect(renamePerformanceTestBenchmarkMock).toHaveBeenCalledTimes(1)
-  })
-
   it('opens the current results folder in the picker and loads a selected folder', async () => {
     const customFolder = 'D:\\shared-benchmarks'
-    const api = window.api
-    vi.mocked(api.browseFolder).mockResolvedValue(customFolder)
-    vi.mocked(api.listPerformanceTestBenchmarks)
+    vi.mocked(window.api.browseFolder).mockResolvedValue(customFolder)
+    listMock()
       .mockReset()
-      .mockResolvedValueOnce({
-        folderPath: 'C:\\results\\performance-tests',
-        benchmarks: sampleBenchmarks
-      })
-      .mockResolvedValueOnce({
-        folderPath: customFolder,
-        benchmarks: [sampleBenchmarks[3]!]
-      })
+      .mockResolvedValueOnce({ folderPath: DEFAULT_FOLDER, benchmarks: sampleBenchmarks })
+      .mockResolvedValueOnce({ folderPath: customFolder, benchmarks: [sampleBenchmarks[3]!] })
     const wrapper = mountView()
     await flushPromises()
+    await selectRow(wrapper, '10')
 
-    expect(wrapper.get('.benchmarks__open-folder').attributes('title')).toBe(
-      'C:\\results\\performance-tests'
-    )
+    expect(wrapper.get('.benchmarks__open-folder').attributes('title')).toBe(DEFAULT_FOLDER)
     await wrapper.get('.benchmarks__open-folder').trigger('click')
     await flushPromises()
 
-    expect(api.browseFolder).toHaveBeenCalledWith('C:\\results\\performance-tests')
-    expect(api.listPerformanceTestBenchmarks).toHaveBeenLastCalledWith(customFolder)
+    expect(window.api.browseFolder).toHaveBeenCalledWith(DEFAULT_FOLDER)
+    expect(listMock()).toHaveBeenLastCalledWith(customFolder)
     expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
-    expect(wrapper.get('[data-testid="benchmark-row-10"]').text()).toContain('Stable 0.3.60')
-  })
-
-  it('refreshes the currently selected sessions folder', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-testid="benchmarks-refresh"]').trigger('click')
-    await flushPromises()
-
-    expect(listMock()).toHaveBeenLastCalledWith('C:\\results\\performance-tests')
+    expect(row(wrapper, '10').text()).toContain('Stable 0.3.60')
+    expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
   })
 
   it('shows a skeleton while loading', async () => {
@@ -851,11 +910,9 @@ describe('BenchmarksView', () => {
     await flushPromises()
 
     expect(wrapper.find('.benchmarks__state--loading').exists()).toBe(true)
-    expect(
-      wrapper
-        .get('[data-testid="benchmarks-refresh"] svg')
-        .classes('benchmarks__refresh-icon--busy')
-    ).toBe(true)
+    expect(wrapper.get('[data-testid="benchmarks-refresh"]').attributes()).toHaveProperty(
+      'disabled'
+    )
   })
 
   it('offers a refresh when loading fails', async () => {
