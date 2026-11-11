@@ -98,52 +98,60 @@ const WAYS = [
 /* Both machines stand on the same floor, flush with the text's left edge:
  * the laptop fills its box, the cloud (drawn smaller, inset) is scaled up
  * from that corner to match. */
+/* The devices follow the window: a size between 92 and 124px wide. The
+ * cloud fills less of its box than the laptop, so it is drawn up to match. */
 .mss-way-device {
   display: flex;
-  height: 72px;
+  height: clamp(60px, 5.4vw, 80px);
   flex: none;
   align-items: flex-end;
 }
 .mss-way .mss-laptop {
-  width: 112px;
-  height: 73px;
-  margin-left: -6px;
+  width: clamp(92px, 8.2vw, 124px);
+  height: auto;
+  margin-left: -4px;
+  aspect-ratio: 160 / 104;
 }
 .mss-way .mss-cloud {
-  transform: translate(-16px, 2px) scale(1.2);
+  transform: translate(-20%, 6px) scale(1.4);
   transform-origin: left bottom;
 }
 .mss-way:not([aria-checked='true']) .mss-way-device {
-  opacity: 0.8;
+  opacity: 0.9;
   transition: opacity 160ms ease;
 }
 .mss-way:hover .mss-way-device {
   opacity: 1;
 }
+/* Three sizes, one step apart: the name, its one line, the fine print. */
 .mss-way-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .mss-way-title {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 24px;
 }
 .mss-way-tag {
   color: var(--color-muted-foreground);
-  font-size: var(--text-ui);
+  font-size: 14px;
+  line-height: 20px;
 }
 .mss-way-desc {
-  margin-top: 10px;
+  margin-top: 12px;
   max-width: 34ch;
   color: var(--color-subtle-foreground);
-  font-size: var(--text-ui);
-  line-height: var(--text-ui--line-height);
+  font-size: 12.5px;
+  line-height: 18px;
   text-wrap: pretty;
 }
+/* Not picked: a shade down, still readable; the ring and the fill say
+ * which one is picked. */
 .mss-way:not([aria-checked='true']) .mss-way-title {
-  color: var(--color-muted-foreground);
+  color: color-mix(in oklch, var(--color-base-foreground) 82%, transparent);
 }
 .mss-way-desc b {
   color: var(--color-muted-foreground);
@@ -166,6 +174,36 @@ const WAYS = [
 }
 .mss-way[aria-checked='true'] .mss-way-mark {
   visibility: visible;
+}
+
+/* Run on alone (setup.css, .is-alone): the same stacked card, on the
+ * Home's build card's measures (MarBuildsRow.vue, .mbr-card: 16px corners,
+ * 20px padding, the device 88px), a size up. Here, not in setup.css, so it
+ * outranks the card's own rules above. */
+:root .proto-ui.proto-ui.proto-ui .mss-first.is-alone .mss-ways .mss-way {
+  padding: 32px 32px 34px;
+  border-radius: 16px;
+}
+.mss-first.is-alone .mss-way-mark {
+  top: 20px;
+  right: 20px;
+}
+.mss-first.is-alone .mss-ways {
+  gap: 14px;
+  margin-top: 28px;
+}
+.mss-first.is-alone .mss-way {
+  gap: 20px;
+}
+.mss-first.is-alone .mss-way-device {
+  height: clamp(64px, 5.6vw, 76px);
+}
+.mss-first.is-alone .mss-way .mss-laptop {
+  width: clamp(100px, 8.4vw, 118px);
+}
+.mss-first.is-alone .mss-way-desc {
+  margin-top: 10px;
+  max-width: 36ch;
 }
 
 /* Rows: the same cards stacked; the mark is a radio on the right. */
