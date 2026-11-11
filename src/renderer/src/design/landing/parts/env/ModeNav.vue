@@ -42,12 +42,12 @@ interface Item {
 }
 const NAV = computed<Record<Mode, Item[]>>(() => ({
   agent: [],
-  // Home from Milestone 4, Explore and Learn from 5; the builds follow in
+  // Home from Milestone 4, Explore from 3 (4.7), Learn from 5; the builds follow in
   // the sidebar group. Projects (Milestone 8) add the libraries, and the
   // builds move here (the sidebar group lists projects instead).
   create: [
     { page: 'overview', label: 'Home', icon: Home },
-    // Explore comes with Explore & Learn; at Milestone 2 apps live in Apps.
+    // Explore comes with Milestone 3; at Milestone 2 apps live in Apps.
     ...(can.value.explore
       ? [
           {
@@ -67,7 +67,7 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
     ...(can.value.exploreApps && !can.value.projects && proto.signedIn
       ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
       : []),
-    ...(can.value.explore
+    ...(can.value.learn
       ? [{ page: 'tutorials' as Page, label: 'Learn', icon: GraduationCap }]
       : []),
     // Where an app's results land, before Projects brings the Libraries group.

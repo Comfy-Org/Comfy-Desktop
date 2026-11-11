@@ -20,9 +20,10 @@ import { appsProto } from './appFlow'
  *                   (use cases); an app opens in a tab, as its user. Shown
  *                   as "5" in the menu; the later ones are shown one up.
  *                   (The value stays 4.5 so every `m >= n` check holds.)
- * 4.7  Workflows  - Milestone 3: the Workflows library joins Apps and
- *                   Assets in the sidebar (no Projects yet). Shown as "6".
- *   5  Explore    - Explore and Learn.
+ * 4.7  Workflows  - Milestone 3: Explore and the Workflows library join
+ *                   Apps and Assets in the sidebar (no Projects yet).
+ *                   Shown as "6".
+ *   5  Learn      - Learn.
  *   6  Builder    - the Build lens (deploy builds as APIs).
  *   7  One window - the long-term vision: builds open in the same window,
  *                   switched from the breadcrumb, still running.
@@ -44,8 +45,8 @@ export const MILESTONES = [
   { value: '3', label: '3 · Breadcrumb' },
   { value: '4', label: '4 · Home' },
   { value: '4.5', label: '5 · Explore apps (Milestone 2)' },
-  { value: '4.7', label: '6 · Workflows (Milestone 3)' },
-  { value: '5', label: '7 · Explore & Learn' },
+  { value: '4.7', label: '6 · Workflows & Explore (Milestone 3)' },
+  { value: '5', label: '7 · Learn' },
   { value: '6', label: '8 · Builder' },
   { value: '7', label: '9 · One window' },
   { value: '8', label: '10 · Projects (future)' },
@@ -76,7 +77,9 @@ export const can = computed(() => {
     exploreApps: m >= 4.5,
     /** Milestone 3: the Workflows library in the sidebar. */
     workflows: m >= 4.7,
-    explore: m >= 5,
+    /** Explore arrives with Workflows (Milestone 3); Learn after. */
+    explore: m >= 4.7,
+    learn: m >= 5,
     builder: m >= 6,
     oneWindow: m >= 7,
     projects: m >= 8,
