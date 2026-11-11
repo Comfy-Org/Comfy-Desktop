@@ -1022,7 +1022,9 @@
   /* One-click install: the consent under Set up's list; the action bar's
      own line is the only divider. */
   .mss-setup-consent {
-    margin-top: 28px;
+    margin-top: 24px;
+    /* The boxes line up with the rows' icons and the computer, 32px in. */
+    padding: 0 32px;
   }
   /* The Home's Spotlight (shell/homeBackgrounds.css): a neutral light from
    * the top centre, the same on every step. */
