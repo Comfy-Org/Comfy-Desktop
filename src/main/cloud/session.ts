@@ -513,10 +513,24 @@ export class CloudSession {
       getAccessToken: () => this.getAccessToken(),
       onUnauthorized: (rejectedAccessToken) => {
         if (dropWorkspaceToken(rejectedAccessToken)) return
-        if (loadGrant()?.accessToken !== rejectedAccessToken) return
+        const grant = loadGrant()
+        if (grant?.accessToken !== rejectedAccessToken) return
+        if (isExpired(grant) && grant.refreshToken) {
+          void this.signOutIfGrantEnded(grant, onSignedOut)
+          return
+        }
         this.logout()
         onSignedOut?.()
       }
     }
+  }
+
+  private async signOutIfGrantEnded(grant: AuthTokens, onSignedOut?: () => void): Promise<void> {
+    const generation = this.authGeneration
+    const refreshed = await this.refreshGrant(grant)
+    if (refreshed !== 'ended' || generation !== this.authGeneration) return
+    if (loadGrant()?.accessToken !== grant.accessToken) return
+    this.logout()
+    onSignedOut?.()
   }
 }
