@@ -319,12 +319,8 @@ const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
             <MarSeg v-model="view" :options="VIEWS" label="Preview" class="mar-tpl-views" />
           </header>
           <div v-if="view === 'result'" class="mad-view">
-            <!-- Catalog pictures are small: never past 1.5× their size, so
-                 they stay crisp. -->
-            <div
-              class="mad-fit"
-              :style="{ '--r': ratio, maxWidth: natural ? `${natural * 1.5}px` : undefined }"
-            >
+            <!-- The picture fits the stage, like an asset's. -->
+            <div class="mad-fit" :style="{ '--r': ratio }">
               <div ref="mediaEl" class="mad-media" :style="{ scale: zoom / 100 }">
                 <img :src="media.hero" alt="" draggable="false" @load="measure" />
                 <template v-if="media.quadrants">
