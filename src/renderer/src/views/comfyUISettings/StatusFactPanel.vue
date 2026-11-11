@@ -3,6 +3,7 @@ import { computed, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { Pencil } from 'lucide-vue-next'
+import InlineNameEdit from '../../components/InlineNameEdit.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
 import type { DetailField, DetailSection, Installation } from '../../types/ipc'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -14,6 +15,7 @@ interface Props {
   onRename?: (newName: string) => Promise<boolean>
   onUpdateUrl?: (newUrl: string) => Promise<boolean>
   urlRestartPending?: boolean
+  hideHero?: boolean
 }
 
 const props = defineProps<Props>()
@@ -26,69 +28,6 @@ function openPath(path: string): void {
 }
 
 const nameEditable = computed(() => props.installation?.sourceCategory !== 'cloud')
-
-const nameEl = useTemplateRef<HTMLElement>('nameEl')
-
-function syncName(): void {
-  const el = nameEl.value
-  if (!el) return
-  const name = props.installation?.name ?? ''
-  if (el.textContent !== name) el.textContent = name
-}
-
-watch(
-  [() => props.installation?.name ?? '', nameEl],
-  () => {
-    if (document.activeElement !== nameEl.value) syncName()
-  },
-  { immediate: true, flush: 'post' }
-)
-
-function focusName(): void {
-  const el = nameEl.value
-  if (!el) return
-  el.focus()
-  const range = document.createRange()
-  range.selectNodeContents(el)
-  range.collapse(false)
-  const sel = window.getSelection()
-  sel?.removeAllRanges()
-  sel?.addRange(range)
-}
-
-function handleNameSelectAll(event: KeyboardEvent): void {
-  event.preventDefault()
-  const el = event.currentTarget as HTMLElement
-  const range = document.createRange()
-  range.selectNodeContents(el)
-  const sel = window.getSelection()
-  sel?.removeAllRanges()
-  sel?.addRange(range)
-}
-
-function handleNamePaste(event: ClipboardEvent): void {
-  event.preventDefault()
-  const text = event.clipboardData?.getData('text/plain') ?? ''
-  document.execCommand('insertText', false, text)
-}
-
-function handleNameEscape(): void {
-  syncName()
-  nameEl.value?.blur()
-}
-
-async function handleNameBlur(event: FocusEvent): Promise<void> {
-  const el = event.target as HTMLElement
-  const current = props.installation?.name ?? ''
-  const newName = el.textContent?.trim() ?? ''
-  if (newName && newName !== current) {
-    if (el.textContent !== newName) el.textContent = newName
-    const committed = await props.onRename?.(newName)
-    if (committed === false) syncName()
-    return
-  }
-  syncName()
-}
 
 const urlEditable = computed(() => props.installation?.sourceCategory === 'remote')
 
@@ -321,49 +260,14 @@ const groups = computed<FactGroup[]>(() => {
 
 <template>
   <div class="status-fact-panel flex max-w-[720px] flex-col gap-3">
-    <header v-if="installation" class="status-fact-hero mb-1 flex flex-col gap-1.5">
+    <header v-if="installation && !hideHero" class="status-fact-hero mb-1 flex flex-col gap-1.5">
       <div class="status-fact-hero-title-row flex flex-wrap items-center gap-2">
-        <span
-          class="status-fact-hero-name-wrap group/name -ml-1.5 inline-flex max-w-full items-center gap-1.5"
-        >
-          <span
-            v-if="nameEditable"
-            id="status-fact-hero-name"
-            ref="nameEl"
-            class="status-fact-hero-name peer/name cursor-text hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] min-w-0 truncate rounded-md px-1.5 py-0.5 text-[16px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease]"
-            role="textbox"
-            :aria-label="t('statusFactPanel.editName')"
-            contenteditable="plaintext-only"
-            spellcheck="false"
-            @blur="handleNameBlur"
-            @keydown.enter.prevent="($event.target as HTMLElement).blur()"
-            @keydown.esc.prevent="handleNameEscape"
-            @keydown.ctrl.a.prevent="handleNameSelectAll"
-            @keydown.meta.a.prevent="handleNameSelectAll"
-            @paste="handleNamePaste"
-          />
-          <span
-            v-else
-            class="status-fact-hero-name min-w-0 truncate rounded-md px-1.5 py-0.5 text-[16px] leading-6 font-semibold text-text outline-none transition-[background-color] duration-[120ms] ease-[ease] status-fact-hero-name-static cursor-default"
-            >{{ installation.name }}</span
-          >
-          <Button
-            v-if="nameEditable"
-            variant="textonly"
-            size="unset"
-            type="button"
-            class="status-fact-hero-edit-btn static inline-flex w-0 shrink-0 items-center justify-center -ml-1.5 overflow-hidden rounded-md border-none bg-transparent p-0 appearance-auto transition-[width,margin-left] duration-[120ms] ease-[ease] hover:bg-transparent focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring,var(--neutral-50))] focus-visible:outline-offset-1 focus-visible:ring-0 group-hover/name:w-[17px] group-hover/name:ml-0 peer-focus-visible/name:w-[17px] peer-focus-visible/name:ml-0 focus-visible:w-[17px] focus-visible:ml-0 [&>svg]:opacity-0 group-hover/name:[&>svg]:opacity-60 peer-focus-visible/name:[&>svg]:opacity-60 focus-visible:[&>svg]:opacity-60"
-            :aria-label="t('statusFactPanel.editName')"
-            aria-controls="status-fact-hero-name"
-            @click="focusName"
-          >
-            <Pencil
-              :size="13"
-              class="status-fact-hero-edit-hint shrink-0 text-text-muted transition-opacity duration-[120ms] ease-[ease] select-none"
-              aria-hidden="true"
-            />
-          </Button>
-        </span>
+        <InlineNameEdit
+          prefix="status-fact-hero"
+          :name="installation.name"
+          :editable="nameEditable"
+          :on-rename="onRename"
+        />
         <span
           v-if="installation.sourceLabel"
           class="status-fact-hero-badge shrink-0 rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-2 py-0.5 text-[11px] leading-4 font-medium text-text-muted"

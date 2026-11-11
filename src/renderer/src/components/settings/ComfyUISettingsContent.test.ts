@@ -51,7 +51,7 @@ vi.mock('../../views/comfyUISettings/SettingsSectionList.vue', () => ({
   default: { template: '<div data-testid="settings-section-list-stub"></div>' }
 }))
 vi.mock('../../views/comfyUISettings/StatusFactPanel.vue', () => ({
-  default: { template: '<div />' }
+  default: { name: 'StatusFactPanel', props: ['hideHero'], template: '<div />' }
 }))
 vi.mock('../../views/comfyUISettings/StoragePane.vue', () => ({
   default: { template: '<div />' }
@@ -70,6 +70,7 @@ vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
   default: {
     name: 'MoreMenu',
     props: ['open', 'actions'],
+    emits: ['pick', 'close'],
     template: '<div v-if="open" data-testid="more-menu">menu</div>'
   }
 }))
@@ -808,6 +809,70 @@ describe('ComfyUISettingsContent', () => {
       expect(w.emitted('op-cancel')).toHaveLength(1)
       expect(w.emitted('op-retry')).toHaveLength(1)
       expect(w.emitted('op-dismiss')).toHaveLength(1)
+    })
+  })
+
+  describe('rename from the page title', () => {
+    function mountTitleTarget(): HTMLElement {
+      const target = document.createElement('div')
+      target.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(target)
+      return target
+    }
+
+    function moreMenu(w: VueWrapper) {
+      return w
+        .findAllComponents({ name: 'MoreMenu' })
+        .find((m) => (m.props('actions') as { id: string }[]).some((a) => a.id === 'rename'))!
+    }
+
+    it('edits the name in the page title and points the Rename item at it', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'untrack', label: 'Forget' }
+      ]
+      useComfyUISettingsState.runActionStub.mockClear()
+      const target = mountTitleTarget()
+      const w = await mountContent({
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
+      await flushPromises()
+
+      const name = target.querySelector<HTMLElement>('.build-details-title-name')!
+      expect(name.textContent).toBe('My Install')
+      expect(name.getAttribute('contenteditable')).toBe('plaintext-only')
+      expect(w.findComponent({ name: 'StatusFactPanel' }).props('hideHero')).toBe(true)
+
+      moreMenu(w).vm.$emit('pick', { id: 'rename', label: 'Rename' })
+      await flushPromises()
+      expect(document.activeElement).toBe(name)
+      expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
+
+      moreMenu(w).vm.$emit('pick', { id: 'untrack', label: 'Forget' })
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'untrack',
+        label: 'Forget'
+      })
+
+      w.unmount()
+      target.remove()
+    })
+
+    it('keeps the About name and the Rename prompt outside the page', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'rename', label: 'Rename' }]
+      useComfyUISettingsState.runActionStub.mockClear()
+      const w = await mountContent({ initialTab: 'status' })
+
+      expect(w.findComponent({ name: 'StatusFactPanel' }).props('hideHero')).toBe(false)
+      expect(document.querySelector('.build-details-title-name')).toBeNull()
+
+      moreMenu(w).vm.$emit('pick', { id: 'rename', label: 'Rename' })
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'rename',
+        label: 'Rename'
+      })
     })
   })
 })

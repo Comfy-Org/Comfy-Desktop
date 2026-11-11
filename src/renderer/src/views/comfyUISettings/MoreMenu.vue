@@ -43,7 +43,10 @@ function onInteractOutside(event: Event): void {
 }
 function onCloseAutoFocus(event: Event): void {
   event.preventDefault()
-  if (restoreFocus.value) props.anchor?.focus()
+  const active = document.activeElement
+  const movedOn =
+    active instanceof HTMLElement && active !== document.body && !active.closest('.more-menu')
+  if (restoreFocus.value && !movedOn) props.anchor?.focus()
 }
 function onWindowBlur(): void {
   restoreFocus.value = false

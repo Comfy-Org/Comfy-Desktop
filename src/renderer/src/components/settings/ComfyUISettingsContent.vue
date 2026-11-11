@@ -46,6 +46,7 @@ import MoreMenu, { type MenuAction } from '../../views/comfyUISettings/MoreMenu.
 import ArgsBuilderPage from '../../views/comfyUISettings/ArgsBuilderPage.vue'
 import SnapshotsView from '../../views/comfyUISettings/SnapshotsView.vue'
 import StatusFactPanel from '../../views/comfyUISettings/StatusFactPanel.vue'
+import InlineNameEdit from '../InlineNameEdit.vue'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
 import ConsoleTerminalPane from '../../views/comfyUISettings/ConsoleTerminalPane.vue'
@@ -87,6 +88,7 @@ interface Props {
   currentView?: ViewKind
   currentCategory?: Category | null
   pageActionsTarget?: string
+  pageTitleTarget?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -99,6 +101,7 @@ const props = withDefaults(defineProps<Props>(), {
   currentView: 'dashboard',
   currentCategory: null,
   pageActionsTarget: undefined,
+  pageTitleTarget: undefined,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
     modelsDirs: [],
@@ -364,6 +367,16 @@ function toggleMoreMenu(): void {
 }
 function closeMoreMenu(): void {
   moreMenuOpen.value = false
+}
+
+const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
+const titleEditable = computed(() => installation.value?.sourceCategory !== 'cloud')
+function handleMorePick(action: ActionDef): void {
+  if (action.id === 'rename' && titleEdit.value && titleEditable.value) {
+    titleEdit.value.focus()
+    return
+  }
+  void runAction(action)
 }
 
 type SubPage = 'args' | null
@@ -894,6 +907,7 @@ defineExpose({
                     :on-rename="renameInstallation"
                     :on-update-url="handleUrlUpdate"
                     :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
+                    :hide-hero="!!pageTitleTarget"
                   />
                 </div>
                 <div
@@ -1211,10 +1225,23 @@ defineExpose({
               :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-more')"
               :actions="pinBottomMenuActions"
               @close="closeMoreMenu"
-              @pick="runAction"
+              @pick="handleMorePick"
             />
           </div>
         </footer>
+      </Teleport>
+
+      <Teleport v-if="pageTitleTarget && installation" defer :to="pageTitleTarget">
+        <InlineNameEdit
+          ref="titleEdit"
+          prefix="build-details-title"
+          :name="installation.name"
+          :editable="titleEditable"
+          :on-rename="renameInstallation"
+          text-class=""
+          :icon-size="18"
+          pencil-width="24px"
+        />
       </Teleport>
     </div>
   </Tabs>

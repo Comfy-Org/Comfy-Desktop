@@ -11,6 +11,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
 const ACTIONS_ID = 'build-details-actions'
+const TITLE_ID = 'build-details-title'
 
 const { installation } = defineProps<{
   installation: Installation
@@ -91,10 +92,9 @@ onUnmounted(() => unsubscribeSettings?.())
         <div class="min-w-0 flex-1 basis-60">
           <div class="flex min-w-0 items-center gap-2">
             <h1
-              class="m-0 truncate text-[30px]/[1.15] font-semibold tracking-[-0.02em] text-foreground"
-            >
-              {{ installation.name }}
-            </h1>
+              :id="TITLE_ID"
+              class="m-0 flex min-w-0 text-[30px]/[1.15] font-semibold tracking-[-0.02em] text-foreground"
+            />
             <StatusChip v-if="status" class="build-details-status" :tone="status.tone">
               <template v-if="status.tone === 'bad'" #icon>
                 <OctagonAlert :size="11" aria-hidden="true" />
@@ -120,6 +120,7 @@ onUnmounted(() => unsubscribeSettings?.())
         :installation="installation"
         :global-settings-snapshot="storage"
         :page-actions-target="`#${ACTIONS_ID}`"
+        :page-title-target="`#${TITLE_ID}`"
         class="min-h-0 flex-auto"
         @show-progress="emit('show-progress', $event)"
         @navigate-list="emit('back')"

@@ -121,6 +121,16 @@ describe('StatusFactPanel — hero name', () => {
     expect(onRename).not.toHaveBeenCalled()
   })
 
+  it('leaves the name to the page title when the hero is hidden', async () => {
+    const wrapper = mount(StatusFactPanel, {
+      props: { installation: makeInstall('Paged'), sections: [], diskUsage: null, hideHero: true }
+    })
+    await nextTick()
+
+    expect(wrapper.find('.status-fact-hero').exists()).toBe(false)
+    expect(wrapper.find('.status-fact-hero-badge').exists()).toBe(false)
+  })
+
   it('repaints the hero when the installation name prop changes', async () => {
     const wrapper = mountPanel({ installation: makeInstall('First') })
     await nextTick()
