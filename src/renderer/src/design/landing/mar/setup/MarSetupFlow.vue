@@ -598,11 +598,9 @@ function rowState(i: number): string {
             }}</DialogDescription>
             <!-- New build: the name, the one thing the first install never
                  asked; the rest is the same list. -->
-            <div v-if="newBuild" class="mss-form mss-newbuild-name">
-              <div class="mss-form-row">
-                <span class="mss-form-label">Name</span>
-                <Input v-model="buildName" aria-label="Build name" />
-              </div>
+            <div v-if="newBuild" class="mss-newbuild-name">
+              <span class="mss-form-label">Name</span>
+              <Input v-model="buildName" aria-label="Build name" />
             </div>
 
             <!-- The machine it checked, drawn large: the subject of the
