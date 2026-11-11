@@ -1011,7 +1011,7 @@ onActivated(() => {
               @click="refreshBenchmarks"
             >
               <RefreshCw
-                :size="13"
+                :size="15"
                 :class="{
                   'benchmarks__refresh-icon--busy animate-spin [animation-duration:900ms]': loading
                 }"
@@ -1033,7 +1033,7 @@ onActivated(() => {
             >
               <Button as-child variant="muted-textonly" size="icon">
                 <summary class="cursor-pointer" :title="t('benchmarks.columns')">
-                  <SlidersHorizontal :size="16" aria-hidden="true" />
+                  <SlidersHorizontal :size="15" aria-hidden="true" />
                   <span class="sr-only">{{ t('benchmarks.columns') }}</span>
                 </summary>
               </Button>
