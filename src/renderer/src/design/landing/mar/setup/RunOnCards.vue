@@ -181,8 +181,12 @@ const WAYS = [
  * 20px padding, the device 88px), a size up. Here, not in setup.css, so it
  * outranks the card's own rules above. */
 :root .proto-ui.proto-ui.proto-ui .mss-first.is-alone .mss-ways .mss-way {
-  padding: 24px 24px 26px;
+  padding: 32px 32px 34px;
   border-radius: 16px;
+}
+.mss-first.is-alone .mss-way-mark {
+  top: 20px;
+  right: 20px;
 }
 .mss-first.is-alone .mss-ways {
   gap: 14px;
