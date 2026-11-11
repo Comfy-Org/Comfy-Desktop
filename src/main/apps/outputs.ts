@@ -1,7 +1,7 @@
 import type { AppOutputAction, AppOutputItem } from '../../types/ipc'
 
 export const MAX_OUTPUTS = 40
-export const MAX_OUTPUTS_BYTES = 500_000_000
+export const MAX_OUTPUTS_BYTES = 100_000_000
 const MAX_TAGS = 8
 const MEDIA_TYPE = /^(image|video|audio)\/[\w.+-]{1,60}$/
 
@@ -18,13 +18,16 @@ function outputItem(value: unknown): AppOutputItem | null {
   if (!name || typeof mimeType !== 'string' || !MEDIA_TYPE.test(mimeType)) return null
   if (!(bytes instanceof Uint8Array)) return null
   const tags = Array.isArray(item['tags'])
-    ? item['tags'].map((tag) => text(tag, 40)).filter((tag): tag is string => tag !== null)
+    ? item['tags']
+        .slice(0, MAX_TAGS)
+        .map((tag) => text(tag, 40))
+        .filter((tag): tag is string => tag !== null)
     : []
   return {
     name,
     mimeType,
     bytes: bytes as Uint8Array<ArrayBuffer>,
-    tags: tags.slice(0, MAX_TAGS),
+    tags,
     workflow: item['workflow'] === true
   }
 }

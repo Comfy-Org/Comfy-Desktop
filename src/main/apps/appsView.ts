@@ -214,11 +214,13 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   if (!outputs) throw new Error('These outputs cannot be shown.')
   const key = keyForAppsPage(page)
   const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
-  if (!panel || panel.isDestroyed()) return
+  if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
   const backdrop = await page
     .capturePage()
     .then((image) => image.toJPEG(BACKDROP_QUALITY))
     .catch(() => null)
+  if (panel.isDestroyed()) return
+  panel.focus()
   panel.send(APPS_OUTPUT_CHANNEL, { ...outputs, backdrop })
 }
 
@@ -518,7 +520,7 @@ export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
   ipcMain.handle(APPS_CATALOG_CHANNEL, () => listCatalogApps(APPS_URL))
-  ipcMain.on('comfy-apps:output-action', relayOutputAction)
+  ipcMain.on(APPS_OUTPUT_ACTION_CHANNEL, relayOutputAction)
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)

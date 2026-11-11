@@ -83,7 +83,10 @@ const emit = defineEmits<{
   'app-entered': [entered: boolean]
 }>()
 watch(openApp, (app) => {
-  if (!app) appEntered.value = false
+  if (!app) {
+    appEntered.value = false
+    closeAppOutputs()
+  }
   emit('app-open', app !== null)
 })
 watch(appEntered, (entered) => emit('app-entered', entered))

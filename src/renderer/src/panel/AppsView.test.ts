@@ -153,6 +153,7 @@ describe('AppsView', () => {
     await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
     await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
     showApps.mockClear()
+    hideApps.mockClear()
 
     appsOutput!({
       items: [
@@ -192,6 +193,34 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
     expect(showApps).toHaveBeenCalled()
+  })
+
+  it("closes an app's output dialog when the app goes back", async () => {
+    window.localStorage.setItem('comfy.desktop.apps.tab', 'all')
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    appsOutput!({
+      items: [
+        {
+          name: 'picture-1.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1]),
+          tags: [],
+          workflow: false
+        }
+      ],
+      index: 0,
+      backdrop: null
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(true)
+
+    appsAppOpen!({ open: false })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
   it('opens an app from its card over the whole page and returns to the cards when the app goes back', async () => {

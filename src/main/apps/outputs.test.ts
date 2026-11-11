@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { MAX_OUTPUTS, outputAction, outputRequest } from './outputs'
+import { MAX_OUTPUTS, MAX_OUTPUTS_BYTES, outputAction, outputRequest } from './outputs'
 
 const picture = (extra: Record<string, unknown> = {}) => ({
   name: 'picture-1.png',
@@ -38,6 +38,10 @@ describe('outputRequest', () => {
     expect(outputRequest({ items: [picture({ name: ' ' })], index: 0 })).toBeNull()
     expect(
       outputRequest({ items: Array.from({ length: MAX_OUTPUTS + 1 }, () => picture()), index: 0 })
+    ).toBeNull()
+    const half = new Uint8Array(MAX_OUTPUTS_BYTES / 2 + 1)
+    expect(
+      outputRequest({ items: [picture({ bytes: half }), picture({ bytes: half })], index: 0 })
     ).toBeNull()
   })
 })

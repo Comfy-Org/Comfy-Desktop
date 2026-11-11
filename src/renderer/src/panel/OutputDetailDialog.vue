@@ -118,7 +118,10 @@ function zoomOptionLabel(option: Zoom): string {
 useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   const target = event.target
   if (event.defaultPrevented) return
-  if (target instanceof Element && target.closest('input, textarea, video, audio, [role="menu"]'))
+  if (
+    target instanceof Element &&
+    target.closest('input, textarea, video, audio, [role="menu"], [role="alertdialog"]')
+  )
     return
   if (event.key === 'ArrowLeft') step(-1)
   else if (event.key === 'ArrowRight') step(1)
@@ -129,8 +132,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
   <DesktopDialogSurface
     open
     :aria-label="item.name"
-    overlay-class="fixed inset-0 z-60 grid place-items-center bg-neutral-900/60 px-20 py-12 backdrop-blur-md"
-    content-class="flex flex-row h-[min(820px,calc(100vh-96px))] w-[min(1280px,calc(100vw-160px))] gap-3 rounded-panel border border-solid border-neutral-100/8 bg-neutral-900 p-3"
+    overlay-class="fixed inset-0 z-60 grid place-items-center bg-media-overlay px-20 py-12 backdrop-blur-md"
+    content-class="flex flex-row h-[min(820px,calc(100vh-96px))] w-[min(1280px,calc(100vw-160px))] gap-3 rounded-panel border border-solid border-border bg-window-background p-3"
     data-testid="output-detail"
     @close="emit('close')"
   >
@@ -185,6 +188,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
 
       <footer class="flex shrink-0 items-end gap-3">
         <ol
+          v-if="items.length > 1"
           ref="filmstrip"
           class="m-0 flex min-w-0 flex-1 list-none gap-1.5 overflow-x-auto scrollbar-hide p-1"
         >
@@ -230,7 +234,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
               type="button"
               variant="secondary"
               size="md"
-              class="gap-1.5 px-3 text-[13px]/5 tabular-nums"
+              class="min-w-20 justify-between gap-1.5 px-3 text-[13px]/5 tabular-nums"
               data-testid="output-detail-zoom"
             >
               {{ zoomLabel }}
@@ -256,7 +260,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </section>
 
     <aside
-      class="flex w-[clamp(280px,30%,360px)] shrink-0 flex-col gap-6 overflow-y-auto rounded-xl bg-neutral-800 p-5"
+      class="flex w-[clamp(280px,30%,360px)] shrink-0 flex-col gap-6 overflow-y-auto rounded-xl bg-card p-5"
       data-testid="output-detail-panel"
     >
       <div class="flex flex-col gap-3">
