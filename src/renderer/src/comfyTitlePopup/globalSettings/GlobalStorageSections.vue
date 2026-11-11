@@ -141,6 +141,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
   <GlobalSettingsMicroSection :title="t('settings.models')" :tooltip="t('tooltips.sharedModels')">
     <ModelsDirList
       :dirs="sharedModelDirs"
+      hide-shared-tag
       @change="handleChangeModelsDir"
       @remove="handleRemoveModelsDir"
       @make-primary="handleMakePrimary"
@@ -158,6 +159,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
       :label="sharedInputField.label || t('media.inputDir')"
       :path="sharedFieldPath(sharedInputField)"
       shared
+      hide-shared-tag
       @open="handleOpenPath(sharedFieldPath(sharedInputField))"
       @browse="handleBrowseSharedInput"
     />
@@ -166,6 +168,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
       :label="sharedOutputField.label || t('media.outputDir')"
       :path="sharedFieldPath(sharedOutputField)"
       shared
+      hide-shared-tag
       @open="handleOpenPath(sharedFieldPath(sharedOutputField))"
       @browse="handleBrowseSharedOutput"
     />

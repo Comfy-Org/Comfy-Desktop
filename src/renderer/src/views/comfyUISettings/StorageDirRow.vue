@@ -12,6 +12,7 @@ interface Props {
   browsable?: boolean
   manageable?: boolean
   shared?: boolean
+  hideSharedTag?: boolean
 }
 
 withDefaults(defineProps<Props>(), {
@@ -20,7 +21,8 @@ withDefaults(defineProps<Props>(), {
   resettable: false,
   browsable: true,
   manageable: false,
-  shared: false
+  shared: false,
+  hideSharedTag: false
 })
 
 const emit = defineEmits<{
@@ -56,7 +58,7 @@ const actionClass =
           {{ path }}
         </Button>
       </div>
-      <span v-if="shared" :class="[tagClass, 'storage-dir-shared-tag']">{{
+      <span v-if="shared && !hideSharedTag" :class="[tagClass, 'storage-dir-shared-tag']">{{
         t('models.sharedTag')
       }}</span>
       <span v-if="tag" :class="[tagClass, 'storage-dir-tag']">{{ tag }}</span>

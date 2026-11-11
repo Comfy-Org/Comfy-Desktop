@@ -29,6 +29,7 @@ interface ModelsDir {
 interface Props {
   dirs: ModelsDir[]
   addLabel?: string
+  hideSharedTag?: boolean
 }
 
 const props = defineProps<Props>()
@@ -155,7 +156,7 @@ const rows = computed(() =>
         {{ t('models.primary') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
       </span>
-      <span v-if="row.shared" :class="[tagClass, 'tag-shared']">
+      <span v-if="row.shared && !props.hideSharedTag" :class="[tagClass, 'tag-shared']">
         {{ t('models.sharedTag') }}
       </span>
       <span v-if="row.locked || row.isExtra" :class="[tagClass, 'tag-local']">
