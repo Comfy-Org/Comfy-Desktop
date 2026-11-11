@@ -114,7 +114,20 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage =
+  | 'home'
+  | 'apps'
+  | 'assets'
+  | 'chooser'
+  | 'benchmarks'
+  | 'performance-test'
+
+export interface CatalogWorkflow {
+  id: string
+  title: string
+  description: string
+  thumbnailUrl: string | null
+}
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
@@ -1137,6 +1150,9 @@ export interface ElectronApi {
   onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
   onAppsAppOpen(callback: (info: { open: boolean }) => void): Unsubscribe
   onAppsSettled(callback: () => void): Unsubscribe
+  listHomeWorkflows(): Promise<CatalogWorkflow[]>
+  openCatalogWorkflow(id: string): Promise<boolean>
+  openCatalogWorkflowHub(): Promise<boolean>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

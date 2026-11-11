@@ -1,5 +1,5 @@
-import { app, ipcMain, shell, WebContentsView } from 'electron'
-import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
+import { app, ipcMain, session, shell, WebContentsView } from 'electron'
+import type { IpcMainEvent, IpcMainInvokeEvent, Session, WebContents } from 'electron'
 import { promises as fsp } from 'fs'
 import path from 'path'
 
@@ -15,6 +15,7 @@ import {
   collectOutputs,
   isAppOpen,
   isAppPage,
+  isAllowedAppsPermission,
   isAppsFrameUrl,
   isDocumentFailure,
   isInside,
@@ -60,6 +61,7 @@ export const APPS_CATALOG_CHANNEL = 'comfy-apps:catalog'
 
 const appOpen = new Map<number, boolean>()
 const awaitingCommit = new Set<number>()
+const settledPages = new Set<number>()
 
 export interface AppsRect {
   x: number
@@ -102,7 +104,28 @@ function markLoadFailed(key: number, view: WebContentsView, url: string): void {
   tellPanelLoadFailed(comfyWindows.get(key)?.panelView?.webContents, url || APPS_URL)
 }
 
+let securedSession: Session | null = null
+
+function secureAppsSession(): void {
+  const appsSession = session.fromPartition(APPS_PARTITION)
+  if (securedSession === appsSession) return
+  appsSession.setPermissionCheckHandler((_contents, permission) =>
+    isAllowedAppsPermission(permission)
+  )
+  appsSession.setPermissionRequestHandler((_contents, permission, callback) =>
+    callback(isAllowedAppsPermission(permission))
+  )
+  securedSession = appsSession
+}
+
+function keepOnAppsOrigin(event: { preventDefault(): void }, url: string): void {
+  if (isAppsFrameUrl(url, APPS_ORIGIN)) return
+  event.preventDefault()
+  openOutside(url)
+}
+
 function createAppsView(key: number, url: string): WebContentsView {
+  secureAppsSession()
   const view = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, '../preload/appsPreload.js'),
@@ -114,10 +137,9 @@ function createAppsView(key: number, url: string): WebContentsView {
   })
   view.setBorderRadius(14)
   const wc = view.webContents
-  wc.on('will-navigate', (event, url) => {
-    if (isAppsFrameUrl(url, APPS_ORIGIN)) return
-    event.preventDefault()
-    openOutside(url)
+  wc.on('will-navigate', keepOnAppsOrigin)
+  wc.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
+    if (isMainFrame) keepOnAppsOrigin(event, url)
   })
   wc.setWindowOpenHandler(({ url }) => {
     openOutside(url)
@@ -128,6 +150,7 @@ function createAppsView(key: number, url: string): WebContentsView {
   })
   wc.on('did-navigate', (_event, url, httpResponseCode) => {
     awaitingCommit.delete(key)
+    settledPages.delete(key)
     if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
     trackAppOpen(key, url)
   })
@@ -136,6 +159,7 @@ function createAppsView(key: number, url: string): WebContentsView {
   })
   appOpen.set(key, isAppOpen(url, APPS_URL))
   awaitingCommit.add(key)
+  settledPages.delete(key)
   wc.loadURL(url).catch(() => {})
   return view
 }
@@ -147,6 +171,7 @@ function requestedUrl(r: Partial<AppsRect>): string {
 function openUrl(key: number, view: WebContentsView, url: string): void {
   appOpen.set(key, isAppOpen(url, APPS_URL))
   awaitingCommit.add(key)
+  settledPages.delete(key)
   view.webContents.loadURL(url).catch(() => {})
 }
 
@@ -183,6 +208,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
       views.delete(key)
       appOpen.delete(key)
       awaitingCommit.delete(key)
+      settledPages.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -198,14 +224,15 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   view.setVisible(true)
   if (r.fresh !== true) return
   tellPanelAppOpen(key)
-  if (!awaitingCommit.has(key)) tellPanelSettled(key)
+  if (settledPages.has(key)) tellPanelSettled(key)
 }
 
 function relayPageSettled(event: IpcMainEvent): void {
   for (const [key, view] of views) {
     if (view.webContents !== event.sender) continue
-    if (!awaitingCommit.has(key) && isAppPage(event.senderFrame?.url ?? '', APPS_URL))
-      tellPanelSettled(key)
+    if (awaitingCommit.has(key) || !isAppPage(event.senderFrame?.url ?? '', APPS_URL)) return
+    settledPages.add(key)
+    tellPanelSettled(key)
     return
   }
 }
@@ -505,7 +532,9 @@ export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
   ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)
-  ipcMain.handle(APPS_CATALOG_CHANNEL, () => listCatalogApps(APPS_URL))
+  ipcMain.handle(APPS_CATALOG_CHANNEL, (event) =>
+    entryForPanel(event.sender) ? listCatalogApps(APPS_URL) : []
+  )
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)

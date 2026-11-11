@@ -3,6 +3,7 @@ import { runInNewContext } from 'vm'
 import { describe, expect, it } from 'vitest'
 
 import {
+  isAllowedAppsPermission,
   appsOrigin,
   appsUrl,
   cleanSaveName,
@@ -100,6 +101,19 @@ describe('appsOrigin', () => {
   })
 })
 
+describe('isAllowedAppsPermission', () => {
+  it.each(['clipboard-sanitized-write', 'fullscreen'])('lets an app page use %s', (permission) => {
+    expect(isAllowedAppsPermission(permission)).toBe(true)
+  })
+
+  it.each(['media', 'geolocation', 'notifications', 'clipboard-read', 'openExternal'])(
+    'denies %s',
+    (permission) => {
+      expect(isAllowedAppsPermission(permission)).toBe(false)
+    }
+  )
+})
+
 describe('isAppsFrameUrl', () => {
   it('matches the exact origin', () => {
     const origin = 'https://apps.comfy.org'
@@ -151,6 +165,11 @@ describe('safeUploadName', () => {
   it('keeps a video name', () => {
     expect(safeUploadName('shot.mp4')).toBe('shot.mp4')
     expect(safeUploadName('shot.webm')).toBe('shot.webm')
+  })
+  it('keeps a song name', () => {
+    expect(safeUploadName('My Song.mp3')).toBe('My_Song.mp3')
+    expect(safeUploadName('take.flac')).toBe('take.flac')
+    expect(safeUploadName('voice.m4a')).toBe('voice.m4a')
   })
 })
 
@@ -497,7 +516,8 @@ describe('downloadRequest', () => {
       'model_patches',
       'background_removal',
       'frame_interpolation',
-      'geometry_estimation'
+      'geometry_estimation',
+      'audio_encoders'
     ]) {
       expect(downloadRequest({ ...ok, folder })).not.toHaveProperty('error')
     }

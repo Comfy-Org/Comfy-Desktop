@@ -101,10 +101,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="slot" class="panel-apps min-h-0 flex-1 overflow-hidden" data-testid="apps-host">
+  <div ref="slot" class="min-h-0 flex-1 overflow-hidden" data-testid="apps-host">
     <div
       ref="surface"
-      class="size-full rounded-[14px] bg-content-background"
+      class="size-full rounded-shell bg-content-background"
       data-testid="apps-host-surface"
     />
   </div>

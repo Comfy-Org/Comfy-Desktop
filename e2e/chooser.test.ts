@@ -81,9 +81,11 @@ test('activate hook focuses the existing chooser host instead of spawning a dupl
   )
   expect(before).toBe(1)
 
-  await ctx.app.evaluate(({ app }) => {
-    app.emit('activate')
-  })
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ app }) => {
+      app.emit('activate')
+    })
+  )
   await new Promise((r) => setTimeout(r, 200))
 
   const after = await evalWithRetry(() =>
@@ -140,13 +142,15 @@ test('title popup reopens after a blur dismiss (menu-closed IPC clears the reope
     })
     .toBe(true)
 
-  await ctx.app.evaluate(({ webContents }) => {
-    const wc = webContents
-      .getAllWebContents()
-      .find((w) => w.getURL().includes('comfyTitlePopup.html'))
-    if (!wc) throw new Error('title popup webContents missing')
-    ;(wc as unknown as { emit: (event: string) => void }).emit('blur')
-  })
+  await evalWithRetry(() =>
+    ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().includes('comfyTitlePopup.html'))
+      if (!wc) throw new Error('title popup webContents missing')
+      ;(wc as unknown as { emit: (event: string) => void }).emit('blur')
+    })
+  )
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
       timeout: 5_000,
