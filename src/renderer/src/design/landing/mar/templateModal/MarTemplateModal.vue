@@ -295,6 +295,9 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
   { value: 'result', label: 'Result' },
   { value: 'graph', label: 'Graph' }
 ]
+// The graph takes the whole stage so zoomed in it runs to the edges; it
+// fits inside the room the picture has (under the bar, over the zoom).
+const GRAPH_PAD = { t: 64, r: 32, b: 72, l: 32 }
 </script>
 
 <template>
@@ -337,8 +340,8 @@ const VIEWS: { value: 'result' | 'graph'; label: string }[] = [
             </div>
           </div>
           <!-- The graph takes the picture's place, fitted to the same area. -->
-          <div v-else-if="graph" class="mad-view">
-            <TplGraph v-model:zoom="zoom" v-model:fit="graphFit" :spec="graph" />
+          <div v-else-if="graph" class="mar-tpl-gview">
+            <TplGraph v-model:zoom="zoom" v-model:fit="graphFit" :spec="graph" :pad="GRAPH_PAD" />
           </div>
           <!-- Zoom, where the asset view keeps it, bottom right, for the
                picture and the graph alike. -->

@@ -114,6 +114,12 @@
 }
 
 /* ── Stage: the output, or its graph ─────────────────────────────── */
+/* The graph has the whole stage (the stage clips at its rounded edges);
+   TplGraph fits it inside the picture's room. */
+.mar-tpl-gview {
+  position: absolute;
+  inset: 0;
+}
 .mar-tpl .mad-media img {
   user-select: none;
 }

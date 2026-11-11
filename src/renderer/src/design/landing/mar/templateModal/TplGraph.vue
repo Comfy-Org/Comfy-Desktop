@@ -15,7 +15,12 @@ import {
  *  view. Drag to pan; the modal's ZoomControl (assets/ZoomControl.vue)
  *  scales it: `zoom` is a percentage of the fitted size (100 = fit), and
  *  `fit` reports the fitted scale so the control reads in real size. */
-const { spec } = defineProps<{ spec: GraphSpec }>()
+const { spec, pad = { t: 0, r: 0, b: 0, l: 0 } } = defineProps<{
+  spec: GraphSpec
+  /** Room the stage's controls take: the graph fits and centres inside
+   *  it, but zoomed in it runs under them to the stage's edges. */
+  pad?: { t: number; r: number; b: number; l: number }
+}>()
 const zoomPct = defineModel<number>('zoom', { default: 100 })
 const fitOut = defineModel<number>('fit', { default: 1 })
 
@@ -33,16 +38,20 @@ onMounted(() => {
 onBeforeUnmount(() => ro?.disconnect())
 
 // A little air around it, like the picture's own margin.
+const room = computed(() => ({
+  w: size.value.w - pad.l - pad.r,
+  h: size.value.h - pad.t - pad.b
+}))
 const fit = computed(() =>
-  Math.min((size.value.w - 32) / spec.width, (size.value.h - 32) / spec.height, 1.6)
+  Math.min((room.value.w - 32) / spec.width, (room.value.h - 32) / spec.height, 1.6)
 )
 watch(fit, (f) => (fitOut.value = f), { immediate: true })
 // Back to fit (D, Zoom to fit) recentres it too.
 watch(zoomPct, (z) => z === 100 && (pan.value = { x: 0, y: 0 }))
 const scale = computed(() => fit.value * zoom.value)
 const transform = computed(() => {
-  const x = (size.value.w - spec.width * scale.value) / 2 + pan.value.x
-  const y = (size.value.h - spec.height * scale.value) / 2 + pan.value.y
+  const x = pad.l + (room.value.w - spec.width * scale.value) / 2 + pan.value.x
+  const y = pad.t + (room.value.h - spec.height * scale.value) / 2 + pan.value.y
   return `translate(${x}px, ${y}px) scale(${scale.value})`
 })
 
