@@ -28,10 +28,10 @@ function gitIn(cwd: string, args: string[]): void {
     cwd,
     env: {
       ...process.env,
-      GIT_AUTHOR_NAME: 'Lifecycle Test',
-      GIT_AUTHOR_EMAIL: 'lifecycle@example.com',
-      GIT_COMMITTER_NAME: 'Lifecycle Test',
-      GIT_COMMITTER_EMAIL: 'lifecycle@example.com'
+      GIT_AUTHOR_NAME: 'E2E Test',
+      GIT_AUTHOR_EMAIL: 'e2e@example.com',
+      GIT_COMMITTER_NAME: 'E2E Test',
+      GIT_COMMITTER_EMAIL: 'e2e@example.com'
     },
     stdio: 'pipe'
   })
@@ -80,7 +80,7 @@ test.afterAll(async () => {
   if (stagedPath) await rm(stagedPath, { recursive: true, force: true })
 })
 
-test('Builds menu → Add Existing → Browse probes the staged directory → Add Build registers it @lifecycle', async () => {
+test('Builds menu → Add Existing → Browse probes the staged directory → Add Build registers it @nightly', async () => {
   expect(await ctx.panel.click('[data-testid="build-actions-menu-trigger"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="build-actions-add-existing"]')
   expect(await ctx.panel.click('[data-testid="build-actions-add-existing"]')).toBe(true)

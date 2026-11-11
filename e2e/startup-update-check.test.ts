@@ -57,7 +57,7 @@ test.afterAll(async () => {
   if (stagedInstallPath) await rm(stagedInstallPath, { recursive: true, force: true })
 })
 
-test('startup pre-warm fills the release cache without any UI gesture @lifecycle', async () => {
+test('startup pre-warm fills the release cache without any UI gesture @nightly', async () => {
   test.setTimeout(60_000)
 
   await expect

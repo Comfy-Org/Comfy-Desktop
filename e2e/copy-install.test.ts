@@ -61,7 +61,7 @@ test.afterAll(async () => {
   if (sourcePath) await rm(sourcePath, { recursive: true, force: true })
 })
 
-test('Copy creates a new install on disk + in the registry, source untouched @lifecycle', async () => {
+test('Copy creates a new install on disk + in the registry, source untouched @nightly', async () => {
   await ctx.panel.evaluate<boolean>(
     `(() => {
       window.api.openInstancePicker({

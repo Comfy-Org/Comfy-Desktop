@@ -40,10 +40,10 @@ function gitIn(cwd: string, args: string[]): string {
     cwd,
     env: {
       ...process.env,
-      GIT_AUTHOR_NAME: 'Lifecycle Test',
-      GIT_AUTHOR_EMAIL: 'lifecycle@example.com',
-      GIT_COMMITTER_NAME: 'Lifecycle Test',
-      GIT_COMMITTER_EMAIL: 'lifecycle@example.com'
+      GIT_AUTHOR_NAME: 'E2E Test',
+      GIT_AUTHOR_EMAIL: 'e2e@example.com',
+      GIT_COMMITTER_NAME: 'E2E Test',
+      GIT_COMMITTER_EMAIL: 'e2e@example.com'
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf-8'
@@ -191,7 +191,7 @@ test.afterAll(async () => {
   if (workTmpPath) await rm(workTmpPath, { recursive: true, force: true })
 })
 
-test('seeded HEADs start at commit B (sanity) @lifecycle @windows @macos @linux', async () => {
+test('seeded HEADs start at commit B (sanity) @nightly @windows @macos @linux', async () => {
   const comfyHead = gitIn(path.join(stagedInstallPath, 'ComfyUI'), ['rev-parse', 'HEAD'])
   const nodeHead = gitIn(path.join(stagedInstallPath, 'ComfyUI', 'custom_nodes', NODE_DIRNAME), [
     'rev-parse',
@@ -201,7 +201,7 @@ test('seeded HEADs start at commit B (sanity) @lifecycle @windows @macos @linux'
   expect(nodeHead).toBe(nodeCommitB)
 })
 
-test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle @windows @macos @linux', async () => {
+test('snapshot-restore moves ComfyUI + node HEAD back to commit A @nightly @windows @macos @linux', async () => {
   const list = await ctx.panel.evaluate<SnapshotListResult>(
     `window.api.getSnapshots(${JSON.stringify(INSTALL_ID)})`
   )
@@ -254,7 +254,7 @@ test('snapshot-restore moves ComfyUI + node HEAD back to commit A @lifecycle @wi
   await closeTitlePopupIfOpen(ctx.app)
 })
 
-test('restore captures a post-restore snapshot @lifecycle @windows @macos @linux', async () => {
+test('restore captures a post-restore snapshot @nightly @windows @macos @linux', async () => {
   await expect
     .poll(
       async () =>
@@ -270,7 +270,7 @@ test('restore captures a post-restore snapshot @lifecycle @windows @macos @linux
     })
 })
 
-test('picker-driven restore surfaces inline op-card + auto-dismisses on success @lifecycle', async () => {
+test('picker-driven restore surfaces inline op-card + auto-dismisses on success @nightly', async () => {
   test.setTimeout(120_000)
 
   const list = await ctx.panel.evaluate<SnapshotListResult>(

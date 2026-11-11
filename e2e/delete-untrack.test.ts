@@ -77,12 +77,12 @@ test.afterAll(async () => {
   if (deletePath) await rm(deletePath, { recursive: true, force: true })
 })
 
-test('chooser lists both seeded installs @lifecycle', async () => {
+test('chooser lists both seeded installs @nightly', async () => {
   await ctx.panel.waitForSelector(byTestId(TID.dashboardTile(UNTRACK_ID)), { timeout: 10_000 })
   await ctx.panel.waitForSelector(byTestId(TID.dashboardTile(DELETE_ID)), { timeout: 10_000 })
 })
 
-test('Manage drawer Untrack drops the record but preserves the install directory @lifecycle', async () => {
+test('Manage drawer Untrack drops the record but preserves the install directory @nightly', async () => {
   await ctx.panel.evaluate<boolean>(
     `(() => {
       window.api.openInstancePicker({
@@ -116,7 +116,7 @@ test('Manage drawer Untrack drops the record but preserves the install directory
   )
 })
 
-test('kebab Delete drops the record AND removes the install directory @lifecycle', async () => {
+test('kebab Delete drops the record AND removes the install directory @nightly', async () => {
   await openKebabAndClick(DELETE_ID, 'delete')
 
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
