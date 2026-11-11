@@ -100,17 +100,17 @@ const WAYS = [
  * from that corner to match. */
 .mss-way-device {
   display: flex;
-  height: 72px;
+  height: 56px;
   flex: none;
   align-items: flex-end;
 }
 .mss-way .mss-laptop {
-  width: 112px;
-  height: 73px;
-  margin-left: -6px;
+  width: 84px;
+  height: 55px;
+  margin-left: -4px;
 }
 .mss-way .mss-cloud {
-  transform: translate(-16px, 2px) scale(1.2);
+  transform: translate(-12px, 2px) scale(0.9);
   transform-origin: left bottom;
 }
 .mss-way:not([aria-checked='true']) .mss-way-device {
