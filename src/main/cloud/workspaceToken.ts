@@ -1,4 +1,4 @@
-import { lifetimeSecondsOf } from './claims'
+import { lifetimeSecondsOf, subjectOf, workspaceIdOf } from './claims'
 
 import { CLOUD_CONFIG } from './config'
 
@@ -27,6 +27,64 @@ export type WorkspaceMintOutcome =
   | { kind: 'reauthorize'; reason: ReauthorizeReason }
   | { kind: 'refused' }
   | { kind: 'retryable'; retryAfterSeconds?: number }
+
+const REPORTABLE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'account_outside_organization',
+  'auth_type_not_allowed',
+  'insufficient_scope',
+  'internal_error',
+  'invalid_token',
+  'not_found',
+  'oauth_derived_mint_refused',
+  'oauth_grant_ended',
+  'oauth_token_mint_refused',
+  'oauth_workspace_mint_disabled',
+  'partner_node_job_ended',
+  'partner_node_renew_disabled',
+  'partner_node_requires_sign_in',
+  'partner_node_session_ended',
+  'partner_node_session_expired',
+  'partner_node_session_revoked',
+  'partner_node_token_disabled',
+  'personal_workspace_disabled',
+  'rate_limited',
+  'resource_invalid',
+  'session_expired',
+  'sso_required',
+  'token_revoked',
+  'unauthorized'
+])
+const UNLISTED_ERROR_CODE = 'other'
+
+function reportableErrorCode(code: string): string {
+  const known = code.toLowerCase()
+  return REPORTABLE_ERROR_CODES.has(known) ? known : UNLISTED_ERROR_CODE
+}
+
+export type MintFailureReport =
+  | { reason: 'network' }
+  | { reason: 'http'; http_status: number; error_code?: string }
+
+export function mintFailureReport(
+  failure: Extract<WorkspaceTokenMint, { kind: 'failed' }>
+): MintFailureReport {
+  if (failure.status === null) return { reason: 'network' }
+  const { status, code } = failure
+  return code
+    ? { reason: 'http', http_status: status, error_code: reportableErrorCode(code) }
+    : { reason: 'http', http_status: status }
+}
+
+export type MintedTokenProblem = 'workspace_mismatch' | 'subject_mismatch'
+
+export function mintedTokenProblem(
+  token: string,
+  workspaceId: string,
+  subject: string | null
+): MintedTokenProblem | null {
+  if (workspaceIdOf(token) !== workspaceId) return 'workspace_mismatch'
+  return subjectOf(token) === subject ? null : 'subject_mismatch'
+}
 
 export function classifyMint(mint: WorkspaceTokenMint): WorkspaceMintOutcome {
   if (mint.kind === 'minted') return mint

@@ -34,6 +34,18 @@ describe('isDatadogMirroredEvent', () => {
   it.each([
     ['comfy.desktop.auth.host_sign_in', true],
     ['comfy.desktop.auth.sign_in_failed', true],
+    ['comfy.desktop.auth.signed_out', true],
+    ['comfy.desktop.auth.expired_grant_rejected', true],
+    ['comfy.desktop.auth.grant_revocation', true],
+    ['comfy.desktop.auth.partner_node_token_failed', true],
+    ['comfy.desktop.auth.partner_node_token_issued', false],
+    ['comfy.desktop.auth.session_sign_in', true],
+    ['comfy.desktop.auth.grant_refresh_failed', true],
+    ['comfy.desktop.auth.workspace_token_mint_failed', true],
+    ['comfy.desktop.auth.stored_session_failed', true],
+    ['comfy.desktop.auth.stored_session_restored', false],
+    ['comfy.desktop.auth.embedded_session_disabled', true],
+    ['comfy.desktop.auth.view_token_refused', true],
     ['comfy.desktop.auth.sign_in_started', false]
   ])('mirrors %s: %s', (name, mirrored) => {
     expect(isDatadogMirroredEvent(name)).toBe(mirrored)

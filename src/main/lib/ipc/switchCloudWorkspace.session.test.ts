@@ -26,7 +26,7 @@ vi.mock('electron', () => ({
 vi.mock('../../cloud/oauth', () => ({
   signIn: vi.fn(),
   refresh: vi.fn(),
-  revoke: vi.fn(async () => 'settled'),
+  revoke: vi.fn(async () => 'revoked'),
   openAuthorizePage: vi.fn(async () => {})
 }))
 vi.mock('../../devplatform/session', () => ({

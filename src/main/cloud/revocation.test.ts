@@ -13,6 +13,8 @@ vi.mock('fs', async (importOriginal) => {
   return { ...actual, rmSync: vi.fn(actual.rmSync), renameSync: vi.fn(actual.renameSync) }
 })
 
+vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
+
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => electronState.userData), isPackaged: false },
   safeStorage: {
@@ -32,7 +34,8 @@ vi.mock('electron', () => ({
 import { safeStorage } from 'electron'
 
 import { CLOUD_CONFIG } from './config'
-import { Revocations } from './revocation'
+import * as mainTelemetry from '../lib/telemetry'
+import { GRANT_REVOCATION_EVENT, Revocations } from './revocation'
 import { _resetForTest, addPendingRevocation, loadPendingRevocations } from './tokenStore'
 import type { PendingRevocation } from './tokenStore'
 
@@ -68,6 +71,13 @@ function revocation(refreshToken: string): PendingRevocation {
   }
 }
 
+function revocationEvents(): unknown[] {
+  return vi
+    .mocked(mainTelemetry.emit)
+    .mock.calls.filter(([event]) => event === GRANT_REVOCATION_EVENT)
+    .map(([, context]) => context)
+}
+
 function queuedTokens(): string[] {
   _resetForTest()
   return loadPendingRevocations()
@@ -79,6 +89,7 @@ beforeEach(() => {
   electronState.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'comfy-cloud-revocation-'))
   _resetForTest()
   requests = []
+  vi.mocked(mainTelemetry.emit).mockClear()
   written.clear()
   replies = []
   replyFor = {}
@@ -171,6 +182,40 @@ describe('Revocations', () => {
     expect(queuedTokens()).toEqual([])
   })
 
+  it('reports a revocation Cloud confirmed', async () => {
+    const revocations = new Revocations()
+
+    revocations.add(revocation('refresh-1'))
+    await revocations.drain()
+
+    expect(revocationEvents()).toEqual([{ outcome: 'revoked' }])
+  })
+
+  it('reports a revocation that has to wait once, then that Cloud confirmed it', async () => {
+    vi.useFakeTimers()
+    replies = [offline, offline, ok]
+    const revocations = new Revocations()
+
+    revocations.add(revocation('refresh-1'))
+    await revocations.drain()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(revocationEvents()).toEqual([{ outcome: 'retry' }])
+
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(requests).toHaveLength(3)
+    expect(revocationEvents()).toEqual([{ outcome: 'retry' }, { outcome: 'revoked' }])
+  })
+
+  it('reports a revocation it gave up on after the token outlived its lifetime', async () => {
+    addPendingRevocation({ ...revocation('refresh-old'), queuedAt: Date.now() - 720 * 3_600_000 })
+
+    await new Revocations().drain()
+
+    expect(requests).toEqual([])
+    expect(revocationEvents()).toEqual([{ outcome: 'expired' }])
+  })
+
   it('backs off between attempts while Cloud stays unreachable', async () => {
     vi.useFakeTimers()
     replies = [offline, offline, offline]
@@ -221,6 +266,7 @@ describe('Revocations', () => {
 
     expect(requests).toHaveLength(1)
     expect(queuedTokens()).toEqual([])
+    expect(revocationEvents()).toEqual([{ outcome: 'refused' }])
   })
 
   it('revokes a token queued before a relaunch', async () => {
@@ -237,6 +283,20 @@ describe('Revocations', () => {
 
     expect(requests.map((request) => request.token)).toEqual(['refresh-1', 'refresh-1'])
     expect(queuedTokens()).toEqual([])
+    expect(revocationEvents()).toEqual([{ outcome: 'retry' }, { outcome: 'revoked' }])
+  })
+
+  it('reports a waiting revocation again after a relaunch that still cannot reach Cloud', async () => {
+    vi.useFakeTimers()
+    replies = [offline, offline]
+    const before = new Revocations()
+    before.add(revocation('refresh-1'))
+    await before.drain()
+
+    _resetForTest()
+    await new Revocations().drain()
+
+    expect(revocationEvents()).toEqual([{ outcome: 'retry' }, { outcome: 'retry' }])
   })
 
   it('sends every queued token, including one queued while another is in flight', async () => {
@@ -330,6 +390,7 @@ describe('Revocations', () => {
 
     expect(requests.map((request) => request.token)).toEqual(['refresh-1'])
     expect(fs.readdirSync(dir)).toEqual([])
+    expect(revocationEvents()).toEqual([{ outcome: 'revoked' }])
   })
 
   it('keeps a token it could not save in memory and leaves no partial file', async () => {
@@ -353,6 +414,41 @@ describe('Revocations', () => {
       vi.mocked(fs.renameSync).mockReset()
     }
   })
+
+  it.each<[string, () => () => void]>([
+    [
+      'the disk is full',
+      () => {
+        vi.mocked(fs.renameSync).mockImplementation(() => {
+          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+        })
+        return () => vi.mocked(fs.renameSync).mockReset()
+      }
+    ],
+    [
+      'secure storage is unavailable',
+      () => {
+        vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false)
+        return () => vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(true)
+      }
+    ]
+  ])(
+    'reports a revocation it could not save because %s, and still that Cloud confirmed it',
+    async (_name, breakStorage) => {
+      const repairStorage = breakStorage()
+      const revocations = new Revocations()
+
+      try {
+        revocations.add(revocation('refresh-1'))
+        await revocations.drain()
+
+        expect(requests.map((request) => request.token)).toEqual(['refresh-1'])
+        expect(revocationEvents()).toEqual([{ outcome: 'not_saved' }, { outcome: 'revoked' }])
+      } finally {
+        repairStorage()
+      }
+    }
+  )
 
   it('revokes a token queued by an earlier build, dating it by its file', async () => {
     const dir = path.join(electronState.userData, 'comfy-cloud-revocations')

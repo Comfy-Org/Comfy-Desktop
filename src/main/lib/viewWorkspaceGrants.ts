@@ -3,11 +3,17 @@ import type { WebContents } from 'electron'
 import { canMintWorkspaceTokens, grantFamilyOf, subjectOf, workspaceIdOf } from '../cloud/claims'
 import {
   classifyMint,
+  mintedTokenProblem,
+  mintFailureReport,
   mintPartnerNodeToken,
   mintWorkspaceToken,
   renewPartnerNodeToken
 } from '../cloud/workspaceToken'
-import type { WorkspaceTokenMint } from '../cloud/workspaceToken'
+import type {
+  MintedTokenProblem,
+  MintFailureReport,
+  WorkspaceTokenMint
+} from '../cloud/workspaceToken'
 import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import * as mainTelemetry from './telemetry'
 
@@ -18,16 +24,53 @@ const PARTNER_NODE_MAX_RETRY_MS = 5 * 60_000
 
 export const VIEW_TOKEN_MINTED_EVENT = 'comfy.desktop.auth.view_token_minted'
 export const VIEW_TOKEN_MINT_FAILED_EVENT = 'comfy.desktop.auth.view_token_mint_failed'
+export const PARTNER_NODE_TOKEN_ISSUED_EVENT = 'comfy.desktop.auth.partner_node_token_issued'
+export const PARTNER_NODE_TOKEN_FAILED_EVENT = 'comfy.desktop.auth.partner_node_token_failed'
+export const VIEW_TOKEN_REFUSED_EVENT = 'comfy.desktop.auth.view_token_refused'
 
-function reportMint(result: WorkspaceTokenMint): void {
-  if (result.kind === 'minted') {
-    mainTelemetry.emit(VIEW_TOKEN_MINTED_EVENT)
-    return
-  }
-  mainTelemetry.emit(
-    VIEW_TOKEN_MINT_FAILED_EVENT,
-    result.status === null ? { reason: 'network' } : { reason: 'http', http_status: result.status }
-  )
+type IssuedToken = Extract<WorkspaceTokenMint, { kind: 'minted' }>
+
+type TokenProblem = MintedTokenProblem | 'mint_scope' | 'expires_too_soon'
+
+type MintFailure = MintFailureReport | { reason: 'unusable_token'; problem: TokenProblem }
+
+function workspaceTokenProblem(
+  token: string,
+  workspaceId: string,
+  subject: string | null
+): TokenProblem | null {
+  const problem = mintedTokenProblem(token, workspaceId, subject)
+  if (problem) return problem
+  return canMintWorkspaceTokens(token) ? 'mint_scope' : null
+}
+
+function partnerNodeTokenProblem(
+  issued: IssuedToken,
+  workspaceId: string,
+  subject: string | null,
+  shortestLifetimeMs: number
+): TokenProblem | null {
+  if (issued.expiresAt - shortestLifetimeMs <= Date.now()) return 'expires_too_soon'
+  return mintedTokenProblem(issued.token, workspaceId, subject)
+}
+
+function mintFailureOf(
+  result: WorkspaceTokenMint,
+  problemOf: (issued: IssuedToken) => TokenProblem | null
+): MintFailure | null {
+  if (result.kind === 'failed') return mintFailureReport(result)
+  const problem = problemOf(result)
+  return problem ? { reason: 'unusable_token', problem } : null
+}
+
+function reportMint(failure: MintFailure | null): void {
+  if (failure) mainTelemetry.emit(VIEW_TOKEN_MINT_FAILED_EVENT, failure)
+  else mainTelemetry.emit(VIEW_TOKEN_MINTED_EVENT)
+}
+
+function reportPartnerNodeToken(operation: 'mint' | 'renew', failure: MintFailure | null): void {
+  if (failure) mainTelemetry.emit(PARTNER_NODE_TOKEN_FAILED_EVENT, { operation, ...failure })
+  else mainTelemetry.emit(PARTNER_NODE_TOKEN_ISSUED_EVENT, { operation })
 }
 
 export interface GrantSession {
@@ -95,6 +138,7 @@ export class ViewWorkspaceGrants {
   private seeded = false
   private desktopAllowed = new Set<string>()
   private viewAllowed = new WeakMap<WebContents, Set<string>>()
+  private refusedViews = new WeakSet<WebContents>()
   private minted = new Map<string, MintedToken>()
   private partnerNodeMinted = new Map<string, MintedToken>()
   private partnerNodeRetryAt = new Map<string, number>()
@@ -124,6 +168,7 @@ export class ViewWorkspaceGrants {
     this.seeded = true
     this.desktopAllowed = new Set()
     this.viewAllowed = new WeakMap()
+    this.refusedViews = new WeakSet()
     this.minted = new Map()
     this.partnerNodeMinted = new Map()
     this.partnerNodeRetryAt = new Map()
@@ -150,12 +195,23 @@ export class ViewWorkspaceGrants {
     gate: Gate,
     read: (fence: MintFence) => Promise<HeldToken | null>
   ): Promise<string | null> {
-    if (!this.mayHold(view, workspaceId)) return null
+    if (!this.mayHold(view, workspaceId)) {
+      this.reportRefusal(view, workspaceId)
+      return null
+    }
     const fence = this.currentFence()
     if (!(await gate()) || !this.isCurrent(fence)) return null
     const held = await read(fence)
     if (!held || !this.isCurrent(fence) || !this.mayHold(view, workspaceId)) return null
-    return this.session.currentSubject() === held.subject ? held.token : null
+    if (this.session.currentSubject() !== held.subject) return null
+    this.refusedViews.delete(view)
+    return held.token
+  }
+
+  private reportRefusal(view: WebContents, workspaceId: string): void {
+    if (this.session.currentWorkspaceId() !== workspaceId || this.refusedViews.has(view)) return
+    this.refusedViews.add(view)
+    mainTelemetry.emit(VIEW_TOKEN_REFUSED_EVENT)
   }
 
   private currentFence(): MintFence {
@@ -213,7 +269,9 @@ export class ViewWorkspaceGrants {
     if (!allowed || !this.isCurrent(fence)) return null
     const result = await this.once(['workspace', key], fence, () =>
       this.mint(accessToken, workspaceId).then((minted) => {
-        reportMint(minted)
+        reportMint(
+          mintFailureOf(minted, ({ token }) => workspaceTokenProblem(token, workspaceId, subject))
+        )
         this.endAnEndedGrant(accessToken, minted)
         if (minted.kind === 'failed' && minted.status === 401) this.onUnauthorized(accessToken)
         return minted
@@ -221,12 +279,7 @@ export class ViewWorkspaceGrants {
     )
     if (!this.isCurrent(fence) || this.session.currentSubject() !== subject) return null
     if (result.kind !== 'minted') return null
-    if (
-      workspaceIdOf(result.token) !== workspaceId ||
-      subjectOf(result.token) !== subject ||
-      canMintWorkspaceTokens(result.token)
-    )
-      return null
+    if (workspaceTokenProblem(result.token, workspaceId, subject)) return null
     this.minted.set(key, { token: result.token, expiresAt: result.expiresAt })
     return { token: result.token, subject }
   }
@@ -251,9 +304,7 @@ export class ViewWorkspaceGrants {
     )
     const usable =
       result.kind === 'minted' &&
-      workspaceIdOf(result.token) === workspaceId &&
-      subjectOf(result.token) === subject &&
-      result.expiresAt - MINT_REFRESH_SKEW_MS > Date.now()
+      !partnerNodeTokenProblem(result, workspaceId, subject, MINT_REFRESH_SKEW_MS)
     if (!usable && fence.epoch === this.epoch) {
       const retryAfterMs =
         result.kind === 'failed' && result.retryAfterSeconds !== undefined
@@ -289,6 +340,17 @@ export class ViewWorkspaceGrants {
     fence: MintFence
   ): Promise<WorkspaceTokenMint> {
     const renewed = await this.partnerNode.renew(partnerNodeToken)
+    reportPartnerNodeToken(
+      'renew',
+      mintFailureOf(renewed, (issued) =>
+        partnerNodeTokenProblem(
+          issued,
+          workspaceId,
+          subjectOf(accessToken),
+          PARTNER_NODE_RENEW_BEFORE_MS
+        )
+      )
+    )
     if (renewed.kind === 'minted' && renewed.expiresAt - PARTNER_NODE_RENEW_BEFORE_MS > Date.now())
       return renewed
     if (renewed.kind === 'failed' && !isRetryableFailure(renewed))
@@ -302,6 +364,12 @@ export class ViewWorkspaceGrants {
     workspaceId: string
   ): Promise<WorkspaceTokenMint> {
     const minted = await this.partnerNode.mint(accessToken, workspaceId)
+    reportPartnerNodeToken(
+      'mint',
+      mintFailureOf(minted, (issued) =>
+        partnerNodeTokenProblem(issued, workspaceId, subjectOf(accessToken), MINT_REFRESH_SKEW_MS)
+      )
+    )
     this.endAnEndedGrant(accessToken, minted)
     return minted
   }

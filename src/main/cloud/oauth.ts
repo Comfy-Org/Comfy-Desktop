@@ -195,11 +195,13 @@ export async function refresh(
   return toTokens(r, refreshToken)
 }
 
+export type RevokeResult = 'revoked' | 'refused' | 'retry'
+
 export async function revoke(
   refreshToken: string,
   clientId: string,
   revokeUrl: string = CLOUD_CONFIG.revokeUrl
-): Promise<'settled' | 'retry'> {
+): Promise<RevokeResult> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
   try {
@@ -210,10 +212,10 @@ export async function revoke(
       redirect: 'manual',
       signal: controller.signal
     })
-    if (resp.ok) return 'settled'
+    if (resp.ok) return 'revoked'
     if (resp.status !== 400 && resp.status !== 401) return 'retry'
     const detail = await resp.text().catch(() => '')
-    return PERMANENT_REVOKE_ERRORS.has(oauthErrorOf(detail) ?? '') ? 'settled' : 'retry'
+    return PERMANENT_REVOKE_ERRORS.has(oauthErrorOf(detail) ?? '') ? 'refused' : 'retry'
   } catch {
     return 'retry'
   } finally {

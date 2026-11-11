@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -20,10 +20,15 @@ vi.mock('electron', () => ({
   }
 }))
 
-import { safeStorage } from 'electron'
+vi.mock('../lib/telemetry', () => ({ emit: vi.fn() }))
 
+import { app, safeStorage } from 'electron'
+
+import * as mainTelemetry from '../lib/telemetry'
 import { CLOUD_CONFIG } from './config'
 import {
+  STORED_SESSION_FAILED_EVENT,
+  STORED_SESSION_RESTORED_EVENT,
   _resetForTest,
   activateWorkspace,
   addPendingRevocation,
@@ -83,11 +88,19 @@ function readVault(): Record<string, unknown> {
   >
 }
 
+function eventsNamed(name: string): unknown[] {
+  return vi
+    .mocked(mainTelemetry.emit)
+    .mock.calls.filter(([event]) => event === name)
+    .map(([, context]) => context)
+}
+
 describe('grant vault', () => {
   beforeEach(() => {
     electronState.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'comfy-cloud-tokens-'))
     electronState.encryptionAvailable = true
     _resetForTest()
+    vi.mocked(mainTelemetry.emit).mockClear()
   })
 
   afterEach(() => {
@@ -512,5 +525,155 @@ describe('grant vault', () => {
 
     expect(loadGrant()).toBeNull()
     expect(getAuthStatus()).toEqual({ signedIn: false })
+  })
+
+  describe('stored session telemetry', () => {
+    it('reports a session restored from disk once, however often it is read', () => {
+      saveGrant(tokens('user-1', 'w1'))
+      _resetForTest()
+
+      loadGrant()
+      loadActiveWorkspaceId()
+      getAuthStatus()
+
+      expect(eventsNamed(STORED_SESSION_RESTORED_EVENT)).toEqual([{ format: 'current' }])
+      expect(eventsNamed(STORED_SESSION_FAILED_EVENT)).toEqual([])
+    })
+
+    it.each<[string, unknown]>([
+      [
+        'a version 1 vault',
+        {
+          version: 1,
+          activeKey: 'workspace:w1',
+          bundles: { 'workspace:w1': tokens('user-1', 'w1') }
+        }
+      ],
+      ['the original single-token payload', tokens('user-1', 'w1')]
+    ])('reports %s moved to the current format', (_name, payload) => {
+      writeVault(payload)
+
+      expect(loadGrant()).not.toBeNull()
+
+      expect(eventsNamed(STORED_SESSION_RESTORED_EVENT)).toEqual([{ format: 'legacy' }])
+      expect(eventsNamed(STORED_SESSION_FAILED_EVENT)).toEqual([])
+    })
+
+    it.each<[string, () => void, string]>([
+      [
+        'cannot be decrypted',
+        () => fs.writeFileSync(vaultPath(), JSON.stringify({ version: 2 })),
+        'undecryptable'
+      ],
+      [
+        'is not JSON',
+        () => fs.writeFileSync(vaultPath(), safeStorage.encryptString('not json')),
+        'invalid'
+      ],
+      [
+        'has an unknown version',
+        () => writeVault({ version: 3, grant: tokens('user-1', 'w1') }),
+        'invalid'
+      ],
+      [
+        'is a version 1 vault with no active session',
+        () => writeVault({ version: 1, activeKey: 'workspace:w2', bundles: {} }),
+        'invalid'
+      ],
+      ['cannot be read', () => fs.mkdirSync(vaultPath()), 'unreadable']
+    ])('reports once a stored session that %s', (_name, store, reason) => {
+      store()
+
+      expect(loadGrant()).toBeNull()
+      expect(getAuthStatus()).toEqual({ signedIn: false })
+      expect(loadGrant()).toBeNull()
+
+      expect(eventsNamed(STORED_SESSION_FAILED_EVENT)).toEqual([{ operation: 'load', reason }])
+      expect(eventsNamed(STORED_SESSION_RESTORED_EVENT)).toEqual([])
+    })
+
+    it('reads a session as signed out, and says it was unreadable, when the read throws no error object', () => {
+      vi.mocked(app.getPath).mockImplementationOnce(() => {
+        throw null
+      })
+      onTestFinished(() => {
+        vi.mocked(app.getPath).mockReset()
+      })
+
+      expect(loadGrant()).toBeNull()
+
+      expect(eventsNamed(STORED_SESSION_FAILED_EVENT)).toEqual([
+        { operation: 'load', reason: 'unreadable' }
+      ])
+    })
+
+    it('reports nothing when no session is stored', () => {
+      expect(loadGrant()).toBeNull()
+
+      expect(vi.mocked(mainTelemetry.emit)).not.toHaveBeenCalled()
+    })
+
+    it('reports nothing for a session saved and read back in the same process', () => {
+      saveGrant(tokens('user-1', 'w1'))
+      saveWorkspaceToken('w2', mintedToken('user-1', 'w2'))
+
+      expect(loadGrant()).not.toBeNull()
+
+      expect(vi.mocked(mainTelemetry.emit)).not.toHaveBeenCalled()
+    })
+
+    it('reports once a session kept only in memory because secure storage is unavailable', () => {
+      electronState.encryptionAvailable = false
+
+      expect(saveGrant(tokens('user-1', 'w1'))).toBe(true)
+      saveWorkspaceToken('w2', mintedToken('user-1', 'w2'))
+      activateWorkspace('w2')
+
+      expect(eventsNamed(STORED_SESSION_FAILED_EVENT)).toEqual([
+        { operation: 'save', reason: 'secure_storage_unavailable' }
+      ])
+    })
+
+    it('reports once a session that could not be written to disk', () => {
+      const keychainLocked = (): never => {
+        throw new Error('keychain locked')
+      }
+      vi.mocked(safeStorage.encryptString)
+        .mockImplementationOnce(keychainLocked)
+        .mockImplementationOnce(keychainLocked)
+      onTestFinished(() => {
+        vi.mocked(safeStorage.encryptString).mockReset()
+      })
+      const grant = tokens('user-1', 'w1')
+
+      expect(saveGrant(grant)).toBe(false)
+      saveWorkspaceToken('w2', mintedToken('user-1', 'w2'))
+
+      expect(fs.existsSync(vaultPath())).toBe(false)
+      expect(loadGrant()).toEqual(grant)
+      expect(eventsNamed(STORED_SESSION_FAILED_EVENT)).toEqual([
+        { operation: 'save', reason: 'write_failed' }
+      ])
+    })
+
+    it('reports a legacy session that was read but could not be saved in the current format', () => {
+      const legacy = tokens('user-1', 'w1')
+      writeVault(legacy)
+      const stored = fs.readFileSync(vaultPath())
+      vi.mocked(safeStorage.encryptString).mockImplementationOnce(() => {
+        throw new Error('keychain locked')
+      })
+      onTestFinished(() => {
+        vi.mocked(safeStorage.encryptString).mockReset()
+      })
+
+      expect(loadGrant()).toEqual(legacy)
+
+      expect(fs.readFileSync(vaultPath())).toEqual(stored)
+      expect(eventsNamed(STORED_SESSION_RESTORED_EVENT)).toEqual([{ format: 'legacy' }])
+      expect(eventsNamed(STORED_SESSION_FAILED_EVENT)).toEqual([
+        { operation: 'save', reason: 'write_failed' }
+      ])
+    })
   })
 })
