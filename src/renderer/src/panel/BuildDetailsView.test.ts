@@ -9,7 +9,7 @@ import type { Installation } from '../types/ipc'
 vi.mock('../components/settings/ComfyUISettingsContent.vue', () => ({
   default: {
     name: 'ComfyUISettingsContent',
-    props: ['installation', 'globalSettingsSnapshot', 'pageActionsTarget'],
+    props: ['installation', 'globalSettingsSnapshot', 'pageActionsTarget', 'pageTitleTarget'],
     emits: [
       'show-progress',
       'navigate-list',
@@ -18,7 +18,8 @@ vi.mock('../components/settings/ComfyUISettingsContent.vue', () => ({
       'primary-action',
       'open-new-window'
     ],
-    template: '<div data-testid="settings-content" />'
+    template:
+      '<div data-testid="settings-content"><Teleport defer :to="pageTitleTarget">{{ installation.name }}</Teleport></div>'
   }
 }))
 
@@ -51,7 +52,8 @@ beforeEach(() => {
 
 async function mountDetails(installation: Installation = INSTALL) {
   const wrapper = mount(BuildDetailsView, {
-    props: { installation }
+    props: { installation },
+    attachTo: document.body
   })
   await flushPromises()
   return { wrapper, content: wrapper.findComponent({ name: 'ComfyUISettingsContent' }) }
@@ -79,12 +81,13 @@ describe('BuildDetailsView', () => {
     expect(wrapper.get('.build-details-status').text()).toBe('Running')
   })
 
-  it('hands the settings body its build, shared storage and action slot', async () => {
+  it('hands the settings body its build, shared storage, title and action slots', async () => {
     const { content } = await mountDetails()
 
     expect(content.props('installation')).toEqual(INSTALL)
     expect(content.props('globalSettingsSnapshot')).toEqual(SNAPSHOT)
     expect(content.props('pageActionsTarget')).toBe('#build-details-actions')
+    expect(content.props('pageTitleTarget')).toBe('#build-details-title')
   })
 
   it('launches the build from the primary action', async () => {
