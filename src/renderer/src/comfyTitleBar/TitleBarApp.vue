@@ -580,18 +580,6 @@ onUnmounted(() => {
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
       <button
-        v-if="!isConsentLockdown"
-        ref="fileBtn"
-        type="button"
-        class="title-menu-button title-menu-button--icon"
-        :class="titleMenuButtonClass"
-        aria-haspopup="menu"
-        v-bind="tooltipAttrs(t('titleBar.menu'))"
-        @click="handleFileMenu"
-      >
-        <MenuIcon :size="18" />
-      </button>
-      <button
         v-if="showRefreshButton"
         type="button"
         class="title-menu-button title-menu-button--icon title-refresh-button"
@@ -801,6 +789,18 @@ onUnmounted(() => {
           class="title-downloads-error-dot pointer-events-none absolute -top-[3px] -left-[3px] size-2 rounded-[999px] bg-[var(--danger)] [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))]"
           aria-hidden="true"
         />
+      </button>
+      <button
+        v-if="!isConsentLockdown"
+        ref="fileBtn"
+        type="button"
+        class="title-menu-button title-menu-button--icon"
+        :class="titleMenuButtonClass"
+        aria-haspopup="menu"
+        v-bind="tooltipAttrs(t('titleBar.menu'))"
+        @click="handleFileMenu"
+      >
+        <MenuIcon :size="18" />
       </button>
     </div>
   </header>
