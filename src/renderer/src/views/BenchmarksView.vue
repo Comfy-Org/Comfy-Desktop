@@ -4,10 +4,13 @@ import Input from '@comfyorg/design-system/input/Input'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
+  Check,
+  ChevronDown,
   ChevronRight,
   Ellipsis,
   Flag,
@@ -21,12 +24,12 @@ import {
   Trash2,
   X
 } from 'lucide-vue-next'
+import { DropdownMenuRadioGroup } from 'reka-ui'
 import { useI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark, PerformanceTestResultValue } from '../types/ipc'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
-import BaseSelect, { type BaseSelectOption } from '../components/ui/BaseSelect.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import {
   createBenchmarkComparisonSvg,
@@ -132,7 +135,12 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', closeColumnsPickerOnOutsideClick, true)
 })
 
-function uniqueOptions(allLabel: string, values: Array<string | null>): BaseSelectOption[] {
+interface FilterOption {
+  value: string
+  label: string
+}
+
+function uniqueOptions(allLabel: string, values: Array<string | null>): FilterOption[] {
   return [
     { value: '', label: allLabel },
     ...[...new Set(values.filter((value): value is string => Boolean(value)))]
@@ -147,7 +155,7 @@ function uniqueOptions(allLabel: string, values: Array<string | null>): BaseSele
 function entityOptions(
   allLabel: string,
   entries: Array<{ value: string; label: string }>
-): BaseSelectOption[] {
+): FilterOption[] {
   const uniqueEntries = [...new Map(entries.map((entry) => [entry.value, entry])).values()]
   const labelCounts = new Map<string, number>()
   for (const entry of uniqueEntries) {
@@ -460,7 +468,7 @@ const metricRows = computed<Array<{ key: MetricKey; label: string }>>(() => [
   { key: 'measuredJobCount', label: t('benchmarks.measuredRuns') }
 ])
 const metricLabel = computed(() => columnLabel(comparisonMetric.value))
-const compareByOptions = computed<BaseSelectOption[]>(() => [
+const compareByOptions = computed<FilterOption[]>(() => [
   ...(manualOrder.value ? [{ value: MANUAL_ORDER, label: t('benchmarks.manualSort') }] : []),
   ...durationKeys.map((key) => ({ value: key, label: columnLabel(key) }))
 ])
@@ -474,6 +482,53 @@ function setCompareBy(value: string): void {
   sortKey.value = metric
   sortAscending.value = true
 }
+
+const toolbarMenus = computed(() =>
+  [
+    {
+      key: 'workspace',
+      label: t('benchmarks.filterWorkspace'),
+      options: workspaceOptions.value,
+      model: workspaceFilter
+    },
+    {
+      key: 'build',
+      label: t('benchmarks.filterBuild'),
+      options: instanceOptions.value,
+      model: instanceFilter
+    },
+    {
+      key: 'hardware',
+      label: t('benchmarks.filterHardware'),
+      options: hardwareOptions.value,
+      model: hardwareFilter
+    },
+    {
+      key: 'workflow',
+      label: t('benchmarks.filterWorkflow'),
+      options: workflowOptions.value,
+      model: workflowFilter
+    }
+  ]
+    .map(({ model, ...menu }) => ({
+      ...menu,
+      value: model.value,
+      set: (value: string): void => {
+        model.value = value
+      }
+    }))
+    .concat({
+      key: 'compare-by',
+      label: t('benchmarks.compareBy'),
+      options: compareByOptions.value,
+      value: compareByValue.value,
+      set: setCompareBy
+    })
+    .map((menu) => ({
+      ...menu,
+      current: menu.options.find((option) => option.value === menu.value)?.label ?? ''
+    }))
+)
 
 function setSort(key: string): void {
   if (!manualOrder.value && sortKey.value === key) sortAscending.value = !sortAscending.value
@@ -957,47 +1012,44 @@ onActivated(() => {
         </BrandedPageHeader>
 
         <div class="benchmarks__toolbar flex flex-wrap items-center gap-2">
-          <BaseSelect
-            v-model="workspaceFilter"
-            class="benchmarks__filter w-auto max-w-56"
-            :options="workspaceOptions"
-            :label="t('benchmarks.filterWorkspace')"
-            :aria-label="t('benchmarks.filterWorkspace')"
-            compact
-          />
-          <BaseSelect
-            v-model="instanceFilter"
-            class="benchmarks__filter w-auto max-w-56"
-            :options="instanceOptions"
-            :label="t('benchmarks.filterBuild')"
-            :aria-label="t('benchmarks.filterBuild')"
-            compact
-          />
-          <BaseSelect
-            v-model="hardwareFilter"
-            class="benchmarks__filter w-auto max-w-56"
-            :options="hardwareOptions"
-            :label="t('benchmarks.filterHardware')"
-            :aria-label="t('benchmarks.filterHardware')"
-            compact
-          />
-          <BaseSelect
-            v-model="workflowFilter"
-            class="benchmarks__filter w-auto max-w-56"
-            :options="workflowOptions"
-            :label="t('benchmarks.filterWorkflow')"
-            :aria-label="t('benchmarks.filterWorkflow')"
-            compact
-          />
-          <BaseSelect
-            class="benchmarks__compare-by w-auto"
-            :model-value="compareByValue"
-            :options="compareByOptions"
-            :label="t('benchmarks.compareBy')"
-            :aria-label="t('benchmarks.compareBy')"
-            compact
-            @update:model-value="setCompareBy"
-          />
+          <Menu
+            v-for="filter in toolbarMenus"
+            :key="filter.key"
+            :modal="false"
+            align="start"
+            class="z-20 min-w-[180px]"
+            :aria-label="filter.label"
+          >
+            <template #trigger>
+              <Button
+                type="button"
+                variant="secondary"
+                size="md"
+                class="benchmarks__filter max-w-64 gap-1.5 px-3 text-[13px]/5"
+                :aria-label="filter.label"
+                :data-testid="`benchmarks-filter-${filter.key}`"
+              >
+                <span class="shrink-0 text-subtle-foreground">{{ filter.label }}</span>
+                <span class="truncate">{{ filter.current }}</span>
+                <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
+              </Button>
+            </template>
+            <DropdownMenuRadioGroup :model-value="filter.value">
+              <MenuRadioItem
+                v-for="option in filter.options"
+                :key="option.value"
+                as="button"
+                type="button"
+                :value="option.value"
+                class="w-full"
+                :data-value="option.value"
+                @select="filter.set(option.value)"
+              >
+                <span class="flex-1 text-left">{{ option.label }}</span>
+                <Check v-if="filter.value === option.value" :size="15" aria-hidden="true" />
+              </MenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </Menu>
           <div class="benchmarks__compare ml-auto flex items-center gap-2">
             <Button
               variant="muted-textonly"

@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import type { PerformanceTestBenchmark } from '../types/ipc'
 import type * as PerformanceTestResultsSvg from '../lib/performanceTestResultsSvg'
-import BaseSelect from '../components/ui/BaseSelect.vue'
 import { useDialogs } from '../composables/useDialogs'
 import BenchmarksView from './BenchmarksView.vue'
 import { setChecked } from './testHelpers'
@@ -135,20 +134,38 @@ function vsLabels(wrapper: VueWrapper, testId = PORTRAIT_4090): string[] {
     .map((cell) => cell.text())
 }
 
-function compareBySelect(wrapper: VueWrapper) {
-  return wrapper
-    .findAllComponents(BaseSelect)
-    .find((select) => select.props('ariaLabel') === 'Compare by')!
-}
-
-async function compareBy(wrapper: VueWrapper, value: string): Promise<void> {
-  compareBySelect(wrapper).vm.$emit('update:modelValue', value)
-  await flushPromises()
-}
-
 async function openMenu(wrapper: VueWrapper, selector: string): Promise<void> {
   await wrapper.get(selector).trigger('keydown', { key: 'ArrowDown' })
   await flushPromises()
+}
+
+async function filterOptions(wrapper: VueWrapper, key: string): Promise<string[]> {
+  await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
+  const labels = Array.from(
+    document.body.querySelectorAll('[role="menu"] [role="menuitemradio"]'),
+    (item) => item.textContent!.trim()
+  )
+  await wrapper
+    .get(`[data-testid="benchmarks-filter-${key}"]`)
+    .trigger('keydown', { key: 'Escape' })
+  document.body
+    .querySelector<HTMLElement>('[role="menu"]')
+    ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await vi.waitFor(() => expect(document.body.querySelector('[role="menu"]')).toBeNull())
+  return labels
+}
+
+async function chooseFilter(wrapper: VueWrapper, key: string, value: string): Promise<void> {
+  await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
+  await chooseMenuItem(`[data-value="${value}"]`)
+}
+
+async function compareBy(wrapper: VueWrapper, value: string): Promise<void> {
+  await chooseFilter(wrapper, 'compare-by', value)
+}
+
+function compareByCurrent(wrapper: VueWrapper): string {
+  return wrapper.get('[data-testid="benchmarks-filter-compare-by"]').text()
 }
 
 function menuItem(selector: string): HTMLElement | null {
@@ -421,11 +438,12 @@ describe('BenchmarksView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(
-      compareBySelect(wrapper)
-        .props('options')
-        .map((option) => option.label)
-    ).toEqual(['Fastest', 'Average', 'Median', 'Slowest'])
+    expect(await filterOptions(wrapper, 'compare-by')).toEqual([
+      'Fastest',
+      'Average',
+      'Median',
+      'Slowest'
+    ])
     await compareBy(wrapper, 'fastestJobDurationSeconds')
     expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
     expect(group(wrapper).get('.benchmarks__bar-head').text()).toBe('Fastest and range')
@@ -458,8 +476,8 @@ describe('BenchmarksView', () => {
     await wrapper.get('[data-testid="benchmark-row-13"]').trigger('drop', { dataTransfer })
 
     expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
-    expect(compareBySelect(wrapper).props('modelValue')).toBe('manual')
-    expect(compareBySelect(wrapper).props('options')[0]!.label).toBe('Manual')
+    expect(compareByCurrent(wrapper)).toBe('Compare byManual')
+    expect((await filterOptions(wrapper, 'compare-by'))[0]).toBe('Manual')
     expect(group(wrapper).get('.benchmarks__metric-sort').text()).toBe('Median')
     expect(vsLabels(wrapper)).toEqual(['1.53× slower', 'Fastest', '1.11× slower'])
 
@@ -480,7 +498,7 @@ describe('BenchmarksView', () => {
 
     await compareBy(wrapper, 'medianJobDurationSeconds')
     expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
-    expect(compareBySelect(wrapper).props('options')).toHaveLength(4)
+    expect(await filterOptions(wrapper, 'compare-by')).toHaveLength(4)
   })
 
   it('collapses a group', async () => {
@@ -566,11 +584,7 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__no-results').text()).toContain('No runs match these filters')
 
     await wrapper.get('input[type="text"]').setValue('')
-    const hardwareSelect = wrapper
-      .findAllComponents(BaseSelect)
-      .find((select) => select.props('ariaLabel') === 'Hardware')!
-    hardwareSelect.vm.$emit('update:modelValue', 'Apple M3 Max')
-    await flushPromises()
+    await chooseFilter(wrapper, 'hardware', 'Apple M3 Max')
     expect(wrapper.findAll('[data-testid^="benchmark-row-"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="benchmark-row-10"]').exists()).toBe(true)
   })
@@ -588,15 +602,8 @@ describe('BenchmarksView', () => {
     expect(wrapper.get('.benchmarks__group-meta').text()).toBe(
       'Unknown hardware · 1 session · 5 runs'
     )
-    const workspaceSelect = wrapper
-      .findAllComponents(BaseSelect)
-      .find((select) => select.props('ariaLabel') === 'Workspace')!
-    expect(workspaceSelect.props('options').map((option) => option.label)).toEqual([
-      'All',
-      'Unmanaged'
-    ])
-    workspaceSelect.vm.$emit('update:modelValue', '__unmanaged__')
-    await flushPromises()
+    expect(await filterOptions(wrapper, 'workspace')).toEqual(['All', 'Unmanaged'])
+    await chooseFilter(wrapper, 'workspace', '__unmanaged__')
     expect(wrapper.find('[data-testid="benchmark-row-31"]').exists()).toBe(true)
   })
 
