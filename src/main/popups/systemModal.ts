@@ -165,12 +165,6 @@ export function openSystemModalAsync(opts: OpenSystemModalOpts): Promise<boolean
   return openSystemModalResolving(opts, (action) => action === 'confirm')
 }
 
-export function openSystemModalChoiceAsync(
-  opts: OpenSystemModalOpts
-): Promise<'confirm' | 'cancel' | 'secondary'> {
-  return openSystemModalResolving(opts, (action) => action)
-}
-
 export function registerSystemModalIpc(): void {
   ipcMain.on('comfy-systemmodal:ready', (event) => {
     const entry = systemModalsByWebContents.get(event.sender.id)

@@ -35,7 +35,6 @@ interface TitleBarMenusBridge {
   openFileMenu: (anchor: MenuAnchor) => void
   dismissFileMenu: () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
-  clickInstallPill: (anchor: MenuAnchor) => void
   onMenuOpened: (cb: (info: { menu: TitleMenuKind }) => void) => () => void
   onMenuClosed: (cb: (info: { menu: TitleMenuKind }) => void) => () => void
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
@@ -46,7 +45,6 @@ interface UseTitleBarMenusOpts {
   hideTip: () => void
   fileBtnRef: Readonly<ShallowRef<HTMLElement | null>>
   downloadsBtnRef: Readonly<ShallowRef<HTMLElement | null>>
-  installPillRef: Readonly<ShallowRef<HTMLElement | null>>
 }
 
 interface TitleBarMenusApi {
@@ -61,7 +59,6 @@ interface TitleBarMenusApi {
   isInstancePickerOpen: Ref<boolean>
   handleFileMenu: () => void
   handleDownloadsTray: () => void
-  handleInstallPill: () => void
 }
 
 export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
@@ -138,11 +135,6 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     opts.bridge?.clickDownloadsTray(anchorDownloadsBelow(opts.downloadsBtnRef.value))
   }
 
-  function handleInstallPill(): void {
-    opts.hideTip()
-    opts.bridge?.clickInstallPill(anchorDownloadsBelow(opts.installPillRef.value))
-  }
-
   function acknowledgeRecent(): void {
     for (const d of downloadsState.value.recent) seenUrls.add(d.url)
   }
@@ -213,7 +205,6 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     downloadsTrayLabel,
     downloadsStartedAt,
     handleFileMenu,
-    handleDownloadsTray,
-    handleInstallPill
+    handleDownloadsTray
   }
 }

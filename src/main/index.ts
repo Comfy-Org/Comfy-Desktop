@@ -37,12 +37,7 @@ import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
-import {
-  openSystemModal,
-  openSystemModalAsync,
-  openSystemModalChoiceAsync,
-  registerSystemModalIpc
-} from './popups/systemModal'
+import { openSystemModal, openSystemModalAsync, registerSystemModalIpc } from './popups/systemModal'
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
@@ -139,9 +134,7 @@ import {
   findEntryByHostWindow,
   forceRevealHostWindow,
   getEntryByInstallationId,
-  hasRunningSessionForEntry,
   isChooserHost,
-  isHomePanel,
   isInstallHost,
   openOrFocusAnyHostWindow,
   openOrFocusChooserHostWindow,
@@ -777,6 +770,10 @@ ipcMain.on('comfy-window:new-chooser-window', () => {
 
 ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {
   recordIpcInvocation('focus-comfy-window', { installationId })
+  return focusBuild(installationId)
+})
+
+function focusBuild(installationId: string): boolean {
   const entry = getEntryByInstallationId(installationId)
   if (entry && !entry.window.isDestroyed()) {
     showBuildWindow(entry)
@@ -790,7 +787,7 @@ ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {
   }
 
   return false
-})
+}
 
 ipcMain.handle('open-install-window', (_event, installationId: string) => {
   recordIpcInvocation('open-install-window', { installationId })
@@ -838,23 +835,12 @@ ipcMain.handle('return-to-dashboard', (event) => {
 })
 
 function showBuildWindow(entry: ComfyWindowEntry): void {
-  if (isHomePanel(entry.activePanel)) setActivePanel(entry.windowKey, 'comfy')
   entry.window.show()
   entry.window.focus()
 }
 
-async function closeBuildTab(id: number, entry: ComfyWindowEntry): Promise<void> {
-  const previous = entry.activePanel
-  if (!isHomePanel(previous)) setActivePanel(id, 'home')
-  const closed = await returnToDashboard(id)
-  if (!closed && entry.activePanel === 'home' && !isHomePanel(previous)) {
-    setActivePanel(id, previous)
-  }
-}
-
-ipcMain.on('comfy-window:close-build-tab', (event) => {
-  const found = findEntryByTitleBarSender(event.sender)
-  if (found && isInstallHost(found.entry)) void closeBuildTab(found.id, found.entry)
+ipcMain.on('comfy-window:show-home', (event) => {
+  if (findEntryByTitleBarSender(event.sender)) openOrFocusChooserHostWindow()
 })
 
 ipcMain.handle('claim-attach-host', (event, installationId: string) => {
@@ -1120,76 +1106,6 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       } catch (err) {
         console.error('openInstallInNewWindow failed:', err)
       }
-    }
-
-    const pickInstallFromPicker = async (
-      installationId: string,
-      parentEntryId: number,
-      opts?: { confirmed?: boolean }
-    ): Promise<void> => {
-      const existing = getEntryByInstallationId(installationId)
-      if (existing && !existing.window.isDestroyed()) {
-        showBuildWindow(existing)
-        return
-      }
-      const parentEntry = comfyWindows.get(parentEntryId)
-      if (!parentEntry || parentEntry.window.isDestroyed()) return
-
-      if (parentEntry.installationId === installationId) return
-
-      if (parentEntry.installationId != null) {
-        if (!opts?.confirmed) {
-          const currentId = parentEntry.installationId
-          const stopsBuild =
-            shouldConfirmKillForEntry(parentEntry) &&
-            (hasRunningSessionForEntry(parentEntry) ||
-              _getLaunchingInstallationIds().includes(currentId))
-          let targetName = installationId
-          try {
-            const target = await getInstallation(installationId)
-            if (target?.name) targetName = target.name
-          } catch {}
-          const choice = await openSystemModalChoiceAsync({
-            parent: parentEntry.window,
-            spec: {
-              title: 'Switch instance?',
-              message: `Switch to ${targetName}?`,
-              details: [
-                {
-                  label: 'Heads up',
-                  items: stopsBuild
-                    ? [
-                        'Switch stops the current instance and replaces it in this window.',
-                        'Open in new window keeps the current instance running.'
-                      ]
-                    : [
-                        'Switch replaces the current instance in this window.',
-                        'Open in new window keeps it open.'
-                      ]
-                }
-              ],
-              confirmLabel: 'Switch',
-              secondaryLabel: 'Open in new window',
-              cancelLabel: 'Cancel',
-              confirmStyle: 'primary',
-              theme: parentEntry.lastTheme
-            }
-          })
-          if (choice === 'cancel') return
-          if (choice === 'secondary') {
-            openInstallInNewWindow(installationId)
-            return
-          }
-        }
-        mainTelemetry.emit('comfy.desktop.instance.switched', {
-          from_installation_id: parentEntry.installationId,
-          to_installation_id: installationId,
-          method: 'picker'
-        })
-        parentEntry.detachInstall()
-      }
-
-      deliverPickToEntry(parentEntry, installationId)
     }
 
     registerTitlePopupIpc({
@@ -1502,7 +1418,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           return { ok: false, message: err instanceof Error ? err.message : 'Action failed.' }
         }
       },
-      pickInstallFromPicker,
+      pickInstallFromPicker: (installationId) => {
+        if (focusBuild(installationId) || _runningSessions.has(installationId)) return
+        void openInstallInNewWindow(installationId)
+      },
       openInstallInNewWindow,
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
         const parentEntry = comfyWindows.get(parentEntryId)

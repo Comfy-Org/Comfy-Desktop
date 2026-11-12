@@ -99,12 +99,7 @@ export async function openManageViaDashboard(
   return popup
 }
 
-const INSTALL_PILL = '.title-install-pill.is-interactive'
-const BUILD_TAB = '[data-testid="title-build-tab"]'
-
-function hasBuildTab(titleBar: WebContentsPage): Promise<boolean> {
-  return titleBar.exists(BUILD_TAB)
-}
+const NOT_LOCKED_DOWN = '.title-announcement-button'
 
 export async function openPickerViaTitlePill(
   app: ElectronApplication,
@@ -113,20 +108,16 @@ export async function openPickerViaTitlePill(
 ): Promise<WebContentsPage> {
   if (await isPopupVisible(app, 'comfyTitlePopup.html')) {
     throw new Error(
-      'openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill'
+      'openPickerViaTitlePill: picker popup is already open - close it before opening it again'
     )
   }
   await expect
-    .poll(async () => (await hasBuildTab(titleBar)) || titleBar.exists(INSTALL_PILL), {
+    .poll(() => titleBar.exists(NOT_LOCKED_DOWN), {
       timeout: 15_000,
       intervals: [100, 250]
     })
     .toBe(true)
-  if (await hasBuildTab(titleBar)) {
-    await titleBar.evaluate('window.api.openInstancePicker()')
-  } else {
-    expect(await titleBar.click(INSTALL_PILL), 'title-bar install pill clicked').toBe(true)
-  }
+  await titleBar.evaluate('window.api.openInstancePicker()')
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {

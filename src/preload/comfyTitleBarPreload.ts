@@ -5,7 +5,6 @@ import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode
 
 export type ComfyPanelKey =
   | 'comfy'
-  | 'home'
   | 'performance-test'
   | 'benchmarks'
   | 'new-install'
@@ -43,7 +42,7 @@ export interface ComfyTitleBarBridge {
   getInstallationId(): string | null
   isMac(): boolean
   setPanel(panel: ComfyPanelKey): void
-  closeBuildTab(): void
+  showHome(): void
   openNewWindow(): void
   openFileMenu(anchor: TitleMenuAnchor): void
   dismissFileMenu(): void
@@ -73,7 +72,6 @@ export interface ComfyTitleBarBridge {
   clickInstallUpdatePill(): void
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void
   clickDownloadsTray(anchor: TitleMenuAnchor): void
-  clickInstallPill(anchor: TitleMenuAnchor): void
   clickFeedback(): void
   clickAnnouncement(): void
   clickRefreshInstance(): void
@@ -121,8 +119,8 @@ const bridge: ComfyTitleBarBridge = {
   setPanel: (panel) => {
     ipcRenderer.send('comfy-window:set-panel', { panel })
   },
-  closeBuildTab: () => {
-    ipcRenderer.send('comfy-window:close-build-tab')
+  showHome: () => {
+    ipcRenderer.send('comfy-window:show-home')
   },
   openNewWindow: () => {
     ipcRenderer.send('comfy-window:new-chooser-window')
@@ -256,9 +254,6 @@ const bridge: ComfyTitleBarBridge = {
   },
   clickDownloadsTray: (anchor) => {
     ipcRenderer.send('comfy-window:click-downloads-tray', { anchor })
-  },
-  clickInstallPill: (anchor) => {
-    ipcRenderer.send('comfy-window:click-install-pill', { anchor })
   },
   clickFeedback: () => {
     ipcRenderer.send('comfy-window:click-feedback')

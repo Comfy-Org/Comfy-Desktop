@@ -218,9 +218,6 @@
     "installUpdateVersion": "ComfyUI {version}",
     "refreshInstanceTooltip": "刷新",
     "resetZoomTooltip": "将缩放重置为 100%",
-    "pillHintTitle": "切换和管理实例",
-    "pillHintBody": "点击这里切换实例、启动新的本地实例，或返回仪表板。",
-    "pillHintDismiss": "知道了",
     "betaNoticeTitle": "已启用 Beta 功能",
     "betaNoticeBody": "此实例启动时启用了一项 Beta 功能。你可以在设置中关闭 Beta 功能。",
     "betaNoticeTitleNamed": "已启用 {feature} Beta 功能",
@@ -230,9 +227,7 @@
     "betaNoticeOffTitleNamed": "已关闭 {feature} Beta 功能",
     "betaNoticeOffBodyNamed": "我们已为此实例关闭了 {feature} Beta 功能。你可以在设置中管理 Beta 功能。",
     "betaNoticeDismiss": "知道了",
-    "betaNoticeSettings": "设置",
-    "closeBuildTab": "关闭 {name}",
-    "tabs": "标签页"
+    "betaNoticeSettings": "设置"
   },
   "comfyUISettings": {
     "title": "设置",
@@ -1826,12 +1821,6 @@
     "confirmHeadsUp": "请注意",
     "restartConfirmItem1": "重启将停止正在运行的会话。",
     "restartConfirmItem2": "工作流中任何未保存的工作都会丢失。",
-    "switchConfirmTitle": "切换构建？",
-    "switchConfirmMessage": "切换到 {name}？",
-    "switchConfirmAction": "切换",
-    "switchConfirmSecondary": "在新窗口中打开",
-    "switchConfirmItem1": "切换会停止当前构建并在此窗口中将其替换。",
-    "switchConfirmItem2": "在新窗口中打开会让当前构建继续运行。",
     "more": "更多",
     "settings": "设置",
     "snapshots": "快照",

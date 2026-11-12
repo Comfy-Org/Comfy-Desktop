@@ -4,7 +4,6 @@ import MenuView from './MenuView.vue'
 import DownloadsView from './DownloadsView.vue'
 import DownloadsFullView from './DownloadsFullView.vue'
 import InstancePickerView from './InstancePickerView.vue'
-import BuildSwitcherList from './BuildSwitcherList.vue'
 import GlobalSettingsView from './GlobalSettingsView.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
@@ -47,7 +46,6 @@ interface PickerStorageSlice {
 }
 
 interface PickerSnapshot {
-  layout?: 'list' | 'full'
   installs: PickerInstall[]
   activeInstallationId: string | null
   runningInstallationIds: string[]
@@ -335,10 +333,6 @@ onUnmounted(() => {
     <MenuView v-if="kind === 'menu'" :items="items" @activate="handleActivate" />
     <DownloadsView v-else-if="kind === 'downloads'" :state="downloadsState" />
     <DownloadsFullView v-else-if="kind === 'downloads-full'" :state="downloadsState" />
-    <BuildSwitcherList
-      v-else-if="kind === 'instance-picker' && pickerSnapshot.layout === 'list'"
-      :snapshot="pickerSnapshot"
-    />
     <InstancePickerView v-else-if="kind === 'instance-picker'" :snapshot="pickerSnapshot" />
     <GlobalSettingsView v-else :snapshot="globalSettingsSnapshot" />
     <ModalDialog />

@@ -9,7 +9,6 @@ export const hostInstallEvents = new EventEmitter()
 
 export type ComfyPanelKey =
   | 'comfy'
-  | 'home'
   | 'performance-test'
   | 'benchmarks'
   | 'feedback'
@@ -22,7 +21,6 @@ export type ComfyPanelKey =
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
-  'home',
   'performance-test',
   'benchmarks',
   'feedback',
@@ -33,12 +31,6 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'progress',
   'announcement'
 ])
-
-const HOME_PANELS: ReadonlySet<ComfyPanelKey> = new Set(['home', 'performance-test', 'benchmarks'])
-
-export function isHomePanel(panel: ComfyPanelKey): boolean {
-  return HOME_PANELS.has(panel)
-}
 
 export type BodyMode =
   | 'comfy'
@@ -177,7 +169,6 @@ export function hasRunningSessionForEntry(
 }
 
 export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
-  if (entry.activePanel === 'home') return 'chooser'
   if (entry.installationId === null) {
     return entry.activePanel === 'comfy' ? 'chooser' : entry.activePanel
   }

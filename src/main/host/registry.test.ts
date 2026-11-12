@@ -167,13 +167,6 @@ describe('computeBodyMode', () => {
     expect(computeBodyMode(entry)).toBe('comfy-lifecycle')
   })
 
-  it('shows Home over a build, running or stopped, while its Home tab is active', () => {
-    const entry = makeEntry({ installationId: 'inst-A', activePanel: 'home' })
-    expect(computeBodyMode(entry)).toBe('chooser')
-    _runningSessions.set('inst-A', {} as never)
-    expect(computeBodyMode(entry)).toBe('chooser')
-  })
-
   it('passes non-comfy panels through for install-backed hosts', () => {
     const entry = makeEntry({ installationId: 'inst-A', activePanel: 'new-install' })
     expect(computeBodyMode(entry)).toBe('new-install')
