@@ -1589,6 +1589,35 @@ describe('renderer model-job snapshot', () => {
     expect(completedFor(listing)?.savePath).toBeUndefined()
   })
 
+  it('withholds the failure text from a listing view but not from the owner', async () => {
+    const installationId = uniqueInstallationId()
+    const name = uniqueName()
+    const before = transfers.length
+    const owner = fakeContents({ installationId })
+    const job = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints',
+      senderContents: owner as never
+    })
+    await waitForTransfers(before + 1)
+    const listing = fakeContents({ installationId })
+    mod.subscribeToInstallationModelJobs(installationId, listing as never)
+    const error = `EACCES: permission denied, open '${job.savePath}'`
+
+    transfers[before]!.resolve({ outcome: 'error', error })
+    await expect(job.completion).resolves.toMatchObject({ status: 'error' })
+    await flush()
+
+    const failedFor = (contents: FakeContents) =>
+      progressEvents(contents).find(
+        (event) => (event as { status?: string }).status === 'error'
+      ) as ComfyDownloadManager.DownloadProgress | undefined
+    expect(failedFor(owner)?.error).toBe(error)
+    expect(failedFor(listing)).toBeDefined()
+    expect(failedFor(listing)?.error).toBeUndefined()
+  })
+
   it('stops delivering to an unattached joining view once it attaches to an installation', async () => {
     const job = await startJob(uniqueInstallationId())
     const transfer = transfers.at(-1)!

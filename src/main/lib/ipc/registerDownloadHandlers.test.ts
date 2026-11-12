@@ -100,12 +100,15 @@ describe('registerDownloadHandlers model download snapshot', () => {
     expect(mocks.subscribeToInstallationModelJobs).toHaveBeenCalledWith('install-a', sender)
   })
 
-  it('returns no jobs to a sender that is not a registered ComfyUI view', () => {
-    mocks.findInstallationIdByComfySender.mockReturnValue(null)
+  it.for([null, ''])(
+    'returns no jobs to a sender whose installation resolves to %j',
+    (installationId) => {
+      mocks.findInstallationIdByComfySender.mockReturnValue(installationId)
 
-    expect(listModelDownloads({ id: 10 })).toEqual([])
-    expect(mocks.subscribeToInstallationModelJobs).not.toHaveBeenCalled()
-  })
+      expect(listModelDownloads({ id: 10 })).toEqual([])
+      expect(mocks.subscribeToInstallationModelJobs).not.toHaveBeenCalled()
+    }
+  )
 })
 
 type SyncIpcEvent = { sender: unknown; senderFrame: unknown; returnValue?: unknown }

@@ -533,7 +533,7 @@ function broadcastProgress(progress: DownloadProgress): void {
       if (contents.isDestroyed() || resolveSenderInstallationId(contents) !== installationId) {
         pending.installationSubscribers?.delete(contents)
       } else if (!reachesContentsDirectly(pending, contents, target)) {
-        contents.send('desktop2-download-progress', withoutSavePath(progress))
+        contents.send('desktop2-download-progress', forNonOwnerView(progress))
       }
     }
   }
@@ -665,7 +665,11 @@ function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): (
   }
 }
 
-function withoutSavePath({ savePath: _savePath, ...progress }: DownloadProgress): DownloadProgress {
+function forNonOwnerView({
+  savePath: _savePath,
+  error: _error,
+  ...progress
+}: DownloadProgress): DownloadProgress {
   return progress
 }
 
@@ -714,9 +718,12 @@ function joinModelJob(
     joiner !== windowContents &&
     resolveSenderInstallationId(joiner) === installationId
   ) {
-    if (joiner !== existing.senderContents)
-      addInstallationSubscriber(existing, joiner, installationId)
-    joiner.send('desktop2-download-progress', withoutSavePath(existing.lastProgress))
+    const isOwner = joiner === existing.senderContents
+    if (!isOwner) addInstallationSubscriber(existing, joiner, installationId)
+    joiner.send(
+      'desktop2-download-progress',
+      isOwner ? existing.lastProgress : forNonOwnerView(existing.lastProgress)
+    )
   }
   const onProgress = opts.onProgress
   if (onProgress) {
@@ -1833,7 +1840,7 @@ export function subscribeToInstallationModelJobs(
   )
   for (const job of jobs) addInstallationSubscriber(job, contents, installationId)
   return jobs.map(({ lastProgress, suspended }) => ({
-    ...withoutSavePath(lastProgress),
+    ...forNonOwnerView(lastProgress),
     ...(suspended ? { status: 'paused' as const } : {})
   }))
 }

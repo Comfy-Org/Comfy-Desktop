@@ -54,9 +54,7 @@ export function registerDownloadHandlers(): void {
 
   ipcMain.handle('desktop2-list-model-downloads', (event) => {
     const installationId = findInstallationIdByComfySender(event.sender)
-    return installationId === null
-      ? []
-      : subscribeToInstallationModelJobs(installationId, event.sender)
+    return installationId ? subscribeToInstallationModelJobs(installationId, event.sender) : []
   })
 
   const controlRef = (payload?: { ref?: unknown; url?: unknown }): string | null => {
