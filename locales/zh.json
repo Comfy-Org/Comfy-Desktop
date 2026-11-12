@@ -25,7 +25,9 @@
     "signInBody": "在 Comfy Cloud 上同步和运行",
     "newBuild": "新建构建",
     "noBuilds": "还没有构建",
-    "failedToStart": "启动失败",
+    "crashed": "已崩溃",
+    "crashedWithCode": "已崩溃（退出代码 {code}）",
+    "crashedWithSignal": "已崩溃（{signal}）",
     "failedToStartReason": "启动失败：{reason}"
   },
   "home": {

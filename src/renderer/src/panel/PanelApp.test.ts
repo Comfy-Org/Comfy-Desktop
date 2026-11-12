@@ -1385,6 +1385,64 @@ describe('PanelApp', () => {
     )
   })
 
+  it('keeps a removed build closed when it comes back', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get(`[data-testid="app-sidebar-build-${SAMPLE_INSTALL.id}"]`).trigger('click')
+    await flushPromises()
+
+    mockState.installations = []
+    mockState.installationsChangedCallbacks.forEach((cb) => cb())
+    await flushPromises()
+    mockState.installations = [SAMPLE_INSTALL]
+    mockState.installationsChangedCallbacks.forEach((cb) => cb())
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(
+      wrapper
+        .get(`[data-testid="app-sidebar-build-${SAMPLE_INSTALL.id}"]`)
+        .attributes('aria-current')
+    ).toBe(undefined)
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it('closes an open build page when the workspace switches away from it', async () => {
+    mockState.installations = [
+      { ...SAMPLE_INSTALL, id: 'workspace-1-install', workspaceId: 'workspace-1' },
+      { ...SAMPLE_INSTALL, id: 'workspace-2-install', workspaceId: 'workspace-2' }
+    ]
+    const listWorkspaces = window.api.comfybuilder.listWorkspaces as ReturnType<typeof vi.fn>
+    listWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: 'Workspace One', type: 'team' },
+      { id: 'workspace-2', name: 'Workspace Two', type: 'team' }
+    ])
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    const dashboardScope = useDashboardScopeStore()
+    dashboardScope.selectWorkspace('workspace-1')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-build-workspace-1-install"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(true)
+
+    dashboardScope.selectWorkspace('workspace-2')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-sidebar-build-workspace-1-install"]').exists()).toBe(
+      false
+    )
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
   it('opens the new-install takeover from the + on the sidebar Builds title', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()

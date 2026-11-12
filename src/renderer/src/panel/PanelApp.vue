@@ -22,6 +22,8 @@ import MigrateConfirmTakeover from '../views/MigrateConfirmTakeover.vue'
 import { useTheme } from '../composables/useTheme'
 import { useSessionStore } from '../stores/sessionStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import { seedLauncherPrefsFromUrl, useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useModal } from '../composables/useModal'
 import { useAdoptPromptBridge } from '../composables/useAdoptPromptBridge'
@@ -171,9 +173,11 @@ const sidebarPage = computed<DashboardPage | null>(() => {
 })
 
 const buildDetailsId = ref<string | null>(null)
-const buildDetailsInstall = computed(() =>
-  buildDetailsId.value ? (installationStore.getById(buildDetailsId.value) ?? null) : null
-)
+const dashboardScope = useDashboardScopeStore()
+const buildDetailsInstall = computed(() => {
+  const inst = buildDetailsId.value ? installationStore.getById(buildDetailsId.value) : undefined
+  return inst && isInstallationInWorkspace(inst, dashboardScope.selectedWorkspaceId) ? inst : null
+})
 
 function openBuildDetails(inst: Installation): void {
   buildDetailsId.value = inst.id
@@ -184,6 +188,9 @@ function closeBuildDetails(): void {
 }
 
 watch(activePanel, closeBuildDetails)
+watch(buildDetailsInstall, (inst) => {
+  if (!inst) closeBuildDetails()
+})
 
 const sidebarBuildId = computed(() =>
   activePanel.value === 'chooser' && dashboardHomePage.value === 'chooser'

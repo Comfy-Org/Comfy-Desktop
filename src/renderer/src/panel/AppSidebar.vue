@@ -58,11 +58,6 @@ void dashboardScope.initialize()
 const { visibleInstalls } = useInstallList({
   installations: toRef(installationStore, 'installations')
 })
-const builds = computed(() =>
-  visibleInstalls.value.filter((build) =>
-    isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
-  )
-)
 const buildsPageActive = computed(() => activePage === 'chooser' && !activeBuildId)
 
 function isLive(build: Installation): boolean {
@@ -70,13 +65,20 @@ function isLive(build: Installation): boolean {
   return status === 'running' || status === 'always-on'
 }
 
-function failure(build: Installation): string | null {
+function failureText(build: Installation): string | null {
   const error = sessionStore.errorInstances.get(build.id)
   if (!error) return null
-  return error.message
-    ? t('sidebar.failedToStartReason', { reason: error.message })
-    : t('sidebar.failedToStart')
+  if (error.message) return t('sidebar.failedToStartReason', { reason: error.message })
+  if (error.signal) return t('sidebar.crashedWithSignal', { signal: error.signal })
+  if (error.exitCode != null) return t('sidebar.crashedWithCode', { code: error.exitCode })
+  return t('sidebar.crashed')
 }
+
+const buildRows = computed(() =>
+  visibleInstalls.value
+    .filter((build) => isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId))
+    .map((build) => ({ build, failure: failureText(build), live: isLive(build) }))
+)
 
 function navigate(page: DashboardPage): void {
   emit('navigate', page)
@@ -190,34 +192,34 @@ function navigate(page: DashboardPage): void {
             </Button>
           </div>
           <p
-            v-if="!builds.length"
+            v-if="!buildRows.length"
             class="m-0 flex h-8 shrink-0 items-center gap-2.5 px-3 text-[13px]/5 text-subtle-foreground"
             data-testid="app-sidebar-no-builds"
           >
             <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
           </p>
           <Button
-            v-for="build in builds"
+            v-for="{ build, failure, live } in buildRows"
             :key="build.id"
             variant="muted-textonly"
             size="unset"
             class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
             :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
             :aria-current="build.id === activeBuildId ? 'page' : undefined"
-            :title="failure(build) ? `${build.name} · ${failure(build)}` : build.name"
+            :title="failure ? `${build.name} · ${failure}` : build.name"
             :data-testid="`app-sidebar-build-${build.id}`"
             @click="emit('open-build', build)"
           >
             <span class="relative flex shrink-0">
               <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="16" aria-hidden="true" />
               <span
-                v-if="failure(build) || isLive(build)"
+                v-if="failure || live"
                 class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
                 :class="[
-                  failure(build) ? 'bg-destructive' : 'bg-success',
+                  failure ? 'bg-destructive' : 'bg-success',
                   build.id === activeBuildId ? 'ring-[oklch(0.27_0_0)]' : 'ring-sidebar-background'
                 ]"
-                :data-testid="failure(build) ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
+                :data-testid="failure ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
                 aria-hidden="true"
               />
             </span>

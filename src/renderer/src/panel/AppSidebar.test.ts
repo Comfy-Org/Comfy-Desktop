@@ -181,6 +181,18 @@ describe('AppSidebar', () => {
       expect(row.attributes('title')).toBe('Flux Sandbox · Failed to start: Port 8188 is in use')
     })
 
+    it('says a build crashed, with its exit code, rather than that it failed to start', async () => {
+      useSessionStore().errorInstances.set(OLD.id, {
+        installationName: OLD.name,
+        exitCode: 3221225477
+      })
+      const wrapper = await mountSidebar('home', [OLD])
+
+      const row = wrapper.get('[data-testid="app-sidebar-build-old"]')
+      expect(row.find('[data-testid="app-sidebar-dot-failed"]').exists()).toBe(true)
+      expect(row.attributes('title')).toBe('Flux Sandbox · Crashed (exit code 3221225477)')
+    })
+
     it('opens a build without launching or navigating', async () => {
       const wrapper = await mountSidebar('home', [OLD])
 

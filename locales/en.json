@@ -25,7 +25,9 @@
     "signInBody": "Sync and run on Comfy Cloud",
     "newBuild": "New build",
     "noBuilds": "No builds yet",
-    "failedToStart": "Failed to start",
+    "crashed": "Crashed",
+    "crashedWithCode": "Crashed (exit code {code})",
+    "crashedWithSignal": "Crashed ({signal})",
     "failedToStartReason": "Failed to start: {reason}"
   },
   "home": {
