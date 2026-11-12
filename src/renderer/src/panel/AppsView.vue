@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
@@ -84,9 +84,11 @@ function showAppOutputs(outputs: AppOutputs): void {
 function closeAppOutputs(): void {
   const shown = appOutputs.value
   if (!shown) return
-  for (const item of shown.items) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
-  if (shown.backdropUrl) URL.revokeObjectURL(shown.backdropUrl)
   appOutputs.value = null
+  void nextTick(() => {
+    for (const item of shown.items) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+    if (shown.backdropUrl) URL.revokeObjectURL(shown.backdropUrl)
+  })
 }
 
 function appOutputAction(action: AppOutputAction['action'], index: number): void {
