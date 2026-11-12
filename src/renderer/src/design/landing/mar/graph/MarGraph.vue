@@ -70,6 +70,8 @@ import SettingsDialog from './panels/SettingsDialog.vue'
 import NodeSearch from './NodeSearch.vue'
 import MediaViewer from './MediaViewer.vue'
 import AgentPanel from './AgentPanel.vue'
+import McpNudge from '../mcp/McpNudge.vue'
+import McpSetupModal from '../mcp/McpSetupModal.vue'
 import {
   CANVAS_GEOMETRY,
   SOCKETS,
@@ -1951,6 +1953,9 @@ function addFromPanel(kind: NodeKind): void {
       @pick="(index) => pick(sById[viewing!]!, index)"
       @save="save(sById[viewing!]!)"
     />
+    <!-- Milestone 2 on: a local build offers to connect an agent. -->
+    <McpNudge />
+    <McpSetupModal />
   </div>
 </template>
 
