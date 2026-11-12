@@ -6,12 +6,15 @@ import AppSidebar from './AppSidebar.vue'
 import type { DashboardPage } from '../types/ipc'
 
 const navigatePanel = vi.fn()
+const getAppsEnabled = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
+  getAppsEnabled.mockResolvedValue(true)
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
+    getAppsEnabled,
     getSetting: vi.fn().mockResolvedValue(undefined),
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
@@ -43,6 +46,27 @@ describe('AppSidebar', () => {
       'Performance Tests',
       'Benchmarks'
     ])
+  })
+
+  it('hides the Apps row while the remote switch is off', async () => {
+    getAppsEnabled.mockResolvedValue(false)
+    const wrapper = await mountSidebar()
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Assets',
+      'Builds',
+      'Performance Tests',
+      'Benchmarks'
+    ])
+    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(false)
+  })
+
+  it('hides the Apps row when Desktop cannot say whether the switch is on', async () => {
+    getAppsEnabled.mockRejectedValue(new Error('no answer'))
+    const wrapper = await mountSidebar()
+
+    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(false)
   })
 
   it('marks only the current page', async () => {

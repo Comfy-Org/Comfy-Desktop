@@ -31,6 +31,7 @@ import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { registerAppsIpc } from './apps/appsView'
+import { initAppsSwitch, isAppsEnabled } from './apps/appsSwitch'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
@@ -966,7 +967,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       appVersion: APP_VERSION,
       appEnv: app.isPackaged ? 'prod-v2' : 'dev',
       isPackaged: app.isPackaged,
-      sessionStartProps: { prior_session_unclean: priorSessionUnclean }
+      sessionStartProps: {
+        prior_session_unclean: priorSessionUnclean,
+        apps_enabled: isAppsEnabled()
+      }
     })
     mainTelemetry.setConsentState(initialConsent)
     mainTelemetry.installAppHooks()
@@ -1011,6 +1015,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     await initUserTier()
 
     void initCloudFreeRuns({ distinctId: installationId })
+
+    void initAppsSwitch({ distinctId: installationId })
 
     void initCoreBetaFlags({
       distinctId: installationId,
