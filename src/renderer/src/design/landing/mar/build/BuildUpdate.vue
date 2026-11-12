@@ -5,10 +5,7 @@ import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import type { ProtoInstance } from '../../mock'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
-import { factsOf, selectedTorch } from './buildFacts'
-import { runOp } from './buildOps'
-import { setExtra } from './m1Builds'
-import { proto } from '../../useProto'
+import { changeTorch, torchOptions } from './buildTorch'
 import './buildTabs.css'
 
 /**
@@ -21,45 +18,7 @@ import './buildTabs.css'
  * is. Long work runs in the tab (buildOps.ts).
  */
 const { env, torchOnly = false } = defineProps<{ env: ProtoInstance; torchOnly?: boolean }>()
-const facts = factsOf(env)
-
-const installed = facts.torch.split(' ')[0]!
-const OPTIONS = [
-  { v: installed, note: '' },
-  { v: '2.10.0', note: '2.4 GB download' },
-  {
-    v: '2.11.0.dev',
-    note: '2.6 GB download  ·  Nightly build: unstable, and installable for only about 60 days after publication'
-  }
-]
-const TORCH = computed(() =>
-  OPTIONS.map((t) => ({
-    ...t,
-    on: (selectedTorch[env.id] ?? installed) === t.v,
-    note: t.v === installed ? facts.torch : t.note
-  }))
-)
-function copyWithTorch(v: string): void {
-  const n = proto.addedInstances.filter((i) => i.id.startsWith(`${env.id}-copy`)).length + 1
-  const id = `${env.id}-copy-${n}`
-  proto.addedInstances.unshift({
-    ...env,
-    id,
-    name: n === 1 ? `${env.name} copy` : `${env.name} copy ${n}`,
-    state: 'stopped',
-    lastUsed: 'Just now',
-    lastUsedRank: -1
-  })
-  selectedTorch[id] = v
-  setExtra(id, { from: { how: 'Copied', name: env.name } })
-}
-function changeTorch(v: string, copy: boolean): void {
-  runOp(env.id, {
-    title: copy ? `Copying & changing PyTorch to ${v}…` : `Changing PyTorch to ${v}…`,
-    done: copy ? 'Copy complete' : 'PyTorch changed',
-    then: copy ? () => copyWithTorch(v) : () => (selectedTorch[env.id] = v)
-  })
-}
+const TORCH = computed(() => torchOptions(env))
 </script>
 
 <template>
@@ -79,10 +38,10 @@ function changeTorch(v: string, copy: boolean): void {
         </div>
         <span v-if="t.on" class="mar-bt-selected"><Check :size="14" />Selected</span>
         <template v-else>
-          <Button variant="ghost" size="sm" @click="changeTorch(t.v, true)"
+          <Button variant="ghost" size="sm" @click="changeTorch(env, t.v, true)"
             ><CopyPlus :size="13" />Copy & Change</Button
           >
-          <Button size="sm" @click="changeTorch(t.v, false)">Change PyTorch</Button>
+          <Button size="sm" @click="changeTorch(env, t.v, false)">Change PyTorch</Button>
         </template>
       </Card>
     </div>
