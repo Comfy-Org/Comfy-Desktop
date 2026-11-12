@@ -3,6 +3,7 @@ import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight, Folder, FolderOpen, FolderSearch } from 'lucide-vue-next'
 import Tooltip from '../components/ui/Tooltip.vue'
+import InfoTooltip from '../components/InfoTooltip.vue'
 import { revealInFolderKey } from '../composables/usePlatform'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -41,7 +42,7 @@ const emit = defineEmits<{ 'clear-filters': [] }>()
 const { t } = useI18n()
 const modal = useModal()
 const root = useTemplateRef<HTMLElement>('root')
-const buildsIdPrefix = useId()
+const idPrefix = useId()
 const revealLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 const folders = ref<OutputFolder[] | null>(null)
 const trail = ref<Crumb[]>([])
@@ -88,20 +89,33 @@ const detailIndex = computed<number | null>({
     (detailPath.value = (index === null ? null : visibleFiles.value[index]?.path) ?? null)
 })
 
-function folderLabel(output: OutputFolder): string {
-  return output.shared
-    ? t('assets.local.sharedOutput')
-    : t('assets.local.buildOutput', { name: output.builds.join(', ') })
+const FOLDER_GROUPS = [
+  { key: 'shared', shared: true },
+  { key: 'separate', shared: false }
+] as const
+
+const folderGroups = computed(() =>
+  FOLDER_GROUPS.map((group) => ({
+    key: group.key,
+    items: (folders.value ?? []).filter((output) => output.shared === group.shared)
+  })).filter((group) => group.items.length > 0)
+)
+
+function pathParts(path: string): string[] {
+  return path.split(/[\\/]/).filter(Boolean)
+}
+
+function folderName(output: OutputFolder): string {
+  return pathParts(output.path).at(-1) ?? output.path
+}
+
+function folderLocation(output: OutputFolder): string {
+  const parent = pathParts(output.path).at(-2)
+  return parent ? t('assets.local.inFolder', { name: parent }) : output.path
 }
 
 function listsBuildNames(output: OutputFolder): boolean {
-  return output.shared && output.builds.length > 0
-}
-
-function buildCount(output: OutputFolder): string {
   return output.builds.length > 0
-    ? t('assets.local.buildCount', output.builds.length)
-    : t('assets.local.notUsed')
 }
 
 function fileDetails(entry: OutputEntry): string {
@@ -292,54 +306,77 @@ defineExpose({ reload, loading })
         </h2>
         <p class="m-0 text-ui text-muted-foreground">{{ t('assets.local.noFoldersBody') }}</p>
       </section>
-      <ul
-        v-else
-        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,300px))] gap-3 p-0"
-      >
-        <li
-          v-for="(output, index) in folders"
-          :key="output.path"
-          class="relative flex h-14 items-center gap-3 rounded-xl bg-card pr-1.5 pl-4 transition-colors duration-150 hover:bg-card-hover"
+      <template v-else>
+        <section
+          v-for="group in folderGroups"
+          :key="group.key"
+          class="flex flex-col gap-2"
+          :aria-labelledby="`${idPrefix}-group-${group.key}`"
+          :data-testid="`local-group-${group.key}`"
         >
-          <Folder :size="20" class="shrink-0 text-muted-foreground" aria-hidden="true" />
-          <Tooltip
-            :disabled="!listsBuildNames(output)"
-            :delay-ms="BUILDS_TOOLTIP_DELAY_MS"
-            side="bottom"
-            align="start"
-            class="min-w-0 flex-1"
-            :data-testid="`local-folder-builds-${output.path}`"
+          <h2
+            :id="`${idPrefix}-group-${group.key}`"
+            class="m-0 flex items-center text-ui font-medium text-muted-foreground"
           >
-            <button
-              type="button"
-              class="flex w-full min-w-0 cursor-pointer flex-col text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
-              :aria-describedby="
-                listsBuildNames(output) ? `${buildsIdPrefix}-builds-${index}` : undefined
-              "
-              :data-testid="`local-folder-${output.path}`"
-              @click="enter({ name: folderLabel(output), path: output.path })"
+            {{ t(`assets.local.groups.${group.key}.title`) }}
+            <InfoTooltip
+              :text="t(`assets.local.groups.${group.key}.hint`)"
+              icon="info"
+              :data-testid="`local-group-hint-${group.key}`"
+            />
+          </h2>
+          <ul
+            class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,300px))] gap-3 p-0"
+          >
+            <li
+              v-for="(output, index) in group.items"
+              :key="output.path"
+              class="relative flex h-14 items-center gap-3 rounded-xl bg-card pr-1.5 pl-4 transition-colors duration-150 hover:bg-card-hover"
             >
-              <span class="truncate text-ui font-medium text-foreground">{{
-                folderLabel(output)
-              }}</span>
-              <span class="truncate text-ui text-subtle-foreground">{{ buildCount(output) }}</span>
-              <span
-                v-if="listsBuildNames(output)"
-                :id="`${buildsIdPrefix}-builds-${index}`"
-                class="sr-only"
-                >{{ output.builds.join(', ') }}</span
+              <Folder :size="20" class="shrink-0 text-muted-foreground" aria-hidden="true" />
+              <Tooltip
+                :disabled="!listsBuildNames(output)"
+                :delay-ms="BUILDS_TOOLTIP_DELAY_MS"
+                side="bottom"
+                align="start"
+                class="min-w-0 flex-1"
+                :data-testid="`local-folder-builds-${output.path}`"
               >
-            </button>
-            <template #content>
-              <span v-for="name in output.builds" :key="name" class="block">{{ name }}</span>
-            </template>
-          </Tooltip>
-          <FolderActionsMenu
-            :path="output.path"
-            :trigger-test-id="`local-folder-menu-${output.path}`"
-          />
-        </li>
-      </ul>
+                <button
+                  type="button"
+                  class="flex w-full min-w-0 cursor-pointer flex-col text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                  :aria-describedby="
+                    listsBuildNames(output) ? `${idPrefix}-builds-${group.key}-${index}` : undefined
+                  "
+                  :data-testid="`local-folder-${output.path}`"
+                  @click="enter({ name: folderName(output), path: output.path })"
+                >
+                  <span class="truncate text-ui font-medium text-foreground">{{
+                    folderName(output)
+                  }}</span>
+                  <span class="truncate text-ui text-subtle-foreground">{{
+                    folderLocation(output)
+                  }}</span>
+                  <span
+                    v-if="listsBuildNames(output)"
+                    :id="`${idPrefix}-builds-${group.key}-${index}`"
+                    class="sr-only"
+                    >{{ t('assets.local.savedBy') }} {{ output.builds.join(', ') }}</span
+                  >
+                </button>
+                <template #content>
+                  <span class="mb-0.5 block">{{ t('assets.local.savedBy') }}</span>
+                  <span v-for="name in output.builds" :key="name" class="block">{{ name }}</span>
+                </template>
+              </Tooltip>
+              <FolderActionsMenu
+                :path="output.path"
+                :trigger-test-id="`local-folder-menu-${output.path}`"
+              />
+            </li>
+          </ul>
+        </section>
+      </template>
     </template>
 
     <template v-else>

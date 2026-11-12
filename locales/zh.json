@@ -94,11 +94,19 @@
     "showInFolder": "在文件夹中显示",
     "viewInAssets": "在资产中查看",
     "local": {
-      "sharedOutput": "共享输出",
-      "buildOutput": "{name} 输出",
-      "notUsed": "还没有构建保存到这里",
-      "buildCount": "{count} 个构建保存到这里",
       "folderActions": "文件夹操作",
+      "inFolder": "位于 {name}",
+      "savedBy": "保存到这里的构建",
+      "groups": {
+        "shared": {
+          "title": "共享文件夹",
+          "hint": "使用共享文件夹的构建都会把文件保存在这里。"
+        },
+        "separate": {
+          "title": "独立构建文件夹",
+          "hint": "这些构建把文件保存在自己的文件夹中，而不是共享文件夹。"
+        }
+      },
       "showInFinder": "在访达中显示",
       "showInExplorer": "在资源管理器中显示",
       "copyPath": "复制路径",

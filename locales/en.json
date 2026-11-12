@@ -94,11 +94,19 @@
     "showInFolder": "Show in folder",
     "viewInAssets": "View in Assets",
     "local": {
-      "sharedOutput": "Shared output",
-      "buildOutput": "{name} output",
-      "notUsed": "No build saves here yet",
-      "buildCount": "1 build saves here | {count} builds save here",
       "folderActions": "Folder actions",
+      "inFolder": "In {name}",
+      "savedBy": "Saved here by",
+      "groups": {
+        "shared": {
+          "title": "Shared folder",
+          "hint": "Builds that use the shared folders all save their files here."
+        },
+        "separate": {
+          "title": "Separate build folders",
+          "hint": "These builds save their files in their own folder, not in the shared one."
+        }
+      },
       "showInFinder": "Show in Finder",
       "showInExplorer": "Show in Explorer",
       "copyPath": "Copy path",

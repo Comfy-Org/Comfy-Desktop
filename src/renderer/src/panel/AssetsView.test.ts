@@ -532,18 +532,22 @@ describe('AssetsView on This computer', () => {
     listOutputFolders.mockResolvedValue(outputFolders())
   })
 
-  it('shows each output folder with how many builds save there, without the file tools', async () => {
+  it('shows each output folder by its own name and where it is, without the file tools', async () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
     await openThisComputer(wrapper)
     const cloudLoads = listAssets.mock.calls.length
 
-    const shared = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
-    expect(shared.text()).toContain('Shared output')
-    expect(shared.text()).toContain('2 builds save here')
+    const sharedGroup = wrapper.get('[data-testid="local-group-shared"]')
+    expect(sharedGroup.get('h2').text()).toBe('Shared folder')
+    const shared = sharedGroup.get(`[data-testid="local-folder-${SHARED}"]`)
+    expect(shared.text()).toContain('output')
+    expect(shared.text()).toContain('In ComfyUI-Shared')
     expect(shared.text()).not.toContain(SHARED)
-    const apps = wrapper.get(`[data-testid="local-folder-${APPS}"]`)
-    expect(apps.text()).toContain('Apps output')
-    expect(apps.text()).toContain('1 build saves here')
+    const separateGroup = wrapper.get('[data-testid="local-group-separate"]')
+    expect(separateGroup.get('h2').text()).toBe('Separate build folders')
+    const apps = separateGroup.get(`[data-testid="local-folder-${APPS}"]`)
+    expect(apps.text()).toContain('output')
+    expect(apps.text()).toContain('In ComfyUI-Apps')
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="local-open-folder"]').exists()).toBe(false)
 
@@ -551,6 +555,28 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
     expect(listOutputFolders).toHaveBeenCalledTimes(2)
     expect(listAssets).toHaveBeenCalledTimes(cloudLoads)
+  })
+
+  it('leaves out a section that has no folders', async () => {
+    listOutputFolders.mockResolvedValue(outputFolders().slice(0, 1))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    expect(wrapper.find('[data-testid="local-group-shared"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="local-group-separate"]').exists()).toBe(false)
+  })
+
+  it('explains a section when its info icon gets focus', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const hint = wrapper.get('[data-testid="local-group-hint-separate"] [role="button"]')
+
+    ;(hint.element as HTMLElement).focus()
+    await flushPromises()
+
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+      'These builds save their files in their own folder, not in the shared one.'
+    )
   })
 
   it('names the builds that save to a folder when the folder gets focus', async () => {
@@ -562,13 +588,14 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
 
     const description = document.getElementById(card.attributes('aria-describedby')!)
-    expect(description?.textContent).toBe('Test Instance, My Local 1')
+    expect(description?.textContent).toBe('Saved here by Test Instance, My Local 1')
     const bubble = document.querySelector('.tooltip-bubble')
+    expect(bubble?.textContent).toContain('Saved here by')
     expect(bubble?.textContent).toContain('Test Instance')
     expect(bubble?.textContent).toContain('My Local 1')
   })
 
-  it('does not repeat the build name on a folder that only one build names in its title', async () => {
+  it('names the one build that saves to a separate folder', async () => {
     const wrapper = await mountAssets([], [], { attachTo: document.body })
     await openThisComputer(wrapper)
     const card = wrapper.get(`[data-testid="local-folder-${APPS}"]`)
@@ -576,8 +603,9 @@ describe('AssetsView on This computer', () => {
     ;(card.element as HTMLButtonElement).focus()
     await flushPromises()
 
-    expect(card.attributes('aria-describedby')).toBeUndefined()
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    const description = document.getElementById(card.attributes('aria-describedby')!)
+    expect(description?.textContent).toBe('Saved here by Apps')
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Apps')
   })
 
   it('shows a folder in Finder from its menu without opening it', async () => {
@@ -684,7 +712,7 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
 
     expect(wrapper.get('nav').text()).toContain('This computer')
-    expect(wrapper.get('nav').text()).toContain('Shared output')
+    expect(wrapper.get('[aria-current="page"]').text()).toBe('output')
     expect(
       wrapper.findAll('[data-testid^="local-file-"]').map((c) => c.attributes('data-testid'))
     ).toEqual(['local-file-new.mp4', 'local-file-old.png'])
