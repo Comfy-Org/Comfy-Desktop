@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ImageOff } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
 import type { CatalogWorkflow } from '../../types/ipc'
 
 interface ArcSlot {
@@ -10,6 +10,9 @@ interface ArcSlot {
   dim: number
   layer: number
 }
+
+const STEP_CLASS =
+  'absolute top-[150px] z-10 grid size-9 -translate-y-1/2 place-items-center rounded-[8px] border-0 bg-transparent p-0 text-muted-foreground opacity-50 outline-none transition-[opacity,background-color,color] duration-200 group-hover/arc:opacity-90 hover:bg-foreground/7 hover:text-foreground hover:opacity-100 focus-visible:bg-foreground/7 focus-visible:text-foreground focus-visible:opacity-100 active:scale-94 disabled:pointer-events-none disabled:opacity-0 motion-reduce:transition-none'
 
 const ARC_REACH = 2
 const OFFSTAGE = ARC_REACH + 1
@@ -51,6 +54,8 @@ const loadedThumbnails = ref(new Set<string>())
 const brokenThumbnails = ref(new Set<string>())
 
 const wraps = computed(() => workflows.length > ARC_REACH * 2)
+const atFirst = computed(() => !wraps.value && frontPosition.value === 0)
+const atLast = computed(() => !wraps.value && frontPosition.value === workflows.length - 1)
 
 function offsetFrom(position: number, index: number): number {
   const count = workflows.length
@@ -159,75 +164,112 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
 </script>
 
 <template>
-  <ul
-    class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
-    :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
-    data-testid="home-workflow-carousel"
-    @pointerdown="startDrag"
-    @keydown.left.prevent="moveTo(frontPosition - 1)"
-    @keydown.right.prevent="moveTo(frontPosition + 1)"
-  >
-    <li v-for="card in arcCards" :key="card.workflow.id" class="contents">
-      <button
-        type="button"
-        class="absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        :class="[
-          jumpedAcross.has(card.workflow.id)
-            ? 'transition-none'
-            : 'transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
-          !card.onStage && 'pointer-events-none'
-        ]"
-        :style="slotStyle(card.offset)"
-        :aria-label="
-          card.offset === 0
-            ? t('home.openWorkflow', { title: card.workflow.title })
-            : t('home.showWorkflow', { title: card.workflow.title })
-        "
-        :aria-current="card.offset === 0 ? 'true' : undefined"
-        :aria-hidden="card.onStage ? undefined : 'true'"
-        :tabindex="card.onStage ? undefined : -1"
-        data-testid="home-workflow-card"
-        :data-arc-offset="card.offset"
-        @click="activate(card)"
-      >
-        <img
-          v-if="showsThumbnail(card.workflow)"
-          :src="card.workflow.thumbnailUrl ?? undefined"
-          alt=""
-          draggable="false"
-          class="absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none"
-          :class="loadedThumbnails.has(card.workflow.id) ? 'opacity-100' : 'opacity-0'"
-          :data-loaded="loadedThumbnails.has(card.workflow.id)"
-          @load="markThumbnailLoaded(card.workflow)"
-          @error="markThumbnailBroken(card.workflow)"
-        />
-        <span
-          v-else
-          class="absolute inset-0 flex items-center justify-center text-subtle-foreground"
+  <div class="group/arc relative">
+    <ul
+      class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
+      :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
+      data-testid="home-workflow-carousel"
+      @pointerdown="startDrag"
+      @keydown.left.prevent="moveTo(frontPosition - 1)"
+      @keydown.right.prevent="moveTo(frontPosition + 1)"
+    >
+      <li v-for="card in arcCards" :key="card.workflow.id" class="contents">
+        <button
+          type="button"
+          class="group/card absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          :class="[
+            jumpedAcross.has(card.workflow.id)
+              ? 'transition-none'
+              : 'transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+            !card.onStage && 'pointer-events-none'
+          ]"
+          :style="slotStyle(card.offset)"
+          :aria-label="
+            card.offset === 0
+              ? t('home.openWorkflow', { title: card.workflow.title })
+              : t('home.showWorkflow', { title: card.workflow.title })
+          "
+          :aria-current="card.offset === 0 ? 'true' : undefined"
+          :aria-hidden="card.onStage ? undefined : 'true'"
+          :tabindex="card.onStage ? undefined : -1"
+          data-testid="home-workflow-card"
+          :data-arc-offset="card.offset"
+          @click="activate(card)"
         >
-          <ImageOff :size="22" aria-hidden="true" />
-        </span>
-        <span
-          class="absolute inset-x-0 top-0 h-[45%] bg-linear-to-b from-black/62 via-black/28 via-55% to-transparent"
-          aria-hidden="true"
-        />
-        <span
-          class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
-          aria-hidden="true"
-        />
-        <span class="absolute inset-x-3.5 bottom-4 flex flex-col">
-          <span class="truncate text-sm/[17px] font-medium text-white">
-            {{ card.workflow.title }}
+          <img
+            v-if="showsThumbnail(card.workflow)"
+            :src="card.workflow.thumbnailUrl ?? undefined"
+            alt=""
+            draggable="false"
+            class="absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none"
+            :class="loadedThumbnails.has(card.workflow.id) ? 'opacity-100' : 'opacity-0'"
+            :data-loaded="loadedThumbnails.has(card.workflow.id)"
+            @load="markThumbnailLoaded(card.workflow)"
+            @error="markThumbnailBroken(card.workflow)"
+          />
+          <span
+            v-else
+            class="absolute inset-0 flex items-center justify-center text-subtle-foreground"
+          >
+            <ImageOff :size="22" aria-hidden="true" />
           </span>
-          <span v-if="card.workflow.description" class="truncate text-[13px]/[18px] text-white/70">
-            {{ card.workflow.description }}
+          <span
+            class="absolute inset-x-0 top-0 h-[45%] bg-linear-to-b from-black/62 via-black/28 via-55% to-transparent"
+            aria-hidden="true"
+          />
+          <span
+            class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
+            aria-hidden="true"
+          />
+          <span class="absolute inset-x-3.5 bottom-4 flex items-center gap-2.5">
+            <span class="flex min-w-0 flex-1 flex-col" data-testid="home-workflow-name">
+              <span class="truncate text-sm/[17px] font-medium text-white">
+                {{ card.workflow.title }}
+              </span>
+              <span
+                v-if="card.workflow.description"
+                class="truncate text-[13px]/[18px] text-white/70"
+              >
+                {{ card.workflow.description }}
+              </span>
+            </span>
+            <span
+              v-if="card.offset === 0"
+              class="hidden h-[30px] flex-none items-center rounded-[var(--radius-control)] bg-white px-3.5 text-[12.5px] font-semibold text-[#111] shadow-[0_0_0_1px_rgb(0_0_0/0.06),0_8px_20px_-6px_rgb(0_0_0/0.5)] transition-[opacity,translate,display] transition-discrete duration-200 ease-[cubic-bezier(0.19,1,0.22,1)] group-hover/card:inline-flex group-focus-visible/card:inline-flex starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none"
+              aria-hidden="true"
+              data-testid="home-workflow-cta"
+            >
+              {{ t('home.openWorkflowCta') }}
+            </span>
           </span>
-        </span>
-        <span
-          class="pointer-events-none absolute inset-0 bg-[#090909] opacity-(--arc-dim) transition-opacity duration-500 motion-reduce:transition-none"
-          aria-hidden="true"
-        />
-      </button>
-    </li>
-  </ul>
+          <span
+            class="pointer-events-none absolute inset-0 bg-[#090909] opacity-(--arc-dim) transition-opacity duration-500 motion-reduce:transition-none"
+            aria-hidden="true"
+          />
+        </button>
+      </li>
+    </ul>
+    <button
+      v-if="workflows.length > 1"
+      type="button"
+      :class="[STEP_CLASS, 'left-[max(8px,calc(50%-420px))]']"
+      :aria-label="t('home.previousWorkflow')"
+      :disabled="atFirst"
+      data-testid="home-workflow-previous"
+      @click="moveTo(frontPosition - 1)"
+    >
+      <ChevronLeft :size="20" aria-hidden="true" />
+    </button>
+    <button
+      v-if="workflows.length > 1"
+      type="button"
+      :class="[STEP_CLASS, 'right-[max(8px,calc(50%-420px))]']"
+      :aria-label="t('home.nextWorkflow')"
+      :disabled="atLast"
+      data-testid="home-workflow-next"
+      @click="moveTo(frontPosition + 1)"
+    >
+      <ChevronRight :size="20" aria-hidden="true" />
+    </button>
+  </div>
 </template>

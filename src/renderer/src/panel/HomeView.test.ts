@@ -88,7 +88,10 @@ async function openHome() {
 function arc(wrapper: VueWrapper): string[] {
   return wrapper
     .findAll('[data-testid="home-workflow-card"]:not([aria-hidden="true"])')
-    .map((card) => ({ offset: Number(card.attributes('data-arc-offset')), text: card.text() }))
+    .map((card) => ({
+      offset: Number(card.attributes('data-arc-offset')),
+      text: card.get('[data-testid="home-workflow-name"]').text()
+    }))
     .sort((left, right) => left.offset - right.offset)
     .map((card) => `${card.offset}:${card.text}`)
 }
@@ -199,6 +202,60 @@ describe('Home example workflows', () => {
 
     await carousel.trigger('keydown', { key: 'ArrowLeft' })
     expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+  })
+
+  it('turns the carousel with the previous and next arrows', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    const next = wrapper.get('[data-testid="home-workflow-next"]')
+    const previous = wrapper.get('[data-testid="home-workflow-previous"]')
+
+    expect(next.attributes('aria-label')).toBe('Next workflow')
+    expect(previous.attributes('aria-label')).toBe('Previous workflow')
+
+    await next.trigger('click')
+    await next.trigger('click')
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+
+    await previous.trigger('click')
+    await previous.trigger('click')
+    await previous.trigger('click')
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 6')
+    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('stops the arrows at the ends of a short list and leaves them out for a single card', async () => {
+    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    const wrapper = await openHome()
+    const next = wrapper.get('[data-testid="home-workflow-next"]')
+    const previous = wrapper.get('[data-testid="home-workflow-previous"]')
+
+    expect(previous.attributes('disabled')).toBeDefined()
+    expect(next.attributes('disabled')).toBeUndefined()
+
+    await next.trigger('click')
+    expect(cardAt(wrapper, 0).text()).toContain('Make your character talk')
+    expect(next.attributes('disabled')).toBeDefined()
+    expect(previous.attributes('disabled')).toBeUndefined()
+
+    listHomeWorkflows.mockResolvedValue([UPSCALE])
+    const single = await openHome()
+    expect(single.find('[data-testid="home-workflow-next"]').exists()).toBe(false)
+    expect(single.find('[data-testid="home-workflow-previous"]').exists()).toBe(false)
+  })
+
+  it('offers Open on the front card only, and opens that workflow from it', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    const ctas = wrapper.findAll('[data-testid="home-workflow-cta"]')
+
+    expect(ctas).toHaveLength(1)
+    expect(cardAt(wrapper, 0).find('[data-testid="home-workflow-cta"]').text()).toBe('Open')
+    expect(ctas[0]!.attributes('aria-hidden')).toBe('true')
+
+    await ctas[0]!.trigger('click')
+
+    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
   })
 
   it('turns the carousel when it is dragged, and does not open the card the drag ends on', async () => {
