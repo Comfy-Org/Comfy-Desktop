@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AppsView from './AppsView.vue'
-import type { CatalogApp } from '../types/ipc'
+import type { AppOutputs, CatalogApp } from '../types/ipc'
 import { useModal } from '../composables/useModal'
 
 const showApps = vi.fn()
@@ -11,9 +11,14 @@ const listCatalogApps = vi.fn()
 let appsLoadFailed: ((info: { url: string }) => void) | null = null
 let appsAppOpen: ((info: { open: boolean }) => void) | null = null
 let appsSettled: (() => void) | null = null
+let appsOutput: ((outputs: AppOutputs) => void) | null = null
+const appsOutputAction = vi.fn()
 
 async function mountApps(props: { growBy?: number; obscured?: boolean } = {}) {
-  const wrapper = mount(AppsView, { props })
+  const wrapper = mount(AppsView, {
+    props,
+    global: { stubs: { teleport: { template: '<div><slot /></div>' } } }
+  })
   await flushPromises()
   return wrapper
 }
@@ -46,7 +51,12 @@ beforeEach(() => {
     onAppsSettled: vi.fn((callback: () => void) => {
       appsSettled = callback
       return () => (appsSettled = null)
-    })
+    }),
+    onAppsOutput: vi.fn((callback: (outputs: AppOutputs) => void) => {
+      appsOutput = callback
+      return () => (appsOutput = null)
+    }),
+    appsOutputAction
   }
 })
 
@@ -96,6 +106,81 @@ describe('AppsView', () => {
     expect(wrapper.find('h1').exists()).toBe(true)
     expect(wrapper.find('[data-testid="app-card-studio"]').exists()).toBe(true)
     expect(listCatalogApps).toHaveBeenCalledOnce()
+  })
+
+  it("shows an app's outputs in the output dialog over a still of the app and hands the actions back to it", async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    showApps.mockClear()
+    hideApps.mockClear()
+
+    appsOutput!({
+      items: [
+        {
+          name: 'picture-1.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1, 2, 3]),
+          tags: ['This computer'],
+          workflow: true
+        },
+        {
+          name: 'picture-2.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([4]),
+          tags: [],
+          workflow: false
+        }
+      ],
+      index: 1,
+      backdrop: new Uint8Array([9])
+    })
+    await flushPromises()
+
+    expect(hideApps).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('picture-2.png')
+
+    await wrapper.get('[data-testid="output-detail-download"]').trigger('click')
+    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'download', index: 1 })
+
+    await wrapper.get('[data-testid="output-detail-thumb-0"]').trigger('click')
+    expect(wrapper.get('[data-testid="output-detail-panel"]').text()).toContain('This computer')
+    await wrapper.get('[data-testid="output-detail-workflow"]').trigger('click')
+    await flushPromises()
+
+    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'open-workflow', index: 0 })
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
+    expect(showApps).toHaveBeenCalled()
+  })
+
+  it("closes an app's output dialog when the app goes back", async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    appsOutput!({
+      items: [
+        {
+          name: 'picture-1.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1]),
+          tags: [],
+          workflow: false
+        }
+      ],
+      index: 0,
+      backdrop: null
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(true)
+
+    appsAppOpen!({ open: false })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
   it('opens a second app picked while the first one is still sliding in', async () => {

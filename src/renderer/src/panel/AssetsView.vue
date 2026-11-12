@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
@@ -24,6 +24,8 @@ import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import OutputDetailDialog from './OutputDetailDialog.vue'
+import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -61,6 +63,7 @@ const showName = useLocalStorage('comfy.desktop.assets.showName', false)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 
 const assets = ref<GalleryAsset[]>([])
+const detailKey = ref<string | null>(null)
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
@@ -185,6 +188,34 @@ watch(
   { immediate: true }
 )
 
+watch(visibleAssets, (list) => {
+  if (detailKey.value !== null && !list.some((asset) => cardKey(asset) === detailKey.value))
+    detailKey.value = null
+})
+const detailIndex = computed<number | null>({
+  get: () => {
+    if (detailKey.value === null) return null
+    const index = visibleAssets.value.findIndex((asset) => cardKey(asset) === detailKey.value)
+    return index >= 0 ? index : null
+  },
+  set: (index) => {
+    const asset = index === null ? undefined : visibleAssets.value[index]
+    detailKey.value = asset ? cardKey(asset) : null
+  }
+})
+const fileItems = computed<OutputDetailItem[]>(() =>
+  visibleAssets.value.map((asset) => ({
+    key: cardKey(asset),
+    name: asset.name,
+    kind: asset.kind,
+    sizeBytes: asset.sizeBytes,
+    createdAt: asset.createdAt,
+    tags: asset.tags,
+    previewUrl: asset.previewUrl,
+    workflow: null
+  }))
+)
+
 function warmNameTooltips(): void {
   clearTimeout(warmTimer)
   warmTimer = setTimeout(() => (nameTooltipsWarm.value = true), NAME_TOOLTIP_DELAY_MS)
@@ -207,6 +238,17 @@ async function signIn(): Promise<void> {
   } finally {
     signingIn.value = false
   }
+}
+
+function openDetail(asset: GalleryAsset): void {
+  detailKey.value = cardKey(asset)
+}
+
+async function closeDetail(): Promise<void> {
+  const viewedKey = detailKey.value ?? ''
+  detailKey.value = null
+  await nextTick()
+  scroller.value?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(viewedKey)}"]`)?.focus()
 }
 
 async function download(asset: GalleryAsset): Promise<void> {
@@ -238,6 +280,13 @@ function extensionOf(name: string): string {
 </script>
 
 <template>
+  <OutputDetailDialog
+    v-if="detailIndex !== null && visibleAssets.length > 0"
+    v-model:index="detailIndex"
+    :items="fileItems"
+    @close="closeDetail"
+    @download="download(visibleAssets[$event]!)"
+  />
   <div
     ref="scroller"
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
@@ -460,7 +509,14 @@ function extensionOf(name: string): string {
             :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
             class="w-full align-top"
           >
-            <div class="block w-full">
+            <button
+              type="button"
+              class="block w-full cursor-pointer text-left"
+              :aria-label="t('assets.inspect', { name: asset.name })"
+              :data-testid="`asset-open-${asset.id}`"
+              :data-card-key="cardKey(asset)"
+              @click="openDetail(asset)"
+            >
               <span
                 class="relative block overflow-hidden"
                 :class="
@@ -511,7 +567,7 @@ function extensionOf(name: string): string {
                   assetDetails(asset)
                 }}</span>
               </span>
-            </div>
+            </button>
           </Tooltip>
 
           <Button

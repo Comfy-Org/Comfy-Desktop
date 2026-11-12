@@ -28,6 +28,8 @@ const CALLS = [
   'localDownload',
   'cancelRun',
   'openInComfy',
+  'showOutput',
+  'onOutputAction',
   'track'
 ]
 
@@ -68,6 +70,14 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
     ipcRenderer.invoke('comfy-apps:local-fetch', req),
   localDownload: (req: { url: string; folder: string; name: string }) =>
     ipcRenderer.invoke('comfy-apps:local-download', req),
+  showOutput: (request: unknown) => ipcRenderer.invoke('comfy-apps:show-output', request),
+  onOutputAction: (callback: (action: unknown) => void) => {
+    const listener = (_e: IpcRendererEvent, msg: unknown) => callback(msg)
+    ipcRenderer.on('comfy-apps:output-action', listener)
+    return () => {
+      ipcRenderer.removeListener('comfy-apps:output-action', listener)
+    }
+  },
   track: (name: string, fields?: Record<string, unknown>): void => {
     try {
       ipcRenderer.invoke('comfy-apps:track', name, fields).catch(() => {})

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { useDialogs } from '../composables/useDialogs'
 import { useModal } from '../composables/useModal'
+import type { AppOutputs } from '../types/ipc'
 
 const SLIDE_MS = 480
 const EASE_OUT_CUBIC = 'cubic-bezier(0.33, 1, 0.68, 1)'
@@ -11,10 +12,14 @@ const REVEAL_MAX_MS = 4000
 const {
   url,
   growBy = 0,
+  covered = false,
+  backdrop = null,
   obscured = false
 } = defineProps<{
   url: string
   growBy?: number
+  covered?: boolean
+  backdrop?: string | null
   obscured?: boolean
 }>()
 
@@ -22,6 +27,7 @@ const emit = defineEmits<{
   failed: [url: string]
   'app-open': [open: boolean]
   entered: []
+  outputs: [outputs: AppOutputs]
 }>()
 
 const slot = useTemplateRef<HTMLElement>('slot')
@@ -29,6 +35,7 @@ const surface = useTemplateRef<HTMLElement>('surface')
 let observer: ResizeObserver | null = null
 let stopListening: (() => void) | null = null
 let stopAppOpen: (() => void) | null = null
+let stopOutputs: (() => void) | null = null
 let stopSettled: (() => void) | null = null
 let parked = true
 let gone = false
@@ -39,7 +46,7 @@ let freshPending = true
 
 const { state: modal } = useModal()
 const { state: dialog } = useDialogs()
-const hidden = computed(() => obscured || modal.visible || dialog.open)
+const hidden = computed(() => covered || obscured || modal.visible || dialog.open)
 
 function report(): void {
   const el = slot.value
@@ -51,8 +58,6 @@ function report(): void {
   window.api.showApps({ x, y: r.y, width, height: r.height, fresh: freshPending, url })
   freshPending = false
 }
-
-watch(hidden, (isHidden) => (isHidden ? window.api.hideApps() : report()))
 
 const reportResize = (): void => report()
 
@@ -83,9 +88,12 @@ function releaseHoldLater(): void {
   }, HOLD_MAX_MS)
 }
 
+watch(hidden, (isHidden) => (isHidden ? window.api.hideApps() : report()))
+
 onMounted(async () => {
   stopListening = window.api.onAppsLoadFailed(({ url: failed }) => emit('failed', failed))
   stopAppOpen = window.api.onAppsAppOpen(({ open }) => emit('app-open', open))
+  stopOutputs = window.api.onAppsOutput((outputs) => emit('outputs', outputs))
   const settled = pageSettled()
   observer = new ResizeObserver(reportResize)
   if (slot.value) observer.observe(slot.value)
@@ -108,6 +116,7 @@ onBeforeUnmount(() => {
   clearTimeout(revealTimer)
   stopListening?.()
   stopAppOpen?.()
+  stopOutputs?.()
   stopSettled?.()
   observer?.disconnect()
   window.removeEventListener('resize', reportResize)
@@ -121,6 +130,13 @@ onBeforeUnmount(() => {
       ref="surface"
       class="size-full rounded-shell bg-content-background"
       data-testid="apps-host-surface"
+    />
+    <img
+      v-if="covered && backdrop"
+      :src="backdrop"
+      alt=""
+      class="absolute inset-0 size-full rounded-shell object-cover"
+      data-testid="apps-host-backdrop"
     />
   </div>
 </template>

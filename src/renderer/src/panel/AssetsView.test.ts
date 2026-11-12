@@ -35,7 +35,11 @@ function build(id: string, name: string): Installation {
   return { id, name, sourceLabel: 'Standalone', sourceCategory: 'local' }
 }
 
-async function mountAssets(running: Installation[], stopped: Installation[] = []) {
+async function mountAssets(
+  running: Installation[],
+  stopped: Installation[] = [],
+  options: { attachTo?: HTMLElement } = {}
+) {
   useInstallationStore().installations = [...running, ...stopped]
   const sessions = useSessionStore()
   for (const inst of running) {
@@ -45,7 +49,10 @@ async function mountAssets(running: Installation[], stopped: Installation[] = []
       mode: 'app'
     })
   }
-  const wrapper = mount(AssetsView)
+  const wrapper = mount(AssetsView, {
+    ...options,
+    global: { stubs: { teleport: { template: '<div><slot /></div>' } } }
+  })
   await flushPromises()
   return wrapper
 }
@@ -132,7 +139,7 @@ describe('AssetsView', () => {
 
     await wrapper.get('[data-testid="assets-filter"]').trigger('keydown', { key: 'Enter' })
     await flushPromises()
-    document.querySelector<HTMLElement>('[data-testid="assets-filter-image"]')!.click()
+    await wrapper.get('[data-testid="assets-filter-image"]').trigger('click')
     await flushPromises()
     expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png'])
 
@@ -211,6 +218,47 @@ describe('AssetsView', () => {
     await wrapper.get('[data-testid="asset-download-b"]').trigger('click')
 
     expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('lab', 'b', 'forest.png')
+  })
+
+  it('opens an asset in the output dialog over the cards, steps through assets and closes', async () => {
+    listAssets.mockResolvedValue([
+      asset('a', 'surfer.mp4', 'video'),
+      asset('b', 'forest.png', 'image')
+    ])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('surfer.mp4')
+    expect(wrapper.get('[data-testid="asset-open-b"]').isVisible()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('forest.png')
+    expect(wrapper.find('[data-testid="output-detail-workflow"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="output-detail-download"]').trigger('click')
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('lab', 'b', 'forest.png')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+    expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
+  })
+
+  it('leaves the arrow keys to a video that has focus', async () => {
+    listAssets.mockResolvedValue([
+      { ...asset('a', 'surfer.mp4', 'video'), previewUrl: 'http://127.0.0.1:8188/surfer.mp4' },
+      asset('b', 'forest.png', 'image')
+    ])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+
+    wrapper
+      .get('video[controls]')
+      .element.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('surfer.mp4')
   })
 
   it('starts one download at a time for a file', async () => {
@@ -328,6 +376,70 @@ describe('AssetsView', () => {
     await wrapper.get('input').setValue('zzz')
 
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain('No matching assets')
+  })
+
+  it('keeps showing the same file when the assets reload in a new order', async () => {
+    const newer = (id: string, name: string, at: string) => ({
+      ...asset(id, name, 'image'),
+      createdAt: at
+    })
+    listAssets.mockResolvedValue([
+      newer('a', 'first.png', '2026-01-02T00:00:00Z'),
+      newer('b', 'second.png', '2026-01-01T00:00:00Z')
+    ])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="asset-open-b"]').trigger('click')
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('second.png')
+
+    listAssets.mockImplementation(async (installationId: string) =>
+      installationId === 'lab'
+        ? [
+            newer('c', 'brand-new.png', '2026-01-03T00:00:00Z'),
+            newer('a', 'first.png', '2026-01-02T00:00:00Z'),
+            newer('b', 'second.png', '2026-01-01T00:00:00Z')
+          ]
+        : []
+    )
+    const other = build('other', 'Other Lab')
+    useInstallationStore().installations = [build('lab', 'Video Lab'), other]
+    useSessionStore().runningInstances.set(other.id, {
+      installationId: other.id,
+      installationName: other.name,
+      mode: 'app'
+    })
+    await flushPromises()
+
+    expect(listAssets).toHaveBeenCalledWith('other')
+
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('second.png')
+  })
+
+  it('closes the detail view for good when its file goes away on a reload', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+
+    listAssets.mockResolvedValue([])
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
+    await flushPromises()
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-c' }
+    await flushPromises()
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+  })
+
+  it('returns focus to the opened card when the detail view closes', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], { attachTo: document.body })
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await wrapper.get('[data-testid="output-detail-close"]').trigger('click')
+    await flushPromises()
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="asset-open-a"]').element)
+    wrapper.unmount()
   })
 
   it('reports a failed load', async () => {

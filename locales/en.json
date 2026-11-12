@@ -57,6 +57,27 @@
     "loadFailed": "Couldn't load assets",
     "download": "Download",
     "downloadFailed": "Couldn't download asset",
+    "inspect": "Inspect {name}",
+    "kindSingular": {
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio",
+      "3d": "3D",
+      "file": "File"
+    },
+    "detail": {
+      "tags": "Tags",
+      "tagsHint": "Tags are edited in ComfyUI.",
+      "createdAt": "Created {date}",
+      "fit": "Fit",
+      "zoom": "Zoom",
+      "zoomLevel": "Zoom: {level}",
+      "generationInfo": "Generation info",
+      "workflow": "Workflow",
+      "available": "Available",
+      "notSaved": "Not saved",
+      "openWorkflow": "Open workflow"
+    },
     "noMatches": "No matching assets",
     "noMatchesHint": "Try another type or search.",
     "filter": "Filter",

@@ -48,6 +48,7 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { listCatalogApps } from './catalog'
+import { outputAction, outputRequest } from './outputs'
 import { localBuilds, openInComfy } from './openInComfy'
 import { isAppsEnabled } from './appsSwitch'
 import {
@@ -72,8 +73,14 @@ export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
 export const APPS_SETTLED_CHANNEL = 'comfy-apps:settled'
 export const APPS_PAGE_SETTLED_CHANNEL = 'comfy-apps:page-settled'
 export const APPS_CATALOG_CHANNEL = 'comfy-apps:catalog'
+export const APPS_OUTPUT_CHANNEL = 'comfy-apps:output'
+export const APPS_OUTPUT_ACTION_CHANNEL = 'comfy-apps:output-action'
+const BACKDROP_QUALITY = 80
 
 const appOpen = new Map<number, boolean>()
+const capturingOutputs = new Set<number>()
+const pageDocuments = new Map<number, number>()
+const liveOutputCounts = new Map<number, number>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
 
@@ -170,6 +177,8 @@ function createAppsView(key: number, url: string): WebContentsView {
     if (isMainFrame && isPageLoadFailure(errorCode)) markLoadFailed(key, view, url)
   })
   wc.on('did-navigate', (_event, url, httpResponseCode) => {
+    pageDocuments.set(key, (pageDocuments.get(key) ?? 0) + 1)
+    liveOutputCounts.delete(key)
     awaitingCommit.delete(key)
     settledPages.delete(key)
     if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
@@ -232,6 +241,8 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
       views.delete(key)
       pageWhere.delete(pageId)
       appOpen.delete(key)
+      liveOutputCounts.delete(key)
+      pageDocuments.delete(key)
       awaitingCommit.delete(key)
       settledPages.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
@@ -246,8 +257,12 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     height: Math.round(r.height!)
   })
   entry.window.contentView.addChildView(view)
+  const uncovered = !view.getVisible()
   view.setVisible(true)
-  if (r.fresh !== true) return
+  if (r.fresh !== true) {
+    if (uncovered) view.webContents.focus()
+    return
+  }
   tellPanelAppOpen(key)
   if (settledPages.has(key)) tellPanelSettled(key)
 }
@@ -274,6 +289,48 @@ function fromAppsPage(event: IpcMainInvokeEvent): boolean {
   return (
     ours && !!frame && frame === event.sender.mainFrame && isAppsFrameUrl(frame.url, APPS_ORIGIN)
   )
+}
+
+function keyForAppsPage(sender: WebContents): number | null {
+  for (const [key, view] of views) if (view.webContents === sender) return key
+  return null
+}
+
+async function captureBackdrop(page: WebContents): Promise<Buffer | null> {
+  try {
+    const jpeg = (await page.capturePage()).toJPEG(BACKDROP_QUALITY)
+    return jpeg.byteLength > 0 ? jpeg : null
+  } catch {
+    return null
+  }
+}
+
+async function showOutput(page: WebContents, request: unknown): Promise<void> {
+  const outputs = outputRequest(request)
+  if (!outputs) throw new Error('These outputs cannot be shown.')
+  const key = keyForAppsPage(page)
+  const entry = key === null ? undefined : comfyWindows.get(key)
+  const panel = entry?.panelView?.webContents
+  if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
+  if (!views.get(key)?.getVisible()) throw new Error('The app is not on screen.')
+  if (capturingOutputs.has(key)) throw new Error('Outputs are already opening.')
+  const pageDocument = pageDocuments.get(key)
+  capturingOutputs.add(key)
+  const backdrop = await captureBackdrop(page).finally(() => capturingOutputs.delete(key))
+  if (panel.isDestroyed() || !appOpen.get(key) || pageDocuments.get(key) !== pageDocument) return
+  liveOutputCounts.set(key, outputs.items.length)
+  if (entry?.window.isFocused()) panel.focus()
+  panel.send(APPS_OUTPUT_CHANNEL, { ...outputs, backdrop })
+}
+
+function relayOutputAction(event: IpcMainEvent, input: unknown): void {
+  const found = entryForPanel(event.sender)
+  const action = outputAction(input)
+  if (!found || !action) return
+  const count = liveOutputCounts.get(found[0]) ?? 0
+  const page = views.get(found[0])?.webContents
+  if (action.index >= count || !page || page.isDestroyed()) return
+  page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
 }
 
 function authState(): AppsAuthState {
@@ -611,6 +668,16 @@ async function uploadImage(
   return { name: body.name }
 }
 
+function handleFromAppsPage<A extends unknown[], R>(
+  channel: string,
+  fn: (page: WebContents, ...args: A) => Promise<R> | R
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    if (!fromAppsPage(event)) throw new Error('Not allowed.')
+    return fn(event.sender, ...(args as A))
+  })
+}
+
 function pageOf(event: IpcMainInvokeEvent): AppPage {
   return { id: event.sender.id, app: appOfPage(event.senderFrame?.url ?? '', APPS_URL) }
 }
@@ -629,7 +696,7 @@ function handleFromApps<A extends unknown[], R>(
   channel: string,
   fn: (...args: A) => Promise<R> | R
 ): void {
-  handleFromAppPage(channel, (_page, ...args: A) => fn(...args))
+  handleFromAppsPage(channel, (_page, ...args: A) => fn(...args))
 }
 
 function noteLocalRun(page: AppPage, req: unknown): void {
@@ -650,6 +717,7 @@ export function registerAppsIpc(): void {
   ipcMain.handle(APPS_CATALOG_CHANNEL, (event) =>
     entryForPanel(event.sender) ? listCatalogApps(APPS_URL) : []
   )
+  ipcMain.on(APPS_OUTPUT_ACTION_CHANNEL, relayOutputAction)
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)
@@ -680,5 +748,6 @@ export function registerAppsIpc(): void {
     localDownload(req, page.app)
   )
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)
+  handleFromAppsPage('comfy-apps:show-output', showOutput)
   handleFromApps('comfy-apps:track', trackFromPage)
 }

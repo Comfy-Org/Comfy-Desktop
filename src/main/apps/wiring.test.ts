@@ -15,7 +15,7 @@ const exposed = all(
   /^ {2}(\w+):/gm
 )
 const invoked = all(preload, /ipcRenderer\.invoke\('([\w:-]+)'/g)
-const handled = all(main, /handleFromApp(?:s|Page)\('([\w:-]+)'/g)
+const handled = all(main, /handleFromApp(?:sPage|s|Page)\('([\w:-]+)'/g)
 
 describe('Apps bridge wiring', () => {
   it('getInfo names exactly the calls the page gets', () => {
@@ -47,6 +47,13 @@ describe('Apps bridge wiring', () => {
     const settled = main.match(/APPS_PAGE_SETTLED_CHANNEL = '([\w:-]+)'/)![1]
     expect(preload).toContain(`ipcRenderer.send('${settled}')`)
     expect(main).toContain('ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)')
+  })
+
+  it('output actions reach the page on the channel the preload listens to', () => {
+    const action = main.match(/APPS_OUTPUT_ACTION_CHANNEL = '([\w:-]+)'/)![1]
+    expect(preload).toContain(`ipcRenderer.on('${action}'`)
+    expect(preload).toContain(`ipcRenderer.removeListener('${action}'`)
+    expect(main).toContain('ipcMain.on(APPS_OUTPUT_ACTION_CHANNEL, relayOutputAction)')
   })
 
   it('passes the app tag with a Cloud run only when the page gives one', () => {
