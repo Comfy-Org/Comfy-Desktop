@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   getGrantAccessToken: vi.fn<() => Promise<string | null>>(),
   mint: vi.fn(),
   partnerMint: vi.fn(),
-  current: 'ws-1',
+  current: 'ws-1' as string | null,
   entries: [] as unknown[]
 }))
 
@@ -578,6 +578,15 @@ describe('billingHandoffForSender', () => {
 
     await expect(issue()).resolves.toEqual({ status: 'sign_in_again' })
     expect(rejectAccessToken).toHaveBeenCalledWith(ACCESS)
+  })
+
+  it('asks to sign in again when rejecting the grant signs Desktop out', async () => {
+    respond(401, { code: 'unauthorized' })
+    vi.mocked(rejectAccessToken).mockImplementationOnce(() => {
+      mocks.current = null
+    })
+
+    await expect(issue()).resolves.toEqual({ status: 'sign_in_again' })
   })
 
   it.each([

@@ -168,7 +168,10 @@ export async function billingHandoffForSender(
   const accessToken = await getCloudSession().getGrantAccessToken()
   if (!accessToken) return { status: 'sign_in_again' }
   const handoff = await issueBillingHandoff(accessToken, { workspaceId, receiver, clientVersion })
-  if (handoff.status === 'sign_in_again') rejectAccessToken(accessToken)
+  if (handoff.status === 'sign_in_again') {
+    rejectAccessToken(accessToken)
+    return handoff
+  }
   return grants.mayHold(event.sender, workspaceId) ? handoff : { status: 'disabled' }
 }
 
