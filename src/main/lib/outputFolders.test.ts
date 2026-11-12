@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   root,
@@ -105,6 +105,11 @@ beforeEach(() => {
     install('Cloud', { sourceId: 'cloud' }),
     install('Old Desktop', { sourceId: 'desktop' })
   ])
+})
+
+afterEach(() => {
+  for (const link of ['escape', 'shared', 'shared.png'])
+    fs.rmSync(path.join(ownDir, link), { force: true })
 })
 
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -244,8 +249,6 @@ describe('comfyOutputPath', () => {
     expect(await file('shared', 'other-build.png')).toBeNull()
     expect(await file('../outside', 'secret.png')).toBeNull()
     expect(await file('', '../outside/secret.png')).toBeNull()
-    fs.rmSync(path.join(ownDir, 'escape'))
-    fs.rmSync(path.join(ownDir, 'shared'))
   })
 
   it('refuses builds whose output folder Desktop does not manage', async () => {
@@ -264,7 +267,6 @@ describe('outputLocator', () => {
   it("finds the file in the build's output folder with exactly the same bytes", async () => {
     write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00001.png'), 'other picture')
     write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png'), 'same picture!')
-
     write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00003.png'), 'third picture')
     const locate = outputLocator(apps)
     const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
@@ -307,8 +309,6 @@ describe('outputLocator', () => {
     const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
     expect(await sameBytes(bytesOf('secret bytes'))).toBeNull()
     expect(await sameBytes(bytesOf('shared bytes'))).toBeNull()
-    fs.rmSync(path.join(ownDir, 'escape'))
-    fs.rmSync(path.join(ownDir, 'shared.png'))
   })
 })
 

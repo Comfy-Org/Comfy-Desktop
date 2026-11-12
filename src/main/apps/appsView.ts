@@ -71,6 +71,7 @@ const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
 const parkedApps = new Set<number>()
 const shownOutputFiles = new Map<number, (string | null)[]>()
+const latestOutputRequest = new Map<number, number>()
 
 export interface AppsRect {
   x: number
@@ -222,6 +223,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
       settledPages.delete(key)
       parkedApps.delete(key)
       shownOutputFiles.delete(key)
+      latestOutputRequest.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -283,6 +285,8 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const key = keyForAppsPage(page)
   const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
+  const turn = (latestOutputRequest.get(key) ?? 0) + 1
+  latestOutputRequest.set(key, turn)
   const apps = outputs.items.some(needsLookup) ? await findApps() : null
   const { items, files } = await resolveOutputFiles(
     outputs.items,
@@ -292,7 +296,7 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
     .capturePage()
     .then((image) => image.toJPEG(BACKDROP_QUALITY))
     .catch(() => null)
-  if (panel.isDestroyed() || !appOpen.get(key)) return
+  if (panel.isDestroyed() || !appOpen.get(key) || latestOutputRequest.get(key) !== turn) return
   shownOutputFiles.set(key, files)
   panel.focus()
   panel.send(APPS_OUTPUT_CHANNEL, { items, index: outputs.index, backdrop })
@@ -309,7 +313,7 @@ function relayOutputAction(event: IpcMainEvent, input: unknown): void {
   if (!found || !action) return
   const file =
     action.action === 'show-in-folder' ? shownOutputFiles.get(found[0])?.[action.index] : null
-  if (file) return void revealOutputFile(file)
+  if (file) return void revealOutputFile(file).catch(() => {})
   const page = views.get(found[0])?.webContents
   if (page && !page.isDestroyed()) page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
 }

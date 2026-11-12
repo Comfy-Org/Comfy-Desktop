@@ -27,6 +27,7 @@ const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
 const MAX_MATCH_ENTRIES = 5000
 const MAX_MATCH_DEPTH = 4
+const APPS_OUTPUT_FOLDER = 'apps'
 
 const thumbnails = new Map<string, Buffer>()
 const thumbnailQueue: (() => void)[] = []
@@ -102,7 +103,11 @@ export async function comfyOutputPath(
 
 async function filesBySize(root: string): Promise<Map<number, string[]>> {
   const bySize = new Map<number, string[]>()
-  const queue = [{ dir: root, depth: 0 }]
+  const appsDir = path.join(root, APPS_OUTPUT_FOLDER)
+  const queue = [
+    { dir: appsDir, depth: 1 },
+    { dir: root, depth: 0 }
+  ]
   let seen = 0
   while (queue.length > 0 && seen < MAX_MATCH_ENTRIES) {
     const { dir, depth } = queue.shift()!
@@ -110,9 +115,11 @@ async function filesBySize(root: string): Promise<Map<number, string[]>> {
       .filter((dirent) => !dirent.name.startsWith('.'))
       .slice(0, MAX_MATCH_ENTRIES - seen)
     seen += dirents.length
-    for (const dirent of dirents)
-      if (dirent.isDirectory() && depth < MAX_MATCH_DEPTH)
-        queue.push({ dir: path.join(dir, dirent.name), depth: depth + 1 })
+    for (const dirent of dirents) {
+      const full = path.join(dir, dirent.name)
+      if (dirent.isDirectory() && depth < MAX_MATCH_DEPTH && full !== appsDir)
+        queue.push({ dir: full, depth: depth + 1 })
+    }
     const files = dirents.filter((dirent) => dirent.isFile() && assetKind(dirent.name))
     await runPool(files, STATS_AT_ONCE, async (dirent) => {
       const full = path.join(dir, dirent.name)
