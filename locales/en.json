@@ -23,7 +23,11 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
-    "signInBody": "Sync and run on Comfy Cloud"
+    "signInBody": "Sync and run on Comfy Cloud",
+    "newBuild": "New build",
+    "noBuilds": "No builds yet",
+    "failedToStart": "Failed to start",
+    "failedToStartReason": "Failed to start: {reason}"
   },
   "home": {
     "title": "Welcome. Let's create!",

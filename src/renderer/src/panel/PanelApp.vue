@@ -185,6 +185,22 @@ function closeBuildDetails(): void {
 
 watch(activePanel, closeBuildDetails)
 
+const sidebarBuildId = computed(() =>
+  activePanel.value === 'chooser' && dashboardHomePage.value === 'chooser'
+    ? (buildDetailsInstall.value?.id ?? null)
+    : null
+)
+
+async function openBuildFromSidebar(inst: Installation): Promise<void> {
+  dashboardHomePage.value = 'chooser'
+  if (activePanel.value !== 'chooser') {
+    window.api.navigatePanel('chooser')
+    await switchPanel('chooser', 'sidebar')
+    await nextTick()
+  }
+  openBuildDetails(inst)
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   if (page === 'home' || page === 'chooser') dashboardHomePage.value = page
@@ -441,7 +457,10 @@ onUnmounted(() => {
       <AppSidebar
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
+        :active-build-id="sidebarBuildId"
         @navigate="handleSidebarNavigate"
+        @open-build="openBuildFromSidebar"
+        @new-build="handleChooserShowNewInstall"
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"

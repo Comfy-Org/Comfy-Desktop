@@ -1,22 +1,31 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ChartColumn, Gauge, House, Server } from 'lucide-vue-next'
+import { ArrowRight, ChartColumn, Cloud, Gauge, House, Laptop, Plus, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
-import type { DashboardPage } from '../types/ipc'
+import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
+import { useInstallList } from '../composables/useInstallList'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { useInstallationStore } from '../stores/installationStore'
+import { useSessionStore } from '../stores/sessionStore'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import type { DashboardPage, Installation } from '../types/ipc'
 
-const { activePage } = defineProps<{
+const { activePage, activeBuildId = null } = defineProps<{
   activePage: DashboardPage
+  activeBuildId?: string | null
 }>()
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
+  'open-build': [installation: Installation]
+  'new-build': []
 }>()
 
 interface SidebarRow {
@@ -39,9 +48,40 @@ const toolRows = computed<SidebarRow[]>(() => [
   { page: 'benchmarks', label: t('fileMenu.benchmarks'), icon: ChartColumn }
 ])
 const groups = computed(() => [
-  { key: 'main', rows: mainRows.value },
+  {
+    key: 'main',
+    rows: collapsed.value ? mainRows.value : mainRows.value.filter((row) => row.page !== 'chooser')
+  },
   { key: 'tools', title: t('sidebar.tools'), rows: toolRows.value }
 ])
+
+const installationStore = useInstallationStore()
+const sessionStore = useSessionStore()
+const dashboardScope = useDashboardScopeStore()
+void dashboardScope.initialize()
+
+const { visibleInstalls } = useInstallList({
+  installations: toRef(installationStore, 'installations')
+})
+const builds = computed(() =>
+  visibleInstalls.value.filter((build) =>
+    isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
+  )
+)
+const buildsPageActive = computed(() => activePage === 'chooser' && !activeBuildId)
+
+function isLive(build: Installation): boolean {
+  const status = homeBuildStatus(build, sessionStore)
+  return status === 'running' || status === 'always-on'
+}
+
+function failure(build: Installation): string | null {
+  const error = sessionStore.errorInstances.get(build.id)
+  if (!error) return null
+  return error.message
+    ? t('sidebar.failedToStartReason', { reason: error.message })
+    : t('sidebar.failedToStart')
+}
 
 function navigate(page: DashboardPage): void {
   emit('navigate', page)
@@ -120,6 +160,75 @@ function navigate(page: DashboardPage): void {
           <component :is="row.icon" :size="15" aria-hidden="true" />
           <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
         </Button>
+        <div
+          v-if="group.key === 'main' && !collapsed"
+          class="flex flex-col gap-px"
+          data-testid="app-sidebar-builds"
+        >
+          <div class="mt-5.5 flex h-6.5 shrink-0 items-center justify-between pr-1 pl-3">
+            <Button
+              variant="textonly"
+              size="unset"
+              class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
+              :aria-current="buildsPageActive ? 'page' : undefined"
+              data-testid="app-sidebar-chooser"
+              @click="navigate('chooser')"
+            >
+              {{ t('sidebar.builds') }}
+              <ArrowRight
+                :size="12"
+                :stroke-width="2.25"
+                class="-translate-x-0.5 opacity-35 transition-[opacity,translate] duration-200 ease-out group-hover/title:translate-x-0 group-hover/title:opacity-100 group-focus-visible/title:translate-x-0 group-focus-visible/title:opacity-100 group-aria-[current=page]/title:translate-x-0 group-aria-[current=page]/title:opacity-100 motion-reduce:transition-none"
+                aria-hidden="true"
+              />
+            </Button>
+            <Button
+              variant="muted-textonly"
+              size="unset"
+              class="size-6 rounded-md p-0 hover:bg-secondary hover:text-foreground"
+              :aria-label="t('sidebar.newBuild')"
+              :title="t('sidebar.newBuild')"
+              data-testid="app-sidebar-new-build"
+              @click="emit('new-build')"
+            >
+              <Plus :size="13" aria-hidden="true" />
+            </Button>
+          </div>
+          <p
+            v-if="!builds.length"
+            class="m-0 flex h-8 shrink-0 items-center gap-2.5 px-3 text-[13px]/5 text-subtle-foreground"
+            data-testid="app-sidebar-no-builds"
+          >
+            <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
+          </p>
+          <Button
+            v-for="build in builds"
+            :key="build.id"
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+            :class="build.id === activeBuildId && 'bg-accent text-foreground hover:bg-accent'"
+            :aria-current="build.id === activeBuildId ? 'page' : undefined"
+            :title="failure(build) ? `${build.name} · ${failure(build)}` : build.name"
+            :data-testid="`app-sidebar-build-${build.id}`"
+            @click="emit('open-build', build)"
+          >
+            <span class="relative flex shrink-0">
+              <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="16" aria-hidden="true" />
+              <span
+                v-if="failure(build) || isLive(build)"
+                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full ring-2"
+                :class="[
+                  failure(build) ? 'bg-destructive' : 'bg-success',
+                  build.id === activeBuildId ? 'ring-[oklch(0.27_0_0)]' : 'ring-sidebar-background'
+                ]"
+                :data-testid="failure(build) ? 'app-sidebar-dot-failed' : 'app-sidebar-dot-live'"
+                aria-hidden="true"
+              />
+            </span>
+            <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
+          </Button>
+        </div>
       </template>
     </nav>
 

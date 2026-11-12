@@ -1332,6 +1332,70 @@ describe('PanelApp', () => {
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
   })
 
+  it('opens a build from the sidebar on Benchmarks without launching it', async () => {
+    window.history.replaceState({}, '', '/?panel=benchmarks&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get(`[data-testid="app-sidebar-build-${SAMPLE_INSTALL.id}"]`).trigger('click')
+    await flushPromises()
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'chooser' }))
+    await flushPromises()
+
+    expect(window.api.navigatePanel).toHaveBeenCalledWith('chooser')
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+    expect(
+      wrapper
+        .get(`[data-testid="app-sidebar-build-${SAMPLE_INSTALL.id}"]`)
+        .attributes('aria-current')
+    ).toBe('page')
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      undefined
+    )
+    expect(window.api.claimAttachHost).not.toHaveBeenCalled()
+  })
+
+  it('opens a build from the sidebar on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get(`[data-testid="app-sidebar-build-${SAMPLE_INSTALL.id}"]`).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+  })
+
+  it('drops the sidebar highlight when the open build is removed', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get(`[data-testid="app-sidebar-build-${SAMPLE_INSTALL.id}"]`).trigger('click')
+    await flushPromises()
+
+    mockState.installations = []
+    mockState.installationsChangedCallbacks.forEach((cb) => cb())
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid^="app-sidebar-build-"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
+      'page'
+    )
+  })
+
+  it('opens the new-install takeover from the + on the sidebar Builds title', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-new-build"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
+  })
+
   it('uses the live dashboard selection for both entry points even when persistence fails', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     mockState.comfybuilder.getAuthStatus.mockResolvedValue({
