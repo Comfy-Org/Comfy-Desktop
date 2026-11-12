@@ -680,12 +680,52 @@ describe('BenchmarksView', () => {
     expect(group(wrapper).find('table').exists()).toBe(true)
   })
 
+  it('checks every column the table shows and hides the ones you uncheck', async () => {
+    const wrapper = await mountGrouped('Hardware')
+    const checked = (key: string) =>
+      menuItem(`[data-testid="benchmark-column-${key}"]`)!.getAttribute('aria-checked')
+    const locked = (key: string) =>
+      menuItem(`[data-testid="benchmark-column-${key}"]`)!.hasAttribute('data-disabled')
+
+    await openMenu(wrapper, '[data-testid="benchmarks-columns"]')
+    const title = document.querySelector('.benchmarks__columns-title')!
+    expect(title.textContent?.trim()).toBe('Columns to display')
+    expect(title.classList).toContain('uppercase')
+    for (const key of [
+      'id',
+      'workflowName',
+      'instance.name',
+      'range',
+      'medianJobDurationSeconds',
+      'vsBaseline'
+    ]) {
+      expect(checked(key), key).toBe('true')
+    }
+    expect(checked('averageJobDurationSeconds')).toBe('false')
+    expect(['id', 'medianJobDurationSeconds', 'vsBaseline'].every(locked)).toBe(true)
+    expect(['workflowName', 'instance.name', 'range'].some(locked)).toBe(false)
+
+    menuItem('[data-testid="benchmark-column-range"]')!.click()
+    menuItem('[data-testid="benchmark-column-workflowName"]')!.click()
+    await flushPromises()
+    await closeMenu()
+
+    expect(texts(wrapper, 'thead th')).toEqual([
+      '',
+      'Session',
+      'Build',
+      'Median ↑',
+      'Vs baseline',
+      ''
+    ])
+    expect(wrapper.find('.benchmarks__bar-cell').exists()).toBe(false)
+  })
+
   it('adds picked columns to the table and the export, best value in green', async () => {
     const wrapper = await mountGrouped('Hardware')
 
     await openMenu(wrapper, '[data-testid="benchmarks-columns"]')
     expect(menuItem('[data-testid="benchmark-column-systemInfo.cpu_model"]')).not.toBeNull()
-    expect(menuItem('[data-testid="benchmark-column-workflowName"]')).toBeNull()
     menuItem('[data-testid="benchmark-column-averageJobDurationSeconds"]')!.click()
     await flushPromises()
     expect(openMenuElement()).not.toBeNull()

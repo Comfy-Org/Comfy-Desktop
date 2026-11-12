@@ -39,6 +39,8 @@ const props = defineProps<{
   metric: DurationKey
   sort: ColumnSort
   buildColumn: boolean
+  workflowColumn: boolean
+  rangeColumn: boolean
   extraColumns: Array<{ key: string; label: string }>
   selectedIds: ReadonlySet<string>
   deletingIds: ReadonlySet<string>
@@ -401,7 +403,10 @@ function toggleBaseline(id: string): void {
                     {{ t('benchmarks.session') }} {{ sortIndicator('id') }}
                   </Button>
                 </th>
-                <th v-if="groupBy !== 'workflow'" :aria-sort="ariaSort('workflowName')">
+                <th
+                  v-if="workflowColumn && groupBy !== 'workflow'"
+                  :aria-sort="ariaSort('workflowName')"
+                >
                   <Button
                     variant="textonly"
                     size="unset"
@@ -424,6 +429,7 @@ function toggleBaseline(id: string): void {
                   </Button>
                 </th>
                 <th
+                  v-if="rangeColumn"
                   class="benchmarks__bar-head w-[32%] min-w-36 @max-[900px]:w-auto @max-[900px]:min-w-30"
                 >
                   {{ t('benchmarks.metricAndRange', { metric: metricLabel }) }}
@@ -545,7 +551,7 @@ function toggleBaseline(id: string): void {
                   </span>
                 </td>
                 <td
-                  v-if="groupBy !== 'workflow'"
+                  v-if="workflowColumn && groupBy !== 'workflow'"
                   class="benchmarks__workflow max-w-44 truncate"
                   :title="row.benchmark.workflowName"
                 >
@@ -554,7 +560,7 @@ function toggleBaseline(id: string): void {
                 <td v-if="buildColumn" class="benchmarks__build max-w-50 truncate">
                   {{ row.benchmark.instance.name }}
                 </td>
-                <td class="benchmarks__bar-cell">
+                <td v-if="rangeColumn" class="benchmarks__bar-cell">
                   <span
                     v-if="row.value === null"
                     class="benchmarks__no-data text-xs text-subtle-foreground"

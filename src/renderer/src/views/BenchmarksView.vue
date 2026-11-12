@@ -17,6 +17,7 @@ import {
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuItemIndicator,
+  DropdownMenuLabel,
   DropdownMenuRadioGroup
 } from 'reka-ui'
 import { useI18n } from 'vue-i18n'
@@ -56,6 +57,8 @@ interface MenuOption {
 const SERIES_COLORS = ['#e8e8ee', '#7aa2f7', '#9ece6a', '#bb9af7', '#7dcfff']
 const UNMANAGED_WORKSPACE = '__unmanaged__'
 const IDENTITY_COLUMN_KEYS = ['workflowName', 'id', 'hardware.deviceName']
+const RANGE_COLUMN_KEY = 'range'
+const VS_BASELINE_COLUMN_KEY = 'vsBaseline'
 const COLUMN_PICKER_ORDER = [
   'instance.name',
   'workspace.name',
@@ -111,7 +114,9 @@ const manualOrders = ref<Record<string, string[]>>({})
 const baselineIds = ref<Record<string, string>>({})
 const collapsedGroupKeys = ref<ReadonlySet<string>>(new Set())
 const selectedIds = ref<ReadonlySet<string>>(new Set())
-const visibleColumnKeys = ref<ReadonlySet<string>>(new Set(['instance.name']))
+const visibleColumnKeys = ref<ReadonlySet<string>>(
+  new Set(['instance.name', 'workflowName', RANGE_COLUMN_KEY])
+)
 const columnOrder = ref<string[]>([])
 const deletingIds = ref<ReadonlySet<string>>(new Set())
 const isExporting = ref(false)
@@ -186,7 +191,11 @@ function columnLabel(key: string): string {
     'instance.name': t('benchmarks.instance'),
     'workspace.name': t('benchmarks.workspace'),
     measuredJobCount: t('benchmarks.runs'),
-    'hardware.deviceName': t('benchmarks.hardware')
+    'hardware.deviceName': t('benchmarks.hardware'),
+    [RANGE_COLUMN_KEY]: t('benchmarks.metricAndRange', {
+      metric: t(DURATION_LABEL_KEYS[metric.value])
+    }),
+    [VS_BASELINE_COLUMN_KEY]: t('benchmarks.vsBaseline')
   }
   if (isDurationKey(key)) return t(DURATION_LABEL_KEYS[key])
   return (
@@ -227,10 +236,32 @@ const availableColumnKeys = computed(() => {
   return [...ordered, ...[...keys].sort((a, b) => a.localeCompare(b))]
 })
 const buildColumnVisible = computed(() => visibleColumnKeys.value.has('instance.name'))
+const workflowColumnVisible = computed(() => visibleColumnKeys.value.has('workflowName'))
+const rangeColumnVisible = computed(() => visibleColumnKeys.value.has(RANGE_COLUMN_KEY))
+const columnPickerRows = computed(() => {
+  const optional = availableColumnKeys.value.filter((key) => key !== 'instance.name')
+  const keys = [
+    'id',
+    ...(groupBy.value === 'workflow' ? [] : ['workflowName']),
+    ...(availableColumnKeys.value.includes('instance.name') ? ['instance.name'] : []),
+    RANGE_COLUMN_KEY,
+    ...optional,
+    VS_BASELINE_COLUMN_KEY
+  ]
+  const alwaysShown = new Set(['id', metric.value, VS_BASELINE_COLUMN_KEY])
+  return keys.map((key) => ({
+    key,
+    label: columnLabel(key),
+    locked: alwaysShown.has(key),
+    visible: alwaysShown.has(key) || visibleColumnKeys.value.has(key)
+  }))
+})
 const extraColumns = computed(() => {
   const position = new Map(columnOrder.value.map((key, index) => [key, index]))
   return availableColumnKeys.value
-    .filter((key) => key !== 'instance.name' && visibleColumnKeys.value.has(key))
+    .filter(
+      (key) => key !== 'instance.name' && key !== metric.value && visibleColumnKeys.value.has(key)
+    )
     .sort(
       (a, b) =>
         (position.get(a) ?? Number.MAX_SAFE_INTEGER) - (position.get(b) ?? Number.MAX_SAFE_INTEGER)
@@ -765,12 +796,7 @@ onActivated(() => {
               >
                 <template #leading><Search :size="14" aria-hidden="true" /></template>
               </BaseInput>
-              <Menu
-                :modal="false"
-                align="end"
-                :label="t('benchmarks.columnsToDisplay')"
-                class="z-20 max-h-90 min-w-56"
-              >
+              <Menu :modal="false" align="end" class="z-20 max-h-90 min-w-56">
                 <template #trigger>
                   <Button
                     variant="muted-textonly"
@@ -784,16 +810,22 @@ onActivated(() => {
                     <SlidersHorizontal :size="15" aria-hidden="true" />
                   </Button>
                 </template>
+                <DropdownMenuLabel
+                  class="benchmarks__columns-title px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+                >
+                  {{ t('benchmarks.columnsToDisplay') }}
+                </DropdownMenuLabel>
                 <DropdownMenuCheckboxItem
-                  v-for="key in availableColumnKeys"
-                  :key="key"
-                  :model-value="visibleColumnKeys.has(key)"
-                  class="flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-highlighted:bg-accent"
-                  :data-testid="`benchmark-column-${key}`"
-                  @update:model-value="(visible) => setColumnVisible(key, visible === true)"
+                  v-for="row in columnPickerRows"
+                  :key="row.key"
+                  :model-value="row.visible"
+                  :disabled="row.locked"
+                  class="flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-disabled:text-muted-foreground data-highlighted:bg-accent"
+                  :data-testid="`benchmark-column-${row.key}`"
+                  @update:model-value="(visible) => setColumnVisible(row.key, visible === true)"
                   @select="(event) => event.preventDefault()"
                 >
-                  <span class="flex-1 truncate text-left">{{ columnLabel(key) }}</span>
+                  <span class="flex-1 truncate text-left">{{ row.label }}</span>
                   <DropdownMenuItemIndicator>
                     <Check :size="15" aria-hidden="true" />
                   </DropdownMenuItemIndicator>
@@ -878,6 +910,8 @@ onActivated(() => {
             :metric="metric"
             :sort="columnSort"
             :build-column="buildColumnVisible"
+            :workflow-column="workflowColumnVisible"
+            :range-column="rangeColumnVisible"
             :extra-columns="extraColumns"
             :selected-ids="selectedIds"
             :deleting-ids="deletingIds"
