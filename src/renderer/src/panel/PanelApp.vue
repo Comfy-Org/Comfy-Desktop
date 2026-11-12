@@ -170,6 +170,7 @@ const dashboardHomePage = ref<DashboardHomePage>('home')
 const appsVisit = ref(0)
 const appsAppOpen = ref(false)
 const appsAppEntered = ref(false)
+const sidebarMenuOpen = ref(false)
 const assetsFocusName = ref<string | null>(null)
 const sidebarCollapsed = useLocalStorage(SIDEBAR_COLLAPSED_KEY, false)
 const appsGrowBy = computed(() => (sidebarCollapsed.value ? 0 : SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH))
@@ -463,6 +464,7 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :folded="appsAppEntered"
         @navigate="handleSidebarNavigate"
+        @menu-open="sidebarMenuOpen = $event"
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
@@ -493,6 +495,7 @@ onUnmounted(() => {
               v-else-if="dashboardHomePage === 'apps'"
               :key="appsVisit"
               :grow-by="appsGrowBy"
+              :sidebar-menu-open="sidebarMenuOpen"
               @app-open="appsAppOpen = $event"
               @app-entered="appsAppEntered = $event"
               @view-in-assets="viewInAssets"

@@ -1195,6 +1195,7 @@ export interface ElectronApi {
   }): void
   listCatalogApps(): Promise<CatalogApp[]>
   hideApps(): void
+  captureApps(): Promise<Uint8Array<ArrayBuffer> | null>
   onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
   onAppsAppOpen(callback: (info: { open: boolean }) => void): Unsubscribe
   onAppsOutput(callback: (outputs: AppOutputs) => void): Unsubscribe
@@ -1327,7 +1328,7 @@ export interface ElectronApi {
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
-    openSettingsPage(page: PlatformSettingsPage, workspaceId?: string): Promise<void>
+    openSettingsPage(page: PlatformSettingsPage, workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }

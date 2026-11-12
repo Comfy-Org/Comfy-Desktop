@@ -62,6 +62,7 @@ export const APPS_PAGE_SETTLED_CHANNEL = 'comfy-apps:page-settled'
 export const APPS_CATALOG_CHANNEL = 'comfy-apps:catalog'
 export const APPS_OUTPUT_CHANNEL = 'comfy-apps:output'
 export const APPS_OUTPUT_ACTION_CHANNEL = 'comfy-apps:output-action'
+export const APPS_CAPTURE_CHANNEL = 'comfy-apps:capture'
 const BACKDROP_QUALITY = 80
 
 const appOpen = new Map<number, boolean>()
@@ -254,6 +255,20 @@ function hideApps(event: IpcMainEvent): void {
   views.get(found[0])?.setVisible(false)
 }
 
+function captureBackdrop(page: WebContents): Promise<Buffer | null> {
+  return page
+    .capturePage()
+    .then((image) => image.toJPEG(BACKDROP_QUALITY))
+    .catch(() => null)
+}
+
+async function captureApps(event: IpcMainInvokeEvent): Promise<Buffer | null> {
+  const found = entryForPanel(event.sender)
+  const page = found ? views.get(found[0])?.webContents : undefined
+  if (!page || page.isDestroyed()) return null
+  return captureBackdrop(page)
+}
+
 function fromAppsPage(event: IpcMainInvokeEvent): boolean {
   const ours = [...views.values()].some((v) => v.webContents === event.sender)
   const frame = event.senderFrame
@@ -273,10 +288,7 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const key = keyForAppsPage(page)
   const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
-  const backdrop = await page
-    .capturePage()
-    .then((image) => image.toJPEG(BACKDROP_QUALITY))
-    .catch(() => null)
+  const backdrop = await captureBackdrop(page)
   if (panel.isDestroyed() || !appOpen.get(key)) return
   panel.focus()
   panel.send(APPS_OUTPUT_CHANNEL, { ...outputs, backdrop })
@@ -577,6 +589,7 @@ function appsPages(): WebContents[] {
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  ipcMain.handle(APPS_CAPTURE_CHANNEL, captureApps)
   ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)
   ipcMain.handle(APPS_CATALOG_CHANNEL, (event) =>
     entryForPanel(event.sender) ? listCatalogApps(APPS_URL) : []

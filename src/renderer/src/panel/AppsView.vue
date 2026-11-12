@@ -13,8 +13,9 @@ interface ShownAppOutputs {
   backdropUrl: string | null
 }
 
-const { growBy = 0 } = defineProps<{
+const { growBy = 0, sidebarMenuOpen = false } = defineProps<{
   growBy?: number
+  sidebarMenuOpen?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -39,6 +40,34 @@ watch(openApp, (app) => {
   emit('app-open', app !== null)
 })
 watch(appEntered, (entered) => emit('app-entered', entered))
+
+const sidebarBackdropUrl = ref<string | null>(null)
+const coveredBySidebar = ref(false)
+let sidebarCoverRequest = 0
+
+function releaseSidebarBackdrop(): void {
+  if (sidebarBackdropUrl.value) URL.revokeObjectURL(sidebarBackdropUrl.value)
+  sidebarBackdropUrl.value = null
+}
+
+watch(
+  () => sidebarMenuOpen && openApp.value !== null,
+  async (cover) => {
+    const request = ++sidebarCoverRequest
+    if (!cover) {
+      coveredBySidebar.value = false
+      releaseSidebarBackdrop()
+      return
+    }
+    const backdrop = await window.api.captureApps().catch(() => null)
+    if (request !== sidebarCoverRequest) return
+    releaseSidebarBackdrop()
+    if (backdrop) {
+      sidebarBackdropUrl.value = URL.createObjectURL(new Blob([backdrop], { type: 'image/jpeg' }))
+    }
+    coveredBySidebar.value = true
+  }
+)
 
 const appFillsPage = computed(() => openApp.value !== null && appEntered.value)
 
@@ -104,6 +133,8 @@ function viewInAssets(index: number): void {
 }
 
 onBeforeUnmount(() => {
+  sidebarCoverRequest++
+  releaseSidebarBackdrop()
   closeAppOutputs()
   if (openApp.value) emit('app-open', false)
   if (appEntered.value) emit('app-entered', false)
@@ -139,8 +170,8 @@ onBeforeUnmount(() => {
     class="absolute inset-0"
     :url="openApp.url"
     :grow-by="growBy"
-    :covered="appOutputs !== null"
-    :backdrop="appOutputs?.backdropUrl ?? null"
+    :covered="appOutputs !== null || coveredBySidebar"
+    :backdrop="appOutputs?.backdropUrl ?? sidebarBackdropUrl"
     @failed="appFailed"
     @outputs="showAppOutputs"
     @app-open="closeApp"

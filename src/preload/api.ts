@@ -105,6 +105,7 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('assets:download', installationId, assetId, fileName),
     showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),
     hideApps: () => ipcRenderer.send('comfy-apps:hide'),
+    captureApps: () => ipcRenderer.invoke('comfy-apps:capture'),
     listCatalogApps: () => ipcRenderer.invoke('comfy-apps:catalog'),
     onAppsLoadFailed: (callback) => {
       const handler = (_event: IpcRendererEvent, info: unknown) =>

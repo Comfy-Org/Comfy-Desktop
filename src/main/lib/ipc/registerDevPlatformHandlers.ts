@@ -196,9 +196,10 @@ export function registerDevPlatformHandlers(): void {
         PLATFORM_SETTINGS_PATHS[page as keyof typeof PLATFORM_SETTINGS_PATHS],
         PLATFORM_WEB_BASE_URL
       )
-      if (typeof workspaceId === 'string' && workspaceId.trim()) {
-        url.searchParams.set('workspace', workspaceId)
+      if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+        throw new Error('A workspace is required to open Developer Platform settings.')
       }
+      url.searchParams.set('workspace', workspaceId)
       await shell.openExternal(url.toString())
     }
   )

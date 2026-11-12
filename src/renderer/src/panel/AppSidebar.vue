@@ -19,6 +19,7 @@ const { activePage, folded = false } = defineProps<{
 
 const emit = defineEmits<{
   navigate: [page: DashboardPage]
+  'menu-open': [open: boolean]
 }>()
 
 interface SidebarRow {
@@ -140,6 +141,10 @@ function navigate(page: DashboardPage): void {
       </template>
     </nav>
 
-    <SidebarAccount class="mt-2 w-full shrink-0" :collapsed="collapsed" />
+    <SidebarAccount
+      class="mt-2 w-full shrink-0"
+      :collapsed="collapsed"
+      @menu-open="emit('menu-open', $event)"
+    />
   </aside>
 </template>

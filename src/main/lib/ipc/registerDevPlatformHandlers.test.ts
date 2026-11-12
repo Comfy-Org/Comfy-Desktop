@@ -251,12 +251,12 @@ describe('registerDevPlatformHandlers', () => {
     expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url)
   })
 
-  it('opens a settings page without a workspace when none is known', async () => {
-    await handler('comfybuilder:openSettingsPage')({}, 'billing', undefined)
-
-    expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(
-      'https://platform.comfy.org/settings/billing'
+  it('rejects a missing workspace instead of opening an unscoped settings page', async () => {
+    await expect(handler('comfybuilder:openSettingsPage')({}, 'billing', '')).rejects.toThrow(
+      'A workspace is required to open Developer Platform settings.'
     )
+
+    expect(mocks.openExternal).not.toHaveBeenCalled()
   })
 
   it('refuses a settings page Platform does not have', async () => {

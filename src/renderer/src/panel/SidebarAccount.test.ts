@@ -37,27 +37,32 @@ function toComputedColor(color: string | undefined): string {
   return probe.style.backgroundColor
 }
 
-function installApi(status: AuthStatus) {
+interface ApiOptions {
+  listWorkspaces?: () => Promise<Workspace[]>
+  savedWorkspaceId?: string
+}
+
+function installApi(status: AuthStatus, options: ApiOptions = {}) {
   const comfybuilder = {
     getAuthStatus: vi.fn().mockResolvedValue(status),
     onAuthChanged: vi.fn(() => () => {}),
     signIn: vi.fn().mockResolvedValue({ signedIn: true }),
     signOut: vi.fn().mockResolvedValue({ signedIn: false }),
-    listWorkspaces: vi.fn().mockResolvedValue(WORKSPACES),
+    listWorkspaces: vi.fn(options.listWorkspaces ?? (() => Promise.resolve(WORKSPACES))),
     switchWorkspace: vi.fn(),
     openSettingsPage: vi.fn().mockResolvedValue(undefined)
   }
   ;(window as unknown as { api: unknown }).api = {
     comfybuilder,
-    getSetting: vi.fn().mockResolvedValue(undefined),
+    getSetting: vi.fn().mockResolvedValue(options.savedWorkspaceId),
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {})
   }
   return comfybuilder
 }
 
-async function mountAccount(status: AuthStatus, collapsed = false) {
-  const comfybuilder = installApi(status)
+async function mountAccount(status: AuthStatus, collapsed = false, options: ApiOptions = {}) {
+  const comfybuilder = installApi(status, options)
   setActivePinia(createPinia())
   const wrapper = mount(SidebarAccount, {
     attachTo: document.body,
@@ -261,5 +266,125 @@ describe('SidebarAccount', () => {
 
     expect(comfybuilder.signOut).toHaveBeenCalledOnce()
     expect(wrapper.find('[data-testid="devplatform-account-signin"]').exists()).toBe(true)
+  })
+
+  it('shows a workspace with no plan field on a neutral tile, as its list row does', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN)
+    useDashboardScopeStore().selectWorkspace('legacy')
+    await flushPromises()
+
+    const avatar = wrapper.get(
+      '[data-testid="workspace-switcher-trigger"] [data-testid="workspace-avatar"]'
+    ).element as HTMLElement
+    expect(avatar.style.backgroundColor).toBe('')
+  })
+
+  it('shrinks to the workspace tile on the collapsed sidebar and names it in a tooltip', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN, true)
+
+    const trigger = wrapper.get('[data-testid="workspace-switcher-trigger"]')
+    expect(trigger.text()).toBe('S')
+    expect(trigger.attributes('title')).toBe('Silverside')
+  })
+
+  it('tells the sidebar while its menu is open', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN)
+
+    await openMenu(wrapper)
+    window.dispatchEvent(new Event('blur'))
+    await flushPromises()
+
+    expect(wrapper.emitted('menu-open')).toEqual([[true], [false]])
+    expect(document.body.querySelector('[data-testid="workspace-menu"]')).toBeNull()
+  })
+
+  it('keeps the settings links off until it knows which workspace to open them in', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () => new Promise(() => {}),
+      savedWorkspaceId: 'w2'
+    })
+
+    const body = await openMenu(wrapper)
+
+    expect(wrapper.get('[data-testid="workspace-switcher-trigger"]').text()).toBe('WWorkspace')
+    const settings = body.get('[data-testid="workspace-settings"]')
+    const credits = body.get('[data-testid="workspace-manage-credits"]')
+    expect(settings.attributes('disabled')).toBeDefined()
+    expect(credits.attributes('disabled')).toBeDefined()
+    await credits.trigger('click')
+    expect(comfybuilder.openSettingsPage).not.toHaveBeenCalled()
+  })
+
+  it('shows two loading rows while the workspaces load', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () => new Promise(() => {})
+    })
+
+    const body = await openWorkspaces(wrapper)
+
+    expect(body.findAll('[data-testid="workspace-skeleton"]')).toHaveLength(2)
+    expect(body.get('[data-testid="workspace-switcher-panel"]').attributes('aria-busy')).toBe(
+      'true'
+    )
+  })
+
+  it('says when the workspaces cannot load and tries again when the menu opens', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () => Promise.reject(new Error('offline'))
+    })
+    expect(comfybuilder.listWorkspaces).toHaveBeenCalledOnce()
+
+    const body = await openWorkspaces(wrapper)
+
+    expect(comfybuilder.listWorkspaces).toHaveBeenCalledTimes(2)
+    expect(body.get('[data-testid="workspace-load-error"]').text()).toBe(
+      "Couldn't load your workspaces. Please try again later."
+    )
+  })
+
+  it('says so when there are no workspaces', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () => Promise.resolve([])
+    })
+
+    const body = await openWorkspaces(wrapper)
+
+    expect(body.get('[data-testid="workspace-switcher-empty"]').text()).toBe(
+      "You don't have access to any workspaces yet."
+    )
+  })
+
+  it('offers search above six workspaces and forgets the query when the list closes', async () => {
+    const many: Workspace[] = Array.from({ length: 7 }, (_, index) => ({
+      id: `t${index}`,
+      name: index === 0 ? 'Silverside' : `Team ${index}`,
+      type: 'team',
+      role: 'member'
+    }))
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () => Promise.resolve(many)
+    })
+
+    let body = await openWorkspaces(wrapper)
+    const search = body.get<HTMLInputElement>('[data-testid="workspace-switcher-panel"] input')
+    await userEvent.fill(search.element, 'team 3')
+    await vi.waitFor(() => expect(body.findAll('[role="option"]')).toHaveLength(1))
+    await userEvent.fill(search.element, 'nothing')
+    await vi.waitFor(() =>
+      expect(body.get('[data-testid="workspace-switcher-empty"]').text()).toBe(
+        'No workspaces match your search.'
+      )
+    )
+
+    await userEvent.keyboard('{Escape}')
+    await flushPromises()
+    await body.get('[data-testid="workspace-switch-action"]').trigger('click')
+    await flushPromises()
+    body = new DOMWrapper(document.body)
+
+    expect(
+      body.get<HTMLInputElement>('[data-testid="workspace-switcher-panel"] input').element.value
+    ).toBe('')
+    expect(body.findAll('[role="option"]')).toHaveLength(7)
   })
 })

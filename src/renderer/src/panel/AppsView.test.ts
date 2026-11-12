@@ -12,8 +12,9 @@ let appsAppOpen: ((info: { open: boolean }) => void) | null = null
 let appsSettled: (() => void) | null = null
 let appsOutput: ((outputs: AppOutputs) => void) | null = null
 const appsOutputAction = vi.fn()
+const captureApps = vi.fn()
 
-async function mountApps(props: { growBy?: number } = {}) {
+async function mountApps(props: { growBy?: number; sidebarMenuOpen?: boolean } = {}) {
   const wrapper = mount(AppsView, {
     props,
     global: { stubs: { teleport: { template: '<div><slot /></div>' } } }
@@ -61,8 +62,10 @@ beforeEach(() => {
       appsOutput = callback
       return () => (appsOutput = null)
     }),
-    appsOutputAction
+    appsOutputAction,
+    captureApps
   }
+  captureApps.mockResolvedValue(new Uint8Array([7]))
 })
 
 describe('AppsView', () => {
@@ -159,6 +162,38 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
     expect(showApps).toHaveBeenCalled()
+  })
+
+  it('covers an open app with a still of it while the sidebar menu is open, so the menu shows above it', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    showApps.mockClear()
+    hideApps.mockClear()
+
+    await wrapper.setProps({ sidebarMenuOpen: true })
+    await flushPromises()
+
+    expect(captureApps).toHaveBeenCalledOnce()
+    expect(hideApps).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(true)
+
+    await wrapper.setProps({ sidebarMenuOpen: false })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
+    expect(showApps).toHaveBeenCalled()
+  })
+
+  it('leaves the gallery alone when the sidebar menu opens with no app open', async () => {
+    const wrapper = await mountApps()
+
+    await wrapper.setProps({ sidebarMenuOpen: true })
+    await flushPromises()
+
+    expect(captureApps).not.toHaveBeenCalled()
+    expect(hideApps).not.toHaveBeenCalled()
   })
 
   it("closes an app's output dialog when the app goes back", async () => {

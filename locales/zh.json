@@ -1435,8 +1435,6 @@
       "cta": "登录"
     },
     "account": {
-      "signOut": "退出登录",
-      "signedInAs": "已登录为 {email}",
       "installationInProgressTitle": "安装正在进行中",
       "installationInProgressMessage": "退出登录将取消安装。是否取消安装并退出登录？",
       "cancelInstallationAndSignOut": "取消安装并退出登录"
@@ -1456,6 +1454,7 @@
       "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
     },
     "workspaceMenu": {
+      "workspace": "工作区",
       "switchWorkspace": "切换工作区",
       "workspaceSettings": "工作区设置",
       "managePlanAndCredits": "管理套餐和积分",

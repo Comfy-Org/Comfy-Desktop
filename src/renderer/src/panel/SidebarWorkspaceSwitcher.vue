@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { PopoverAnchor, PopoverRoot, PopoverTrigger } from 'reka-ui'
@@ -22,6 +22,10 @@ const { collapsed } = defineProps<{
   collapsed: boolean
 }>()
 
+const emit = defineEmits<{
+  'menu-open': [open: boolean]
+}>()
+
 const SEARCH_THRESHOLD = 6
 
 const PLAN_LABELS: Readonly<Record<string, string>> = {
@@ -38,7 +42,7 @@ const { t } = useI18n()
 const store = useAuthStore()
 const dashboardScope = useDashboardScopeStore()
 
-const ROLE_LABELS = computed<Readonly<Record<string, string>>>(() => ({
+const roleLabels = computed<Readonly<Record<string, string>>>(() => ({
   owner: t('devPlatform.workspaceMenu.role.owner'),
   member: t('devPlatform.workspaceMenu.role.member')
 }))
@@ -62,7 +66,7 @@ function planLabel(tier: string | null | undefined): string {
 }
 
 function roleLabel(role: string): string {
-  return (Object.hasOwn(ROLE_LABELS.value, role) && ROLE_LABELS.value[role]) || role
+  return (Object.hasOwn(roleLabels.value, role) && roleLabels.value[role]) || role
 }
 
 const currentWorkspace = computed(() =>
@@ -75,11 +79,9 @@ const currentWorkspaceName = computed(
   () =>
     currentWorkspace.value?.name ??
     (statusIsCurrent.value ? store.status.workspaceName : undefined) ??
-    t('devPlatform.workspace.currentFallback')
+    t('devPlatform.workspaceMenu.workspace')
 )
-const currentWorkspaceTier = computed(() =>
-  currentWorkspace.value ? (currentWorkspace.value.subscriptionTier ?? null) : undefined
-)
+const currentWorkspaceTier = computed(() => currentWorkspace.value?.subscriptionTier)
 const currentWorkspaceMeta = computed(() => {
   const current = currentWorkspace.value
   if (!current) return []
@@ -125,11 +127,16 @@ watch(
 )
 
 watch(menuOpen, (open) => {
+  emit('menu-open', open)
   if (open) {
     if (store.workspacesError && !store.loadingWorkspaces) void store.fetchWorkspaces()
     return
   }
   workspacesOpen.value = false
+})
+
+onBeforeUnmount(() => {
+  if (menuOpen.value) emit('menu-open', false)
 })
 
 watch(workspacesOpen, (open) => {
@@ -151,8 +158,12 @@ function selectWorkspace(workspace: Workspace): void {
 }
 
 function openSettingsPage(page: PlatformSettingsPage): void {
+  const workspaceId = currentCloudWorkspaceId.value
+  if (!workspaceId) return
   menuOpen.value = false
-  void window.api.comfybuilder.openSettingsPage(page, currentCloudWorkspaceId.value).catch(() => {})
+  void window.api.comfybuilder
+    .openSettingsPage(page, workspaceId)
+    .catch((error) => console.warn('Could not open Developer Platform settings', error))
 }
 
 async function signOut(): Promise<void> {
@@ -172,7 +183,7 @@ async function signOut(): Promise<void> {
         type="button"
         variant="textonly"
         size="unset"
-        class="h-12 w-full rounded-lg text-sm font-medium hover:bg-secondary data-[state=open]:bg-secondary"
+        class="h-12 w-full rounded-lg text-[13px]/5 font-medium hover:bg-secondary data-[state=open]:bg-secondary"
         :class="collapsed ? 'justify-center p-1' : 'justify-start gap-3 px-3'"
         data-testid="workspace-switcher-trigger"
         :aria-label="currentWorkspaceName"
@@ -223,7 +234,7 @@ async function signOut(): Promise<void> {
                       class="flex items-center gap-1 overflow-hidden text-2xs/tight font-medium whitespace-nowrap text-muted-foreground uppercase"
                       data-testid="workspace-menu-meta"
                     >
-                      <template v-for="(part, index) in currentWorkspaceMeta" :key="part">
+                      <template v-for="(part, index) in currentWorkspaceMeta" :key="index">
                         <span
                           v-if="index > 0"
                           class="size-0.75 shrink-0 rounded-full bg-current"
@@ -247,6 +258,7 @@ async function signOut(): Promise<void> {
                 size="unset"
                 class="mx-2 h-10 justify-start gap-2 rounded-md px-2 font-normal"
                 data-testid="workspace-settings"
+                :disabled="!currentCloudWorkspaceId"
                 @click="openSettingsPage(settingsPage)"
               >
                 <Settings class="text-muted-foreground" :size="16" aria-hidden="true" />
@@ -260,6 +272,7 @@ async function signOut(): Promise<void> {
                 size="unset"
                 class="mx-2 h-10 justify-start gap-2 rounded-md px-2 font-normal"
                 data-testid="workspace-manage-credits"
+                :disabled="!currentCloudWorkspaceId"
                 @click="openSettingsPage('billing')"
               >
                 <CreditCard class="text-muted-foreground" :size="16" aria-hidden="true" />

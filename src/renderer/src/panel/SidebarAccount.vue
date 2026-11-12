@@ -15,6 +15,10 @@ const { collapsed } = defineProps<{
   collapsed: boolean
 }>()
 
+const emit = defineEmits<{
+  'menu-open': [open: boolean]
+}>()
+
 const SHOWCASE_IMAGES = [portraitSun, hillsSunset, portraitGarden]
 
 const { t } = useI18n()
@@ -39,7 +43,11 @@ async function onSignIn(): Promise<void> {
 
 <template>
   <div class="sidebar-account">
-    <SidebarWorkspaceSwitcher v-if="store.isSignedIn" :collapsed="collapsed" />
+    <SidebarWorkspaceSwitcher
+      v-if="store.isSignedIn"
+      :collapsed="collapsed"
+      @menu-open="emit('menu-open', $event)"
+    />
 
     <Button
       v-else-if="collapsed"
