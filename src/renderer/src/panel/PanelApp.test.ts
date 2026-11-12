@@ -1288,6 +1288,7 @@ describe('PanelApp', () => {
     ])
     Object.assign(window.api, {
       listCatalogApps,
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       showApps: vi.fn(),
       hideApps: vi.fn(),
       onAppsLoadFailed: vi.fn(() => () => {}),
@@ -1320,6 +1321,7 @@ describe('PanelApp', () => {
     Object.assign(window.api, {
       listCatalogApps: vi.fn().mockResolvedValue([]),
       listAssets: vi.fn().mockResolvedValue([]),
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       onAppsLoadFailed: vi.fn(() => () => {}),
       onAppsAppOpen: vi.fn(() => () => {}),
       onAppsOutput: vi.fn(() => () => {}),
@@ -1355,6 +1357,7 @@ describe('PanelApp', () => {
           url: 'https://apps.example/apps/studio/desktop.html'
         }
       ]),
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       showApps: vi.fn(),
       hideApps: vi.fn(),
       onAppsLoadFailed: vi.fn(() => () => {}),
