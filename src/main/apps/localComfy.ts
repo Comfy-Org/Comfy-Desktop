@@ -360,7 +360,9 @@ async function queueIsEmpty(port: number): Promise<boolean> {
 }
 
 export async function freeIfDone(port: number): Promise<boolean> {
+  const seen = lastUse
   if (appsRunning()?.port !== port || !(await queueIsEmpty(port))) return false
+  if (lastUse !== seen || appsRunning()?.port !== port) return false
   try {
     const res = await fetch(`http://127.0.0.1:${port}/free`, {
       method: 'POST',
@@ -398,7 +400,9 @@ async function stopWhenIdle(): Promise<void> {
     now: Date.now()
   })
   if (!idle) return
+  const seen = lastUse
   if (downloads.size > 0 || starting || !(await queueIsEmpty(run.port))) return touch()
+  if (lastUse !== seen || downloads.size > 0 || starting) return
   await stopRunning(run.id)
 }
 

@@ -35,7 +35,7 @@ test('accept ToS + pick cloud auto-launches the seeded Cloud install @lifecycle'
   expect(await ctx.panel.click('[data-testid="first-use-continue"]')).toBe(true)
 
   await expect
-    .poll(() => ctx.titleBar.exists('.title-install-pill:not(.is-install-less)'), {
+    .poll(() => ctx.titleBar.exists('[data-testid="title-home-button"]'), {
       timeout: 30_000,
       intervals: [100, 200, 500]
     })

@@ -37,6 +37,7 @@ export interface OutputDetailItem {
   workflow: boolean | null
   savedIn?: string | null
   inCloud?: boolean
+  modifiedAt?: string | null
 }
 
 type Zoom = 'fit' | 0.5 | 1 | 2
@@ -65,7 +66,7 @@ const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const natural = ref<{ width: number; height: number } | null>(null)
 const zoom = ref<Zoom>('fit')
 
-const item = computed(() => items[index.value]!)
+const item = computed(() => items[index.value] ?? items[0]!)
 const reducedMotion = computed(() => preferredMotion.value === 'reduce')
 const extension = computed(() => {
   const dot = item.value.name.lastIndexOf('.')
@@ -77,6 +78,11 @@ const subtitle = computed(() =>
     item.value.createdAt
       ? t('assets.detail.createdAt', {
           date: new Date(item.value.createdAt).toLocaleString(locale.value)
+        })
+      : null,
+    item.value.modifiedAt
+      ? t('assets.detail.modifiedAt', {
+          date: new Date(item.value.modifiedAt).toLocaleString(locale.value)
         })
       : null
   ]
@@ -128,6 +134,7 @@ function onVideoLoad(event: Event): void {
 }
 
 function step(delta: number): void {
+  if (items.length === 0) return
   index.value = (index.value + delta + items.length) % items.length
 }
 

@@ -275,7 +275,6 @@ export function registerPanelViewIpc(): void {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents !== event.sender) continue
       if (entry.installationId === null) setActivePanel(id, panel)
-      else if (entry.activePanel !== 'comfy') setActivePanel(id, panel === 'comfy' ? 'home' : panel)
       return
     }
   })

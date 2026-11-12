@@ -211,6 +211,7 @@ describe('serveOutputFile', () => {
     expect(fetchFile).toHaveBeenCalledWith(expect.stringMatching(/^file:\/\/.*picture\.png$/))
 
     expect(ok.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    expect(ok.headers.get('Content-Security-Policy')).toBe('sandbox')
 
     const refused = await serveOutputFile(
       new Request(outputFileUrl(path.join(outsideDir, 'secret.png')))

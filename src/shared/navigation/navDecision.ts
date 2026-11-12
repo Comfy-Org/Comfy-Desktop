@@ -6,7 +6,7 @@ export type TargetRun = 'stopped' | 'running-elsewhere' | 'self'
 
 export type Intent = 'primary' | 'new-window'
 
-export type Verb = 'switch' | 'restart' | 'open-new' | 'focus' | 'no-op' | 'install-wizard'
+export type Verb = 'restart' | 'open-new' | 'focus' | 'no-op' | 'install-wizard'
 
 export const NAV_LABEL = {
   start: 'instancePicker.open',
@@ -63,7 +63,7 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
   [cellKey('dashboard', 'dashboard', 'self'), NO_OP],
   [
     cellKey('dashboard', 'instance', 'stopped'),
-    dec({ window: 'same', verb: 'switch', primaryLabel: NAV_LABEL.start })
+    dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.start })
   ],
   [
     cellKey('dashboard', 'instance', 'running-elsewhere'),
@@ -71,12 +71,7 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
   ],
   [
     cellKey('dashboard', 'cloud', 'stopped'),
-    dec({
-      window: 'same',
-      verb: 'switch',
-      primaryLabel: NAV_LABEL.openCloud,
-      secondary: [OPEN_NEW_WINDOW_SECONDARY]
-    })
+    dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.openCloud })
   ],
   [
     cellKey('dashboard', 'cloud', 'running-elsewhere'),
@@ -102,12 +97,7 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
   ],
   [
     cellKey('instance', 'instance', 'stopped'),
-    dec({
-      window: 'same',
-      verb: 'switch',
-      primaryLabel: NAV_LABEL.switch,
-      secondary: [OPEN_NEW_WINDOW_SECONDARY]
-    })
+    dec({ window: 'new', verb: 'open-new', primaryLabel: NAV_LABEL.start })
   ],
   [
     cellKey('instance', 'instance', 'running-elsewhere'),

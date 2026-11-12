@@ -6,12 +6,12 @@ import { useSessionStore } from '../stores/sessionStore'
 import { NAV_LABEL, type NavDecision } from '../../../shared/navigation/navDecision'
 import InstancePickerView from './InstancePickerView.vue'
 
-const SWITCH_DECISION: NavDecision = {
-  window: 'same',
-  verb: 'switch',
+const OPEN_NEW_DECISION: NavDecision = {
+  window: 'new',
+  verb: 'open-new',
   primaryLabel: NAV_LABEL.start,
   secondary: [],
-  telemetry: 'instance.switched'
+  telemetry: null
 }
 const RESTART_DECISION: NavDecision = {
   window: 'same',
@@ -86,6 +86,7 @@ interface MockSnapshot {
 
 interface BridgeState {
   picks: string[]
+  newWindows: string[]
   restarts: { id: string; opts?: { confirmed?: boolean } }[]
   backgroundOps: { installationId: string; actionId: string }[]
   newInstallCount: number
@@ -97,6 +98,7 @@ interface BridgeState {
 function installMockBridge(): BridgeState {
   const state: BridgeState = {
     picks: [],
+    newWindows: [],
     restarts: [],
     backgroundOps: [],
     newInstallCount: 0,
@@ -107,6 +109,9 @@ function installMockBridge(): BridgeState {
   const bridge = {
     pickInstall: (id: string) => {
       state.picks.push(id)
+    },
+    openInstallNewWindow: (id: string) => {
+      state.newWindows.push(id)
     },
     restartInstall: (id: string, opts?: { confirmed?: boolean }) => {
       state.restarts.push({ id, opts })
@@ -502,7 +507,7 @@ describe('comfyTitlePopup/InstancePickerView', () => {
   })
 
   describe('primary action dispatch', () => {
-    it('dispatches pickInstall when the selected install is not running', async () => {
+    it('opens the selected install in a new window when it is not running', async () => {
       const { default: ComfyUISettingsContent } =
         await import('../components/settings/ComfyUISettingsContent.vue')
       const wrapper = await mountPicker({
@@ -512,9 +517,10 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       })
       const settings = wrapper.findComponent(ComfyUISettingsContent)
       expect(settings.exists()).toBe(true)
-      settings.vm.$emit('primary-action', SWITCH_DECISION)
+      settings.vm.$emit('primary-action', OPEN_NEW_DECISION)
       await flushPromises()
-      expect(bridge.picks).toEqual(['a'])
+      expect(bridge.newWindows).toEqual(['a'])
+      expect(bridge.picks).toEqual([])
       expect(bridge.restarts).toEqual([])
     })
 

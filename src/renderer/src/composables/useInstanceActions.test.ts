@@ -19,7 +19,7 @@ function installation(over: Partial<Installation> = {}): Installation {
 function decision(over: Partial<NavDecision>): NavDecision {
   return {
     window: 'same',
-    verb: 'switch',
+    verb: 'focus',
     primaryLabel: 'instancePicker.switch',
     secondary: [],
     telemetry: null,
@@ -34,36 +34,11 @@ function makeDeps(
   return {
     bridge,
     confirmLocalKill: vi.fn().mockResolvedValue(true),
-    confirmSwitch: vi.fn().mockResolvedValue('switch'),
     ...over
   }
 }
 
 describe('useInstanceActions.dispatch', () => {
-  it('switch → confirm in-drawer then pickInstall(confirmed:true)', async () => {
-    const bridge = makeBridge()
-    const deps = makeDeps(bridge)
-    await useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
-    expect(deps.confirmSwitch).toHaveBeenCalled()
-    expect(bridge.pickInstall).toHaveBeenCalledWith('a', { confirmed: true })
-  })
-
-  it('switch → "new-window" choice routes to openInstallNewWindow, not pickInstall', async () => {
-    const bridge = makeBridge()
-    const deps = makeDeps(bridge, { confirmSwitch: vi.fn().mockResolvedValue('new-window') })
-    await useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
-    expect(bridge.openInstallNewWindow).toHaveBeenCalledWith('a')
-    expect(bridge.pickInstall).not.toHaveBeenCalled()
-  })
-
-  it('switch → cancel fires nothing', async () => {
-    const bridge = makeBridge()
-    const deps = makeDeps(bridge, { confirmSwitch: vi.fn().mockResolvedValue('cancel') })
-    await useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
-    expect(bridge.pickInstall).not.toHaveBeenCalled()
-    expect(bridge.openInstallNewWindow).not.toHaveBeenCalled()
-  })
-
   it('routes restart → restartInstall(confirmed:true) after a confirm', async () => {
     const bridge = makeBridge()
     const deps = makeDeps(bridge)
@@ -123,7 +98,7 @@ describe('useInstanceActions.dispatch', () => {
   it('no-ops when the bridge is undefined', async () => {
     const deps = { ...makeDeps(makeBridge()), bridge: undefined }
     await expect(
-      useInstanceActions(deps).dispatch(decision({ verb: 'switch' }), installation())
+      useInstanceActions(deps).dispatch(decision({ verb: 'focus' }), installation())
     ).resolves.toBeUndefined()
   })
 
