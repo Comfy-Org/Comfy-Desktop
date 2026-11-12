@@ -119,13 +119,17 @@ export function updateBuild(b: ProtoInstance, channel?: Channel): void {
 export const leaving = ref<string>()
 
 /* ---- Snapshots (ComfyUI-Manager's) ---- */
-export type Trigger = 'boot' | 'manual' | 'pre-update' | 'restart'
+export type Trigger = 'boot' | 'manual' | 'pre-update' | 'post-update' | 'post-restore' | 'restart'
 export const TRIGGERS: Record<Trigger, string> = {
   boot: 'Boot',
   manual: 'Manual',
-  'pre-update': 'Pre-Update',
-  restart: 'Manager Restart'
+  'pre-update': 'Update',
+  'post-update': 'Updated',
+  'post-restore': 'Restored',
+  restart: 'Manager'
 }
+/** Post-Update and Post-Restore mark a change of state: a brighter tag and dot. */
+export const isStateTrigger = (t: Trigger): boolean => t === 'post-update' || t === 'post-restore'
 export interface Snapshot {
   id: string
   label?: string
@@ -154,6 +158,14 @@ export function snapshotsOf(b: ProtoInstance): Snapshot[] {
                 label: 'before-lora-pack',
                 trigger: 'manual',
                 when: 'Yesterday',
+                comfy: v,
+                nodes: n - 1,
+                pkgs: 209
+              },
+              {
+                id: 's3b',
+                trigger: 'post-update',
+                when: '6 days ago',
                 comfy: v,
                 nodes: n - 1,
                 pkgs: 209

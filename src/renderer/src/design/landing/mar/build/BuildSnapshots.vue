@@ -10,6 +10,7 @@ import MarItemMenu from '../pages/MarItemMenu.vue'
 import type { MenuLine } from '../pages/menu'
 import {
   TRIGGERS,
+  isStateTrigger,
   createSnapshot,
   deleteSnapshot,
   snapshotsOf,
@@ -30,7 +31,7 @@ import './buildTabs.css'
 const { env } = defineProps<{ env: ProtoInstance }>()
 const snaps = snapshotsOf(env)
 const state = stateOf(env)
-const open = ref<string>()
+const open = ref<string | undefined>(snaps[0]?.id)
 const naming = ref(false)
 const label = ref('')
 
@@ -74,19 +75,27 @@ function diff(a: Snapshot, b: Snapshot) {
     more: Math.max(0, Math.abs(p) - 3)
   }
 }
-const delta = (i: number): string | undefined => {
+/** What changed since the snapshot before: added in green, removed in
+ *  red, per nodes and pkgs; nothing when nothing changed. */
+const delta = (i: number): { n: string; tone: 'add' | 'del'; label: string }[] => {
   const older = snaps[i + 1]
-  if (!older) return `${snaps[i]!.nodes} nodes`
+  if (!older) return []
   const d = snaps[i]!.nodes - older.nodes
   const p = snaps[i]!.pkgs - older.pkgs
-  return (
-    [
-      d && `${d > 0 ? '+' : '−'}${Math.abs(d)} nodes`,
-      p && `${p > 0 ? '+' : '−'}${Math.abs(p)} pkgs`
-    ]
-      .filter(Boolean)
-      .join(' · ') || undefined
-  )
+  const part = (v: number, label: string) =>
+    v ? [{ n: `${v > 0 ? '+' : '−'}${Math.abs(v)}`, tone: v > 0 ? 'add' : 'del', label }] : []
+  return [...part(d, 'nodes'), ...part(p, 'pkgs')] as ReturnType<typeof delta>
+}
+/** ComfyUI moved since the snapshot before: "v0.37.2 → v0.37.4". */
+const moved = (i: number): string | undefined => {
+  const older = snaps[i + 1]
+  return !snaps[i]!.label && older && older.comfy !== snaps[i]!.comfy ? older.comfy : undefined
+}
+const diffOpen = ref<string[]>([])
+function toggleDiff(key: string): void {
+  const at = diffOpen.value.indexOf(key)
+  if (at < 0) diffOpen.value.push(key)
+  else diffOpen.value.splice(at, 1)
 }
 const lines = (s: Snapshot, i: number): MenuLine[] => [
   { label: 'Export', icon: Download, run: () => toast('Snapshot exported.') },
@@ -140,7 +149,8 @@ const latest = computed(() => snaps[0]?.when)
       class="mar-sn"
       :class="[
         open === s.id && 'is-open',
-        i === 0 && (state.run === 'running' ? 'is-now' : 'is-latest')
+        i === 0 && (state.run === 'running' ? 'is-now' : 'is-latest'),
+        isStateTrigger(s.trigger) && 'is-state'
       ]"
     >
       <span class="mar-sn-dot" />
@@ -155,9 +165,21 @@ const latest = computed(() => snaps[0]?.when)
         <span class="mar-sn-when">{{ s.when }}</span>
         <ChevronRight :size="14" class="mar-sn-chev" />
         <span class="mar-sn-trigger">{{ TRIGGERS[s.trigger] }}</span>
-        <span class="mar-sn-name">{{ s.label ?? s.comfy }}</span>
-        <span v-if="i === 0" class="mar-tag">Latest</span>
-        <span v-if="delta(i)" class="mar-sn-delta">{{ delta(i) }}</span>
+        <span class="mar-sn-name"
+          ><template v-if="moved(i)"
+            ><span class="mar-sn-prev">{{ moved(i) }} →</span> <b>{{ s.comfy }}</b></template
+          ><template v-else>{{ s.label ?? s.comfy }}</template></span
+        >
+        <span v-if="i === 0" class="mar-sn-latest">Latest</span>
+        <span v-if="delta(i).length" class="mar-sn-delta">
+          <template v-for="(d, di) in delta(i)" :key="d.label"
+            ><span v-if="di" aria-hidden="true">·</span
+            ><span
+              ><span :class="d.tone === 'add' ? 'is-add' : 'is-del'">{{ d.n }}</span>
+              {{ d.label }}</span
+            ></template
+          >
+        </span>
         <span class="mar-bt-acts" @click.stop>
           <Button v-if="i > 0" variant="ghost" size="sm" @click="restore(s)"
             ><RotateCcw :size="13" />Restore</Button
@@ -166,7 +188,14 @@ const latest = computed(() => snaps[0]?.when)
         </span>
       </div>
       <div v-if="open === s.id" class="mar-sn-body">
-        <template
+        <p class="mar-sn-meta">
+          {{ s.nodes }} nodes<span aria-hidden="true">·</span>{{ s.pkgs }} packages<template
+            v-if="s.label"
+            ><span aria-hidden="true">·</span
+            ><span class="text-base-foreground">{{ s.label }}</span></template
+          >
+        </p>
+        <div
           v-for="part in [
             ...(snaps[i + 1]
               ? [{ title: 'What changed in this snapshot', d: diff(snaps[i + 1]!, s) }]
@@ -175,42 +204,55 @@ const latest = computed(() => snaps[0]?.when)
           ]"
           :key="part.title"
         >
-          <p class="mar-sn-h">{{ part.title }}</p>
-          <p
-            v-if="!part.d.comfy && !part.d.nodes.length && !part.d.pkgs.length"
-            class="mar-bt-hint"
+          <button
+            type="button"
+            class="mar-sn-h"
+            :aria-expanded="diffOpen.includes(`${s.id}:${part.title}`)"
+            @click="toggleDiff(`${s.id}:${part.title}`)"
           >
-            No changes from the previous snapshot.
-          </p>
-          <dl class="mar-sn-diff">
-            <template v-if="part.d.comfy"
-              ><dt>ComfyUI</dt>
-              <dd>{{ part.d.comfy }}</dd></template
+            <ChevronRight
+              :size="13"
+              class="mar-sn-dchev"
+              :class="diffOpen.includes(`${s.id}:${part.title}`) && 'rotate-90'"
+            />{{ part.title }}
+          </button>
+          <div v-if="diffOpen.includes(`${s.id}:${part.title}`)" class="mar-sn-diffbox">
+            <p
+              v-if="!part.d.comfy && !part.d.nodes.length && !part.d.pkgs.length"
+              class="mar-bt-hint"
             >
-            <template v-if="part.d.nodes.length"
-              ><dt>Custom Nodes ({{ part.d.nodes.length }})</dt>
-              <dd>
-                <span
-                  v-for="n in part.d.nodes"
-                  :key="n"
-                  :class="n[0] === '+' ? 'is-add' : 'is-del'"
-                  >{{ n }}</span
-                >
-              </dd></template
-            >
-            <template v-if="part.d.pkgs.length"
-              ><dt>Pip Packages ({{ part.d.pkgs.length + part.d.more }})</dt>
-              <dd>
-                <span
-                  v-for="n in part.d.pkgs"
-                  :key="n"
-                  :class="n[0] === '+' ? 'is-add' : n[0] === '~' ? '' : 'is-del'"
-                  >{{ n }}</span
-                ><span v-if="part.d.more" class="mar-bt-hint">and {{ part.d.more }} more</span>
-              </dd></template
-            >
-          </dl>
-        </template>
+              No changes from the previous snapshot.
+            </p>
+            <dl class="mar-sn-diff">
+              <template v-if="part.d.comfy"
+                ><dt>ComfyUI</dt>
+                <dd>{{ part.d.comfy }}</dd></template
+              >
+              <template v-if="part.d.nodes.length"
+                ><dt>Custom Nodes ({{ part.d.nodes.length }})</dt>
+                <dd>
+                  <span
+                    v-for="n in part.d.nodes"
+                    :key="n"
+                    :class="n[0] === '+' ? 'is-add' : 'is-del'"
+                    >{{ n }}</span
+                  >
+                </dd></template
+              >
+              <template v-if="part.d.pkgs.length"
+                ><dt>Pip Packages ({{ part.d.pkgs.length + part.d.more }})</dt>
+                <dd>
+                  <span
+                    v-for="n in part.d.pkgs"
+                    :key="n"
+                    :class="n[0] === '+' ? 'is-add' : n[0] === '~' ? '' : 'is-del'"
+                    >{{ n }}</span
+                  ><span v-if="part.d.more" class="mar-bt-hint">and {{ part.d.more }} more</span>
+                </dd></template
+              >
+            </dl>
+          </div>
+        </div>
         <p v-if="i === 0 && !snaps[1]" class="mar-bt-hint">The first snapshot of this build.</p>
       </div>
     </div>
