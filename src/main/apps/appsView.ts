@@ -45,7 +45,7 @@ import {
 import { listCatalogApps } from './catalog'
 import { needsLookup, outputAction, outputRequest, resolveOutputFiles } from './outputs'
 import { findApps } from './appsBuild'
-import { allowedPath, comfyOutputPath, matchingOutputPath } from '../lib/outputFolders'
+import { allowedPath, outputLocator } from '../lib/outputFolders'
 import { localBuilds, openInComfy } from './openInComfy'
 import { stackApps } from './stackApps'
 
@@ -284,11 +284,10 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
   const apps = outputs.items.some(needsLookup) ? await findApps() : null
-  const { items, files } = await resolveOutputFiles(outputs.items, async (file, bytes) => {
-    if (!apps) return null
-    const named = file ? await comfyOutputPath(apps, file, bytes.byteLength) : null
-    return named ?? matchingOutputPath(apps, bytes)
-  })
+  const { items, files } = await resolveOutputFiles(
+    outputs.items,
+    apps ? outputLocator(apps) : async () => null
+  )
   const backdrop = await page
     .capturePage()
     .then((image) => image.toJPEG(BACKDROP_QUALITY))

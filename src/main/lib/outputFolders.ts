@@ -82,13 +82,17 @@ export async function allowedPath(target: string): Promise<string | null> {
   return allowedRoots.some((root) => real === root || isInside(real, root, path.sep)) ? real : null
 }
 
+async function buildOutputRoot(inst: InstallationRecord): Promise<string | null> {
+  const dir = outputDirFor(inst, sharedOutputDir())
+  return dir ? realDir(dir) : null
+}
+
 export async function comfyOutputPath(
   inst: InstallationRecord,
   file: ComfyOutputFile,
   sizeBytes: number
 ): Promise<string | null> {
-  const dir = outputDirFor(inst, sharedOutputDir())
-  const root = dir ? await realDir(dir) : null
+  const root = await buildOutputRoot(inst)
   if (!root) return null
   const real = await allowedPath(path.join(root, file.subfolder, file.filename))
   if (!real || !isInside(real, root, path.sep)) return null
@@ -96,42 +100,54 @@ export async function comfyOutputPath(
   return stat?.isFile() && stat.size === sizeBytes ? real : null
 }
 
-async function sameSizeFiles(root: string, size: number): Promise<string[]> {
-  const found: string[] = []
-  const queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }]
+async function filesBySize(root: string): Promise<Map<number, string[]>> {
+  const bySize = new Map<number, string[]>()
+  const queue = [{ dir: root, depth: 0 }]
   let seen = 0
   while (queue.length > 0 && seen < MAX_MATCH_ENTRIES) {
     const { dir, depth } = queue.shift()!
-    const dirents = await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])
-    for (const dirent of dirents) {
-      if (++seen > MAX_MATCH_ENTRIES) break
-      if (dirent.name.startsWith('.')) continue
-      const full = path.join(dir, dirent.name)
+    const dirents = (await fsp.readdir(dir, { withFileTypes: true }).catch(() => []))
+      .filter((dirent) => !dirent.name.startsWith('.'))
+      .slice(0, MAX_MATCH_ENTRIES - seen)
+    seen += dirents.length
+    for (const dirent of dirents)
       if (dirent.isDirectory() && depth < MAX_MATCH_DEPTH)
-        queue.push({ dir: full, depth: depth + 1 })
-      if (!dirent.isFile() || !assetKind(dirent.name)) continue
+        queue.push({ dir: path.join(dir, dirent.name), depth: depth + 1 })
+    const files = dirents.filter((dirent) => dirent.isFile() && assetKind(dirent.name))
+    await runPool(files, STATS_AT_ONCE, async (dirent) => {
+      const full = path.join(dir, dirent.name)
       const stat = await fsp.stat(full).catch(() => null)
-      if (stat?.size === size) found.push(full)
-    }
+      if (stat) bySize.set(stat.size, [...(bySize.get(stat.size) ?? []), full])
+    })
   }
-  return found
+  return bySize
 }
 
-export async function matchingOutputPath(
-  inst: InstallationRecord,
-  bytes: Uint8Array
-): Promise<string | null> {
-  const dir = outputDirFor(inst, sharedOutputDir())
-  const root = dir ? await realDir(dir) : null
-  if (!root || bytes.byteLength === 0) return null
-  const wanted = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  for (const file of await sameSizeFiles(root, bytes.byteLength)) {
-    const content = await fsp.readFile(file).catch(() => null)
-    if (!content?.equals(wanted)) continue
-    const real = await allowedPath(file)
-    if (real && isInside(real, root, path.sep)) return real
+function outputMatcher(inst: InstallationRecord): (bytes: Uint8Array) => Promise<string | null> {
+  let scan: Promise<{ root: string; bySize: Map<number, string[]> } | null> | null = null
+  return async (bytes) => {
+    scan ??= buildOutputRoot(inst).then(async (root) =>
+      root ? { root, bySize: await filesBySize(root) } : null
+    )
+    const found = await scan
+    if (!found || bytes.byteLength === 0) return null
+    const wanted = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    for (const file of found.bySize.get(bytes.byteLength) ?? []) {
+      const content = await fsp.readFile(file).catch(() => null)
+      if (!content?.equals(wanted)) continue
+      const real = await allowedPath(file)
+      if (real && isInside(real, found.root, path.sep)) return real
+    }
+    return null
   }
-  return null
+}
+
+export function outputLocator(
+  inst: InstallationRecord
+): (file: ComfyOutputFile | null, bytes: Uint8Array) => Promise<string | null> {
+  const sameBytes = outputMatcher(inst)
+  return async (file, bytes) =>
+    (file ? await comfyOutputPath(inst, file, bytes.byteLength) : null) ?? sameBytes(bytes)
 }
 
 export function outputFileUrl(file: string, thumbnailOf?: number): string {

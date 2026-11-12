@@ -69,7 +69,7 @@ import {
   MAX_FILES,
   comfyOutputPath,
   listOutputFolder,
-  matchingOutputPath,
+  outputLocator,
   listOutputFolders,
   outputDirOverride,
   outputFileUrl,
@@ -257,7 +257,7 @@ describe('comfyOutputPath', () => {
   })
 })
 
-describe('matchingOutputPath', () => {
+describe('outputLocator', () => {
   const apps = install('Apps', { useSharedOutput: false, outputDir: ownDir })
   const bytesOf = (text: string) => new TextEncoder().encode(text)
 
@@ -265,16 +265,36 @@ describe('matchingOutputPath', () => {
     write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00001.png'), 'other picture')
     write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png'), 'same picture!')
 
-    expect(await matchingOutputPath(apps, bytesOf('same picture!'))).toBe(
+    write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00003.png'), 'third picture')
+    const locate = outputLocator(apps)
+    const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
+
+    expect(await sameBytes(bytesOf('same picture!'))).toBe(
       path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png')
+    )
+    expect(await sameBytes(bytesOf('third picture'))).toBe(
+      path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00003.png')
     )
   })
 
   it('finds nothing when no file has those bytes, or there are no bytes', async () => {
     write(path.join(ownDir, 'kept.png'), 'kept')
 
-    expect(await matchingOutputPath(apps, bytesOf('gone'))).toBeNull()
-    expect(await matchingOutputPath(apps, new Uint8Array())).toBeNull()
+    const locate = outputLocator(apps)
+    const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
+    expect(await sameBytes(bytesOf('gone'))).toBeNull()
+    expect(await sameBytes(new Uint8Array())).toBeNull()
+  })
+
+  it('looks by bytes when the reference does not lead to the file', async () => {
+    write(path.join(ownDir, 'apps', 'renamed.png'), 'moved bytes')
+
+    expect(
+      await outputLocator(apps)(
+        { filename: 'old-name.png', subfolder: 'apps' },
+        new TextEncoder().encode('moved bytes')
+      )
+    ).toBe(path.join(ownDir, 'apps', 'renamed.png'))
   })
 
   it("does not follow links out of the build's output folder", async () => {
@@ -283,8 +303,10 @@ describe('matchingOutputPath', () => {
     fs.symlinkSync(outsideDir, path.join(ownDir, 'escape'))
     fs.symlinkSync(path.join(sharedDir, 'shared.png'), path.join(ownDir, 'shared.png'))
 
-    expect(await matchingOutputPath(apps, bytesOf('secret bytes'))).toBeNull()
-    expect(await matchingOutputPath(apps, bytesOf('shared bytes'))).toBeNull()
+    const locate = outputLocator(apps)
+    const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
+    expect(await sameBytes(bytesOf('secret bytes'))).toBeNull()
+    expect(await sameBytes(bytesOf('shared bytes'))).toBeNull()
     fs.rmSync(path.join(ownDir, 'escape'))
     fs.rmSync(path.join(ownDir, 'shared.png'))
   })
