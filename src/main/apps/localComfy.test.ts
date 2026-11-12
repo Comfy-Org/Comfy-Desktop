@@ -58,6 +58,7 @@ class FakeSocket {
   close(): void {}
 }
 
+import { MAX_UPLOAD_BYTES } from './guards'
 import { initLocalComfy, localDownload, localFetch, startLocal } from './localComfy'
 
 const appsSession = {
@@ -253,6 +254,31 @@ describe('stopping a This computer run that is still queued', () => {
     expect(sent[0]).toMatchObject({ app: 'upscale', outcome: 'cancelled' })
     expect(sent[0]).not.toHaveProperty('queue_seconds')
   })
+
+  it.each(['queue', 'history'] as const)(
+    'sends no run_finished when the %s check after a stop answers more than 50 MB',
+    async (oversized) => {
+      const id = runId()
+      await submit(id, { name: 'Upscale', id: 'upscale' }, null)
+      const tooLarge = { 'content-length': String(MAX_UPLOAD_BYTES + 1) }
+      answerEmpty()
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ queue_running: [], queue_pending: [] }), {
+          status: 200,
+          headers: oversized === 'queue' ? tooLarge : {}
+        })
+      )
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response('{}', { status: 200, headers: oversized === 'history' ? tooLarge : {} })
+      )
+
+      const answer = await localFetch({ method: 'POST', path: '/queue', body: { delete: [id] } })
+      await settle()
+
+      expect(answer.status).toBe(200)
+      expect(captured('run_finished')).toEqual([])
+    }
+  )
 
   it('reports how the run ended when it started before the delete reached ComfyUI', async () => {
     const id = runId()

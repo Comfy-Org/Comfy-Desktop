@@ -420,7 +420,9 @@ function finishRun(msg: { type: string; data: unknown }, now: number): void {
 async function comfyJson(port: number, path: string): Promise<unknown> {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(5000) })
   if (!res.ok) throw new Error(`ComfyUI answered ${res.status} for ${path}`)
-  return res.json()
+  const body = await readCapped(res, MAX_UPLOAD_BYTES)
+  if (!body) throw new Error(`ComfyUI answered more than 50 MB for ${path}`)
+  return JSON.parse(new TextDecoder().decode(body)) as unknown
 }
 
 async function droppedBeforeStart(port: number, id: string): Promise<boolean> {
