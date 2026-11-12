@@ -53,9 +53,19 @@ DS's Motion page (`ds/motion.ts`).
   row; no check and no column kept for one. A check is only for a
   multi-select (`ui/Select.vue`).
 - **Every menu is the DS `Menu`.** Pickers, ⋯ menus and the ☰ popup use
-  `@comfyorg/design-system/menu/Menu` with `MenuItem` / `MenuRadioItem`
-  and `ui-select-option`, like the filter menus. Never the `Select`
-  listbox for a menu: its spacing drifts from the filters.
+  `@comfyorg/design-system/menu/Menu` with `MenuItem` / `MenuRadioItem`,
+  like the filter menus. Never the `Select` listbox for a menu: its
+  spacing drifts from the filters. A single choice fills the picked row
+  with the DS selected color (`bg-muted`, `selectedMenuButtonClass`), no check.
+
+## Split button
+
+- **One convention** (`pages/MarSplitButton.vue`; Desktop:
+  `components/ui/SplitButton.vue` on the DS `ButtonGroup`): main half
+  `px-3`, label with no trailing arrow; chevron half 30px wide, 14px
+  chevron that does not rotate, full-height 1px divider; each half hovers
+  on its own and an open menu keeps the chevron half in hover. With
+  nothing to pick it is a plain button. Never hand-build one.
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
 - **A filter shows as a chip** under the toolbar, removable, with Clear
