@@ -6,7 +6,7 @@ import {
   CircleStop,
   Cloud,
   CloudUpload,
-  CopyPlus,
+  Copy,
   Download,
   EyeOff,
   Folder,
@@ -310,8 +310,8 @@ const moreLines = computed<MenuLine[]>(() => [
   ...(own.value
     ? [
         {
-          label: 'Duplicate Instance',
-          icon: CopyPlus,
+          label: 'Duplicate',
+          icon: Copy,
           disabled: running.value,
           title: running.value ? 'Stop the running instance first.' : undefined,
           run: duplicateHere

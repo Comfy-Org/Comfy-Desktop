@@ -382,7 +382,7 @@ function m1Lines(b: Build): MenuLine[] {
       : []),
     ...(local && !problem
       ? [
-          { label: 'Duplicate Instance', icon: Copy, run: () => builds.duplicate(b.id), ...gated },
+          { label: 'Duplicate', icon: Copy, run: () => builds.duplicate(b.id), ...gated },
           { label: 'Show in Finder', icon: FolderOpen, run: () => toast(`Revealed ${b.name}`) }
         ]
       : [])
