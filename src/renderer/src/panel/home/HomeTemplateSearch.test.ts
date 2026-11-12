@@ -125,6 +125,16 @@ describe('HomeTemplateSearch', () => {
     )
   })
 
+  it('does not say a partner template rewrites its prompt, since partner templates are never rewritten', async () => {
+    search.mockResolvedValue(
+      answer({ run: [candidate('api_partner_template', { partner: true, rewrite: true })] })
+    )
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    expect(wrapper.find('[data-testid="home-template-search-rewrite"]').exists()).toBe(false)
+  })
+
   it('labels templates whose prompt the service would rewrite', async () => {
     search.mockResolvedValue(
       answer({ run: [candidate('poster_template', { rewrite: true }), BANNER] })
@@ -363,19 +373,20 @@ describe('TemplateSearchResults as a grid', () => {
   })
 
   it('shows partner, download and rewrite labels on the picture', async () => {
-    const partner = candidate('api_partner_template', { partner: true, rewrite: true })
-    const { wrapper, stop } = await mountGrid({ run: [partner], download: [MURAL] })
+    const partner = candidate('api_partner_template', { partner: true })
+    const rewritten = candidate('rewritten_template', { rewrite: true })
+    const { wrapper, stop } = await mountGrid({ run: [partner, rewritten], download: [MURAL] })
 
-    const [first, second] = wrapper.findAll('[role="option"]')
+    const [first, second, third] = wrapper.findAll('[role="option"]')
     const picture = (card: typeof first) => card!.find('.aspect-\\[4\\/3\\]')
     expect(picture(first).find('[data-testid="home-template-search-partner"]').text()).toBe(
       'Partner'
     )
-    expect(picture(first).find('[data-testid="home-template-search-rewrite"]').text()).toBe(
+    expect(picture(second).find('[data-testid="home-template-search-rewrite"]').text()).toBe(
       'Rewrites prompt'
     )
     expect(
-      picture(second).find('[data-testid="home-template-search-needs-download"]').exists()
+      picture(third).find('[data-testid="home-template-search-needs-download"]').exists()
     ).toBe(true)
     stop()
   })

@@ -36,6 +36,10 @@ function templateRow(
   return { key: `${kind}:${candidate.templateId}`, kind, candidate, best: false }
 }
 
+export function rewritesPrompt(candidate: TemplateSearchCandidate): boolean {
+  return candidate.rewrite && !candidate.partner
+}
+
 function shown(candidate: TemplateSearchCandidate, floor: number): boolean {
   return !candidate.belowThreshold || (candidate.score ?? 0) >= floor
 }

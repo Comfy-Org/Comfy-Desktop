@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { Bot, CircleDollarSign } from 'lucide-vue-next'
 import TemplateSearchBadge from './TemplateSearchBadge.vue'
 import type { TemplateSearchCandidate } from '../../types/ipc'
-import type { BadgeTone, SearchRow } from './templateSearch'
+import { rewritesPrompt, type BadgeTone, type SearchRow } from './templateSearch'
 import type { TemplateSearchController } from './useTemplateSearch'
 
 const props = defineProps<{
@@ -92,7 +92,7 @@ function badges(row: SearchRow): Badge[] {
       label: t('home.search.needsDownloadPill'),
       testId: 'home-template-search-needs-download'
     })
-  if (candidate.rewrite)
+  if (rewritesPrompt(candidate))
     list.push({
       tone: 'rewrite',
       label: t('home.search.rewritePill'),
@@ -307,7 +307,7 @@ function optionId(index: number): string {
             </TemplateSearchBadge>
           </span>
           <TemplateSearchBadge
-            v-if="row.candidate?.rewrite"
+            v-if="row.candidate && rewritesPrompt(row.candidate)"
             tone="rewrite"
             overlay
             class="absolute right-2 bottom-2"
