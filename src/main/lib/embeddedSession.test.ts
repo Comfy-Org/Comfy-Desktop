@@ -60,6 +60,7 @@ import {
 import type { EmbeddedSessionSender } from './embeddedSession'
 import { CLOUD_CONFIG } from '../cloud/config'
 import * as mainTelemetry from './telemetry'
+import { rejectAccessToken } from '../devplatform/session'
 import { _resetForTest as resetViewGrants } from './viewWorkspaceGrants'
 
 function jwt(claims: Record<string, unknown>): string {
@@ -123,6 +124,7 @@ beforeEach(() => {
   resetViewGrants()
   resetEmbeddedSession()
   vi.mocked(mainTelemetry.emit).mockClear()
+  vi.mocked(rejectAccessToken).mockClear()
 })
 
 function disabledEvents(): unknown[] {
@@ -456,7 +458,7 @@ describe('billingHandoffForSender', () => {
     vi.unstubAllGlobals()
   })
 
-  function issue(workspaceId: unknown = 'ws-2', receiver: unknown = 'billing_web') {
+  function issue(workspaceId: unknown = 'ws-1', receiver: unknown = 'billing_web') {
     const { event } = view('http://127.0.0.1:8000')
     return billingHandoffForSender(event, workspaceId, receiver, '1.2.3')
   }
@@ -464,7 +466,7 @@ describe('billingHandoffForSender', () => {
   it('posts the handoff request with the grant access token as Bearer', async () => {
     respond(201, { entry_url: ENTRY_URL, expires_at: '2026-11-12T12:00:00Z', request_id: 'r-1' })
 
-    await expect(issue('ws-2', 'platform')).resolves.toEqual({
+    await expect(issue('ws-1', 'platform')).resolves.toEqual({
       status: 'issued',
       entryUrl: ENTRY_URL
     })
@@ -476,7 +478,7 @@ describe('billingHandoffForSender', () => {
         Authorization: `Bearer ${ACCESS}`
       },
       body: JSON.stringify({
-        workspace_id: 'ws-2',
+        workspace_id: 'ws-1',
         receiver: 'platform',
         surface: 'desktop',
         client_version: '1.2.3'
@@ -547,8 +549,8 @@ describe('billingHandoffForSender', () => {
   it.each([
     ['an empty workspace', '', 'billing_web'],
     ['a non-string workspace', 42, 'billing_web'],
-    ['an unknown receiver', 'ws-2', 'checkout'],
-    ['a null receiver', 'ws-2', null]
+    ['an unknown receiver', 'ws-1', 'checkout'],
+    ['a null receiver', 'ws-1', null]
   ])('is disabled for %s', async (_name, workspaceId, receiver) => {
     respond(201, { entry_url: ENTRY_URL })
 
@@ -564,11 +566,50 @@ describe('billingHandoffForSender', () => {
     respond(201, { entry_url: ENTRY_URL })
     const { event } = view(comfyUrl, options)
 
-    await expect(billingHandoffForSender(event, 'ws-2', 'billing_web', '1.2.3')).resolves.toEqual({
+    await expect(billingHandoffForSender(event, 'ws-1', 'billing_web', '1.2.3')).resolves.toEqual({
       status: 'disabled'
     })
     expect(fetch).not.toHaveBeenCalled()
     expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('rejects the grant access token when Cloud answers 401', async () => {
+    respond(401, { code: 'unauthorized' })
+
+    await expect(issue()).resolves.toEqual({ status: 'sign_in_again' })
+    expect(rejectAccessToken).toHaveBeenCalledWith(ACCESS)
+  })
+
+  it.each([
+    ['a 201', 201, { entry_url: ENTRY_URL }],
+    ['a refusal', 403, { code: 'HANDOFF_DISABLED' }]
+  ])('keeps the grant after %s', async (_name, status, body) => {
+    respond(status, body)
+
+    await issue()
+
+    expect(rejectAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('is disabled for a workspace that is not Desktop current workspace', async () => {
+    respond(201, { entry_url: ENTRY_URL })
+
+    await expect(issue('ws-2')).resolves.toEqual({ status: 'disabled' })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('withholds the entry url when Desktop switches workspace while Cloud issues it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        mocks.current = 'ws-2'
+        return new Response(JSON.stringify({ entry_url: ENTRY_URL }), { status: 201 })
+      })
+    )
+
+    await expect(issue()).resolves.toEqual({ status: 'disabled' })
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   it('is disabled while the embedded session is off', async () => {

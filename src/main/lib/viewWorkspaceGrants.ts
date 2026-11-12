@@ -237,7 +237,7 @@ export class ViewWorkspaceGrants {
     if (current) this.desktopAllowed.add(current)
   }
 
-  private mayHold(view: WebContents, workspaceId: string): boolean {
+  mayHold(view: WebContents, workspaceId: string): boolean {
     this.seed()
     if (this.session.currentWorkspaceId() !== workspaceId) return false
     return (

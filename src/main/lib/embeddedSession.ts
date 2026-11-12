@@ -1,7 +1,7 @@
 import type { WebContents, WebFrameMain } from 'electron'
 
 import { identityOf } from '../cloud/claims'
-import { getCloudSession } from '../devplatform/session'
+import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import type { WorkspaceSwitchOutcome } from '../cloud/types'
@@ -161,10 +161,15 @@ export async function billingHandoffForSender(
 ): Promise<ComfyDesktop2BillingHandoff> {
   if (typeof workspaceId !== 'string' || workspaceId === '' || !isBillingHandoffReceiver(receiver))
     return { status: 'disabled' }
-  if (!isTrustedSender(event) || !(await enabledForLocalView())) return { status: 'disabled' }
+  if (!isTrustedSender(event)) return { status: 'disabled' }
+  const grants = getViewWorkspaceGrants()
+  if (!grants.mayHold(event.sender, workspaceId) || !(await enabledForLocalView()))
+    return { status: 'disabled' }
   const accessToken = await getCloudSession().getGrantAccessToken()
   if (!accessToken) return { status: 'sign_in_again' }
-  return issueBillingHandoff(accessToken, { workspaceId, receiver, clientVersion })
+  const handoff = await issueBillingHandoff(accessToken, { workspaceId, receiver, clientVersion })
+  if (handoff.status === 'sign_in_again') rejectAccessToken(accessToken)
+  return grants.mayHold(event.sender, workspaceId) ? handoff : { status: 'disabled' }
 }
 
 let broadcastGeneration = 0
