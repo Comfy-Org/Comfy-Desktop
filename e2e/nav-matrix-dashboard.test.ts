@@ -75,7 +75,7 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('Dashboard → stopped instance: same-window launch, no new window @windows @macos @linux', async () => {
+test('Dashboard → stopped instance: launches in a new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'pickInstall')
 
@@ -104,10 +104,11 @@ test('Dashboard → stopped instance: same-window launch, no new window @windows
     )
     .toBe(true)
 
-  expect(await liveWindowCount(ctx.app)).toBe(before)
-  await expectNoIpcInvocation(ctx.app, 'focus-comfy-window', () => true, {
-    message: 'unexpected focus-comfy-window on a same-window launch'
-  })
+  const newWindowCalls = (await getIpcInvocations(ctx.app, 'open-install-new-window')) as {
+    installationId?: string
+  }[]
+  expect(newWindowCalls.some((c) => c.installationId === INSTALL_A_ID)).toBe(true)
+  expect(await liveWindowCount(ctx.app)).toBe(before + 1)
 })
 
 test('Dashboard → running instance: focus existing window @windows @macos @linux', async () => {
@@ -124,6 +125,13 @@ test('Dashboard → running instance: focus existing window @windows @macos @lin
   )
 
   await expect
+    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(false)
+
+  await expect
     .poll(
       async () => {
         const calls = (await getIpcInvocations(ctx.app, 'focus-comfy-window')) as {
@@ -135,6 +143,9 @@ test('Dashboard → running instance: focus existing window @windows @macos @lin
     )
     .toBe(true)
 
+  await expectNoIpcInvocation(ctx.app, 'open-install-new-window', () => true, {
+    message: 'unexpected new window for a build that is already running'
+  })
   await expectNoIpcInvocation(ctx.app, 'run-action', (c) => c.actionId === 'launch', {
     message: 'unexpected run-action launch on a focus-existing path'
   })

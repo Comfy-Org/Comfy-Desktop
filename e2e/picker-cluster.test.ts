@@ -95,16 +95,21 @@ test('pick-install for a running install dismisses the popup and focuses the exi
     .toBe(false)
 
   await expect
-    .poll(async () => (await getIpcInvocations(ctx.app, 'focus-comfy-window')).length, {
-      timeout: 5_000,
-      intervals: [100, 250]
-    })
-    .toBeGreaterThanOrEqual(1)
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'focus-comfy-window')) as {
+          installationId?: string
+        }[]
+        return calls.some((c) => c.installationId === INSTALL_ID)
+      },
+      { timeout: 5_000, intervals: [100, 250] }
+    )
+    .toBe(true)
 
-  const focusCalls = (await getIpcInvocations(ctx.app, 'focus-comfy-window')) as {
-    installationId?: string
-  }[]
-  expect(focusCalls[0]?.installationId).toBe(INSTALL_ID)
+  const openNewWindowCalls = await getIpcInvocations(ctx.app, 'open-install-new-window')
+  expect(openNewWindowCalls).toEqual([])
+  const launchCalls = (await getIpcInvocations(ctx.app, 'run-action')) as { actionId?: string }[]
+  expect(launchCalls.some((c) => c.actionId === 'launch')).toBe(false)
 })
 
 test('pick-install for a stopped install dismisses the popup and fires runAction(launch) @windows @macos @linux', async () => {

@@ -72,11 +72,11 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
   it('Dashboard → Dashboard: no-op', () => {
     expect(decisionFor('dashboard', 'dashboard', 'self').verb).toBe('no-op')
   })
-  it('Dashboard → Instance (stopped): Start in same window, no caret', () => {
+  it('Dashboard → Instance (stopped): Start in a new window, no caret', () => {
     const decision = decisionFor('dashboard', 'instance', 'stopped')
     expect(decision).toMatchObject({
-      window: 'same',
-      verb: 'switch',
+      window: 'new',
+      verb: 'open-new',
       primaryLabel: NAV_LABEL.start
     })
     expect(decision.secondary).toHaveLength(0)
@@ -90,16 +90,14 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
     })
     expect(decision.secondary).toHaveLength(0)
   })
-  it('Dashboard → Cloud (closed): Open Cloud same window + new-window caret', () => {
+  it('Dashboard → Cloud (closed): Open Cloud in a new window, no caret', () => {
     const decision = decisionFor('dashboard', 'cloud', 'stopped')
     expect(decision).toMatchObject({
-      window: 'same',
-      verb: 'switch',
+      window: 'new',
+      verb: 'open-new',
       primaryLabel: NAV_LABEL.openCloud
     })
-    expect(decision.secondary.some((alt) => alt.window === 'new' && alt.verb === 'open-new')).toBe(
-      true
-    )
+    expect(decision.secondary).toHaveLength(0)
   })
   it('Dashboard → New Instance: install wizard', () => {
     expect(decisionFor('dashboard', 'new-instance', 'stopped').verb).toBe('install-wizard')
@@ -121,12 +119,14 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
       primaryLabel: NAV_LABEL.restart
     })
   })
-  it('Instance → Instance B (stopped): switch in place + new-window caret (matrix row 9)', () => {
+  it('Instance → Instance B (stopped): Start in a new window, no caret', () => {
     const decision = decisionFor('instance', 'instance', 'stopped')
-    expect(decision).toMatchObject({ window: 'same', verb: 'switch' })
-    expect(decision.secondary.some((alt) => alt.window === 'new' && alt.verb === 'open-new')).toBe(
-      true
-    )
+    expect(decision).toMatchObject({
+      window: 'new',
+      verb: 'open-new',
+      primaryLabel: NAV_LABEL.start
+    })
+    expect(decision.secondary).toHaveLength(0)
   })
   it('Instance → Instance B (running elsewhere): focus, no caret', () => {
     const decision = decisionFor('instance', 'instance', 'running-elsewhere')
@@ -194,7 +194,7 @@ describe('decideNavigation — boundary rules', () => {
       input({
         currentView: 'dashboard',
         target: 'cloud',
-        targetRun: 'stopped',
+        targetRun: 'running-elsewhere',
         intent: 'new-window'
       })
     )
@@ -222,45 +222,18 @@ describe('decideNavigation — boundary rules', () => {
 })
 
 describe('decideNavigation — caret (new-window intent)', () => {
-  it('instance host → stopped instance B: caret selects the new-window alternative', () => {
+  it.each([
+    ['instance', 'instance'],
+    ['dashboard', 'cloud']
+  ] as const)('%s host → stopped %s: caret keeps the new-window primary', (currentView, target) => {
     const primary = decideNavigation(
-      input({
-        currentView: 'instance',
-        target: 'instance',
-        targetRun: 'stopped',
-        intent: 'primary'
-      })
+      input({ currentView, target, targetRun: 'stopped', intent: 'primary' })
     )
-    expect(primary).toMatchObject({ window: 'same', verb: 'switch' })
     const caret = decideNavigation(
-      input({
-        currentView: 'instance',
-        target: 'instance',
-        targetRun: 'stopped',
-        intent: 'new-window'
-      })
+      input({ currentView, target, targetRun: 'stopped', intent: 'new-window' })
     )
-    expect(caret).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
-    })
-  })
-
-  it('dashboard host → open cloud: caret selects the new-window alternative', () => {
-    const caret = decideNavigation(
-      input({
-        currentView: 'dashboard',
-        target: 'cloud',
-        targetRun: 'stopped',
-        intent: 'new-window'
-      })
-    )
-    expect(caret).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
-    })
+    expect(primary).toMatchObject({ window: 'new', verb: 'open-new' })
+    expect(caret).toEqual(primary)
   })
 })
 

@@ -210,9 +210,9 @@ function handleSidebarNavigate(page: DashboardPage): void {
     dashboardHomePage.value = page
 }
 
-async function launchFromBuildDetails(inst: Installation): Promise<void> {
+async function openBuild(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
-  await handleChooserPick(inst)
+  window.api.openInstallInNewWindow(inst.id)
 }
 
 const firstUseTakeoverActive = computed(
@@ -234,7 +234,7 @@ chooserHandoff = useChooserHandoff({
   switchPanel,
   hostOwnsPerformanceTestRun: () => performanceTestRunActive.value
 })
-const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
+const { handleChooserShowNewInstall } = chooserHandoff
 
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {
@@ -310,7 +310,7 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
     if (!installationId) {
       const inst = installationStore.getById(targetInstallationId)
       if (inst) {
-        void handleChooserPick(inst)
+        void openBuild(inst)
         return
       }
     }
@@ -486,13 +486,14 @@ onUnmounted(() => {
           >
             <HomeView
               v-if="dashboardHomePage === 'home'"
-              @pick="handleChooserPick"
+              @pick="openBuild"
               @show-builds="dashboardHomePage = 'chooser'"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
               :key="appsVisit"
               :grow-by="appsGrowBy"
+              :obscured="currentOverlay?.kind === 'takeover'"
               @app-open="appsAppOpen = $event"
               @app-entered="appsAppEntered = $event"
               @view-in-assets="viewInAssets"
@@ -506,12 +507,12 @@ onUnmounted(() => {
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
               @back="closeBuildDetails"
-              @launch="launchFromBuildDetails"
+              @launch="openBuild"
               @show-progress="handleShowProgress"
             />
             <ChooserView
               :visible="dashboardHomePage === 'chooser' && !buildDetailsInstall"
-              @pick="handleChooserPick"
+              @pick="openBuild"
               @open-details="openBuildDetails"
               @show-new-install="handleChooserShowNewInstall"
               @show-build-import="switchPanel($event, 'chooser')"

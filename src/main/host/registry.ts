@@ -9,7 +9,6 @@ export const hostInstallEvents = new EventEmitter()
 
 export type ComfyPanelKey =
   | 'comfy'
-  | 'home'
   | 'performance-test'
   | 'benchmarks'
   | 'feedback'
@@ -22,7 +21,6 @@ export type ComfyPanelKey =
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
-  'home',
   'performance-test',
   'benchmarks',
   'feedback',
@@ -33,12 +31,6 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'progress',
   'announcement'
 ])
-
-const HOME_PANELS: ReadonlySet<ComfyPanelKey> = new Set(['home', 'performance-test', 'benchmarks'])
-
-export function isHomePanel(panel: ComfyPanelKey): boolean {
-  return HOME_PANELS.has(panel)
-}
 
 export type BodyMode =
   | 'comfy'
@@ -177,7 +169,6 @@ export function hasRunningSessionForEntry(
 }
 
 export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
-  if (entry.activePanel === 'home') return 'chooser'
   if (entry.installationId === null) {
     return entry.activePanel === 'comfy' ? 'chooser' : entry.activePanel
   }
@@ -234,6 +225,29 @@ export function findPreferredHostByVisibility(
     if (minimisedFallback === null) minimisedFallback = entry
   }
   return minimisedFallback
+}
+
+export function findHostLaunching(installationId: string): ComfyWindowEntry | undefined {
+  const claimedKey = pendingAttachClaims.get(installationId)
+  for (const entry of comfyWindows.values()) {
+    if (entry.window.isDestroyed() || !isChooserHost(entry)) continue
+    if (entry.previewInstallationId === installationId || entry.windowKey === claimedKey) {
+      return entry
+    }
+  }
+  return undefined
+}
+
+function isLaunchingABuild(entry: ComfyWindowEntry): boolean {
+  if (entry.previewInstallationId !== null) return true
+  for (const claimedKey of pendingAttachClaims.values()) {
+    if (claimedKey === entry.windowKey) return true
+  }
+  return false
+}
+
+export function findHomeHostEntry(): ComfyWindowEntry | null {
+  return findPreferredHostByVisibility((e) => isChooserHost(e) && !isLaunchingABuild(e))
 }
 
 export function findPreferredChooserHostWindow(): BrowserWindow | null {
