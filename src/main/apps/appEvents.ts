@@ -1,9 +1,9 @@
 import * as telemetry from '../lib/telemetry'
 import type { TelemetryContext, TelemetryValue } from '../lib/telemetry'
 import { isAppsEnabled } from './appsSwitch'
+import { APP_SLUG } from './guards'
 
 export const APP_EVENT_PREFIX = 'comfy.desktop.apps.'
-export const APP_SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/
 export const CLASS_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 export const NODE_TYPE = /^[A-Za-z0-9_][A-Za-z0-9_ .+()|-]{0,79}$/
 export const MAX_NODE_TYPES = 20

@@ -76,6 +76,36 @@ export function isWorkflow(value: unknown): value is Record<string, unknown> {
   )
 }
 
+export const APP_SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/
+
+export function isAppSlug(value: unknown): value is string {
+  return typeof value === 'string' && APP_SLUG.test(value)
+}
+
+export interface CloudAppTag {
+  id: string
+  model?: string
+  where: 'cloud'
+}
+
+export function cloudAppTag(input: unknown): CloudAppTag | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+  const { app, model } = input as { app?: unknown; model?: unknown }
+  if (!isAppSlug(app)) return null
+  return { id: app, ...(isAppSlug(model) ? { model } : {}), where: 'cloud' }
+}
+
+export function cloudPromptBody(
+  workflow: Record<string, unknown>,
+  token: string,
+  tag: CloudAppTag | null
+): string {
+  return JSON.stringify({
+    prompt: workflow,
+    extra_data: { auth_token_comfy_org: token, ...(tag ? { comfy_app: tag } : {}) }
+  })
+}
+
 const MAX_OPEN_NODES = 500
 const CREDENTIAL_INPUTS = /^(api_key_comfy_org|auth_token_comfy_org)$/i
 
