@@ -38,6 +38,7 @@ import { getDeviceId } from '../deviceId'
 import { getCachedWorkspaceName } from '../../cloud/tokenStore'
 import { getCloudSession } from '../../devplatform/session'
 import { getCloudFreeRunsEnabledAsync } from '../cloudFreeRuns'
+import { getAppsEnabledAsync } from '../../apps/appsSwitch'
 import { getUserTierAsync } from '../userTier'
 import { getStableTags } from '../comfyui-releases'
 import { defaultBenchmarksDir } from '../paths'
@@ -77,6 +78,7 @@ export function registerAppHandlers(): void {
   ipcMain.handle('get-cloud-user-tier', () => getUserTierAsync())
 
   ipcMain.handle('get-cloud-free-runs-enabled', () => getCloudFreeRunsEnabledAsync())
+  ipcMain.handle('get-apps-enabled', () => getAppsEnabledAsync())
 
   ipcMain.handle('get-sources', () =>
     sources
