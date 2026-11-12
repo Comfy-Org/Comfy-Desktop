@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Folder, FolderOpen } from 'lucide-vue-next'
+import { ChevronRight, Folder, FolderOpen, FolderSearch } from 'lucide-vue-next'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { revealInFolderKey } from '../composables/usePlatform'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AssetCard from './AssetCard.vue'
@@ -41,6 +42,7 @@ const { t } = useI18n()
 const modal = useModal()
 const root = useTemplateRef<HTMLElement>('root')
 const buildsIdPrefix = useId()
+const revealLabel = t(revealInFolderKey(window.api.platform))
 const folders = ref<OutputFolder[] | null>(null)
 const trail = ref<Crumb[]>([])
 const listing = ref<OutputFolderListing | null>(null)
@@ -90,6 +92,10 @@ function folderLabel(output: OutputFolder): string {
   return output.shared
     ? t('assets.local.sharedOutput')
     : t('assets.local.buildOutput', { name: output.builds.join(', ') })
+}
+
+function listsBuildNames(output: OutputFolder): boolean {
+  return output.shared && output.builds.length > 0
 }
 
 function buildCount(output: OutputFolder): string {
@@ -297,7 +303,7 @@ defineExpose({ reload, loading })
         >
           <Folder :size="20" class="shrink-0 text-muted-foreground" aria-hidden="true" />
           <Tooltip
-            :disabled="output.builds.length === 0"
+            :disabled="!listsBuildNames(output)"
             :delay-ms="BUILDS_TOOLTIP_DELAY_MS"
             side="bottom"
             align="start"
@@ -308,7 +314,7 @@ defineExpose({ reload, loading })
               type="button"
               class="flex w-full min-w-0 cursor-pointer flex-col text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
               :aria-describedby="
-                output.builds.length > 0 ? `${buildsIdPrefix}-builds-${index}` : undefined
+                listsBuildNames(output) ? `${buildsIdPrefix}-builds-${index}` : undefined
               "
               :data-testid="`local-folder-${output.path}`"
               @click="enter({ name: folderLabel(output), path: output.path })"
@@ -317,9 +323,12 @@ defineExpose({ reload, loading })
                 folderLabel(output)
               }}</span>
               <span class="truncate text-ui text-subtle-foreground">{{ buildCount(output) }}</span>
-              <span :id="`${buildsIdPrefix}-builds-${index}`" class="sr-only">{{
-                output.builds.join(', ')
-              }}</span>
+              <span
+                v-if="listsBuildNames(output)"
+                :id="`${buildsIdPrefix}-builds-${index}`"
+                class="sr-only"
+                >{{ output.builds.join(', ') }}</span
+              >
             </button>
             <template #content>
               <span v-for="name in output.builds" :key="name" class="block">{{ name }}</span>
@@ -417,12 +426,12 @@ defineExpose({ reload, loading })
                 variant="muted-textonly"
                 size="icon"
                 class="bg-media-overlay text-foreground"
-                :aria-label="t('assets.showInFolder')"
-                :title="t('assets.showInFolder')"
+                :aria-label="revealLabel"
+                :title="revealLabel"
                 :data-testid="`local-show-${entry.name}`"
                 @click="showInFolder(entry.path)"
               >
-                <FolderOpen :size="14" aria-hidden="true" />
+                <FolderSearch :size="14" aria-hidden="true" />
               </Button>
             </template>
           </AssetCard>

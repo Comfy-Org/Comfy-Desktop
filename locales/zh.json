@@ -103,6 +103,7 @@
       "showInExplorer": "在资源管理器中显示",
       "copyPath": "复制路径",
       "pathCopied": "已复制路径",
+      "copyFailed": "无法复制路径",
       "openFolder": "打开文件夹",
       "path": "文件夹路径",
       "noFoldersTitle": "还没有输出文件夹",

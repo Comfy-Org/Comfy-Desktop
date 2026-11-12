@@ -5,9 +5,14 @@ import { Check, Copy, EllipsisVertical, FolderSearch } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import { normalizePlatform } from '../composables/usePlatform'
+import { revealInFolderKey } from '../composables/usePlatform'
 
 const COPIED_CLOSE_MS = 900
+const COPY_LABEL_KEYS = {
+  idle: 'assets.local.copyPath',
+  copied: 'assets.local.pathCopied',
+  failed: 'assets.local.copyFailed'
+} as const
 
 const props = defineProps<{
   path: string
@@ -15,14 +20,9 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const revealKey = {
-  mac: 'assets.local.showInFinder',
-  windows: 'assets.local.showInExplorer',
-  linux: 'assets.showInFolder',
-  unknown: 'assets.showInFolder'
-}[normalizePlatform(window.api.platform)]
+const revealKey = revealInFolderKey(window.api.platform)
 const open = ref(false)
-const copied = ref(false)
+const copyState = ref<'idle' | 'copied' | 'failed'>('idle')
 let closeTimer: ReturnType<typeof setTimeout> | null = null
 
 function clearCloseTimer(): void {
@@ -36,13 +36,10 @@ function reveal(): void {
 
 async function copyPath(event: Event): Promise<void> {
   event.preventDefault()
-  try {
-    await navigator.clipboard.writeText(props.path)
-  } catch {
-    open.value = false
-    return
-  }
-  copied.value = true
+  copyState.value = await navigator.clipboard.writeText(props.path).then(
+    () => 'copied' as const,
+    () => 'failed' as const
+  )
   clearCloseTimer()
   closeTimer = setTimeout(() => (open.value = false), COPIED_CLOSE_MS)
 }
@@ -50,7 +47,7 @@ async function copyPath(event: Event): Promise<void> {
 watch(open, (isOpen) => {
   if (isOpen) return
   clearCloseTimer()
-  copied.value = false
+  copyState.value = 'idle'
 })
 
 onBeforeUnmount(clearCloseTimer)
@@ -61,7 +58,7 @@ onBeforeUnmount(clearCloseTimer)
     v-model:open="open"
     :modal="false"
     align="end"
-    class="z-20 min-w-[200px]"
+    class="z-20 min-w-[180px]"
     :aria-label="t('assets.local.folderActions')"
   >
     <template #trigger>
@@ -94,11 +91,9 @@ onBeforeUnmount(clearCloseTimer)
       data-testid="local-folder-copy-path"
       @select="copyPath"
     >
-      <Check v-if="copied" :size="15" aria-hidden="true" />
+      <Check v-if="copyState === 'copied'" :size="15" aria-hidden="true" />
       <Copy v-else :size="15" aria-hidden="true" />
-      <span class="flex-1 text-left" aria-live="polite">{{
-        copied ? t('assets.local.pathCopied') : t('assets.local.copyPath')
-      }}</span>
+      <span class="flex-1 text-left" aria-live="polite">{{ t(COPY_LABEL_KEYS[copyState]) }}</span>
     </MenuItem>
   </Menu>
 </template>

@@ -568,6 +568,18 @@ describe('AssetsView on This computer', () => {
     expect(bubble?.textContent).toContain('My Local 1')
   })
 
+  it('does not repeat the build name on a folder that only one build names in its title', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const card = wrapper.get(`[data-testid="local-folder-${APPS}"]`)
+
+    ;(card.element as HTMLButtonElement).focus()
+    await flushPromises()
+
+    expect(card.attributes('aria-describedby')).toBeUndefined()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
   it('shows a folder in Finder from its menu without opening it', async () => {
     const wrapper = await mountAssets([])
     await openThisComputer(wrapper)
@@ -601,6 +613,26 @@ describe('AssetsView on This computer', () => {
     expect(writeText).toHaveBeenCalledWith(APPS)
     expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Path copied')
     expect(listOutputFolder).not.toHaveBeenCalled()
+  })
+
+  it('says when a folder path could not be copied', async () => {
+    const writeText = vi
+      .spyOn(navigator.clipboard, 'writeText')
+      .mockRejectedValue(new Error('denied'))
+    onTestFinished(() => writeText.mockRestore())
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    await wrapper
+      .get(`[data-testid="local-folder-menu-${APPS}"]`)
+      .trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe(
+      "Couldn't copy the path"
+    )
   })
 
   it('opens on This computer when the user left it there', async () => {
@@ -673,7 +705,9 @@ describe('AssetsView on This computer', () => {
     await wrapper.get('[data-testid="local-open-folder"]').trigger('click')
     expect(openPath).toHaveBeenCalledExactlyOnceWith(SHARED)
 
-    await wrapper.get('[data-testid="local-show-cutout.png"]').trigger('click')
+    const show = wrapper.get('[data-testid="local-show-cutout.png"]')
+    expect(show.attributes('aria-label')).toBe('Show in Finder')
+    await show.trigger('click')
     expect(revealPath).toHaveBeenCalledExactlyOnceWith(`${SHARED}/cutout.png`)
   })
 
@@ -691,7 +725,9 @@ describe('AssetsView on This computer', () => {
     expect(savedIn).toContain('output')
     expect(savedIn).toContain('/Users/me/ComfyUI-Shared')
     expect(wrapper.find('[data-testid="output-detail-download"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="output-detail-show-in-folder"]').trigger('click')
+    const show = wrapper.get('[data-testid="output-detail-show-in-folder"]')
+    expect(show.text()).toBe('Show in Finder')
+    await show.trigger('click')
     expect(revealPath).toHaveBeenCalledExactlyOnceWith(`${SHARED}/cutout.png`)
   })
 
