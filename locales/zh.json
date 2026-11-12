@@ -95,23 +95,17 @@
     "viewInAssets": "在资产中查看",
     "local": {
       "folderActions": "文件夹操作",
-      "inFolder": "位于 {name}",
+      "howFoldersWork": "文件夹说明",
+      "foldersHint": "每个文件夹上方的名称是把图片和视频保存到这里的构建。大多数构建共用一个文件夹。",
+      "noBuilds": "还没有构建保存到这里",
       "savedBy": "保存到这里的构建",
-      "groups": {
-        "shared": {
-          "title": "共享文件夹",
-          "hint": "使用共享文件夹的构建都会把文件保存在这里。"
-        },
-        "separate": {
-          "title": "独立构建文件夹",
-          "hint": "这些构建把文件保存在自己的文件夹中，而不是共享文件夹。"
-        }
-      },
+      "moreBuilds": "还有 {count} 个",
+      "showBuildNames": "显示构建名称",
       "showInFinder": "在访达中显示",
       "showInExplorer": "在资源管理器中显示",
       "copyPath": "复制路径",
       "pathCopied": "已复制路径",
-      "copyFailed": "无法复制。点击重试",
+      "copyFailed": "无法复制。请重试",
       "openFolder": "打开文件夹",
       "path": "文件夹路径",
       "noFoldersTitle": "还没有输出文件夹",

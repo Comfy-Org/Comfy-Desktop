@@ -36,10 +36,12 @@ function reveal(): void {
 
 async function copyPath(event: Event): Promise<void> {
   event.preventDefault()
-  copyState.value = await navigator.clipboard.writeText(props.path).then(
+  const result = await navigator.clipboard.writeText(props.path).then(
     () => 'copied' as const,
     () => 'failed' as const
   )
+  if (!open.value) return
+  copyState.value = result
   clearCloseTimer()
   if (copyState.value === 'copied')
     closeTimer = setTimeout(() => (open.value = false), COPIED_CLOSE_MS)
