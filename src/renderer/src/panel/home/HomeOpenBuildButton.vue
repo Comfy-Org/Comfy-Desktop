@@ -90,7 +90,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
           type="button"
           variant="inverted"
           size="md"
-          class="rounded-l-none border-l border-background/20 pr-2.5 pl-2"
+          class="rounded-l-none pr-2.5 pl-2 before:absolute before:inset-y-2 before:left-0 before:w-px before:bg-background/20"
           :aria-label="t('home.chooseBuildToOpen')"
           data-testid="home-open-build-menu"
         >
