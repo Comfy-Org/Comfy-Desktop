@@ -43,6 +43,13 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
+  it('passes the app tag with a Cloud run only when the page gives one', () => {
+    expect(preload).toMatch(/const BRIDGE = 3\n/)
+    expect(preload).toContain("ipcRenderer.invoke('comfy-apps:run', workflow, app)")
+    expect(main).toMatch(/async function run\(workflow: unknown, app\?: unknown\)/)
+    expect(main).toContain('body: cloudPromptBody(workflow, token, tag)')
+  })
+
   it('refuses to show the apps page while the remote switch is off', () => {
     expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
   })

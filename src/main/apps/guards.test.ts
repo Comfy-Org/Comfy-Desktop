@@ -7,6 +7,8 @@ import {
   appsOrigin,
   appsUrl,
   cleanSaveName,
+  cloudAppTag,
+  cloudPromptBody,
   COMFY_READY_SCRIPT,
   collectOutputs,
   downloadRequest,
@@ -14,6 +16,7 @@ import {
   DEFAULT_APPS_URL,
   isAppOpen,
   isAppsFrameUrl,
+  isAppSlug,
   isBuildId,
   isComfyPage,
   isDocumentFailure,
@@ -928,5 +931,91 @@ describe('reading the local queue', () => {
     expect(queueAnswer(500, bytes, new Map()).status).toBe(500)
     expect(queueAnswer(500, bytes, new Map()).body).not.toEqual(bytes)
     expect(queueAnswer(200, new TextEncoder().encode('not json'), new Map()).status).toBe(502)
+  })
+})
+
+describe('cloudAppTag', () => {
+  it('tags a Cloud run with the app and its model', () => {
+    expect(cloudAppTag({ app: 'text-to-image', model: 'flux-2-klein' })).toEqual({
+      id: 'text-to-image',
+      model: 'flux-2-klein',
+      where: 'cloud'
+    })
+  })
+
+  it('tags a Cloud run with only the app when no model is named', () => {
+    expect(cloudAppTag({ app: 'remove-background' })).toEqual({
+      id: 'remove-background',
+      where: 'cloud'
+    })
+  })
+
+  it('leaves a model that is not a slug out of the tag', () => {
+    expect(cloudAppTag({ app: 'upscale', model: 'My Model/v2' })).toEqual({
+      id: 'upscale',
+      where: 'cloud'
+    })
+  })
+
+  it.each<[string, unknown]>([
+    ['nothing, from a page that predates the tag', undefined],
+    ['null', null],
+    ['a bare string', 'upscale'],
+    ['a list', ['upscale']],
+    ['no app', { model: 'flux-2' }],
+    ['a display name', { app: 'Remove background' }],
+    ['a path', { app: '../upscale' }],
+    ['65 characters', { app: 'a'.repeat(65) }],
+    ['a number', { app: 3 }]
+  ])('sends no tag for %s', (_why, input) => {
+    expect(cloudAppTag(input)).toBeNull()
+  })
+
+  it('takes only id, model and where from the page', () => {
+    expect(
+      Object.keys(cloudAppTag({ app: 'upscale', model: 'x', prompt: 'a cat', where: 'local' })!)
+    ).toEqual(['id', 'model', 'where'])
+  })
+})
+
+describe('isAppSlug', () => {
+  it.each([
+    ['upscale', true],
+    ['image-to-3d', true],
+    ['sdr_to.hdr', true],
+    ['0', true],
+    ['Upscale', false],
+    ['', false],
+    ['-upscale', false],
+    ['up scale', false],
+    ['a'.repeat(64), true],
+    ['a'.repeat(65), false]
+  ])('%s is a slug: %s', (value, ok) => {
+    expect(isAppSlug(value)).toBe(ok)
+  })
+})
+
+describe('cloudPromptBody', () => {
+  const workflow = { '1': { class_type: 'SaveImage', inputs: {} } }
+
+  it('posts extra_data.comfy_app next to the token for a tagged run', () => {
+    expect(
+      JSON.parse(
+        cloudPromptBody(workflow, 'tok', { id: 'upscale', model: 'esrgan-4x', where: 'cloud' })
+      )
+    ).toEqual({
+      prompt: workflow,
+      extra_data: {
+        auth_token_comfy_org: 'tok',
+        comfy_app: { id: 'upscale', model: 'esrgan-4x', where: 'cloud' }
+      }
+    })
+  })
+
+  it('posts the body as before for an untagged run', () => {
+    expect(JSON.parse(cloudPromptBody(workflow, 'tok', null))).toEqual({
+      prompt: workflow,
+      extra_data: { auth_token_comfy_org: 'tok' }
+    })
   })
 })

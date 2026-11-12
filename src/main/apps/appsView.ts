@@ -13,6 +13,8 @@ import {
   appsOrigin,
   appsUrl,
   cleanSaveName,
+  cloudAppTag,
+  cloudPromptBody,
   collectOutputs,
   isAppOpen,
   isAllowedAppsPermission,
@@ -257,14 +259,15 @@ interface NodeError {
   errors?: Array<{ message?: string; details?: string }>
 }
 
-async function run(workflow: unknown): Promise<{ runId: string }> {
+async function run(workflow: unknown, app?: unknown): Promise<{ runId: string }> {
   if (!isWorkflow(workflow)) throw new Error('That is not a workflow.')
+  const tag = cloudAppTag(app)
   const token = await getCloudSession().getAccessToken()
   if (!token) throw new Error('Sign in to Comfy to use apps.')
   const res = await cloudFetch('/prompt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: workflow, extra_data: { auth_token_comfy_org: token } })
+    body: cloudPromptBody(workflow, token, tag)
   })
   if (!res.ok) throw await failure(res)
   const body = (await res.json()) as { prompt_id?: string; node_errors?: Record<string, NodeError> }
