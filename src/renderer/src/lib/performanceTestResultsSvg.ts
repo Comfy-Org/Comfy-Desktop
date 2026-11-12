@@ -35,8 +35,38 @@ function text(x: number, y: number, value: string, className: string, anchor = '
   return `<text x="${x}" y="${y}" class="${className}" text-anchor="${anchor}">${escapeXml(value)}</text>`
 }
 
-function fitText(value: string, maxCharacters: number): string {
-  return value.length > maxCharacters ? `${value.slice(0, maxCharacters - 1).trimEnd()}…` : value
+const WIDE_CHARACTER = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u
+
+function characterWidthEm(character: string): number {
+  if (WIDE_CHARACTER.test(character)) return 1
+  if (/\d/.test(character)) return 0.62
+  if (character === ' ') return 0.28
+  if (/[.,:;'|!il]/.test(character)) return 0.3
+  if (/[A-Z]/.test(character)) return 0.66
+  return 0.55
+}
+
+export function estimateTextWidth(value: string, fontSize: number): number {
+  let width = 0
+  for (const character of value) width += characterWidthEm(character)
+  return width * fontSize
+}
+
+export function fitText(value: string, maxWidth: number, fontSize: number): string {
+  if (estimateTextWidth(value, fontSize) <= maxWidth) return value
+  const characters = [...value]
+  while (
+    characters.length > 0 &&
+    estimateTextWidth(`${characters.join('')}…`, fontSize) > maxWidth
+  ) {
+    characters.pop()
+  }
+  return `${characters.join('').trimEnd()}…`
+}
+
+export function fitFontSize(value: string, maxWidth: number, maxFontSize: number): number {
+  const widthAtMax = estimateTextWidth(value, maxFontSize)
+  return widthAtMax <= maxWidth ? maxFontSize : Math.floor((maxFontSize * maxWidth) / widthAtMax)
 }
 
 export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImageData): string {
@@ -44,7 +74,12 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
   const margin = 56
   const contentWidth = width - margin * 2
   const resultsY = 132
+  const headlineColumnWidth = 288
   const chartX = margin + 320
+  const titleSize = 26
+  const headlineMaxSize = 64
+  const headlineSize = fitFontSize(data.headline.value, headlineColumnWidth, headlineMaxSize)
+  const factValueSize = 15
   const chartLabelWidth = 120
   const chartValueWidth = 96
   const trackX = chartX + chartLabelWidth
@@ -68,7 +103,7 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
       const barWidth = Math.max((row.durationSeconds / longestDuration) * trackWidth, 8)
       const tone = row.highlight ? 'strong' : 'soft'
       return [
-        text(chartX, y + 20, row.label, 'chart-label'),
+        text(chartX, y + 20, fitText(row.label, chartLabelWidth - 12, 14), 'chart-label'),
         `<rect x="${trackX}" y="${y + 12}" width="${trackWidth}" height="8" rx="4" class="chart-track" />`,
         `<rect x="${trackX}" y="${y + 12}" width="${barWidth}" height="8" rx="4" class="chart-bar-${tone}" />`,
         text(width - margin, y + 21, row.value, `chart-value-${tone}`, 'end')
@@ -82,7 +117,7 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
       const y = factsTop + Math.floor(index / columns) * factHeight
       return [
         text(x, y + 18, fact.label, 'fact-label'),
-        text(x, y + 40, fitText(fact.value, Math.floor(columnWidth / 8.4)), 'fact-value')
+        text(x, y + 40, fitText(fact.value, columnWidth, factValueSize), 'fact-value')
       ].join('')
     })
     .join('')
@@ -92,9 +127,9 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
   <style>
     text { font-family: Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
     .background { fill: #121212; }
-    .title { fill: #f5f5f5; font-size: 26px; font-weight: 600; }
+    .title { fill: #f5f5f5; font-size: ${titleSize}px; font-weight: 600; }
     .section-label { fill: #8a8a8a; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; }
-    .headline { fill: #ffffff; font-size: 64px; font-weight: 500; letter-spacing: -0.02em; }
+    .headline { fill: #ffffff; font-size: ${headlineSize}px; font-weight: 500; letter-spacing: -0.02em; }
     .headline-label { fill: #a3a3a3; font-size: 15px; }
     .chart-label { fill: #a3a3a3; font-size: 14px; }
     .chart-track { fill: #242424; }
@@ -103,13 +138,13 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
     .chart-value-strong { fill: #ffffff; font-size: 16px; font-weight: 600; }
     .chart-value-soft { fill: #d4d4d4; font-size: 16px; }
     .fact-label { fill: #8a8a8a; font-size: 13px; }
-    .fact-value { fill: #e5e5e5; font-size: 15px; }
+    .fact-value { fill: #e5e5e5; font-size: ${factValueSize}px; }
     .footer-date { fill: #8a8a8a; font-size: 13px; }
   </style>
   <rect width="${width}" height="${height}" class="background" />
-  ${text(margin, 72, data.title, 'title')}
+  ${text(margin, 72, fitText(data.title, contentWidth, titleSize), 'title')}
   ${text(margin, resultsY + 86, data.headline.value, 'headline')}
-  ${text(margin, resultsY + 120, data.headline.label, 'headline-label')}
+  ${text(margin, resultsY + 120, fitText(data.headline.label, headlineColumnWidth, 15), 'headline-label')}
   ${text(chartX, resultsY + 14, data.aggregateTitle.toUpperCase(), 'section-label')}
   ${chart}
   ${text(margin, systemY + 14, data.systemInformationTitle.toUpperCase(), 'section-label')}
