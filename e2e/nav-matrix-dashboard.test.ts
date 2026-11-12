@@ -131,6 +131,18 @@ test('Dashboard → running instance: focus existing window @windows @macos @lin
     })
     .toBe(false)
 
+  await expect
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'focus-comfy-window')) as {
+          installationId?: string
+        }[]
+        return calls.some((c) => c.installationId === INSTALL_A_ID)
+      },
+      { timeout: 5_000, intervals: [100, 250] }
+    )
+    .toBe(true)
+
   await expectNoIpcInvocation(ctx.app, 'open-install-new-window', () => true, {
     message: 'unexpected new window for a build that is already running'
   })

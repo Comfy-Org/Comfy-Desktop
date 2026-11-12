@@ -134,6 +134,9 @@ import {
   findEntryByHostWindow,
   forceRevealHostWindow,
   getEntryByInstallationId,
+  bringToFront,
+  findHomeHostEntry,
+  findHostLaunching,
   isChooserHost,
   isInstallHost,
   openOrFocusAnyHostWindow,
@@ -768,13 +771,11 @@ ipcMain.on('comfy-window:new-chooser-window', () => {
   openChooserHostWindow()
 })
 
-ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {
-  recordIpcInvocation('focus-comfy-window', { installationId })
-  return focusBuild(installationId)
-})
+ipcMain.handle('focus-comfy-window', (_event, installationId: string) => focusBuild(installationId))
 
 function focusBuild(installationId: string): boolean {
-  const entry = getEntryByInstallationId(installationId)
+  recordIpcInvocation('focus-comfy-window', { installationId })
+  const entry = getEntryByInstallationId(installationId) ?? findHostLaunching(installationId)
   if (entry && !entry.window.isDestroyed()) {
     showBuildWindow(entry)
     return true
@@ -840,7 +841,10 @@ function showBuildWindow(entry: ComfyWindowEntry): void {
 }
 
 ipcMain.on('comfy-window:show-home', (event) => {
-  if (findEntryByTitleBarSender(event.sender)) openOrFocusChooserHostWindow()
+  if (!findEntryByTitleBarSender(event.sender)) return
+  const home = findHomeHostEntry()
+  if (home) bringToFront(home.window)
+  else openChooserHostWindow()
 })
 
 ipcMain.handle('claim-attach-host', (event, installationId: string) => {
@@ -1070,7 +1074,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       installationId: string,
       opts?: { allowDuplicate?: boolean }
     ): Promise<void> => {
-      const existing = getEntryByInstallationId(installationId)
+      const existing = getEntryByInstallationId(installationId) ?? findHostLaunching(installationId)
       const willFocusExisting =
         !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
       recordIpcInvocation('open-install-new-window', {

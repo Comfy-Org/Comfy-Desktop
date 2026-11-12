@@ -115,6 +115,18 @@ test('Instance B (running elsewhere): focus its existing window @windows @macos 
     `window.__comfyTitlePopup.pickInstall(${JSON.stringify(INSTALL_B_ID)})`
   )
 
+  await expect
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'focus-comfy-window')) as {
+          installationId?: string
+        }[]
+        return calls.some((c) => c.installationId === INSTALL_B_ID)
+      },
+      { timeout: 5_000, intervals: [100, 250] }
+    )
+    .toBe(true)
+
   await expectNoIpcInvocation(ctx.app, 'open-install-new-window', () => true, {
     message: 'unexpected new window for a build that is already running'
   })

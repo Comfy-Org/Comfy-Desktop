@@ -227,6 +227,29 @@ export function findPreferredHostByVisibility(
   return minimisedFallback
 }
 
+export function findHostLaunching(installationId: string): ComfyWindowEntry | undefined {
+  const claimedKey = pendingAttachClaims.get(installationId)
+  for (const entry of comfyWindows.values()) {
+    if (entry.window.isDestroyed() || !isChooserHost(entry)) continue
+    if (entry.previewInstallationId === installationId || entry.windowKey === claimedKey) {
+      return entry
+    }
+  }
+  return undefined
+}
+
+function isLaunchingABuild(entry: ComfyWindowEntry): boolean {
+  if (entry.previewInstallationId !== null) return true
+  for (const claimedKey of pendingAttachClaims.values()) {
+    if (claimedKey === entry.windowKey) return true
+  }
+  return false
+}
+
+export function findHomeHostEntry(): ComfyWindowEntry | null {
+  return findPreferredHostByVisibility((e) => isChooserHost(e) && !isLaunchingABuild(e))
+}
+
 export function findPreferredChooserHostWindow(): BrowserWindow | null {
   const entry = findPreferredHostByVisibility((e) => e.installationId === null)
   return entry?.window ?? null

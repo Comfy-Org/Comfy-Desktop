@@ -20,6 +20,7 @@ import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
+import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
 const { t, locale } = useI18n()
@@ -364,9 +365,6 @@ const betaNotice = useBetaActivationNotice({
 
 const homeButtonShown = computed(() => !isInstallLess.value && !isFirstUseLockdown.value)
 
-const titleHomeButtonClass =
-  '[-webkit-app-region:no-drag] inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-control border border-solid border-border px-2 text-ui text-muted-foreground outline-none hover:bg-accent/40 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring'
-
 function showHome(): void {
   bridge?.showHome()
 }
@@ -535,16 +533,18 @@ onUnmounted(() => {
       ref="titleCluster"
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
-      <button
+      <Button
         v-if="homeButtonShown"
         type="button"
-        :class="titleHomeButtonClass"
+        variant="outline"
+        size="sm"
+        class="[-webkit-app-region:no-drag] [.title-bar:not(.is-hover-active)_&]:hover:bg-transparent"
         data-testid="title-home-button"
         @click="showHome"
       >
         <House :size="14" aria-hidden="true" />
         {{ t('sidebar.home') }}
-      </button>
+      </Button>
       <div v-else-if="isFirstUseLockdown" class="title-install-pill" :class="titleInstallPillClass">
         <div
           class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
