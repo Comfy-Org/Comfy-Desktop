@@ -399,10 +399,10 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="workspace-install-source-managed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-install-source-managed"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="install-source-remote"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="install-source-standalone"]').text()).toBe(
+    expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="install-source-here"]').text()).toBe(
       'Install on this computer instead'
     )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
@@ -410,7 +410,7 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(window.api.getFieldOptions).not.toHaveBeenCalled()
     expect(window.api.validateHardware).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
+    await wrapper.get('[data-testid="install-source-here"]').trigger('click')
     await flushPromises()
 
     expect(window.api.validateHardware).toHaveBeenCalledOnce()
@@ -1150,5 +1150,47 @@ describe('InstallWizardModal hardware warning', () => {
     await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
 
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
+  })
+
+  it('keeps the hardware warning visible in Change setup', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([standaloneSource])
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: true,
+      warning: KFD_WARNING
+    })
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    await showChangeSetup(wrapper)
+
+    expect(wrapper.get('[data-testid="wizard-hardware-warning"]').text()).toBe(KFD_WARNING)
+  })
+
+  it('clears the unsupported machine state once a source that skips local hardware is picked', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      standaloneSource,
+      remoteSource
+    ])
+    ;(window.api.detectGPU as ReturnType<typeof vi.fn>).mockResolvedValue({ label: 'Old GPU' })
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: false,
+      error: 'This CPU is missing AVX support.'
+    })
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(wrapper.find('.config-machine--unsupported').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe(
+      'This CPU is missing AVX support.'
+    )
+
+    await showChangeSetup(wrapper)
+    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+
+    expect(wrapper.find('.config-machine--unsupported').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe('Old GPU')
   })
 })

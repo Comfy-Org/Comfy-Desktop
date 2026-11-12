@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { Check } from 'lucide-vue-next'
+import { Check, Crown } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 
 export interface SetupOptionCard {
@@ -8,6 +8,7 @@ export interface SetupOptionCard {
   label: string
   description?: string
   recommended?: boolean
+  credits?: boolean
   icon?: Component
   image?: string | null
   testId?: string
@@ -76,6 +77,13 @@ defineEmits<{ select: [value: string] }>()
             class="setup-option__recommended flex-none rounded-[4px] bg-white/16 px-1.5 py-0.5 text-[10px] leading-[14px] font-semibold tracking-[0.04em] text-text-muted uppercase"
           >
             {{ $t('newInstall.recommended') }}
+          </span>
+          <span
+            v-if="opt.credits"
+            class="setup-option__credits inline-flex flex-none items-center gap-1 text-[11px] leading-4 font-medium text-[var(--upgrade)]"
+          >
+            <Crown :size="12" :stroke-width="2.5" aria-hidden="true" />
+            {{ $t('standalone.templateApiBadge') }}
           </span>
         </span>
         <span

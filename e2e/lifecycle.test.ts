@@ -358,7 +358,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
       async () =>
         ctx.panel.evaluate<boolean>(
           `(() => {
-          const sel = document.querySelector('.setup-option--selected .setup-option__label')
+          const sel = document.querySelector('#source-fields .setup-option--selected .setup-option__label')
           return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
         })()`
         ),

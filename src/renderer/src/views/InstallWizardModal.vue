@@ -88,6 +88,7 @@ const defaultInstPath = ref('')
 const detectedGpu = ref('')
 const gpuName = ref('')
 const machineUnsupported = ref(false)
+const unsupportedReason = ref('')
 const view = ref<'summary' | 'change'>('summary')
 const platform = window.api?.platform ?? 'darwin'
 const hardwareWarning = ref('')
@@ -472,6 +473,7 @@ function rawSelections(): Record<string, FieldOption> {
   return result
 }
 
+let gpuDetectionDone = false
 let installDirPromise: Promise<string> | null = null
 let sourcesPromise: Promise<Source[]> | null = null
 
@@ -488,6 +490,9 @@ onMounted(() => {
     })
     .catch(() => {
       detectedGpu.value = t('newInstall.noGpuDetected')
+    })
+    .finally(() => {
+      gpuDetectionDone = true
     })
 
   installDirPromise = window.api.getDefaultInstallDir().catch(() => '')
@@ -542,8 +547,9 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   fieldErrors.value.clear()
   textFieldValues.value.clear()
 
-  detectedGpu.value = t('newInstall.detectingGpu')
+  if (!gpuName.value && !gpuDetectionDone) detectedGpu.value = t('newInstall.detectingGpu')
   machineUnsupported.value = false
+  unsupportedReason.value = ''
   view.value = 'summary'
   hardwareValidation = null
   hardwareWarning.value = ''
@@ -679,7 +685,7 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
     await selectSourceCard(source)
   } else {
     machineUnsupported.value = true
-    detectedGpu.value = hardwareValidation.error || t('newInstall.noGpuDetected')
+    unsupportedReason.value = hardwareValidation.error || t('newInstall.noGpuDetected')
   }
 }
 
@@ -1175,10 +1181,19 @@ function isHiddenWhenEmpty(field: SourceField): boolean {
   return options.length === 0 && !fieldLoading.value.get(field.id)
 }
 
-const machineTitle = computed(() =>
-  machineUnsupported.value ? detectedGpu.value : gpuName.value || detectedGpu.value
+const machineBlocked = computed(
+  () =>
+    machineUnsupported.value &&
+    !managedBuildMode.value &&
+    (!currentSource.value || currentSource.value.id === 'standalone')
 )
-const machineDetected = computed(() => !machineUnsupported.value && !!gpuName.value)
+const machineTitle = computed(() =>
+  machineBlocked.value ? unsupportedReason.value : gpuName.value || detectedGpu.value
+)
+const machineDetected = computed(() => !machineBlocked.value && !!gpuName.value)
+const blockingFieldError = computed(
+  () => urlFieldError.value || fieldErrors.value.values().next().value || ''
+)
 
 const remoteSource = computed(() => sources.value.find((source) => source.id === 'remote') ?? null)
 const remoteSelected = computed(
@@ -1218,20 +1233,25 @@ const selectedSourceCard = computed(() => {
   return currentSource.value ? `source-${currentSource.value.id}` : null
 })
 
-function selectSourceCardByKey(key: string): void {
+async function selectSourceCardByKey(key: string): Promise<void> {
   const tab = installSourceTabs.value.find((candidate) => candidate.key === key)
   if (!tab) return
-  if (tab.kind === 'managed') void selectManagedInstallMode()
-  else void selectSourceCard(tab.source)
+  if (tab.kind === 'managed') await selectManagedInstallMode()
+  else await selectSourceCard(tab.source)
 }
 
-function selectRemoteSource(): void {
-  if (remoteSource.value) void selectSourceCard(remoteSource.value)
+async function selectRemoteSource(): Promise<void> {
+  if (remoteSource.value) await selectSourceCard(remoteSource.value)
 }
 
-function selectStandaloneSource(): void {
+async function selectStandaloneSource(): Promise<void> {
   const standalone = sources.value.find((source) => source.id === 'standalone')
-  if (standalone) void selectSourceCard(standalone)
+  if (standalone) await selectSourceCard(standalone)
+}
+
+function backToConfigure(): void {
+  step.value = 'configure'
+  view.value = 'summary'
 }
 
 function toOptionCards(options: FieldOption[]): SetupOptionCard[] {
@@ -1240,6 +1260,7 @@ function toOptionCards(options: FieldOption[]): SetupOptionCard[] {
     label: option.label,
     description: option.description,
     recommended: option.recommended,
+    credits: isApiNodeTemplate(option),
     image: getVariantImage(option)
   }))
 }
@@ -1435,12 +1456,12 @@ defineExpose({ open })
 
               <div
                 class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[18px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
-                :class="machineUnsupported && 'config-machine--unsupported'"
+                :class="machineBlocked && 'config-machine--unsupported'"
               >
                 <SetupMachineIllustration
                   class="h-[88px] w-[136px] flex-none max-[640px]:hidden"
                   :os="platform"
-                  :bad="machineUnsupported"
+                  :bad="machineBlocked"
                 />
                 <span class="grid min-w-0">
                   <span
@@ -1451,8 +1472,12 @@ defineExpose({ open })
                     }}</span
                   >
                   <span
-                    class="config-gpu-value truncate text-[22px] leading-7 font-semibold tracking-[-0.01em]"
-                    :class="machineUnsupported ? 'text-[var(--danger)]' : 'text-neutral-100'"
+                    class="config-gpu-value text-[22px] leading-7 font-semibold tracking-[-0.01em]"
+                    :class="
+                      machineBlocked
+                        ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
+                        : 'truncate text-neutral-100'
+                    "
                     data-testid="detected-gpu-field"
                     >{{ machineTitle }}</span
                   >
@@ -1475,6 +1500,14 @@ defineExpose({ open })
                 data-testid="wizard-hardware-warning"
               >
                 {{ hardwareWarning }}
+              </div>
+              <div
+                v-if="blockingFieldError"
+                class="config-summary-field-error mt-2 px-1 text-[12px] leading-[1.4] text-[var(--danger)]"
+                role="alert"
+                data-testid="config-summary-field-error"
+              >
+                {{ blockingFieldError }}
               </div>
 
               <dl
@@ -1544,7 +1577,15 @@ defineExpose({ open })
               data-testid="config-change-form"
             >
               <div
-                v-if="sources.length > 0 && !remoteSelected"
+                v-if="hardwareWarning && !currentSource?.skipInstall"
+                class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
+                role="alert"
+                data-testid="wizard-hardware-warning"
+              >
+                {{ hardwareWarning }}
+              </div>
+              <div
+                v-if="sources.length > 0"
                 class="config-form-row grid grid-cols-[148px_minmax(0,1fr)] items-start gap-4 py-3"
               >
                 <span
@@ -1821,7 +1862,7 @@ defineExpose({ open })
                     variant="link"
                     type="button"
                     class="config-install-here text-[12.5px] text-neutral-100"
-                    data-testid="install-source-standalone"
+                    data-testid="install-source-here"
                     @click="selectStandaloneSource"
                   >
                     {{ $t('newInstall.installHereInstead') }}
@@ -1944,7 +1985,7 @@ defineExpose({ open })
               variant="textonly"
               type="button"
               class="template-back -ml-3"
-              @click="step = 'configure'"
+              @click="backToConfigure"
             >
               <ArrowLeft :size="16" aria-hidden="true" />
               {{ $t('common.back') }}

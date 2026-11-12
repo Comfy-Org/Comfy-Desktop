@@ -156,13 +156,22 @@ test('open-new-install dismisses the popup and opens the New Build modal @window
   await expectNewBuildModalOpen(ctx.panel)
   await ctx.panel.waitForVisible('[data-testid="config-summary"]', { timeout: 10_000 })
 
-  const fitsWindow = await ctx.panel.evaluate<boolean>(
+  const tail = await ctx.panel.evaluate<number | null>(
     `(() => {
-      const panel = document.querySelector('[data-testid="new-build-modal"]').getBoundingClientRect()
-      return panel.top >= 0 && panel.bottom <= window.innerHeight
+      const summary = document.querySelector('[data-testid="config-summary"]')
+      const box = summary?.closest('.install-wizard-body')
+      if (!summary || !box) return null
+      const top = box.getBoundingClientRect().top - box.scrollTop
+      const contentEnd = summary.getBoundingClientRect().bottom - top
+        + parseFloat(getComputedStyle(box).paddingBottom)
+      return box.scrollHeight - Math.max(box.clientHeight, Math.ceil(contentEnd))
     })()`
   )
-  expect(fitsWindow, 'The New Build modal should fit inside the window').toBe(true)
+  expect(tail, 'The New Build modal should have a scrolling body').not.toBeNull()
+  expect(
+    tail,
+    'The New Build body should not scroll past the end of its content'
+  ).toBeLessThanOrEqual(2)
 })
 
 test('open-install-action with reveal-in-folder keeps the popup open and fires the action @windows @macos @linux', async () => {
