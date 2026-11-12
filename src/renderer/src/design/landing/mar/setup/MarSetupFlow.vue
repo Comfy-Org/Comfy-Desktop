@@ -15,6 +15,7 @@ import {
   HardDrive,
   LoaderCircle,
   Package,
+  SlidersHorizontal,
   TriangleAlert,
   Users,
   Zap
@@ -75,6 +76,7 @@ import {
   phases,
   retryInstall,
   setupOn,
+  newBuildModal,
   startInstall,
   unsupported,
   type Starter,
@@ -93,7 +95,8 @@ import './setup.css'
  * Copy is the product's, in English.
  */
 const open = computed({
-  get: () => setupOn.value && flow.open && flow.step !== 'first' && !flow.arriving && !flow.landing,
+  get: () =>
+    newBuildModal.value && flow.open && flow.step !== 'first' && !flow.arriving && !flow.landing,
   set: (v: boolean) => {
     if (!v) closeSetup()
   }
@@ -627,7 +630,32 @@ function rowState(i: number): string {
             <!-- What gets installed: one grouped list, as the Home's settings,
                  a line each: what it is, its value, its detail. Only a problem
                  gets a mark. -->
-            <dl class="mss-summary" aria-label="Install summary">
+            <dl class="mss-summary is-stacked" aria-label="Install summary">
+              <div class="mss-row">
+                <dt><Package :size="15" />Release</dt>
+                <dd>
+                  <span class="text-base-foreground">{{
+                    channel === 'stable' ? 'Stable' : 'Latest on GitHub'
+                  }}</span>
+                  <span class="mss-row-meta">{{
+                    channel === 'stable'
+                      ? 'Tested releases, recommended for most users'
+                      : 'The newest changes, before they are released'
+                  }}</span>
+                </dd>
+              </div>
+              <div class="mss-row">
+                <dt><SlidersHorizontal :size="15" />ComfyUI version</dt>
+                <dd>
+                  <span class="text-base-foreground">{{
+                    channel === 'stable' ? version : 'latest'
+                  }}</span>
+                  <span class="mss-row-meta"
+                    >{{ version === DETECTED.version ? 'Latest stable' : 'Older stable' }} ·
+                    {{ DETECTED.downloadGb }} GB download</span
+                  >
+                </dd>
+              </div>
               <div class="mss-row">
                 <dt><Zap :size="15" />Hardware</dt>
                 <dd>
@@ -635,7 +663,7 @@ function rowState(i: number): string {
                   <span class="mss-row-meta">{{ pickedHardware.summary }}</span>
                 </dd>
               </div>
-              <div class="mss-row" :class="lowSpace && 'is-bad'">
+              <div class="mss-row is-change" :class="lowSpace && 'is-bad'">
                 <dt><HardDrive :size="15" />Location</dt>
                 <dd>
                   <span class="truncate text-base-foreground">{{ where }}</span>
@@ -646,16 +674,7 @@ function rowState(i: number): string {
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
-              </div>
-              <div class="mss-row">
-                <dt><Package :size="15" />Version</dt>
-                <dd>
-                  <span class="text-base-foreground"
-                    >ComfyUI {{ channel === 'stable' ? version : 'latest' }} ·
-                    {{ channel === 'stable' ? 'Stable' : 'Latest on GitHub' }}</span
-                  >
-                  <span class="mss-row-meta">{{ DETECTED.downloadGb }} GB download</span>
-                </dd>
+                <Button size="sm" variant="ghost" @click="flow.movedDisk = true">Browse…</Button>
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
               <div v-if="localSetup.machine === 'legacy' && flow.bringOver" class="mss-row">
@@ -733,9 +752,6 @@ function rowState(i: number): string {
           </template>
           <template v-else>
             <span class="flex-1"></span>
-            <span v-if="!unsupported" class="mss-foot-sum tabular-nums"
-              >{{ DETECTED.downloadGb }} GB download · ~{{ REQUIRED_GB }} GB required</span
-            >
             <Button v-if="unsupported" size="lg" @click="changeSetup">Change</Button>
             <Button v-else-if="newBuild" variant="primary" size="lg" @click="createBuild(buildName)"
               >Install</Button
@@ -805,7 +821,8 @@ function rowState(i: number): string {
                 />
               </div>
             </div>
-            <div v-if="!simple" class="mss-form-row">
+            <!-- New build asks its name on the summary, in its own card. -->
+            <div v-if="!simple && (flow.takeover || flow.homeCard)" class="mss-form-row">
               <span class="mss-form-label">Name</span>
               <Input v-model="name" aria-label="Name" />
             </div>

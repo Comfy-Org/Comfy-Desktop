@@ -1492,7 +1492,6 @@
      control, a note), so a row that swaps its control doesn't move the rest. */
   min-height: 64px;
   padding-block: 12px;
-  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
 }
 /* The last row of the sheet: the action bar draws the line under it. */
 .mss-form-row:last-child {
@@ -2245,4 +2244,21 @@ body:has(.mss-first) [data-reka-popper-content-wrapper] {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* New build summary (Comfy-Desktop#2044): each line is its value over its
+ * detail, no hairlines between them; Location keeps Browse at the end. */
+.mss-summary.is-stacked {
+  box-shadow: none;
+  padding-block: 6px;
+}
+.mss-summary.is-stacked .mss-row {
+  padding-block: 8px;
+  box-shadow: none;
+}
+.mss-summary.is-stacked .mss-row dd {
+  display: grid;
+  gap: 0;
+}
+.mss-summary.is-stacked .mss-row-meta {
+  font-size: 12px;
 }

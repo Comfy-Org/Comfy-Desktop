@@ -201,6 +201,12 @@ watch(
 
 /** The proposed flow replaces "New build flow" wherever the New UI is drawn. */
 export const setupOn = computed(() => can.value.design && localSetup.mode === 'on')
+/** New build opens the New Build modal from Milestone 2 on, as Desktop
+ *  ships it (Comfy-Desktop#2044), the Local setup tweak on or off. The first
+ *  launch stays the tweak's. */
+export const newBuildModal = computed(
+  () => setupOn.value || (proto.milestone >= 4.5 && marUser.local !== 'none')
+)
 /** Home first applies only where the Home exists (the next iterations). */
 export const homeFirst = computed(
   () => setupOn.value && localSetup.scope === 'next' && localSetup.onboarding !== 'install'
@@ -781,9 +787,9 @@ function arrive(): void {
 
 /** Entry: the first launch, then every New Instance button. */
 export function openSetup(): boolean {
-  if (!setupOn.value) return false
+  if (!newBuildModal.value) return false
   // Today's New Instance opens the install wizard directly.
-  flow.step = marUser.local === 'none' ? 'first' : 'setup'
+  flow.step = setupOn.value && marUser.local === 'none' ? 'first' : 'setup'
   flow.takeover = flow.step === 'first'
   // One-click install: the first launch opens on Set up, full window,
   // after the wordmark's beat.
