@@ -5,9 +5,17 @@ import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
 import InstanceGlyph from '../InstanceGlyph.vue'
-import { envById } from './env'
+import { envById, envStatus } from './env'
 import { allWorkflows } from '../../gallery'
-import { go, hostActions, instances, proto, toast, type Page } from '../../useProto'
+import {
+  go,
+  hostActions,
+  instances,
+  proto,
+  recentInstances,
+  toast,
+  type Page
+} from '../../useProto'
 import { PROJECTS } from '../../mock'
 import { can } from '../../milestones'
 import { errorOf } from '../../mar/build/buildErrors'
@@ -38,7 +46,8 @@ const rows = computed<Row[]>(() =>
         envId: p.envId,
         count: allWorkflows.value.filter((w) => w.project === p.name).length
       }))
-    : instances.value.map((i) => ({
+    : // Most recently used first, the order Home and the build picker use (#2042).
+      recentInstances.value.map((i) => ({
         page: `environment:${i.id}` as Page,
         label: i.name,
         envId: i.id,
@@ -46,7 +55,7 @@ const rows = computed<Row[]>(() =>
         count: can.value.breadcrumb
           ? allWorkflows.value.filter((w) => w.envId === i.id).length
           : undefined,
-        live: i.state === 'running',
+        live: envStatus(i).live,
         failed: errorOf(i.id)
       }))
 )
@@ -122,7 +131,13 @@ const itemClass = (page: Page): string =>
           ><InstanceGlyph :inst="envById(r.envId!)!" size="xs" dot failed
         /></span>
       </Tooltip>
-      <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" dot />
+      <InstanceGlyph
+        v-else-if="envById(r.envId!)"
+        :inst="envById(r.envId!)!"
+        size="xs"
+        dot
+        :live="r.live"
+      />
       <span class="sidebar-label text-left">{{ r.label }}</span>
       <!-- Projects: the environment the project runs on -->
       <Tooltip
