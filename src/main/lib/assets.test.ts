@@ -48,6 +48,7 @@ describe('assetKind', () => {
     ['narration.WAV', undefined, 'audio'],
     ['mesh.glb', undefined, '3d'],
     ['notes.txt', undefined, null],
+    ['shader.constructor', undefined, null],
     ['png', undefined, null]
   ])('classifies %s (%s) as %s', (name, mimeType, kind) => {
     expect(assetKind(name, mimeType)).toBe(kind)
@@ -143,6 +144,37 @@ describe('listAssets', () => {
       'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
     )
     expect(summary!.sizeBytes, 'an empty file keeps its size').toBe(0)
+  })
+
+  it('falls back to the content link when a preview link cannot be parsed', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    fetchMock.mockResolvedValue(
+      jsonResponse({ assets: [{ id: 'a1', name: 'still.png', preview_url: 'http://' }] })
+    )
+
+    const [summary] = await listAssets('local-1')
+
+    expect(summary!.previewUrl).toBe(
+      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
+    )
+  })
+
+  it('drops rows whose fields have the wrong type', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        assets: [
+          { id: 'bad', name: 'bad.png', mime_type: 1 },
+          { id: 'good', name: 'good.png', mime_type: null, created_at: null }
+        ]
+      })
+    )
+
+    const assets = await listAssets('local-1')
+
+    expect(assets.map((a) => a.id)).toEqual(['good'])
   })
 
   it('returns nothing for a local build that is not running', async () => {

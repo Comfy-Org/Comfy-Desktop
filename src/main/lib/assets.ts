@@ -10,10 +10,11 @@ const ASSETS_LIST_CHANNEL = 'assets:list'
 
 const LIST_QUERY = 'tags_any=output&sort=created_at&order=desc&limit=100'
 const REQUEST_TIMEOUT_MS = 20_000
+const PREVIEW_BATCH_TIMEOUT_MS = 30_000
 const SIGNED_URL_CONCURRENCY = 6
 const SIGNED_STORAGE_HOST = 'storage.googleapis.com'
 
-const KIND_BY_EXTENSION: Record<string, AssetKind> = Object.fromEntries([
+const KIND_BY_EXTENSION = new Map<string, AssetKind>([
   ...['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'tif', 'tiff', 'svg'].map(
     (ext) => [ext, 'image'] as const
   ),
@@ -27,29 +28,40 @@ const KIND_BY_EXTENSION: Record<string, AssetKind> = Object.fromEntries([
 interface AssetRow {
   id: string
   name: string
-  size?: number
-  mime_type?: string
-  created_at?: string
-  preview_url?: string
+  size?: number | null
+  mime_type?: string | null
+  created_at?: string | null
+  preview_url?: string | null
   tags?: unknown
 }
 
 type AssetSource = { kind: 'cloud'; accessToken: string } | { kind: 'local'; origin: string }
 type ContentDisposition = 'inline' | 'attachment'
 
-function isAssetRow(value: unknown): value is AssetRow {
-  if (!value || typeof value !== 'object') return false
-  const row = value as Partial<AssetRow>
-  return typeof row.id === 'string' && typeof row.name === 'string'
+function isOptional(value: unknown, type: 'string' | 'number'): boolean {
+  return value === undefined || value === null || typeof value === type
 }
 
-export function assetKind(name: string, mimeType?: string): AssetKind | null {
+function isAssetRow(value: unknown): value is AssetRow {
+  if (!value || typeof value !== 'object') return false
+  const row = value as Record<keyof AssetRow, unknown>
+  return (
+    typeof row.id === 'string' &&
+    typeof row.name === 'string' &&
+    isOptional(row.size, 'number') &&
+    isOptional(row.mime_type, 'string') &&
+    isOptional(row.created_at, 'string') &&
+    isOptional(row.preview_url, 'string')
+  )
+}
+
+export function assetKind(name: string, mimeType?: string | null): AssetKind | null {
   const mimeKind = mimeType?.split('/')[0]
   if (mimeKind === 'image' || mimeKind === 'video' || mimeKind === 'audio') return mimeKind
   if (mimeType?.startsWith('model/')) return '3d'
   const dot = name.lastIndexOf('.')
   if (dot < 0) return null
-  return KIND_BY_EXTENSION[name.slice(dot + 1).toLowerCase()] ?? null
+  return KIND_BY_EXTENSION.get(name.slice(dot + 1).toLowerCase()) ?? null
 }
 
 function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
@@ -98,13 +110,14 @@ function contentPath(assetId: string, disposition: ContentDisposition): string {
 async function resolveCloudContentUrl(
   assetId: string,
   accessToken: string,
-  disposition: ContentDisposition
+  disposition: ContentDisposition,
+  deadline: AbortSignal
 ): Promise<string | null> {
   try {
     const res = await fetch(`${CLOUD_CONFIG.issuer}${contentPath(assetId, disposition)}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       redirect: 'manual',
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), deadline])
     })
     return signedStorageUrl(res.headers.get('location'))
   } catch {
@@ -131,19 +144,24 @@ async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
     { Authorization: `Bearer ${accessToken}` }
   )
   const summaries = rows.map((row) => toSummary(row, null))
-  await runPool(summaries, SIGNED_URL_CONCURRENCY, async (summary) => {
-    if (summary.kind === null || summary.kind === '3d') return
-    summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline')
-  })
+  const deadline = AbortSignal.timeout(PREVIEW_BATCH_TIMEOUT_MS)
+  await runPool(
+    summaries,
+    SIGNED_URL_CONCURRENCY,
+    async (summary) => {
+      if (summary.kind === null || summary.kind === '3d') return
+      summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
+    },
+    deadline
+  )
   return summaries
 }
 
 function localPreviewUrl(row: AssetRow, origin: string): string {
   const fallback = new URL(contentPath(row.id, 'inline'), origin)
-  if (!row.preview_url) return fallback.toString()
-  const preview = new URL(row.preview_url, origin)
+  const preview = row.preview_url ? URL.parse(row.preview_url, origin) : null
   return (
-    preview.origin === origin && preview.pathname.startsWith('/api/') ? preview : fallback
+    preview?.origin === fallback.origin && preview.pathname.startsWith('/api/') ? preview : fallback
   ).toString()
 }
 
