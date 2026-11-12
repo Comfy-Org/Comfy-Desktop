@@ -10,6 +10,22 @@ function text(value: unknown, max: number): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : null
 }
 
+const BIDI_CONTROLS = /[\u202a-\u202e\u2066-\u2069]/
+
+function hasHiddenCharacters(value: string): boolean {
+  return (
+    BIDI_CONTROLS.test(value) ||
+    Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+  )
+}
+const ABSOLUTE_LOCAL_PATH = /^(\/|[A-Za-z]:[\\/])/
+
+function absoluteFolder(value: unknown): string | null {
+  const folder = text(value, 1024)
+  if (!folder || hasHiddenCharacters(folder)) return null
+  return ABSOLUTE_LOCAL_PATH.test(folder) ? folder : null
+}
+
 function outputItem(value: unknown): AppOutputItem | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Record<string, unknown>
@@ -24,12 +40,17 @@ function outputItem(value: unknown): AppOutputItem | null {
         .map((tag) => text(tag, 40))
         .filter((tag): tag is string => tag !== null)
     : []
+  const savedOn =
+    item['savedOn'] === 'cloud' || item['savedOn'] === 'computer' ? item['savedOn'] : null
+  const folder = savedOn === 'computer' ? absoluteFolder(item['folder']) : null
   return {
     name,
     mimeType,
     bytes: bytes as Uint8Array<ArrayBuffer>,
     tags,
-    workflow: item['workflow'] === true
+    workflow: item['workflow'] === true,
+    ...(savedOn ? { savedOn } : {}),
+    ...(folder ? { folder } : {})
   }
 }
 
@@ -49,7 +70,8 @@ export function outputRequest(input: unknown): { items: AppOutputItem[]; index: 
 export function outputAction(input: unknown): AppOutputAction | null {
   if (!input || typeof input !== 'object') return null
   const { action, index } = input as { action?: unknown; index?: unknown }
-  if (action !== 'download' && action !== 'open-workflow') return null
+  if (action !== 'download' && action !== 'open-workflow' && action !== 'show-in-folder')
+    return null
   if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
   return { action, index }
 }

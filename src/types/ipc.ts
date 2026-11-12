@@ -178,6 +178,8 @@ export interface AppOutputItem {
   bytes: Uint8Array<ArrayBuffer>
   tags: string[]
   workflow: boolean
+  savedOn?: 'cloud' | 'computer'
+  folder?: string
 }
 
 export interface AppOutputs {
@@ -187,7 +189,7 @@ export interface AppOutputs {
 }
 
 export interface AppOutputAction {
-  action: 'download' | 'open-workflow'
+  action: 'download' | 'open-workflow' | 'show-in-folder'
   index: number
 }
 

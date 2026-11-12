@@ -170,6 +170,7 @@ const dashboardHomePage = ref<DashboardHomePage>('home')
 const appsVisit = ref(0)
 const appsAppOpen = ref(false)
 const appsAppEntered = ref(false)
+const assetsFocusName = ref<string | null>(null)
 const sidebarCollapsed = useLocalStorage(SIDEBAR_COLLAPSED_KEY, false)
 const appsGrowBy = computed(() => (sidebarCollapsed.value ? 0 : SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH))
 
@@ -194,7 +195,13 @@ function closeBuildDetails(): void {
 
 watch(activePanel, closeBuildDetails)
 
+function viewInAssets(name: string): void {
+  handleSidebarNavigate('assets')
+  assetsFocusName.value = name
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
+  assetsFocusName.value = null
   if (page === 'apps' && appsAppOpen.value) appsVisit.value++
   appsAppOpen.value = false
   appsAppEntered.value = false
@@ -489,8 +496,13 @@ onUnmounted(() => {
               :obscured="currentOverlay?.kind === 'takeover'"
               @app-open="appsAppOpen = $event"
               @app-entered="appsAppEntered = $event"
+              @view-in-assets="viewInAssets"
             />
-            <AssetsView v-else-if="dashboardHomePage === 'assets'" />
+            <AssetsView
+              v-else-if="dashboardHomePage === 'assets'"
+              :focus-name="assetsFocusName"
+              @focus-used="assetsFocusName = null"
+            />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"

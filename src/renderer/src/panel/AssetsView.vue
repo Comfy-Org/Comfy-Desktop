@@ -46,13 +46,17 @@ type SortOrder = 'newest' | 'oldest'
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
 
+const { focusName = null } = defineProps<{ focusName?: string | null }>()
+const emit = defineEmits<{ 'focus-used': [] }>()
+
 const { t } = useI18n()
 const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
-const place = useLocalStorage<Place>('comfy.desktop.assets.place', 'cloud')
+const savedPlace = useLocalStorage<Place>('comfy.desktop.assets.place', 'cloud')
+const place = ref<Place>(focusName ? 'cloud' : savedPlace.value)
 const localFolder = ref<string | null>(null)
 const localFolders = useTemplateRef<InstanceType<typeof LocalFolders>>('localFolders')
 const kindFilter = ref<KindFilter>('all')
@@ -71,6 +75,7 @@ const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
+const loadedBuildIds = ref<string[]>([])
 const failed = ref(false)
 
 function isCloudBuild(inst: Installation): boolean {
@@ -175,6 +180,7 @@ async function loadAssets(): Promise<void> {
     const ids = reachableBuildIds.value
     const results = await Promise.allSettled(ids.map((id) => window.api.listAssets(id)))
     if (current !== requestId) return
+    loadedBuildIds.value = ids.filter((_, i) => results[i]!.status === 'fulfilled')
     assets.value = results.flatMap((result, i) => {
       if (result.status === 'rejected') return []
       const installationId = ids[i]!
@@ -196,6 +202,44 @@ watch(accountContext, () => (assets.value = []))
 watch(
   () => [...reachableBuildIds.value, accountContext.value].join('\n'),
   () => void loadAssets(),
+  { immediate: true }
+)
+
+let pendingFocus: string | null = null
+
+function isCloudId(installationId: string): boolean {
+  const inst = installationStore.getById(installationId)
+  return !!inst && isCloudBuild(inst)
+}
+
+const cloudLoaded = computed(() => loadedBuildIds.value.some(isCloudId))
+
+watch(
+  () => focusName,
+  (name) => {
+    if (!name) return
+    pendingFocus = name
+    place.value = 'cloud'
+    emit('focus-used')
+  },
+  { immediate: true }
+)
+
+watch(
+  [visibleAssets, loading, cloudLoaded],
+  ([list, busy, cloud]) => {
+    if (!pendingFocus || busy || !cloud) return
+    const name = pendingFocus
+    pendingFocus = null
+    if (place.value !== 'cloud') return
+    const newest = list
+      .filter((asset) => asset.name === name && isCloudId(asset.installationId))
+      .reduce<GalleryAsset | null>(
+        (best, asset) => (best && createdMs(best) >= createdMs(asset) ? best : asset),
+        null
+      )
+    if (newest) openDetail(newest)
+  },
   { immediate: true }
 )
 
@@ -238,6 +282,11 @@ function coolNameTooltips(): void {
 }
 
 onBeforeUnmount(() => clearTimeout(warmTimer))
+
+function pickPlace(next: Place): void {
+  place.value = next
+  savedPlace.value = next
+}
 
 function refresh(): void {
   if (place.value === 'cloud') void loadAssets()
@@ -322,10 +371,11 @@ function assetDetails(asset: AssetSummary): string {
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
         <SegmentedControl
-          v-model="place"
+          :model-value="place"
           :options="placeOptions"
           :label="t('assets.place.label')"
           data-testid="assets-place"
+          @update:model-value="pickPlace"
         />
         <div class="ml-auto flex items-center gap-2">
           <Button

@@ -78,7 +78,8 @@
       "available": "可用",
       "notSaved": "未保存",
       "openWorkflow": "打开工作流",
-      "savedIn": "保存位置"
+      "savedIn": "保存位置",
+      "cloudAssets": "Comfy Cloud 资产"
     },
     "noMatches": "没有匹配的资产",
     "noMatchesHint": "试试其他类型或搜索词。",
@@ -92,6 +93,7 @@
       "computer": "这台电脑"
     },
     "showInFolder": "在文件夹中显示",
+    "viewInAssets": "在资产中查看",
     "local": {
       "sharedOutput": "共享输出",
       "buildOutput": "{name} 输出",

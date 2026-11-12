@@ -28,6 +28,36 @@ describe('outputRequest', () => {
     expect(request?.items[1]).toMatchObject({ workflow: false, tags: [] })
   })
 
+  it('keeps where an output is saved, and a folder only for this computer', () => {
+    const request = outputRequest({
+      items: [
+        picture({ savedOn: 'computer', folder: '/Users/me/ComfyUI-Shared/output/apps' }),
+        picture({ savedOn: 'cloud', folder: '/ignored' }),
+        picture({ savedOn: 'mars', folder: '/ignored' })
+      ],
+      index: 0
+    })
+    expect(request?.items[0]).toMatchObject({
+      savedOn: 'computer',
+      folder: '/Users/me/ComfyUI-Shared/output/apps'
+    })
+    expect(request?.items[1]?.savedOn).toBe('cloud')
+    expect(request?.items[1]).not.toHaveProperty('folder')
+    expect(request?.items[2]).not.toHaveProperty('savedOn')
+    expect(request?.items[2]).not.toHaveProperty('folder')
+  })
+
+  it('keeps only an absolute folder with no hidden characters', () => {
+    const folderOf = (folder: string) =>
+      outputRequest({ items: [picture({ savedOn: 'computer', folder })], index: 0 })?.items[0]
+        ?.folder
+    expect(folderOf('C:\\Users\\me\\output')).toBe('C:\\Users\\me\\output')
+    expect(folderOf('relative/output')).toBeUndefined()
+    expect(folderOf('\\\\server\\share')).toBeUndefined()
+    expect(folderOf('/Users/me/\u202eoutput')).toBeUndefined()
+    expect(folderOf('/Users/me/out\nput')).toBeUndefined()
+  })
+
   it('refuses outputs it cannot show', () => {
     expect(outputRequest(null)).toBeNull()
     expect(outputRequest({ items: [], index: 0 })).toBeNull()
@@ -59,7 +89,11 @@ describe('outputRequest', () => {
 })
 
 describe('outputAction', () => {
-  it('passes on a download or an open-workflow for one output', () => {
+  it('passes on a download, an open-workflow or a show-in-folder for one output', () => {
+    expect(outputAction({ action: 'show-in-folder', index: 1 })).toEqual({
+      action: 'show-in-folder',
+      index: 1
+    })
     expect(outputAction({ action: 'download', index: 2 })).toEqual({ action: 'download', index: 2 })
     expect(outputAction({ action: 'open-workflow', index: 0 })).toEqual({
       action: 'open-workflow',
