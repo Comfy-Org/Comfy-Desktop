@@ -68,6 +68,9 @@ DS's Motion page (`ds/motion.ts`).
   on its own and an open menu keeps the chevron half in hover. Its menu
   opens 6px below, like the filter menus. With nothing to pick it is a
   plain button. Never hand-build one.
+- **A split button menu hugs its rows:** never narrower than the
+  button, at most 320px (long names truncate, full name on hover), rows
+  keep 20px on the right.
 - **Status in a build menu row is a dot on the icon**, like the sidebar
   glyph: green for live (Running, Always on), red for broken or didn't
   start, nothing for Ready. No status text. A broken build is disabled
