@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { Bot } from 'lucide-vue-next'
+import TemplateSearchBadge from './TemplateSearchBadge.vue'
 import type { TemplateSearchCandidate } from '../../types/ipc'
-import type { SearchRow } from './templateSearch'
+import type { BadgeTone, SearchRow } from './templateSearch'
 import type { TemplateSearchController } from './useTemplateSearch'
 
 const props = defineProps<{
@@ -13,11 +14,71 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
+const STRONG_MATCH = 0.85
+
 const GROUP_TITLE_KEYS: Record<SearchRow['kind'], string> = {
   run: 'home.search.run',
   download: 'home.search.downloadAndRun',
   also: 'home.search.alsoTry',
   agent: 'home.search.agentGroup'
+}
+
+interface Badge {
+  tone: BadgeTone
+  label: string
+  testId: string
+}
+
+function matchBadge(candidate: TemplateSearchCandidate): Badge | null {
+  if (candidate.score === null) return null
+  const percent = Math.round(candidate.score * 100)
+  const level = candidate.belowThreshold
+    ? { tone: 'weak' as const, key: 'home.search.matchWeak' }
+    : candidate.score >= STRONG_MATCH
+      ? { tone: 'strong' as const, key: 'home.search.matchStrong' }
+      : { tone: 'good' as const, key: 'home.search.matchGood' }
+  return {
+    tone: level.tone,
+    label: `${t(level.key)} · ${percent}%`,
+    testId: 'home-template-search-match'
+  }
+}
+
+function badges(row: SearchRow): Badge[] {
+  const candidate = row.candidate
+  if (!candidate) return []
+  const list: Badge[] = []
+  if (row.best)
+    list.push({
+      tone: 'best',
+      label: t('home.search.bestMatch'),
+      testId: 'home-template-search-best'
+    })
+  const match = matchBadge(candidate)
+  if (match) list.push(match)
+  if (candidate.partner)
+    list.push({
+      tone: 'partner',
+      label: t('home.search.partner'),
+      testId: 'home-template-search-partner'
+    })
+  if (candidate.needsDownload)
+    list.push({
+      tone: 'download',
+      label: t('home.search.needsDownloadPill'),
+      testId: 'home-template-search-needs-download'
+    })
+  if (candidate.rewrite)
+    list.push({
+      tone: 'rewrite',
+      label: t('home.search.rewritePill'),
+      testId: 'home-template-search-rewrite'
+    })
+  return list
+}
+
+function isWeak(row: SearchRow): boolean {
+  return row.candidate?.belowThreshold === true
 }
 
 function rowMeta(row: SearchRow): string {
@@ -97,7 +158,8 @@ function optionId(index: number): string {
           role="option"
           :aria-selected="index === controller.activeIndex.value"
           :aria-disabled="controller.rowDisabled(row)"
-          class="flex h-14 items-center gap-3 rounded-[8px] px-2.5"
+          :data-weak="isWeak(row) || undefined"
+          class="flex min-h-14 items-center gap-3 rounded-[8px] px-2.5 py-2"
           :class="[
             index === controller.activeIndex.value ? 'bg-[rgb(137_137_137/0.12)]' : '',
             controller.rowDisabled(row) ? 'cursor-default opacity-60' : 'cursor-pointer'
@@ -116,44 +178,27 @@ function optionId(index: number): string {
               :src="row.candidate.thumbnailUrl"
               alt=""
               class="size-full object-cover"
+              :class="isWeak(row) ? 'opacity-60 grayscale' : ''"
               loading="lazy"
             />
           </span>
-          <span class="flex min-w-0 flex-auto flex-col">
+          <span class="flex min-w-0 flex-auto flex-col" :class="isWeak(row) ? 'opacity-60' : ''">
             <span class="truncate text-[13px]/5 font-medium text-foreground">
               {{ row.kind === 'agent' ? t('home.search.agentTitle') : row.candidate?.title }}
             </span>
             <span class="truncate text-xs/4 text-subtle-foreground">{{ rowMeta(row) }}</span>
           </span>
-          <span
-            v-if="row.candidate?.rewrite"
-            class="shrink-0 rounded-full bg-[rgb(137_137_137/0.14)] px-2 py-0.5 text-[11px]/4 text-muted-foreground"
-            data-testid="home-template-search-rewrite"
-          >
-            {{ t('home.search.rewritePill') }}
+          <span class="flex shrink-0 flex-wrap justify-end gap-1.5">
+            <TemplateSearchBadge
+              v-for="badge in badges(row)"
+              :key="badge.testId"
+              :tone="badge.tone"
+              :data-testid="badge.testId"
+            >
+              {{ badge.label }}
+            </TemplateSearchBadge>
           </span>
-          <span
-            v-if="row.candidate?.partner"
-            class="shrink-0 rounded-full bg-[rgb(120_140_255/0.16)] px-2 py-0.5 text-[11px]/4 text-[rgb(170_182_255)]"
-            data-testid="home-template-search-partner"
-          >
-            {{ t('home.search.partner') }}
-          </span>
-          <span
-            v-if="row.candidate?.needsDownload"
-            class="shrink-0 rounded-full bg-[rgb(255_190_90/0.14)] px-2 py-0.5 text-[11px]/4 text-[rgb(240_190_110)]"
-            data-testid="home-template-search-needs-download"
-          >
-            {{ t('home.search.needsDownloadPill') }}
-          </span>
-          <span
-            v-if="row.best"
-            class="shrink-0 rounded-full bg-[rgb(137_137_137/0.14)] px-2 py-0.5 text-[11px]/4 text-muted-foreground"
-            data-testid="home-template-search-best"
-          >
-            {{ t('home.search.bestMatch') }}
-          </span>
-          <span class="shrink-0 text-xs/4 font-medium text-muted-foreground">
+          <span class="w-26 shrink-0 text-right text-xs/4 font-medium text-muted-foreground">
             {{ rowAction(row) }}
           </span>
         </li>
@@ -164,7 +209,7 @@ function optionId(index: number): string {
       v-else
       :id="listboxId"
       role="listbox"
-      class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(196px,1fr))] gap-3 p-0"
+      class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(212px,1fr))] gap-3 p-0"
       :aria-label="t('home.search.label')"
     >
       <li
@@ -174,6 +219,7 @@ function optionId(index: number): string {
         role="option"
         :aria-selected="index === controller.activeIndex.value"
         :aria-disabled="controller.rowDisabled(row)"
+        :data-weak="isWeak(row) || undefined"
         class="flex min-w-0 flex-col overflow-hidden rounded-xl border bg-[rgb(137_137_137/0.06)] transition-colors"
         :class="[
           index === controller.activeIndex.value
@@ -195,49 +241,38 @@ function optionId(index: number): string {
             :src="row.candidate.thumbnailUrl"
             alt=""
             class="size-full object-cover"
+            :class="isWeak(row) ? 'opacity-50 grayscale' : ''"
             loading="lazy"
           />
           <span
             v-if="row.kind !== 'agent'"
-            class="absolute top-2 left-2 rounded-md px-1.5 py-0.5 text-[11px]/4 font-semibold"
+            class="absolute top-2 left-2 rounded-md px-1.5 py-0.5 text-[12px]/4 font-semibold shadow-[0_1px_6px_rgb(0_0_0/0.5)]"
             :class="
-              row.best ? 'bg-[rgb(120_140_255/0.9)] text-white' : 'bg-[rgb(0_0_0/0.6)] text-white'
+              row.best ? 'bg-[rgb(110_130_255)] text-white' : 'bg-[rgb(0_0_0/0.72)] text-white'
             "
           >
             #{{ index + 1 }}
           </span>
-          <span class="absolute top-2 right-2 flex flex-wrap justify-end gap-1">
-            <span
-              v-if="row.candidate?.partner"
-              class="rounded-full bg-[rgb(40_48_110/0.85)] px-2 py-0.5 text-[11px]/4 text-[rgb(200_208_255)]"
-              data-testid="home-template-search-partner"
-            >
-              {{ t('home.search.partner') }}
-            </span>
-            <span
-              v-if="row.candidate?.needsDownload"
-              class="rounded-full bg-[rgb(90_60_10/0.85)] px-2 py-0.5 text-[11px]/4 text-[rgb(255_210_140)]"
-              data-testid="home-template-search-needs-download"
-            >
-              {{ t('home.search.needsDownloadPill') }}
-            </span>
-            <span
-              v-if="row.candidate?.rewrite"
-              class="rounded-full bg-[rgb(0_0_0/0.6)] px-2 py-0.5 text-[11px]/4 text-white"
-              data-testid="home-template-search-rewrite"
-            >
-              {{ t('home.search.rewritePill') }}
-            </span>
-          </span>
         </span>
-        <span class="flex min-w-0 flex-col px-3 py-2.5">
-          <span class="truncate text-[13px]/5 font-medium text-foreground">
-            {{ row.kind === 'agent' ? t('home.search.agentTitle') : row.candidate?.title }}
+        <span
+          class="flex min-w-0 flex-col gap-2 px-3 py-2.5"
+          :class="isWeak(row) ? 'opacity-70' : ''"
+        >
+          <span class="flex min-w-0 flex-col">
+            <span class="truncate text-[13px]/5 font-medium text-foreground">
+              {{ row.kind === 'agent' ? t('home.search.agentTitle') : row.candidate?.title }}
+            </span>
+            <span class="truncate text-xs/4 text-subtle-foreground">{{ rowMeta(row) }}</span>
           </span>
-          <span class="truncate text-xs/4 text-subtle-foreground">
-            {{
-              row.kind === 'also' ? `${rowMeta(row)} · ${t('home.search.alsoTry')}` : rowMeta(row)
-            }}
+          <span v-if="badges(row).length" class="flex flex-wrap gap-1.5">
+            <TemplateSearchBadge
+              v-for="badge in badges(row)"
+              :key="badge.testId"
+              :tone="badge.tone"
+              :data-testid="badge.testId"
+            >
+              {{ badge.label }}
+            </TemplateSearchBadge>
           </span>
         </span>
       </li>

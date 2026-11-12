@@ -21,6 +21,8 @@ function candidate(templateId: string, over: Partial<TemplateSearchCandidate> = 
     partner: false,
     rewrite: false,
     needsDownload: false,
+    score: 0.92,
+    belowThreshold: false,
     missing: [],
     ...over
   }
@@ -132,6 +134,23 @@ describe('HomeTemplateSearch', () => {
       'Rewrites prompt'
     )
     expect(second!.find('[data-testid="home-template-search-rewrite"]').exists()).toBe(false)
+  })
+
+  it('shows how well each template matches, and greys out the weaker ones', async () => {
+    const weak = candidate('weak_template', { score: 0.3, belowThreshold: true })
+    const good = candidate('good_template', { score: 0.6 })
+    search.mockResolvedValue(answer({ run: [POSTER, good], alsoTry: [weak] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    const matches = wrapper
+      .findAll('[data-testid="home-template-search-match"]')
+      .map((badge) => badge.text())
+    expect(matches).toEqual(['Strong match · 92%', 'Good match · 60%', 'Weaker match · 30%'])
+    const [strongRow, goodRow, weakRow] = wrapper.findAll('[role="option"]')
+    expect(strongRow!.attributes('data-weak')).toBeUndefined()
+    expect(goodRow!.attributes('data-weak')).toBeUndefined()
+    expect(weakRow!.attributes('data-weak')).toBe('true')
   })
 
   it('shows the template family under its title', async () => {

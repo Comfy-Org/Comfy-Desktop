@@ -452,6 +452,8 @@ describe('Home template search', () => {
             partner: false,
             rewrite: false,
             needsDownload: false,
+            score: 0.9,
+            belowThreshold: false,
             missing: []
           }
         ],
@@ -488,6 +490,8 @@ describe('Home template search', () => {
             partner: false,
             rewrite: false,
             needsDownload: false,
+            score: 0.9,
+            belowThreshold: false,
             missing: []
           }
         ],
@@ -523,6 +527,8 @@ describe('Home template search', () => {
             partner: false,
             rewrite: false,
             needsDownload: false,
+            score: 0.9,
+            belowThreshold: false,
             missing: []
           }
         ],

@@ -89,6 +89,25 @@ describe('parseDecision', () => {
     ])
   })
 
+  it('carries each score, and whether it falls below its threshold', () => {
+    const body = decision({
+      split: {
+        run: [{ ...candidate('as_given', 'poster_template'), score: 0.91, threshold: 0.44 }],
+        download: []
+      },
+      options: [
+        { ...candidate('as_given', 'weak_template'), score: 0.2, threshold: 0.44, clears: false },
+        { ...candidate('as_given', 'close_template'), score: 0.4, threshold: 0.44 }
+      ]
+    })
+    const result = parseDecision(body)!
+    expect(result.run[0]).toMatchObject({ score: 0.91, belowThreshold: false })
+    expect(result.alsoTry.map((c) => [c.templateId, c.score, c.belowThreshold])).toEqual([
+      ['weak_template', 0.2, true],
+      ['close_template', 0.4, true]
+    ])
+  })
+
   it('marks what needs a download, and what it would download', () => {
     const result = parseDecision(decision())!
     expect(result.run.every((c) => !c.needsDownload)).toBe(true)

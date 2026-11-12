@@ -145,6 +145,8 @@ export interface TemplateSearchCandidate {
   partner: boolean
   rewrite: boolean
   needsDownload: boolean
+  score: number | null
+  belowThreshold: boolean
   missing: string[]
 }
 

@@ -61,7 +61,11 @@
       "alsoTry": "Also try",
       "partner": "Partner",
       "needsDownloadPill": "Needs download",
-      "rewritePill": "Rewrites prompt"
+      "rewritePill": "Rewrites prompt",
+      "matchStrong": "Strong match",
+      "matchGood": "Good match",
+      "matchWeak": "Weaker match",
+      "matchScore": "{percent}% match"
     }
   },
   "installType": {

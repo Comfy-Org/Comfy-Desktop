@@ -3,11 +3,13 @@ import { isPartnerTemplate } from './decisionApi'
 import type { TemplateSearchCandidate, TemplateSearchResult } from '../../types/ipc'
 import type { TemplateSearchBackend } from './types'
 
+const FAKE_THRESHOLD = 0.5
+
 function candidate(
   templateId: string,
   title: string,
   family: string,
-  extra: { missing?: string[]; rewrite?: boolean } = {}
+  extra: { missing?: string[]; rewrite?: boolean; score?: number } = {}
 ): TemplateSearchCandidate {
   return {
     templateId,
@@ -17,6 +19,8 @@ function candidate(
     partner: isPartnerTemplate(templateId),
     rewrite: extra.rewrite ?? false,
     needsDownload: (extra.missing ?? []).length > 0,
+    score: extra.score ?? 0.9,
+    belowThreshold: (extra.score ?? 0.9) < FAKE_THRESHOLD,
     missing: extra.missing ?? []
   }
 }
@@ -29,7 +33,9 @@ const TEXT_TO_IMAGE = candidate(
     rewrite: true
   }
 )
-const FAST_IMAGE = candidate('sdxlturbo_example', 'SDXL Turbo', 'text-to-image')
+const FAST_IMAGE = candidate('sdxlturbo_example', 'SDXL Turbo', 'text-to-image', {
+  score: 0.32
+})
 const PIXEL_IMAGE = candidate('image_pixeldit_t2i', 'PixelDiT: Text to Image', 'text-to-image', {
   missing: ['PixelDiT model']
 })
@@ -57,7 +63,9 @@ const MUSIC = candidate(
   'ACE-Step 1.5 Music Generation AIO',
   'music'
 )
-const SOUND = candidate('audio_stable_audio_3_medium', 'Stable Audio 3.0 Medium', 'sound')
+const SOUND = candidate('audio_stable_audio_3_medium', 'Stable Audio 3.0 Medium', 'sound', {
+  score: 0.41
+})
 const IMAGE_TO_3D = candidate(
   '3d_hunyuan3d_multiview_to_model_turbo',
   'HY 3D 2.0 MV Turbo',

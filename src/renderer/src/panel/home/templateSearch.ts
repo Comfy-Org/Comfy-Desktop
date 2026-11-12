@@ -6,6 +6,8 @@ import type {
 
 export type SearchRowKind = 'run' | 'download' | 'also' | 'agent'
 
+export type BadgeTone = 'partner' | 'download' | 'rewrite' | 'strong' | 'good' | 'weak' | 'best'
+
 export interface TemplateSearchPick {
   query: string
   kind: Exclude<SearchRowKind, 'agent'>

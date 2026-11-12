@@ -52,6 +52,17 @@ function missingFor(candidate: JsonRecord, templateId: string): string[] {
   return items.filter((item) => item && item !== templateId)
 }
 
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function isBelowThreshold(candidate: JsonRecord): boolean {
+  if (typeof candidate.clears === 'boolean') return !candidate.clears
+  const score = asNumber(candidate.score)
+  const threshold = asNumber(candidate.threshold)
+  return score !== null && threshold !== null && score < threshold
+}
+
 function isOutcome(value: unknown): value is TemplateSearchOutcome {
   return typeof value === 'string' && OUTCOMES.has(value)
 }
@@ -84,6 +95,8 @@ function candidateFrom(value: unknown, fromDownloadList: boolean): TemplateSearc
     partner: isPartnerTemplate(templateId),
     rewrite: candidate.kind === 'rewrite',
     needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
+    score: asNumber(candidate.score),
+    belowThreshold: isBelowThreshold(candidate),
     missing: missingFor(candidate, templateId)
   }
 }

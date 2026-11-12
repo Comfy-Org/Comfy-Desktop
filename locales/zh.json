@@ -61,7 +61,11 @@
       "alsoTry": "也可以试试",
       "partner": "合作伙伴",
       "needsDownloadPill": "需要下载",
-      "rewritePill": "改写提示词"
+      "rewritePill": "改写提示词",
+      "matchStrong": "高度匹配",
+      "matchGood": "匹配",
+      "matchWeak": "较弱匹配",
+      "matchScore": "匹配度 {percent}%"
     }
   },
   "installType": {
