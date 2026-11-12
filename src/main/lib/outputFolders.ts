@@ -104,29 +104,31 @@ export async function comfyOutputPath(
 async function filesBySize(root: string): Promise<Map<number, string[]>> {
   const bySize = new Map<number, string[]>()
   const appsDir = path.join(root, APPS_OUTPUT_FOLDER)
-  const queue = [
-    { dir: appsDir, depth: 1 },
-    { dir: root, depth: 0 }
-  ]
   let seen = 0
-  while (queue.length > 0 && seen < MAX_MATCH_ENTRIES) {
-    const { dir, depth } = queue.shift()!
-    const dirents = (await fsp.readdir(dir, { withFileTypes: true }).catch(() => []))
-      .filter((dirent) => !dirent.name.startsWith('.'))
-      .slice(0, MAX_MATCH_ENTRIES - seen)
-    seen += dirents.length
-    for (const dirent of dirents) {
-      const full = path.join(dir, dirent.name)
-      if (dirent.isDirectory() && depth < MAX_MATCH_DEPTH && full !== appsDir)
-        queue.push({ dir: full, depth: depth + 1 })
+  const walk = async (start: string, startDepth: number): Promise<void> => {
+    const queue = [{ dir: start, depth: startDepth }]
+    while (queue.length > 0 && seen < MAX_MATCH_ENTRIES) {
+      const { dir, depth } = queue.shift()!
+      const dirents = (await fsp.readdir(dir, { withFileTypes: true }).catch(() => []))
+        .filter((dirent) => !dirent.name.startsWith('.'))
+        .slice(0, MAX_MATCH_ENTRIES - seen)
+      seen += dirents.length
+      for (const dirent of dirents) {
+        const full = path.join(dir, dirent.name)
+        if (dirent.isDirectory() && depth < MAX_MATCH_DEPTH && full !== appsDir)
+          queue.push({ dir: full, depth: depth + 1 })
+      }
+      const files = dirents.filter((dirent) => dirent.isFile() && assetKind(dirent.name))
+      await runPool(files, STATS_AT_ONCE, async (dirent) => {
+        const full = path.join(dir, dirent.name)
+        const stat = await fsp.stat(full).catch(() => null)
+        if (stat) bySize.set(stat.size, [...(bySize.get(stat.size) ?? []), full])
+      })
     }
-    const files = dirents.filter((dirent) => dirent.isFile() && assetKind(dirent.name))
-    await runPool(files, STATS_AT_ONCE, async (dirent) => {
-      const full = path.join(dir, dirent.name)
-      const stat = await fsp.stat(full).catch(() => null)
-      if (stat) bySize.set(stat.size, [...(bySize.get(stat.size) ?? []), full])
-    })
   }
+  const appsStat = await fsp.lstat(appsDir).catch(() => null)
+  if (appsStat?.isDirectory()) await walk(appsDir, 1)
+  await walk(root, 0)
   return bySize
 }
 

@@ -299,6 +299,20 @@ describe('outputLocator', () => {
     ).toBe(path.join(ownDir, 'apps', 'renamed.png'))
   })
 
+  it('does not read an apps folder that is a link', async () => {
+    const linkedDir = path.join(root, 'linked-output')
+    fs.mkdirSync(linkedDir, { recursive: true })
+    write(path.join(outsideDir, 'linked.png'), 'linked bytes')
+    fs.symlinkSync(outsideDir, path.join(linkedDir, 'apps'))
+    const linked = install('Linked', { useSharedOutput: false, outputDir: linkedDir })
+
+    try {
+      expect(await outputLocator(linked)(null, bytesOf('linked bytes'))).toBeNull()
+    } finally {
+      fs.rmSync(path.join(linkedDir, 'apps'))
+    }
+  })
+
   it("does not follow links out of the build's output folder", async () => {
     write(path.join(outsideDir, 'secret.png'), 'secret bytes')
     write(path.join(sharedDir, 'shared.png'), 'shared bytes')
