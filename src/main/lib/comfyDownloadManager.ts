@@ -92,6 +92,7 @@ interface PendingDownload {
   senderContents?: Electron.WebContents
   subscriberWindows: Set<BrowserWindow>
   subscriberContents: Set<Electron.WebContents>
+  installationSubscribers?: Set<Electron.WebContents>
   item?: Electron.DownloadItem
   transport?: ModelTransferHandle | null
   suspended?: boolean
@@ -104,6 +105,7 @@ interface PendingDownload {
   preflight?: Promise<void>
   leases?: Set<string>
   installationId?: string | null
+  joinedInstallationIds?: Set<string>
   expectedSize?: number
   sha256?: string
   explicitSession?: Electron.Session
@@ -528,6 +530,13 @@ function broadcastProgress(progress: DownloadProgress): void {
         contents.send('desktop2-download-progress', progress)
       }
     }
+    for (const contents of pending.installationSubscribers ?? []) {
+      if (!servesInstallation(pending, resolveSenderInstallationId(contents))) {
+        pending.installationSubscribers?.delete(contents)
+      } else if (contents !== target && !pending.subscriberContents.has(contents)) {
+        contents.send('desktop2-download-progress', progress)
+      }
+    }
   }
   _broadcastToRenderer('model-download-progress', progress)
   if (isTerminalStatus(progress.status)) {
@@ -657,18 +666,21 @@ function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): (
   }
 }
 
-function subscribeContentsToJob(pending: PendingDownload, contents: Electron.WebContents): void {
-  if (contents !== pending.senderContents) pending.subscriberContents.add(contents)
-}
-
-function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJobHandle {
+function joinModelJob(
+  existing: PendingDownload,
+  opts: ModelJobOptions,
+  installationId: string | null
+): ModelJobHandle {
+  if (installationId && installationId !== existing.installationId) {
+    ;(existing.joinedInstallationIds ??= new Set()).add(installationId)
+  }
   if (opts.window && opts.window !== existing.window && !opts.window.isDestroyed()) {
     existing.subscriberWindows.add(opts.window)
     opts.window.webContents.send('desktop2-download-progress', existing.lastProgress)
   }
   const joiner = opts.senderContents
   if (joiner && !joiner.isDestroyed() && joiner !== opts.window?.webContents) {
-    subscribeContentsToJob(existing, joiner)
+    if (joiner !== existing.senderContents) existing.subscriberContents.add(joiner)
     joiner.send('desktop2-download-progress', existing.lastProgress)
   }
   const onProgress = opts.onProgress
@@ -1002,7 +1014,7 @@ export async function startManagedModelJob(opts: ModelJobOptions): Promise<Model
       }
       retryParamsById.delete(id)
       createdAtById.delete(id)
-      return joinModelJob(active, opts)
+      return joinModelJob(active, opts, resolvedInstallId)
     }
     modelJobIdByDest.delete(destKey)
   }
@@ -1764,15 +1776,31 @@ export function retryDownload(ref: string): boolean {
   return true
 }
 
+function servesInstallation(pending: PendingDownload, installationId: string | null): boolean {
+  if (installationId === null) return false
+  return (
+    pending.installationId === installationId ||
+    pending.joinedInstallationIds?.has(installationId) === true
+  )
+}
+
+function isCancellationUnderWay(pending: PendingDownload): boolean {
+  return pending.cancelling === true || pending.cancelRequested === true
+}
+
 export function subscribeToInstallationModelJobs(
   installationId: string,
   contents: Electron.WebContents
 ): DownloadProgress[] {
+  if (contents.isDestroyed()) return []
   const jobs = [...pendingDownloads.values()].filter(
-    (pending) => pending.installationId === installationId
+    (pending) => servesInstallation(pending, installationId) && !isCancellationUnderWay(pending)
   )
-  for (const job of jobs) subscribeContentsToJob(job, contents)
-  return jobs.map((job) => ({ ...job.lastProgress }))
+  for (const job of jobs) (job.installationSubscribers ??= new Set()).add(contents)
+  return jobs.map((job) => ({
+    ...job.lastProgress,
+    ...(job.suspended ? { status: 'paused' as const } : {})
+  }))
 }
 
 export function getActiveDownloads(): DownloadProgress[] {
@@ -1882,6 +1910,12 @@ export function detachWindowDownloads(win: BrowserWindow): void {
     }
     pending.subscriberWindows.delete(win)
     if (ownedByWin(pending.senderContents)) pending.senderContents = undefined
+    for (const contents of pending.subscriberContents) {
+      if (ownedByWin(contents)) pending.subscriberContents.delete(contents)
+    }
+    for (const contents of pending.installationSubscribers ?? []) {
+      if (ownedByWin(contents)) pending.installationSubscribers?.delete(contents)
+    }
   }
   for (const params of retryParamsById.values()) {
     if (params.window === win) params.window = undefined
