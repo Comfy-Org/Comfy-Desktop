@@ -46,8 +46,7 @@ type SortOrder = 'newest' | 'oldest'
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
 
-const { focusName = null } = defineProps<{ focusName?: string | null }>()
-const emit = defineEmits<{ 'focus-used': [] }>()
+const { startOnCloud = false } = defineProps<{ startOnCloud?: boolean }>()
 
 const { t } = useI18n()
 const modal = useModal()
@@ -56,7 +55,7 @@ const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
 const savedPlace = useLocalStorage<Place>('comfy.desktop.assets.place', 'cloud')
-const place = ref<Place>(focusName ? 'cloud' : savedPlace.value)
+const place = ref<Place>(startOnCloud ? 'cloud' : savedPlace.value)
 const localFolder = ref<string | null>(null)
 const localFolders = useTemplateRef<InstanceType<typeof LocalFolders>>('localFolders')
 const kindFilter = ref<KindFilter>('all')
@@ -195,44 +194,6 @@ async function loadAssets(): Promise<void> {
 watch(
   () => [...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
   () => void loadAssets(),
-  { immediate: true }
-)
-
-let pendingFocus: string | null = null
-
-function isCloudId(installationId: string): boolean {
-  const inst = installationStore.getById(installationId)
-  return !!inst && isCloudBuild(inst)
-}
-
-const cloudLoaded = computed(() => loadedBuildIds.value.some(isCloudId))
-
-watch(
-  () => focusName,
-  (name) => {
-    if (!name) return
-    pendingFocus = name
-    place.value = 'cloud'
-    emit('focus-used')
-  },
-  { immediate: true }
-)
-
-watch(
-  [visibleAssets, loading, cloudLoaded],
-  ([list, busy, cloud]) => {
-    if (!pendingFocus || busy || !cloud) return
-    const name = pendingFocus
-    pendingFocus = null
-    if (place.value !== 'cloud') return
-    const newest = list
-      .filter((asset) => asset.name === name && isCloudId(asset.installationId))
-      .reduce<GalleryAsset | null>(
-        (best, asset) => (best && createdMs(best) >= createdMs(asset) ? best : asset),
-        null
-      )
-    if (newest) openDetail(newest)
-  },
   { immediate: true }
 )
 

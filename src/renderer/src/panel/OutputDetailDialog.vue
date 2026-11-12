@@ -55,7 +55,7 @@ const emit = defineEmits<{
   download: [index: number]
   'open-workflow': [index: number]
   'show-in-folder': [index: number]
-  'view-in-assets': [index: number]
+  'see-all-assets': []
 }>()
 
 const { t, locale } = useI18n()
@@ -378,11 +378,11 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           variant="secondary"
           size="md"
           class="gap-1.5 text-ui"
-          data-testid="output-detail-view-in-assets"
-          @click="emit('view-in-assets', index)"
+          data-testid="output-detail-see-all-assets"
+          @click="emit('see-all-assets')"
         >
           <Images :size="15" aria-hidden="true" />
-          {{ t('assets.viewInAssets') }}
+          {{ t('assets.seeAllAssets') }}
         </Button>
         <Button
           v-if="item.workflow"

@@ -92,7 +92,7 @@
       "computer": "This computer"
     },
     "showInFolder": "Show in folder",
-    "viewInAssets": "View in Assets",
+    "seeAllAssets": "See all assets",
     "local": {
       "folderActions": "Folder actions",
       "inFolder": "In {name}",

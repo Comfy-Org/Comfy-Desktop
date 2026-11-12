@@ -422,7 +422,7 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="output-detail-saved-in"]').text()).toContain(
       'remove-background'
     )
-    expect(wrapper.find('[data-testid="output-detail-view-in-assets"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="output-detail-see-all-assets"]').exists()).toBe(false)
     await wrapper.get('[data-testid="output-detail-show-in-folder"]').trigger('click')
     expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'show-in-folder', index: 0 })
 
@@ -431,10 +431,10 @@ describe('AppsView', () => {
       'Comfy Cloud assets'
     )
     expect(wrapper.find('[data-testid="output-detail-show-in-folder"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="output-detail-view-in-assets"]').trigger('click')
+    await wrapper.get('[data-testid="output-detail-see-all-assets"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.emitted('view-in-assets')).toEqual([['cloud-cutout.png']])
+    expect(wrapper.emitted('see-all-assets')).toEqual([[]])
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 })

@@ -92,7 +92,7 @@
       "computer": "这台电脑"
     },
     "showInFolder": "在文件夹中显示",
-    "viewInAssets": "在资产中查看",
+    "seeAllAssets": "查看全部资产",
     "local": {
       "folderActions": "文件夹操作",
       "inFolder": "位于 {name}",

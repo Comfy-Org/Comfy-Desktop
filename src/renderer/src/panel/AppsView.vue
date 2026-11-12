@@ -20,7 +20,7 @@ const { growBy = 0 } = defineProps<{
 const emit = defineEmits<{
   'app-open': [open: boolean]
   'app-entered': [entered: boolean]
-  'view-in-assets': [name: string]
+  'see-all-assets': []
 }>()
 
 const { t } = useI18n()
@@ -97,10 +97,9 @@ function appOutputAction(action: AppOutputAction['action'], index: number): void
   if (action === 'open-workflow') closeAppOutputs()
 }
 
-function viewInAssets(index: number): void {
-  const name = appOutputs.value?.items[index]?.name
+function seeAllAssets(): void {
   closeAppOutputs()
-  if (name) emit('view-in-assets', name)
+  emit('see-all-assets')
 }
 
 onBeforeUnmount(() => {
@@ -120,7 +119,7 @@ onBeforeUnmount(() => {
     @download="appOutputAction('download', $event)"
     @open-workflow="appOutputAction('open-workflow', $event)"
     @show-in-folder="appOutputAction('show-in-folder', $event)"
-    @view-in-assets="viewInAssets"
+    @see-all-assets="seeAllAssets"
   />
   <div
     class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
