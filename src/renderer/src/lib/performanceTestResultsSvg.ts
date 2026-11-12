@@ -53,11 +53,11 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
   const longestDuration = Math.max(...data.durations.map((row) => row.durationSeconds), 0.001)
   const chartTop = resultsY + 30
   const chartBottom = chartTop + data.durations.length * rowHeight
-  const systemY = Math.max(chartBottom, resultsY + 140) + 52
+  const systemY = Math.max(chartBottom, resultsY + 140) + 44
   const columns = 3
   const columnGap = 32
   const columnWidth = (contentWidth - columnGap * (columns - 1)) / columns
-  const factHeight = 60
+  const factHeight = 52
   const factRows = Math.ceil(data.system.length / columns)
   const factsTop = systemY + 30
   const height = factsTop + factRows * factHeight + 92
@@ -82,7 +82,7 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
       const y = factsTop + Math.floor(index / columns) * factHeight
       return [
         text(x, y + 18, fact.label, 'fact-label'),
-        text(x, y + 42, fitText(fact.value, Math.floor(columnWidth / 8.4)), 'fact-value')
+        text(x, y + 40, fitText(fact.value, Math.floor(columnWidth / 8.4)), 'fact-value')
       ].join('')
     })
     .join('')

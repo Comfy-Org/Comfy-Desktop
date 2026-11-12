@@ -182,14 +182,17 @@ const durationChart = computed(() => {
     }))
   }
 })
-const lastLogLine = computed(
-  () =>
-    performanceTestLogs.value
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .pop() ?? ''
-)
+function lastNonEmptyLine(text: string): string {
+  let end = text.length
+  while (end > 0) {
+    const start = text.lastIndexOf('\n', end - 1)
+    const line = text.slice(start + 1, end).trim()
+    if (line) return line
+    end = Math.max(start, 0)
+  }
+  return ''
+}
+const lastLogLine = computed(() => lastNonEmptyLine(performanceTestLogs.value))
 interface PerformanceTestRunLabel {
   readonly workflow: string
   readonly build: string
@@ -740,7 +743,11 @@ watch(performanceTestLogs, async () => {
                       variant="secondary"
                       size="md"
                       type="button"
-                      :aria-label="t('performanceTest.selectInstancePlaceholder')"
+                      :aria-label="
+                        selectedInstance
+                          ? `${t('performanceTest.selectInstance')}: ${selectedInstance.label}`
+                          : t('performanceTest.selectInstancePlaceholder')
+                      "
                       :disabled="instanceOptions.length === 0"
                     >
                       <span class="shrink-0 text-subtle-foreground">{{
@@ -996,7 +1003,7 @@ watch(performanceTestLogs, async () => {
                 {{ t('performanceTest.resultContextOn') }} {{ runLabel.build }}
               </span>
               <div
-                v-if="resultsFolderPath && !isLaunching"
+                v-if="resultsFolderPath && (!isLaunching || performanceTestResult?.resultsSummary)"
                 class="performance-test__results-actions ml-auto -mr-2 flex shrink-0 items-center gap-0.5"
               >
                 <span
@@ -1045,7 +1052,9 @@ watch(performanceTestLogs, async () => {
             </div>
             <div class="performance-test__results mt-2.5">
               <div
-                v-if="isLaunching && totalProgressRuns > 0"
+                v-if="
+                  isLaunching && totalProgressRuns > 0 && !performanceTestResult?.resultsSummary
+                "
                 class="performance-test__progress grid gap-4"
               >
                 <div class="performance-test__progress-heading flex items-baseline gap-2.5">
@@ -1157,7 +1166,7 @@ watch(performanceTestLogs, async () => {
           </section>
 
           <section
-            v-if="performanceTestResult?.hardware"
+            v-if="performanceTestResult?.hardware || performanceTestResult?.systemInfo"
             class="performance-test__system-section mt-3 flex w-full min-w-0 flex-none flex-col rounded-2xl bg-white/[0.035] px-6 py-[22px]"
           >
             <div class="flex min-h-8 items-center">
@@ -1166,25 +1175,25 @@ watch(performanceTestLogs, async () => {
               </h2>
             </div>
             <dl
-              class="performance-test__system m-0 mt-2.5 grid grid-cols-3 gap-x-6 gap-y-4 @max-[800px]:grid-cols-2 [&>div]:flex [&>div]:min-w-0 [&>div]:flex-col [&>div]:gap-1 [&_dt]:text-[12px] [&_dt]:text-text-muted [&_dd]:m-0 [&_dd]:truncate [&_dd]:text-[13px] [&_dd]:text-[var(--text-primary)]"
+              class="performance-test__system m-0 mt-2.5 grid grid-cols-3 gap-x-6 gap-y-3 @max-[800px]:grid-cols-2 [&>div]:flex [&>div]:min-w-0 [&>div]:flex-col [&>div]:gap-0.5 [&_dt]:text-[12px] [&_dt]:text-text-muted [&_dd]:m-0 [&_dd]:truncate [&_dd]:text-[13px] [&_dd]:text-[var(--text-primary)]"
             >
-              <div>
+              <div v-if="computeDeviceNames">
                 <dt>{{ t('performanceTest.device') }}</dt>
                 <dd :title="computeDeviceNames">{{ computeDeviceNames }}</dd>
               </div>
-              <div v-if="performanceTestResult.hardware.vramMb != null">
+              <div v-if="performanceTestResult.hardware?.vramMb != null">
                 <dt>{{ t('performanceTest.vram') }}</dt>
                 <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
               </div>
-              <div v-if="performanceTestResult.hardware.ramMb != null">
+              <div v-if="performanceTestResult.hardware?.ramMb != null">
                 <dt>{{ t('performanceTest.ram') }}</dt>
                 <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
               </div>
-              <div v-if="performanceTestResult.hardware.pytorchVersion">
+              <div v-if="performanceTestResult.hardware?.pytorchVersion">
                 <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
                 <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
               </div>
-              <div v-if="performanceTestResult.hardware.xformersVersion">
+              <div v-if="performanceTestResult.hardware?.xformersVersion">
                 <dt>{{ t('performanceTest.xformersVersion') }}</dt>
                 <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
               </div>

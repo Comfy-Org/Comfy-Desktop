@@ -905,6 +905,7 @@ describe('PanelApp', () => {
     await flushPromises()
     await waitForBuildMenuFocusReturn()
     expect(instanceSelect.text()).toBe('BuildWorkspace Install')
+    expect(instanceSelect.attributes('aria-label')).toBe('Build: Workspace Install')
 
     const api = (
       window as unknown as {
@@ -1042,6 +1043,9 @@ describe('PanelApp', () => {
     expect(results).toContain('1.250 s')
     expect(results).toContain('Slowest run')
     expect(results).toContain('2.750 s')
+    expect(wrapper.get('.performance-test__logs-summary').text()).toBe(
+      'Finished 5 measured runs (0 failed). Final response saved to C:\\ComfyUI\\performance-tests\\20260907225600\\jobs.json'
+    )
     expect(results).not.toContain('prompt-3')
     expect(results).not.toContain('prompt-7')
     expect(results).toContain('Average run')
@@ -2324,6 +2328,59 @@ describe('PanelApp', () => {
     expect(wrapper.find('.performance-test__stop').exists()).toBe(false)
     expect(wrapper.find('.performance-test__run-label').exists()).toBe(false)
     expect(wrapper.get('.performance-test__results').text()).toContain('No results yet')
+  })
+
+  it('shows the results as soon as they arrive, while the logs are still being saved', async () => {
+    const { wrapper } = await mountWithInstance()
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
+    const logsApi = (
+      window as unknown as { api: { savePerformanceTestLogs: ReturnType<typeof vi.fn> } }
+    ).api
+    let finishSavingLogs!: (result: { ok: boolean; logsPath: string }) => void
+    logsApi.savePerformanceTestLogs.mockReturnValueOnce(
+      new Promise((resolve) => (finishSavingLogs = resolve))
+    )
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.performance-test__stop').exists()).toBe(true)
+    expect(wrapper.find('.performance-test__progress').exists()).toBe(false)
+    expect(wrapper.get('.performance-test__median-summary').text()).toBe(
+      'Median run · 5 measured · 0 failed'
+    )
+    expect(wrapper.find('.performance-test__aggregate-chart').exists()).toBe(true)
+    expect(wrapper.find('.performance-test__open-results').exists()).toBe(true)
+
+    finishSavingLogs({ ok: true, logsPath: 'C:\\ComfyUI\\performance-tests\\logs.txt' })
+    await flushPromises()
+    expect(wrapper.find('.performance-test__stop').exists()).toBe(false)
+    expect(wrapper.find('.performance-test__aggregate-chart').exists()).toBe(true)
+  })
+
+  it('shows the system information it has when the hardware snapshot is missing', async () => {
+    const { wrapper } = await mountWithInstance()
+    await chooseWorkflowItem(wrapper, '.performance-test__drop-content')
+    const runApi = (
+      window as unknown as { api: { runPerformanceTestWorkflow: ReturnType<typeof vi.fn> } }
+    ).api
+    const successfulRun = runApi.runPerformanceTestWorkflow.getMockImplementation()!
+    runApi.runPerformanceTestWorkflow.mockImplementationOnce(async (...args: unknown[]) => ({
+      ...((await successfulRun(...args)) as RunPerformanceTestWorkflowResult),
+      hardware: null
+    }))
+
+    await wrapper.get('.performance-test__run').trigger('click')
+    await flushPromises()
+
+    const system = wrapper.get('.performance-test__system-section .performance-test__system')
+    expect(system.findAll('dt').map((label) => label.text())).toEqual([
+      'CPU',
+      'CPU cores',
+      'Operating system',
+      'Architecture'
+    ])
+    expect(system.text()).toContain('AMD Ryzen 9 7950X')
   })
 
   it('keeps the model download visible when importing another workflow fails', async () => {
