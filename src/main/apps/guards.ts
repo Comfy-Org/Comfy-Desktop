@@ -1,7 +1,20 @@
-export const DEFAULT_APPS_URL = 'https://apps.comfy.org/'
+export const DEFAULT_APPS_URL = 'https://comfy.org/apps/'
 
-export function appsUrl(env: NodeJS.ProcessEnv, packaged: boolean): string {
-  return (!packaged && env['COMFY_APPS_URL']) || DEFAULT_APPS_URL
+const APPS_URL_BY_CLOUD: ReadonlyMap<string, string> = new Map([
+  ['https://cloud.comfy.org', DEFAULT_APPS_URL],
+  ['https://stagingcloud.comfy.org', 'https://comfy-website-preview-pr-384.vercel.app/apps/']
+])
+
+function cloudAppsUrl(issuer: string): string {
+  try {
+    return APPS_URL_BY_CLOUD.get(new URL(issuer).origin) ?? DEFAULT_APPS_URL
+  } catch {
+    return DEFAULT_APPS_URL
+  }
+}
+
+export function appsUrl(env: NodeJS.ProcessEnv, packaged: boolean, issuer: string): string {
+  return (!packaged && env['COMFY_APPS_URL']) || cloudAppsUrl(issuer)
 }
 
 export function appsOrigin(url: string): string | null {
