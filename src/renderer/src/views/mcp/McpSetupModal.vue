@@ -104,7 +104,7 @@ function toggleSound(): void {
   <DesktopDialogSurface
     :open="true"
     :aria-label="t('mcpSetup.title')"
-    overlay-class="fixed inset-0 z-60 flex bg-black/62 px-[14vw] py-[13vh] max-[820px]:px-2 max-[820px]:pt-15 max-[820px]:pb-2"
+    overlay-class="fixed inset-0 z-60 flex bg-black/62 px-[clamp(56px,10vw,220px)] py-[clamp(40px,8vh,120px)] max-[820px]:px-2 max-[820px]:pt-15 max-[820px]:pb-2"
     content-class="relative size-full"
     @close="dismiss"
   >
@@ -118,11 +118,9 @@ function toggleSound(): void {
       <X :size="18" />
     </button>
     <div
-      class="grid size-full grid-cols-[minmax(0,1fr)_clamp(360px,36vw,440px)] gap-2 overflow-hidden rounded-[20px] bg-content-background p-2 text-foreground shadow-[0_0_0_1px_oklch(1_0_0/0.07),0_30px_80px_-20px_rgb(0_0_0/0.6)] max-[820px]:grid-cols-1 max-[820px]:grid-rows-[minmax(0,1fr)_minmax(0,60vh)]"
+      class="grid size-full grid-cols-[minmax(0,1fr)_clamp(360px,36vw,440px)] overflow-hidden rounded-[20px] bg-content-background text-foreground shadow-[0_0_0_1px_oklch(1_0_0/0.1),0_30px_80px_-20px_rgb(0_0_0/0.7)] max-[820px]:grid-cols-1 max-[820px]:grid-rows-[minmax(0,1fr)_minmax(0,60vh)]"
     >
-      <div
-        class="relative -my-2 -ml-2 min-h-0 overflow-hidden bg-black max-[820px]:-mr-2 max-[820px]:mb-0"
-      >
+      <div class="relative min-h-0 overflow-hidden bg-black">
         <video
           ref="videoRef"
           class="absolute inset-0 block size-full object-cover"
@@ -146,13 +144,13 @@ function toggleSound(): void {
       </div>
 
       <aside
-        class="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[14px] bg-[color-mix(in_oklch,var(--color-foreground)_6%,var(--color-content-background))]"
+        class="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[color-mix(in_oklch,var(--color-foreground)_6%,var(--color-content-background))]"
       >
         <div
           class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-x-hidden overflow-y-auto overscroll-contain pb-3"
         >
           <header class="flex flex-col gap-1.5 px-6 pt-6 pb-2">
-            <h2 class="m-0 text-[15px] leading-[1.35] font-semibold text-balance">
+            <h2 class="m-0 text-[18px] leading-6 font-semibold text-balance">
               {{ t('mcpSetup.title') }}
             </h2>
             <p class="m-0 text-[13px] leading-5 text-pretty text-muted-foreground">
@@ -171,7 +169,7 @@ function toggleSound(): void {
           </div>
 
           <template v-if="path === 'have_agent'">
-            <section class="flex flex-col gap-4 px-6 py-3" data-testid="mcp-option-agent">
+            <section class="flex flex-col gap-4 px-6 pt-3 pb-1" data-testid="mcp-option-agent">
               <h3
                 class="m-0 text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase"
               >
@@ -179,9 +177,9 @@ function toggleSound(): void {
               </h3>
               <ol class="m-0 flex list-none flex-col gap-5 p-0">
                 <li v-for="step in steps" :key="step.key" class="flex min-w-0 flex-col gap-2">
-                  <p class="m-0 flex items-center gap-2.5 text-[13px] leading-5 font-medium">
+                  <p class="m-0 flex items-baseline gap-2 text-[13px] leading-5 font-medium">
                     <span
-                      class="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-[11px] font-medium text-muted-foreground tabular-nums"
+                      class="w-3 shrink-0 text-muted-foreground tabular-nums"
                       aria-hidden="true"
                       >{{ step.number }}</span
                     >
@@ -189,13 +187,14 @@ function toggleSound(): void {
                   </p>
                   <div
                     v-if="step.command"
-                    class="flex items-start gap-2 rounded-[10px] bg-foreground/6 py-1.5 pr-1.5 pl-3"
+                    class="group flex items-start gap-2 rounded-[10px] bg-foreground/6 py-1.5 pr-1.5 pl-3"
                   >
                     <code
                       class="min-w-0 flex-1 py-0.5 font-mono text-xs leading-5 [overflow-wrap:anywhere]"
                       >{{ step.command }}</code
                     >
                     <BaseCopyButton
+                      class="opacity-0 transition-opacity duration-150 ease-out group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
                       :value="step.command"
                       :aria-label="t('mcpSetup.copyCommand')"
                       :data-testid="step.testId"
@@ -293,7 +292,7 @@ function toggleSound(): void {
           </section>
         </div>
 
-        <footer class="mx-4 pt-3 pb-4">
+        <footer class="border-t border-solid border-neutral-100/8 p-4">
           <button
             type="button"
             class="inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border-0 bg-foreground/7 px-3 text-[13px] text-foreground transition-colors hover:bg-foreground/11"
