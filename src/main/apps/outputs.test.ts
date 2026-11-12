@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { MAX_OUTPUTS, MAX_OUTPUTS_BYTES, outputAction, outputRequest } from './outputs'
+import {
+  MAX_OUTPUTS,
+  MAX_OUTPUTS_BYTES,
+  outputAction,
+  outputRequest,
+  resolveOutputFiles
+} from './outputs'
 
 const picture = (extra: Record<string, unknown> = {}) => ({
   name: 'picture-1.png',
@@ -58,6 +64,44 @@ describe('outputRequest', () => {
     expect(folderOf('/Users/me/out\nput')).toBeUndefined()
   })
 
+  it('keeps the ComfyUI output reference of an output made on this computer', () => {
+    const request = outputRequest({
+      items: [
+        picture({
+          savedOn: 'computer',
+          comfyFile: { filename: 'ComfyUI_00001_.png', subfolder: 'apps\\text', type: 'output' }
+        }),
+        picture({ savedOn: 'cloud', comfyFile: { filename: 'a.png', type: 'output' } })
+      ],
+      index: 0
+    })
+    expect(request?.items[0]?.comfyFile).toEqual({
+      filename: 'ComfyUI_00001_.png',
+      subfolder: 'apps/text'
+    })
+    expect(request?.items[1]).not.toHaveProperty('comfyFile')
+  })
+
+  it('drops a ComfyUI output reference that could climb out of the output folder', () => {
+    const fileOf = (comfyFile: unknown) =>
+      outputRequest({ items: [picture({ savedOn: 'computer', comfyFile })], index: 0 })?.items[0]
+        ?.comfyFile
+    expect(fileOf({ filename: 'a.png', type: 'output' })).toEqual({
+      filename: 'a.png',
+      subfolder: ''
+    })
+    expect(fileOf({ filename: 'a.png', subfolder: '', type: 'temp' })).toBeUndefined()
+    expect(fileOf({ filename: '../a.png', subfolder: '', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: '..', subfolder: '', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: '../other', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: 'apps/../..', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: '/etc', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: 'C:\\out', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: 'apps//x', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a\u202e.png', subfolder: '', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 7, subfolder: '', type: 'output' })).toBeUndefined()
+  })
+
   it('refuses outputs it cannot show', () => {
     expect(outputRequest(null)).toBeNull()
     expect(outputRequest({ items: [], index: 0 })).toBeNull()
@@ -74,6 +118,49 @@ describe('outputRequest', () => {
     expect(
       outputRequest({ items: [picture({ bytes: half }), picture({ bytes: half })], index: 0 })
     ).toBeNull()
+  })
+})
+
+describe('resolveOutputFiles', () => {
+  it('shows the folder Desktop found and never one the page sent with the reference', async () => {
+    const request = outputRequest({
+      items: [
+        picture({
+          savedOn: 'computer',
+          comfyFile: { filename: 'found.png', subfolder: '', type: 'output' }
+        }),
+        picture({
+          savedOn: 'computer',
+          folder: '/Users/me/elsewhere',
+          comfyFile: { filename: 'gone.png', subfolder: '', type: 'output' }
+        }),
+        picture({ savedOn: 'computer', folder: '/Users/me/output/apps' }),
+        picture({ savedOn: 'cloud' })
+      ],
+      index: 0
+    })
+    const resolve = async (file: { filename: string }) =>
+      file.filename === 'found.png' ? '/Users/me/output/found.png' : null
+
+    const { items, files } = await resolveOutputFiles(request!.items, resolve)
+
+    expect(files).toEqual(['/Users/me/output/found.png', null, null, null])
+    expect(items[0]).toMatchObject({ savedOn: 'computer', folder: '/Users/me/output' })
+    expect(items[1]).not.toHaveProperty('folder')
+    expect(items[2]).toMatchObject({ folder: '/Users/me/output/apps' })
+    expect(items[3]).toMatchObject({ savedOn: 'cloud' })
+    for (const item of items) expect(item).not.toHaveProperty('comfyFile')
+  })
+
+  it('treats a lookup that fails as not found', async () => {
+    const request = outputRequest({
+      items: [picture({ savedOn: 'computer', comfyFile: { filename: 'a.png', type: 'output' } })],
+      index: 0
+    })
+    const { files } = await resolveOutputFiles(request!.items, () =>
+      Promise.reject(new Error('disk gone'))
+    )
+    expect(files).toEqual([null])
   })
 })
 

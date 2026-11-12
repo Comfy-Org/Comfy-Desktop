@@ -43,7 +43,9 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { listCatalogApps } from './catalog'
-import { outputAction, outputRequest } from './outputs'
+import { outputAction, outputRequest, resolveOutputFiles } from './outputs'
+import { findApps } from './appsBuild'
+import { allowedPath, comfyOutputPath } from '../lib/outputFolders'
 import { localBuilds, openInComfy } from './openInComfy'
 import { stackApps } from './stackApps'
 
@@ -68,6 +70,7 @@ const appOpen = new Map<number, boolean>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
 const parkedApps = new Set<number>()
+const shownOutputFiles = new Map<number, (string | null)[]>()
 
 export interface AppsRect {
   x: number
@@ -218,6 +221,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
       awaitingCommit.delete(key)
       settledPages.delete(key)
       parkedApps.delete(key)
+      shownOutputFiles.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -279,19 +283,32 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const key = keyForAppsPage(page)
   const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
+  const apps = outputs.items.some((item) => item.comfyFile) ? await findApps() : null
+  const { items, files } = await resolveOutputFiles(outputs.items, async (file, sizeBytes) =>
+    apps ? comfyOutputPath(apps, file, sizeBytes) : null
+  )
   const backdrop = await page
     .capturePage()
     .then((image) => image.toJPEG(BACKDROP_QUALITY))
     .catch(() => null)
   if (panel.isDestroyed() || !appOpen.get(key)) return
+  shownOutputFiles.set(key, files)
   panel.focus()
-  panel.send(APPS_OUTPUT_CHANNEL, { ...outputs, backdrop })
+  panel.send(APPS_OUTPUT_CHANNEL, { items, index: outputs.index, backdrop })
+}
+
+async function revealOutputFile(file: string): Promise<void> {
+  const real = await allowedPath(file)
+  if (real) shell.showItemInFolder(real)
 }
 
 function relayOutputAction(event: IpcMainEvent, input: unknown): void {
   const found = entryForPanel(event.sender)
   const action = outputAction(input)
   if (!found || !action) return
+  const file =
+    action.action === 'show-in-folder' ? shownOutputFiles.get(found[0])?.[action.index] : null
+  if (file) return void revealOutputFile(file)
   const page = views.get(found[0])?.webContents
   if (page && !page.isDestroyed()) page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
 }

@@ -1,3 +1,4 @@
+import path from 'path'
 import type { AppOutputAction, AppOutputItem } from '../../types/ipc'
 
 export const MAX_OUTPUTS = 40
@@ -19,6 +20,14 @@ function hasHiddenCharacters(value: string): boolean {
   )
 }
 const ABSOLUTE_LOCAL_PATH = /^(\/|[A-Za-z]:[\\/])/
+const PATH_SEPARATOR = /[\\/]/
+
+export interface ComfyOutputFile {
+  filename: string
+  subfolder: string
+}
+
+export type AppOutputRequestItem = AppOutputItem & { comfyFile?: ComfyOutputFile }
 
 function absoluteFolder(value: unknown): string | null {
   const folder = text(value, 1024)
@@ -26,7 +35,24 @@ function absoluteFolder(value: unknown): string | null {
   return ABSOLUTE_LOCAL_PATH.test(folder) ? folder : null
 }
 
-function outputItem(value: unknown): AppOutputItem | null {
+function pathPart(value: string): boolean {
+  return value !== '.' && value !== '..' && value.trim() === value && !hasHiddenCharacters(value)
+}
+
+function comfyOutputFile(value: unknown): ComfyOutputFile | null {
+  if (!value || typeof value !== 'object') return null
+  const { filename, subfolder = '', type } = value as Record<string, unknown>
+  if (type !== 'output' || typeof filename !== 'string' || typeof subfolder !== 'string')
+    return null
+  if (!filename || filename.length > 255 || PATH_SEPARATOR.test(filename) || !pathPart(filename))
+    return null
+  if (subfolder.length > 1024 || ABSOLUTE_LOCAL_PATH.test(subfolder)) return null
+  const parts = subfolder === '' ? [] : subfolder.split(PATH_SEPARATOR)
+  if (!parts.every((part) => part !== '' && pathPart(part))) return null
+  return { filename, subfolder: parts.join('/') }
+}
+
+function outputItem(value: unknown): AppOutputRequestItem | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Record<string, unknown>
   const name = text(item['name'], 200)
@@ -43,6 +69,7 @@ function outputItem(value: unknown): AppOutputItem | null {
   const savedOn =
     item['savedOn'] === 'cloud' || item['savedOn'] === 'computer' ? item['savedOn'] : null
   const folder = savedOn === 'computer' ? absoluteFolder(item['folder']) : null
+  const comfyFile = savedOn === 'computer' ? comfyOutputFile(item['comfyFile']) : null
   return {
     name,
     mimeType,
@@ -50,21 +77,41 @@ function outputItem(value: unknown): AppOutputItem | null {
     tags,
     workflow: item['workflow'] === true,
     ...(savedOn ? { savedOn } : {}),
-    ...(folder ? { folder } : {})
+    ...(folder ? { folder } : {}),
+    ...(comfyFile ? { comfyFile } : {})
   }
 }
 
-export function outputRequest(input: unknown): { items: AppOutputItem[]; index: number } | null {
+export function outputRequest(
+  input: unknown
+): { items: AppOutputRequestItem[]; index: number } | null {
   if (!input || typeof input !== 'object') return null
   const { items, index } = input as { items?: unknown; index?: unknown }
   if (!Array.isArray(items) || items.length === 0 || items.length > MAX_OUTPUTS) return null
   const parsed = items.map(outputItem)
   if (parsed.some((item) => item === null)) return null
-  const outputs = parsed as AppOutputItem[]
+  const outputs = parsed as AppOutputRequestItem[]
   const total = outputs.reduce((sum, item) => sum + item.bytes.byteLength, 0)
   if (total > MAX_OUTPUTS_BYTES) return null
   if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
   return index < outputs.length ? { items: outputs, index } : null
+}
+
+export async function resolveOutputFiles(
+  items: AppOutputRequestItem[],
+  resolve: (file: ComfyOutputFile, sizeBytes: number) => Promise<string | null>
+): Promise<{ items: AppOutputItem[]; files: (string | null)[] }> {
+  const files = await Promise.all(
+    items.map((item) =>
+      item.comfyFile ? resolve(item.comfyFile, item.bytes.byteLength).catch(() => null) : null
+    )
+  )
+  const shown = items.map(({ comfyFile, folder, ...item }, i): AppOutputItem => {
+    const file = files[i]
+    if (comfyFile) return file ? { ...item, savedOn: 'computer', folder: path.dirname(file) } : item
+    return folder ? { ...item, folder } : item
+  })
+  return { items: shown, files }
 }
 
 export function outputAction(input: unknown): AppOutputAction | null {

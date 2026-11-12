@@ -67,6 +67,7 @@ vi.mock('./assets', () => ({
 import type { InstallationRecord } from '../installations'
 import {
   MAX_FILES,
+  comfyOutputPath,
   listOutputFolder,
   listOutputFolders,
   outputDirOverride,
@@ -195,6 +196,63 @@ describe('listOutputFolder', () => {
     expect(await listOutputFolder('relative/path')).toBeNull()
     expect(await listOutputFolder(42)).toBeNull()
     fs.rmSync(path.join(sharedDir, 'escape'))
+  })
+})
+
+describe('comfyOutputPath', () => {
+  const apps = install('Apps', { useSharedOutput: false, outputDir: ownDir })
+
+  it("finds a ComfyUI output in the build's own output folder", async () => {
+    write(path.join(ownDir, 'apps', 'ComfyUI_00001_.png'), 'four')
+
+    expect(
+      await comfyOutputPath(apps, { filename: 'ComfyUI_00001_.png', subfolder: 'apps' }, 4)
+    ).toBe(path.join(ownDir, 'apps', 'ComfyUI_00001_.png'))
+  })
+
+  it('finds an output of a build that saves to the shared folder', async () => {
+    write(path.join(sharedDir, 'ComfyUI_00002_.png'), 'shared')
+
+    expect(
+      await comfyOutputPath(
+        install('Test Instance'),
+        { filename: 'ComfyUI_00002_.png', subfolder: '' },
+        6
+      )
+    ).toBe(path.join(sharedDir, 'ComfyUI_00002_.png'))
+  })
+
+  it('refuses a file that is gone or does not match the bytes the page shows', async () => {
+    write(path.join(ownDir, 'ComfyUI_00003_.png'), 'four')
+
+    expect(await comfyOutputPath(apps, { filename: 'ComfyUI_00003_.png', subfolder: '' }, 5)).toBe(
+      null
+    )
+    expect(await comfyOutputPath(apps, { filename: 'missing.png', subfolder: '' }, 4)).toBeNull()
+  })
+
+  it("refuses paths that leave the build's output folder", async () => {
+    write(path.join(outsideDir, 'secret.png'), 'four')
+    write(path.join(sharedDir, 'other-build.png'), 'four')
+    fs.symlinkSync(outsideDir, path.join(ownDir, 'escape'))
+    fs.symlinkSync(sharedDir, path.join(ownDir, 'shared'))
+
+    const file = (subfolder: string, filename: string) =>
+      comfyOutputPath(apps, { filename, subfolder }, 4)
+    expect(await file('escape', 'secret.png')).toBeNull()
+    expect(await file('shared', 'other-build.png')).toBeNull()
+    expect(await file('../outside', 'secret.png')).toBeNull()
+    expect(await file('', '../outside/secret.png')).toBeNull()
+    fs.rmSync(path.join(ownDir, 'escape'))
+    fs.rmSync(path.join(ownDir, 'shared'))
+  })
+
+  it('refuses builds whose output folder Desktop does not manage', async () => {
+    write(path.join(sharedDir, 'ComfyUI_00004_.png'), 'four')
+    const file = { filename: 'ComfyUI_00004_.png', subfolder: '' }
+
+    expect(await comfyOutputPath(install('Cloud', { sourceId: 'cloud' }), file, 4)).toBeNull()
+    expect(await comfyOutputPath(install('Old', { sourceId: 'desktop' }), file, 4)).toBeNull()
   })
 })
 

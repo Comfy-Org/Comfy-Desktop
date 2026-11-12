@@ -6,6 +6,7 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import { isInside } from '../apps/guards'
+import type { ComfyOutputFile } from '../apps/outputs'
 import { assetKind } from './assets'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
@@ -71,12 +72,26 @@ export async function listOutputFolders(): Promise<OutputFolder[]> {
   return [...byPath.values()]
 }
 
-async function allowedPath(target: string): Promise<string | null> {
+export async function allowedPath(target: string): Promise<string | null> {
   if (!path.isAbsolute(target)) return null
   if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS) await listOutputFolders()
   const real = await fsp.realpath(target).catch(() => null)
   if (!real) return null
   return allowedRoots.some((root) => real === root || isInside(real, root, path.sep)) ? real : null
+}
+
+export async function comfyOutputPath(
+  inst: InstallationRecord,
+  file: ComfyOutputFile,
+  sizeBytes: number
+): Promise<string | null> {
+  const dir = outputDirFor(inst, sharedOutputDir())
+  const root = dir ? await realDir(dir) : null
+  if (!root) return null
+  const real = await allowedPath(path.join(root, file.subfolder, file.filename))
+  if (!real || !isInside(real, root, path.sep)) return null
+  const stat = await fsp.stat(real).catch(() => null)
+  return stat?.isFile() && stat.size === sizeBytes ? real : null
 }
 
 export function outputFileUrl(file: string, thumbnailOf?: number): string {
