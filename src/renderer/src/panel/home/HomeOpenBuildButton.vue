@@ -8,11 +8,10 @@ import SplitButton from '../../components/ui/SplitButton.vue'
 import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
-const { builds, target, statusOf, colorOf } = defineProps<{
+const { builds, target, statusOf } = defineProps<{
   builds: readonly Installation[]
   target: Installation
   statusOf: (build: Installation) => HomeBuildStatus
-  colorOf: (build: Installation) => string
 }>()
 
 const emit = defineEmits<{
@@ -60,7 +59,6 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       v-if="builds.length > 1"
       class="shrink-0"
       :size="14"
-      :style="{ color: colorOf(target) }"
       :data-kind="isCloudBuild(target) ? 'cloud' : 'local'"
       aria-hidden="true"
       data-testid="home-open-comfyui-icon"
@@ -84,13 +82,19 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
             :is="isCloudBuild(build) ? Cloud : Laptop"
             class="shrink-0"
             :size="14"
-            :style="{ color: colorOf(build) }"
             aria-hidden="true"
           />
           <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
-          <span class="shrink-0 text-muted-foreground" data-testid="home-open-build-status">{{
-            statusLabel(build)
-          }}</span>
+          <span
+            class="flex shrink-0 items-center gap-1.5 text-muted-foreground"
+            data-testid="home-open-build-status"
+            ><span
+              class="size-1.5 shrink-0 rounded-full"
+              :class="statusOf(build) === 'starting' ? 'bg-muted-foreground' : 'bg-[#59d38c]'"
+              aria-hidden="true"
+              data-testid="home-open-build-status-dot"
+            />{{ statusLabel(build) }}</span
+          >
         </MenuRadioItem>
       </DropdownMenuRadioGroup>
     </template>

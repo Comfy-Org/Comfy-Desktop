@@ -429,20 +429,18 @@ describe('Home builds', () => {
     expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
   })
 
-  it('marks Open ComfyUI with the kind and color of the build it opens', async () => {
+  it('marks Open ComfyUI with the kind of build it opens', async () => {
     getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
     const wrapper = await openHome()
     const icon = () => wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement
 
     expect(icon().dataset.kind).toBe('local')
-    expect(icon().style.color).toBe('rgb(250, 135, 70)')
 
     await openBuildMenu(wrapper)
     buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
     expect(icon().dataset.kind).toBe('cloud')
-    expect(icon().style.color).toBe('rgb(0, 198, 226)')
   })
 
   it('lists every build of the workspace with what each is doing in the Open ComfyUI menu', async () => {
