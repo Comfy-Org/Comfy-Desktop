@@ -57,6 +57,7 @@ DS's Motion page (`ds/motion.ts`).
   like the filter menus. Never the `Select` listbox for a menu: its
   spacing drifts from the filters. A single choice fills the picked row
   with the DS selected color (`bg-muted`, `selectedMenuButtonClass`), no check.
+  Rows sit 2px apart (`gap-0.5`) so two highlighted rows never touch.
 
 ## Split button
 
