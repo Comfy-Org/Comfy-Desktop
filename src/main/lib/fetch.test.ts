@@ -97,6 +97,25 @@ describe('fetchJSON — mirror fallback semantics', () => {
     await expect(p).resolves.toEqual({ from: 'mirror' })
   })
 
+  it('retries the mirror when the primary response body fails to decode', async () => {
+    const p = fetchJSON(PRIMARY)
+    const res = Object.assign(new EventEmitter(), { statusCode: 200, headers: {} })
+    requests[0]!.emit('response', res)
+    res.emit('error', new Error('net::ERR_CONTENT_DECODING_FAILED'))
+    await new Promise((r) => setImmediate(r))
+    expect(requests[1]?.__url).toBe(MIRROR)
+    requests[1]!.emit('response', makeResponse(200, '{"from":"mirror"}'))
+    await expect(p).resolves.toEqual({ from: 'mirror' })
+  })
+
+  it('rejects instead of throwing when a response body fails to decode outside the R2 namespace', async () => {
+    const p = fetchJSON('https://api.github.com/repos/x/y/releases')
+    const res = Object.assign(new EventEmitter(), { statusCode: 200, headers: {} })
+    requests[0]!.emit('response', res)
+    res.emit('error', new Error('net::ERR_CONTENT_DECODING_FAILED'))
+    await expect(p).rejects.toThrow(/ERR_CONTENT_DECODING_FAILED/)
+  })
+
   it('does NOT send the primary If-None-Match to the mirror', async () => {
     const p = fetchJSON(PRIMARY)
     requests[0]!.emit('response', makeResponse(500, ''))
