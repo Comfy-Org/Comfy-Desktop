@@ -1423,8 +1423,12 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         }
       },
       pickInstallFromPicker: (installationId) => {
-        if (focusBuild(installationId) || _runningSessions.has(installationId)) return
-        void openInstallInNewWindow(installationId)
+        const hasBuild =
+          !!getEntryByInstallationId(installationId) ||
+          !!findHostLaunching(installationId) ||
+          _runningSessions.has(installationId)
+        if (hasBuild) focusBuild(installationId)
+        else void openInstallInNewWindow(installationId)
       },
       openInstallInNewWindow,
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
