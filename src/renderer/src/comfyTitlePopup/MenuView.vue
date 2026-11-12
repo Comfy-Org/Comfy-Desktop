@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, useTemplateRef } from 'vue'
+import { onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
 import { Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
@@ -53,17 +53,23 @@ function moveFocus(key: string, elements: HTMLElement[]): void {
   elements[next]?.focus()
 }
 
-function activateFocused(elements: HTMLElement[]): boolean {
+function activateFocused(elements: HTMLElement[], repeat: boolean): boolean {
   const current = focusedIndex(elements)
   if (current < 0) return false
-  const id = elements[current]?.dataset.id
-  const item = props.items.find((entry) => entry.id === id)
-  if (!item) return false
-  handleClick(item)
+  const item = props.items[Number(elements[current]?.dataset.index)]
+  if (!item?.id) return false
+  if (!repeat) handleClick(item)
   return true
 }
 
+function focusIsElsewhere(): boolean {
+  const active = document.activeElement
+  if (!active || active === document.body) return false
+  return !menuEl.value?.contains(active)
+}
+
 function handleKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.isComposing || focusIsElsewhere()) return
   const elements = menuItems()
   if (elements.length === 0) return
   if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -71,7 +77,7 @@ function handleKeydown(event: KeyboardEvent): void {
     moveFocus(event.key, elements)
     return
   }
-  if ((event.key === 'Enter' || event.key === ' ') && activateFocused(elements)) {
+  if ((event.key === 'Enter' || event.key === ' ') && activateFocused(elements, event.repeat)) {
     event.preventDefault()
   }
 }
@@ -80,6 +86,8 @@ function clearFocus(): void {
   const active = document.activeElement
   if (active instanceof HTMLElement && menuEl.value?.contains(active)) active.blur()
 }
+
+watch(() => props.items, clearFocus)
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
@@ -103,9 +111,9 @@ onUnmounted(() => {
       <li
         v-else
         class="item box-border flex h-8 cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-0 whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-[oklch(1_0_0/0.07)] focus-visible:bg-[oklch(1_0_0/0.07)] focus-visible:outline-none"
-        role="menuitem"
-        :data-id="item.id"
-        tabindex="-1"
+        :role="item.id ? 'menuitem' : 'none'"
+        :data-index="idx"
+        :tabindex="item.id ? -1 : undefined"
         @click="handleClick(item)"
       >
         <span class="check inline-flex size-3.5 shrink-0 items-center justify-center opacity-85">

@@ -1465,6 +1465,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (!entry) return
     const id = payload?.id
     if (typeof id !== 'string') return
+    if (!entry.view.isOpen) return
     activateTitlePopupMenuItem(entry, id, bindings)
   })
 

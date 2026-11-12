@@ -12,18 +12,18 @@ const items = [
 
 let wrapper: VueWrapper | undefined
 
-function mountMenu(): VueWrapper {
+function mountMenu(menuItems: typeof items = items): VueWrapper {
   const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: {} } })
   wrapper = mount(MenuView, {
-    props: { items },
+    props: { items: menuItems },
     attachTo: document.body,
     global: { plugins: [i18n] }
   })
   return wrapper
 }
 
-function press(key: string): void {
-  window.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true }))
+function press(key: string, init: KeyboardEventInit = {}): void {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, ...init }))
 }
 
 function focusedLabel(): string | undefined {
@@ -79,5 +79,50 @@ describe('MenuView keyboard', () => {
     press('ArrowDown')
     window.dispatchEvent(new Event('blur'))
     expect(document.activeElement).toBe(document.body)
+  })
+
+  it('reopens clean when the popup gets a new list of items', async () => {
+    const menu = mountMenu()
+    press('ArrowDown')
+    await menu.setProps({ items: [...items] })
+    expect(document.activeElement).toBe(document.body)
+    press('Enter')
+    expect(menu.emitted('activate')).toBeUndefined()
+  })
+
+  it('opens an item once when Enter is held down', () => {
+    const menu = mountMenu()
+    press('ArrowDown')
+    press('Enter')
+    press('Enter', { repeat: true })
+    press('Enter', { repeat: true })
+    expect(menu.emitted('activate')).toEqual([['performance-test']])
+  })
+
+  it('leaves the keys alone while focus is outside the menu', () => {
+    mountMenu()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    input.focus()
+    press('ArrowDown')
+    expect(document.activeElement).toBe(input)
+    input.remove()
+  })
+
+  it('leaves the keys alone during IME composition', () => {
+    mountMenu()
+    press('ArrowDown', { isComposing: true })
+    expect(document.activeElement).toBe(document.body)
+  })
+
+  it('skips rows without an id', () => {
+    mountMenu([
+      { id: 'benchmarks', label: 'Benchmarks' },
+      { label: 'Note' },
+      { id: 'settings', label: 'Settings' }
+    ])
+    press('ArrowDown')
+    press('ArrowDown')
+    expect(focusedLabel()).toBe('Settings')
   })
 })
