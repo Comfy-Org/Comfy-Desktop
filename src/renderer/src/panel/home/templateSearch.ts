@@ -1,0 +1,59 @@
+import type {
+  TemplateSearchCandidate,
+  TemplateSearchResponse,
+  TemplateSearchResult
+} from '../../types/ipc'
+
+export type SearchRowKind = 'run' | 'download' | 'also' | 'agent'
+
+export const WEAK_MATCH_FLOOR = 0.05
+
+export type BadgeTone = 'partner' | 'download' | 'rewrite' | 'strong' | 'good' | 'weak' | 'best'
+
+export interface TemplateSearchPick {
+  query: string
+  kind: Exclude<SearchRowKind, 'agent'>
+  position: number
+  best: boolean
+}
+
+export interface TemplateSearchClient {
+  search(query: string): Promise<TemplateSearchResponse>
+  open(candidate: TemplateSearchCandidate, pick: TemplateSearchPick): Promise<boolean>
+}
+
+export interface SearchRow {
+  key: string
+  kind: SearchRowKind
+  candidate: TemplateSearchCandidate | null
+  best: boolean
+}
+
+function templateRow(
+  kind: Exclude<SearchRowKind, 'agent'>,
+  candidate: TemplateSearchCandidate
+): SearchRow {
+  return { key: `${kind}:${candidate.templateId}`, kind, candidate, best: false }
+}
+
+export function rewritesPrompt(candidate: TemplateSearchCandidate): boolean {
+  return candidate.rewrite && !candidate.partner
+}
+
+function shown(candidate: TemplateSearchCandidate, floor: number): boolean {
+  return !candidate.belowThreshold || (candidate.score ?? 0) >= floor
+}
+
+export function searchRows(result: TemplateSearchResult, floor = WEAK_MATCH_FLOOR): SearchRow[] {
+  if (result.outcome === 'bad_input') return []
+  const templates = [
+    ...result.run.map((candidate) => templateRow('run', candidate)),
+    ...result.download.map((candidate) => templateRow('download', candidate)),
+    ...result.alsoTry.map((candidate) => templateRow('also', candidate))
+  ].filter((row) => row.candidate === null || shown(row.candidate, floor))
+  const agent: SearchRow = { key: 'agent', kind: 'agent', candidate: null, best: false }
+  if (result.outcome === 'agent') return [{ ...agent, best: true }, ...templates]
+  const [first, ...rest] = templates
+  if (result.outcome === 'template' && first) return [{ ...first, best: true }, ...rest, agent]
+  return [...templates, agent]
+}

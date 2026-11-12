@@ -135,6 +135,37 @@ export interface CatalogWorkflow {
   thumbnailUrl: string | null
 }
 
+export type TemplateSearchOutcome = 'template' | 'agent' | 'bad_input' | 'unsat'
+
+export interface TemplateSearchCandidate {
+  templateId: string
+  title: string
+  thumbnailUrl: string | null
+  family: string | null
+  partner: boolean
+  rewrite: boolean
+  needsDownload: boolean
+  score: number | null
+  calibrated: number | null
+  calibratedThreshold: number | null
+  belowThreshold: boolean
+  missing: string[]
+}
+
+export interface TemplateSearchResult {
+  outcome: TemplateSearchOutcome
+  reply: string | null
+  run: TemplateSearchCandidate[]
+  download: TemplateSearchCandidate[]
+  alsoTry: TemplateSearchCandidate[]
+}
+
+export type TemplateSearchResponse =
+  | { kind: 'result'; result: TemplateSearchResult }
+  | { kind: 'failed' }
+
+export type OpenTemplateOutcome = 'opened' | 'launch' | 'refused'
+
 export interface BuildStorageSnapshot {
   sharedDirectoriesFields: Record<string, unknown>[]
   modelsDirs: { path: string; isPrimary: boolean }[]
@@ -1123,6 +1154,8 @@ export interface ElectronApi {
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>
+  searchTemplates(query: string): Promise<TemplateSearchResponse>
+  openTemplateInBuild(installationId: string, templateId: string): Promise<OpenTemplateOutcome>
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

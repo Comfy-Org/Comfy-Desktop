@@ -1,0 +1,190 @@
+import { isPersistableTemplateId, thumbnailUrlFor } from '../sources/standalone/curatedTemplates'
+import type {
+  TemplateSearchCandidate,
+  TemplateSearchOutcome,
+  TemplateSearchResult
+} from '../../types/ipc'
+import type { FetchLike, TemplateSearchBackend } from './types'
+
+export const RUN_LIMIT = 3
+export const DOWNLOAD_LIMIT = 2
+export const ALSO_TRY_LIMIT = 3
+const REQUESTED_CANDIDATES = 8
+const TIMEOUT_MS = 3000
+const DECIDE_PATH = '/api/decide'
+const PARTNER_PREFIX = 'api_'
+const OUTCOMES: ReadonlySet<string> = new Set<TemplateSearchOutcome>([
+  'template',
+  'agent',
+  'bad_input',
+  'unsat'
+])
+
+type JsonRecord = Record<string, unknown>
+
+function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonRecord) : null
+}
+
+function asText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function asTexts(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => !!asText(item)) : []
+}
+
+const NOT_INSTALLED = 'not_installed'
+
+function maskCode(value: unknown): string | null {
+  return asText(asRecord(asRecord(value)?.masked)?.code)
+}
+
+function isOfferableOption(value: unknown): boolean {
+  const option = asRecord(value)
+  return option !== null && (option.masked == null || maskCode(option) === NOT_INSTALLED)
+}
+
+function missingFor(candidate: JsonRecord, templateId: string): string[] {
+  const listed = asTexts(candidate.download)
+  const masked = asText(asRecord(candidate.masked)?.detail)
+  const items = listed.length ? listed : masked ? masked.split(',').map((item) => item.trim()) : []
+  return items.filter((item) => item && item !== templateId)
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function isBelowThreshold(candidate: JsonRecord): boolean {
+  if (typeof candidate.clears === 'boolean') return !candidate.clears
+  const score = asNumber(candidate.score)
+  const threshold = asNumber(candidate.threshold)
+  return score !== null && threshold !== null && score < threshold
+}
+
+function isOutcome(value: unknown): value is TemplateSearchOutcome {
+  return typeof value === 'string' && OUTCOMES.has(value)
+}
+
+export function isPartnerTemplate(templateId: string): boolean {
+  return templateId.startsWith(PARTNER_PREFIX)
+}
+
+export function decisionEndpoint(base: string): string | null {
+  let url: URL
+  try {
+    url = new URL(base)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+  return new URL(DECIDE_PATH, url).toString()
+}
+
+function candidateFrom(value: unknown, fromDownloadList: boolean): TemplateSearchCandidate | null {
+  const candidate = asRecord(value)
+  const variant = asRecord(candidate?.variant)
+  const templateId = variant?.template_id
+  if (!candidate || !variant || !isPersistableTemplateId(templateId)) return null
+  return {
+    templateId,
+    title: asText(variant.title) ?? templateId,
+    thumbnailUrl: thumbnailUrlFor(templateId, 'webp'),
+    family: asText(candidate.family_id),
+    partner: isPartnerTemplate(templateId),
+    rewrite: false,
+    needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
+    score: asNumber(candidate.score),
+    calibrated: asNumber(candidate.calibrated),
+    calibratedThreshold: asNumber(candidate.calibrated_threshold),
+    belowThreshold: isBelowThreshold(candidate),
+    missing: missingFor(candidate, templateId)
+  }
+}
+
+function distinctCandidates(
+  value: unknown,
+  limit: number,
+  {
+    taken = new Set<string>(),
+    fromDownloadList = false
+  }: { taken?: ReadonlySet<string>; fromDownloadList?: boolean } = {}
+): TemplateSearchCandidate[] {
+  const seen = new Set(taken)
+  const candidates: TemplateSearchCandidate[] = []
+  for (const item of Array.isArray(value) ? value : []) {
+    if (candidates.length === limit) break
+    const candidate = candidateFrom(item, fromDownloadList)
+    if (!candidate || seen.has(candidate.templateId)) continue
+    seen.add(candidate.templateId)
+    candidates.push(candidate)
+  }
+  return candidates
+}
+
+function rewritableTemplates(lists: unknown[]): Set<string> {
+  const ids = new Set<string>()
+  for (const list of lists) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const option = asRecord(item)
+      const templateId = asRecord(option?.variant)?.template_id
+      if (option?.kind === 'rewrite' && typeof templateId === 'string') ids.add(templateId)
+    }
+  }
+  return ids
+}
+
+export function parseDecision(body: unknown): TemplateSearchResult | null {
+  const decision = asRecord(body)
+  const outcome = asRecord(decision?.outcome)
+  const split = asRecord(decision?.split)
+  if (!outcome || !split || !isOutcome(outcome.kind)) return null
+  const run = distinctCandidates(split.run, RUN_LIMIT)
+  const download = distinctCandidates(split.download, DOWNLOAD_LIMIT, {
+    taken: new Set(run.map((candidate) => candidate.templateId)),
+    fromDownloadList: true
+  })
+  const options = Array.isArray(decision?.options) ? decision.options : []
+  const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, {
+    taken: new Set([...run, ...download].map((candidate) => candidate.templateId))
+  })
+  const rewriteChosen = outcome.kind === 'template' && outcome.prompt === 'rewrite'
+  const rewritable = rewritableTemplates([split.run, split.download, options])
+  const withRewrite = (candidate: TemplateSearchCandidate): TemplateSearchCandidate => ({
+    ...candidate,
+    rewrite: rewriteChosen && rewritable.has(candidate.templateId)
+  })
+  return {
+    outcome: outcome.kind,
+    reply: asText(outcome.reply),
+    run: run.map(withRewrite),
+    download: download.map(withRewrite),
+    alsoTry: alsoTry.map(withRewrite)
+  }
+}
+
+export function createDecisionApiBackend(
+  endpoint: string,
+  fetch: FetchLike
+): TemplateSearchBackend {
+  return {
+    async search(query) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          text: query,
+          writer: 'off',
+          run_n: REQUESTED_CANDIDATES,
+          download_m: REQUESTED_CANDIDATES
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS)
+      })
+      if (!response.ok) throw new Error(`the decision service answered ${response.status}`)
+      const result = parseDecision(await response.json())
+      if (!result) throw new Error('the decision service sent a decision Desktop cannot read')
+      return result
+    }
+  }
+}
