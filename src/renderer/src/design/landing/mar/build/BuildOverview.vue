@@ -136,9 +136,9 @@ function save(): void {
     </Card>
 
     <SectionHeader title="Details" class="mar-sec mt-7" />
-    <div class="mar-tl-sys">
-      <div v-if="!onPage" class="mar-tl-fact">
-        <span class="mar-tl-label">Name</span>
+    <div class="bo-facts">
+      <div v-if="!onPage" class="bo-fact">
+        <span class="bo-label">Name</span>
         <input
           v-if="editing"
           ref="field"
@@ -149,7 +149,7 @@ function save(): void {
           @keydown.esc="editing = false"
           @blur="save"
         />
-        <span v-else class="mar-ab-value"
+        <span v-else class="bo-value"
           ><span class="truncate">{{ state.name }}</span
           ><Button
             variant="ghost"
@@ -160,9 +160,9 @@ function save(): void {
             ><Pencil :size="13" /></Button
         ></span>
       </div>
-      <div class="mar-tl-fact">
-        <span class="mar-tl-label">Location</span>
-        <span class="mar-ab-value font-mono"
+      <div class="bo-fact">
+        <span class="bo-label">Location</span>
+        <span class="bo-value bo-path"
           ><span class="truncate">{{ facts.path }}</span
           ><Button
             variant="ghost"
@@ -180,15 +180,13 @@ function save(): void {
             ><Copy :size="13" /></Button
         ></span>
       </div>
-      <div class="mar-tl-fact">
-        <span class="mar-tl-label">{{ extra.from ? `${extra.from.how} from` : 'Lineage' }}</span>
-        <span class="mar-ab-value">{{
-          extra.from ? `${extra.from.name}  ·  Oct 28` : 'Original install'
-        }}</span>
+      <div v-if="extra.from" class="bo-fact">
+        <span class="bo-label">{{ extra.from.how }} from</span>
+        <span class="bo-value">{{ extra.from.name }} · Oct 28</span>
       </div>
-      <div v-if="state.run === 'running'" class="mar-tl-fact">
-        <span class="mar-tl-label">Port</span>
-        <span class="mar-ab-value tabular-nums">8188</span>
+      <div v-if="state.run === 'running'" class="bo-fact">
+        <span class="bo-label">Port</span>
+        <span class="bo-value tabular-nums">8188</span>
       </div>
     </div>
   </template>
@@ -198,3 +196,35 @@ function save(): void {
     <BuildAbout :env :combined="own" :on-page />
   </template>
 </template>
+
+<style scoped>
+.bo-facts {
+  display: flex;
+  max-width: 760px;
+  flex-direction: column;
+}
+.bo-fact {
+  display: grid;
+  min-height: 36px;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+.bo-label {
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+.bo-value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+}
+.bo-path > .truncate {
+  margin-right: 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+</style>
