@@ -6,13 +6,7 @@ vi.mock('../lib/telemetry', () => telemetry)
 const appsSwitch = vi.hoisted(() => ({ isAppsEnabled: vi.fn(() => true) }))
 vi.mock('./appsSwitch', () => appsSwitch)
 
-import {
-  cloudRefusal,
-  errorClassOf,
-  refusedNodeTypes,
-  trackApps,
-  trackFromPage
-} from './appEvents'
+import { cloudRefusal, errorClassOf, refusedNodeTypes, trackApps, trackFromPage } from './appEvents'
 
 function sent(): Array<[string, Record<string, unknown>]> {
   return [...telemetry.capture.mock.calls, ...telemetry.emit.mock.calls] as Array<
