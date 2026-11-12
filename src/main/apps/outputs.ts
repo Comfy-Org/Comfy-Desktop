@@ -37,10 +37,10 @@ export function outputRequest(input: unknown): { items: AppOutputItem[]; index: 
   if (!input || typeof input !== 'object') return null
   const { items, index } = input as { items?: unknown; index?: unknown }
   if (!Array.isArray(items) || items.length === 0 || items.length > MAX_OUTPUTS) return null
-  const parsed = items.map(outputItem)
+  const parsed = Array.from(items, outputItem)
   if (parsed.some((item) => item === null)) return null
   const outputs = parsed as AppOutputItem[]
-  const total = outputs.reduce((sum, item) => sum + item.bytes.byteLength, 0)
+  const total = outputs.reduce((sum, item) => sum + item.bytes.buffer.byteLength, 0)
   if (total > MAX_OUTPUTS_BYTES) return null
   if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
   return index < outputs.length ? { items: outputs, index } : null

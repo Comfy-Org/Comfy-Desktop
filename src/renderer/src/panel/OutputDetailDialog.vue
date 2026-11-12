@@ -61,7 +61,7 @@ const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const natural = ref<{ width: number; height: number } | null>(null)
 const zoom = ref<Zoom>('fit')
 
-const item = computed(() => items[index.value]!)
+const item = computed(() => items[index.value] ?? items[0]!)
 const reducedMotion = computed(() => preferredMotion.value === 'reduce')
 const extension = computed(() => {
   const dot = item.value.name.lastIndexOf('.')
@@ -129,6 +129,7 @@ function onVideoLoad(event: Event): void {
 }
 
 function step(delta: number): void {
+  if (items.length === 0) return
   index.value = (index.value + delta + items.length) % items.length
 }
 

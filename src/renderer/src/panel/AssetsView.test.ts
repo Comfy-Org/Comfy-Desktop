@@ -311,6 +311,23 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('surfer.mp4')
   })
 
+  it('starts one download at a time for a file', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    let finish: () => void = () => {}
+    downloadAsset.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)))
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    const button = wrapper.get('[data-testid="asset-download-a"]')
+
+    await button.trigger('click')
+    await button.trigger('click')
+
+    expect(downloadAsset).toHaveBeenCalledOnce()
+    expect(button.attributes('disabled')).toBeDefined()
+    finish()
+    await flushPromises()
+    expect(button.attributes('disabled')).toBeUndefined()
+  })
+
   it('tells the user when a download fails', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
     downloadAsset.mockRejectedValue(new Error('offline'))
@@ -379,6 +396,29 @@ describe('AssetsView', () => {
     expect(listAssets).toHaveBeenCalledTimes(2)
   })
 
+  it('clears the previous workspace assets while the new workspace loads', async () => {
+    listAssets.mockResolvedValueOnce([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    listAssets.mockReturnValueOnce(new Promise(() => {}))
+
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="assets-grid"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="assets-skeleton"]').exists()).toBe(true)
+  })
+
+  it('reports a failed load when one build fails and the others have no assets', async () => {
+    listAssets.mockImplementation(async (id: string) => {
+      if (id === 'old') throw new Error('offline')
+      return []
+    })
+
+    const wrapper = await mountAssets([build('lab', 'Video Lab'), build('old', 'Old Build')])
+
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+  })
+
   it('says nothing matches when a search hides every asset', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
@@ -401,13 +441,25 @@ describe('AssetsView', () => {
     await wrapper.get('[data-testid="asset-open-b"]').trigger('click')
     expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('second.png')
 
-    listAssets.mockResolvedValue([
-      newer('c', 'brand-new.png', '2026-01-03T00:00:00Z'),
-      newer('a', 'first.png', '2026-01-02T00:00:00Z'),
-      newer('b', 'second.png', '2026-01-01T00:00:00Z')
-    ])
-    useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
+    listAssets.mockImplementation(async (installationId: string) =>
+      installationId === 'lab'
+        ? [
+            newer('c', 'brand-new.png', '2026-01-03T00:00:00Z'),
+            newer('a', 'first.png', '2026-01-02T00:00:00Z'),
+            newer('b', 'second.png', '2026-01-01T00:00:00Z')
+          ]
+        : []
+    )
+    const other = build('other', 'Other Lab')
+    useInstallationStore().installations = [build('lab', 'Video Lab'), other]
+    useSessionStore().runningInstances.set(other.id, {
+      installationId: other.id,
+      installationName: other.name,
+      mode: 'app'
+    })
     await flushPromises()
+
+    expect(listAssets).toHaveBeenCalledWith('other')
 
     expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('second.png')
   })
