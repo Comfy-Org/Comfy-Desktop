@@ -107,8 +107,8 @@ function secureAppsSession(): void {
   securedSession = appsSession
 }
 
-function keepOnAppsOrigin(event: { preventDefault(): void }, url: string): void {
-  if (isAppsFrameUrl(url, APPS_ORIGIN)) return
+function keepInApps(event: { preventDefault(): void }, url: string): void {
+  if (isAppsFrameUrl(url, APPS_URL)) return
   event.preventDefault()
   openOutside(url)
 }
@@ -126,9 +126,9 @@ function createAppsView(key: number): WebContentsView {
   })
   view.setBorderRadius(14)
   const wc = view.webContents
-  wc.on('will-navigate', keepOnAppsOrigin)
+  wc.on('will-navigate', keepInApps)
   wc.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) keepOnAppsOrigin(event, url)
+    if (isMainFrame) keepInApps(event, url)
   })
   wc.setWindowOpenHandler(({ url }) => {
     openOutside(url)
@@ -203,9 +203,7 @@ function hideApps(event: IpcMainEvent): void {
 function fromAppsPage(event: IpcMainInvokeEvent): boolean {
   const ours = [...views.values()].some((v) => v.webContents === event.sender)
   const frame = event.senderFrame
-  return (
-    ours && !!frame && frame === event.sender.mainFrame && isAppsFrameUrl(frame.url, APPS_ORIGIN)
-  )
+  return ours && !!frame && frame === event.sender.mainFrame && isAppsFrameUrl(frame.url, APPS_URL)
 }
 
 function authState(): AppsAuthState {
@@ -501,7 +499,7 @@ function handleFromApps<A extends unknown[], R>(
 function appsPages(): WebContents[] {
   return [...views.values()]
     .map((v) => v.webContents)
-    .filter((wc) => !wc.isDestroyed() && isAppsFrameUrl(wc.getURL(), APPS_ORIGIN))
+    .filter((wc) => !wc.isDestroyed() && isAppsFrameUrl(wc.getURL(), APPS_URL))
 }
 
 export function registerAppsIpc(): void {
