@@ -3,7 +3,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
-import { computed, nextTick, onActivated, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import {
   Check,
   ChevronDown,
@@ -80,29 +80,6 @@ const benchmarksFolderPath = ref('')
 const loading = ref(true)
 const loadError = ref(false)
 const searchQuery = ref('')
-const searchExpanded = ref(false)
-const searchField = ref<InstanceType<typeof BaseInput> | null>(null)
-const searchToggle = ref<InstanceType<typeof Button> | null>(null)
-const searchCollapsed = computed(() => !searchExpanded.value && searchQuery.value === '')
-
-async function expandSearch(): Promise<void> {
-  searchExpanded.value = true
-  await nextTick()
-  const root = searchField.value?.$el as HTMLElement | undefined
-  root?.querySelector('input')?.focus()
-}
-
-function collapseSearchWhenEmpty(): void {
-  if (searchQuery.value === '') searchExpanded.value = false
-}
-
-async function closeSearchFromKeyboard(): Promise<void> {
-  if (searchQuery.value !== '') return
-  searchExpanded.value = false
-  await nextTick()
-  const toggle = searchToggle.value?.$el as HTMLElement | undefined
-  if (toggle?.offsetParent) toggle.focus()
-}
 const workspaceFilter = ref('')
 const buildFilter = ref('')
 const machineFilter = ref('')
@@ -364,6 +341,21 @@ const toolbarMenus = computed(() => [
     value: metric.value,
     set: setMetric,
     options: DURATION_KEYS.map((key) => ({ value: key, label: t(DURATION_LABEL_KEYS[key]) }))
+  }
+])
+
+const VIEW_MENU_KEYS = new Set(['group-by', 'compare-by'])
+
+const toolbarMenuGroups = computed(() => [
+  {
+    key: 'filters',
+    class: 'benchmarks__filters @max-[68rem]/toolbar:basis-full',
+    menus: toolbarMenus.value.filter((menu) => !VIEW_MENU_KEYS.has(menu.key))
+  },
+  {
+    key: 'view',
+    class: 'benchmarks__view-options',
+    menus: toolbarMenus.value.filter((menu) => VIEW_MENU_KEYS.has(menu.key))
   }
 ])
 
@@ -713,10 +705,15 @@ onActivated(() => {
         </BrandedPageHeader>
 
         <div class="benchmarks__toolbar @container/toolbar">
-          <div class="flex items-start gap-2">
-            <div class="benchmarks__filters flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <div class="flex items-center gap-2 @max-[68rem]/toolbar:flex-wrap">
+            <div
+              v-for="group in toolbarMenuGroups"
+              :key="group.key"
+              class="flex min-w-0 items-center gap-2 @max-[36rem]/toolbar:grid @max-[36rem]/toolbar:basis-full @max-[36rem]/toolbar:grid-cols-2"
+              :class="group.class"
+            >
               <Menu
-                v-for="menu in toolbarMenus"
+                v-for="menu in group.menus"
                 :key="menu.key"
                 :modal="false"
                 align="start"
@@ -727,13 +724,13 @@ onActivated(() => {
                     type="button"
                     variant="secondary"
                     size="md"
-                    class="benchmarks__filter max-w-64 min-w-0 gap-1.5 px-3 text-[13px]/5"
+                    class="benchmarks__filter max-w-64 min-w-0 gap-1.5 px-3 text-[13px]/5 @max-[36rem]/toolbar:max-w-none"
                     :aria-label="`${menu.label}: ${currentOptionLabel(menu)}`"
                     :data-testid="`benchmarks-filter-${menu.key}`"
                   >
                     <span class="shrink-0 text-subtle-foreground">{{ menu.label }}</span>
                     <span class="truncate">{{ currentOptionLabel(menu) }}</span>
-                    <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
+                    <ChevronDown :size="14" class="ml-auto shrink-0" aria-hidden="true" />
                   </Button>
                 </template>
                 <DropdownMenuRadioGroup :model-value="menu.value">
@@ -750,7 +747,9 @@ onActivated(() => {
                 </DropdownMenuRadioGroup>
               </Menu>
             </div>
-            <div class="benchmarks__tools flex shrink-0 items-center gap-2">
+            <div
+              class="benchmarks__tools ml-auto flex shrink-0 items-center gap-2 @max-[36rem]/toolbar:order-first @max-[36rem]/toolbar:basis-full"
+            >
               <Button
                 variant="muted-textonly"
                 size="icon"
@@ -768,31 +767,12 @@ onActivated(() => {
                   aria-hidden="true"
                 />
               </Button>
-              <Button
-                v-if="searchCollapsed"
-                ref="searchToggle"
-                variant="muted-textonly"
-                size="icon"
-                class="benchmarks__search-toggle hidden @max-[720px]/toolbar:inline-flex"
-                type="button"
-                :aria-label="t('benchmarks.search')"
-                :title="t('benchmarks.search')"
-                data-testid="benchmarks-search-toggle"
-                @click="expandSearch"
-              >
-                <Search :size="15" aria-hidden="true" />
-              </Button>
               <BaseInput
-                ref="searchField"
                 v-model="searchQuery"
-                class="benchmarks__search h-8 w-40 @max-[720px]/toolbar:w-32 [&_input]:text-[13px]"
-                :class="{ '@max-[720px]/toolbar:hidden': searchCollapsed }"
-                :data-collapsed="searchCollapsed ? '' : undefined"
+                class="benchmarks__search h-8 w-40 @max-[36rem]/toolbar:w-auto @max-[36rem]/toolbar:flex-1 [&_input]:text-[13px]"
                 :placeholder="t('benchmarks.searchPlaceholder')"
                 :aria-label="t('benchmarks.searchPlaceholder')"
                 :spellcheck="false"
-                @keydown.escape="closeSearchFromKeyboard"
-                @focusout="collapseSearchWhenEmpty"
               >
                 <template #leading><Search :size="14" aria-hidden="true" /></template>
               </BaseInput>
