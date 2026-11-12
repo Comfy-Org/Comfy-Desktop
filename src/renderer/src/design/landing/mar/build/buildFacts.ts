@@ -312,3 +312,6 @@ export function settingsOf(b: ProtoInstance): BuildSettings {
   }
   return s
 }
+
+/** The PyTorch a build switched to in the Update tab, while the proto is open. */
+export const selectedTorch = reactive<Record<string, string>>({})
