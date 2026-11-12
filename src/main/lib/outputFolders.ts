@@ -7,9 +7,10 @@ import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import { isInside } from '../apps/guards'
 import { assetKind } from './assets'
+import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
-import type { OutputFolder, OutputFolderListing } from '../../types/ipc'
+import type { OutputEntry, OutputFolder, OutputFolderListing } from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
@@ -19,11 +20,16 @@ export const MAX_FILES = 2000
 const THUMBNAIL_SIZE = 480
 const MAX_CACHED_THUMBNAILS = 400
 const THUMBNAILS_AT_ONCE = 2
+const STATS_AT_ONCE = 32
+const ROOTS_FRESH_MS = 5000
+const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
+const SERVED_KINDS = new Set(['image', 'video', 'audio'])
 
 const thumbnails = new Map<string, Buffer>()
 const thumbnailQueue: (() => void)[] = []
 let thumbnailsRunning = 0
 let allowedRoots: string[] = []
+let allowedRootsAt = 0
 
 export function sharedOutputDir(): string {
   return (settings.get('outputDir') as string | undefined) || settings.defaults.outputDir
@@ -61,12 +67,13 @@ export async function listOutputFolders(): Promise<OutputFolder[]> {
     byPath.set(real, folder)
   }
   allowedRoots = [...byPath.keys()]
+  allowedRootsAt = Date.now()
   return [...byPath.values()]
 }
 
 async function allowedPath(target: string): Promise<string | null> {
   if (!path.isAbsolute(target)) return null
-  if (allowedRoots.length === 0) await listOutputFolders()
+  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS) await listOutputFolders()
   const real = await fsp.realpath(target).catch(() => null)
   if (!real) return null
   return allowedRoots.some((root) => real === root || isInside(real, root, path.sep)) ? real : null
@@ -83,31 +90,31 @@ export async function listOutputFolder(target: unknown): Promise<OutputFolderLis
   if (!dir) return null
   const names = await fsp.readdir(dir, { withFileTypes: true }).catch(() => null)
   if (!names) return null
-  const entries = await Promise.all(
-    names
-      .filter((dirent) => !dirent.name.startsWith('.'))
-      .map(async (dirent) => {
-        const full = path.join(dir, dirent.name)
-        const stat = await fsp.stat(full).catch(() => null)
-        if (!stat) return null
-        const isFolder = stat.isDirectory()
-        const kind = isFolder ? null : assetKind(dirent.name)
-        if (!isFolder && !kind) return null
-        const previewable = kind === 'image' || kind === 'video' || kind === 'audio'
-        return {
-          name: dirent.name,
-          path: full,
-          isFolder,
-          kind,
-          sizeBytes: isFolder ? null : stat.size,
-          modifiedAt: stat.mtime.toISOString(),
-          previewUrl: previewable ? outputFileUrl(full) : null,
-          thumbnailUrl:
-            kind === 'image' || kind === 'video' ? outputFileUrl(full, stat.mtimeMs) : null
-        }
-      })
+  const candidates = names.filter(
+    (dirent) =>
+      !dirent.name.startsWith('.') &&
+      (dirent.isDirectory() || dirent.isSymbolicLink() || assetKind(dirent.name) !== null)
   )
-  const found = entries.filter((entry) => entry !== null)
+  const found: OutputEntry[] = []
+  await runPool(candidates, STATS_AT_ONCE, async (dirent) => {
+    const full = path.join(dir, dirent.name)
+    const stat = await fsp.stat(full).catch(() => null)
+    if (!stat) return
+    const isFolder = stat.isDirectory()
+    const kind = isFolder ? null : assetKind(dirent.name)
+    if (!isFolder && !kind) return
+    const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
+    found.push({
+      name: dirent.name,
+      path: full,
+      isFolder,
+      kind,
+      sizeBytes: isFolder ? null : stat.size,
+      modifiedAt: new Date(modifiedMs).toISOString(),
+      previewUrl: kind && SERVED_KINDS.has(kind) ? outputFileUrl(full) : null,
+      thumbnailUrl: kind === 'image' || kind === 'video' ? outputFileUrl(full, modifiedMs) : null
+    })
+  })
   const files = found
     .filter((entry) => !entry.isFolder)
     .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
@@ -117,20 +124,37 @@ export async function listOutputFolder(target: unknown): Promise<OutputFolderLis
   }
 }
 
-async function makeThumbnail(file: string): Promise<Buffer | null> {
+function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {
+  if (assetKind(file) !== 'image' || sizeBytes > MAX_LINUX_THUMBNAIL_SOURCE_BYTES) return null
+  try {
+    return nativeImage.createFromPath(file)
+  } catch {
+    return null
+  }
+}
+
+async function makeThumbnail(file: string, sizeBytes: number): Promise<Buffer | null> {
   const size = { width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE }
   const image =
     process.platform === 'linux'
-      ? nativeImage.createFromPath(file)
+      ? linuxThumbnailSource(file, sizeBytes)
       : await nativeImage.createThumbnailFromPath(file, size).catch(() => null)
   if (!image || image.isEmpty()) return null
-  const { width } = image.getSize()
-  const scaled = width > THUMBNAIL_SIZE ? image.resize({ width: THUMBNAIL_SIZE }) : image
-  return scaled.toJPEG(82)
+  const { width, height } = image.getSize()
+  const scale = Math.min(1, THUMBNAIL_SIZE / Math.max(width, height))
+  const scaled =
+    scale < 1
+      ? image.resize({
+          width: Math.max(1, Math.round(width * scale)),
+          height: Math.max(1, Math.round(height * scale))
+        })
+      : image
+  const jpeg = scaled.toJPEG(82)
+  return jpeg.length > 0 ? jpeg : null
 }
 
 async function fewAtATime<T>(work: () => Promise<T>): Promise<T> {
-  if (thumbnailsRunning >= THUMBNAILS_AT_ONCE)
+  while (thumbnailsRunning >= THUMBNAILS_AT_ONCE)
     await new Promise<void>((resolve) => thumbnailQueue.push(resolve))
   thumbnailsRunning++
   try {
@@ -147,27 +171,53 @@ async function thumbnailFor(file: string): Promise<Buffer | null> {
   const key = `${file}\n${stat.mtimeMs}`
   const cached = thumbnails.get(key)
   if (cached) return cached
-  const made = await fewAtATime(() => makeThumbnail(file))
+  const made = await fewAtATime(() => makeThumbnail(file, stat.size))
   if (!made) return null
   thumbnails.set(key, made)
   if (thumbnails.size > MAX_CACHED_THUMBNAILS) thumbnails.delete(thumbnails.keys().next().value!)
   return made
 }
 
+function decodedPath(url: URL): string | null {
+  if (url.host !== 'file') return null
+  try {
+    return decodeURIComponent(url.pathname.slice(1))
+  } catch {
+    return null
+  }
+}
+
+async function fetchFile(file: string, request: Request): Promise<Response> {
+  const res = await net
+    .fetch(pathToFileURL(file).toString(), { headers: request.headers })
+    .catch(() => null)
+  if (!res) return notFound()
+  const headers = new Headers(res.headers)
+  headers.set('X-Content-Type-Options', 'nosniff')
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+}
+
+function notFound(): Response {
+  return new Response(null, { status: 404 })
+}
+
 export async function serveOutputFile(request: Request): Promise<Response> {
   const url = new URL(request.url)
-  const file =
-    url.host === 'file' ? await allowedPath(decodeURIComponent(url.pathname.slice(1))) : null
-  if (!file) return new Response(null, { status: 404 })
-  if (!url.searchParams.has('thumbnail')) {
-    return net.fetch(pathToFileURL(file).toString(), { headers: request.headers })
-  }
+  const target = decodedPath(url)
+  const kind = target ? assetKind(target) : null
+  const file = target && kind && SERVED_KINDS.has(kind) ? await allowedPath(target) : null
+  if (!file) return notFound()
+  if (!url.searchParams.has('thumbnail')) return fetchFile(file, request)
   const jpeg = await thumbnailFor(file)
   return jpeg
     ? new Response(new Uint8Array(jpeg), {
-        headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' }
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'private, max-age=3600',
+          'X-Content-Type-Options': 'nosniff'
+        }
       })
-    : new Response(null, { status: 404 })
+    : notFound()
 }
 
 export function registerOutputFilesScheme(): void {
