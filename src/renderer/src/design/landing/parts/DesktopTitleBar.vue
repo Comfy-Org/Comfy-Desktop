@@ -6,12 +6,14 @@ import { toast } from '../useProto'
 import { can } from '../milestones'
 import { runTitleBarCommand, titleBarState } from '../titleBar'
 import MarProtoMenu from '../mar/MarProtoMenu.vue'
+import MarTitleMenu from '../mar/shell/MarTitleMenu.vue'
 
 /**
  * Browser preview only: a stand-in for the desktop app's title bar, laid
  * out like the real one at this milestone: today's layout (menu left, the
  * centre pill) until the breadcrumb arrives (Milestone 3) - then the
- * breadcrumb on the left and the app menu at the right.
+ * breadcrumb. From Builds on, the ☰ is Desktop's menu (mar/shell/MarTitleMenu.vue),
+ * at the left in every milestone.
  */
 </script>
 
@@ -25,6 +27,7 @@ import MarProtoMenu from '../mar/MarProtoMenu.vue'
       /><span class="size-3 rounded-full bg-[#28c840]" />
     </span>
     <span class="w-2" aria-hidden="true" />
+    <MarTitleMenu v-if="can.builds" />
     <TitleBarBreadcrumb
       v-if="can.breadcrumb"
       :state="titleBarState"
@@ -32,6 +35,7 @@ import MarProtoMenu from '../mar/MarProtoMenu.vue'
     />
     <template v-else>
       <button
+        v-if="!can.builds"
         type="button"
         class="text-muted-foreground hover:text-base-foreground"
         aria-label="Menu"
@@ -53,17 +57,8 @@ import MarProtoMenu from '../mar/MarProtoMenu.vue'
       <Bell :size="15" />
       <MessageSquarePlus :size="15" />
       <ArrowDownToLine :size="15" />
-      <!-- The prototype controls, left of the app menu. -->
+      <!-- The prototype controls. -->
       <MarProtoMenu />
-      <button
-        v-if="can.breadcrumb"
-        type="button"
-        class="hover:text-base-foreground"
-        aria-label="Menu"
-        @click="toast('App menu')"
-      >
-        <Menu :size="16" />
-      </button>
     </span>
   </header>
 </template>
