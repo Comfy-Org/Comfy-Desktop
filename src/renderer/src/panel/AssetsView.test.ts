@@ -121,6 +121,7 @@ beforeEach(() => {
     listOutputFolder,
     openPath,
     revealPath,
+    platform: 'darwin',
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -531,16 +532,18 @@ describe('AssetsView on This computer', () => {
     listOutputFolders.mockResolvedValue(outputFolders())
   })
 
-  it('shows each output folder with the builds that save there, without the file tools', async () => {
+  it('shows each output folder with how many builds save there, without the file tools', async () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
     await openThisComputer(wrapper)
     const cloudLoads = listAssets.mock.calls.length
 
     const shared = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
     expect(shared.text()).toContain('Shared output')
-    expect(shared.text()).toContain('Used by Test Instance, My Local 1')
-    expect(shared.text()).toContain(SHARED)
-    expect(wrapper.get(`[data-testid="local-folder-${APPS}"]`).text()).toContain('Apps output')
+    expect(shared.text()).toContain('2 builds save here')
+    expect(shared.text()).not.toContain(SHARED)
+    const apps = wrapper.get(`[data-testid="local-folder-${APPS}"]`)
+    expect(apps.text()).toContain('Apps output')
+    expect(apps.text()).toContain('1 build saves here')
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="local-open-folder"]').exists()).toBe(false)
 
@@ -548,6 +551,53 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
     expect(listOutputFolders).toHaveBeenCalledTimes(2)
     expect(listAssets).toHaveBeenCalledTimes(cloudLoads)
+  })
+
+  it('names the builds that save to a folder when its build count gets focus', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    expect(document.body.textContent).not.toContain('Test Instance')
+
+    await wrapper.get(`[data-testid="local-folder-builds-${SHARED}"]`).trigger('focusin')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Test Instance')
+    expect(document.body.textContent).toContain('My Local 1')
+    wrapper.unmount()
+  })
+
+  it('shows a folder in Finder from its menu without opening it', async () => {
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    await wrapper
+      .get(`[data-testid="local-folder-menu-${SHARED}"]`)
+      .trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const reveal = wrapper.get('[data-testid="local-folder-reveal"]')
+    expect(reveal.text()).toBe('Show in Finder')
+    await reveal.trigger('click')
+    await flushPromises()
+
+    expect(revealPath).toHaveBeenCalledWith(SHARED)
+    expect(listOutputFolder).not.toHaveBeenCalled()
+  })
+
+  it('copies a folder path from its menu', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    await wrapper
+      .get(`[data-testid="local-folder-menu-${APPS}"]`)
+      .trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith(APPS)
+    expect(listOutputFolder).not.toHaveBeenCalled()
+    writeText.mockRestore()
   })
 
   it('opens on This computer when the user left it there', async () => {

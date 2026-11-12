@@ -1,7 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Folder, FolderOpen } from 'lucide-vue-next'
+import {
+  ChevronRight,
+  Copy,
+  EllipsisVertical,
+  Folder,
+  FolderOpen,
+  FolderSearch
+} from 'lucide-vue-next'
+import Menu from '@comfyorg/design-system/menu/Menu'
+import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import Tooltip from '../components/ui/Tooltip.vue'
+import { revealInFolderLabel } from '../composables/usePlatform'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AssetCard from './AssetCard.vue'
@@ -37,6 +48,7 @@ const emit = defineEmits<{ 'clear-filters': [] }>()
 const { t } = useI18n()
 const modal = useModal()
 const root = useTemplateRef<HTMLElement>('root')
+const revealLabel = revealInFolderLabel(window.api.platform)
 const folders = ref<OutputFolder[] | null>(null)
 const trail = ref<Crumb[]>([])
 const listing = ref<OutputFolderListing | null>(null)
@@ -88,10 +100,14 @@ function folderLabel(output: OutputFolder): string {
     : t('assets.local.buildOutput', { name: output.builds.join(', ') })
 }
 
-function usedBy(output: OutputFolder): string {
+function buildCount(output: OutputFolder): string {
   return output.builds.length > 0
-    ? t('assets.local.usedBy', { builds: output.builds.join(', ') })
+    ? t('assets.local.buildCount', output.builds.length)
     : t('assets.local.notUsed')
+}
+
+async function copyPath(path: string): Promise<void> {
+  await navigator.clipboard.writeText(path).catch(() => {})
 }
 
 function fileDetails(entry: OutputEntry): string {
@@ -266,11 +282,11 @@ defineExpose({ reload, loading })
     <template v-else-if="!current">
       <ul
         v-if="folders === null"
-        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 p-0"
+        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,300px))] gap-3 p-0"
         role="status"
         :aria-label="t('common.loading')"
       >
-        <li v-for="n in 2" :key="n"><Skeleton class="h-[92px] w-full rounded-xl" /></li>
+        <li v-for="n in 2" :key="n"><Skeleton class="h-14 w-full rounded-xl" /></li>
       </ul>
       <section
         v-else-if="folders.length === 0"
@@ -284,28 +300,76 @@ defineExpose({ reload, loading })
       </section>
       <ul
         v-else
-        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 p-0"
+        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,300px))] gap-3 p-0"
       >
-        <li v-for="output in folders" :key="output.path">
+        <li
+          v-for="output in folders"
+          :key="output.path"
+          class="relative flex h-14 items-center gap-3 rounded-xl bg-card pr-1.5 pl-4 transition-colors duration-150 hover:bg-card-hover"
+        >
+          <Folder :size="20" class="shrink-0 text-muted-foreground" aria-hidden="true" />
           <button
             type="button"
-            class="flex w-full cursor-pointer items-start gap-3 rounded-xl bg-card p-4 text-left transition-colors duration-150 hover:bg-card-hover"
+            class="flex min-w-0 flex-1 cursor-pointer flex-col text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring"
             :data-testid="`local-folder-${output.path}`"
             @click="enter({ name: folderLabel(output), path: output.path })"
           >
-            <Folder :size="20" class="mt-0.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span class="flex min-w-0 flex-col gap-0.5">
-              <span class="truncate text-ui font-medium text-foreground">{{
-                folderLabel(output)
-              }}</span>
-              <span class="truncate text-ui text-subtle-foreground" :title="usedBy(output)">{{
-                usedBy(output)
-              }}</span>
-              <span class="truncate text-ui text-subtle-foreground" :title="output.path">{{
-                output.path
-              }}</span>
-            </span>
+            <span class="truncate text-ui font-medium text-foreground">{{
+              folderLabel(output)
+            }}</span>
+            <Tooltip
+              :disabled="output.builds.length === 0"
+              side="bottom"
+              align="start"
+              class="relative z-10 max-w-full self-start"
+              :data-testid="`local-folder-builds-${output.path}`"
+            >
+              <span class="truncate text-ui text-subtle-foreground">{{ buildCount(output) }}</span>
+              <template #content>
+                <span v-for="name in output.builds" :key="name" class="block">{{ name }}</span>
+              </template>
+            </Tooltip>
           </button>
+          <Menu
+            :modal="false"
+            align="end"
+            class="z-20 min-w-[200px]"
+            :aria-label="t('assets.local.folderActions')"
+          >
+            <template #trigger>
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="icon"
+                class="relative z-10"
+                :aria-label="t('assets.local.folderActions')"
+                :title="t('assets.local.folderActions')"
+                :data-testid="`local-folder-menu-${output.path}`"
+              >
+                <EllipsisVertical :size="16" aria-hidden="true" />
+              </Button>
+            </template>
+            <MenuItem
+              as="button"
+              type="button"
+              class="w-full"
+              data-testid="local-folder-reveal"
+              @select="showInFolder(output.path)"
+            >
+              <FolderSearch :size="15" aria-hidden="true" />
+              <span class="flex-1 text-left">{{ revealLabel }}</span>
+            </MenuItem>
+            <MenuItem
+              as="button"
+              type="button"
+              class="w-full"
+              data-testid="local-folder-copy-path"
+              @select="copyPath(output.path)"
+            >
+              <Copy :size="15" aria-hidden="true" />
+              <span class="flex-1 text-left">{{ t('assets.local.copyPath') }}</span>
+            </MenuItem>
+          </Menu>
         </li>
       </ul>
     </template>

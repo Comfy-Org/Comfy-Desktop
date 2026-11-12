@@ -96,8 +96,10 @@
     "local": {
       "sharedOutput": "共享输出",
       "buildOutput": "{name} 输出",
-      "usedBy": "使用者：{builds}",
       "notUsed": "还没有构建保存到这里",
+      "buildCount": "{count} 个构建保存到这里",
+      "folderActions": "文件夹操作",
+      "copyPath": "复制路径",
       "openFolder": "打开文件夹",
       "path": "文件夹路径",
       "noFoldersTitle": "还没有输出文件夹",

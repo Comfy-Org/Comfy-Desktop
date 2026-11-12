@@ -96,8 +96,10 @@
     "local": {
       "sharedOutput": "Shared output",
       "buildOutput": "{name} output",
-      "usedBy": "Used by {builds}",
       "notUsed": "No build saves here yet",
+      "buildCount": "1 build saves here | {count} builds save here",
+      "folderActions": "Folder actions",
+      "copyPath": "Copy path",
       "openFolder": "Open folder",
       "path": "Folder path",
       "noFoldersTitle": "No output folders yet",
