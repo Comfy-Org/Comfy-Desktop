@@ -35,11 +35,14 @@ import {
   DURATION_KEYS,
   DURATION_LABEL_KEYS,
   formatSeconds,
+  GROUP_BY_OPTIONS,
   isDurationKey,
+  isGroupBy,
   machineKey,
   machineLabels,
   type ColumnSort,
-  type DurationKey
+  type DurationKey,
+  type GroupBy
 } from '../lib/benchmarkGroups'
 import { createResultsPng } from '../lib/performanceTestResultsSvg'
 import { useDialogs } from '../composables/useDialogs'
@@ -78,6 +81,7 @@ const workspaceFilter = ref('')
 const buildFilter = ref('')
 const machineFilter = ref('')
 const workflowFilter = ref('')
+const groupBy = ref<GroupBy>('none')
 const metric = ref<DurationKey>('medianJobDurationSeconds')
 const columnSort = ref<ColumnSort>({ key: 'medianJobDurationSeconds', ascending: true })
 const manualOrders = ref<Record<string, string[]>>({})
@@ -85,6 +89,7 @@ const baselineIds = ref<Record<string, string>>({})
 const collapsedGroupKeys = ref<ReadonlySet<string>>(new Set())
 const selectedIds = ref<ReadonlySet<string>>(new Set())
 const visibleColumnKeys = ref<ReadonlySet<string>>(new Set(['instance.name']))
+const columnOrder = ref<string[]>([])
 const deletingIds = ref<ReadonlySet<string>>(new Set())
 const isExporting = ref(false)
 const exportError = ref<string | null>(null)
@@ -199,11 +204,16 @@ const availableColumnKeys = computed(() => {
   return [...ordered, ...[...keys].sort((a, b) => a.localeCompare(b))]
 })
 const buildColumnVisible = computed(() => visibleColumnKeys.value.has('instance.name'))
-const extraColumns = computed(() =>
-  availableColumnKeys.value
+const extraColumns = computed(() => {
+  const position = new Map(columnOrder.value.map((key, index) => [key, index]))
+  return availableColumnKeys.value
     .filter((key) => key !== 'instance.name' && visibleColumnKeys.value.has(key))
+    .sort(
+      (a, b) =>
+        (position.get(a) ?? Number.MAX_SAFE_INTEGER) - (position.get(b) ?? Number.MAX_SAFE_INTEGER)
+    )
     .map((key) => ({ key, label: columnLabel(key) }))
-)
+})
 const exportColumns = computed(() =>
   [
     ...IDENTITY_COLUMN_KEYS,
@@ -279,6 +289,22 @@ const toolbarMenus = computed(() => [
     )
   },
   {
+    key: 'group-by',
+    label: t('benchmarks.groupBy'),
+    value: groupBy.value,
+    set: setGroupBy,
+    options: GROUP_BY_OPTIONS.map((value) => ({
+      value,
+      label: t(
+        {
+          none: 'benchmarks.groupByNone',
+          workflow: 'benchmarks.filterWorkflow',
+          hardware: 'benchmarks.filterHardware'
+        }[value]
+      )
+    }))
+  },
+  {
     key: 'compare-by',
     label: t('benchmarks.compareBy'),
     value: metric.value,
@@ -315,6 +341,7 @@ function isVisible(benchmark: PerformanceTestBenchmark): boolean {
 const groups = computed(() =>
   buildBenchmarkGroups({
     benchmarks: benchmarks.value,
+    groupBy: groupBy.value,
     isVisible,
     metric: metric.value,
     sort: columnSort.value,
@@ -329,6 +356,10 @@ const selectedRuns = computed(() =>
 const selectionOverLimit = computed(
   () => selectedRuns.value.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS
 )
+
+function setGroupBy(value: string): void {
+  if (isGroupBy(value)) groupBy.value = value
+}
 
 function setMetric(value: string): void {
   if (!isDurationKey(value)) return
@@ -392,7 +423,7 @@ function isBestAmong(
 
 async function exportRuns(runs: PerformanceTestBenchmark[]): Promise<void> {
   if (runs.length === 0 || runs.length > MAX_BENCHMARK_COMPARISON_EXPORT_RUNS) return
-  const groupKeys = new Set(runs.map(benchmarkGroupKey))
+  const groupKeys = new Set(runs.map((run) => benchmarkGroupKey(run, groupBy.value)))
   const onlyGroup =
     groupKeys.size === 1 ? groups.value.find((group) => groupKeys.has(group.key)) : undefined
   const relativeGroup = onlyGroup?.customBaseline ? onlyGroup : undefined
@@ -655,10 +686,10 @@ onActivated(() => {
                 :key="option.value"
                 :value="option.value"
                 :data-value="option.value"
+                class="data-[state=checked]:bg-accent"
                 @select="menu.set(option.value)"
               >
                 <span class="flex-1 text-left">{{ option.label }}</span>
-                <Check v-if="menu.value === option.value" :size="15" aria-hidden="true" />
               </MenuRadioItem>
             </DropdownMenuRadioGroup>
           </Menu>
@@ -796,6 +827,7 @@ onActivated(() => {
             :key="group.key"
             :class="{ 'not-first:mt-4': !collapsedGroupKeys.has(group.key) }"
             :group="group"
+            :group-by="groupBy"
             :machine-label="machineNames.get(group.machineKey) ?? t('benchmarks.unknownHardware')"
             :metric="metric"
             :sort="columnSort"
@@ -816,6 +848,7 @@ onActivated(() => {
             @set-baseline="(id) => setBaseline(group.key, id)"
             @reset-baseline="resetBaseline(group.key)"
             @reorder="(order) => setManualOrder(group.key, order)"
+            @reorder-columns="(keys) => (columnOrder = keys)"
             @delete="deleteSession"
           />
         </div>

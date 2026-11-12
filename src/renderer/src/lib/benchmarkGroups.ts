@@ -18,6 +18,10 @@ export const DURATION_KEYS = [
 
 export type DurationKey = (typeof DURATION_KEYS)[number]
 
+export const GROUP_BY_OPTIONS = ['none', 'workflow', 'hardware'] as const
+
+export type GroupBy = (typeof GROUP_BY_OPTIONS)[number]
+
 export const DURATION_LABEL_KEYS: Record<DurationKey, string> = {
   fastestJobDurationSeconds: 'benchmarks.fastest',
   averageJobDurationSeconds: 'benchmarks.average',
@@ -53,6 +57,7 @@ export interface BenchmarkGroup {
 
 export interface BenchmarkGroupsInput {
   benchmarks: readonly PerformanceTestBenchmark[]
+  groupBy: GroupBy
   isVisible: (benchmark: PerformanceTestBenchmark) => boolean
   metric: DurationKey
   sort: ColumnSort
@@ -84,8 +89,14 @@ export function machineKey(benchmark: PerformanceTestBenchmark): string {
   return JSON.stringify([gpu, cpu, memoryGb, platform])
 }
 
-export function benchmarkGroupKey(benchmark: PerformanceTestBenchmark): string {
-  return JSON.stringify([benchmark.workflowName, machineKey(benchmark)])
+export function isGroupBy(value: string): value is GroupBy {
+  return (GROUP_BY_OPTIONS as readonly string[]).includes(value)
+}
+
+export function benchmarkGroupKey(benchmark: PerformanceTestBenchmark, groupBy: GroupBy): string {
+  if (groupBy === 'workflow') return JSON.stringify(['workflow', benchmark.workflowName])
+  if (groupBy === 'hardware') return JSON.stringify(['hardware', machineKey(benchmark)])
+  return 'all'
 }
 
 export function machineLabels(
@@ -227,7 +238,7 @@ function buildGroup(
 export function buildBenchmarkGroups(input: BenchmarkGroupsInput): BenchmarkGroup[] {
   const membersByKey = new Map<string, PerformanceTestBenchmark[]>()
   for (const benchmark of input.benchmarks) {
-    const key = benchmarkGroupKey(benchmark)
+    const key = benchmarkGroupKey(benchmark, input.groupBy)
     const members = membersByKey.get(key)
     if (members) members.push(benchmark)
     else membersByKey.set(key, [benchmark])

@@ -27,12 +27,14 @@ import {
   type BenchmarkGroup,
   type ColumnSort,
   type DurationKey,
+  type GroupBy,
   type RunComparison
 } from '../../lib/benchmarkGroups'
 import BenchmarkSessionName from './BenchmarkSessionName.vue'
 
 const props = defineProps<{
   group: BenchmarkGroup
+  groupBy: GroupBy
   machineLabel: string
   metric: DurationKey
   sort: ColumnSort
@@ -56,17 +58,27 @@ const emit = defineEmits<{
   setBaseline: [id: string]
   resetBaseline: []
   reorder: [order: string[]]
+  reorderColumns: [keys: string[]]
   delete: [benchmark: PerformanceTestBenchmark]
 }>()
 
 const { t } = useI18n()
 const RUN_DRAG_TYPE = 'application/x-comfy-benchmark-run'
+const COLUMN_DRAG_TYPE = 'application/x-comfy-benchmark-column'
 const draggedId = ref<string | null>(null)
 const dropTargetId = ref<string | null>(null)
+const draggedColumnKey = ref<string | null>(null)
+const dropTargetColumnKey = ref<string | null>(null)
 const pendingRenameId = ref<string | null>(null)
 const sessionNames = new Map<string, InstanceType<typeof BenchmarkSessionName>>()
 const grips = new Map<string, HTMLElement>()
 
+const groupName = computed(() => {
+  if (props.groupBy === 'workflow') return props.group.workflowName
+  if (props.groupBy === 'hardware') return props.machineLabel
+  return ''
+})
+const groupLabel = computed(() => groupName.value || t('benchmarks.allRuns'))
 const metricLabel = computed(() => t(DURATION_LABEL_KEYS[props.metric]))
 const memberIds = computed(() => props.group.members.map(({ id }) => id))
 const referenceHidden = computed(
@@ -224,14 +236,75 @@ function endDrag(): void {
   draggedId.value = null
   dropTargetId.value = null
 }
+
+function moveColumn(key: string, targetKey: string): void {
+  const keys = props.extraColumns.map((column) => column.key)
+  const from = keys.indexOf(key)
+  const to = keys.indexOf(targetKey)
+  if (from < 0 || to < 0 || from === to) return
+  keys.splice(from, 1)
+  keys.splice(to, 0, key)
+  emit('reorderColumns', keys)
+}
+
+function moveColumnWithKeyboard(key: string, offset: -1 | 1): void {
+  const keys = props.extraColumns.map((column) => column.key)
+  const neighbor = keys[keys.indexOf(key) + offset]
+  if (neighbor) moveColumn(key, neighbor)
+}
+
+function startColumnDrag(event: DragEvent, key: string): void {
+  draggedColumnKey.value = key
+  if (!event.dataTransfer) return
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData(COLUMN_DRAG_TYPE, key)
+}
+
+function dragOverColumn(event: DragEvent, key: string): void {
+  if (!draggedColumnKey.value || draggedColumnKey.value === key) {
+    dropTargetColumnKey.value = null
+    return
+  }
+  event.preventDefault()
+  dropTargetColumnKey.value = key
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+
+function dropColumn(event: DragEvent, targetKey: string): void {
+  event.preventDefault()
+  if (draggedColumnKey.value) moveColumn(draggedColumnKey.value, targetKey)
+  endColumnDrag()
+}
+
+function endColumnDrag(): void {
+  draggedColumnKey.value = null
+  dropTargetColumnKey.value = null
+}
+
+function isChosenBaseline(id: string): boolean {
+  return props.group.customBaseline && props.group.referenceId === id
+}
+
+function canFlag(row: { value: number | null; benchmark: PerformanceTestBenchmark }): boolean {
+  return (
+    props.group.measuredCount > 1 &&
+    row.value !== null &&
+    (props.group.customBaseline || props.group.referenceId !== row.benchmark.id)
+  )
+}
+
+function toggleBaseline(id: string): void {
+  if (isChosenBaseline(id)) emit('resetBaseline')
+  else emit('setBaseline', id)
+}
 </script>
 
 <template>
   <section
     class="benchmarks__group min-w-0"
     :class="collapsed ? 'benchmarks__group--collapsed rounded-[14px] bg-card pr-2 pl-4' : ''"
-    :data-testid="`benchmark-group-${group.workflowName}-${machineLabel}`"
-    :aria-label="`${group.workflowName}, ${machineLabel}`"
+    :data-testid="`benchmark-group-${groupName || 'all'}`"
+    :aria-label="groupLabel"
   >
     <div
       class="benchmarks__group-head flex items-center gap-2"
@@ -240,23 +313,30 @@ function endDrag(): void {
       <Button
         variant="textonly"
         size="unset"
-        class="benchmarks__group-toggle -ml-1 gap-1.5 rounded-lg px-1 py-1 text-[14px] font-semibold text-foreground hover:bg-transparent"
+        class="benchmarks__group-toggle -ml-1 min-w-0 max-w-[60%] shrink gap-1.5 rounded-lg px-1 py-1 hover:bg-transparent"
+        :class="
+          groupName
+            ? 'text-[14px] font-semibold text-foreground'
+            : 'text-[11px] font-semibold tracking-[0.06em] text-subtle-foreground uppercase'
+        "
         type="button"
+        :title="groupLabel"
         :aria-expanded="!collapsed"
         @click="emit('toggleCollapsed')"
       >
         <ChevronRight
           :size="14"
-          class="text-muted-foreground transition-transform duration-150"
+          class="shrink-0 text-muted-foreground transition-transform duration-150"
           :class="{ 'rotate-90': !collapsed }"
           aria-hidden="true"
         />
-        {{ group.workflowName }}
+        <span class="benchmarks__group-label truncate">{{ groupLabel }}</span>
       </Button>
-      <span class="benchmarks__group-meta min-w-0 truncate text-xs text-subtle-foreground">
+      <span
+        class="benchmarks__group-meta min-w-0 shrink-0 truncate text-xs text-subtle-foreground tabular-nums"
+      >
         {{
           t('benchmarks.groupMeta', {
-            hardware: machineLabel,
             sessions: t('benchmarks.sessionCount', group.rows.length),
             runs: t(
               'benchmarks.runCount',
@@ -272,7 +352,7 @@ function endDrag(): void {
             size="icon"
             class="benchmarks__group-menu ml-auto data-[state=open]:bg-accent data-[state=open]:text-foreground"
             type="button"
-            :aria-label="t('benchmarks.groupActions', { workflow: group.workflowName })"
+            :aria-label="t('benchmarks.groupActions', { workflow: groupLabel })"
           >
             <Ellipsis :size="16" aria-hidden="true" />
           </Button>
@@ -293,7 +373,7 @@ function endDrag(): void {
 
     <template v-if="!collapsed">
       <p
-        v-if="group.buildCount === 1"
+        v-if="groupBy === 'workflow' && group.buildCount === 1"
         class="benchmarks__single-note m-0 mb-2 pl-4 text-[13px] text-muted-foreground"
       >
         {{ t('benchmarks.singleRun') }}
@@ -302,12 +382,15 @@ function endDrag(): void {
       <div class="benchmarks__group-box rounded-[14px] bg-card pt-3 pr-4 pb-2 pl-14">
         <div class="benchmarks__table-scroll scroll-visible -mr-2 -ml-12 overflow-x-auto">
           <table
-            class="benchmarks__table w-full border-separate border-spacing-0 [--bench-line:color-mix(in_oklch,var(--color-foreground)_8%,transparent)] text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:h-9 [&_th]:px-2 [&_th]:text-[12px] [&_th]:font-medium [&_th]:tracking-[0.01em] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_th]:shadow-[inset_0_-1px_0_var(--bench-line)] [&_td:first-child]:rounded-l-lg [&_td:last-child]:rounded-r-lg [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--bench-line)] [&_tbody_tr:hover>td]:bg-foreground/[0.035] [&_tbody_tr:hover>td]:shadow-none [&_tbody_tr:hover+tr>td]:shadow-none [&_tbody_tr.benchmarks__row--selected>td]:shadow-none [&_tbody_tr.benchmarks__row--selected+tr>td]:shadow-none"
+            class="benchmarks__table w-full border-separate border-spacing-0 [--bench-line:color-mix(in_oklch,var(--color-foreground)_8%,transparent)] text-left text-[13px] [&_td]:px-2 [&_td]:py-2 [&_td]:whitespace-nowrap [&_th]:h-9 [&_th]:px-2 [&_th]:text-[12px] [&_th]:font-medium [&_th]:tracking-[0.01em] [&_th]:whitespace-nowrap [&_th]:text-subtle-foreground [&_th]:shadow-[inset_0_-1px_0_var(--bench-line)] [&_td]:bg-card [&_th]:bg-card [&_td:first-child]:rounded-l-lg [&_td:last-child]:rounded-r-lg [&_tbody_tr+tr>td]:shadow-[inset_0_1px_0_var(--bench-line)] [&_tbody_tr:hover>td]:bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,var(--color-card))] [&_tbody_tr:hover>td]:shadow-none [&_tbody_tr:hover+tr>td]:shadow-none [&_tbody_tr.benchmarks__row--selected>td]:shadow-none [&_tbody_tr.benchmarks__row--selected+tr>td]:shadow-none"
           >
             <thead>
               <tr>
-                <th class="w-10 !px-0" :aria-label="t('benchmarks.selection')" />
-                <th :aria-sort="ariaSort('id')">
+                <th
+                  class="sticky left-0 z-[1] w-10 !px-0"
+                  :aria-label="t('benchmarks.selection')"
+                />
+                <th class="sticky left-10 z-[1]" :aria-sort="ariaSort('id')">
                   <Button
                     variant="textonly"
                     size="unset"
@@ -316,6 +399,17 @@ function endDrag(): void {
                     @click="emit('sort', 'id')"
                   >
                     {{ t('benchmarks.session') }} {{ sortIndicator('id') }}
+                  </Button>
+                </th>
+                <th v-if="groupBy !== 'workflow'" :aria-sort="ariaSort('workflowName')">
+                  <Button
+                    variant="textonly"
+                    size="unset"
+                    class="benchmarks__sort gap-1 bg-transparent text-[12px] font-medium tracking-[0.01em] text-subtle-foreground hover:bg-transparent hover:text-foreground"
+                    type="button"
+                    @click="emit('sort', 'workflowName')"
+                  >
+                    {{ t('benchmarks.workflow') }} {{ sortIndicator('workflowName') }}
                   </Button>
                 </th>
                 <th v-if="buildColumn" :aria-sort="ariaSort('instance.name')">
@@ -337,20 +431,35 @@ function endDrag(): void {
                 <th
                   v-for="column in extraColumns"
                   :key="column.key"
-                  class="text-right"
+                  class="benchmarks__column-head cursor-grab text-right active:cursor-grabbing"
+                  :class="{
+                    'benchmarks__column-head--dragging opacity-55': draggedColumnKey === column.key,
+                    'benchmarks__column-head--drop-target !bg-[color-mix(in_oklch,var(--color-foreground)_10%,var(--color-card))] !text-foreground':
+                      dropTargetColumnKey === column.key
+                  }"
+                  draggable="true"
+                  :title="t('benchmarks.reorderComparisonHint')"
                   :aria-sort="ariaSort(column.key)"
+                  :data-testid="`benchmark-column-head-${column.key}`"
+                  @dragstart="startColumnDrag($event, column.key)"
+                  @dragover="dragOverColumn($event, column.key)"
+                  @drop="dropColumn($event, column.key)"
+                  @dragend="endColumnDrag"
                 >
                   <Button
                     variant="textonly"
                     size="unset"
                     class="benchmarks__sort gap-1 bg-transparent text-[12px] font-medium tracking-[0.01em] text-subtle-foreground hover:bg-transparent hover:text-foreground"
                     type="button"
+                    aria-describedby="benchmark-reorder-instructions"
                     @click="emit('sort', column.key)"
+                    @keydown.alt.left.prevent="moveColumnWithKeyboard(column.key, -1)"
+                    @keydown.alt.right.prevent="moveColumnWithKeyboard(column.key, 1)"
                   >
                     {{ column.label }} {{ sortIndicator(column.key) }}
                   </Button>
                 </th>
-                <th class="text-right" :aria-sort="ariaSort(metric)">
+                <th class="sticky right-46 z-[1] text-right" :aria-sort="ariaSort(metric)">
                   <Button
                     variant="textonly"
                     size="unset"
@@ -361,12 +470,15 @@ function endDrag(): void {
                     {{ metricLabel }} {{ sortIndicator(metric) }}
                   </Button>
                 </th>
-                <th class="benchmarks__vs-head w-28 text-right">
-                  {{
-                    group.customBaseline ? t('benchmarks.vsBaseline') : t('benchmarks.vsFastest')
-                  }}
+                <th
+                  class="benchmarks__vs-head sticky right-10 z-[1] w-36 min-w-36 !pr-9 text-right"
+                >
+                  {{ t('benchmarks.vsBaseline') }}
                 </th>
-                <th class="w-10" :aria-label="t('benchmarks.actions')" />
+                <th
+                  class="sticky right-0 z-[1] w-10 min-w-10 !px-1"
+                  :aria-label="t('benchmarks.actions')"
+                />
               </tr>
             </thead>
             <tbody @dragleave="dragLeave">
@@ -375,16 +487,17 @@ function endDrag(): void {
                 :key="row.benchmark.id"
                 class="benchmarks__row group/row [&>td]:transition-colors"
                 :class="{
-                  'benchmarks__row--selected [&>td]:bg-foreground/[0.07]': row.selected,
+                  'benchmarks__row--selected [&>td]:bg-[color-mix(in_oklch,var(--color-foreground)_7%,var(--color-card))]':
+                    row.selected,
                   'benchmarks__row--dragging opacity-55': draggedId === row.benchmark.id,
-                  'benchmarks__row--drop-target [&>td]:bg-foreground/10':
+                  'benchmarks__row--drop-target [&>td]:bg-[color-mix(in_oklch,var(--color-foreground)_10%,var(--color-card))]':
                     dropTargetId === row.benchmark.id
                 }"
                 :data-testid="`benchmark-row-${row.benchmark.id}`"
                 @dragover="dragOver($event, row.benchmark.id)"
                 @drop="drop($event, row.benchmark.id)"
               >
-                <td class="w-10 !pr-0 !pl-1.5">
+                <td class="sticky left-0 z-[1] w-10 !pr-0 !pl-1.5">
                   <div class="flex items-center gap-1">
                     <span
                       :ref="(element) => rememberGrip(row.benchmark.id, element)"
@@ -419,7 +532,7 @@ function endDrag(): void {
                     />
                   </div>
                 </td>
-                <td class="benchmarks__session max-w-65">
+                <td class="benchmarks__session sticky left-10 z-[1] max-w-65">
                   <BenchmarkSessionName
                     :ref="(component) => rememberSessionName(row.benchmark.id, component)"
                     :name="row.benchmark.id"
@@ -430,6 +543,13 @@ function endDrag(): void {
                     {{ formatDate(row.benchmark.createdAt) }} ·
                     {{ t('benchmarks.runCount', row.benchmark.measuredJobCount) }}
                   </span>
+                </td>
+                <td
+                  v-if="groupBy !== 'workflow'"
+                  class="benchmarks__workflow max-w-44 truncate"
+                  :title="row.benchmark.workflowName"
+                >
+                  {{ row.benchmark.workflowName }}
                 </td>
                 <td v-if="buildColumn" class="benchmarks__build max-w-50 truncate">
                   {{ row.benchmark.instance.name }}
@@ -501,35 +621,74 @@ function endDrag(): void {
                 >
                   {{ formatColumnValue(row.benchmark, column.key) }}
                 </td>
-                <td class="benchmarks__value text-right font-semibold tabular-nums">
+                <td
+                  class="benchmarks__value sticky right-46 z-[1] text-right font-semibold tabular-nums"
+                >
                   <span v-if="row.value === null" class="font-normal text-subtle-foreground"
                     >—</span
                   >
                   <template v-else>{{ formatSeconds(row.value) }}</template>
                 </td>
-                <td class="benchmarks__vs text-right text-xs text-muted-foreground">
-                  <span
-                    v-if="row.pill"
-                    class="benchmarks__pill inline-flex h-5 items-center rounded-md px-2 text-[11px] font-semibold"
-                    :class="
-                      group.customBaseline
-                        ? 'benchmarks__pill--baseline bg-foreground/10 text-foreground'
-                        : 'benchmarks__pill--fastest bg-success/14 text-success'
-                    "
-                  >
-                    {{ row.pill }}
-                  </span>
-                  <span
-                    v-else
-                    :class="{
-                      'text-success': row.comparison.kind === 'faster',
-                      'text-subtle-foreground': row.comparison.kind === 'missing'
-                    }"
-                  >
-                    {{ row.vs }}
+                <td
+                  class="benchmarks__vs sticky right-10 z-[1] w-36 min-w-36 text-right text-xs text-muted-foreground"
+                >
+                  <span class="flex items-center justify-end gap-1">
+                    <span
+                      v-if="row.pill"
+                      class="benchmarks__pill inline-flex h-5 items-center rounded-md px-2 text-[11px] font-semibold"
+                      :class="
+                        group.customBaseline
+                          ? 'benchmarks__pill--baseline bg-foreground/10 text-foreground'
+                          : 'benchmarks__pill--fastest bg-success/14 text-success'
+                      "
+                    >
+                      {{ row.pill }}
+                    </span>
+                    <span
+                      v-else
+                      :class="{
+                        'text-success': row.comparison.kind === 'faster',
+                        'text-subtle-foreground': row.comparison.kind === 'missing'
+                      }"
+                    >
+                      {{ row.vs }}
+                    </span>
+
+                    <Button
+                      v-if="canFlag(row)"
+                      variant="muted-textonly"
+                      size="unset"
+                      class="benchmarks__baseline-toggle size-6 shrink-0 rounded-lg"
+                      :class="
+                        isChosenBaseline(row.benchmark.id)
+                          ? 'benchmarks__baseline-toggle--on text-foreground'
+                          : 'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100'
+                      "
+                      type="button"
+                      :aria-pressed="isChosenBaseline(row.benchmark.id)"
+                      :aria-label="
+                        isChosenBaseline(row.benchmark.id)
+                          ? t('benchmarks.resetBaseline')
+                          : t('benchmarks.setBaseline')
+                      "
+                      :title="
+                        isChosenBaseline(row.benchmark.id)
+                          ? t('benchmarks.resetBaseline')
+                          : t('benchmarks.setBaseline')
+                      "
+                      :data-testid="`benchmark-baseline-${row.benchmark.id}`"
+                      @click="toggleBaseline(row.benchmark.id)"
+                    >
+                      <Flag
+                        :size="14"
+                        :fill="isChosenBaseline(row.benchmark.id) ? 'currentColor' : 'none'"
+                        aria-hidden="true"
+                      />
+                    </Button>
+                    <span v-else class="size-6 shrink-0" aria-hidden="true" />
                   </span>
                 </td>
-                <td class="w-10 text-right">
+                <td class="sticky right-0 z-[1] w-10 min-w-10 !px-1 text-right">
                   <Menu
                     :modal="false"
                     align="end"

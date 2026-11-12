@@ -109,9 +109,8 @@ const sampleBenchmarks = [
   run('10', 'landscape.json', 8.7, { gpu: 'Apple M3 Max', build: 'Stable 0.3.60' }),
   run('9', 'portrait.json', 3, { build: 'Stable 0.3.55', fastest: 1 })
 ]
-const PORTRAIT_4090 = 'benchmark-group-portrait.json-NVIDIA RTX 4090'
-const PORTRAIT_5090 = 'benchmark-group-portrait.json-NVIDIA RTX 5090'
-const LANDSCAPE_M3 = 'benchmark-group-landscape.json-Apple M3 Max'
+const PORTRAIT_4090 = 'benchmark-group-NVIDIA RTX 4090'
+const PORTRAIT_5090 = 'benchmark-group-NVIDIA RTX 5090'
 
 function listMock(): ReturnType<typeof vi.fn> {
   return window.api.listPerformanceTestBenchmarks as unknown as ReturnType<typeof vi.fn>
@@ -123,6 +122,13 @@ function useBenchmarks(list: PerformanceTestBenchmark[], folderPath = DEFAULT_FO
 
 function mountView() {
   return mount(BenchmarksView, { attachTo: document.body })
+}
+
+async function mountGrouped(groupBy: string) {
+  const wrapper = mountView()
+  await flushPromises()
+  await chooseOption(wrapper, 'group-by', groupBy)
+  return wrapper
 }
 
 function group(wrapper: VueWrapper, testId = PORTRAIT_4090) {
@@ -341,28 +347,28 @@ describe('BenchmarksView', () => {
     })
   })
 
-  it('compares the builds that ran each workflow on each machine', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+  it('compares the builds that ran on each machine when grouped by hardware', async () => {
+    const wrapper = await mountGrouped('Hardware')
 
     const cards = wrapper.findAll('.benchmarks__group')
     expect(cards.map((card) => card.get('.benchmarks__group-toggle').text())).toEqual([
-      'portrait.json',
-      'portrait.json',
-      'landscape.json'
+      'NVIDIA RTX 4090',
+      'NVIDIA RTX 5090',
+      'Apple M3 Max'
     ])
     expect(cards.map((card) => card.get('.benchmarks__group-meta').text())).toEqual([
-      'NVIDIA RTX 4090 · 3 sessions · 15 runs',
-      'NVIDIA RTX 5090 · 1 session · 5 runs',
-      'Apple M3 Max · 1 session · 5 runs'
+      '3 sessions · 15 runs',
+      '1 session · 5 runs',
+      '1 session · 5 runs'
     ])
     expect(texts(wrapper, 'thead th')).toEqual([
       '',
       'Session',
+      'Workflow',
       'Build',
       'Median and range',
       'Median ↑',
-      'Vs fastest',
+      'Vs baseline',
       ''
     ])
     expect(rowIds(wrapper)).toEqual(['13', '12', '9'])
@@ -383,10 +389,7 @@ describe('BenchmarksView', () => {
         (row(wrapper, '13').get('.benchmarks__bar-fill').element as HTMLElement).style.width
       )
     ).toBeCloseTo((1.9 / 3.7) * 100, 3)
-    expect(group(wrapper).find('.benchmarks__single-note').exists()).toBe(false)
-    expect(group(wrapper, PORTRAIT_5090).get('.benchmarks__single-note').text()).toBe(
-      'Only one build ran this workflow here. Run it on another build to compare.'
-    )
+    expect(wrapper.find('.benchmarks__single-note').exists()).toBe(false)
     expect(vsLabels(wrapper, PORTRAIT_5090)).toEqual([''])
     expect(wrapper.find('.benchmarks__selection-bar').exists()).toBe(false)
   })
@@ -397,12 +400,15 @@ describe('BenchmarksView', () => {
       run('22', 'a.json', 3, { cpu: 'Intel Core i9-14900K' }),
       run('23', 'a.json', 2.5, { cpu: 'AMD Ryzen 9 7950X', build: 'Stable' })
     ])
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
+    expect(texts(wrapper, '.benchmarks__group-toggle', 'benchmarks')).toEqual([
+      'NVIDIA RTX 4090 · AMD Ryzen 9 7950X',
+      'NVIDIA RTX 4090 · Intel Core i9-14900K'
+    ])
     expect(texts(wrapper, '.benchmarks__group-meta', 'benchmarks')).toEqual([
-      'NVIDIA RTX 4090 · AMD Ryzen 9 7950X · 2 sessions · 10 runs',
-      'NVIDIA RTX 4090 · Intel Core i9-14900K · 1 session · 5 runs'
+      '2 sessions · 10 runs',
+      '1 session · 5 runs'
     ])
     expect(await menuOptions(wrapper, 'hardware')).toEqual([
       'All',
@@ -415,29 +421,33 @@ describe('BenchmarksView', () => {
   })
 
   it('compares filtered runs with the fastest run of the whole group', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await search(wrapper, 'stable 0.3.55')
     expect(rowIds(wrapper)).toEqual(['9'])
     expect(vsLabels(wrapper)).toEqual(['1.53× slower'])
-    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs fastest')
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
     expect(group(wrapper).get('.benchmarks__reference-hidden').text()).toBe(
       'Compared with session 13, which the filters hide.'
     )
-    expect(group(wrapper).find('.benchmarks__single-note').exists()).toBe(false)
 
     await search(wrapper, '')
     await chooseOption(wrapper, 'build', 'Stable 0.3.60')
     expect(rowIds(wrapper)).toEqual(['12'])
     expect(vsLabels(wrapper)).toEqual(['1.11× slower'])
-    expect(group(wrapper).find('.benchmarks__single-note').exists()).toBe(false)
-    expect(group(wrapper, LANDSCAPE_M3).find('.benchmarks__single-note').exists()).toBe(true)
+
+    await chooseOption(wrapper, 'group-by', 'Workflow')
+    expect(rowIds(wrapper, 'benchmark-group-portrait.json')).toEqual(['12'])
+    expect(
+      group(wrapper, 'benchmark-group-portrait.json').find('.benchmarks__single-note').exists()
+    ).toBe(false)
+    expect(
+      group(wrapper, 'benchmark-group-landscape.json').get('.benchmarks__single-note').text()
+    ).toBe('Only one build ran this workflow here. Run it on another build to compare.')
   })
 
   it('keeps a chosen baseline while filters hide it, and resets it', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await rowAction(wrapper, '12', '.benchmarks__set-baseline')
     expect(vsLabels(wrapper)).toEqual(['1.11× faster', 'Baseline', '1.38× slower'])
@@ -462,7 +472,7 @@ describe('BenchmarksView', () => {
 
     await group(wrapper).get('.benchmarks__reset-baseline').trigger('click')
     expect(vsLabels(wrapper)).toEqual(['Fastest', '1.60× slower', '1.80× slower'])
-    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs fastest')
+    expect(group(wrapper).get('.benchmarks__vs-head').text()).toBe('Vs baseline')
   })
 
   it('calls equally fast runs the same speed', async () => {
@@ -470,16 +480,14 @@ describe('BenchmarksView', () => {
       run('21', 'a.json', 2, { gpu: 'GPU', build: 'Build A' }),
       run('22', 'a.json', 2, { gpu: 'GPU', build: 'Build B' })
     ])
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
-    expect(vsLabels(wrapper, 'benchmark-group-a.json-GPU')).toEqual(['Fastest', 'Same speed'])
+    expect(vsLabels(wrapper, 'benchmark-group-GPU')).toEqual(['Fastest', 'Same speed'])
   })
 
   it('shows runs without measurements as unavailable', async () => {
     useBenchmarks([...sampleBenchmarks, unmeasuredRun('8')])
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     expect(rowIds(wrapper)).toEqual(['13', '12', '9', '8'])
     expect(row(wrapper, '8').get('.benchmarks__no-data').text()).toBe('No measured runs')
@@ -510,8 +518,7 @@ describe('BenchmarksView', () => {
   })
 
   it('compares by another metric and sorts by any header', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     expect(await menuOptions(wrapper, 'compare-by')).toEqual([
       'Fastest',
@@ -540,8 +547,7 @@ describe('BenchmarksView', () => {
   })
 
   it('moves rows up and down by dragging and with Alt+arrow keys', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await drag(wrapper, '13', '12')
     expect(rowIds(wrapper)).toEqual(['12', '13', '9'])
@@ -564,8 +570,7 @@ describe('BenchmarksView', () => {
   })
 
   it('clears the drop highlight when a drag leaves the table', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
     const dataTransfer = new DataTransfer()
 
     await row(wrapper, '9').get('.benchmarks__grip').trigger('dragstart', { dataTransfer })
@@ -586,8 +591,7 @@ describe('BenchmarksView', () => {
   })
 
   it('keeps every row movable after filters change, runs arrive or another folder loads', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await search(wrapper, 'stable')
     await drag(wrapper, '9', '12')
@@ -614,8 +618,7 @@ describe('BenchmarksView', () => {
   })
 
   it('sorts again by any header after a manual order', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await drag(wrapper, '9', '13')
     expect(rowIds(wrapper)).toEqual(['9', '13', '12'])
@@ -626,8 +629,7 @@ describe('BenchmarksView', () => {
   })
 
   it('collapses a group', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
     const toggle = group(wrapper).get('.benchmarks__group-toggle')
 
     expect(toggle.attributes('aria-expanded')).toBe('true')
@@ -639,8 +641,7 @@ describe('BenchmarksView', () => {
   })
 
   it('adds picked columns to the table and the export, best value in green', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await openMenu(wrapper, '[data-testid="benchmarks-columns"]')
     expect(menuItem('[data-testid="benchmark-column-systemInfo.cpu_model"]')).not.toBeNull()
@@ -659,11 +660,12 @@ describe('BenchmarksView', () => {
     expect(texts(wrapper, 'thead th')).toEqual([
       '',
       'Session',
+      'Workflow',
       'Median and range',
       'Average',
       'Custom Score',
       'Median ↑',
-      'Vs fastest',
+      'Vs baseline',
       ''
     ])
     expect(texts(wrapper, '.benchmarks__best')).toEqual(['2 s'])
@@ -676,6 +678,103 @@ describe('BenchmarksView', () => {
     expect(svg).toContain('Custom Score: 13')
     expect(svg).toContain('GPU / Hardware: NVIDIA RTX 4090')
     expect(svg).toContain('Duration range')
+  })
+
+  it('compares every run in one table by default and groups on demand', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findAll('.benchmarks__group')).toHaveLength(1)
+    expect(group(wrapper, 'benchmark-group-all').get('.benchmarks__group-toggle').text()).toBe(
+      'All runs'
+    )
+    expect(rowIds(wrapper, 'benchmark-group-all')).toHaveLength(5)
+    expect(texts(wrapper, '.benchmarks__workflow', 'benchmark-group-all')).toContain(
+      'landscape.json'
+    )
+    expect(wrapper.find('.benchmarks__single-note').exists()).toBe(false)
+    expect(await menuOptions(wrapper, 'group-by')).toEqual(['None', 'Workflow', 'Hardware'])
+
+    await chooseOption(wrapper, 'group-by', 'Workflow')
+    expect(wrapper.findAll('.benchmarks__group-toggle').map((toggle) => toggle.text())).toEqual([
+      'portrait.json',
+      'landscape.json'
+    ])
+    expect(wrapper.find('.benchmarks__workflow').exists()).toBe(false)
+    expect(texts(wrapper, 'thead th', 'benchmark-group-portrait.json')).toContain('Vs baseline')
+
+    await chooseOption(wrapper, 'group-by', 'None')
+    expect(wrapper.findAll('.benchmarks__group')).toHaveLength(1)
+  })
+
+  it('truncates long workflow names and keeps the full name in a tooltip', async () => {
+    const longName = 'my_client_project_final_v3_portrait_upscale_with_face_detailer_2x.json'
+    useBenchmarks([run('5', longName, 2), run('6', longName, 3, { build: 'Stable 0.3.60' })])
+    const wrapper = mountView()
+    await flushPromises()
+
+    const cell = row(wrapper, '5').get('.benchmarks__workflow')
+    expect(cell.classes()).toContain('truncate')
+    expect(cell.attributes('title')).toBe(longName)
+
+    await chooseOption(wrapper, 'group-by', 'Workflow')
+    const toggle = group(wrapper, `benchmark-group-${longName}`).get('.benchmarks__group-toggle')
+    expect(toggle.attributes('title')).toBe(longName)
+    expect(toggle.get('.benchmarks__group-label').classes()).toContain('truncate')
+  })
+
+  it('sets and resets the baseline from the flag on a row', async () => {
+    const wrapper = await mountGrouped('Hardware')
+
+    expect(row(wrapper, '13').find('[data-testid="benchmark-baseline-13"]').exists()).toBe(false)
+    const flag = row(wrapper, '12').get('[data-testid="benchmark-baseline-12"]')
+    expect(flag.attributes('aria-pressed')).toBe('false')
+    expect(flag.attributes('aria-label')).toBe('Set as baseline')
+
+    await flag.trigger('click')
+    const chosen = row(wrapper, '12').get('[data-testid="benchmark-baseline-12"]')
+    expect(chosen.attributes('aria-pressed')).toBe('true')
+    expect(chosen.attributes('aria-label')).toBe('Reset baseline')
+    expect(group(wrapper).find('.benchmarks__reset-baseline').exists()).toBe(true)
+    expect(row(wrapper, '13').find('[data-testid="benchmark-baseline-13"]').exists()).toBe(true)
+
+    await chosen.trigger('click')
+    expect(vsLabels(wrapper)).toEqual(['Fastest', '1.11× slower', '1.53× slower'])
+    expect(group(wrapper).find('.benchmarks__reset-baseline').exists()).toBe(false)
+  })
+
+  it('reorders picked columns by dragging headers and with Alt+arrow keys', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openMenu(wrapper, '[data-testid="benchmarks-columns"]')
+    menuItem('[data-testid="benchmark-column-averageJobDurationSeconds"]')!.click()
+    menuItem('[data-testid="benchmark-column-customScore"]')!.click()
+    await flushPromises()
+    await closeMenu()
+    const heads = () =>
+      wrapper
+        .findAll('[data-testid^="benchmark-column-head-"]')
+        .map((head) => head.attributes('data-testid')!.replace('benchmark-column-head-', ''))
+    const head = (key: string) => wrapper.get(`[data-testid="benchmark-column-head-${key}"]`)
+    expect(heads()).toEqual(['averageJobDurationSeconds', 'customScore'])
+
+    const dataTransfer = new DataTransfer()
+    await head('customScore').trigger('dragstart', { dataTransfer })
+    await head('averageJobDurationSeconds').trigger('dragover', { dataTransfer })
+    expect(head('averageJobDurationSeconds').classes()).toContain(
+      'benchmarks__column-head--drop-target'
+    )
+    await head('averageJobDurationSeconds').trigger('drop', { dataTransfer })
+    await head('customScore').trigger('dragend', { dataTransfer })
+    expect(heads()).toEqual(['customScore', 'averageJobDurationSeconds'])
+    expect(wrapper.find('.benchmarks__column-head--drop-target').exists()).toBe(false)
+
+    await head('customScore').get('button').trigger('keydown', { key: 'ArrowRight', altKey: true })
+    expect(heads()).toEqual(['averageJobDurationSeconds', 'customScore'])
+    await head('averageJobDurationSeconds')
+      .get('button')
+      .trigger('keydown', { key: 'ArrowLeft', altKey: true })
+    expect(heads()).toEqual(['averageJobDurationSeconds', 'customScore'])
   })
 
   it('filters by search and the toolbar menus', async () => {
@@ -702,12 +801,10 @@ describe('BenchmarksView', () => {
     useBenchmarks([
       { ...run('31', 'mystery.json', 1, { gpu: null }), workspace: { id: null, name: null } }
     ])
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
-    expect(wrapper.get('.benchmarks__group-meta').text()).toBe(
-      'Unknown hardware · 1 session · 5 runs'
-    )
+    expect(wrapper.get('.benchmarks__group-toggle').text()).toBe('Unknown hardware')
+    expect(wrapper.get('.benchmarks__group-meta').text()).toBe('1 session · 5 runs')
     expect(await menuOptions(wrapper, 'workspace')).toEqual(['All', 'Unmanaged'])
     await chooseOption(wrapper, 'workspace', 'Unmanaged')
     expect(wrapper.find('[data-testid="benchmark-row-31"]').exists()).toBe(true)
@@ -750,8 +847,7 @@ describe('BenchmarksView', () => {
   })
 
   it('exports relative speed only for one group with a chosen baseline', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await rowAction(wrapper, '12', '.benchmarks__set-baseline')
     await groupAction(wrapper, '.benchmarks__select-group')
@@ -769,8 +865,7 @@ describe('BenchmarksView', () => {
 
   it('shows export errors in the selection bar until the list reloads', async () => {
     exportResultsImageMock.mockResolvedValueOnce({ ok: false, message: 'Disk full' })
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
 
     await groupAction(wrapper, '.benchmarks__export-group')
     expect(wrapper.get('.benchmarks__export-error').text()).toBe('Disk full')
@@ -805,8 +900,7 @@ describe('BenchmarksView', () => {
   })
 
   it('renames a session in place and keeps its selection, order and baseline', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
     await rowAction(wrapper, '12', '.benchmarks__set-baseline')
     await selectRow(wrapper, '12')
     await drag(wrapper, '9', '13')
@@ -829,8 +923,7 @@ describe('BenchmarksView', () => {
 
   it('puts the old name back when a rename is refused', async () => {
     renamePerformanceTestBenchmarkMock.mockResolvedValueOnce({ ok: false, message: 'Name taken' })
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
     const dialogs = useDialogs()
 
     expect(sessionField(wrapper, '13').getAttribute('aria-label')).toBe('Edit session 13')
@@ -846,8 +939,7 @@ describe('BenchmarksView', () => {
   })
 
   it('confirms before deleting all files for a session', async () => {
-    const wrapper = mountView()
-    await flushPromises()
+    const wrapper = await mountGrouped('Hardware')
     const dialogs = useDialogs()
     await selectRow(wrapper, '13')
 
