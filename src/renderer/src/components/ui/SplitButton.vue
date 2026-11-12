@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useSlots } from 'vue'
+import { ref, useSlots, useTemplateRef, watch, type ComponentPublicInstance } from 'vue'
 import { ChevronDown } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import ButtonGroup from '@comfyorg/design-system/button-group/ButtonGroup'
@@ -22,10 +22,19 @@ const {
 const emit = defineEmits<{ run: [] }>()
 const open = defineModel<boolean>('open', { default: false })
 const slots = useSlots()
+
+const MENU_CHROME_PX = 10
+const group = useTemplateRef<ComponentPublicInstance | HTMLElement>('group')
+const menuMinWidth = ref(0)
+watch(open, (isOpen) => {
+  if (!isOpen) return
+  const el = group.value instanceof HTMLElement ? group.value : group.value?.$el
+  menuMinWidth.value = el instanceof HTMLElement ? el.offsetWidth - MENU_CHROME_PX : 0
+})
 </script>
 
 <template>
-  <component :is="slots.menu ? ButtonGroup : 'div'" class="inline-flex rounded-lg">
+  <component :is="slots.menu ? ButtonGroup : 'div'" ref="group" class="inline-flex rounded-lg">
     <Tooltip :text="tooltip" :disabled="open" side="bottom" align="end">
       <Button
         type="button"
@@ -46,7 +55,7 @@ const slots = useSlots()
       :modal="false"
       align="end"
       :side-offset="6"
-      class="z-[9999] min-w-60"
+      class="z-[9999] min-w-0 max-w-80"
       :aria-label="menuLabel"
     >
       <template #trigger>
@@ -61,7 +70,9 @@ const slots = useSlots()
           <ChevronDown :size="14" aria-hidden="true" />
         </Button>
       </template>
-      <slot name="menu" />
+      <div :style="{ minWidth: `${menuMinWidth}px` }" data-testid="split-button-menu-body">
+        <slot name="menu" />
+      </div>
     </Menu>
   </component>
 </template>

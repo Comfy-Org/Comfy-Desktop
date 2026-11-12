@@ -78,7 +78,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
             type="button"
             :value="build.id"
             :disabled="brokenReason(build) !== undefined"
-            class="group ui-select-option w-full data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
+            class="group ui-select-option w-full pr-5 data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
             data-testid="home-open-build-option"
             @select="emit('open', build)"
           >
@@ -93,7 +93,9 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
                 :data-tone="problem(build) ? 'danger' : 'live'"
               />
             </span>
-            <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
+            <span class="min-w-0 flex-1 truncate text-left" :title="build.name">{{
+              build.name
+            }}</span>
           </MenuRadioItem>
         </Tooltip>
       </DropdownMenuRadioGroup>
