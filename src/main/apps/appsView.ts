@@ -26,6 +26,7 @@ import {
   isVersionsIndex,
   isWorkflow,
   MAX_UPLOAD_BYTES,
+  openAppId,
   readCapped,
   type OutputFile,
   readable,
@@ -48,6 +49,7 @@ import {
 import { localBuilds, openInComfy } from './openInComfy'
 import { isAppsEnabled } from './appsSwitch'
 import { trackFromPage } from './appEvents'
+import { desktopAppIds } from './desktopApps'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -149,6 +151,7 @@ function createAppsView(key: number): WebContentsView {
     if (isMainFrame) trackAppOpen(key, url)
   })
   wc.loadURL(APPS_URL).catch(() => {})
+  void desktopAppIds()
   return view
 }
 
@@ -205,12 +208,11 @@ function hideApps(event: IpcMainEvent): void {
   views.get(found[0])?.setVisible(false)
 }
 
-function fromAppsPage(event: IpcMainInvokeEvent): boolean {
+function appsPageUrl(event: IpcMainInvokeEvent): string | null {
   const ours = [...views.values()].some((v) => v.webContents === event.sender)
   const frame = event.senderFrame
-  return (
-    ours && !!frame && frame === event.sender.mainFrame && isAppsFrameUrl(frame.url, APPS_ORIGIN)
-  )
+  if (!ours || !frame || frame !== event.sender.mainFrame) return null
+  return isAppsFrameUrl(frame.url, APPS_ORIGIN) ? frame.url : null
 }
 
 function authState(): AppsAuthState {
@@ -259,11 +261,15 @@ interface NodeError {
   errors?: Array<{ message?: string; details?: string }>
 }
 
-async function run(workflow: unknown, app?: unknown): Promise<{ runId: string }> {
+async function run(
+  pageUrl: string,
+  workflow: unknown,
+  options?: unknown
+): Promise<{ runId: string }> {
   if (!isWorkflow(workflow)) throw new Error('That is not a workflow.')
-  const tag = cloudAppTag(app)
   const token = await getCloudSession().getAccessToken()
   if (!token) throw new Error('Sign in to Comfy to use apps.')
+  const tag = cloudAppTag(openAppId(pageUrl, APPS_URL), await desktopAppIds(), options)
   const res = await cloudFetch('/prompt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -494,14 +500,22 @@ async function uploadImage(bytes: unknown, name: unknown): Promise<{ name: strin
   return { name: body.name }
 }
 
+function handleFromAppsPage<A extends unknown[], R>(
+  channel: string,
+  fn: (pageUrl: string, ...args: A) => Promise<R> | R
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    const pageUrl = appsPageUrl(event)
+    if (pageUrl === null) throw new Error('Not allowed.')
+    return fn(pageUrl, ...(args as A))
+  })
+}
+
 function handleFromApps<A extends unknown[], R>(
   channel: string,
   fn: (...args: A) => Promise<R> | R
 ): void {
-  ipcMain.handle(channel, async (event, ...args) => {
-    if (!fromAppsPage(event)) throw new Error('Not allowed.')
-    return fn(...(args as A))
-  })
+  handleFromAppsPage(channel, (_pageUrl, ...args: A) => fn(...args))
 }
 
 function appsPages(): WebContents[] {
@@ -520,7 +534,7 @@ export function registerAppsIpc(): void {
     await signInToCloud()
     return authState()
   })
-  handleFromApps('comfy-apps:run', run)
+  handleFromAppsPage('comfy-apps:run', run)
   handleFromApps('comfy-apps:get-run', getRun)
   handleFromApps('comfy-apps:cancel-run', cancelRun)
   handleFromApps('comfy-apps:get-output', getOutput)

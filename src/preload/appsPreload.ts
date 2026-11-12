@@ -33,10 +33,10 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
   getInfo: () => ({ bridge: BRIDGE, calls: CALLS }),
   getAuthState: () => ipcRenderer.invoke('comfy-apps:get-auth-state'),
   signIn: () => ipcRenderer.invoke('comfy-apps:sign-in'),
-  run: (workflow: unknown, app?: { app: string; model?: string }) =>
-    app === undefined
+  run: (workflow: unknown, options?: { model?: string }) =>
+    options === undefined
       ? ipcRenderer.invoke('comfy-apps:run', workflow)
-      : ipcRenderer.invoke('comfy-apps:run', workflow, app),
+      : ipcRenderer.invoke('comfy-apps:run', workflow, options),
   getRun: (runId: string) => ipcRenderer.invoke('comfy-apps:get-run', runId),
   cancelRun: (runId: string) => ipcRenderer.invoke('comfy-apps:cancel-run', runId),
   openInComfy: (req: { prompt: unknown; where: 'local' | 'cloud'; name: string; build?: string }) =>

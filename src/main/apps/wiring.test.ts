@@ -15,7 +15,7 @@ const exposed = all(
   /^ {2}(\w+):/gm
 )
 const invoked = all(preload, /ipcRenderer\.invoke\('([\w:-]+)'/g)
-const handled = all(main, /handleFromApps\('([\w:-]+)'/g)
+const handled = all(main, /handleFromApps(?:Page)?\('([\w:-]+)'/g)
 
 describe('Apps bridge wiring', () => {
   it('getInfo names exactly the calls the page gets', () => {
@@ -43,15 +43,21 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
-  it('passes the app tag with a Cloud run only when the page gives one', () => {
+  it('a Cloud run takes only the model from the page and the app from its address', () => {
     expect(preload).toMatch(/const BRIDGE = 3\n/)
-    expect(preload).toContain("ipcRenderer.invoke('comfy-apps:run', workflow, app)")
-    expect(main).toMatch(/async function run\(workflow: unknown, app\?: unknown\)/)
+    expect(preload).toContain('run: (workflow: unknown, options?: { model?: string }) =>')
+    expect(preload).toContain("ipcRenderer.invoke('comfy-apps:run', workflow, options)")
+    expect(main).toContain("handleFromAppsPage('comfy-apps:run', run)")
+    expect(main).toContain(
+      'cloudAppTag(openAppId(pageUrl, APPS_URL), await desktopAppIds(), options)'
+    )
     expect(main).toContain('body: cloudPromptBody(workflow, token, tag)')
   })
 
   it('refuses to show the apps page while the remote switch is off', () => {
-    expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
+    expect(main).toMatch(
+      /function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/
+    )
   })
 
   it('local events go out on the channel the preload listens to', () => {

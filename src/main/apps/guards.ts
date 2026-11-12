@@ -88,11 +88,44 @@ export interface CloudAppTag {
   where: 'cloud'
 }
 
-export function cloudAppTag(input: unknown): CloudAppTag | null {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
-  const { app, model } = input as { app?: unknown; model?: unknown }
-  if (!isAppSlug(app)) return null
-  return { id: app, ...(isAppSlug(model) ? { model } : {}), where: 'cloud' }
+export function openAppId(pageUrl: string, listUrl: string): string | null {
+  let page: URL
+  let list: URL
+  try {
+    page = new URL(pageUrl)
+    list = new URL(listUrl)
+  } catch {
+    return null
+  }
+  if (page.origin !== list.origin) return null
+  const folder = list.pathname.endsWith('/') ? list.pathname : `${list.pathname}/`
+  if (!page.pathname.startsWith(folder)) return null
+  const [id, ...rest] = page.pathname.slice(folder.length).split('/')
+  return rest.length > 0 && isAppSlug(id) ? id : null
+}
+
+export function catalogAppIds(body: unknown): Set<string> {
+  const items = (body as { items?: unknown } | null)?.items
+  if (!Array.isArray(items)) throw new Error('The catalog answer has no item list.')
+  const ids = new Set<string>()
+  for (const item of items) {
+    const slug = (item as { data?: { slug?: unknown } | null } | null)?.data?.slug
+    if (isAppSlug(slug)) ids.add(slug)
+  }
+  return ids
+}
+
+export function cloudAppTag(
+  openApp: string | null,
+  desktopApps: ReadonlySet<string>,
+  options: unknown
+): CloudAppTag | null {
+  if (!openApp || !desktopApps.has(openApp)) return null
+  const model =
+    options && typeof options === 'object' && !Array.isArray(options)
+      ? (options as { model?: unknown }).model
+      : undefined
+  return { id: openApp, ...(isAppSlug(model) ? { model } : {}), where: 'cloud' }
 }
 
 export function cloudPromptBody(
