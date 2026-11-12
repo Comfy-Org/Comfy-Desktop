@@ -46,7 +46,7 @@ const open = ref(false)
         <Menu :size="16" />
       </button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="start" :side-offset="6" class="min-w-52">
+    <DropdownMenuContent align="start" :side-offset="6" loop class="min-w-52">
       <template v-for="(g, gi) in GROUPS" :key="gi">
         <DropdownMenuSeparator v-if="gi" />
         <DropdownMenuItem v-for="i in g" :key="i.label" @select="i.run()">{{
