@@ -1263,6 +1263,7 @@ describe('PanelApp', () => {
     ])
     Object.assign(window.api, {
       listCatalogApps,
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       showApps: vi.fn(),
       hideApps: vi.fn(),
       onAppsLoadFailed: vi.fn(() => () => {}),
@@ -1332,6 +1333,7 @@ describe('PanelApp', () => {
           url: 'https://apps.example/apps/studio/desktop.html'
         }
       ]),
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       showApps: vi.fn(),
       hideApps: vi.fn(),
       onAppsLoadFailed: vi.fn(() => () => {}),
