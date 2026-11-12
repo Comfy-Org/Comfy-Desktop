@@ -28,6 +28,7 @@
   "home": {
     "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
+    "chooseBuildToOpen": "Choose the build to open",
     "allBuilds": "All builds",
     "buildRunning": "Running",
     "buildStarting": "Starting",

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -79,8 +79,15 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
+const mounted: VueWrapper[] = []
+
+afterEach(() => {
+  while (mounted.length) mounted.pop()?.unmount()
+})
+
 async function openHome() {
   const wrapper = mount(HomeView, { attachTo: document.body })
+  mounted.push(wrapper)
   await flushPromises()
   return wrapper
 }
@@ -101,6 +108,15 @@ function pressCarouselAt(wrapper: VueWrapper, clientX: number): void {
   wrapper
     .get('[data-testid="home-workflow-carousel"]')
     .element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX, bubbles: true }))
+}
+
+async function openBuildMenu(wrapper: VueWrapper): Promise<void> {
+  await wrapper.get('[data-testid="home-open-build-menu"]').trigger('keydown', { key: 'ArrowDown' })
+  await flushPromises()
+}
+
+function buildOptions(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-testid="home-open-build-option"]')]
 }
 
 describe('Home example workflows', () => {
@@ -403,6 +419,56 @@ describe('Home builds', () => {
     await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
 
     expect(wrapper.emitted('pick')).toEqual([[NEWEST]])
+  })
+
+  it('shows which build Open ComfyUI opens', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
+  })
+
+  it('lists every build of the workspace with what each is doing in the Open ComfyUI menu', async () => {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(RUNNING.id, {
+      installationId: RUNNING.id,
+      installationName: RUNNING.name,
+      mode: 'window'
+    })
+    await openBuildMenu(wrapper)
+
+    expect(buildOptions().map((option) => option.textContent?.trim())).toEqual([
+      'My Local 1Ready',
+      'Video LabRunning',
+      'Comfy CloudAlways on',
+      'Flux SandboxReady'
+    ])
+    expect(buildOptions()[0]!.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('opens the build picked in the menu, without launching it on pick', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+
+    buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.emitted('pick')).toBeUndefined()
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Comfy Cloud')
+
+    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
+
+    expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
+  })
+
+  it('leaves the build menu out when there is only one build', async () => {
+    getInstallations.mockResolvedValue([OLDEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Flux Sandbox')
+    expect(wrapper.find('[data-testid="home-open-build-menu"]').exists()).toBe(false)
   })
 
   it('goes to the full list from All builds', async () => {
