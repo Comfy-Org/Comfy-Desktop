@@ -57,6 +57,7 @@ const NEWEST = build({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  window.localStorage.clear()
   listHomeWorkflows.mockResolvedValue([])
   openCatalogWorkflow.mockResolvedValue(true)
   openCatalogWorkflowHub.mockResolvedValue(true)
@@ -461,6 +462,27 @@ describe('Home builds', () => {
     await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
 
     expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
+  })
+
+  it('keeps the build picked in the menu the next time Home opens', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    const first = await openHome()
+    await openBuildMenu(first)
+    buildOptions()[2]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    first.unmount()
+
+    const second = await openHome()
+
+    expect(second.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Flux Sandbox')
+  })
+
+  it('goes back to the most recent build when the remembered one is gone', async () => {
+    window.localStorage.setItem('home.openBuildId', 'removed-build')
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
   })
 
   it('leaves the build menu out when there is only one build', async () => {

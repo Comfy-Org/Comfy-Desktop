@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SelectTrigger } from 'reka-ui'
 import { ArrowRight, ChevronDown } from 'lucide-vue-next'
@@ -7,8 +7,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Select from '@comfyorg/design-system/select/Select'
 import SelectContent from '@comfyorg/design-system/select/SelectContent'
 import SelectItem from '@comfyorg/design-system/select/SelectItem'
-import BuildDeviceArt from './BuildDeviceArt.vue'
-import { HOME_BUILD_TONES, homeBuildTones, isCloudBuild, type HomeBuildStatus } from './homeBuild'
+import type { HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
 const { builds, target, statusOf } = defineProps<{
@@ -25,7 +24,6 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const open = ref(false)
-const tones = computed(() => homeBuildTones(builds))
 
 function statusLabel(build: Installation): string {
   switch (statusOf(build)) {
@@ -92,7 +90,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
           type="button"
           variant="inverted"
           size="md"
-          class="rounded-l-none pr-2.5 pl-1"
+          class="rounded-l-none border-l border-background/20 pr-2.5 pl-2"
           :aria-label="t('home.chooseBuildToOpen')"
           data-testid="home-open-build-menu"
         >
@@ -116,22 +114,20 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         @close-auto-focus="onCloseAutoFocus"
       >
         <SelectItem
-          v-for="(build, index) in builds"
+          v-for="build in builds"
           :key="build.id"
           :value="build.id"
           :text-value="build.name"
-          class="ui-select-option gap-2.5 py-1.5 text-xs [&>span:last-child]:hidden"
-          text-class="min-w-0 flex-auto"
+          class="ui-select-option py-1.5 text-xs"
+          text-class="min-w-0 whitespace-normal"
           data-testid="home-open-build-option"
         >
-          <span class="flex min-w-0 items-center gap-2.5">
-            <BuildDeviceArt
-              class="h-[15px] w-[23px] shrink-0"
-              :kind="isCloudBuild(build) ? 'cloud' : 'laptop'"
-              :glow="HOME_BUILD_TONES[tones[index]!].glow"
-            />
-            <span class="ui-select-option-label min-w-0 flex-auto truncate">{{ build.name }}</span>
-            <span class="shrink-0 text-muted-foreground" data-testid="home-open-build-status">
+          <span class="ui-select-option-body flex min-w-0 flex-col gap-0.5">
+            <span class="ui-select-option-label">{{ build.name }}</span>
+            <span
+              class="ui-select-option-desc text-xs text-muted-foreground"
+              data-testid="home-open-build-status"
+            >
               {{ statusLabel(build) }}
             </span>
           </span>
