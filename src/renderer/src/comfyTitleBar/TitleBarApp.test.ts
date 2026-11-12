@@ -456,6 +456,20 @@ describe('TitleBarApp', () => {
     expect(wrapper.findAll('.title-nav-button').length).toBe(0)
   })
 
+  it('shows the fallback label pushed by main in the lockdown pill when there is no build', async () => {
+    bridgeState = installMockBridge({ installationId: null })
+    vi.resetModules()
+    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+    const wrapper = mount(TitleBarApp)
+    await flushPromises()
+    bridgeState.firstUseModeChangedCallbacks.forEach((cb) => cb('consent-lockdown'))
+    bridgeState.titleChangedCallbacks.forEach((cb) => cb('Comfy Desktop'))
+    await flushPromises()
+
+    expect(wrapper.find('nav').exists()).toBe(false)
+    expect(wrapper.get('.title-install-pill .title-install-name').text()).toBe('Comfy Desktop')
+  })
+
   it('applies the is-mac class when running on macOS', async () => {
     bridgeState = installMockBridge({ isMac: true })
     vi.resetModules()

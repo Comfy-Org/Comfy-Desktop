@@ -108,7 +108,7 @@ export async function openPickerViaTitlePill(
 ): Promise<WebContentsPage> {
   if (await isPopupVisible(app, 'comfyTitlePopup.html')) {
     throw new Error(
-      'openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill'
+      'openPickerViaTitlePill: picker popup is already open - close it before opening it again'
     )
   }
   await expect
