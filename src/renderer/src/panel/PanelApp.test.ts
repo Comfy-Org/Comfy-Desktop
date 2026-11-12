@@ -1296,6 +1296,7 @@ describe('PanelApp', () => {
     Object.assign(window.api, {
       listCatalogApps: vi.fn().mockResolvedValue([]),
       listAssets: vi.fn().mockResolvedValue([]),
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       onAppsLoadFailed: vi.fn(() => () => {}),
       onAppsAppOpen: vi.fn(() => () => {}),
       onAppsOutput: vi.fn(() => () => {}),
