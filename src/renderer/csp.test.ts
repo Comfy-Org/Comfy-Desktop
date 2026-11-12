@@ -63,6 +63,11 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['img-src']).toContain('blob:')
     expect(csp['media-src']).toContain('blob:')
   })
+
+  it('shows files from the output folders on this computer', () => {
+    expect(csp['img-src']).toContain('comfy-output:')
+    expect(csp['media-src']).toContain('comfy-output:')
+  })
 })
 
 describe.each(TELEMETRY_RENDERER_HTMLS)(

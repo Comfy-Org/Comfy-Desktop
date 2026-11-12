@@ -32,6 +32,7 @@ import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
 import { registerAppsIpc } from './apps/appsView'
 import { initAppsSwitch, isAppsEnabled } from './apps/appsSwitch'
+import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
@@ -193,6 +194,8 @@ try {
 if (settings.get('hardwareAcceleration') === false) {
   app.disableHardwareAcceleration()
 }
+
+registerOutputFilesScheme()
 
 todesktop.init({ autoUpdater: false })
 
@@ -937,6 +940,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     setHostFactories({ createChooser: openChooserHostWindow })
     registerPanelViewIpc()
     registerAppsIpc()
+    registerOutputFolderHandlers()
 
     migrateXdgPaths()
     persistWinDataRootChoice()
