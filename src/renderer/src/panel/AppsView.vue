@@ -13,8 +13,9 @@ interface ShownAppOutputs {
   backdropUrl: string | null
 }
 
-const { growBy = 0 } = defineProps<{
+const { growBy = 0, obscured = false } = defineProps<{
   growBy?: number
+  obscured?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -127,11 +128,13 @@ onBeforeUnmount(() => {
   </div>
   <AppsHost
     v-if="openApp"
+    :key="openApp.id"
     class="absolute inset-0"
     :url="openApp.url"
     :grow-by="growBy"
     :covered="appOutputs !== null"
     :backdrop="appOutputs?.backdropUrl ?? null"
+    :obscured="obscured"
     @failed="appFailed"
     @outputs="showAppOutputs"
     @app-open="closeApp"
