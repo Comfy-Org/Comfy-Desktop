@@ -5,6 +5,7 @@ import { ChevronRight, Folder, FolderOpen } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AssetCard from './AssetCard.vue'
+import { useModal } from '../composables/useModal'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { formatBytes } from '../lib/downloadFormatters'
@@ -34,6 +35,7 @@ const folder = defineModel<string | null>('folder', { required: true })
 const emit = defineEmits<{ 'clear-filters': [] }>()
 
 const { t } = useI18n()
+const modal = useModal()
 const root = useTemplateRef<HTMLElement>('root')
 const folders = ref<OutputFolder[] | null>(null)
 const trail = ref<Crumb[]>([])
@@ -76,7 +78,8 @@ const detailIndex = computed<number | null>({
     const index = visibleFiles.value.findIndex((entry) => entry.path === detailPath.value)
     return index >= 0 ? index : null
   },
-  set: (index) => (detailPath.value = index === null ? null : visibleFiles.value[index]!.path)
+  set: (index) =>
+    (detailPath.value = (index === null ? null : visibleFiles.value[index]?.path) ?? null)
 })
 
 function folderLabel(output: OutputFolder): string {
@@ -166,12 +169,18 @@ async function closeDetail(): Promise<void> {
   root.value?.querySelector<HTMLElement>(`[data-card-key="${CSS.escape(viewed)}"]`)?.focus()
 }
 
-function openFolder(path: string): void {
-  void window.api.openPath(path)
+async function openFolder(path: string): Promise<void> {
+  const error = await window.api.openPath(path)
+  if (error) await modal.alert({ title: t('assets.local.folderFailed'), message: path })
 }
 
 function showInFolder(path: string): void {
   window.api.revealPath(path)
+}
+
+function showFileAt(index: number): void {
+  const entry = visibleFiles.value[index]
+  if (entry) showInFolder(entry.path)
 }
 
 defineExpose({ reload, loading })
@@ -184,7 +193,7 @@ defineExpose({ reload, loading })
     :items="detailItems"
     :downloadable="false"
     @close="closeDetail"
-    @show-in-folder="showInFolder(visibleFiles[$event]!.path)"
+    @show-in-folder="showFileAt"
   />
   <div
     ref="root"
@@ -327,7 +336,7 @@ defineExpose({ reload, loading })
         </ul>
       </div>
       <section
-        v-else-if="visibleFiles.length === 0"
+        v-else-if="visibleFiles.length === 0 && (files.length > 0 || subfolders.length === 0)"
         class="flex flex-col items-center gap-1.5 px-6 py-16 text-center"
         data-testid="local-empty"
       >
@@ -345,8 +354,11 @@ defineExpose({ reload, loading })
           >
             {{ t('assets.local.clearFilters') }}
           </Button>
+          <p v-if="listing.truncated" class="m-0 mt-4 text-ui text-subtle-foreground">
+            {{ t('assets.local.truncated', files.length) }}
+          </p>
         </template>
-        <p v-else-if="subfolders.length === 0" class="m-0 text-ui text-muted-foreground">
+        <p v-else class="m-0 text-ui text-muted-foreground">
           {{ t('assets.local.emptyFolder') }}
         </p>
       </section>
@@ -359,6 +371,7 @@ defineExpose({ reload, loading })
             :name="entry.name"
             :kind="entry.kind"
             :image-url="entry.thumbnailUrl"
+            :video-url="entry.kind === 'video' ? entry.previewUrl : null"
             :layout="layout"
             :details="fileDetails(entry)"
             :show-name="showName"

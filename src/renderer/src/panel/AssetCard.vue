@@ -35,10 +35,15 @@ const emit = defineEmits<{ open: [] }>()
 
 const { t } = useI18n()
 const imageFailed = ref(false)
+const videoFailed = ref(false)
 
 watch(
   () => imageUrl,
   () => (imageFailed.value = false)
+)
+watch(
+  () => videoUrl,
+  () => (videoFailed.value = false)
 )
 
 const mediaClass =
@@ -73,11 +78,12 @@ function extensionOf(fileName: string): string {
             @error="imageFailed = true"
           />
           <video
-            v-else-if="videoUrl"
+            v-else-if="videoUrl && !videoFailed"
             :src="videoUrl"
             preload="metadata"
             muted
             :class="[mediaClass, 'size-full']"
+            @error="videoFailed = true"
           />
           <span
             v-else
