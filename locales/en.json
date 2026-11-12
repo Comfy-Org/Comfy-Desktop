@@ -19,7 +19,6 @@
     "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
-    "tools": "Tools",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
@@ -1527,7 +1526,6 @@
     "lineage": "Lineage"
   },
   "fileMenu": {
-    "newWindow": "Open Dashboard",
     "newInstall": "Install a New Build",
     "addExistingInstall": "Add Existing Build",
     "loadSnapshot": "Load Snapshot",
