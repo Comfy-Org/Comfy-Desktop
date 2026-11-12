@@ -167,14 +167,20 @@ async function loadAssets(): Promise<void> {
       const buildName = installationStore.getById(installationId)?.name ?? ''
       return result.value.map((asset) => ({ ...asset, installationId, buildName }))
     })
-    failed.value = results.length > 0 && results.every((r) => r.status === 'rejected')
+    failed.value = assets.value.length === 0 && results.some((r) => r.status === 'rejected')
   } finally {
     if (current === requestId) loading.value = false
   }
 }
 
+const accountContext = computed(
+  () => `${authStore.isSignedIn}:${authStore.status.workspaceId ?? ''}`
+)
+
+watch(accountContext, () => (assets.value = []))
+
 watch(
-  () => [...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
+  () => [...reachableBuildIds.value, accountContext.value].join('\n'),
   () => void loadAssets(),
   { immediate: true }
 )
