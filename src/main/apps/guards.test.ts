@@ -3,6 +3,7 @@ import { runInNewContext } from 'vm'
 import { describe, expect, it } from 'vitest'
 
 import {
+  appOfPage,
   isAllowedAppsPermission,
   appsOrigin,
   appsUrl,
@@ -1017,5 +1018,37 @@ describe('cloudPromptBody', () => {
       prompt: workflow,
       extra_data: { auth_token_comfy_org: 'tok' }
     })
+  })
+})
+
+describe('appOfPage', () => {
+  const list = 'https://comfy.org/apps/'
+
+  it.each([
+    ['https://comfy.org/apps/remove-background/desktop.html', 'remove-background'],
+    ['https://comfy.org/apps/upscale/', 'upscale'],
+    ['https://comfy.org/apps/upscale', 'upscale'],
+    ['https://comfy.org/apps/image-to-3d/desktop.html?x=1#top', 'image-to-3d'],
+    ['https://comfy.org/apps/#/text-to-image', 'text-to-image'],
+    ['https://comfy.org/apps/#/text-to-image/run?x=1', 'text-to-image']
+  ])('reads the app in %s as %s', (page, app) => {
+    expect(appOfPage(page, list)).toBe(app)
+  })
+
+  it('reads the app under a list address with no trailing slash', () => {
+    expect(
+      appOfPage('http://127.0.0.1:4321/apps/upscale/desktop.html', 'http://127.0.0.1:4321/apps')
+    ).toBe('upscale')
+  })
+
+  it.each([
+    ['the list itself', 'https://comfy.org/apps/'],
+    ['a file next to the list', 'https://comfy.org/apps/index.html'],
+    ['another site', 'https://evil.example/apps/upscale/'],
+    ['outside the apps folder', 'https://comfy.org/blog/upscale/'],
+    ['a folder that is not a slug', 'https://comfy.org/apps/Upscale%20Me/'],
+    ['not an address', 'nope']
+  ])('reads no app from %s', (_why, page) => {
+    expect(appOfPage(page, list)).toBeNull()
   })
 })

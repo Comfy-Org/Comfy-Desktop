@@ -210,6 +210,41 @@ export function checkAppEvent(
   return checked
 }
 
+export function errorClassOf(error: unknown): string | undefined {
+  const raw = typeof error === 'string' ? error : error instanceof Error ? error.name : undefined
+  const last = raw?.split('.').pop()
+  return last && CLASS_NAME.test(last) ? last : undefined
+}
+
+export function refusedNodeTypes(nodeErrors: unknown): string[] {
+  if (!nodeErrors || typeof nodeErrors !== 'object') return []
+  const types = new Set<string>()
+  for (const error of Object.values(nodeErrors as Record<string, unknown>)) {
+    if (types.size === MAX_NODE_TYPES) break
+    const type = (error as { class_type?: unknown } | null)?.class_type
+    if (typeof type === 'string' && NODE_TYPE.test(type)) types.add(type)
+  }
+  return [...types]
+}
+
+export type CloudRefusal = Pick<AppEventFields['run_failed'], 'step' | 'error_class' | 'node_types'>
+
+function refusalStep(status: number): RunFailedStep {
+  if (status === 429) return 'rate_limited'
+  if (status === 401 || status === 403) return 'sign_in'
+  return 'rejected'
+}
+
+export function cloudRefusal(status: number, body: unknown): CloudRefusal {
+  const nodeTypes = refusedNodeTypes((body as { node_errors?: unknown } | null)?.node_errors)
+  const ok = status >= 200 && status < 300
+  return {
+    step: refusalStep(status),
+    ...(ok ? {} : { error_class: `http_${status}` }),
+    ...(nodeTypes.length ? { node_types: nodeTypes } : {})
+  }
+}
+
 function send(name: string, checked: TelemetryContext): void {
   const event = `${APP_EVENT_PREFIX}${name}`
   const context = { ...checked, apps_enabled: isAppsEnabled() }

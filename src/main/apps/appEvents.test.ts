@@ -6,7 +6,13 @@ vi.mock('../lib/telemetry', () => telemetry)
 const appsSwitch = vi.hoisted(() => ({ isAppsEnabled: vi.fn(() => true) }))
 vi.mock('./appsSwitch', () => appsSwitch)
 
-import { trackApps, trackFromPage } from './appEvents'
+import {
+  cloudRefusal,
+  errorClassOf,
+  refusedNodeTypes,
+  trackApps,
+  trackFromPage
+} from './appEvents'
 
 function sent(): Array<[string, Record<string, unknown>]> {
   return [...telemetry.capture.mock.calls, ...telemetry.emit.mock.calls] as Array<
@@ -253,3 +259,88 @@ function failed(): Parameters<typeof trackApps<'run_failed'>>[1] {
 function many(n: number): string[] {
   return Array.from({ length: n }, (_, i) => `Node${i}`)
 }
+
+describe('cloudRefusal', () => {
+  it('reads a 429 after the last try as rate_limited', () => {
+    expect(cloudRefusal(429, null)).toEqual({ step: 'rate_limited', error_class: 'http_429' })
+  })
+
+  it.each([401, 403])('reads %s as a sign-in failure', (status) => {
+    expect(cloudRefusal(status, null)).toEqual({ step: 'sign_in', error_class: `http_${status}` })
+  })
+
+  it('reads node_errors as rejected with the node types and nothing they said', () => {
+    const answer = {
+      error: { message: 'Prompt outputs failed validation' },
+      node_errors: {
+        '3': {
+          class_type: 'KSampler',
+          errors: [{ message: 'Value not in list', details: 'ckpt_name: my secret.safetensors' }]
+        },
+        '7': { class_type: 'KSampler', errors: [] },
+        '9': { class_type: 'LoadImage', errors: [{ message: '/Users/someone/cat.png' }] }
+      }
+    }
+
+    const refusal = cloudRefusal(400, answer)
+
+    expect(refusal).toEqual({
+      step: 'rejected',
+      error_class: 'http_400',
+      node_types: ['KSampler', 'LoadImage']
+    })
+    expect(JSON.stringify(refusal)).not.toMatch(/secret|Users|Value not in list/)
+  })
+
+  it('reads node_errors on an accepted answer as rejected with no HTTP class', () => {
+    expect(cloudRefusal(200, { node_errors: { '1': { class_type: 'SaveImage' } } })).toEqual({
+      step: 'rejected',
+      node_types: ['SaveImage']
+    })
+  })
+
+  it('reads any other answer as rejected', () => {
+    expect(cloudRefusal(500, 'oops')).toEqual({ step: 'rejected', error_class: 'http_500' })
+  })
+})
+
+describe('refusedNodeTypes', () => {
+  it('keeps at most 20 distinct class names', () => {
+    const errors = Object.fromEntries(many(30).map((type, i) => [String(i), { class_type: type }]))
+
+    expect(refusedNodeTypes(errors)).toEqual(many(20))
+  })
+
+  it('leaves out class names that look like paths or text', () => {
+    expect(
+      refusedNodeTypes({
+        '1': { class_type: '../../etc/passwd' },
+        '2': { class_type: 'x'.repeat(81) },
+        '3': { class_type: 7 },
+        '4': null,
+        '5': { class_type: 'VAEDecode' }
+      })
+    ).toEqual(['VAEDecode'])
+  })
+
+  it.each([null, undefined, 'text', 3])('finds none in %s', (value) => {
+    expect(refusedNodeTypes(value)).toEqual([])
+  })
+})
+
+describe('errorClassOf', () => {
+  it('names an error by its class', () => {
+    expect(errorClassOf(new TypeError('fetch failed for /Users/someone'))).toBe('TypeError')
+  })
+
+  it('keeps the class name from a dotted exception type', () => {
+    expect(errorClassOf('torch.OutOfMemoryError')).toBe('OutOfMemoryError')
+  })
+
+  it.each([undefined, null, 42, 'Out of memory', '', { name: 'Error' }])(
+    'gives no class for %s',
+    (value) => {
+      expect(errorClassOf(value)).toBeUndefined()
+    }
+  )
+})
