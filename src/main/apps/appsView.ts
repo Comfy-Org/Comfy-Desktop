@@ -50,6 +50,7 @@ import {
 import { listCatalogApps } from './catalog'
 import { outputAction, outputRequest } from './outputs'
 import { localBuilds, openInComfy } from './openInComfy'
+import { stackApps } from './stackApps'
 import { isAppsEnabled } from './appsSwitch'
 import {
   type CloudRefusal,
@@ -83,6 +84,7 @@ const pageDocuments = new Map<number, number>()
 const liveOutputCounts = new Map<number, number>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
+const parkedApps = new Set<number>()
 
 const pageWhere = new Map<number, Where>()
 
@@ -97,6 +99,7 @@ export interface AppsRect {
   width: number
   height: number
   fresh?: boolean
+  parked?: boolean
   url?: string
 }
 
@@ -245,6 +248,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
       pageDocuments.delete(key)
       awaitingCommit.delete(key)
       settledPages.delete(key)
+      parkedApps.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -256,11 +260,15 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     width: Math.round(r.width!),
     height: Math.round(r.height!)
   })
-  entry.window.contentView.addChildView(view)
+  const parked = r.parked === true
+  const wasParked = parkedApps.has(key)
+  if (parked) parkedApps.add(key)
+  else parkedApps.delete(key)
+  const stacked = stackApps(entry.window.contentView, view, entry.panelView!, parked)
   const uncovered = !view.getVisible()
-  view.setVisible(true)
+  view.setVisible(stacked)
   if (r.fresh !== true) {
-    if (uncovered) view.webContents.focus()
+    if (!parked && (uncovered || wasParked)) view.webContents.focus()
     return
   }
   tellPanelAppOpen(key)

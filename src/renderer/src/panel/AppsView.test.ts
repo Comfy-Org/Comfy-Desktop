@@ -23,6 +23,12 @@ async function mountApps(props: { growBy?: number; obscured?: boolean } = {}) {
   return wrapper
 }
 
+const animate = vi.spyOn(Element.prototype, 'animate')
+
+function entrance(): Animation {
+  return animate.mock.results.at(-1)!.value as Animation
+}
+
 function catalogApp(id: string, title: string): CatalogApp {
   return {
     id,
@@ -183,7 +189,7 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
-  it('opens a second app picked while the first one is still sliding in', async () => {
+  it('opens a second app picked while the first one is still entering', async () => {
     listCatalogApps.mockResolvedValue([
       catalogApp('studio', 'Cinematic Studio'),
       catalogApp('reshoot', 'Re-shoot a video')
@@ -203,7 +209,7 @@ describe('AppsView', () => {
     )
   })
 
-  it('slides in an empty surface and keeps the app off screen until its page settles', async () => {
+  it('fades in a skeleton of the app page and keeps the app parked behind it until its page settles', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountApps({ growBy: 172 })
 
@@ -212,21 +218,56 @@ describe('AppsView', () => {
 
     const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
     const first = showApps.mock.calls[0]![0]
-    expect(first.fresh).toBe(true)
-    expect(first.x).toBe(window.innerWidth)
+    expect(first).toMatchObject({ fresh: true, parked: true })
+    expect(Math.round(first.x)).toBe(Math.round(slot.x))
     expect(Math.round(first.width)).toBe(Math.round(slot.width + 172))
-    expect(wrapper.find('[data-testid="apps-host-surface"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
-    expect(wrapper.find('h1').exists()).toBe(true)
-
-    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    const surface = wrapper.get('[data-testid="apps-host-surface"]')
+    expect(surface.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
+    expect(animate.mock.calls.at(-1)).toEqual([
+      [
+        { transform: 'translateX(48px)', opacity: 0 },
+        { transform: 'none', opacity: 1 }
+      ],
+      expect.objectContaining({ duration: 220 })
+    ])
+    expect(wrapper.emitted('app-entered')).toEqual([[true]])
     expect(wrapper.find('h1').exists()).toBe(false)
-    expect(showApps.mock.calls.every(([rect]) => rect.x === window.innerWidth)).toBe(true)
+    expect(
+      wrapper.get('[data-testid="app-card-studio"]').element.closest('[style*="display: none"]')
+    ).not.toBeNull()
+
+    await entrance().finished
+    await flushPromises()
+    expect(showApps.mock.calls.every(([rect]) => rect.parked)).toBe(true)
+    expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
 
     appsSettled!()
     await flushPromises()
     const last = showApps.mock.calls.at(-1)![0]
+    expect(last.parked).toBe(false)
     expect(Math.round(last.x)).toBe(Math.round(slot.x))
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(false)
+    )
+  })
+
+  it('starts loading the app at open and reveals it as soon as the entrance ends when the page settled first', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    entrance().pause()
+    await flushPromises()
+    expect(showApps.mock.calls[0]![0]).toMatchObject({ fresh: true, parked: true })
+
+    appsSettled!()
+    await flushPromises()
+    expect(showApps.mock.calls.every(([rect]) => rect.parked)).toBe(true)
+
+    entrance().play()
+    await entrance().finished
+    await flushPromises()
+    expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
   })
 
   it('shows the app anyway when its page never says it settled', async () => {
@@ -239,18 +280,68 @@ describe('AppsView', () => {
       const wrapper = await mountApps()
       await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
       await flushPromises()
-      expect(showApps.mock.calls.at(-1)![0].x).toBe(window.innerWidth)
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(true)
+      expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
+      await entrance().finished
 
-      await vi.advanceTimersByTimeAsync(4000)
-      const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
-      expect(Math.round(showApps.mock.calls.at(-1)![0].x)).toBe(Math.round(slot.x))
+      await vi.advanceTimersByTimeAsync(3999)
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(true)
+      expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(250)
+      expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(false)
     } finally {
       vi.useRealTimers()
       matchMedia.mockRestore()
     }
   })
 
-  it('shows an app in place without sliding when motion is reduced', async () => {
+  it('shows a settled app after the reveal limit even when its entrance never finishes', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const wrapper = await mountApps()
+      await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+      entrance().pause()
+      await flushPromises()
+      appsSettled!()
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(3999)
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(250)
+      expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('eases the entrance with ease-out when the theme curve is not a valid easing', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    document.documentElement.style.setProperty('--ease-out-expo', 'not-a-curve')
+    try {
+      const wrapper = await mountApps()
+      await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+      await flushPromises()
+
+      expect(animate.mock.calls.at(-1)![1]).toMatchObject({ easing: 'ease-out' })
+      appsSettled!()
+      await entrance().finished
+      await flushPromises()
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
+    } finally {
+      document.documentElement.style.removeProperty('--ease-out-expo')
+    }
+  })
+
+  it('fades an app in without moving it when motion is reduced', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const matchMedia = vi
       .spyOn(window, 'matchMedia')
@@ -261,10 +352,13 @@ describe('AppsView', () => {
       await flushPromises()
 
       expect(wrapper.emitted('app-entered')).toEqual([[true]])
+      expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(true)
+      expect(animate.mock.calls.at(-1)![0]).toEqual([{ opacity: 0 }, { opacity: 1 }])
+
       appsSettled!()
+      await entrance().finished
       await flushPromises()
-      const slot = wrapper.get('[data-testid="apps-host"]').element.getBoundingClientRect()
-      expect(Math.round(showApps.mock.calls.at(-1)![0].x)).toBe(Math.round(slot.x))
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
     } finally {
       matchMedia.mockRestore()
     }

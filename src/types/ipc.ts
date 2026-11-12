@@ -1188,6 +1188,7 @@ export interface ElectronApi {
     width: number
     height: number
     fresh?: boolean
+    parked?: boolean
     url?: string
   }): void
   listCatalogApps(): Promise<CatalogApp[]>

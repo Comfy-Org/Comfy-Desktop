@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import AppPageSkeleton from './AppPageSkeleton.vue'
 import { useDialogs } from '../composables/useDialogs'
 import { useModal } from '../composables/useModal'
 import type { AppOutputs } from '../types/ipc'
 
-const SLIDE_MS = 480
-const EASE_OUT_CUBIC = 'cubic-bezier(0.33, 1, 0.68, 1)'
+const ENTER_MS = 220
+const ENTER_NUDGE = 'translateX(48px)'
+const ENTER_EASING_TOKEN = '--ease-out-expo'
 const HOLD_MAX_MS = 1000
 const REVEAL_MAX_MS = 4000
+const SKELETON_LINGER_MS = 250
 
 const {
   url,
@@ -32,6 +35,7 @@ const emit = defineEmits<{
 
 const slot = useTemplateRef<HTMLElement>('slot')
 const surface = useTemplateRef<HTMLElement>('surface')
+const skeletonShown = ref(true)
 let observer: ResizeObserver | null = null
 let stopListening: (() => void) | null = null
 let stopAppOpen: (() => void) | null = null
@@ -42,6 +46,7 @@ let gone = false
 let holdWidth = 0
 let holdTimer: ReturnType<typeof setTimeout> | undefined
 let revealTimer: ReturnType<typeof setTimeout> | undefined
+let lingerTimer: ReturnType<typeof setTimeout> | undefined
 let freshPending = true
 
 const { state: modal } = useModal()
@@ -54,17 +59,38 @@ function report(): void {
   const r = el.getBoundingClientRect()
   if (holdWidth && r.width >= holdWidth) holdWidth = 0
   const width = Math.max(r.width, holdWidth)
-  const x = parked ? window.innerWidth : r.x
-  window.api.showApps({ x, y: r.y, width, height: r.height, fresh: freshPending, url })
+  window.api.showApps({
+    x: r.x,
+    y: r.y,
+    width,
+    height: r.height,
+    fresh: freshPending,
+    parked,
+    url
+  })
   freshPending = false
 }
 
 const reportResize = (): void => report()
 
-function slideIn(): Promise<void> {
+function entranceEasing(): string {
+  const token = getComputedStyle(document.documentElement)
+    .getPropertyValue(ENTER_EASING_TOKEN)
+    .trim()
+  return CSS.supports('animation-timing-function', token) ? token : 'ease-out'
+}
+
+function enter(): Promise<void> {
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const easing = entranceEasing()
   const animation = surface.value?.animate(
-    [{ transform: 'translateX(100%)' }, { transform: 'none' }],
-    { duration: SLIDE_MS, easing: EASE_OUT_CUBIC }
+    reducedMotion
+      ? [{ opacity: 0 }, { opacity: 1 }]
+      : [
+          { transform: ENTER_NUDGE, opacity: 0 },
+          { transform: 'none', opacity: 1 }
+        ],
+    { duration: ENTER_MS, easing }
   )
   return animation
     ? animation.finished.then(
@@ -77,8 +103,15 @@ function slideIn(): Promise<void> {
 function pageSettled(): Promise<void> {
   return new Promise((done) => {
     stopSettled = window.api.onAppsSettled(done)
-    revealTimer = setTimeout(done, REVEAL_MAX_MS)
   })
+}
+
+function revealApp(): void {
+  if (gone || !parked) return
+  clearTimeout(revealTimer)
+  parked = false
+  report()
+  lingerTimer = setTimeout(() => (skeletonShown.value = false), SKELETON_LINGER_MS)
 }
 
 function releaseHoldLater(): void {
@@ -95,25 +128,26 @@ onMounted(async () => {
   stopAppOpen = window.api.onAppsAppOpen(({ open }) => emit('app-open', open))
   stopOutputs = window.api.onAppsOutput((outputs) => emit('outputs', outputs))
   const settled = pageSettled()
+  revealTimer = setTimeout(revealApp, REVEAL_MAX_MS)
   observer = new ResizeObserver(reportResize)
   if (slot.value) observer.observe(slot.value)
   window.addEventListener('resize', reportResize)
   const width = slot.value?.getBoundingClientRect().width ?? 0
   if (growBy > 0) holdWidth = width + growBy
   report()
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) await slideIn()
-  if (gone) return
   emit('entered')
+  await enter()
+  if (gone) return
   if (holdWidth) releaseHoldLater()
   await settled
-  parked = false
-  report()
+  revealApp()
 })
 
 onBeforeUnmount(() => {
   gone = true
   clearTimeout(holdTimer)
   clearTimeout(revealTimer)
+  clearTimeout(lingerTimer)
   stopListening?.()
   stopAppOpen?.()
   stopOutputs?.()
@@ -130,7 +164,9 @@ onBeforeUnmount(() => {
       ref="surface"
       class="size-full rounded-shell bg-content-background"
       data-testid="apps-host-surface"
-    />
+    >
+      <AppPageSkeleton v-if="skeletonShown" />
+    </div>
     <img
       v-if="covered && backdrop"
       :src="backdrop"
