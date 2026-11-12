@@ -340,8 +340,11 @@ const diskTooSmallForAnyTemplate = computed(() => {
   return isTemplateDiskBlocked(diskSpace.value, cheapest)
 })
 
+const asksForTemplate = computed(() => props.hideBackToDashboard)
+
 const shouldShowPickerStep = computed(
   () =>
+    asksForTemplate.value &&
     localInstallMode.value &&
     currentSource.value?.id === 'standalone' &&
     pickerEnabled.value &&
@@ -853,7 +856,11 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
     fieldLoading.value.set(field.id, false)
     fieldOptions.value.set(field.id, options)
 
-    if (options.length > 0) {
+    if (field.id === 'bundledTemplate' && !asksForTemplate.value) {
+      const none = options.find((opt) => opt.value === NO_TEMPLATE_VALUE)
+      if (none) selections.value[field.id] = none
+      else delete selections.value[field.id]
+    } else if (options.length > 0) {
       let defaultIndex =
         field.id === 'bundledTemplate' ? 0 : options.findIndex((opt) => opt.recommended)
       if (defaultIndex < 0) defaultIndex = 0
@@ -1174,7 +1181,8 @@ function onSelectFieldChange(field: SourceField, fieldIndex: number, value: stri
 }
 
 function isHiddenWhenEmpty(field: SourceField): boolean {
-  if (field.id === 'bundledTemplate' && shouldShowPickerStep.value) return true
+  if (field.id === 'bundledTemplate' && (!asksForTemplate.value || shouldShowPickerStep.value))
+    return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
   const options = fieldOptions.value.get(field.id)
   if (options === undefined) return false

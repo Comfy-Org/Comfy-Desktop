@@ -10,10 +10,11 @@ import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
-function mountModal() {
+function mountModal(props: { hideBackToDashboard?: boolean } = {}) {
   const pinia = createPinia()
   setActivePinia(pinia)
   return mount(InstallWizardModal, {
+    props,
     global: {
       plugins: [pinia],
       stubs: {
@@ -229,7 +230,7 @@ describe('InstallWizardModal heading', () => {
   })
 })
 
-describe('InstallWizardModal starter template disk gate', () => {
+describe('InstallWizardModal starter template disk gate in the first-use chain', () => {
   async function openTemplateStep(modelsPresent: boolean) {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -251,7 +252,7 @@ describe('InstallWizardModal starter template disk gate', () => {
       free: 1_000_000_000,
       total: 1_000_000_000_000
     })
-    const wrapper = mountModal()
+    const wrapper = mountModal({ hideBackToDashboard: true })
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
     await wrapper.get('.config-continue').trigger('click')
@@ -470,7 +471,7 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
   })
 
-  it('uses the existing local installer and template picker for Standalone', async () => {
+  it('installs Standalone directly without asking for a starter template', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
@@ -509,10 +510,16 @@ describe('InstallWizardModal workspace Builds', () => {
       undefined
     )
 
+    expect((wrapper.get('.config-source-field').element as HTMLElement).style.display).toBe('none')
+
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.template-shell').exists()).toBe(true)
+    expect(wrapper.find('.template-shell').exists()).toBe(false)
+    expect(window.api.buildInstallation).toHaveBeenCalledWith(
+      'standalone',
+      expect.objectContaining({ bundledTemplate: expect.objectContaining({ value: 'none' }) })
+    )
     expect(window.api.comfybuilder.installBuild).not.toHaveBeenCalled()
   })
 
