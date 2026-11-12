@@ -41,9 +41,12 @@ function startedAt(): Map<string, number> {
 }
 
 async function running(inst: installations.InstallationRecord): Promise<string | null> {
-  if (_runningSessions.has(inst.id)) return showComfyWindow(inst) ? inst.id : null
-  const result = await launchInstall(inst)
-  return result.ok || _runningSessions.has(inst.id) ? inst.id : null
+  if (!_runningSessions.has(inst.id)) {
+    const result = await launchInstall(inst)
+    if (!result.ok && !_runningSessions.has(inst.id)) return null
+  }
+  if (_runningSessions.get(inst.id)?.mode === 'console' && !showComfyWindow(inst)) return null
+  return inst.id
 }
 
 async function appsBuildWindow(): Promise<string | null> {
