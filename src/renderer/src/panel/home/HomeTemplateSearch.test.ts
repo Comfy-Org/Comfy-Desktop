@@ -20,6 +20,7 @@ function candidate(templateId: string, over: Partial<TemplateSearchCandidate> = 
     family: null,
     partner: false,
     rewrite: false,
+    needsDownload: false,
     missing: [],
     ...over
   }
@@ -27,7 +28,10 @@ function candidate(templateId: string, over: Partial<TemplateSearchCandidate> = 
 
 const POSTER = candidate('poster_template')
 const BANNER = candidate('banner_template')
-const MURAL = candidate('mural_template', { missing: ['mural.safetensors'] })
+const MURAL = candidate('mural_template', {
+  missing: ['mural.safetensors'],
+  needsDownload: true
+})
 
 function answer(result: Partial<TemplateSearchResult>): TemplateSearchResponse {
   return {

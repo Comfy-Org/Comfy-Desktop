@@ -25,7 +25,7 @@ function rowMeta(row: SearchRow): string {
   const blocked = props.controller.blockedReason.value
   if (blocked !== null) return blocked
   const candidate = row.candidate as TemplateSearchCandidate
-  if (row.kind !== 'download') return candidate.family ?? t('home.search.template')
+  if (!candidate.needsDownload) return candidate.family ?? t('home.search.template')
   return candidate.missing.length
     ? t('home.search.needsDownload', { items: candidate.missing.join(', ') })
     : t('home.search.needsTemplateDownload')
@@ -33,7 +33,7 @@ function rowMeta(row: SearchRow): string {
 
 function rowAction(row: SearchRow): string {
   if (row.kind === 'agent') return t('home.search.askAgent')
-  return row.kind === 'download' ? t('home.search.downloadAndRun') : t('home.search.run')
+  return row.candidate?.needsDownload ? t('home.search.downloadAndRun') : t('home.search.run')
 }
 
 function startsGroup(index: number): boolean {
@@ -140,7 +140,7 @@ function optionId(index: number): string {
             {{ t('home.search.partner') }}
           </span>
           <span
-            v-if="row.kind === 'download'"
+            v-if="row.candidate?.needsDownload"
             class="shrink-0 rounded-full bg-[rgb(255_190_90/0.14)] px-2 py-0.5 text-[11px]/4 text-[rgb(240_190_110)]"
             data-testid="home-template-search-needs-download"
           >
@@ -215,7 +215,7 @@ function optionId(index: number): string {
               {{ t('home.search.partner') }}
             </span>
             <span
-              v-if="row.kind === 'download'"
+              v-if="row.candidate?.needsDownload"
               class="rounded-full bg-[rgb(90_60_10/0.85)] px-2 py-0.5 text-[11px]/4 text-[rgb(255_210_140)]"
               data-testid="home-template-search-needs-download"
             >

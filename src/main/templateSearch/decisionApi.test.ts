@@ -48,6 +48,10 @@ function decision(over: Record<string, unknown> = {}) {
       { ...candidate('as_given', 'flyer_template'), masked: { code: 'needs_file' } },
       candidate('as_given', 'mural_template'),
       candidate('agent', null),
+      {
+        ...candidate('as_given', 'quilt_template'),
+        masked: { code: 'not_installed', detail: 'quilt_template,quilt.safetensors' }
+      },
       candidate('as_given', 'card_template'),
       candidate('rewrite', 'card_template'),
       candidate('as_given', 'badge_template'),
@@ -79,10 +83,22 @@ describe('parseDecision', () => {
 
   it('suggests up to three more unmasked templates from the ranked list that are not shown already', () => {
     expect(parseDecision(decision())?.alsoTry.map((c) => c.templateId)).toEqual([
+      'quilt_template',
       'card_template',
-      'badge_template',
-      'pennant_template'
+      'badge_template'
     ])
+  })
+
+  it('marks what needs a download, and what it would download', () => {
+    const result = parseDecision(decision())!
+    expect(result.run.every((c) => !c.needsDownload)).toBe(true)
+    expect(result.download.every((c) => c.needsDownload)).toBe(true)
+    expect(result.alsoTry[0]).toMatchObject({
+      templateId: 'quilt_template',
+      needsDownload: true,
+      missing: ['quilt.safetensors']
+    })
+    expect(result.alsoTry[1]).toMatchObject({ templateId: 'card_template', needsDownload: false })
   })
 
   it('suggests nothing more when the service sends no ranked list', () => {

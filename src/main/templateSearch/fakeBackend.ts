@@ -16,6 +16,7 @@ function candidate(
     family,
     partner: isPartnerTemplate(templateId),
     rewrite: extra.rewrite ?? false,
+    needsDownload: (extra.missing ?? []).length > 0,
     missing: extra.missing ?? []
   }
 }

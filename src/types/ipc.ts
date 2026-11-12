@@ -144,6 +144,7 @@ export interface TemplateSearchCandidate {
   family: string | null
   partner: boolean
   rewrite: boolean
+  needsDownload: boolean
   missing: string[]
 }
 

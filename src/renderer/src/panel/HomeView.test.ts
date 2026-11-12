@@ -451,6 +451,7 @@ describe('Home template search', () => {
             family: null,
             partner: false,
             rewrite: false,
+            needsDownload: false,
             missing: []
           }
         ],
@@ -486,6 +487,7 @@ describe('Home template search', () => {
             family: null,
             partner: false,
             rewrite: false,
+            needsDownload: false,
             missing: []
           }
         ],
@@ -520,6 +522,7 @@ describe('Home template search', () => {
             family: null,
             partner: false,
             rewrite: false,
+            needsDownload: false,
             missing: []
           }
         ],

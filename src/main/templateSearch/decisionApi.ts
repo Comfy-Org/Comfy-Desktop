@@ -34,9 +34,22 @@ function asTexts(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => !!asText(item)) : []
 }
 
-function isUnmaskedOption(value: unknown): boolean {
+const NOT_INSTALLED = 'not_installed'
+
+function maskCode(value: unknown): string | null {
+  return asText(asRecord(asRecord(value)?.masked)?.code)
+}
+
+function isOfferableOption(value: unknown): boolean {
   const option = asRecord(value)
-  return option !== null && option.masked == null
+  return option !== null && (option.masked == null || maskCode(option) === NOT_INSTALLED)
+}
+
+function missingFor(candidate: JsonRecord, templateId: string): string[] {
+  const listed = asTexts(candidate.download)
+  const masked = asText(asRecord(candidate.masked)?.detail)
+  const items = listed.length ? listed : masked ? masked.split(',').map((item) => item.trim()) : []
+  return items.filter((item) => item && item !== templateId)
 }
 
 function isOutcome(value: unknown): value is TemplateSearchOutcome {
@@ -58,7 +71,7 @@ export function decisionEndpoint(base: string): string | null {
   return new URL(DECIDE_PATH, url).toString()
 }
 
-function candidateFrom(value: unknown): TemplateSearchCandidate | null {
+function candidateFrom(value: unknown, fromDownloadList: boolean): TemplateSearchCandidate | null {
   const candidate = asRecord(value)
   const variant = asRecord(candidate?.variant)
   const templateId = variant?.template_id
@@ -70,20 +83,24 @@ function candidateFrom(value: unknown): TemplateSearchCandidate | null {
     family: asText(candidate.family_id),
     partner: isPartnerTemplate(templateId),
     rewrite: candidate.kind === 'rewrite',
-    missing: asTexts(candidate.download).filter((item) => item !== templateId)
+    needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
+    missing: missingFor(candidate, templateId)
   }
 }
 
 function distinctCandidates(
   value: unknown,
   limit: number,
-  taken: ReadonlySet<string> = new Set()
+  {
+    taken = new Set<string>(),
+    fromDownloadList = false
+  }: { taken?: ReadonlySet<string>; fromDownloadList?: boolean } = {}
 ): TemplateSearchCandidate[] {
   const seen = new Set(taken)
   const candidates: TemplateSearchCandidate[] = []
   for (const item of Array.isArray(value) ? value : []) {
     if (candidates.length === limit) break
-    const candidate = candidateFrom(item)
+    const candidate = candidateFrom(item, fromDownloadList)
     if (!candidate || seen.has(candidate.templateId)) continue
     seen.add(candidate.templateId)
     candidates.push(candidate)
@@ -97,17 +114,14 @@ export function parseDecision(body: unknown): TemplateSearchResult | null {
   const split = asRecord(decision?.split)
   if (!outcome || !split || !isOutcome(outcome.kind)) return null
   const run = distinctCandidates(split.run, RUN_LIMIT)
-  const download = distinctCandidates(
-    split.download,
-    DOWNLOAD_LIMIT,
-    new Set(run.map((candidate) => candidate.templateId))
-  )
+  const download = distinctCandidates(split.download, DOWNLOAD_LIMIT, {
+    taken: new Set(run.map((candidate) => candidate.templateId)),
+    fromDownloadList: true
+  })
   const options = Array.isArray(decision?.options) ? decision.options : []
-  const alsoTry = distinctCandidates(
-    options.filter(isUnmaskedOption),
-    ALSO_TRY_LIMIT,
-    new Set([...run, ...download].map((candidate) => candidate.templateId))
-  )
+  const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, {
+    taken: new Set([...run, ...download].map((candidate) => candidate.templateId))
+  })
   return { outcome: outcome.kind, reply: asText(outcome.reply), run, download, alsoTry }
 }
 
