@@ -97,6 +97,26 @@ describe('AppsView', () => {
     expect(listCatalogApps).toHaveBeenCalledOnce()
   })
 
+  it('opens a second app picked while the first one is still sliding in', async () => {
+    listCatalogApps.mockResolvedValue([
+      catalogApp('studio', 'Cinematic Studio'),
+      catalogApp('reshoot', 'Re-shoot a video')
+    ])
+    const wrapper = await mountApps()
+
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-reshoot"]').trigger('click')
+    await flushPromises()
+
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fresh: true,
+        url: 'https://apps.example/apps/reshoot/desktop.html'
+      })
+    )
+  })
+
   it('slides in an empty surface and keeps the app off screen until its page settles', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountApps({ growBy: 172 })

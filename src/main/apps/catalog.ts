@@ -4,6 +4,7 @@ import { isTemporaryLaunchApp } from './temporaryLaunchApps'
 
 const DESKTOP_SURFACE = 'desktop_starters'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
+const CATALOG_MEDIA_PATH = '/catalog-media/'
 const CATALOG_TIMEOUT_MS = 8000
 const THUMBNAIL_FIELDS = ['$.static_thumb', '$.hero_poster']
 
@@ -29,8 +30,10 @@ export function catalogUrl(): string {
 function thumbnailUrl(media: Record<string, unknown> | null | undefined): string | null {
   for (const field of THUMBNAIL_FIELDS) {
     const path = media?.[field]
-    if (typeof path === 'string' && path.startsWith('/catalog-media/'))
-      return `${CATALOG_MEDIA_ORIGIN}${path}`
+    if (typeof path !== 'string' || !path.startsWith(CATALOG_MEDIA_PATH)) continue
+    const url = new URL(path, CATALOG_MEDIA_ORIGIN)
+    if (url.origin === CATALOG_MEDIA_ORIGIN && url.pathname.startsWith(CATALOG_MEDIA_PATH))
+      return url.href
   }
   return null
 }
@@ -57,14 +60,24 @@ function sortOrder(item: CatalogItem): number {
   return typeof order === 'number' && isFinite(order) ? order : Number.MAX_SAFE_INTEGER
 }
 
+function isCatalogItem(item: unknown): item is CatalogItem {
+  return typeof item === 'object' && item !== null
+}
+
 export async function listCatalogApps(listUrl: string): Promise<CatalogApp[]> {
   const res = await fetch(catalogUrl(), { signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS) })
   if (!res.ok) throw new Error(`Catalog request failed: HTTP ${res.status}`)
-  const body = (await res.json()) as { items?: unknown }
-  const items = Array.isArray(body.items) ? (body.items as CatalogItem[]) : []
-  return [...items]
+  const body = (await res.json()) as { items?: unknown } | null
+  if (!Array.isArray(body?.items)) throw new Error('Catalog response has no item list')
+  const seen = new Set<string>()
+  return body.items
+    .filter(isCatalogItem)
     .filter((item) => isTemporaryLaunchApp(item.data?.slug))
     .sort((a, b) => sortOrder(a) - sortOrder(b))
     .map((item) => toCatalogApp(item, listUrl))
-    .filter((entry): entry is CatalogApp => entry !== null)
+    .filter((entry): entry is CatalogApp => {
+      if (entry === null || seen.has(entry.id)) return false
+      seen.add(entry.id)
+      return true
+    })
 }

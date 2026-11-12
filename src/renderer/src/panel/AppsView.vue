@@ -63,6 +63,7 @@ onBeforeUnmount(() => {
   </div>
   <AppsHost
     v-if="openApp"
+    :key="openApp.id"
     class="absolute inset-0"
     :url="openApp.url"
     :grow-by="growBy"
