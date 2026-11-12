@@ -1,6 +1,11 @@
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import type { TemplateSearchResult } from '../../types/ipc'
-import { searchRows, type SearchRow, type TemplateSearchClient } from './templateSearch'
+import {
+  WEAK_MATCH_FLOOR,
+  searchRows,
+  type SearchRow,
+  type TemplateSearchClient
+} from './templateSearch'
 
 export const SEARCH_DELAY_MS = 300
 
@@ -14,6 +19,7 @@ export interface TemplateSearchOptions {
   client: () => TemplateSearchClient
   blockedReason: () => string | null
   refreshKey: () => string
+  weakMatchFloor?: () => number
 }
 
 export function useTemplateSearch(options: TemplateSearchOptions) {
@@ -26,7 +32,9 @@ export function useTemplateSearch(options: TemplateSearchOptions) {
   let pendingSearch: ReturnType<typeof setTimeout> | undefined
 
   const rows = computed<SearchRow[]>(() =>
-    state.value.kind === 'result' ? searchRows(state.value.result) : []
+    state.value.kind === 'result'
+      ? searchRows(state.value.result, options.weakMatchFloor?.() ?? WEAK_MATCH_FLOOR)
+      : []
   )
   const reply = computed(() => (state.value.kind === 'result' ? state.value.result.reply : null))
   const activeRow = computed(() => rows.value[activeIndex.value] ?? null)

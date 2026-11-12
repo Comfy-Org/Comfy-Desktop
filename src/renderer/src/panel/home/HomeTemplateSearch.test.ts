@@ -156,6 +156,21 @@ describe('HomeTemplateSearch', () => {
     expect(weakRow!.attributes('data-weak')).toBe('true')
   })
 
+  it('leaves out weaker matches below the floor, but never one that clears the bar', async () => {
+    const faint = candidate('faint_template', { score: 0.01, belowThreshold: true })
+    const weak = candidate('weak_template', { score: 0.05, belowThreshold: true })
+    const lowButClears = candidate('low_template', { score: 0.02 })
+    search.mockResolvedValue(answer({ run: [lowButClears], alsoTry: [faint, weak] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    expect(rowTitles(wrapper)).toEqual([
+      'low_template title',
+      'weak_template title',
+      'Build it with the agent'
+    ])
+  })
+
   it('shows the template family under its title', async () => {
     search.mockResolvedValue(
       answer({ run: [candidate('poster_template', { family: 'text-to-image' })] })

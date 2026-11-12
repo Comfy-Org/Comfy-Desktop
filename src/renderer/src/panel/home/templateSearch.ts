@@ -6,6 +6,8 @@ import type {
 
 export type SearchRowKind = 'run' | 'download' | 'also' | 'agent'
 
+export const WEAK_MATCH_FLOOR = 0.05
+
 export type BadgeTone = 'partner' | 'download' | 'rewrite' | 'strong' | 'good' | 'weak' | 'best'
 
 export interface TemplateSearchPick {
@@ -34,13 +36,17 @@ function templateRow(
   return { key: `${kind}:${candidate.templateId}`, kind, candidate, best: false }
 }
 
-export function searchRows(result: TemplateSearchResult): SearchRow[] {
+function shown(candidate: TemplateSearchCandidate, floor: number): boolean {
+  return !candidate.belowThreshold || (candidate.score ?? 0) >= floor
+}
+
+export function searchRows(result: TemplateSearchResult, floor = WEAK_MATCH_FLOOR): SearchRow[] {
   if (result.outcome === 'bad_input') return []
   const templates = [
     ...result.run.map((candidate) => templateRow('run', candidate)),
     ...result.download.map((candidate) => templateRow('download', candidate)),
     ...result.alsoTry.map((candidate) => templateRow('also', candidate))
-  ]
+  ].filter((row) => row.candidate === null || shown(row.candidate, floor))
   const agent: SearchRow = { key: 'agent', kind: 'agent', candidate: null, best: false }
   if (result.outcome === 'agent') return [{ ...agent, best: true }, ...templates]
   const [first, ...rest] = templates
