@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronRight, Folder, FolderOpen } from 'lucide-vue-next'
 import Tooltip from '../components/ui/Tooltip.vue'
@@ -20,6 +20,7 @@ interface Crumb {
 }
 
 const NAME_TOOLTIP_DELAY_MS = 600
+const BUILDS_TOOLTIP_DELAY_MS = 500
 const SKELETON_COUNT = 8
 
 const props = defineProps<{
@@ -39,6 +40,7 @@ const emit = defineEmits<{ 'clear-filters': [] }>()
 const { t } = useI18n()
 const modal = useModal()
 const root = useTemplateRef<HTMLElement>('root')
+const buildsIdPrefix = useId()
 const folders = ref<OutputFolder[] | null>(null)
 const trail = ref<Crumb[]>([])
 const listing = ref<OutputFolderListing | null>(null)
@@ -289,33 +291,40 @@ defineExpose({ reload, loading })
         class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,300px))] gap-3 p-0"
       >
         <li
-          v-for="output in folders"
+          v-for="(output, index) in folders"
           :key="output.path"
           class="relative flex h-14 items-center gap-3 rounded-xl bg-card pr-1.5 pl-4 transition-colors duration-150 hover:bg-card-hover"
         >
           <Folder :size="20" class="shrink-0 text-muted-foreground" aria-hidden="true" />
-          <button
-            type="button"
-            class="flex min-w-0 flex-1 cursor-pointer flex-col text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring"
-            :data-testid="`local-folder-${output.path}`"
-            @click="enter({ name: folderLabel(output), path: output.path })"
+          <Tooltip
+            :disabled="output.builds.length === 0"
+            :delay-ms="BUILDS_TOOLTIP_DELAY_MS"
+            side="bottom"
+            align="start"
+            class="min-w-0 flex-1"
+            :data-testid="`local-folder-builds-${output.path}`"
           >
-            <span class="truncate text-ui font-medium text-foreground">{{
-              folderLabel(output)
-            }}</span>
-            <Tooltip
-              :disabled="output.builds.length === 0"
-              side="bottom"
-              align="start"
-              class="relative z-10 max-w-full self-start"
-              :data-testid="`local-folder-builds-${output.path}`"
+            <button
+              type="button"
+              class="flex w-full min-w-0 cursor-pointer flex-col text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+              :aria-describedby="
+                output.builds.length > 0 ? `${buildsIdPrefix}-builds-${index}` : undefined
+              "
+              :data-testid="`local-folder-${output.path}`"
+              @click="enter({ name: folderLabel(output), path: output.path })"
             >
+              <span class="truncate text-ui font-medium text-foreground">{{
+                folderLabel(output)
+              }}</span>
               <span class="truncate text-ui text-subtle-foreground">{{ buildCount(output) }}</span>
-              <template #content>
-                <span v-for="name in output.builds" :key="name" class="block">{{ name }}</span>
-              </template>
-            </Tooltip>
-          </button>
+              <span :id="`${buildsIdPrefix}-builds-${index}`" class="sr-only">{{
+                output.builds.join(', ')
+              }}</span>
+            </button>
+            <template #content>
+              <span v-for="name in output.builds" :key="name" class="block">{{ name }}</span>
+            </template>
+          </Tooltip>
           <FolderActionsMenu
             :path="output.path"
             :trigger-test-id="`local-folder-menu-${output.path}`"
@@ -337,7 +346,7 @@ defineExpose({ reload, loading })
           <Folder :size="16" class="shrink-0 text-muted-foreground" aria-hidden="true" />
           <button
             type="button"
-            class="min-w-0 flex-1 cursor-pointer truncate text-left text-ui text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring"
+            class="min-w-0 flex-1 cursor-pointer truncate text-left text-ui text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
             :data-testid="`local-subfolder-${entry.name}`"
             @click="enter({ name: entry.name, path: entry.path })"
           >

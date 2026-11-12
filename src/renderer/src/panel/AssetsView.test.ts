@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -553,17 +553,19 @@ describe('AssetsView on This computer', () => {
     expect(listAssets).toHaveBeenCalledTimes(cloudLoads)
   })
 
-  it('names the builds that save to a folder when its build count gets focus', async () => {
+  it('names the builds that save to a folder when the folder gets focus', async () => {
     const wrapper = await mountAssets([], [], { attachTo: document.body })
     await openThisComputer(wrapper)
-    expect(document.body.textContent).not.toContain('Test Instance')
-
-    await wrapper.get(`[data-testid="local-folder-builds-${SHARED}"]`).trigger('focusin')
+    const card = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    ;(card.element as HTMLButtonElement).focus()
     await flushPromises()
 
-    expect(document.body.textContent).toContain('Test Instance')
-    expect(document.body.textContent).toContain('My Local 1')
-    wrapper.unmount()
+    const description = document.getElementById(card.attributes('aria-describedby')!)
+    expect(description?.textContent).toBe('Test Instance, My Local 1')
+    const bubble = document.querySelector('.tooltip-bubble')
+    expect(bubble?.textContent).toContain('Test Instance')
+    expect(bubble?.textContent).toContain('My Local 1')
   })
 
   it('shows a folder in Finder from its menu without opening it', async () => {
@@ -583,8 +585,9 @@ describe('AssetsView on This computer', () => {
     expect(listOutputFolder).not.toHaveBeenCalled()
   })
 
-  it('copies a folder path from its menu', async () => {
+  it('copies a folder path from its menu and says it was copied', async () => {
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    onTestFinished(() => writeText.mockRestore())
     const wrapper = await mountAssets([])
     await openThisComputer(wrapper)
 
@@ -596,8 +599,8 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
 
     expect(writeText).toHaveBeenCalledWith(APPS)
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Path copied')
     expect(listOutputFolder).not.toHaveBeenCalled()
-    writeText.mockRestore()
   })
 
   it('opens on This computer when the user left it there', async () => {
@@ -729,6 +732,7 @@ describe('AssetsView on This computer', () => {
 
   it('shows a subfolder in Finder and copies its path from its menu without opening it', async () => {
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    onTestFinished(() => writeText.mockRestore())
     listOutputFolder.mockResolvedValueOnce(listing([entry(SHARED, 'apps', null)]))
     const wrapper = await mountAssets([])
     await openThisComputer(wrapper)
@@ -748,7 +752,6 @@ describe('AssetsView on This computer', () => {
     expect(revealPath).toHaveBeenCalledWith(`${SHARED}/apps`)
     expect(writeText).toHaveBeenCalledWith(`${SHARED}/apps`)
     expect(listOutputFolder).toHaveBeenCalledTimes(1)
-    writeText.mockRestore()
   })
 
   it('shows only the subfolders of a folder with no files, and the cut-short note when nothing matches', async () => {
