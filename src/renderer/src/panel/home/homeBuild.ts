@@ -1,6 +1,7 @@
 import type { Installation } from '../../types/ipc'
 
 export type HomeBuildTone = 'ember' | 'iris' | 'tide'
+export type BuildDeviceKind = 'laptop' | 'pc-laptop' | 'monitor' | 'cloud'
 export type HomeBuildStatus = 'running' | 'starting' | 'update' | 'always-on' | 'ready'
 
 export interface HomeBuildToneStyle {
@@ -19,6 +20,16 @@ const LOCAL_TONES: readonly HomeBuildTone[] = ['ember', 'iris']
 
 export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
+}
+
+export function buildDeviceKind(
+  build: Installation,
+  platform: string | undefined = window.api?.platform
+): BuildDeviceKind {
+  if (isCloudBuild(build)) return 'cloud'
+  if (platform === 'win32') return 'pc-laptop'
+  if (platform === 'linux') return 'monitor'
+  return 'laptop'
 }
 
 export function isComfyCloud(build: Installation): boolean {

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 
+import type { BuildDeviceKind } from './homeBuild'
+
 const { kind, glow } = defineProps<{
-  kind: 'laptop' | 'cloud'
+  kind: BuildDeviceKind
   glow: string
 }>()
 
@@ -78,6 +80,92 @@ const id = useId()
         <stop stop-color="#E4E4E8" />
         <stop offset="0.35" stop-color="#A9A9AF" />
         <stop offset="1" stop-color="#5B5B61" />
+      </linearGradient>
+    </defs>
+  </svg>
+  <svg
+    v-else-if="kind === 'pc-laptop' || kind === 'monitor'"
+    width="88"
+    height="57"
+    viewBox="0 0 88 57"
+    fill="none"
+    aria-hidden="true"
+  >
+    <g transform="scale(0.55)">
+      <template v-if="kind === 'pc-laptop'">
+        <ellipse cx="80" cy="97" rx="76" ry="6" :fill="`url(#${id}-ground)`" />
+        <rect x="18" y="4" width="124" height="83" rx="4.5" :fill="`url(#${id}-edge)`" />
+        <rect x="19" y="5" width="122" height="82" rx="3.5" fill="#09090B" />
+        <rect x="21.5" y="8" width="117" height="73" rx="1.5" :fill="`url(#${id}-screen)`" />
+        <rect x="21.5" y="8" width="117" height="73" rx="1.5" :fill="`url(#${id}-glow)`" />
+        <rect x="21.5" y="8" width="117" height="73" rx="1.5" :fill="`url(#${id}-sheen)`" />
+        <circle cx="80" cy="6.5" r="0.8" fill="#3A3A40" />
+        <rect
+          x="21.5"
+          y="8"
+          width="117"
+          height="73"
+          rx="1.5"
+          stroke="white"
+          stroke-opacity="0.06"
+        />
+        <path
+          d="M5 87h150v3c0 2.8-3.4 5-7.6 5H12.6C8.4 95 5 92.8 5 90z"
+          :fill="`url(#${id}-base)`"
+        />
+        <rect x="5" y="87" width="150" height="0.9" fill="white" fill-opacity="0.28" />
+        <rect x="60" y="87.9" width="40" height="1.4" rx="0.7" fill="#141416" />
+      </template>
+      <template v-else>
+        <ellipse cx="80" cy="98" rx="52" ry="5" :fill="`url(#${id}-ground)`" />
+        <path d="M72 80h16l2 13H70z" :fill="`url(#${id}-base)`" />
+        <rect x="54" y="92" width="52" height="3.5" rx="1.75" :fill="`url(#${id}-base)`" />
+        <rect x="54" y="92" width="52" height="0.8" rx="0.4" fill="white" fill-opacity="0.28" />
+        <rect x="12" y="3" width="136" height="78" rx="4.5" :fill="`url(#${id}-edge)`" />
+        <rect x="13" y="4" width="134" height="76" rx="3.5" fill="#09090B" />
+        <rect x="15.5" y="6.5" width="129" height="68" rx="2" :fill="`url(#${id}-screen)`" />
+        <rect x="15.5" y="6.5" width="129" height="68" rx="2" :fill="`url(#${id}-glow)`" />
+        <rect x="15.5" y="6.5" width="129" height="68" rx="2" :fill="`url(#${id}-sheen)`" />
+        <rect
+          x="15.5"
+          y="6.5"
+          width="129"
+          height="68"
+          rx="2"
+          stroke="white"
+          stroke-opacity="0.06"
+        />
+        <circle cx="80" cy="77.2" r="0.8" fill="#3A3A40" />
+      </template>
+    </g>
+    <defs>
+      <radialGradient :id="`${id}-ground`">
+        <stop stop-opacity="0.55" />
+        <stop offset="1" stop-opacity="0" />
+      </radialGradient>
+      <linearGradient :id="`${id}-edge`" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#5A5A60" />
+        <stop offset="1" stop-color="#232326" />
+      </linearGradient>
+      <linearGradient :id="`${id}-screen`" x1="0" y1="0" x2="0.56" y2="1.44">
+        <stop stop-color="#3A3A3E" />
+        <stop offset="0.55" stop-color="#1F1F22" />
+        <stop offset="1" stop-color="#0E0E10" />
+      </linearGradient>
+      <radialGradient :id="`${id}-glow`" cx="0.33" cy="0.36" r="0.75">
+        <stop :stop-color="glow" stop-opacity="0.8" />
+        <stop offset="0.65" :stop-color="glow" stop-opacity="0.3" />
+        <stop offset="1" :stop-color="glow" stop-opacity="0" />
+      </radialGradient>
+      <linearGradient :id="`${id}-sheen`" x1="0" y1="0" x2="0.71" y2="1.09">
+        <stop stop-color="white" stop-opacity="0.14" />
+        <stop offset="0.45" stop-color="white" stop-opacity="0.03" />
+        <stop offset="0.46" stop-color="white" stop-opacity="0" />
+      </linearGradient>
+      <linearGradient :id="`${id}-base`" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#6C6C73" />
+        <stop offset="0.35" stop-color="#3F3F45" />
+        <stop offset="1" stop-color="#1C1C1F" />
       </linearGradient>
     </defs>
   </svg>
