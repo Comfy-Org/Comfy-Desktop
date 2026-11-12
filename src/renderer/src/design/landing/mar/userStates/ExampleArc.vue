@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, PanelsTopLeft } from 'lucide-vue-next'
+import { ArrowRight, ChevronLeft, ChevronRight, PanelsTopLeft } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion, runExample } from './examples'
@@ -261,6 +261,14 @@ function wheel(e: WheelEvent): void {
         </span>
       </button>
     </div>
+    <!-- Arrows at the ends of the arc, for mice that can't swipe: quiet
+         until you point at the arc. -->
+    <button type="button" class="mar-arc-step is-prev" aria-label="Previous app" @click="turn(-1)">
+      <ChevronLeft :size="20" />
+    </button>
+    <button type="button" class="mar-arc-step is-next" aria-label="Next app" @click="turn(1)">
+      <ChevronRight :size="20" />
+    </button>
 
     <div class="mar-arc-actions">
       <button
@@ -533,6 +541,50 @@ function wheel(e: WheelEvent): void {
   background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
   color: var(--color-base-foreground);
 }
+:root .proto-ui.proto-ui.proto-ui .mar-arc-step {
+  position: absolute;
+  z-index: 200;
+  top: 162px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+  opacity: 0.5;
+  outline: none;
+  translate: 0 -50%;
+  transition:
+    opacity 200ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+/* At the ends of the arc, past the side cards; never off the page. */
+:root .proto-ui.proto-ui.proto-ui .mar-arc-step.is-prev {
+  left: max(8px, calc(50% - 420px));
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc-step.is-next {
+  right: max(8px, calc(50% - 420px));
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc:hover .mar-arc-step {
+  opacity: 0.9;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc .mar-arc-step:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-arc .mar-arc-step:focus-visible {
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc-step:active {
+  scale: 0.94;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root .proto-ui.proto-ui.proto-ui .mar-arc-step {
+    transition: none;
+  }
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arc-step:focus-visible,
 :root .proto-ui.proto-ui.proto-ui .mar-arc-all:focus-visible {
   box-shadow: 0 0 0 2px var(--color-border-focus);
 }
