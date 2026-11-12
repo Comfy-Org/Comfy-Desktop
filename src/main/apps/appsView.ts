@@ -258,7 +258,7 @@ function hideApps(event: IpcMainEvent): void {
 function captureBackdrop(page: WebContents): Promise<Buffer | null> {
   return page
     .capturePage()
-    .then((image) => image.toJPEG(BACKDROP_QUALITY))
+    .then((image) => (image.isEmpty() ? null : image.toJPEG(BACKDROP_QUALITY)))
     .catch(() => null)
 }
 

@@ -79,7 +79,7 @@ const currentWorkspaceName = computed(
   () =>
     currentWorkspace.value?.name ??
     (statusIsCurrent.value ? store.status.workspaceName : undefined) ??
-    t('devPlatform.workspaceMenu.workspace')
+    t('devPlatform.workspace.switchLabel')
 )
 const currentWorkspaceTier = computed(() => currentWorkspace.value?.subscriptionTier)
 const currentWorkspaceMeta = computed(() => {
@@ -136,7 +136,7 @@ watch(menuOpen, (open) => {
 })
 
 onBeforeUnmount(() => {
-  if (menuOpen.value) emit('menu-open', false)
+  emit('menu-open', false)
 })
 
 watch(workspacesOpen, (open) => {
@@ -183,7 +183,7 @@ async function signOut(): Promise<void> {
         type="button"
         variant="textonly"
         size="unset"
-        class="h-12 w-full rounded-lg text-[13px]/5 font-medium hover:bg-secondary data-[state=open]:bg-secondary"
+        class="h-12 w-full rounded-lg text-ui font-medium hover:bg-secondary data-[state=open]:bg-secondary"
         :class="collapsed ? 'justify-center p-1' : 'justify-start gap-3 px-3'"
         data-testid="workspace-switcher-trigger"
         :aria-label="currentWorkspaceName"

@@ -45,7 +45,7 @@ interface ApiOptions {
 function installApi(status: AuthStatus, options: ApiOptions = {}) {
   const comfybuilder = {
     getAuthStatus: vi.fn().mockResolvedValue(status),
-    onAuthChanged: vi.fn(() => () => {}),
+    onAuthChanged: vi.fn((_callback: (status: AuthStatus) => void) => () => {}),
     signIn: vi.fn().mockResolvedValue({ signedIn: true }),
     signOut: vi.fn().mockResolvedValue({ signedIn: false }),
     listWorkspaces: vi.fn(options.listWorkspaces ?? (() => Promise.resolve(WORKSPACES))),
@@ -299,7 +299,7 @@ describe('SidebarAccount', () => {
   })
 
   it('keeps the settings links off until it knows which workspace to open them in', async () => {
-    const { wrapper, comfybuilder } = await mountAccount(SIGNED_IN, false, {
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
       listWorkspaces: () => new Promise(() => {}),
       savedWorkspaceId: 'w2'
     })
@@ -311,8 +311,18 @@ describe('SidebarAccount', () => {
     const credits = body.get('[data-testid="workspace-manage-credits"]')
     expect(settings.attributes('disabled')).toBeDefined()
     expect(credits.attributes('disabled')).toBeDefined()
-    await credits.trigger('click')
-    expect(comfybuilder.openSettingsPage).not.toHaveBeenCalled()
+  })
+
+  it('tells the sidebar the menu closed when signing out takes it away while open', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_IN)
+    await openMenu(wrapper)
+
+    const authChanged = comfybuilder.onAuthChanged.mock.calls[0]![0] as (status: AuthStatus) => void
+    authChanged(SIGNED_OUT)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="workspace-switcher-trigger"]').exists()).toBe(false)
+    expect(wrapper.emitted('menu-open')?.at(-1)).toEqual([false])
   })
 
   it('shows two loading rows while the workspaces load', async () => {

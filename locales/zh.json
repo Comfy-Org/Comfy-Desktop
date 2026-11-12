@@ -1454,7 +1454,6 @@
       "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
     },
     "workspaceMenu": {
-      "workspace": "工作区",
       "switchWorkspace": "切换工作区",
       "workspaceSettings": "工作区设置",
       "managePlanAndCredits": "管理套餐和积分",

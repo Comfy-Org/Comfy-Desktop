@@ -1454,7 +1454,6 @@
       "promoteFailedMessage": "Could not create a draft in Comfy Developer Platform."
     },
     "workspaceMenu": {
-      "workspace": "Workspace",
       "switchWorkspace": "Switch workspace",
       "workspaceSettings": "Workspace settings",
       "managePlanAndCredits": "Manage plan & credits",

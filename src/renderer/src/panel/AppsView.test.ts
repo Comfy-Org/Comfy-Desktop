@@ -177,6 +177,9 @@ describe('AppsView', () => {
 
     expect(captureApps).toHaveBeenCalledOnce()
     expect(hideApps).toHaveBeenCalled()
+    expect(captureApps.mock.invocationCallOrder[0]).toBeLessThan(
+      hideApps.mock.invocationCallOrder[0]!
+    )
     expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(true)
 
     await wrapper.setProps({ sidebarMenuOpen: false })
@@ -184,6 +187,27 @@ describe('AppsView', () => {
 
     expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
     expect(showApps).toHaveBeenCalled()
+  })
+
+  it('does not cover the app when the menu closed before its still came back', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    hideApps.mockClear()
+    let finishCapture: (still: Uint8Array) => void = () => {}
+    captureApps.mockReturnValueOnce(new Promise((done) => (finishCapture = done)))
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL')
+
+    await wrapper.setProps({ sidebarMenuOpen: true })
+    await wrapper.setProps({ sidebarMenuOpen: false })
+    finishCapture(new Uint8Array([7]))
+    await flushPromises()
+
+    expect(hideApps).not.toHaveBeenCalled()
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
+    createObjectURL.mockRestore()
   })
 
   it('leaves the gallery alone when the sidebar menu opens with no app open', async () => {
