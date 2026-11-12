@@ -13,6 +13,7 @@ import { APPS_STAGES, appsStage } from './apps/appsStage'
 import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
 import { FIRST_RUNS, firstRun } from './firstRun'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
+import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
 import { COVERS, cover } from './cover'
@@ -138,6 +139,7 @@ const PARTS: Part[] = [
   one('appExamplesAt', appExamplesAt, 'tabs', APP_EXAMPLES_AT),
   one('firstRun', firstRun, 'original', FIRST_RUNS),
   one('examples', exampleLook, 'arc', EXAMPLE_LOOKS),
+  one('arcMix', homeArcMix, 'tabs', HOME_ARC_MIXES),
   one('editorEntry', editorEntry, 'rows', EDITOR_ENTRIES),
   one('templates', templateStyle, 'photo', TEMPLATE_STYLES),
   // The cover's default follows the milestone (cover.ts).

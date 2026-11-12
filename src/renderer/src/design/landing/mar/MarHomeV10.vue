@@ -10,6 +10,7 @@ import StarterCards from '../parts/StarterCards.vue'
 import MarSpacesRow from './MarSpacesRow.vue'
 import MarBuildsRow from './MarBuildsRow.vue'
 import ExampleArc from './userStates/ExampleArc.vue'
+import HomeArcMix from './userStates/HomeArcMix.vue'
 import { firstTime } from './userStates/userState'
 import ExampleShowcase from './userStates/ExampleShowcase.vue'
 import { EXAMPLES, runExample, type Example } from './userStates/examples'
@@ -191,8 +192,10 @@ const recent = computed<Recent[]>(() =>
     <MarStart v-else-if="firstRun && !cardInBuilds" />
     <div v-else>
       <!-- The Apps stage: the examples arc leads for everyone, from
-           Milestone 2 on. -->
-      <ExampleArc v-if="can.exploreApps" class="mt-6" />
+           Milestone 2 on; from Milestone 3 it shows workflows too
+           (UI Playground › Apps and workflows). -->
+      <HomeArcMix v-if="can.explore" class="mt-6" />
+      <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
       <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time

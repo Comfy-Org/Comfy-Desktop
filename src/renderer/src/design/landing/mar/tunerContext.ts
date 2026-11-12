@@ -25,6 +25,7 @@ import { p20 } from './p20/p20'
 import { assetsTab, comfyLook } from './graph/comfyLook'
 import { firstRun } from './firstRun'
 import { exampleLook } from './userStates/exampleLook'
+import { homeArcMix } from './userStates/homeArcMix'
 import { editorEntry } from './userStates/editorEntry'
 import { firstTime, marUser, setUser } from './userStates/userState'
 import { pageState } from './pages/pageState'
@@ -73,6 +74,8 @@ export const when = {
   exampleLook: computed(
     () => onHome.value && firstTime.value && (!onFirstRun.value || firstRun.id === 'original')
   ),
+  // Milestone 3's Home: how the arc shows apps and workflows.
+  homeArcMix: computed(() => onHome.value && can.value.explore),
   // The node editor's way in, under the examples of the Original first run.
   editorEntry: computed(() => onFirstRun.value && firstRun.id === 'original'),
   // Template cards: Explore and Favorites.
@@ -207,6 +210,7 @@ export const TWEAKS = {
   appExamplesAt: one(appExamplesAt, 'tabs'),
   firstRun: one(firstRun, 'original'),
   exampleLook: one(exampleLook, 'arc'),
+  homeArcMix: one(homeArcMix, 'tabs'),
   editorEntry: one(editorEntry, 'rows'),
   templates: one(templateStyle, 'photo'),
   // The milestone picks the cover (cover.ts): the canvas, then the image.

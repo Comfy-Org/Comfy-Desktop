@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, ChevronLeft, ChevronRight, PanelsTopLeft } from 'lucide-vue-next'
+import { ArrowRight, ChevronLeft, ChevronRight, PanelsTopLeft, Workflow } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
-import { EXAMPLES, reducedMotion, runExample } from './examples'
+import { EXAMPLES, reducedMotion } from './examples'
+import { ARC_APPS, type ArcItem } from './arcItems'
 
 /**
  * First-time examples · Arc carousel: the examples stand on a wide 3D
@@ -18,7 +19,16 @@ import { EXAMPLES, reducedMotion, runExample } from './examples'
  * front. Run never says where: on Desktop it runs on Desktop, on Cloud on
  * Cloud.
  */
-const N = EXAMPLES.length
+const { items: given, allLabel = 'See all apps' } = defineProps<{
+  /** What stands on the arc: the apps unless a Home layout (M3) passes
+   *  apps and workflows. */
+  items?: ArcItem[]
+  allLabel?: string
+}>()
+const emit = defineEmits<{ all: [] }>()
+
+const items = computed(() => given ?? ARC_APPS)
+const N = computed(() => items.value.length)
 const ANGLE = 25 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
 const DRAG = 240 // px of drag that turns the arc by one card
@@ -27,15 +37,17 @@ const LAND = 350 // ms after a card reaches the front before it first sweeps
 
 // `pos` is where the arc is (in cards, unbounded); `target` where it's going.
 // It opens on Re-shoot a video, with Cinematic Studio and Openjutsu beside.
-const START = Math.max(
-  0,
-  EXAMPLES.findIndex((x) => x.label === 'Re-shoot a video')
-)
+const START = given
+  ? 0
+  : Math.max(
+      0,
+      EXAMPLES.findIndex((x) => x.label === 'Re-shoot a video')
+    )
 const pos = ref(START)
 const target = ref(pos.value)
 const dragging = ref(false)
 const cards = ref<HTMLElement[]>([])
-const active = computed(() => mod(Math.round(target.value), N))
+const active = computed(() => mod(Math.round(target.value), N.value))
 
 // The front card's sweep: each new front card starts from what goes in.
 const after = ref(false)
@@ -64,8 +76,9 @@ function mod(a: number, n: number): number {
 }
 /** Signed distance of card i from the front, wrapped to [-N/2, N/2). */
 function offset(i: number): number {
-  const d = mod(i - pos.value, N)
-  return d >= N / 2 ? d - N : d
+  const n = N.value
+  const d = mod(i - pos.value, n)
+  return d >= n / 2 ? d - n : d
 }
 
 function pose(i: number): Record<string, string> {
@@ -76,7 +89,9 @@ function pose(i: number): Record<string, string> {
   const z = RADIUS * (Math.cos(rad) - 1)
   // Fully there at the front, see-through to the sides so the arc melts
   // into the page; gone by the seam at the back.
-  const fade = Math.max(0, Math.min(1, (N / 2 - a) / (N / 2 - 1))) * (1 - Math.min(a, 2) * 0.24)
+  const half = N.value / 2
+  const fade =
+    Math.max(0, Math.min(1, (half - a) / Math.max(half - 1, 1))) * (1 - Math.min(a, 2) * 0.24)
   return {
     transform: `translateX(${x}px) translateZ(${z}px) rotateY(${d * ANGLE}deg)`,
     zIndex: String(100 - Math.round(a * 10)),
@@ -90,6 +105,11 @@ function pose(i: number): Record<string, string> {
 // from wherever the arc is, so flipping fast stays smooth.
 let vel = 0
 let raf = 0
+// A new set of cards (another tab or chip) starts again from its first.
+watch(items, () => {
+  pos.value = target.value = 0
+  vel = 0
+})
 let last = 0
 function tick(t: number): void {
   const dt = Math.min(0.032, (t - last) / 1000 || 0.016)
@@ -126,7 +146,7 @@ async function turn(by: number, focus = false): Promise<void> {
 }
 function pick(i: number): void {
   if (moved) return
-  if (i === active.value) runExample(EXAMPLES[i]!)
+  if (i === active.value) items.value[i]!.open()
   else void turn(Math.round(offset(i) + pos.value - target.value))
 }
 function key(e: KeyboardEvent): void {
@@ -213,8 +233,8 @@ function wheel(e: WheelEvent): void {
       @wheel="wheel"
     >
       <button
-        v-for="(x, i) in EXAMPLES"
-        :key="x.label"
+        v-for="(x, i) in items"
+        :key="x.id"
         ref="cards"
         type="button"
         class="mar-arc-card"
@@ -224,8 +244,8 @@ function wheel(e: WheelEvent): void {
         :aria-current="i === active ? 'true' : undefined"
         :aria-label="
           i === active
-            ? `Run ${x.label}: ${x.does}. ${x.kind} app`
-            : `${x.label}: ${x.does}. ${x.kind} app`
+            ? `Open ${x.label}: ${x.does}. ${x.kind === 'app' ? 'App' : 'Workflow'}`
+            : `${x.label}: ${x.does}. ${x.kind === 'app' ? 'App' : 'Workflow'}`
         "
         @click="pick(i)"
       >
@@ -236,6 +256,7 @@ function wheel(e: WheelEvent): void {
           :style="x.focus && { objectPosition: `${x.focus[0]} 50%` }"
         />
         <img
+          v-if="x.after"
           :src="x.after"
           alt=""
           draggable="false"
@@ -247,26 +268,27 @@ function wheel(e: WheelEvent): void {
         <span class="mar-arc-scrim" />
         <!-- App, as a badge up top; its name and what it does, below. -->
         <span class="mar-arc-text">
-          <span class="mar-arc-app"><PanelsTopLeft :size="11" />App</span>
+          <span v-if="x.kind === 'app'" class="mar-arc-app"><PanelsTopLeft :size="11" />App</span>
+          <span v-else class="mar-arc-app"><Workflow :size="11" />Workflow</span>
         </span>
         <span class="mar-arc-dim" />
         <!-- As on the app cards: the name and what it does on the left,
-             the white Run on the right on hover, one row over the fade. -->
+             the white Open on the right on hover, one row over the fade. -->
         <span class="mar-arc-bar">
           <span class="mar-arc-name">
             <span class="mar-arc-title">{{ x.label }}</span>
             <span class="mar-arc-does">{{ x.does }}</span>
           </span>
-          <span class="mar-arc-go" aria-hidden="true">Run</span>
+          <span class="mar-arc-go" aria-hidden="true">Open</span>
         </span>
       </button>
     </div>
     <!-- Arrows at the ends of the arc, for mice that can't swipe: quiet
          until you point at the arc. -->
-    <button type="button" class="mar-arc-step is-prev" aria-label="Previous app" @click="turn(-1)">
+    <button type="button" class="mar-arc-step is-prev" aria-label="Previous" @click="turn(-1)">
       <ChevronLeft :size="20" />
     </button>
-    <button type="button" class="mar-arc-step is-next" aria-label="Next app" @click="turn(1)">
+    <button type="button" class="mar-arc-step is-next" aria-label="Next" @click="turn(1)">
       <ChevronRight :size="20" />
     </button>
 
@@ -275,9 +297,9 @@ function wheel(e: WheelEvent): void {
         v-if="can.exploreApps"
         type="button"
         class="mar-arc-all"
-        @click="go(can.explore ? 'explore' : 'apps')"
+        @click="given ? emit('all') : go(can.explore ? 'explore' : 'apps')"
       >
-        See all apps<ArrowRight :size="14" />
+        {{ allLabel }}<ArrowRight :size="14" />
       </button>
     </div>
   </div>
@@ -384,7 +406,7 @@ function wheel(e: WheelEvent): void {
   opacity: 0;
 }
 /* The name and what it does, one row at the bottom of every card, as
-   on the app cards; Run joins it on the front card when you point at it
+   on the app cards; Open joins it on the front card when you point at it
    (or focus it). */
 .mar-arc-bar {
   position: absolute;

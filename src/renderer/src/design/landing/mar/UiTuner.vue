@@ -41,6 +41,7 @@ import {
   type Screen
 } from './setup/setupFlow'
 import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
+import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
 import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
 import { MAR_USERS, marUser, setUser } from './userStates/userState'
 import { PAGE_STATES, pageState } from './pages/pageState'
@@ -134,6 +135,7 @@ const PAGE: { id: TweakId; show: () => boolean }[] = [
   { id: 'homeBackground', show: () => when.homeBackground.value },
   { id: 'firstRun', show: () => when.firstRun.value },
   { id: 'exampleLook', show: () => when.exampleLook.value },
+  { id: 'homeArcMix', show: () => when.homeArcMix.value },
   { id: 'appPage', show: () => when.appPage.value },
   { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
   { id: 'editorEntry', show: () => when.editorEntry.value },
@@ -346,6 +348,9 @@ const linkSays = computed(() => {
           </Row>
           <Row :show="shows('exampleLook')" label="Examples">
             <Select v-model="exampleLook.id" :options="EXAMPLE_LOOKS" class="w-full" />
+          </Row>
+          <Row :show="shows('homeArcMix')" label="Apps and workflows">
+            <Select v-model="homeArcMix.id" :options="HOME_ARC_MIXES" class="w-full" />
           </Row>
           <Row :show="shows('appPage')" label="App page">
             <Select v-model="appPage.id" :options="APP_PAGE_LOOKS" class="w-full" />
