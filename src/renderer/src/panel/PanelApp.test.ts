@@ -20,6 +20,7 @@ vi.mock('../main', () => ({
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
 const mockModal = {
+  state: { visible: false },
   alert: vi.fn(),
   confirm: vi.fn(),
   close: vi.fn()

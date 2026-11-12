@@ -486,6 +486,7 @@ onUnmounted(() => {
               v-else-if="dashboardHomePage === 'apps'"
               :key="appsVisit"
               :grow-by="appsGrowBy"
+              :obscured="currentOverlay?.kind === 'takeover'"
               @app-open="appsAppOpen = $event"
               @app-entered="appsAppEntered = $event"
             />
