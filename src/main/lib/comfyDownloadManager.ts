@@ -92,7 +92,7 @@ interface PendingDownload {
   senderContents?: Electron.WebContents
   subscriberWindows: Set<BrowserWindow>
   subscriberContents: Set<Electron.WebContents>
-  installationSubscribers?: Set<Electron.WebContents>
+  installationSubscribers?: Map<Electron.WebContents, string>
   item?: Electron.DownloadItem
   transport?: ModelTransferHandle | null
   suspended?: boolean
@@ -105,7 +105,6 @@ interface PendingDownload {
   preflight?: Promise<void>
   leases?: Set<string>
   installationId?: string | null
-  joinedInstallationIds?: Set<string>
   expectedSize?: number
   sha256?: string
   explicitSession?: Electron.Session
@@ -530,10 +529,10 @@ function broadcastProgress(progress: DownloadProgress): void {
         contents.send('desktop2-download-progress', progress)
       }
     }
-    for (const contents of pending.installationSubscribers ?? []) {
-      if (!servesInstallation(pending, resolveSenderInstallationId(contents))) {
+    for (const [contents, installationId] of pending.installationSubscribers ?? []) {
+      if (resolveSenderInstallationId(contents) !== installationId) {
         pending.installationSubscribers?.delete(contents)
-      } else if (contents !== target && !pending.subscriberContents.has(contents)) {
+      } else if (contents !== target) {
         contents.send('desktop2-download-progress', progress)
       }
     }
@@ -666,21 +665,37 @@ function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): (
   }
 }
 
+const contentsWatchedForDestroy = new WeakSet<Electron.WebContents>()
+
+function addInstallationSubscriber(
+  pending: PendingDownload,
+  contents: Electron.WebContents,
+  installationId: string
+): void {
+  ;(pending.installationSubscribers ??= new Map()).set(contents, installationId)
+  if (contentsWatchedForDestroy.has(contents)) return
+  contentsWatchedForDestroy.add(contents)
+  contents.once('destroyed', () => {
+    for (const job of pendingDownloads.values()) job.installationSubscribers?.delete(contents)
+  })
+}
+
 function joinModelJob(
   existing: PendingDownload,
   opts: ModelJobOptions,
   installationId: string | null
 ): ModelJobHandle {
-  if (installationId && installationId !== existing.installationId) {
-    ;(existing.joinedInstallationIds ??= new Set()).add(installationId)
-  }
-  if (opts.window && opts.window !== existing.window && !opts.window.isDestroyed()) {
+  const windowContents =
+    opts.window && !opts.window.isDestroyed() ? opts.window.webContents : undefined
+  if (opts.window && opts.window !== existing.window && windowContents) {
     existing.subscriberWindows.add(opts.window)
-    opts.window.webContents.send('desktop2-download-progress', existing.lastProgress)
+    windowContents.send('desktop2-download-progress', existing.lastProgress)
   }
   const joiner = opts.senderContents
-  if (joiner && !joiner.isDestroyed() && joiner !== opts.window?.webContents) {
-    if (joiner !== existing.senderContents) existing.subscriberContents.add(joiner)
+  if (joiner && !joiner.isDestroyed() && joiner !== windowContents) {
+    if (installationId && joiner !== existing.senderContents) {
+      addInstallationSubscriber(existing, joiner, installationId)
+    }
     joiner.send('desktop2-download-progress', existing.lastProgress)
   }
   const onProgress = opts.onProgress
@@ -1776,14 +1791,6 @@ export function retryDownload(ref: string): boolean {
   return true
 }
 
-function servesInstallation(pending: PendingDownload, installationId: string | null): boolean {
-  if (installationId === null) return false
-  return (
-    pending.installationId === installationId ||
-    pending.joinedInstallationIds?.has(installationId) === true
-  )
-}
-
 function isCancellationUnderWay(pending: PendingDownload): boolean {
   return pending.cancelling === true || pending.cancelRequested === true
 }
@@ -1794,9 +1801,9 @@ export function subscribeToInstallationModelJobs(
 ): DownloadProgress[] {
   if (contents.isDestroyed()) return []
   const jobs = [...pendingDownloads.values()].filter(
-    (pending) => servesInstallation(pending, installationId) && !isCancellationUnderWay(pending)
+    (pending) => pending.installationId === installationId && !isCancellationUnderWay(pending)
   )
-  for (const job of jobs) (job.installationSubscribers ??= new Set()).add(contents)
+  for (const job of jobs) addInstallationSubscriber(job, contents, installationId)
   return jobs.map((job) => ({
     ...job.lastProgress,
     ...(job.suspended ? { status: 'paused' as const } : {})
@@ -1910,10 +1917,7 @@ export function detachWindowDownloads(win: BrowserWindow): void {
     }
     pending.subscriberWindows.delete(win)
     if (ownedByWin(pending.senderContents)) pending.senderContents = undefined
-    for (const contents of pending.subscriberContents) {
-      if (ownedByWin(contents)) pending.subscriberContents.delete(contents)
-    }
-    for (const contents of pending.installationSubscribers ?? []) {
+    for (const contents of pending.installationSubscribers?.keys() ?? []) {
       if (ownedByWin(contents)) pending.installationSubscribers?.delete(contents)
     }
   }

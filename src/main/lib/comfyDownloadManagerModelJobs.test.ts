@@ -1269,15 +1269,24 @@ describe('renderer model-job snapshot', () => {
   interface FakeContents {
     isDestroyed: () => boolean
     send: ReturnType<typeof vi.fn>
+    once: (event: string, listener: () => void) => void
+    emitDestroyed: () => void
     __ownerWindow?: unknown
   }
 
   function fakeContents(
     opts: { installationId?: string; ownerWindow?: unknown; destroyed?: boolean } = {}
   ): FakeContents {
+    const destroyedListeners: (() => void)[] = []
     const contents: FakeContents = {
       isDestroyed: () => opts.destroyed === true,
       send: vi.fn(),
+      once: (event, listener) => {
+        if (event === 'destroyed') destroyedListeners.push(listener)
+      },
+      emitDestroyed: () => {
+        for (const listener of destroyedListeners.splice(0)) listener()
+      },
       __ownerWindow: opts.ownerWindow
     }
     if (opts.installationId) viewInstallations.set(contents, opts.installationId)
@@ -1456,22 +1465,73 @@ describe('renderer model-job snapshot', () => {
     await cancelAll(job)
   })
 
-  it('lists a shared-destination job for every installation that joined it', async () => {
+  it('delivers to a joining view of another installation until it is re-attached', async () => {
     const owner = uniqueInstallationId()
-    const joiner = uniqueInstallationId()
+    const joinerInstallation = uniqueInstallationId()
     const name = uniqueName()
     const job = await startJob(owner, name)
+    const joiner = fakeContents({ installationId: joinerInstallation })
     const joined = await mod.startManagedModelJob({
       url: job.url,
       filename: name,
       directory: 'checkpoints',
-      installationId: joiner
+      senderContents: joiner as never
     })
     expect(joined.id).toBe(job.id)
+    expect(
+      mod.subscribeToInstallationModelJobs(joinerInstallation, fakeContents() as never)
+    ).toEqual([])
 
-    const snapshot = mod.subscribeToInstallationModelJobs(joiner, fakeContents() as never)
+    joiner.send.mockClear()
+    expect(mod.pauseModelDownload(job.id)).toBe(true)
+    expect(progressEvents(joiner)).toEqual([expect.objectContaining({ status: 'paused' })])
 
-    expect(snapshot.map(({ id }) => id)).toEqual([job.id])
+    viewInstallations.set(joiner, uniqueInstallationId())
+    joiner.send.mockClear()
+    expect(mod.cancelModelDownload(job.id)).toBe(true)
+    await expect(job.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+
+    expect(progressEvents(joiner)).toEqual([])
+  })
+
+  it('drops a listed view from a job once its WebContents is destroyed', async () => {
+    const installationId = uniqueInstallationId()
+    const job = await startJob(installationId)
+    const transfer = transfers.at(-1)!
+    const contents = fakeContents({ installationId })
+    mod.subscribeToInstallationModelJobs(installationId, contents as never)
+
+    contents.emitDestroyed()
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(contents)).toEqual([])
+  })
+
+  it('replays to a joining view whose window was destroyed during admission', async () => {
+    const installationId = uniqueInstallationId()
+    const name = uniqueName()
+    const job = await startJob(installationId, name)
+    const sender = fakeContents({ installationId })
+    const closedWindow = {
+      isDestroyed: () => true,
+      get webContents(): never {
+        throw new Error('Object has been destroyed')
+      }
+    }
+
+    const joined = await mod.startManagedModelJob({
+      url: job.url,
+      filename: name,
+      directory: 'checkpoints',
+      window: closedWindow as never,
+      senderContents: sender as never
+    })
+
+    expect(joined.id).toBe(job.id)
+    expect(progressEvents(sender)).toEqual([expect.objectContaining({ id: job.id })])
     joined.release()
     await cancelAll(job)
   })
