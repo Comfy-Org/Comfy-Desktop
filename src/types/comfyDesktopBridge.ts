@@ -210,7 +210,8 @@ export interface ComfyDesktop2Bridge {
   resumeDownload?: (url: string) => Promise<boolean>
   cancelDownload?: (url: string) => Promise<boolean>
   /** Live model jobs (pending, downloading or paused) for the caller's installation,
-   *  in the `onDownloadProgress` shape; the caller then receives their later events.
+   *  in the `onDownloadProgress` shape; the caller then receives later events for
+   *  those jobs, not for jobs started afterwards by Desktop or another view.
    *  Register `onDownloadProgress` first: earlier events are not replayed.
    *  Absent on Desktop builds predating it. */
   listModelDownloads?: () => Promise<ComfyDownloadProgress[]>

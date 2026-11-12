@@ -532,7 +532,7 @@ function broadcastProgress(progress: DownloadProgress): void {
     for (const [contents, installationId] of pending.installationSubscribers ?? []) {
       if (resolveSenderInstallationId(contents) !== installationId) {
         pending.installationSubscribers?.delete(contents)
-      } else if (contents !== target) {
+      } else if (contents !== target && !pending.subscriberContents.has(contents)) {
         contents.send('desktop2-download-progress', progress)
       }
     }
@@ -692,9 +692,15 @@ function joinModelJob(
     windowContents.send('desktop2-download-progress', existing.lastProgress)
   }
   const joiner = opts.senderContents
-  if (joiner && !joiner.isDestroyed() && joiner !== windowContents) {
-    if (installationId && joiner !== existing.senderContents) {
-      addInstallationSubscriber(existing, joiner, installationId)
+  if (
+    joiner &&
+    !joiner.isDestroyed() &&
+    joiner !== windowContents &&
+    (installationId === null || resolveSenderInstallationId(joiner) === installationId)
+  ) {
+    if (joiner !== existing.senderContents) {
+      if (installationId) addInstallationSubscriber(existing, joiner, installationId)
+      else existing.subscriberContents.add(joiner)
     }
     joiner.send('desktop2-download-progress', existing.lastProgress)
   }
@@ -1804,9 +1810,9 @@ export function subscribeToInstallationModelJobs(
     (pending) => pending.installationId === installationId && !isCancellationUnderWay(pending)
   )
   for (const job of jobs) addInstallationSubscriber(job, contents, installationId)
-  return jobs.map((job) => ({
-    ...job.lastProgress,
-    ...(job.suspended ? { status: 'paused' as const } : {})
+  return jobs.map(({ lastProgress: { savePath: _savePath, ...row }, suspended }) => ({
+    ...row,
+    ...(suspended ? { status: 'paused' as const } : {})
   }))
 }
 

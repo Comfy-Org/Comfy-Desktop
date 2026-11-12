@@ -1495,6 +1495,67 @@ describe('renderer model-job snapshot', () => {
     expect(progressEvents(joiner)).toEqual([])
   })
 
+  async function joinFrom(
+    job: ComfyDownloadManager.ModelJobHandle,
+    sender: FakeContents
+  ): Promise<ComfyDownloadManager.ModelJobHandle> {
+    return mod.startManagedModelJob({
+      url: job.url,
+      filename: path.basename(job.savePath),
+      directory: 'checkpoints',
+      senderContents: sender as never
+    })
+  }
+
+  it('delivers the outcome to a joining view that resolves to no installation', async () => {
+    const job = await startJob(uniqueInstallationId())
+    const transfer = transfers.at(-1)!
+    const joiner = fakeContents()
+    await joinFrom(job, joiner)
+
+    joiner.send.mockClear()
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(joiner)).toEqual([
+      expect.objectContaining({ id: job.id, status: 'completed' })
+    ])
+  })
+
+  it('sends each event once to a view that joined a job and then listed it', async () => {
+    const installationId = uniqueInstallationId()
+    const job = await startJob(installationId)
+    const transfer = transfers.at(-1)!
+    const view = fakeContents()
+    await joinFrom(job, view)
+    viewInstallations.set(view, installationId)
+    mod.subscribeToInstallationModelJobs(installationId, view as never)
+
+    view.send.mockClear()
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(view)).toHaveLength(1)
+  })
+
+  it('neither replays to nor subscribes a joining view re-attached during admission', async () => {
+    const installationId = uniqueInstallationId()
+    const job = await startJob(installationId)
+    const transfer = transfers.at(-1)!
+    const joiner = fakeContents({ installationId })
+
+    const joining = joinFrom(job, joiner)
+    viewInstallations.set(joiner, uniqueInstallationId())
+    await joining
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(joiner)).toEqual([])
+  })
+
   it('drops a listed view from a job once its WebContents is destroyed', async () => {
     const installationId = uniqueInstallationId()
     const job = await startJob(installationId)
