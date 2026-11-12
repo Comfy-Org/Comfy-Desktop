@@ -105,21 +105,19 @@ onUnmounted(() => {
     <template v-for="(item, idx) in items" :key="idx">
       <li
         v-if="item.kind === 'separator'"
-        class="separator mx-1.5 my-1 h-px bg-border opacity-100"
+        class="separator mx-1 my-1 h-px bg-border opacity-100"
         role="separator"
       />
       <li
         v-else
-        class="item box-border flex h-8 cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-0 whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-[oklch(1_0_0/0.07)] focus-visible:bg-[oklch(1_0_0/0.07)] focus-visible:outline-none"
+        class="item box-border flex h-8 cursor-pointer items-center gap-2 rounded-md px-3 py-0 whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
         :role="item.id ? 'menuitem' : 'none'"
         :data-index="idx"
         :tabindex="item.id ? -1 : undefined"
         @click="handleClick(item)"
       >
-        <span class="check inline-flex size-3.5 shrink-0 items-center justify-center opacity-85">
-          <Check v-if="item.checked" :size="14" />
-        </span>
         <span class="label flex-auto overflow-hidden text-ellipsis">{{ labelFor(item) }}</span>
+        <Check v-if="item.checked" class="check shrink-0" :size="15" aria-hidden="true" />
       </li>
     </template>
   </ul>
