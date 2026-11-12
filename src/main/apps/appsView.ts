@@ -70,10 +70,7 @@ export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
 
 const appOpen = new Map<number, boolean>()
 
-const pageWhere = new Map<number, Where>()
-
 interface AppPage {
-  id: number
   app: string | null
 }
 
@@ -195,10 +192,8 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   if (!view) {
     view = createAppsView(key)
     views.set(key, view)
-    const pageId = view.webContents.id
     entry.window.once('closed', () => {
       views.delete(key)
-      pageWhere.delete(pageId)
       appOpen.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
@@ -311,7 +306,6 @@ async function run(page: AppPage, workflow: unknown, app?: unknown): Promise<{ r
     throw new Error(`Comfy Cloud would not run node ${node} (${e.class_type ?? 'unknown'}): ${why}`)
   }
   if (!isRunId(body.prompt_id)) throw new Error('Comfy Cloud did not start the run.')
-  pageWhere.set(page.id, 'cloud')
   return { runId: body.prompt_id }
 }
 
@@ -430,6 +424,7 @@ async function savedPath(file: unknown): Promise<string> {
 }
 
 async function getOutput(
+  page: AppPage,
   file: unknown,
   save?: unknown
 ): Promise<{ type: string; bytes: Uint8Array; path?: string }> {
@@ -445,11 +440,18 @@ async function getOutput(
   const type = res.headers.get('content-type') ?? 'application/octet-stream'
   if (save === undefined || !ext) return { type, bytes }
   const s = (save ?? {}) as { app?: unknown; label?: unknown }
-  return { type, bytes, path: await saveResult(s.app, s.label, ext, bytes) }
+  const saved = await saveResult(s.app, s.label, ext, bytes)
+  outputSaved(page, s.label, ext, 'cloud')
+  return { type, bytes, path: saved }
 }
 
 function isWorkflowCopy(label: unknown, ext: string): boolean {
   return label === 'workflow' && ext === 'json'
+}
+
+function outputSaved(page: AppPage, label: unknown, ext: string, where?: Where): void {
+  if (!page.app || isWorkflowCopy(label, ext)) return
+  trackApps('output_saved', { app: page.app, ...(where ? { where } : {}) })
 }
 
 async function saveFile(
@@ -464,10 +466,7 @@ async function saveFile(
     throw new Error('Apps cannot save that file.')
   }
   const saved = await saveResult(app, label, e, bytes)
-  const where = pageWhere.get(page.id)
-  if (page.app && where && !isWorkflowCopy(label, e)) {
-    trackApps('output_saved', { app: page.app, where })
-  }
+  outputSaved(page, label, e)
   return { path: saved }
 }
 
@@ -566,7 +565,7 @@ async function uploadImage(
 }
 
 function pageOf(event: IpcMainInvokeEvent): AppPage {
-  return { id: event.sender.id, app: appOfPage(event.senderFrame?.url ?? '', APPS_URL) }
+  return { app: appOfPage(event.senderFrame?.url ?? '', APPS_URL) }
 }
 
 function handleFromAppPage<A extends unknown[], R>(
@@ -584,11 +583,6 @@ function handleFromApps<A extends unknown[], R>(
   fn: (...args: A) => Promise<R> | R
 ): void {
   handleFromAppPage(channel, (_page, ...args: A) => fn(...args))
-}
-
-function noteLocalRun(page: AppPage, req: unknown): void {
-  const { method, path: at } = (req ?? {}) as { method?: unknown; path?: unknown }
-  if (method === 'POST' && at === '/prompt') pageWhere.set(page.id, 'local')
 }
 
 function appsPages(): WebContents[] {
@@ -610,7 +604,7 @@ export function registerAppsIpc(): void {
   handleFromAppPage('comfy-apps:run', run)
   handleFromApps('comfy-apps:get-run', getRun)
   handleFromApps('comfy-apps:cancel-run', cancelRun)
-  handleFromApps('comfy-apps:get-output', getOutput)
+  handleFromAppPage('comfy-apps:get-output', getOutput)
   handleFromAppPage('comfy-apps:upload-image', uploadImage)
   handleFromAppPage('comfy-apps:save-file', saveFile)
   handleFromApps('comfy-apps:read-saved', readSaved)
@@ -622,10 +616,7 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:start-local', startLocal)
   handleFromApps('comfy-apps:cancel-setup', cancelSetup)
   handleFromApps('comfy-apps:local-builds', localBuilds)
-  handleFromAppPage('comfy-apps:local-fetch', (page, req: unknown) => {
-    noteLocalRun(page, req)
-    return localFetch(req)
-  })
+  handleFromApps('comfy-apps:local-fetch', localFetch)
   handleFromApps('comfy-apps:local-download', localDownload)
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)
   handleFromApps('comfy-apps:track', trackFromPage)

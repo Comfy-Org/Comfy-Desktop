@@ -55,14 +55,25 @@ describe('Apps bridge wiring', () => {
     expect(main).toContain('cloudRunFailed(appId, cloudRefusal(res.status, answer))')
     expect(main).toContain('cloudRunFailed(appId, cloudRefusal(res.status, body))')
     expect(main).toContain("step: 'upload'")
-    expect(main).toContain("trackApps('output_saved', { app: page.app, where })")
-    for (const channel of ['run', 'upload-image', 'save-file', 'local-fetch']) {
+    for (const channel of ['run', 'upload-image', 'save-file', 'get-output']) {
       expect(main).toContain(`handleFromAppPage('comfy-apps:${channel}'`)
     }
   })
 
+  it('reports both save paths, with where only when Desktop knows it', () => {
+    const getOutput = main.slice(main.indexOf('async function getOutput('))
+    const saveFile = main.slice(main.indexOf('async function saveFile('))
+    expect(getOutput.slice(0, getOutput.indexOf('\n}\n'))).toContain(
+      "outputSaved(page, s.label, ext, 'cloud')"
+    )
+    expect(saveFile.slice(0, saveFile.indexOf('\n}\n'))).toContain('outputSaved(page, label, e)')
+    expect(main).not.toMatch(/pageWhere|noteLocalRun/)
+  })
+
   it('refuses to show the apps page while the remote switch is off', () => {
-    expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
+    expect(main).toMatch(
+      /function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/
+    )
   })
 
   it('local events go out on the channel the preload listens to', () => {

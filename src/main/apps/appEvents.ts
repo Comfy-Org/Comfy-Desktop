@@ -59,7 +59,7 @@ export interface AppEventFields {
     ram_gb?: number
     os: NodeJS.Platform
   }
-  output_saved: { app: string; where: Where }
+  output_saved: { app: string; where?: Where }
   setup: {
     app?: string
     stage: 'comfyui' | 'model'
@@ -164,7 +164,7 @@ const MAIN_ONLY_SCHEMAS: Record<string, Schema> = {
     ram_gb: may(whole(MAX_GB)),
     os: need(oneOf('win32', 'darwin', 'linux'))
   },
-  output_saved: { app: need(slug), where: need(where) },
+  output_saved: { app: need(slug), where: may(where) },
   setup: {
     app: may(slug),
     stage: need(oneOf('comfyui', 'model')),
@@ -216,30 +216,56 @@ export function errorClassOf(error: unknown): string | undefined {
   return last && CLASS_NAME.test(last) ? last : undefined
 }
 
-export function refusedNodeTypes(nodeErrors: unknown): string[] {
-  if (!nodeErrors || typeof nodeErrors !== 'object') return []
+function nodeTypesOf(values: unknown[]): string[] {
   const types = new Set<string>()
-  for (const error of Object.values(nodeErrors as Record<string, unknown>)) {
+  for (const type of values) {
     if (types.size === MAX_NODE_TYPES) break
-    const type = (error as { class_type?: unknown } | null)?.class_type
     if (typeof type === 'string' && NODE_TYPE.test(type)) types.add(type)
   }
   return [...types]
 }
 
+export function refusedNodeTypes(nodeErrors: unknown): string[] {
+  if (!nodeErrors || typeof nodeErrors !== 'object') return []
+  return nodeTypesOf(
+    Object.values(nodeErrors as Record<string, unknown>).map(
+      (error) => (error as { class_type?: unknown } | null)?.class_type
+    )
+  )
+}
+
 export type CloudRefusal = Pick<AppEventFields['run_failed'], 'step' | 'error_class' | 'node_types'>
 
-function refusalStep(status: number): RunFailedStep {
+interface CloudAnswer {
+  node_errors?: unknown
+  error?: { type?: unknown; class_types?: unknown }
+}
+
+const AUTH_ERROR_TYPES: ReadonlySet<string> = new Set(['UNAUTHORIZED', 'UNAUTHENTICATED'])
+
+function refusalStep(status: number, answer: CloudAnswer | null): RunFailedStep {
   if (status === 429) return 'rate_limited'
-  if (status === 401 || status === 403) return 'sign_in'
+  if (status === 401) return 'sign_in'
+  if (status === 403) {
+    const type = answer?.error?.type
+    return typeof type === 'string' && !AUTH_ERROR_TYPES.has(type) ? 'rejected' : 'sign_in'
+  }
   return 'rejected'
 }
 
+function answerNodeTypes(answer: CloudAnswer | null): string[] {
+  const fromNodes = refusedNodeTypes(answer?.node_errors)
+  if (fromNodes.length) return fromNodes
+  const classTypes = answer?.error?.class_types
+  return Array.isArray(classTypes) ? nodeTypesOf(classTypes) : []
+}
+
 export function cloudRefusal(status: number, body: unknown): CloudRefusal {
-  const nodeTypes = refusedNodeTypes((body as { node_errors?: unknown } | null)?.node_errors)
+  const answer = body && typeof body === 'object' ? (body as CloudAnswer) : null
+  const nodeTypes = answerNodeTypes(answer)
   const ok = status >= 200 && status < 300
   return {
-    step: refusalStep(status),
+    step: refusalStep(status, answer),
     ...(ok ? {} : { error_class: `http_${status}` }),
     ...(nodeTypes.length ? { node_types: nodeTypes } : {})
   }
