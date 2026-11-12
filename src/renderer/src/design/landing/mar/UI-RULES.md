@@ -53,6 +53,9 @@ DS's Motion page (`ds/motion.ts`).
   colour, like "ASSET DETAILS", for every section and sub-section title in
   panels, menus and details. Field names in key/value rows stay sentence
   case.
+- **Dropdown titles are uppercase too.** Every group or section title inside
+  a dropdown or menu uses the same uppercase label style. The locale string
+  stays in sentence case; `uppercase` is applied in CSS.
 - **English only** in the prototype, Figma, Linear and the repo.
 - **No em dashes** in product copy.
 
@@ -88,6 +91,29 @@ DS's Motion page (`ds/motion.ts`).
 - **One choice marks its row.** A single-choice dropdown fills the picked
   row; no check and no column kept for one. A check is only for a
   multi-select (`ui/Select.vue`).
+- **Every menu is the DS `Menu`.** Pickers, ⋯ menus and the ☰ popup use
+  `@comfyorg/design-system/menu/Menu` with `MenuItem` / `MenuRadioItem`,
+  like the filter menus. Never the `Select` listbox for a menu: its
+  spacing drifts from the filters. A single choice fills the picked row
+  with the DS selected color (`bg-muted`, `selectedMenuButtonClass`), no check.
+  Rows sit 2px apart (`gap-0.5`) so two highlighted rows never touch.
+
+## Split button
+
+- **One convention** (`pages/MarSplitButton.vue`; Desktop:
+  `components/ui/SplitButton.vue` on the DS `ButtonGroup`): main half
+  `px-3`, label with no trailing arrow; chevron half 30px wide, 14px
+  chevron that does not rotate, full-height 1px divider; each half hovers
+  on its own and an open menu keeps the chevron half in hover. Its menu
+  opens 6px below, like the filter menus. With nothing to pick it is a
+  plain button. Never hand-build one.
+- **A split button menu hugs its rows:** never narrower than the
+  button, at most 320px (long names truncate, full name on hover), rows
+  keep 20px on the right.
+- **Status in a build menu row is a dot on the icon**, like the sidebar
+  glyph: green for live (Running, Always on), red for broken or didn't
+  start, nothing for Ready. No status text. A broken build is disabled
+  and gives its reason on hover.
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
 - **No filter chips** for now (Explore, Assets): the Filter menu and its
