@@ -28,6 +28,7 @@ vi.mock('../../composables/useComfyUISettings', () => ({
   useComfyUISettings: () => ({
     ...useComfyUISettingsState,
     updateField: vi.fn(),
+    renameInstallation: vi.fn().mockResolvedValue(true),
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
       computed(() => {
@@ -48,10 +49,14 @@ vi.mock('../../views/comfyUISettings/SnapshotsView.vue', () => ({
   }
 }))
 vi.mock('../../views/comfyUISettings/SettingsSectionList.vue', () => ({
-  default: { template: '<div data-testid="settings-section-list-stub"></div>' }
+  default: {
+    name: 'SettingsSectionList',
+    props: ['columns'],
+    template: '<div data-testid="settings-section-list-stub"></div>'
+  }
 }))
 vi.mock('../../views/comfyUISettings/StatusFactPanel.vue', () => ({
-  default: { template: '<div />' }
+  default: { name: 'StatusFactPanel', props: ['hideHero', 'onRename'], template: '<div />' }
 }))
 vi.mock('../../views/comfyUISettings/StoragePane.vue', () => ({
   default: { template: '<div />' }
@@ -70,6 +75,7 @@ vi.mock('../../views/comfyUISettings/MoreMenu.vue', () => ({
   default: {
     name: 'MoreMenu',
     props: ['open', 'actions'],
+    emits: ['pick', 'close'],
     template: '<div v-if="open" data-testid="more-menu">menu</div>'
   }
 }))
@@ -732,6 +738,58 @@ describe('ComfyUISettingsContent', () => {
     })
   })
 
+  describe('Startup Args two-column layout', () => {
+    let priorSections: unknown[]
+    let target: HTMLElement
+
+    beforeEach(() => {
+      priorSections = useComfyUISettingsState.sections.value
+      useComfyUISettingsState.sections.value = [
+        { tab: 'update', fields: [] },
+        { tab: 'settings', fields: [] },
+        { tab: 'status', fields: [] }
+      ]
+      target = document.createElement('div')
+      target.id = 'page-actions'
+      document.body.append(target)
+    })
+
+    afterEach(() => {
+      useComfyUISettingsState.sections.value = priorSections
+      target.remove()
+    })
+
+    async function columnsFor(props: Record<string, unknown>): Promise<unknown> {
+      const w = await mountContent({ initialTab: 'config', ...props })
+      const columns = w.findComponent({ name: 'SettingsSectionList' }).props('columns')
+      w.unmount()
+      return columns
+    }
+
+    it('lays out the Startup Args tab in two columns on the build page', async () => {
+      expect(await columnsFor({ pageActionsTarget: '#page-actions' })).toBe(true)
+    })
+
+    it('keeps the settings modal single-column', async () => {
+      expect(await columnsFor({})).toBe(false)
+    })
+
+    it('keeps a cloud build single-column, where that tab is labelled Storage', async () => {
+      expect(
+        await columnsFor({
+          pageActionsTarget: '#page-actions',
+          installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
+        })
+      ).toBe(false)
+    })
+
+    it('keeps the Update tab single-column on the build page', async () => {
+      expect(await columnsFor({ pageActionsTarget: '#page-actions', initialTab: 'update' })).toBe(
+        false
+      )
+    })
+  })
+
   describe('Update-tab auto-refresh staleness gate', () => {
     async function checkUpdateFireCount(lastCheckedAt?: number): Promise<number> {
       const priorSections = useComfyUISettingsState.sections.value
@@ -808,6 +866,93 @@ describe('ComfyUISettingsContent', () => {
       expect(w.emitted('op-cancel')).toHaveLength(1)
       expect(w.emitted('op-retry')).toHaveLength(1)
       expect(w.emitted('op-dismiss')).toHaveLength(1)
+    })
+  })
+
+  describe('rename from the page title', () => {
+    let titleTarget: HTMLElement | null = null
+
+    function mountTitleTarget(): HTMLElement {
+      titleTarget = document.createElement('div')
+      titleTarget.innerHTML = '<h1 id="page-title"></h1><div id="page-actions-slot"></div>'
+      document.body.append(titleTarget)
+      return titleTarget
+    }
+
+    afterEach(() => {
+      titleTarget?.remove()
+      titleTarget = null
+    })
+
+    function moreMenu(w: VueWrapper) {
+      return w
+        .findAllComponents({ name: 'MoreMenu' })
+        .find((m) => (m.props('actions') as { id: string }[]).some((a) => a.id === 'rename'))!
+    }
+
+    function mountOnPage() {
+      return mountContent({
+        pageActionsTarget: '#page-actions-slot',
+        pageTitleTarget: '#page-title',
+        initialTab: 'status'
+      })
+    }
+
+    it('edits the name in the page title and points the Rename item at it', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [
+        { id: 'rename', label: 'Rename' },
+        { id: 'untrack', label: 'Forget' }
+      ]
+      useComfyUISettingsState.runActionStub.mockClear()
+      const target = mountTitleTarget()
+      const w = await mountOnPage()
+      await flushPromises()
+
+      const name = target.querySelector<HTMLElement>('.build-details-title-name')!
+      expect(name.textContent).toBe('My Install')
+      expect(name.getAttribute('contenteditable')).toBe('plaintext-only')
+      expect(w.findComponent({ name: 'StatusFactPanel' }).props('hideHero')).toBe(true)
+
+      moreMenu(w).vm.$emit('pick', { id: 'rename', label: 'Rename' })
+      await flushPromises()
+      expect(document.activeElement).toBe(name)
+      expect(useComfyUISettingsState.runActionStub).not.toHaveBeenCalled()
+
+      moreMenu(w).vm.$emit('pick', { id: 'untrack', label: 'Forget' })
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'untrack',
+        label: 'Forget'
+      })
+    })
+
+    it('shows a read-only title when the build offers no Rename action', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'untrack', label: 'Forget' }]
+      const target = mountTitleTarget()
+      const w = await mountOnPage()
+      await flushPromises()
+
+      const name = target.querySelector<HTMLElement>('.build-details-title-name')!
+      expect(name.textContent).toBe('My Install')
+      expect(name.getAttribute('contenteditable')).toBeNull()
+      expect(target.querySelector('.build-details-title-edit-btn')).toBeNull()
+      expect(w.findComponent({ name: 'StatusFactPanel' }).props('onRename')).toBeUndefined()
+    })
+
+    it('keeps the About name and the Rename prompt outside the page', async () => {
+      useComfyUISettingsState.pinBottomActions.value = [{ id: 'rename', label: 'Rename' }]
+      useComfyUISettingsState.runActionStub.mockClear()
+      const w = await mountContent({ initialTab: 'status' })
+
+      const panel = w.findComponent({ name: 'StatusFactPanel' })
+      expect(panel.props('hideHero')).toBe(false)
+      expect(panel.props('onRename')).toBeTypeOf('function')
+      expect(document.querySelector('.build-details-title-name')).toBeNull()
+
+      moreMenu(w).vm.$emit('pick', { id: 'rename', label: 'Rename' })
+      expect(useComfyUISettingsState.runActionStub).toHaveBeenCalledWith({
+        id: 'rename',
+        label: 'Rename'
+      })
     })
   })
 })

@@ -22,7 +22,7 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "signInTitle": "Log in to Comfy",
-    "signInBody": "Sync your work and run it on Comfy Cloud."
+    "signInBody": "Sync and run on Comfy Cloud"
   },
   "home": {
     "title": "Welcome. Let's create!",
@@ -161,6 +161,7 @@
     "yamlTag": "YAML",
     "includeSharedDirs": "Include Shared Directories",
     "manageSharedDirs": "Manage Shared Directories in Desktop Settings",
+    "manageShort": "Manage",
     "refreshCustomPaths": "Refresh status",
     "extraModelPathsModalTitle": "Custom model paths",
     "extraModelPathsModalNote": "Read-only — ComfyUI searches these directories, but the launcher does not manage them. Edit extra_model_paths.yaml to change them.",
@@ -260,6 +261,7 @@
     "makePrimary": "Use for Model Downloads",
     "openDir": "Open folder",
     "instanceOnly": "Build",
+    "sharedTag": "Shared",
     "lockedDir": "This directory is always used and cannot be removed.",
     "removeInstanceDirTitle": "Remove model directory?",
     "removeInstanceDirConfirm": "This won't delete any files. You can re-add the directory later from this list.",
@@ -642,6 +644,7 @@
     "community": "Community",
     "storageTab": "Storage",
     "sharedDirectories": "Shared Directories",
+    "storageSharedHint": "These folders are shared by every build. Each build chooses in its own Storage tab whether to use them.",
     "installLocation": "Default Install Location",
     "updatesTab": "Updates",
     "diagnostics": "Diagnostics",
@@ -1354,6 +1357,8 @@
       "personalLabel": "Personal",
       "switchLabel": "Workspace",
       "currentFallback": "Current workspace",
+      "switchUnavailable": "This workspace is unavailable.",
+      "switchRetryable": "Couldn't switch workspace. Check your connection and try again.",
       "instanceCountLabel": "INSTANCES",
       "loadError": "Couldn't load workspaces. Retry",
       "refresh": "Refresh workspaces",

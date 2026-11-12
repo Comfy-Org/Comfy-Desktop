@@ -22,7 +22,7 @@
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "signInTitle": "登录 Comfy",
-    "signInBody": "同步你的作品，并在 Comfy Cloud 上运行。"
+    "signInBody": "在 Comfy Cloud 上同步和运行"
   },
   "home": {
     "title": "欢迎。开始创作吧！",
@@ -161,6 +161,7 @@
     "yamlTag": "YAML",
     "includeSharedDirs": "包含共享目录",
     "manageSharedDirs": "在桌面设置中管理共享目录",
+    "manageShort": "管理",
     "refreshCustomPaths": "刷新状态",
     "extraModelPathsModalTitle": "自定义模型路径",
     "extraModelPathsModalNote": "只读 —— ComfyUI 会搜索这些目录，但启动器不会管理它们。请编辑 extra_model_paths.yaml 以更改它们。",
@@ -260,6 +261,7 @@
     "makePrimary": "用于模型下载",
     "openDir": "打开文件夹",
     "instanceOnly": "构建",
+    "sharedTag": "共享",
     "lockedDir": "此目录始终会被使用，无法移除。",
     "removeInstanceDirTitle": "要移除模型目录吗？",
     "removeInstanceDirConfirm": "这不会删除任何文件。你之后可以从此列表重新添加该目录。",
@@ -642,6 +644,7 @@
     "community": "社区",
     "storageTab": "存储",
     "sharedDirectories": "共享目录",
+    "storageSharedHint": "这些文件夹由所有构建共享。每个构建可在自己的“存储”标签页中选择是否使用。",
     "installLocation": "默认安装位置",
     "updatesTab": "更新",
     "diagnostics": "诊断",
@@ -1354,6 +1357,8 @@
       "personalLabel": "个人",
       "switchLabel": "工作区",
       "currentFallback": "当前工作区",
+      "switchUnavailable": "此工作区不可用。",
+      "switchRetryable": "无法切换工作区。请检查网络连接后重试。",
       "instanceCountLabel": "实例",
       "loadError": "无法加载工作区，请重试",
       "refresh": "刷新工作区",

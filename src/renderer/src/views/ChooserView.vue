@@ -90,13 +90,15 @@ watch(
   async ([signedIn, workspaceId]) => {
     const generation = ++buildPrefetchGeneration
     if (!signedIn || !workspaceId) return
+    const intent = dashboardScope.takeChosenSelection() ? 'chosen' : 'restored'
     try {
       if (authStore.status.workspaceId !== workspaceId) {
-        await authStore.switchWorkspace(workspaceId)
+        await authStore.switchWorkspace(workspaceId, intent)
       }
       if (
         generation !== buildPrefetchGeneration ||
-        selectedManagedWorkspaceId.value !== workspaceId
+        selectedManagedWorkspaceId.value !== workspaceId ||
+        authStore.status.workspaceId !== workspaceId
       )
         return
       await authStore.fetchBuilds()
@@ -157,6 +159,10 @@ const refreshingWorkspace = computed(() => authStore.loadingWorkspaces || authSt
 
 async function refreshWorkspace(): Promise<void> {
   emitTelemetryAction('comfy.desktop.workspace.refresh', {})
+  const selected = selectedManagedWorkspaceId.value
+  if (selected && authStore.status.workspaceId !== selected) {
+    await authStore.switchWorkspace(selected).catch(() => {})
+  }
   await Promise.all([authStore.fetchWorkspaces(), authStore.fetchBuilds()])
 }
 
@@ -372,6 +378,18 @@ const gridHandlers = {
             </BaseInput>
           </div>
         </div>
+        <p
+          v-if="authStore.workspaceSwitchFailure"
+          class="m-0 basis-full text-[13px]/5 text-muted-foreground"
+          role="status"
+          data-testid="chooser-workspace-switch-failure"
+        >
+          {{
+            authStore.workspaceSwitchFailure === 'unavailable'
+              ? t('devPlatform.workspace.switchUnavailable')
+              : t('devPlatform.workspace.switchRetryable')
+          }}
+        </p>
       </div>
 
       <div
