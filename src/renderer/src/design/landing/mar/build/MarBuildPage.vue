@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   Camera,
   Ellipsis,
@@ -131,6 +131,9 @@ type Tab =
 
 // The Builds milestone: production's tabs (or Overview first).
 const mvp = computed(() => buildsAsM1.value)
+// Desktop's build page: the name is the page title, renamed in place; the
+// kind sits small at the start of the subtitle (Comfy-Desktop#2002).
+const desktopPage = computed(() => mvp.value && buildPage.id === 'production')
 const state = stateOf(env)
 const snaps = snapshotsOf(env)
 const pending = computed(() => pendingOf(env))
@@ -299,7 +302,11 @@ const windowLines = computed<MenuLine[]>(() =>
 // More: the install's own actions, Desktop's order; Forget and Uninstall
 // last. Stop lives on the caret, beside Restart, and only there.
 const moreLines = computed<MenuLine[]>(() => [
-  { label: 'Rename', icon: Pencil, run: () => (tab.value = 'about') },
+  {
+    label: 'Rename',
+    icon: Pencil,
+    run: () => (desktopPage.value ? renameTitle() : (tab.value = 'about'))
+  },
   ...(own.value
     ? [
         {
@@ -358,6 +365,25 @@ const lines = computed<MenuLine[]>(() => [
   }
 ])
 
+// Rename from the title: Enter or leaving keeps it, Esc puts it back.
+const sourceLabel = env.channel === 'Legacy Desktop' ? 'Desktop (legacy)' : 'Standalone'
+const canRename = computed(() => own.value || remote)
+const naming = ref(false)
+const nameDraft = ref('')
+const nameField = ref<HTMLInputElement>()
+async function renameTitle(): Promise<void> {
+  if (!canRename.value) return
+  nameDraft.value = state.name
+  naming.value = true
+  await nextTick()
+  nameField.value?.select()
+}
+function keepName(): void {
+  const v = nameDraft.value.trim()
+  if (naming.value && v) state.name = v
+  naming.value = false
+}
+
 const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.length + 1}`)
 </script>
 
@@ -372,7 +398,30 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       @back="go('environments' as Page)"
       @status="openBuildSettings(env.id, 'update')"
     >
-      <template #cover>
+      <template v-if="desktopPage" #title>
+        <input
+          v-if="naming"
+          ref="nameField"
+          v-model="nameDraft"
+          class="mar-bp-title mar-bp-name-input"
+          aria-label="Build name"
+          @keydown.enter="keepName"
+          @keydown.esc="naming = false"
+          @blur="keepName"
+        />
+        <button
+          v-else-if="canRename"
+          type="button"
+          class="mar-bp-name"
+          title="Rename"
+          @click="renameTitle"
+        >
+          <h1 class="mar-bp-title">{{ state.name }}</h1>
+          <Pencil :size="16" class="mar-bp-name-pen" />
+        </button>
+        <h1 v-else class="mar-bp-title">{{ state.name }}</h1>
+      </template>
+      <template v-if="!desktopPage" #cover>
         <span class="mar-bp-glyph"
           ><Server v-if="remote" :size="26" class="text-muted-foreground" /><InstanceGlyph
             v-else
@@ -381,7 +430,13 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         /></span>
       </template>
       <template #meta>
-        <template v-if="remote">
+        <template v-if="desktopPage">
+          <component :is="remote ? Server : own ? Laptop : Cloud" :size="14" />
+          <span v-if="remote" class="font-mono">{{ remoteUrl }}</span>
+          <span v-else-if="own">This computer · {{ sourceLabel }}</span>
+          <span v-else>Comfy Cloud</span>
+        </template>
+        <template v-else-if="remote">
           <Server :size="13" /><span class="font-mono">{{ remoteUrl }}</span>
         </template>
         <template v-else-if="k === 'managed'">
@@ -389,7 +444,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         </template>
         <Badge v-else-if="mvp" size="sm">{{ state.version }}</Badge>
         <Badge v-else-if="versions[0]" size="sm">{{ versions[0].label }}</Badge>
-        <template v-for="r in where" :key="r.where">
+        <template v-for="r in desktopPage ? [] : where" :key="r.where">
           <span class="mar-eh-dot" />
           <button
             v-if="r.where === 'deployments'"
@@ -404,7 +459,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
             }}<StatusDot v-if="r.live" status="running" />
           </span>
         </template>
-        <template v-for="p in usedBy" :key="p.id">
+        <template v-for="p in desktopPage ? [] : usedBy" :key="p.id">
           <span class="mar-eh-dot" />
           <button type="button" class="mar-eh-link" @click="go(`project:${p.id}` as Page)">
             <Folder :size="13" />Used by {{ p.name }}
@@ -482,8 +537,9 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         v-else-if="tab === 'about' && can.buildOverview && buildPage.id === 'production'"
         :env
         :own
+        on-page
       />
-      <BuildAbout v-else-if="tab === 'about'" :env />
+      <BuildAbout v-else-if="tab === 'about'" :env :on-page="desktopPage" />
       <BuildUpdate v-else-if="tab === 'update'" :env />
       <BuildSnapshots v-else-if="tab === 'snapshots'" :env />
       <BuildSettings v-else-if="tab === 'settings'" :env />
@@ -663,6 +719,54 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
 </template>
 
 <style>
+/* The name is the title and the rename control: the pencil on hover. */
+:root .proto-ui.proto-ui.proto-ui .mar-bp-title {
+  margin: 0;
+  /* The same title as the Builds page (marShell.css). */
+  font-size: clamp(32px, min(3.6vw, 6vh), 52px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bp-name {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  color: var(--color-base-foreground);
+  text-align: left;
+}
+.mar-bp-name .mar-bp-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-bp-name-pen {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.mar-bp-name:hover .mar-bp-name-pen,
+.mar-bp-name:focus-visible .mar-bp-name-pen {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bp-name-input {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+  color: var(--color-base-foreground);
+  field-sizing: content;
+  outline: 2px solid var(--color-border-focus);
+}
 .mar-bp-glyph {
   display: inline-flex;
   align-items: center;

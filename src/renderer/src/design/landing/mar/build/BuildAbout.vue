@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { Copy, FolderOpen, Pencil } from 'lucide-vue-next'
+import { Copy, Pencil } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import { toast } from '../../useProto'
@@ -11,11 +11,17 @@ import './buildTabs.css'
 
 /**
  * Desktop's About tab (views/comfyUISettings/StatusFactPanel.vue): the
- * name, editable (not on Cloud), then its facts in groups: the instance,
+ * name, editable (not on Cloud), then its facts in groups: the build,
  * how it runs while it runs, where it lives and how much room it takes,
  * and where it came from. A remote build's address is editable here.
+ * On a build's page the title already names it and renames it
+ * (`onPage`), so the name and source badge don't repeat here.
  */
-const { env, combined = false } = defineProps<{ env: ProtoInstance; combined?: boolean }>()
+const {
+  env,
+  combined = false,
+  onPage = false
+} = defineProps<{ env: ProtoInstance; combined?: boolean; onPage?: boolean }>()
 const facts = factsOf(env)
 const state = stateOf(env)
 const extra = extraOf(env.id)
@@ -34,15 +40,15 @@ type Fact = { label: string; value: string; path?: boolean }
 const GROUPS = computed(() =>
   [
     {
-      title: 'Instance details',
+      title: 'Build details',
       facts: [
-        { label: 'Source', value: source },
         ...(combined && !remote && !cloud
           ? []
           : [{ label: 'Current Version', value: cloud ? 'Managed by Comfy' : state.version }]),
         ...(remote || cloud
           ? []
           : [
+              { label: 'Hardware', value: facts.hardware },
               { label: 'Python', value: facts.python },
               ...(combined ? [] : [{ label: 'PyTorch', value: facts.torch }])
             ])
@@ -93,7 +99,7 @@ function save(): void {
 
 <template>
   <div class="mar-ab">
-    <div class="mar-ab-hero">
+    <div v-if="!onPage" class="mar-ab-hero">
       <input
         v-if="editing === 'name'"
         ref="field"
@@ -152,16 +158,17 @@ function save(): void {
       <div v-for="f in g.facts" :key="f.label" class="mar-ab-fact">
         <span class="mar-bt-fact-label">{{ f.label }}</span>
         <span class="mar-ab-value" :class="f.path && 'font-mono'">
-          <span class="truncate">{{ f.value }}</span>
+          <button
+            v-if="f.path"
+            type="button"
+            class="mar-ab-open truncate"
+            title="Open folder"
+            @click="toast(`Opened ${f.value}`)"
+          >
+            {{ f.value }}
+          </button>
+          <span v-else class="truncate">{{ f.value }}</span>
           <template v-if="f.path">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Open folder"
-              title="Open folder"
-              @click="toast(`Opened ${f.value}`)"
-              ><FolderOpen :size="13"
-            /></Button>
             <Button
               variant="ghost"
               size="icon-xs"

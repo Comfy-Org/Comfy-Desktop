@@ -10,11 +10,19 @@ import BuildUpdateSummary from './BuildUpdateSummary.vue'
  * it's up to date, then its facts, then PyTorch. Cloud and Remote show
  * their facts.
  */
-const { env, own } = defineProps<{ env: ProtoInstance; own: boolean }>()
+const {
+  env,
+  own,
+  onPage = false
+} = defineProps<{
+  env: ProtoInstance
+  own: boolean
+  onPage?: boolean
+}>()
 </script>
 
 <template>
   <BuildUpdateSummary v-if="own" :env />
-  <BuildAbout :env :combined="own" />
+  <BuildAbout :env :combined="own" :on-page />
   <BuildUpdate v-if="own" :env torch-only />
 </template>

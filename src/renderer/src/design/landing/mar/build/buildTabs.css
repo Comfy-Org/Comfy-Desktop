@@ -651,12 +651,24 @@
 .mar-ab-fact {
   display: grid;
   min-height: 36px;
+  padding: 8px 0;
   grid-template-columns: 160px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
 }
-.mar-ab-fact + .mar-ab-fact {
-  border-top: 1px solid color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+:root .proto-ui.proto-ui.proto-ui .mar-ab-open {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-ab-open:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .mar-ab-value {
   display: flex;
