@@ -44,7 +44,9 @@ describe('Apps bridge wiring', () => {
   })
 
   it('refuses to show the apps page while the remote switch is off', () => {
-    expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
+    expect(main).toMatch(
+      /function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/
+    )
   })
 
   it('local events go out on the channel the preload listens to', () => {
