@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ChartColumn, Gauge, House, Server } from 'lucide-vue-next'
+import { House, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -34,13 +34,8 @@ const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
-const toolRows = computed<SidebarRow[]>(() => [
-  { page: 'performance-test', label: t('fileMenu.performanceTest'), icon: Gauge },
-  { page: 'benchmarks', label: t('fileMenu.benchmarks'), icon: ChartColumn }
-])
-const groups = computed(() => [
-  { key: 'main', rows: mainRows.value },
-  { key: 'tools', title: t('sidebar.tools'), rows: toolRows.value }
+const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>(() => [
+  { key: 'main', rows: mainRows.value }
 ])
 
 function navigate(page: DashboardPage): void {

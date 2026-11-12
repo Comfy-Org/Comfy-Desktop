@@ -5,7 +5,9 @@ import {
   openTitleMenu,
   expectChooserVisible,
   expectNewBuildModalOpen,
-  openNewBuildChangeSetup
+  openNewBuildChangeSetup,
+  pickFromTitleMenu,
+  showBuildsPage
 } from './support/chooserHelpers'
 import {
   findWebContentsId,
@@ -76,12 +78,7 @@ test('Builds dropdown opens both import flows and restores focus on Escape @wind
 })
 
 test('activate hook focuses the existing chooser host instead of spawning a duplicate @windows @macos @linux', async () => {
-  const before = await evalWithRetry(() =>
-    ctx.app.evaluate(
-      ({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length
-    )
-  )
-  expect(before).toBe(1)
+  expect(await openWindowCount()).toBe(1)
 
   await evalWithRetry(() =>
     ctx.app.evaluate(({ app }) => {
@@ -90,12 +87,7 @@ test('activate hook focuses the existing chooser host instead of spawning a dupl
   )
   await new Promise((r) => setTimeout(r, 200))
 
-  const after = await evalWithRetry(() =>
-    ctx.app.evaluate(
-      ({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length
-    )
-  )
-  expect(after).toBe(1)
+  expect(await openWindowCount()).toBe(1)
 })
 
 test('title popup + system modal webContents are pre-warmed on the chooser host @windows @macos @linux', async () => {
@@ -114,7 +106,13 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
     .toBe(true)
 
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
-  expect(popupItems).toEqual(['Open Dashboard', 'Desktop Settings', 'Close Window', 'Quit Desktop'])
+  expect(popupItems).toEqual([
+    'Performance Tests',
+    'Benchmarks',
+    'Desktop Settings',
+    'Close Window',
+    'Quit Desktop'
+  ])
 
   await evalWithRetry(() =>
     ctx.app.evaluate(({ webContents }) => {
@@ -131,6 +129,20 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
       intervals: [100, 200]
     })
     .toBe(false)
+})
+
+test('the ☰ menu opens Performance Tests and Benchmarks in the dashboard window itself @windows @macos @linux', async () => {
+  for (const [label, page] of [
+    ['Performance Tests', '[data-testid="performance-test"]'],
+    ['Benchmarks', '[data-testid="benchmarks"]']
+  ] as const) {
+    await new Promise((resolve) => setTimeout(resolve, TITLE_REOPEN_SUPPRESSION_MS))
+    await pickFromTitleMenu(ctx.app, ctx.titleBar, label)
+    await ctx.panel.waitForVisible(page)
+    expect(await openWindowCount(), `${label} opened without a second window`).toBe(1)
+  }
+
+  await showBuildsPage(ctx.panel)
 })
 
 test('title popup reopens after a blur dismiss (menu-closed IPC clears the reopen guard) @windows @macos @linux', async () => {
@@ -211,6 +223,14 @@ test('title-bar tooltip popup is created on demand and hides cleanly @windows @m
     })
     .toBe(false)
 })
+
+async function openWindowCount(): Promise<number> {
+  return evalWithRetry(() =>
+    ctx.app.evaluate(
+      ({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length
+    )
+  )
+}
 
 async function readPopupMenuItems(app: ElectronApplication, marker: string): Promise<string[]> {
   return evalWithRetry(() =>
