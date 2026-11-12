@@ -79,6 +79,8 @@ export const can = computed(() => {
     workflows: m >= 5,
     /** Explore (Milestone 3), with the Hub's apps and workflows; Learn after. */
     explore: m >= 4.7,
+    /** A build's page: About and Update as one Overview tab, then Assets & Models. */
+    buildOverview: m >= 4.7,
     learn: m >= 5,
     /** Search (⌘K) comes with Learn, not with Explore. */
     search: m >= 5,

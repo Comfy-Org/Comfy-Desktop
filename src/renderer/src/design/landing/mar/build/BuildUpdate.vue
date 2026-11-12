@@ -15,7 +15,7 @@ import './buildTabs.css'
  * Now. Then PyTorch, a card per official build. Long work runs in the tab
  * (buildOps.ts).
  */
-const { env } = defineProps<{ env: ProtoInstance }>()
+const { env, torchOnly = false } = defineProps<{ env: ProtoInstance; torchOnly?: boolean }>()
 const facts = factsOf(env)
 
 const TORCH = [
@@ -36,7 +36,7 @@ function changeTorch(v: string, copy: boolean): void {
 </script>
 
 <template>
-  <BuildUpdateSummary :env />
+  <BuildUpdateSummary v-if="!torchOnly" :env />
 
   <section class="mar-bt-section">
     <header class="mar-bt-head"><h2 class="mar-bt-h2">PyTorch</h2></header>

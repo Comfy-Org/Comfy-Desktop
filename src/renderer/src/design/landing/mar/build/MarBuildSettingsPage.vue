@@ -16,7 +16,9 @@ import BuildTerminal from './BuildTerminal.vue'
 import BuildUpdate from './BuildUpdate.vue'
 import { stateOf } from './buildFacts'
 import { opOf } from './buildOps'
-import { desktopTabs, nextBuildTab, type BuildTab } from './buildTab'
+import { can } from '../../milestones'
+import BuildOverview from './BuildOverview.vue'
+import { desktopTabs, nextBuildTab, tabAsked, type BuildTab } from './buildTab'
 import { isRemote } from './m1Builds'
 
 /**
@@ -32,9 +34,9 @@ const state = stateOf(env)
 const remote = isRemote(env)
 const own = env.kind === 'local'
 const op = computed(() => opOf(env.id))
-const TABS = computed(() => desktopTabs(own, remote))
+const TABS = computed(() => desktopTabs(own, remote, false, can.value.buildOverview))
 
-const asked = nextBuildTab.value
+const asked = tabAsked(nextBuildTab.value, can.value.buildOverview)
 nextBuildTab.value = ''
 const tab = ref<BuildTab>(
   TABS.value.some((t) => t.value === asked) ? (asked as BuildTab) : TABS.value[0]!.value
@@ -74,6 +76,7 @@ watch(TABS, (list) => {
     <BuildSnapshots v-else-if="tab === 'snapshots'" :env />
     <BuildStorage v-else-if="tab === 'storage'" :env />
     <BuildTerminal v-else-if="tab === 'terminal'" :env />
+    <BuildOverview v-else-if="tab === 'about' && can.buildOverview" :env :own />
     <BuildAbout v-else-if="tab === 'about'" :env />
   </div>
 </template>

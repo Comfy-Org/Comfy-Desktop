@@ -15,7 +15,7 @@ import './buildTabs.css'
  * how it runs while it runs, where it lives and how much room it takes,
  * and where it came from. A remote build's address is editable here.
  */
-const { env } = defineProps<{ env: ProtoInstance }>()
+const { env, combined = false } = defineProps<{ env: ProtoInstance; combined?: boolean }>()
 const facts = factsOf(env)
 const state = stateOf(env)
 const extra = extraOf(env.id)
@@ -37,12 +37,14 @@ const GROUPS = computed(() =>
       title: 'Instance details',
       facts: [
         { label: 'Source', value: source },
-        { label: 'Current Version', value: cloud ? 'Managed by Comfy' : state.version },
+        ...(combined && !remote && !cloud
+          ? []
+          : [{ label: 'Current Version', value: cloud ? 'Managed by Comfy' : state.version }]),
         ...(remote || cloud
           ? []
           : [
               { label: 'Python', value: facts.python },
-              { label: 'PyTorch', value: facts.torch }
+              ...(combined ? [] : [{ label: 'PyTorch', value: facts.torch }])
             ])
       ] as Fact[]
     },

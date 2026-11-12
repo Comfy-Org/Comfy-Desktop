@@ -81,7 +81,8 @@ import BuildUpdate from './BuildUpdate.vue'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
 import { createSnapshot, leaving, pendingOf, snapshotsOf, stateOf } from './buildFacts'
 import { buildPage } from './buildPage'
-import { desktopTabs, nextBuildTab, openBuildSettings } from './buildTab'
+import BuildOverview from './BuildOverview.vue'
+import { desktopTabs, nextBuildTab, openBuildSettings, tabAsked } from './buildTab'
 import { syncing } from './syncPrevious'
 import { clearError, errorOf } from './buildErrors'
 import '../table/table.css'
@@ -154,7 +155,7 @@ const own = computed(() => k.value === 'local')
 const remote = isRemote(env)
 const remoteUrl = computed(() => extraOf(env.id).remote?.replace(/^https?:\/\//, ''))
 const DESKTOP_TABS = computed<{ value: Tab; label: string; dot?: boolean }[]>(() =>
-  desktopTabs(own.value, remote, Boolean(pending.value))
+  desktopTabs(own.value, remote, Boolean(pending.value), can.value.buildOverview)
 )
 const MVP_TABS = computed<{ value: Tab; label: string; count?: number; dot?: boolean }[]>(() =>
   buildPage.id === 'production'
@@ -199,7 +200,7 @@ const TABS = computed(() => (mvp.value ? MVP_TABS.value : LATER_TABS.value))
 const asked =
   nextBuildTab.value === 'settings' && !TABS.value.some((t) => t.value === 'settings')
     ? 'args'
-    : nextBuildTab.value
+    : tabAsked(nextBuildTab.value, can.value.buildOverview && buildPage.id === 'production')
 nextBuildTab.value = ''
 const tab = ref<Tab>(
   asked && TABS.value.some((t) => t.value === asked)
@@ -477,6 +478,11 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
         <BuildUpdateSummary v-if="own" :env />
         <BuildAbout :env />
       </template>
+      <BuildOverview
+        v-else-if="tab === 'about' && can.buildOverview && buildPage.id === 'production'"
+        :env
+        :own
+      />
       <BuildAbout v-else-if="tab === 'about'" :env />
       <BuildUpdate v-else-if="tab === 'update'" :env />
       <BuildSnapshots v-else-if="tab === 'snapshots'" :env />
