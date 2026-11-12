@@ -985,7 +985,7 @@ watch(performanceTestLogs, async () => {
           </div>
 
           <section
-            class="performance-test__results-section mt-6 flex w-full min-w-0 flex-none flex-col text-[13px] text-text-muted"
+            class="performance-test__results-section mt-6 flex w-full min-w-0 flex-none flex-col rounded-2xl bg-white/[0.035] px-6 py-[22px] text-[13px] text-text-muted"
           >
             <div class="performance-test__results-head flex min-h-8 min-w-0 items-center">
               <h2 class="m-0 shrink-0" :class="sectionLabelClass">
@@ -1158,7 +1158,7 @@ watch(performanceTestLogs, async () => {
 
           <section
             v-if="performanceTestResult?.hardware"
-            class="performance-test__system-section mt-9 flex w-full min-w-0 flex-none flex-col"
+            class="performance-test__system-section mt-3 flex w-full min-w-0 flex-none flex-col rounded-2xl bg-white/[0.035] px-6 py-[22px]"
           >
             <div class="flex min-h-8 items-center">
               <h2 class="m-0" :class="sectionLabelClass">
