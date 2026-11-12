@@ -1591,7 +1591,7 @@
     "measuredRunCount": "Measured runs",
     "failedRunCount": "Failed runs",
     "runProgress": "Progress",
-    "runDurationChart": "Run duration aggregates",
+    "runDurationChart": "Run duration",
     "device": "Compute device",
     "vram": "VRAM",
     "ram": "RAM",
@@ -1617,9 +1617,6 @@
     "resultsEmptyTitle": "No results yet",
     "medianSummary": "Median run · {count} measured · {failed} failed",
     "runCounts": "{count} measured · {failed} failed",
-    "legendMedian": "Median",
-    "legendAverage": "Average",
-    "legendRange": "fastest to slowest",
     "runPhaseWarmup": "warm-up run",
     "runPhaseMeasured": "measured run {current} of {total}"
   },

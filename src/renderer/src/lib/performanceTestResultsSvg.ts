@@ -3,7 +3,11 @@ import comfyWordmarkSource from '../components/icons/ComfyWordmark.vue?raw'
 export interface PerformanceTestImageMetric {
   label: string
   value: string
-  durationSeconds?: number
+}
+
+export interface PerformanceTestImageDuration extends PerformanceTestImageMetric {
+  durationSeconds: number
+  highlight?: boolean
 }
 
 export interface PerformanceTestResultsImageData {
@@ -11,8 +15,8 @@ export interface PerformanceTestResultsImageData {
   aggregateTitle: string
   systemInformationTitle: string
   testDateTime: string
-  metrics: PerformanceTestImageMetric[]
-  hardware: PerformanceTestImageMetric[]
+  headline: PerformanceTestImageMetric
+  durations: PerformanceTestImageDuration[]
   system: PerformanceTestImageMetric[]
 }
 
@@ -31,61 +35,54 @@ function text(x: number, y: number, value: string, className: string, anchor = '
   return `<text x="${x}" y="${y}" class="${className}" text-anchor="${anchor}">${escapeXml(value)}</text>`
 }
 
-function informationCard(
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  rows: PerformanceTestImageMetric[]
-): string {
-  const content = rows
-    .map((row, index) => {
-      const rowY = y + 35 + index * 43
-      return [
-        text(x + 20, rowY, row.label, 'info-label'),
-        text(x + width - 20, rowY, row.value, 'info-value', 'end'),
-        `<line x1="${x + 20}" y1="${rowY + 12}" x2="${x + width - 20}" y2="${rowY + 12}" class="divider" />`
-      ].join('')
-    })
-    .join('')
-
-  return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" class="card" />${content}`
+function fitText(value: string, maxCharacters: number): string {
+  return value.length > maxCharacters ? `${value.slice(0, maxCharacters - 1).trimEnd()}…` : value
 }
 
 export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImageData): string {
   const width = 1200
   const margin = 56
-  const metricGap = 16
-  const metricWidth =
-    (width - margin * 2 - metricGap * (data.metrics.length - 1)) / data.metrics.length
-  const chartMetrics = data.metrics.filter((metric) => metric.durationSeconds != null)
-  const longestDuration = Math.max(...chartMetrics.map((metric) => metric.durationSeconds!), 0.001)
-  const systemY = chartMetrics.length > 0 ? 340 : 235
-  const cardGap = 20
-  const cardWidth = (width - margin * 2 - cardGap) / 2
-  const cardHeight = Math.max(data.hardware.length, data.system.length) * 43 + 34
-  const height = systemY + 50 + cardHeight + 56
+  const contentWidth = width - margin * 2
+  const resultsY = 132
+  const chartX = margin + 320
+  const chartLabelWidth = 120
+  const chartValueWidth = 96
+  const trackX = chartX + chartLabelWidth
+  const trackWidth = width - margin - chartValueWidth - trackX
+  const rowHeight = 32
+  const longestDuration = Math.max(...data.durations.map((row) => row.durationSeconds), 0.001)
+  const chartTop = resultsY + 30
+  const chartBottom = chartTop + data.durations.length * rowHeight
+  const systemY = Math.max(chartBottom, resultsY + 140) + 52
+  const columns = 3
+  const columnGap = 32
+  const columnWidth = (contentWidth - columnGap * (columns - 1)) / columns
+  const factHeight = 60
+  const factRows = Math.ceil(data.system.length / columns)
+  const factsTop = systemY + 30
+  const height = factsTop + factRows * factHeight + 92
 
-  const metricCards = data.metrics
-    .map((metric, index) => {
-      const x = margin + index * (metricWidth + metricGap)
-      const right = x + metricWidth - 16
+  const chart = data.durations
+    .map((row, index) => {
+      const y = chartTop + index * rowHeight
+      const barWidth = Math.max((row.durationSeconds / longestDuration) * trackWidth, 8)
+      const tone = row.highlight ? 'strong' : 'soft'
       return [
-        `<rect x="${x}" y="90" width="${metricWidth}" height="92" rx="10" class="card" />`,
-        text(right, 122, metric.label, 'metric-label', 'end'),
-        text(right, 160, metric.value, 'metric-value', 'end')
+        text(chartX, y + 20, row.label, 'chart-label'),
+        `<rect x="${trackX}" y="${y + 12}" width="${trackWidth}" height="8" rx="4" class="chart-track" />`,
+        `<rect x="${trackX}" y="${y + 12}" width="${barWidth}" height="8" rx="4" class="chart-bar-${tone}" />`,
+        text(width - margin, y + 21, row.value, `chart-value-${tone}`, 'end')
       ].join('')
     })
     .join('')
 
-  const chart = chartMetrics
-    .map((metric, index) => {
-      const y = 235 + index * 24
-      const barWidth = (metric.durationSeconds! / longestDuration) * 800
+  const facts = data.system
+    .map((fact, index) => {
+      const x = margin + (index % columns) * (columnWidth + columnGap)
+      const y = factsTop + Math.floor(index / columns) * factHeight
       return [
-        text(margin, y + 10, metric.label, 'chart-label'),
-        `<rect x="${margin + 180}" y="${y}" width="800" height="10" rx="5" class="chart-track" />`,
-        `<rect x="${margin + 180}" y="${y}" width="${barWidth}" height="10" rx="5" class="chart-bar" />`
+        text(x, y + 18, fact.label, 'fact-label'),
+        text(x, y + 42, fitText(fact.value, Math.floor(columnWidth / 8.4)), 'fact-value')
       ].join('')
     })
     .join('')
@@ -93,31 +90,34 @@ export function createPerformanceTestResultsSvg(data: PerformanceTestResultsImag
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <style>
+    text { font-family: Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; }
     .background { fill: #121212; }
-    .card { fill: #1d1d1d; stroke: #393939; stroke-width: 1; }
-    .title { fill: #f5f5f5; font: 600 28px system-ui, sans-serif; }
-    .section-title { fill: #d4d4d4; font: 500 16px system-ui, sans-serif; }
-    .metric-label, .info-label { fill: #a3a3a3; font: 14px system-ui, sans-serif; }
-    .metric-value { fill: #ffffff; font: 600 26px system-ui, sans-serif; }
-    .info-value { fill: #d4d4d4; font: 14px system-ui, sans-serif; }
-    .chart-label { fill: #a3a3a3; font: 12px system-ui, sans-serif; }
-    .chart-track { fill: #393939; }
-    .chart-bar { fill: #f4c430; }
-    .divider { stroke: #333333; stroke-width: 1; }
-    .footer-date { fill: #a3a3a3; font: 12px system-ui, sans-serif; }
+    .title { fill: #f5f5f5; font-size: 26px; font-weight: 600; }
+    .section-label { fill: #8a8a8a; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; }
+    .headline { fill: #ffffff; font-size: 64px; font-weight: 500; letter-spacing: -0.02em; }
+    .headline-label { fill: #a3a3a3; font-size: 15px; }
+    .chart-label { fill: #a3a3a3; font-size: 14px; }
+    .chart-track { fill: #242424; }
+    .chart-bar-strong { fill: #f5f5f5; }
+    .chart-bar-soft { fill: #6b6b6b; }
+    .chart-value-strong { fill: #ffffff; font-size: 16px; font-weight: 600; }
+    .chart-value-soft { fill: #d4d4d4; font-size: 16px; }
+    .fact-label { fill: #8a8a8a; font-size: 13px; }
+    .fact-value { fill: #e5e5e5; font-size: 15px; }
+    .footer-date { fill: #8a8a8a; font-size: 13px; }
   </style>
   <rect width="${width}" height="${height}" class="background" />
-  ${text(margin, 55, data.title, 'title')}
-  ${metricCards}
-  ${chartMetrics.length > 0 ? text(margin, 215, data.aggregateTitle, 'section-title') : ''}
+  ${text(margin, 72, data.title, 'title')}
+  ${text(margin, resultsY + 86, data.headline.value, 'headline')}
+  ${text(margin, resultsY + 120, data.headline.label, 'headline-label')}
+  ${text(chartX, resultsY + 14, data.aggregateTitle.toUpperCase(), 'section-label')}
   ${chart}
-  ${text(margin, systemY, data.systemInformationTitle, 'section-title')}
-  ${informationCard(margin, systemY + 24, cardWidth, cardHeight, data.hardware)}
-  ${informationCard(margin + cardWidth + cardGap, systemY + 24, cardWidth, cardHeight, data.system)}
-  <g role="img" aria-label="Comfy" transform="translate(${margin} ${height - 51}) scale(0.65)">
+  ${text(margin, systemY + 14, data.systemInformationTitle.toUpperCase(), 'section-label')}
+  ${facts}
+  <g role="img" aria-label="Comfy" transform="translate(${margin} ${height - 60}) scale(0.65)">
     <path d="${COMFY_WORDMARK_PATH}" fill="#ffffff" />
   </g>
-  ${text(width - margin, height - 28, data.testDateTime, 'footer-date', 'end')}
+  ${text(width - margin, height - 37, data.testDateTime, 'footer-date', 'end')}
 </svg>`
 }
 

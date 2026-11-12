@@ -1591,7 +1591,7 @@
     "measuredRunCount": "测量运行数",
     "failedRunCount": "失败运行数",
     "runProgress": "进度",
-    "runDurationChart": "运行时长汇总",
+    "runDurationChart": "运行时长",
     "device": "计算设备",
     "vram": "显存",
     "ram": "内存",
@@ -1617,9 +1617,6 @@
     "resultsEmptyTitle": "暂无结果",
     "medianSummary": "中位运行 · {count} 次测量 · {failed} 次失败",
     "runCounts": "{count} 次测量 · {failed} 次失败",
-    "legendMedian": "中位数",
-    "legendAverage": "平均值",
-    "legendRange": "最快到最慢",
     "runPhaseWarmup": "预热运行",
     "runPhaseMeasured": "第 {current} / {total} 次测量运行"
   },

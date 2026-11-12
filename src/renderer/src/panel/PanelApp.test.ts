@@ -1049,17 +1049,22 @@ describe('PanelApp', () => {
     expect(results).toContain('1.875 s')
     expect(results).toContain('Median run · 5 measured · 0 failed')
     expect(wrapper.get('.performance-test__summary').findAll(':scope > *')).toHaveLength(2)
+    const aggregateChart = wrapper.get('.performance-test__aggregate-chart')
+    expect(aggregateChart.findAll('dt').map((label) => label.text())).toEqual([
+      'Fastest run',
+      'Median run',
+      'Average run',
+      'Slowest run'
+    ])
     expect(
-      wrapper
-        .get('.performance-test__timing-list')
-        .findAll('dt')
-        .map((label) => label.text())
-    ).toEqual(['Fastest run', 'Average run', 'Slowest run'])
-    expect(wrapper.get('.performance-test__aggregate-chart').attributes('aria-label')).toBe(
-      'Run duration aggregates'
-    )
+      aggregateChart
+        .findAll('.performance-test__aggregate-bar i')
+        .map((bar) => Math.round(Number.parseFloat(bar.element.style.width)))
+    ).toEqual([45, 68, 73, 100])
+    expect(aggregateChart.attributes('aria-label')).toBe('Run duration')
     const systemSection = wrapper.get('.performance-test__system-section')
-    expect(systemSection.get('h3').text()).toBe('System information')
+    expect(systemSection.get('h2').text()).toBe('System information')
+    expect(systemSection.get('.performance-test__system').isVisible()).toBe(true)
     const system = systemSection.get('.performance-test__system').text()
     expect(system).toContain('NVIDIA GeForce RTX 4090')
     expect(system).not.toContain('Top-level fallback should not be displayed')
@@ -1100,10 +1105,7 @@ describe('PanelApp', () => {
     expect(svg).toContain('Performance Test: results-json-workflow.json')
     expect(svg).not.toContain('Performance Test: cat-workflow.json')
     expect(svg).toContain('role="img" aria-label="Comfy"')
-    expect(svg).toContain('Measured runs')
-    expect(svg).toContain('7')
-    expect(svg).toContain('Failed runs')
-    expect(svg).toContain('2')
+    expect(svg).toContain('Median run · 7 measured · 2 failed')
     expect(svg).toContain('9.100 s')
     expect(svg).toContain('Results JSON GPU')
     expect(svg).toContain('Results JSON CPU')
@@ -2299,7 +2301,7 @@ describe('PanelApp', () => {
 
     expect(wrapper.get('.performance-test__median-summary').text()).toBe('0 measured · 5 failed')
     expect(wrapper.get('.performance-test__results').text()).not.toContain('Median run')
-    expect(wrapper.find('.performance-test__timing-list').exists()).toBe(false)
+    expect(wrapper.find('.performance-test__aggregate-chart').exists()).toBe(false)
   })
 
   it('returns the results card to its empty state when a run is stopped before results', async () => {

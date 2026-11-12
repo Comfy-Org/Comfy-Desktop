@@ -44,8 +44,9 @@ import {
 import { emitTelemetryAction } from '../lib/telemetry'
 import { performanceTestSessionKey } from '../../../shared/performanceTestSession'
 
-const toggleClass =
-  'self-center text-[11px] font-semibold tracking-[0.04em] text-subtle-foreground uppercase hover:text-foreground [&_.collapsible-section-toggle__chevron]:size-3.5'
+const sectionLabelClass =
+  'text-[11px] font-semibold tracking-[0.04em] text-subtle-foreground uppercase'
+const toggleClass = `self-center ${sectionLabelClass} hover:text-foreground [&_.collapsible-section-toggle__chevron]:size-3.5`
 const filterClass = 'gap-1.5 px-3 text-[13px]/5'
 const numberInputClass =
   'w-9 flex-none [&_input]:h-6 [&_input]:w-full [&_input]:rounded-md [&_input]:border-0 [&_input]:bg-transparent [&_input]:p-0 [&_input]:text-center [&_input]:text-[13px] [&_input]:text-foreground [&_input]:tabular-nums [&_input]:shadow-none [&_input]:[appearance:textfield] [&_input]:focus-visible:ring-0 [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none'
@@ -131,7 +132,6 @@ const {
 const isExportingResults = ref(false)
 const exportResultsError = ref<string | null>(null)
 const logsExpanded = ref(false)
-const systemExpanded = ref(false)
 const warmupRuns = ref('1')
 const measuredRuns = ref('5')
 const logInstallationId = ref<string | null>(null)
@@ -162,34 +162,25 @@ const computeDeviceNames = computed(() =>
     .flatMap((device) => (device.deviceName ? [device.deviceName] : []))
     .join(', ')
 )
-const numberLine = computed(() => {
+const durationChart = computed(() => {
   const statistics = performanceTestResult.value?.statistics
   if (!statistics) return null
-  const fastest = statistics.fastest.durationSeconds
-  const slowest = statistics.slowest.durationSeconds
-  const span = slowest - fastest
-  const position = (value: number): number => (span > 0 ? ((value - fastest) / span) * 100 : 50)
-  const average = position(statistics.averageDurationSeconds)
-  return {
-    fastest: formatDuration(fastest),
-    slowest: formatDuration(slowest),
-    average: formatDuration(statistics.averageDurationSeconds),
-    median: formatDuration(statistics.medianDurationSeconds),
-    medianAt: `${position(statistics.medianDurationSeconds)}%`,
-    averageAt: `${average}%`
-  }
-})
-const systemSummary = computed(() => {
-  const hardware = performanceTestResult.value?.hardware
-  const systemInfo = performanceTestResult.value?.systemInfo
-  return [
-    computeDeviceNames.value,
-    hardware?.vramMb != null ? `${formatMemory(hardware.vramMb)} ${t('performanceTest.vram')}` : '',
-    systemInfo ? formatOperatingSystem(systemInfo) : '',
-    hardware?.pytorchVersion ? `PyTorch ${hardware.pytorchVersion}` : ''
+  const rows = [
+    { label: t('performanceTest.fastestRun'), seconds: statistics.fastest.durationSeconds },
+    { label: t('performanceTest.medianRunDuration'), seconds: statistics.medianDurationSeconds },
+    { label: t('performanceTest.averageRunDuration'), seconds: statistics.averageDurationSeconds },
+    { label: t('performanceTest.slowestRun'), seconds: statistics.slowest.durationSeconds }
   ]
-    .filter(Boolean)
-    .join(' · ')
+  const maximum = Math.max(...rows.map(({ seconds }) => seconds), 0)
+  return {
+    median: formatDuration(statistics.medianDurationSeconds),
+    rows: rows.map((row, index) => ({
+      label: row.label,
+      value: formatDuration(row.seconds),
+      width: maximum > 0 ? `${(row.seconds / maximum) * 100}%` : '0%',
+      highlight: index === 1
+    }))
+  }
 })
 const lastLogLine = computed(
   () =>
@@ -589,26 +580,35 @@ async function exportResultsImage(): Promise<void> {
     if (!hardware || fastest === null || slowest === null || average === null || median === null) {
       throw new Error(t('performanceTest.exportImageFailed'))
     }
-    const hardwareRows: PerformanceTestImageMetric[] = [
+    const systemRows: PerformanceTestImageMetric[] = [
       {
         label: t('performanceTest.device'),
         value: hardware.devices.flatMap((device) => device.deviceName ?? []).join(', ')
       }
     ]
     if (hardware.vramMb != null)
-      hardwareRows.push({ label: t('performanceTest.vram'), value: formatMemory(hardware.vramMb) })
+      systemRows.push({ label: t('performanceTest.vram'), value: formatMemory(hardware.vramMb) })
     if (hardware.ramMb != null)
-      hardwareRows.push({ label: t('performanceTest.ram'), value: formatMemory(hardware.ramMb) })
+      systemRows.push({ label: t('performanceTest.ram'), value: formatMemory(hardware.ramMb) })
     if (hardware.pytorchVersion)
-      hardwareRows.push({
+      systemRows.push({
         label: t('performanceTest.pytorchVersion'),
         value: hardware.pytorchVersion
       })
     if (hardware.xformersVersion)
-      hardwareRows.push({
+      systemRows.push({
         label: t('performanceTest.xformersVersion'),
         value: hardware.xformersVersion
       })
+    systemRows.push(
+      { label: t('performanceTest.cpu'), value: summary.systemInfo.cpu_model },
+      { label: t('performanceTest.cpuCores'), value: String(summary.systemInfo.cpu_cores) },
+      {
+        label: t('performanceTest.operatingSystem'),
+        value: formatOperatingSystem(summary.systemInfo)
+      },
+      { label: t('performanceTest.architecture'), value: summary.systemInfo.arch }
+    )
 
     const svg = createPerformanceTestResultsSvg({
       title: t('performanceTest.imageTitle', { workflowName: summary.workflowName }),
@@ -618,46 +618,25 @@ async function exportResultsImage(): Promise<void> {
         dateStyle: 'medium',
         timeStyle: 'short'
       }).format(new Date(summary.createdAt)),
-      metrics: [
-        {
-          label: t('performanceTest.measuredRunCount'),
-          value: String(summary.measuredJobCount)
-        },
-        {
-          label: t('performanceTest.failedRunCount'),
-          value: String(summary.failedRunCount)
-        },
-        {
-          label: t('performanceTest.fastestRun'),
-          value: formatDuration(fastest),
-          durationSeconds: fastest
-        },
-        {
-          label: t('performanceTest.slowestRun'),
-          value: formatDuration(slowest),
-          durationSeconds: slowest
-        },
-        {
-          label: t('performanceTest.averageRunDuration'),
-          value: formatDuration(average),
-          durationSeconds: average
-        },
-        {
-          label: t('performanceTest.medianRunDuration'),
-          value: formatDuration(median),
-          durationSeconds: median
-        }
-      ],
-      hardware: hardwareRows,
-      system: [
-        { label: t('performanceTest.cpu'), value: summary.systemInfo.cpu_model },
-        { label: t('performanceTest.cpuCores'), value: String(summary.systemInfo.cpu_cores) },
-        { label: t('performanceTest.architecture'), value: summary.systemInfo.arch },
-        {
-          label: t('performanceTest.operatingSystem'),
-          value: formatOperatingSystem(summary.systemInfo)
-        }
-      ]
+      headline: {
+        label: t('performanceTest.medianSummary', {
+          count: summary.measuredJobCount,
+          failed: summary.failedRunCount
+        }),
+        value: formatDuration(median)
+      },
+      durations: [
+        { label: t('performanceTest.fastestRun'), seconds: fastest },
+        { label: t('performanceTest.medianRunDuration'), seconds: median },
+        { label: t('performanceTest.averageRunDuration'), seconds: average },
+        { label: t('performanceTest.slowestRun'), seconds: slowest }
+      ].map(({ label, seconds }, index) => ({
+        label,
+        value: formatDuration(seconds),
+        durationSeconds: seconds,
+        highlight: index === 1
+      })),
+      system: systemRows
     })
     const png = await createResultsPng(svg)
     const exported = await window.api.exportResultsImage(png, 'performance-test', defaultPath)
@@ -1006,16 +985,14 @@ watch(performanceTestLogs, async () => {
           </div>
 
           <section
-            class="performance-test__results-section mt-6 flex w-full min-w-0 flex-none flex-col rounded-2xl bg-white/[0.035] px-6 pt-[22px] text-[13px] text-text-muted"
-            :class="{ 'pb-[22px]': !performanceTestResult?.hardware || isLaunching }"
+            class="performance-test__results-section mt-6 flex w-full min-w-0 flex-none flex-col text-[13px] text-text-muted"
           >
-            <h2 class="sr-only">{{ t('performanceTest.results') }}</h2>
-            <div
-              v-if="runLabel"
-              class="performance-test__results-head mb-[18px] flex min-h-[30px] items-center gap-1"
-            >
-              <span class="performance-test__run-label min-w-0 truncate text-[12.5px]">
-                <span class="font-medium text-foreground">{{ runLabel.workflow }}</span>
+            <div class="performance-test__results-head flex min-h-8 min-w-0 items-center">
+              <h2 class="m-0 shrink-0" :class="sectionLabelClass">
+                {{ t('performanceTest.results') }}
+              </h2>
+              <span v-if="runLabel" :class="summaryClass" class="performance-test__run-label">
+                <span class="text-foreground">{{ runLabel.workflow }}</span>
                 {{ t('performanceTest.resultContextOn') }} {{ runLabel.build }}
               </span>
               <div
@@ -1066,7 +1043,7 @@ watch(performanceTestLogs, async () => {
                 </Button>
               </div>
             </div>
-            <div class="performance-test__results">
+            <div class="performance-test__results mt-2.5">
               <div
                 v-if="isLaunching && totalProgressRuns > 0"
                 class="performance-test__progress grid gap-4"
@@ -1114,19 +1091,20 @@ watch(performanceTestLogs, async () => {
               </div>
               <div
                 v-else-if="performanceTestResult?.resultsSummary"
-                class="performance-test__summary grid grid-cols-[minmax(200px,240px)_minmax(0,1fr)] items-end gap-x-12 gap-y-6 @max-[640px]:grid-cols-1"
-                :class="{ 'pb-[22px]': performanceTestResult.hardware }"
+                class="performance-test__summary grid grid-cols-[minmax(180px,220px)_minmax(0,1fr)] items-center gap-x-12 gap-y-5 @max-[640px]:grid-cols-1"
               >
                 <div class="performance-test__median flex flex-col gap-2.5">
                   <span
-                    v-if="numberLine"
+                    v-if="durationChart"
                     class="text-[44px] leading-none font-medium tracking-[-0.02em] text-foreground tabular-nums"
-                    >{{ numberLine.median }}</span
+                    >{{ durationChart.median }}</span
                   >
                   <span class="performance-test__median-summary text-[12.5px]">
                     {{
                       t(
-                        numberLine ? 'performanceTest.medianSummary' : 'performanceTest.runCounts',
+                        durationChart
+                          ? 'performanceTest.medianSummary'
+                          : 'performanceTest.runCounts',
                         {
                           count: performanceTestResult.resultsSummary.measuredJobCount,
                           failed: performanceTestResult.resultsSummary.failedRunCount
@@ -1135,58 +1113,37 @@ watch(performanceTestLogs, async () => {
                     }}
                   </span>
                 </div>
-                <div v-if="numberLine" class="min-w-0">
-                  <dl
-                    class="performance-test__timing-list m-0 grid grid-cols-3 gap-x-6 tabular-nums"
-                  >
-                    <div
-                      v-for="stat in [
-                        { label: t('performanceTest.fastestRun'), value: numberLine.fastest },
-                        {
-                          label: t('performanceTest.averageRunDuration'),
-                          value: numberLine.average
-                        },
-                        { label: t('performanceTest.slowestRun'), value: numberLine.slowest }
-                      ]"
-                      :key="stat.label"
-                      class="flex flex-col gap-1"
-                    >
-                      <dt class="text-[12px]">{{ stat.label }}</dt>
-                      <dd class="m-0 text-[17px] font-medium text-foreground">{{ stat.value }}</dd>
-                    </div>
-                  </dl>
+                <dl
+                  v-if="durationChart"
+                  class="performance-test__aggregate-chart m-0 grid min-w-0"
+                  :aria-label="t('performanceTest.runDurationChart')"
+                >
                   <div
-                    class="performance-test__aggregate-chart relative mt-3.5 h-3.5"
-                    role="img"
-                    :aria-label="t('performanceTest.runDurationChart')"
+                    v-for="row in durationChart.rows"
+                    :key="row.label"
+                    class="performance-test__aggregate-bar grid min-h-7 grid-cols-[96px_minmax(0,1fr)_72px] items-center gap-3"
                   >
-                    <span class="absolute inset-x-0 top-[5px] h-1 rounded-[2px] bg-white/14" />
-                    <span
-                      class="absolute top-0 h-3.5 w-0.5 -translate-x-1/2 rounded-[1px] bg-neutral-300"
-                      :style="{ left: numberLine.averageAt }"
-                    />
-                    <span
-                      class="absolute top-px size-3 -translate-x-1/2 rounded-full bg-white shadow-[0_0_0_3px_rgb(255_255_255/0.16)]"
-                      :style="{ left: numberLine.medianAt }"
-                    />
-                  </div>
-                  <div
-                    class="performance-test__chart-legend mt-2 flex items-center gap-4 text-[11.5px] text-subtle-foreground"
-                    aria-hidden="true"
-                  >
-                    <span class="inline-flex items-center gap-1.5"
-                      ><i class="size-2 rounded-full bg-white" />{{
-                        t('performanceTest.legendMedian')
-                      }}</span
+                    <dt class="text-[12px]">{{ row.label }}</dt>
+                    <dd
+                      class="m-0 h-1.5 overflow-hidden rounded-full bg-white/8"
+                      aria-hidden="true"
                     >
-                    <span class="inline-flex items-center gap-1.5"
-                      ><i class="h-2.5 w-0.5 rounded-[1px] bg-neutral-300" />{{
-                        t('performanceTest.legendAverage')
-                      }}</span
+                      <i
+                        class="block h-full rounded-[inherit]"
+                        :class="row.highlight ? 'bg-neutral-100' : 'bg-white/35'"
+                        :style="{ width: row.width }"
+                      />
+                    </dd>
+                    <dd
+                      class="m-0 text-right text-[13px] tabular-nums"
+                      :class="
+                        row.highlight ? 'font-medium text-foreground' : 'text-[var(--text-primary)]'
+                      "
                     >
-                    <span class="ml-auto">{{ t('performanceTest.legendRange') }}</span>
+                      {{ row.value }}
+                    </dd>
                   </div>
-                </div>
+                </dl>
               </div>
               <div v-else class="performance-test__results-placeholder pt-1 pb-1.5">
                 <p class="m-0 mb-1.5 text-[15px] font-medium text-foreground">
@@ -1197,75 +1154,67 @@ watch(performanceTestLogs, async () => {
                 </p>
               </div>
             </div>
-            <div
-              v-if="performanceTestResult?.hardware"
-              class="performance-test__system-section -mx-6 flex flex-col rounded-b-2xl bg-white/[0.02] px-6"
-            >
-              <div class="performance-test__system-head flex min-h-11 min-w-0 items-center">
-                <h3 class="m-0 flex shrink-0">
-                  <CollapsibleSectionToggle
-                    :class="toggleClass"
-                    :expanded="systemExpanded"
-                    :label="t('performanceTest.systemInformation')"
-                    @toggle="systemExpanded = !systemExpanded"
-                  />
-                </h3>
-                <span v-if="!systemExpanded" :class="summaryClass" class="text-text-muted">{{
-                  systemSummary
-                }}</span>
-              </div>
-              <dl
-                v-show="systemExpanded"
-                class="performance-test__system m-0 grid grid-cols-3 gap-x-6 pb-3.5 @max-[800px]:grid-cols-1 [&>div]:grid [&>div]:min-h-[30px] [&>div]:grid-cols-[112px_minmax(0,1fr)] [&>div]:items-center [&>div]:gap-3 [&_dt]:text-[12px] [&_dt]:text-text-muted [&_dd]:m-0 [&_dd]:truncate [&_dd]:text-[12.5px] [&_dd]:text-[var(--text-primary)]"
-              >
-                <div>
-                  <dt>{{ t('performanceTest.device') }}</dt>
-                  <dd :title="computeDeviceNames">{{ computeDeviceNames }}</dd>
-                </div>
-                <div v-if="performanceTestResult.hardware.vramMb != null">
-                  <dt>{{ t('performanceTest.vram') }}</dt>
-                  <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
-                </div>
-                <div v-if="performanceTestResult.hardware.ramMb != null">
-                  <dt>{{ t('performanceTest.ram') }}</dt>
-                  <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
-                </div>
-                <div v-if="performanceTestResult.hardware.pytorchVersion">
-                  <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
-                  <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
-                </div>
-                <div v-if="performanceTestResult.hardware.xformersVersion">
-                  <dt>{{ t('performanceTest.xformersVersion') }}</dt>
-                  <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
-                </div>
-                <template v-if="performanceTestResult.systemInfo">
-                  <div>
-                    <dt>{{ t('performanceTest.cpu') }}</dt>
-                    <dd :title="performanceTestResult.systemInfo.cpu_model">
-                      {{ performanceTestResult.systemInfo.cpu_model }}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('performanceTest.cpuCores') }}</dt>
-                    <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('performanceTest.operatingSystem') }}</dt>
-                    <dd :title="formatOperatingSystem(performanceTestResult.systemInfo)">
-                      {{ formatOperatingSystem(performanceTestResult.systemInfo) }}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{{ t('performanceTest.architecture') }}</dt>
-                    <dd>{{ performanceTestResult.systemInfo.arch }}</dd>
-                  </div>
-                </template>
-              </dl>
-            </div>
           </section>
 
           <section
-            class="performance-test__logs-section mt-[18px] flex w-full min-w-0 flex-none flex-col"
+            v-if="performanceTestResult?.hardware"
+            class="performance-test__system-section mt-9 flex w-full min-w-0 flex-none flex-col"
+          >
+            <div class="flex min-h-8 items-center">
+              <h2 class="m-0" :class="sectionLabelClass">
+                {{ t('performanceTest.systemInformation') }}
+              </h2>
+            </div>
+            <dl
+              class="performance-test__system m-0 mt-2.5 grid grid-cols-3 gap-x-6 gap-y-4 @max-[800px]:grid-cols-2 [&>div]:flex [&>div]:min-w-0 [&>div]:flex-col [&>div]:gap-1 [&_dt]:text-[12px] [&_dt]:text-text-muted [&_dd]:m-0 [&_dd]:truncate [&_dd]:text-[13px] [&_dd]:text-[var(--text-primary)]"
+            >
+              <div>
+                <dt>{{ t('performanceTest.device') }}</dt>
+                <dd :title="computeDeviceNames">{{ computeDeviceNames }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.vramMb != null">
+                <dt>{{ t('performanceTest.vram') }}</dt>
+                <dd>{{ formatMemory(performanceTestResult.hardware.vramMb) }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.ramMb != null">
+                <dt>{{ t('performanceTest.ram') }}</dt>
+                <dd>{{ formatMemory(performanceTestResult.hardware.ramMb) }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.pytorchVersion">
+                <dt>{{ t('performanceTest.pytorchVersion') }}</dt>
+                <dd>{{ performanceTestResult.hardware.pytorchVersion }}</dd>
+              </div>
+              <div v-if="performanceTestResult.hardware.xformersVersion">
+                <dt>{{ t('performanceTest.xformersVersion') }}</dt>
+                <dd>{{ performanceTestResult.hardware.xformersVersion }}</dd>
+              </div>
+              <template v-if="performanceTestResult.systemInfo">
+                <div>
+                  <dt>{{ t('performanceTest.cpu') }}</dt>
+                  <dd :title="performanceTestResult.systemInfo.cpu_model">
+                    {{ performanceTestResult.systemInfo.cpu_model }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('performanceTest.cpuCores') }}</dt>
+                  <dd>{{ performanceTestResult.systemInfo.cpu_cores }}</dd>
+                </div>
+                <div>
+                  <dt>{{ t('performanceTest.operatingSystem') }}</dt>
+                  <dd :title="formatOperatingSystem(performanceTestResult.systemInfo)">
+                    {{ formatOperatingSystem(performanceTestResult.systemInfo) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{{ t('performanceTest.architecture') }}</dt>
+                  <dd>{{ performanceTestResult.systemInfo.arch }}</dd>
+                </div>
+              </template>
+            </dl>
+          </section>
+
+          <section
+            class="performance-test__logs-section mt-9 flex w-full min-w-0 flex-none flex-col"
             :class="{ 'performance-test__logs-section--collapsed': !logsExpanded }"
           >
             <div class="performance-test__logs-head flex min-h-10 min-w-0 items-center">
