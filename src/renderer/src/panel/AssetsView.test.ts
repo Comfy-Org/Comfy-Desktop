@@ -563,7 +563,8 @@ describe('AssetsView on This computer', () => {
 
   it.each([
     ['C:\\Users\\me\\ComfyUI-Shared\\output', 'C:\\…\\ComfyUI-Shared'],
-    ['\\\\server\\share\\renders\\output', '\\\\server\\…\\renders'],
+    ['\\\\server\\share\\renders\\output', '\\\\server\\share\\renders'],
+    ['\\\\server\\shareB\\jobs\\renders\\output', '\\\\server\\shareB\\…\\renders'],
     ['C:\\output', 'C:\\'],
     ['/output', '/'],
     ['/Users/me/output', '/Users/me']
@@ -773,9 +774,9 @@ describe('AssetsView on This computer', () => {
       .get('[data-testid="local-folder-copy-path"]')
       .trigger('keydown', { key: 'Escape' })
     await flushPromises()
-    finishCopy()
-    await flushPromises()
     await trigger.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    finishCopy()
     await flushPromises()
 
     expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Copy path')

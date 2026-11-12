@@ -25,6 +25,7 @@ const SHOWN_BUILD_NAMES = 2
 const MAX_TOOLTIP_BUILD_NAMES = 10
 const WINDOWS_PATH = /^([A-Za-z]:|\\\\)/
 const DRIVE_ONLY = /^[A-Za-z]:$/
+const NETWORK_PATH = /^\\\\/
 const SKELETON_COUNT = 8
 
 const props = defineProps<{
@@ -119,7 +120,9 @@ function shortParentPath(output: OutputFolder): string {
   const separator = WINDOWS_PATH.test(output.path) ? '\\' : '/'
   const root = output.path.match(/^[\\/]+/)?.[0] ?? ''
   const parents = pathParts(output.path).slice(0, -1)
-  const shown = parents.length <= 2 ? parents : [parents[0], '…', parents.at(-1)]
+  const kept = NETWORK_PATH.test(output.path) ? 2 : 1
+  const shown =
+    parents.length <= kept + 1 ? parents : [...parents.slice(0, kept), '…', parents.at(-1)]
   const joined = root + shown.join(separator)
   return DRIVE_ONLY.test(joined) ? joined + separator : joined
 }
