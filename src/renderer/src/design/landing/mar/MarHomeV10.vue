@@ -193,7 +193,7 @@ const recent = computed<Recent[]>(() =>
     <div v-else>
       <!-- The Apps stage: the examples arc leads for everyone, from
            Milestone 2 on; from Milestone 3 it shows workflows too
-           (UI Playground › Apps and workflows). -->
+           (UI Playground › Apps and templates). -->
       <HomeArcMix v-if="can.explore" class="mt-6" />
       <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
       <MarBuildsRow v-if="!onCloud" />

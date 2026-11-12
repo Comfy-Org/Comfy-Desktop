@@ -1,32 +1,31 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronLeft, ChevronRight, PanelsTopLeft, Workflow } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import ExampleArc from './ExampleArc.vue'
-import MarSeg from '../pages/MarSeg.vue'
 import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import WorkflowCard from '../WorkflowCard.vue'
-import { ARC_APPS, ARC_WORKFLOWS, interleave, type ArcItem } from './arcItems'
+import { ARC_APPS, ARC_TEMPLATES, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
 
 /**
- * Milestone 3's Home stage: the apps arc plus the workflows, in the layout
- * picked in UI Playground › Apps and workflows. The arc keeps a featured
+ * Milestone 3's Home stage: the apps arc plus the Hub's templates, in the
+ * layout picked in UI Playground › Apps and templates. The arc keeps a featured
  * set (about ten); everything else is one click away in Explore.
  */
 const FEATURED = 12
 
-const kind = ref<'apps' | 'workflows'>('apps')
+const kind = ref<'apps' | 'templates'>('apps')
 const KINDS = [
-  { value: 'apps' as const, label: 'Apps', icon: PanelsTopLeft },
-  { value: 'workflows' as const, label: 'Workflows', icon: Workflow }
+  { value: 'apps' as const, label: 'Apps' },
+  { value: 'templates' as const, label: 'Templates' }
 ]
 
 type Topic = 'all' | ArcItem['topic']
 const topic = ref<Topic>('all')
-const EVERY = [...ARC_APPS, ...ARC_WORKFLOWS]
+const EVERY = [...ARC_APPS, ...ARC_TEMPLATES]
 const TOPICS = computed(() =>
   (
     [
@@ -42,14 +41,14 @@ const TOPICS = computed(() =>
 const items = computed<ArcItem[]>(() => {
   switch (homeArcMix.id) {
     case 'tabs':
-      return (kind.value === 'apps' ? ARC_APPS : ARC_WORKFLOWS).slice(0, FEATURED)
+      return (kind.value === 'apps' ? ARC_APPS : ARC_TEMPLATES).slice(0, FEATURED)
     case 'mixed':
-      return interleave(ARC_APPS, ARC_WORKFLOWS, FEATURED)
+      return interleave(ARC_APPS, ARC_TEMPLATES, FEATURED)
     case 'row':
       return ARC_APPS
     case 'topics': {
       const apps = ARC_APPS.filter((x) => topic.value === 'all' || x.topic === topic.value)
-      const flows = ARC_WORKFLOWS.filter((x) => topic.value === 'all' || x.topic === topic.value)
+      const flows = ARC_TEMPLATES.filter((x) => topic.value === 'all' || x.topic === topic.value)
       return interleave(apps, flows, FEATURED)
     }
   }
@@ -57,7 +56,7 @@ const items = computed<ArcItem[]>(() => {
 })
 
 const allLabel = computed(() => {
-  if (homeArcMix.id === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
+  if (homeArcMix.id === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all templates'
   if (homeArcMix.id === 'topics' && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
   if (homeArcMix.id === 'row') return 'See all apps'
@@ -69,7 +68,7 @@ function seeAll(on: 'apps' | 'templates'): void {
   go('explore')
 }
 const allOn = computed(() =>
-  homeArcMix.id === 'tabs' && kind.value === 'workflows' ? 'templates' : 'apps'
+  homeArcMix.id === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
 )
 
 const row = ref<InstanceType<typeof ScrollRow> | null>(null)
@@ -81,8 +80,24 @@ function scrollRow(by: number): void {
 
 <template>
   <div class="mar-arcmix">
-    <div v-if="homeArcMix.id === 'tabs'" class="mar-arcmix-picker">
-      <MarSeg v-model="kind" :options="KINDS" label="Show" />
+    <div
+      v-if="homeArcMix.id === 'tabs'"
+      class="mar-arcmix-picker"
+      role="tablist"
+      aria-label="Show"
+      data-no-pill
+    >
+      <button
+        v-for="k in KINDS"
+        :key="k.value"
+        type="button"
+        role="tab"
+        class="mar-arcmix-tab"
+        :aria-selected="kind === k.value"
+        @click="kind = k.value"
+      >
+        {{ k.label }}
+      </button>
     </div>
     <div
       v-else-if="homeArcMix.id === 'topics'"
@@ -108,16 +123,16 @@ function scrollRow(by: number): void {
     <section v-if="homeArcMix.id === 'row'" class="mar-arcmix-row">
       <SectionHeader
         class="mar-sec"
-        title="Workflows"
-        link="See all workflows"
+        title="Templates"
+        link="See all templates"
         @link="seeAll('templates')"
       >
         <template #controls>
           <span class="mar-arcmix-steps">
-            <button type="button" aria-label="Previous workflows" @click="scrollRow(-1)">
+            <button type="button" aria-label="Previous templates" @click="scrollRow(-1)">
               <ChevronLeft :size="16" />
             </button>
-            <button type="button" aria-label="Next workflows" @click="scrollRow(1)">
+            <button type="button" aria-label="Next templates" @click="scrollRow(1)">
               <ChevronRight :size="16" />
             </button>
           </span>
@@ -125,7 +140,7 @@ function scrollRow(by: number): void {
       </SectionHeader>
       <ScrollRow ref="row" :columns="5" :min="180">
         <WorkflowCard
-          v-for="w in ARC_WORKFLOWS"
+          v-for="w in ARC_TEMPLATES"
           :key="w.id"
           :src="w.src"
           :title="w.label"
@@ -162,6 +177,42 @@ function scrollRow(by: number): void {
 :root .proto-ui.proto-ui.proto-ui .mar-arcmix-chip[aria-selected='true'] {
   background: var(--color-base-foreground);
   color: var(--color-base-background);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab {
+  position: relative;
+  width: auto;
+  height: 28px;
+  padding: 0 8px;
+  background: none;
+  color: var(--color-muted-foreground);
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 140ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab:hover {
+  color: var(--color-base-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab[aria-selected='true'] {
+  color: var(--color-base-foreground);
+}
+.mar-arcmix-tab::after {
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentColor;
+  content: '';
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition:
+    opacity 160ms ease,
+    transform 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+.mar-arcmix-tab[aria-selected='true']::after {
+  opacity: 1;
+  transform: none;
 }
 .mar-arcmix-row {
   margin-top: 28px;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, ChevronLeft, ChevronRight, PanelsTopLeft, Workflow } from 'lucide-vue-next'
+import { ArrowRight, ChevronLeft, ChevronRight, PanelsTopLeft } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion } from './examples'
@@ -244,8 +244,8 @@ function wheel(e: WheelEvent): void {
         :aria-current="i === active ? 'true' : undefined"
         :aria-label="
           i === active
-            ? `Open ${x.label}: ${x.does}. ${x.kind === 'app' ? 'App' : 'Workflow'}`
-            : `${x.label}: ${x.does}. ${x.kind === 'app' ? 'App' : 'Workflow'}`
+            ? `Open ${x.label}: ${x.does}. ${x.kind === 'app' ? 'App' : 'Template'}`
+            : `${x.label}: ${x.does}. ${x.kind === 'app' ? 'App' : 'Template'}`
         "
         @click="pick(i)"
       >
@@ -266,10 +266,10 @@ function wheel(e: WheelEvent): void {
         />
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
-        <!-- App, as a badge up top; its name and what it does, below. -->
-        <span class="mar-arc-text">
-          <span v-if="x.kind === 'app'" class="mar-arc-app"><PanelsTopLeft :size="11" />App</span>
-          <span v-else class="mar-arc-app"><Workflow :size="11" />Workflow</span>
+        <!-- Apps only (Milestone 2): App as a badge up top. From Milestone 3 the
+             Home's tabs say what's on the arc, so no badge. -->
+        <span v-if="!given" class="mar-arc-text">
+          <span class="mar-arc-app"><PanelsTopLeft :size="11" />App</span>
         </span>
         <span class="mar-arc-dim" />
         <!-- As on the app cards: the name and what it does on the left,
@@ -279,7 +279,9 @@ function wheel(e: WheelEvent): void {
             <span class="mar-arc-title">{{ x.label }}</span>
             <span class="mar-arc-does">{{ x.does }}</span>
           </span>
-          <span class="mar-arc-go" aria-hidden="true">Open</span>
+          <span class="mar-arc-go" aria-hidden="true">{{
+            x.kind === 'template' ? 'Open template' : 'Open'
+          }}</span>
         </span>
       </button>
     </div>

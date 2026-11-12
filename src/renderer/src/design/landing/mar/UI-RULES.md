@@ -102,6 +102,11 @@ DS's Motion page (`ds/motion.ts`).
   empty or not, so the bar never shifts. An empty one says what lands there
   ("No 3D files yet"), never "Nothing matches", which is only for a search
   or a filter.
+- **Home's Apps | Templates tabs are plain text** centred over the arc: the
+  picked one bright and underlined, the other muted, no pill around them.
+  The cards carry no type badge; the tab says what's on the arc.
+- **Templates, not Workflows,** for the Hub's catalog (Home, Explore).
+  Workflows are the person's own (Recent workflows, the Workflows library).
 - **Counts go in the tabs**, not beside the title ("Images 4", not "17
   assets" after the heading). They follow the open folder, filter and
   search (the type aside). Assets' type tabs only; other tab rows keep counts off.

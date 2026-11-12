@@ -1,13 +1,13 @@
 import { reactive, watch } from 'vue'
 
-/** How the Home's arc shows apps and workflows from Milestone 3 on
- *  (UI Playground › Apps and workflows). */
+/** How the Home's arc shows apps and templates from Milestone 3 on
+ *  (UI Playground › Apps and templates). */
 export type HomeArcMix = 'tabs' | 'mixed' | 'row' | 'topics'
 
 export const HOME_ARC_MIXES: { value: HomeArcMix; label: string }[] = [
-  { value: 'tabs', label: '1 · Apps | Workflows tabs over the arc' },
-  { value: 'mixed', label: '2 · One arc, apps and workflows mixed' },
-  { value: 'row', label: '3 · Arc of apps, row of workflows' },
+  { value: 'tabs', label: '1 · Apps | Templates tabs over the arc' },
+  { value: 'mixed', label: '2 · One arc, apps and templates mixed' },
+  { value: 'row', label: '3 · Arc of apps, row of templates' },
   { value: 'topics', label: '4 · Arc by use case (chips)' }
 ]
 

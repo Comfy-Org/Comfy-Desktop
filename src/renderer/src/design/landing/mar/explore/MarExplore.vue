@@ -50,7 +50,7 @@ import AssetLayoutMenu, { type AssetView } from '../assets/AssetLayoutMenu.vue'
 
 /**
  * Explore. One line holds everything that narrows the page: what you're
- * looking at (Apps, Workflows, Models, Tutorials), its type, and a search,
+ * looking at (Apps, Templates, Models, Tutorials), its type, and a search,
  * so there is one kind of tab, not two. It leads with apps, one catalogue
  * anyone can run, filtered like the hub's: Filter by use case, Sort, search,
  * the picked ones on the menu's rows. From Explore & Learn on,
@@ -84,9 +84,9 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
         icon: PanelsTopLeft
       },
       // Icons on every tab, like Apps' own row.
-      { value: 'templates', label: 'Workflows', count: HUB_WORKFLOWS.length, icon: ComfyWorkflow },
+      { value: 'templates', label: 'Templates', count: HUB_WORKFLOWS.length, icon: ComfyWorkflow },
       // Models and Tutorials come with Learn (Milestone 3 is the Hub's apps
-      // and workflows only).
+      // and templates only).
       ...(can.value.learn
         ? [
             {
@@ -126,7 +126,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
 }
 watch(tab, clearFilters)
 const PLACEHOLDER: Record<Exclude<Tab, 'mine'>, string> = {
-  templates: 'Search workflows',
+  templates: 'Search templates',
   models: 'Search models or providers',
   apps: 'Search apps',
   examples: 'Search',
@@ -350,7 +350,7 @@ const picked = computed(() =>
     g.items.filter((i) => g.list.value.includes(i.value)).map((i) => ({ ...i, group: g }))
   )
 )
-// Apps and Workflows: one grid of cards; Size picks five, four or three
+// Apps and Templates: one grid of cards; Size picks five, four or three
 // across.
 const cardView = ref<AssetView>('grid')
 const cardSize = ref(2)
@@ -394,8 +394,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     :error-title="asApps ? `Can't load Apps` : `Can't load Explore`"
     :error-text="
       can.learn
-        ? 'Example workflows, models and tutorials come from the internet. Your own workflows are still in Workflows.'
-        : 'Apps and workflows come from the internet. Check your connection and try again.'
+        ? 'Templates, models and tutorials come from the internet. Your own workflows are still in Workflows.'
+        : 'Apps and templates come from the internet. Check your connection and try again.'
     "
     @clear="clearFilters"
   >
@@ -521,7 +521,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
           />
         </span>
         <!-- Layout, last, as on Assets: Size and Sort by on Apps and
-             Workflows (one grid, so no layouts to pick). -->
+             Templates (one grid, so no layouts to pick). -->
         <span v-if="tab === 'apps' || tab === 'templates'" key="sort" class="inline-flex">
           <AssetLayoutMenu
             v-if="tab === 'apps'"
@@ -599,7 +599,7 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     <!-- My apps: the ones you made, live, draft or with changes. -->
     <MarAppsPage v-else-if="tab === 'mine'" embedded toolbar-to="#mar-ex-lib-tools" />
 
-    <!-- Workflows (the Hub's): the same card as an app, its name and the
+    <!-- Templates (the Hub's workflows): the same card as an app, its name and the
          first line of the catalog's description. -->
     <div
       v-else-if="tab === 'templates'"

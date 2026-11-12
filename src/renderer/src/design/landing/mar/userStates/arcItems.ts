@@ -3,12 +3,12 @@ import { thumb } from '../../mock'
 import { HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
 import { EXAMPLES, runExample } from './examples'
 
-/** One card on the Home's arc: an app or a workflow. */
+/** One card on the Home's arc: an app or a template (a Hub workflow). */
 export interface ArcItem {
   id: string
   label: string
   does: string
-  kind: 'app' | 'workflow'
+  kind: 'app' | 'template'
   /** Image, video or 3D: what a use-case chip groups it under. */
   topic: 'image' | 'video' | '3d' | 'audio'
   src: string
@@ -30,24 +30,24 @@ export const ARC_APPS: ArcItem[] = EXAMPLES.map((x) => ({
   open: () => runExample(x)
 }))
 
-function workflow(w: HubWorkflow): ArcItem {
+function template(w: HubWorkflow): ArcItem {
   const [title, what] = w.title.split(':').map((x) => x.trim())
   return {
     id: w.id,
     label: what ? title! : w.title,
     does: what ?? hubLine(w),
-    kind: 'workflow',
+    kind: 'template',
     topic: w.media,
     src: hubThumb(w.id) ?? thumb(w.id),
     open: () => openDetail('template', w.id)
   }
 }
 
-export const ARC_WORKFLOWS: ArcItem[] = [...HUB_WORKFLOWS]
+export const ARC_TEMPLATES: ArcItem[] = [...HUB_WORKFLOWS]
   .sort((a, b) => b.usage - a.usage)
-  .map(workflow)
+  .map(template)
 
-/** Apps and workflows taking turns, as one featured set. */
+/** Apps and templates taking turns, as one featured set. */
 export function interleave(a: ArcItem[], b: ArcItem[], max: number): ArcItem[] {
   const out: ArcItem[] = []
   for (let i = 0; out.length < max && (i < a.length || i < b.length); i++) {
