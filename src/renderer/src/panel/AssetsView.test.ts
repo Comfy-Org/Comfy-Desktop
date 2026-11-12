@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -121,6 +121,7 @@ beforeEach(() => {
     listOutputFolder,
     openPath,
     revealPath,
+    platform: 'darwin',
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -583,16 +584,26 @@ describe('AssetsView on This computer', () => {
     listOutputFolders.mockResolvedValue(outputFolders())
   })
 
-  it('shows each output folder with the builds that save there, without the file tools', async () => {
+  it('shows each output folder by its own name and where it is, under the builds that save there', async () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
     await openThisComputer(wrapper)
     const cloudLoads = listAssets.mock.calls.length
 
-    const shared = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
-    expect(shared.text()).toContain('Shared output')
-    expect(shared.text()).toContain('Used by Test Instance, My Local 1')
-    expect(shared.text()).toContain(SHARED)
-    expect(wrapper.get(`[data-testid="local-folder-${APPS}"]`).text()).toContain('Apps output')
+    const heading = (path: string) => wrapper.get(`[data-testid="local-folder-heading-${path}"] h2`)
+    const card = (path: string) => wrapper.get(`[data-testid="local-folder-${path}"]`)
+    expect(heading(SHARED).text()).toBe('Test Instance, My Local 1')
+    expect(
+      card(SHARED)
+        .findAll('span')
+        .map((span) => span.text())
+    ).toEqual(['output', '/Users/…/ComfyUI-Shared'])
+    expect(card(SHARED).attributes('title')).toBe(SHARED)
+    expect(heading(APPS).text()).toBe('Apps')
+    expect(
+      card(APPS)
+        .findAll('span')
+        .map((span) => span.text())
+    ).toEqual(['output', '/Users/…/ComfyUI-Apps'])
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="local-open-folder"]').exists()).toBe(false)
 
@@ -600,6 +611,227 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
     expect(listOutputFolders).toHaveBeenCalledTimes(2)
     expect(listAssets).toHaveBeenCalledTimes(cloudLoads)
+  })
+
+  it.each([
+    ['C:\\Users\\me\\ComfyUI-Shared\\output', 'C:\\…\\ComfyUI-Shared'],
+    ['\\\\server\\share\\renders\\output', '\\\\server\\share\\renders'],
+    ['\\\\server\\shareB\\jobs\\renders\\output', '\\\\server\\shareB\\…\\renders'],
+    ['C:\\output', 'C:\\'],
+    ['/output', '/'],
+    ['/Users/me/output', '/Users/me']
+  ])('shortens the folder that holds %s to %s', async (path, shown) => {
+    listOutputFolders.mockResolvedValue([{ path, shared: true, builds: ['Test Instance'] }])
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    expect(
+      wrapper.get(`[data-testid="local-folder-${CSS.escape(path)}"] span:last-child`).text()
+    ).toBe(shown)
+  })
+
+  it('says when no build saves to a folder yet', async () => {
+    listOutputFolders.mockResolvedValue([{ path: SHARED, shared: true, builds: [] }])
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+
+    expect(wrapper.get(`[data-testid="local-folder-heading-${SHARED}"] h2`).text()).toBe(
+      'No build saves here yet'
+    )
+    const card = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
+    expect(document.getElementById(card.attributes('aria-describedby')!)?.textContent).toBe(
+      'No build saves here yet'
+    )
+  })
+
+  it('shows two build names and lists all of them from the +N button', async () => {
+    const builds = ['Test Instance', 'My Local 1', 'MyLocalComfy', 'ComfyUI (1)']
+    listOutputFolders.mockResolvedValue([{ path: SHARED, shared: true, builds }])
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const more = wrapper.get(`[data-testid="local-folder-more-${SHARED}"]`)
+    expect(more.text()).toBe('+2')
+    expect(document.getElementById(more.attributes('aria-describedby')!)?.textContent).toBe(
+      builds.join(', ')
+    )
+    ;(more.element as HTMLButtonElement).focus()
+    await flushPromises()
+
+    const bubble = document.querySelector('.tooltip-bubble')?.textContent
+    expect(bubble).toContain('Saved here by')
+    for (const name of builds) expect(bubble).toContain(name)
+  })
+
+  it('lists at most ten builds in the tooltip and counts the rest', async () => {
+    const builds = Array.from({ length: 13 }, (_, n) => `Build ${n + 1}`)
+    listOutputFolders.mockResolvedValue([{ path: SHARED, shared: true, builds }])
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    ;(
+      wrapper.get(`[data-testid="local-folder-more-${SHARED}"]`).element as HTMLButtonElement
+    ).focus()
+    await flushPromises()
+
+    const bubble = document.querySelector('.tooltip-bubble')?.textContent
+    expect(bubble).toContain('Build 10')
+    expect(bubble).not.toContain('Build 11')
+    expect(bubble).toContain('and 3 more')
+  })
+
+  it('lists cut-off build names on hover and from a keyboard button', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const trigger = wrapper.get(`[data-testid="local-folder-heading-${SHARED}"]`)
+    expect(wrapper.find(`[data-testid="local-folder-names-${SHARED}"]`).exists()).toBe(false)
+
+    trigger.get('h2').element.style.maxWidth = '40px'
+    const names = await vi.waitFor(() =>
+      wrapper.get(`[data-testid="local-folder-names-${SHARED}"]`)
+    )
+    expect(names.attributes('aria-label')).toBe('Show build names')
+    ;(names.element as HTMLButtonElement).focus()
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('My Local 1')
+  })
+
+  it('says who saves to a folder on hover, with no +N button when every name fits', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const trigger = wrapper.get(`[data-testid="local-folder-heading-${APPS}"]`)
+
+    await trigger.trigger('pointermove', { pointerType: 'mouse' })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    await flushPromises()
+
+    expect(wrapper.find(`[data-testid="local-folder-more-${APPS}"]`).exists()).toBe(false)
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Saved here by')
+  })
+
+  it('shows the build list only for a folder that builds use', async () => {
+    listOutputFolders.mockResolvedValue([
+      { path: SHARED, shared: true, builds: [] },
+      { path: APPS, shared: false, builds: ['Apps'] }
+    ])
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const hover = async (path: string): Promise<void> => {
+      await wrapper
+        .get(`[data-testid="local-folder-heading-${path}"]`)
+        .trigger('pointermove', { pointerType: 'mouse' })
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      await flushPromises()
+    }
+
+    await hover(SHARED)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    await hover(APPS)
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Apps')
+  })
+
+  it('explains how the folders work on focus and to screen readers', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const help = wrapper.get('[data-testid="local-folders-help"] button')
+    const hint =
+      'The names above each folder are the builds that save their images and videos there. Most builds share one folder.'
+    expect(document.getElementById(help.attributes('aria-describedby')!)?.textContent).toBe(hint)
+    ;(help.element as HTMLButtonElement).focus()
+    await flushPromises()
+
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(hint)
+  })
+
+  it('keeps the help button in place while the folders load', async () => {
+    listOutputFolders.mockReturnValue(new Promise(() => {}))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    expect(wrapper.find('[data-testid="local-folders-help"]').exists()).toBe(true)
+  })
+
+  it('shows a folder in Finder from its menu without opening it', async () => {
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    await wrapper
+      .get(`[data-testid="local-folder-menu-${SHARED}"]`)
+      .trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const reveal = wrapper.get('[data-testid="local-folder-reveal"]')
+    expect(reveal.text()).toBe('Show in Finder')
+    await reveal.trigger('click')
+    await flushPromises()
+
+    expect(revealPath).toHaveBeenCalledWith(SHARED)
+    expect(listOutputFolder).not.toHaveBeenCalled()
+  })
+
+  it('copies a folder path from its menu and says it was copied', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    onTestFinished(() => writeText.mockRestore())
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    await wrapper
+      .get(`[data-testid="local-folder-menu-${APPS}"]`)
+      .trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith(APPS)
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Path copied')
+    expect(listOutputFolder).not.toHaveBeenCalled()
+  })
+
+  it('says when a folder path could not be copied and lets the user try again', async () => {
+    const writeText = vi
+      .spyOn(navigator.clipboard, 'writeText')
+      .mockRejectedValue(new Error('denied'))
+    onTestFinished(() => writeText.mockRestore())
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    await wrapper
+      .get(`[data-testid="local-folder-menu-${APPS}"]`)
+      .trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe(
+      "Couldn't copy. Try again"
+    )
+
+    writeText.mockResolvedValue()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Path copied')
+  })
+
+  it('does not show an old copy result when the menu opens again', async () => {
+    let finishCopy = (): void => {}
+    const writeText = vi
+      .spyOn(navigator.clipboard, 'writeText')
+      .mockReturnValue(new Promise<void>((resolve) => (finishCopy = resolve)))
+    onTestFinished(() => writeText.mockRestore())
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const trigger = wrapper.get(`[data-testid="local-folder-menu-${APPS}"]`)
+
+    await trigger.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await wrapper
+      .get('[data-testid="local-folder-copy-path"]')
+      .trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    await trigger.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    finishCopy()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Copy path')
   })
 
   it('opens on This computer when the user left it there', async () => {
@@ -646,7 +878,7 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
 
     expect(wrapper.get('nav').text()).toContain('This computer')
-    expect(wrapper.get('nav').text()).toContain('Shared output')
+    expect(wrapper.get('[aria-current="page"]').text()).toBe('output')
     expect(
       wrapper.findAll('[data-testid^="local-file-"]').map((c) => c.attributes('data-testid'))
     ).toEqual(['local-file-new.mp4', 'local-file-old.png'])
@@ -672,7 +904,9 @@ describe('AssetsView on This computer', () => {
     await wrapper.get('[data-testid="local-open-folder"]').trigger('click')
     expect(openPath).toHaveBeenCalledExactlyOnceWith(SHARED)
 
-    await wrapper.get('[data-testid="local-show-cutout.png"]').trigger('click')
+    const show = wrapper.get('[data-testid="local-show-cutout.png"]')
+    expect(show.attributes('aria-label')).toBe('Show in Finder')
+    await show.trigger('click')
     expect(revealPath).toHaveBeenCalledExactlyOnceWith(`${SHARED}/cutout.png`)
   })
 
@@ -693,7 +927,9 @@ describe('AssetsView on This computer', () => {
     expect(savedIn).toContain('output')
     expect(savedIn).toContain('/Users/me/ComfyUI-Shared')
     expect(wrapper.find('[data-testid="output-detail-download"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="output-detail-show-in-folder"]').trigger('click')
+    const show = wrapper.get('[data-testid="output-detail-show-in-folder"]')
+    expect(show.text()).toBe('Show in Finder')
+    await show.trigger('click')
     expect(revealPath).toHaveBeenCalledExactlyOnceWith(`${SHARED}/cutout.png`)
   })
 
@@ -730,6 +966,30 @@ describe('AssetsView on This computer', () => {
       title: "Couldn't open this folder. It may have been moved or deleted.",
       message: SHARED
     })
+  })
+
+  it('shows a subfolder in Finder and copies its path from its menu without opening it', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    onTestFinished(() => writeText.mockRestore())
+    listOutputFolder.mockResolvedValueOnce(listing([entry(SHARED, 'apps', null)]))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    const menu = wrapper.get('[data-testid="local-subfolder-menu-apps"]')
+    await menu.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-reveal"]').trigger('click')
+    await flushPromises()
+    await menu.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+
+    expect(revealPath).toHaveBeenCalledWith(`${SHARED}/apps`)
+    expect(writeText).toHaveBeenCalledWith(`${SHARED}/apps`)
+    expect(listOutputFolder).toHaveBeenCalledTimes(1)
   })
 
   it('shows only the subfolders of a folder with no files, and the cut-short note when nothing matches', async () => {

@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronRight, Folder, FolderOpen } from 'lucide-vue-next'
+import { ChevronRight, CircleHelp, Folder, FolderOpen, FolderSearch, List } from 'lucide-vue-next'
+import Tooltip from '../components/ui/Tooltip.vue'
+import { revealInFolderKey } from '../composables/usePlatform'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AssetCard from './AssetCard.vue'
+import FolderActionsMenu from './FolderActionsMenu.vue'
 import { useModal } from '../composables/useModal'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
@@ -18,6 +21,11 @@ interface Crumb {
 }
 
 const NAME_TOOLTIP_DELAY_MS = 600
+const SHOWN_BUILD_NAMES = 2
+const MAX_TOOLTIP_BUILD_NAMES = 10
+const WINDOWS_PATH = /^([A-Za-z]:|\\\\)/
+const DRIVE_ONLY = /^[A-Za-z]:$/
+const NETWORK_PATH = /^\\\\/
 const SKELETON_COUNT = 8
 
 const props = defineProps<{
@@ -37,6 +45,24 @@ const emit = defineEmits<{ 'clear-filters': [] }>()
 const { t } = useI18n()
 const modal = useModal()
 const root = useTemplateRef<HTMLElement>('root')
+const idPrefix = useId()
+const headingPaths = new Map<Element, string>()
+const clippedHeadings = ref(new Set<string>())
+const headingObserver = new ResizeObserver((entries) => {
+  const next = new Set(clippedHeadings.value)
+  for (const { target } of entries) {
+    const path = headingPaths.get(target)
+    if (path === undefined) continue
+    if (target.scrollWidth > target.clientWidth) next.add(path)
+    else next.delete(path)
+  }
+  if (
+    next.size !== clippedHeadings.value.size ||
+    [...next].some((path) => !clippedHeadings.value.has(path))
+  )
+    clippedHeadings.value = next
+})
+const revealLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 const folders = ref<OutputFolder[] | null>(null)
 const trail = ref<Crumb[]>([])
 const listing = ref<OutputFolderListing | null>(null)
@@ -83,17 +109,65 @@ const detailIndex = computed<number | null>({
     (detailPath.value = (index === null ? null : visibleFiles.value[index]?.path) ?? null)
 })
 
-function folderLabel(output: OutputFolder): string {
-  return output.shared
-    ? t('assets.local.sharedOutput')
-    : t('assets.local.buildOutput', { name: output.builds.join(', ') })
+function pathParts(path: string): string[] {
+  return path.split(/[\\/]/).filter(Boolean)
 }
 
-function usedBy(output: OutputFolder): string {
-  return output.builds.length > 0
-    ? t('assets.local.usedBy', { builds: output.builds.join(', ') })
-    : t('assets.local.notUsed')
+function folderName(output: OutputFolder): string {
+  return pathParts(output.path).at(-1) ?? output.path
 }
+
+function shortParentPath(output: OutputFolder): string {
+  const separator = WINDOWS_PATH.test(output.path) ? '\\' : '/'
+  const root = output.path.match(/^[\\/]+/)?.[0] ?? ''
+  const parents = pathParts(output.path).slice(0, -1)
+  const kept = NETWORK_PATH.test(output.path) ? 2 : 1
+  const shown =
+    parents.length <= kept + 1 ? parents : [...parents.slice(0, kept), '…', parents.at(-1)]
+  const joined = root + shown.join(separator)
+  return DRIVE_ONLY.test(joined) ? joined + separator : joined
+}
+
+function shownBuildNames(output: OutputFolder): string {
+  return output.builds.length > 0
+    ? output.builds.slice(0, SHOWN_BUILD_NAMES).join(', ')
+    : t('assets.local.noBuilds')
+}
+
+function allBuildNames(output: OutputFolder): string {
+  return output.builds.length > 0 ? output.builds.join(', ') : t('assets.local.noBuilds')
+}
+
+function hiddenBuildCount(output: OutputFolder): number {
+  return Math.max(0, output.builds.length - SHOWN_BUILD_NAMES)
+}
+
+function tooltipBuildNames(output: OutputFolder): string[] {
+  return output.builds.slice(0, MAX_TOOLTIP_BUILD_NAMES)
+}
+
+function namesCutOff(output: OutputFolder): boolean {
+  return output.builds.length > 0 && clippedHeadings.value.has(output.path)
+}
+
+function setBuildHeading(path: string, element: unknown): void {
+  if (element instanceof Element) {
+    headingPaths.set(element, path)
+    headingObserver.observe(element)
+    return
+  }
+  for (const [observed, observedPath] of headingPaths)
+    if (observedPath === path) {
+      headingObserver.unobserve(observed)
+      headingPaths.delete(observed)
+    }
+  if (!clippedHeadings.value.has(path)) return
+  const next = new Set(clippedHeadings.value)
+  next.delete(path)
+  clippedHeadings.value = next
+}
+
+onBeforeUnmount(() => headingObserver.disconnect())
 
 function fileDetails(entry: OutputEntry): string {
   return [
@@ -265,13 +339,38 @@ defineExpose({ reload, loading })
     </section>
 
     <template v-else-if="!current">
+      <div v-if="folders?.length !== 0" class="flex">
+        <Tooltip
+          side="right"
+          keep-open-on-click
+          :text="t('assets.local.foldersHint')"
+          data-testid="local-folders-help"
+        >
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="md"
+            class="-ml-2 gap-1.5 px-2 text-ui"
+            :aria-describedby="`${idPrefix}-folders-hint`"
+          >
+            <CircleHelp :size="14" aria-hidden="true" />
+            {{ t('assets.local.howFoldersWork') }}
+          </Button>
+        </Tooltip>
+        <span :id="`${idPrefix}-folders-hint`" class="sr-only">{{
+          t('assets.local.foldersHint')
+        }}</span>
+      </div>
       <ul
         v-if="folders === null"
-        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 p-0"
+        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-x-4 gap-y-6 p-0"
         role="status"
         :aria-label="t('common.loading')"
       >
-        <li v-for="n in 2" :key="n"><Skeleton class="h-[92px] w-full rounded-xl" /></li>
+        <li v-for="n in 2" :key="n" class="flex flex-col gap-2">
+          <Skeleton class="h-6 w-32 rounded-md" />
+          <Skeleton class="h-14 w-full rounded-xl" />
+        </li>
       </ul>
       <section
         v-else-if="folders.length === 0"
@@ -283,32 +382,99 @@ defineExpose({ reload, loading })
         </h2>
         <p class="m-0 text-ui text-muted-foreground">{{ t('assets.local.noFoldersBody') }}</p>
       </section>
-      <ul
-        v-else
-        class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3 p-0"
-      >
-        <li v-for="output in folders" :key="output.path">
-          <button
-            type="button"
-            class="flex w-full cursor-pointer items-start gap-3 rounded-xl bg-card p-4 text-left transition-colors duration-150 hover:bg-card-hover"
-            :data-testid="`local-folder-${output.path}`"
-            @click="enter({ name: folderLabel(output), path: output.path })"
+      <template v-else>
+        <ul
+          class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-x-4 gap-y-6 p-0"
+        >
+          <li
+            v-for="(output, index) in folders"
+            :key="output.path"
+            class="flex min-w-0 flex-col gap-2"
           >
-            <Folder :size="20" class="mt-0.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span class="flex min-w-0 flex-col gap-0.5">
-              <span class="truncate text-ui font-medium text-foreground">{{
-                folderLabel(output)
+            <div class="flex h-6 min-w-0">
+              <Tooltip
+                side="top"
+                align="start"
+                keep-open-on-click
+                :disabled="output.builds.length === 0"
+                class="min-w-0 items-center gap-1.5"
+                :data-testid="`local-folder-heading-${output.path}`"
+              >
+                <h2
+                  :ref="(element) => setBuildHeading(output.path, element)"
+                  :class="[
+                    'm-0 truncate text-ui',
+                    output.builds.length > 0
+                      ? 'font-medium text-foreground'
+                      : 'text-muted-foreground'
+                  ]"
+                >
+                  {{ shownBuildNames(output) }}
+                </h2>
+                <Button
+                  v-if="hiddenBuildCount(output) > 0"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  class="shrink-0"
+                  :aria-describedby="`${idPrefix}-builds-${index}`"
+                  :data-testid="`local-folder-more-${output.path}`"
+                >
+                  +{{ hiddenBuildCount(output) }}
+                </Button>
+                <Button
+                  v-else-if="namesCutOff(output)"
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  class="shrink-0"
+                  :aria-label="t('assets.local.showBuildNames')"
+                  :aria-describedby="`${idPrefix}-builds-${index}`"
+                  :data-testid="`local-folder-names-${output.path}`"
+                >
+                  <List :size="14" aria-hidden="true" />
+                </Button>
+                <template #content>
+                  <span class="mb-0.5 block">{{ t('assets.local.savedBy') }}</span>
+                  <span v-for="name in tooltipBuildNames(output)" :key="name" class="block">{{
+                    name
+                  }}</span>
+                  <span v-if="output.builds.length > MAX_TOOLTIP_BUILD_NAMES" class="block">{{
+                    t('assets.local.moreBuilds', output.builds.length - MAX_TOOLTIP_BUILD_NAMES)
+                  }}</span>
+                </template>
+              </Tooltip>
+              <span :id="`${idPrefix}-builds-${index}`" class="sr-only">{{
+                allBuildNames(output)
               }}</span>
-              <span class="truncate text-ui text-subtle-foreground" :title="usedBy(output)">{{
-                usedBy(output)
-              }}</span>
-              <span class="truncate text-ui text-subtle-foreground" :title="output.path">{{
-                output.path
-              }}</span>
-            </span>
-          </button>
-        </li>
-      </ul>
+            </div>
+            <div
+              class="relative flex h-14 items-center gap-3 rounded-xl bg-card pr-1.5 pl-4 transition-colors duration-150 hover:bg-card-hover"
+            >
+              <Folder :size="20" class="shrink-0 text-muted-foreground" aria-hidden="true" />
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 cursor-pointer flex-col text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+                :aria-describedby="`${idPrefix}-builds-${index}`"
+                :title="output.path"
+                :data-testid="`local-folder-${output.path}`"
+                @click="enter({ name: folderName(output), path: output.path })"
+              >
+                <span class="truncate text-ui font-medium text-foreground">{{
+                  folderName(output)
+                }}</span>
+                <span class="truncate text-ui text-subtle-foreground">{{
+                  shortParentPath(output)
+                }}</span>
+              </button>
+              <FolderActionsMenu
+                :path="output.path"
+                :trigger-test-id="`local-folder-menu-${output.path}`"
+              />
+            </div>
+          </li>
+        </ul>
+      </template>
     </template>
 
     <template v-else>
@@ -316,16 +482,24 @@ defineExpose({ reload, loading })
         v-if="subfolders.length > 0"
         class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2 p-0"
       >
-        <li v-for="entry in subfolders" :key="entry.path">
+        <li
+          v-for="entry in subfolders"
+          :key="entry.path"
+          class="relative flex h-10 items-center gap-2.5 rounded-lg bg-card pr-1 pl-3 transition-colors duration-150 hover:bg-card-hover"
+        >
+          <Folder :size="16" class="shrink-0 text-muted-foreground" aria-hidden="true" />
           <button
             type="button"
-            class="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-lg bg-card px-3 text-left text-ui text-foreground transition-colors duration-150 hover:bg-card-hover"
+            class="min-w-0 flex-1 cursor-pointer truncate text-left text-ui text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
             :data-testid="`local-subfolder-${entry.name}`"
             @click="enter({ name: entry.name, path: entry.path })"
           >
-            <Folder :size="16" class="shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span class="truncate">{{ entry.name }}</span>
+            {{ entry.name }}
           </button>
+          <FolderActionsMenu
+            :path="entry.path"
+            :trigger-test-id="`local-subfolder-menu-${entry.name}`"
+          />
         </li>
       </ul>
 
@@ -387,12 +561,12 @@ defineExpose({ reload, loading })
                 variant="muted-textonly"
                 size="icon"
                 class="bg-media-overlay text-foreground"
-                :aria-label="t('assets.showInFolder')"
-                :title="t('assets.showInFolder')"
+                :aria-label="revealLabel"
+                :title="revealLabel"
                 :data-testid="`local-show-${entry.name}`"
                 @click="showInFolder(entry.path)"
               >
-                <FolderOpen :size="14" aria-hidden="true" />
+                <FolderSearch :size="14" aria-hidden="true" />
               </Button>
             </template>
           </AssetCard>
