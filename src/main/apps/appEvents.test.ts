@@ -201,10 +201,7 @@ describe('trackApps', () => {
   it.each<[string, Parameters<typeof trackApps<'setup'>>[1]]>([
     ['a started ComfyUI setup', { stage: 'comfyui', outcome: 'started', bytes: 2_500_000_000 }],
     ['a finished setup with its time', { stage: 'comfyui', outcome: 'finished', seconds: 300 }],
-    [
-      'a model download with its public file name',
-      { app: 'upscale', stage: 'model', outcome: 'finished', model_file: '4x-UltraSharp.pth' }
-    ]
+    ['a finished model download', { app: 'upscale', stage: 'model', outcome: 'finished' }]
   ])('sends setup for %s', (_why, fields) => {
     trackApps('setup', fields)
 
@@ -229,14 +226,6 @@ describe('trackApps', () => {
     ['an OS not on the list', ['run_finished', { ...finished, os: 'aix' }]],
     ['a GPU not on the list', ['run_finished', { ...finished, gpu: 'mps' as 'apple' }]],
     ['a ComfyUI version with a path', ['run_finished', { ...finished, comfy_version: '../x' }]],
-    [
-      'a model file that is a path',
-      ['setup', { stage: 'model', outcome: 'started', model_file: '/models/a.safetensors' }]
-    ],
-    [
-      'a model file that is not a model',
-      ['setup', { stage: 'model', outcome: 'started', model_file: 'notes.txt' }]
-    ],
     ['a setup stage not on the list', ['setup', { stage: 'pip' as 'model', outcome: 'started' }]],
     ['negative bytes', ['setup', { stage: 'model', outcome: 'failed', bytes: -5 }]]
   ])('drops %s', (_why, [name, fields]) => {

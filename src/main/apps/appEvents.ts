@@ -8,7 +8,6 @@ export const CLASS_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
 export const NODE_TYPE = /^[A-Za-z0-9_][A-Za-z0-9_ .+()|-]{0,79}$/
 export const MAX_NODE_TYPES = 20
 const COMFY_VERSION = /^v?\d{1,4}(\.\d{1,4}){1,3}([.+-][0-9A-Za-z]{1,16}){0,3}$/
-const MODEL_FILE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}\.(safetensors|pth)$/
 const MAX_SECONDS = 7 * 24 * 60 * 60
 const MAX_BYTES = 10 ** 13
 const MAX_GB = 4096
@@ -66,7 +65,6 @@ export interface AppEventFields {
     outcome: 'started' | 'finished' | 'failed'
     bytes?: number
     seconds?: number
-    model_file?: string
   }
 }
 
@@ -170,8 +168,7 @@ const MAIN_ONLY_SCHEMAS: Record<string, Schema> = {
     stage: need(oneOf('comfyui', 'model')),
     outcome: need(oneOf('started', 'finished', 'failed')),
     bytes: may(whole(MAX_BYTES)),
-    seconds: may(seconds),
-    model_file: may(matching(MODEL_FILE))
+    seconds: may(seconds)
   }
 }
 
