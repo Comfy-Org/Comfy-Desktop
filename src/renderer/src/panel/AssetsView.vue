@@ -62,6 +62,7 @@ const localFolders = useTemplateRef<InstanceType<typeof LocalFolders>>('localFol
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
+const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', false)
@@ -186,14 +187,20 @@ async function loadAssets(): Promise<void> {
       const buildName = installationStore.getById(installationId)?.name ?? ''
       return result.value.map((asset) => ({ ...asset, installationId, buildName }))
     })
-    failed.value = results.length > 0 && results.every((r) => r.status === 'rejected')
+    failed.value = assets.value.length === 0 && results.some((r) => r.status === 'rejected')
   } finally {
     if (current === requestId) loading.value = false
   }
 }
 
+const accountContext = computed(
+  () => `${authStore.isSignedIn}:${authStore.status.workspaceId ?? ''}`
+)
+
+watch(accountContext, () => (assets.value = []))
+
 watch(
-  () => [...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
+  () => [...reachableBuildIds.value, accountContext.value].join('\n'),
   () => void loadAssets(),
   { immediate: true }
 )
@@ -315,10 +322,15 @@ async function closeDetail(): Promise<void> {
 }
 
 async function download(asset: GalleryAsset): Promise<void> {
+  const key = cardKey(asset)
+  if (downloading.value.has(key)) return
+  downloading.value.add(key)
   try {
     await window.api.downloadAsset(asset.installationId, asset.id, asset.name)
   } catch {
     await modal.alert({ title: t('assets.downloadFailed'), message: asset.name })
+  } finally {
+    downloading.value.delete(key)
   }
 }
 
@@ -598,6 +610,7 @@ function assetDetails(asset: AssetSummary): string {
               class="bg-media-overlay text-foreground"
               :aria-label="t('assets.download')"
               :title="t('assets.download')"
+              :disabled="downloading.has(cardKey(asset))"
               :data-testid="`asset-download-${asset.id}`"
               @click="download(asset)"
             >

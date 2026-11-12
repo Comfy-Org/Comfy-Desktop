@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import AppsView from './AppsView.vue'
 import type { AppOutputs, CatalogApp } from '../types/ipc'
+import { useModal } from '../composables/useModal'
 
 const showApps = vi.fn()
 const hideApps = vi.fn()
@@ -13,7 +14,7 @@ let appsSettled: (() => void) | null = null
 let appsOutput: ((outputs: AppOutputs) => void) | null = null
 const appsOutputAction = vi.fn()
 
-async function mountApps(props: { growBy?: number } = {}) {
+async function mountApps(props: { growBy?: number; obscured?: boolean } = {}) {
   const wrapper = mount(AppsView, {
     props,
     global: { stubs: { teleport: { template: '<div><slot /></div>' } } }
@@ -182,6 +183,26 @@ describe('AppsView', () => {
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
+  it('opens a second app picked while the first one is still sliding in', async () => {
+    listCatalogApps.mockResolvedValue([
+      catalogApp('studio', 'Cinematic Studio'),
+      catalogApp('reshoot', 'Re-shoot a video')
+    ])
+    const wrapper = await mountApps()
+
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-reshoot"]').trigger('click')
+    await flushPromises()
+
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fresh: true,
+        url: 'https://apps.example/apps/reshoot/desktop.html'
+      })
+    )
+  })
+
   it('slides in an empty surface and keeps the app off screen until its page settles', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountApps({ growBy: 172 })
@@ -342,5 +363,48 @@ describe('AppsView', () => {
 
     expect(wrapper.emitted('view-in-assets')).toEqual([['cloud-cutout.png']])
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+  })
+
+  it('hides an open app under a takeover and shows it again after', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    showApps.mockClear()
+
+    await wrapper.setProps({ obscured: true })
+    expect(hideApps).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ obscured: false })
+    expect(showApps).toHaveBeenCalledWith(expect.objectContaining({ fresh: false }))
+  })
+
+  it('hides an open app while a panel dialog is open', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    const modal = useModal()
+
+    void modal.alert({ title: 'Update ready', message: 'Restart now?' })
+    await flushPromises()
+    expect(hideApps).toHaveBeenCalledTimes(1)
+
+    modal.dismiss()
+    await flushPromises()
+    expect(showApps).toHaveBeenLastCalledWith(expect.objectContaining({ fresh: false }))
+  })
+
+  it('opens an app picked under a takeover once the takeover closes', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps({ obscured: true })
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    expect(showApps).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ obscured: false })
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({ fresh: true, url: 'https://apps.example/apps/studio/desktop.html' })
+    )
   })
 })

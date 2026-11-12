@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { useDialogs } from '../composables/useDialogs'
+import { useModal } from '../composables/useModal'
 import type { AppOutputs } from '../types/ipc'
 
 const SLIDE_MS = 480
@@ -11,12 +13,14 @@ const {
   url,
   growBy = 0,
   covered = false,
-  backdrop = null
+  backdrop = null,
+  obscured = false
 } = defineProps<{
   url: string
   growBy?: number
   covered?: boolean
   backdrop?: string | null
+  obscured?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -38,15 +42,21 @@ let gone = false
 let holdWidth = 0
 let holdTimer: ReturnType<typeof setTimeout> | undefined
 let revealTimer: ReturnType<typeof setTimeout> | undefined
+let freshPending = true
 
-function report(fresh = false): void {
+const { state: modal } = useModal()
+const { state: dialog } = useDialogs()
+const hidden = computed(() => covered || obscured || modal.visible || dialog.open)
+
+function report(): void {
   const el = slot.value
-  if (!el || gone || covered) return
+  if (!el || gone || hidden.value) return
   const r = el.getBoundingClientRect()
   if (holdWidth && r.width >= holdWidth) holdWidth = 0
   const width = Math.max(r.width, holdWidth)
   const x = parked ? window.innerWidth : r.x
-  window.api.showApps({ x, y: r.y, width, height: r.height, fresh, url })
+  window.api.showApps({ x, y: r.y, width, height: r.height, fresh: freshPending, url })
+  freshPending = false
 }
 
 const reportResize = (): void => report()
@@ -78,10 +88,7 @@ function releaseHoldLater(): void {
   }, HOLD_MAX_MS)
 }
 
-watch(
-  () => covered,
-  (isCovered) => (isCovered ? window.api.hideApps() : report())
-)
+watch(hidden, (isHidden) => (isHidden ? window.api.hideApps() : report()))
 
 onMounted(async () => {
   stopListening = window.api.onAppsLoadFailed(({ url: failed }) => emit('failed', failed))
@@ -93,7 +100,7 @@ onMounted(async () => {
   window.addEventListener('resize', reportResize)
   const width = slot.value?.getBoundingClientRect().width ?? 0
   if (growBy > 0) holdWidth = width + growBy
-  report(true)
+  report()
   if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) await slideIn()
   if (gone) return
   emit('entered')
