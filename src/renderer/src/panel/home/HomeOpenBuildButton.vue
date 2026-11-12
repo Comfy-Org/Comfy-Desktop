@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { DropdownMenuRadioGroup } from 'reka-ui'
 import { ArrowRight, Cloud, Laptop } from 'lucide-vue-next'
-import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
@@ -70,13 +71,14 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
     <ArrowRight v-if="builds.length < 2" class="shrink-0" :size="14" aria-hidden="true" />
     <template v-if="builds.length > 1" #menu>
-      <div class="flex flex-col gap-0.5">
-        <MenuItem
+      <DropdownMenuRadioGroup :model-value="target.id" class="flex flex-col gap-0.5">
+        <MenuRadioItem
           v-for="build in builds"
           :key="build.id"
           as="button"
           type="button"
-          class="ui-select-option w-full"
+          :value="build.id"
+          class="ui-select-option w-full data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
           data-testid="home-open-build-option"
           @select="emit('open', build)"
         >
@@ -97,8 +99,8 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
               data-testid="home-open-build-status-dot"
             />{{ statusLabel(build) }}</span
           >
-        </MenuItem>
-      </div>
+        </MenuRadioItem>
+      </DropdownMenuRadioGroup>
     </template>
   </SplitButton>
 </template>

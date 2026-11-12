@@ -470,7 +470,12 @@ describe('Home builds', () => {
       'Comfy CloudAlways on',
       'Flux SandboxReady'
     ])
-    expect(buildOptions().some((option) => option.hasAttribute('aria-checked'))).toBe(false)
+    expect(buildOptions().map((option) => option.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false'
+    ])
     expect(
       buildOptions().map((option) =>
         Boolean(option.querySelector('[data-testid="home-open-build-status-dot"]'))
