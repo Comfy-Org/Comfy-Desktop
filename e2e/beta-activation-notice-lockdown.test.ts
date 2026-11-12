@@ -56,8 +56,8 @@ async function popupVisible(app: ElectronApplication): Promise<boolean | 'detach
 
 async function lockdownEngaged(titleBar: WebContentsPage): Promise<boolean> {
   const bell = await titleBar.exists('.title-announcement-button')
-  const pill = await titleBar.exists('.title-install-pill.is-interactive')
-  return !bell && !pill
+  const homeButton = await titleBar.exists('[data-testid="title-home-button"]')
+  return !bell && !homeButton
 }
 
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'

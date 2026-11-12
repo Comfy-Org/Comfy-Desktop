@@ -139,12 +139,18 @@ export function focusActiveBody(entry: ComfyWindowEntry): void {
   }
 }
 
+function isOverlayPanel(panel: ComfyPanelKey): boolean {
+  return panel === 'feedback' || panel === 'announcement'
+}
+
 export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   const entry = comfyWindows.get(windowKey)
   if (!entry || entry.window.isDestroyed()) return
   const reassertFullPageTool = panel === 'performance-test' || panel === 'benchmarks'
   if (entry.activePanel === panel && !reassertFullPageTool) return
 
+  if (!isOverlayPanel(panel)) entry.overlayReturnPanel = undefined
+  else if (!isOverlayPanel(entry.activePanel)) entry.overlayReturnPanel = entry.activePanel
   entry.activePanel = panel
   const mode = computeBodyMode(entry)
   if (mode !== 'comfy') {
@@ -248,7 +254,7 @@ export function registerPanelViewIpc(): void {
   ipcMain.on('comfy-window:close-current-panel', (event) => {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents === event.sender) {
-        setActivePanel(id, 'comfy')
+        setActivePanel(id, entry.overlayReturnPanel ?? 'comfy')
         return
       }
     }

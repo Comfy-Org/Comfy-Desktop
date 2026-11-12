@@ -974,7 +974,7 @@ export function openDownloadsTrayForInstall(installationId: string): void {
 
 export interface TitlePopupHostBindings {
   openChooserHostWindow: (initialPanel?: ComfyPanelKey) => void
-  returnToDashboard: (parentEntryId: number) => Promise<void> | void
+  returnToDashboard: (parentEntryId: number) => Promise<unknown> | void
   confirmAndCloseAllHostWindows: (parentWindow: BrowserWindow | null) => Promise<void> | void
   confirmAndCloseHostWindow: (parentWindow: BrowserWindow) => Promise<void> | void
   setActivePanel: (windowKey: number, panel: ComfyPanelKey) => void
@@ -986,11 +986,7 @@ export interface TitlePopupHostBindings {
   getRunningInstallationIds: () => string[]
   getRunningSessionStartedAt?: () => Record<string, number>
   getLaunchingInstallationIds: () => string[]
-  pickInstallFromPicker: (
-    installationId: string,
-    parentEntryId: number,
-    opts?: { confirmed?: boolean }
-  ) => Promise<void> | void
+  pickInstallFromPicker: (installationId: string) => Promise<void> | void
   openInstallInNewWindow: (
     installationId: string,
     opts?: { allowDuplicate?: boolean }
@@ -1658,34 +1654,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   })
 
   ipcMain.on(
-    'comfy-window:click-install-pill',
-    (event, payload: { anchor?: { x?: number; y?: number } } | undefined) => {
-      const found = findEntryByTitleBarSender(event.sender)
-      if (!found) return
-      const { id: windowKey, entry } = found
-      if (entry.window.isDestroyed()) return
-
-      const existingPopup = titlePopupsByParent.get(entry.window.id)
-      if (
-        existingPopup &&
-        existingPopup.kind === 'instance-picker' &&
-        (existingPopup.view.isOpen || existingPopup.view.pendingShowTimer !== null)
-      ) {
-        hideTitlePopup(existingPopup, { releaseFocusToParent: true })
-        return
-      }
-
-      const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
-      const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
-
-      openInstancePickerForHost(entry, windowKey, bindings, entry.titleBarView.webContents, {
-        x,
-        y
-      })
-    }
-  )
-
-  ipcMain.on(
     'comfy-window:open-instance-picker-for-install',
     (
       event,
@@ -1793,20 +1761,16 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     }
   )
 
-  ipcMain.on(
-    'comfy-titlepopup:pick-install',
-    (event, payload: { installationId?: unknown; confirmed?: unknown }) => {
-      const entry = titlePopupsByWebContents.get(event.sender.id)
-      if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
-      const installationId = payload?.installationId
-      if (typeof installationId !== 'string' || installationId.length === 0) return
-      const confirmed = payload?.confirmed === true
-      hideTitlePopup(entry, { releaseFocusToParent: false })
-      Promise.resolve(
-        bindings.pickInstallFromPicker(installationId, entry.parentEntryId, { confirmed })
-      ).catch((err) => console.error('pickInstallFromPicker failed:', err))
-    }
-  )
+  ipcMain.on('comfy-titlepopup:pick-install', (event, payload: { installationId?: unknown }) => {
+    const entry = titlePopupsByWebContents.get(event.sender.id)
+    if (!entry || entry.kind !== POPUP_KIND.instancePicker) return
+    const installationId = payload?.installationId
+    if (typeof installationId !== 'string' || installationId.length === 0) return
+    hideTitlePopup(entry, { releaseFocusToParent: false })
+    Promise.resolve(bindings.pickInstallFromPicker(installationId)).catch((err) =>
+      console.error('pickInstallFromPicker failed:', err)
+    )
+  })
 
   ipcMain.on(
     'comfy-titlepopup:open-install-new-window',

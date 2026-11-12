@@ -127,6 +127,9 @@ test('Instance B (running elsewhere): focus its existing window @windows @macos 
     )
     .toBe(true)
 
+  await expectNoIpcInvocation(ctx.app, 'open-install-new-window', () => true, {
+    message: 'unexpected new window for a build that is already running'
+  })
   await expectNoIpcInvocation(ctx.app, 'run-action', (c) => c.actionId === 'launch', {
     message: 'unexpected run-action launch on a focus-existing path'
   })

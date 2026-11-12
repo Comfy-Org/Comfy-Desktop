@@ -504,9 +504,7 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
     })
   )
 
-  expect(await ctx.titleBar.click('.title-install-pill.is-interactive')).toBe(true)
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
   await popup.waitForVisible('.picker-home', { timeout: 10_000 })
   expect(await popup.click('.picker-home')).toBe(true)
 

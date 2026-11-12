@@ -241,6 +241,24 @@ describe('comfy-window:navigate-panel', () => {
     expect(entry.activePanel).toBe('comfy')
   })
 
+  it('goes back to the Home tool that Feedback opened from', () => {
+    const { entry, panelWc } = makeWindowWithPanel({
+      installationId: 'install-1',
+      activePanel: 'benchmarks'
+    })
+
+    setActivePanel(entry.windowKey, 'feedback')
+    registerPanelViewIpc()
+    const closeCurrent = vi
+      .mocked(ipcMain.on)
+      .mock.calls.find(
+        ([channel]) => channel === 'comfy-window:close-current-panel'
+      )?.[1] as (event: { sender: unknown }) => void
+    closeCurrent({ sender: panelWc })
+
+    expect(entry.activePanel).toBe('benchmarks')
+  })
+
   it.each(['feedback', 'new-install', undefined])('ignores the unknown page %s', (page) => {
     const { entry, panelWc } = makeWindowWithPanel({ installationId: null, activePanel: 'comfy' })
 
