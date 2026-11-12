@@ -384,9 +384,7 @@ const betaNotice = useBetaActivationNotice({
 })
 
 const HOME_PANELS: ReadonlySet<ComfyPanelKey> = new Set(['home', 'performance-test', 'benchmarks'])
-const homeTabActive = computed(
-  () => !isFirstUseLockdown.value && (isInstallLess.value || HOME_PANELS.has(activePanel.value))
-)
+const homeTabActive = computed(() => isInstallLess.value || HOME_PANELS.has(activePanel.value))
 
 const titleTabBase =
   '[-webkit-app-region:no-drag] group flex h-7 min-w-0 shrink items-center gap-2 rounded-control text-ui outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -408,8 +406,8 @@ function titleTabClose(active: boolean): string {
 }
 
 function showHomeTab(): void {
-  if (!isInstallLess.value) bridge?.setPanel('home')
-  else if (activePanel.value !== 'comfy') bridge?.setPanel('comfy')
+  const homePanel: ComfyPanelKey = isInstallLess.value ? 'comfy' : 'home'
+  if (activePanel.value !== homePanel) bridge?.setPanel(homePanel)
 }
 
 function closeBuildTab(): void {
