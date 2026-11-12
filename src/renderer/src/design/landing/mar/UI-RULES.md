@@ -65,8 +65,11 @@ DS's Motion page (`ds/motion.ts`).
   `components/ui/SplitButton.vue` on the DS `ButtonGroup`): main half
   `px-3`, label with no trailing arrow; chevron half 30px wide, 14px
   chevron that does not rotate, full-height 1px divider; each half hovers
-  on its own and an open menu keeps the chevron half in hover. With
-  nothing to pick it is a plain button. Never hand-build one.
+  on its own and an open menu keeps the chevron half in hover. Its menu
+  opens 6px below, like the filter menus. With nothing to pick it is a
+  plain button. Never hand-build one.
+- **Status in a menu row follows the cards:** green dot only for live
+  (Running, Always on); Ready is plain text, no dot, no check.
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
 - **A filter shows as a chip** under the toolbar, removable, with Clear
