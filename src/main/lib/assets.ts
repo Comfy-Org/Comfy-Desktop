@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { Readable } from 'stream'
@@ -181,14 +182,14 @@ async function saveDownload(url: string, filePath: string): Promise<void> {
     clearTimeout(timer)
     timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   }
-  const partPath = `${filePath}.part`
+  const partPath = `${filePath}.${randomUUID()}.part`
   try {
     const res = await fetch(url, { signal: controller.signal })
     if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
     const body = Readable.fromWeb(res.body as WebReadableStream)
     body.on('data', keepAlive)
     try {
-      await pipeline(body, fs.createWriteStream(partPath))
+      await pipeline(body, fs.createWriteStream(partPath, { flags: 'wx' }))
       await fs.promises.rename(partPath, filePath)
     } catch (error) {
       await fs.promises.rm(partPath, { force: true }).catch(() => {})
@@ -196,12 +197,16 @@ async function saveDownload(url: string, filePath: string): Promise<void> {
     }
   } finally {
     clearTimeout(timer)
+    controller.abort()
   }
 }
 
+function isUsableFileName(name: string): boolean {
+  return name !== '' && name !== '.' && name !== '..'
+}
+
 function safeFileName(fileName: string, assetId: string): string {
-  const base = path.basename(fileName)
-  return base === '' || base === '.' || base === '..' ? assetId : base
+  return [fileName, assetId].map((name) => path.basename(name)).find(isUsableFileName) ?? 'download'
 }
 
 export async function downloadAsset(

@@ -54,6 +54,7 @@ const sessionStore = useSessionStore()
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
+const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', false)
@@ -203,10 +204,15 @@ async function signIn(): Promise<void> {
 }
 
 async function download(asset: GalleryAsset): Promise<void> {
+  const key = cardKey(asset)
+  if (downloading.value.has(key)) return
+  downloading.value.add(key)
   try {
     await window.api.downloadAsset(asset.installationId, asset.id, asset.name)
   } catch {
     await modal.alert({ title: t('assets.downloadFailed'), message: asset.name })
+  } finally {
+    downloading.value.delete(key)
   }
 }
 
@@ -509,6 +515,7 @@ function extensionOf(name: string): string {
             class="absolute top-2 right-2 bg-media-overlay text-foreground opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
             :aria-label="t('assets.download')"
             :title="t('assets.download')"
+            :disabled="downloading.has(cardKey(asset))"
             :data-testid="`asset-download-${asset.id}`"
             @click="download(asset)"
           >

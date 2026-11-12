@@ -7,7 +7,7 @@ const runningSessions = new Map<string, { port?: number }>()
 
 const showSaveDialog = vi.fn()
 const written = new Map<string, string>()
-const createWriteStream = vi.fn((filePath: string) => {
+const createWriteStream = vi.fn((filePath: string, _options?: { flags: string }) => {
   const chunks: Buffer[] = []
   return new Writable({
     write(chunk: Buffer, _encoding, done) {
@@ -36,7 +36,8 @@ const savedSettings = new Map<string, string>()
 vi.mock('fs', () => ({
   default: {
     existsSync: (dir: string) => dir === '/remembered',
-    createWriteStream: (filePath: string) => createWriteStream(filePath),
+    createWriteStream: (filePath: string, options?: { flags: string }) =>
+      createWriteStream(filePath, options),
     promises: {
       rm: (path: string, options: { force: boolean }) => removeFile(path, options),
       rename: (from: string, to: string) => renameFile(from, to)
@@ -234,6 +235,7 @@ describe('listAssets', () => {
 
 describe('downloadAsset', () => {
   const win = {} as Parameters<typeof downloadAsset>[0]
+  const partFilePath = (): string => createWriteStream.mock.calls[0]![0]
 
   it('saves a local build asset where the user picks', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
@@ -248,6 +250,31 @@ describe('downloadAsset', () => {
     )
     expect(written.get('/picked/still.png')).toBe('bytes')
     expect(savedSettings.get('lastSaveDialogDir')).toBe('/picked')
+  })
+
+  it('writes each download to its own new partial file next to the picked file', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    fetchMock.mockImplementation(async () => new Response('bytes'))
+
+    await downloadAsset(win, 'local-1', 'a1', 'still.png')
+    await downloadAsset(win, 'local-1', 'a1', 'still.png')
+
+    const [first, second] = createWriteStream.mock.calls
+    expect(first![0]).toMatch(/^\/picked\/still\.png\..+\.part$/)
+    expect(second![0]).not.toBe(first![0])
+    expect(first![1]).toEqual({ flags: 'wx' })
+  })
+
+  it('offers only a plain file name in the save dialog when the name is unusable', async () => {
+    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
+    runningSessions.set('local-1', { port: 8188 })
+    showSaveDialog.mockResolvedValue({ canceled: true })
+
+    await downloadAsset(win, 'local-1', '../../a1', '..')
+
+    expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/a1')
   })
 
   it('starts the save dialog in the folder the user picked last time', async () => {
@@ -283,10 +310,15 @@ describe('downloadAsset', () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
     runningSessions.set('local-1', { port: 8188 })
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    fetchMock.mockResolvedValue(new Response(null, { status: 503 }))
+    let signal: AbortSignal | undefined
+    fetchMock.mockImplementation(async (_url: string, init: { signal: AbortSignal }) => {
+      signal = init.signal
+      return new Response('Service Unavailable', { status: 503 })
+    })
 
     await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow('HTTP 503')
     expect(createWriteStream).not.toHaveBeenCalled()
+    expect(signal?.aborted, 'the failed response is released').toBe(true)
   })
 
   it('removes the half-written file when the download breaks off', async () => {
@@ -304,7 +336,7 @@ describe('downloadAsset', () => {
     await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow(
       'connection reset'
     )
-    expect(removeFile).toHaveBeenCalledWith('/picked/still.png.part', { force: true })
+    expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
   })
 
@@ -330,7 +362,7 @@ describe('downloadAsset', () => {
     } finally {
       vi.useRealTimers()
     }
-    expect(removeFile).toHaveBeenCalledWith('/picked/still.png.part', { force: true })
+    expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
   })
 
   it('writes nothing when the save dialog is cancelled', async () => {

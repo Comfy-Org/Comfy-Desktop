@@ -213,6 +213,23 @@ describe('AssetsView', () => {
     expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('lab', 'b', 'forest.png')
   })
 
+  it('starts one download at a time for a file', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    let finish: () => void = () => {}
+    downloadAsset.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)))
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    const button = wrapper.get('[data-testid="asset-download-a"]')
+
+    await button.trigger('click')
+    await button.trigger('click')
+
+    expect(downloadAsset).toHaveBeenCalledOnce()
+    expect(button.attributes('disabled')).toBeDefined()
+    finish()
+    await flushPromises()
+    expect(button.attributes('disabled')).toBeUndefined()
+  })
+
   it('tells the user when a download fails', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
     downloadAsset.mockRejectedValue(new Error('offline'))
