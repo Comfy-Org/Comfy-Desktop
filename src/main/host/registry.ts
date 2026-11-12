@@ -9,6 +9,7 @@ export const hostInstallEvents = new EventEmitter()
 
 export type ComfyPanelKey =
   | 'comfy'
+  | 'home'
   | 'performance-test'
   | 'benchmarks'
   | 'feedback'
@@ -21,6 +22,7 @@ export type ComfyPanelKey =
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
+  'home',
   'performance-test',
   'benchmarks',
   'feedback',
@@ -53,6 +55,7 @@ export interface ComfyWindowEntry {
   titleBarView: WebContentsView
   panelView: WebContentsView | null
   activePanel: ComfyPanelKey
+  overlayReturnPanel?: ComfyPanelKey
   pendingOverlayReveal?: boolean
   overlayRevealTimer?: ReturnType<typeof setTimeout>
 
@@ -168,6 +171,7 @@ export function hasRunningSessionForEntry(
 }
 
 export function computeBodyMode(entry: ComfyWindowEntry): BodyMode {
+  if (entry.activePanel === 'home') return 'chooser'
   if (entry.installationId === null) {
     return entry.activePanel === 'comfy' ? 'chooser' : entry.activePanel
   }

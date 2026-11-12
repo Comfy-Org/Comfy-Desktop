@@ -96,7 +96,10 @@ export interface PickerStorageSlice {
   modelsSystemDefault: string
 }
 
+export type InstancePickerLayout = 'list' | 'full'
+
 export interface InstancePickerSnapshot {
+  layout: InstancePickerLayout
   installs: InstancePickerInstall[]
   activeInstallationId: string | null
   currentView: ViewKind
@@ -161,6 +164,7 @@ export interface GlobalSettingsSnapshot {
 }
 
 interface BuildInstancePickerSnapshotArgs {
+  layout?: InstancePickerLayout
   installs: InstancePickerInstall[]
   hostInstallationId: string | null
   previewInstallationId?: string | null
@@ -261,6 +265,7 @@ export function buildInstancePickerSnapshot(
     : null
   const currentView: ViewKind = viewKindFor(activeInstallationId, currentCategory)
   return {
+    layout: args.layout ?? 'full',
     installs: args.installs,
     activeInstallationId,
     currentView,
@@ -318,6 +323,7 @@ export interface TitlePopupEntry {
   pickerScopeAnchor: { installationId: string; dashboardWorkspaceId: unknown } | null
   pickerSelectionEpoch: number
   pickerInitialTab: string | null
+  pickerLayout: InstancePickerLayout
   pickerAutoAction: string | null
   pickerAutoActionNonce: number
   lastPickerBroadcastJson: string | null
@@ -563,6 +569,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
       selectedSettings: details.settings,
       selectedSnapshots: details.snapshots,
       initialTab: entry.pickerInitialTab,
+      layout: entry.pickerLayout,
       autoAction: entry.pickerAutoAction,
       autoActionNonce: entry.pickerAutoActionNonce,
       storage: buildPickerStorageSlice(),
@@ -575,6 +582,15 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
     if (entry.lastPickerBroadcastJson === snapshotJson) continue
     entry.lastPickerBroadcastJson = snapshotJson
     entry.view.popup.webContents.send('comfy-titlepopup:installs-changed', snapshot)
+    if (entry.pickerLayout === 'list' && !entry.view.parentWindow.isDestroyed()) {
+      entry.view.popup.setBounds(
+        computeBuildListBounds(
+          entry.view.parentWindow,
+          entry.view.popup.getBounds().x,
+          snapshot.installs.length
+        )
+      )
+    }
   }
 }
 
@@ -637,6 +653,7 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     pickerScopeAnchor: null,
     pickerSelectionEpoch: 0,
     pickerInitialTab: null,
+    pickerLayout: 'full',
     pickerAutoAction: null,
     pickerAutoActionNonce: 0,
     openedAt: 0,
@@ -700,6 +717,11 @@ const PICKER_TOP_GUTTER = 8
 const PICKER_EXPANDED_MAX_WIDTH = 960
 const PICKER_EXPANDED_MAX_HEIGHT_RATIO = 0.85
 const PICKER_EXPANDED_MAX_HEIGHT = 720
+const BUILD_LIST_WIDTH = 320
+const BUILD_LIST_MAX_HEIGHT = 360
+const BUILD_LIST_ROW_HEIGHT = 38
+const BUILD_LIST_FRAME_HEIGHT = 46
+const BUILD_LIST_GAP_BELOW_TAB = 4
 
 interface PickerBounds {
   x: number
@@ -724,6 +746,26 @@ function computePickerBounds(parent: BrowserWindow): PickerBounds {
   const slack = Math.max(0, innerHeight - height)
   const y = slack > 0 ? innerTop + Math.round(slack / 3) : innerTop
   return { x, y, width, height }
+}
+
+function computeBuildListBounds(
+  parent: BrowserWindow,
+  anchorX: number,
+  buildCount: number
+): PickerBounds {
+  const content = parent.getContentBounds()
+  const width = Math.min(BUILD_LIST_WIDTH, Math.max(0, content.width - 2 * PICKER_SIDE_GUTTER))
+  const height = Math.min(
+    BUILD_LIST_MAX_HEIGHT,
+    BUILD_LIST_FRAME_HEIGHT + buildCount * BUILD_LIST_ROW_HEIGHT,
+    Math.max(0, content.height - TITLEBAR_HEIGHT - PICKER_BOTTOM_GUTTER)
+  )
+  return {
+    x: clampPopupX(anchorX, width, parent),
+    y: TITLEBAR_HEIGHT + BUILD_LIST_GAP_BELOW_TAB,
+    width,
+    height
+  }
 }
 
 interface CenteredCardClamp {
@@ -799,6 +841,7 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   const parent = entry.view.parentWindow
 
   if (entry.kind === 'instance-picker') {
+    if (entry.pickerLayout === 'list') return
     const target = computePickerBounds(parent)
     if (
       target.x === cur.x &&
@@ -918,7 +961,10 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
     )
     x = clampPopupX(rawX, width, opts.parent)
   } else if (opts.kind === 'instance-picker') {
-    const bounds = computePickerBounds(opts.parent)
+    const bounds =
+      opts.snapshot.layout === 'list'
+        ? computeBuildListBounds(opts.parent, rawX, opts.snapshot.installs.length)
+        : computePickerBounds(opts.parent)
     width = bounds.width
     height = bounds.height
     x = bounds.x
@@ -1091,7 +1137,8 @@ function openInstancePickerForHost(
   anchor: { x: number; y: number },
   selectedInstallationId?: string | null,
   initialTab?: string | null,
-  autoAction?: string | null
+  autoAction?: string | null,
+  layout: InstancePickerLayout = 'full'
 ): void {
   const show = (): void =>
     showInstancePickerForHost(
@@ -1102,7 +1149,8 @@ function openInstancePickerForHost(
       anchor,
       selectedInstallationId,
       initialTab,
-      autoAction
+      autoAction,
+      layout
     )
   if (
     selectedInstallationId &&
@@ -1122,7 +1170,8 @@ function showInstancePickerForHost(
   anchor: { x: number; y: number },
   selectedInstallationId?: string | null,
   initialTab?: string | null,
-  autoAction?: string | null
+  autoAction?: string | null,
+  layout: InstancePickerLayout = 'full'
 ): void {
   if (parentEntry.window.isDestroyed()) return
   const allInstalls = cachedInstallsForPicker.slice()
@@ -1150,9 +1199,11 @@ function showInstancePickerForHost(
     : null
   popupEntry.pickerSelectionEpoch = pickerSelectionEpoch
   popupEntry.pickerInitialTab = initialTab ?? null
+  popupEntry.pickerLayout = layout
   popupEntry.pickerAutoAction = autoAction ?? null
   popupEntry.pickerAutoActionNonce = autoActionNonce
   const snapshot = buildInstancePickerSnapshot({
+    layout,
     installs,
     hostInstallationId: parentEntry.installationId,
     previewInstallationId: parentEntry.previewInstallationId,
@@ -1678,10 +1729,17 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
       const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
       const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
 
-      openInstancePickerForHost(entry, windowKey, bindings, entry.titleBarView.webContents, {
-        x,
-        y
-      })
+      openInstancePickerForHost(
+        entry,
+        windowKey,
+        bindings,
+        entry.titleBarView.webContents,
+        { x, y },
+        null,
+        null,
+        null,
+        'list'
+      )
     }
   )
 

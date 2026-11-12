@@ -504,6 +504,18 @@ describe('buildInstancePickerSnapshot', () => {
     expect(snap.installs).toEqual(installs)
   })
 
+  it('opens the full picker unless asked for the plain build list', () => {
+    const args = {
+      installs: [makeInstall({ id: 'a' })],
+      hostInstallationId: 'a',
+      runningInstallationIds: [],
+      launchingInstallationIds: [],
+      storage: EMPTY_STORAGE
+    }
+    expect(buildInstancePickerSnapshot(args).layout).toBe('full')
+    expect(buildInstancePickerSnapshot({ ...args, layout: 'list' }).layout).toBe('list')
+  })
+
   it('echoes the host installation id under `activeInstallationId`', () => {
     const snap = buildInstancePickerSnapshot({
       installs: [makeInstall({ id: 'a' })],

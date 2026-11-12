@@ -145,6 +145,9 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   const reassertFullPageTool = panel === 'performance-test' || panel === 'benchmarks'
   if (entry.activePanel === panel && !reassertFullPageTool) return
 
+  const isOverlayPanel = panel === 'feedback' || panel === 'announcement'
+  if (!isOverlayPanel) entry.overlayReturnPanel = undefined
+  else if (entry.activePanel === 'home') entry.overlayReturnPanel = 'home'
   entry.activePanel = panel
   const mode = computeBodyMode(entry)
   if (mode !== 'comfy') {
@@ -248,7 +251,7 @@ export function registerPanelViewIpc(): void {
   ipcMain.on('comfy-window:close-current-panel', (event) => {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents === event.sender) {
-        setActivePanel(id, 'comfy')
+        setActivePanel(id, entry.overlayReturnPanel ?? 'comfy')
         return
       }
     }
@@ -269,6 +272,7 @@ export function registerPanelViewIpc(): void {
     for (const [id, entry] of comfyWindows) {
       if (entry.panelView?.webContents !== event.sender) continue
       if (entry.installationId === null) setActivePanel(id, panel)
+      else if (entry.activePanel !== 'comfy') setActivePanel(id, panel === 'comfy' ? 'home' : panel)
       return
     }
   })

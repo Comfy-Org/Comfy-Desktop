@@ -230,7 +230,9 @@
     "betaNoticeOffTitleNamed": "The {feature} beta is off",
     "betaNoticeOffBodyNamed": "We've turned the {feature} beta off for this instance. You can manage beta features in Settings.",
     "betaNoticeDismiss": "Got it",
-    "betaNoticeSettings": "Settings"
+    "betaNoticeSettings": "Settings",
+    "closeBuildTab": "Close {name}",
+    "tabs": "Tabs"
   },
   "comfyUISettings": {
     "title": "Settings",

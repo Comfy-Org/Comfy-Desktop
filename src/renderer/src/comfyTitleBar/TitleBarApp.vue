@@ -5,12 +5,14 @@ import {
   ArrowDownToLine,
   Bell,
   ChevronDown,
+  House,
   CloudDownload,
   Loader2,
   Menu as MenuIcon,
   MessageSquarePlus,
   RefreshCw,
   RotateCw,
+  X,
   ZoomIn
 } from 'lucide-vue-next'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
@@ -28,6 +30,7 @@ const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
 type ComfyPanelKey =
   | 'comfy'
+  | 'home'
   | 'performance-test'
   | 'benchmarks'
   | 'new-install'
@@ -60,6 +63,7 @@ interface Bridge {
   getInstallationId: () => string | null
   isMac: () => boolean
   setPanel: (panel: ComfyPanelKey) => void
+  closeBuildTab: () => void
   openNewWindow: () => void
   openFileMenu: (anchor: MenuAnchor) => void
   dismissFileMenu: () => void
@@ -183,11 +187,8 @@ const {
   appUpdateState,
   appUpdatePillLabel,
   appUpdatePillTooltip,
-  installUpdatePillLabel,
   showAppUpdatePill,
-  showInstallUpdatePill,
-  handleAppUpdatePill,
-  handleInstallUpdatePill
+  handleAppUpdatePill
 } = useUpdatePills({ bridge, isInstallLess })
 
 function handleFeedback(): void {
@@ -268,8 +269,13 @@ function measureFit(): FitMeasurement {
   const barRect = bar.getBoundingClientRect()
   if (barRect.width === 0) return { gap: Infinity, trailingWidth: NaN }
   const trailingRect = trailing.getBoundingClientRect()
-  const pillRect = pill.getBoundingClientRect()
-  return { gap: trailingRect.left - pillRect.right, trailingWidth: trailingRect.width }
+  const leadingRight = Math.max(
+    pill.getBoundingClientRect().right,
+    ...Array.from(pill.closest('.title-cluster')?.children ?? []).map(
+      (child) => child.getBoundingClientRect().right
+    )
+  )
+  return { gap: trailingRect.left - leadingRight, trailingWidth: trailingRect.width }
 }
 
 function scheduleFit(): void {
@@ -390,7 +396,41 @@ const betaNotice = useBetaActivationNotice({
   }
 })
 
+const buildTabsShown = computed(() => !isInstallLess.value && !isFirstUseLockdown.value)
+const homeTabActive = computed(() => buildTabsShown.value && activePanel.value === 'home')
+
+const titleTabBase =
+  '[-webkit-app-region:no-drag] group flex h-7 min-w-0 shrink items-center gap-2 rounded-control text-ui outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+function titleTab(active: boolean): string {
+  return [
+    titleTabBase,
+    active
+      ? 'bg-accent text-foreground'
+      : 'text-muted-foreground hover:bg-accent/40 hover:text-foreground'
+  ].join(' ')
+}
+
+function titleTabClose(active: boolean): string {
+  return [
+    'inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-min text-subtle-foreground outline-none hover:bg-foreground/10 hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring',
+    active ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+  ].join(' ')
+}
+
+function showHomeTab(): void {
+  bridge?.setPanel('home')
+}
+
+function closeBuildTab(): void {
+  bridge?.closeBuildTab()
+}
+
 function handleInstallPillWithCoachmark(): void {
+  if (homeTabActive.value) {
+    bridge?.setPanel('comfy')
+    return
+  }
   void coachmark.acknowledgeViaPillOpen().then(retryBetaNoticeAfterHint)
   handleInstallPill()
 }
@@ -465,6 +505,7 @@ onMounted(() => {
     installationId.value = nextInstallationId ?? ''
     isInstallLess.value = nextInstallationId === null
     if (previous !== installationId.value) {
+      activePanel.value = 'comfy'
       if (betaNotice.isShowing.value) {
         bridge.hideCoachmark()
         betaNotice.forgetWithoutAcknowledging()
@@ -512,16 +553,8 @@ watch(
   { immediate: true }
 )
 
-watch(
-  [
-    locale,
-    installLabel,
-    appUpdatePillLabel,
-    showAppUpdatePill,
-    showInstallUpdatePill,
-    isFirstUseLockdown
-  ],
-  () => invalidateRestoreCosts()
+watch([locale, installLabel, appUpdatePillLabel, showAppUpdatePill, isFirstUseLockdown], () =>
+  invalidateRestoreCosts()
 )
 
 onUnmounted(() => {
@@ -579,35 +612,69 @@ onUnmounted(() => {
     <div
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
-      <button
-        v-if="!isConsentLockdown"
-        ref="fileBtn"
-        type="button"
-        class="title-menu-button title-menu-button--icon"
-        :class="titleMenuButtonClass"
-        aria-haspopup="menu"
-        v-bind="tooltipAttrs(t('titleBar.menu'))"
-        @click="handleFileMenu"
+      <nav
+        v-if="buildTabsShown"
+        class="flex min-w-0 items-center gap-1"
+        :aria-label="t('titleBar.tabs')"
       >
-        <MenuIcon :size="18" />
-      </button>
-      <button
-        v-if="showRefreshButton"
-        type="button"
-        class="title-menu-button title-menu-button--icon title-refresh-button"
-        :class="titleMenuButtonClass"
-        v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
-        @click="handleRefreshInstance"
-      >
-        <RotateCw :size="16" />
-      </button>
-    </div>
-
-    <div
-      class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
-    >
+        <button
+          type="button"
+          :class="[titleTab(homeTabActive), 'w-8 shrink-0 cursor-pointer justify-center']"
+          :aria-label="t('sidebar.home')"
+          :aria-current="homeTabActive ? 'page' : undefined"
+          data-testid="title-home-tab"
+          v-bind="tooltipAttrs(t('sidebar.home'))"
+          @click="showHomeTab"
+        >
+          <House :size="15" aria-hidden="true" />
+        </button>
+        <div
+          ref="installPill"
+          class="title-install-pill"
+          :class="[
+            titleTab(!homeTabActive),
+            'max-w-52 pr-1 pl-2',
+            { 'is-coachmark': coachmark.isShowing.value }
+          ]"
+          data-testid="title-build-tab"
+        >
+          <button
+            type="button"
+            class="flex min-w-0 cursor-pointer items-center gap-2 rounded-min outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            :aria-current="homeTabActive ? undefined : 'page'"
+            aria-haspopup="listbox"
+            :aria-expanded="isInstancePickerOpen"
+            @click="handleInstallPillWithCoachmark"
+          >
+            <component
+              :is="installTypeMeta.icon"
+              v-if="showInstallTypeIcon"
+              :size="14"
+              class="title-install-type-icon shrink-0"
+              v-bind="tooltipAttrs(installTypeLabel)"
+            />
+            <span class="title-install-name truncate">{{ installLabel }}</span>
+            <ChevronDown
+              :size="13"
+              class="shrink-0 text-subtle-foreground"
+              :class="homeTabActive && 'invisible'"
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            :class="titleTabClose(!homeTabActive)"
+            :aria-label="t('titleBar.closeBuildTab', { name: installLabel })"
+            data-testid="title-close-build-tab"
+            v-bind="tooltipAttrs(t('titleBar.closeBuildTab', { name: installLabel }))"
+            @click.stop="closeBuildTab"
+          >
+            <X :size="12" aria-hidden="true" />
+          </button>
+        </div>
+      </nav>
       <div
-        v-if="!isFirstUseLockdown"
+        v-else-if="!isFirstUseLockdown"
         ref="installPill"
         class="title-install-pill is-interactive"
         :class="[
@@ -646,17 +713,6 @@ onUnmounted(() => {
           class="title-install-slot title-install-slot--center inline-flex min-w-0 flex-auto items-center justify-center gap-1.5"
         >
           <span class="title-install-name min-w-0 truncate">{{ installLabel }}</span>
-          <button
-            v-if="showInstallUpdatePill"
-            type="button"
-            class="title-install-update-chip [-webkit-app-region:no-drag] ml-1 inline-flex shrink-0 items-center rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--comfy-yellow)_55%,transparent)] bg-[color-mix(in_srgb,var(--comfy-yellow)_12%,transparent)] px-2 py-px [font-family:inherit] text-[11px] leading-4 font-normal text-comfy-yellow cursor-pointer transition-[background-color,border-color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_20%,transparent)] [.title-bar.is-hover-active_&]:hover:border-comfy-yellow [.title-bar.is-light_&]:bg-[color-mix(in_srgb,var(--comfy-yellow)_22%,transparent)] [.title-bar.is-light_&]:border-[color-mix(in_srgb,var(--comfy-yellow)_70%,var(--neutral-700))] [.title-bar.is-light_&]:text-neutral-700 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
-            v-bind="tooltipAttrs(installUpdatePillLabel)"
-            @click.stop="handleInstallUpdatePill"
-            @keydown.enter.stop
-            @keydown.space.stop
-          >
-            {{ t('titleBar.installUpdateShort') }}
-          </button>
         </div>
         <div
           class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
@@ -694,7 +750,33 @@ onUnmounted(() => {
           class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
         ></div>
       </div>
+      <button
+        v-if="!isConsentLockdown"
+        ref="fileBtn"
+        type="button"
+        class="title-menu-button title-menu-button--icon"
+        :class="titleMenuButtonClass"
+        aria-haspopup="menu"
+        v-bind="tooltipAttrs(t('titleBar.menu'))"
+        @click="handleFileMenu"
+      >
+        <MenuIcon :size="18" />
+      </button>
+      <button
+        v-if="showRefreshButton"
+        type="button"
+        class="title-menu-button title-menu-button--icon title-refresh-button"
+        :class="titleMenuButtonClass"
+        v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
+        @click="handleRefreshInstance"
+      >
+        <RotateCw :size="16" />
+      </button>
     </div>
+
+    <div
+      class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
+    ></div>
 
     <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
       <button

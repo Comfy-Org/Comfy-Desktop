@@ -139,6 +139,7 @@ import {
   findEntryByHostWindow,
   forceRevealHostWindow,
   getEntryByInstallationId,
+  hasRunningSessionForEntry,
   isChooserHost,
   isInstallHost,
   openOrFocusAnyHostWindow,
@@ -777,8 +778,7 @@ ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {
   recordIpcInvocation('focus-comfy-window', { installationId })
   const entry = getEntryByInstallationId(installationId)
   if (entry && !entry.window.isDestroyed()) {
-    entry.window.show()
-    entry.window.focus()
+    showBuildWindow(entry)
     return true
   }
 
@@ -795,8 +795,7 @@ ipcMain.handle('open-install-window', (_event, installationId: string) => {
   recordIpcInvocation('open-install-window', { installationId })
   const existing = getEntryByInstallationId(installationId)
   if (existing && !existing.window.isDestroyed()) {
-    existing.window.show()
-    existing.window.focus()
+    showBuildWindow(existing)
     return true
   }
   openChooserHostWindow()
@@ -818,6 +817,7 @@ ipcMain.handle('close-host-window', (event) => {
   for (const [, entry] of comfyWindows) {
     if (entry.window.isDestroyed()) continue
     if (entry.panelView?.webContents === event.sender) {
+      if (isInstallHost(entry)) return false
       entry.window.close()
       return true
     }
@@ -834,6 +834,17 @@ ipcMain.handle('return-to-dashboard', (event) => {
     return true
   }
   return false
+})
+
+function showBuildWindow(entry: ComfyWindowEntry): void {
+  if (entry.activePanel === 'home') setActivePanel(entry.windowKey, 'comfy')
+  entry.window.show()
+  entry.window.focus()
+}
+
+ipcMain.on('comfy-window:close-build-tab', (event) => {
+  const found = findEntryByTitleBarSender(event.sender)
+  if (found && isInstallHost(found.entry)) void returnToDashboard(found.id)
 })
 
 ipcMain.handle('claim-attach-host', (event, installationId: string) => {
@@ -1108,8 +1119,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     ): Promise<void> => {
       const existing = getEntryByInstallationId(installationId)
       if (existing && !existing.window.isDestroyed()) {
-        existing.window.show()
-        existing.window.focus()
+        showBuildWindow(existing)
         return
       }
       const parentEntry = comfyWindows.get(parentEntryId)
@@ -1118,7 +1128,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       if (parentEntry.installationId === installationId) return
 
       if (parentEntry.installationId != null) {
-        if (!opts?.confirmed && shouldConfirmKillForEntry(parentEntry)) {
+        if (!opts?.confirmed) {
+          const stopsBuild =
+            shouldConfirmKillForEntry(parentEntry) && hasRunningSessionForEntry(parentEntry)
           let targetName = installationId
           try {
             const target = await getInstallation(installationId)
@@ -1132,10 +1144,15 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
               details: [
                 {
                   label: 'Heads up',
-                  items: [
-                    'Switch stops the current instance and replaces it in this window.',
-                    'Open in new window keeps the current instance running.'
-                  ]
+                  items: stopsBuild
+                    ? [
+                        'Switch stops the current instance and replaces it in this window.',
+                        'Open in new window keeps the current instance running.'
+                      ]
+                    : [
+                        'Switch replaces the current instance in this window.',
+                        'Open in new window keeps it open.'
+                      ]
                 }
               ],
               confirmLabel: 'Switch',

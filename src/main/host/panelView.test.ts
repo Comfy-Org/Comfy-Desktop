@@ -241,6 +241,45 @@ describe('comfy-window:navigate-panel', () => {
     expect(entry.activePanel).toBe('comfy')
   })
 
+  it("opens tools from a build window's Home tab, and goes back to Home from the sidebar", () => {
+    const { entry, panelWc } = makeWindowWithPanel({
+      installationId: 'install-1',
+      activePanel: 'home'
+    })
+
+    navigate(panelWc, 'benchmarks')
+    expect(entry.activePanel).toBe('benchmarks')
+
+    navigate(panelWc, 'chooser')
+    expect(entry.activePanel).toBe('home')
+    expect(computeBodyMode(entry)).toBe('chooser')
+  })
+
+  it('goes back to Home when Feedback opened from the Home tab closes', () => {
+    const { entry, panelWc } = makeWindowWithPanel({
+      installationId: 'install-1',
+      activePanel: 'home'
+    })
+    _runningSessions.set('install-1', {} as never)
+
+    setActivePanel(entry.windowKey, 'feedback')
+    registerPanelViewIpc()
+    const closeCurrent = vi
+      .mocked(ipcMain.on)
+      .mock.calls.find(
+        ([channel]) => channel === 'comfy-window:close-current-panel'
+      )?.[1] as (event: { sender: unknown }) => void
+    closeCurrent({ sender: panelWc })
+
+    expect(entry.activePanel).toBe('home')
+    expect(computeBodyMode(entry)).toBe('chooser')
+
+    setActivePanel(entry.windowKey, 'comfy')
+    setActivePanel(entry.windowKey, 'feedback')
+    closeCurrent({ sender: panelWc })
+    expect(entry.activePanel).toBe('comfy')
+  })
+
   it.each(['feedback', 'new-install', undefined])('ignores the unknown page %s', (page) => {
     const { entry, panelWc } = makeWindowWithPanel({ installationId: null, activePanel: 'comfy' })
 

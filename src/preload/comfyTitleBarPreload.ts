@@ -5,6 +5,7 @@ import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode
 
 export type ComfyPanelKey =
   | 'comfy'
+  | 'home'
   | 'performance-test'
   | 'benchmarks'
   | 'new-install'
@@ -42,6 +43,7 @@ export interface ComfyTitleBarBridge {
   getInstallationId(): string | null
   isMac(): boolean
   setPanel(panel: ComfyPanelKey): void
+  closeBuildTab(): void
   openNewWindow(): void
   openFileMenu(anchor: TitleMenuAnchor): void
   dismissFileMenu(): void
@@ -118,6 +120,9 @@ const bridge: ComfyTitleBarBridge = {
   isMac: () => (g.navigator?.userAgent ?? '').toLowerCase().includes('mac'),
   setPanel: (panel) => {
     ipcRenderer.send('comfy-window:set-panel', { panel })
+  },
+  closeBuildTab: () => {
+    ipcRenderer.send('comfy-window:close-build-tab')
   },
   openNewWindow: () => {
     ipcRenderer.send('comfy-window:new-chooser-window')
