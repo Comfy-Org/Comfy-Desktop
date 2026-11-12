@@ -65,6 +65,23 @@ export async function openTitleMenu(titleBar: WebContentsPage): Promise<void> {
   expect(ok, 'Title menu button click dispatched').toBe(true)
 }
 
+export async function pickFromTitleMenu(
+  app: ElectronApplication,
+  titleBar: WebContentsPage,
+  label: string
+): Promise<void> {
+  await waitForWebContents(app, 'comfyTitlePopup.html', 10_000)
+  await openTitleMenu(titleBar)
+  await expect
+    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(true)
+  const picked = await titlePopupPage(app).clickByText('li.item', label)
+  expect(picked, `${label} picked from the title menu`).toBe(true)
+}
+
 export async function openDownloadsTray(titleBar: WebContentsPage): Promise<void> {
   await titleBar.waitForVisible('.title-downloads-tray')
   const ok = await titleBar.click('.title-downloads-tray')

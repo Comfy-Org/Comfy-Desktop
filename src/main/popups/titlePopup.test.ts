@@ -32,13 +32,10 @@ import {
   scopeInstancePicker,
   buildTitlePopupMenuItems,
   computePopupHeight,
-  decideFlowMenuItemTarget,
-  isFlowMenuItemId,
   parseGlobalSettingsTarget,
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
   syncTitlePopupConfig,
-  type FlowMenuItemId,
   type InstancePickerInstall,
   type TitlePopupEntry,
   type TitlePopupHostBindings
@@ -221,36 +218,36 @@ describe('activateTitlePopupMenuItem', () => {
     } as unknown as Parameters<typeof activateTitlePopupMenuItem>[0]
   }
 
-  it.each([null, 'inst-1'] as const)(
-    'opens Performance Test in a new host when installationId is %s',
-    (installationId) => {
-      const host = makeEntry({ installationId })
+  it.each(['performance-test', 'benchmarks'] as const)(
+    'switches the dashboard window to %s in place',
+    (tool) => {
+      const host = makeEntry({ installationId: null })
       comfyWindows.set(host.windowKey, host)
       const bindings = {
         openChooserHostWindow: vi.fn(),
         setActivePanel: vi.fn()
       } as unknown as TitlePopupHostBindings
 
-      activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'performance-test', bindings)
+      activateTitlePopupMenuItem(makePopupEntry(host.windowKey), tool, bindings)
 
-      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('performance-test')
-      expect(bindings.setActivePanel).not.toHaveBeenCalled()
+      expect(bindings.setActivePanel).toHaveBeenCalledExactlyOnceWith(host.windowKey, tool)
+      expect(bindings.openChooserHostWindow).not.toHaveBeenCalled()
     }
   )
 
-  it.each([null, 'inst-1'] as const)(
-    'opens Benchmarks in a new host when installationId is %s',
-    (installationId) => {
-      const host = makeEntry({ installationId })
+  it.each(['performance-test', 'benchmarks'] as const)(
+    'opens %s in a dashboard window from a build window',
+    (tool) => {
+      const host = makeEntry({ installationId: 'inst-1' })
       comfyWindows.set(host.windowKey, host)
       const bindings = {
         openChooserHostWindow: vi.fn(),
         setActivePanel: vi.fn()
       } as unknown as TitlePopupHostBindings
 
-      activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'benchmarks', bindings)
+      activateTitlePopupMenuItem(makePopupEntry(host.windowKey), tool, bindings)
 
-      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith('benchmarks')
+      expect(bindings.openChooserHostWindow).toHaveBeenCalledExactlyOnceWith(tool)
       expect(bindings.setActivePanel).not.toHaveBeenCalled()
     }
   )
@@ -273,33 +270,6 @@ describe('activateTitlePopupMenuItem', () => {
     activateTitlePopupMenuItem(makePopupEntry(host.windowKey), 'reset-zoom', bindings)
 
     expect(bindings.resetComfyZoom).not.toHaveBeenCalled()
-  })
-})
-
-describe('decideFlowMenuItemTarget', () => {
-  const flowIds: FlowMenuItemId[] = ['new-install', 'track', 'load-snapshot', 'quick-install']
-
-  it.each(flowIds)('dashboard host routes %s to in-place takeover', (id) => {
-    const target = decideFlowMenuItemTarget(makeEntry({ installationId: null }), id)
-    expect(target).toEqual({ kind: 'set-active-panel', panel: id })
-  })
-
-  it.each(flowIds)('install host routes %s to a fresh chooser window', (id) => {
-    const target = decideFlowMenuItemTarget(makeEntry({ installationId: 'inst-1' }), id)
-    expect(target).toEqual({ kind: 'open-chooser-host', panel: id })
-  })
-})
-
-describe('isFlowMenuItemId', () => {
-  it('accepts the four flow ids and rejects everything else', () => {
-    expect(isFlowMenuItemId('new-install')).toBe(true)
-    expect(isFlowMenuItemId('track')).toBe(true)
-    expect(isFlowMenuItemId('load-snapshot')).toBe(true)
-    expect(isFlowMenuItemId('quick-install')).toBe(true)
-    expect(isFlowMenuItemId('new-window')).toBe(false)
-    expect(isFlowMenuItemId('settings')).toBe(false)
-    expect(isFlowMenuItemId('feedback')).toBe(false)
-    expect(isFlowMenuItemId('')).toBe(false)
   })
 })
 
