@@ -3,7 +3,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onMounted, ref } from 'vue'
 import {
   Check,
   ChevronDown,
@@ -77,6 +77,29 @@ const benchmarksFolderPath = ref('')
 const loading = ref(true)
 const loadError = ref(false)
 const searchQuery = ref('')
+const searchExpanded = ref(false)
+const searchField = ref<InstanceType<typeof BaseInput> | null>(null)
+const searchToggle = ref<InstanceType<typeof Button> | null>(null)
+const searchCollapsed = computed(() => !searchExpanded.value && searchQuery.value === '')
+
+async function expandSearch(): Promise<void> {
+  searchExpanded.value = true
+  await nextTick()
+  const root = searchField.value?.$el as HTMLElement | undefined
+  root?.querySelector('input')?.focus()
+}
+
+function collapseSearchWhenEmpty(): void {
+  if (searchQuery.value === '') searchExpanded.value = false
+}
+
+async function closeSearchFromKeyboard(): Promise<void> {
+  if (searchQuery.value !== '') return
+  searchExpanded.value = false
+  await nextTick()
+  const toggle = searchToggle.value?.$el as HTMLElement | undefined
+  if (toggle?.offsetParent) toggle.focus()
+}
 const workspaceFilter = ref('')
 const buildFilter = ref('')
 const machineFilter = ref('')
@@ -641,7 +664,7 @@ onActivated(() => {
       class="benchmarks__layout @container relative flex h-full min-h-0 w-full flex-col overflow-x-hidden overflow-y-auto text-foreground"
     >
       <div class="mx-auto flex w-full max-w-300 flex-col gap-5 px-10 pt-9 pb-8">
-        <BrandedPageHeader :title="t('benchmarks.title')">
+        <BrandedPageHeader :title="t('benchmarks.title')" actions-inline>
           <template #actions>
             <Button
               variant="secondary"
@@ -658,102 +681,125 @@ onActivated(() => {
           </template>
         </BrandedPageHeader>
 
-        <div class="benchmarks__toolbar flex flex-wrap items-center gap-2">
-          <Menu
-            v-for="menu in toolbarMenus"
-            :key="menu.key"
-            :modal="false"
-            align="start"
-            class="z-20 min-w-[180px]"
-          >
-            <template #trigger>
+        <div class="benchmarks__toolbar @container/toolbar">
+          <div class="flex items-start gap-2">
+            <div class="benchmarks__filters flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <Menu
+                v-for="menu in toolbarMenus"
+                :key="menu.key"
+                :modal="false"
+                align="start"
+                class="z-20 min-w-[180px]"
+              >
+                <template #trigger>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    class="benchmarks__filter max-w-64 min-w-0 gap-1.5 px-3 text-[13px]/5"
+                    :aria-label="`${menu.label}: ${currentOptionLabel(menu)}`"
+                    :data-testid="`benchmarks-filter-${menu.key}`"
+                  >
+                    <span class="shrink-0 text-subtle-foreground">{{ menu.label }}</span>
+                    <span class="truncate">{{ currentOptionLabel(menu) }}</span>
+                    <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
+                  </Button>
+                </template>
+                <DropdownMenuRadioGroup :model-value="menu.value">
+                  <MenuRadioItem
+                    v-for="option in menu.options"
+                    :key="option.value"
+                    :value="option.value"
+                    :data-value="option.value"
+                    class="data-[state=checked]:bg-accent"
+                    @select="menu.set(option.value)"
+                  >
+                    <span class="flex-1 text-left">{{ option.label }}</span>
+                  </MenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </Menu>
+            </div>
+            <div class="benchmarks__tools flex shrink-0 items-center gap-2">
               <Button
+                variant="muted-textonly"
+                size="icon"
+                class="benchmarks__refresh"
                 type="button"
-                variant="secondary"
-                size="md"
-                class="benchmarks__filter max-w-64 gap-1.5 px-3 text-[13px]/5"
-                :aria-label="`${menu.label}: ${currentOptionLabel(menu)}`"
-                :data-testid="`benchmarks-filter-${menu.key}`"
+                :disabled="loading"
+                :aria-label="t('benchmarks.refresh')"
+                :title="t('benchmarks.refresh')"
+                data-testid="benchmarks-refresh"
+                @click="refreshBenchmarks"
               >
-                <span class="shrink-0 text-subtle-foreground">{{ menu.label }}</span>
-                <span class="truncate">{{ currentOptionLabel(menu) }}</span>
-                <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
+                <RefreshCw
+                  :size="15"
+                  :class="{ 'animate-spin [animation-duration:900ms]': loading }"
+                  aria-hidden="true"
+                />
               </Button>
-            </template>
-            <DropdownMenuRadioGroup :model-value="menu.value">
-              <MenuRadioItem
-                v-for="option in menu.options"
-                :key="option.value"
-                :value="option.value"
-                :data-value="option.value"
-                class="data-[state=checked]:bg-accent"
-                @select="menu.set(option.value)"
+              <Button
+                v-if="searchCollapsed"
+                ref="searchToggle"
+                variant="muted-textonly"
+                size="icon"
+                class="benchmarks__search-toggle hidden @max-[720px]/toolbar:inline-flex"
+                type="button"
+                :aria-label="t('benchmarks.search')"
+                :title="t('benchmarks.search')"
+                data-testid="benchmarks-search-toggle"
+                @click="expandSearch"
               >
-                <span class="flex-1 text-left">{{ option.label }}</span>
-              </MenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </Menu>
-          <div class="ml-auto flex items-center gap-2">
-            <Button
-              variant="muted-textonly"
-              size="icon"
-              class="benchmarks__refresh"
-              type="button"
-              :disabled="loading"
-              :aria-label="t('benchmarks.refresh')"
-              :title="t('benchmarks.refresh')"
-              data-testid="benchmarks-refresh"
-              @click="refreshBenchmarks"
-            >
-              <RefreshCw
-                :size="15"
-                :class="{ 'animate-spin [animation-duration:900ms]': loading }"
-                aria-hidden="true"
-              />
-            </Button>
-            <BaseInput
-              v-model="searchQuery"
-              class="benchmarks__search h-8 w-40 [&_input]:text-[13px]"
-              :placeholder="t('benchmarks.searchPlaceholder')"
-              :aria-label="t('benchmarks.searchPlaceholder')"
-              :spellcheck="false"
-            >
-              <template #leading><Search :size="14" aria-hidden="true" /></template>
-            </BaseInput>
-            <Menu
-              :modal="false"
-              align="end"
-              :label="t('benchmarks.columnsToDisplay')"
-              class="z-20 max-h-90 min-w-56"
-            >
-              <template #trigger>
-                <Button
-                  variant="muted-textonly"
-                  size="icon"
-                  type="button"
-                  class="benchmarks__columns data-[state=open]:bg-accent data-[state=open]:text-foreground"
-                  :aria-label="t('benchmarks.columns')"
-                  :title="t('benchmarks.columns')"
-                  data-testid="benchmarks-columns"
+                <Search :size="15" aria-hidden="true" />
+              </Button>
+              <BaseInput
+                ref="searchField"
+                v-model="searchQuery"
+                class="benchmarks__search h-8 w-40 @max-[720px]/toolbar:w-32 [&_input]:text-[13px]"
+                :class="{ '@max-[720px]/toolbar:hidden': searchCollapsed }"
+                :data-collapsed="searchCollapsed ? '' : undefined"
+                :placeholder="t('benchmarks.searchPlaceholder')"
+                :aria-label="t('benchmarks.searchPlaceholder')"
+                :spellcheck="false"
+                @keydown.escape="closeSearchFromKeyboard"
+                @focusout="collapseSearchWhenEmpty"
+              >
+                <template #leading><Search :size="14" aria-hidden="true" /></template>
+              </BaseInput>
+              <Menu
+                :modal="false"
+                align="end"
+                :label="t('benchmarks.columnsToDisplay')"
+                class="z-20 max-h-90 min-w-56"
+              >
+                <template #trigger>
+                  <Button
+                    variant="muted-textonly"
+                    size="icon"
+                    type="button"
+                    class="benchmarks__columns data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                    :aria-label="t('benchmarks.columns')"
+                    :title="t('benchmarks.columns')"
+                    data-testid="benchmarks-columns"
+                  >
+                    <SlidersHorizontal :size="15" aria-hidden="true" />
+                  </Button>
+                </template>
+                <DropdownMenuCheckboxItem
+                  v-for="key in availableColumnKeys"
+                  :key="key"
+                  :model-value="visibleColumnKeys.has(key)"
+                  class="flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-highlighted:bg-accent"
+                  :data-testid="`benchmark-column-${key}`"
+                  @update:model-value="(visible) => setColumnVisible(key, visible === true)"
+                  @select="(event) => event.preventDefault()"
                 >
-                  <SlidersHorizontal :size="15" aria-hidden="true" />
-                </Button>
-              </template>
-              <DropdownMenuCheckboxItem
-                v-for="key in availableColumnKeys"
-                :key="key"
-                :model-value="visibleColumnKeys.has(key)"
-                class="flex min-h-8 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-none data-highlighted:bg-accent"
-                :data-testid="`benchmark-column-${key}`"
-                @update:model-value="(visible) => setColumnVisible(key, visible === true)"
-                @select="(event) => event.preventDefault()"
-              >
-                <span class="flex-1 truncate text-left">{{ columnLabel(key) }}</span>
-                <DropdownMenuItemIndicator>
-                  <Check :size="15" aria-hidden="true" />
-                </DropdownMenuItemIndicator>
-              </DropdownMenuCheckboxItem>
-            </Menu>
+                  <span class="flex-1 truncate text-left">{{ columnLabel(key) }}</span>
+                  <DropdownMenuItemIndicator>
+                    <Check :size="15" aria-hidden="true" />
+                  </DropdownMenuItemIndicator>
+                </DropdownMenuCheckboxItem>
+              </Menu>
+            </div>
           </div>
         </div>
 

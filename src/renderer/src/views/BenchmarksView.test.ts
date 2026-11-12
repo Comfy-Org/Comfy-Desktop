@@ -347,6 +347,46 @@ describe('BenchmarksView', () => {
     })
   })
 
+  describe('search in a narrow toolbar', () => {
+    function searchField(wrapper: VueWrapper) {
+      return wrapper.get<HTMLElement>('.benchmarks__search')
+    }
+
+    it('opens from the icon, focused, and folds back on Escape while empty', async () => {
+      const wrapper = mountView()
+      await flushPromises()
+      expect(searchField(wrapper).attributes('data-collapsed')).toBe('')
+
+      await wrapper.get('[data-testid="benchmarks-search-toggle"]').trigger('click')
+      await flushPromises()
+      const input = wrapper.get<HTMLInputElement>('.benchmarks__search input')
+      expect(searchField(wrapper).attributes('data-collapsed')).toBeUndefined()
+      expect(wrapper.find('[data-testid="benchmarks-search-toggle"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(input.element)
+
+      await input.trigger('keydown', { key: 'Escape' })
+      expect(searchField(wrapper).attributes('data-collapsed')).toBe('')
+      expect(wrapper.find('[data-testid="benchmarks-search-toggle"]').exists()).toBe(true)
+    })
+
+    it('folds back on blur only while empty', async () => {
+      const wrapper = mountView()
+      await flushPromises()
+      await wrapper.get('[data-testid="benchmarks-search-toggle"]').trigger('click')
+      await flushPromises()
+      const input = wrapper.get<HTMLInputElement>('.benchmarks__search input')
+
+      await input.setValue('stable')
+      await input.trigger('focusout')
+      await input.trigger('keydown', { key: 'Escape' })
+      expect(searchField(wrapper).attributes('data-collapsed')).toBeUndefined()
+
+      await input.setValue('')
+      await input.trigger('focusout')
+      expect(searchField(wrapper).attributes('data-collapsed')).toBe('')
+    })
+  })
+
   it('compares the builds that ran on each machine when grouped by hardware', async () => {
     const wrapper = await mountGrouped('Hardware')
 
