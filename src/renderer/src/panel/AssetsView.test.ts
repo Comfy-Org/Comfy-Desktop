@@ -595,6 +595,41 @@ describe('AssetsView on This computer', () => {
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
   })
 
+  it('says so when the folder cannot be opened on this computer any more', async () => {
+    listOutputFolder.mockResolvedValue(listing([entry(SHARED, 'cutout.png', 'image')]))
+    openPath.mockResolvedValueOnce('The folder does not exist.')
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="local-open-folder"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open this folder. It may have been moved or deleted.",
+      message: SHARED
+    })
+  })
+
+  it('shows only the subfolders of a folder with no files, and the cut-short note when nothing matches', async () => {
+    listOutputFolder.mockResolvedValueOnce(listing([entry(SHARED, 'apps', null)]))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="local-subfolder-apps"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="local-empty"]').exists()).toBe(false)
+
+    listOutputFolder.mockResolvedValueOnce(
+      listing([entry(`${SHARED}/apps`, 'cutout.png', 'image')], true)
+    )
+    await wrapper.get('[data-testid="local-subfolder-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('input').setValue('nothing-like-this')
+    expect(wrapper.get('[data-testid="local-empty"]').text()).toContain('Showing the newest file.')
+  })
+
   it('says a folder could not be opened and leads back to This computer', async () => {
     listOutputFolder.mockResolvedValue(null)
     const wrapper = await mountAssets([])
