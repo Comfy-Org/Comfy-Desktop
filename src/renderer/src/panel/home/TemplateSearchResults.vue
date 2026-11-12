@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Bot } from 'lucide-vue-next'
+import { Bot, CircleDollarSign } from 'lucide-vue-next'
 import TemplateSearchBadge from './TemplateSearchBadge.vue'
 import type { TemplateSearchCandidate } from '../../types/ipc'
 import type { BadgeTone, SearchRow } from './templateSearch'
@@ -65,7 +65,7 @@ function matchBadge(candidate: TemplateSearchCandidate): Badge | null {
 }
 
 function cornerBadges(row: SearchRow): Badge[] {
-  return badges(row).filter((badge) => badge.tone === 'partner' || badge.tone === 'download')
+  return badges(row).filter((badge) => badge.tone === 'download')
 }
 
 function badges(row: SearchRow): Badge[] {
@@ -268,12 +268,21 @@ function optionId(index: number): string {
             :class="isWeak(row) ? 'opacity-50 grayscale' : ''"
             loading="lazy"
           />
-          <span
-            v-if="row.kind !== 'agent'"
-            class="absolute top-2 left-2 rounded-md px-1.5 py-0.5 text-[12px]/4 font-semibold text-white shadow-[0_2px_8px_rgb(0_0_0/0.45)]"
-            :class="row.best ? 'bg-[rgb(110_130_255)]' : 'bg-[rgb(12_12_14/0.82)]'"
-          >
-            #{{ index + 1 }}
+          <span v-if="row.kind !== 'agent'" class="absolute top-2 left-2 flex items-center gap-1.5">
+            <span
+              class="rounded-md px-1.5 py-0.5 text-[12px]/4 font-semibold text-white shadow-[0_2px_8px_rgb(0_0_0/0.45)]"
+              :class="row.best ? 'bg-[rgb(110_130_255)]' : 'bg-[rgb(12_12_14/0.82)]'"
+            >
+              #{{ index + 1 }}
+            </span>
+            <span
+              v-if="row.candidate?.partner"
+              class="inline-flex h-6 items-center gap-1 rounded-md bg-[linear-gradient(90deg,rgb(255_200_40),rgb(240_88_48))] px-2 text-[13px] leading-none font-bold text-[rgb(34_14_0)] shadow-[0_2px_10px_rgb(0_0_0/0.5)] ring-1 ring-[rgb(255_255_255/0.35)] ring-inset"
+              data-testid="home-template-search-partner"
+            >
+              <CircleDollarSign :size="14" :stroke-width="2.5" aria-hidden="true" />
+              {{ t('home.search.partner') }}
+            </span>
           </span>
           <span
             v-if="row.candidate && matchLevel(row.candidate)"
