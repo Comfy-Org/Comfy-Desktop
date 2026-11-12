@@ -47,15 +47,37 @@ import {
 } from './guards'
 
 describe('appsUrl', () => {
-  it('defaults to the hosted site and takes an override in a development build', () => {
-    expect(appsUrl({}, false)).toBe(DEFAULT_APPS_URL)
-    expect(appsUrl({ COMFY_APPS_URL: 'http://127.0.0.1:5310/' }, false)).toBe(
-      'http://127.0.0.1:5310/'
-    )
+  const prod = 'https://cloud.comfy.org'
+  const staging = 'https://stagingcloud.comfy.org'
+  const stagingApps = 'https://comfy-website-preview-pr-384.vercel.app/apps/'
+
+  it('opens the comfy.org apps page for production Cloud', () => {
+    expect(DEFAULT_APPS_URL).toBe('https://comfy.org/apps/')
+    expect(appsUrl({}, false, prod)).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl({}, true, `${prod}/`)).toBe(DEFAULT_APPS_URL)
+  })
+
+  it('opens the staging website apps page for staging Cloud, packaged or not', () => {
+    expect(appsUrl({}, false, staging)).toBe(stagingApps)
+    expect(appsUrl({}, true, staging)).toBe(stagingApps)
+  })
+
+  it('falls back to the comfy.org apps page for any other Cloud', () => {
+    expect(appsUrl({}, false, 'https://testcloud.comfy.org')).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl({}, false, 'http://stagingcloud.comfy.org')).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl({}, false, 'not a url')).toBe(DEFAULT_APPS_URL)
+  })
+
+  it('takes an override in a development build over either Cloud', () => {
+    const env = { COMFY_APPS_URL: 'http://127.0.0.1:5310/' }
+    expect(appsUrl(env, false, prod)).toBe('http://127.0.0.1:5310/')
+    expect(appsUrl(env, false, staging)).toBe('http://127.0.0.1:5310/')
   })
 
   it('ignores the override in a packaged build', () => {
-    expect(appsUrl({ COMFY_APPS_URL: 'https://evil.example/' }, true)).toBe(DEFAULT_APPS_URL)
+    const env = { COMFY_APPS_URL: 'https://evil.example/' }
+    expect(appsUrl(env, true, prod)).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl(env, true, staging)).toBe(stagingApps)
   })
 })
 

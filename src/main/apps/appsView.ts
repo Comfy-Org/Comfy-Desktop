@@ -43,7 +43,7 @@ import {
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
 
-const APPS_URL = appsUrl(process.env, app.isPackaged)
+const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
 const APPS_PARTITION = 'persist:comfy-apps'
 
