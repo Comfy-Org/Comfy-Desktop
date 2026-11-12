@@ -27,6 +27,9 @@ DS's Motion page (`ds/motion.ts`).
   colour, like "ASSET DETAILS", for every section and sub-section title in
   panels, menus and details. Field names in key/value rows stay sentence
   case.
+- **Dropdown titles are uppercase too.** Every group or section title inside
+  a dropdown or menu uses the same uppercase label style. The locale string
+  stays in sentence case; `uppercase` is applied in CSS.
 - **English only** in the prototype, Figma, Linear and the repo.
 - **No em dashes** in product copy.
 
