@@ -210,6 +210,9 @@ describe('serveOutputFile', () => {
     expect(ok.status).toBe(200)
     expect(fetchFile).toHaveBeenCalledWith(expect.stringMatching(/^file:\/\/.*picture\.png$/))
 
+    expect(ok.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    expect(ok.headers.get('Content-Security-Policy')).toBe('sandbox')
+
     const refused = await serveOutputFile(
       new Request(outputFileUrl(path.join(outsideDir, 'secret.png')))
     )
@@ -217,11 +220,27 @@ describe('serveOutputFile', () => {
     expect(fetchFile).toHaveBeenCalledOnce()
   })
 
+  it('answers 404 for files it does not show, broken addresses and files that are gone', async () => {
+    write(path.join(sharedDir, 'page.html'))
+    write(path.join(sharedDir, 'gone.png'))
+    await listOutputFolders()
+
+    const html = await serveOutputFile(
+      new Request(outputFileUrl(path.join(sharedDir, 'page.html')))
+    )
+    expect(html.status).toBe(404)
+    const broken = await serveOutputFile(new Request('comfy-output://file/%'))
+    expect(broken.status).toBe(404)
+    fetchFile.mockRejectedValueOnce(new Error('ENOENT'))
+    const gone = await serveOutputFile(new Request(outputFileUrl(path.join(sharedDir, 'gone.png'))))
+    expect(gone.status).toBe(404)
+  })
+
   it('serves a small JPEG thumbnail and answers 404 when none can be made', async () => {
     write(path.join(sharedDir, 'thumb.png'))
     await listOutputFolders()
     const resize = vi.fn(() => ({ toJPEG: () => Buffer.from('small') }))
-    const big = { isEmpty: () => false, getSize: () => ({ width: 2000 }), resize }
+    const big = { isEmpty: () => false, getSize: () => ({ width: 2000, height: 1000 }), resize }
     thumbnailImage.mockResolvedValueOnce(big)
     fullImage.mockReturnValueOnce(big)
 
@@ -230,7 +249,21 @@ describe('serveOutputFile', () => {
     )
     expect(thumb.headers.get('Content-Type')).toBe('image/jpeg')
     expect(await thumb.text()).toBe('small')
-    expect(resize).toHaveBeenCalledWith({ width: 480 })
+    expect(resize).toHaveBeenCalledWith({ width: 480, height: 240 })
+    expect(thumb.headers.get('X-Content-Type-Options')).toBe('nosniff')
+
+    write(path.join(sharedDir, 'blank.png'))
+    const blank = {
+      isEmpty: () => false,
+      getSize: () => ({ width: 10, height: 10 }),
+      toJPEG: () => Buffer.alloc(0)
+    }
+    thumbnailImage.mockResolvedValueOnce(blank)
+    fullImage.mockReturnValueOnce(blank)
+    const empty = await serveOutputFile(
+      new Request(outputFileUrl(path.join(sharedDir, 'blank.png'), 1))
+    )
+    expect(empty.status).toBe(404)
 
     write(path.join(sharedDir, 'broken.png'))
     thumbnailImage.mockRejectedValueOnce(new Error('no thumbnail'))

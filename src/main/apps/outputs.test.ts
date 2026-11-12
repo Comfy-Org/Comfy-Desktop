@@ -47,6 +47,17 @@ describe('outputRequest', () => {
     expect(request?.items[2]).not.toHaveProperty('folder')
   })
 
+  it('keeps only an absolute folder with no hidden characters', () => {
+    const folderOf = (folder: string) =>
+      outputRequest({ items: [picture({ savedOn: 'computer', folder })], index: 0 })?.items[0]
+        ?.folder
+    expect(folderOf('C:\\Users\\me\\output')).toBe('C:\\Users\\me\\output')
+    expect(folderOf('relative/output')).toBeUndefined()
+    expect(folderOf('\\\\server\\share')).toBeUndefined()
+    expect(folderOf('/Users/me/\u202eoutput')).toBeUndefined()
+    expect(folderOf('/Users/me/out\nput')).toBeUndefined()
+  })
+
   it('refuses outputs it cannot show', () => {
     expect(outputRequest(null)).toBeNull()
     expect(outputRequest({ items: [], index: 0 })).toBeNull()
@@ -63,6 +74,17 @@ describe('outputRequest', () => {
     expect(
       outputRequest({ items: [picture({ bytes: half }), picture({ bytes: half })], index: 0 })
     ).toBeNull()
+  })
+
+  it('refuses an items list with holes', () => {
+    const items = [picture(), picture()]
+    delete items[0]
+    expect(outputRequest({ items, index: 1 })).toBeNull()
+  })
+
+  it('counts the whole buffer behind each output', () => {
+    const view = new Uint8Array(new ArrayBuffer(MAX_OUTPUTS_BYTES + 1), 0, 1)
+    expect(outputRequest({ items: [picture({ bytes: view })], index: 0 })).toBeNull()
   })
 })
 

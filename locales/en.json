@@ -69,6 +69,7 @@
       "tags": "Tags",
       "tagsHint": "Tags are edited in ComfyUI.",
       "createdAt": "Created {date}",
+      "modifiedAt": "Modified {date}",
       "fit": "Fit",
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",

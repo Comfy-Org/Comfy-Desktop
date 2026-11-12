@@ -496,6 +496,7 @@ onUnmounted(() => {
               :key="appsVisit"
               :grow-by="appsGrowBy"
               :sidebar-menu-open="sidebarMenuOpen"
+              :obscured="currentOverlay?.kind === 'takeover'"
               @app-open="appsAppOpen = $event"
               @app-entered="appsAppEntered = $event"
               @view-in-assets="viewInAssets"

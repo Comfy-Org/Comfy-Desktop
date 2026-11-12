@@ -3,10 +3,13 @@ import { runInNewContext } from 'vm'
 import { describe, expect, it } from 'vitest'
 
 import {
+  appOfPage,
   isAllowedAppsPermission,
   appsOrigin,
   appsUrl,
   cleanSaveName,
+  cloudAppTag,
+  cloudPromptBody,
   COMFY_READY_SCRIPT,
   collectOutputs,
   downloadRequest,
@@ -15,6 +18,7 @@ import {
   isAppOpen,
   isAppPage,
   isAppsFrameUrl,
+  isAppSlug,
   isBuildId,
   isComfyPage,
   isDocumentFailure,
@@ -23,6 +27,7 @@ import {
   isRunId,
   isVersionsIndex,
   isWorkflow,
+  localAppId,
   localEvent,
   localInstalls,
   localRequest,
@@ -30,12 +35,14 @@ import {
   openRequest,
   openWorkflowScript,
   outputKind,
+  promptIdOf,
   queueAnswer,
   queueJson,
   queueView,
   readable,
   readCapped,
   reconnectDelay,
+  runEnd,
   type RunSeen,
   safeUploadName,
   saveExt,
@@ -48,15 +55,37 @@ import {
 } from './guards'
 
 describe('appsUrl', () => {
-  it('defaults to the hosted site and takes an override in a development build', () => {
-    expect(appsUrl({}, false)).toBe(DEFAULT_APPS_URL)
-    expect(appsUrl({ COMFY_APPS_URL: 'http://127.0.0.1:5310/' }, false)).toBe(
-      'http://127.0.0.1:5310/'
-    )
+  const prod = 'https://cloud.comfy.org'
+  const staging = 'https://stagingcloud.comfy.org'
+  const stagingApps = 'https://comfy-website-preview-pr-384.vercel.app/apps/'
+
+  it('opens the comfy.org apps page for production Cloud', () => {
+    expect(DEFAULT_APPS_URL).toBe('https://comfy.org/apps/')
+    expect(appsUrl({}, false, prod)).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl({}, true, `${prod}/`)).toBe(DEFAULT_APPS_URL)
+  })
+
+  it('opens the staging website apps page for staging Cloud, packaged or not', () => {
+    expect(appsUrl({}, false, staging)).toBe(stagingApps)
+    expect(appsUrl({}, true, staging)).toBe(stagingApps)
+  })
+
+  it('falls back to the comfy.org apps page for any other Cloud', () => {
+    expect(appsUrl({}, false, 'https://testcloud.comfy.org')).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl({}, false, 'http://stagingcloud.comfy.org')).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl({}, false, 'not a url')).toBe(DEFAULT_APPS_URL)
+  })
+
+  it('takes an override in a development build over either Cloud', () => {
+    const env = { COMFY_APPS_URL: 'http://127.0.0.1:5310/' }
+    expect(appsUrl(env, false, prod)).toBe('http://127.0.0.1:5310/')
+    expect(appsUrl(env, false, staging)).toBe('http://127.0.0.1:5310/')
   })
 
   it('ignores the override in a packaged build', () => {
-    expect(appsUrl({ COMFY_APPS_URL: 'https://evil.example/' }, true)).toBe(DEFAULT_APPS_URL)
+    const env = { COMFY_APPS_URL: 'https://evil.example/' }
+    expect(appsUrl(env, true, prod)).toBe(DEFAULT_APPS_URL)
+    expect(appsUrl(env, true, staging)).toBe(stagingApps)
   })
 })
 
@@ -154,6 +183,11 @@ describe('toOutputFile', () => {
     expect(toOutputFile({ filename: 'a.png', subfolder: '../x', type: 'output' })).toBeNull()
     expect(toOutputFile({ filename: 'a.png', type: 'input' })).toBeNull()
   })
+  it('refuses a file name that is a path', () => {
+    expect(toOutputFile({ filename: '../../secret.png', type: 'output' })).toBeNull()
+    expect(toOutputFile({ filename: 'a\\b.png', type: 'output' })).toBeNull()
+    expect(toOutputFile({ filename: '..', type: 'output' })).toBeNull()
+  })
 })
 
 describe('safeUploadName', () => {
@@ -170,6 +204,10 @@ describe('safeUploadName', () => {
     expect(safeUploadName('My Song.mp3')).toBe('My_Song.mp3')
     expect(safeUploadName('take.flac')).toBe('take.flac')
     expect(safeUploadName('voice.m4a')).toBe('voice.m4a')
+  })
+  it('keeps the extension of a long name', () => {
+    const name = safeUploadName(`${'a'.repeat(150)}.webm`)
+    expect(name).toBe(`${'a'.repeat(95)}.webm`)
   })
 })
 
@@ -913,5 +951,192 @@ describe('reading the local queue', () => {
     expect(queueAnswer(500, bytes, new Map()).status).toBe(500)
     expect(queueAnswer(500, bytes, new Map()).body).not.toEqual(bytes)
     expect(queueAnswer(200, new TextEncoder().encode('not json'), new Map()).status).toBe(502)
+  })
+})
+
+describe('cloudAppTag', () => {
+  it('tags a Cloud run with the app and its model', () => {
+    expect(cloudAppTag({ app: 'text-to-image', model: 'flux-2-klein' })).toEqual({
+      id: 'text-to-image',
+      model: 'flux-2-klein',
+      where: 'cloud'
+    })
+  })
+
+  it('tags a Cloud run with only the app when no model is named', () => {
+    expect(cloudAppTag({ app: 'remove-background' })).toEqual({
+      id: 'remove-background',
+      where: 'cloud'
+    })
+  })
+
+  it('leaves a model that is not a slug out of the tag', () => {
+    expect(cloudAppTag({ app: 'upscale', model: 'My Model/v2' })).toEqual({
+      id: 'upscale',
+      where: 'cloud'
+    })
+  })
+
+  it.each<[string, unknown]>([
+    ['nothing, from a page that predates the tag', undefined],
+    ['null', null],
+    ['a bare string', 'upscale'],
+    ['a list', ['upscale']],
+    ['no app', { model: 'flux-2' }],
+    ['a display name', { app: 'Remove background' }],
+    ['a path', { app: '../upscale' }],
+    ['65 characters', { app: 'a'.repeat(65) }],
+    ['a number', { app: 3 }]
+  ])('sends no tag for %s', (_why, input) => {
+    expect(cloudAppTag(input)).toBeNull()
+  })
+
+  it('takes only id, model and where from the page', () => {
+    expect(
+      Object.keys(cloudAppTag({ app: 'upscale', model: 'x', prompt: 'a cat', where: 'local' })!)
+    ).toEqual(['id', 'model', 'where'])
+  })
+})
+
+describe('isAppSlug', () => {
+  it.each([
+    ['upscale', true],
+    ['image-to-3d', true],
+    ['sdr_to.hdr', true],
+    ['0', true],
+    ['Upscale', false],
+    ['', false],
+    ['-upscale', false],
+    ['up scale', false],
+    ['a'.repeat(64), true],
+    ['a'.repeat(65), false]
+  ])('%s is a slug: %s', (value, ok) => {
+    expect(isAppSlug(value)).toBe(ok)
+  })
+})
+
+describe('cloudPromptBody', () => {
+  const workflow = { '1': { class_type: 'SaveImage', inputs: {} } }
+
+  it('posts extra_data.comfy_app next to the token for a tagged run', () => {
+    expect(
+      JSON.parse(
+        cloudPromptBody(workflow, 'tok', { id: 'upscale', model: 'esrgan-4x', where: 'cloud' })
+      )
+    ).toEqual({
+      prompt: workflow,
+      extra_data: {
+        auth_token_comfy_org: 'tok',
+        comfy_app: { id: 'upscale', model: 'esrgan-4x', where: 'cloud' }
+      }
+    })
+  })
+
+  it('posts the body as before for an untagged run', () => {
+    expect(JSON.parse(cloudPromptBody(workflow, 'tok', null))).toEqual({
+      prompt: workflow,
+      extra_data: { auth_token_comfy_org: 'tok' }
+    })
+  })
+})
+
+describe('appOfPage', () => {
+  const list = 'https://comfy.org/apps/'
+
+  it.each([
+    ['https://comfy.org/apps/remove-background/desktop.html', 'remove-background'],
+    ['https://comfy.org/apps/upscale/', 'upscale'],
+    ['https://comfy.org/apps/upscale', 'upscale'],
+    ['https://comfy.org/apps/image-to-3d/desktop.html?x=1#top', 'image-to-3d'],
+    ['https://comfy.org/apps/#/text-to-image', 'text-to-image'],
+    ['https://comfy.org/apps/#/text-to-image/run?x=1', 'text-to-image']
+  ])('reads the app in %s as %s', (page, app) => {
+    expect(appOfPage(page, list)).toBe(app)
+  })
+
+  it('reads the app under a list address with no trailing slash', () => {
+    expect(
+      appOfPage('http://127.0.0.1:4321/apps/upscale/desktop.html', 'http://127.0.0.1:4321/apps')
+    ).toBe('upscale')
+  })
+
+  it.each([
+    ['the list itself', 'https://comfy.org/apps/'],
+    ['a file next to the list', 'https://comfy.org/apps/index.html'],
+    ['another site', 'https://evil.example/apps/upscale/'],
+    ['outside the apps folder', 'https://comfy.org/blog/upscale/'],
+    ['a folder that is not a slug', 'https://comfy.org/apps/Upscale%20Me/'],
+    ['not an address', 'nope']
+  ])('reads no app from %s', (_why, page) => {
+    expect(appOfPage(page, list)).toBeNull()
+  })
+})
+
+describe('localAppId', () => {
+  it('reads the app id a page adds to its This computer tag', () => {
+    const body = { prompt: {}, extra_data: { comfy_app: { name: 'Upscale', id: 'upscale' } } }
+
+    expect(localAppId(JSON.stringify(body))).toBe('upscale')
+  })
+
+  it.each([
+    ['a tag with only the display name', { extra_data: { comfy_app: { name: 'Upscale' } } }],
+    ['an id that is not a slug', { extra_data: { comfy_app: { id: 'Up Scale' } } }],
+    ['no tag', { prompt: {} }],
+    ['null', null]
+  ])('reads no app from %s', (_why, body) => {
+    expect(localAppId(JSON.stringify(body))).toBeNull()
+  })
+
+  it('reads no app from text that is not JSON', () => {
+    expect(localAppId('{')).toBeNull()
+  })
+})
+
+describe('promptIdOf', () => {
+  const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+
+  it('reads the run id ComfyUI gives a prompt', () => {
+    expect(promptIdOf(bytes({ prompt_id: 'abc-123', number: 4, node_errors: {} }))).toBe('abc-123')
+  })
+
+  it.each([
+    ['no id', bytes({ error: 'invalid prompt' })],
+    ['an id with a slash', bytes({ prompt_id: '../x' })],
+    ['text that is not JSON', new TextEncoder().encode('nope')]
+  ])('reads none from %s', (_why, body) => {
+    expect(promptIdOf(body)).toBeNull()
+  })
+})
+
+describe('runEnd', () => {
+  it.each([
+    ['execution_success', 'success'],
+    ['execution_interrupted', 'cancelled']
+  ])('reads %s as %s', (type, outcome) => {
+    expect(runEnd({ type, data: { prompt_id: 'r1' } })).toEqual({ id: 'r1', outcome })
+  })
+
+  it('reads a failed run with only its exception type', () => {
+    expect(
+      runEnd({
+        type: 'execution_error',
+        data: {
+          prompt_id: 'r1',
+          exception_type: 'torch.OutOfMemoryError',
+          exception_message: 'CUDA out of memory',
+          traceback: ['/home/someone']
+        }
+      })
+    ).toEqual({ id: 'r1', outcome: 'failed', exceptionType: 'torch.OutOfMemoryError' })
+  })
+
+  it.each([
+    ['a run that is still going', { type: 'progress', data: { prompt_id: 'r1' } }],
+    ['a start', { type: 'execution_start', data: { prompt_id: 'r1' } }],
+    ['an end with no run id', { type: 'execution_success', data: {} }],
+    ['a type from the object prototype', { type: 'toString', data: { prompt_id: 'r1' } }]
+  ])('reads no end from %s', (_why, msg) => {
+    expect(runEnd(msg)).toBeNull()
   })
 })

@@ -20,6 +20,7 @@ vi.mock('../main', () => ({
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
 const mockModal = {
+  state: { visible: false },
   alert: vi.fn(),
   confirm: vi.fn(),
   close: vi.fn()
@@ -1308,13 +1309,11 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="assets-view"]').exists()).toBe(true)
-    expect(wrapper.getComponent({ name: 'AssetsView' }).props('focusName')).toBe('cutout.png')
+    expect(wrapper.getComponent({ name: 'AssetsView' }).emitted('focus-used')).toHaveLength(1)
     expect(wrapper.get('[data-testid="app-sidebar-assets"]').attributes('aria-current')).toBe(
       'page'
     )
 
-    wrapper.getComponent({ name: 'AssetsView' }).vm.$emit('focus-used')
-    await flushPromises()
     expect(wrapper.getComponent({ name: 'AssetsView' }).props('focusName')).toBeNull()
   })
 

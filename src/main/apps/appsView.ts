@@ -1,5 +1,6 @@
 import { app, ipcMain, session, shell, WebContentsView } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, Session, WebContents } from 'electron'
+import { randomUUID } from 'crypto'
 import { promises as fsp } from 'fs'
 import path from 'path'
 
@@ -9,9 +10,12 @@ import { comfyWindows } from '../host/registry'
 import { signInToCloud } from '../lib/ipc/registerDevPlatformHandlers'
 import * as settings from '../settings'
 import {
+  appOfPage,
   appsOrigin,
   appsUrl,
   cleanSaveName,
+  cloudAppTag,
+  cloudPromptBody,
   collectOutputs,
   isAppOpen,
   isAppPage,
@@ -24,6 +28,7 @@ import {
   isVersionsIndex,
   isWorkflow,
   MAX_UPLOAD_BYTES,
+  readCapped,
   type OutputFile,
   readable,
   type OutputKind,
@@ -46,8 +51,17 @@ import { listCatalogApps } from './catalog'
 import { outputAction, outputRequest } from './outputs'
 import { localBuilds, openInComfy } from './openInComfy'
 import { stackApps } from './stackApps'
+import { isAppsEnabled } from './appsSwitch'
+import {
+  type CloudRefusal,
+  cloudRefusal,
+  errorClassOf,
+  trackApps,
+  trackFromPage,
+  type Where
+} from './appEvents'
 
-const APPS_URL = appsUrl(process.env, app.isPackaged)
+const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
 const APPS_PARTITION = 'persist:comfy-apps'
 
@@ -66,8 +80,19 @@ export const APPS_CAPTURE_CHANNEL = 'comfy-apps:capture'
 const BACKDROP_QUALITY = 80
 
 const appOpen = new Map<number, boolean>()
+const capturingOutputs = new Set<number>()
+const pageDocuments = new Map<number, number>()
+const liveOutputCounts = new Map<number, number>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
+const parkedApps = new Set<number>()
+
+const pageWhere = new Map<number, Where>()
+
+interface AppPage {
+  id: number
+  app: string | null
+}
 
 export interface AppsRect {
   x: number
@@ -156,6 +181,8 @@ function createAppsView(key: number, url: string): WebContentsView {
     if (isMainFrame && isPageLoadFailure(errorCode)) markLoadFailed(key, view, url)
   })
   wc.on('did-navigate', (_event, url, httpResponseCode) => {
+    pageDocuments.set(key, (pageDocuments.get(key) ?? 0) + 1)
+    liveOutputCounts.delete(key)
     awaitingCommit.delete(key)
     settledPages.delete(key)
     if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
@@ -192,6 +219,7 @@ function entryForPanel(
 }
 
 function showApps(event: IpcMainEvent, rect: unknown): void {
+  if (!isAppsEnabled()) return
   const found = entryForPanel(event.sender)
   if (!found) return
   if (!APPS_ORIGIN) return tellPanelLoadFailed(event.sender, APPS_URL)
@@ -212,11 +240,16 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   if (!view) {
     view = createAppsView(key, url)
     views.set(key, view)
+    const pageId = view.webContents.id
     entry.window.once('closed', () => {
       views.delete(key)
+      pageWhere.delete(pageId)
       appOpen.delete(key)
+      liveOutputCounts.delete(key)
+      pageDocuments.delete(key)
       awaitingCommit.delete(key)
       settledPages.delete(key)
+      parkedApps.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -228,11 +261,15 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     width: Math.round(r.width!),
     height: Math.round(r.height!)
   })
-  stackApps(entry.window.contentView, view, entry.panelView!, r.parked === true)
+  const parked = r.parked === true
+  const wasParked = parkedApps.has(key)
+  if (parked) parkedApps.add(key)
+  else parkedApps.delete(key)
+  const stacked = stackApps(entry.window.contentView, view, entry.panelView!, parked)
   const uncovered = !view.getVisible()
-  view.setVisible(true)
+  view.setVisible(stacked)
   if (r.fresh !== true) {
-    if (uncovered && r.parked !== true) view.webContents.focus()
+    if (!parked && (uncovered || wasParked)) view.webContents.focus()
     return
   }
   tellPanelAppOpen(key)
@@ -255,13 +292,6 @@ function hideApps(event: IpcMainEvent): void {
   views.get(found[0])?.setVisible(false)
 }
 
-function captureBackdrop(page: WebContents): Promise<Buffer | null> {
-  return page
-    .capturePage()
-    .then((image) => (image.isEmpty() ? null : image.toJPEG(BACKDROP_QUALITY)))
-    .catch(() => null)
-}
-
 async function captureApps(event: IpcMainInvokeEvent): Promise<Buffer | null> {
   const found = entryForPanel(event.sender)
   const page = found ? views.get(found[0])?.webContents : undefined
@@ -282,15 +312,30 @@ function keyForAppsPage(sender: WebContents): number | null {
   return null
 }
 
+async function captureBackdrop(page: WebContents): Promise<Buffer | null> {
+  try {
+    const jpeg = (await page.capturePage()).toJPEG(BACKDROP_QUALITY)
+    return jpeg.byteLength > 0 ? jpeg : null
+  } catch {
+    return null
+  }
+}
+
 async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const outputs = outputRequest(request)
   if (!outputs) throw new Error('These outputs cannot be shown.')
   const key = keyForAppsPage(page)
-  const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
+  const entry = key === null ? undefined : comfyWindows.get(key)
+  const panel = entry?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
-  const backdrop = await captureBackdrop(page)
-  if (panel.isDestroyed() || !appOpen.get(key)) return
-  panel.focus()
+  if (!views.get(key)?.getVisible()) throw new Error('The app is not on screen.')
+  if (capturingOutputs.has(key)) throw new Error('Outputs are already opening.')
+  const pageDocument = pageDocuments.get(key)
+  capturingOutputs.add(key)
+  const backdrop = await captureBackdrop(page).finally(() => capturingOutputs.delete(key))
+  if (panel.isDestroyed() || !appOpen.get(key) || pageDocuments.get(key) !== pageDocument) return
+  liveOutputCounts.set(key, outputs.items.length)
+  if (entry?.window.isFocused()) panel.focus()
   panel.send(APPS_OUTPUT_CHANNEL, { ...outputs, backdrop })
 }
 
@@ -298,8 +343,10 @@ function relayOutputAction(event: IpcMainEvent, input: unknown): void {
   const found = entryForPanel(event.sender)
   const action = outputAction(input)
   if (!found || !action) return
+  const count = liveOutputCounts.get(found[0]) ?? 0
   const page = views.get(found[0])?.webContents
-  if (page && !page.isDestroyed()) page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
+  if (action.index >= count || !page || page.isDestroyed()) return
+  page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
 }
 
 function authState(): AppsAuthState {
@@ -307,12 +354,22 @@ function authState(): AppsAuthState {
   return status.signedIn ? { signedIn: true, email: status.email } : { signedIn: false }
 }
 
+const CLOUD_TIMEOUT_MS = 120_000
+
 async function cloudFetch(pathAndQuery: string, init: RequestInit = {}): Promise<Response> {
   const token = await getCloudSession().getAccessToken()
   if (!token) throw new Error('Sign in to Comfy to use apps.')
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${token}`)
-  return fetch(`${CLOUD_CONFIG.apiBase}${pathAndQuery}`, { ...init, headers })
+  const signal = init.signal ?? AbortSignal.timeout(CLOUD_TIMEOUT_MS)
+  return fetch(`${CLOUD_CONFIG.apiBase}${pathAndQuery}`, { ...init, headers, signal }).catch(
+    (err: unknown) => {
+      if ((err as Error)?.name === 'TimeoutError') {
+        throw new Error('Comfy Cloud took too long to answer.')
+      }
+      throw err
+    }
+  )
 }
 
 async function failure(res: Response): Promise<Error> {
@@ -338,24 +395,42 @@ interface NodeError {
   errors?: Array<{ message?: string; details?: string }>
 }
 
-async function run(workflow: unknown): Promise<{ runId: string }> {
+function cloudRunFailed(app: string | null, why: CloudRefusal): void {
+  if (app) trackApps('run_failed', { app, where: 'cloud', ...why })
+}
+
+async function run(page: AppPage, workflow: unknown, app?: unknown): Promise<{ runId: string }> {
   if (!isWorkflow(workflow)) throw new Error('That is not a workflow.')
+  const tag = cloudAppTag(app)
+  const appId = tag?.id ?? page.app
   const token = await getCloudSession().getAccessToken()
-  if (!token) throw new Error('Sign in to Comfy to use apps.')
+  if (!token) {
+    cloudRunFailed(appId, { step: 'sign_in' })
+    throw new Error('Sign in to Comfy to use apps.')
+  }
   const res = await cloudFetch('/prompt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: workflow, extra_data: { auth_token_comfy_org: token } })
+    body: cloudPromptBody(workflow, token, tag)
   })
-  if (!res.ok) throw await failure(res)
+  if (!res.ok) {
+    const answer: unknown = await res
+      .clone()
+      .json()
+      .catch(() => null)
+    cloudRunFailed(appId, cloudRefusal(res.status, answer))
+    throw await failure(res)
+  }
   const body = (await res.json()) as { prompt_id?: string; node_errors?: Record<string, NodeError> }
   const refused = Object.entries(body.node_errors ?? {})[0]
   if (refused) {
+    cloudRunFailed(appId, cloudRefusal(res.status, body))
     const [node, e] = refused
     const why = e.errors?.[0]?.details || e.errors?.[0]?.message || 'refused'
     throw new Error(`Comfy Cloud would not run node ${node} (${e.class_type ?? 'unknown'}): ${why}`)
   }
   if (!isRunId(body.prompt_id)) throw new Error('Comfy Cloud did not start the run.')
+  pageWhere.set(page.id, 'cloud')
   return { runId: body.prompt_id }
 }
 
@@ -371,7 +446,8 @@ export interface RunStatus {
 
 async function runWithoutHistory(runId: string): Promise<RunStatus> {
   const res = await cloudFetch(`/jobs/${runId}`)
-  if (!res.ok) return { state: 'waiting' }
+  if (res.status === 429 || res.status >= 500) return { state: 'waiting' }
+  if (!res.ok) return { state: 'failed', error: (await failure(res)).message }
   const rec = (await res.json()) as {
     status?: string
     outputs_count?: number
@@ -479,18 +555,24 @@ async function getOutput(
   const f = toOutputFile(file)
   if (!f) throw new Error('Unknown output.')
   const ext = saveExt(f.filename.split('.').pop())
-  if (!ext) throw new Error('Apps cannot save that kind of file.')
+  if (save !== undefined && !ext) throw new Error('Apps cannot save that kind of file.')
   const query = new URLSearchParams({ filename: f.filename, subfolder: f.subfolder, type: f.type })
   const res = await cloudFetchRetrying(`/view?${query}`)
   if (!res.ok) throw await failure(res)
-  const bytes = new Uint8Array(await res.arrayBuffer())
+  const bytes = await readCapped(res, MAX_UPLOAD_BYTES)
+  if (!bytes) throw new Error('That result is larger than 50 MB.')
   const type = res.headers.get('content-type') ?? 'application/octet-stream'
-  if (save === undefined) return { type, bytes }
+  if (save === undefined || !ext) return { type, bytes }
   const s = (save ?? {}) as { app?: unknown; label?: unknown }
   return { type, bytes, path: await saveResult(s.app, s.label, ext, bytes) }
 }
 
+function isWorkflowCopy(label: unknown, ext: string): boolean {
+  return label === 'workflow' && ext === 'json'
+}
+
 async function saveFile(
+  page: AppPage,
   bytes: unknown,
   app: unknown,
   label: unknown,
@@ -500,11 +582,19 @@ async function saveFile(
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES || !e) {
     throw new Error('Apps cannot save that file.')
   }
-  return { path: await saveResult(app, label, e, bytes) }
+  const saved = await saveResult(app, label, e, bytes)
+  const where = pageWhere.get(page.id)
+  if (page.app && where && !isWorkflowCopy(label, e)) {
+    trackApps('output_saved', { app: page.app, where })
+  }
+  return { path: saved }
 }
 
 async function readSaved(file: unknown): Promise<Uint8Array> {
-  return new Uint8Array(await fsp.readFile(await savedPath(file)))
+  const real = await savedPath(file)
+  if ((await fsp.stat(real)).size > MAX_UPLOAD_BYTES)
+    throw new Error('That file is larger than 50 MB.')
+  return new Uint8Array(await fsp.readFile(real))
 }
 
 async function saveVersions(app: unknown, bytes: unknown): Promise<void> {
@@ -513,8 +603,12 @@ async function saveVersions(app: unknown, bytes: unknown): Promise<void> {
   const dir = path.join(await appsRoot(), slug)
   await fsp.mkdir(dir, { recursive: true })
   const file = path.join(dir, VERSIONS_FILE)
-  await fsp.writeFile(`${file}.tmp`, bytes)
-  await fsp.rename(`${file}.tmp`, file)
+  const tmp = `${file}.${randomUUID()}.tmp`
+  await fsp.writeFile(tmp, bytes)
+  await fsp.rename(tmp, file).catch(async (err: unknown) => {
+    await fsp.rm(tmp, { force: true }).catch(() => {})
+    throw err
+  })
 }
 
 async function readVersions(app: unknown): Promise<Uint8Array | null> {
@@ -552,14 +646,41 @@ async function showInFolder(file: unknown): Promise<void> {
   shell.showItemInFolder(await savedPath(file))
 }
 
-async function uploadImage(bytes: unknown, name: unknown): Promise<{ name: string }> {
+function uploadFailed(page: AppPage, errorClass: string | undefined): void {
+  if (!page.app) return
+  trackApps('run_failed', {
+    app: page.app,
+    where: 'cloud',
+    step: 'upload',
+    ...(errorClass ? { error_class: errorClass } : {})
+  })
+}
+
+async function uploadImage(
+  page: AppPage,
+  bytes: unknown,
+  name: unknown
+): Promise<{ name: string }> {
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES) {
+    uploadFailed(page, 'too_large')
     throw new Error('Pick a file under 50 MB.')
   }
-  const res = await cloudFetch('/upload/image', { method: 'POST', body: uploadForm(bytes, name) })
-  if (!res.ok) throw await failure(res)
+  let res: Response
+  try {
+    res = await cloudFetch('/upload/image', { method: 'POST', body: uploadForm(bytes, name) })
+  } catch (err) {
+    uploadFailed(page, errorClassOf(err))
+    throw err
+  }
+  if (!res.ok) {
+    uploadFailed(page, `http_${res.status}`)
+    throw await failure(res)
+  }
   const body = (await res.json()) as { name?: string }
-  if (typeof body.name !== 'string') throw new Error('Comfy Cloud did not keep the file.')
+  if (typeof body.name !== 'string') {
+    uploadFailed(page, 'no_file_name')
+    throw new Error('Comfy Cloud did not keep the file.')
+  }
   return { name: body.name }
 }
 
@@ -573,11 +694,30 @@ function handleFromAppsPage<A extends unknown[], R>(
   })
 }
 
+function pageOf(event: IpcMainInvokeEvent): AppPage {
+  return { id: event.sender.id, app: appOfPage(event.senderFrame?.url ?? '', APPS_URL) }
+}
+
+function handleFromAppPage<A extends unknown[], R>(
+  channel: string,
+  fn: (page: AppPage, ...args: A) => Promise<R> | R
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    if (!fromAppsPage(event)) throw new Error('Not allowed.')
+    return fn(pageOf(event), ...(args as A))
+  })
+}
+
 function handleFromApps<A extends unknown[], R>(
   channel: string,
   fn: (...args: A) => Promise<R> | R
 ): void {
   handleFromAppsPage(channel, (_page, ...args: A) => fn(...args))
+}
+
+function noteLocalRun(page: AppPage, req: unknown): void {
+  const { method, path: at } = (req ?? {}) as { method?: unknown; path?: unknown }
+  if (method === 'POST' && at === '/prompt') pageWhere.set(page.id, 'local')
 }
 
 function appsPages(): WebContents[] {
@@ -602,23 +742,29 @@ export function registerAppsIpc(): void {
     await signInToCloud()
     return authState()
   })
-  handleFromApps('comfy-apps:run', run)
+  handleFromAppPage('comfy-apps:run', run)
   handleFromApps('comfy-apps:get-run', getRun)
   handleFromApps('comfy-apps:cancel-run', cancelRun)
   handleFromApps('comfy-apps:get-output', getOutput)
-  handleFromApps('comfy-apps:upload-image', uploadImage)
-  handleFromApps('comfy-apps:save-file', saveFile)
+  handleFromAppPage('comfy-apps:upload-image', uploadImage)
+  handleFromAppPage('comfy-apps:save-file', saveFile)
   handleFromApps('comfy-apps:read-saved', readSaved)
   handleFromApps('comfy-apps:show-in-folder', showInFolder)
   handleFromApps('comfy-apps:save-versions', saveVersions)
   handleFromApps('comfy-apps:read-versions', readVersions)
   handleFromApps('comfy-apps:get-node-price', getNodePrice)
   handleFromApps('comfy-apps:get-local', getLocal)
-  handleFromApps('comfy-apps:start-local', startLocal)
+  handleFromAppPage('comfy-apps:start-local', (page, want: unknown) => startLocal(want, page.app))
   handleFromApps('comfy-apps:cancel-setup', cancelSetup)
   handleFromApps('comfy-apps:local-builds', localBuilds)
-  handleFromApps('comfy-apps:local-fetch', localFetch)
-  handleFromApps('comfy-apps:local-download', localDownload)
+  handleFromAppPage('comfy-apps:local-fetch', (page, req: unknown) => {
+    noteLocalRun(page, req)
+    return localFetch(req, page.app)
+  })
+  handleFromAppPage('comfy-apps:local-download', (page, req: unknown) =>
+    localDownload(req, page.app)
+  )
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)
   handleFromAppsPage('comfy-apps:show-output', showOutput)
+  handleFromApps('comfy-apps:track', trackFromPage)
 }

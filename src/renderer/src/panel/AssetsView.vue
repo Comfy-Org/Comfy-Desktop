@@ -62,6 +62,7 @@ const localFolders = useTemplateRef<InstanceType<typeof LocalFolders>>('localFol
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
+const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', false)
@@ -74,6 +75,7 @@ const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
+const loadedBuildIds = ref<string[]>([])
 const failed = ref(false)
 
 function isCloudBuild(inst: Installation): boolean {
@@ -178,40 +180,65 @@ async function loadAssets(): Promise<void> {
     const ids = reachableBuildIds.value
     const results = await Promise.allSettled(ids.map((id) => window.api.listAssets(id)))
     if (current !== requestId) return
+    loadedBuildIds.value = ids.filter((_, i) => results[i]!.status === 'fulfilled')
     assets.value = results.flatMap((result, i) => {
       if (result.status === 'rejected') return []
       const installationId = ids[i]!
       const buildName = installationStore.getById(installationId)?.name ?? ''
       return result.value.map((asset) => ({ ...asset, installationId, buildName }))
     })
-    failed.value = results.length > 0 && results.every((r) => r.status === 'rejected')
+    failed.value = assets.value.length === 0 && results.some((r) => r.status === 'rejected')
   } finally {
     if (current === requestId) loading.value = false
   }
 }
 
+const accountContext = computed(
+  () => `${authStore.isSignedIn}:${authStore.status.workspaceId ?? ''}`
+)
+
+watch(accountContext, () => (assets.value = []))
+
 watch(
-  () => [...reachableBuildIds.value, authStore.status.workspaceId ?? ''].join('\n'),
+  () => [...reachableBuildIds.value, accountContext.value].join('\n'),
   () => void loadAssets(),
   { immediate: true }
 )
 
-let pendingFocus = focusName
+let pendingFocus: string | null = null
+
+function isCloudId(installationId: string): boolean {
+  const inst = installationStore.getById(installationId)
+  return !!inst && isCloudBuild(inst)
+}
+
+const cloudLoaded = computed(() => loadedBuildIds.value.some(isCloudId))
 
 watch(
-  [visibleAssets, loading],
-  ([list, busy]) => {
-    if (!pendingFocus || busy || reachableBuildIds.value.length === 0) return
+  () => focusName,
+  (name) => {
+    if (!name) return
+    pendingFocus = name
+    place.value = 'cloud'
+    emit('focus-used')
+  },
+  { immediate: true }
+)
+
+watch(
+  [visibleAssets, loading, cloudLoaded],
+  ([list, busy, cloud]) => {
+    if (!pendingFocus || busy || !cloud) return
     const name = pendingFocus
     pendingFocus = null
+    if (place.value !== 'cloud') return
     const newest = list
-      .filter((asset) => asset.name === name)
+      .filter((asset) => asset.name === name && isCloudId(asset.installationId))
       .reduce<GalleryAsset | null>(
         (best, asset) => (best && createdMs(best) >= createdMs(asset) ? best : asset),
         null
       )
     if (newest) openDetail(newest)
-    emit('focus-used')
   },
   { immediate: true }
 )
@@ -295,10 +322,15 @@ async function closeDetail(): Promise<void> {
 }
 
 async function download(asset: GalleryAsset): Promise<void> {
+  const key = cardKey(asset)
+  if (downloading.value.has(key)) return
+  downloading.value.add(key)
   try {
     await window.api.downloadAsset(asset.installationId, asset.id, asset.name)
   } catch {
     await modal.alert({ title: t('assets.downloadFailed'), message: asset.name })
+  } finally {
+    downloading.value.delete(key)
   }
 }
 
@@ -578,6 +610,7 @@ function assetDetails(asset: AssetSummary): string {
               class="bg-media-overlay text-foreground"
               :aria-label="t('assets.download')"
               :title="t('assets.download')"
+              :disabled="downloading.has(cardKey(asset))"
               :data-testid="`asset-download-${asset.id}`"
               @click="download(asset)"
             >

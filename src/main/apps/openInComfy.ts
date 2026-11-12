@@ -3,13 +3,7 @@ import { getEntryByInstallationId } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import * as installations from '../installations'
 import { _runningSessions } from '../lib/ipc/shared'
-import {
-  categoryOf,
-  findApps,
-  launchAppsBuild,
-  launchInstall,
-  showAppsBuildWindow
-} from './appsBuild'
+import { categoryOf, findApps, launchAppsBuild, launchInstall, showComfyWindow } from './appsBuild'
 import { pickOpenTarget } from './appsBuildRules'
 import {
   COMFY_READY_SCRIPT,
@@ -19,6 +13,7 @@ import {
   openRequest,
   openWorkflowScript
 } from './guards'
+import { ownInUse } from './localComfy'
 
 export type OpenResult = { opened: true } | { opened: false; error: string }
 
@@ -46,21 +41,28 @@ function startedAt(): Map<string, number> {
 }
 
 async function running(inst: installations.InstallationRecord): Promise<string | null> {
-  if (_runningSessions.has(inst.id)) return inst.id
-  const result = await launchInstall(inst)
-  return result.ok || _runningSessions.has(inst.id) ? inst.id : null
+  if (!_runningSessions.has(inst.id)) {
+    const result = await launchInstall(inst)
+    if (!result.ok && !_runningSessions.has(inst.id)) return null
+  }
+  if (_runningSessions.get(inst.id)?.mode === 'console' && !showComfyWindow(inst)) return null
+  return inst.id
 }
 
 async function appsBuildWindow(): Promise<string | null> {
   const apps = await findApps()
   if (apps?.status !== 'installed') return null
-  if (_runningSessions.has(apps.id)) return showAppsBuildWindow(apps) ? apps.id : null
+  if (_runningSessions.has(apps.id)) return showComfyWindow(apps) ? apps.id : null
   const result = await launchAppsBuild(apps, true)
   return result.ok || _runningSessions.has(apps.id) ? apps.id : null
 }
 
 async function localInstallId(build?: string): Promise<string | null> {
-  const target = pickOpenTarget(await ownBuilds(), startedAt(), build)
+  const own = await ownBuilds()
+  const used = build === undefined ? ownInUse() : null
+  const inUse = used ? own.find((inst) => inst.id === used) : undefined
+  if (inUse) return running(inUse)
+  const target = pickOpenTarget(own, startedAt(), build)
   if (target) return running(target)
   return build === undefined ? appsBuildWindow() : null
 }

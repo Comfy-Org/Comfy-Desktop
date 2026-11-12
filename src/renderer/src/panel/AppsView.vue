@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
@@ -13,9 +13,14 @@ interface ShownAppOutputs {
   backdropUrl: string | null
 }
 
-const { growBy = 0, sidebarMenuOpen = false } = defineProps<{
+const {
+  growBy = 0,
+  sidebarMenuOpen = false,
+  obscured = false
+} = defineProps<{
   growBy?: number
   sidebarMenuOpen?: boolean
+  obscured?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -116,9 +121,11 @@ function showAppOutputs(outputs: AppOutputs): void {
 function closeAppOutputs(): void {
   const shown = appOutputs.value
   if (!shown) return
-  for (const item of shown.items) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
-  if (shown.backdropUrl) URL.revokeObjectURL(shown.backdropUrl)
   appOutputs.value = null
+  void nextTick(() => {
+    for (const item of shown.items) if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+    if (shown.backdropUrl) URL.revokeObjectURL(shown.backdropUrl)
+  })
 }
 
 function appOutputAction(action: AppOutputAction['action'], index: number): void {
@@ -167,11 +174,13 @@ onBeforeUnmount(() => {
   </div>
   <AppsHost
     v-if="openApp"
+    :key="openApp.id"
     class="absolute inset-0"
     :url="openApp.url"
     :grow-by="growBy"
     :covered="appOutputs !== null || coveredBySidebar"
     :backdrop="appOutputs?.backdropUrl ?? sidebarBackdropUrl"
+    :obscured="obscured"
     @failed="appFailed"
     @outputs="showAppOutputs"
     @app-open="closeApp"

@@ -1,7 +1,20 @@
-export const DEFAULT_APPS_URL = 'https://apps.comfy.org/'
+export const DEFAULT_APPS_URL = 'https://comfy.org/apps/'
 
-export function appsUrl(env: NodeJS.ProcessEnv, packaged: boolean): string {
-  return (!packaged && env['COMFY_APPS_URL']) || DEFAULT_APPS_URL
+const APPS_URL_BY_CLOUD: ReadonlyMap<string, string> = new Map([
+  ['https://cloud.comfy.org', DEFAULT_APPS_URL],
+  ['https://stagingcloud.comfy.org', 'https://comfy-website-preview-pr-384.vercel.app/apps/']
+])
+
+function cloudAppsUrl(issuer: string): string {
+  try {
+    return APPS_URL_BY_CLOUD.get(new URL(issuer).origin) ?? DEFAULT_APPS_URL
+  } catch {
+    return DEFAULT_APPS_URL
+  }
+}
+
+export function appsUrl(env: NodeJS.ProcessEnv, packaged: boolean, issuer: string): string {
+  return (!packaged && env['COMFY_APPS_URL']) || cloudAppsUrl(issuer)
 }
 
 export function appsOrigin(url: string): string | null {
@@ -71,6 +84,55 @@ export function isWorkflow(value: unknown): value is Record<string, unknown> {
       typeof (node as { class_type?: unknown }).class_type === 'string' &&
       typeof (node as { inputs?: unknown }).inputs === 'object'
   )
+}
+
+export const APP_SLUG = /^[a-z0-9][a-z0-9._-]{0,63}$/
+
+export function isAppSlug(value: unknown): value is string {
+  return typeof value === 'string' && APP_SLUG.test(value)
+}
+
+export function appOfPage(pageUrl: string, listUrl: string): string | null {
+  let page: URL
+  let list: URL
+  try {
+    page = new URL(pageUrl)
+    list = new URL(listUrl)
+  } catch {
+    return null
+  }
+  if (page.origin !== list.origin) return null
+  const base = list.pathname.endsWith('/') ? list.pathname : `${list.pathname}/`
+  const rest = page.pathname.startsWith(base) ? page.pathname.slice(base.length) : ''
+  const [first = '', ...more] = rest.split('/')
+  const folder = more.length > 0 || !first.includes('.') ? first : ''
+  const routed = page.hash.startsWith('#/') ? page.hash.slice(2).split(/[/?]/)[0]! : ''
+  const app = folder || routed
+  return isAppSlug(app) ? app : null
+}
+
+export interface CloudAppTag {
+  id: string
+  model?: string
+  where: 'cloud'
+}
+
+export function cloudAppTag(input: unknown): CloudAppTag | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
+  const { app, model } = input as { app?: unknown; model?: unknown }
+  if (!isAppSlug(app)) return null
+  return { id: app, ...(isAppSlug(model) ? { model } : {}), where: 'cloud' }
+}
+
+export function cloudPromptBody(
+  workflow: Record<string, unknown>,
+  token: string,
+  tag: CloudAppTag | null
+): string {
+  return JSON.stringify({
+    prompt: workflow,
+    extra_data: { auth_token_comfy_org: token, ...(tag ? { comfy_app: tag } : {}) }
+  })
 }
 
 const MAX_OPEN_NODES = 500
@@ -160,20 +222,21 @@ export interface OutputFile {
 export function toOutputFile(value: unknown): OutputFile | null {
   if (!value || typeof value !== 'object') return null
   const v = value as Record<string, unknown>
-  if (typeof v['filename'] !== 'string' || !v['filename'] || v['filename'].length > 255) return null
+  const filename = v['filename']
+  if (typeof filename !== 'string' || !filename || filename.length > 255) return null
+  if (/[\\/\0]/.test(filename) || filename === '.' || filename === '..') return null
   const subfolder = typeof v['subfolder'] === 'string' ? v['subfolder'] : ''
   if (subfolder.length > 255 || subfolder.includes('..')) return null
   const type = v['type'] === 'temp' ? 'temp' : v['type'] === 'output' ? 'output' : null
   if (!type) return null
-  return { filename: v['filename'], subfolder, type }
+  return { filename, subfolder, type }
 }
 
 export function safeUploadName(name: unknown): string {
   const base = typeof name === 'string' ? (name.split(/[\\/]/).pop() ?? '') : ''
-  const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100)
-  return /\.(png|jpe?g|webp|mp4|webm|mov|mp3|wav|flac|ogg|m4a|opus)$/i.test(cleaned)
-    ? cleaned
-    : 'upload.png'
+  const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_')
+  const ext = /\.(png|jpe?g|webp|mp4|webm|mov|mp3|wav|flac|ogg|m4a|opus)$/i.exec(cleaned)?.[0]
+  return ext ? cleaned.slice(0, Math.min(cleaned.length, 100) - ext.length) + ext : 'upload.png'
 }
 
 export type OutputKind = 'image' | 'video' | 'audio' | '3d' | 'text' | 'file'
@@ -382,6 +445,46 @@ export function noteRun(
     return
   }
   if (RUN_END_TYPES.includes(msg.type)) seen.delete(id)
+}
+
+export function localAppId(promptJson: string): string | null {
+  try {
+    const body = JSON.parse(promptJson) as { extra_data?: { comfy_app?: { id?: unknown } } }
+    const id = body?.extra_data?.comfy_app?.id
+    return isAppSlug(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+export function promptIdOf(answer: Uint8Array): string | null {
+  try {
+    const id = (JSON.parse(new TextDecoder().decode(answer)) as { prompt_id?: unknown })?.prompt_id
+    return isRunId(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+export interface RunEnd {
+  id: string
+  outcome: 'success' | 'failed' | 'cancelled'
+  exceptionType?: string
+}
+
+const RUN_OUTCOMES: Readonly<Record<string, RunEnd['outcome']>> = {
+  execution_success: 'success',
+  execution_error: 'failed',
+  execution_interrupted: 'cancelled'
+}
+
+export function runEnd(msg: { type: string; data: unknown }): RunEnd | null {
+  const outcome = Object.hasOwn(RUN_OUTCOMES, msg.type) ? RUN_OUTCOMES[msg.type] : undefined
+  const data = (msg.data ?? {}) as { prompt_id?: unknown; exception_type?: unknown }
+  if (!outcome || !isRunId(data.prompt_id)) return null
+  const exceptionType =
+    outcome === 'failed' && typeof data.exception_type === 'string' ? data.exception_type : null
+  return { id: data.prompt_id, outcome, ...(exceptionType ? { exceptionType } : {}) }
 }
 
 export interface QueueRun {

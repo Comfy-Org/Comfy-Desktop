@@ -1131,7 +1131,7 @@ export interface ElectronApi {
     imageType: 'performance-test' | 'benchmark-comparison',
     defaultPath?: string
   ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
-  openPath(targetPath: string): Promise<void>
+  openPath(targetPath: string): Promise<string>
   revealPath(targetPath: string): void
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
@@ -1311,6 +1311,7 @@ export interface ElectronApi {
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
   getCloudFreeRunsEnabled(): Promise<boolean>
+  getAppsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>

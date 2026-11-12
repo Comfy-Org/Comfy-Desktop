@@ -17,9 +17,10 @@ import {
   MARKER_FILE,
   sourceMap
 } from '../lib/ipc/shared'
-import { installModelsDir } from '../lib/models'
+import { installModelsDir, resolveComfyDir } from '../lib/models'
 import { dataDir, defaultDataRoot, defaultInstallDir } from '../lib/paths'
 import { findAvailablePort } from '../lib/process'
+import { coreSemver, coreVerifiedSemver } from '../lib/version'
 import * as settings from '../settings'
 import { buildPinnedVariant } from '../sources/standalone'
 import { DEFAULT_LAUNCH_ARGS, variantMatchesHost } from '../sources/standalone/envPaths'
@@ -33,14 +34,17 @@ import {
   appsLaunchArgs,
   appsModelDirs,
   appsOutputDir,
+  comfyuiFileVersion,
   downloadBytes,
   findAppsBuild,
   localOff,
   pickVariant,
+  reusableInstalls,
   type SetupEvent,
   setupEnd,
   setupEvent
 } from './appsBuildRules'
+import { trackApps } from './appEvents'
 
 export function categoryOf(inst: InstallationRecord): string | undefined {
   return sourceMap[inst.sourceId]?.category
@@ -92,6 +96,17 @@ export async function findApps(): Promise<InstallationRecord | null> {
   if (inst) appsId = inst.id
   else if (!setup) appsId = null
   return inst
+}
+
+export async function reusableLocal(): Promise<InstallationRecord[]> {
+  return reusableInstalls(await installations.list(), categoryOf)
+}
+
+export async function installVersion(inst: InstallationRecord): Promise<string | null> {
+  const file = path.join(resolveComfyDir(inst.installPath), 'comfyui_version.py')
+  const text = await fsp.readFile(file, 'utf8').catch(() => null)
+  const onDisk = text === null ? null : comfyuiFileVersion(text)
+  return onDisk ?? coreVerifiedSemver(inst) ?? coreSemver(inst)
 }
 
 interface Plan {
@@ -162,16 +177,21 @@ async function storageFor(inst: InstallationRecord): Promise<Record<string, unkn
   }
 }
 
-class SetupCancelled extends Error {
+export class SetupCancelled extends Error {
   constructor() {
     super('You cancelled setting up ComfyUI for apps.')
   }
 }
 
-function progressSender(totalBytes: number, onEvent: (e: SetupEvent) => void): WebContents {
+function progressSender(
+  s: Setup,
+  totalBytes: number,
+  onEvent: (e: SetupEvent) => void
+): WebContents {
   let lastAt = 0
   let lastStep = ''
   const send = (channel: string, payload: unknown) => {
+    if (s.cancelled && s.id) _operationAborts.get(s.id)?.abort()
     if (channel !== 'install-progress' || !payload || typeof payload !== 'object') return
     const { phase, ...detail } = payload as Record<string, unknown>
     const event = setupEvent(String(phase), detail, totalBytes)
@@ -185,28 +205,54 @@ function progressSender(totalBytes: number, onEvent: (e: SetupEvent) => void): W
   return { isDestroyed: () => false, send } as unknown as WebContents
 }
 
+const STALE_STATUSES = new Set(['failed', 'installing', 'partial-delete'])
+
 async function dropStale(inst: InstallationRecord): Promise<void> {
-  if (_operationAborts.has(inst.id) || (inst.status !== 'failed' && inst.status !== 'installing')) {
+  if (_operationAborts.has(inst.id) || !STALE_STATUSES.has(inst.status ?? '')) {
     throw new Error('The Apps build is busy in Comfy Desktop. Try again in a minute.')
   }
   const marker = await fsp
     .readFile(path.join(inst.installPath, MARKER_FILE), 'utf8')
     .catch(() => null)
   if (marker?.trim() === inst.id) {
-    await fsp.rm(inst.installPath, { recursive: true, force: true }).catch(() => {})
+    await fsp.rm(inst.installPath, { recursive: true, force: true }).catch(() => {
+      throw new Error(
+        `Comfy Desktop could not remove the old Apps build at ${inst.installPath}. Delete that folder and try again.`
+      )
+    })
   }
   await installations.remove(inst.id)
+}
+
+function trackSetup(
+  app: string | null,
+  outcome: 'started' | 'finished' | 'failed',
+  bytes: number,
+  startedAt: number
+): void {
+  trackApps('setup', {
+    ...(app ? { app } : {}),
+    stage: 'comfyui',
+    outcome,
+    ...(bytes > 0 ? { bytes } : {}),
+    ...(outcome === 'started' ? {} : { seconds: (Date.now() - startedAt) / 1000 })
+  })
 }
 
 async function runSetup(
   s: Setup,
   found: InstallationRecord | null,
-  onEvent: (e: SetupEvent) => void
+  onEvent: (e: SetupEvent) => void,
+  app: string | null
 ): Promise<InstallationRecord> {
+  const startedAt = Date.now()
+  let planned = 0
   try {
     if (found) await dropStale(found)
     const { data, bytes } = await planAppsBuild()
+    planned = bytes
     if (s.cancelled) throw new SetupCancelled()
+    trackSetup(app, 'started', bytes, startedAt)
     onEvent(setupEvent('download', { percent: 0 }, bytes)!)
     const added = await addInstallation({
       ...data,
@@ -224,31 +270,35 @@ async function runSetup(
       await installations.remove(id)
       throw new SetupCancelled()
     }
-    const result = (await installInstance(progressSender(bytes, onEvent), id)) as {
+    const result = (await installInstance(progressSender(s, bytes, onEvent), id)) as {
       message?: string
     }
     const inst = await installations.get(id)
+    if (s.cancelled) throw new SetupCancelled()
     if (inst?.status === 'installed') {
+      trackSetup(app, 'finished', bytes, startedAt)
       onEvent(setupEnd('done'))
       return inst
     }
-    if (!inst || s.cancelled) throw new SetupCancelled()
+    if (!inst) throw new SetupCancelled()
     throw new Error(result.message || 'ComfyUI for apps did not install.')
   } catch (err) {
     const cancelled = err instanceof SetupCancelled
+    if (!cancelled) trackSetup(app, 'failed', planned, startedAt)
     onEvent(setupEnd(cancelled ? 'cancelled' : 'failed', (err as Error)?.message))
     throw err
   }
 }
 
 export async function ensureAppsBuild(
-  onEvent: (e: SetupEvent) => void
+  onEvent: (e: SetupEvent) => void,
+  app: string | null = null
 ): Promise<InstallationRecord> {
   const found = await findApps()
   if (found?.status === 'installed') return found
   if (!setup) {
     const s = { id: null, cancelled: false } as unknown as Setup
-    s.promise = runSetup(s, found, onEvent).finally(() => {
+    s.promise = runSetup(s, found, onEvent, app).finally(() => {
       if (setup === s) setup = null
     })
     setup = s
@@ -263,11 +313,10 @@ export function cancelAppsSetup(): { cancelled: boolean } {
   return { cancelled: true }
 }
 
-export async function launchAppsBuild(
+export async function launchConsole(
   inst: InstallationRecord,
   withWindow = false
 ): Promise<{ ok: boolean; message?: string }> {
-  const fresh = (await installations.update(inst.id, await storageFor(inst))) ?? inst
   const taken = new Set<number>([
     ..._pendingPorts.keys(),
     ...[..._runningSessions.values()].map((s) => s.port)
@@ -279,13 +328,21 @@ export async function launchAppsBuild(
     taken
   ).catch(() => null)
   if (!port) return { ok: false, message: 'No free port for ComfyUI for apps.' }
-  return launchInstall(fresh, {
+  return launchInstall(inst, {
     portOverride: port,
     ...(withWindow ? {} : { launchModeOverride: 'console' })
   })
 }
 
-export function showAppsBuildWindow(inst: InstallationRecord): boolean {
+export async function launchAppsBuild(
+  inst: InstallationRecord,
+  withWindow = false
+): Promise<{ ok: boolean; message?: string }> {
+  const fresh = (await installations.update(inst.id, await storageFor(inst))) ?? inst
+  return launchConsole(fresh, withWindow)
+}
+
+export function showComfyWindow(inst: InstallationRecord): boolean {
   const session = _runningSessions.get(inst.id)
   if (!session || !_onLaunch) return false
   const entry = getEntryByInstallationId(inst.id)

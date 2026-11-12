@@ -10,6 +10,22 @@ function text(value: unknown, max: number): string | null {
   return typeof value === 'string' && value.trim() !== '' ? value.trim().slice(0, max) : null
 }
 
+const BIDI_CONTROLS = /[\u202a-\u202e\u2066-\u2069]/
+
+function hasHiddenCharacters(value: string): boolean {
+  return (
+    BIDI_CONTROLS.test(value) ||
+    Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+  )
+}
+const ABSOLUTE_LOCAL_PATH = /^(\/|[A-Za-z]:[\\/])/
+
+function absoluteFolder(value: unknown): string | null {
+  const folder = text(value, 1024)
+  if (!folder || hasHiddenCharacters(folder)) return null
+  return ABSOLUTE_LOCAL_PATH.test(folder) ? folder : null
+}
+
 function outputItem(value: unknown): AppOutputItem | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Record<string, unknown>
@@ -26,7 +42,7 @@ function outputItem(value: unknown): AppOutputItem | null {
     : []
   const savedOn =
     item['savedOn'] === 'cloud' || item['savedOn'] === 'computer' ? item['savedOn'] : null
-  const folder = savedOn === 'computer' ? text(item['folder'], 1024) : null
+  const folder = savedOn === 'computer' ? absoluteFolder(item['folder']) : null
   return {
     name,
     mimeType,
@@ -42,10 +58,10 @@ export function outputRequest(input: unknown): { items: AppOutputItem[]; index: 
   if (!input || typeof input !== 'object') return null
   const { items, index } = input as { items?: unknown; index?: unknown }
   if (!Array.isArray(items) || items.length === 0 || items.length > MAX_OUTPUTS) return null
-  const parsed = items.map(outputItem)
+  const parsed = Array.from(items, outputItem)
   if (parsed.some((item) => item === null)) return null
   const outputs = parsed as AppOutputItem[]
-  const total = outputs.reduce((sum, item) => sum + item.bytes.byteLength, 0)
+  const total = outputs.reduce((sum, item) => sum + item.bytes.buffer.byteLength, 0)
   if (total > MAX_OUTPUTS_BYTES) return null
   if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
   return index < outputs.length ? { items: outputs, index } : null
