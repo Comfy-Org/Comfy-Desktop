@@ -93,7 +93,7 @@ function candidateFrom(value: unknown, fromDownloadList: boolean): TemplateSearc
     thumbnailUrl: thumbnailUrlFor(templateId, 'webp'),
     family: asText(candidate.family_id),
     partner: isPartnerTemplate(templateId),
-    rewrite: candidate.kind === 'rewrite',
+    rewrite: false,
     needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
     score: asNumber(candidate.score),
     calibrated: asNumber(candidate.calibrated),
@@ -123,6 +123,18 @@ function distinctCandidates(
   return candidates
 }
 
+function rewritableTemplates(lists: unknown[]): Set<string> {
+  const ids = new Set<string>()
+  for (const list of lists) {
+    for (const item of Array.isArray(list) ? list : []) {
+      const option = asRecord(item)
+      const templateId = asRecord(option?.variant)?.template_id
+      if (option?.kind === 'rewrite' && typeof templateId === 'string') ids.add(templateId)
+    }
+  }
+  return ids
+}
+
 export function parseDecision(body: unknown): TemplateSearchResult | null {
   const decision = asRecord(body)
   const outcome = asRecord(decision?.outcome)
@@ -137,7 +149,19 @@ export function parseDecision(body: unknown): TemplateSearchResult | null {
   const alsoTry = distinctCandidates(options.filter(isOfferableOption), ALSO_TRY_LIMIT, {
     taken: new Set([...run, ...download].map((candidate) => candidate.templateId))
   })
-  return { outcome: outcome.kind, reply: asText(outcome.reply), run, download, alsoTry }
+  const rewriteChosen = outcome.kind === 'template' && outcome.prompt === 'rewrite'
+  const rewritable = rewritableTemplates([split.run, split.download, options])
+  const withRewrite = (candidate: TemplateSearchCandidate): TemplateSearchCandidate => ({
+    ...candidate,
+    rewrite: rewriteChosen && rewritable.has(candidate.templateId)
+  })
+  return {
+    outcome: outcome.kind,
+    reply: asText(outcome.reply),
+    run: run.map(withRewrite),
+    download: download.map(withRewrite),
+    alsoTry: alsoTry.map(withRewrite)
+  }
 }
 
 export function createDecisionApiBackend(

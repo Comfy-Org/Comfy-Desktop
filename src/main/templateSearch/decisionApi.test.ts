@@ -122,6 +122,27 @@ describe('parseDecision', () => {
     ])
   })
 
+  it('marks a template as rewriting only when the service decided to rewrite this request', () => {
+    const kept = parseDecision(
+      decision({ outcome: { kind: 'template', prompt: 'as_given', reply: null } })
+    )!
+    expect(kept.run[0]).toMatchObject({ templateId: 'poster_template', rewrite: false })
+
+    const rewritten = parseDecision(
+      decision({ outcome: { kind: 'template', prompt: 'rewrite', reply: null } })
+    )!
+    expect(rewritten.run.find((c) => c.templateId === 'poster_template')?.rewrite).toBe(true)
+    expect(rewritten.run.find((c) => c.templateId === 'logo_template')?.rewrite).toBe(false)
+    expect(rewritten.alsoTry.find((c) => c.templateId === 'card_template')?.rewrite).toBe(true)
+  })
+
+  it('never marks a rewrite when the outcome is not a template', () => {
+    const agent = parseDecision(
+      decision({ outcome: { kind: 'agent', prompt: 'rewrite', reply: null } })
+    )!
+    expect([...agent.run, ...agent.download, ...agent.alsoTry].every((c) => !c.rewrite)).toBe(true)
+  })
+
   it('marks what needs a download, and what it would download', () => {
     const result = parseDecision(decision())!
     expect(result.run.every((c) => !c.needsDownload)).toBe(true)
