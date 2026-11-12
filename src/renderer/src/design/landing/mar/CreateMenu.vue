@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { ArrowRight, ArrowUpRight, ChevronDown, Play, Plus, Rocket } from 'lucide-vue-next'
 import { DropdownMenuRoot, DropdownMenuTrigger } from 'reka-ui'
 import Button from '../ui/Button.vue'
+import MarOpenBuildButton from './MarOpenBuildButton.vue'
 import DropdownMenuContent from '../ui/DropdownMenuContent.vue'
 import DropdownMenuItem from '../ui/DropdownMenuItem.vue'
 import { activeInstance, deployEnv, hostActions, instances, proto } from '../useProto'
@@ -35,7 +36,14 @@ function deploy(): void {
 </script>
 
 <template>
-  <Button v-if="!deployable" variant="primary" class="gap-1.5" @click="hostActions.launch(target)">
+  <!-- On Desktop, Open ComfyUI picks its build (Comfy-Desktop#2030). -->
+  <MarOpenBuildButton v-if="!deployable && !onCloud" :target />
+  <Button
+    v-else-if="!deployable"
+    variant="primary"
+    class="gap-1.5"
+    @click="hostActions.launch(target)"
+  >
     Open ComfyUI<component :is="onCloud ? ArrowUpRight : ArrowRight" :size="14" />
   </Button>
   <DropdownMenuRoot v-else :modal="false">
