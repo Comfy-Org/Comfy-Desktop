@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuRadioGroup } from 'reka-ui'
-import { ArrowRight, Cloud, Laptop } from 'lucide-vue-next'
+import { Cloud, Laptop } from 'lucide-vue-next'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
@@ -60,7 +60,6 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
   >
     <component
       :is="isCloudBuild(target) ? Cloud : Laptop"
-      v-if="builds.length > 1"
       class="shrink-0"
       :size="14"
       :data-kind="isCloudBuild(target) ? 'cloud' : 'local'"
@@ -69,7 +68,6 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     />
     <span>{{ t('home.openComfyUI') }}</span>
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
-    <ArrowRight v-if="builds.length < 2" class="shrink-0" :size="14" aria-hidden="true" />
     <template v-if="builds.length > 1" #menu>
       <DropdownMenuRadioGroup :model-value="target.id" class="flex flex-col gap-0.5">
         <MenuRadioItem

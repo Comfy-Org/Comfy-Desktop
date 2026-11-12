@@ -495,13 +495,16 @@ describe('Home builds', () => {
     expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
   })
 
-  it('leaves the build menu out when there is only one build', async () => {
+  it('leaves the build menu out with one build, keeping the icon and no arrow', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
     expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Flux Sandbox')
     expect(wrapper.find('[data-testid="home-open-build-menu"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="home-open-comfyui-icon"]').exists()).toBe(false)
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('local')
+    expect(wrapper.get('[data-testid="home-open-comfyui"]').findAll('svg')).toHaveLength(1)
   })
 
   it('goes to the full list from All builds', async () => {
