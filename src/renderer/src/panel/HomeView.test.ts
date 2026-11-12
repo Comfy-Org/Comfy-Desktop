@@ -244,6 +244,37 @@ describe('Home example workflows', () => {
     expect(single.find('[data-testid="home-workflow-previous"]').exists()).toBe(false)
   })
 
+  it('keeps keyboard focus on an arrow when the one in use reaches the end of a short list', async () => {
+    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    const wrapper = await openHome()
+    const next = wrapper.get<HTMLButtonElement>('[data-testid="home-workflow-next"]')
+    const previous = wrapper.get<HTMLButtonElement>('[data-testid="home-workflow-previous"]')
+
+    next.element.focus()
+    await next.trigger('click')
+    await flushPromises()
+
+    expect(next.element.disabled).toBe(true)
+    expect(document.activeElement).toBe(previous.element)
+  })
+
+  it('turns with the arrow keys from an arrow button and moves card focus to the new front card', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+
+    const next = wrapper.get('[data-testid="home-workflow-next"]')
+    await next.trigger('keydown', { key: 'ArrowRight' })
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+
+    const front = cardAt(wrapper, 0).element as HTMLButtonElement
+    front.focus()
+    await cardAt(wrapper, 0).trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
+
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+    expect(document.activeElement).toBe(cardAt(wrapper, 0).element)
+  })
+
   it('offers Open on the front card only, and opens that workflow from it', async () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
 import type { CatalogWorkflow } from '../../types/ipc'
@@ -56,6 +56,28 @@ const brokenThumbnails = ref(new Set<string>())
 const wraps = computed(() => workflows.length > ARC_REACH * 2)
 const atFirst = computed(() => !wraps.value && frontPosition.value === 0)
 const atLast = computed(() => !wraps.value && frontPosition.value === workflows.length - 1)
+
+const arc = useTemplateRef<HTMLUListElement>('arc')
+const stepButtons = useTemplateRef<HTMLButtonElement[]>('stepButtons')
+
+const steps = computed(() => [
+  {
+    direction: -1,
+    label: t('home.previousWorkflow'),
+    icon: ChevronLeft,
+    side: 'left-[max(8px,calc(50%-420px))]',
+    disabled: atFirst.value,
+    testId: 'home-workflow-previous'
+  },
+  {
+    direction: 1,
+    label: t('home.nextWorkflow'),
+    icon: ChevronRight,
+    side: 'right-[max(8px,calc(50%-420px))]',
+    disabled: atLast.value,
+    testId: 'home-workflow-next'
+  }
+])
 
 function offsetFrom(position: number, index: number): number {
   const count = workflows.length
@@ -156,6 +178,16 @@ function startDrag(event: PointerEvent): void {
 
 onBeforeUnmount(stopDrag)
 
+async function turn(direction: number): Promise<void> {
+  const focused = document.activeElement
+  const cardHadFocus = arc.value?.contains(focused) ?? false
+  const focusedArrow = stepButtons.value?.find((button) => button === focused)
+  moveTo(frontPosition.value + direction)
+  await nextTick()
+  if (cardHadFocus) arc.value?.querySelector<HTMLButtonElement>('[aria-current="true"]')?.focus()
+  else if (focusedArrow?.disabled) stepButtons.value?.find((button) => !button.disabled)?.focus()
+}
+
 function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
   if (clickBelongsToDrag) return
   if (card.offset === 0) emit('open', card.workflow)
@@ -164,14 +196,13 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
 </script>
 
 <template>
-  <div class="group/arc relative">
+  <div class="group/arc relative" @keydown.left.prevent="turn(-1)" @keydown.right.prevent="turn(1)">
     <ul
+      ref="arc"
       class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
       :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
       data-testid="home-workflow-carousel"
       @pointerdown="startDrag"
-      @keydown.left.prevent="moveTo(frontPosition - 1)"
-      @keydown.right.prevent="moveTo(frontPosition + 1)"
     >
       <li v-for="card in arcCards" :key="card.workflow.id" class="contents">
         <button
@@ -249,27 +280,20 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
         </button>
       </li>
     </ul>
-    <button
-      v-if="workflows.length > 1"
-      type="button"
-      :class="[STEP_CLASS, 'left-[max(8px,calc(50%-420px))]']"
-      :aria-label="t('home.previousWorkflow')"
-      :disabled="atFirst"
-      data-testid="home-workflow-previous"
-      @click="moveTo(frontPosition - 1)"
-    >
-      <ChevronLeft :size="20" aria-hidden="true" />
-    </button>
-    <button
-      v-if="workflows.length > 1"
-      type="button"
-      :class="[STEP_CLASS, 'right-[max(8px,calc(50%-420px))]']"
-      :aria-label="t('home.nextWorkflow')"
-      :disabled="atLast"
-      data-testid="home-workflow-next"
-      @click="moveTo(frontPosition + 1)"
-    >
-      <ChevronRight :size="20" aria-hidden="true" />
-    </button>
+    <template v-if="workflows.length > 1">
+      <button
+        v-for="arrow in steps"
+        :key="arrow.direction"
+        ref="stepButtons"
+        type="button"
+        :class="[STEP_CLASS, arrow.side]"
+        :aria-label="arrow.label"
+        :disabled="arrow.disabled"
+        :data-testid="arrow.testId"
+        @click="turn(arrow.direction)"
+      >
+        <component :is="arrow.icon" :size="20" aria-hidden="true" />
+      </button>
+    </template>
   </div>
 </template>
