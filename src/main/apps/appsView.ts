@@ -27,7 +27,12 @@ import {
   isRunId,
   isVersionsIndex,
   isWorkflow,
+  inJobGrace,
+  jobsAnswer,
+  MAX_RESULT_BYTES,
+  MAX_SAVE_BYTES,
   MAX_UPLOAD_BYTES,
+  noteSubmitted,
   readCapped,
   type OutputFile,
   readable,
@@ -38,6 +43,7 @@ import {
   uploadForm,
   VERSIONS_FILE
 } from './guards'
+import { stallGuard, streamToFile } from './download'
 import {
   cancelSetup,
   getLocal,
@@ -347,6 +353,7 @@ function authState(): AppsAuthState {
 }
 
 const CLOUD_TIMEOUT_MS = 120_000
+const DOWNLOAD_STALL_MS = 60_000
 
 async function cloudFetch(pathAndQuery: string, init: RequestInit = {}): Promise<Response> {
   const token = await getCloudSession().getAccessToken()
@@ -373,12 +380,46 @@ async function failure(res: Response): Promise<Error> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+const MAX_BUSY_RETRIES = 4
+
+function busyDelay(res: Response, attempt: number): number {
+  const asked = Number(res.headers.get('retry-after'))
+  return asked > 0 ? Math.min(asked, 30) * 1000 : 2000 * (attempt + 1)
+}
+
 async function cloudFetchRetrying(pathAndQuery: string, init: RequestInit = {}): Promise<Response> {
   for (let attempt = 0; ; attempt++) {
     const res = await cloudFetch(pathAndQuery, init)
-    if (res.status !== 429 || attempt === 4) return res
-    const asked = Number(res.headers.get('retry-after'))
-    await sleep(asked > 0 ? Math.min(asked, 30) * 1000 : 2000 * (attempt + 1))
+    if (res.status !== 429 || attempt === MAX_BUSY_RETRIES) return res
+    await sleep(busyDelay(res, attempt))
+  }
+}
+
+async function cloudDownload<T>(
+  pathAndQuery: string,
+  read: (res: Response, alive: () => void) => Promise<T>
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const stall = stallGuard(DOWNLOAD_STALL_MS)
+    let res: Response | undefined
+    let delay: number
+    try {
+      res = await cloudFetch(pathAndQuery, { signal: stall.signal })
+      if (res.status !== 429 || attempt === MAX_BUSY_RETRIES) {
+        if (!res.ok) throw await failure(res)
+        return await read(res, stall.alive)
+      }
+      delay = busyDelay(res, attempt)
+      await res.body?.cancel().catch(() => {})
+    } catch (err) {
+      await res?.body?.cancel().catch(() => {})
+      if (stall.signal.aborted)
+        throw new Error('Comfy Cloud stopped sending the result.', { cause: err })
+      throw err
+    } finally {
+      stall.stop()
+    }
+    await sleep(delay)
   }
 }
 
@@ -423,6 +464,7 @@ async function run(page: AppPage, workflow: unknown, app?: unknown): Promise<{ r
   }
   if (!isRunId(body.prompt_id)) throw new Error('Comfy Cloud did not start the run.')
   pageWhere.set(page.id, 'cloud')
+  noteSubmitted(submittedRuns, body.prompt_id, Date.now())
   return { runId: body.prompt_id }
 }
 
@@ -436,10 +478,17 @@ export interface RunStatus {
   text?: Record<string, string[]>
 }
 
+const submittedRuns = new Map<string, number>()
+
 async function runWithoutHistory(runId: string): Promise<RunStatus> {
   const res = await cloudFetch(`/jobs/${runId}`)
-  if (res.status === 429 || res.status >= 500) return { state: 'waiting' }
-  if (!res.ok) return { state: 'failed', error: (await failure(res)).message }
+  const answer = jobsAnswer(res.status, inJobGrace(submittedRuns, runId, Date.now()))
+  if (answer !== 'read') {
+    if (answer === 'refused') return { state: 'failed', error: (await failure(res)).message }
+    await res.body?.cancel().catch(() => {})
+    return answer === 'wait' ? { state: 'waiting' } : { state: 'failed', error: answer.error }
+  }
+  submittedRuns.delete(runId)
   const rec = (await res.json()) as {
     status?: string
     outputs_count?: number
@@ -473,6 +522,7 @@ async function getRun(runId: unknown): Promise<RunStatus> {
   const body = (await res.json()) as Record<string, HistoryEntry | undefined>
   const entry = body[runId]
   if (!entry) return { state: 'waiting' }
+  submittedRuns.delete(runId)
   const status = entry.status ?? {}
   if (status.status_str === 'error') {
     const msg = status.messages?.find((m) => m[0] === 'execution_error')?.[1] as
@@ -514,7 +564,7 @@ async function saveResult(
   app: unknown,
   label: unknown,
   ext: string,
-  bytes: Uint8Array
+  write: (file: string) => Promise<void>
 ): Promise<string> {
   const slug = cleanSaveName(app)
   const name = cleanSaveName(label)
@@ -525,7 +575,7 @@ async function saveResult(
   for (let n = 1; ; n++) {
     const file = path.join(dir, n === 1 ? base : base.replace(/(\.[a-z0-9]+)$/, ` ${n}$1`))
     try {
-      await fsp.writeFile(file, bytes, { flag: 'wx' })
+      await write(file)
       return file
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || n > 50) throw err
@@ -549,14 +599,30 @@ async function getOutput(
   const ext = saveExt(f.filename.split('.').pop())
   if (save !== undefined && !ext) throw new Error('Apps cannot save that kind of file.')
   const query = new URLSearchParams({ filename: f.filename, subfolder: f.subfolder, type: f.type })
-  const res = await cloudFetchRetrying(`/view?${query}`)
-  if (!res.ok) throw await failure(res)
-  const bytes = await readCapped(res, MAX_UPLOAD_BYTES)
-  if (!bytes) throw new Error('That result is larger than 50 MB.')
-  const type = res.headers.get('content-type') ?? 'application/octet-stream'
-  if (save === undefined || !ext) return { type, bytes }
+  const view = `/view?${query}`
+  if (save === undefined || !ext) {
+    return cloudDownload(view, async (res, alive) => {
+      const bytes = await readCapped(res, MAX_RESULT_BYTES, alive)
+      if (!bytes) throw new Error('That result is larger than 100 MB, so Apps cannot show it.')
+      return { type: contentType(res), bytes }
+    })
+  }
   const s = (save ?? {}) as { app?: unknown; label?: unknown }
-  return { type, bytes, path: await saveResult(s.app, s.label, ext, bytes) }
+  const saved = await cloudDownload(view, async (res, alive) => ({
+    type: contentType(res),
+    path: await saveResult(s.app, s.label, ext, async (file) => {
+      if ((await streamToFile(res.body, file, MAX_SAVE_BYTES, alive)) === null)
+        throw new Error('That result is larger than 2 GB, so Apps cannot save it.')
+    })
+  }))
+  if ((await fsp.stat(saved.path)).size > MAX_RESULT_BYTES) {
+    throw new Error(`Saved to ${saved.path}. It is larger than 100 MB, so Apps cannot show it.`)
+  }
+  return { ...saved, bytes: new Uint8Array(await fsp.readFile(saved.path)) }
+}
+
+function contentType(res: Response): string {
+  return res.headers.get('content-type') ?? 'application/octet-stream'
 }
 
 function isWorkflowCopy(label: unknown, ext: string): boolean {
@@ -571,10 +637,10 @@ async function saveFile(
   ext: unknown
 ): Promise<{ path: string }> {
   const e = saveExt(ext)
-  if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES || !e) {
-    throw new Error('Apps cannot save that file.')
-  }
-  const saved = await saveResult(app, label, e, bytes)
+  if (!(bytes instanceof Uint8Array) || !e) throw new Error('Apps cannot save that file.')
+  if (bytes.byteLength > MAX_RESULT_BYTES) throw new Error('Apps can save files up to 100 MB here.')
+  const write = (file: string) => fsp.writeFile(file, bytes, { flag: 'wx' })
+  const saved = await saveResult(app, label, e, write)
   const where = pageWhere.get(page.id)
   if (page.app && where && !isWorkflowCopy(label, e)) {
     trackApps('output_saved', { app: page.app, where })
@@ -584,8 +650,8 @@ async function saveFile(
 
 async function readSaved(file: unknown): Promise<Uint8Array> {
   const real = await savedPath(file)
-  if ((await fsp.stat(real)).size > MAX_UPLOAD_BYTES)
-    throw new Error('That file is larger than 50 MB.')
+  if ((await fsp.stat(real)).size > MAX_RESULT_BYTES)
+    throw new Error('That file is larger than 100 MB, so Apps cannot open it.')
   return new Uint8Array(await fsp.readFile(real))
 }
 
