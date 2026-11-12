@@ -13,6 +13,7 @@ import {
   openRequest,
   openWorkflowScript
 } from './guards'
+import { ownInUse } from './localComfy'
 
 export type OpenResult = { opened: true } | { opened: false; error: string }
 
@@ -57,7 +58,11 @@ async function appsBuildWindow(): Promise<string | null> {
 }
 
 async function localInstallId(build?: string): Promise<string | null> {
-  const target = pickOpenTarget(await ownBuilds(), startedAt(), build)
+  const own = await ownBuilds()
+  const used = build === undefined ? ownInUse() : null
+  const inUse = used ? own.find((inst) => inst.id === used) : undefined
+  if (inUse) return running(inUse)
+  const target = pickOpenTarget(own, startedAt(), build)
   if (target) return running(target)
   return build === undefined ? appsBuildWindow() : null
 }

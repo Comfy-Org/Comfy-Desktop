@@ -1308,6 +1308,7 @@ export interface ElectronApi {
   getStableTags(): Promise<string[]>
   getCloudUserTier(): Promise<CloudUserTier>
   getCloudFreeRunsEnabled(): Promise<boolean>
+  getAppsEnabled(): Promise<boolean>
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>

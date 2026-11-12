@@ -5,10 +5,12 @@ import { describe, expect, it } from 'vitest'
 import {
   APPS_BUILD_IDLE_MS,
   APPS_BUILD_RELEASE,
+  APPS_BUILD_VERSION,
   APPS_SETUP_STAGE,
   appsLaunchArgs,
   appsModelDirs,
   appsOutputDir,
+  comfyuiFileVersion,
   downloadBytes,
   FREE_IDLE_MS,
   FREE_JSON,
@@ -20,12 +22,16 @@ import {
   MAC_GPU_ONLY_ARG,
   MAC_GPU_ONLY_MIN_BYTES,
   MAC_NO_GPU,
+  pickComfy,
   pickOpenTarget,
   pickVariant,
   queueEmpty,
+  releaseVersion,
+  reusableInstalls,
   setupEnd,
   setupEvent,
-  shouldStopIdle
+  shouldStopIdle,
+  wantedVersion
 } from './appsBuildRules'
 import { localInstalls } from './guards'
 
@@ -364,5 +370,153 @@ describe('which build Open in ComfyUI picks', () => {
 
   it('has nothing to pick when the person has no build of their own', () => {
     expect(pickOpenTarget([], new Map([['apps', 50]]))).toBeNull()
+  })
+})
+
+describe('the ComfyUI version an app needs', () => {
+  it('is the Apps build version when the page names none', () => {
+    expect(APPS_BUILD_VERSION).toBe('0.42.1')
+    expect(wantedVersion(undefined)).toBe(APPS_BUILD_VERSION)
+    expect(wantedVersion({})).toBe(APPS_BUILD_VERSION)
+  })
+
+  it('takes the minimum the page names', () => {
+    expect(wantedVersion({ minVersion: '0.37.0' })).toBe('0.37.0')
+    expect(wantedVersion({ minVersion: 'v0.36.0' })).toBe('0.36.0')
+  })
+
+  it('falls back to the Apps build version for anything that is not a version', () => {
+    for (const minVersion of ['', 'latest', '0.37', '1.2.3.4', 37, null, ['0.37.0']]) {
+      expect(wantedVersion({ minVersion })).toBe(APPS_BUILD_VERSION)
+    }
+    expect(wantedVersion('0.37.0')).toBe(APPS_BUILD_VERSION)
+  })
+
+  it('reads a release tag as its ComfyUI version', () => {
+    expect(releaseVersion('v0.42.1-env1')).toBe('0.42.1')
+    expect(releaseVersion('0.44.0')).toBe('0.44.0')
+    expect(releaseVersion('abc1234')).toBeNull()
+  })
+})
+
+describe('reading the ComfyUI version of an install', () => {
+  it('reads comfyui_version.py', () => {
+    expect(comfyuiFileVersion('# generated\n__version__ = "0.44.0"\n')).toBe('0.44.0')
+    expect(comfyuiFileVersion("__version__='0.3.40'")).toBe('0.3.40')
+  })
+
+  it('gives no version when the file names none', () => {
+    expect(comfyuiFileVersion('')).toBeNull()
+    expect(comfyuiFileVersion('version = "0.44.0"')).toBeNull()
+    expect(comfyuiFileVersion('__version__ = "dev"')).toBeNull()
+  })
+})
+
+describe('which of the person own installs an app run may use', () => {
+  const kinds: Record<string, string> = {
+    standalone: 'local',
+    git: 'local',
+    portable: 'local',
+    desktop: 'local',
+    cloud: 'cloud',
+    remote: 'remote'
+  }
+  const category = (inst: { sourceId: string }) => kinds[inst.sourceId]
+  const base = { installPath: '/x', status: 'installed' }
+
+  it('keeps finished local installs', () => {
+    const list = [
+      { id: 'a', sourceId: 'standalone', ...base },
+      { id: 'b', sourceId: 'git', ...base },
+      { id: 'c', sourceId: 'portable', ...base }
+    ]
+    expect(reusableInstalls(list, category).map((i) => i.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('leaves out Cloud, remote, legacy Desktop and the Apps build', () => {
+    const list = [
+      { id: 'cloud', sourceId: 'cloud', ...base },
+      { id: 'remote', sourceId: 'remote', ...base },
+      { id: 'legacy', sourceId: 'desktop', ...base },
+      { id: 'apps', sourceId: 'standalone', appsBuild: true, ...base }
+    ]
+    expect(reusableInstalls(list, category)).toEqual([])
+  })
+
+  it('leaves out installs that are not finished or have no folder', () => {
+    const list = [
+      { id: 'installing', sourceId: 'standalone', installPath: '/x', status: 'installing' },
+      { id: 'failed', sourceId: 'standalone', installPath: '/x', status: 'failed' },
+      { id: 'unknown', sourceId: 'standalone', installPath: '/x' },
+      { id: 'nowhere', sourceId: 'standalone', installPath: '', status: 'installed' }
+    ]
+    expect(reusableInstalls(list, category)).toEqual([])
+  })
+})
+
+describe('which ComfyUI an app run uses', () => {
+  const at = (id: string, version: string | null, running = false, busy = false) => ({
+    id,
+    version,
+    running,
+    busy
+  })
+
+  it('uses one that is already running over a newer stopped one', () => {
+    const list = [at('stopped', '0.45.0'), at('running', '0.43.0', true)]
+    expect(pickComfy(list, '0.42.1')?.id).toBe('running')
+  })
+
+  it('picks the newest compatible one', () => {
+    const list = [at('old', '0.43.0'), at('new', '0.44.2'), at('mid', '0.44.0')]
+    expect(pickComfy(list, '0.42.1')?.id).toBe('new')
+  })
+
+  it('picks the newest of several running ones', () => {
+    const list = [at('a', '0.43.0', true), at('b', '0.44.0', true)]
+    expect(pickComfy(list, '0.42.1')?.id).toBe('b')
+  })
+
+  it('keeps list order between equal versions', () => {
+    const list = [at('first', '0.44.0'), at('second', '0.44.0')]
+    expect(pickComfy(list, '0.42.1')?.id).toBe('first')
+  })
+
+  it('accepts exactly the minimum version', () => {
+    expect(pickComfy([at('a', '0.37.0')], '0.37.0')?.id).toBe('a')
+  })
+
+  it('skips installs older than the app needs, even running ones', () => {
+    const list = [at('old', '0.36.9', true), at('ok', '0.37.0')]
+    expect(pickComfy(list, '0.37.0')?.id).toBe('ok')
+    expect(pickComfy([at('old', '0.41.0', true)], '0.42.1')).toBeNull()
+  })
+
+  it('treats an install whose version is unknown as not compatible', () => {
+    expect(pickComfy([at('unknown', null, true)], '0.30.0')).toBeNull()
+  })
+
+  it('skips installs Desktop is busy with', () => {
+    const list = [at('updating', '0.45.0', false, true), at('ok', '0.43.0')]
+    expect(pickComfy(list, '0.42.1')?.id).toBe('ok')
+  })
+
+  it('stays on the running one apps already use while it still fits', () => {
+    const list = [at('newer', '0.45.0', true), at('used', '0.43.0', true)]
+    expect(pickComfy(list, '0.42.1', 'used')?.id).toBe('used')
+    expect(pickComfy(list, '0.44.0', 'used')?.id).toBe('newer')
+    expect(
+      pickComfy([at('newer', '0.45.0', true), at('used', '0.43.0')], '0.42.1', 'used')?.id
+    ).toBe('newer')
+  })
+
+  it('finds none so the Apps build is used', () => {
+    expect(pickComfy([], '0.42.1')).toBeNull()
+  })
+
+  it('lets a page that needs less use an older install', () => {
+    const list = [at('song', '0.36.0')]
+    expect(pickComfy(list, '0.36.0')?.id).toBe('song')
+    expect(pickComfy(list, APPS_BUILD_VERSION)).toBeNull()
   })
 })
