@@ -1,5 +1,6 @@
-import { go } from '../../useProto'
-import { TEMPLATES, thumb, type Template } from '../../mock'
+import { openDetail } from '../../useProto'
+import { thumb } from '../../mock'
+import { HUB_WORKFLOWS, hubLine, hubThumb, type HubWorkflow } from '../explore/hubWorkflows'
 import { EXAMPLES, runExample } from './examples'
 
 /** One card on the Home's arc: an app or a workflow. */
@@ -29,27 +30,22 @@ export const ARC_APPS: ArcItem[] = EXAMPLES.map((x) => ({
   open: () => runExample(x)
 }))
 
-const TOPIC_LABEL: Record<ArcItem['topic'], string> = {
-  image: 'Image',
-  video: 'Video',
-  '3d': '3D',
-  audio: 'Audio'
-}
-
-function workflow(t: Template): ArcItem {
-  const [title, what] = t.title.split(':').map((x) => x.trim())
+function workflow(w: HubWorkflow): ArcItem {
+  const [title, what] = w.title.split(':').map((x) => x.trim())
   return {
-    id: t.id,
-    label: what ? title! : t.title,
-    does: what ?? TOPIC_LABEL[t.category],
+    id: w.id,
+    label: what ? title! : w.title,
+    does: what ?? hubLine(w),
     kind: 'workflow',
-    topic: t.category,
-    src: thumb(t.id),
-    open: () => go('explore')
+    topic: w.media,
+    src: hubThumb(w.id) ?? thumb(w.id),
+    open: () => openDetail('template', w.id)
   }
 }
 
-export const ARC_WORKFLOWS: ArcItem[] = TEMPLATES.filter((t) => t.kind === 'graph').map(workflow)
+export const ARC_WORKFLOWS: ArcItem[] = [...HUB_WORKFLOWS]
+  .sort((a, b) => b.usage - a.usage)
+  .map(workflow)
 
 /** Apps and workflows taking turns, as one featured set. */
 export function interleave(a: ArcItem[], b: ArcItem[], max: number): ArcItem[] {

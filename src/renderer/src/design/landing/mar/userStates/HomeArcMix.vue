@@ -9,6 +9,7 @@ import SectionHeader from '../../ui/SectionHeader.vue'
 import WorkflowCard from '../WorkflowCard.vue'
 import { ARC_APPS, ARC_WORKFLOWS, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
+import { exploreStart } from '../explore/exploreStart'
 
 /**
  * Milestone 3's Home stage: the apps arc plus the workflows, in the layout
@@ -63,6 +64,14 @@ const allLabel = computed(() => {
   return 'Explore all'
 })
 
+function seeAll(on: 'apps' | 'templates'): void {
+  exploreStart.value = on
+  go('explore')
+}
+const allOn = computed(() =>
+  homeArcMix.id === 'tabs' && kind.value === 'workflows' ? 'templates' : 'apps'
+)
+
 const row = ref<InstanceType<typeof ScrollRow> | null>(null)
 function scrollRow(by: number): void {
   const el = (row.value?.$el as HTMLElement | undefined) ?? null
@@ -94,14 +103,14 @@ function scrollRow(by: number): void {
       </button>
     </div>
 
-    <ExampleArc :items="items" :all-label="allLabel" @all="go('explore')" />
+    <ExampleArc :items="items" :all-label="allLabel" @all="seeAll(allOn)" />
 
     <section v-if="homeArcMix.id === 'row'" class="mar-arcmix-row">
       <SectionHeader
         class="mar-sec"
         title="Workflows"
         link="See all workflows"
-        @link="go('explore')"
+        @link="seeAll('templates')"
       >
         <template #controls>
           <span class="mar-arcmix-steps">
