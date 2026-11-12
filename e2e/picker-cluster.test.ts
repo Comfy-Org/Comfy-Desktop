@@ -3,7 +3,7 @@ import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { expectChooserVisible, expectTakeoverOpen } from './support/chooserHelpers'
+import { expectChooserVisible, expectNewBuildModalOpen } from './support/chooserHelpers'
 import {
   closeTitlePopupIfOpen,
   isPopupVisible,
@@ -140,7 +140,7 @@ test('pick-install for a stopped install dismisses the popup and fires runAction
   expect(focusCalls.length).toBe(0)
 })
 
-test('open-new-install dismisses the popup and mounts the new-install takeover @windows @macos @linux', async () => {
+test('open-new-install dismisses the popup and opens the New Build modal @windows @macos @linux', async () => {
   await openExpandedPicker()
 
   const popup = titlePopupPage(ctx.app)
@@ -153,23 +153,16 @@ test('open-new-install dismisses the popup and mounts the new-install takeover @
     })
     .toBe(false)
 
-  await expectTakeoverOpen(ctx.panel)
-  await ctx.panel.waitForVisible('.config-shell', { timeout: 10_000 })
+  await expectNewBuildModalOpen(ctx.panel)
+  await ctx.panel.waitForVisible('[data-testid="config-summary"]', { timeout: 10_000 })
 
-  const tail = await ctx.panel.evaluate<number | null>(
+  const fitsWindow = await ctx.panel.evaluate<boolean>(
     `(() => {
-      const shell = document.querySelector('.config-shell')
-      let box = shell.parentElement
-      while (box && getComputedStyle(box).overflowY !== 'auto') box = box.parentElement
-      if (!box) return null
-      const top = box.getBoundingClientRect().top - box.scrollTop
-      const contentEnd = shell.getBoundingClientRect().bottom - top
-        + parseFloat(getComputedStyle(box).paddingBottom)
-      return box.scrollHeight - Math.max(box.clientHeight, Math.ceil(contentEnd))
+      const panel = document.querySelector('[data-testid="new-build-modal"]').getBoundingClientRect()
+      return panel.top >= 0 && panel.bottom <= window.innerHeight
     })()`
   )
-  expect(tail, 'Configure should have a scrolling box').not.toBeNull()
-  expect(tail, 'Configure should not scroll past the end of its form').toBeLessThanOrEqual(2)
+  expect(fitsWindow, 'The New Build modal should fit inside the window').toBe(true)
 })
 
 test('open-install-action with reveal-in-folder keeps the popup open and fires the action @windows @macos @linux', async () => {

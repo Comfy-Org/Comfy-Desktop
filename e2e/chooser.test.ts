@@ -4,7 +4,8 @@ import {
   clickNewInstallTile,
   openTitleMenu,
   expectChooserVisible,
-  expectTakeoverOpen
+  expectNewBuildModalOpen,
+  openNewBuildChangeSetup
 } from './support/chooserHelpers'
 import {
   findWebContentsId,
@@ -40,10 +41,11 @@ test('title bar shows install-less pill on chooser host @windows @macos @linux',
 
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
   await clickNewInstallTile(ctx.panel)
-  await expectTakeoverOpen(ctx.panel)
+  await expectNewBuildModalOpen(ctx.panel)
+  await openNewBuildChangeSetup(ctx.panel)
   expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
   expect(await ctx.panel.click('.config-back-to-dashboard')).toBe(true)
-  await expect.poll(() => ctx.panel.exists('.brand-takeover-root')).toBe(false)
+  await expect.poll(() => ctx.panel.exists('[data-testid="new-build-modal"]')).toBe(false)
   await expectChooserVisible(ctx.panel)
 })
 

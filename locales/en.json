@@ -446,7 +446,19 @@
     "buildModels": "Models",
     "buildCustomNodes": "Custom nodes",
     "buildSize": "Size",
-    "buildTarget": "Hardware"
+    "buildTarget": "Hardware",
+    "newBuildTitle": "New Build",
+    "changeSetupTitle": "Change Setup",
+    "changeSetupLead": "Everything here starts on what fits this computer.",
+    "change": "Change",
+    "detected": "Detected",
+    "getComfyFrom": "Get ComfyUI from",
+    "installSummary": "Install summary",
+    "alreadyHaveComfy": "Already have ComfyUI?",
+    "connectToServer": "Connect to a server",
+    "installHereInstead": "Install on this computer instead",
+    "install": "Install",
+    "connect": "Connect"
   },
   "templateQuit": {
     "title": "Template models are still downloading",

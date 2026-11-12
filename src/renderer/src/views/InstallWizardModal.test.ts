@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
-import BrandVariantList from '../components/BrandVariantList.vue'
+import SetupOptionCards from '../components/SetupOptionCards.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
@@ -18,11 +18,19 @@ function mountModal() {
       plugins: [pinia],
       stubs: {
         BrandTakeoverLayout: {
-          template: '<div><slot /><slot name="footer-left" /><slot name="footer" /></div>'
+          template: '<div class="brand-takeover-stub"><slot /></div>'
+        },
+        DesktopDialogSurface: {
+          template: '<div class="dialog-surface-stub"><slot /></div>'
         }
       }
     }
   })
+}
+
+async function showChangeSetup(wrapper: ReturnType<typeof mountModal>): Promise<void> {
+  await wrapper.get('[data-testid="config-change-setup"]').trigger('click')
+  await flushPromises()
 }
 
 beforeEach(() => {
@@ -67,9 +75,60 @@ describe('InstallWizardModal heading', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('.wizard-title').text()).toBe('Install a New Build')
-    expect(wrapper.find('[aria-label="Install a New Build"]').exists()).toBe(true)
+    expect(wrapper.get('.wizard-title').text()).toBe('New Build')
+    expect(wrapper.find('[aria-label="New Build"]').exists()).toBe(true)
     expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
+    expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(false)
+  })
+
+  it('sums up the detected setup and opens every field from Change', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'mps', label: 'Apple Silicon (MPS)', description: '773 MB', recommended: true }
+    ])
+    ;(window.api.detectGPU as ReturnType<typeof vi.fn>).mockResolvedValue({
+      label: 'Apple Silicon'
+    })
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe('Apple Silicon')
+    expect(wrapper.get('.config-machine-kicker').text()).toBe('Detected')
+    const rows = wrapper.findAll('.config-summary-row').map((row) => row.text())
+    expect(rows[0]).toContain('Apple Silicon (MPS)')
+    expect(rows[0]).toContain('773 MB')
+    expect(rows[1]).toContain('/home/user/ComfyUI')
+    expect(wrapper.find('#source-fields').exists()).toBe(false)
+    expect(wrapper.get('.config-continue').text()).toBe('Install')
+
+    await showChangeSetup(wrapper)
+
+    expect(wrapper.get('.wizard-title').text()).toBe('Change Setup')
+    expect(wrapper.get('#source-fields').text()).toContain('Apple Silicon (MPS)')
+    expect(wrapper.find('[data-testid="install-location-field"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+    expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
+  })
+
+  it('browses for a new location straight from the summary', async () => {
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    await wrapper.get('.config-summary-browse').trigger('click')
+    await flushPromises()
+
+    expect(window.api.browseFolder).toHaveBeenCalledWith('/home/user/ComfyUI')
+    expect(wrapper.get('.config-summary-location').text()).toContain('/home/user/Picked')
   })
 
   it('shows signed-out local fields directly like the Public workspace tab', async () => {
@@ -86,6 +145,7 @@ describe('InstallWizardModal heading', () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(wrapper.get('.config-advanced').classes()).toEqual(
       expect.arrayContaining(['config-advanced--direct', 'is-open'])
@@ -124,6 +184,7 @@ describe('InstallWizardModal heading', () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
@@ -151,6 +212,7 @@ describe('InstallWizardModal heading', () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
@@ -220,6 +282,7 @@ describe('InstallWizardModal install-location field', () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(wrapper.get('[data-testid="install-location-field"] .config-label').text()).toBe(
       'Install location'
@@ -237,9 +300,9 @@ describe('InstallWizardModal install-location field', () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(wrapper.find('button.config-path-open').exists()).toBe(false)
-    expect(wrapper.find('.config-path-open--static').exists()).toBe(true)
     expect(window.api.openPath).not.toHaveBeenCalled()
   })
 })
@@ -263,6 +326,7 @@ describe('InstallWizardModal workspace Builds', () => {
       wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
     ).open({ workspaceId: 'w1' })
     await flushPromises()
+    await showChangeSetup(wrapper)
     return wrapper
   }
 
@@ -286,6 +350,7 @@ describe('InstallWizardModal workspace Builds', () => {
       wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
     ).open({ workspaceId: 'w1' })
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(
       wrapper.get('[data-testid="workspace-install-source-managed"]').attributes()
@@ -298,7 +363,8 @@ describe('InstallWizardModal workspace Builds', () => {
         .get('[data-testid="install-source-tabs"]')
         .findAll('button')
         .map((button) => button.text())
-    ).toEqual(['Public Builds', 'Managed Builds', 'Remote Connection', 'Portable'])
+    ).toEqual(['Public Builds', 'Managed Builds', 'Portable'])
+    expect(wrapper.get('[data-testid="install-source-remote"]').text()).toBe('Connect to a server')
     expect(wrapper.get('[data-testid="install-source-tabs"]').text()).not.toContain('RECOMMENDED')
     expect(wrapper.find('[data-testid="workspace-install-source-public"]').exists()).toBe(false)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
@@ -333,11 +399,11 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
     await flushPromises()
 
-    expect(
-      wrapper.get('[data-testid="workspace-install-source-managed"]').attributes('aria-checked')
-    ).toBe('false')
-    expect(wrapper.get('[data-testid="install-source-remote"]').attributes('aria-checked')).toBe(
-      'true'
+    expect(wrapper.find('[data-testid="workspace-install-source-managed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="install-source-remote"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="install-source-standalone"]').text()).toBe(
+      'Install on this computer instead'
     )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('#source-fields').text()).toContain('Server URL')
@@ -385,6 +451,7 @@ describe('InstallWizardModal workspace Builds', () => {
 
     await open({ workspaceId: 'w1' })
     await flushPromises()
+    await showChangeSetup(wrapper)
     expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
       { value: 'ready', label: 'Ready Build', description: 'Release v2' }
     ])
@@ -393,6 +460,7 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
     await open({ workspaceId: 'w1' })
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(window.api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledTimes(2)
@@ -425,7 +493,9 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
+    expect(wrapper.get('.wizard-lead').text()).toBe(
+      'Everything here starts on what fits this computer.'
+    )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('.config-advanced').classes()).toContain('config-advanced--direct')
     expect(wrapper.get('.config-advanced').classes()).toContain('is-open')
@@ -510,6 +580,7 @@ describe('InstallWizardModal workspace Builds', () => {
       wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
     ).open({ workspaceId: 'personal' })
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(window.api.comfybuilder.switchWorkspace).not.toHaveBeenCalled()
     expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
@@ -553,7 +624,9 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
+    expect(wrapper.get('.wizard-lead').text()).toBe(
+      'Everything here starts on what fits this computer.'
+    )
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
     expect(wrapper.getComponent(PathDiskInfo).props('estimatedSize')).toBe(4_500)
@@ -624,7 +697,9 @@ describe('InstallWizardModal workspace Builds', () => {
     signInToWorkspace([])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
+    expect(wrapper.get('.wizard-lead').text()).toBe(
+      'Everything here starts on what fits this computer.'
+    )
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
@@ -649,6 +724,7 @@ describe('InstallWizardModal workspace Builds', () => {
       wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
     ).open({ workspaceId: 'w1' })
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(window.api.comfybuilder.listBuilds).not.toHaveBeenCalled()
     expect(
@@ -695,6 +771,7 @@ describe('InstallWizardModal workspace Builds', () => {
       wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
     ).open({ workspaceId: 'w2' })
     await flushPromises()
+    await showChangeSetup(wrapper)
 
     expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
     expect(
@@ -734,6 +811,7 @@ describe('InstallWizardModal workspace Builds', () => {
         wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
       ).open({ workspaceId: 'w2' })
       await flushPromises()
+      await showChangeSetup(wrapper)
       expect(wrapper.getComponent(BaseSelect).props('options')).toHaveLength(1)
       authChanged({ signedIn: true, workspaceId: 'w1', workspaceType: 'team' })
       await flushPromises()
@@ -811,6 +889,7 @@ describe('InstallWizardModal workspace Builds', () => {
       wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
     ).open({ workspaceId: 'w2' })
     await flushPromises()
+    await showChangeSetup(wrapper)
     wrapper.getComponent(BaseSelect).vm.$emit('update:modelValue', 'second')
     await flushPromises()
     switchWorkspace.mockClear()
@@ -892,6 +971,7 @@ describe('InstallWizardModal workspace Builds', () => {
       entry: { id: 'managed-1', name: 'My Managed Instance' }
     })
     const wrapper = await openWorkspaceModal()
+    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
     await wrapper.get('#inst-name-standalone').setValue('My Managed Instance')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
@@ -945,22 +1025,20 @@ describe('InstallWizardModal workspace Builds', () => {
     const targetSection = wrapper.get('[data-testid="workspace-build-targets"]')
     expect(targetSection.isVisible()).toBe(true)
     expect(targetSection.get('label').text()).toBe('Hardware')
-    const targetPicker = wrapper.getComponent(BrandVariantList)
+    const targetPicker = targetSection.getComponent(SetupOptionCards)
     expect(targetPicker.props('options')).toEqual([
-      {
+      expect.objectContaining({
         value: 'cuda',
         label: 'Windows - NVIDIA (CUDA 12.8)',
         description: 'Release v3',
-        recommended: true,
-        data: { variantId: 'win-nvidia-cu128' }
-      },
-      {
+        recommended: true
+      }),
+      expect.objectContaining({
         value: 'cpu',
         label: 'Windows - CPU',
         description: 'Release v3',
-        recommended: false,
-        data: { variantId: 'win-cpu-cpu' }
-      }
+        recommended: false
+      })
     ])
     expect(targetPicker.props('selectedValue')).toBe('cuda')
 
@@ -1035,18 +1113,11 @@ describe('InstallWizardModal hardware warning', () => {
     const warning = wrapper.find('[data-testid="wizard-hardware-warning"]')
     expect(warning.exists()).toBe(true)
     expect(warning.text()).toBe(KFD_WARNING)
-    const advanced = wrapper.get('.config-advanced').element
-    const installLocation = wrapper.get('[data-testid="install-location-field"]').element
-    const gpuField = wrapper.get('[data-testid="detected-gpu-field"]').element
+    const machine = wrapper.get('.config-machine').element
     expect(
-      advanced.compareDocumentPosition(installLocation) & Node.DOCUMENT_POSITION_FOLLOWING
+      machine.compareDocumentPosition(warning.element) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
-    expect(
-      installLocation.compareDocumentPosition(gpuField) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).not.toBe(0)
-    expect(gpuField.parentElement).toBe(wrapper.get('.config-install-meta').element)
-    expect(wrapper.get('.config-install-separator').text()).toBe('·')
-    expect(wrapper.get('.config-gpu-value').text()).toBe('detected GPU: Radeon RX 7900')
+    expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe('Radeon RX 7900')
   })
 
   it('renders no warning element when validateHardware reports none', async () => {
@@ -1073,12 +1144,10 @@ describe('InstallWizardModal hardware warning', () => {
 
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(true)
 
-    const remotePill = wrapper
-      .findAll('button[role="radio"]')
-      .find((b) => b.text().includes('Remote Connection'))
-    expect(remotePill).toBeTruthy()
-    await remotePill!.trigger('click')
+    await showChangeSetup(wrapper)
+    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
 
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
   })
