@@ -47,8 +47,8 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
-import { isAppsEnabled } from './appsSwitch'
-import { trackFromPage } from './appEvents'
+import { isAppsEnabled, onAppsEnabledChanged } from './appsSwitch'
+import { trackApps, trackFromPage, type Where } from './appEvents'
 import { desktopAppIds } from './desktopApps'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
@@ -61,6 +61,7 @@ const failedViews = new WeakSet<WebContentsView>()
 
 export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
 export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
+export const APPS_ENABLED_CHANNEL = 'comfy-apps:enabled'
 
 const appOpen = new Map<number, boolean>()
 
@@ -80,6 +81,15 @@ function openOutside(url: string): void {
 
 function tellPanelLoadFailed(panel: WebContents | undefined, url: string): void {
   if (panel && !panel.isDestroyed()) panel.send(APPS_LOAD_FAILED_CHANNEL, { url })
+}
+
+function tellPanelAppsEnabled(panel: WebContents | undefined, on: boolean): void {
+  if (panel && !panel.isDestroyed()) panel.send(APPS_ENABLED_CHANNEL, { enabled: on })
+}
+
+function tellPanelsAppsEnabled(on: boolean): void {
+  for (const entry of comfyWindows.values()) tellPanelAppsEnabled(entry.panelView?.webContents, on)
+  if (!on) for (const view of views.values()) view.setVisible(false)
 }
 
 function tellPanelAppOpen(key: number): void {
@@ -113,8 +123,8 @@ function secureAppsSession(): void {
   securedSession = appsSession
 }
 
-function keepOnAppsOrigin(event: { preventDefault(): void }, url: string): void {
-  if (isAppsFrameUrl(url, APPS_ORIGIN)) return
+function keepInApps(event: { preventDefault(): void }, url: string): void {
+  if (isAppsFrameUrl(url, APPS_URL)) return
   event.preventDefault()
   openOutside(url)
 }
@@ -132,9 +142,9 @@ function createAppsView(key: number): WebContentsView {
   })
   view.setBorderRadius(14)
   const wc = view.webContents
-  wc.on('will-navigate', keepOnAppsOrigin)
+  wc.on('will-navigate', keepInApps)
   wc.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) keepOnAppsOrigin(event, url)
+    if (isMainFrame) keepInApps(event, url)
   })
   wc.setWindowOpenHandler(({ url }) => {
     openOutside(url)
@@ -165,7 +175,7 @@ function entryForPanel(
 }
 
 function showApps(event: IpcMainEvent, rect: unknown): void {
-  if (!isAppsEnabled()) return
+  if (!isAppsEnabled()) return tellPanelAppsEnabled(event.sender, false)
   const found = entryForPanel(event.sender)
   if (!found) return
   if (!APPS_ORIGIN) return tellPanelLoadFailed(event.sender, APPS_URL)
@@ -212,7 +222,7 @@ function appsPageUrl(event: IpcMainInvokeEvent): string | null {
   const ours = [...views.values()].some((v) => v.webContents === event.sender)
   const frame = event.senderFrame
   if (!ours || !frame || frame !== event.sender.mainFrame) return null
-  return isAppsFrameUrl(frame.url, APPS_ORIGIN) ? frame.url : null
+  return isAppsFrameUrl(frame.url, APPS_URL) ? frame.url : null
 }
 
 function authState(): AppsAuthState {
@@ -394,6 +404,15 @@ async function saveResult(
   }
 }
 
+const isWhere = (value: unknown): value is Where => value === 'cloud' || value === 'local'
+
+function tellOutputSaved(app: unknown, where: unknown): void {
+  if (typeof app !== 'string' || !isWhere(where)) return
+  try {
+    trackApps('output_saved', { app, where })
+  } catch {}
+}
+
 async function savedPath(file: unknown): Promise<string> {
   if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error('Unknown file.')
   const real = await fsp.realpath(file).catch(() => null)
@@ -401,7 +420,7 @@ async function savedPath(file: unknown): Promise<string> {
   return real
 }
 
-async function getOutput(
+export async function getOutput(
   file: unknown,
   save?: unknown
 ): Promise<{ type: string; bytes: Uint8Array; path?: string }> {
@@ -417,20 +436,25 @@ async function getOutput(
   const type = res.headers.get('content-type') ?? 'application/octet-stream'
   if (save === undefined || !ext) return { type, bytes }
   const s = (save ?? {}) as { app?: unknown; label?: unknown }
-  return { type, bytes, path: await saveResult(s.app, s.label, ext, bytes) }
+  const saved = await saveResult(s.app, s.label, ext, bytes)
+  tellOutputSaved(s.app, 'cloud')
+  return { type, bytes, path: saved }
 }
 
-async function saveFile(
+export async function saveFile(
   bytes: unknown,
   app: unknown,
   label: unknown,
-  ext: unknown
+  ext: unknown,
+  where?: unknown
 ): Promise<{ path: string }> {
   const e = saveExt(ext)
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES || !e) {
     throw new Error('Apps cannot save that file.')
   }
-  return { path: await saveResult(app, label, e, bytes) }
+  const saved = await saveResult(app, label, e, bytes)
+  tellOutputSaved(app, where)
+  return { path: saved }
 }
 
 async function readSaved(file: unknown): Promise<Uint8Array> {
@@ -521,12 +545,13 @@ function handleFromApps<A extends unknown[], R>(
 function appsPages(): WebContents[] {
   return [...views.values()]
     .map((v) => v.webContents)
-    .filter((wc) => !wc.isDestroyed() && isAppsFrameUrl(wc.getURL(), APPS_ORIGIN))
+    .filter((wc) => !wc.isDestroyed() && isAppsFrameUrl(wc.getURL(), APPS_URL))
 }
 
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  onAppsEnabledChanged(tellPanelsAppsEnabled)
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)

@@ -127,11 +127,37 @@ describe('isAllowedAppsPermission', () => {
 
 describe('isAppsFrameUrl', () => {
   it('matches the exact origin', () => {
-    const origin = 'https://apps.comfy.org'
-    expect(isAppsFrameUrl('https://apps.comfy.org/upscale', origin)).toBe(true)
-    expect(isAppsFrameUrl('https://apps.comfy.org.evil.com/', origin)).toBe(false)
-    expect(isAppsFrameUrl('https://evil.com/?https://apps.comfy.org', origin)).toBe(false)
-    expect(isAppsFrameUrl('https://apps.comfy.org/', null)).toBe(false)
+    const apps = 'https://apps.comfy.org/'
+    expect(isAppsFrameUrl('https://apps.comfy.org/upscale', apps)).toBe(true)
+    expect(isAppsFrameUrl('https://apps.comfy.org.evil.com/', apps)).toBe(false)
+    expect(isAppsFrameUrl('https://evil.com/?https://apps.comfy.org', apps)).toBe(false)
+    expect(isAppsFrameUrl('http://apps.comfy.org/', 'http://apps.comfy.org/')).toBe(false)
+    expect(isAppsFrameUrl('https://apps.comfy.org/', 'not a url')).toBe(false)
+  })
+
+  it.each([DEFAULT_APPS_URL, 'https://comfy-website-preview-pr-384.vercel.app/apps/'])(
+    'keeps %s to its apps pages',
+    (apps) => {
+      const site = new URL(apps).origin
+      expect(isAppsFrameUrl(`${site}/apps/`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/apps`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/apps/some-app`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/apps/text-to-image/desktop.html#/run`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/hub/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/appsfoo`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/apps-evil/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/apps/../hub/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/apps/%2e%2e/hub/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/hub/?next=/apps/`, apps)).toBe(false)
+    }
+  )
+
+  it('lets a development site at its root use the whole origin', () => {
+    const apps = 'http://localhost:5173/'
+    expect(isAppsFrameUrl('http://localhost:5173/', apps)).toBe(true)
+    expect(isAppsFrameUrl('http://localhost:5173/some-app/desktop.html', apps)).toBe(true)
+    expect(isAppsFrameUrl('http://localhost:5174/', apps)).toBe(false)
   })
 })
 
