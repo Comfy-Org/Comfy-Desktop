@@ -66,7 +66,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
     <ArrowRight v-if="builds.length < 2" class="shrink-0" :size="14" aria-hidden="true" />
     <template v-if="builds.length > 1" #menu>
-      <DropdownMenuRadioGroup :model-value="target.id">
+      <DropdownMenuRadioGroup :model-value="target.id" class="flex flex-col gap-0.5">
         <MenuRadioItem
           v-for="build in builds"
           :key="build.id"
