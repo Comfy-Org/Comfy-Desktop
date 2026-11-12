@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, useTemplateRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { useDialogs } from '../composables/useDialogs'
+import { useModal } from '../composables/useModal'
+
+const props = defineProps<{ obscured?: boolean }>()
 
 const emit = defineEmits<{
   failed: [url: string]
@@ -10,13 +14,21 @@ const slot = useTemplateRef<HTMLElement>('slot')
 let observer: ResizeObserver | null = null
 let stopListening: (() => void) | null = null
 let stopAppOpen: (() => void) | null = null
+let freshPending = true
 
-function report(fresh = false): void {
+const { state: modal } = useModal()
+const { state: dialog } = useDialogs()
+const hidden = computed(() => props.obscured === true || modal.visible || dialog.open)
+
+function report(): void {
   const el = slot.value
-  if (!el) return
+  if (!el || hidden.value) return
   const r = el.getBoundingClientRect()
-  window.api.showApps({ x: r.x, y: r.y, width: r.width, height: r.height, fresh })
+  window.api.showApps({ x: r.x, y: r.y, width: r.width, height: r.height, fresh: freshPending })
+  freshPending = false
 }
+
+watch(hidden, (isHidden) => (isHidden ? window.api.hideApps() : report()))
 
 const reportResize = (): void => report()
 
@@ -26,7 +38,7 @@ onMounted(() => {
   observer = new ResizeObserver(reportResize)
   if (slot.value) observer.observe(slot.value)
   window.addEventListener('resize', reportResize)
-  report(true)
+  report()
 })
 
 onBeforeUnmount(() => {
