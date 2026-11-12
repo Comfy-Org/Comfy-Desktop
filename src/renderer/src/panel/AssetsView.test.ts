@@ -727,6 +727,30 @@ describe('AssetsView on This computer', () => {
     })
   })
 
+  it('shows a subfolder in Finder and copies its path from its menu without opening it', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    listOutputFolder.mockResolvedValueOnce(listing([entry(SHARED, 'apps', null)]))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    const menu = wrapper.get('[data-testid="local-subfolder-menu-apps"]')
+    await menu.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-reveal"]').trigger('click')
+    await flushPromises()
+    await menu.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+
+    expect(revealPath).toHaveBeenCalledWith(`${SHARED}/apps`)
+    expect(writeText).toHaveBeenCalledWith(`${SHARED}/apps`)
+    expect(listOutputFolder).toHaveBeenCalledTimes(1)
+    writeText.mockRestore()
+  })
+
   it('shows only the subfolders of a folder with no files, and the cut-short note when nothing matches', async () => {
     listOutputFolder.mockResolvedValueOnce(listing([entry(SHARED, 'apps', null)]))
     const wrapper = await mountAssets([])

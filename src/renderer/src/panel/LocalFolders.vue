@@ -1,21 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  ChevronRight,
-  Copy,
-  EllipsisVertical,
-  Folder,
-  FolderOpen,
-  FolderSearch
-} from 'lucide-vue-next'
-import Menu from '@comfyorg/design-system/menu/Menu'
-import MenuItem from '@comfyorg/design-system/menu/MenuItem'
+import { ChevronRight, Folder, FolderOpen } from 'lucide-vue-next'
 import Tooltip from '../components/ui/Tooltip.vue'
-import { revealInFolderLabel } from '../composables/usePlatform'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AssetCard from './AssetCard.vue'
+import FolderActionsMenu from './FolderActionsMenu.vue'
 import { useModal } from '../composables/useModal'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
@@ -48,7 +39,6 @@ const emit = defineEmits<{ 'clear-filters': [] }>()
 const { t } = useI18n()
 const modal = useModal()
 const root = useTemplateRef<HTMLElement>('root')
-const revealLabel = revealInFolderLabel(window.api.platform)
 const folders = ref<OutputFolder[] | null>(null)
 const trail = ref<Crumb[]>([])
 const listing = ref<OutputFolderListing | null>(null)
@@ -104,10 +94,6 @@ function buildCount(output: OutputFolder): string {
   return output.builds.length > 0
     ? t('assets.local.buildCount', output.builds.length)
     : t('assets.local.notUsed')
-}
-
-async function copyPath(path: string): Promise<void> {
-  await navigator.clipboard.writeText(path).catch(() => {})
 }
 
 function fileDetails(entry: OutputEntry): string {
@@ -330,46 +316,10 @@ defineExpose({ reload, loading })
               </template>
             </Tooltip>
           </button>
-          <Menu
-            :modal="false"
-            align="end"
-            class="z-20 min-w-[200px]"
-            :aria-label="t('assets.local.folderActions')"
-          >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="muted-textonly"
-                size="icon"
-                class="relative z-10"
-                :aria-label="t('assets.local.folderActions')"
-                :title="t('assets.local.folderActions')"
-                :data-testid="`local-folder-menu-${output.path}`"
-              >
-                <EllipsisVertical :size="16" aria-hidden="true" />
-              </Button>
-            </template>
-            <MenuItem
-              as="button"
-              type="button"
-              class="w-full"
-              data-testid="local-folder-reveal"
-              @select="showInFolder(output.path)"
-            >
-              <FolderSearch :size="15" aria-hidden="true" />
-              <span class="flex-1 text-left">{{ revealLabel }}</span>
-            </MenuItem>
-            <MenuItem
-              as="button"
-              type="button"
-              class="w-full"
-              data-testid="local-folder-copy-path"
-              @select="copyPath(output.path)"
-            >
-              <Copy :size="15" aria-hidden="true" />
-              <span class="flex-1 text-left">{{ t('assets.local.copyPath') }}</span>
-            </MenuItem>
-          </Menu>
+          <FolderActionsMenu
+            :path="output.path"
+            :trigger-test-id="`local-folder-menu-${output.path}`"
+          />
         </li>
       </ul>
     </template>
@@ -379,16 +329,24 @@ defineExpose({ reload, loading })
         v-if="subfolders.length > 0"
         class="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2 p-0"
       >
-        <li v-for="entry in subfolders" :key="entry.path">
+        <li
+          v-for="entry in subfolders"
+          :key="entry.path"
+          class="relative flex h-10 items-center gap-2.5 rounded-lg bg-card pr-1 pl-3 transition-colors duration-150 hover:bg-card-hover"
+        >
+          <Folder :size="16" class="shrink-0 text-muted-foreground" aria-hidden="true" />
           <button
             type="button"
-            class="flex h-10 w-full cursor-pointer items-center gap-2.5 rounded-lg bg-card px-3 text-left text-ui text-foreground transition-colors duration-150 hover:bg-card-hover"
+            class="min-w-0 flex-1 cursor-pointer truncate text-left text-ui text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-1 focus-visible:after:ring-ring"
             :data-testid="`local-subfolder-${entry.name}`"
             @click="enter({ name: entry.name, path: entry.path })"
           >
-            <Folder :size="16" class="shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span class="truncate">{{ entry.name }}</span>
+            {{ entry.name }}
           </button>
+          <FolderActionsMenu
+            :path="entry.path"
+            :trigger-test-id="`local-subfolder-menu-${entry.name}`"
+          />
         </li>
       </ul>
 
