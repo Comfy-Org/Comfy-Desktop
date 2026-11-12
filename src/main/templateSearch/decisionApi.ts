@@ -96,6 +96,7 @@ function candidateFrom(value: unknown, fromDownloadList: boolean): TemplateSearc
     rewrite: candidate.kind === 'rewrite',
     needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
     score: asNumber(candidate.score),
+    calibrated: asNumber(candidate.calibrated),
     belowThreshold: isBelowThreshold(candidate),
     missing: missingFor(candidate, templateId)
   }

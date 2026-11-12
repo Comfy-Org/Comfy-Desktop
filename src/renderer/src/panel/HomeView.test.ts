@@ -453,6 +453,7 @@ describe('Home template search', () => {
             rewrite: false,
             needsDownload: false,
             score: 0.9,
+            calibrated: null,
             belowThreshold: false,
             missing: []
           }
@@ -491,6 +492,7 @@ describe('Home template search', () => {
             rewrite: false,
             needsDownload: false,
             score: 0.9,
+            calibrated: null,
             belowThreshold: false,
             missing: []
           }
@@ -528,6 +530,7 @@ describe('Home template search', () => {
             rewrite: false,
             needsDownload: false,
             score: 0.9,
+            calibrated: null,
             belowThreshold: false,
             missing: []
           }

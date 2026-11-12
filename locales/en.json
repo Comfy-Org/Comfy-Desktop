@@ -65,7 +65,9 @@
       "matchStrong": "Strong match",
       "matchGood": "Good match",
       "matchWeak": "Weaker match",
-      "matchScore": "{percent}% match"
+      "matchScore": "{percent}% match",
+      "matchRaw": "raw score {raw}",
+      "matchUncalibrated": "raw score, not calibrated"
     }
   },
   "installType": {

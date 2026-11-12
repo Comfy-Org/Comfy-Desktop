@@ -25,6 +25,7 @@ function candidate(templateId: string, over: Partial<TemplateSearchCandidate> = 
     rewrite: false,
     needsDownload: false,
     score: 0.92,
+    calibrated: null,
     belowThreshold: false,
     missing: [],
     ...over
@@ -150,16 +151,20 @@ describe('HomeTemplateSearch', () => {
   })
 
   it('shows how well each template matches, and greys out the weaker ones', async () => {
-    const weak = candidate('weak_template', { score: 0.3, belowThreshold: true })
-    const good = candidate('good_template', { score: 0.6 })
-    search.mockResolvedValue(answer({ run: [POSTER, good], alsoTry: [weak] }))
+    const strong = candidate('strong_template', { score: 0.92, calibrated: 0.81 })
+    const weak = candidate('weak_template', { score: 0.3, calibrated: 0.05, belowThreshold: true })
+    const good = candidate('good_template', { score: 0.6, calibrated: 0.35 })
+    search.mockResolvedValue(answer({ run: [strong, good], alsoTry: [weak] }))
     const wrapper = mountSearch()
     await searchFor(wrapper, 'a poster')
 
-    const matches = wrapper
-      .findAll('[data-testid="home-template-search-match"]')
-      .map((badge) => badge.text())
-    expect(matches).toEqual(['Strong match · 92%', 'Good match · 60%', 'Weaker match · 30%'])
+    const badges = wrapper.findAll('[data-testid="home-template-search-match"]')
+    expect(badges.map((badge) => badge.text())).toEqual([
+      'Strong match · 81%',
+      'Good match · 35%',
+      'Weaker match · 5%'
+    ])
+    expect(badges[0]!.attributes('title')).toBe('Strong match · 81% (raw score 0.920)')
     const [strongRow, goodRow, weakRow] = wrapper.findAll('[role="option"]')
     expect(strongRow!.attributes('data-weak')).toBeUndefined()
     expect(goodRow!.attributes('data-weak')).toBeUndefined()
@@ -179,6 +184,16 @@ describe('HomeTemplateSearch', () => {
       'weak_template title',
       'Build it with the agent'
     ])
+  })
+
+  it('shows an uncalibrated score as a plain number, not a percentage', async () => {
+    search.mockResolvedValue(answer({ run: [POSTER] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    const badge = wrapper.get('[data-testid="home-template-search-match"]')
+    expect(badge.text()).toBe('Strong match · 0.92')
+    expect(badge.attributes('title')).toBe('Strong match · 0.92 (raw score, not calibrated)')
   })
 
   it('shows the template family under its title', async () => {
@@ -362,13 +377,17 @@ describe('TemplateSearchResults as a grid', () => {
   }
 
   it('puts the match as a coloured percentage in the corner of each picture', async () => {
+    const calibrated = candidate('calibrated_template', { score: 0.92, calibrated: 0.81 })
     const weak = candidate('weak_template', { score: 0.06, belowThreshold: true })
-    const { wrapper, stop } = await mountGrid({ run: [POSTER], alsoTry: [weak] })
+    const { wrapper, stop } = await mountGrid({ run: [calibrated], alsoTry: [weak] })
 
     const boxes = wrapper.findAll('[data-testid="home-template-search-match"]')
-    expect(boxes.map((box) => box.text())).toEqual(['92%', '6%'])
+    expect(boxes.map((box) => box.text())).toEqual(['81%', '0.06'])
     expect(boxes.map((box) => box.attributes('data-level'))).toEqual(['strong', 'weak'])
-    expect(boxes[1]!.attributes('aria-label')).toBe('Weaker match · 6%')
+    expect(boxes[0]!.attributes('aria-label')).toBe('Strong match · 81% (raw score 0.920)')
+    expect(boxes[1]!.attributes('aria-label')).toBe(
+      'Weaker match · 0.06 (raw score, not calibrated)'
+    )
     stop()
   })
 

@@ -27,6 +27,7 @@ interface Badge {
   tone: BadgeTone
   label: string
   testId: string
+  title?: string
 }
 
 type MatchLevel = 'strong' | 'good' | 'weak'
@@ -49,19 +50,43 @@ function matchLevel(candidate: TemplateSearchCandidate): MatchLevel | null {
   return candidate.score >= STRONG_MATCH ? 'strong' : 'good'
 }
 
-function matchPercent(candidate: TemplateSearchCandidate): number {
-  return Math.round((candidate.score ?? 0) * 100)
+function rawScore(candidate: TemplateSearchCandidate): string {
+  return (candidate.score ?? 0).toFixed(2)
+}
+
+function shownScore(candidate: TemplateSearchCandidate): string {
+  return candidate.calibrated === null
+    ? rawScore(candidate)
+    : `${Math.round(candidate.calibrated * 100)}%`
+}
+
+function scoreNote(candidate: TemplateSearchCandidate): string {
+  return candidate.calibrated === null
+    ? t('home.search.matchUncalibrated')
+    : t('home.search.matchRaw', { raw: (candidate.score ?? 0).toFixed(3) })
 }
 
 function matchLabel(candidate: TemplateSearchCandidate): string {
   const level = matchLevel(candidate)
-  return level ? `${t(MATCH_LEVEL_KEYS[level])} · ${matchPercent(candidate)}%` : ''
+  return level
+    ? `${t(MATCH_LEVEL_KEYS[level])} · ${shownScore(candidate)} (${scoreNote(candidate)})`
+    : ''
+}
+
+function matchBadgeLabel(candidate: TemplateSearchCandidate): string {
+  const level = matchLevel(candidate)
+  return level ? `${t(MATCH_LEVEL_KEYS[level])} · ${shownScore(candidate)}` : ''
 }
 
 function matchBadge(candidate: TemplateSearchCandidate): Badge | null {
   const level = matchLevel(candidate)
   if (level === null) return null
-  return { tone: level, label: matchLabel(candidate), testId: 'home-template-search-match' }
+  return {
+    tone: level,
+    label: matchBadgeLabel(candidate),
+    title: matchLabel(candidate),
+    testId: 'home-template-search-match'
+  }
 }
 
 function cornerBadges(row: SearchRow): Badge[] {
@@ -217,6 +242,7 @@ function optionId(index: number): string {
               v-for="badge in badges(row)"
               :key="badge.testId"
               :tone="badge.tone"
+              :title="badge.title"
               :data-testid="badge.testId"
             >
               {{ badge.label }}
@@ -293,7 +319,7 @@ function optionId(index: number): string {
             :data-level="matchLevel(row.candidate)"
             data-testid="home-template-search-match"
           >
-            {{ matchPercent(row.candidate) }}%
+            {{ shownScore(row.candidate) }}
           </span>
           <span v-if="cornerBadges(row).length" class="absolute bottom-2 left-2 flex gap-1">
             <TemplateSearchBadge

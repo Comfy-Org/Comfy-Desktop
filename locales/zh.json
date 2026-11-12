@@ -65,7 +65,9 @@
       "matchStrong": "高度匹配",
       "matchGood": "匹配",
       "matchWeak": "较弱匹配",
-      "matchScore": "匹配度 {percent}%"
+      "matchScore": "匹配度 {percent}%",
+      "matchRaw": "原始分数 {raw}",
+      "matchUncalibrated": "原始分数，未校准"
     }
   },
   "installType": {

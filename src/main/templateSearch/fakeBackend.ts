@@ -20,6 +20,7 @@ function candidate(
     rewrite: extra.rewrite ?? false,
     needsDownload: (extra.missing ?? []).length > 0,
     score: extra.score ?? 0.9,
+    calibrated: null,
     belowThreshold: (extra.score ?? 0.9) < FAKE_THRESHOLD,
     missing: extra.missing ?? []
   }
