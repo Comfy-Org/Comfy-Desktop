@@ -15,7 +15,7 @@ const exposed = all(
   /^ {2}(\w+):/gm
 )
 const invoked = all(preload, /ipcRenderer\.invoke\('([\w:-]+)'/g)
-const handled = all(main, /handleFromApps(?:Page)?\('([\w:-]+)'/g)
+const handled = all(main, /handleFromApp(?:sPage|s|Page)\('([\w:-]+)'/g)
 
 describe('Apps bridge wiring', () => {
   it('getInfo names exactly the calls the page gets', () => {
@@ -54,6 +54,34 @@ describe('Apps bridge wiring', () => {
     expect(preload).toContain(`ipcRenderer.on('${action}'`)
     expect(preload).toContain(`ipcRenderer.removeListener('${action}'`)
     expect(main).toContain('ipcMain.on(APPS_OUTPUT_ACTION_CHANNEL, relayOutputAction)')
+  })
+
+  it('passes the app tag with a Cloud run only when the page gives one', () => {
+    expect(preload).toMatch(/const BRIDGE = 3\n/)
+    expect(preload).toContain("ipcRenderer.invoke('comfy-apps:run', workflow, app)")
+    expect(main).toMatch(/async function run\(page: AppPage, workflow: unknown, app\?: unknown\)/)
+    expect(main).toContain('body: cloudPromptBody(workflow, token, tag)')
+  })
+
+  it('reports Cloud runs that fail before a job exists, and saved results', () => {
+    expect(main).toContain("cloudRunFailed(appId, { step: 'sign_in' })")
+    expect(main).toContain('cloudRunFailed(appId, cloudRefusal(res.status, answer))')
+    expect(main).toContain('cloudRunFailed(appId, cloudRefusal(res.status, body))')
+    expect(main).toContain("step: 'upload'")
+    expect(main).toContain("trackApps('output_saved', { app: page.app, where })")
+    for (const channel of ['run', 'upload-image', 'save-file', 'local-fetch']) {
+      expect(main).toContain(`handleFromAppPage('comfy-apps:${channel}'`)
+    }
+  })
+
+  it('tells the local calls which app page asked', () => {
+    expect(main).toContain('startLocal(want, page.app)')
+    expect(main).toContain('localFetch(req, page.app)')
+    expect(main).toContain('localDownload(req, page.app)')
+  })
+
+  it('refuses to show the apps page while the remote switch is off', () => {
+    expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
   })
 
   it('local events go out on the channel the preload listens to', () => {
