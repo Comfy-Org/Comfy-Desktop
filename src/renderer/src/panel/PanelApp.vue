@@ -6,6 +6,7 @@ import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
+import McpSetupModal from '../views/mcp/McpSetupModal.vue'
 import AppSidebar from './AppSidebar.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import HomeView from './HomeView.vue'
@@ -302,10 +303,19 @@ function handleProgressSuccessChoice(actionId: string, targetInstallationId: str
   }
 }
 
+function closeMcpSetup(): void {
+  window.api.closeCurrentPanel()
+}
+
+function openMcpTerminal(): void {
+  if (!installationId) return
+  window.api.openInstancePicker({ installationId, initialTab: 'console' })
+}
+
 watch(
   activePanel,
   (next) => {
-    const isOverlay = next === 'feedback' || next === 'announcement'
+    const isOverlay = next === 'feedback' || next === 'announcement' || next === 'mcp-setup'
     document.body.classList.toggle('panel-overlay-mode', isOverlay)
     if (!isOverlay) return
     void nextTick(() => window.api.signalOverlayReady())
@@ -544,6 +554,12 @@ onUnmounted(() => {
 
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
+    <McpSetupModal
+      v-if="activePanel === 'mcp-setup'"
+      :port="sessionStore.runningInstances.get(installationId)?.port"
+      @close="closeMcpSetup"
+      @open-terminal="openMcpTerminal"
+    />
 
     <ModalDialog />
     <DialogHost />

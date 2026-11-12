@@ -1825,5 +1825,34 @@
     "label": "While you wait",
     "cloudFailedTitle": "Couldn't open Comfy Cloud",
     "cloudFailedMessage": "Check your connection and try again from the dashboard."
+  },
+  "mcpSetup": {
+    "title": "Connect a local agent",
+    "lead": "Let Claude Code, Cursor or any MCP agent run workflows on this build, using your nodes, models and templates.",
+    "pathLabel": "Setup path",
+    "haveAgent": "I have an agent",
+    "needAgent": "I need one",
+    "copyCommand": "Copy command",
+    "copied": "Copied",
+    "videoAlt": "How to connect an agent to Comfy over MCP",
+    "mute": "Mute video",
+    "unmute": "Unmute video",
+    "docs": "Read the docs",
+    "inAgent": {
+      "label": "Use Comfy in your agent",
+      "body": "Run this in your own terminal, then restart your agent.",
+      "jsonHint": "Using Cursor or Claude Desktop?",
+      "copyJson": "Copy the JSON config"
+    },
+    "inTerminal": {
+      "label": "Run your agent in the Comfy terminal",
+      "body": "Installs into this build's Python, then starts Claude Code.",
+      "open": "Open terminal"
+    },
+    "agents": {
+      "label": "Install an agent",
+      "body": "Comfy MCP works with any agent that speaks MCP. Install one, then come back to connect it.",
+      "installGuide": "Install guide"
+    }
   }
 }

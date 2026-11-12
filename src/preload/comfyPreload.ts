@@ -38,6 +38,10 @@ function openTerminal(): Promise<boolean> {
   return ipcRenderer.invoke('desktop2-open-terminal')
 }
 
+function openMcpSetup(): Promise<boolean> {
+  return ipcRenderer.invoke('desktop2-open-mcp-setup')
+}
+
 function openTerminalPopout(): Promise<void> {
   return ipcRenderer.invoke('desktop2-open-terminal-popout')
 }
@@ -327,6 +331,7 @@ const bridge = {
     ipcRenderer.send('desktop2-theme-report', { bg, text })
   },
   openTerminal,
+  openMcpSetup,
   Terminal,
   Logs,
   Telemetry,

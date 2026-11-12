@@ -1825,5 +1825,34 @@
     "label": "等待期间",
     "cloudFailedTitle": "无法打开 Comfy Cloud",
     "cloudFailedMessage": "请检查网络连接，然后从主面板重试。"
+  },
+  "mcpSetup": {
+    "title": "连接本地智能体",
+    "lead": "让 Claude Code、Cursor 或任何 MCP 智能体使用你的节点、模型和模板，在此构建上运行工作流。",
+    "pathLabel": "设置方式",
+    "haveAgent": "我有智能体",
+    "needAgent": "我需要一个",
+    "copyCommand": "复制命令",
+    "copied": "已复制",
+    "videoAlt": "如何通过 MCP 将智能体连接到 Comfy",
+    "mute": "静音视频",
+    "unmute": "取消静音",
+    "docs": "阅读文档",
+    "inAgent": {
+      "label": "在你的智能体中使用 Comfy",
+      "body": "在你自己的终端中运行此命令，然后重启智能体。",
+      "jsonHint": "使用 Cursor 或 Claude Desktop？",
+      "copyJson": "复制 JSON 配置"
+    },
+    "inTerminal": {
+      "label": "在 Comfy 终端中运行智能体",
+      "body": "安装到此构建的 Python 中，然后启动 Claude Code。",
+      "open": "打开终端"
+    },
+    "agents": {
+      "label": "安装智能体",
+      "body": "Comfy MCP 适用于任何支持 MCP 的智能体。安装后回来连接即可。",
+      "installGuide": "安装指南"
+    }
   }
 }

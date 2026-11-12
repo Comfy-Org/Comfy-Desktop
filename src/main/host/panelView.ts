@@ -148,7 +148,7 @@ export function setActivePanel(windowKey: number, panel: ComfyPanelKey): void {
   if (mode !== 'comfy') {
     ensurePanelView(windowKey, entry, mode)
   }
-  const isOverlay = mode === 'feedback' || mode === 'announcement'
+  const isOverlay = mode === 'feedback' || mode === 'announcement' || mode === 'mcp-setup'
   entry.pendingOverlayReveal = isOverlay
   if (entry.overlayRevealTimer) clearTimeout(entry.overlayRevealTimer)
   entry.overlayRevealTimer = undefined
