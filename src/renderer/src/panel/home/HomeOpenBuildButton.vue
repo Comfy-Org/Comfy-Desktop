@@ -16,7 +16,6 @@ const { builds, target, statusOf } = defineProps<{
 
 const emit = defineEmits<{
   open: [build: Installation]
-  select: [build: Installation]
 }>()
 
 const { t } = useI18n()
@@ -76,7 +75,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
           :value="build.id"
           class="ui-select-option w-full data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
           data-testid="home-open-build-option"
-          @select="emit('select', build)"
+          @select="emit('open', build)"
         >
           <component
             :is="isCloudBuild(build) ? Cloud : Laptop"

@@ -57,7 +57,6 @@ const NEWEST = build({
 
 beforeEach(() => {
   vi.clearAllMocks()
-  window.localStorage.clear()
   listHomeWorkflows.mockResolvedValue([])
   openCatalogWorkflow.mockResolvedValue(true)
   openCatalogWorkflowHub.mockResolvedValue(true)
@@ -430,17 +429,12 @@ describe('Home builds', () => {
   })
 
   it('marks Open ComfyUI with the kind of build it opens', async () => {
-    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    getInstallations.mockResolvedValue([CLOUD, OLDEST])
     const wrapper = await openHome()
-    const icon = () => wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement
 
-    expect(icon().dataset.kind).toBe('local')
-
-    await openBuildMenu(wrapper)
-    buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await flushPromises()
-
-    expect(icon().dataset.kind).toBe('cloud')
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('cloud')
   })
 
   it('lists every build of the workspace with what each is doing in the Open ComfyUI menu', async () => {
@@ -462,7 +456,7 @@ describe('Home builds', () => {
     expect(buildOptions()[0]!.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('opens the build picked in the menu, without launching it on pick', async () => {
+  it('opens ComfyUI in the build picked in the menu, without changing the current one', async () => {
     getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
     const wrapper = await openHome()
     await openBuildMenu(wrapper)
@@ -470,32 +464,7 @@ describe('Home builds', () => {
     buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await flushPromises()
 
-    expect(wrapper.emitted('pick')).toBeUndefined()
-    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Comfy Cloud')
-
-    await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
-
     expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
-  })
-
-  it('keeps the build picked in the menu the next time Home opens', async () => {
-    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
-    const first = await openHome()
-    await openBuildMenu(first)
-    buildOptions()[2]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    await flushPromises()
-    first.unmount()
-
-    const second = await openHome()
-
-    expect(second.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Flux Sandbox')
-  })
-
-  it('goes back to the most recent build when the remembered one is gone', async () => {
-    window.localStorage.setItem('home.openBuildId', 'removed-build')
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
-    const wrapper = await openHome()
-
     expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
   })
 

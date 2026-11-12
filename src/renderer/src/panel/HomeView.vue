@@ -44,29 +44,6 @@ const workspaceBuilds = computed(() =>
 const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
 const buildTones = computed(() => homeBuildTones(builds.value))
 const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
-const OPEN_BUILD_KEY = 'home.openBuildId'
-const selectedBuildId = ref<string | null>(readOpenBuildId())
-const openTarget = computed(
-  () =>
-    workspaceBuilds.value.find((build) => build.id === selectedBuildId.value) ??
-    mostRecentBuild.value
-)
-
-function readOpenBuildId(): string | null {
-  try {
-    return window.localStorage.getItem(OPEN_BUILD_KEY)
-  } catch {
-    return null
-  }
-}
-
-function selectOpenBuild(build: Installation): void {
-  selectedBuildId.value = build.id
-  try {
-    window.localStorage.setItem(OPEN_BUILD_KEY, build.id)
-  } catch {}
-}
-
 function buildStatus(build: Installation) {
   return homeBuildStatus(build, sessionStore)
 }
@@ -106,13 +83,12 @@ onMounted(() => {
     data-testid="home-view"
   >
     <HomeOpenBuildButton
-      v-if="openTarget"
+      v-if="mostRecentBuild"
       class="absolute top-4 right-4 z-10"
       :builds="workspaceBuilds"
-      :target="openTarget"
+      :target="mostRecentBuild"
       :status-of="buildStatus"
       @open="emit('pick', $event)"
-      @select="selectOpenBuild"
     />
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
