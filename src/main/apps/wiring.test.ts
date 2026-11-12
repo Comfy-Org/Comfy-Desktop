@@ -43,6 +43,10 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
+  it('refuses to show the apps page while the remote switch is off', () => {
+    expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
+  })
+
   it('local events go out on the channel the preload listens to', () => {
     const sent = local.match(/LOCAL_EVENT_CHANNEL = '([\w:-]+)'/)![1]
     expect(preload).toContain(`ipcRenderer.on('${sent}'`)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import { AppWindow, ChartColumn, Gauge, House, Images, Server } from 'lucide-vue-next'
@@ -30,9 +30,21 @@ const { t } = useI18n()
 const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
 
+const appsEnabled = ref(false)
+
+onMounted(async () => {
+  try {
+    appsEnabled.value = (await window.api.getAppsEnabled()) === true
+  } catch {
+    appsEnabled.value = false
+  }
+})
+
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
-  { page: 'apps', label: t('sidebar.apps'), icon: AppWindow },
+  ...(appsEnabled.value
+    ? [{ page: 'apps' as const, label: t('sidebar.apps'), icon: AppWindow }]
+    : []),
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])

@@ -42,6 +42,7 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
+import { isAppsEnabled } from './appsSwitch'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -156,6 +157,7 @@ function entryForPanel(
 }
 
 function showApps(event: IpcMainEvent, rect: unknown): void {
+  if (!isAppsEnabled()) return
   const found = entryForPanel(event.sender)
   if (!found) return
   if (!APPS_ORIGIN) return tellPanelLoadFailed(event.sender, APPS_URL)
