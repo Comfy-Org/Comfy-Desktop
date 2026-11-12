@@ -139,8 +139,8 @@ describe('resolveOutputFiles', () => {
       ],
       index: 0
     })
-    const resolve = async (file: { filename: string }) =>
-      file.filename === 'found.png' ? '/Users/me/output/found.png' : null
+    const resolve = async (file: { filename: string } | null) =>
+      file?.filename === 'found.png' ? '/Users/me/output/found.png' : null
 
     const { items, files } = await resolveOutputFiles(request!.items, resolve)
 
@@ -150,6 +150,26 @@ describe('resolveOutputFiles', () => {
     expect(items[2]).toMatchObject({ folder: '/Users/me/output/apps' })
     expect(items[3]).toMatchObject({ savedOn: 'cloud' })
     for (const item of items) expect(item).not.toHaveProperty('comfyFile')
+  })
+
+  it('looks up an output made on this computer that has no reference or folder by its bytes', async () => {
+    const request = outputRequest({
+      items: [picture({ savedOn: 'computer' }), picture()],
+      index: 0
+    })
+    const seen: (unknown[] | null)[] = []
+    const { items, files } = await resolveOutputFiles(request!.items, async (file, bytes) => {
+      seen.push([file, [...bytes]])
+      return '/Users/me/output/apps/sdr-to-hdr/hdr_00003.avif'
+    })
+
+    expect(seen).toEqual([[null, [1, 2, 3]]])
+    expect(files).toEqual(['/Users/me/output/apps/sdr-to-hdr/hdr_00003.avif', null])
+    expect(items[0]).toMatchObject({
+      savedOn: 'computer',
+      folder: '/Users/me/output/apps/sdr-to-hdr'
+    })
+    expect(items[1]).not.toHaveProperty('savedOn')
   })
 
   it('treats a lookup that fails as not found', async () => {

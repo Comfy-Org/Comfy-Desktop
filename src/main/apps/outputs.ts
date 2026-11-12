@@ -97,19 +97,23 @@ export function outputRequest(
   return index < outputs.length ? { items: outputs, index } : null
 }
 
+export function needsLookup(item: AppOutputRequestItem): boolean {
+  return item.savedOn === 'computer' && (item.comfyFile !== undefined || item.folder === undefined)
+}
+
 export async function resolveOutputFiles(
   items: AppOutputRequestItem[],
-  resolve: (file: ComfyOutputFile, sizeBytes: number) => Promise<string | null>
+  resolve: (file: ComfyOutputFile | null, bytes: Uint8Array) => Promise<string | null>
 ): Promise<{ items: AppOutputItem[]; files: (string | null)[] }> {
   const files = await Promise.all(
     items.map((item) =>
-      item.comfyFile ? resolve(item.comfyFile, item.bytes.byteLength).catch(() => null) : null
+      needsLookup(item) ? resolve(item.comfyFile ?? null, item.bytes).catch(() => null) : null
     )
   )
   const shown = items.map(({ comfyFile, folder, ...item }, i): AppOutputItem => {
     const file = files[i]
-    if (comfyFile) return file ? { ...item, savedOn: 'computer', folder: path.dirname(file) } : item
-    return folder ? { ...item, folder } : item
+    if (file) return { ...item, savedOn: 'computer', folder: path.dirname(file) }
+    return folder && !comfyFile ? { ...item, folder } : item
   })
   return { items: shown, files }
 }

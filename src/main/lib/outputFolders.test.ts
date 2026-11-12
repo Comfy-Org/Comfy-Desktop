@@ -69,6 +69,7 @@ import {
   MAX_FILES,
   comfyOutputPath,
   listOutputFolder,
+  matchingOutputPath,
   listOutputFolders,
   outputDirOverride,
   outputFileUrl,
@@ -253,6 +254,39 @@ describe('comfyOutputPath', () => {
 
     expect(await comfyOutputPath(install('Cloud', { sourceId: 'cloud' }), file, 4)).toBeNull()
     expect(await comfyOutputPath(install('Old', { sourceId: 'desktop' }), file, 4)).toBeNull()
+  })
+})
+
+describe('matchingOutputPath', () => {
+  const apps = install('Apps', { useSharedOutput: false, outputDir: ownDir })
+  const bytesOf = (text: string) => new TextEncoder().encode(text)
+
+  it("finds the file in the build's output folder with exactly the same bytes", async () => {
+    write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00001.png'), 'other picture')
+    write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png'), 'same picture!')
+
+    expect(await matchingOutputPath(apps, bytesOf('same picture!'))).toBe(
+      path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png')
+    )
+  })
+
+  it('finds nothing when no file has those bytes, or there are no bytes', async () => {
+    write(path.join(ownDir, 'kept.png'), 'kept')
+
+    expect(await matchingOutputPath(apps, bytesOf('gone'))).toBeNull()
+    expect(await matchingOutputPath(apps, new Uint8Array())).toBeNull()
+  })
+
+  it("does not follow links out of the build's output folder", async () => {
+    write(path.join(outsideDir, 'secret.png'), 'secret bytes')
+    write(path.join(sharedDir, 'shared.png'), 'shared bytes')
+    fs.symlinkSync(outsideDir, path.join(ownDir, 'escape'))
+    fs.symlinkSync(path.join(sharedDir, 'shared.png'), path.join(ownDir, 'shared.png'))
+
+    expect(await matchingOutputPath(apps, bytesOf('secret bytes'))).toBeNull()
+    expect(await matchingOutputPath(apps, bytesOf('shared bytes'))).toBeNull()
+    fs.rmSync(path.join(ownDir, 'escape'))
+    fs.rmSync(path.join(ownDir, 'shared.png'))
   })
 })
 

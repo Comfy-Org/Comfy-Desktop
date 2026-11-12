@@ -25,6 +25,8 @@ const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
+const MAX_MATCH_ENTRIES = 5000
+const MAX_MATCH_DEPTH = 4
 
 const thumbnails = new Map<string, Buffer>()
 const thumbnailQueue: (() => void)[] = []
@@ -92,6 +94,44 @@ export async function comfyOutputPath(
   if (!real || !isInside(real, root, path.sep)) return null
   const stat = await fsp.stat(real).catch(() => null)
   return stat?.isFile() && stat.size === sizeBytes ? real : null
+}
+
+async function sameSizeFiles(root: string, size: number): Promise<string[]> {
+  const found: string[] = []
+  const queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }]
+  let seen = 0
+  while (queue.length > 0 && seen < MAX_MATCH_ENTRIES) {
+    const { dir, depth } = queue.shift()!
+    const dirents = await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const dirent of dirents) {
+      if (++seen > MAX_MATCH_ENTRIES) break
+      if (dirent.name.startsWith('.')) continue
+      const full = path.join(dir, dirent.name)
+      if (dirent.isDirectory() && depth < MAX_MATCH_DEPTH)
+        queue.push({ dir: full, depth: depth + 1 })
+      if (!dirent.isFile() || !assetKind(dirent.name)) continue
+      const stat = await fsp.stat(full).catch(() => null)
+      if (stat?.size === size) found.push(full)
+    }
+  }
+  return found
+}
+
+export async function matchingOutputPath(
+  inst: InstallationRecord,
+  bytes: Uint8Array
+): Promise<string | null> {
+  const dir = outputDirFor(inst, sharedOutputDir())
+  const root = dir ? await realDir(dir) : null
+  if (!root || bytes.byteLength === 0) return null
+  const wanted = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  for (const file of await sameSizeFiles(root, bytes.byteLength)) {
+    const content = await fsp.readFile(file).catch(() => null)
+    if (!content?.equals(wanted)) continue
+    const real = await allowedPath(file)
+    if (real && isInside(real, root, path.sep)) return real
+  }
+  return null
 }
 
 export function outputFileUrl(file: string, thumbnailOf?: number): string {
