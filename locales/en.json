@@ -95,18 +95,12 @@
     "viewInAssets": "View in Assets",
     "local": {
       "folderActions": "Folder actions",
-      "inFolder": "In {name}",
+      "howFoldersWork": "How folders work",
+      "foldersHint": "Each build saves its images and videos to a folder. Most builds share one.",
+      "noBuilds": "No build saves here yet",
       "savedBy": "Saved here by",
-      "groups": {
-        "shared": {
-          "title": "Shared folder",
-          "hint": "Builds that use the shared folders all save their files here."
-        },
-        "separate": {
-          "title": "Separate build folders",
-          "hint": "These builds save their files in their own folder, not in the shared one."
-        }
-      },
+      "moreBuilds": "and 1 more | and {count} more",
+      "showBuildNames": "Show build names",
       "showInFinder": "Show in Finder",
       "showInExplorer": "Show in Explorer",
       "copyPath": "Copy path",

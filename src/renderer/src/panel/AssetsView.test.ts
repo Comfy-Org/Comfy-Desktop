@@ -532,22 +532,26 @@ describe('AssetsView on This computer', () => {
     listOutputFolders.mockResolvedValue(outputFolders())
   })
 
-  it('shows each output folder by its own name and where it is, without the file tools', async () => {
+  it('shows each output folder by its own name and where it is, under the builds that save there', async () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
     await openThisComputer(wrapper)
     const cloudLoads = listAssets.mock.calls.length
 
-    const sharedGroup = wrapper.get('[data-testid="local-group-shared"]')
-    expect(sharedGroup.get('h2').text()).toBe('Shared folder')
-    const shared = sharedGroup.get(`[data-testid="local-folder-${SHARED}"]`)
-    expect(shared.text()).toContain('output')
-    expect(shared.text()).toContain('In ComfyUI-Shared')
-    expect(shared.text()).not.toContain(SHARED)
-    const separateGroup = wrapper.get('[data-testid="local-group-separate"]')
-    expect(separateGroup.get('h2').text()).toBe('Separate build folders')
-    const apps = separateGroup.get(`[data-testid="local-folder-${APPS}"]`)
-    expect(apps.text()).toContain('output')
-    expect(apps.text()).toContain('In ComfyUI-Apps')
+    const heading = (path: string) => wrapper.get(`[data-testid="local-folder-heading-${path}"] h2`)
+    const card = (path: string) => wrapper.get(`[data-testid="local-folder-${path}"]`)
+    expect(heading(SHARED).text()).toBe('Test Instance, My Local 1')
+    expect(
+      card(SHARED)
+        .findAll('span')
+        .map((span) => span.text())
+    ).toEqual(['output', '/Users/…/ComfyUI-Shared'])
+    expect(card(SHARED).attributes('title')).toBe(SHARED)
+    expect(heading(APPS).text()).toBe('Apps')
+    expect(
+      card(APPS)
+        .findAll('span')
+        .map((span) => span.text())
+    ).toEqual(['output', '/Users/…/ComfyUI-Apps'])
     expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="local-open-folder"]').exists()).toBe(false)
 
@@ -557,55 +561,117 @@ describe('AssetsView on This computer', () => {
     expect(listAssets).toHaveBeenCalledTimes(cloudLoads)
   })
 
-  it('leaves out a section that has no folders', async () => {
-    listOutputFolders.mockResolvedValue(outputFolders().slice(0, 1))
+  it.each([
+    ['C:\\Users\\me\\ComfyUI-Shared\\output', 'C:\\…\\ComfyUI-Shared'],
+    ['\\\\server\\share\\renders\\output', '\\\\server\\…\\renders'],
+    ['C:\\output', 'C:\\'],
+    ['/output', '/'],
+    ['/Users/me/output', '/Users/me']
+  ])('shortens the folder that holds %s to %s', async (path, shown) => {
+    listOutputFolders.mockResolvedValue([{ path, shared: true, builds: ['Test Instance'] }])
     const wrapper = await mountAssets([])
     await openThisComputer(wrapper)
 
-    expect(wrapper.find('[data-testid="local-group-shared"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="local-group-separate"]').exists()).toBe(false)
+    expect(
+      wrapper.get(`[data-testid="local-folder-${CSS.escape(path)}"] span:last-child`).text()
+    ).toBe(shown)
   })
 
-  it('explains a section when its info icon gets focus', async () => {
+  it('says when no build saves to a folder yet', async () => {
+    listOutputFolders.mockResolvedValue([{ path: SHARED, shared: true, builds: [] }])
     const wrapper = await mountAssets([], [], { attachTo: document.body })
     await openThisComputer(wrapper)
-    const hint = wrapper.get('[data-testid="local-group-hint-separate"] [role="button"]')
 
-    ;(hint.element as HTMLElement).focus()
-    await flushPromises()
-
-    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
-      'These builds save their files in their own folder, not in the shared one.'
+    expect(wrapper.get(`[data-testid="local-folder-heading-${SHARED}"] h2`).text()).toBe(
+      'No build saves here yet'
+    )
+    const card = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
+    expect(document.getElementById(card.attributes('aria-describedby')!)?.textContent).toBe(
+      'No build saves here yet'
     )
   })
 
-  it('names the builds that save to a folder when the folder gets focus', async () => {
+  it('shows two build names and lists all of them from the +N button', async () => {
+    const builds = ['Test Instance', 'My Local 1', 'MyLocalComfy', 'ComfyUI (1)']
+    listOutputFolders.mockResolvedValue([{ path: SHARED, shared: true, builds }])
     const wrapper = await mountAssets([], [], { attachTo: document.body })
     await openThisComputer(wrapper)
-    const card = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
-    expect(document.querySelector('.tooltip-bubble')).toBeNull()
-    ;(card.element as HTMLButtonElement).focus()
+    const more = wrapper.get(`[data-testid="local-folder-more-${SHARED}"]`)
+    expect(more.text()).toBe('+2')
+    expect(document.getElementById(more.attributes('aria-describedby')!)?.textContent).toBe(
+      builds.join(', ')
+    )
+    ;(more.element as HTMLButtonElement).focus()
     await flushPromises()
 
-    const description = document.getElementById(card.attributes('aria-describedby')!)
-    expect(description?.textContent).toBe('Saved here by Test Instance, My Local 1')
-    const bubble = document.querySelector('.tooltip-bubble')
-    expect(bubble?.textContent).toContain('Saved here by')
-    expect(bubble?.textContent).toContain('Test Instance')
-    expect(bubble?.textContent).toContain('My Local 1')
+    const bubble = document.querySelector('.tooltip-bubble')?.textContent
+    expect(bubble).toContain('Saved here by')
+    for (const name of builds) expect(bubble).toContain(name)
   })
 
-  it('names the one build that saves to a separate folder', async () => {
+  it('lists at most ten builds in the tooltip and counts the rest', async () => {
+    const builds = Array.from({ length: 13 }, (_, n) => `Build ${n + 1}`)
+    listOutputFolders.mockResolvedValue([{ path: SHARED, shared: true, builds }])
     const wrapper = await mountAssets([], [], { attachTo: document.body })
     await openThisComputer(wrapper)
-    const card = wrapper.get(`[data-testid="local-folder-${APPS}"]`)
-
-    ;(card.element as HTMLButtonElement).focus()
+    ;(
+      wrapper.get(`[data-testid="local-folder-more-${SHARED}"]`).element as HTMLButtonElement
+    ).focus()
     await flushPromises()
 
-    const description = document.getElementById(card.attributes('aria-describedby')!)
-    expect(description?.textContent).toBe('Saved here by Apps')
-    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Apps')
+    const bubble = document.querySelector('.tooltip-bubble')?.textContent
+    expect(bubble).toContain('Build 10')
+    expect(bubble).not.toContain('Build 11')
+    expect(bubble).toContain('and 3 more')
+  })
+
+  it('lists cut-off build names on hover and from a keyboard button', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const trigger = wrapper.get(`[data-testid="local-folder-heading-${SHARED}"]`)
+    expect(wrapper.find(`[data-testid="local-folder-names-${SHARED}"]`).exists()).toBe(false)
+
+    trigger.get('h2').element.style.maxWidth = '40px'
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    await flushPromises()
+    const names = wrapper.get(`[data-testid="local-folder-names-${SHARED}"]`)
+    expect(names.attributes('aria-label')).toBe('Show build names')
+    ;(names.element as HTMLButtonElement).focus()
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('My Local 1')
+  })
+
+  it('has no +N button and no tooltip when every build name fits', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const trigger = wrapper.get(`[data-testid="local-folder-heading-${SHARED}"]`)
+
+    await trigger.trigger('pointermove', { pointerType: 'mouse' })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    await flushPromises()
+
+    expect(wrapper.find(`[data-testid="local-folder-more-${SHARED}"]`).exists()).toBe(false)
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+  })
+
+  it('explains how the folders work on focus and to screen readers', async () => {
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const help = wrapper.get('[data-testid="local-folders-help"] button')
+    const hint = 'Each build saves its images and videos to a folder. Most builds share one.'
+    expect(document.getElementById(help.attributes('aria-describedby')!)?.textContent).toBe(hint)
+    ;(help.element as HTMLButtonElement).focus()
+    await flushPromises()
+
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(hint)
+  })
+
+  it('keeps the help button in place while the folders load', async () => {
+    listOutputFolders.mockReturnValue(new Promise(() => {}))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    expect(wrapper.find('[data-testid="local-folders-help"]').exists()).toBe(true)
   })
 
   it('shows a folder in Finder from its menu without opening it', async () => {
