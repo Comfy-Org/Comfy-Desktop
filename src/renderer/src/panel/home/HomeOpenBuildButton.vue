@@ -5,6 +5,8 @@ import { DropdownMenuRadioGroup } from 'reka-ui'
 import { Cloud, Laptop } from 'lucide-vue-next'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import SplitButton from '../../components/ui/SplitButton.vue'
+import Tooltip from '../../components/ui/Tooltip.vue'
+import { useSessionStore } from '../../stores/sessionStore'
 import { isCloudBuild, type HomeBuildStatus } from './homeBuild'
 import type { Installation } from '../../types/ipc'
 
@@ -22,22 +24,22 @@ const { t } = useI18n()
 
 const open = ref(false)
 
-function statusLabel(build: Installation): string {
-  switch (statusOf(build)) {
-    case 'running':
-      return t('home.buildRunning')
-    case 'starting':
-      return t('home.buildStarting')
-    case 'always-on':
-      return t('home.buildAlwaysOn')
-    default:
-      return t('home.buildReady')
-  }
-}
+const sessionStore = useSessionStore()
 
 function isLive(build: Installation): boolean {
   const status = statusOf(build)
   return status === 'running' || status === 'always-on'
+}
+
+function brokenReason(build: Installation): string | undefined {
+  return build.statusTag?.style === 'danger' ? build.statusTag.label : undefined
+}
+
+function problem(build: Installation): string | undefined {
+  return (
+    brokenReason(build) ??
+    (sessionStore.errorInstances.has(build.id) ? t('home.buildDidntStart') : undefined)
+  )
 }
 
 function onWindowBlur(): void {
@@ -70,34 +72,30 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
     <template v-if="builds.length > 1" #menu>
       <DropdownMenuRadioGroup :model-value="target.id" class="flex flex-col gap-0.5">
-        <MenuRadioItem
-          v-for="build in builds"
-          :key="build.id"
-          as="button"
-          type="button"
-          :value="build.id"
-          class="ui-select-option w-full data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
-          data-testid="home-open-build-option"
-          @select="emit('open', build)"
-        >
-          <component
-            :is="isCloudBuild(build) ? Cloud : Laptop"
-            class="shrink-0"
-            :size="14"
-            aria-hidden="true"
-          />
-          <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
-          <span
-            class="flex shrink-0 items-center gap-1.5 text-muted-foreground"
-            data-testid="home-open-build-status"
-            ><span
-              v-if="isLive(build)"
-              class="size-1.5 shrink-0 rounded-full bg-[#59d38c]"
-              aria-hidden="true"
-              data-testid="home-open-build-status-dot"
-            />{{ statusLabel(build) }}</span
+        <Tooltip v-for="build in builds" :key="build.id" :text="problem(build)" side="left">
+          <MenuRadioItem
+            as="button"
+            type="button"
+            :value="build.id"
+            :disabled="brokenReason(build) !== undefined"
+            class="group ui-select-option w-full data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
+            data-testid="home-open-build-option"
+            @select="emit('open', build)"
           >
-        </MenuRadioItem>
+            <span class="relative flex shrink-0">
+              <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="14" aria-hidden="true" />
+              <span
+                v-if="problem(build) || isLive(build)"
+                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full border-2 border-background group-data-[state=checked]:border-muted"
+                :class="problem(build) ? 'bg-destructive' : 'bg-[#59d38c]'"
+                aria-hidden="true"
+                data-testid="home-open-build-status-dot"
+                :data-tone="problem(build) ? 'danger' : 'live'"
+              />
+            </span>
+            <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
+          </MenuRadioItem>
+        </Tooltip>
       </DropdownMenuRadioGroup>
     </template>
   </SplitButton>
