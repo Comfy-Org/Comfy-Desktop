@@ -182,10 +182,15 @@ class SetupCancelled extends Error {
   }
 }
 
-function progressSender(totalBytes: number, onEvent: (e: SetupEvent) => void): WebContents {
+function progressSender(
+  s: Setup,
+  totalBytes: number,
+  onEvent: (e: SetupEvent) => void
+): WebContents {
   let lastAt = 0
   let lastStep = ''
   const send = (channel: string, payload: unknown) => {
+    if (s.cancelled && s.id) _operationAborts.get(s.id)?.abort()
     if (channel !== 'install-progress' || !payload || typeof payload !== 'object') return
     const { phase, ...detail } = payload as Record<string, unknown>
     const event = setupEvent(String(phase), detail, totalBytes)
@@ -199,15 +204,21 @@ function progressSender(totalBytes: number, onEvent: (e: SetupEvent) => void): W
   return { isDestroyed: () => false, send } as unknown as WebContents
 }
 
+const STALE_STATUSES = new Set(['failed', 'installing', 'partial-delete'])
+
 async function dropStale(inst: InstallationRecord): Promise<void> {
-  if (_operationAborts.has(inst.id) || (inst.status !== 'failed' && inst.status !== 'installing')) {
+  if (_operationAborts.has(inst.id) || !STALE_STATUSES.has(inst.status ?? '')) {
     throw new Error('The Apps build is busy in Comfy Desktop. Try again in a minute.')
   }
   const marker = await fsp
     .readFile(path.join(inst.installPath, MARKER_FILE), 'utf8')
     .catch(() => null)
   if (marker?.trim() === inst.id) {
-    await fsp.rm(inst.installPath, { recursive: true, force: true }).catch(() => {})
+    await fsp.rm(inst.installPath, { recursive: true, force: true }).catch(() => {
+      throw new Error(
+        `Comfy Desktop could not remove the old Apps build at ${inst.installPath}. Delete that folder and try again.`
+      )
+    })
   }
   await installations.remove(inst.id)
 }
@@ -238,15 +249,16 @@ async function runSetup(
       await installations.remove(id)
       throw new SetupCancelled()
     }
-    const result = (await installInstance(progressSender(bytes, onEvent), id)) as {
+    const result = (await installInstance(progressSender(s, bytes, onEvent), id)) as {
       message?: string
     }
     const inst = await installations.get(id)
+    if (s.cancelled) throw new SetupCancelled()
     if (inst?.status === 'installed') {
       onEvent(setupEnd('done'))
       return inst
     }
-    if (!inst || s.cancelled) throw new SetupCancelled()
+    if (!inst) throw new SetupCancelled()
     throw new Error(result.message || 'ComfyUI for apps did not install.')
   } catch (err) {
     const cancelled = err instanceof SetupCancelled
