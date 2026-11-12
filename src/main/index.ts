@@ -123,6 +123,8 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
+import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
+import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 import { readSmartAppControlState } from './lib/smartAppControl'
@@ -1016,6 +1018,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
+
+    void initWorkspaceMintSwitchFlag({ distinctId: installationId })
+
+    getCloudSession().resumeRevocations()
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)

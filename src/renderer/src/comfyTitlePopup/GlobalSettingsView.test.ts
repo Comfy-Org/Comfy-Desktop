@@ -542,6 +542,27 @@ describe('GlobalSettingsView', () => {
     expect(dirRows.every((r) => r.find('.storage-item-icon.is-shared').exists())).toBe(true)
   })
 
+  it('Storage tab explains the folders are shared and drops the redundant Shared tag', async () => {
+    installMockBridge()
+    const snapshot = makeSnapshot({
+      sharedDirectoriesFields: [
+        { id: 'inputDir', label: 'Input Directory', value: '/shared/in', type: 'path' },
+        { id: 'outputDir', label: 'Output Directory', value: '/shared/out', type: 'path' }
+      ]
+    })
+    const wrapper = mountView(snapshot)
+    await wrapper
+      .findAll('.gs-tab')
+      .find((t) => t.text() === 'Storage')!
+      .trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    expect(wrapper.find('.gs-storage-hint').text()).toContain('shared by every build')
+    expect(wrapper.find('.tag-shared').exists()).toBe(false)
+    expect(wrapper.find('.storage-dir-shared-tag').exists()).toBe(false)
+    const dirTags = wrapper.findAll('.gs-shared-dirs .storage-dir-tag').map((el) => el.text())
+    expect(dirTags).toEqual(['Input Directory', 'Output Directory'])
+  })
+
   it('Storage tab section tooltips state the global-vs-instance scope', async () => {
     installMockBridge()
     const snapshot = makeSnapshot({
