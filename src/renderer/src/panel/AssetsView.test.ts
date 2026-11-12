@@ -632,33 +632,55 @@ describe('AssetsView on This computer', () => {
     expect(wrapper.find(`[data-testid="local-folder-names-${SHARED}"]`).exists()).toBe(false)
 
     trigger.get('h2').element.style.maxWidth = '40px'
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    await flushPromises()
-    const names = wrapper.get(`[data-testid="local-folder-names-${SHARED}"]`)
+    const names = await vi.waitFor(() =>
+      wrapper.get(`[data-testid="local-folder-names-${SHARED}"]`)
+    )
     expect(names.attributes('aria-label')).toBe('Show build names')
     ;(names.element as HTMLButtonElement).focus()
     await flushPromises()
     expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('My Local 1')
   })
 
-  it('has no +N button and no tooltip when every build name fits', async () => {
+  it('says who saves to a folder on hover, with no +N button when every name fits', async () => {
     const wrapper = await mountAssets([], [], { attachTo: document.body })
     await openThisComputer(wrapper)
-    const trigger = wrapper.get(`[data-testid="local-folder-heading-${SHARED}"]`)
+    const trigger = wrapper.get(`[data-testid="local-folder-heading-${APPS}"]`)
 
     await trigger.trigger('pointermove', { pointerType: 'mouse' })
     await new Promise((resolve) => setTimeout(resolve, 150))
     await flushPromises()
 
-    expect(wrapper.find(`[data-testid="local-folder-more-${SHARED}"]`).exists()).toBe(false)
+    expect(wrapper.find(`[data-testid="local-folder-more-${APPS}"]`).exists()).toBe(false)
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Saved here by')
+  })
+
+  it('shows the build list only for a folder that builds use', async () => {
+    listOutputFolders.mockResolvedValue([
+      { path: SHARED, shared: true, builds: [] },
+      { path: APPS, shared: false, builds: ['Apps'] }
+    ])
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const hover = async (path: string): Promise<void> => {
+      await wrapper
+        .get(`[data-testid="local-folder-heading-${path}"]`)
+        .trigger('pointermove', { pointerType: 'mouse' })
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      await flushPromises()
+    }
+
+    await hover(SHARED)
     expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    await hover(APPS)
+    expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Apps')
   })
 
   it('explains how the folders work on focus and to screen readers', async () => {
     const wrapper = await mountAssets([], [], { attachTo: document.body })
     await openThisComputer(wrapper)
     const help = wrapper.get('[data-testid="local-folders-help"] button')
-    const hint = 'Each build saves its images and videos to a folder. Most builds share one.'
+    const hint =
+      'The names above each folder are the builds that save their images and videos there. Most builds share one folder.'
     expect(document.getElementById(help.attributes('aria-describedby')!)?.textContent).toBe(hint)
     ;(help.element as HTMLButtonElement).focus()
     await flushPromises()
@@ -725,13 +747,38 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe(
-      "Couldn't copy. Click to try again"
+      "Couldn't copy. Try again"
     )
 
     writeText.mockResolvedValue()
     await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Path copied')
+  })
+
+  it('does not show an old copy result when the menu opens again', async () => {
+    let finishCopy = (): void => {}
+    const writeText = vi
+      .spyOn(navigator.clipboard, 'writeText')
+      .mockReturnValue(new Promise<void>((resolve) => (finishCopy = resolve)))
+    onTestFinished(() => writeText.mockRestore())
+    const wrapper = await mountAssets([], [], { attachTo: document.body })
+    await openThisComputer(wrapper)
+    const trigger = wrapper.get(`[data-testid="local-folder-menu-${APPS}"]`)
+
+    await trigger.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await wrapper
+      .get('[data-testid="local-folder-copy-path"]')
+      .trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    finishCopy()
+    await flushPromises()
+    await trigger.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Copy path')
   })
 
   it('opens on This computer when the user left it there', async () => {

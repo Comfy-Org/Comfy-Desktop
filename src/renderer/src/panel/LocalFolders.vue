@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  ChevronRight,
-  CircleHelp,
-  Ellipsis,
-  Folder,
-  FolderOpen,
-  FolderSearch
-} from 'lucide-vue-next'
+import { ChevronRight, CircleHelp, Folder, FolderOpen, FolderSearch, List } from 'lucide-vue-next'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { revealInFolderKey } from '../composables/usePlatform'
 import Button from '@comfyorg/design-system/button/Button'
@@ -62,7 +55,11 @@ const headingObserver = new ResizeObserver((entries) => {
     if (target.scrollWidth > target.clientWidth) next.add(path)
     else next.delete(path)
   }
-  clippedHeadings.value = next
+  if (
+    next.size !== clippedHeadings.value.size ||
+    [...next].some((path) => !clippedHeadings.value.has(path))
+  )
+    clippedHeadings.value = next
 })
 const revealLabel = computed(() => t(revealInFolderKey(window.api.platform)))
 const folders = ref<OutputFolder[] | null>(null)
@@ -149,10 +146,6 @@ function namesCutOff(output: OutputFolder): boolean {
   return output.builds.length > 0 && clippedHeadings.value.has(output.path)
 }
 
-function opensBuildList(output: OutputFolder): boolean {
-  return output.builds.length > 0 && (hiddenBuildCount(output) > 0 || namesCutOff(output))
-}
-
 function setBuildHeading(path: string, element: unknown): void {
   if (element instanceof Element) {
     headingPaths.set(element, path)
@@ -164,6 +157,10 @@ function setBuildHeading(path: string, element: unknown): void {
       headingObserver.unobserve(observed)
       headingPaths.delete(observed)
     }
+  if (!clippedHeadings.value.has(path)) return
+  const next = new Set(clippedHeadings.value)
+  next.delete(path)
+  clippedHeadings.value = next
 }
 
 onBeforeUnmount(() => headingObserver.disconnect())
@@ -395,13 +392,18 @@ defineExpose({ reload, loading })
                 side="top"
                 align="start"
                 keep-open-on-click
-                :should-open="() => opensBuildList(output)"
+                :disabled="output.builds.length === 0"
                 class="min-w-0 items-center gap-1.5"
                 :data-testid="`local-folder-heading-${output.path}`"
               >
                 <h2
                   :ref="(element) => setBuildHeading(output.path, element)"
-                  class="m-0 truncate text-ui font-medium text-foreground"
+                  :class="[
+                    'm-0 truncate text-ui',
+                    output.builds.length > 0
+                      ? 'font-medium text-foreground'
+                      : 'text-muted-foreground'
+                  ]"
                 >
                   {{ shownBuildNames(output) }}
                 </h2>
@@ -426,7 +428,7 @@ defineExpose({ reload, loading })
                   :aria-describedby="`${idPrefix}-builds-${index}`"
                   :data-testid="`local-folder-names-${output.path}`"
                 >
-                  <Ellipsis :size="14" aria-hidden="true" />
+                  <List :size="14" aria-hidden="true" />
                 </Button>
                 <template #content>
                   <span class="mb-0.5 block">{{ t('assets.local.savedBy') }}</span>
