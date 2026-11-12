@@ -69,6 +69,7 @@
       "tags": "标签",
       "tagsHint": "标签在 ComfyUI 中编辑。",
       "createdAt": "创建于 {date}",
+      "modifiedAt": "修改于 {date}",
       "fit": "适应",
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
