@@ -43,21 +43,20 @@ afterEach(() => {
 describe('McpSetupModal', () => {
   it('opens on "I have an agent" with both ways to connect for this build', async () => {
     await mountModal(8231)
-    expect(byTestId('mcp-option-agent').textContent).toContain('Use Comfy in your agent')
-    expect(byTestId('mcp-option-terminal').textContent).toContain(
-      'Run your agent in the Comfy terminal'
-    )
+    expect(byTestId('mcp-option-agent').textContent).toContain('Add it to Claude Code')
+    expect(byTestId('mcp-option-terminal').textContent).toContain('Or run it in the Comfy terminal')
     expect(document.body.textContent).toContain('COMFY_LOCAL_URL=http://127.0.0.1:8231')
     expect(document.querySelector('[data-testid="mcp-agents"]')).toBeNull()
   })
 
   it('reports which snippet was copied', async () => {
     await mountModal(8188)
+    byTestId('mcp-copy-install').click()
     byTestId('mcp-copy-claude-code').click()
     byTestId('mcp-copy-terminal').click()
     byTestId('mcp-copy-json').click()
     await flushPromises()
-    for (const client of ['claude_code', 'terminal', 'json']) {
+    for (const client of ['install', 'claude_code', 'terminal', 'json']) {
       expect(emitTelemetryAction).toHaveBeenCalledWith('comfy.desktop.mcp.snippet_copied', {
         client
       })

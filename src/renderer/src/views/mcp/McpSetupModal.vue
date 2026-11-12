@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowUpRight, SquareTerminal, Volume2, VolumeX, X } from 'lucide-vue-next'
+import { ArrowUpRight, Check, Copy, SquareTerminal, Volume2, VolumeX, X } from 'lucide-vue-next'
 import DesktopDialogSurface from '../../components/ui/DesktopDialogSurface.vue'
 import SegmentedControl from '../../components/ui/SegmentedControl.vue'
 import BaseCopyButton from '../../components/ui/BaseCopyButton.vue'
@@ -29,17 +29,47 @@ function selectPath(next: Path): void {
   emitTelemetryAction('comfy.desktop.mcp.path_selected', { path: next })
 }
 
-function trackCopy(client: McpSnippetClient): void {
+function trackCopy(client: McpSnippetClient | null): void {
+  if (!client) return
   emitTelemetryAction('comfy.desktop.mcp.snippet_copied', { client })
 }
 
-const jsonCopied = ref(false)
-async function copyJson(): Promise<void> {
-  trackCopy('json')
+const steps = computed(() => [
+  {
+    key: 'install',
+    number: 1,
+    title: t('mcpSetup.inAgent.install'),
+    command: snippets.value.install,
+    client: 'install' as const,
+    testId: 'mcp-copy-install'
+  },
+  {
+    key: 'register',
+    number: 2,
+    title: t('mcpSetup.inAgent.register'),
+    command: snippets.value.register,
+    client: 'claude_code' as const,
+    testId: 'mcp-copy-claude-code'
+  },
+  {
+    key: 'restart',
+    number: 3,
+    title: t('mcpSetup.inAgent.restart'),
+    command: '',
+    client: null,
+    testId: ''
+  }
+])
+
+const copiedClient = ref<McpSnippetClient | null>(null)
+async function copyText(client: McpSnippetClient, text: string): Promise<void> {
+  trackCopy(client)
   try {
-    await navigator.clipboard.writeText(snippets.value.json)
-    jsonCopied.value = true
-    setTimeout(() => (jsonCopied.value = false), 1600)
+    await navigator.clipboard.writeText(text)
+    copiedClient.value = client
+    setTimeout(() => {
+      if (copiedClient.value === client) copiedClient.value = null
+    }, 1600)
   } catch {}
 }
 
@@ -88,7 +118,7 @@ function toggleSound(): void {
       <X :size="18" />
     </button>
     <div
-      class="grid size-full grid-cols-[minmax(0,1fr)_clamp(340px,32vw,400px)] gap-2 overflow-hidden rounded-[20px] bg-content-background p-2 text-foreground shadow-[0_0_0_1px_oklch(1_0_0/0.07),0_30px_80px_-20px_rgb(0_0_0/0.6)] max-[820px]:grid-cols-1 max-[820px]:grid-rows-[minmax(0,1fr)_minmax(0,60vh)]"
+      class="grid size-full grid-cols-[minmax(0,1fr)_clamp(360px,36vw,440px)] gap-2 overflow-hidden rounded-[20px] bg-content-background p-2 text-foreground shadow-[0_0_0_1px_oklch(1_0_0/0.07),0_30px_80px_-20px_rgb(0_0_0/0.6)] max-[820px]:grid-cols-1 max-[820px]:grid-rows-[minmax(0,1fr)_minmax(0,60vh)]"
     >
       <div
         class="relative -my-2 -ml-2 min-h-0 overflow-hidden bg-black max-[820px]:-mr-2 max-[820px]:mb-0"
@@ -121,16 +151,16 @@ function toggleSound(): void {
         <div
           class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-x-hidden overflow-y-auto overscroll-contain pb-3"
         >
-          <header class="flex flex-col gap-1.5 pt-5 pr-3.5 pb-2 pl-5">
+          <header class="flex flex-col gap-1.5 px-6 pt-6 pb-2">
             <h2 class="m-0 text-[15px] leading-[1.35] font-semibold text-balance">
               {{ t('mcpSetup.title') }}
             </h2>
-            <p class="m-0 text-xs leading-[18px] text-pretty text-muted-foreground">
+            <p class="m-0 text-[13px] leading-5 text-pretty text-muted-foreground">
               {{ t('mcpSetup.lead') }}
             </p>
           </header>
 
-          <div class="px-5 pb-1">
+          <div class="px-6 pt-2 pb-2">
             <SegmentedControl
               :model-value="path"
               :options="pathOptions"
@@ -141,82 +171,110 @@ function toggleSound(): void {
           </div>
 
           <template v-if="path === 'have_agent'">
-            <section class="flex flex-col gap-2.5 px-5 py-2.5" data-testid="mcp-option-agent">
+            <section class="flex flex-col gap-4 px-6 py-3" data-testid="mcp-option-agent">
               <h3
                 class="m-0 text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase"
               >
                 {{ t('mcpSetup.inAgent.label') }}
               </h3>
-              <p class="m-0 text-[13px] leading-[19px] text-pretty">
-                {{ t('mcpSetup.inAgent.body') }}
-              </p>
-              <div class="flex items-start gap-2 rounded-[10px] bg-foreground/6 py-1.5 pr-1.5 pl-3">
-                <code
-                  class="min-w-0 flex-1 py-0.5 font-mono text-xs leading-5 [overflow-wrap:anywhere]"
-                  :title="snippets.claudeCode"
-                  >{{ snippets.claudeCode }}</code
+              <ol class="m-0 flex list-none flex-col gap-5 p-0">
+                <li
+                  v-for="step in steps"
+                  :key="step.key"
+                  class="grid grid-cols-[20px_minmax(0,1fr)] gap-3"
                 >
-                <BaseCopyButton
-                  :value="snippets.claudeCode"
-                  :aria-label="t('mcpSetup.copyCommand')"
-                  data-testid="mcp-copy-claude-code"
-                  @click="trackCopy('claude_code')"
-                />
-              </div>
-              <p class="m-0 text-xs text-muted-foreground">
-                {{ t('mcpSetup.inAgent.jsonHint') }}
-                <button
-                  type="button"
-                  class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-foreground hover:underline"
-                  data-testid="mcp-copy-json"
-                  @click="copyJson"
-                >
-                  {{ jsonCopied ? t('mcpSetup.copied') : t('mcpSetup.inAgent.copyJson') }}
-                </button>
-              </p>
+                  <span
+                    class="inline-flex size-5 items-center justify-center rounded-full bg-foreground/8 text-[11px] font-medium text-muted-foreground tabular-nums"
+                    aria-hidden="true"
+                    >{{ step.number }}</span
+                  >
+                  <div class="flex min-w-0 flex-col gap-2">
+                    <p class="m-0 text-[13px] leading-5 font-medium text-pretty">
+                      {{ step.title }}
+                    </p>
+                    <div
+                      v-if="step.command"
+                      class="flex items-start gap-2 rounded-[10px] bg-foreground/6 py-1.5 pr-1.5 pl-3"
+                    >
+                      <code
+                        class="min-w-0 flex-1 py-0.5 font-mono text-xs leading-5 [overflow-wrap:anywhere]"
+                        >{{ step.command }}</code
+                      >
+                      <BaseCopyButton
+                        :value="step.command"
+                        :aria-label="t('mcpSetup.copyCommand')"
+                        :data-testid="step.testId"
+                        @click="trackCopy(step.client)"
+                      />
+                    </div>
+                    <p
+                      v-if="step.key === 'register'"
+                      class="m-0 text-xs leading-[18px] text-muted-foreground"
+                    >
+                      {{ t('mcpSetup.inAgent.jsonHint') }}
+                      <button
+                        type="button"
+                        class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-foreground hover:underline"
+                        data-testid="mcp-copy-json"
+                        @click="copyText('json', snippets.json)"
+                      >
+                        {{
+                          copiedClient === 'json'
+                            ? t('mcpSetup.copied')
+                            : t('mcpSetup.inAgent.copyJson')
+                        }}
+                      </button>
+                    </p>
+                  </div>
+                </li>
+              </ol>
             </section>
 
-            <section class="flex flex-col gap-2.5 px-5 py-2.5" data-testid="mcp-option-terminal">
-              <h3
-                class="m-0 text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase"
-              >
-                {{ t('mcpSetup.inTerminal.label') }}
-              </h3>
-              <p class="m-0 text-[13px] leading-[19px] text-pretty">
-                {{ t('mcpSetup.inTerminal.body') }}
-              </p>
-              <div class="flex items-start gap-2 rounded-[10px] bg-foreground/6 py-1.5 pr-1.5 pl-3">
-                <code
-                  class="min-w-0 flex-1 py-0.5 font-mono text-xs leading-5 [overflow-wrap:anywhere]"
-                  :title="snippets.terminal"
-                  >{{ snippets.terminal }}</code
-                >
-                <BaseCopyButton
-                  :value="snippets.terminal"
-                  :aria-label="t('mcpSetup.copyCommand')"
-                  data-testid="mcp-copy-terminal"
-                  @click="trackCopy('terminal')"
-                />
+            <section class="px-6 pt-2 pb-3" data-testid="mcp-option-terminal">
+              <div class="flex flex-col gap-3 rounded-[12px] bg-foreground/5 p-4">
+                <div class="flex flex-col gap-1">
+                  <h3 class="m-0 text-[13px] leading-5 font-medium">
+                    {{ t('mcpSetup.inTerminal.label') }}
+                  </h3>
+                  <p class="m-0 text-xs leading-[18px] text-pretty text-muted-foreground">
+                    {{ t('mcpSetup.inTerminal.body') }}
+                  </p>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border-0 bg-foreground/8 px-3 text-[13px] text-foreground transition-colors hover:bg-foreground/12"
+                    :title="snippets.terminal"
+                    data-testid="mcp-copy-terminal"
+                    @click="copyText('terminal', snippets.terminal)"
+                  >
+                    <Check v-if="copiedClient === 'terminal'" :size="14" />
+                    <Copy v-else :size="14" />
+                    {{
+                      copiedClient === 'terminal' ? t('mcpSetup.copied') : t('mcpSetup.copyCommand')
+                    }}
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border-0 bg-foreground/8 px-3 text-[13px] text-foreground transition-colors hover:bg-foreground/12"
+                    data-testid="mcp-open-terminal"
+                    @click="openTerminal"
+                  >
+                    <SquareTerminal :size="14" />
+                    {{ t('mcpSetup.inTerminal.open') }}
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border-0 bg-foreground/8 px-3 text-[13px] text-foreground transition-colors hover:bg-foreground/12"
-                data-testid="mcp-open-terminal"
-                @click="openTerminal"
-              >
-                <SquareTerminal :size="14" />
-                {{ t('mcpSetup.inTerminal.open') }}
-              </button>
             </section>
           </template>
 
-          <section v-else class="flex flex-col gap-2.5 px-5 py-2.5" data-testid="mcp-agents">
+          <section v-else class="flex flex-col gap-3 px-6 py-3" data-testid="mcp-agents">
             <h3
               class="m-0 text-[11px] font-medium tracking-[0.06em] text-muted-foreground uppercase"
             >
               {{ t('mcpSetup.agents.label') }}
             </h3>
-            <p class="m-0 text-[13px] leading-[19px] text-pretty">
+            <p class="m-0 text-[13px] leading-5 text-pretty">
               {{ t('mcpSetup.agents.body') }}
             </p>
             <ul class="m-0 flex list-none flex-col gap-1 p-0">
@@ -241,7 +299,7 @@ function toggleSound(): void {
           </section>
         </div>
 
-        <footer class="mx-4 pt-3.5 pb-4">
+        <footer class="mx-4 pt-3 pb-4">
           <button
             type="button"
             class="inline-flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border-0 bg-foreground/7 px-3 text-[13px] text-foreground transition-colors hover:bg-foreground/11"

@@ -1,4 +1,4 @@
-export type McpSnippetClient = 'claude_code' | 'json' | 'terminal'
+export type McpSnippetClient = 'install' | 'claude_code' | 'json' | 'terminal'
 
 export const MCP_DOCS_URL = 'https://docs.comfy.org/agent-tools/mcp#local-comfy-mcp-connection'
 export const MCP_VIDEO_URL = 'https://media.comfy.org/website/mcp/launch-film.mp4'
@@ -6,7 +6,8 @@ export const MCP_VIDEO_URL = 'https://media.comfy.org/website/mcp/launch-film.mp
 const INSTALL = 'pip install "comfy-cli>=1.14.0" comfy-mcp'
 
 export interface McpSnippets {
-  claudeCode: string
+  install: string
+  register: string
   json: string
   terminal: string
 }
@@ -19,7 +20,8 @@ export function buildMcpSnippets(port?: number): McpSnippets {
     ? { command: 'comfy-mcp', env: { COMFY_LOCAL_URL: localUrl } }
     : { command: 'comfy-mcp' }
   return {
-    claudeCode: `${INSTALL} && ${register}`,
+    install: INSTALL,
+    register,
     json: JSON.stringify({ mcpServers: { 'comfy-mcp': server } }),
     terminal: `${INSTALL} && ${register} && claude`
   }

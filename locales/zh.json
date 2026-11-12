@@ -1840,12 +1840,14 @@
     "docs": "阅读文档",
     "inAgent": {
       "label": "在你的智能体中使用 Comfy",
-      "body": "在你自己的终端中运行此命令，然后重启智能体。",
+      "install": "在你自己的终端中安装 Comfy MCP",
+      "register": "将其添加到 Claude Code",
+      "restart": "重启你的智能体",
       "jsonHint": "使用 Cursor 或 Claude Desktop？",
       "copyJson": "复制 JSON 配置"
     },
     "inTerminal": {
-      "label": "在 Comfy 终端中运行智能体",
+      "label": "或在 Comfy 终端中运行",
       "body": "安装到此构建的 Python 中，然后启动 Claude Code。",
       "open": "打开终端"
     },

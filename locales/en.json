@@ -1840,12 +1840,14 @@
     "docs": "Read the docs",
     "inAgent": {
       "label": "Use Comfy in your agent",
-      "body": "Run this in your own terminal, then restart your agent.",
+      "install": "Install Comfy MCP in your own terminal",
+      "register": "Add it to Claude Code",
+      "restart": "Restart your agent",
       "jsonHint": "Using Cursor or Claude Desktop?",
       "copyJson": "Copy the JSON config"
     },
     "inTerminal": {
-      "label": "Run your agent in the Comfy terminal",
+      "label": "Or run it in the Comfy terminal",
       "body": "Installs into this build's Python, then starts Claude Code.",
       "open": "Open terminal"
     },
