@@ -7,6 +7,8 @@ import type { ProtoInstance } from '../../mock'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
 import { factsOf, selectedTorch } from './buildFacts'
 import { runOp } from './buildOps'
+import { setExtra } from './m1Builds'
+import { proto } from '../../useProto'
 import './buildTabs.css'
 
 /**
@@ -37,11 +39,25 @@ const TORCH = computed(() =>
     note: t.v === installed ? facts.torch : t.note
   }))
 )
+function copyWithTorch(v: string): void {
+  const n = proto.addedInstances.filter((i) => i.id.startsWith(`${env.id}-copy`)).length + 1
+  const id = `${env.id}-copy-${n}`
+  proto.addedInstances.unshift({
+    ...env,
+    id,
+    name: n === 1 ? `${env.name} copy` : `${env.name} copy ${n}`,
+    state: 'stopped',
+    lastUsed: 'Just now',
+    lastUsedRank: -1
+  })
+  selectedTorch[id] = v
+  setExtra(id, { from: { how: 'Copied', name: env.name } })
+}
 function changeTorch(v: string, copy: boolean): void {
   runOp(env.id, {
     title: copy ? `Copying & changing PyTorch to ${v}…` : `Changing PyTorch to ${v}…`,
     done: copy ? 'Copy complete' : 'PyTorch changed',
-    then: copy ? undefined : () => (selectedTorch[env.id] = v)
+    then: copy ? () => copyWithTorch(v) : () => (selectedTorch[env.id] = v)
   })
 }
 </script>

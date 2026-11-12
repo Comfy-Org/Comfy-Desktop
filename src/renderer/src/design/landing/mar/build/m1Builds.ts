@@ -47,6 +47,10 @@ const EXTRA: Record<string, BuildExtra> = {
 
 export const extraOf = (id: string): BuildExtra => EXTRA[id] ?? {}
 
+export function setExtra(id: string, extra: BuildExtra): void {
+  EXTRA[id] = extra
+}
+
 const base = {
   workspace: 'personal' as const,
   channel: 'Stable',
