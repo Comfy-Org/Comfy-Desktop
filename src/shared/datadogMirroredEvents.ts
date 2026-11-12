@@ -43,7 +43,8 @@ export const DATADOG_MIRRORED_EVENT_NAMES: ReadonlySet<string> = new Set([
   'comfy.desktop.comfyui.agent.startup_stalled',
   'comfy.desktop.comfyui.agent.health_check_failed',
   'comfy.desktop.comfyui.agent.agent_error',
-  'comfy.desktop.comfyui.agent.document_host_degraded'
+  'comfy.desktop.comfyui.agent.document_host_degraded',
+  'comfy.desktop.apps.run_failed'
 ])
 
 export function isDatadogMirroredEvent(eventName: string): boolean {

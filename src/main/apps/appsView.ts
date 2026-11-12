@@ -43,6 +43,7 @@ import {
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
 import { isAppsEnabled } from './appsSwitch'
+import { trackFromPage } from './appEvents'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -513,4 +514,5 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:local-fetch', localFetch)
   handleFromApps('comfy-apps:local-download', localDownload)
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)
+  handleFromApps('comfy-apps:track', trackFromPage)
 }
