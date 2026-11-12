@@ -436,6 +436,46 @@ export function noteRun(
   if (RUN_END_TYPES.includes(msg.type)) seen.delete(id)
 }
 
+export function localAppId(promptJson: string): string | null {
+  try {
+    const body = JSON.parse(promptJson) as { extra_data?: { comfy_app?: { id?: unknown } } }
+    const id = body?.extra_data?.comfy_app?.id
+    return isAppSlug(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+export function promptIdOf(answer: Uint8Array): string | null {
+  try {
+    const id = (JSON.parse(new TextDecoder().decode(answer)) as { prompt_id?: unknown })?.prompt_id
+    return isRunId(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+export interface RunEnd {
+  id: string
+  outcome: 'success' | 'failed' | 'cancelled'
+  exceptionType?: string
+}
+
+const RUN_OUTCOMES: Readonly<Record<string, RunEnd['outcome']>> = {
+  execution_success: 'success',
+  execution_error: 'failed',
+  execution_interrupted: 'cancelled'
+}
+
+export function runEnd(msg: { type: string; data: unknown }): RunEnd | null {
+  const outcome = Object.hasOwn(RUN_OUTCOMES, msg.type) ? RUN_OUTCOMES[msg.type] : undefined
+  const data = (msg.data ?? {}) as { prompt_id?: unknown; exception_type?: unknown }
+  if (!outcome || !isRunId(data.prompt_id)) return null
+  const exceptionType =
+    outcome === 'failed' && typeof data.exception_type === 'string' ? data.exception_type : null
+  return { id: data.prompt_id, outcome, ...(exceptionType ? { exceptionType } : {}) }
+}
+
 export interface QueueRun {
   id: string
   app: string | null

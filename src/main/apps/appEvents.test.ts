@@ -8,6 +8,8 @@ vi.mock('./appsSwitch', () => appsSwitch)
 
 import {
   cloudRefusal,
+  comfyVersionOf,
+  computerOf,
   errorClassOf,
   refusedNodeTypes,
   trackApps,
@@ -341,6 +343,39 @@ describe('errorClassOf', () => {
     'gives no class for %s',
     (value) => {
       expect(errorClassOf(value)).toBeUndefined()
+    }
+  )
+})
+
+describe('computerOf', () => {
+  it.each([
+    ['nvidia', 'nvidia'],
+    ['amd', 'amd'],
+    ['intel', 'intel'],
+    ['mps', 'apple']
+  ])('names the %s GPU class %s', (id, gpu) => {
+    expect(computerOf(id, null, null)).toEqual({ gpu })
+  })
+
+  it('rounds VRAM and RAM to whole GB', () => {
+    expect(computerOf('nvidia', 12_200, 31_900)).toEqual({ gpu: 'nvidia', vram_gb: 12, ram_gb: 31 })
+  })
+
+  it('leaves out what it does not know', () => {
+    expect(computerOf(null, undefined, Number.NaN)).toEqual({})
+    expect(computerOf('toString', -1, null)).toEqual({})
+  })
+})
+
+describe('comfyVersionOf', () => {
+  it.each(['0.3.68', 'v0.42.1-env1', '1.2.3+cu128'])('keeps %s', (version) => {
+    expect(comfyVersionOf(version)).toBe(version)
+  })
+
+  it.each([null, undefined, '', 'nightly', '/opt/comfy/0.3.1', '0.3.68 (my build)'])(
+    'drops %s',
+    (version) => {
+      expect(comfyVersionOf(version)).toBeUndefined()
     }
   )
 })

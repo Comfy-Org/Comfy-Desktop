@@ -26,6 +26,7 @@ import {
   isRunId,
   isVersionsIndex,
   isWorkflow,
+  localAppId,
   localEvent,
   localInstalls,
   localRequest,
@@ -33,12 +34,14 @@ import {
   openRequest,
   openWorkflowScript,
   outputKind,
+  promptIdOf,
   queueAnswer,
   queueJson,
   queueView,
   readable,
   readCapped,
   reconnectDelay,
+  runEnd,
   type RunSeen,
   safeUploadName,
   saveExt,
@@ -1041,5 +1044,74 @@ describe('appOfPage', () => {
     ['not an address', 'nope']
   ])('reads no app from %s', (_why, page) => {
     expect(appOfPage(page, list)).toBeNull()
+  })
+})
+
+describe('localAppId', () => {
+  it('reads the app id a page adds to its This computer tag', () => {
+    const body = { prompt: {}, extra_data: { comfy_app: { name: 'Upscale', id: 'upscale' } } }
+
+    expect(localAppId(JSON.stringify(body))).toBe('upscale')
+  })
+
+  it.each([
+    ['a tag with only the display name', { extra_data: { comfy_app: { name: 'Upscale' } } }],
+    ['an id that is not a slug', { extra_data: { comfy_app: { id: 'Up Scale' } } }],
+    ['no tag', { prompt: {} }],
+    ['null', null]
+  ])('reads no app from %s', (_why, body) => {
+    expect(localAppId(JSON.stringify(body))).toBeNull()
+  })
+
+  it('reads no app from text that is not JSON', () => {
+    expect(localAppId('{')).toBeNull()
+  })
+})
+
+describe('promptIdOf', () => {
+  const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
+
+  it('reads the run id ComfyUI gives a prompt', () => {
+    expect(promptIdOf(bytes({ prompt_id: 'abc-123', number: 4, node_errors: {} }))).toBe('abc-123')
+  })
+
+  it.each([
+    ['no id', bytes({ error: 'invalid prompt' })],
+    ['an id with a slash', bytes({ prompt_id: '../x' })],
+    ['text that is not JSON', new TextEncoder().encode('nope')]
+  ])('reads none from %s', (_why, body) => {
+    expect(promptIdOf(body)).toBeNull()
+  })
+})
+
+describe('runEnd', () => {
+  it.each([
+    ['execution_success', 'success'],
+    ['execution_interrupted', 'cancelled']
+  ])('reads %s as %s', (type, outcome) => {
+    expect(runEnd({ type, data: { prompt_id: 'r1' } })).toEqual({ id: 'r1', outcome })
+  })
+
+  it('reads a failed run with only its exception type', () => {
+    expect(
+      runEnd({
+        type: 'execution_error',
+        data: {
+          prompt_id: 'r1',
+          exception_type: 'torch.OutOfMemoryError',
+          exception_message: 'CUDA out of memory',
+          traceback: ['/home/someone']
+        }
+      })
+    ).toEqual({ id: 'r1', outcome: 'failed', exceptionType: 'torch.OutOfMemoryError' })
+  })
+
+  it.each([
+    ['a run that is still going', { type: 'progress', data: { prompt_id: 'r1' } }],
+    ['a start', { type: 'execution_start', data: { prompt_id: 'r1' } }],
+    ['an end with no run id', { type: 'execution_success', data: {} }],
+    ['a type from the object prototype', { type: 'toString', data: { prompt_id: 'r1' } }]
+  ])('reads no end from %s', (_why, msg) => {
+    expect(runEnd(msg)).toBeNull()
   })
 })

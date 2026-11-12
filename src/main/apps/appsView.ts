@@ -598,14 +598,16 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:read-versions', readVersions)
   handleFromApps('comfy-apps:get-node-price', getNodePrice)
   handleFromApps('comfy-apps:get-local', getLocal)
-  handleFromApps('comfy-apps:start-local', startLocal)
+  handleFromAppPage('comfy-apps:start-local', (page, want: unknown) => startLocal(want, page.app))
   handleFromApps('comfy-apps:cancel-setup', cancelSetup)
   handleFromApps('comfy-apps:local-builds', localBuilds)
   handleFromAppPage('comfy-apps:local-fetch', (page, req: unknown) => {
     noteLocalRun(page, req)
-    return localFetch(req)
+    return localFetch(req, page.app)
   })
-  handleFromApps('comfy-apps:local-download', localDownload)
+  handleFromAppPage('comfy-apps:local-download', (page, req: unknown) =>
+    localDownload(req, page.app)
+  )
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)
   handleFromApps('comfy-apps:track', trackFromPage)
 }

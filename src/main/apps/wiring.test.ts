@@ -61,6 +61,12 @@ describe('Apps bridge wiring', () => {
     }
   })
 
+  it('tells the local calls which app page asked', () => {
+    expect(main).toContain('startLocal(want, page.app)')
+    expect(main).toContain('localFetch(req, page.app)')
+    expect(main).toContain('localDownload(req, page.app)')
+  })
+
   it('refuses to show the apps page while the remote switch is off', () => {
     expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
   })

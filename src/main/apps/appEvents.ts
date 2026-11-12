@@ -216,6 +216,43 @@ export function errorClassOf(error: unknown): string | undefined {
   return last && CLASS_NAME.test(last) ? last : undefined
 }
 
+const GPU_CLASSES: Readonly<Record<string, GpuClass>> = {
+  nvidia: 'nvidia',
+  amd: 'amd',
+  intel: 'intel',
+  mps: 'apple'
+}
+
+export interface Computer {
+  gpu?: GpuClass
+  vram_gb?: number
+  ram_gb?: number
+}
+
+const toGb = (mb: number | null | undefined): number | undefined =>
+  typeof mb === 'number' && Number.isFinite(mb) && mb >= 0 && mb / 1024 <= MAX_GB
+    ? Math.round(mb / 1024)
+    : undefined
+
+export function computerOf(
+  gpuId: string | null | undefined,
+  vramMb: number | null | undefined,
+  ramMb: number | null | undefined
+): Computer {
+  const gpu = gpuId && Object.hasOwn(GPU_CLASSES, gpuId) ? GPU_CLASSES[gpuId] : undefined
+  const vram = toGb(vramMb)
+  const ram = toGb(ramMb)
+  return {
+    ...(gpu ? { gpu } : {}),
+    ...(vram !== undefined ? { vram_gb: vram } : {}),
+    ...(ram !== undefined ? { ram_gb: ram } : {})
+  }
+}
+
+export function comfyVersionOf(version: string | null | undefined): string | undefined {
+  return version && COMFY_VERSION.test(version) ? version : undefined
+}
+
 export function refusedNodeTypes(nodeErrors: unknown): string[] {
   if (!nodeErrors || typeof nodeErrors !== 'object') return []
   const types = new Set<string>()
