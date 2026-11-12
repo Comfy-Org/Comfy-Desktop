@@ -82,6 +82,25 @@ export function isAppSlug(value: unknown): value is string {
   return typeof value === 'string' && APP_SLUG.test(value)
 }
 
+export function appOfPage(pageUrl: string, listUrl: string): string | null {
+  let page: URL
+  let list: URL
+  try {
+    page = new URL(pageUrl)
+    list = new URL(listUrl)
+  } catch {
+    return null
+  }
+  if (page.origin !== list.origin) return null
+  const base = list.pathname.endsWith('/') ? list.pathname : `${list.pathname}/`
+  const rest = page.pathname.startsWith(base) ? page.pathname.slice(base.length) : ''
+  const [first = '', ...more] = rest.split('/')
+  const folder = more.length > 0 || !first.includes('.') ? first : ''
+  const routed = page.hash.startsWith('#/') ? page.hash.slice(2).split(/[/?]/)[0]! : ''
+  const app = folder || routed
+  return isAppSlug(app) ? app : null
+}
+
 export interface CloudAppTag {
   id: string
   model?: string
