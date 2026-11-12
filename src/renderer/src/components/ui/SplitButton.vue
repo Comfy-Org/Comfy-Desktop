@@ -45,6 +45,7 @@ const slots = useSlots()
       v-model:open="open"
       :modal="false"
       align="end"
+      :side-offset="6"
       class="z-[9999] min-w-60"
       :aria-label="menuLabel"
     >

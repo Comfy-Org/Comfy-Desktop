@@ -30,6 +30,7 @@
     "openComfyUI": "Open ComfyUI",
     "chooseBuildToOpen": "Choose the build to open",
     "openComfyUIIn": "Open ComfyUI in {name}",
+    "opensIn": "Opens in {name}",
     "allBuilds": "All builds",
     "buildRunning": "Running",
     "buildStarting": "Starting",

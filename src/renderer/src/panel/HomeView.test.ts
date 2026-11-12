@@ -443,7 +443,11 @@ describe('Home builds', () => {
     wrapper
       .get('[data-testid="home-open-build"] .tooltip-wrap')
       .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
-    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).not.toBeNull())
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+        `Opens in ${NEWEST.name}`
+      )
+    )
 
     await openBuildMenu(wrapper)
 
@@ -467,6 +471,11 @@ describe('Home builds', () => {
       'Flux SandboxReady'
     ])
     expect(buildOptions().some((option) => option.hasAttribute('aria-checked'))).toBe(false)
+    expect(
+      buildOptions().map((option) =>
+        Boolean(option.querySelector('[data-testid="home-open-build-status-dot"]'))
+      )
+    ).toEqual([false, true, true, false])
   })
 
   it('opens ComfyUI in the build picked in the menu, without changing the current one', async () => {

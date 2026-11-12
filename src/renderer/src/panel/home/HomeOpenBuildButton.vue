@@ -34,6 +34,11 @@ function statusLabel(build: Installation): string {
   }
 }
 
+function isLive(build: Installation): boolean {
+  const status = statusOf(build)
+  return status === 'running' || status === 'always-on'
+}
+
 function onWindowBlur(): void {
   open.value = false
 }
@@ -45,7 +50,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
   <SplitButton
     v-model:open="open"
     :label="t('home.openComfyUIIn', { name: target.name })"
-    :tooltip="t('home.openComfyUIIn', { name: target.name })"
+    :tooltip="t('home.opensIn', { name: target.name })"
     :menu-label="t('home.chooseBuildToOpen')"
     main-testid="home-open-comfyui"
     menu-testid="home-open-build-menu"
@@ -86,8 +91,8 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
             class="flex shrink-0 items-center gap-1.5 text-muted-foreground"
             data-testid="home-open-build-status"
             ><span
-              class="size-1.5 shrink-0 rounded-full"
-              :class="statusOf(build) === 'starting' ? 'bg-muted-foreground' : 'bg-[#59d38c]'"
+              v-if="isLive(build)"
+              class="size-1.5 shrink-0 rounded-full bg-[#59d38c]"
               aria-hidden="true"
               data-testid="home-open-build-status-dot"
             />{{ statusLabel(build) }}</span
