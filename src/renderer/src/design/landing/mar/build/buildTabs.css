@@ -235,7 +235,47 @@
   color: var(--color-base-foreground);
   font-size: 13px;
 }
+/* Storage and Startup Args: section titles are uppercase labels. */
+:root .proto-ui.proto-ui.proto-ui .mar-bt-settings > section > header > h3 {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 /* Storage */
+:root .proto-ui.proto-ui.proto-ui .mar-st-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-base-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-st-path:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.mar-st-tip,
+.mar-st-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mar-st-tag {
+  gap: 4px;
+}
+.mar-st-tip svg,
+.mar-st-tag svg {
+  color: var(--color-subtle-foreground);
+}
 :root .proto-ui.proto-ui.proto-ui .mar-st-toggle {
   /* Label left, switch at the column's end: the switches line up down the page. */
   display: flex;
