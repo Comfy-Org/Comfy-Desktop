@@ -429,6 +429,22 @@ describe('Home builds', () => {
     expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
   })
 
+  it('marks Open ComfyUI with the kind and color of the build it opens', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    const wrapper = await openHome()
+    const icon = () => wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement
+
+    expect(icon().dataset.kind).toBe('local')
+    expect(icon().style.color).toBe('rgb(250, 135, 70)')
+
+    await openBuildMenu(wrapper)
+    buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    expect(icon().dataset.kind).toBe('cloud')
+    expect(icon().style.color).toBe('rgb(0, 198, 226)')
+  })
+
   it('lists every build of the workspace with what each is doing in the Open ComfyUI menu', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
     const wrapper = await openHome()
@@ -445,7 +461,7 @@ describe('Home builds', () => {
       'Comfy CloudAlways on',
       'Flux SandboxReady'
     ])
-    expect(buildOptions()[0]!.getAttribute('aria-selected')).toBe('true')
+    expect(buildOptions()[0]!.getAttribute('aria-checked')).toBe('true')
   })
 
   it('opens the build picked in the menu, without launching it on pick', async () => {
@@ -491,6 +507,7 @@ describe('Home builds', () => {
 
     expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Flux Sandbox')
     expect(wrapper.find('[data-testid="home-open-build-menu"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-open-comfyui-icon"]').exists()).toBe(false)
   })
 
   it('goes to the full list from All builds', async () => {

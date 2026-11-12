@@ -7,7 +7,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
-import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
+import { HOME_BUILD_TONES, homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -43,6 +43,7 @@ const workspaceBuilds = computed(() =>
 )
 const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
 const buildTones = computed(() => homeBuildTones(builds.value))
+const workspaceTones = computed(() => homeBuildTones(workspaceBuilds.value))
 const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
 const OPEN_BUILD_KEY = 'home.openBuildId'
 const selectedBuildId = ref<string | null>(readOpenBuildId())
@@ -65,6 +66,11 @@ function selectOpenBuild(build: Installation): void {
   try {
     window.localStorage.setItem(OPEN_BUILD_KEY, build.id)
   } catch {}
+}
+
+function buildColor(build: Installation): string {
+  const tone = workspaceTones.value[workspaceBuilds.value.indexOf(build)] ?? 'ember'
+  return HOME_BUILD_TONES[tone].glow
 }
 
 function buildStatus(build: Installation) {
@@ -111,6 +117,7 @@ onMounted(() => {
       :builds="workspaceBuilds"
       :target="openTarget"
       :status-of="buildStatus"
+      :color-of="buildColor"
       @open="emit('pick', $event)"
       @select="selectOpenBuild"
     />
