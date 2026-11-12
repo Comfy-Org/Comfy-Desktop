@@ -2,7 +2,7 @@
 import { computed, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ArrowRight, ChartColumn, Cloud, Gauge, House, Laptop, Plus, Server } from 'lucide-vue-next'
+import { ArrowRight, Cloud, House, Laptop, Plus, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -43,16 +43,11 @@ const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
-const toolRows = computed<SidebarRow[]>(() => [
-  { page: 'performance-test', label: t('fileMenu.performanceTest'), icon: Gauge },
-  { page: 'benchmarks', label: t('fileMenu.benchmarks'), icon: ChartColumn }
-])
-const groups = computed(() => [
+const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>(() => [
   {
     key: 'main',
     rows: collapsed.value ? mainRows.value : mainRows.value.filter((row) => row.page !== 'chooser')
-  },
-  { key: 'tools', title: t('sidebar.tools'), rows: toolRows.value }
+  }
 ])
 
 const installationStore = useInstallationStore()

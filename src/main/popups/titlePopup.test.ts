@@ -135,11 +135,12 @@ describe('buildTitlePopupMenuItems', () => {
   })
 
   it.each([null, 'inst-1'] as const)(
-    'keeps settings and window actions without duplicate dashboard shortcuts on host %s',
+    'lists the tools, settings and window actions on host %s',
     (installationId) => {
       const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
       expect(items.map((item) => item.id ?? 'separator')).toEqual([
-        'new-window',
+        'performance-test',
+        'benchmarks',
         'separator',
         'settings',
         'separator',
@@ -153,7 +154,8 @@ describe('buildTitlePopupMenuItems', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
-      'new-window',
+      'performance-test',
+      'benchmarks',
       'settings',
       'reset-zoom',
       'exit-window',
@@ -191,10 +193,11 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
 
-  it('places New Window first and Quit Desktop last on a chooser host', () => {
+  it('places Performance Tests first and Quit Desktop last on a chooser host', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     const ids = items.map((i) => i.id ?? null)
-    expect(ids[0]).toBe('new-window')
+    expect(ids[0]).toBe('performance-test')
+    expect(ids).not.toContain('new-window')
     expect(ids[ids.length - 1]).toBe('close-all-windows')
   })
 

@@ -19,7 +19,6 @@
     "builds": "构建",
     "navigation": "导航",
     "home": "主页",
-    "tools": "工具",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
     "signInTitle": "登录 Comfy",
@@ -1531,7 +1530,6 @@
     "lineage": "来源"
   },
   "fileMenu": {
-    "newWindow": "打开仪表板",
     "newInstall": "安装新构建",
     "addExistingInstall": "添加现有构建",
     "loadSnapshot": "加载快照",
