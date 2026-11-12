@@ -364,6 +364,11 @@ function createBuild(b: Build): void {
 // Manage, then the state's change, then the install's own; snapshots;
 // Create Build; Stop and Uninstall last. While it runs, what would change
 // it is greyed, and its tooltip says why.
+// New Build's chevron, as Desktop's Builds header (#2040).
+const NEW_BUILD_LINES: MenuLine[] = [
+  { label: 'Add Existing Build', run: () => toast('Add Existing Build') },
+  { label: 'Load Snapshot', run: () => toast('Load Snapshot') }
+]
 function m1Lines(b: Build): MenuLine[] {
   const local = b.kind === 'local'
   const running = b.state === 'running' || busy(b)
@@ -565,12 +570,14 @@ const newLabel = computed(() =>
     @clear="clear"
   >
     <template #actions="{ state }">
-      <Button
+      <MarSplitButton
         v-if="state === 'live' || state === 'loading'"
-        variant="primary"
-        @click="hostActions.newInstance()"
-        ><Plus :size="15" />New Build</Button
-      >
+        label="New Build"
+        :icon="Plus"
+        :lines="NEW_BUILD_LINES"
+        menu-label="More build options"
+        @run="hostActions.newInstance()"
+      />
     </template>
 
     <template #toolbar>
