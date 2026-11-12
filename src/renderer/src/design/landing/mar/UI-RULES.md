@@ -68,8 +68,10 @@ DS's Motion page (`ds/motion.ts`).
   on its own and an open menu keeps the chevron half in hover. Its menu
   opens 6px below, like the filter menus. With nothing to pick it is a
   plain button. Never hand-build one.
-- **Status in a menu row follows the cards:** green dot only for live
-  (Running, Always on); Ready is plain text, no dot, no check.
+- **Status in a build menu row is a dot on the icon**, like the sidebar
+  glyph: green for live (Running, Always on), red for broken or didn't
+  start, nothing for Ready. No status text. A broken build is disabled
+  and gives its reason on hover.
 - **One submenu open at a time** (controlled `DropdownMenuSub`, see
   `graph/AssetFilterMenu.vue`).
 - **A filter shows as a chip** under the toolbar, removable, with Clear
