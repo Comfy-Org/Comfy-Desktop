@@ -830,12 +830,25 @@ describe('BenchmarksView', () => {
     expect(heads()).toEqual(['customScore', 'averageJobDurationSeconds'])
     expect(wrapper.find('.benchmarks__column-head--drop-target').exists()).toBe(false)
 
-    await head('customScore').get('button').trigger('keydown', { key: 'ArrowRight', altKey: true })
+    const columnHint = 'Drag to reorder. You can also press Alt+Left or Alt+Right.'
+    const sortButton = (key: string) => head(key).get<HTMLButtonElement>('button').element
+    expect(head('customScore').attributes('title')).toBe(columnHint)
+    const describedBy = sortButton('customScore').getAttribute('aria-describedby')!
+    expect(document.getElementById(describedBy)?.textContent?.trim()).toBe(columnHint)
+
+    const pressOnHead = async (key: string, arrow: string) => {
+      sortButton(key).focus()
+      await head(key).get('button').trigger('keydown', { key: arrow, altKey: true })
+      await flushPromises()
+    }
+    await pressOnHead('averageJobDurationSeconds', 'ArrowLeft')
     expect(heads()).toEqual(['averageJobDurationSeconds', 'customScore'])
-    await head('averageJobDurationSeconds')
-      .get('button')
-      .trigger('keydown', { key: 'ArrowLeft', altKey: true })
-    expect(heads()).toEqual(['averageJobDurationSeconds', 'customScore'])
+    expect(document.activeElement).toBe(sortButton('averageJobDurationSeconds'))
+    await pressOnHead('averageJobDurationSeconds', 'ArrowRight')
+    expect(heads()).toEqual(['customScore', 'averageJobDurationSeconds'])
+    expect(document.activeElement).toBe(sortButton('averageJobDurationSeconds'))
+    await pressOnHead('customScore', 'ArrowLeft')
+    expect(heads()).toEqual(['customScore', 'averageJobDurationSeconds'])
   })
 
   it('filters by search and the toolbar menus', async () => {

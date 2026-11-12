@@ -74,6 +74,7 @@ const dropTargetColumnKey = ref<string | null>(null)
 const pendingRenameId = ref<string | null>(null)
 const sessionNames = new Map<string, InstanceType<typeof BenchmarkSessionName>>()
 const grips = new Map<string, HTMLElement>()
+const columnHeads = new Map<string, HTMLElement>()
 
 const groupName = computed(() => {
   if (props.groupBy === 'workflow') return props.group.workflowName
@@ -182,6 +183,11 @@ function rememberGrip(id: string, element: unknown): void {
   else grips.delete(id)
 }
 
+function rememberColumnHead(key: string, element: unknown): void {
+  if (element instanceof HTMLElement) columnHeads.set(key, element)
+  else columnHeads.delete(key)
+}
+
 function focusPendingRename(event: Event): void {
   const id = pendingRenameId.value
   if (!id) return
@@ -249,10 +255,13 @@ function moveColumn(key: string, targetKey: string): void {
   emit('reorderColumns', keys)
 }
 
-function moveColumnWithKeyboard(key: string, offset: -1 | 1): void {
+async function moveColumnWithKeyboard(key: string, offset: -1 | 1): Promise<void> {
   const keys = props.extraColumns.map((column) => column.key)
   const neighbor = keys[keys.indexOf(key) + offset]
-  if (neighbor) moveColumn(key, neighbor)
+  if (!neighbor) return
+  moveColumn(key, neighbor)
+  await nextTick()
+  columnHeads.get(key)?.querySelector('button')?.focus()
 }
 
 function startColumnDrag(event: DragEvent, key: string): void {
@@ -437,6 +446,7 @@ function toggleBaseline(id: string): void {
                 <th
                   v-for="column in extraColumns"
                   :key="column.key"
+                  :ref="(element) => rememberColumnHead(column.key, element)"
                   class="benchmarks__column-head cursor-grab text-right active:cursor-grabbing"
                   :class="{
                     'benchmarks__column-head--dragging opacity-55': draggedColumnKey === column.key,
@@ -444,7 +454,7 @@ function toggleBaseline(id: string): void {
                       dropTargetColumnKey === column.key
                   }"
                   draggable="true"
-                  :title="t('benchmarks.reorderComparisonHint')"
+                  :title="t('benchmarks.reorderColumnHint')"
                   :aria-sort="ariaSort(column.key)"
                   :data-testid="`benchmark-column-head-${column.key}`"
                   @dragstart="startColumnDrag($event, column.key)"
@@ -457,7 +467,7 @@ function toggleBaseline(id: string): void {
                     size="unset"
                     class="benchmarks__sort gap-1 bg-transparent text-[12px] font-medium tracking-[0.01em] text-subtle-foreground hover:bg-transparent hover:text-foreground"
                     type="button"
-                    aria-describedby="benchmark-reorder-instructions"
+                    aria-describedby="benchmark-column-reorder-instructions"
                     @click="emit('sort', column.key)"
                     @keydown.alt.left.prevent="moveColumnWithKeyboard(column.key, -1)"
                     @keydown.alt.right.prevent="moveColumnWithKeyboard(column.key, 1)"

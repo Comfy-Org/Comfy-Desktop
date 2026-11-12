@@ -1649,6 +1649,7 @@
     "renameErrorTitle": "无法重命名会话",
     "renameErrorMessage": "无法重命名会话文件夹。",
     "reorderComparisonHint": "拖动以重新排序。也可以按 Alt+上箭头或 Alt+下箭头。",
+    "reorderColumnHint": "拖动以重新排序。也可以按 Alt+左箭头或 Alt+右箭头。",
     "comparisonImageTitle": "基准比较",
     "exportResultsImage": "导出结果",
     "exportingImage": "正在导出图像...",

@@ -818,6 +818,9 @@ onActivated(() => {
         <span id="benchmark-reorder-instructions" class="sr-only">
           {{ t('benchmarks.reorderComparisonHint') }}
         </span>
+        <span id="benchmark-column-reorder-instructions" class="sr-only">
+          {{ t('benchmarks.reorderColumnHint') }}
+        </span>
 
         <div
           v-if="loading"

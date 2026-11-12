@@ -1649,6 +1649,7 @@
     "renameErrorTitle": "Could not rename session",
     "renameErrorMessage": "The session folder could not be renamed.",
     "reorderComparisonHint": "Drag to reorder. You can also press Alt+Up or Alt+Down.",
+    "reorderColumnHint": "Drag to reorder. You can also press Alt+Left or Alt+Right.",
     "comparisonImageTitle": "Benchmark Comparison",
     "exportResultsImage": "Export results",
     "exportingImage": "Exporting image...",
