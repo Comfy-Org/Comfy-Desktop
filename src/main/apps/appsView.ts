@@ -67,6 +67,7 @@ const BACKDROP_QUALITY = 80
 const appOpen = new Map<number, boolean>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
+const parkedApps = new Set<number>()
 
 export interface AppsRect {
   x: number
@@ -216,6 +217,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
       appOpen.delete(key)
       awaitingCommit.delete(key)
       settledPages.delete(key)
+      parkedApps.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -227,11 +229,15 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     width: Math.round(r.width!),
     height: Math.round(r.height!)
   })
-  stackApps(entry.window.contentView, view, entry.panelView!, r.parked === true)
+  const parked = r.parked === true
+  const wasParked = parkedApps.has(key)
+  if (parked) parkedApps.add(key)
+  else parkedApps.delete(key)
+  const stacked = stackApps(entry.window.contentView, view, entry.panelView!, parked)
   const uncovered = !view.getVisible()
-  view.setVisible(true)
+  view.setVisible(stacked)
   if (r.fresh !== true) {
-    if (uncovered && r.parked !== true) view.webContents.focus()
+    if (!parked && (uncovered || wasParked)) view.webContents.focus()
     return
   }
   tellPanelAppOpen(key)

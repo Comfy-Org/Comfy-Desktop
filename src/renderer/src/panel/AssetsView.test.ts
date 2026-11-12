@@ -462,24 +462,54 @@ describe('AssetsView', () => {
 })
 
 describe('AssetsView opened for one Cloud file', () => {
-  it('shows the Comfy Cloud assets with the newest file of that name open, for this visit only', async () => {
+  it('shows the Comfy Cloud assets with the newest Cloud file of that name open, for this visit only', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
     listOutputFolders.mockResolvedValue([])
-    listAssets.mockResolvedValue([
-      { ...asset('old', 'cloud-cutout.png', 'image'), createdAt: '2026-11-01T12:00:00Z' },
-      asset('a', 'forest.png', 'image'),
-      { ...asset('new', 'cloud-cutout.png', 'image'), createdAt: '2026-11-10T12:00:00Z' }
-    ])
+    listAssets.mockImplementation(async (id: string) =>
+      id === 'cloud'
+        ? [
+            { ...asset('old', 'cloud-cutout.png', 'image'), createdAt: '2026-11-01T12:00:00Z' },
+            asset('a', 'forest.png', 'image'),
+            { ...asset('new', 'cloud-cutout.png', 'image'), createdAt: '2026-11-10T12:00:00Z' }
+          ]
+        : [{ ...asset('local', 'cloud-cutout.png', 'image'), createdAt: '2026-11-12T12:00:00Z' }]
+    )
 
-    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], {
-      props: { focusName: 'cloud-cutout.png' }
-    })
+    const wrapper = await mountAssets(
+      [{ ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }, build('lab', 'Video Lab')],
+      [],
+      { props: { focusName: 'cloud-cutout.png' } }
+    )
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="assets-grid"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('cloud-cutout.png')
     expect(wrapper.get('[data-testid="output-detail-panel"]').text()).toContain('11/10/2026')
     expect(wrapper.emitted('focus-used')).toHaveLength(1)
     expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('computer')
+  })
+
+  it('does not open the file if the user moved to This computer before it loaded', async () => {
+    listOutputFolders.mockResolvedValue([])
+    let finish: (assets: AssetSummary[]) => void = () => {}
+    listAssets.mockImplementation(
+      () => new Promise<AssetSummary[]>((resolve) => (finish = resolve))
+    )
+    const wrapper = await mountAssets(
+      [{ ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }],
+      [],
+      { props: { focusName: 'cloud-cutout.png' } }
+    )
+
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+    await openThisComputer(wrapper)
+    finish([asset('new', 'cloud-cutout.png', 'image')])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
   it('just shows the Comfy Cloud assets when the file is not there', async () => {
@@ -628,6 +658,41 @@ describe('AssetsView on This computer', () => {
     await wrapper.get('[data-testid="local-clear-filters"]').trigger('click')
     expect(wrapper.find('[data-testid="local-file-cutout.png"]').exists()).toBe(true)
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('says so when the folder cannot be opened on this computer any more', async () => {
+    listOutputFolder.mockResolvedValue(listing([entry(SHARED, 'cutout.png', 'image')]))
+    openPath.mockResolvedValueOnce('The folder does not exist.')
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="local-open-folder"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open this folder. It may have been moved or deleted.",
+      message: SHARED
+    })
+  })
+
+  it('shows only the subfolders of a folder with no files, and the cut-short note when nothing matches', async () => {
+    listOutputFolder.mockResolvedValueOnce(listing([entry(SHARED, 'apps', null)]))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="local-subfolder-apps"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="local-empty"]').exists()).toBe(false)
+
+    listOutputFolder.mockResolvedValueOnce(
+      listing([entry(`${SHARED}/apps`, 'cutout.png', 'image')], true)
+    )
+    await wrapper.get('[data-testid="local-subfolder-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('input').setValue('nothing-like-this')
+    expect(wrapper.get('[data-testid="local-empty"]').text()).toContain('Showing the newest file.')
   })
 
   it('says a folder could not be opened and leads back to This computer', async () => {

@@ -55,11 +55,16 @@ function report(fresh = false): void {
 
 const reportResize = (): void => report()
 
+function entranceEasing(): string {
+  const token = getComputedStyle(document.documentElement)
+    .getPropertyValue(ENTER_EASING_TOKEN)
+    .trim()
+  return CSS.supports('animation-timing-function', token) ? token : 'ease-out'
+}
+
 function enter(): Promise<void> {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const easing =
-    getComputedStyle(document.documentElement).getPropertyValue(ENTER_EASING_TOKEN).trim() ||
-    'ease-out'
+  const easing = entranceEasing()
   const animation = surface.value?.animate(
     reducedMotion
       ? [{ opacity: 0 }, { opacity: 1 }]
@@ -80,8 +85,15 @@ function enter(): Promise<void> {
 function pageSettled(): Promise<void> {
   return new Promise((done) => {
     stopSettled = window.api.onAppsSettled(done)
-    revealTimer = setTimeout(done, REVEAL_MAX_MS)
   })
+}
+
+function revealApp(): void {
+  if (gone || !parked) return
+  clearTimeout(revealTimer)
+  parked = false
+  report()
+  lingerTimer = setTimeout(() => (skeletonShown.value = false), SKELETON_LINGER_MS)
 }
 
 function releaseHoldLater(): void {
@@ -101,6 +113,7 @@ onMounted(async () => {
   stopAppOpen = window.api.onAppsAppOpen(({ open }) => emit('app-open', open))
   stopOutputs = window.api.onAppsOutput((outputs) => emit('outputs', outputs))
   const settled = pageSettled()
+  revealTimer = setTimeout(revealApp, REVEAL_MAX_MS)
   observer = new ResizeObserver(reportResize)
   if (slot.value) observer.observe(slot.value)
   window.addEventListener('resize', reportResize)
@@ -112,10 +125,7 @@ onMounted(async () => {
   if (gone) return
   if (holdWidth) releaseHoldLater()
   await settled
-  if (gone) return
-  parked = false
-  report()
-  lingerTimer = setTimeout(() => (skeletonShown.value = false), SKELETON_LINGER_MS)
+  revealApp()
 })
 
 onBeforeUnmount(() => {

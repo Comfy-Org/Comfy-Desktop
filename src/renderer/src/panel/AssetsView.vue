@@ -74,6 +74,7 @@ const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
+const loadedBuildIds = ref<string[]>([])
 const failed = ref(false)
 
 function isCloudBuild(inst: Installation): boolean {
@@ -178,6 +179,7 @@ async function loadAssets(): Promise<void> {
     const ids = reachableBuildIds.value
     const results = await Promise.allSettled(ids.map((id) => window.api.listAssets(id)))
     if (current !== requestId) return
+    loadedBuildIds.value = ids.filter((_, i) => results[i]!.status === 'fulfilled')
     assets.value = results.flatMap((result, i) => {
       if (result.status === 'rejected') return []
       const installationId = ids[i]!
@@ -196,22 +198,40 @@ watch(
   { immediate: true }
 )
 
-let pendingFocus = focusName
+let pendingFocus: string | null = null
+
+function isCloudId(installationId: string): boolean {
+  const inst = installationStore.getById(installationId)
+  return !!inst && isCloudBuild(inst)
+}
+
+const cloudLoaded = computed(() => loadedBuildIds.value.some(isCloudId))
 
 watch(
-  [visibleAssets, loading],
-  ([list, busy]) => {
-    if (!pendingFocus || busy || reachableBuildIds.value.length === 0) return
+  () => focusName,
+  (name) => {
+    if (!name) return
+    pendingFocus = name
+    place.value = 'cloud'
+    emit('focus-used')
+  },
+  { immediate: true }
+)
+
+watch(
+  [visibleAssets, loading, cloudLoaded],
+  ([list, busy, cloud]) => {
+    if (!pendingFocus || busy || !cloud) return
     const name = pendingFocus
     pendingFocus = null
+    if (place.value !== 'cloud') return
     const newest = list
-      .filter((asset) => asset.name === name)
+      .filter((asset) => asset.name === name && isCloudId(asset.installationId))
       .reduce<GalleryAsset | null>(
         (best, asset) => (best && createdMs(best) >= createdMs(asset) ? best : asset),
         null
       )
     if (newest) openDetail(newest)
-    emit('focus-used')
   },
   { immediate: true }
 )

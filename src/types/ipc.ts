@@ -1129,7 +1129,7 @@ export interface ElectronApi {
     imageType: 'performance-test' | 'benchmark-comparison',
     defaultPath?: string
   ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
-  openPath(targetPath: string): Promise<void>
+  openPath(targetPath: string): Promise<string>
   revealPath(targetPath: string): void
   openExternal(url: string): Promise<void>
   getDiskSpace(targetPath: string): Promise<DiskSpaceInfo>
