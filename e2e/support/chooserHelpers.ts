@@ -99,7 +99,7 @@ export async function openManageViaDashboard(
   return popup
 }
 
-const INSTALL_PILL = '.title-install-pill.is-interactive'
+const INSTALL_PILL = '[data-testid="title-choose-build-tab"]'
 const BUILD_TAB = '[data-testid="title-build-tab"]'
 
 function hasBuildTab(titleBar: WebContentsPage): Promise<boolean> {

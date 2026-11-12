@@ -127,19 +127,8 @@ const titleMenuButtonClass =
 
 const titleInstallPillClass = [
   '[-webkit-app-region:no-drag] inline-flex h-7 items-center gap-2 [inline-size:fit-content] [min-inline-size:200px] [max-inline-size:clamp(200px,22cqi,360px)] rounded-[999px] border border-solid border-transparent bg-[var(--chooser-surface-bg)] py-[5px] pr-2.5 pl-3 [font-family:inherit] text-[12px] leading-[inherit] font-normal text-neutral-100 cursor-default transition-[background-color,border-color,color] duration-[120ms] ease-[ease]',
-  '[&.is-interactive]:cursor-pointer',
-  '[&.is-interactive:focus-visible]:outline-none [&.is-interactive:focus-visible]:outline-current',
-  '[&.is-install-less]:opacity-85',
-  '[.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
-  '[&.is-interactive:focus-visible:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [&.is-interactive:focus-visible:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
-  '[&.is-interactive.is-open]:border-neutral-50 [&.is-interactive.is-open]:text-neutral-50',
   '[.title-bar.is-light_&]:bg-[rgba(0,0,0,0.04)] [.title-bar.is-light_&]:text-neutral-700',
-  '[.title-bar:not(.is-light)_&]:border-border [.title-bar:not(.is-light)_&]:bg-[oklch(1_0_0/0.04)] [.title-bar:not(.is-light)_&]:text-text-muted',
-  '[.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-neutral-700',
-  '[.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:text-neutral-700',
-  '[.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:border-[oklch(1_0_0/0.12)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:bg-[oklch(1_0_0/0.07)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:text-text',
-  '[.title-bar:not(.is-light)_&.is-interactive.is-open]:border-[oklch(1_0_0/0.3)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:bg-[oklch(1_0_0/0.07)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:text-text',
-  '[.title-bar.is-light_&.is-interactive.is-open]:border-[color-mix(in_srgb,var(--neutral-700)_55%,transparent)] [.title-bar.is-light_&.is-interactive.is-open]:text-neutral-700'
+  '[.title-bar:not(.is-light)_&]:border-border [.title-bar:not(.is-light)_&]:bg-[oklch(1_0_0/0.04)] [.title-bar:not(.is-light)_&]:text-text-muted'
 ].join(' ')
 
 const titleDownloadsBadgeClass =
@@ -396,9 +385,10 @@ const betaNotice = useBetaActivationNotice({
   }
 })
 
-const buildTabsShown = computed(() => !isInstallLess.value && !isFirstUseLockdown.value)
 const HOME_PANELS: ReadonlySet<ComfyPanelKey> = new Set(['home', 'performance-test', 'benchmarks'])
-const homeTabActive = computed(() => buildTabsShown.value && HOME_PANELS.has(activePanel.value))
+const homeTabActive = computed(
+  () => !isFirstUseLockdown.value && (isInstallLess.value || HOME_PANELS.has(activePanel.value))
+)
 
 const titleTabBase =
   '[-webkit-app-region:no-drag] group flex h-7 min-w-0 shrink items-center gap-2 rounded-control text-ui outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -420,7 +410,8 @@ function titleTabClose(active: boolean): string {
 }
 
 function showHomeTab(): void {
-  bridge?.setPanel('home')
+  if (!isInstallLess.value) bridge?.setPanel('home')
+  else if (activePanel.value !== 'comfy') bridge?.setPanel('comfy')
 }
 
 function closeBuildTab(): void {
@@ -428,7 +419,7 @@ function closeBuildTab(): void {
 }
 
 function handleInstallPillWithCoachmark(): void {
-  if (homeTabActive.value) {
+  if (homeTabActive.value && !isInstallLess.value) {
     bridge?.setPanel('comfy')
     return
   }
@@ -614,7 +605,7 @@ onUnmounted(() => {
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
       <nav
-        v-if="buildTabsShown"
+        v-if="!isFirstUseLockdown"
         class="flex min-w-0 items-center gap-1"
         :aria-label="t('titleBar.tabs')"
       >
@@ -630,6 +621,7 @@ onUnmounted(() => {
           <House :size="15" aria-hidden="true" />
         </button>
         <div
+          v-if="!isInstallLess"
           ref="installPill"
           class="title-install-pill"
           :class="[
@@ -673,58 +665,21 @@ onUnmounted(() => {
             <X :size="12" aria-hidden="true" />
           </button>
         </div>
+        <button
+          v-else
+          ref="installPill"
+          type="button"
+          class="title-install-pill"
+          :class="[titleTab(false), 'max-w-52 cursor-pointer px-2']"
+          aria-haspopup="dialog"
+          :aria-expanded="isInstancePickerOpen"
+          data-testid="title-choose-build-tab"
+          @click="handleInstallPillWithCoachmark"
+        >
+          <span class="truncate">{{ t('chooser.title') }}</span>
+          <ChevronDown :size="13" class="shrink-0 text-subtle-foreground" aria-hidden="true" />
+        </button>
       </nav>
-      <div
-        v-else-if="!isFirstUseLockdown"
-        ref="installPill"
-        class="title-install-pill is-interactive"
-        :class="[
-          titleInstallPillClass,
-          {
-            'is-open': isInstancePickerOpen,
-            'is-coachmark': coachmark.isShowing.value,
-            'is-install-less': isInstallLess
-          }
-        ]"
-        role="button"
-        tabindex="0"
-        aria-haspopup="dialog"
-        :aria-expanded="isInstancePickerOpen"
-        @click="handleInstallPillWithCoachmark"
-        @keydown.enter.prevent="handleInstallPillWithCoachmark"
-        @keydown.space.prevent="handleInstallPillWithCoachmark"
-      >
-        <div
-          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
-        >
-          <ComfyCLogo
-            v-if="showBrandMark"
-            class="title-install-brand-mark shrink-0 text-current"
-            :size="16"
-          />
-          <component
-            :is="installTypeMeta.icon"
-            v-else-if="showInstallTypeIcon"
-            :size="16"
-            class="title-install-type-icon shrink-0 opacity-85"
-            v-bind="tooltipAttrs(installTypeLabel)"
-          />
-        </div>
-        <div
-          class="title-install-slot title-install-slot--center inline-flex min-w-0 flex-auto items-center justify-center gap-1.5"
-        >
-          <span class="title-install-name min-w-0 truncate">{{ installLabel }}</span>
-        </div>
-        <div
-          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
-        >
-          <ChevronDown
-            :size="12"
-            class="title-install-caret shrink-0 text-current opacity-70"
-            aria-hidden="true"
-          />
-        </div>
-      </div>
       <div v-else ref="installPill" class="title-install-pill" :class="titleInstallPillClass">
         <div
           class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"

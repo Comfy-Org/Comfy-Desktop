@@ -382,19 +382,61 @@ describe('TitleBarApp', () => {
     wrapper.unmount()
   })
 
-  it('renders the install-less pill as an interactive opener for the instance picker', async () => {
+  it('shows the same tabs with no build: Home selected and a tab that opens the full build picker', async () => {
     bridgeState = installMockBridge({ installationId: null })
     vi.resetModules()
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
-    const pill = wrapper.find('.title-install-pill')
-    expect(pill.exists()).toBe(true)
-    expect(pill.element.tagName).toBe('DIV')
-    expect(pill.attributes('role')).toBe('button')
-    expect(pill.classes()).toContain('is-install-less')
-    expect(wrapper.find('.title-install-caret').exists()).toBe(true)
+
+    const home = wrapper.get('[data-testid="title-home-tab"]')
+    expect(home.attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-testid="title-build-tab"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="title-close-build-tab"]').exists()).toBe(false)
+
+    const chooseTab = wrapper.get('[data-testid="title-choose-build-tab"]')
+    expect(chooseTab.element.tagName).toBe('BUTTON')
+    expect(chooseTab.text()).toBe('Choose a build')
+    expect(chooseTab.attributes('aria-current')).toBeUndefined()
+    expect(chooseTab.attributes('aria-haspopup')).toBe('dialog')
+    expect(home.classes()).toEqual(expect.arrayContaining(['h-7', 'rounded-control', 'bg-accent']))
+    expect(chooseTab.classes()).toEqual(expect.arrayContaining(['h-7', 'rounded-control']))
+
+    await chooseTab.trigger('click')
+    expect(bridgeState.installPillClicks.length).toBe(1)
+    expect(bridgeState.setPanelCalls).toEqual([])
     wrapper.unmount()
+  })
+
+  it('keeps the dashboard in place from the Home tab with no build, and returns to it from a Home tool', async () => {
+    bridgeState = installMockBridge({ installationId: null })
+    vi.resetModules()
+    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+    const wrapper = mount(TitleBarApp)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="title-home-tab"]').trigger('click')
+    expect(bridgeState.setPanelCalls).toEqual([])
+
+    bridgeState.panelChangedCallbacks.forEach((cb) => cb('benchmarks'))
+    await flushPromises()
+    await wrapper.get('[data-testid="title-home-tab"]').trigger('click')
+    expect(bridgeState.setPanelCalls).toEqual(['comfy'])
+  })
+
+  it('swaps the choose tab for the build tab when the window gets a build', async () => {
+    bridgeState = installMockBridge({ installationId: null })
+    vi.resetModules()
+    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+    const wrapper = mount(TitleBarApp)
+    await flushPromises()
+
+    bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-1'))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="title-choose-build-tab"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="title-build-tab"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="title-home-tab"]').attributes('aria-current')).toBeUndefined()
   })
 
   it('updates the install pill label when main pushes a title', async () => {
@@ -432,27 +474,6 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp)
     await flushPromises()
     expect(wrapper.find('header').classes()).toContain('is-mac')
-  })
-
-  it('shows the dropdown caret on install-less host windows so the picker opener reads as actionable', async () => {
-    bridgeState = installMockBridge({ installationId: null })
-    vi.resetModules()
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp)
-    await flushPromises()
-    expect(wrapper.find('.title-install-name').exists()).toBe(true)
-    expect(wrapper.find('.title-install-caret').exists()).toBe(true)
-  })
-
-  it('accepts the install-less fallback label pushed by main', async () => {
-    bridgeState = installMockBridge({ installationId: null })
-    vi.resetModules()
-    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp)
-    await flushPromises()
-    bridgeState.titleChangedCallbacks.forEach((cb) => cb('Comfy Desktop'))
-    await flushPromises()
-    expect(wrapper.find('.title-install-name').text()).toBe('Comfy Desktop')
   })
 
   it('suppresses menu re-open immediately after a menu close (click-to-toggle dismiss)', async () => {
