@@ -35,10 +35,9 @@ function buildNudge() {
   nudge.style.cssText =
     'position:fixed;right:16px;bottom:16px;z-index:2147483646;' +
     'display:flex;align-items:center;gap:12px;max-width:calc(100vw - 32px);' +
-    'padding:10px 10px 10px 16px;border-radius:12px;' +
-    'background:var(--comfy-menu-bg, #171717);color:var(--fg-color, #e5e5e5);' +
-    'border:1px solid var(--border-color, rgba(255,255,255,0.1));' +
-    'box-shadow:0 12px 32px rgba(0,0,0,0.35);' +
+    'padding:10px 10px 10px 16px;border-radius:14px;' +
+    'background:oklch(0.19 0 0);color:oklch(0.955 0 0);' +
+    'box-shadow:0 0 0 1px oklch(1 0 0 / 0.07),0 30px 80px -20px rgb(0 0 0 / 0.6);' +
     'font-family:Inter,system-ui,sans-serif;font-size:13px;line-height:1.35;' +
     'opacity:0;transform:translateY(8px);' +
     'transition:opacity 200ms ease-out,transform 200ms ease-out;';
@@ -49,7 +48,7 @@ function buildNudge() {
   title.style.cssText = 'font-weight:600;';
   title.textContent = 'Run this build from your AI agent';
   var lead = document.createElement('span');
-  lead.style.cssText = 'opacity:0.65;';
+  lead.style.cssText = 'color:oklch(0.76 0 0);';
   lead.textContent = 'Connect Claude Code, Cursor or any MCP agent.';
   text.appendChild(title);
   text.appendChild(lead);
@@ -59,9 +58,9 @@ function buildNudge() {
   connect.setAttribute('data-testid', 'mcp-nudge-connect');
   connect.textContent = 'Connect';
   connect.style.cssText =
-    'flex:none;cursor:pointer;border:0;border-radius:8px;height:32px;padding:0 14px;' +
+    'flex:none;cursor:pointer;border:0;border-radius:10px;height:32px;padding:0 14px;' +
     'font:inherit;font-weight:600;' +
-    'background:var(--fg-color, #e5e5e5);color:var(--comfy-menu-bg, #171717);' +
+    'background:oklch(0.955 0 0);color:oklch(0.14 0 0);' +
     'transition:opacity 120ms ease-out;';
   connect.addEventListener('mouseenter', function () { connect.style.opacity = '0.88'; });
   connect.addEventListener('mouseleave', function () { connect.style.opacity = '1'; });
@@ -80,11 +79,11 @@ function buildNudge() {
   close.setAttribute('data-testid', 'mcp-nudge-dismiss');
   close.textContent = '\\u00d7';
   close.style.cssText =
-    'flex:none;cursor:pointer;border:0;border-radius:6px;width:28px;height:28px;' +
-    'background:transparent;color:currentColor;font-size:16px;line-height:1;opacity:0.55;' +
-    'transition:opacity 120ms ease-out;';
-  close.addEventListener('mouseenter', function () { close.style.opacity = '0.9'; });
-  close.addEventListener('mouseleave', function () { close.style.opacity = '0.55'; });
+    'flex:none;cursor:pointer;border:0;border-radius:8px;width:28px;height:28px;' +
+    'background:transparent;color:oklch(0.76 0 0);font-size:16px;line-height:1;' +
+    'transition:background-color 120ms ease-out,color 120ms ease-out;';
+  close.addEventListener('mouseenter', function () { close.style.background = 'oklch(1 0 0 / 0.08)'; close.style.color = 'oklch(0.955 0 0)'; });
+  close.addEventListener('mouseleave', function () { close.style.background = 'transparent'; close.style.color = 'oklch(0.76 0 0)'; });
   close.addEventListener('click', function () {
     track('nudge_dismissed', {});
     hide();
