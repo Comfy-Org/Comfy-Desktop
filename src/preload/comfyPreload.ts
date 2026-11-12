@@ -279,6 +279,8 @@ const Auth: ComfyDesktop2AuthBridge = {
   signOut: () => ipcRenderer.invoke('desktop2-auth:sign-out'),
   switchWorkspace: (workspaceId) =>
     ipcRenderer.invoke('desktop2-auth:switch-workspace', workspaceId),
+  issueBillingHandoff: (workspaceId, receiver) =>
+    ipcRenderer.invoke('desktop2-auth:issue-billing-handoff', workspaceId, receiver),
   onChanged: (callback) => {
     const handler = (_event: IpcRendererEvent, state: ComfyDesktop2AuthState) => callback(state)
     ipcRenderer.on('desktop2-auth:changed', handler)

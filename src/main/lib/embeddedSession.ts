@@ -5,7 +5,12 @@ import { getCloudSession } from '../devplatform/session'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import type { WorkspaceSwitchOutcome } from '../cloud/types'
-import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
+import { issueBillingHandoff } from '../cloud/billingHandoff'
+import type {
+  ComfyDesktop2AuthState,
+  ComfyDesktop2BillingHandoff,
+  ComfyDesktop2BillingHandoffReceiver
+} from '../../types/comfyDesktopBridge'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 import * as mainTelemetry from './telemetry'
 import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
@@ -19,6 +24,7 @@ export const EMBEDDED_SESSION_CHANNELS = {
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   switchWorkspace: 'desktop2-auth:switch-workspace',
+  issueBillingHandoff: 'desktop2-auth:issue-billing-handoff',
   changed: 'desktop2-auth:changed'
 } as const
 
@@ -138,6 +144,27 @@ export async function switchWorkspaceForSender(
   const { reached } = await switchWorkspace(workspaceId)
   if (reached) grants.allowView(event.sender, workspaceId)
   return stateForSender(event)
+}
+
+const BILLING_HANDOFF_RECEIVERS: ReadonlySet<unknown> =
+  new Set<ComfyDesktop2BillingHandoffReceiver>(['billing_web', 'platform'])
+
+function isBillingHandoffReceiver(value: unknown): value is ComfyDesktop2BillingHandoffReceiver {
+  return BILLING_HANDOFF_RECEIVERS.has(value)
+}
+
+export async function billingHandoffForSender(
+  event: EmbeddedSessionSender,
+  workspaceId: unknown,
+  receiver: unknown,
+  clientVersion: string
+): Promise<ComfyDesktop2BillingHandoff> {
+  if (typeof workspaceId !== 'string' || workspaceId === '' || !isBillingHandoffReceiver(receiver))
+    return { status: 'disabled' }
+  if (!isTrustedSender(event) || !(await enabledForLocalView())) return { status: 'disabled' }
+  const accessToken = await getCloudSession().getGrantAccessToken()
+  if (!accessToken) return { status: 'sign_in_again' }
+  return issueBillingHandoff(accessToken, { workspaceId, receiver, clientVersion })
 }
 
 let broadcastGeneration = 0

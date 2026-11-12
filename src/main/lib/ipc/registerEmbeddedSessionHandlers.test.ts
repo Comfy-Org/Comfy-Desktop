@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
   switchCloudWorkspace: vi.fn()
 }))
 
-vi.mock('electron', () => ({ ipcMain: { handle: mocks.handle } }))
+vi.mock('electron', () => ({
+  app: { getVersion: () => '1.2.3' },
+  ipcMain: { handle: mocks.handle }
+}))
 
 vi.mock('../telemetry', () => ({ emit: mocks.emit }))
 
@@ -25,8 +28,10 @@ vi.mock('../embeddedSession', () => ({
     getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
     requestSignIn: 'desktop2-auth:request-sign-in',
     signOut: 'desktop2-auth:sign-out',
-    switchWorkspace: 'desktop2-auth:switch-workspace'
+    switchWorkspace: 'desktop2-auth:switch-workspace',
+    issueBillingHandoff: 'desktop2-auth:issue-billing-handoff'
   },
+  billingHandoffForSender: vi.fn(),
   partnerNodeTokenForSender: vi.fn(),
   stateForSender: mocks.stateForSender,
   switchWorkspaceForSender: mocks.switchWorkspaceForSender,

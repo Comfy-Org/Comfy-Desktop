@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type * as WorkspaceTokenModule from '../cloud/workspaceToken'
 
@@ -47,6 +47,7 @@ vi.mock('../host/registry', () => ({
 }))
 
 import {
+  billingHandoffForSender,
   EMBEDDED_SESSION_CHANNELS,
   EMBEDDED_SESSION_DISABLED_EVENT,
   _resetForTest as resetEmbeddedSession,
@@ -438,5 +439,143 @@ describe('embeddedSession', () => {
       userId: 'user-1',
       workspaceId: 'ws-2'
     })
+  })
+})
+
+describe('billingHandoffForSender', () => {
+  const ENTRY_URL = 'https://billing.comfy.org/handoff?code=abc'
+
+  function respond(status: number, body: unknown): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(body), { status }))
+    )
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function issue(workspaceId: unknown = 'ws-2', receiver: unknown = 'billing_web') {
+    const { event } = view('http://127.0.0.1:8000')
+    return billingHandoffForSender(event, workspaceId, receiver, '1.2.3')
+  }
+
+  it('posts the handoff request with the grant access token as Bearer', async () => {
+    respond(201, { entry_url: ENTRY_URL, expires_at: '2026-11-12T12:00:00Z', request_id: 'r-1' })
+
+    await expect(issue('ws-2', 'platform')).resolves.toEqual({
+      status: 'issued',
+      entryUrl: ENTRY_URL
+    })
+    expect(fetch).toHaveBeenCalledWith(`${CLOUD_CONFIG.apiBase}/auth/handoffs`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ACCESS}`
+      },
+      body: JSON.stringify({
+        workspace_id: 'ws-2',
+        receiver: 'platform',
+        surface: 'desktop',
+        client_version: '1.2.3'
+      }),
+      signal: expect.any(AbortSignal)
+    })
+  })
+
+  it.each([
+    ['a 401', 401, { code: 'unauthorized', message: 'expired' }, { status: 'sign_in_again' }],
+    [
+      'a disabled handoff',
+      403,
+      { code: 'HANDOFF_DISABLED', message: 'Handoff is disabled' },
+      { status: 'refused', code: 'HANDOFF_DISABLED', message: 'Handoff is disabled' }
+    ],
+    ['an error without a body', 500, null, { status: 'refused' }],
+    ['a 201 without an entry url', 201, { request_id: 'r-1' }, { status: 'refused' }],
+    ['a 201 with an unparseable entry url', 201, { entry_url: 'not a url' }, { status: 'refused' }],
+    [
+      'a 201 with an http entry url',
+      201,
+      { entry_url: 'http://billing.comfy.org/handoff' },
+      { status: 'refused' }
+    ],
+    [
+      'a 201 with a javascript entry url',
+      201,
+      { entry_url: 'javascript:alert(1)' },
+      { status: 'refused' }
+    ]
+  ])('resolves %s', async (_name, status, body, expected) => {
+    respond(status, body)
+
+    const result = await issue()
+
+    expect(result).toEqual(expected)
+    expect(JSON.stringify(result)).not.toContain(ACCESS)
+    expect(fetch).toHaveBeenCalledWith(
+      `${CLOUD_CONFIG.apiBase}/auth/handoffs`,
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: `Bearer ${ACCESS}` }),
+        body: expect.stringContaining('"surface":"desktop"')
+      })
+    )
+  })
+
+  it('refuses without a code when the request never reaches Cloud', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed')
+      })
+    )
+
+    await expect(issue()).resolves.toEqual({ status: 'refused' })
+  })
+
+  it('asks to sign in again without calling Cloud when Desktop is signed out', async () => {
+    respond(201, { entry_url: ENTRY_URL })
+    mocks.getGrantAccessToken.mockResolvedValue(null)
+
+    await expect(issue()).resolves.toEqual({ status: 'sign_in_again' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an empty workspace', '', 'billing_web'],
+    ['a non-string workspace', 42, 'billing_web'],
+    ['an unknown receiver', 'ws-2', 'checkout'],
+    ['a null receiver', 'ws-2', null]
+  ])('is disabled for %s', async (_name, workspaceId, receiver) => {
+    respond(201, { entry_url: ENTRY_URL })
+
+    await expect(issue(workspaceId, receiver)).resolves.toEqual({ status: 'disabled' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['a remote ComfyUI', 'http://192.168.1.20:8188', {}],
+    ['a view that navigated away', 'http://127.0.0.1:8000', { frameUrl: 'https://evil.example' }],
+    ['a subframe', 'http://127.0.0.1:8000', { subframe: true }]
+  ])('is disabled for %s', async (_name, comfyUrl, options: ViewOptions) => {
+    respond(201, { entry_url: ENTRY_URL })
+    const { event } = view(comfyUrl, options)
+
+    await expect(billingHandoffForSender(event, 'ws-2', 'billing_web', '1.2.3')).resolves.toEqual({
+      status: 'disabled'
+    })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('is disabled while the embedded session is off', async () => {
+    respond(201, { entry_url: ENTRY_URL })
+    mocks.enabled = false
+
+    await expect(issue()).resolves.toEqual({ status: 'disabled' })
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

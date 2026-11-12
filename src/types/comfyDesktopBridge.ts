@@ -123,6 +123,14 @@ export type ComfyDesktop2AuthState =
       workspaceId?: string
     }
 
+export type ComfyDesktop2BillingHandoffReceiver = 'billing_web' | 'platform'
+
+export type ComfyDesktop2BillingHandoff =
+  | { status: 'issued'; entryUrl: string }
+  | { status: 'sign_in_again' }
+  | { status: 'refused'; code?: string; message?: string }
+  | { status: 'disabled' }
+
 export interface ComfyDesktop2AuthBridge {
   getState(): Promise<ComfyDesktop2AuthState>
   /** The workspace credential, only for an exact workspace Desktop's session
@@ -147,6 +155,11 @@ export interface ComfyDesktop2AuthBridge {
   switchWorkspace(workspaceId: string): Promise<ComfyDesktop2AuthState>
   /** Fires when Desktop signs in, signs out or switches workspace. */
   onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
+  /** Issues a billing handoff with Desktop's credential and resolves with only its https entry URL; absent on older Desktop builds. */
+  issueBillingHandoff?(
+    workspaceId: string,
+    receiver: ComfyDesktop2BillingHandoffReceiver
+  ): Promise<ComfyDesktop2BillingHandoff>
 }
 
 export interface ComfyDesktop2TerminalBridge {
