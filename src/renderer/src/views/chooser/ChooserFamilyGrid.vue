@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
 import { homeBuildTones } from '../../panel/home/homeBuild'
+import { useInstallationStore } from '../../stores/installationStore'
 import type { Installation } from '../../types/ipc'
 
 const props = withDefaults(
@@ -30,7 +31,8 @@ const emit = defineEmits<{
   'why-cloud': []
 }>()
 
-const tones = computed(() => homeBuildTones(props.installations))
+const installationStore = useInstallationStore()
+const tones = computed(() => homeBuildTones(props.installations, installationStore.installations))
 
 function lockLeavingTileSize(el: Element): void {
   const node = el as HTMLElement

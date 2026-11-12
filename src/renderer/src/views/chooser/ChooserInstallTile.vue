@@ -16,7 +16,12 @@ import {
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
-import { HOME_BUILD_TONES, isCloudBuild, type HomeBuildTone } from '../../panel/home/homeBuild'
+import {
+  buildDeviceKind,
+  HOME_BUILD_TONES,
+  isCloudBuild,
+  type HomeBuildTone
+} from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
@@ -264,7 +269,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     <BuildDeviceArt
       v-else
       class="chooser-tile-icon relative shrink-0"
-      :kind="isCloudBuild(inst) ? 'cloud' : 'laptop'"
+      :kind="buildDeviceKind(inst)"
       :glow="toneStyle.glow"
     />
 
