@@ -7,6 +7,7 @@ import { can } from '../milestones'
 import { runTitleBarCommand, titleBarState } from '../titleBar'
 import MarProtoMenu from '../mar/MarProtoMenu.vue'
 import MarTitleMenu from '../mar/shell/MarTitleMenu.vue'
+import MarDownloadsMenu from '../mar/shell/MarDownloadsMenu.vue'
 
 /**
  * Browser preview only: a stand-in for the desktop app's title bar, laid
@@ -56,7 +57,8 @@ import MarTitleMenu from '../mar/shell/MarTitleMenu.vue'
     <span class="ml-auto flex items-center gap-3.5 text-muted-foreground">
       <Bell :size="15" />
       <MessageSquarePlus :size="15" />
-      <ArrowDownToLine :size="15" />
+      <MarDownloadsMenu v-if="can.builds" />
+      <ArrowDownToLine v-else :size="15" />
       <!-- The prototype controls. -->
       <MarProtoMenu />
     </span>
