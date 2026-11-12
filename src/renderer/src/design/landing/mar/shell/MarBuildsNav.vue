@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { ChartColumn, Gauge, Server } from 'lucide-vue-next'
+import { Server } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import { cn } from '../../ui/cn'
 import { go, proto, type Page } from '../../useProto'
 
 /**
  * The sidebar before Home (Milestones 2-3), as Desktop has it today
- * (panel/AppSidebar.vue on bl/desktop-as-a-platform): one Builds row, then
- * Tools with Benchmarks and Performance Tests. A build opens from the list.
+ * (panel/AppSidebar.vue): one Builds row. The tools, Benchmarks and
+ * Performance Tests, live in the title bar's ☰ (Comfy-Desktop#2016,
+ * shell/MarTitleMenu.vue). A build opens from the list.
  */
 interface Row {
   page: Page
@@ -17,14 +18,7 @@ interface Row {
   prefix?: string
 }
 const GROUPS: { title?: string; rows: Row[] }[] = [
-  { rows: [{ page: 'environments', label: 'Builds', icon: Server, prefix: 'environment:' }] },
-  {
-    title: 'Tools',
-    rows: [
-      { page: 'tool:benchmarks', label: 'Benchmarks', icon: ChartColumn },
-      { page: 'tool:performance', label: 'Performance Tests', icon: Gauge }
-    ]
-  }
+  { rows: [{ page: 'environments', label: 'Builds', icon: Server, prefix: 'environment:' }] }
 ]
 const isOn = (r: Row): boolean =>
   proto.page === r.page || Boolean(r.prefix && proto.page.startsWith(r.prefix))
