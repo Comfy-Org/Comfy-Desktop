@@ -178,54 +178,48 @@ function toggleSound(): void {
                 {{ t('mcpSetup.inAgent.label') }}
               </h3>
               <ol class="m-0 flex list-none flex-col gap-5 p-0">
-                <li
-                  v-for="step in steps"
-                  :key="step.key"
-                  class="grid grid-cols-[20px_minmax(0,1fr)] gap-3"
-                >
-                  <span
-                    class="inline-flex size-5 items-center justify-center rounded-full bg-foreground/8 text-[11px] font-medium text-muted-foreground tabular-nums"
-                    aria-hidden="true"
-                    >{{ step.number }}</span
+                <li v-for="step in steps" :key="step.key" class="flex min-w-0 flex-col gap-2">
+                  <p class="m-0 flex items-center gap-2.5 text-[13px] leading-5 font-medium">
+                    <span
+                      class="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground/8 text-[11px] font-medium text-muted-foreground tabular-nums"
+                      aria-hidden="true"
+                      >{{ step.number }}</span
+                    >
+                    {{ step.title }}
+                  </p>
+                  <div
+                    v-if="step.command"
+                    class="flex items-start gap-2 rounded-[10px] bg-foreground/6 py-1.5 pr-1.5 pl-3"
                   >
-                  <div class="flex min-w-0 flex-col gap-2">
-                    <p class="m-0 text-[13px] leading-5 font-medium text-pretty">
-                      {{ step.title }}
-                    </p>
-                    <div
-                      v-if="step.command"
-                      class="flex items-start gap-2 rounded-[10px] bg-foreground/6 py-1.5 pr-1.5 pl-3"
+                    <code
+                      class="min-w-0 flex-1 py-0.5 font-mono text-xs leading-5 [overflow-wrap:anywhere]"
+                      >{{ step.command }}</code
                     >
-                      <code
-                        class="min-w-0 flex-1 py-0.5 font-mono text-xs leading-5 [overflow-wrap:anywhere]"
-                        >{{ step.command }}</code
-                      >
-                      <BaseCopyButton
-                        :value="step.command"
-                        :aria-label="t('mcpSetup.copyCommand')"
-                        :data-testid="step.testId"
-                        @click="trackCopy(step.client)"
-                      />
-                    </div>
-                    <p
-                      v-if="step.key === 'register'"
-                      class="m-0 text-xs leading-[18px] text-muted-foreground"
-                    >
-                      {{ t('mcpSetup.inAgent.jsonHint') }}
-                      <button
-                        type="button"
-                        class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-foreground hover:underline"
-                        data-testid="mcp-copy-json"
-                        @click="copyText('json', snippets.json)"
-                      >
-                        {{
-                          copiedClient === 'json'
-                            ? t('mcpSetup.copied')
-                            : t('mcpSetup.inAgent.copyJson')
-                        }}
-                      </button>
-                    </p>
+                    <BaseCopyButton
+                      :value="step.command"
+                      :aria-label="t('mcpSetup.copyCommand')"
+                      :data-testid="step.testId"
+                      @click="trackCopy(step.client)"
+                    />
                   </div>
+                  <p
+                    v-if="step.key === 'register'"
+                    class="m-0 text-xs leading-[18px] text-muted-foreground"
+                  >
+                    {{ t('mcpSetup.inAgent.jsonHint') }}
+                    <button
+                      type="button"
+                      class="cursor-pointer border-0 bg-transparent p-0 text-xs font-medium text-foreground hover:underline"
+                      data-testid="mcp-copy-json"
+                      @click="copyText('json', snippets.json)"
+                    >
+                      {{
+                        copiedClient === 'json'
+                          ? t('mcpSetup.copied')
+                          : t('mcpSetup.inAgent.copyJson')
+                      }}
+                    </button>
+                  </p>
                 </li>
               </ol>
             </section>
