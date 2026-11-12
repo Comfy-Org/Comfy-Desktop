@@ -14,6 +14,15 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_completed')).toBe(false)
   })
 
+  it.each([
+    ['comfy.desktop.apps.run_failed', true],
+    ['comfy.desktop.apps.run_started', false],
+    ['comfy.desktop.apps.run_finished', false],
+    ['comfy.desktop.apps.setup', false]
+  ])('mirrors app event %s: %s', (name, mirrored) => {
+    expect(isDatadogMirroredEvent(name)).toBe(mirrored)
+  })
+
   it('mirrors install.not_started but not install.dispatched', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.install.not_started')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.install.dispatched')).toBe(false)
