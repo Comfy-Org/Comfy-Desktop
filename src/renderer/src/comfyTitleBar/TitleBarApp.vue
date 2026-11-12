@@ -224,6 +224,7 @@ const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 const installPillRef = useTemplateRef<HTMLElement>('installPill')
+const titleClusterRef = useTemplateRef<HTMLElement>('titleCluster')
 const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
 const trailingWidthPx = ref(0)
@@ -253,16 +254,13 @@ interface FitMeasurement {
 function measureFit(): FitMeasurement {
   const bar = titleBarRef.value
   const trailing = titleTrailingRef.value
-  const pill = installPillRef.value
-  if (!bar || !trailing || !pill) return { gap: Infinity, trailingWidth: NaN }
+  const cluster = titleClusterRef.value
+  if (!bar || !trailing || !cluster) return { gap: Infinity, trailingWidth: NaN }
   const barRect = bar.getBoundingClientRect()
   if (barRect.width === 0) return { gap: Infinity, trailingWidth: NaN }
   const trailingRect = trailing.getBoundingClientRect()
   const leadingRight = Math.max(
-    pill.getBoundingClientRect().right,
-    ...Array.from(pill.closest('.title-cluster')?.children ?? []).map(
-      (child) => child.getBoundingClientRect().right
-    )
+    ...Array.from(cluster.children).map((child) => child.getBoundingClientRect().right)
   )
   return { gap: trailingRect.left - leadingRight, trailingWidth: trailingRect.width }
 }
@@ -419,7 +417,7 @@ function closeBuildTab(): void {
 }
 
 function handleInstallPillWithCoachmark(): void {
-  if (homeTabActive.value && !isInstallLess.value) {
+  if (homeTabActive.value) {
     bridge?.setPanel('comfy')
     return
   }
@@ -602,6 +600,7 @@ onUnmounted(() => {
     }"
   >
     <div
+      ref="titleCluster"
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
       <nav
@@ -665,20 +664,6 @@ onUnmounted(() => {
             <X :size="12" aria-hidden="true" />
           </button>
         </div>
-        <button
-          v-else
-          ref="installPill"
-          type="button"
-          class="title-install-pill"
-          :class="[titleTab(false), 'max-w-52 cursor-pointer px-2']"
-          aria-haspopup="dialog"
-          :aria-expanded="isInstancePickerOpen"
-          data-testid="title-choose-build-tab"
-          @click="handleInstallPillWithCoachmark"
-        >
-          <span class="truncate">{{ t('chooser.title') }}</span>
-          <ChevronDown :size="13" class="shrink-0 text-subtle-foreground" aria-hidden="true" />
-        </button>
       </nav>
       <div v-else ref="installPill" class="title-install-pill" :class="titleInstallPillClass">
         <div

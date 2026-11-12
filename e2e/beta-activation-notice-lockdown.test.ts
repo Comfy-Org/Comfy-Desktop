@@ -56,9 +56,7 @@ async function popupVisible(app: ElectronApplication): Promise<boolean | 'detach
 
 async function lockdownEngaged(titleBar: WebContentsPage): Promise<boolean> {
   const bell = await titleBar.exists('.title-announcement-button')
-  const pill = await titleBar.exists(
-    '[data-testid="title-build-tab"], [data-testid="title-choose-build-tab"]'
-  )
+  const pill = await titleBar.exists('[data-testid="title-home-tab"]')
   return !bell && !pill
 }
 

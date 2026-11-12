@@ -382,30 +382,20 @@ describe('TitleBarApp', () => {
     wrapper.unmount()
   })
 
-  it('shows the same tabs with no build: Home selected and a tab that opens the full build picker', async () => {
+  it('shows only the Home tab, selected and in the build-window tab style, with no build', async () => {
     bridgeState = installMockBridge({ installationId: null })
     vi.resetModules()
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
-    const wrapper = mount(TitleBarApp, { attachTo: document.body })
+    const wrapper = mount(TitleBarApp)
     await flushPromises()
 
+    const nav = wrapper.get('nav')
+    expect(nav.findAll('button').length).toBe(1)
     const home = wrapper.get('[data-testid="title-home-tab"]')
     expect(home.attributes('aria-current')).toBe('page')
-    expect(wrapper.find('[data-testid="title-build-tab"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="title-close-build-tab"]').exists()).toBe(false)
-
-    const chooseTab = wrapper.get('[data-testid="title-choose-build-tab"]')
-    expect(chooseTab.element.tagName).toBe('BUTTON')
-    expect(chooseTab.text()).toBe('Choose a build')
-    expect(chooseTab.attributes('aria-current')).toBeUndefined()
-    expect(chooseTab.attributes('aria-haspopup')).toBe('dialog')
     expect(home.classes()).toEqual(expect.arrayContaining(['h-7', 'rounded-control', 'bg-accent']))
-    expect(chooseTab.classes()).toEqual(expect.arrayContaining(['h-7', 'rounded-control']))
-
-    await chooseTab.trigger('click')
-    expect(bridgeState.installPillClicks.length).toBe(1)
-    expect(bridgeState.setPanelCalls).toEqual([])
-    wrapper.unmount()
+    expect(wrapper.find('[data-testid="title-build-tab"]').exists()).toBe(false)
+    expect(wrapper.find('.title-install-pill').exists()).toBe(false)
   })
 
   it('keeps the dashboard in place from the Home tab with no build, and returns to it from a Home tool', async () => {
@@ -424,7 +414,7 @@ describe('TitleBarApp', () => {
     expect(bridgeState.setPanelCalls).toEqual(['comfy'])
   })
 
-  it('swaps the choose tab for the build tab when the window gets a build', async () => {
+  it('adds the build tab when the window gets a build', async () => {
     bridgeState = installMockBridge({ installationId: null })
     vi.resetModules()
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
@@ -434,7 +424,6 @@ describe('TitleBarApp', () => {
     bridgeState.installationIdChangedCallbacks.forEach((cb) => cb('inst-1'))
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="title-choose-build-tab"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="title-build-tab"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="title-home-tab"]').attributes('aria-current')).toBeUndefined()
   })

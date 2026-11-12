@@ -99,12 +99,7 @@ export async function openManageViaDashboard(
   return popup
 }
 
-const INSTALL_PILL = '[data-testid="title-choose-build-tab"]'
-const BUILD_TAB = '[data-testid="title-build-tab"]'
-
-function hasBuildTab(titleBar: WebContentsPage): Promise<boolean> {
-  return titleBar.exists(BUILD_TAB)
-}
+const HOME_TAB = '[data-testid="title-home-tab"]'
 
 export async function openPickerViaTitlePill(
   app: ElectronApplication,
@@ -117,16 +112,12 @@ export async function openPickerViaTitlePill(
     )
   }
   await expect
-    .poll(async () => (await hasBuildTab(titleBar)) || titleBar.exists(INSTALL_PILL), {
+    .poll(() => titleBar.exists(HOME_TAB), {
       timeout: 15_000,
       intervals: [100, 250]
     })
     .toBe(true)
-  if (await hasBuildTab(titleBar)) {
-    await titleBar.evaluate('window.api.openInstancePicker()')
-  } else {
-    expect(await titleBar.click(INSTALL_PILL), 'title-bar install pill clicked').toBe(true)
-  }
+  await titleBar.evaluate('window.api.openInstancePicker()')
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {

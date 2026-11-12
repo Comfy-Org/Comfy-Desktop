@@ -33,13 +33,11 @@ test('chooser body renders on cold start @windows @macos @linux', async () => {
   expect(await ctx.panel.exists('[data-testid="devplatform-account-signin"]')).toBe(true)
 })
 
-test('title bar shows Home and the choose-a-build tab on chooser host @windows @macos @linux', async () => {
+test('title bar shows only the Home tab on chooser host @windows @macos @linux', async () => {
   expect(await ctx.titleBar.exists('[data-testid="title-home-tab"][aria-current="page"]')).toBe(
     true
   )
-  expect(await ctx.titleBar.textOf('[data-testid="title-choose-build-tab"]')).toMatch(
-    /Choose a build/i
-  )
+  expect(await ctx.titleBar.exists('[data-testid="title-build-tab"]')).toBe(false)
 })
 
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
