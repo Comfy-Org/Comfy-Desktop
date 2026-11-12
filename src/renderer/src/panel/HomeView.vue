@@ -19,7 +19,7 @@ type LoadState = 'loading' | 'ready' | 'unavailable'
 
 const HOME_BUILD_LIMIT = 3
 const TEXT_LINK_CLASS =
-  'h-6 gap-1.5 rounded-[7px] px-1.5 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
+  'h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
 
 const emit = defineEmits<{
   pick: [installation: Installation]
@@ -159,7 +159,7 @@ onMounted(() => {
             type="button"
             variant="muted-textonly"
             size="unset"
-            :class="TEXT_LINK_CLASS"
+            :class="[TEXT_LINK_CLASS, '-my-1']"
             data-testid="home-all-builds"
             @click="emit('show-builds')"
           >
