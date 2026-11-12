@@ -466,7 +466,7 @@ describe('Home builds', () => {
       'Comfy CloudAlways on',
       'Flux SandboxReady'
     ])
-    expect(buildOptions()[0]!.getAttribute('aria-checked')).toBe('true')
+    expect(buildOptions().some((option) => option.hasAttribute('aria-checked'))).toBe(false)
   })
 
   it('opens ComfyUI in the build picked in the menu, without changing the current one', async () => {
