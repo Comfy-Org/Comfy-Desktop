@@ -471,7 +471,10 @@ onUnmounted(() => {
               @pick="handleChooserPick"
               @show-builds="dashboardHomePage = 'chooser'"
             />
-            <AppsView v-else-if="dashboardHomePage === 'apps'" />
+            <AppsView
+              v-else-if="dashboardHomePage === 'apps'"
+              :obscured="currentOverlay?.kind === 'takeover'"
+            />
             <AssetsView v-else-if="dashboardHomePage === 'assets'" />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
