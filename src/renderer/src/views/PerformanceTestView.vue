@@ -48,6 +48,7 @@ const sectionLabelClass =
   'text-[11px] font-semibold tracking-[0.04em] text-subtle-foreground uppercase'
 const toggleClass = `self-center ${sectionLabelClass} hover:text-foreground [&_.collapsible-section-toggle__chevron]:size-3.5`
 const filterClass = 'gap-1.5 px-3 text-[13px]/5'
+const filterNarrowClass = '@max-[36rem]/setup:w-full @max-[36rem]/setup:max-w-none'
 const numberInputClass =
   'w-9 flex-none [&_input]:h-6 [&_input]:w-full [&_input]:rounded-md [&_input]:border-0 [&_input]:bg-transparent [&_input]:p-0 [&_input]:text-center [&_input]:text-[13px] [&_input]:text-foreground [&_input]:tabular-nums [&_input]:shadow-none [&_input]:[appearance:textfield] [&_input]:focus-visible:ring-0 [&_input::-webkit-inner-spin-button]:appearance-none [&_input::-webkit-outer-spin-button]:appearance-none'
 const runButtonClass = 'ml-auto min-w-20 gap-1.5 px-3 text-[13px]/5'
@@ -725,11 +726,13 @@ watch(performanceTestLogs, async () => {
         class="performance-test__intro mx-auto flex min-h-full w-full max-w-300 flex-col items-start gap-5 px-10 pt-9 pb-24 text-left"
       >
         <BrandedPageHeader :title="t('performanceTest.title')" />
-        <div class="performance-test__content flex min-h-0 w-full flex-none flex-col">
+        <div
+          class="performance-test__content @container/setup flex min-h-0 w-full flex-none flex-col"
+        >
           <div class="performance-test__setup flex w-full flex-none flex-wrap items-center gap-2">
-            <section class="performance-test__step flex min-w-0">
+            <section class="performance-test__step flex min-w-0 @max-[36rem]/setup:basis-full">
               <h2 class="sr-only">{{ t('performanceTest.selectInstance') }}</h2>
-              <div class="performance-test__instance-select min-w-0">
+              <div class="performance-test__instance-select min-w-0 @max-[36rem]/setup:w-full">
                 <Menu
                   :modal="false"
                   align="start"
@@ -739,7 +742,7 @@ watch(performanceTestLogs, async () => {
                   <template #trigger>
                     <Button
                       class="max-w-64"
-                      :class="filterClass"
+                      :class="[filterClass, filterNarrowClass]"
                       variant="secondary"
                       size="md"
                       type="button"
@@ -760,7 +763,7 @@ watch(performanceTestLogs, async () => {
                           selectedInstance?.label ?? t('performanceTest.selectInstancePlaceholder')
                         }}</span
                       >
-                      <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
+                      <ChevronDown :size="14" class="ml-auto shrink-0" aria-hidden="true" />
                     </Button>
                   </template>
                   <DropdownMenuRadioGroup :model-value="selectedInstallationId ?? ''">
@@ -792,7 +795,7 @@ watch(performanceTestLogs, async () => {
               </div>
             </section>
             <section
-              class="performance-test__step performance-test__workflow-step performance-test__drop-zone -m-1 flex min-w-0 rounded-[12px] p-1 outline-1 outline-offset-[-1px] transition-[outline-color,background-color] duration-[140ms]"
+              class="performance-test__step performance-test__workflow-step performance-test__drop-zone -m-1 flex min-w-0 @max-[36rem]/setup:basis-[calc(100%+0.5rem)] rounded-[12px] p-1 outline-1 outline-offset-[-1px] transition-[outline-color,background-color] duration-[140ms]"
               :class="[
                 isWorkflowDragging
                   ? 'performance-test__drop-zone--dragging bg-white/4 outline-white/35 outline-dashed'
@@ -815,7 +818,7 @@ watch(performanceTestLogs, async () => {
                 <template #trigger>
                   <Button
                     class="performance-test__workflow-trigger max-w-[26rem]"
-                    :class="filterClass"
+                    :class="[filterClass, filterNarrowClass]"
                     variant="secondary"
                     size="md"
                     type="button"
@@ -845,7 +848,7 @@ watch(performanceTestLogs, async () => {
                         ? t('performanceTest.importingWorkflow')
                         : t('performanceTest.chooseWorkflowPlaceholder')
                     }}</span>
-                    <ChevronDown :size="14" class="shrink-0" aria-hidden="true" />
+                    <ChevronDown :size="14" class="ml-auto shrink-0" aria-hidden="true" />
                   </Button>
                 </template>
                 <MenuItem
