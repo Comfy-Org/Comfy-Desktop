@@ -6,8 +6,9 @@ import AppsHost from './AppsHost.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { CatalogApp } from '../types/ipc'
 
-const { growBy = 0 } = defineProps<{
+const { growBy = 0, obscured = false } = defineProps<{
   growBy?: number
+  obscured?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -67,6 +68,7 @@ onBeforeUnmount(() => {
     class="absolute inset-0"
     :url="openApp.url"
     :grow-by="growBy"
+    :obscured="obscured"
     @failed="appFailed"
     @app-open="closeApp"
     @entered="appEntered = true"
