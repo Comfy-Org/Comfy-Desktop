@@ -1271,6 +1271,7 @@ describe('renderer model-job snapshot', () => {
     send: ReturnType<typeof vi.fn>
     once: (event: string, listener: () => void) => void
     emitDestroyed: () => void
+    markDestroyed: () => void
     __ownerWindow?: unknown
   }
 
@@ -1278,14 +1279,18 @@ describe('renderer model-job snapshot', () => {
     opts: { installationId?: string; ownerWindow?: unknown; destroyed?: boolean } = {}
   ): FakeContents {
     const destroyedListeners: (() => void)[] = []
+    let destroyed = opts.destroyed === true
     const contents: FakeContents = {
-      isDestroyed: () => opts.destroyed === true,
+      isDestroyed: () => destroyed,
       send: vi.fn(),
       once: (event, listener) => {
         if (event === 'destroyed') destroyedListeners.push(listener)
       },
       emitDestroyed: () => {
         for (const listener of destroyedListeners.splice(0)) listener()
+      },
+      markDestroyed: () => {
+        destroyed = true
       },
       __ownerWindow: opts.ownerWindow
     }
@@ -1554,6 +1559,87 @@ describe('renderer model-job snapshot', () => {
     await flush()
 
     expect(progressEvents(joiner)).toEqual([])
+  })
+
+  it('withholds the completed savePath from a listing view but not from the owner', async () => {
+    const installationId = uniqueInstallationId()
+    const name = uniqueName()
+    const before = transfers.length
+    const owner = fakeContents({ installationId })
+    const job = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints',
+      senderContents: owner as never
+    })
+    await waitForTransfers(before + 1)
+    const listing = fakeContents({ installationId })
+    mod.subscribeToInstallationModelJobs(installationId, listing as never)
+
+    transfers[before]!.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    const completedFor = (contents: FakeContents) =>
+      progressEvents(contents).find(
+        (event) => (event as { status?: string }).status === 'completed'
+      ) as ComfyDownloadManager.DownloadProgress | undefined
+    expect(completedFor(owner)?.savePath).toBe(job.savePath)
+    expect(completedFor(listing)).toBeDefined()
+    expect(completedFor(listing)?.savePath).toBeUndefined()
+  })
+
+  it('stops delivering to an unattached joining view once it attaches to an installation', async () => {
+    const job = await startJob(uniqueInstallationId())
+    const transfer = transfers.at(-1)!
+    const joiner = fakeContents()
+    await joinFrom(job, joiner)
+
+    viewInstallations.set(joiner, uniqueInstallationId())
+    joiner.send.mockClear()
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(joiner)).toEqual([])
+  })
+
+  it('skips an unattached joining view whose WebContents is destroyed', async () => {
+    const job = await startJob(uniqueInstallationId())
+    const transfer = transfers.at(-1)!
+    const joiner = fakeContents()
+    await joinFrom(job, joiner)
+
+    joiner.markDestroyed()
+    joiner.send.mockClear()
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(joiner)).toEqual([])
+  })
+
+  it('sends each event once to a window that joined a job and whose contents listed it', async () => {
+    const installationId = uniqueInstallationId()
+    const name = uniqueName()
+    const job = await startJob(installationId, name)
+    const transfer = transfers.at(-1)!
+    const win = fakeWindow()
+    viewInstallations.set(win.webContents, installationId)
+    await mod.startManagedModelJob({
+      url: job.url,
+      filename: name,
+      directory: 'checkpoints',
+      window: win as never
+    })
+    mod.subscribeToInstallationModelJobs(installationId, win.webContents as never)
+
+    win.webContents.send.mockClear()
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(win.webContents)).toHaveLength(1)
   })
 
   it('drops a listed view from a job once its WebContents is destroyed', async () => {
