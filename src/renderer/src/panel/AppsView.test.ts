@@ -278,6 +278,48 @@ describe('AppsView', () => {
     }
   })
 
+  it('shows a settled app after the reveal limit even when its entrance never finishes', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const wrapper = await mountApps()
+      await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+      entrance().pause()
+      await flushPromises()
+      appsSettled!()
+      await flushPromises()
+
+      await vi.advanceTimersByTimeAsync(3999)
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(250)
+      expect(wrapper.find('[data-testid="app-page-skeleton"]').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('eases the entrance with ease-out when the theme curve is not a valid easing', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    document.documentElement.style.setProperty('--ease-out-expo', 'not-a-curve')
+    try {
+      const wrapper = await mountApps()
+      await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+      await flushPromises()
+
+      expect(animate.mock.calls.at(-1)![1]).toMatchObject({ easing: 'ease-out' })
+      appsSettled!()
+      await entrance().finished
+      await flushPromises()
+      expect(showApps.mock.calls.at(-1)![0].parked).toBe(false)
+    } finally {
+      document.documentElement.style.removeProperty('--ease-out-expo')
+    }
+  })
+
   it('fades an app in without moving it when motion is reduced', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const matchMedia = vi

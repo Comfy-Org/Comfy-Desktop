@@ -39,9 +39,20 @@ describe('stackApps', () => {
     expect(content.children).toEqual(['comfy', 'panel', 'titlebar', 'apps'])
   })
 
-  it('puts the app on top when the panel is not in the window', () => {
+  it('leaves a parked app out of the window when the panel is not in it', () => {
     const content = fakeContent(['comfy', 'titlebar'])
-    stackApps(content, 'apps', 'panel', true)
+    expect(stackApps(content, 'apps', 'panel', true)).toBe(false)
+    expect(content.children).toEqual(['comfy', 'titlebar'])
+  })
+
+  it('leaves a shown app where it is when the panel is gone and it is parked again', () => {
+    const content = fakeContent(['comfy', 'titlebar', 'apps'])
+    expect(stackApps(content, 'apps', 'panel', true)).toBe(false)
     expect(content.children).toEqual(['comfy', 'titlebar', 'apps'])
+  })
+
+  it('says the app is stacked when the panel is there', () => {
+    expect(stackApps(fakeContent(['comfy', 'panel']), 'apps', 'panel', true)).toBe(true)
+    expect(stackApps(fakeContent(['comfy']), 'apps', 'panel', false)).toBe(true)
   })
 })
