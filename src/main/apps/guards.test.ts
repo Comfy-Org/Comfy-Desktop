@@ -164,6 +164,11 @@ describe('toOutputFile', () => {
     expect(toOutputFile({ filename: 'a.png', subfolder: '../x', type: 'output' })).toBeNull()
     expect(toOutputFile({ filename: 'a.png', type: 'input' })).toBeNull()
   })
+  it('refuses a file name that is a path', () => {
+    expect(toOutputFile({ filename: '../../secret.png', type: 'output' })).toBeNull()
+    expect(toOutputFile({ filename: 'a\\b.png', type: 'output' })).toBeNull()
+    expect(toOutputFile({ filename: '..', type: 'output' })).toBeNull()
+  })
 })
 
 describe('safeUploadName', () => {
@@ -180,6 +185,10 @@ describe('safeUploadName', () => {
     expect(safeUploadName('My Song.mp3')).toBe('My_Song.mp3')
     expect(safeUploadName('take.flac')).toBe('take.flac')
     expect(safeUploadName('voice.m4a')).toBe('voice.m4a')
+  })
+  it('keeps the extension of a long name', () => {
+    const name = safeUploadName(`${'a'.repeat(150)}.webm`)
+    expect(name).toBe(`${'a'.repeat(95)}.webm`)
   })
 })
 
