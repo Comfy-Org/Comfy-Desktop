@@ -24,12 +24,14 @@ const open = defineModel<boolean>('open', { default: false })
 const slots = useSlots()
 
 const MENU_CHROME_PX = 10
+const MENU_OVERHANG_PX = 8
 const group = useTemplateRef<ComponentPublicInstance | HTMLElement>('group')
 const menuMinWidth = ref(0)
 watch(open, (isOpen) => {
   if (!isOpen) return
   const el = group.value instanceof HTMLElement ? group.value : group.value?.$el
-  menuMinWidth.value = el instanceof HTMLElement ? el.offsetWidth - MENU_CHROME_PX : 0
+  menuMinWidth.value =
+    el instanceof HTMLElement ? el.offsetWidth + MENU_OVERHANG_PX - MENU_CHROME_PX : 0
 })
 </script>
 
