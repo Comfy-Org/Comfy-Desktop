@@ -19,6 +19,7 @@ import {
 import { PROJECTS } from '../../mock'
 import { can } from '../../milestones'
 import { errorOf } from '../../mar/build/buildErrors'
+import { stateOf } from '../../mar/build/buildFacts'
 import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 // Local setup › Home first: the first install runs behind the Home (mar/setup).
 import { BUILD_NAME, flow, installingBehind, installPending } from '../../mar/setup/setupFlow'
@@ -49,7 +50,7 @@ const rows = computed<Row[]>(() =>
     : // Most recently used first, the order Home and the build picker use (#2042).
       recentInstances.value.map((i) => ({
         page: `environment:${i.id}` as Page,
-        label: i.name,
+        label: stateOf(i).name,
         envId: i.id,
         // Nothing links a workflow to its build before the breadcrumb milestone.
         count: can.value.breadcrumb

@@ -14,6 +14,7 @@ import { appsProto, closeAppTab, libApp } from './appFlow'
 import { thumb } from './mock'
 import { marTabsOn } from './mar/shell/titleTabs'
 import { buildTrail } from './mar/build/buildNav'
+import { stateOf } from './mar/build/buildFacts'
 import { onCloud } from './mar/shell/surface'
 import { assetsCrumbState, runAssetsCrumb } from './mar/shell/assetsCrumb'
 
@@ -142,7 +143,7 @@ function marTabs(): Pick<TitleBarState, 'tabs' | 'tabFront' | 'runsOn' | 'agent'
       kind: kindOf(t.instanceId)
     })),
     tabFront: appsProto.front ? null : proto.activeTab === 'home' ? null : proto.activeTab,
-    runsOn: runs ? { name: runs.name, kind: kindOf(runs.id) } : undefined,
+    runsOn: runs ? { name: stateOf(runs).name, kind: kindOf(runs.id) } : undefined,
     agent: can.value.agent ? proto.mode === 'agent' && proto.activeTab === 'home' : undefined
   }
 }
