@@ -1521,7 +1521,6 @@
     "lineage": "来源"
   },
   "fileMenu": {
-    "newWindow": "打开仪表板",
     "newInstall": "安装新构建",
     "addExistingInstall": "添加现有构建",
     "loadSnapshot": "加载快照",

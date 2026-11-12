@@ -1521,7 +1521,6 @@
     "lineage": "Lineage"
   },
   "fileMenu": {
-    "newWindow": "Open Dashboard",
     "newInstall": "Install a New Build",
     "addExistingInstall": "Add Existing Build",
     "loadSnapshot": "Load Snapshot",

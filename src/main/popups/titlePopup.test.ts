@@ -139,8 +139,6 @@ describe('buildTitlePopupMenuItems', () => {
     (installationId) => {
       const items = buildTitlePopupMenuItems(makeEntry({ installationId }))
       expect(items.map((item) => item.id ?? 'separator')).toEqual([
-        'new-window',
-        'separator',
         'performance-test',
         'benchmarks',
         'separator',
@@ -156,7 +154,6 @@ describe('buildTitlePopupMenuItems', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: 'inst-1', zoomLevel: 2 }))
     const ids = items.map((i) => i.id ?? null).filter((id) => id !== null)
     expect(ids).toEqual([
-      'new-window',
       'performance-test',
       'benchmarks',
       'settings',
@@ -196,10 +193,11 @@ describe('buildTitlePopupMenuItems', () => {
     expect(items.find((i) => i.id === 'reset-zoom')).toBeUndefined()
   })
 
-  it('places New Window first and Quit Desktop last on a chooser host', () => {
+  it('places Performance Tests first and Quit Desktop last on a chooser host', () => {
     const items = buildTitlePopupMenuItems(makeEntry({ installationId: null }))
     const ids = items.map((i) => i.id ?? null)
-    expect(ids[0]).toBe('new-window')
+    expect(ids[0]).toBe('performance-test')
+    expect(ids).not.toContain('new-window')
     expect(ids[ids.length - 1]).toBe('close-all-windows')
   })
 

@@ -113,7 +113,6 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
 
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
   expect(popupItems).toEqual([
-    'Open Dashboard',
     'Performance Tests',
     'Benchmarks',
     'Desktop Settings',

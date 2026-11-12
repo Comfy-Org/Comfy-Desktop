@@ -475,8 +475,6 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     ]
   }
   const items: TitlePopupMenuItem[] = [
-    { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
-    { kind: 'separator' },
     {
       id: 'performance-test',
       label: 'Performance Tests',
