@@ -45,7 +45,7 @@ import {
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
 import { isAppsEnabled } from './appsSwitch'
-import { trackFromPage } from './appEvents'
+import { trackApps, trackFromPage, type Where } from './appEvents'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -385,6 +385,15 @@ async function saveResult(
   }
 }
 
+const isWhere = (value: unknown): value is Where => value === 'cloud' || value === 'local'
+
+function tellOutputSaved(app: unknown, where: unknown): void {
+  if (typeof app !== 'string' || !isWhere(where)) return
+  try {
+    trackApps('output_saved', { app, where })
+  } catch {}
+}
+
 async function savedPath(file: unknown): Promise<string> {
   if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error('Unknown file.')
   const real = await fsp.realpath(file).catch(() => null)
@@ -392,7 +401,7 @@ async function savedPath(file: unknown): Promise<string> {
   return real
 }
 
-async function getOutput(
+export async function getOutput(
   file: unknown,
   save?: unknown
 ): Promise<{ type: string; bytes: Uint8Array; path?: string }> {
@@ -408,20 +417,25 @@ async function getOutput(
   const type = res.headers.get('content-type') ?? 'application/octet-stream'
   if (save === undefined || !ext) return { type, bytes }
   const s = (save ?? {}) as { app?: unknown; label?: unknown }
-  return { type, bytes, path: await saveResult(s.app, s.label, ext, bytes) }
+  const saved = await saveResult(s.app, s.label, ext, bytes)
+  tellOutputSaved(s.app, 'cloud')
+  return { type, bytes, path: saved }
 }
 
-async function saveFile(
+export async function saveFile(
   bytes: unknown,
   app: unknown,
   label: unknown,
-  ext: unknown
+  ext: unknown,
+  where?: unknown
 ): Promise<{ path: string }> {
   const e = saveExt(ext)
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES || !e) {
     throw new Error('Apps cannot save that file.')
   }
-  return { path: await saveResult(app, label, e, bytes) }
+  const saved = await saveResult(app, label, e, bytes)
+  tellOutputSaved(app, where)
+  return { path: saved }
 }
 
 async function readSaved(file: unknown): Promise<Uint8Array> {

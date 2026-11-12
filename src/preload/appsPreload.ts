@@ -46,8 +46,13 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
     ipcRenderer.invoke('comfy-apps:upload-image', bytes, name),
   uploadFile: (bytes: Uint8Array, name: string) =>
     ipcRenderer.invoke('comfy-apps:upload-image', bytes, name),
-  saveFile: (bytes: Uint8Array, app: string, label: string, ext: string) =>
-    ipcRenderer.invoke('comfy-apps:save-file', bytes, app, label, ext),
+  saveFile: (
+    bytes: Uint8Array,
+    app: string,
+    label: string,
+    ext: string,
+    where?: 'local' | 'cloud'
+  ) => ipcRenderer.invoke('comfy-apps:save-file', bytes, app, label, ext, where),
   readSaved: (path: string) => ipcRenderer.invoke('comfy-apps:read-saved', path),
   showInFolder: (path: string) => ipcRenderer.invoke('comfy-apps:show-in-folder', path),
   saveVersions: (app: string, bytes: Uint8Array) =>
