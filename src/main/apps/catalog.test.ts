@@ -75,6 +75,20 @@ describe('toCatalogApp', () => {
     expect(toCatalogApp(outside, LIST)?.thumbnailUrl).toBeNull()
   })
 
+  it('ignores media that climbs out of the catalog folder', () => {
+    const climbing = item('a', {
+      title: 'A',
+      slug: 'a',
+      website_media: {
+        '$.static_thumb': '/catalog-media/../account/delete',
+        '$.hero_poster': '/catalog-media/a/poster'
+      }
+    })
+    expect(toCatalogApp(climbing, LIST)?.thumbnailUrl).toBe(
+      'https://comfy.org/catalog-media/a/poster'
+    )
+  })
+
   it('skips an app without a title or a slug', () => {
     expect(toCatalogApp(item('a', { slug: 'a' }), LIST)).toBeNull()
     expect(toCatalogApp(item('b', { title: 'No slug' }), LIST)).toBeNull()
@@ -95,6 +109,33 @@ describe('listCatalogApps', () => {
     )
     const apps = await listCatalogApps(LIST)
     expect(apps.map((app) => app.title)).toEqual(['First', 'Second'])
+  })
+
+  it('skips entries that are not objects and lists each app once', async () => {
+    fetchMock.mockResolvedValue(
+      Response.json({
+        items: [
+          null,
+          'genjutsu',
+          catalogApp('genjutsu', 'First', 0),
+          catalogApp('genjutsu', 'Again', 1)
+        ]
+      })
+    )
+    const apps = await listCatalogApps(LIST)
+    expect(apps.map((app) => app.title)).toEqual(['First'])
+  })
+
+  it('keeps an empty catalog empty', async () => {
+    fetchMock.mockResolvedValue(Response.json({ items: [] }))
+    await expect(listCatalogApps(LIST)).resolves.toEqual([])
+  })
+
+  it('fails when the catalog answers without an item list', async () => {
+    fetchMock.mockResolvedValue(Response.json({ items: null }))
+    await expect(listCatalogApps(LIST)).rejects.toThrow('no item list')
+    fetchMock.mockResolvedValue(Response.json(null))
+    await expect(listCatalogApps(LIST)).rejects.toThrow('no item list')
   })
 
   it('fails when the catalog does not answer', async () => {

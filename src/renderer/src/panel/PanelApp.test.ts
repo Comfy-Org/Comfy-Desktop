@@ -20,6 +20,7 @@ vi.mock('../main', () => ({
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
 const mockModal = {
+  state: { visible: false },
   alert: vi.fn(),
   confirm: vi.fn(),
   close: vi.fn()
@@ -373,6 +374,7 @@ function installMockApi(initial?: {
     transferHostBoundsToInstall: vi.fn(async () => {}),
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
+    openInstallInNewWindow: vi.fn(),
     navigatePanel: vi.fn(),
     listHomeWorkflows: vi.fn(async () => []),
     openCatalogWorkflow: vi.fn(async () => true),
@@ -1246,6 +1248,30 @@ describe('PanelApp', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+  })
+
+  it('opens a build picked on the dashboard in its own window and keeps the dashboard here', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await showBuilds(wrapper)
+    const api = (
+      window as unknown as {
+        api: {
+          openInstallInNewWindow: ReturnType<typeof vi.fn>
+          claimAttachHost: ReturnType<typeof vi.fn>
+          getListActions: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+
+    wrapper.getComponent({ name: 'ChooserView' }).vm.$emit('pick', SAMPLE_INSTALL)
+    await flushPromises()
+
+    expect(api.openInstallInNewWindow).toHaveBeenCalledWith(SAMPLE_INSTALL.id)
+    expect(api.getListActions).not.toHaveBeenCalled()
+    expect(api.claimAttachHost).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 

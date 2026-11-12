@@ -314,6 +314,7 @@ async function fetchFile(file: string, request: Request): Promise<Response> {
   if (!res) return notFound()
   const headers = new Headers(res.headers)
   headers.set('X-Content-Type-Options', 'nosniff')
+  headers.set('Content-Security-Policy', 'sandbox')
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
 }
 

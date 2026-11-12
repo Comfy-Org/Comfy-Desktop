@@ -24,6 +24,8 @@ import {
   consumeAttachClaim,
   dropAttachClaimsForWindow,
   dropInstallationIndex,
+  findHomeHostEntry,
+  findHostLaunching,
   findPreferredHostByVisibility,
   getEntryByInstallationId,
   hostInstallEvents,
@@ -165,13 +167,6 @@ describe('computeBodyMode', () => {
     _runningSessions.set('inst-A', {} as never)
     _stoppingInstallationIds.add('inst-A')
     expect(computeBodyMode(entry)).toBe('comfy-lifecycle')
-  })
-
-  it('shows Home over a build, running or stopped, while its Home tab is active', () => {
-    const entry = makeEntry({ installationId: 'inst-A', activePanel: 'home' })
-    expect(computeBodyMode(entry)).toBe('chooser')
-    _runningSessions.set('inst-A', {} as never)
-    expect(computeBodyMode(entry)).toBe('chooser')
   })
 
   it('passes non-comfy panels through for install-backed hosts', () => {
@@ -342,6 +337,36 @@ describe('attach-claim helpers', () => {
     expect(consumeAttachClaim('inst-A')).toBeUndefined()
     expect(consumeAttachClaim('inst-C')).toBeUndefined()
     expect(consumeAttachClaim('inst-B')).toBe(9)
+  })
+})
+
+describe('home and launching windows', () => {
+  it('finds the window that is launching a build, by its preview or its attach claim', () => {
+    const previewing = makeEntry({ installationId: null })
+    previewing.previewInstallationId = 'inst-A'
+    const claiming = makeEntry({ installationId: null })
+    registerHostEntry(previewing)
+    registerHostEntry(claiming)
+    claimAttachHost('inst-B', claiming.windowKey)
+
+    expect(findHostLaunching('inst-A')).toBe(previewing)
+    expect(findHostLaunching('inst-B')).toBe(claiming)
+    expect(findHostLaunching('inst-C')).toBeUndefined()
+  })
+
+  it('picks a home window that is not launching a build, and never a build window', () => {
+    const build = makeEntry({ installationId: 'inst-A' })
+    const launching = makeEntry({ installationId: null })
+    launching.previewInstallationId = 'inst-B'
+    const home = makeEntry({ installationId: null })
+    registerHostEntry(build)
+    registerHostEntry(launching)
+    registerHostEntry(home)
+
+    expect(findHomeHostEntry()).toBe(home)
+
+    unregisterHostEntry(home)
+    expect(findHomeHostEntry()).toBeNull()
   })
 })
 

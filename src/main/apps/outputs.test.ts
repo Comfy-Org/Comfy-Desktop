@@ -119,6 +119,17 @@ describe('outputRequest', () => {
       outputRequest({ items: [picture({ bytes: half }), picture({ bytes: half })], index: 0 })
     ).toBeNull()
   })
+
+  it('refuses an items list with holes', () => {
+    const items = [picture(), picture()]
+    delete items[0]
+    expect(outputRequest({ items, index: 1 })).toBeNull()
+  })
+
+  it('counts the whole buffer behind each output', () => {
+    const view = new Uint8Array(new ArrayBuffer(MAX_OUTPUTS_BYTES + 1), 0, 1)
+    expect(outputRequest({ items: [picture({ bytes: view })], index: 0 })).toBeNull()
+  })
 })
 
 describe('resolveOutputFiles', () => {

@@ -24,6 +24,7 @@ const revealKey = revealInFolderKey(window.api.platform)
 const open = ref(false)
 const copyState = ref<'idle' | 'copied' | 'failed'>('idle')
 let closeTimer: ReturnType<typeof setTimeout> | null = null
+let copyRun = 0
 
 function clearCloseTimer(): void {
   if (closeTimer) clearTimeout(closeTimer)
@@ -36,19 +37,21 @@ function reveal(): void {
 
 async function copyPath(event: Event): Promise<void> {
   event.preventDefault()
+  clearCloseTimer()
+  const run = ++copyRun
   const result = await navigator.clipboard.writeText(props.path).then(
     () => 'copied' as const,
     () => 'failed' as const
   )
-  if (!open.value) return
+  if (run !== copyRun) return
   copyState.value = result
-  clearCloseTimer()
   if (copyState.value === 'copied')
     closeTimer = setTimeout(() => (open.value = false), COPIED_CLOSE_MS)
 }
 
 watch(open, (isOpen) => {
   if (isOpen) return
+  copyRun++
   clearCloseTimer()
   copyState.value = 'idle'
 })
