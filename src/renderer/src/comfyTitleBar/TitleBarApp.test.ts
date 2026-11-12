@@ -309,6 +309,19 @@ describe('TitleBarApp', () => {
     wrapper.unmount()
   })
 
+  it('keeps Home selected while a Home tool is open, and the build tab goes back to the build', async () => {
+    const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+    const wrapper = mount(TitleBarApp)
+    await flushPromises()
+    bridgeState.panelChangedCallbacks.forEach((cb) => cb('benchmarks'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="title-home-tab"]').attributes('aria-current')).toBe('page')
+    await wrapper.get('[data-testid="title-build-tab"] button').trigger('click')
+    expect(bridgeState.setPanelCalls).toEqual(['comfy'])
+    expect(bridgeState.installPillClicks).toEqual([])
+  })
+
   it('closes the build from its tab', async () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)

@@ -141,6 +141,7 @@ import {
   getEntryByInstallationId,
   hasRunningSessionForEntry,
   isChooserHost,
+  isHomePanel,
   isInstallHost,
   openOrFocusAnyHostWindow,
   openOrFocusChooserHostWindow,
@@ -837,14 +838,23 @@ ipcMain.handle('return-to-dashboard', (event) => {
 })
 
 function showBuildWindow(entry: ComfyWindowEntry): void {
-  if (entry.activePanel === 'home') setActivePanel(entry.windowKey, 'comfy')
+  if (isHomePanel(entry.activePanel)) setActivePanel(entry.windowKey, 'comfy')
   entry.window.show()
   entry.window.focus()
 }
 
+async function closeBuildTab(id: number, entry: ComfyWindowEntry): Promise<void> {
+  const previous = entry.activePanel
+  if (!isHomePanel(previous)) setActivePanel(id, 'home')
+  const closed = await returnToDashboard(id)
+  if (!closed && entry.activePanel === 'home' && !isHomePanel(previous)) {
+    setActivePanel(id, previous)
+  }
+}
+
 ipcMain.on('comfy-window:close-build-tab', (event) => {
   const found = findEntryByTitleBarSender(event.sender)
-  if (found && isInstallHost(found.entry)) void returnToDashboard(found.id)
+  if (found && isInstallHost(found.entry)) void closeBuildTab(found.id, found.entry)
 })
 
 ipcMain.handle('claim-attach-host', (event, installationId: string) => {
@@ -1129,8 +1139,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
 
       if (parentEntry.installationId != null) {
         if (!opts?.confirmed) {
+          const currentId = parentEntry.installationId
           const stopsBuild =
-            shouldConfirmKillForEntry(parentEntry) && hasRunningSessionForEntry(parentEntry)
+            shouldConfirmKillForEntry(parentEntry) &&
+            (hasRunningSessionForEntry(parentEntry) ||
+              _getLaunchingInstallationIds().includes(currentId))
           let targetName = installationId
           try {
             const target = await getInstallation(installationId)

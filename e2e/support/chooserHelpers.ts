@@ -99,6 +99,13 @@ export async function openManageViaDashboard(
   return popup
 }
 
+const INSTALL_PILL = '.title-install-pill.is-interactive'
+const BUILD_TAB = '[data-testid="title-build-tab"]'
+
+function hasBuildTab(titleBar: WebContentsPage): Promise<boolean> {
+  return titleBar.exists(BUILD_TAB)
+}
+
 export async function openPickerViaTitlePill(
   app: ElectronApplication,
   titleBar: WebContentsPage,
@@ -109,11 +116,17 @@ export async function openPickerViaTitlePill(
       'openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill'
     )
   }
-  await titleBar.waitForVisible('.title-install-pill.is-interactive', { timeout: 15_000 })
-  expect(
-    await titleBar.click('.title-install-pill.is-interactive'),
-    'title-bar install pill clicked'
-  ).toBe(true)
+  await expect
+    .poll(async () => (await hasBuildTab(titleBar)) || titleBar.exists(INSTALL_PILL), {
+      timeout: 15_000,
+      intervals: [100, 250]
+    })
+    .toBe(true)
+  if (await hasBuildTab(titleBar)) {
+    await titleBar.evaluate('window.api.openInstancePicker()')
+  } else {
+    expect(await titleBar.click(INSTALL_PILL), 'title-bar install pill clicked').toBe(true)
+  }
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {

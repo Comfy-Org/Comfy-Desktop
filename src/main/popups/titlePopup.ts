@@ -45,6 +45,7 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   isChooserHost,
+  isInstallHost,
   isPanelSender
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
@@ -324,6 +325,7 @@ export interface TitlePopupEntry {
   pickerSelectionEpoch: number
   pickerInitialTab: string | null
   pickerLayout: InstancePickerLayout
+  pickerBuildCount: number
   pickerAutoAction: string | null
   pickerAutoActionNonce: number
   lastPickerBroadcastJson: string | null
@@ -582,6 +584,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
     if (entry.lastPickerBroadcastJson === snapshotJson) continue
     entry.lastPickerBroadcastJson = snapshotJson
     entry.view.popup.webContents.send('comfy-titlepopup:installs-changed', snapshot)
+    entry.pickerBuildCount = snapshot.installs.length
     if (entry.pickerLayout === 'list' && !entry.view.parentWindow.isDestroyed()) {
       entry.view.popup.setBounds(
         computeBuildListBounds(
@@ -654,6 +657,7 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
     pickerSelectionEpoch: 0,
     pickerInitialTab: null,
     pickerLayout: 'full',
+    pickerBuildCount: 0,
     pickerAutoAction: null,
     pickerAutoActionNonce: 0,
     openedAt: 0,
@@ -832,6 +836,10 @@ function clampPopupX(x: number, width: number, parent: BrowserWindow): number {
   return Math.min(x, maxX)
 }
 
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
 function refitPopupForParent(entry: TitlePopupEntry): void {
   if (!entry.view.isOpen) return
   if (entry.view.popup.webContents.isDestroyed()) return
@@ -841,8 +849,10 @@ function refitPopupForParent(entry: TitlePopupEntry): void {
   const parent = entry.view.parentWindow
 
   if (entry.kind === 'instance-picker') {
-    if (entry.pickerLayout === 'list') return
-    const target = computePickerBounds(parent)
+    const target =
+      entry.pickerLayout === 'list'
+        ? computeBuildListBounds(parent, cur.x, entry.pickerBuildCount)
+        : computePickerBounds(parent)
     if (
       target.x === cur.x &&
       target.y === cur.y &&
@@ -1020,7 +1030,7 @@ export function openDownloadsTrayForInstall(installationId: string): void {
 
 export interface TitlePopupHostBindings {
   openChooserHostWindow: (initialPanel?: ComfyPanelKey) => void
-  returnToDashboard: (parentEntryId: number) => Promise<void> | void
+  returnToDashboard: (parentEntryId: number) => Promise<unknown> | void
   confirmAndCloseAllHostWindows: (parentWindow: BrowserWindow | null) => Promise<void> | void
   confirmAndCloseHostWindow: (parentWindow: BrowserWindow) => Promise<void> | void
   setActivePanel: (windowKey: number, panel: ComfyPanelKey) => void
@@ -1200,6 +1210,7 @@ function showInstancePickerForHost(
   popupEntry.pickerSelectionEpoch = pickerSelectionEpoch
   popupEntry.pickerInitialTab = initialTab ?? null
   popupEntry.pickerLayout = layout
+  popupEntry.pickerBuildCount = installs.length
   popupEntry.pickerAutoAction = autoAction ?? null
   popupEntry.pickerAutoActionNonce = autoActionNonce
   const snapshot = buildInstancePickerSnapshot({
@@ -1726,8 +1737,8 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         return
       }
 
-      const x = Math.max(0, Math.round(payload?.anchor?.x ?? 0))
-      const y = Math.max(0, Math.round(payload?.anchor?.y ?? TITLEBAR_HEIGHT))
+      const x = Math.max(0, Math.round(finiteOr(payload?.anchor?.x, 0)))
+      const y = Math.max(0, Math.round(finiteOr(payload?.anchor?.y, TITLEBAR_HEIGHT)))
 
       openInstancePickerForHost(
         entry,
@@ -1738,7 +1749,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
         null,
         null,
         null,
-        'list'
+        isInstallHost(entry) ? 'list' : 'full'
       )
     }
   )

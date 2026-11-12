@@ -38,7 +38,8 @@ function moveFocus(step: number): void {
   const all = rows()
   if (all.length === 0) return
   const at = all.indexOf(document.activeElement as HTMLElement)
-  all[(at + step + all.length) % all.length]?.focus()
+  const from = at === -1 ? (step > 0 ? -1 : 0) : at
+  all[(from + step + all.length) % all.length]?.focus()
 }
 
 function pick(build: Installation): void {
@@ -50,7 +51,7 @@ function pick(build: Installation): void {
 }
 
 onMounted(focusCurrent)
-watch(() => snapshot.activeInstallationId, focusCurrent)
+watch([() => snapshot.activeInstallationId, () => builds.value.length > 0], focusCurrent)
 </script>
 
 <template>

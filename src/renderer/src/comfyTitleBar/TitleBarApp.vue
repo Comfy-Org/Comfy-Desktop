@@ -397,7 +397,8 @@ const betaNotice = useBetaActivationNotice({
 })
 
 const buildTabsShown = computed(() => !isInstallLess.value && !isFirstUseLockdown.value)
-const homeTabActive = computed(() => buildTabsShown.value && activePanel.value === 'home')
+const HOME_PANELS: ReadonlySet<ComfyPanelKey> = new Set(['home', 'performance-test', 'benchmarks'])
+const homeTabActive = computed(() => buildTabsShown.value && HOME_PANELS.has(activePanel.value))
 
 const titleTabBase =
   '[-webkit-app-region:no-drag] group flex h-7 min-w-0 shrink items-center gap-2 rounded-control text-ui outline-none focus-visible:ring-2 focus-visible:ring-ring'

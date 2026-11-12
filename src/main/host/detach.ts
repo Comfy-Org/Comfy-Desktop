@@ -114,16 +114,16 @@ export function closeAllHostWindows(): void {
   }
 }
 
-export async function returnToDashboard(parentEntryId: number): Promise<void> {
+export async function returnToDashboard(parentEntryId: number): Promise<boolean> {
   const entry = comfyWindows.get(parentEntryId)
-  if (!entry || isChooserHost(entry) || entry.window.isDestroyed()) return
+  if (!entry || isChooserHost(entry) || entry.window.isDestroyed()) return false
   const panelAlive = !!entry.panelView && !entry.panelView.webContents.isDestroyed()
   const cleared = panelAlive
     ? await consultPanelRendererReturnToDashboard(entry.panelView)
     : await confirmReturnToDashboardViaSystemModal(entry)
-  if (!cleared) return
-  if (entry.window.isDestroyed()) return
+  if (!cleared || entry.window.isDestroyed()) return false
   entry.detachInstall()
+  return true
 }
 
 async function confirmReturnToDashboardViaSystemModal(entry: ComfyWindowEntry): Promise<boolean> {
@@ -267,6 +267,7 @@ export function _detachInstallImpl(entry: ComfyWindowEntry): void {
   entry.sourceCategory = null
   entry.previewInstallationId = null
   entry.activePanel = 'comfy'
+  entry.overlayReturnPanel = undefined
   entry.window.setTitle(CHOOSER_HOST_WINDOW_TITLE)
   if (!entry.titleBarView.webContents.isDestroyed()) {
     entry.titleBarView.webContents.send('comfy-titlebar:title-changed', entry.titleBarText)

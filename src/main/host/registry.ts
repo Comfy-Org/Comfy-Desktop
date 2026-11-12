@@ -34,6 +34,12 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'announcement'
 ])
 
+const HOME_PANELS: ReadonlySet<ComfyPanelKey> = new Set(['home', 'performance-test', 'benchmarks'])
+
+export function isHomePanel(panel: ComfyPanelKey): boolean {
+  return HOME_PANELS.has(panel)
+}
+
 export type BodyMode =
   | 'comfy'
   | 'comfy-lifecycle'

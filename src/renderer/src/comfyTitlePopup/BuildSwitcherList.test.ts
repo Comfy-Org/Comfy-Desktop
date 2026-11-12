@@ -78,4 +78,26 @@ describe('BuildSwitcherList', () => {
     expect(document.activeElement).toBe(wrapper.get('[data-testid="build-list-test"]').element)
     wrapper.unmount()
   })
+
+  it('focuses the open build when the builds arrive after the list opens', async () => {
+    const wrapper = mount(BuildSwitcherList, {
+      attachTo: document.body,
+      props: {
+        snapshot: { installs: [], activeInstallationId: 'test', runningInstallationIds: [] }
+      }
+    })
+    await flushPromises()
+
+    await wrapper.setProps({
+      snapshot: {
+        installs: [build('apps', 'Apps'), build('test', 'Test Instance')],
+        activeInstallationId: 'test',
+        runningInstallationIds: []
+      }
+    })
+    await flushPromises()
+
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="build-list-test"]').element)
+    wrapper.unmount()
+  })
 })
