@@ -147,6 +147,7 @@ export interface TemplateSearchCandidate {
   needsDownload: boolean
   score: number | null
   calibrated: number | null
+  calibratedThreshold: number | null
   belowThreshold: boolean
   missing: string[]
 }

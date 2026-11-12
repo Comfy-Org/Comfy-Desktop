@@ -97,7 +97,8 @@ describe('parseDecision', () => {
             ...candidate('as_given', 'poster_template'),
             score: 0.91,
             threshold: 0.44,
-            calibrated: 0.83
+            calibrated: 0.83,
+            calibrated_threshold: 0.59
           }
         ],
         download: []
@@ -108,7 +109,12 @@ describe('parseDecision', () => {
       ]
     })
     const result = parseDecision(body)!
-    expect(result.run[0]).toMatchObject({ score: 0.91, calibrated: 0.83, belowThreshold: false })
+    expect(result.run[0]).toMatchObject({
+      score: 0.91,
+      calibrated: 0.83,
+      calibratedThreshold: 0.59,
+      belowThreshold: false
+    })
     expect(result.alsoTry[0]!.calibrated).toBeNull()
     expect(result.alsoTry.map((c) => [c.templateId, c.score, c.belowThreshold])).toEqual([
       ['weak_template', 0.2, true],

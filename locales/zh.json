@@ -67,7 +67,9 @@
       "matchWeak": "较弱匹配",
       "matchScore": "匹配度 {percent}%",
       "matchRaw": "原始分数 {raw}",
-      "matchUncalibrated": "原始分数，未校准"
+      "matchUncalibrated": "原始分数，未校准",
+      "belowBar": "低于 {bar}% 门槛",
+      "belowBarPlain": "低于门槛"
     }
   },
   "installType": {

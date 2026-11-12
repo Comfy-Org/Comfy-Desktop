@@ -26,6 +26,7 @@ function candidate(templateId: string, over: Partial<TemplateSearchCandidate> = 
     needsDownload: false,
     score: 0.92,
     calibrated: null,
+    calibratedThreshold: null,
     belowThreshold: false,
     missing: [],
     ...over
@@ -194,6 +195,25 @@ describe('HomeTemplateSearch', () => {
     const badge = wrapper.get('[data-testid="home-template-search-match"]')
     expect(badge.text()).toBe('Strong match · 0.92')
     expect(badge.attributes('title')).toBe('Strong match · 0.92 (raw score, not calibrated)')
+  })
+
+  it('says a weaker match is below the bar, in the same units as its score', async () => {
+    const weak = candidate('weak_template', {
+      family: 't2i-stylised',
+      score: 0.405,
+      calibrated: 0.56,
+      calibratedThreshold: 0.59,
+      belowThreshold: true
+    })
+    search.mockResolvedValue(answer({ run: [POSTER], alsoTry: [weak] }))
+    const wrapper = mountSearch()
+    await searchFor(wrapper, 'a poster')
+
+    const row = wrapper.get('[data-weak="true"]')
+    expect(row.text()).toContain('t2i-stylised · below our 59% bar')
+    expect(row.get('[data-testid="home-template-search-match"]').attributes('title')).toBe(
+      'Weaker match · 56% (below our 59% bar · raw score 0.405)'
+    )
   })
 
   it('shows the template family under its title', async () => {
@@ -386,7 +406,7 @@ describe('TemplateSearchResults as a grid', () => {
     expect(boxes.map((box) => box.attributes('data-level'))).toEqual(['strong', 'weak'])
     expect(boxes[0]!.attributes('aria-label')).toBe('Strong match · 81% (raw score 0.920)')
     expect(boxes[1]!.attributes('aria-label')).toBe(
-      'Weaker match · 0.06 (raw score, not calibrated)'
+      'Weaker match · 0.06 (below our bar · raw score, not calibrated)'
     )
     stop()
   })

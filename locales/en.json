@@ -67,7 +67,9 @@
       "matchWeak": "Weaker match",
       "matchScore": "{percent}% match",
       "matchRaw": "raw score {raw}",
-      "matchUncalibrated": "raw score, not calibrated"
+      "matchUncalibrated": "raw score, not calibrated",
+      "belowBar": "below our {bar}% bar",
+      "belowBarPlain": "below our bar"
     }
   },
   "installType": {

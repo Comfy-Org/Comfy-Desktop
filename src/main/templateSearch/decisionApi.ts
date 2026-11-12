@@ -97,6 +97,7 @@ function candidateFrom(value: unknown, fromDownloadList: boolean): TemplateSearc
     needsDownload: fromDownloadList || maskCode(candidate) === NOT_INSTALLED,
     score: asNumber(candidate.score),
     calibrated: asNumber(candidate.calibrated),
+    calibratedThreshold: asNumber(candidate.calibrated_threshold),
     belowThreshold: isBelowThreshold(candidate),
     missing: missingFor(candidate, templateId)
   }

@@ -60,10 +60,18 @@ function shownScore(candidate: TemplateSearchCandidate): string {
     : `${Math.round(candidate.calibrated * 100)}%`
 }
 
+function belowBar(candidate: TemplateSearchCandidate): string {
+  return typeof candidate.calibratedThreshold === 'number'
+    ? t('home.search.belowBar', { bar: Math.round(candidate.calibratedThreshold * 100) })
+    : t('home.search.belowBarPlain')
+}
+
 function scoreNote(candidate: TemplateSearchCandidate): string {
-  return candidate.calibrated === null
-    ? t('home.search.matchUncalibrated')
-    : t('home.search.matchRaw', { raw: (candidate.score ?? 0).toFixed(3) })
+  const raw =
+    candidate.calibrated === null
+      ? t('home.search.matchUncalibrated')
+      : t('home.search.matchRaw', { raw: (candidate.score ?? 0).toFixed(3) })
+  return candidate.belowThreshold ? `${belowBar(candidate)} · ${raw}` : raw
 }
 
 function matchLabel(candidate: TemplateSearchCandidate): string {
@@ -135,7 +143,10 @@ function rowMeta(row: SearchRow): string {
   const blocked = props.controller.blockedReason.value
   if (blocked !== null) return blocked
   const candidate = row.candidate as TemplateSearchCandidate
-  if (!candidate.needsDownload) return candidate.family ?? t('home.search.template')
+  if (!candidate.needsDownload) {
+    const family = candidate.family ?? t('home.search.template')
+    return candidate.belowThreshold ? `${family} · ${belowBar(candidate)}` : family
+  }
   return candidate.missing.length
     ? t('home.search.needsDownload', { items: candidate.missing.join(', ') })
     : t('home.search.needsTemplateDownload')
