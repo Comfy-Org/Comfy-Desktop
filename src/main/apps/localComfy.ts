@@ -7,7 +7,10 @@ import type { InstallationRecord } from '../installations'
 import {
   _getActiveLaunchIds,
   _getLaunchingInstances,
+  _isStopping,
+  _operationAborts,
   _runningSessions,
+  type SessionInfo,
   sessionLifecycleEvents,
   stopRunning
 } from '../lib/ipc/shared'
@@ -20,18 +23,24 @@ import {
   cancelAppsSetup,
   ensureAppsBuild,
   findApps,
+  installVersion,
   launchAppsBuild,
-  planAppsBuild
+  launchConsole,
+  planAppsBuild,
+  reusableLocal
 } from './appsBuild'
 import {
   APPS_BUILD_NAME,
+  type ComfyChoice,
   FREE_IDLE_MS,
   FREE_JSON,
   freeWait,
   isRunEnd,
+  pickComfy,
   queueEmpty,
   type SetupEvent,
-  shouldStopIdle
+  shouldStopIdle,
+  wantedVersion
 } from './appsBuildRules'
 import {
   type DownloadRequest,
@@ -52,6 +61,8 @@ import {
 export interface LocalState {
   state: 'running' | 'starting' | 'stopped' | 'none' | 'unsupported'
   name?: string
+  version?: string
+  own?: boolean
   clientId?: string
   error?: string
   setup?: boolean
@@ -69,14 +80,33 @@ let starting: Promise<LocalState> | null = null
 let lastUse = Date.now()
 const runsSeen = new Map<string, RunSeen>()
 
+interface Target {
+  id: string
+  name: string
+  version: string | null
+  own: boolean
+}
+
+let target: Target | null = null
+const startedHere = new Set<string>()
+
 function touch(): void {
   lastUse = Date.now()
 }
 
+function localSession(id: string): SessionInfo | null {
+  const s = _runningSessions.get(id)
+  return s && !s.url && s.port > 0 && (s.sourceInstallationId ?? id) === id ? s : null
+}
+
 export function appsRunning(): { id: string; name: string; port: number } | null {
-  const id = appsBuildId()
-  const s = id ? _runningSessions.get(id) : undefined
-  return id && s && !s.url && s.port > 0 ? { id, name: s.installationName, port: s.port } : null
+  const id = target?.id ?? appsBuildId()
+  const s = id ? localSession(id) : null
+  return id && s ? { id, name: s.installationName, port: s.port } : null
+}
+
+export function ownInUse(): string | null {
+  return target?.own ? (appsRunning()?.id ?? null) : null
 }
 
 function launching(id: string): boolean {
@@ -86,33 +116,89 @@ function launching(id: string): boolean {
   )
 }
 
-async function currentState(): Promise<{ state: LocalState; install?: InstallationRecord }> {
+function busy(id: string, running: boolean): boolean {
+  if (_isStopping(id)) return true
+  if (running || startedHere.has(id)) return false
+  return _operationAborts.has(id) || launching(id)
+}
+
+interface Candidate extends ComfyChoice {
+  inst: InstallationRecord
+  own: boolean
+}
+
+async function candidate(inst: InstallationRecord, own: boolean): Promise<Candidate> {
+  const running = localSession(inst.id) !== null
+  return {
+    id: inst.id,
+    inst,
+    own,
+    running,
+    busy: busy(inst.id, running),
+    version: await installVersion(inst)
+  }
+}
+
+async function choose(min: string, apps: InstallationRecord | null): Promise<Candidate | null> {
+  const own = await Promise.all((await reusableLocal()).map((inst) => candidate(inst, true)))
+  const appsRunningNow = apps && localSession(apps.id) ? [await candidate(apps, false)] : []
+  return pickComfy([...own, ...appsRunningNow], min, appsRunning()?.id)
+}
+
+function aimAt(pick: Candidate | null): void {
+  target = pick ? { id: pick.id, name: pick.inst.name, version: pick.version, own: pick.own } : null
+}
+
+function shown(): Pick<LocalState, 'name' | 'version' | 'own'> {
+  if (!target?.own) return {}
+  return { name: target.name, own: true, ...(target.version ? { version: target.version } : {}) }
+}
+
+interface Current {
+  state: LocalState
+  pick: Candidate | null
+}
+
+async function currentState(want: unknown, adopt: boolean): Promise<Current> {
   const off = await appsLocalOff()
-  if (off) return { state: { state: 'unsupported', error: off } }
+  if (off) return { state: { state: 'unsupported', error: off }, pick: null }
   const inst = await findApps()
+  if (adopt) {
+    const pick = await choose(wantedVersion(want), inst?.status === 'installed' ? inst : null)
+    aimAt(pick)
+    if (pick?.own && !pick.running) {
+      const state = launching(pick.id) ? 'starting' : 'stopped'
+      return { state: { state, ...shown() }, pick }
+    }
+  }
   const run = appsRunning()
   if (run) {
     return {
-      state: { state: 'running', name: run.name, clientId: CLIENT_ID },
-      ...(inst ? { install: inst } : {})
+      state: { state: 'running', name: run.name, ...shown(), clientId: CLIENT_ID },
+      pick: null
     }
   }
+  if (target?.own) return { state: { state: 'starting', ...shown() }, pick: null }
   if (appsSetupRunning())
-    return { state: { state: 'starting', name: APPS_BUILD_NAME, setup: true } }
+    return { state: { state: 'starting', name: APPS_BUILD_NAME, setup: true }, pick: null }
   if (!inst || inst.status !== 'installed') {
     const download = await planAppsBuild().then(
       (p) => p.bytes,
       () => 0
     )
-    return { state: { state: 'none', name: APPS_BUILD_NAME, ...(download ? { download } : {}) } }
+    return {
+      state: { state: 'none', name: APPS_BUILD_NAME, ...(download ? { download } : {}) },
+      pick: null
+    }
   }
-  if (launching(inst.id)) return { state: { state: 'starting', name: inst.name }, install: inst }
-  return { state: { state: 'stopped', name: inst.name }, install: inst }
+  if (launching(inst.id)) return { state: { state: 'starting', name: inst.name }, pick: null }
+  return { state: { state: 'stopped', name: inst.name }, pick: null }
 }
 
-export async function getLocal(): Promise<LocalState> {
+export async function getLocal(want?: unknown): Promise<LocalState> {
   syncLocalSocket()
-  const { state } = await currentState()
+  const { state } = await currentState(want, !starting)
+  syncLocalSocket()
   return state.state === 'stopped' && starting ? { ...state, state: 'starting' } : state
 }
 
@@ -130,24 +216,21 @@ async function answers(port: number): Promise<boolean> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-async function untilAnswering(name: string | undefined): Promise<LocalState> {
+async function untilAnswering(id: string, name: string | undefined): Promise<LocalState> {
   const deadline = Date.now() + COMFY_BOOT_TIMEOUT_MS
   while (Date.now() < deadline) {
     const run = appsRunning()
     if (run && (await answers(run.port))) {
       touch()
       syncLocalSocket()
-      return { state: 'running', name: run.name, clientId: CLIENT_ID }
+      return { state: 'running', name: run.name, ...shown(), clientId: CLIENT_ID }
     }
-    if (!run) {
-      const { state } = await currentState()
-      if (state.state !== 'starting') {
-        return { state: 'stopped', name, error: 'ComfyUI stopped before it was ready.' }
-      }
+    if (!run && !launching(id)) {
+      return { state: 'stopped', name, ...shown(), error: 'ComfyUI stopped before it was ready.' }
     }
     await sleep(1000)
   }
-  return { state: 'stopped', name, error: 'ComfyUI did not answer within 5 minutes.' }
+  return { state: 'stopped', name, ...shown(), error: 'ComfyUI did not answer within 5 minutes.' }
 }
 
 function shortError(message: string | undefined): string {
@@ -159,9 +242,24 @@ function sendSetup(event: SetupEvent): void {
   forward({ type: 'setup', data: event })
 }
 
-async function start(): Promise<LocalState> {
-  const { state } = await currentState()
+async function startOwn(inst: InstallationRecord): Promise<LocalState> {
+  touch()
+  if (!appsRunning() && !launching(inst.id)) {
+    startedHere.add(inst.id)
+    const result = await launchConsole(inst)
+    if (!result.ok && !appsRunning()) {
+      if (!localSession(inst.id) && !launching(inst.id)) startedHere.delete(inst.id)
+      return { state: 'stopped', name: inst.name, ...shown(), error: shortError(result.message) }
+    }
+  }
+  return untilAnswering(inst.id, inst.name)
+}
+
+async function start(want: unknown): Promise<LocalState> {
+  const { state, pick } = await currentState(want, true)
+  syncLocalSocket()
   if (state.state === 'unsupported' || state.state === 'running') return state
+  if (pick?.own) return startOwn(pick.inst)
   let inst: InstallationRecord
   try {
     inst = await ensureAppsBuild(sendSetup)
@@ -175,11 +273,11 @@ async function start(): Promise<LocalState> {
       return { state: 'stopped', name: inst.name, error: shortError(result.message) }
     }
   }
-  return untilAnswering(inst.name)
+  return untilAnswering(inst.id, inst.name)
 }
 
-export function startLocal(): Promise<LocalState> {
-  starting ??= start().finally(() => (starting = null))
+export function startLocal(want?: unknown): Promise<LocalState> {
+  starting ??= start(want).finally(() => (starting = null))
   return starting
 }
 
@@ -278,7 +376,7 @@ async function runDownload(installationId: string, req: DownloadRequest): Promis
 export async function localDownload(input: unknown): Promise<LocalDownload> {
   const req = downloadRequest(input)
   if ('error' in req) return { state: 'failed', error: req.error }
-  const installationId = appsRunning()?.id ?? (await findApps())?.id
+  const installationId = appsRunning()?.id ?? target?.id ?? (await findApps())?.id
   if (!installationId) return { state: 'failed', error: 'Start ComfyUI for apps first.' }
   touch()
   const key = [installationId, req.url, req.folder, req.name].join('\n')
@@ -389,21 +487,34 @@ function scheduleFree(port: number, wait = FREE_IDLE_MS): void {
   }, wait)
 }
 
+function startedByApps(): string[] {
+  if (!starting) {
+    for (const id of startedHere) {
+      if (!localSession(id) && !launching(id)) startedHere.delete(id)
+    }
+  }
+  const apps = appsBuildId()
+  return [...(apps ? [apps] : []), ...[...startedHere].filter((id) => id !== apps)]
+}
+
 async function stopWhenIdle(): Promise<void> {
-  const run = appsRunning()
-  if (!run) return
-  const entry = getEntryByInstallationId(run.id)
-  const idle = shouldStopIdle({
-    mode: _runningSessions.get(run.id)?.mode ?? '',
-    hasWindow: !!entry && !entry.window.isDestroyed(),
-    lastUse,
-    now: Date.now()
-  })
-  if (!idle) return
-  const seen = lastUse
-  if (downloads.size > 0 || starting || !(await queueIsEmpty(run.port))) return touch()
-  if (lastUse !== seen || downloads.size > 0 || starting) return
-  await stopRunning(run.id)
+  for (const id of startedByApps()) {
+    const s = localSession(id)
+    if (!s) continue
+    const entry = getEntryByInstallationId(id)
+    const idle = shouldStopIdle({
+      mode: s.mode,
+      hasWindow: !!entry && !entry.window.isDestroyed(),
+      lastUse,
+      now: Date.now()
+    })
+    if (!idle) continue
+    const seen = lastUse
+    if (downloads.size > 0 || starting || !(await queueIsEmpty(s.port))) return touch()
+    if (lastUse !== seen || downloads.size > 0 || starting) return
+    await stopRunning(id)
+    startedHere.delete(id)
+  }
 }
 
 export function initLocalComfy(pages: () => WebContents[]): void {

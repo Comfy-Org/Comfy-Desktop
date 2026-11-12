@@ -53,8 +53,9 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
     ipcRenderer.invoke('comfy-apps:save-versions', app, bytes),
   readVersions: (app: string) => ipcRenderer.invoke('comfy-apps:read-versions', app),
   getNodePrice: (node: string) => ipcRenderer.invoke('comfy-apps:get-node-price', node),
-  getLocal: () => ipcRenderer.invoke('comfy-apps:get-local'),
-  startLocal: () => ipcRenderer.invoke('comfy-apps:start-local'),
+  getLocal: (want?: { minVersion?: string }) => ipcRenderer.invoke('comfy-apps:get-local', want),
+  startLocal: (want?: { minVersion?: string }) =>
+    ipcRenderer.invoke('comfy-apps:start-local', want),
   cancelSetup: () => ipcRenderer.invoke('comfy-apps:cancel-setup'),
   localBuilds: () => ipcRenderer.invoke('comfy-apps:local-builds'),
   localFetch: (req: { method: string; path: string; body?: unknown; fileName?: string }) =>
