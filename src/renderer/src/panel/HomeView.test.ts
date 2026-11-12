@@ -437,6 +437,19 @@ describe('Home builds', () => {
     ).toBe('cloud')
   })
 
+  it('hides the Open ComfyUI tooltip while the build menu is open', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+    wrapper
+      .get('[data-testid="home-open-build"] .tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).not.toBeNull())
+
+    await openBuildMenu(wrapper)
+
+    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
+  })
+
   it('lists every build of the workspace with what each is doing in the Open ComfyUI menu', async () => {
     getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
     const wrapper = await openHome()

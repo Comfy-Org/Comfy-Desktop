@@ -26,7 +26,7 @@ const slots = useSlots()
 
 <template>
   <component :is="slots.menu ? ButtonGroup : 'div'" class="inline-flex rounded-lg">
-    <Tooltip :text="tooltip" side="bottom" align="end">
+    <Tooltip :text="tooltip" :disabled="open" side="bottom" align="end">
       <Button
         type="button"
         variant="inverted"
