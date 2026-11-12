@@ -20,6 +20,7 @@ vi.mock('../main', () => ({
 
 vi.mock('../composables/useTheme', () => ({ useTheme: () => ({ theme: 'dark' }) }))
 const mockModal = {
+  state: { visible: false },
   alert: vi.fn(),
   confirm: vi.fn(),
   close: vi.fn()
@@ -1247,6 +1248,84 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+  })
+
+  it('closes an open app when Apps is clicked in the sidebar, and otherwise keeps the page', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const listCatalogApps = vi.fn().mockResolvedValue([
+      {
+        id: 'studio',
+        title: 'Cinematic Studio',
+        description: '',
+        thumbnailUrl: null,
+        url: 'https://apps.example/apps/studio/desktop.html'
+      }
+    ])
+    Object.assign(window.api, {
+      listCatalogApps,
+      showApps: vi.fn(),
+      hideApps: vi.fn(),
+      onAppsLoadFailed: vi.fn(() => () => {}),
+      onAppsAppOpen: vi.fn(() => () => {}),
+      onAppsSettled: vi.fn(() => () => {})
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    const clickApps = async () => {
+      await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+      await flushPromises()
+    }
+
+    await clickApps()
+    await clickApps()
+    expect(listCatalogApps).toHaveBeenCalledOnce()
+
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+
+    await clickApps()
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
+  })
+
+  it('unfolds the sidebar when another page is picked while an app is open', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const matchMedia = vi
+      .spyOn(window, 'matchMedia')
+      .mockImplementation((query) => ({ matches: query.includes('reduce') }) as MediaQueryList)
+    Object.assign(window.api, {
+      listCatalogApps: vi.fn().mockResolvedValue([
+        {
+          id: 'studio',
+          title: 'Cinematic Studio',
+          description: '',
+          thumbnailUrl: null,
+          url: 'https://apps.example/apps/studio/desktop.html'
+        }
+      ]),
+      showApps: vi.fn(),
+      hideApps: vi.fn(),
+      onAppsLoadFailed: vi.fn(() => () => {}),
+      onAppsAppOpen: vi.fn(() => () => {}),
+      onAppsSettled: vi.fn(() => () => {})
+    })
+    try {
+      const wrapper = mountPanel()
+      await flushPromises()
+      await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+
+      await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+    } finally {
+      matchMedia.mockRestore()
+    }
   })
 
   it('opens on Home, with the list of builds hidden until Builds is picked', async () => {

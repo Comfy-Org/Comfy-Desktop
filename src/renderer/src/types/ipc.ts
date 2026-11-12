@@ -2,6 +2,7 @@ export type {
   DashboardPage,
   AssetKind,
   AssetSummary,
+  CatalogApp,
   CatalogWorkflow,
   Unsubscribe,
   BetaActivationNotice,

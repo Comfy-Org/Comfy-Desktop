@@ -43,6 +43,12 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
+  it('a page says it settled on the channel main relays to the panel', () => {
+    const settled = main.match(/APPS_PAGE_SETTLED_CHANNEL = '([\w:-]+)'/)![1]
+    expect(preload).toContain(`ipcRenderer.send('${settled}')`)
+    expect(main).toContain('ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)')
+  })
+
   it('passes the app tag with a Cloud run only when the page gives one', () => {
     expect(preload).toMatch(/const BRIDGE = 3\n/)
     expect(preload).toContain("ipcRenderer.invoke('comfy-apps:run', workflow, app)")

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useLocalStorage } from '@vueuse/core'
 import ProgressModal from '../views/ProgressModal.vue'
 import ModalDialog from '../components/ModalDialog.vue'
 import DialogHost from '../components/DialogHost.vue'
@@ -12,6 +13,7 @@ import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import AppsView from './AppsView.vue'
 import AssetsView from './AssetsView.vue'
+import { SIDEBAR_COLLAPSED_KEY, SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from './sidebarWidth'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -165,6 +167,11 @@ if (params.get('e2e') === '1') {
 type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser' | 'apps' | 'assets'>
 
 const dashboardHomePage = ref<DashboardHomePage>('home')
+const appsVisit = ref(0)
+const appsAppOpen = ref(false)
+const appsAppEntered = ref(false)
+const sidebarCollapsed = useLocalStorage(SIDEBAR_COLLAPSED_KEY, false)
+const appsGrowBy = computed(() => (sidebarCollapsed.value ? 0 : SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH))
 
 const sidebarPage = computed<DashboardPage | null>(() => {
   const panel = activePanel.value
@@ -188,6 +195,9 @@ function closeBuildDetails(): void {
 watch(activePanel, closeBuildDetails)
 
 function handleSidebarNavigate(page: DashboardPage): void {
+  if (page === 'apps' && appsAppOpen.value) appsVisit.value++
+  appsAppOpen.value = false
+  appsAppEntered.value = false
   closeBuildDetails()
   if (page === 'home' || page === 'chooser' || page === 'apps' || page === 'assets')
     dashboardHomePage.value = page
@@ -444,6 +454,7 @@ onUnmounted(() => {
       <AppSidebar
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
+        :folded="appsAppEntered"
         @navigate="handleSidebarNavigate"
       />
       <main
@@ -464,7 +475,7 @@ onUnmounted(() => {
 
           <div
             v-else-if="activePanel === 'chooser'"
-            class="panel-chooser flex min-h-0 flex-1 flex-col overflow-hidden"
+            class="panel-chooser relative flex min-h-0 flex-1 flex-col overflow-hidden"
           >
             <HomeView
               v-if="dashboardHomePage === 'home'"
@@ -473,7 +484,11 @@ onUnmounted(() => {
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
+              :key="appsVisit"
+              :grow-by="appsGrowBy"
               :obscured="currentOverlay?.kind === 'takeover'"
+              @app-open="appsAppOpen = $event"
+              @app-entered="appsAppEntered = $event"
             />
             <AssetsView v-else-if="dashboardHomePage === 'assets'" />
             <BuildDetailsView

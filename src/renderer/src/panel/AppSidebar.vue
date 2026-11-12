@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import { AppWindow, ChartColumn, Gauge, House, Images, Server } from 'lucide-vue-next'
@@ -10,9 +10,11 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import type { DashboardPage } from '../types/ipc'
+import { SIDEBAR_COLLAPSED_KEY, SIDEBAR_RAIL_WIDTH, SIDEBAR_WIDTH } from './sidebarWidth'
 
-const { activePage } = defineProps<{
+const { activePage, folded = false } = defineProps<{
   activePage: DashboardPage
+  folded?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,7 +29,19 @@ interface SidebarRow {
 
 const { t } = useI18n()
 
-const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
+const savedCollapsed = useLocalStorage(SIDEBAR_COLLAPSED_KEY, false)
+const unfoldedByUser = ref(false)
+watch(
+  () => folded,
+  () => (unfoldedByUser.value = false)
+)
+const collapsed = computed(() => savedCollapsed.value || (folded && !unfoldedByUser.value))
+
+function toggleCollapsed(): void {
+  const expand = collapsed.value
+  savedCollapsed.value = !expand
+  unfoldedByUser.value = expand
+}
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
 
 const appsEnabled = ref(false)
@@ -66,7 +80,8 @@ function navigate(page: DashboardPage): void {
 <template>
   <aside
     class="app-sidebar flex shrink-0 flex-col overflow-hidden rounded-shell bg-sidebar-background transition-[width] duration-240 ease-in-out motion-reduce:transition-none"
-    :class="collapsed ? 'w-[72px] items-center px-3 py-2' : 'w-[244px] px-3 py-2'"
+    :class="collapsed ? 'items-center px-3 py-2' : 'px-3 py-2'"
+    :style="{ width: `${collapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH}px` }"
     :aria-label="t('sidebar.navigation')"
     data-testid="app-sidebar"
     :data-collapsed="collapsed"
@@ -96,7 +111,7 @@ function navigate(page: DashboardPage): void {
         :aria-label="toggleLabel"
         :aria-expanded="!collapsed"
         :title="toggleLabel"
-        @click="collapsed = !collapsed"
+        @click="toggleCollapsed"
       >
         <SidebarToggleIcon />
       </Button>

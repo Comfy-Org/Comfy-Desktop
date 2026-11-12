@@ -119,4 +119,31 @@ describe('AppSidebar', () => {
     const reopened = await mountSidebar()
     expect(reopened.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
   })
+
+  it('folds while an app is open without changing the saved setting', async () => {
+    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'false')
+    const wrapper = await mountSidebar()
+    const sidebar = () => wrapper.get('[data-testid="app-sidebar"]')
+
+    await wrapper.setProps({ folded: true })
+    expect(sidebar().attributes('data-collapsed')).toBe('true')
+    expect(sidebar().attributes('style')).toContain('width: 72px')
+    expect(window.localStorage.getItem('comfy.desktop.sidebar.collapsed')).toBe('false')
+
+    await wrapper.setProps({ folded: false })
+    expect(sidebar().attributes('data-collapsed')).toBe('false')
+    expect(sidebar().attributes('style')).toContain('width: 244px')
+  })
+
+  it('expands from the toggle while folded, even when saved as collapsed', async () => {
+    window.localStorage.setItem('comfy.desktop.sidebar.collapsed', 'true')
+    const wrapper = await mountSidebar()
+    await wrapper.setProps({ folded: true })
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+    expect(window.localStorage.getItem('comfy.desktop.sidebar.collapsed')).toBe('false')
+  })
 })

@@ -65,7 +65,9 @@
     "signIn": "登录 Comfy Cloud"
   },
   "apps": {
-    "loadFailed": "无法加载应用页面：{url}"
+    "catalogFailed": "无法加载应用列表。",
+    "comingSoon": "即将推出",
+    "loadFailed": "无法加载应用：{url}"
   },
   "home": {
     "title": "欢迎。开始创作吧！",

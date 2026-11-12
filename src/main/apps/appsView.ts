@@ -18,6 +18,7 @@ import {
   cloudPromptBody,
   collectOutputs,
   isAppOpen,
+  isAppPage,
   isAllowedAppsPermission,
   isAppsFrameUrl,
   isDocumentFailure,
@@ -46,6 +47,7 @@ import {
   startLocal,
   syncLocalSocket
 } from './localComfy'
+import { listCatalogApps } from './catalog'
 import { localBuilds, openInComfy } from './openInComfy'
 import { isAppsEnabled } from './appsSwitch'
 import {
@@ -67,8 +69,13 @@ const failedViews = new WeakSet<WebContentsView>()
 
 export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
 export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
+export const APPS_SETTLED_CHANNEL = 'comfy-apps:settled'
+export const APPS_PAGE_SETTLED_CHANNEL = 'comfy-apps:page-settled'
+export const APPS_CATALOG_CHANNEL = 'comfy-apps:catalog'
 
 const appOpen = new Map<number, boolean>()
+const awaitingCommit = new Set<number>()
+const settledPages = new Set<number>()
 
 const pageWhere = new Map<number, Where>()
 
@@ -83,6 +90,7 @@ export interface AppsRect {
   width: number
   height: number
   fresh?: boolean
+  url?: string
 }
 
 export type AppsAuthState = { signedIn: false } | { signedIn: true; email?: string }
@@ -99,6 +107,11 @@ function tellPanelAppOpen(key: number): void {
   const panel = comfyWindows.get(key)?.panelView?.webContents
   if (panel && !panel.isDestroyed())
     panel.send(APPS_APP_OPEN_CHANNEL, { open: appOpen.get(key) === true })
+}
+
+function tellPanelSettled(key: number): void {
+  const panel = comfyWindows.get(key)?.panelView?.webContents
+  if (panel && !panel.isDestroyed()) panel.send(APPS_SETTLED_CHANNEL)
 }
 
 function trackAppOpen(key: number, url: string): void {
@@ -132,7 +145,7 @@ function keepOnAppsOrigin(event: { preventDefault(): void }, url: string): void 
   openOutside(url)
 }
 
-function createAppsView(key: number): WebContentsView {
+function createAppsView(key: number, url: string): WebContentsView {
   secureAppsSession()
   const view = new WebContentsView({
     webPreferences: {
@@ -157,14 +170,30 @@ function createAppsView(key: number): WebContentsView {
     if (isMainFrame && isPageLoadFailure(errorCode)) markLoadFailed(key, view, url)
   })
   wc.on('did-navigate', (_event, url, httpResponseCode) => {
+    awaitingCommit.delete(key)
+    settledPages.delete(key)
     if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
     trackAppOpen(key, url)
   })
   wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
     if (isMainFrame) trackAppOpen(key, url)
   })
-  wc.loadURL(APPS_URL).catch(() => {})
+  appOpen.set(key, isAppOpen(url, APPS_URL))
+  awaitingCommit.add(key)
+  settledPages.delete(key)
+  wc.loadURL(url).catch(() => {})
   return view
+}
+
+function requestedUrl(r: Partial<AppsRect>): string {
+  return typeof r.url === 'string' && isAppsFrameUrl(r.url, APPS_ORIGIN) ? r.url : APPS_URL
+}
+
+function openUrl(key: number, view: WebContentsView, url: string): void {
+  appOpen.set(key, isAppOpen(url, APPS_URL))
+  awaitingCommit.add(key)
+  settledPages.delete(key)
+  view.webContents.loadURL(url).catch(() => {})
 }
 
 function entryForPanel(
@@ -185,21 +214,26 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   const r = rect as Partial<AppsRect> | null
   if (!r || ![r.x, r.y, r.width, r.height].every((n) => typeof n === 'number' && isFinite(n)))
     return
+  const url = requestedUrl(r)
   let view = views.get(key)
   if (view?.webContents.isDestroyed()) view = undefined
   if (view && failedViews.has(view)) {
     if (r.fresh !== true) return
     failedViews.delete(view)
-    view.webContents.loadURL(APPS_URL).catch(() => {})
+    openUrl(key, view, url)
+  } else if (view && r.fresh === true && view.webContents.getURL() !== url) {
+    openUrl(key, view, url)
   }
   if (!view) {
-    view = createAppsView(key)
+    view = createAppsView(key, url)
     views.set(key, view)
     const pageId = view.webContents.id
     entry.window.once('closed', () => {
       views.delete(key)
       pageWhere.delete(pageId)
       appOpen.delete(key)
+      awaitingCommit.delete(key)
+      settledPages.delete(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -213,7 +247,19 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
   })
   entry.window.contentView.addChildView(view)
   view.setVisible(true)
-  if (r.fresh === true) tellPanelAppOpen(key)
+  if (r.fresh !== true) return
+  tellPanelAppOpen(key)
+  if (settledPages.has(key)) tellPanelSettled(key)
+}
+
+function relayPageSettled(event: IpcMainEvent): void {
+  for (const [key, view] of views) {
+    if (view.webContents !== event.sender) continue
+    if (awaitingCommit.has(key) || !isAppPage(event.senderFrame?.url ?? '', APPS_URL)) return
+    settledPages.add(key)
+    tellPanelSettled(key)
+    return
+  }
 }
 
 function hideApps(event: IpcMainEvent): void {
@@ -600,6 +646,10 @@ function appsPages(): WebContents[] {
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)
+  ipcMain.handle(APPS_CATALOG_CHANNEL, (event) =>
+    entryForPanel(event.sender) ? listCatalogApps(APPS_URL) : []
+  )
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)

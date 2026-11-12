@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 
 const BRIDGE = 3
+const SETTLE_QUIET_MS = 400
+const SETTLE_MAX_MS = 3000
 const CALLS = [
   'getInfo',
   'getAuthState',
@@ -79,3 +81,28 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
     }
   }
 })
+
+function reportWhenSettled(): void {
+  let quiet: ReturnType<typeof setTimeout> | undefined
+  const settle = (): void => {
+    clearTimeout(quiet)
+    clearTimeout(cap)
+    observer.disconnect()
+    ipcRenderer.send('comfy-apps:page-settled')
+  }
+  const wait = (): void => {
+    clearTimeout(quiet)
+    quiet = setTimeout(settle, SETTLE_QUIET_MS)
+  }
+  const observer = new MutationObserver(wait)
+  const cap = setTimeout(settle, SETTLE_MAX_MS)
+  observer.observe(document.documentElement, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    characterData: true
+  })
+  wait()
+}
+
+window.addEventListener('DOMContentLoaded', reportWhenSettled, { once: true })

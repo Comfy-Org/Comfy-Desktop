@@ -65,7 +65,9 @@
     "signIn": "Log in to Comfy Cloud"
   },
   "apps": {
-    "loadFailed": "The apps page at {url} could not load."
+    "catalogFailed": "Couldn't load the apps.",
+    "comingSoon": "Coming soon",
+    "loadFailed": "The app at {url} could not load."
   },
   "home": {
     "title": "Welcome. Let's create!",

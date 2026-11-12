@@ -131,6 +131,14 @@ export interface CatalogWorkflow {
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
 
+export interface CatalogApp {
+  id: string
+  title: string
+  description: string
+  thumbnailUrl: string | null
+  url: string
+}
+
 export interface AssetSummary {
   id: string
   name: string
@@ -1129,10 +1137,19 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   downloadAsset(installationId: string, assetId: string, fileName: string): Promise<boolean>
-  showApps(rect: { x: number; y: number; width: number; height: number; fresh?: boolean }): void
+  showApps(rect: {
+    x: number
+    y: number
+    width: number
+    height: number
+    fresh?: boolean
+    url?: string
+  }): void
+  listCatalogApps(): Promise<CatalogApp[]>
   hideApps(): void
   onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
   onAppsAppOpen(callback: (info: { open: boolean }) => void): Unsubscribe
+  onAppsSettled(callback: () => void): Unsubscribe
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>

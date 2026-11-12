@@ -16,6 +16,7 @@ import {
   interruptJson,
   DEFAULT_APPS_URL,
   isAppOpen,
+  isAppPage,
   isAppsFrameUrl,
   isAppSlug,
   isBuildId,
@@ -85,6 +86,21 @@ describe('appsUrl', () => {
     const env = { COMFY_APPS_URL: 'https://evil.example/' }
     expect(appsUrl(env, true, prod)).toBe(DEFAULT_APPS_URL)
     expect(appsUrl(env, true, staging)).toBe(stagingApps)
+  })
+})
+
+describe('isAppPage', () => {
+  const list = 'https://apps.example/apps/'
+
+  it('is an app page when it is on the apps site but not the list', () => {
+    expect(isAppPage('https://apps.example/apps/genjutsu-studio/desktop.html', list)).toBe(true)
+  })
+
+  it('is not an app page on the list, even with an app route, or on another site', () => {
+    expect(isAppPage('https://apps.example/apps/', list)).toBe(false)
+    expect(isAppPage('https://apps.example/apps/#/genjutsu', list)).toBe(false)
+    expect(isAppPage('https://other.example/apps/x/desktop.html', list)).toBe(false)
+    expect(isAppPage('', list)).toBe(false)
   })
 })
 
