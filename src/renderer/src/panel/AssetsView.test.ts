@@ -7,10 +7,20 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { AssetSummary, Installation } from '../types/ipc'
+import type {
+  AssetSummary,
+  Installation,
+  OutputEntry,
+  OutputFolder,
+  OutputFolderListing
+} from '../types/ipc'
 
 const listAssets = vi.fn()
 const downloadAsset = vi.fn()
+const listOutputFolders = vi.fn()
+const listOutputFolder = vi.fn()
+const openPath = vi.fn()
+const revealPath = vi.fn()
 const alert = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
 
@@ -29,6 +39,42 @@ function asset(id: string, name: string, kind: AssetSummary['kind']): AssetSumma
     tags: ['output'],
     previewUrl: null
   }
+}
+
+const SHARED = '/Users/me/ComfyUI-Shared/output'
+const APPS = '/Users/me/ComfyUI-Apps/output'
+
+function outputFolders(): OutputFolder[] {
+  return [
+    { path: SHARED, shared: true, builds: ['Test Instance', 'My Local 1'] },
+    { path: APPS, shared: false, builds: ['Apps'] }
+  ]
+}
+
+function entry(dir: string, name: string, kind: OutputEntry['kind'], day = 1): OutputEntry {
+  const path = `${dir}/${name}`
+  return {
+    name,
+    path,
+    isFolder: kind === null && !name.includes('.'),
+    kind,
+    sizeBytes: kind === null ? null : 2048,
+    modifiedAt: `2026-11-0${day}T10:00:00.000Z`,
+    previewUrl: kind ? `comfy-output://file/${encodeURIComponent(path)}` : null,
+    thumbnailUrl:
+      kind === 'image' ? `comfy-output://file/${encodeURIComponent(path)}?thumbnail` : null
+  }
+}
+
+function listing(entries: OutputEntry[], truncated = false): OutputFolderListing {
+  return { entries, truncated }
+}
+
+async function openThisComputer(wrapper: Awaited<ReturnType<typeof mountAssets>>): Promise<void> {
+  const tab = wrapper.get('[data-testid="assets-place"]').findAll('button')[1]!
+  await tab.trigger('mousedown')
+  await tab.trigger('click')
+  await flushPromises()
 }
 
 function build(id: string, name: string): Installation {
@@ -70,6 +116,10 @@ beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
     downloadAsset,
+    listOutputFolders,
+    listOutputFolder,
+    openPath,
+    revealPath,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -448,5 +498,204 @@ describe('AssetsView', () => {
     const wrapper = await mountAssets([build('lab', 'Video Lab')])
 
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+  })
+
+  it('keeps the white Download button readable', async () => {
+    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+
+    expect(wrapper.get('[data-testid="output-detail-download"]').classes()).toContain(
+      'text-background'
+    )
+  })
+})
+
+describe('AssetsView on This computer', () => {
+  beforeEach(() => {
+    listAssets.mockResolvedValue([])
+    listOutputFolders.mockResolvedValue(outputFolders())
+  })
+
+  it('shows each output folder with the builds that save there, without the file tools', async () => {
+    const wrapper = await mountAssets([build('lab', 'Video Lab')])
+    await openThisComputer(wrapper)
+    const cloudLoads = listAssets.mock.calls.length
+
+    const shared = wrapper.get(`[data-testid="local-folder-${SHARED}"]`)
+    expect(shared.text()).toContain('Shared output')
+    expect(shared.text()).toContain('Used by Test Instance, My Local 1')
+    expect(shared.text()).toContain(SHARED)
+    expect(wrapper.get(`[data-testid="local-folder-${APPS}"]`).text()).toContain('Apps output')
+    expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="local-open-folder"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+    await flushPromises()
+    expect(listOutputFolders).toHaveBeenCalledTimes(2)
+    expect(listAssets).toHaveBeenCalledTimes(cloudLoads)
+  })
+
+  it('opens on This computer when the user left it there', async () => {
+    window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
+
+    const wrapper = await mountAssets([])
+
+    expect(wrapper.find(`[data-testid="local-folder-${SHARED}"]`).exists()).toBe(true)
+  })
+
+  it('says where files will appear when no output folder exists yet', async () => {
+    listOutputFolders.mockResolvedValue([])
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    expect(wrapper.get('[data-testid="local-no-folders"]').text()).toContain(
+      'No output folders yet'
+    )
+  })
+
+  it('walks into a folder and its subfolders and back along the path', async () => {
+    let finish: (value: OutputFolderListing) => void = () => {}
+    listOutputFolder.mockImplementation(
+      (path: string) =>
+        new Promise<OutputFolderListing>((resolve) => {
+          if (path === SHARED) finish = resolve
+          else resolve(listing([entry(`${SHARED}/apps`, 'cutout.png', 'image')]))
+        })
+    )
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="status"]').exists()).toBe(true)
+    finish(
+      listing([
+        entry(SHARED, 'old.png', 'image', 1),
+        entry(SHARED, 'apps', null),
+        entry(SHARED, 'new.mp4', 'video', 5),
+        entry(SHARED, 'notes.txt', null)
+      ])
+    )
+    await flushPromises()
+
+    expect(wrapper.get('nav').text()).toContain('This computer')
+    expect(wrapper.get('nav').text()).toContain('Shared output')
+    expect(
+      wrapper.findAll('[data-testid^="local-file-"]').map((c) => c.attributes('data-testid'))
+    ).toEqual(['local-file-new.mp4', 'local-file-old.png'])
+    expect(wrapper.find('[data-testid="assets-filter"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="local-subfolder-apps"]').trigger('click')
+    await flushPromises()
+    expect(listOutputFolder).toHaveBeenLastCalledWith(`${SHARED}/apps`)
+    expect(wrapper.get('nav').text()).toContain('apps')
+
+    await wrapper.get('[data-testid="local-crumb-0"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find(`[data-testid="local-folder-${SHARED}"]`).exists()).toBe(true)
+  })
+
+  it('opens the folder and shows a file in its folder on this computer', async () => {
+    listOutputFolder.mockResolvedValue(listing([entry(SHARED, 'cutout.png', 'image')]))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="local-open-folder"]').trigger('click')
+    expect(openPath).toHaveBeenCalledExactlyOnceWith(SHARED)
+
+    await wrapper.get('[data-testid="local-show-cutout.png"]').trigger('click')
+    expect(revealPath).toHaveBeenCalledExactlyOnceWith(`${SHARED}/cutout.png`)
+  })
+
+  it('opens a local file in the output dialog with when it changed, where it is saved and no download', async () => {
+    listOutputFolder.mockResolvedValue(listing([entry(SHARED, 'cutout.png', 'image')]))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="local-file-cutout.png"] button').trigger('click')
+
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('cutout.png')
+    const subtitle = wrapper.get('[data-testid="output-detail-panel"] p').text()
+    expect(subtitle).toContain('Modified')
+    expect(subtitle).not.toContain('Created')
+    const savedIn = wrapper.get('[data-testid="output-detail-saved-in"]').text()
+    expect(savedIn).toContain('output')
+    expect(savedIn).toContain('/Users/me/ComfyUI-Shared')
+    expect(wrapper.find('[data-testid="output-detail-download"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="output-detail-show-in-folder"]').trigger('click')
+    expect(revealPath).toHaveBeenCalledExactlyOnceWith(`${SHARED}/cutout.png`)
+  })
+
+  it('says nothing matches a filter and clears it, and says when a folder is cut short', async () => {
+    listOutputFolder.mockResolvedValue(
+      listing([entry(SHARED, 'cutout.png', 'image'), entry(SHARED, 'mask.png', 'image')], true)
+    )
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Showing the newest 2 files.')
+
+    await wrapper.get('input').setValue('nothing-like-this')
+    expect(wrapper.get('[data-testid="local-empty"]').text()).toContain('No matching assets')
+
+    await wrapper.get('[data-testid="local-clear-filters"]').trigger('click')
+    expect(wrapper.find('[data-testid="local-file-cutout.png"]').exists()).toBe(true)
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('says so when the folder cannot be opened on this computer any more', async () => {
+    listOutputFolder.mockResolvedValue(listing([entry(SHARED, 'cutout.png', 'image')]))
+    openPath.mockResolvedValueOnce('The folder does not exist.')
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="local-open-folder"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't open this folder. It may have been moved or deleted.",
+      message: SHARED
+    })
+  })
+
+  it('shows only the subfolders of a folder with no files, and the cut-short note when nothing matches', async () => {
+    listOutputFolder.mockResolvedValueOnce(listing([entry(SHARED, 'apps', null)]))
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="local-subfolder-apps"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="local-empty"]').exists()).toBe(false)
+
+    listOutputFolder.mockResolvedValueOnce(
+      listing([entry(`${SHARED}/apps`, 'cutout.png', 'image')], true)
+    )
+    await wrapper.get('[data-testid="local-subfolder-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('input').setValue('nothing-like-this')
+    expect(wrapper.get('[data-testid="local-empty"]').text()).toContain('Showing the newest file.')
+  })
+
+  it('says a folder could not be opened and leads back to This computer', async () => {
+    listOutputFolder.mockResolvedValue(null)
+    const wrapper = await mountAssets([])
+    await openThisComputer(wrapper)
+    await wrapper.get(`[data-testid="local-folder-${SHARED}"]`).trigger('click')
+    await flushPromises()
+
+    const failed = wrapper.get('[data-testid="local-failed"]')
+    expect(failed.text()).toContain("Couldn't open this folder.")
+    await failed.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find(`[data-testid="local-folder-${SHARED}"]`).exists()).toBe(true)
   })
 })

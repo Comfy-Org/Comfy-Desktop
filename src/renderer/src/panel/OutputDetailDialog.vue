@@ -3,7 +3,17 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useEventListener, usePreferredReducedMotion } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
-import { AudioLines, Box, Check, ChevronDown, Download, File, Workflow, X } from 'lucide-vue-next'
+import {
+  AudioLines,
+  Box,
+  Check,
+  ChevronDown,
+  Download,
+  File,
+  FolderOpen,
+  Workflow,
+  X
+} from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Tag from '@comfyorg/design-system/chip/Tag'
 import AudioPreview from '@comfyorg/design-system/media/AudioPreview'
@@ -23,14 +33,17 @@ export interface OutputDetailItem {
   tags: string[]
   previewUrl: string | null
   workflow: boolean | null
+  savedIn?: string | null
+  modifiedAt?: string | null
 }
 
 type Zoom = 'fit' | 0.5 | 1 | 2
 
 const ZOOM_STEPS: Zoom[] = ['fit', 0.5, 1, 2]
 
-const { items } = defineProps<{
+const { items, downloadable = true } = defineProps<{
   items: OutputDetailItem[]
+  downloadable?: boolean
 }>()
 
 const index = defineModel<number>('index', { required: true })
@@ -39,6 +52,7 @@ const emit = defineEmits<{
   close: []
   download: [index: number]
   'open-workflow': [index: number]
+  'show-in-folder': [index: number]
 }>()
 
 const { t, locale } = useI18n()
@@ -60,6 +74,11 @@ const subtitle = computed(() =>
       ? t('assets.detail.createdAt', {
           date: new Date(item.value.createdAt).toLocaleString(locale.value)
         })
+      : null,
+    item.value.modifiedAt
+      ? t('assets.detail.modifiedAt', {
+          date: new Date(item.value.modifiedAt).toLocaleString(locale.value)
+        })
       : null
   ]
     .filter(Boolean)
@@ -72,6 +91,12 @@ const facts = computed(() =>
     item.value.sizeBytes === null ? null : formatBytes(item.value.sizeBytes)
   ].filter((fact): fact is string => !!fact)
 )
+const savedFolder = computed(() => {
+  const folder = item.value.savedIn
+  if (!folder) return null
+  const cut = Math.max(folder.lastIndexOf('/'), folder.lastIndexOf('\\'))
+  return { name: folder.slice(cut + 1) || folder, parent: cut > 0 ? folder.slice(0, cut) : '' }
+})
 const percent = computed(() => new Intl.NumberFormat(locale.value, { style: 'percent' }))
 const zoomLabel = computed(() =>
   zoom.value === 'fit' ? t('assets.detail.fit') : percent.value.format(zoom.value)
@@ -301,17 +326,42 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
         </div>
       </div>
 
+      <div v-if="savedFolder" class="flex flex-col gap-2.5" data-testid="output-detail-saved-in">
+        <div class="text-xs font-medium tracking-wide text-subtle-foreground uppercase">
+          {{ t('assets.detail.savedIn') }}
+        </div>
+        <div class="flex min-w-0 flex-col gap-0.5 text-ui" :title="item.savedIn ?? undefined">
+          <span class="truncate text-foreground">{{ savedFolder.name }}</span>
+          <span v-if="savedFolder.parent" class="truncate text-subtle-foreground">{{
+            savedFolder.parent
+          }}</span>
+        </div>
+      </div>
+
       <div class="mt-auto flex flex-col gap-2">
         <Button
+          v-if="downloadable"
           type="button"
           variant="inverted"
           size="md"
-          class="gap-1.5 text-ui"
+          class="gap-1.5 text-[13px]/5"
           data-testid="output-detail-download"
           @click="emit('download', index)"
         >
           <Download :size="15" aria-hidden="true" />
           {{ t('assets.download') }}
+        </Button>
+        <Button
+          v-if="item.savedIn"
+          type="button"
+          variant="secondary"
+          size="md"
+          class="gap-1.5 text-ui"
+          data-testid="output-detail-show-in-folder"
+          @click="emit('show-in-folder', index)"
+        >
+          <FolderOpen :size="15" aria-hidden="true" />
+          {{ t('assets.showInFolder') }}
         </Button>
         <Button
           v-if="item.workflow"

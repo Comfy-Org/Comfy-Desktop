@@ -69,6 +69,7 @@
       "tags": "Tags",
       "tagsHint": "Tags are edited in ComfyUI.",
       "createdAt": "Created {date}",
+      "modifiedAt": "Modified {date}",
       "fit": "Fit",
       "zoom": "Zoom",
       "zoomLevel": "Zoom: {level}",
@@ -76,14 +77,36 @@
       "workflow": "Workflow",
       "available": "Available",
       "notSaved": "Not saved",
-      "openWorkflow": "Open workflow"
+      "openWorkflow": "Open workflow",
+      "savedIn": "Saved in"
     },
     "noMatches": "No matching assets",
     "noMatchesHint": "Try another type or search.",
     "filter": "Filter",
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
-    "signIn": "Log in to Comfy Cloud"
+    "signIn": "Log in to Comfy Cloud",
+    "place": {
+      "label": "Where files are saved",
+      "cloud": "Comfy Cloud",
+      "computer": "This computer"
+    },
+    "showInFolder": "Show in folder",
+    "local": {
+      "sharedOutput": "Shared output",
+      "buildOutput": "{name} output",
+      "usedBy": "Used by {builds}",
+      "notUsed": "No build saves here yet",
+      "openFolder": "Open folder",
+      "path": "Folder path",
+      "noFoldersTitle": "No output folders yet",
+      "noFoldersBody": "Files appear here after you run a workflow with ComfyUI on this computer.",
+      "emptyFolder": "No images, videos, audio or 3D files here.",
+      "clearFilters": "Clear filters",
+      "folderFailed": "Couldn't open this folder. It may have been moved or deleted.",
+      "backToComputer": "Back to This computer",
+      "truncated": "Showing the newest file. Open the folder to see all of them. | Showing the newest {count} files. Open the folder to see all of them."
+    }
   },
   "apps": {
     "catalogFailed": "Couldn't load the apps.",

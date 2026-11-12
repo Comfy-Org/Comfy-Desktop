@@ -69,6 +69,7 @@
       "tags": "标签",
       "tagsHint": "标签在 ComfyUI 中编辑。",
       "createdAt": "创建于 {date}",
+      "modifiedAt": "修改于 {date}",
       "fit": "适应",
       "zoom": "缩放",
       "zoomLevel": "缩放：{level}",
@@ -76,14 +77,36 @@
       "workflow": "工作流",
       "available": "可用",
       "notSaved": "未保存",
-      "openWorkflow": "打开工作流"
+      "openWorkflow": "打开工作流",
+      "savedIn": "保存位置"
     },
     "noMatches": "没有匹配的资产",
     "noMatchesHint": "试试其他类型或搜索词。",
     "filter": "筛选",
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
-    "signIn": "登录 Comfy Cloud"
+    "signIn": "登录 Comfy Cloud",
+    "place": {
+      "label": "文件保存位置",
+      "cloud": "Comfy Cloud",
+      "computer": "这台电脑"
+    },
+    "showInFolder": "在文件夹中显示",
+    "local": {
+      "sharedOutput": "共享输出",
+      "buildOutput": "{name} 输出",
+      "usedBy": "使用者：{builds}",
+      "notUsed": "还没有构建保存到这里",
+      "openFolder": "打开文件夹",
+      "path": "文件夹路径",
+      "noFoldersTitle": "还没有输出文件夹",
+      "noFoldersBody": "在这台电脑上用 ComfyUI 运行工作流后，文件会显示在这里。",
+      "emptyFolder": "这里没有图片、视频、音频或 3D 文件。",
+      "clearFilters": "清除筛选",
+      "folderFailed": "无法打开此文件夹。它可能已被移动或删除。",
+      "backToComputer": "返回这台电脑",
+      "truncated": "仅显示最新的 {count} 个文件。打开文件夹可查看全部。"
+    }
   },
   "apps": {
     "catalogFailed": "无法加载应用列表。",
