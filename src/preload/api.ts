@@ -278,6 +278,8 @@ export function buildElectronApi(): ElectronApi {
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),
+      openSettingsPage: (page, workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:openSettingsPage', page, workspaceId),
       installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
       promoteLocalInstance: (installationId) =>
         ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)

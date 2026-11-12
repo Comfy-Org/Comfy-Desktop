@@ -4,6 +4,8 @@ export type { FirstUseMode }
 
 import type { AuthStatus, Workspace } from '../main/cloud/types'
 export type { AuthStatus, Workspace }
+import type { PlatformSettingsPage } from '../main/devplatform/config'
+export type { PlatformSettingsPage }
 
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
@@ -1325,6 +1327,7 @@ export interface ElectronApi {
     switchWorkspace(workspaceId: string): Promise<AuthStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
+    openSettingsPage(page: PlatformSettingsPage, workspaceId?: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }

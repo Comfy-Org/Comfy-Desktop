@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronsUpDown, LogIn, LogOut } from 'lucide-vue-next'
+import { LogIn } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
-import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
-import DevPlatformWorkspaceSelector from '../views/devplatform/DevPlatformWorkspaceSelector.vue'
+import SidebarWorkspaceSwitcher from './SidebarWorkspaceSwitcher.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import hillsSunset from '../assets/sidebar/hills-sunset.jpg'
@@ -24,13 +22,7 @@ const store = useAuthStore()
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
-const selectedWorkspace = computed({
-  get: () => dashboardScope.selectedWorkspaceId,
-  set: dashboardScope.selectWorkspace
-})
-
 const signingIn = ref(false)
-const email = computed(() => store.status.email ?? '')
 
 async function onSignIn(): Promise<void> {
   if (signingIn.value) return
@@ -43,58 +35,11 @@ async function onSignIn(): Promise<void> {
     signingIn.value = false
   }
 }
-
-async function onSignOut(): Promise<void> {
-  try {
-    await store.signOut()
-  } catch {
-    return
-  }
-}
 </script>
 
 <template>
   <div class="sidebar-account">
-    <DevPlatformWorkspaceSelector v-if="store.isSignedIn" v-model="selectedWorkspace" side="top">
-      <template #trigger="{ workspaceName }">
-        <Button
-          type="button"
-          variant="textonly"
-          size="unset"
-          class="w-full rounded-lg text-[13px]/5 font-medium hover:bg-secondary"
-          :class="collapsed ? 'h-12 justify-center p-1' : 'h-13 justify-start gap-2.5 p-1.5'"
-          data-testid="devplatform-workspace-selector"
-          :aria-label="t('devPlatform.account.signedInAs', { email })"
-          :title="collapsed ? workspaceName : undefined"
-        >
-          <span
-            class="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-xs font-semibold"
-            aria-hidden="true"
-            >{{ workspaceName.charAt(0).toUpperCase() }}</span
-          >
-          <template v-if="!collapsed">
-            <span class="flex min-w-0 flex-1 flex-col text-left leading-tight">
-              <span class="workspace-selector__name truncate">{{ workspaceName }}</span>
-              <span class="truncate font-normal text-subtle-foreground">{{ email }}</span>
-            </span>
-            <ChevronsUpDown class="text-subtle-foreground" :size="14" aria-hidden="true" />
-          </template>
-        </Button>
-      </template>
-      <template #footer>
-        <MenuSeparator />
-        <MenuItem
-          as="button"
-          type="button"
-          class="w-full"
-          data-testid="devplatform-account-signout"
-          @select="onSignOut"
-        >
-          <LogOut :size="16" aria-hidden="true" />
-          <span>{{ t('devPlatform.account.signOut') }}</span>
-        </MenuItem>
-      </template>
-    </DevPlatformWorkspaceSelector>
+    <SidebarWorkspaceSwitcher v-if="store.isSignedIn" :collapsed="collapsed" />
 
     <Button
       v-else-if="collapsed"

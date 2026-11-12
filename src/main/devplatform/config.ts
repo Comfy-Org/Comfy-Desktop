@@ -5,3 +5,11 @@ export const BUILDER_BASE_URL = process.env.COMFY_BUILDER_BASE_URL || PROD_BUILD
 
 export const PLATFORM_WEB_BASE_URL =
   process.env.COMFY_PLATFORM_WEB_BASE_URL || PROD_PLATFORM_WEB_BASE_URL
+
+export const PLATFORM_SETTINGS_PATHS = {
+  general: '/settings/general',
+  people: '/settings/people',
+  billing: '/settings/billing'
+} as const
+
+export type PlatformSettingsPage = keyof typeof PLATFORM_SETTINGS_PATHS

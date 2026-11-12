@@ -5,7 +5,7 @@ import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
-import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
+import { PLATFORM_SETTINGS_PATHS, PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
 import {
   getBuilderClient,
   getCloudSession,
@@ -51,6 +51,7 @@ export const DEVPLATFORM_CHANNELS = {
   switchWorkspace: 'comfybuilder:switchWorkspace',
   listBuilds: 'comfybuilder:listBuilds',
   openBuildsPage: 'comfybuilder:openBuildsPage',
+  openSettingsPage: 'comfybuilder:openSettingsPage',
   installBuild: 'comfybuilder:installBuild',
   promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
 } as const
@@ -181,6 +182,23 @@ export function registerDevPlatformHandlers(): void {
       }
       const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
       url.searchParams.set('workspace', workspaceId)
+      await shell.openExternal(url.toString())
+    }
+  )
+
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.openSettingsPage,
+    async (_event, page: unknown, workspaceId: unknown): Promise<void> => {
+      if (typeof page !== 'string' || !Object.hasOwn(PLATFORM_SETTINGS_PATHS, page)) {
+        throw new Error('Unknown Developer Platform settings page.')
+      }
+      const url = new URL(
+        PLATFORM_SETTINGS_PATHS[page as keyof typeof PLATFORM_SETTINGS_PATHS],
+        PLATFORM_WEB_BASE_URL
+      )
+      if (typeof workspaceId === 'string' && workspaceId.trim()) {
+        url.searchParams.set('workspace', workspaceId)
+      }
       await shell.openExternal(url.toString())
     }
   )

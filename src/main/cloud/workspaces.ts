@@ -8,7 +8,7 @@ interface WorkspaceRow {
   name: string
   type: string
   role: string
-  subscription_tier?: string
+  subscription_tier?: string | null
   created_at?: string
   joined_at?: string
 }
@@ -66,7 +66,7 @@ export async function listWorkspaces(
     name: w.name,
     type: w.type,
     role: w.role,
-    ...(w.subscription_tier ? { subscriptionTier: w.subscription_tier } : {}),
+    ...(w.subscription_tier !== undefined ? { subscriptionTier: w.subscription_tier } : {}),
     ...(w.created_at ? { createdAt: w.created_at } : {}),
     ...(w.joined_at ? { joinedAt: w.joined_at } : {})
   }))

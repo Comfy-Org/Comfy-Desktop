@@ -18,7 +18,7 @@ export interface Workspace {
   name: string
   type: string
   role: string
-  subscriptionTier?: string
+  subscriptionTier?: string | null
   createdAt?: string
   joinedAt?: string
 }
