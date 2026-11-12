@@ -1,8 +1,10 @@
 import path from 'path'
+import semver from 'semver'
 import { isAppsBuild } from '../../shared/appsBuild'
 
 export const APPS_BUILD_NAME = 'Apps'
 export const APPS_BUILD_RELEASE = 'v0.42.1-env1'
+export const APPS_BUILD_VERSION = releaseVersion(APPS_BUILD_RELEASE)!
 export const APPS_BUILD_FIRST_PORT = 8288
 export const APPS_BUILD_LAST_PORT = 8388
 export const APPS_BUILD_IDLE_MS = 10 * 60_000
@@ -196,4 +198,70 @@ export function pickOpenTarget<T extends { id: string }>(
     .filter((inst) => startedAt.has(inst.id))
     .sort((a, b) => startedAt.get(b.id)! - startedAt.get(a.id)!)
   return running[0] ?? own[0] ?? null
+}
+
+export function releaseVersion(tag: unknown): string | null {
+  if (typeof tag !== 'string') return null
+  const m = /^v?(\d{1,6}\.\d{1,6}\.\d{1,6})(?:$|[-+])/.exec(tag.trim())
+  return m ? semver.valid(m[1]!) : null
+}
+
+export function wantedVersion(input: unknown): string {
+  const raw =
+    input && typeof input === 'object' ? (input as { minVersion?: unknown }).minVersion : undefined
+  return releaseVersion(raw) ?? APPS_BUILD_VERSION
+}
+
+export function comfyuiFileVersion(text: string): string | null {
+  const m = /^__version__\s*=\s*['"]([^'"]+)['"]/m.exec(text)
+  return m ? releaseVersion(m[1]) : null
+}
+
+export interface ReuseInstall {
+  id: string
+  sourceId: string
+  installPath?: string
+  status?: string
+  appsBuild?: unknown
+}
+
+export function reusableInstalls<T extends ReuseInstall>(
+  list: readonly T[],
+  categoryOf: (inst: T) => string | undefined
+): T[] {
+  return list.filter(
+    (inst) =>
+      categoryOf(inst) === 'local' &&
+      inst.sourceId !== 'desktop' &&
+      !isAppsBuild(inst) &&
+      inst.status === 'installed' &&
+      typeof inst.installPath === 'string' &&
+      inst.installPath !== ''
+  )
+}
+
+export interface ComfyChoice {
+  id: string
+  version: string | null
+  running: boolean
+  busy: boolean
+}
+
+export function pickComfy<T extends ComfyChoice>(
+  list: readonly T[],
+  min: string,
+  inUse?: string | null
+): T | null {
+  const fits = list
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => !c.busy && c.version !== null && semver.gte(c.version, min))
+  const kept = fits.find(({ c }) => c.running && c.id === inUse)
+  if (kept) return kept.c
+  fits.sort(
+    (a, b) =>
+      Number(b.c.running) - Number(a.c.running) ||
+      semver.rcompare(a.c.version!, b.c.version!) ||
+      a.i - b.i
+  )
+  return fits[0]?.c ?? null
 }
