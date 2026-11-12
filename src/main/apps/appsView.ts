@@ -160,6 +160,7 @@ function createAppsView(key: number, url: string): WebContentsView {
     if (isMainFrame && isPageLoadFailure(errorCode)) markLoadFailed(key, view, url)
   })
   wc.on('did-navigate', (_event, url, httpResponseCode) => {
+    forgetOutputs(key)
     awaitingCommit.delete(key)
     settledPages.delete(key)
     if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
@@ -222,8 +223,7 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
       awaitingCommit.delete(key)
       settledPages.delete(key)
       parkedApps.delete(key)
-      shownOutputFiles.delete(key)
-      latestOutputRequest.delete(key)
+      forgetOutputs(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -274,6 +274,17 @@ function fromAppsPage(event: IpcMainInvokeEvent): boolean {
   )
 }
 
+function nextOutputTurn(key: number): number {
+  const turn = (latestOutputRequest.get(key) ?? 0) + 1
+  latestOutputRequest.set(key, turn)
+  return turn
+}
+
+function forgetOutputs(key: number): void {
+  shownOutputFiles.delete(key)
+  nextOutputTurn(key)
+}
+
 function keyForAppsPage(sender: WebContents): number | null {
   for (const [key, view] of views) if (view.webContents === sender) return key
   return null
@@ -285,18 +296,19 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const key = keyForAppsPage(page)
   const panel = key === null ? undefined : comfyWindows.get(key)?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
-  const turn = (latestOutputRequest.get(key) ?? 0) + 1
-  latestOutputRequest.set(key, turn)
+  const turn = nextOutputTurn(key)
+  const current = () => latestOutputRequest.get(key) === turn && !page.isDestroyed()
   const apps = outputs.items.some(needsLookup) ? await findApps() : null
   const { items, files } = await resolveOutputFiles(
     outputs.items,
-    apps ? outputLocator(apps) : async () => null
+    apps ? outputLocator(apps, current) : async () => null
   )
+  if (!current()) return
   const backdrop = await page
     .capturePage()
     .then((image) => image.toJPEG(BACKDROP_QUALITY))
     .catch(() => null)
-  if (panel.isDestroyed() || !appOpen.get(key) || latestOutputRequest.get(key) !== turn) return
+  if (panel.isDestroyed() || !appOpen.get(key) || !current()) return
   shownOutputFiles.set(key, files)
   panel.focus()
   panel.send(APPS_OUTPUT_CHANNEL, { items, index: outputs.index, backdrop })

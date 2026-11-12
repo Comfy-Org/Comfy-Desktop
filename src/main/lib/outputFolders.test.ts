@@ -205,6 +205,8 @@ describe('listOutputFolder', () => {
   })
 })
 
+const bytesOf = (text: string) => new TextEncoder().encode(text)
+
 describe('comfyOutputPath', () => {
   const apps = install('Apps', { useSharedOutput: false, outputDir: ownDir })
 
@@ -212,7 +214,11 @@ describe('comfyOutputPath', () => {
     write(path.join(ownDir, 'apps', 'ComfyUI_00001_.png'), 'four')
 
     expect(
-      await comfyOutputPath(apps, { filename: 'ComfyUI_00001_.png', subfolder: 'apps' }, 4)
+      await comfyOutputPath(
+        apps,
+        { filename: 'ComfyUI_00001_.png', subfolder: 'apps' },
+        bytesOf('four')
+      )
     ).toBe(path.join(ownDir, 'apps', 'ComfyUI_00001_.png'))
   })
 
@@ -223,18 +229,20 @@ describe('comfyOutputPath', () => {
       await comfyOutputPath(
         install('Test Instance'),
         { filename: 'ComfyUI_00002_.png', subfolder: '' },
-        6
+        bytesOf('shared')
       )
     ).toBe(path.join(sharedDir, 'ComfyUI_00002_.png'))
   })
 
   it('refuses a file that is gone or does not match the bytes the page shows', async () => {
     write(path.join(ownDir, 'ComfyUI_00003_.png'), 'four')
+    const file = { filename: 'ComfyUI_00003_.png', subfolder: '' }
 
-    expect(await comfyOutputPath(apps, { filename: 'ComfyUI_00003_.png', subfolder: '' }, 5)).toBe(
-      null
-    )
-    expect(await comfyOutputPath(apps, { filename: 'missing.png', subfolder: '' }, 4)).toBeNull()
+    expect(await comfyOutputPath(apps, file, bytesOf('fives'))).toBeNull()
+    expect(await comfyOutputPath(apps, file, bytesOf('five'))).toBeNull()
+    expect(
+      await comfyOutputPath(apps, { filename: 'missing.png', subfolder: '' }, bytesOf('four'))
+    ).toBeNull()
   })
 
   it("refuses paths that leave the build's output folder", async () => {
@@ -244,7 +252,7 @@ describe('comfyOutputPath', () => {
     fs.symlinkSync(sharedDir, path.join(ownDir, 'shared'))
 
     const file = (subfolder: string, filename: string) =>
-      comfyOutputPath(apps, { filename, subfolder }, 4)
+      comfyOutputPath(apps, { filename, subfolder }, bytesOf('four'))
     expect(await file('escape', 'secret.png')).toBeNull()
     expect(await file('shared', 'other-build.png')).toBeNull()
     expect(await file('../outside', 'secret.png')).toBeNull()
@@ -255,15 +263,15 @@ describe('comfyOutputPath', () => {
     write(path.join(sharedDir, 'ComfyUI_00004_.png'), 'four')
     const file = { filename: 'ComfyUI_00004_.png', subfolder: '' }
 
-    expect(await comfyOutputPath(install('Cloud', { sourceId: 'cloud' }), file, 4)).toBeNull()
-    expect(await comfyOutputPath(install('Old', { sourceId: 'desktop' }), file, 4)).toBeNull()
+    const cloud = install('Cloud', { sourceId: 'cloud' })
+    const old = install('Old', { sourceId: 'desktop' })
+    expect(await comfyOutputPath(cloud, file, bytesOf('four'))).toBeNull()
+    expect(await comfyOutputPath(old, file, bytesOf('four'))).toBeNull()
   })
 })
 
 describe('outputLocator', () => {
   const apps = install('Apps', { useSharedOutput: false, outputDir: ownDir })
-  const bytesOf = (text: string) => new TextEncoder().encode(text)
-
   it("finds the file in the build's output folder with exactly the same bytes", async () => {
     write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00001.png'), 'other picture')
     write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png'), 'same picture!')
@@ -297,6 +305,20 @@ describe('outputLocator', () => {
         new TextEncoder().encode('moved bytes')
       )
     ).toBe(path.join(ownDir, 'apps', 'renamed.png'))
+  })
+
+  it('finds outputs of any file type, such as AAC audio', async () => {
+    write(path.join(ownDir, 'apps', 'song.aac'), 'aac audio bytes')
+
+    expect(await outputLocator(apps)(null, bytesOf('aac audio bytes'))).toBe(
+      path.join(ownDir, 'apps', 'song.aac')
+    )
+  })
+
+  it('stops looking once the preview is no longer wanted', async () => {
+    write(path.join(ownDir, 'apps', 'wanted.png'), 'wanted bytes')
+
+    expect(await outputLocator(apps, () => false)(null, bytesOf('wanted bytes'))).toBeNull()
   })
 
   it('does not read an apps folder that is a link', async () => {
