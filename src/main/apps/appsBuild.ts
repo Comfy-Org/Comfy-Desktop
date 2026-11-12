@@ -44,6 +44,7 @@ import {
   setupEnd,
   setupEvent
 } from './appsBuildRules'
+import { trackApps } from './appEvents'
 
 export function categoryOf(inst: InstallationRecord): string | undefined {
   return sourceMap[inst.sourceId]?.category
@@ -176,7 +177,7 @@ async function storageFor(inst: InstallationRecord): Promise<Record<string, unkn
   }
 }
 
-class SetupCancelled extends Error {
+export class SetupCancelled extends Error {
   constructor() {
     super('You cancelled setting up ComfyUI for apps.')
   }
@@ -223,15 +224,35 @@ async function dropStale(inst: InstallationRecord): Promise<void> {
   await installations.remove(inst.id)
 }
 
+function trackSetup(
+  app: string | null,
+  outcome: 'started' | 'finished' | 'failed',
+  bytes: number,
+  startedAt: number
+): void {
+  trackApps('setup', {
+    ...(app ? { app } : {}),
+    stage: 'comfyui',
+    outcome,
+    ...(bytes > 0 ? { bytes } : {}),
+    ...(outcome === 'started' ? {} : { seconds: (Date.now() - startedAt) / 1000 })
+  })
+}
+
 async function runSetup(
   s: Setup,
   found: InstallationRecord | null,
-  onEvent: (e: SetupEvent) => void
+  onEvent: (e: SetupEvent) => void,
+  app: string | null
 ): Promise<InstallationRecord> {
+  const startedAt = Date.now()
+  let planned = 0
   try {
     if (found) await dropStale(found)
     const { data, bytes } = await planAppsBuild()
+    planned = bytes
     if (s.cancelled) throw new SetupCancelled()
+    trackSetup(app, 'started', bytes, startedAt)
     onEvent(setupEvent('download', { percent: 0 }, bytes)!)
     const added = await addInstallation({
       ...data,
@@ -255,6 +276,7 @@ async function runSetup(
     const inst = await installations.get(id)
     if (s.cancelled) throw new SetupCancelled()
     if (inst?.status === 'installed') {
+      trackSetup(app, 'finished', bytes, startedAt)
       onEvent(setupEnd('done'))
       return inst
     }
@@ -262,19 +284,21 @@ async function runSetup(
     throw new Error(result.message || 'ComfyUI for apps did not install.')
   } catch (err) {
     const cancelled = err instanceof SetupCancelled
+    if (!cancelled) trackSetup(app, 'failed', planned, startedAt)
     onEvent(setupEnd(cancelled ? 'cancelled' : 'failed', (err as Error)?.message))
     throw err
   }
 }
 
 export async function ensureAppsBuild(
-  onEvent: (e: SetupEvent) => void
+  onEvent: (e: SetupEvent) => void,
+  app: string | null = null
 ): Promise<InstallationRecord> {
   const found = await findApps()
   if (found?.status === 'installed') return found
   if (!setup) {
     const s = { id: null, cancelled: false } as unknown as Setup
-    s.promise = runSetup(s, found, onEvent).finally(() => {
+    s.promise = runSetup(s, found, onEvent, app).finally(() => {
       if (setup === s) setup = null
     })
     setup = s

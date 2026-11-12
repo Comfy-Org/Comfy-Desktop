@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { WebContents } from 'electron'
 import { promises as fsp } from 'fs'
+import os from 'os'
 
 import { getEntryByInstallationId } from '../host/registry'
 import type { InstallationRecord } from '../installations'
@@ -15,6 +16,7 @@ import {
   stopRunning
 } from '../lib/ipc/shared'
 import { startManagedModelJob } from '../lib/comfyDownloadManager'
+import { detectGPUCached } from '../lib/gpu'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
 import {
   appsBuildId,
@@ -27,8 +29,10 @@ import {
   launchAppsBuild,
   launchConsole,
   planAppsBuild,
-  reusableLocal
+  reusableLocal,
+  SetupCancelled
 } from './appsBuild'
+import { comfyVersionOf, computerOf, errorClassOf, trackApps } from './appEvents'
 import {
   APPS_BUILD_NAME,
   type ComfyChoice,
@@ -46,13 +50,17 @@ import {
   type DownloadRequest,
   downloadRequest,
   type LocalAnswer,
+  localAppId,
   localEvent,
   localRequest,
   MAX_UPLOAD_BYTES,
   noteRun,
+  promptIdOf,
   queueAnswer,
   readCapped,
   reconnectDelay,
+  type RunEnd,
+  runEnd,
   type RunSeen,
   textAnswer,
   uploadForm
@@ -79,6 +87,17 @@ let appsPages: () => WebContents[] = () => []
 let starting: Promise<LocalState> | null = null
 let lastUse = Date.now()
 const runsSeen = new Map<string, RunSeen>()
+
+interface LocalRun {
+  app: string
+  installId: string
+  comfy: 'own' | 'apps_build'
+  version: string | null
+  submittedAt: number
+}
+
+const MAX_LOCAL_RUNS = 50
+const localRuns = new Map<string, LocalRun>()
 
 interface Target {
   id: string
@@ -242,42 +261,77 @@ function sendSetup(event: SetupEvent): void {
   forward({ type: 'setup', data: event })
 }
 
-async function startOwn(inst: InstallationRecord): Promise<LocalState> {
+function localRunFailed(
+  app: string | null,
+  step: 'setup' | 'start_comfy' | 'model_download',
+  err?: unknown
+): void {
+  if (!app) return
+  const errorClass = err === undefined ? undefined : errorClassOf(err)
+  trackApps('run_failed', {
+    app,
+    where: 'local',
+    step,
+    ...(errorClass ? { error_class: errorClass } : {})
+  })
+}
+
+function startFailed(app: string | null, state: LocalState): LocalState {
+  localRunFailed(app, 'start_comfy')
+  return state
+}
+
+async function answered(app: string | null, id: string, name: string): Promise<LocalState> {
+  const state = await untilAnswering(id, name)
+  return state.state === 'running' ? state : startFailed(app, state)
+}
+
+async function startOwn(inst: InstallationRecord, app: string | null): Promise<LocalState> {
   touch()
   if (!appsRunning() && !launching(inst.id)) {
     startedHere.add(inst.id)
     const result = await launchConsole(inst)
     if (!result.ok && !appsRunning()) {
       if (!localSession(inst.id) && !launching(inst.id)) startedHere.delete(inst.id)
-      return { state: 'stopped', name: inst.name, ...shown(), error: shortError(result.message) }
+      return startFailed(app, {
+        state: 'stopped',
+        name: inst.name,
+        ...shown(),
+        error: shortError(result.message)
+      })
     }
   }
-  return untilAnswering(inst.id, inst.name)
+  return answered(app, inst.id, inst.name)
 }
 
-async function start(want: unknown): Promise<LocalState> {
+async function start(want: unknown, app: string | null): Promise<LocalState> {
   const { state, pick } = await currentState(want, true)
   syncLocalSocket()
   if (state.state === 'unsupported' || state.state === 'running') return state
-  if (pick?.own) return startOwn(pick.inst)
+  if (pick?.own) return startOwn(pick.inst, app)
   let inst: InstallationRecord
   try {
-    inst = await ensureAppsBuild(sendSetup)
+    inst = await ensureAppsBuild(sendSetup, app)
   } catch (err) {
+    if (!(err instanceof SetupCancelled)) localRunFailed(app, 'setup', err)
     return { state: 'none', name: APPS_BUILD_NAME, error: shortError((err as Error)?.message) }
   }
   touch()
   if (!appsRunning() && !launching(inst.id)) {
     const result = await launchAppsBuild(inst)
     if (!result.ok && !appsRunning()) {
-      return { state: 'stopped', name: inst.name, error: shortError(result.message) }
+      return startFailed(app, {
+        state: 'stopped',
+        name: inst.name,
+        error: shortError(result.message)
+      })
     }
   }
-  return untilAnswering(inst.id, inst.name)
+  return answered(app, inst.id, inst.name)
 }
 
-export function startLocal(want?: unknown): Promise<LocalState> {
-  starting ??= start(want).finally(() => (starting = null))
+export function startLocal(want?: unknown, app: string | null = null): Promise<LocalState> {
+  starting ??= start(want, app).finally(() => (starting = null))
   return starting
 }
 
@@ -285,7 +339,66 @@ export function cancelSetup(): { cancelled: boolean } {
   return cancelAppsSetup()
 }
 
-export async function localFetch(input: unknown): Promise<LocalAnswer> {
+function rememberRun(id: string, app: string, installId: string): void {
+  const own = target?.own === true && target.id === installId
+  localRuns.delete(id)
+  localRuns.set(id, {
+    app,
+    installId,
+    comfy: own ? 'own' : 'apps_build',
+    version: target?.id === installId ? target.version : null,
+    submittedAt: Date.now()
+  })
+  for (const old of localRuns.keys()) {
+    if (localRuns.size <= MAX_LOCAL_RUNS) break
+    localRuns.delete(old)
+  }
+}
+
+async function comfyVersion(run: LocalRun): Promise<string | undefined> {
+  if (run.version) return comfyVersionOf(run.version)
+  if (run.comfy === 'own') return undefined
+  const inst = await findApps()
+  return comfyVersionOf(inst ? await installVersion(inst) : null)
+}
+
+async function reportRunFinished(
+  run: LocalRun,
+  end: RunEnd,
+  startedAt: number | undefined,
+  now: number
+): Promise<void> {
+  const [gpu, version] = await Promise.all([
+    detectGPUCached().catch(() => null),
+    comfyVersion(run).catch(() => undefined)
+  ])
+  const hardware = localSession(run.installId)?.getAcceleratorInfo?.() ?? null
+  const errorClass = end.exceptionType ? errorClassOf(end.exceptionType) : undefined
+  trackApps('run_finished', {
+    app: run.app,
+    where: 'local',
+    outcome: end.outcome,
+    run_seconds: Math.max(0, now - (startedAt ?? run.submittedAt)) / 1000,
+    ...(startedAt !== undefined
+      ? { queue_seconds: Math.max(0, startedAt - run.submittedAt) / 1000 }
+      : {}),
+    ...(errorClass ? { error_class: errorClass } : {}),
+    comfy: run.comfy,
+    ...(version ? { comfy_version: version } : {}),
+    ...computerOf(gpu?.id, hardware?.vramMb, hardware?.ramMb ?? os.totalmem() / 1024 / 1024),
+    os: process.platform
+  })
+}
+
+function finishRun(msg: { type: string; data: unknown }, now: number): void {
+  const end = runEnd(msg)
+  const run = end ? localRuns.get(end.id) : undefined
+  if (!end || !run) return
+  localRuns.delete(end.id)
+  void reportRunFinished(run, end, runsSeen.get(end.id)?.startedAt, now).catch(() => {})
+}
+
+export async function localFetch(input: unknown, app: string | null = null): Promise<LocalAnswer> {
   const req = localRequest(input)
   if (!('kind' in req)) return textAnswer(req.status, req.error)
   const run = appsRunning()
@@ -309,6 +422,11 @@ export async function localFetch(input: unknown): Promise<LocalAnswer> {
     const body = await readCapped(res, MAX_UPLOAD_BYTES)
     if (!body) return textAnswer(502, 'ComfyUI answered more than 50 MB.')
     if (req.kind === 'queue') return queueAnswer(res.status, body, runsSeen)
+    if (req.kind === 'prompt' && res.ok) {
+      const id = promptIdOf(body)
+      const runApp = localAppId(req.json) ?? app
+      if (id && runApp) rememberRun(id, runApp, run.id)
+    }
     return {
       status: res.status,
       contentType: res.headers.get('content-type') ?? 'application/octet-stream',
@@ -325,7 +443,29 @@ export type LocalDownload = { state: 'done' } | { state: 'failed'; error: string
 
 const downloads = new Map<string, Promise<LocalDownload>>()
 
-async function runDownload(installationId: string, req: DownloadRequest): Promise<LocalDownload> {
+function trackDownload(
+  app: string | null,
+  req: DownloadRequest,
+  outcome: 'started' | 'finished' | 'failed',
+  startedAt: number,
+  bytes = 0
+): void {
+  trackApps('setup', {
+    ...(app ? { app } : {}),
+    stage: 'model',
+    outcome,
+    model_file: req.name,
+    ...(bytes > 0 ? { bytes } : {}),
+    ...(outcome === 'started' ? {} : { seconds: (Date.now() - startedAt) / 1000 })
+  })
+}
+
+async function runDownload(
+  installationId: string,
+  req: DownloadRequest,
+  app: string | null
+): Promise<LocalDownload> {
+  const startedAt = Date.now()
   let done = 0
   let total = 0
   let moved = false
@@ -334,10 +474,16 @@ async function runDownload(installationId: string, req: DownloadRequest): Promis
       type: 'download',
       data: { ...req, done, total, state, ...(error ? { error } : {}) }
     })
-  const failed = (error: string): LocalDownload => {
+  const stopped = (error: string): LocalDownload => {
     send('failed', error)
     return { state: 'failed', error }
   }
+  const failed = (error: string): LocalDownload => {
+    trackDownload(app, req, 'failed', startedAt, done)
+    localRunFailed(app, 'model_download')
+    return stopped(error)
+  }
+  trackDownload(app, req, 'started', startedAt)
   const handle = await startManagedModelJob({
     url: req.url,
     filename: req.name,
@@ -362,18 +508,22 @@ async function runDownload(installationId: string, req: DownloadRequest): Promis
     clearInterval(timer)
     handle.release()
   }
-  if (outcome.status === 'cancelled') return failed('The download was cancelled.')
+  if (outcome.status === 'cancelled') return stopped('The download was cancelled.')
   if (outcome.status === 'error') return failed(shortError(outcome.error))
   const size = await fsp.stat(outcome.savePath).then(
     (st) => st.size,
     () => total
   )
   done = total = size
+  trackDownload(app, req, 'finished', startedAt, size)
   send('done')
   return { state: 'done' }
 }
 
-export async function localDownload(input: unknown): Promise<LocalDownload> {
+export async function localDownload(
+  input: unknown,
+  app: string | null = null
+): Promise<LocalDownload> {
   const req = downloadRequest(input)
   if ('error' in req) return { state: 'failed', error: req.error }
   const installationId = appsRunning()?.id ?? target?.id ?? (await findApps())?.id
@@ -382,7 +532,7 @@ export async function localDownload(input: unknown): Promise<LocalDownload> {
   const key = [installationId, req.url, req.folder, req.name].join('\n')
   let job = downloads.get(key)
   if (!job) {
-    job = runDownload(installationId, req).finally(() => downloads.delete(key))
+    job = runDownload(installationId, req, app).finally(() => downloads.delete(key))
     downloads.set(key, job)
   }
   return job
@@ -416,7 +566,9 @@ function connect(s: Socket): void {
     const msg = localEvent(ev.data)
     if (!msg) return
     touch()
-    noteRun(runsSeen, msg, Date.now())
+    const now = Date.now()
+    finishRun(msg, now)
+    noteRun(runsSeen, msg, now)
     if (isRunEnd(msg.type)) scheduleFree(s.port)
     forward(msg)
   }
@@ -435,6 +587,7 @@ function closeSocket(): void {
   socket.ws?.close()
   socket = null
   runsSeen.clear()
+  localRuns.clear()
 }
 
 export function syncLocalSocket(): void {
