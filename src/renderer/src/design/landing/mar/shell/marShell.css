@@ -1713,3 +1713,17 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+/* A section's link (All builds) hovers in a 32px box, its right edge on
+   the cards' edge, as Desktop ships it (Comfy-Desktop#2041). */
+:root .proto-ui.proto-ui.proto-ui .mar-sec > button {
+  height: 32px;
+  margin-block: -4px;
+  padding: 0 12px;
+  border-radius: 8px;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-sec > button:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}

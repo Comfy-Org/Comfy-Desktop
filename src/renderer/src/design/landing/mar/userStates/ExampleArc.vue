@@ -546,10 +546,10 @@ function wheel(e: WheelEvent): void {
 :root .proto-ui.proto-ui.proto-ui .mar-arc-all {
   display: inline-flex;
   width: auto;
-  height: 34px;
+  height: 32px;
   align-items: center;
   gap: 6px;
-  padding: 0 14px;
+  padding: 0 12px;
   border-radius: var(--radius-control);
   font-size: 13px;
   font-weight: 500;
