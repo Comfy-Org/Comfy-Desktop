@@ -615,7 +615,7 @@ describe('AssetsView on This computer', () => {
     expect(listOutputFolder).not.toHaveBeenCalled()
   })
 
-  it('says when a folder path could not be copied', async () => {
+  it('says when a folder path could not be copied and lets the user try again', async () => {
     const writeText = vi
       .spyOn(navigator.clipboard, 'writeText')
       .mockRejectedValue(new Error('denied'))
@@ -631,8 +631,13 @@ describe('AssetsView on This computer', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe(
-      "Couldn't copy the path"
+      "Couldn't copy. Click to try again"
     )
+
+    writeText.mockResolvedValue()
+    await wrapper.get('[data-testid="local-folder-copy-path"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="local-folder-copy-path"]').text()).toBe('Path copied')
   })
 
   it('opens on This computer when the user left it there', async () => {

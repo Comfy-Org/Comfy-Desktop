@@ -41,7 +41,8 @@ async function copyPath(event: Event): Promise<void> {
     () => 'failed' as const
   )
   clearCloseTimer()
-  closeTimer = setTimeout(() => (open.value = false), COPIED_CLOSE_MS)
+  if (copyState.value === 'copied')
+    closeTimer = setTimeout(() => (open.value = false), COPIED_CLOSE_MS)
 }
 
 watch(open, (isOpen) => {

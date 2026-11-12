@@ -103,7 +103,7 @@
       "showInExplorer": "Show in Explorer",
       "copyPath": "Copy path",
       "pathCopied": "Path copied",
-      "copyFailed": "Couldn't copy the path",
+      "copyFailed": "Couldn't copy. Click to try again",
       "openFolder": "Open folder",
       "path": "Folder path",
       "noFoldersTitle": "No output folders yet",
