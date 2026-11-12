@@ -1,30 +1,53 @@
-import { mkdtempSync, promises as fsp, rmSync } from 'fs'
-import { tmpdir } from 'os'
+import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const outputDir = vi.hoisted(() => ({ current: '' }))
-const appEvents = vi.hoisted(() => ({ trackApps: vi.fn(), trackFromPage: vi.fn() }))
+const ipcListeners = vi.hoisted(() => new Map<string, (...args: unknown[]) => void>())
+const createdViews = vi.hoisted(() => [] as Array<{ setVisible: (visible: boolean) => void }>)
+const comfyWindows = vi.hoisted(() => new Map<number, unknown>())
 
-vi.mock('electron', () => ({
-  app: { isPackaged: true },
-  ipcMain: { handle: vi.fn(), on: vi.fn() },
-  session: { fromPartition: vi.fn() },
-  shell: { openExternal: vi.fn(), showItemInFolder: vi.fn() },
-  WebContentsView: vi.fn()
-}))
+vi.mock('electron', () => {
+  class WebContentsView {
+    webContents = {
+      isDestroyed: () => false,
+      on: () => {},
+      setWindowOpenHandler: () => {},
+      loadURL: () => Promise.resolve(),
+      close: () => {}
+    }
+    setBorderRadius = vi.fn()
+    setBounds = vi.fn()
+    setVisible = vi.fn()
+    constructor() {
+      createdViews.push(this)
+    }
+  }
+  return {
+    app: { isPackaged: true },
+    ipcMain: {
+      on: (channel: string, listener: (...args: unknown[]) => void) =>
+        ipcListeners.set(channel, listener),
+      handle: () => {}
+    },
+    session: {
+      fromPartition: () => ({
+        setPermissionCheckHandler: () => {},
+        setPermissionRequestHandler: () => {}
+      })
+    },
+    shell: { openExternal: vi.fn(), showItemInFolder: vi.fn() },
+    WebContentsView
+  }
+})
+
 vi.mock('../cloud/config', () => ({
-  CLOUD_CONFIG: { apiBase: 'https://cloud.test/api', issuer: 'https://cloud.test' }
+  CLOUD_CONFIG: { issuer: 'https://cloud.comfy.org', apiBase: 'https://cloud.comfy.org/api' }
 }))
-vi.mock('../devplatform/session', () => ({
-  getCloudSession: () => ({
-    getAccessToken: async () => 'token',
-    status: () => ({ signedIn: true })
-  })
-}))
-vi.mock('../host/registry', () => ({ comfyWindows: new Map() }))
+vi.mock('../devplatform/session', () => ({ getCloudSession: vi.fn() }))
+vi.mock('../host/registry', () => ({ comfyWindows }))
 vi.mock('../lib/ipc/registerDevPlatformHandlers', () => ({ signInToCloud: vi.fn() }))
-vi.mock('../settings', () => ({ get: () => outputDir.current }))
+vi.mock('../settings', () => ({}))
 vi.mock('./localComfy', () => ({
   cancelSetup: vi.fn(),
   getLocal: vi.fn(),
@@ -35,120 +58,102 @@ vi.mock('./localComfy', () => ({
   syncLocalSocket: vi.fn()
 }))
 vi.mock('./openInComfy', () => ({ localBuilds: vi.fn(), openInComfy: vi.fn() }))
-vi.mock('./appsSwitch', () => ({ isAppsEnabled: () => true }))
-vi.mock('./appEvents', () => appEvents)
 
-import { getOutput, saveFile } from './appsView'
+const getOpsFlagResult = vi.fn()
+vi.mock('../lib/telemetry', () => ({
+  getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
+}))
 
-const PNG = new Uint8Array([137, 80, 78, 71])
-const OUTPUT = { filename: 'ComfyUI_00001_.png', subfolder: '', type: 'output' }
+let testConfigDir = ''
+vi.mock('../lib/paths', () => ({
+  configDir: () => testConfigDir
+}))
 
-function cloudAnswers(): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(PNG, { headers: { 'content-type': 'image/png' } }))
-  )
+const settle = () => new Promise((resolve) => setImmediate(resolve))
+const rect = { x: 0, y: 0, width: 400, height: 300, fresh: true }
+
+function lateRemoteAnswer(): (value: boolean) => void {
+  let answer: (result: unknown) => void = () => {}
+  getOpsFlagResult.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+  return (value) => answer({ kind: 'value', value, payload: undefined })
 }
 
-function failNextWrite(): void {
-  vi.spyOn(fsp, 'writeFile').mockRejectedValueOnce(
-    Object.assign(new Error('disk full'), { code: 'ENOSPC' })
-  )
+function openPanel() {
+  const webContents = { isDestroyed: () => false, send: vi.fn() }
+  comfyWindows.set(1, {
+    panelView: { webContents, getBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }) },
+    window: { once: vi.fn(), contentView: { addChildView: vi.fn() } }
+  })
+  return webContents
+}
+
+async function startDesktop(stored?: boolean) {
+  if (stored !== undefined) {
+    fs.writeFileSync(
+      path.join(testConfigDir, 'ops-flags.json'),
+      JSON.stringify({ desktop_apps_enabled: { value: stored, payload: null, fetchedAt: 1 } })
+    )
+  }
+  vi.resetModules()
+  const view = await import('./appsView')
+  const appsSwitch = await import('./appsSwitch')
+  view.registerAppsIpc()
+  await appsSwitch.initAppsSwitch({ distinctId: 'anon' })
+  return appsSwitch
+}
+
+function showApps(sender: unknown): void {
+  ipcListeners.get('comfy-apps:show')!({ sender }, rect)
 }
 
 beforeEach(() => {
-  outputDir.current = mkdtempSync(path.join(tmpdir(), 'apps-view-test-'))
-  appEvents.trackApps.mockReset()
-  cloudAnswers()
+  getOpsFlagResult.mockReset()
+  ipcListeners.clear()
+  createdViews.length = 0
+  comfyWindows.clear()
+  testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apps-view-'))
 })
 
 afterEach(() => {
-  vi.restoreAllMocks()
-  vi.unstubAllGlobals()
-  rmSync(outputDir.current, { recursive: true, force: true })
+  fs.rmSync(testConfigDir, { recursive: true, force: true })
 })
 
-describe('getOutput', () => {
-  it('sends output_saved from the cloud after it saves the result', async () => {
-    const got = await getOutput(OUTPUT, { app: 'upscale', label: 'my result' })
+describe('Apps page and the remote switch', () => {
+  it('tells the panel when a late remote answer turns Apps on', async () => {
+    const panel = openPanel()
+    const remote = lateRemoteAnswer()
+    const appsSwitch = await startDesktop(false)
+    expect(appsSwitch.isAppsEnabled()).toBe(false)
 
-    expect(got.path).toBeDefined()
-    expect(await fsp.readFile(got.path!)).toEqual(Buffer.from(PNG))
-    expect(appEvents.trackApps).toHaveBeenCalledExactlyOnceWith('output_saved', {
-      app: 'upscale',
-      where: 'cloud'
-    })
+    remote(true)
+    await settle()
+
+    expect(panel.send).toHaveBeenCalledWith('comfy-apps:enabled', { enabled: true })
   })
 
-  it('sends nothing for a read that does not save', async () => {
-    const got = await getOutput(OUTPUT)
+  it('hides the open Apps page and tells the panel when a late remote answer turns Apps off', async () => {
+    const panel = openPanel()
+    const remote = lateRemoteAnswer()
+    await startDesktop(true)
+    showApps(panel)
+    const page = createdViews[0]!
+    expect(page.setVisible).toHaveBeenLastCalledWith(true)
 
-    expect(got.path).toBeUndefined()
-    expect(appEvents.trackApps).not.toHaveBeenCalled()
+    remote(false)
+    await settle()
+
+    expect(page.setVisible).toHaveBeenLastCalledWith(false)
+    expect(panel.send).toHaveBeenCalledWith('comfy-apps:enabled', { enabled: false })
   })
 
-  it('sends nothing when the write fails', async () => {
-    failNextWrite()
+  it('answers an open it refuses, so the panel can leave the Apps page', async () => {
+    const panel = openPanel()
+    getOpsFlagResult.mockResolvedValue({ kind: 'unreachable' })
+    await startDesktop()
 
-    await expect(getOutput(OUTPUT, { app: 'upscale', label: 'my result' })).rejects.toThrow(
-      'disk full'
-    )
-    expect(appEvents.trackApps).not.toHaveBeenCalled()
-  })
+    showApps(panel)
 
-  it('keeps the saved result when tracking throws', async () => {
-    appEvents.trackApps.mockImplementation(() => {
-      throw new Error('telemetry down')
-    })
-
-    const got = await getOutput(OUTPUT, { app: 'upscale', label: 'my result' })
-
-    expect(got.type).toBe('image/png')
-    expect(await fsp.readFile(got.path!)).toEqual(Buffer.from(PNG))
-  })
-})
-
-describe('saveFile', () => {
-  it('sends output_saved with where the run happened after it saves the file', async () => {
-    const got = await saveFile(PNG, 'text-to-image', 'my result', 'png', 'local')
-
-    expect(await fsp.readFile(got.path)).toEqual(Buffer.from(PNG))
-    expect(appEvents.trackApps).toHaveBeenCalledExactlyOnceWith('output_saved', {
-      app: 'text-to-image',
-      where: 'local'
-    })
-  })
-
-  it('sends nothing when the page does not say where the run happened', async () => {
-    const got = await saveFile(PNG, 'text-to-image', 'workflow', 'json')
-
-    expect(got.path).toBeDefined()
-    expect(appEvents.trackApps).not.toHaveBeenCalled()
-  })
-
-  it('sends nothing when the write fails', async () => {
-    failNextWrite()
-
-    await expect(saveFile(PNG, 'text-to-image', 'my result', 'png', 'local')).rejects.toThrow(
-      'disk full'
-    )
-    expect(appEvents.trackApps).not.toHaveBeenCalled()
-  })
-
-  it('sends nothing when it refuses the file', async () => {
-    await expect(saveFile(PNG, 'text-to-image', 'my result', 'exe', 'local')).rejects.toThrow(
-      'Apps cannot save that file.'
-    )
-    expect(appEvents.trackApps).not.toHaveBeenCalled()
-  })
-
-  it('keeps the saved path when tracking throws', async () => {
-    appEvents.trackApps.mockImplementation(() => {
-      throw new Error('telemetry down')
-    })
-
-    const got = await saveFile(PNG, 'text-to-image', 'my result', 'png', 'cloud')
-
-    expect(await fsp.readFile(got.path)).toEqual(Buffer.from(PNG))
+    expect(createdViews).toHaveLength(0)
+    expect(panel.send).toHaveBeenCalledWith('comfy-apps:enabled', { enabled: false })
   })
 })

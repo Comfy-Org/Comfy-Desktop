@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 const preload = readFileSync(resolve(__dirname, '../../preload/appsPreload.ts'), 'utf8')
 const main = readFileSync(resolve(__dirname, 'appsView.ts'), 'utf8')
 const local = readFileSync(resolve(__dirname, 'localComfy.ts'), 'utf8')
+const panelPreload = readFileSync(resolve(__dirname, '../../preload/api.ts'), 'utf8')
 
 const all = (text: string, re: RegExp) => [...text.matchAll(re)].map((m) => m[1]!)
 
@@ -43,10 +44,16 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
-  it('refuses to show the apps page while the remote switch is off', () => {
-    expect(main).toMatch(
-      /function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/
-    )
+  it('the Apps switch goes out on the channel the panel preload listens to', () => {
+    const sent = main.match(/APPS_ENABLED_CHANNEL = '([\w:-]+)'/)![1]
+    expect(panelPreload).toContain(`ipcRenderer.on('${sent}'`)
+    expect(panelPreload).toContain(`ipcRenderer.removeListener('${sent}'`)
+  })
+
+  it('every apps-page check is held to the Apps URL path, not just its origin', () => {
+    const checks = all(main, /isAppsFrameUrl\([^,]+, (\w+)\)/g)
+    expect(checks).toHaveLength(3)
+    expect(new Set(checks)).toEqual(new Set(['APPS_URL']))
   })
 
   it('local events go out on the channel the preload listens to', () => {
