@@ -424,7 +424,7 @@ function toggleBaseline(id: string): void {
                   </Button>
                 </th>
                 <th
-                  class="benchmarks__bar-head w-[32%] min-w-36 @max-[900px]:w-auto @max-[900px]:min-w-14 @max-[900px]:!whitespace-normal @max-[900px]:leading-4"
+                  class="benchmarks__bar-head w-[32%] min-w-36 @max-[900px]:w-auto @max-[900px]:min-w-30"
                 >
                   {{ t('benchmarks.metricAndRange', { metric: metricLabel }) }}
                 </th>
