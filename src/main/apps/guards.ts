@@ -163,20 +163,21 @@ export interface OutputFile {
 export function toOutputFile(value: unknown): OutputFile | null {
   if (!value || typeof value !== 'object') return null
   const v = value as Record<string, unknown>
-  if (typeof v['filename'] !== 'string' || !v['filename'] || v['filename'].length > 255) return null
+  const filename = v['filename']
+  if (typeof filename !== 'string' || !filename || filename.length > 255) return null
+  if (/[\\/\0]/.test(filename) || filename === '.' || filename === '..') return null
   const subfolder = typeof v['subfolder'] === 'string' ? v['subfolder'] : ''
   if (subfolder.length > 255 || subfolder.includes('..')) return null
   const type = v['type'] === 'temp' ? 'temp' : v['type'] === 'output' ? 'output' : null
   if (!type) return null
-  return { filename: v['filename'], subfolder, type }
+  return { filename, subfolder, type }
 }
 
 export function safeUploadName(name: unknown): string {
   const base = typeof name === 'string' ? (name.split(/[\\/]/).pop() ?? '') : ''
-  const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 100)
-  return /\.(png|jpe?g|webp|mp4|webm|mov|mp3|wav|flac|ogg|m4a|opus)$/i.test(cleaned)
-    ? cleaned
-    : 'upload.png'
+  const cleaned = base.replace(/[^A-Za-z0-9._-]/g, '_')
+  const ext = /\.(png|jpe?g|webp|mp4|webm|mov|mp3|wav|flac|ogg|m4a|opus)$/i.exec(cleaned)?.[0]
+  return ext ? cleaned.slice(0, Math.min(cleaned.length, 100) - ext.length) + ext : 'upload.png'
 }
 
 export type OutputKind = 'image' | 'video' | 'audio' | '3d' | 'text' | 'file'

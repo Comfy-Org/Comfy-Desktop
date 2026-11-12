@@ -1,5 +1,6 @@
 import { app, ipcMain, session, shell, WebContentsView } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, Session, WebContents } from 'electron'
+import { randomUUID } from 'crypto'
 import { promises as fsp } from 'fs'
 import path from 'path'
 
@@ -23,6 +24,7 @@ import {
   isVersionsIndex,
   isWorkflow,
   MAX_UPLOAD_BYTES,
+  readCapped,
   type OutputFile,
   readable,
   type OutputKind,
@@ -214,12 +216,22 @@ function authState(): AppsAuthState {
   return status.signedIn ? { signedIn: true, email: status.email } : { signedIn: false }
 }
 
+const CLOUD_TIMEOUT_MS = 120_000
+
 async function cloudFetch(pathAndQuery: string, init: RequestInit = {}): Promise<Response> {
   const token = await getCloudSession().getAccessToken()
   if (!token) throw new Error('Sign in to Comfy to use apps.')
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${token}`)
-  return fetch(`${CLOUD_CONFIG.apiBase}${pathAndQuery}`, { ...init, headers })
+  const signal = init.signal ?? AbortSignal.timeout(CLOUD_TIMEOUT_MS)
+  return fetch(`${CLOUD_CONFIG.apiBase}${pathAndQuery}`, { ...init, headers, signal }).catch(
+    (err: unknown) => {
+      if ((err as Error)?.name === 'TimeoutError') {
+        throw new Error('Comfy Cloud took too long to answer.')
+      }
+      throw err
+    }
+  )
 }
 
 async function failure(res: Response): Promise<Error> {
@@ -278,7 +290,8 @@ export interface RunStatus {
 
 async function runWithoutHistory(runId: string): Promise<RunStatus> {
   const res = await cloudFetch(`/jobs/${runId}`)
-  if (!res.ok) return { state: 'waiting' }
+  if (res.status === 429 || res.status >= 500) return { state: 'waiting' }
+  if (!res.ok) return { state: 'failed', error: (await failure(res)).message }
   const rec = (await res.json()) as {
     status?: string
     outputs_count?: number
@@ -386,13 +399,14 @@ async function getOutput(
   const f = toOutputFile(file)
   if (!f) throw new Error('Unknown output.')
   const ext = saveExt(f.filename.split('.').pop())
-  if (!ext) throw new Error('Apps cannot save that kind of file.')
+  if (save !== undefined && !ext) throw new Error('Apps cannot save that kind of file.')
   const query = new URLSearchParams({ filename: f.filename, subfolder: f.subfolder, type: f.type })
   const res = await cloudFetchRetrying(`/view?${query}`)
   if (!res.ok) throw await failure(res)
-  const bytes = new Uint8Array(await res.arrayBuffer())
+  const bytes = await readCapped(res, MAX_UPLOAD_BYTES)
+  if (!bytes) throw new Error('That result is larger than 50 MB.')
   const type = res.headers.get('content-type') ?? 'application/octet-stream'
-  if (save === undefined) return { type, bytes }
+  if (save === undefined || !ext) return { type, bytes }
   const s = (save ?? {}) as { app?: unknown; label?: unknown }
   return { type, bytes, path: await saveResult(s.app, s.label, ext, bytes) }
 }
@@ -411,7 +425,10 @@ async function saveFile(
 }
 
 async function readSaved(file: unknown): Promise<Uint8Array> {
-  return new Uint8Array(await fsp.readFile(await savedPath(file)))
+  const real = await savedPath(file)
+  if ((await fsp.stat(real)).size > MAX_UPLOAD_BYTES)
+    throw new Error('That file is larger than 50 MB.')
+  return new Uint8Array(await fsp.readFile(real))
 }
 
 async function saveVersions(app: unknown, bytes: unknown): Promise<void> {
@@ -420,8 +437,12 @@ async function saveVersions(app: unknown, bytes: unknown): Promise<void> {
   const dir = path.join(await appsRoot(), slug)
   await fsp.mkdir(dir, { recursive: true })
   const file = path.join(dir, VERSIONS_FILE)
-  await fsp.writeFile(`${file}.tmp`, bytes)
-  await fsp.rename(`${file}.tmp`, file)
+  const tmp = `${file}.${randomUUID()}.tmp`
+  await fsp.writeFile(tmp, bytes)
+  await fsp.rename(tmp, file).catch(async (err: unknown) => {
+    await fsp.rm(tmp, { force: true }).catch(() => {})
+    throw err
+  })
 }
 
 async function readVersions(app: unknown): Promise<Uint8Array | null> {
