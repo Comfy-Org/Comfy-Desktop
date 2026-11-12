@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { effectScope } from 'vue'
 
 import HomeTemplateSearch from './HomeTemplateSearch.vue'
+import TemplateSearchResults from './TemplateSearchResults.vue'
+import { useTemplateSearch } from './useTemplateSearch'
 import type { TemplateSearchClient } from './templateSearch'
 import type {
   TemplateSearchCandidate,
@@ -311,5 +314,54 @@ describe('HomeTemplateSearch', () => {
     })
 
     expect(wrapper.find('[data-testid="home-template-search-results"]').exists()).toBe(false)
+  })
+})
+
+describe('TemplateSearchResults as a grid', () => {
+  async function mountGrid(result: Partial<TemplateSearchResult>) {
+    search.mockResolvedValue(answer(result))
+    const scope = effectScope()
+    const controller = scope.run(() =>
+      useTemplateSearch({
+        client: () => ({ search, open }),
+        blockedReason: () => null,
+        refreshKey: () => ''
+      })
+    )!
+    await controller.search('a poster')
+    const wrapper = mount(TemplateSearchResults, {
+      props: { controller, layout: 'grid', listboxId: 'grid' },
+      attachTo: document.body
+    })
+    return { wrapper, stop: () => scope.stop() }
+  }
+
+  it('puts the match as a coloured percentage in the corner of each picture', async () => {
+    const weak = candidate('weak_template', { score: 0.06, belowThreshold: true })
+    const { wrapper, stop } = await mountGrid({ run: [POSTER], alsoTry: [weak] })
+
+    const boxes = wrapper.findAll('[data-testid="home-template-search-match"]')
+    expect(boxes.map((box) => box.text())).toEqual(['92%', '6%'])
+    expect(boxes.map((box) => box.attributes('data-level'))).toEqual(['strong', 'weak'])
+    expect(boxes[1]!.attributes('aria-label')).toBe('Weaker match · 6%')
+    stop()
+  })
+
+  it('shows partner, download and rewrite labels on the picture', async () => {
+    const partner = candidate('api_partner_template', { partner: true, rewrite: true })
+    const { wrapper, stop } = await mountGrid({ run: [partner], download: [MURAL] })
+
+    const [first, second] = wrapper.findAll('[role="option"]')
+    const picture = (card: typeof first) => card!.find('.aspect-\\[4\\/3\\]')
+    expect(picture(first).find('[data-testid="home-template-search-partner"]').text()).toBe(
+      'Partner'
+    )
+    expect(picture(first).find('[data-testid="home-template-search-rewrite"]').text()).toBe(
+      'Rewrites prompt'
+    )
+    expect(
+      picture(second).find('[data-testid="home-template-search-needs-download"]').exists()
+    ).toBe(true)
+    stop()
   })
 })

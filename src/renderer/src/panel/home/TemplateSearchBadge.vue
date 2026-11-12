@@ -3,7 +3,9 @@ import { computed } from 'vue'
 import { Download, Gauge, Handshake, Sparkles, Star } from 'lucide-vue-next'
 import type { BadgeTone } from './templateSearch'
 
-const props = defineProps<{ tone: BadgeTone }>()
+const props = withDefaults(defineProps<{ tone: BadgeTone; overlay?: boolean }>(), {
+  overlay: false
+})
 
 const TONES: Record<BadgeTone, string> = {
   partner: 'bg-[rgb(76_92_214/0.24)] text-[rgb(196_204_255)] ring-[rgb(126_140_255/0.45)]',
@@ -15,6 +17,19 @@ const TONES: Record<BadgeTone, string> = {
   best: 'bg-[rgb(255_255_255/0.14)] text-[rgb(245_245_245)] ring-[rgb(255_255_255/0.3)]'
 }
 
+const OVERLAY =
+  'bg-[rgb(12_12_14/0.82)] text-[rgb(246_246_248)] ring-[rgb(255_255_255/0.16)] shadow-[0_2px_8px_rgb(0_0_0/0.45)] backdrop-blur-sm'
+
+const OVERLAY_ICON: Record<BadgeTone, string> = {
+  partner: 'text-[rgb(150_165_255)]',
+  download: 'text-[rgb(255_196_100)]',
+  rewrite: 'text-[rgb(214_160_255)]',
+  strong: 'text-[rgb(110_225_160)]',
+  good: 'text-[rgb(130_185_255)]',
+  weak: 'text-[rgb(190_190_196)]',
+  best: 'text-white'
+}
+
 const ICONS = { partner: Handshake, download: Download, rewrite: Sparkles, best: Star }
 
 const icon = computed(() => (props.tone in ICONS ? ICONS[props.tone as keyof typeof ICONS] : Gauge))
@@ -23,10 +38,16 @@ const icon = computed(() => (props.tone in ICONS ? ICONS[props.tone as keyof typ
 <template>
   <span
     class="inline-flex h-[22px] shrink-0 items-center gap-1 rounded-md px-2 text-[12px] leading-none font-medium whitespace-nowrap ring-1 ring-inset"
-    :class="TONES[tone]"
+    :class="overlay ? OVERLAY : TONES[tone]"
     :data-tone="tone"
   >
-    <component :is="icon" :size="12" :stroke-width="2.25" aria-hidden="true" />
+    <component
+      :is="icon"
+      :size="12"
+      :stroke-width="2.25"
+      :class="overlay ? OVERLAY_ICON[tone] : ''"
+      aria-hidden="true"
+    />
     <slot />
   </span>
 </template>

@@ -29,19 +29,43 @@ interface Badge {
   testId: string
 }
 
-function matchBadge(candidate: TemplateSearchCandidate): Badge | null {
+type MatchLevel = 'strong' | 'good' | 'weak'
+
+const MATCH_LEVEL_KEYS: Record<MatchLevel, string> = {
+  strong: 'home.search.matchStrong',
+  good: 'home.search.matchGood',
+  weak: 'home.search.matchWeak'
+}
+
+const MATCH_BOX: Record<MatchLevel, string> = {
+  strong: 'bg-[rgb(28_150_88)]',
+  good: 'bg-[rgb(50_112_205)]',
+  weak: 'bg-[rgb(92_92_98)]'
+}
+
+function matchLevel(candidate: TemplateSearchCandidate): MatchLevel | null {
   if (candidate.score === null) return null
-  const percent = Math.round(candidate.score * 100)
-  const level = candidate.belowThreshold
-    ? { tone: 'weak' as const, key: 'home.search.matchWeak' }
-    : candidate.score >= STRONG_MATCH
-      ? { tone: 'strong' as const, key: 'home.search.matchStrong' }
-      : { tone: 'good' as const, key: 'home.search.matchGood' }
-  return {
-    tone: level.tone,
-    label: `${t(level.key)} · ${percent}%`,
-    testId: 'home-template-search-match'
-  }
+  if (candidate.belowThreshold) return 'weak'
+  return candidate.score >= STRONG_MATCH ? 'strong' : 'good'
+}
+
+function matchPercent(candidate: TemplateSearchCandidate): number {
+  return Math.round((candidate.score ?? 0) * 100)
+}
+
+function matchLabel(candidate: TemplateSearchCandidate): string {
+  const level = matchLevel(candidate)
+  return level ? `${t(MATCH_LEVEL_KEYS[level])} · ${matchPercent(candidate)}%` : ''
+}
+
+function matchBadge(candidate: TemplateSearchCandidate): Badge | null {
+  const level = matchLevel(candidate)
+  if (level === null) return null
+  return { tone: level, label: matchLabel(candidate), testId: 'home-template-search-match' }
+}
+
+function cornerBadges(row: SearchRow): Badge[] {
+  return badges(row).filter((badge) => badge.tone === 'partner' || badge.tone === 'download')
 }
 
 function badges(row: SearchRow): Badge[] {
@@ -246,34 +270,48 @@ function optionId(index: number): string {
           />
           <span
             v-if="row.kind !== 'agent'"
-            class="absolute top-2 left-2 rounded-md px-1.5 py-0.5 text-[12px]/4 font-semibold shadow-[0_1px_6px_rgb(0_0_0/0.5)]"
-            :class="
-              row.best ? 'bg-[rgb(110_130_255)] text-white' : 'bg-[rgb(0_0_0/0.72)] text-white'
-            "
+            class="absolute top-2 left-2 rounded-md px-1.5 py-0.5 text-[12px]/4 font-semibold text-white shadow-[0_2px_8px_rgb(0_0_0/0.45)]"
+            :class="row.best ? 'bg-[rgb(110_130_255)]' : 'bg-[rgb(12_12_14/0.82)]'"
           >
             #{{ index + 1 }}
           </span>
-        </span>
-        <span
-          class="flex min-w-0 flex-col gap-2 px-3 py-2.5"
-          :class="isWeak(row) ? 'opacity-70' : ''"
-        >
-          <span class="flex min-w-0 flex-col">
-            <span class="truncate text-[13px]/5 font-medium text-foreground">
-              {{ row.kind === 'agent' ? t('home.search.agentTitle') : row.candidate?.title }}
-            </span>
-            <span class="truncate text-xs/4 text-subtle-foreground">{{ rowMeta(row) }}</span>
+          <span
+            v-if="row.candidate && matchLevel(row.candidate)"
+            class="absolute top-2 right-2 rounded-md px-1.5 py-0.5 text-[12px]/4 font-semibold text-white shadow-[0_2px_8px_rgb(0_0_0/0.45)] ring-1 ring-[rgb(255_255_255/0.18)] ring-inset"
+            :class="MATCH_BOX[matchLevel(row.candidate) ?? 'weak']"
+            :title="matchLabel(row.candidate)"
+            :aria-label="matchLabel(row.candidate)"
+            :data-level="matchLevel(row.candidate)"
+            data-testid="home-template-search-match"
+          >
+            {{ matchPercent(row.candidate) }}%
           </span>
-          <span v-if="badges(row).length" class="flex flex-wrap gap-1.5">
+          <span v-if="cornerBadges(row).length" class="absolute bottom-2 left-2 flex gap-1">
             <TemplateSearchBadge
-              v-for="badge in badges(row)"
+              v-for="badge in cornerBadges(row)"
               :key="badge.testId"
               :tone="badge.tone"
+              overlay
               :data-testid="badge.testId"
             >
               {{ badge.label }}
             </TemplateSearchBadge>
           </span>
+          <TemplateSearchBadge
+            v-if="row.candidate?.rewrite"
+            tone="rewrite"
+            overlay
+            class="absolute right-2 bottom-2"
+            data-testid="home-template-search-rewrite"
+          >
+            {{ t('home.search.rewritePill') }}
+          </TemplateSearchBadge>
+        </span>
+        <span class="flex min-w-0 flex-col px-3 py-2.5" :class="isWeak(row) ? 'opacity-70' : ''">
+          <span class="truncate text-[13px]/5 font-medium text-foreground">
+            {{ row.kind === 'agent' ? t('home.search.agentTitle') : row.candidate?.title }}
+          </span>
+          <span class="truncate text-xs/4 text-subtle-foreground">{{ rowMeta(row) }}</span>
         </span>
       </li>
     </ul>
