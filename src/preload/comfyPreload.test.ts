@@ -109,6 +109,15 @@ describe('comfyPreload model access bridge', () => {
     expect(mocks.invoke).toHaveBeenCalledWith('desktop2-open-model-access-page', { url })
   })
 
+  it('lists the model download snapshot through the desktop2 IPC contract', async () => {
+    const snapshot = [downloadProgress('job-1', 'paused', 0.4)]
+    mocks.invoke.mockResolvedValueOnce(snapshot)
+
+    await expect(hostedBridge().listModelDownloads()).resolves.toEqual(snapshot)
+
+    expect(mocks.invoke).toHaveBeenCalledWith('desktop2-list-model-downloads')
+  })
+
   it('exposes only a navigation request for the hosted terminal', async () => {
     const bridge = hostedBridge()
     mocks.invoke.mockResolvedValueOnce(true)

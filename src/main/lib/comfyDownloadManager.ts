@@ -657,10 +657,19 @@ function acquireModelJobLease(pending: PendingDownload, cleanup?: () => void): (
   }
 }
 
+function subscribeContentsToJob(pending: PendingDownload, contents: Electron.WebContents): void {
+  if (contents !== pending.senderContents) pending.subscriberContents.add(contents)
+}
+
 function joinModelJob(existing: PendingDownload, opts: ModelJobOptions): ModelJobHandle {
   if (opts.window && opts.window !== existing.window && !opts.window.isDestroyed()) {
     existing.subscriberWindows.add(opts.window)
     opts.window.webContents.send('desktop2-download-progress', existing.lastProgress)
+  }
+  const joiner = opts.senderContents
+  if (joiner && !joiner.isDestroyed() && joiner !== opts.window?.webContents) {
+    subscribeContentsToJob(existing, joiner)
+    joiner.send('desktop2-download-progress', existing.lastProgress)
   }
   const onProgress = opts.onProgress
   if (onProgress) {
@@ -1753,6 +1762,17 @@ export function retryDownload(ref: string): boolean {
     })
   }
   return true
+}
+
+export function subscribeToInstallationModelJobs(
+  installationId: string,
+  contents: Electron.WebContents
+): DownloadProgress[] {
+  const jobs = [...pendingDownloads.values()].filter(
+    (pending) => pending.installationId === installationId
+  )
+  for (const job of jobs) subscribeContentsToJob(job, contents)
+  return jobs.map((job) => ({ ...job.lastProgress }))
 }
 
 export function getActiveDownloads(): DownloadProgress[] {

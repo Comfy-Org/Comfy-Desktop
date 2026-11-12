@@ -317,6 +317,9 @@ const bridge = {
   cancelDownload: (url: string): Promise<boolean> => {
     return ipcRenderer.invoke('model-download-cancel', { url })
   },
+  listModelDownloads: (): Promise<ComfyDownloadProgress[]> => {
+    return ipcRenderer.invoke('desktop2-list-model-downloads')
+  },
   onDownloadProgress: (callback: (data: ComfyDownloadProgress) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, data: unknown) =>
       callback(data as ComfyDownloadProgress)

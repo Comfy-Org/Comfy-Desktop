@@ -1,7 +1,7 @@
 import { BrowserWindow, ipcMain, shell } from 'electron'
 import type { IpcMainEvent } from 'electron'
 import path from 'path'
-import { findEntryByComfySender } from '../../host/registry'
+import { findEntryByComfySender, findInstallationIdByComfySender } from '../../host/registry'
 import {
   cancelModelDownload,
   clearFinishedDownloads,
@@ -11,7 +11,8 @@ import {
   pauseModelDownload,
   resumeModelDownload,
   retryDownload,
-  startModelDownload
+  startModelDownload,
+  subscribeToInstallationModelJobs
 } from '../comfyDownloadManager'
 import { getDeviceId, getIdClass } from '../deviceId'
 import { openModelAccessPageWindow } from '../modelAccessPage'
@@ -50,6 +51,13 @@ export function registerDownloadHandlers(): void {
       return startModelDownload(win, url, filename, directory, event.sender)
     }
   )
+
+  ipcMain.handle('desktop2-list-model-downloads', (event) => {
+    const installationId = findInstallationIdByComfySender(event.sender)
+    return installationId === null
+      ? []
+      : subscribeToInstallationModelJobs(installationId, event.sender)
+  })
 
   const controlRef = (payload?: { ref?: unknown; url?: unknown }): string | null => {
     if (typeof payload?.ref === 'string' && payload.ref) return payload.ref

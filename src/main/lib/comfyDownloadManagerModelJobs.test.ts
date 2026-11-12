@@ -1250,6 +1250,119 @@ describe('owner-window detach (issue #1322)', () => {
   })
 })
 
+describe('renderer model-job snapshot', () => {
+  let installSeq = 0
+  function uniqueInstallationId(): string {
+    return `snapshot-install-${installSeq++}`
+  }
+
+  function fakeContents(): { isDestroyed: () => boolean; send: ReturnType<typeof vi.fn> } {
+    return { isDestroyed: () => false, send: vi.fn() }
+  }
+
+  function progressEvents(contents: ReturnType<typeof fakeContents>): unknown[] {
+    return contents.send.mock.calls
+      .filter(([channel]) => channel === 'desktop2-download-progress')
+      .map(([, progress]) => progress)
+  }
+
+  async function startJob(installationId: string): Promise<ComfyDownloadManager.ModelJobHandle> {
+    const name = uniqueName()
+    const before = transfers.length
+    const handle = await mod.startManagedModelJob({
+      url: `https://host.example/${name}`,
+      filename: name,
+      directory: 'checkpoints',
+      installationId
+    })
+    await waitForTransfers(before + 1)
+    return handle
+  }
+
+  it('lists the paused and in-flight jobs of the caller installation and no others', async () => {
+    const installationId = uniqueInstallationId()
+    const running = await startJob(installationId)
+    const paused = await startJob(installationId)
+    expect(mod.pauseModelDownload(paused.id)).toBe(true)
+    const completed = await startJob(installationId)
+    const completedTransfer = transfers.at(-1)!
+    const cancelled = await startJob(installationId)
+    const otherInstallation = await startJob(uniqueInstallationId())
+    completedTransfer.resolve({ outcome: 'completed', savePath: completed.savePath })
+    await expect(completed.completion).resolves.toMatchObject({ status: 'completed' })
+    expect(mod.cancelModelDownload(cancelled.id)).toBe(true)
+    await expect(cancelled.completion).resolves.toEqual({ status: 'cancelled' })
+    await flush()
+
+    const snapshot = mod.subscribeToInstallationModelJobs(installationId, fakeContents() as never)
+
+    expect(snapshot.map(({ id, status }) => ({ id, status }))).toEqual([
+      { id: running.id, status: 'pending' },
+      { id: paused.id, status: 'paused' }
+    ])
+    expect(snapshot[0]).toMatchObject({
+      url: running.url,
+      filename: path.basename(running.savePath),
+      directory: 'checkpoints'
+    })
+    expect(snapshot.every((row) => row.savePath === undefined)).toBe(true)
+
+    for (const handle of [running, paused, otherInstallation]) {
+      expect(mod.cancelModelDownload(handle.id)).toBe(true)
+      await handle.completion
+    }
+    await flush()
+  })
+
+  it('delivers later progress of a listed job started elsewhere to the listing renderer', async () => {
+    const installationId = uniqueInstallationId()
+    const job = await startJob(installationId)
+    const transfer = transfers.at(-1)!
+    const contents = fakeContents()
+
+    mod.subscribeToInstallationModelJobs(installationId, contents as never)
+    transfer.resolve({ outcome: 'completed', savePath: job.savePath })
+    await expect(job.completion).resolves.toMatchObject({ status: 'completed' })
+    await flush()
+
+    expect(progressEvents(contents)).toContainEqual(
+      expect.objectContaining({ id: job.id, status: 'completed' })
+    )
+  })
+
+  it('replays the job state to a renderer that re-requests its own running download', async () => {
+    const name = uniqueName()
+    const url = `https://host.example/${name}`
+    const before = transfers.length
+    const win = {
+      isDestroyed: () => false,
+      webContents: fakeContents(),
+      setProgressBar: vi.fn()
+    }
+    const sender = fakeContents()
+    const request = {
+      url,
+      filename: name,
+      directory: 'checkpoints',
+      window: win as never,
+      senderContents: sender as never
+    }
+    const first = await mod.startManagedModelJob(request)
+    await waitForTransfers(before + 1)
+    await flush()
+    sender.send.mockClear()
+
+    const rejoined = await mod.startManagedModelJob(request)
+
+    expect(rejoined.id).toBe(first.id)
+    expect(progressEvents(sender)).toEqual([expect.objectContaining({ id: first.id })])
+
+    expect(mod.cancelModelDownload(first.id)).toBe(true)
+    await first.completion
+    await flush()
+  })
+})
+
 describe('model download startup safety (issue #1322)', () => {
   it('reports unsafe when migration leaves incomplete finals visible, and retries next call', async () => {
     mod._test_resetModelDownloadsInit()
