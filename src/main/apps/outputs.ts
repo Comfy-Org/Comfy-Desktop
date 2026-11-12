@@ -24,12 +24,17 @@ function outputItem(value: unknown): AppOutputItem | null {
         .map((tag) => text(tag, 40))
         .filter((tag): tag is string => tag !== null)
     : []
+  const savedOn =
+    item['savedOn'] === 'cloud' || item['savedOn'] === 'computer' ? item['savedOn'] : null
+  const folder = savedOn === 'computer' ? text(item['folder'], 1024) : null
   return {
     name,
     mimeType,
     bytes: bytes as Uint8Array<ArrayBuffer>,
     tags,
-    workflow: item['workflow'] === true
+    workflow: item['workflow'] === true,
+    ...(savedOn ? { savedOn } : {}),
+    ...(folder ? { folder } : {})
   }
 }
 
@@ -49,7 +54,8 @@ export function outputRequest(input: unknown): { items: AppOutputItem[]; index: 
 export function outputAction(input: unknown): AppOutputAction | null {
   if (!input || typeof input !== 'object') return null
   const { action, index } = input as { action?: unknown; index?: unknown }
-  if (action !== 'download' && action !== 'open-workflow') return null
+  if (action !== 'download' && action !== 'open-workflow' && action !== 'show-in-folder')
+    return null
   if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
   return { action, index }
 }

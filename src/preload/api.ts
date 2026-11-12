@@ -99,6 +99,8 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
+    listOutputFolders: () => ipcRenderer.invoke('assets:output-folders'),
+    listOutputFolder: (folderPath) => ipcRenderer.invoke('assets:output-folder', folderPath),
     downloadAsset: (installationId, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', installationId, assetId, fileName),
     showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),

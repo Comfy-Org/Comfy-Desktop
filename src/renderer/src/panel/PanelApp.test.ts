@@ -1289,6 +1289,35 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
   })
 
+  it('moves to Assets with the Cloud file open when an app result asks for it', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    Object.assign(window.api, {
+      listCatalogApps: vi.fn().mockResolvedValue([]),
+      listAssets: vi.fn().mockResolvedValue([]),
+      onAppsLoadFailed: vi.fn(() => () => {}),
+      onAppsAppOpen: vi.fn(() => () => {}),
+      onAppsOutput: vi.fn(() => () => {}),
+      onAppsSettled: vi.fn(() => () => {})
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    wrapper.getComponent({ name: 'AppsView' }).vm.$emit('view-in-assets', 'cutout.png')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="assets-view"]').exists()).toBe(true)
+    expect(wrapper.getComponent({ name: 'AssetsView' }).props('focusName')).toBe('cutout.png')
+    expect(wrapper.get('[data-testid="app-sidebar-assets"]').attributes('aria-current')).toBe(
+      'page'
+    )
+
+    wrapper.getComponent({ name: 'AssetsView' }).vm.$emit('focus-used')
+    await flushPromises()
+    expect(wrapper.getComponent({ name: 'AssetsView' }).props('focusName')).toBeNull()
+  })
+
   it('unfolds the sidebar when another page is picked while an app is open', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const matchMedia = vi

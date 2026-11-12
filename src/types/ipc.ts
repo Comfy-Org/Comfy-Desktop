@@ -150,12 +150,36 @@ export interface AssetSummary {
   previewUrl: string | null
 }
 
+export interface OutputFolder {
+  path: string
+  shared: boolean
+  builds: string[]
+}
+
+export interface OutputEntry {
+  name: string
+  path: string
+  isFolder: boolean
+  kind: AssetKind | null
+  sizeBytes: number | null
+  modifiedAt: string
+  previewUrl: string | null
+  thumbnailUrl: string | null
+}
+
+export interface OutputFolderListing {
+  entries: OutputEntry[]
+  truncated: boolean
+}
+
 export interface AppOutputItem {
   name: string
   mimeType: string
   bytes: Uint8Array<ArrayBuffer>
   tags: string[]
   workflow: boolean
+  savedOn?: 'cloud' | 'computer'
+  folder?: string
 }
 
 export interface AppOutputs {
@@ -165,7 +189,7 @@ export interface AppOutputs {
 }
 
 export interface AppOutputAction {
-  action: 'download' | 'open-workflow'
+  action: 'download' | 'open-workflow' | 'show-in-folder'
   index: number
 }
 
@@ -1156,6 +1180,8 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   downloadAsset(installationId: string, assetId: string, fileName: string): Promise<boolean>
+  listOutputFolders(): Promise<OutputFolder[]>
+  listOutputFolder(folderPath: string): Promise<OutputFolderListing | null>
   showApps(rect: {
     x: number
     y: number

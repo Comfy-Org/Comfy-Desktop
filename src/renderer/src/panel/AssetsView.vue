@@ -4,15 +4,11 @@ import { useI18n } from 'vue-i18n'
 import { useLocalStorage, useScroll } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
 import {
-  AudioLines,
-  Box,
   Check,
   Download,
-  File,
   LayoutGrid,
   LayoutDashboard,
   ListFilter,
-  Play,
   RefreshCw,
   Search
 } from 'lucide-vue-next'
@@ -23,7 +19,9 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
-import Tooltip from '../components/ui/Tooltip.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import AssetCard from './AssetCard.vue'
+import LocalFolders from './LocalFolders.vue'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
@@ -40,6 +38,7 @@ interface GalleryAsset extends AssetSummary {
   buildName: string
 }
 
+type Place = 'cloud' | 'computer'
 type KindFilter = 'all' | AssetKind
 type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
@@ -47,12 +46,19 @@ type SortOrder = 'newest' | 'oldest'
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
 
+const { focusName = null } = defineProps<{ focusName?: string | null }>()
+const emit = defineEmits<{ 'focus-used': [] }>()
+
 const { t } = useI18n()
 const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
+const savedPlace = useLocalStorage<Place>('comfy.desktop.assets.place', 'cloud')
+const place = ref<Place>(focusName ? 'cloud' : savedPlace.value)
+const localFolder = ref<string | null>(null)
+const localFolders = useTemplateRef<InstanceType<typeof LocalFolders>>('localFolders')
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
@@ -83,6 +89,15 @@ const reachableBuildIds = computed(() => {
   const accountCloud = reachable.find(isCloudBuild)
   return reachable.filter((b) => !isCloudBuild(b) || b === accountCloud).map((b) => b.id)
 })
+
+const placeOptions = computed(() => [
+  { value: 'cloud' as const, label: t('assets.place.cloud') },
+  { value: 'computer' as const, label: t('assets.place.computer') }
+])
+const filtersShown = computed(() => place.value === 'cloud' || localFolder.value !== null)
+const refreshing = computed(() =>
+  place.value === 'cloud' ? loading.value : (localFolders.value?.loading ?? false)
+)
 
 const kindOptions = computed(() => [
   { value: 'all' as const, label: t('assets.kind.all') },
@@ -181,6 +196,26 @@ watch(
   { immediate: true }
 )
 
+let pendingFocus = focusName
+
+watch(
+  [visibleAssets, loading],
+  ([list, busy]) => {
+    if (!pendingFocus || busy || reachableBuildIds.value.length === 0) return
+    const name = pendingFocus
+    pendingFocus = null
+    const newest = list
+      .filter((asset) => asset.name === name)
+      .reduce<GalleryAsset | null>(
+        (best, asset) => (best && createdMs(best) >= createdMs(asset) ? best : asset),
+        null
+      )
+    if (newest) openDetail(newest)
+    emit('focus-used')
+  },
+  { immediate: true }
+)
+
 watch(visibleAssets, (list) => {
   if (detailKey.value !== null && !list.some((asset) => cardKey(asset) === detailKey.value))
     detailKey.value = null
@@ -221,6 +256,21 @@ function coolNameTooltips(): void {
 
 onBeforeUnmount(() => clearTimeout(warmTimer))
 
+function pickPlace(next: Place): void {
+  place.value = next
+  savedPlace.value = next
+}
+
+function refresh(): void {
+  if (place.value === 'cloud') void loadAssets()
+  else void localFolders.value?.reload()
+}
+
+function clearFilters(): void {
+  kindFilter.value = 'all'
+  searchQuery.value = ''
+}
+
 async function signIn(): Promise<void> {
   if (signingIn.value) return
   signingIn.value = true
@@ -260,16 +310,11 @@ function assetDetails(asset: AssetSummary): string {
     .filter(Boolean)
     .join(' · ')
 }
-
-function extensionOf(name: string): string {
-  const dot = name.lastIndexOf('.')
-  return dot >= 0 ? name.slice(dot) : ''
-}
 </script>
 
 <template>
   <OutputDetailDialog
-    v-if="detailIndex !== null && visibleAssets.length > 0"
+    v-if="place === 'cloud' && detailIndex !== null && visibleAssets.length > 0"
     v-model:index="detailIndex"
     :items="fileItems"
     @close="closeDetail"
@@ -293,150 +338,173 @@ function extensionOf(name: string): string {
       data-testid="assets-toolbar"
     >
       <div class="mx-auto flex min-h-8 w-full max-w-300 flex-wrap items-center gap-2 px-10 py-3">
+        <SegmentedControl
+          :model-value="place"
+          :options="placeOptions"
+          :label="t('assets.place.label')"
+          data-testid="assets-place"
+          @update:model-value="pickPlace"
+        />
         <div class="ml-auto flex items-center gap-2">
           <Button
             variant="muted-textonly"
             size="icon"
             type="button"
-            :disabled="loading"
+            :disabled="refreshing"
             :aria-label="t('assets.refresh')"
             :title="t('assets.refresh')"
             data-testid="assets-refresh"
-            @click="loadAssets"
+            @click="refresh"
           >
             <RefreshCw
               :size="13"
-              :class="loading && 'animate-spin [animation-duration:900ms]'"
+              :class="refreshing && 'animate-spin [animation-duration:900ms]'"
               aria-hidden="true"
             />
           </Button>
-          <Menu
-            :modal="false"
-            align="end"
-            class="z-20 min-w-[180px]"
-            :aria-label="t('assets.kindLabel')"
-          >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="secondary"
-                size="md"
-                class="gap-1.5 px-3 text-ui"
-                data-testid="assets-filter"
+          <template v-if="filtersShown">
+            <Menu
+              :modal="false"
+              align="end"
+              class="z-20 min-w-[180px]"
+              :aria-label="t('assets.kindLabel')"
+            >
+              <template #trigger>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="md"
+                  class="gap-1.5 px-3 text-ui"
+                  data-testid="assets-filter"
+                >
+                  <ListFilter :size="15" aria-hidden="true" />
+                  {{ filterLabel }}
+                </Button>
+              </template>
+              <DropdownMenuRadioGroup :model-value="kindFilter">
+                <MenuRadioItem
+                  v-for="option in kindOptions"
+                  :key="option.value"
+                  as="button"
+                  type="button"
+                  :value="option.value"
+                  class="w-full"
+                  :data-testid="`assets-filter-${option.value}`"
+                  @select="kindFilter = option.value"
+                >
+                  <span class="flex-1 text-left">{{ option.label }}</span>
+                  <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
+                </MenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </Menu>
+            <div class="w-[220px]">
+              <BaseInput
+                v-model="searchQuery"
+                class="h-8 [&_input]:text-ui"
+                :placeholder="t('assets.search')"
+                :aria-label="t('assets.search')"
               >
-                <ListFilter :size="15" aria-hidden="true" />
-                {{ filterLabel }}
-              </Button>
-            </template>
-            <DropdownMenuRadioGroup :model-value="kindFilter">
-              <MenuRadioItem
-                v-for="option in kindOptions"
-                :key="option.value"
+                <template #leading><Search :size="14" /></template>
+              </BaseInput>
+            </div>
+            <Menu
+              :modal="false"
+              align="end"
+              class="z-20 min-w-[240px]"
+              :aria-label="t('assets.viewOptions')"
+            >
+              <template #trigger>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  :aria-label="t('assets.viewOptions')"
+                  :title="t('assets.viewOptions')"
+                  data-testid="assets-view-options"
+                >
+                  <LayoutGrid :size="15" aria-hidden="true" />
+                </Button>
+              </template>
+              <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
+                {{ t('assets.layoutLabel') }}
+              </div>
+              <DropdownMenuRadioGroup :model-value="layout">
+                <MenuRadioItem
+                  v-for="option in layoutOptions"
+                  :key="option.value"
+                  as="button"
+                  type="button"
+                  :value="option.value"
+                  class="w-full gap-2.5"
+                  :data-testid="`assets-layout-${option.value}`"
+                  @select.prevent="layout = option.value"
+                >
+                  <component :is="option.icon" :size="15" aria-hidden="true" />
+                  <span class="flex-1 text-left">{{ option.label }}</span>
+                  <Check v-if="layout === option.value" :size="15" aria-hidden="true" />
+                </MenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <MenuSeparator />
+              <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
+                {{ t('assets.sortLabel') }}
+              </div>
+              <DropdownMenuRadioGroup :model-value="sortOrder">
+                <MenuRadioItem
+                  v-for="option in sortOptions"
+                  :key="option.value"
+                  as="button"
+                  type="button"
+                  :value="option.value"
+                  class="w-full"
+                  @select.prevent="sortOrder = option.value"
+                >
+                  <span class="flex-1 text-left">{{ option.label }}</span>
+                  <Check v-if="sortOrder === option.value" :size="15" aria-hidden="true" />
+                </MenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <MenuSeparator />
+              <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
+                {{ t('assets.showLabel') }}
+              </div>
+              <MenuItem
                 as="button"
                 type="button"
-                :value="option.value"
                 class="w-full"
-                :data-testid="`assets-filter-${option.value}`"
-                @select="kindFilter = option.value"
+                @select.prevent="showName = !showName"
               >
-                <span class="flex-1 text-left">{{ option.label }}</span>
-                <Check v-if="kindFilter === option.value" :size="15" aria-hidden="true" />
-              </MenuRadioItem>
-            </DropdownMenuRadioGroup>
-          </Menu>
-          <div class="w-[220px]">
-            <BaseInput
-              v-model="searchQuery"
-              class="h-8 [&_input]:text-ui"
-              :placeholder="t('assets.search')"
-              :aria-label="t('assets.search')"
-            >
-              <template #leading><Search :size="14" /></template>
-            </BaseInput>
-          </div>
-          <Menu
-            :modal="false"
-            align="end"
-            class="z-20 min-w-[240px]"
-            :aria-label="t('assets.viewOptions')"
-          >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="secondary"
-                size="icon"
-                :aria-label="t('assets.viewOptions')"
-                :title="t('assets.viewOptions')"
-                data-testid="assets-view-options"
-              >
-                <LayoutGrid :size="15" aria-hidden="true" />
-              </Button>
-            </template>
-            <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
-              {{ t('assets.layoutLabel') }}
-            </div>
-            <DropdownMenuRadioGroup :model-value="layout">
-              <MenuRadioItem
-                v-for="option in layoutOptions"
-                :key="option.value"
+                <span class="flex-1 text-left">{{ t('assets.showName') }}</span>
+                <Check v-if="showName" :size="15" aria-hidden="true" />
+              </MenuItem>
+              <MenuItem
                 as="button"
                 type="button"
-                :value="option.value"
-                class="w-full gap-2.5"
-                :data-testid="`assets-layout-${option.value}`"
-                @select.prevent="layout = option.value"
-              >
-                <component :is="option.icon" :size="15" aria-hidden="true" />
-                <span class="flex-1 text-left">{{ option.label }}</span>
-                <Check v-if="layout === option.value" :size="15" aria-hidden="true" />
-              </MenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <MenuSeparator />
-            <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
-              {{ t('assets.sortLabel') }}
-            </div>
-            <DropdownMenuRadioGroup :model-value="sortOrder">
-              <MenuRadioItem
-                v-for="option in sortOptions"
-                :key="option.value"
-                as="button"
-                type="button"
-                :value="option.value"
                 class="w-full"
-                @select.prevent="sortOrder = option.value"
+                @select.prevent="showDetails = !showDetails"
               >
-                <span class="flex-1 text-left">{{ option.label }}</span>
-                <Check v-if="sortOrder === option.value" :size="15" aria-hidden="true" />
-              </MenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <MenuSeparator />
-            <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
-              {{ t('assets.showLabel') }}
-            </div>
-            <MenuItem
-              as="button"
-              type="button"
-              class="w-full"
-              @select.prevent="showName = !showName"
-            >
-              <span class="flex-1 text-left">{{ t('assets.showName') }}</span>
-              <Check v-if="showName" :size="15" aria-hidden="true" />
-            </MenuItem>
-            <MenuItem
-              as="button"
-              type="button"
-              class="w-full"
-              @select.prevent="showDetails = !showDetails"
-            >
-              <span class="flex-1 text-left">{{ t('assets.showDetails') }}</span>
-              <Check v-if="showDetails" :size="15" aria-hidden="true" />
-            </MenuItem>
-          </Menu>
+                <span class="flex-1 text-left">{{ t('assets.showDetails') }}</span>
+                <Check v-if="showDetails" :size="15" aria-hidden="true" />
+              </MenuItem>
+            </Menu>
+          </template>
         </div>
       </div>
     </div>
 
-    <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
+    <LocalFolders
+      v-if="place === 'computer'"
+      ref="localFolders"
+      v-model:folder="localFolder"
+      :kind="kindFilter"
+      :query="searchQuery"
+      :sort="sortOrder"
+      :layout="layout"
+      :layout-class="layoutClass"
+      :show-name="showName"
+      :show-details="showDetails"
+      @clear-filters="clearFilters"
+    />
+
+    <div v-else class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
       <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
         <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
           <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
@@ -468,7 +536,7 @@ function extensionOf(name: string): string {
           type="button"
           variant="inverted"
           size="md"
-          class="mt-6 px-4 text-ui"
+          class="mt-6 px-4 text-[13px]/5"
           :disabled="signingIn"
           data-testid="assets-empty-action"
           @click="emptyState.action.run"
@@ -485,92 +553,38 @@ function extensionOf(name: string): string {
         @pointerenter="warmNameTooltips"
         @pointerleave="coolNameTooltips"
       >
-        <li
+        <AssetCard
           v-for="asset in visibleAssets"
           :key="cardKey(asset)"
-          class="group relative bg-secondary"
-          :data-testid="`asset-${asset.id}`"
+          :item-test-id="`asset-${asset.id}`"
+          :name="asset.name"
+          :kind="asset.kind"
+          :image-url="asset.kind === 'image' ? asset.previewUrl : null"
+          :video-url="asset.kind === 'video' ? asset.previewUrl : null"
+          :layout="layout"
+          :details="assetDetails(asset)"
+          :show-name="showName"
+          :show-details="showDetails"
+          :tooltip-delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
+          :data-testid="`asset-open-${asset.id}`"
+          :data-card-key="cardKey(asset)"
+          @open="openDetail(asset)"
         >
-          <Tooltip
-            :text="asset.name"
-            side="bottom"
-            :delay-ms="nameTooltipsWarm ? 0 : NAME_TOOLTIP_DELAY_MS"
-            class="w-full align-top"
-          >
-            <button
+          <template #action>
+            <Button
               type="button"
-              class="block w-full cursor-pointer text-left"
-              :aria-label="t('assets.inspect', { name: asset.name })"
-              :data-testid="`asset-open-${asset.id}`"
-              :data-card-key="cardKey(asset)"
-              @click="openDetail(asset)"
+              variant="muted-textonly"
+              size="icon"
+              class="bg-media-overlay text-foreground"
+              :aria-label="t('assets.download')"
+              :title="t('assets.download')"
+              :data-testid="`asset-download-${asset.id}`"
+              @click="download(asset)"
             >
-              <span
-                class="relative block overflow-hidden"
-                :class="
-                  layout === 'grid' || !asset.previewUrl || asset.kind !== 'image'
-                    ? 'aspect-video'
-                    : ''
-                "
-              >
-                <img
-                  v-if="asset.previewUrl && asset.kind === 'image'"
-                  :src="asset.previewUrl"
-                  :alt="asset.name"
-                  loading="lazy"
-                  class="block w-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  :class="layout === 'grid' && 'h-full'"
-                />
-                <video
-                  v-else-if="asset.previewUrl && asset.kind === 'video'"
-                  :src="asset.previewUrl"
-                  preload="metadata"
-                  muted
-                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                />
-                <span
-                  v-else
-                  class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                >
-                  <AudioLines v-if="asset.kind === 'audio'" :size="28" aria-hidden="true" />
-                  <Box v-else-if="asset.kind === '3d'" :size="28" aria-hidden="true" />
-                  <File v-else :size="28" aria-hidden="true" />
-                  <span class="text-ui">{{ extensionOf(asset.name) }}</span>
-                </span>
-                <span
-                  v-if="asset.kind === 'video'"
-                  class="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-md bg-media-overlay text-foreground"
-                >
-                  <Play :size="12" aria-hidden="true" />
-                </span>
-              </span>
-              <span
-                v-if="showName || showDetails"
-                class="flex min-w-0 flex-col gap-0.5 px-3 py-2.5"
-              >
-                <span v-if="showName" class="truncate text-ui font-medium text-foreground">{{
-                  asset.name
-                }}</span>
-                <span v-if="showDetails" class="truncate text-ui text-subtle-foreground">{{
-                  assetDetails(asset)
-                }}</span>
-              </span>
-            </button>
-          </Tooltip>
-
-          <Button
-            type="button"
-            variant="muted-textonly"
-            size="icon"
-            class="absolute top-2 right-2 bg-media-overlay text-foreground opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
-            :aria-label="t('assets.download')"
-            :title="t('assets.download')"
-            :data-testid="`asset-download-${asset.id}`"
-            @click="download(asset)"
-          >
-            <Download :size="14" aria-hidden="true" />
-          </Button>
-        </li>
+              <Download :size="14" aria-hidden="true" />
+            </Button>
+          </template>
+        </AssetCard>
       </ul>
     </div>
   </div>
