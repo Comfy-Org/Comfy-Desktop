@@ -462,24 +462,54 @@ describe('AssetsView', () => {
 })
 
 describe('AssetsView opened for one Cloud file', () => {
-  it('shows the Comfy Cloud assets with the newest file of that name open, for this visit only', async () => {
+  it('shows the Comfy Cloud assets with the newest Cloud file of that name open, for this visit only', async () => {
     window.localStorage.setItem('comfy.desktop.assets.place', 'computer')
     listOutputFolders.mockResolvedValue([])
-    listAssets.mockResolvedValue([
-      { ...asset('old', 'cloud-cutout.png', 'image'), createdAt: '2026-11-01T12:00:00Z' },
-      asset('a', 'forest.png', 'image'),
-      { ...asset('new', 'cloud-cutout.png', 'image'), createdAt: '2026-11-10T12:00:00Z' }
-    ])
+    listAssets.mockImplementation(async (id: string) =>
+      id === 'cloud'
+        ? [
+            { ...asset('old', 'cloud-cutout.png', 'image'), createdAt: '2026-11-01T12:00:00Z' },
+            asset('a', 'forest.png', 'image'),
+            { ...asset('new', 'cloud-cutout.png', 'image'), createdAt: '2026-11-10T12:00:00Z' }
+          ]
+        : [{ ...asset('local', 'cloud-cutout.png', 'image'), createdAt: '2026-11-12T12:00:00Z' }]
+    )
 
-    const wrapper = await mountAssets([build('lab', 'Video Lab')], [], {
-      props: { focusName: 'cloud-cutout.png' }
-    })
+    const wrapper = await mountAssets(
+      [{ ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }, build('lab', 'Video Lab')],
+      [],
+      { props: { focusName: 'cloud-cutout.png' } }
+    )
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
 
     expect(wrapper.find('[data-testid="assets-grid"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('cloud-cutout.png')
     expect(wrapper.get('[data-testid="output-detail-panel"]').text()).toContain('11/10/2026')
     expect(wrapper.emitted('focus-used')).toHaveLength(1)
     expect(window.localStorage.getItem('comfy.desktop.assets.place')).toBe('computer')
+  })
+
+  it('does not open the file if the user moved to This computer before it loaded', async () => {
+    listOutputFolders.mockResolvedValue([])
+    let finish: (assets: AssetSummary[]) => void = () => {}
+    listAssets.mockImplementation(
+      () => new Promise<AssetSummary[]>((resolve) => (finish = resolve))
+    )
+    const wrapper = await mountAssets(
+      [{ ...build('cloud', 'Comfy Cloud'), sourceCategory: 'cloud' }],
+      [],
+      { props: { focusName: 'cloud-cutout.png' } }
+    )
+
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+    await openThisComputer(wrapper)
+    finish([asset('new', 'cloud-cutout.png', 'image')])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
   it('just shows the Comfy Cloud assets when the file is not there', async () => {

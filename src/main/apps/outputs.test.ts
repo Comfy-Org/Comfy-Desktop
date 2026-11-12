@@ -47,6 +47,17 @@ describe('outputRequest', () => {
     expect(request?.items[2]).not.toHaveProperty('folder')
   })
 
+  it('keeps only an absolute folder with no hidden characters', () => {
+    const folderOf = (folder: string) =>
+      outputRequest({ items: [picture({ savedOn: 'computer', folder })], index: 0 })?.items[0]
+        ?.folder
+    expect(folderOf('C:\\Users\\me\\output')).toBe('C:\\Users\\me\\output')
+    expect(folderOf('relative/output')).toBeUndefined()
+    expect(folderOf('\\\\server\\share')).toBeUndefined()
+    expect(folderOf('/Users/me/\u202eoutput')).toBeUndefined()
+    expect(folderOf('/Users/me/out\nput')).toBeUndefined()
+  })
+
   it('refuses outputs it cannot show', () => {
     expect(outputRequest(null)).toBeNull()
     expect(outputRequest({ items: [], index: 0 })).toBeNull()
