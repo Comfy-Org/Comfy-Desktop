@@ -332,6 +332,8 @@ function installMockApi(initial?: {
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
+    getAppsEnabled: vi.fn().mockResolvedValue(false),
+    onAppsEnabledChanged: vi.fn(() => () => {}),
     onCloseRequest: vi.fn((cb: (d: { requestId: string }) => void) => {
       state.closeRequestCallbacks.push(cb)
       return () => {}

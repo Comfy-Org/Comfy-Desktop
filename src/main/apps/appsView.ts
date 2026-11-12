@@ -44,7 +44,7 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
-import { isAppsEnabled } from './appsSwitch'
+import { isAppsEnabled, onAppsEnabledChanged } from './appsSwitch'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -56,6 +56,7 @@ const failedViews = new WeakSet<WebContentsView>()
 
 export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
 export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
+export const APPS_ENABLED_CHANNEL = 'comfy-apps:enabled'
 
 const appOpen = new Map<number, boolean>()
 
@@ -75,6 +76,15 @@ function openOutside(url: string): void {
 
 function tellPanelLoadFailed(panel: WebContents | undefined, url: string): void {
   if (panel && !panel.isDestroyed()) panel.send(APPS_LOAD_FAILED_CHANNEL, { url })
+}
+
+function tellPanelAppsEnabled(panel: WebContents | undefined, on: boolean): void {
+  if (panel && !panel.isDestroyed()) panel.send(APPS_ENABLED_CHANNEL, { enabled: on })
+}
+
+function tellPanelsAppsEnabled(on: boolean): void {
+  for (const entry of comfyWindows.values()) tellPanelAppsEnabled(entry.panelView?.webContents, on)
+  if (!on) for (const view of views.values()) view.setVisible(false)
 }
 
 function tellPanelAppOpen(key: number): void {
@@ -159,7 +169,7 @@ function entryForPanel(
 }
 
 function showApps(event: IpcMainEvent, rect: unknown): void {
-  if (!isAppsEnabled()) return
+  if (!isAppsEnabled()) return tellPanelAppsEnabled(event.sender, false)
   const found = entryForPanel(event.sender)
   if (!found) return
   if (!APPS_ORIGIN) return tellPanelLoadFailed(event.sender, APPS_URL)
@@ -509,6 +519,7 @@ function appsPages(): WebContents[] {
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  onAppsEnabledChanged(tellPanelsAppsEnabled)
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)
