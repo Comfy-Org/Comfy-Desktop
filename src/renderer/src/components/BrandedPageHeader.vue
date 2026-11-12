@@ -2,12 +2,14 @@
 defineProps<{
   title: string
   description?: string
+  actionsInline?: boolean
 }>()
 </script>
 
 <template>
   <header
-    class="branded-page-header box-border flex w-full items-end justify-between gap-6 @max-[700px]:flex-col @max-[700px]:items-start @max-[700px]:gap-3"
+    class="branded-page-header box-border flex w-full items-end justify-between gap-6"
+    :class="{ '@max-[700px]:flex-col @max-[700px]:items-start @max-[700px]:gap-3': !actionsInline }"
   >
     <div class="min-w-0">
       <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
@@ -19,6 +21,12 @@ defineProps<{
       >
         {{ description }}
       </p>
+    </div>
+    <div
+      v-if="$slots.actions"
+      class="branded-page-header__actions flex flex-none items-center gap-2"
+    >
+      <slot name="actions" />
     </div>
   </header>
 </template>

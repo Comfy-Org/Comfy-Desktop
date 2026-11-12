@@ -8,6 +8,7 @@ export type {
   Installation,
   RunningInstance,
   PerformanceTestBenchmark,
+  PerformanceTestMachine,
   ExampleWorkflowDownload,
   PerformanceTestResultValue,
   PerformanceTestResultsSummary,
