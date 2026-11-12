@@ -34,6 +34,7 @@ export interface OutputDetailItem {
   previewUrl: string | null
   workflow: boolean | null
   savedIn?: string | null
+  modifiedAt?: string | null
 }
 
 type Zoom = 'fit' | 0.5 | 1 | 2
@@ -72,6 +73,11 @@ const subtitle = computed(() =>
     item.value.createdAt
       ? t('assets.detail.createdAt', {
           date: new Date(item.value.createdAt).toLocaleString(locale.value)
+        })
+      : null,
+    item.value.modifiedAt
+      ? t('assets.detail.modifiedAt', {
+          date: new Date(item.value.modifiedAt).toLocaleString(locale.value)
         })
       : null
   ]

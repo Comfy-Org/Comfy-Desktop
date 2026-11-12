@@ -559,7 +559,7 @@ describe('AssetsView on This computer', () => {
     expect(revealPath).toHaveBeenCalledExactlyOnceWith(`${SHARED}/cutout.png`)
   })
 
-  it('opens a local file in the output dialog with where it is saved and no download', async () => {
+  it('opens a local file in the output dialog with when it changed, where it is saved and no download', async () => {
     listOutputFolder.mockResolvedValue(listing([entry(SHARED, 'cutout.png', 'image')]))
     const wrapper = await mountAssets([])
     await openThisComputer(wrapper)
@@ -569,6 +569,9 @@ describe('AssetsView on This computer', () => {
     await wrapper.get('[data-testid="local-file-cutout.png"] button').trigger('click')
 
     expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('cutout.png')
+    const subtitle = wrapper.get('[data-testid="output-detail-panel"] p').text()
+    expect(subtitle).toContain('Modified')
+    expect(subtitle).not.toContain('Created')
     const savedIn = wrapper.get('[data-testid="output-detail-saved-in"]').text()
     expect(savedIn).toContain('output')
     expect(savedIn).toContain('/Users/me/ComfyUI-Shared')
