@@ -50,6 +50,12 @@ describe('Apps bridge wiring', () => {
     expect(panelPreload).toContain(`ipcRenderer.removeListener('${sent}'`)
   })
 
+  it('every apps-page check is held to the Apps URL path, not just its origin', () => {
+    const checks = all(main, /isAppsFrameUrl\([^,]+, (\w+)\)/g)
+    expect(checks).toHaveLength(3)
+    expect(new Set(checks)).toEqual(new Set(['APPS_URL']))
+  })
+
   it('local events go out on the channel the preload listens to', () => {
     const sent = local.match(/LOCAL_EVENT_CHANNEL = '([\w:-]+)'/)![1]
     expect(preload).toContain(`ipcRenderer.on('${sent}'`)

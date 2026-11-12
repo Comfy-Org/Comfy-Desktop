@@ -38,10 +38,14 @@ export function isAllowedAppsPermission(permission: string): boolean {
   return ALLOWED_APPS_PERMISSIONS.has(permission)
 }
 
-export function isAppsFrameUrl(frameUrl: string, origin: string | null): boolean {
+export function isAppsFrameUrl(frameUrl: string, appsPage: string): boolean {
+  const origin = appsOrigin(appsPage)
   if (!origin) return false
   try {
-    return new URL(frameUrl).origin === origin
+    const frame = new URL(frameUrl)
+    const base = new URL(appsPage).pathname.replace(/\/+$/, '')
+    if (frame.origin !== origin) return false
+    return frame.pathname === base || frame.pathname.startsWith(`${base}/`)
   } catch {
     return false
   }
