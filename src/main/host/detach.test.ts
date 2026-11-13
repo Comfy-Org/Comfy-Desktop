@@ -15,9 +15,17 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+const systemModal = vi.hoisted(() => ({ openSystemModalAsync: vi.fn(async () => false) }))
+vi.mock('../popups/systemModal', () => systemModal)
+
 import { _runningSessions } from '../lib/ipc/shared'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from './registry'
-import { closeAllHostWindows, detachOrphanedInstallHosts, preClearedClose } from './detach'
+import {
+  closeAllHostWindows,
+  detachOrphanedInstallHosts,
+  preClearedClose,
+  returnToDashboard
+} from './detach'
 
 interface FakeWindow {
   destroyed: boolean
@@ -191,5 +199,37 @@ describe('preClearedClose', () => {
     preClearedClose.add(a as unknown as Electron.BrowserWindow)
     expect(preClearedClose.delete(a as unknown as Electron.BrowserWindow)).toBe(true)
     expect(preClearedClose.has(a as unknown as Electron.BrowserWindow)).toBe(false)
+  })
+})
+
+describe('returnToDashboard without a panel', () => {
+  beforeEach(() => systemModal.openSystemModalAsync.mockClear())
+
+  function runningHost(sourceCategory: string): ComfyWindowEntry {
+    const entry = makeEntry(makeWindow())
+    entry.installationId = 'inst-A'
+    entry.sourceCategory = sourceCategory
+    entry.detachInstall = vi.fn()
+    comfyWindows.set(entry.windowKey, entry)
+    _runningSessions.set('inst-A', {} as never)
+    return entry
+  }
+
+  it('asks before stopping a running local install', async () => {
+    const entry = runningHost('local')
+
+    await returnToDashboard(entry.windowKey)
+
+    expect(systemModal.openSystemModalAsync).toHaveBeenCalledOnce()
+    expect(entry.detachInstall).not.toHaveBeenCalled()
+  })
+
+  it('returns a Remote Connection without asking', async () => {
+    const entry = runningHost('remote')
+
+    await returnToDashboard(entry.windowKey)
+
+    expect(systemModal.openSystemModalAsync).not.toHaveBeenCalled()
+    expect(entry.detachInstall).toHaveBeenCalledOnce()
   })
 })

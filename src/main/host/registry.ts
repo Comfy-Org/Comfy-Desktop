@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import type { BrowserWindow, WebContents, WebContentsView } from 'electron'
 import { _runningSessions, _isStopping } from '../lib/ipc/shared'
 import type { FirstUseMode } from '../../shared/firstUseMode'
+import { isLocalInstall } from './localInstall'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
 import type { ViewKind } from '../../shared/viewKind'
 
@@ -158,7 +159,7 @@ export function isInstallHost(
 export function shouldConfirmKillForEntry(
   entry: ComfyWindowEntry | null | undefined
 ): entry is ComfyWindowEntry & { installationId: string } {
-  return !!entry && isInstallHost(entry) && entry.sourceCategory === 'local'
+  return isLocalInstall(entry)
 }
 
 export function hasRunningSessionForEntry(

@@ -2,6 +2,7 @@ import type { WebContents, WebFrameMain } from 'electron'
 
 import { identityOf } from '../cloud/claims'
 import { getCloudSession } from '../devplatform/session'
+import { isLocalInstall } from '../host/localInstall'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import type { WorkspaceSwitchOutcome } from '../cloud/types'
@@ -48,7 +49,7 @@ export function isLoopbackComfyUrl(url: string): boolean {
 }
 
 function servesEntry(entry: ComfyWindowEntry, currentUrl: string): boolean {
-  if (!entry.installationId || !isLoopbackComfyUrl(entry.comfyUrl)) return false
+  if (!isLocalInstall(entry) || !isLoopbackComfyUrl(entry.comfyUrl)) return false
   const expected = originOf(entry.comfyUrl)
   return expected !== null && originOf(currentUrl) === expected
 }
