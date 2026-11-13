@@ -10,6 +10,7 @@ import type { AppOutputAction, AppOutputs, AssetKind, CatalogApp } from '../type
 
 interface ShownAppOutputs {
   items: OutputDetailItem[]
+  turn: number
   backdropUrl: string | null
 }
 
@@ -110,6 +111,7 @@ function showAppOutputs(outputs: AppOutputs): void {
       savedIn: output.savedOn === 'computer' ? (output.folder ?? null) : null,
       inCloud: output.savedOn === 'cloud'
     })),
+    turn: outputs.turn,
     backdropUrl: outputs.backdrop
       ? URL.createObjectURL(new Blob([outputs.backdrop], { type: 'image/jpeg' }))
       : null
@@ -129,7 +131,9 @@ function closeAppOutputs(): void {
 }
 
 function appOutputAction(action: AppOutputAction['action'], index: number): void {
-  window.api.appsOutputAction({ action, index })
+  const shown = appOutputs.value
+  if (!shown) return
+  window.api.appsOutputAction({ action, index, turn: shown.turn })
   if (action === 'open-workflow') closeAppOutputs()
 }
 

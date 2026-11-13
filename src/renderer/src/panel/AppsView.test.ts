@@ -145,6 +145,7 @@ describe('AppsView', () => {
         }
       ],
       index: 1,
+      turn: 3,
       backdrop: new Uint8Array([9])
     })
     await flushPromises()
@@ -154,14 +155,18 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('picture-2.png')
 
     await wrapper.get('[data-testid="output-detail-download"]').trigger('click')
-    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'download', index: 1 })
+    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'download', index: 1, turn: 3 })
 
     await wrapper.get('[data-testid="output-detail-thumb-0"]').trigger('click')
     expect(wrapper.get('[data-testid="output-detail-panel"]').text()).toContain('This computer')
     await wrapper.get('[data-testid="output-detail-workflow"]').trigger('click')
     await flushPromises()
 
-    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'open-workflow', index: 0 })
+    expect(appsOutputAction).toHaveBeenLastCalledWith({
+      action: 'open-workflow',
+      index: 0,
+      turn: 3
+    })
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
     expect(showApps).toHaveBeenCalled()
@@ -239,6 +244,7 @@ describe('AppsView', () => {
         }
       ],
       index: 0,
+      turn: 4,
       backdrop: null
     })
     await flushPromises()
@@ -497,6 +503,7 @@ describe('AppsView', () => {
         }
       ],
       index: 0,
+      turn: 4,
       backdrop: null
     })
     await flushPromises()
@@ -506,7 +513,11 @@ describe('AppsView', () => {
     )
     expect(wrapper.find('[data-testid="output-detail-view-in-assets"]').exists()).toBe(false)
     await wrapper.get('[data-testid="output-detail-show-in-folder"]').trigger('click')
-    expect(appsOutputAction).toHaveBeenLastCalledWith({ action: 'show-in-folder', index: 0 })
+    expect(appsOutputAction).toHaveBeenLastCalledWith({
+      action: 'show-in-folder',
+      index: 0,
+      turn: 4
+    })
 
     await wrapper.get('[data-testid="output-detail-thumb-1"]').trigger('click')
     expect(wrapper.get('[data-testid="output-detail-saved-in"]').text()).toContain(

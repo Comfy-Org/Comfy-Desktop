@@ -94,7 +94,7 @@ const appOpen = new Map<number, boolean>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
 const parkedApps = new Set<number>()
-const shownOutputFiles = new Map<number, (string | null)[]>()
+const shownOutputFiles = new Map<number, { turn: number; files: (string | null)[] }>()
 const latestOutputRequest = new Map<number, number>()
 
 export interface AppsRect {
@@ -358,9 +358,9 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   if (!current()) return
   const backdrop = await captureBackdrop(page)
   if (panel.isDestroyed() || !appOpen.get(key) || !current()) return
-  shownOutputFiles.set(key, files)
+  shownOutputFiles.set(key, { turn, files })
   if (entry?.window.isFocused()) panel.focus()
-  panel.send(APPS_OUTPUT_CHANNEL, { items, index: outputs.index, backdrop })
+  panel.send(APPS_OUTPUT_CHANNEL, { items, index: outputs.index, turn, backdrop })
 }
 
 async function revealOutputFile(file: string): Promise<void> {
@@ -372,13 +372,13 @@ function relayOutputAction(event: IpcMainEvent, input: unknown): void {
   const found = entryForPanel(event.sender)
   const action = outputAction(input)
   if (!found || !action) return
-  const shown = shownOutputFiles.get(found[0]) ?? []
-  if (action.index >= shown.length) return
-  const file = action.action === 'show-in-folder' ? shown[action.index] : null
+  const shown = shownOutputFiles.get(found[0])
+  if (!shown || shown.turn !== action.turn || action.index >= shown.files.length) return
+  const file = action.action === 'show-in-folder' ? shown.files[action.index] : null
   if (file) return void revealOutputFile(file).catch(() => {})
   const page = views.get(found[0])?.webContents
   if (!page || page.isDestroyed()) return
-  page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
+  page.send(APPS_OUTPUT_ACTION_CHANNEL, { action: action.action, index: action.index })
 }
 
 function authState(): AppsAuthState {
