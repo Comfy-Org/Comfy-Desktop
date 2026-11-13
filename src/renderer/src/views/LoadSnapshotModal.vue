@@ -93,7 +93,7 @@ const summaryEntries = computed<SummaryEntry[]>(() => {
   return [
     { label: t('list.snapshotSourceName'), value: p.installationName || '—' },
     { label: t('list.snapshotCount'), value: String(p.snapshotCount) },
-    { label: t('snapshots.comfyuiVersion'), value: n.comfyuiVersion || '—' },
+    { label: t('track.version'), value: n.comfyuiVersion || '—' },
     { label: t('snapshots.variant'), value: n.comfyui.variant || '—' },
     { label: t('snapshots.pythonVersion'), value: n.pythonVersion || '—' },
     { label: t('snapshots.capturedAt'), value: formatDate(n.createdAt) }

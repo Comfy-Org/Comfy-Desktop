@@ -987,7 +987,7 @@
     "comfyui": "ComfyUI",
     "currentVersion": "Current Version",
     "variant": "Hardware",
-    "comfyVersion": "ComfyUI version",
+    "comfyVersion": "Version",
     "starterTemplate": "Starter template",
     "starterTemplateNone": "None",
     "starterTemplateNoneDesc": "Start with a blank canvas",
