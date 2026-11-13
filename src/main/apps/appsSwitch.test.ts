@@ -3,6 +3,8 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as AppsSwitch from './appsSwitch'
+
 const electron = vi.hoisted(() => ({ app: { isPackaged: true } }))
 vi.mock('electron', () => electron)
 
@@ -16,9 +18,7 @@ vi.mock('../lib/paths', () => ({
   configDir: () => testConfigDir
 }))
 
-type Switch = typeof import('./appsSwitch')
-
-async function load(packaged: boolean): Promise<Switch> {
+async function load(packaged: boolean): Promise<typeof AppsSwitch> {
   electron.app.isPackaged = packaged
   vi.resetModules()
   return import('./appsSwitch')
@@ -120,6 +120,28 @@ describe('appsSwitch', () => {
 
     expect(await offline.getAppsEnabledAsync()).toBe(true)
     expect(offline.isAppsEnabled()).toBe(true)
+  })
+
+  it('tells listeners only when a remote answer changes the switch', async () => {
+    const first = await load(true)
+    getOpsFlagResult.mockResolvedValue(answer(true))
+    await first.initAppsSwitch({ distinctId: 'anon' })
+    await settle()
+
+    const same = await load(true)
+    const heardSame = vi.fn()
+    same.onAppsEnabledChanged(heardSame)
+    await same.initAppsSwitch({ distinctId: 'anon' })
+    await settle()
+    expect(heardSame).not.toHaveBeenCalled()
+
+    const changed = await load(true)
+    const heardChange = vi.fn()
+    changed.onAppsEnabledChanged(heardChange)
+    getOpsFlagResult.mockResolvedValue(answer(false))
+    await changed.initAppsSwitch({ distinctId: 'anon' })
+    await settle()
+    expect(heardChange.mock.calls).toEqual([[false]])
   })
 
   it('turns Apps off when PostHog switches it off after a stored on', async () => {
