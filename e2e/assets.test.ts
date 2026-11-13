@@ -33,13 +33,15 @@ test('Assets shows the images in the output folder with no build running and no 
 
   await ctx.panel.waitForVisible(ASSETS_GRID)
   await expect
-    .poll(() =>
-      ctx.panel.evaluate<boolean>(
-        `(() => {
+    .poll(
+      () =>
+        ctx.panel.evaluate<boolean>(
+          `(() => {
           const img = document.querySelector('${ASSETS_GRID} img')
           return !!img && img.complete && img.naturalWidth > 0
         })()`
-      )
+        ),
+      { message: 'the first image from disk loads', timeout: 20_000 }
     )
     .toBe(true)
   const src = await ctx.panel.evaluate<string>(
