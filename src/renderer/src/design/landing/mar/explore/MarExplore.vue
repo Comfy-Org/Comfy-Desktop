@@ -84,7 +84,7 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
         icon: PanelsTopLeft
       },
       // Icons on every tab, like Apps' own row.
-      { value: 'templates', label: 'Templates', count: HUB_WORKFLOWS.length, icon: ComfyWorkflow },
+      { value: 'templates', label: 'Workflows', count: HUB_WORKFLOWS.length, icon: ComfyWorkflow },
       // Models and Tutorials come with Learn (Milestone 3 is the Hub's apps
       // and templates only).
       ...(can.value.learn
@@ -126,7 +126,7 @@ const TYPES: Record<Tab, { value: string; label: string }[]> = {
 }
 watch(tab, clearFilters)
 const PLACEHOLDER: Record<Exclude<Tab, 'mine'>, string> = {
-  templates: 'Search templates',
+  templates: 'Search workflows',
   models: 'Search models or providers',
   apps: 'Search apps',
   examples: 'Search',
@@ -394,8 +394,8 @@ const toolsAt = computed(() => (tabbed.value ? 'toolbar' : 'actions'))
     :error-title="asApps ? `Can't load Apps` : `Can't load Explore`"
     :error-text="
       can.learn
-        ? 'Templates, models and tutorials come from the internet. Your own workflows are still in Workflows.'
-        : 'Apps and templates come from the internet. Check your connection and try again.'
+        ? 'Hub workflows, models and tutorials come from the internet. Your own workflows are still in Workflows.'
+        : 'Apps and workflows come from the internet. Check your connection and try again.'
     "
     @clear="clearFilters"
   >
