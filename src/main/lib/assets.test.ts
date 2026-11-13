@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
-const runningSessions = new Map<string, { port?: number }>()
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() }
@@ -12,7 +11,6 @@ vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({ getAccessToken })
 }))
 vi.mock('./ipc/shared', () => ({
-  _runningSessions: runningSessions,
   sourceMap: {
     cloud: { category: 'cloud' },
     standalone: { category: 'local' },
@@ -33,7 +31,6 @@ function jsonResponse(body: unknown): Response {
 
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
-  runningSessions.clear()
 })
 
 afterEach(() => {
@@ -67,121 +64,39 @@ describe('signedStorageUrl', () => {
 })
 
 describe('listAssets', () => {
-  it('lists a running local build with previews served by that build', async () => {
+  it('never asks a local or remote build over HTTP', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [
-          {
-            id: 'a1',
-            name: 'still.png',
-            size: 2048,
-            mime_type: 'image/png',
-            tags: ['output'],
-            created_at: '2026-11-09T10:00:00Z',
-            preview_url: '/api/view?type=output&filename=still.png'
-          }
-        ]
-      })
-    )
-
-    const assets = await listAssets('local-1')
-
-    expect(fetchMock.mock.calls[0]![0]).toBe(
-      'http://127.0.0.1:8188/api/assets?tags_any=output&sort=created_at&order=desc&limit=100'
-    )
-    expect(assets).toEqual([
-      {
-        id: 'a1',
-        name: 'still.png',
-        kind: 'image',
-        sizeBytes: 2048,
-        createdAt: '2026-11-09T10:00:00Z',
-        mimeType: 'image/png',
-        tags: ['output'],
-        previewUrl: 'http://127.0.0.1:8188/api/view?type=output&filename=still.png'
-      }
-    ])
-  })
-
-  it('skips remote builds instead of asking this machine', async () => {
+    expect(await listAssets('local-1')).toEqual([])
     getInstallation.mockResolvedValue({ id: 'remote-1', sourceId: 'remote' })
-    runningSessions.set('remote-1', { port: 8188 })
-
     expect(await listAssets('remote-1')).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('serves local previews only from the build itself', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [{ id: 'a1', name: 'still.png', preview_url: 'http://127.0.0.1:9999/evil.png' }]
-      })
-    )
+  it('returns nothing for Cloud when signed out', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue(null)
 
-    const [summary] = await listAssets('local-1')
-
-    expect(summary!.previewUrl).toBe(
-      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
-    )
-  })
-
-  it('serves local previews only from the build API', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [{ id: 'a1', name: 'still.png', preview_url: '/extensions/evil.png', size: 0 }]
-      })
-    )
-
-    const [summary] = await listAssets('local-1')
-
-    expect(summary!.previewUrl).toBe(
-      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
-    )
-    expect(summary!.sizeBytes, 'an empty file keeps its size').toBe(0)
-  })
-
-  it('falls back to the content link when a preview link cannot be parsed', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({ assets: [{ id: 'a1', name: 'still.png', preview_url: 'http://' }] })
-    )
-
-    const [summary] = await listAssets('local-1')
-
-    expect(summary!.previewUrl).toBe(
-      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
-    )
-  })
-
-  it('drops rows whose fields have the wrong type', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [
-          { id: 'bad', name: 'bad.png', mime_type: 1 },
-          { id: 'good', name: 'good.png', mime_type: null, created_at: null }
-        ]
-      })
-    )
-
-    const assets = await listAssets('local-1')
-
-    expect(assets.map((a) => a.id)).toEqual(['good'])
-  })
-
-  it('returns nothing for a local build that is not running', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-
-    expect(await listAssets('local-1')).toEqual([])
+    expect(await listAssets('cloud-1')).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('drops Cloud rows whose fields have the wrong type and keeps an empty size', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assets: [
+            { id: 'bad', name: 'bad.png', mime_type: 1 },
+            { id: 'good', name: 'good.png', mime_type: null, created_at: null, size: 0 }
+          ]
+        })
+      )
+      .mockResolvedValue(new Response(null, { status: 404 }))
+
+    const assets = await listAssets('cloud-1')
+
+    expect(assets.map((a) => [a.id, a.sizeBytes])).toEqual([['good', 0]])
   })
 
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {

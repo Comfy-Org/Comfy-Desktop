@@ -25,15 +25,13 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
-import { useSessionStore } from '../stores/sessionStore'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
 
 interface GalleryAsset extends AssetSummary {
-  installationId: string
-  buildName: string
+  source: string
 }
 
 type KindFilter = 'all' | AssetKind
@@ -46,7 +44,6 @@ const NAME_TOOLTIP_DELAY_MS = 600
 const { t } = useI18n()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
-const sessionStore = useSessionStore()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
@@ -64,19 +61,15 @@ let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
 
+const LOCAL_SOURCE = 'local'
+
 function isCloudBuild(inst: Installation): boolean {
   return inst.sourceCategory === 'cloud'
 }
 
-function isReachable(inst: Installation): boolean {
-  return isCloudBuild(inst) ? authStore.isSignedIn : sessionStore.isRunning(inst.id)
-}
-
-const reachableBuildIds = computed(() => {
-  const reachable = installationStore.installations.filter(isReachable)
-  const accountCloud = reachable.find(isCloudBuild)
-  return reachable.filter((b) => !isCloudBuild(b) || b === accountCloud).map((b) => b.id)
-})
+const cloudBuildId = computed(() =>
+  authStore.isSignedIn ? (installationStore.installations.find(isCloudBuild)?.id ?? null) : null
+)
 
 const kindOptions = computed(() => [
   { value: 'all' as const, label: t('assets.kind.all') },
@@ -104,7 +97,7 @@ function createdMs(asset: AssetSummary): number {
 }
 
 function cardKey(asset: GalleryAsset): string {
-  return `${asset.installationId}:${asset.id}`
+  return `${asset.source}:${asset.id}`
 }
 
 const layoutClass = computed(() =>
@@ -154,15 +147,18 @@ async function loadAssets(): Promise<void> {
   loading.value = true
   failed.value = false
   try {
-    const ids = reachableBuildIds.value
-    const results = await Promise.allSettled(ids.map((id) => window.api.listAssets(id)))
+    const cloudId = cloudBuildId.value
+    const sources = [
+      { source: LOCAL_SOURCE, load: () => window.api.listLocalAssets() },
+      ...(cloudId ? [{ source: cloudId, load: () => window.api.listAssets(cloudId) }] : [])
+    ]
+    const results = await Promise.allSettled(sources.map(({ load }) => load()))
     if (current !== requestId) return
-    assets.value = results.flatMap((result, i) => {
-      if (result.status === 'rejected') return []
-      const installationId = ids[i]!
-      const buildName = installationStore.getById(installationId)?.name ?? ''
-      return result.value.map((asset) => ({ ...asset, installationId, buildName }))
-    })
+    assets.value = results.flatMap((result, i) =>
+      result.status === 'fulfilled'
+        ? result.value.map((asset) => ({ ...asset, source: sources[i]!.source }))
+        : []
+    )
     failed.value = assets.value.length === 0 && results.some((r) => r.status === 'rejected')
   } finally {
     if (current === requestId) loading.value = false
@@ -176,7 +172,7 @@ const accountContext = computed(
 watch(accountContext, () => (assets.value = []))
 
 watch(
-  () => [...reachableBuildIds.value, accountContext.value].join('\n'),
+  () => `${cloudBuildId.value ?? ''}\n${accountContext.value}`,
   () => void loadAssets(),
   { immediate: true }
 )
@@ -454,7 +450,7 @@ function extensionOf(name: string): string {
               >
                 <img
                   v-if="asset.previewUrl && asset.kind === 'image'"
-                  :src="asset.previewUrl"
+                  :src="asset.thumbnailUrl ?? asset.previewUrl"
                   :alt="asset.name"
                   loading="lazy"
                   class="block w-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"

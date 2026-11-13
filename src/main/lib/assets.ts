@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import * as installations from '../installations'
-import { _runningSessions, sourceMap } from './ipc/shared'
+import { sourceMap } from './ipc/shared'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
 
@@ -35,7 +35,6 @@ interface AssetRow {
   tags?: unknown
 }
 
-type AssetSource = { kind: 'cloud'; accessToken: string } | { kind: 'local'; origin: string }
 type ContentDisposition = 'inline' | 'attachment'
 
 function isOptional(value: unknown, type: 'string' | 'number'): boolean {
@@ -75,7 +74,8 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
     tags: Array.isArray(row.tags)
       ? row.tags.filter((tag): tag is string => typeof tag === 'string')
       : [],
-    previewUrl
+    previewUrl,
+    thumbnailUrl: null
   }
 }
 
@@ -125,17 +125,10 @@ async function resolveCloudContentUrl(
   }
 }
 
-async function resolveSource(installationId: string): Promise<AssetSource | null> {
+async function cloudAccessToken(installationId: string): Promise<string | null> {
   const inst = await installations.get(installationId)
-  if (!inst) return null
-  const category = sourceMap[inst.sourceId]?.category
-  if (category === 'cloud') {
-    const accessToken = await getCloudSession().getAccessToken()
-    return accessToken ? { kind: 'cloud', accessToken } : null
-  }
-  if (category !== 'local') return null
-  const port = _runningSessions.get(installationId)?.port
-  return port ? { kind: 'local', origin: `http://127.0.0.1:${port}` } : null
+  if (!inst || sourceMap[inst.sourceId]?.category !== 'cloud') return null
+  return getCloudSession().getAccessToken()
 }
 
 async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
@@ -157,25 +150,9 @@ async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
   return summaries
 }
 
-function localPreviewUrl(row: AssetRow, origin: string): string {
-  const fallback = new URL(contentPath(row.id, 'inline'), origin)
-  const preview = row.preview_url ? URL.parse(row.preview_url, origin) : null
-  return (
-    preview?.origin === fallback.origin && preview.pathname.startsWith('/api/') ? preview : fallback
-  ).toString()
-}
-
-async function listLocalAssets(origin: string): Promise<AssetSummary[]> {
-  const rows = await fetchAssetRows(`${origin}/api/assets?${LIST_QUERY}`, {})
-  return rows.map((row) => toSummary(row, localPreviewUrl(row, origin)))
-}
-
 export async function listAssets(installationId: string): Promise<AssetSummary[]> {
-  const source = await resolveSource(installationId)
-  if (!source) return []
-  return source.kind === 'cloud'
-    ? listCloudAssets(source.accessToken)
-    : listLocalAssets(source.origin)
+  const accessToken = await cloudAccessToken(installationId)
+  return accessToken ? listCloudAssets(accessToken) : []
 }
 
 export function registerAssetsHandlers(): void {

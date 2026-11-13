@@ -134,6 +134,7 @@ export interface AssetSummary {
   mimeType: string | null
   tags: string[]
   previewUrl: string | null
+  thumbnailUrl: string | null
 }
 
 export interface BuildStorageSnapshot {
@@ -1122,6 +1123,7 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
+  listLocalAssets(): Promise<AssetSummary[]>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>
