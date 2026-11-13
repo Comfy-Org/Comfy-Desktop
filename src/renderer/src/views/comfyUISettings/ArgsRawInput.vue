@@ -98,18 +98,15 @@ function onKeydown(e: KeyboardEvent): void {
     </BaseInput>
     <ul
       v-if="autocomplete.visible.value"
-      class="args-raw-input-ac absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none overflow-y-auto rounded-lg border border-solid border-[var(--border)] bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.32)]"
+      class="args-raw-input-ac absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none overflow-y-auto rounded-lg border border-solid border-[var(--border)] bg-popover p-1 shadow-[0_8px_24px_rgba(0,0,0,0.32)]"
       role="listbox"
       :aria-label="t('comfyUISettings.argsAutocompleteLabel')"
     >
       <li
         v-for="(m, i) in autocomplete.matches.value"
         :key="m.name"
-        class="args-raw-input-ac-item flex cursor-pointer items-baseline gap-2 rounded-md px-2 py-1.5 text-[12px] text-text transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)]"
-        :class="{
-          'selected bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)]':
-            i === autocomplete.acIndex.value
-        }"
+        class="args-raw-input-ac-item flex min-h-7 cursor-pointer items-baseline gap-2 rounded-md px-3 py-1.5 text-xs text-text transition-[background-color] duration-[120ms] ease-[ease] hover:bg-accent"
+        :class="{ 'selected bg-accent': i === autocomplete.acIndex.value }"
         role="option"
         :aria-selected="i === autocomplete.acIndex.value"
         @mousedown.prevent="autocomplete.completeArg(m.name)"

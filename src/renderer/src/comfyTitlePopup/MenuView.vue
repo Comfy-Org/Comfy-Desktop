@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
-import { Check } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 
 interface MenuItem {
@@ -110,14 +109,15 @@ onUnmounted(() => {
       />
       <li
         v-else
-        class="item box-border flex h-8 cursor-pointer items-center gap-2 rounded-md px-3 py-0 whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+        class="item box-border flex h-7 cursor-pointer items-center gap-2 rounded-md px-3 py-0 text-xs whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+        :class="{ 'bg-muted hover:bg-muted': item.checked }"
+        :aria-checked="item.checked || undefined"
         :role="item.id ? 'menuitem' : 'none'"
         :data-index="idx"
         :tabindex="item.id ? -1 : undefined"
         @click="handleClick(item)"
       >
         <span class="label flex-auto overflow-hidden text-ellipsis">{{ labelFor(item) }}</span>
-        <Check v-if="item.checked" class="check shrink-0" :size="15" aria-hidden="true" />
       </li>
     </template>
   </ul>

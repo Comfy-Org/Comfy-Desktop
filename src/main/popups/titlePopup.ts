@@ -451,7 +451,7 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 }
 
 const POPUP_WIDTH = 220
-const POPUP_ITEM_HEIGHT = 32
+const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8
 const POPUP_VBORDER = 2

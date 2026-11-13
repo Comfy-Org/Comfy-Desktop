@@ -320,9 +320,10 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="popup box-border m-0 h-full w-full overflow-hidden rounded-card border border-solid border-border bg-neutral-800 text-text select-none [box-shadow:var(--shadow-highlight)]"
+    class="popup box-border m-0 h-full w-full overflow-hidden rounded-card border border-solid border-border text-text select-none [box-shadow:var(--shadow-highlight)]"
     :class="{
-      'is-menu text-[13px]': kind === 'menu',
+      'is-menu bg-popover text-xs': kind === 'menu',
+      'bg-neutral-800': kind !== 'menu',
       'is-picker': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
       'is-downloads-full': kind === 'downloads-full',
