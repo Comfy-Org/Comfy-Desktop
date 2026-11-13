@@ -95,6 +95,8 @@ function write(file: string, body = 'x', modified = new Date('2026-11-01T00:00:0
 
 beforeEach(() => {
   vi.clearAllMocks()
+  thumbnailImage.mockReset()
+  fullImage.mockReset()
   for (const dir of [sharedDir, ownDir, outsideDir, installDir])
     fs.rmSync(dir, { recursive: true, force: true })
   for (const dir of [sharedDir, ownDir, outsideDir, path.join(installDir, 'ComfyUI', 'output')])
@@ -204,43 +206,38 @@ describe('listLocalAssets', () => {
 })
 
 describe('serveOutputFile', () => {
-  it('serves the file itself when the thumbnail is slow, then the thumbnail once it is made', async () => {
+  it('serves the file itself when the OS thumbnail is slow, then the thumbnail once it is made', async () => {
     write(path.join(sharedDir, 'slow.png'))
     await listOutputFolders()
     let finishThumbnail: (image: unknown) => void = () => {}
     thumbnailImage.mockReturnValueOnce(new Promise((resolve) => (finishThumbnail = resolve)))
-    fullImage.mockReturnValueOnce(null)
     const url = outputFileUrl(path.join(sharedDir, 'slow.png'), 1)
-
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const platform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'darwin' })
     try {
-      let slow: Response | undefined
-      void serveOutputFile(new Request(url)).then((res) => (slow = res))
-      let waitedMs = 0
-      while (!slow && waitedMs < THUMBNAIL_WAIT_MS * 2) {
-        await vi.advanceTimersByTimeAsync(50)
-        waitedMs += 50
-      }
-      expect(waitedMs, 'it waits for the thumbnail before giving up').toBeGreaterThanOrEqual(
-        THUMBNAIL_WAIT_MS
-      )
-      if (!slow) throw new Error('no response after the thumbnail wait')
-      expect(await slow.text()).toMatch(/^file file:\/\/.*slow\.png$/)
-    } finally {
-      vi.useRealTimers()
-    }
+      const startedAt = Date.now()
+      const slow = await serveOutputFile(new Request(url))
 
-    finishThumbnail({
-      isEmpty: () => false,
-      getSize: () => ({ width: 100, height: 100 }),
-      toJPEG: () => Buffer.from('late')
-    })
-    await vi.waitFor(async () => {
-      const later = await serveOutputFile(new Request(url))
-      expect(later.headers.get('Content-Type')).toBe('image/jpeg')
-      expect(await later.text()).toBe('late')
-    })
-    expect(thumbnailImage, 'the slow thumbnail is made once, not again').toHaveBeenCalledOnce()
+      expect(
+        Date.now() - startedAt,
+        'it waits for the thumbnail before giving up'
+      ).toBeGreaterThanOrEqual(THUMBNAIL_WAIT_MS - 50)
+      expect(await slow.text()).toMatch(/^file file:\/\/.*slow\.png$/)
+
+      finishThumbnail({
+        isEmpty: () => false,
+        getSize: () => ({ width: 100, height: 100 }),
+        toJPEG: () => Buffer.from('late')
+      })
+      await vi.waitFor(async () => {
+        const later = await serveOutputFile(new Request(url))
+        expect(later.headers.get('Content-Type')).toBe('image/jpeg')
+        expect(await later.text()).toBe('late')
+      })
+      expect(thumbnailImage, 'the slow thumbnail is made once, not again').toHaveBeenCalledOnce()
+    } finally {
+      Object.defineProperty(process, 'platform', { value: platform })
+    }
   })
 
   it('serves a file inside an output folder and refuses one outside', async () => {
