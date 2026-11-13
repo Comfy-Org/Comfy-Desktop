@@ -2152,7 +2152,7 @@ defineExpose({ open })
             <span class="flex-1" />
             <Button
               size="lg"
-              variant="textonly"
+              variant="secondary"
               type="button"
               class="h-9 rounded-[10px] config-discard-changes"
               data-testid="config-discard-changes"
