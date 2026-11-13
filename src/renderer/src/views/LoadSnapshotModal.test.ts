@@ -70,8 +70,8 @@ describe('LoadSnapshotModal preview', () => {
       wrapper
         .findAll('.config-label')
         .map((label) => label.text())
-        .slice(0, 4)
-    ).toEqual(['Name', 'Release', 'Device', 'Source build'])
+        .slice(0, 5)
+    ).toEqual(['Snapshot file', 'Name', 'Release', 'Device', 'Contents'])
     const card = (label: string) =>
       wrapper
         .findAll('.setup-option')
@@ -81,5 +81,25 @@ describe('LoadSnapshotModal preview', () => {
     await card('CPU').trigger('click')
     expect(card('CPU').attributes('aria-checked')).toBe('true')
     expect(wrapper.get('.load-snapshot-create').text()).toBe('Create build')
+  })
+
+  it('swaps the snapshot from its file row instead of a Back button', async () => {
+    installApi()
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.revealPath = vi.fn()
+    const wrapper = mountLoadSnapshot()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await wrapper.get('.load-snapshot-tertiary').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.load-snapshot-back').exists()).toBe(false)
+    const fileRow = wrapper.get('.load-snapshot-file')
+    await fileRow.get('button.config-path-open').trigger('click')
+    expect(api.revealPath).toHaveBeenCalledWith('/tmp/snap.json')
+
+    await fileRow.get('.config-path-browse').trigger('click')
+    await flushPromises()
+    expect(api.previewSnapshotFile).toHaveBeenCalledTimes(2)
   })
 })

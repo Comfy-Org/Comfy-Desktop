@@ -394,7 +394,9 @@
   },
   "loadSnapshot": {
     "grandTitle": "Load snapshot",
-    "grandSubtitle": "Load a snapshot file to install a build."
+    "grandSubtitle": "Load a snapshot file to install a build.",
+    "file": "Snapshot file",
+    "contents": "Contents"
   },
   "newInstall": {
     "title": "Install a New Build",

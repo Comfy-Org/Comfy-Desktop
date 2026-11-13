@@ -394,7 +394,9 @@
   },
   "loadSnapshot": {
     "grandTitle": "加载快照",
-    "grandSubtitle": "加载快照文件以安装构建。"
+    "grandSubtitle": "加载快照文件以安装构建。",
+    "file": "快照文件",
+    "contents": "内容"
   },
   "newInstall": {
     "title": "安装新构建",
