@@ -614,12 +614,10 @@ ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }
   const mode = normaliseFirstUseMode(payload?.mode)
   recordIpcInvocation('comfy-window:set-first-use-mode', { mode })
   for (const entry of comfyWindows.values()) {
-    if (entry.panelView?.webContents === event.sender) {
-      entry.firstUseMode = mode
-      if (!entry.titleBarView.webContents.isDestroyed()) {
-        entry.titleBarView.webContents.send('comfy-titlebar:first-use-mode-changed', mode)
-      }
-      return
+    if (entry.panelView?.webContents !== event.sender) continue
+    entry.firstUseMode = mode
+    if (!entry.titleBarView.webContents.isDestroyed()) {
+      entry.titleBarView.webContents.send('comfy-titlebar:first-use-mode-changed', mode)
     }
     return
   }
