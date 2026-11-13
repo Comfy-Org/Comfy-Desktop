@@ -13,11 +13,22 @@ export function parseAppsSwitch(value: FeatureFlagValue | undefined): boolean | 
 
 const fallback = !app.isPackaged
 let known: boolean | undefined
+const listeners = new Set<(on: boolean) => void>()
 
 function remember(value: FeatureFlagValue | undefined): boolean | undefined {
   const on = parseAppsSwitch(value)
-  if (on !== undefined) known = on
+  if (on === undefined) return undefined
+  const was = isAppsEnabled()
+  known = on
+  if (on !== was) for (const listener of listeners) listener(on)
   return on
+}
+
+export function onAppsEnabledChanged(listener: (on: boolean) => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
 }
 
 const flag = makeOpsFlag<boolean>({
@@ -47,4 +58,5 @@ export function isAppsEnabled(): boolean {
 export function _resetForTest(): void {
   flag._resetForTest()
   known = undefined
+  listeners.clear()
 }

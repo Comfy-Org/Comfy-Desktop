@@ -7,6 +7,8 @@ import type { DashboardPage } from '../types/ipc'
 
 const navigatePanel = vi.fn()
 const getAppsEnabled = vi.fn()
+let pushAppsSwitch: (info: { enabled: boolean }) => void = () => {}
+const stopAppsSwitch = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -15,6 +17,10 @@ beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
     getAppsEnabled,
+    onAppsEnabledChanged: vi.fn((callback: (info: { enabled: boolean }) => void) => {
+      pushAppsSwitch = callback
+      return stopAppsSwitch
+    }),
     getSetting: vi.fn().mockResolvedValue(undefined),
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
@@ -67,6 +73,47 @@ describe('AppSidebar', () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(false)
+  })
+
+  it('shows the Apps row when the remote switch turns on after start-up', async () => {
+    getAppsEnabled.mockResolvedValue(false)
+    const wrapper = await mountSidebar()
+
+    pushAppsSwitch({ enabled: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(true)
+  })
+
+  it('leaves the Apps page for Home when the remote switch turns off', async () => {
+    const wrapper = await mountSidebar('apps')
+
+    pushAppsSwitch({ enabled: false })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(false)
+    expect(wrapper.emitted('navigate')).toEqual([['home']])
+    expect(navigatePanel).toHaveBeenCalledWith('home')
+  })
+
+  it('keeps a pushed switch over a slower first read', async () => {
+    let firstRead: (on: boolean) => void = () => {}
+    getAppsEnabled.mockReturnValue(new Promise((resolve) => (firstRead = resolve)))
+    const wrapper = await mountSidebar()
+
+    pushAppsSwitch({ enabled: true })
+    firstRead(false)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(true)
+  })
+
+  it('stops following the switch when it unmounts', async () => {
+    const wrapper = await mountSidebar()
+
+    wrapper.unmount()
+
+    expect(stopAppsSwitch).toHaveBeenCalled()
   })
 
   it('marks only the current page', async () => {
