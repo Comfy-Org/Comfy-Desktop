@@ -12,11 +12,15 @@ import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
-function mountModal(props: { hideBackToDashboard?: boolean } = {}) {
+function mountModal(
+  props: { hideBackToDashboard?: boolean } = {},
+  options: { attachTo?: HTMLElement } = {}
+) {
   const pinia = createPinia()
   setActivePinia(pinia)
   return mount(InstallWizardModal, {
     props,
+    ...options,
     global: {
       plugins: [pinia],
       stubs: {
@@ -1027,6 +1031,46 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
   })
 
+  it('shows a failed Build catalog on the summary and retries it from there', async () => {
+    signInToWorkspace([])
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    const wrapper = mountModal()
+    await flushPromises()
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w1' })
+    await flushPromises()
+
+    const retry = wrapper.get('[data-testid="config-summary-build-retry"]')
+    expect(retry.text()).toBe("Couldn't load builds. Retry")
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeDefined()
+
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="config-summary-build-retry"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="config-summary"]').text()).toContain('Ready Build')
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
+  })
+
+  it('keeps the Build Desktop picked when Discard follows a refresh that dropped the old one', async () => {
+    signInToWorkspace([{ id: 'alpha', name: 'Alpha Build', state: 'installable' }])
+    const wrapper = await openWorkspaceModal()
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'beta', name: 'Beta Build', state: 'installable' }
+    ])
+
+    await wrapper.get('.workspace-build-refresh').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="config-summary"]').text()).toContain('Beta Build')
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
+  })
+
   it('installs the selected Build with the requested name and install root', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.comfybuilder.installBuild as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -1515,6 +1559,78 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.find('.config-loading').exists()).toBe(false)
   })
 
+  it('drops the sign-in wait on Discard and reuses the open sign-in when Managed is picked again', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    mockReleaseOptions()
+    let finishSignIn: (status: unknown) => void = () => {}
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishSignIn = resolve
+      })
+    )
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'ready', name: 'Ready Build', state: 'installable' }
+    ])
+    const wrapper = await openChangeSetup()
+    const managedCard = () => wrapper.get('[data-testid="workspace-install-source-managed"]')
+
+    await managedCard().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-authorization-status"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="workspace-authorization-status"]').exists()).toBe(false)
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
+
+    await showChangeSetup(wrapper)
+    expect(managedCard().attributes('disabled')).toBeUndefined()
+    await managedCard().trigger('click')
+    await flushPromises()
+    finishSignIn({ signedIn: true, workspaceId: 'personal-server-id', workspaceType: 'personal' })
+    await flushPromises()
+
+    expect(window.api.comfybuilder.signIn).toHaveBeenCalledOnce()
+    expect(managedCard().attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="workspace-build-field"]').text()).toContain('Ready Build')
+  })
+
+  it('moves between sources with the arrow keys without signing in, and picks hardware as it moves', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'nvidia', label: 'NVIDIA', recommended: true, data: { variantId: 'win-nvidia' } },
+      { value: 'cpu', label: 'CPU', data: { variantId: 'win-cpu' } }
+    ])
+    const wrapper = mountModal({}, { attachTo: document.body })
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    await showChangeSetup(wrapper)
+
+    await wrapper
+      .get('[data-testid="install-source-standalone"]')
+      .trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
+    expect(document.activeElement).toBe(
+      wrapper.get('[data-testid="workspace-install-source-managed"]').element
+    )
+    expect(window.api.comfybuilder.signIn).not.toHaveBeenCalled()
+
+    const hardware = wrapper.get('#source-fields [role="radiogroup"]')
+    await hardware.findAll('[role="radio"]')[0]!.trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="config-summary"]').text()).toContain('CPU')
+    wrapper.unmount()
+  })
+
   it('hides the close button in Change setup so Discard and Save changes are the only ways back', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
     mockReleaseOptions()
@@ -1560,10 +1676,9 @@ describe('InstallWizardModal Change setup', () => {
     const wrapper = await openChangeSetup()
 
     const rows = wrapper.findAll('#source-fields > *')
-    expect(rows.map((row) => row.attributes('data-testid') ?? row.classes()[0])).toEqual([
-      'install-location-field',
-      'config-form-row'
-    ])
+    expect(
+      rows.map((row) => row.attributes('data-testid') ?? row.get('.config-label').text())
+    ).toEqual(['install-location-field', 'Hardware'])
     expect(wrapper.find('.setup-option__icon img').exists()).toBe(false)
     expect(wrapper.find('.setup-option__icon svg').exists()).toBe(true)
   })

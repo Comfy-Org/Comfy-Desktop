@@ -141,12 +141,9 @@ const effectiveVenvPath = computed(() => {
   return (selectedProbe.value?.venvPath as string | undefined) || ''
 })
 
-const effectiveVenvName = computed(() => {
-  const p = effectiveVenvPath.value
-  if (!p) return ''
-  const sep = p.includes('\\') ? '\\' : '/'
-  return p.split(sep).pop() || ''
-})
+function handleOpenVenvPath(): void {
+  if (effectiveVenvPath.value) void window.api.openPath(effectiveVenvPath.value)
+}
 
 async function handleBrowseVenv(): Promise<void> {
   const defaultPath = effectiveVenvPath.value || trackPath.value || undefined
@@ -255,11 +252,13 @@ defineExpose({ open })
       <InstallLocationRow
         v-if="showVenvField"
         class="track-venv"
+        data-testid="track-venv-field"
         :label="$t('git.venv')"
         :icon="Box"
-        path=""
-        :placeholder="effectiveVenvName || $t('git.venvNotFound')"
+        :path="effectiveVenvPath"
+        :placeholder="$t('git.venvNotFound')"
         @browse="handleBrowseVenv"
+        @open="handleOpenVenvPath"
       />
     </div>
 

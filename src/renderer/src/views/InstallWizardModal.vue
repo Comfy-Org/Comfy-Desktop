@@ -66,6 +66,9 @@ import SetupOptionCards, { type SetupOptionCard } from '../components/SetupOptio
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
+import SetupFormRow from '../components/SetupFormRow.vue'
+import SetupSummaryRow from '../components/SetupSummaryRow.vue'
+import PathOpenButton from '../components/PathOpenButton.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
@@ -78,6 +81,9 @@ const emit = defineEmits<{
   'navigate-list': []
   'back-to-local-branch': []
 }>()
+
+const inlineLinkClass =
+  'text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100'
 
 const spinnerClass =
   'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[""] before:[animation-duration:600ms]'
@@ -713,6 +719,15 @@ async function initializeLocalInstall(gen: number, requestedSource?: Source): Pr
   }
 }
 
+let pendingSignIn: ReturnType<typeof authStore.signIn> | null = null
+
+function signInOnce(): ReturnType<typeof authStore.signIn> {
+  pendingSignIn ??= authStore.signIn().finally(() => {
+    pendingSignIn = null
+  })
+  return pendingSignIn
+}
+
 async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
   let authenticatedNow = false
@@ -720,7 +735,7 @@ async function selectManagedInstallMode(): Promise<void> {
     const session = changeSetupSession
     authorizingWorkspace.value = true
     try {
-      const status = await authStore.signIn()
+      const status = await signInOnce()
       if (!status.signedIn) return
       authenticatedNow = true
       if (workspaceId.value === PERSONAL_WORKSPACE_ID) await authStore.fetchWorkspaces()
@@ -1302,18 +1317,27 @@ async function restoreSourceCard(key: string): Promise<void> {
   else await selectSource(tab.source)
 }
 
+async function restoreManagedBuild(buildId: string, targetId: string): Promise<void> {
+  if (!workspaceBuilds.value.some((build) => build.id === buildId)) return
+  selectedBuildId.value = buildId
+  await nextTick()
+  if (selectedBuild.value?.releaseTargets?.some((target) => target.artifactId === targetId)) {
+    selectedBuildTargetId.value = targetId
+  }
+}
+
 async function discardChangeSetup(): Promise<void> {
   changeSetupSession++
   const draft = changeSetupDraft
   changeSetupDraft = null
   view.value = 'summary'
+  authorizingWorkspace.value = false
   if (!draft) return
   if (draft.sourceKey !== selectedSourceCard.value) {
     if (draft.sourceKey) await restoreSourceCard(draft.sourceKey)
     else {
       modeGeneration++
       initializing.value = false
-      authorizingWorkspace.value = false
       workspaceInstallMode.value = 'public'
       resetSourceState(null)
     }
@@ -1321,9 +1345,7 @@ async function discardChangeSetup(): Promise<void> {
   if (draft.sourceKey !== selectedSourceCard.value) return
   instPath.value = draft.instPath
   if (managedBuildMode.value) {
-    selectedBuildId.value = draft.selectedBuildId
-    await nextTick()
-    selectedBuildTargetId.value = draft.selectedBuildTargetId
+    await restoreManagedBuild(draft.selectedBuildId, draft.selectedBuildTargetId)
     return
   }
   loadGeneration++
@@ -1358,6 +1380,7 @@ const machineTitle = computed(() =>
   machineBlocked.value ? unsupportedReason.value : gpuName.value || detectedGpu.value
 )
 const machineDetected = computed(() => !machineBlocked.value && !!gpuName.value)
+const buildCatalogFailed = computed(() => managedBuildMode.value && authStore.buildsError)
 const blockingFieldError = computed(
   () => urlFieldError.value || fieldErrors.value.values().next().value || ''
 )
@@ -1435,7 +1458,7 @@ const buildTargetCards = computed(() => toHardwareCards(selectedBuildTargetOptio
 const FIELD_ICONS: Record<string, Component> = {
   variant: Zap,
   release: Package,
-  version: Package,
+  comfyVersion: Package,
   asset: Package,
   url: Globe
 }
@@ -1671,74 +1694,76 @@ defineExpose({ open })
         >
           {{ blockingFieldError }}
         </div>
+        <div v-if="buildCatalogFailed" class="mt-2 flex px-1" role="alert">
+          <Button
+            size="unset"
+            variant="destructive-textonly"
+            type="button"
+            class="wizard-build-retry text-left text-[12px] leading-[1.4] whitespace-normal"
+            data-testid="config-summary-build-retry"
+            :disabled="authStore.loadingBuilds || authorizingWorkspace"
+            @click="refreshManagedBuilds"
+          >
+            {{ $t('devPlatform.build.loadError') }}
+          </Button>
+        </div>
 
         <dl
           class="config-summary-list m-0 mt-3 flex flex-col"
           :aria-label="$t('newInstall.installSummary')"
         >
-          <div
+          <SetupSummaryRow
             v-for="row in summaryRows"
             :key="row.key"
-            class="config-summary-row grid min-h-12 grid-cols-[132px_minmax(0,1fr)] items-center gap-4 rounded-[10px] px-4 py-2"
+            :icon="row.icon"
+            :label="row.label"
           >
-            <dt class="flex items-center gap-2.5 text-[13px] text-text-muted">
-              <component :is="row.icon" :size="15" aria-hidden="true" />{{ row.label }}
-            </dt>
-            <dd class="m-0 grid min-w-0 gap-1">
+            <span class="grid min-w-0 flex-1 gap-1">
               <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
               <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
                 row.meta
               }}</span>
-            </dd>
-          </div>
-          <div
+            </span>
+          </SetupSummaryRow>
+          <SetupSummaryRow
             v-if="showLocation"
-            class="config-summary-row config-summary-location grid min-h-12 grid-cols-[132px_minmax(0,1fr)] items-center gap-4 rounded-[10px] px-4 py-2"
+            class="config-summary-location"
+            :icon="HardDrive"
+            :label="$t('common.location')"
           >
-            <dt class="flex items-center gap-2.5 text-[13px] text-text-muted">
-              <HardDrive :size="15" aria-hidden="true" />{{ $t('common.location') }}
-            </dt>
-            <dd class="m-0 flex min-w-0 items-center gap-4">
-              <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
-                <Button
-                  v-if="instPath"
-                  size="unset"
-                  variant="link"
-                  type="button"
-                  class="config-path-open block min-w-0 justify-start truncate p-0 text-left text-[13px] leading-5 font-normal text-neutral-100 hover:underline"
-                  :title="$t('actions.openDirectory')"
-                  :aria-label="`${$t('actions.openDirectory')}: ${instPath}`"
-                  @click="handleOpenInstPath"
-                >
-                  {{ instPath }}
-                </Button>
-                <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
-                  locationMeta
-                }}</span>
-                <span
-                  v-if="diskShortLabel"
-                  class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
-                  >{{ diskShortLabel }}</span
-                >
-                <PathDiskInfo
-                  issues-only
-                  :path-issues="pathIssues"
-                  :disk-space-loading="diskSpaceLoading"
-                  :disk-space="diskSpace"
-                  :estimated-size="estimatedInstallSize"
-                />
-              </div>
-              <Button
-                variant="textonly"
-                type="button"
-                class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
-                data-testid="config-summary-browse"
-                @click="handleBrowse"
+            <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
+              <PathOpenButton
+                v-if="instPath"
+                class="leading-5"
+                :path="instPath"
+                @open="handleOpenInstPath"
+              />
+              <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
+                locationMeta
+              }}</span>
+              <span
+                v-if="diskShortLabel"
+                class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
+                >{{ diskShortLabel }}</span
               >
-                {{ $t('common.browse') }}
-              </Button>
-            </dd>
-          </div>
+              <PathDiskInfo
+                issues-only
+                :path-issues="pathIssues"
+                :disk-space-loading="diskSpaceLoading"
+                :disk-space="diskSpace"
+                :estimated-size="estimatedInstallSize"
+              />
+            </div>
+            <Button
+              variant="textonly"
+              type="button"
+              class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+              data-testid="config-summary-browse"
+              @click="handleBrowse"
+            >
+              {{ $t('common.browse') }}
+            </Button>
+          </SetupSummaryRow>
           <div
             v-if="initializing && summaryRows.length === 0"
             class="config-loading px-3.5 py-3 text-[13px] text-text-muted"
@@ -1758,37 +1783,30 @@ defineExpose({ open })
         >
           {{ hardwareWarning }}
         </div>
-        <div
+        <SetupFormRow
           v-if="sources.length > 0"
-          class="config-form-row grid grid-cols-[148px_minmax(0,1fr)] items-start gap-4 py-3"
+          :label="$t('newInstall.getComfyFrom')"
+          :icon="Download"
+          control-height="cards"
         >
-          <span
-            id="config-source-label"
-            class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted pt-3.5"
-            ><Download :size="15" aria-hidden="true" />{{ $t('newInstall.getComfyFrom') }}</span
-          >
           <SetupOptionCards
             class="config-method-row"
             data-testid="install-source-tabs"
             layout="grid"
+            activation="manual"
             :aria-label="$t('newInstall.chooseMethod')"
             :options="sourceCards"
             :selected-value="selectedSourceCard"
             @select="selectSourceCardByKey"
           />
-        </div>
+        </SetupFormRow>
 
         <template v-if="managedBuildMode">
-          <div
-            class="config-form-row config-field grid grid-cols-[148px_minmax(0,1fr)] items-start gap-4 py-3"
+          <SetupFormRow
+            :label="$t('newInstall.workspaceBuildLabel')"
+            :icon="Users"
             data-testid="workspace-build-field"
           >
-            <label
-              class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted pt-2.5"
-              ><Users :size="15" aria-hidden="true" />{{
-                $t('newInstall.workspaceBuildLabel')
-              }}</label
-            >
             <div class="flex min-w-0 flex-col gap-2">
               <BaseSelect
                 v-model="selectedBuildId"
@@ -1833,10 +1851,10 @@ defineExpose({ open })
               </div>
               <Button
                 v-if="authStore.buildsError"
-                size="md"
+                size="unset"
                 variant="destructive-textonly"
                 type="button"
-                class="wizard-build-retry whitespace-normal text-left"
+                class="wizard-build-retry self-start text-left text-[13px] whitespace-normal"
                 :disabled="authStore.loadingBuilds || authorizingWorkspace"
                 @click="refreshManagedBuilds"
               >
@@ -1853,24 +1871,22 @@ defineExpose({ open })
                 {{ $t('newInstall.noCompatibleBuilds') }}
               </div>
             </div>
-          </div>
+          </SetupFormRow>
 
-          <div
+          <SetupFormRow
             v-if="selectedBuildTargetOptions.length > 0"
-            class="config-form-row config-field grid grid-cols-[148px_minmax(0,1fr)] items-start gap-4 py-3"
+            :label="$t('newInstall.buildTarget')"
+            :icon="Zap"
+            control-height="cards"
             data-testid="workspace-build-targets"
           >
-            <label
-              class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted pt-3.5"
-              ><Zap :size="15" aria-hidden="true" />{{ $t('newInstall.buildTarget') }}</label
-            >
             <SetupOptionCards
               :options="buildTargetCards"
               :selected-value="selectedBuildTargetId"
               :aria-label="$t('newInstall.buildTarget')"
               @select="selectedBuildTargetId = $event"
             />
-          </div>
+          </SetupFormRow>
         </template>
 
         <div
@@ -1891,23 +1907,14 @@ defineExpose({ open })
               @browse="handleBrowse"
               @open="handleOpenInstPath"
             />
-            <div
+            <SetupFormRow
               v-show="!isHiddenWhenEmpty(field) && !isInlinedField(field)"
-              class="config-form-row config-source-field grid grid-cols-[148px_minmax(0,1fr)] gap-4 py-3"
-              :class="field.renderAs === 'cards' ? 'items-start' : 'items-center'"
+              class="config-source-field"
+              :label="field.label"
+              :label-for="`sf-${field.id}`"
+              :icon="FIELD_ICONS[field.id] ?? SlidersHorizontal"
+              :control-height="field.renderAs === 'cards' ? 'cards' : 'centered'"
             >
-              <label
-                class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
-                :class="field.renderAs === 'cards' && 'pt-3.5'"
-                :for="`sf-${field.id}`"
-                ><component
-                  :is="FIELD_ICONS[field.id] ?? SlidersHorizontal"
-                  class="flex-none"
-                  :size="15"
-                  aria-hidden="true"
-                />{{ field.label }}</label
-              >
-
               <div v-if="field.type === 'text'" class="flex min-w-0 flex-col">
                 <div class="config-text-action flex items-stretch gap-2">
                   <InputGroup
@@ -2034,7 +2041,7 @@ defineExpose({ open })
                 :aria-label="field.label"
                 @update:model-value="onSelectFieldChange(field, fieldIndex, $event)"
               />
-            </div>
+            </SetupFormRow>
           </template>
         </div>
 
@@ -2051,15 +2058,13 @@ defineExpose({ open })
           @open="handleOpenInstPath"
         />
 
-        <div
+        <SetupFormRow
           v-if="remoteSource || offersBuildImport"
-          class="config-form-row config-other-ways grid grid-cols-[148px_minmax(0,1fr)] items-center gap-4 py-3"
+          class="config-other-ways"
           data-testid="config-other-ways"
+          :label="remoteSelected ? '' : $t('newInstall.alreadyHaveComfy')"
+          control-height="centered"
         >
-          <span
-            class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
-            >{{ remoteSelected ? '' : $t('newInstall.alreadyHaveComfy') }}</span
-          >
           <p
             class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
           >
@@ -2068,7 +2073,8 @@ defineExpose({ open })
               size="link"
               variant="link"
               type="button"
-              class="config-install-here text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+              class="config-install-here"
+              :class="inlineLinkClass"
               data-testid="install-source-here"
               @click="selectStandaloneSource"
             >
@@ -2080,7 +2086,8 @@ defineExpose({ open })
                 size="link"
                 variant="link"
                 type="button"
-                class="config-connect-remote text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+                class="config-connect-remote"
+                :class="inlineLinkClass"
                 data-testid="install-source-remote"
                 :disabled="authorizingWorkspace"
                 @click="selectRemoteSource"
@@ -2093,7 +2100,8 @@ defineExpose({ open })
                   size="link"
                   variant="link"
                   type="button"
-                  class="config-add-existing text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+                  class="config-add-existing"
+                  :class="inlineLinkClass"
                   data-testid="config-add-existing"
                   @click="openBuildImport('track')"
                 >
@@ -2104,7 +2112,8 @@ defineExpose({ open })
                   size="link"
                   variant="link"
                   type="button"
-                  class="config-load-snapshot text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+                  class="config-load-snapshot"
+                  :class="inlineLinkClass"
                   data-testid="config-load-snapshot"
                   @click="openBuildImport('load-snapshot')"
                 >
@@ -2113,7 +2122,7 @@ defineExpose({ open })
               </template>
             </template>
           </p>
-        </div>
+        </SetupFormRow>
       </div>
     </template>
 

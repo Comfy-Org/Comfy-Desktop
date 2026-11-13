@@ -2,6 +2,7 @@
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import Button from '@comfyorg/design-system/button/Button'
 import PathDiskInfo from './PathDiskInfo.vue'
+import PathOpenButton from './PathOpenButton.vue'
 import type { DiskSpaceInfo, PathIssue } from '../types/ipc'
 
 withDefaults(
@@ -37,18 +38,7 @@ defineEmits<{ browse: []; open: [] }>()
       class="config-input config-path-input min-w-0 gap-2.5 pr-1.5 pl-3 text-[13px]"
       data-testid="config-path-input"
     >
-      <Button
-        v-if="path"
-        size="link"
-        variant="link"
-        type="button"
-        class="config-path-open block min-w-0 flex-1 truncate py-0 text-left text-[13px] text-neutral-100"
-        :title="$t('actions.openDirectory')"
-        :aria-label="`${$t('actions.openDirectory')}: ${path}`"
-        @click="$emit('open')"
-      >
-        {{ path }}
-      </Button>
+      <PathOpenButton v-if="path" class="flex-1" :path="path" @open="$emit('open')" />
       <span v-else class="config-path-placeholder min-w-0 flex-1 truncate text-text-muted">{{
         placeholder
       }}</span>

@@ -8,8 +8,14 @@ const options = [
   { value: 'c', label: 'C' }
 ]
 
-function mountCards(selectedValue: string | null = 'a') {
-  return mount(SetupOptionCards, { props: { options, selectedValue }, attachTo: document.body })
+function mountCards(
+  selectedValue: string | null = 'a',
+  activation: 'automatic' | 'manual' = 'automatic'
+) {
+  return mount(SetupOptionCards, {
+    props: { options, selectedValue, activation },
+    attachTo: document.body
+  })
 }
 
 describe('SetupOptionCards keyboard', () => {
@@ -42,11 +48,21 @@ describe('SetupOptionCards keyboard', () => {
     wrapper.unmount()
   })
 
-  it('picks an option only when it is pressed, never while arrowing past it', async () => {
+  it('picks the option it moves to, like a radio group', async () => {
     const wrapper = mountCards('a')
     const radios = wrapper.findAll('[role="radio"]')
 
     await radios[0]!.trigger('keydown', { key: 'ArrowDown' })
+    expect(wrapper.emitted('select')).toEqual([['c']])
+    wrapper.unmount()
+  })
+
+  it('with manual activation, picks an option only when it is pressed, never while arrowing past it', async () => {
+    const wrapper = mountCards('a', 'manual')
+    const radios = wrapper.findAll('[role="radio"]')
+
+    await radios[0]!.trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(radios[2]!.element)
     expect(wrapper.emitted('select')).toBeUndefined()
 
     await radios[2]!.trigger('click')

@@ -163,6 +163,47 @@ describe('TrackModal — modal layout', () => {
   })
 })
 
+describe('TrackModal — virtual environment', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  async function browseGitInstall(probe: ProbeResult) {
+    const api = installMockApi({
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI'),
+      probeInstallation: vi.fn().mockResolvedValue([probe])
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+    return { api, wrapper }
+  }
+
+  it('shows the detected virtual environment as a path that opens the folder', async () => {
+    const { api, wrapper } = await browseGitInstall({
+      ...gitProbe,
+      venvPath: '/Users/jo/ComfyUI/.venv'
+    })
+
+    const venv = wrapper.get('[data-testid="track-venv-field"]')
+    expect(wrapper.findAll('[data-testid="install-location-field"]')).toHaveLength(1)
+    const pathBtn = venv.get('button.config-path-open')
+    expect(pathBtn.text()).toBe('/Users/jo/ComfyUI/.venv')
+    await pathBtn.trigger('click')
+    expect(api.openPath).toHaveBeenCalledWith('/Users/jo/ComfyUI/.venv')
+  })
+
+  it('says no virtual environment was found when the git install has none', async () => {
+    const { wrapper } = await browseGitInstall(gitProbe)
+
+    const venv = wrapper.get('[data-testid="track-venv-field"]')
+    expect(venv.find('button.config-path-open').exists()).toBe(false)
+    expect(venv.get('.config-path-placeholder').text()).toBe('No virtual environment found.')
+  })
+})
+
 describe('TrackModal — install path resolution on save', () => {
   afterEach(() => {
     vi.restoreAllMocks()

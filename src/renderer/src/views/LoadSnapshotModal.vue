@@ -4,7 +4,7 @@ import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput
 import { ref, computed, watch, toRaw, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { ChevronRight, FileArchive, List, Package, Tag, Upload, Zap } from 'lucide-vue-next'
+import { FileArchive, List, Package, Tag, Upload, Zap } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 
 import type { SnapshotFilePreview, FieldOption, GPUInfo, ShowProgressOpts } from '../types/ipc'
@@ -14,6 +14,7 @@ import SetupModal from '../components/SetupModal.vue'
 import SetupFormRow from '../components/SetupFormRow.vue'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import SetupOptionCards from '../components/SetupOptionCards.vue'
+import SnapshotDisclosure from '../components/SnapshotDisclosure.vue'
 import { toHardwareCards } from '../lib/setupOptionCards'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
@@ -25,6 +26,11 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const modal = useModal()
+
+const spinnerClass =
+  "flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-white/15 before:border-t-neutral-100 before:[animation-duration:0.6s] before:content-['']"
+const recessedListClass =
+  'load-snapshot-recessed-list flex flex-col overflow-y-auto rounded-[10px] bg-black/15 p-1.5'
 
 const isOpen = ref(false)
 const preview = ref<SnapshotFilePreview | null>(null)
@@ -360,7 +366,8 @@ defineExpose({ open })
       >
         <div
           v-if="loading"
-          class="load-snapshot-dropzone__loading text-[13px] text-text-muted flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-white/15 before:border-t-neutral-100 before:[animation-duration:0.6s] before:content-['']"
+          class="load-snapshot-dropzone__loading text-[13px] text-text-muted"
+          :class="spinnerClass"
         >
           {{ $t('newInstall.loading') }}
         </div>
@@ -442,7 +449,8 @@ defineExpose({ open })
         <SetupFormRow :label="$t('list.snapshotDevice')" :icon="Zap" control-height="cards">
           <div
             v-if="variantLoading"
-            class="load-snapshot-loading py-2 text-[13px] text-text-muted flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-white/15 before:border-t-neutral-100 before:[animation-duration:0.6s] before:content-['']"
+            class="load-snapshot-loading py-2 text-[13px] text-text-muted"
+            :class="spinnerClass"
           >
             {{ $t('newInstall.loading') }}
           </div>
@@ -491,183 +499,100 @@ defineExpose({ open })
             </dl>
 
             <div class="load-snapshot-details flex flex-col gap-2">
-              <div
-                class="load-snapshot-disclosure group/disclosure rounded-[14px] bg-white/4 px-4 py-2"
-                :class="{ 'is-open': nodesExpanded }"
+              <SnapshotDisclosure
+                v-model:open="nodesExpanded"
+                :label="`${$t('snapshots.customNodes')} (${preview.newestSnapshot.customNodes.length})`"
               >
-                <Button
-                  variant="textonly"
-                  size="unset"
-                  type="button"
-                  class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
-                  :aria-expanded="nodesExpanded"
-                  @click="nodesExpanded = !nodesExpanded"
-                >
-                  <ChevronRight
-                    :size="14"
-                    class="load-snapshot-disclosure__chevron transition-transform duration-220 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:[transform:rotate(90deg)] motion-reduce:transition-none"
-                    aria-hidden="true"
-                  />
-                  <span
-                    >{{ $t('snapshots.customNodes') }} ({{
-                      preview.newestSnapshot.customNodes.length
-                    }})</span
-                  >
-                </Button>
                 <div
-                  class="load-snapshot-disclosure__wrap grid grid-rows-[0fr] transition-[grid-template-rows] duration-280 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:grid-rows-[1fr] motion-reduce:transition-none"
-                  :inert="!nodesExpanded"
-                  :aria-hidden="!nodesExpanded"
+                  v-if="preview.newestSnapshot.customNodes.length > 0"
+                  :class="recessedListClass"
+                  class="max-h-60 gap-[3px]"
                 >
                   <div
-                    class="load-snapshot-disclosure__body min-h-0 overflow-hidden opacity-0 [transform:translateY(-4px)] transition-[opacity,transform] [transition-duration:220ms,260ms] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] [transition-delay:60ms,40ms] group-[.is-open]/disclosure:mt-2 group-[.is-open]/disclosure:opacity-100 group-[.is-open]/disclosure:[transform:translateY(0)] motion-reduce:transition-none"
+                    v-for="node in preview.newestSnapshot.customNodes"
+                    :key="node.id"
+                    class="load-snapshot-node-row flex items-center gap-2 px-1.5 py-0.5 text-[13px]"
                   >
-                    <div
-                      v-if="preview.newestSnapshot.customNodes.length > 0"
-                      class="load-snapshot-recessed-list flex max-h-60 flex-col gap-[3px] overflow-y-auto rounded-[10px] bg-black/15 p-1.5"
+                    <span
+                      class="load-snapshot-node-status size-[7px] shrink-0 rounded-[50%]"
+                      :class="node.enabled ? 'bg-[var(--info)]' : 'bg-text-muted'"
+                    />
+                    <span
+                      class="load-snapshot-node-name min-w-0 flex-1 truncate text-text select-text"
+                      >{{ node.id }}</span
                     >
-                      <div
-                        v-for="node in preview.newestSnapshot.customNodes"
-                        :key="node.id"
-                        class="load-snapshot-node-row flex items-center gap-2 px-1.5 py-0.5 text-[13px]"
-                      >
-                        <span
-                          class="load-snapshot-node-status size-[7px] shrink-0 rounded-[50%]"
-                          :class="node.enabled ? 'bg-[var(--info)]' : 'bg-text-muted'"
-                        />
-                        <span
-                          class="load-snapshot-node-name min-w-0 flex-1 truncate text-text select-text"
-                          >{{ node.id }}</span
-                        >
-                        <span
-                          class="load-snapshot-node-type shrink-0 rounded-[4px] bg-white/8 px-[5px] py-px text-[11px] font-semibold text-text-muted uppercase"
-                          >{{ node.type }}</span
-                        >
-                        <span
-                          class="load-snapshot-node-version shrink-0 text-[13px] [font-family:monospace] text-text-muted select-text"
-                          :title="formatNodeVersion(node)"
-                          >{{ formatNodeVersion(node) }}</span
-                        >
-                      </div>
-                    </div>
-                    <div v-else class="load-snapshot-empty text-[13px] text-text-muted">—</div>
+                    <span
+                      class="load-snapshot-node-type shrink-0 rounded-[4px] bg-white/8 px-[5px] py-px text-[11px] font-semibold text-text-muted uppercase"
+                      >{{ node.type }}</span
+                    >
+                    <span
+                      class="load-snapshot-node-version shrink-0 text-[13px] [font-family:monospace] text-text-muted select-text"
+                      :title="formatNodeVersion(node)"
+                      >{{ formatNodeVersion(node) }}</span
+                    >
                   </div>
                 </div>
-              </div>
-              <div
-                class="load-snapshot-disclosure group/disclosure rounded-[14px] bg-white/4 px-4 py-2"
-                :class="{ 'is-open': pipExpanded }"
+                <div v-else class="load-snapshot-empty text-[13px] text-text-muted">—</div>
+              </SnapshotDisclosure>
+              <SnapshotDisclosure
+                v-model:open="pipExpanded"
+                :label="`${$t('snapshots.pipPackages')} (${preview.newestSnapshot.pipPackageCount})`"
               >
-                <Button
-                  variant="textonly"
-                  size="unset"
-                  type="button"
-                  class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
-                  :aria-expanded="pipExpanded"
-                  @click="pipExpanded = !pipExpanded"
-                >
-                  <ChevronRight
-                    :size="14"
-                    class="load-snapshot-disclosure__chevron transition-transform duration-220 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:[transform:rotate(90deg)] motion-reduce:transition-none"
-                    aria-hidden="true"
-                  />
-                  <span
-                    >{{ $t('snapshots.pipPackages') }} ({{
-                      preview.newestSnapshot.pipPackageCount
-                    }})</span
-                  >
-                </Button>
                 <div
-                  class="load-snapshot-disclosure__wrap grid grid-rows-[0fr] transition-[grid-template-rows] duration-280 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:grid-rows-[1fr] motion-reduce:transition-none"
-                  :inert="!pipExpanded"
-                  :aria-hidden="!pipExpanded"
+                  v-if="preview.newestSnapshot.pipPackageCount > 0"
+                  :class="recessedListClass"
+                  class="max-h-60 gap-[3px]"
                 >
                   <div
-                    class="load-snapshot-disclosure__body min-h-0 overflow-hidden opacity-0 [transform:translateY(-4px)] transition-[opacity,transform] [transition-duration:220ms,260ms] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] [transition-delay:60ms,40ms] group-[.is-open]/disclosure:mt-2 group-[.is-open]/disclosure:opacity-100 group-[.is-open]/disclosure:[transform:translateY(0)] motion-reduce:transition-none"
+                    v-for="(version, name) in preview.newestSnapshot.pipPackages"
+                    :key="name"
+                    class="load-snapshot-pip-row flex items-center justify-between px-1.5 py-0.5 text-[13px]"
                   >
-                    <div
-                      v-if="preview.newestSnapshot.pipPackageCount > 0"
-                      class="load-snapshot-recessed-list flex max-h-60 flex-col gap-[3px] overflow-y-auto rounded-[10px] bg-black/15 p-1.5"
+                    <span
+                      class="load-snapshot-pip-name min-w-0 flex-1 truncate text-text select-text"
+                      >{{ name }}</span
                     >
-                      <div
-                        v-for="(version, name) in preview.newestSnapshot.pipPackages"
-                        :key="name"
-                        class="load-snapshot-pip-row flex items-center justify-between px-1.5 py-0.5 text-[13px]"
-                      >
-                        <span
-                          class="load-snapshot-pip-name min-w-0 flex-1 truncate text-text select-text"
-                          >{{ name }}</span
-                        >
-                        <span
-                          class="load-snapshot-pip-version ml-3 max-w-[50%] truncate [font-family:monospace] text-text-muted select-text"
-                          :title="version"
-                          >{{ version }}</span
-                        >
-                      </div>
-                    </div>
-                    <div v-else class="load-snapshot-empty text-[13px] text-text-muted">—</div>
+                    <span
+                      class="load-snapshot-pip-version ml-3 max-w-[50%] truncate [font-family:monospace] text-text-muted select-text"
+                      :title="version"
+                      >{{ version }}</span
+                    >
                   </div>
                 </div>
-              </div>
-              <div
-                class="load-snapshot-disclosure group/disclosure rounded-[14px] bg-white/4 px-4 py-2"
-                :class="{ 'is-open': timelineExpanded }"
+                <div v-else class="load-snapshot-empty text-[13px] text-text-muted">—</div>
+              </SnapshotDisclosure>
+              <SnapshotDisclosure
+                v-model:open="timelineExpanded"
+                :label="`${$t('list.snapshotTimeline')} (${preview.snapshotCount})`"
               >
-                <Button
-                  variant="textonly"
-                  size="unset"
-                  type="button"
-                  class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
-                  :aria-expanded="timelineExpanded"
-                  @click="timelineExpanded = !timelineExpanded"
-                >
-                  <ChevronRight
-                    :size="14"
-                    class="load-snapshot-disclosure__chevron transition-transform duration-220 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:[transform:rotate(90deg)] motion-reduce:transition-none"
-                    aria-hidden="true"
-                  />
-                  <span>{{ $t('list.snapshotTimeline') }} ({{ preview.snapshotCount }})</span>
-                </Button>
-                <div
-                  class="load-snapshot-disclosure__wrap grid grid-rows-[0fr] transition-[grid-template-rows] duration-280 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:grid-rows-[1fr] motion-reduce:transition-none"
-                  :inert="!timelineExpanded"
-                  :aria-hidden="!timelineExpanded"
-                >
+                <div :class="recessedListClass" class="load-snapshot-timeline max-h-[200px] gap-1">
                   <div
-                    class="load-snapshot-disclosure__body min-h-0 overflow-hidden opacity-0 [transform:translateY(-4px)] transition-[opacity,transform] [transition-duration:220ms,260ms] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] [transition-delay:60ms,40ms] group-[.is-open]/disclosure:mt-2 group-[.is-open]/disclosure:opacity-100 group-[.is-open]/disclosure:[transform:translateY(0)] motion-reduce:transition-none"
+                    v-for="(snap, i) in preview.snapshots"
+                    :key="snap.filename"
+                    class="load-snapshot-timeline-item flex items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[13px]"
                   >
-                    <div
-                      class="load-snapshot-timeline flex max-h-[200px] flex-col gap-1 overflow-y-auto rounded-[10px] bg-black/15 p-1.5"
+                    <span
+                      class="load-snapshot-trigger shrink-0 rounded-[4px] bg-white/8 px-1.5 py-px text-[11px] font-semibold tracking-[0.3px] uppercase"
+                      :class="triggerTone(snap.trigger)"
                     >
-                      <div
-                        v-for="(snap, i) in preview.snapshots"
-                        :key="snap.filename"
-                        class="load-snapshot-timeline-item flex items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[13px]"
-                      >
-                        <span
-                          class="load-snapshot-trigger shrink-0 rounded-[4px] bg-white/8 px-1.5 py-px text-[11px] font-semibold tracking-[0.3px] uppercase"
-                          :class="triggerTone(snap.trigger)"
-                        >
-                          {{ triggerCopy(snap.trigger) }}
-                        </span>
-                        <span
-                          v-if="i === 0"
-                          class="load-snapshot-current-tag shrink-0 text-[11px] font-semibold text-neutral-100"
-                          >{{ $t('snapshots.current') }}</span
-                        >
-                        <span class="load-snapshot-meta min-w-0 flex-1 truncate text-text-muted">
-                          {{ snap.comfyuiVersion }} ·
-                          {{ $t('snapshots.nodesCount', { count: snap.nodeCount }) }} ·
-                          {{ $t('snapshots.packagesCount', { count: snap.pipPackageCount }) }}
-                        </span>
-                        <span class="load-snapshot-time shrink-0 text-[13px] text-text-muted">{{
-                          formatDate(snap.createdAt)
-                        }}</span>
-                      </div>
-                    </div>
+                      {{ triggerCopy(snap.trigger) }}
+                    </span>
+                    <span
+                      v-if="i === 0"
+                      class="load-snapshot-current-tag shrink-0 text-[11px] font-semibold text-neutral-100"
+                      >{{ $t('snapshots.current') }}</span
+                    >
+                    <span class="load-snapshot-meta min-w-0 flex-1 truncate text-text-muted">
+                      {{ snap.comfyuiVersion }} ·
+                      {{ $t('snapshots.nodesCount', { count: snap.nodeCount }) }} ·
+                      {{ $t('snapshots.packagesCount', { count: snap.pipPackageCount }) }}
+                    </span>
+                    <span class="load-snapshot-time shrink-0 text-[13px] text-text-muted">{{
+                      formatDate(snap.createdAt)
+                    }}</span>
                   </div>
                 </div>
-              </div>
+              </SnapshotDisclosure>
             </div>
           </div>
         </SetupFormRow>

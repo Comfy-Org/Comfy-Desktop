@@ -21,8 +21,9 @@ const props = withDefaults(
     selectedValue?: string | null
     ariaLabel?: string
     layout?: 'grid' | 'list'
+    activation?: 'automatic' | 'manual'
   }>(),
-  { selectedValue: null, ariaLabel: undefined, layout: 'list' }
+  { selectedValue: null, ariaLabel: undefined, layout: 'list', activation: 'automatic' }
 )
 
 const emit = defineEmits<{ select: [value: string] }>()
@@ -47,6 +48,9 @@ function moveFocus(event: KeyboardEvent, index: number): void {
     const option = props.options[target]
     if (!option || option.disabled) continue
     optionEls.value[target]?.focus()
+    if (props.activation === 'automatic' && option.value !== props.selectedValue) {
+      emit('select', option.value)
+    }
     return
   }
 }
