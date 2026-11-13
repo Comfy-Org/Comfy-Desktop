@@ -470,8 +470,10 @@ defineExpose({ open })
         </SetupFormRow>
 
         <SetupFormRow :label="$t('loadSnapshot.contents')" :icon="List" control-height="cards">
-          <div class="load-snapshot-contents flex flex-col gap-3 rounded-[14px] bg-white/4 p-4">
-            <dl class="load-snapshot-summary m-0 grid grid-cols-2 gap-x-6 gap-y-3">
+          <div class="load-snapshot-contents flex flex-col gap-2">
+            <dl
+              class="load-snapshot-summary m-0 grid grid-cols-2 gap-x-6 gap-y-3 rounded-[14px] bg-white/4 p-4"
+            >
               <div
                 v-for="entry in summaryEntries"
                 :key="entry.label"
@@ -488,16 +490,16 @@ defineExpose({ open })
               </div>
             </dl>
 
-            <div class="load-snapshot-details flex flex-col gap-1">
+            <div class="load-snapshot-details flex flex-col gap-2">
               <div
-                class="load-snapshot-disclosure group/disclosure"
+                class="load-snapshot-disclosure group/disclosure rounded-[14px] bg-white/4 px-4 py-2"
                 :class="{ 'is-open': nodesExpanded }"
               >
                 <Button
                   variant="textonly"
                   size="unset"
                   type="button"
-                  class="load-snapshot-disclosure__summary static inline-flex items-center gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
+                  class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
                   :aria-expanded="nodesExpanded"
                   @click="nodesExpanded = !nodesExpanded"
                 >
@@ -553,14 +555,14 @@ defineExpose({ open })
                 </div>
               </div>
               <div
-                class="load-snapshot-disclosure group/disclosure"
+                class="load-snapshot-disclosure group/disclosure rounded-[14px] bg-white/4 px-4 py-2"
                 :class="{ 'is-open': pipExpanded }"
               >
                 <Button
                   variant="textonly"
                   size="unset"
                   type="button"
-                  class="load-snapshot-disclosure__summary static inline-flex items-center gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
+                  class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
                   :aria-expanded="pipExpanded"
                   @click="pipExpanded = !pipExpanded"
                 >
@@ -608,14 +610,14 @@ defineExpose({ open })
                 </div>
               </div>
               <div
-                class="load-snapshot-disclosure group/disclosure"
+                class="load-snapshot-disclosure group/disclosure rounded-[14px] bg-white/4 px-4 py-2"
                 :class="{ 'is-open': timelineExpanded }"
               >
                 <Button
                   variant="textonly"
                   size="unset"
                   type="button"
-                  class="load-snapshot-disclosure__summary static inline-flex items-center gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
+                  class="load-snapshot-disclosure__summary static flex w-full items-center justify-start gap-1.5 rounded-md px-0 py-1 text-[13px] leading-5 font-medium text-text-muted hover:bg-transparent hover:text-neutral-100 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 focus-visible:ring-0"
                   :aria-expanded="timelineExpanded"
                   @click="timelineExpanded = !timelineExpanded"
                 >
