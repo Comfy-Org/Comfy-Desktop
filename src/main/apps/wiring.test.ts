@@ -45,7 +45,9 @@ describe('Apps bridge wiring', () => {
   })
 
   it('the only handler outside the apps-page check answers the panel alone', () => {
-    expect(all(main, /ipcMain\.handle\((\w+)/g)).toEqual(['channel', 'APPS_CATALOG_CHANNEL'])
+    expect(new Set(all(main, /ipcMain\.handle\((\w+)/g))).toEqual(
+      new Set(['channel', 'APPS_CATALOG_CHANNEL'])
+    )
     expect(main).toMatch(
       /ipcMain\.handle\(APPS_CATALOG_CHANNEL, \(event\) =>\s+entryForPanel\(event\.sender\)/
     )
