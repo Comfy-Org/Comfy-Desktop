@@ -22,6 +22,30 @@ export function findWebContentsId(
   )
 }
 
+export function findWebContentsIdInWindow(
+  app: ElectronApplication,
+  marker: string,
+  windowMarker: string
+): Promise<number | null> {
+  return evalWithRetry(() =>
+    app.evaluate(
+      ({ BrowserWindow, WebContentsView }, { m, w }) => {
+        for (const win of BrowserWindow.getAllWindows()) {
+          const urls = win.contentView.children.flatMap((child) =>
+            child instanceof WebContentsView
+              ? [{ id: child.webContents.id, url: child.webContents.getURL() }]
+              : []
+          )
+          if (!urls.some(({ url }) => url.includes(w))) continue
+          return urls.find(({ url }) => url.includes(m))?.id ?? null
+        }
+        return null
+      },
+      { m: marker, w: windowMarker }
+    )
+  )
+}
+
 export async function waitForWebContents(
   app: ElectronApplication,
   marker: string,
@@ -43,15 +67,22 @@ export async function waitForWebContents(
 export class WebContentsPage {
   constructor(
     private readonly app: ElectronApplication,
-    private readonly marker: string
+    private readonly marker: string,
+    private readonly windowMarker?: string
   ) {}
+
+  private resolveId(): Promise<number | null> {
+    return this.windowMarker === undefined
+      ? findWebContentsId(this.app, this.marker)
+      : findWebContentsIdInWindow(this.app, this.marker, this.windowMarker)
+  }
 
   private async wcEval<T>(expr: string): Promise<T> {
     return this.evaluate<T>(expr)
   }
 
   async evaluate<T>(expr: string): Promise<T> {
-    const id = await findWebContentsId(this.app, this.marker)
+    const id = await this.resolveId()
     if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
     return evalWithRetry(() =>
       this.app.evaluate(
@@ -101,7 +132,7 @@ export class WebContentsPage {
   }
 
   private async sendClick(elementExpression: string): Promise<'clicked' | 'missing' | 'blocked'> {
-    const id = await findWebContentsId(this.app, this.marker)
+    const id = await this.resolveId()
     if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
     return this.app.evaluate(
       async ({ BrowserWindow, WebContentsView, webContents }, payload) => {
@@ -180,7 +211,7 @@ export class WebContentsPage {
       })()`)
       if (!focused)
         throw new Error(`fill: element not focusable (selector=${selector}, marker=${this.marker})`)
-      const id = await findWebContentsId(this.app, this.marker)
+      const id = await this.resolveId()
       if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
       await this.app.evaluate(
         async ({ webContents }, payload) => {
@@ -211,7 +242,7 @@ export class WebContentsPage {
   }
 
   async pressKey(key: string): Promise<void> {
-    const id = await findWebContentsId(this.app, this.marker)
+    const id = await this.resolveId()
     if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
     const aliases: Record<string, string> = {
       ArrowDown: 'Down',

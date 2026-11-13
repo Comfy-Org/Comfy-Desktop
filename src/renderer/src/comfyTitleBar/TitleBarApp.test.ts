@@ -955,31 +955,19 @@ describe('TitleBarApp', () => {
     }
   })
 
-  describe('trailing-width mirror (true-centered install pill)', () => {
-    type ResizeCallback = (entries: ResizeObserverEntry[], obs: ResizeObserver) => void
+  describe('title bar resize observer', () => {
     interface ResizeObserverHandle {
       observed: Element[]
-      fire: (width: number) => void
     }
 
     let handles: ResizeObserverHandle[]
     let originalResizeObserver: typeof globalThis.ResizeObserver | undefined
 
     function installStub(): void {
-      function StubCtor(this: unknown, cb: ResizeCallback) {
-        const self = this as { observed: Element[]; cb: ResizeCallback }
+      function StubCtor(this: unknown) {
+        const self = this as ResizeObserverHandle
         self.observed = []
-        self.cb = cb
-        const handle: ResizeObserverHandle = {
-          observed: self.observed,
-          fire(width: number) {
-            self.cb(
-              [{ contentRect: { width, height: 28 } as DOMRectReadOnly } as ResizeObserverEntry],
-              self as unknown as ResizeObserver
-            )
-          }
-        }
-        handles.push(handle)
+        handles.push(self)
       }
       StubCtor.prototype.observe = function observe(this: { observed: Element[] }, el: Element) {
         this.observed.push(el)
@@ -1008,61 +996,16 @@ describe('TitleBarApp', () => {
       }
     })
 
-    it('observes the trailing cluster on mount and disconnects on unmount', async () => {
+    it('observes the title bar on mount and disconnects on unmount', async () => {
       const mod = await import('./TitleBarApp.vue')
       const wrapper = mount(mod.default, { attachTo: document.body })
       await flushPromises()
-      expect(handles).toHaveLength(2)
-      const trailingEl = wrapper.find('.title-trailing').element
-      const handle = handles.find((h) => h.observed[0] === trailingEl)
-      expect(handle).toBeDefined()
+      const titleBarEl = wrapper.find('.title-bar').element
+      expect(handles.some((h) => h.observed[0] === titleBarEl)).toBe(true)
       wrapper.unmount()
       for (const h of handles) {
         expect(h.observed).toHaveLength(0)
       }
-    })
-
-    it('mirrors trailing width onto the title bar as `--title-trailing-width`', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      const handle = handles[0]!
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('0px')
-      handle.fire(240)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('240px')
-      handle.fire(520)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('520px')
-      wrapper.unmount()
-    })
-
-    it('does not update the CSS var when the width is unchanged (avoids redundant style writes)', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      const handle = handles[0]!
-      handle.fire(300)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('300px')
-      handle.fire(300)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('300px')
-      wrapper.unmount()
-    })
-
-    it('rounds fractional widths up so the left-cluster reservation never under-shoots', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      const handle = handles[0]!
-      handle.fire(287.4)
-      await flushPromises()
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('288px')
-      wrapper.unmount()
     })
 
     it('does not crash if ResizeObserver is unavailable (older Electron / SSR-safety)', async () => {
@@ -1070,8 +1013,6 @@ describe('TitleBarApp', () => {
       const mod = await import('./TitleBarApp.vue')
       const wrapper = mount(mod.default, { attachTo: document.body })
       await flushPromises()
-      const titleBar = wrapper.find('.title-bar').element as HTMLElement
-      expect(titleBar.style.getPropertyValue('--title-trailing-width')).toBe('0px')
       expect(wrapper.find('[data-testid="title-home-button"]').exists()).toBe(true)
       wrapper.unmount()
     })

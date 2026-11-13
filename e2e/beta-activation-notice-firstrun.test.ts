@@ -22,8 +22,8 @@ const GRANT_MIN_CORE = '0.3.80'
 let ctx: AppContext
 let installPath: string
 
-function coachmarkPopup(app: ElectronApplication): WebContentsPage {
-  return new WebContentsPage(app, 'comfyTitleTooltip')
+function buildWindowCoachmark(app: ElectronApplication): WebContentsPage {
+  return new WebContentsPage(app, 'comfyTitleTooltip', `:${port}`)
 }
 
 const UNREACHABLE_POSTHOG_HOST = 'http://127.0.0.1:1'
@@ -75,7 +75,7 @@ test.afterAll(async () => {
   else process.env['POSTHOG_HOST'] = previousPosthogHost
 })
 
-test('first run: the hint takes the popup, and dismissing it releases the beta card @linux', async () => {
+test('first run: with no pill hint to wait for, the beta card draws in the build window @linux', async () => {
   await clickInstallTile(ctx.panel, INSTALL_NAME)
   await ctx.panel.waitFor(
     async () =>
@@ -87,26 +87,11 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
     { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
 
-  const popup = coachmarkPopup(ctx.app)
-  await popup.waitFor(
-    async () => {
-      try {
-        return await popup.exists('.coachmark')
-      } catch {
-        return false
-      }
-    },
-    { timeout: 30_000, message: 'no coachmark appeared at all on a first run' }
-  )
-
-  expect(await popup.textOf('.coachmark-title')).toBe('Switch & manage instances')
-
   expect(
     await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
   ).not.toBeNull()
 
-  expect(await popup.click('.coachmark-dismiss')).toBe(true)
-
+  const popup = buildWindowCoachmark(ctx.app)
   await popup.waitFor(
     async () => {
       try {
@@ -115,7 +100,7 @@ test('first run: the hint takes the popup, and dismissing it releases the beta c
         return false
       }
     },
-    { timeout: 30_000, message: 'beta notice never drew after the hint was dismissed' }
+    { timeout: 30_000, message: 'beta notice never drew on a first run' }
   )
 
   expect(await popup.textOf('.coachmark-text')).not.toContain(GRANT_ARG)
