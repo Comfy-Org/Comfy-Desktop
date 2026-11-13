@@ -1574,7 +1574,7 @@ defineExpose({ open })
 
       <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
         <div
-          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 px-4 py-1"
         >
           <label
             class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
@@ -1717,9 +1717,9 @@ defineExpose({ open })
                 />
               </div>
               <Button
-                variant="secondary"
+                variant="textonly"
                 type="button"
-                class="config-path-browse flex-none px-3"
+                class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
                 data-testid="config-summary-browse"
                 @click="handleBrowse"
               >
