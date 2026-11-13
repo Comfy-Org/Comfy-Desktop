@@ -66,7 +66,7 @@ import SetupOptionCards, { type SetupOptionCard } from '../components/SetupOptio
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
-import InstallLocationField from '../components/InstallLocationField.vue'
+import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
@@ -1241,6 +1241,13 @@ const diskFreeLabel = computed(() =>
     ? t('diskSpace.free', { size: formatFreeSpace(diskSpace.value.free) })
     : ''
 )
+const locationMeta = computed(() => {
+  if (!diskFreeLabel.value) return ''
+  const required = estimatedInstallSize.value
+  return required > 0
+    ? `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
+    : diskFreeLabel.value
+})
 const diskShortLabel = computed(() => {
   const required = estimatedInstallSize.value
   if (diskSpaceLoading.value || !diskSpace.value || required <= 0) return ''
@@ -1685,20 +1692,45 @@ defineExpose({ open })
             <dt class="flex items-center gap-2.5 text-[13px] text-text-muted">
               <HardDrive :size="15" aria-hidden="true" />{{ $t('common.location') }}
             </dt>
-            <dd class="m-0 min-w-0">
-              <InstallLocationField
-                class="-ml-3"
-                quiet
-                :path="instPath"
-                :free-label="diskFreeLabel"
-                :short-label="diskShortLabel"
-                :path-issues="pathIssues"
-                :disk-space-loading="diskSpaceLoading"
-                :disk-space="diskSpace"
-                :estimated-size="estimatedInstallSize"
-                @browse="handleBrowse"
-                @open="handleOpenInstPath"
-              />
+            <dd class="m-0 flex min-w-0 items-center gap-4">
+              <div class="grid min-w-0 flex-1 gap-1" data-testid="config-summary-path">
+                <Button
+                  v-if="instPath"
+                  size="unset"
+                  variant="link"
+                  type="button"
+                  class="config-path-open block min-w-0 justify-start truncate p-0 text-left text-[13px] leading-5 font-normal text-neutral-100 hover:underline"
+                  :title="$t('actions.openDirectory')"
+                  :aria-label="`${$t('actions.openDirectory')}: ${instPath}`"
+                  @click="handleOpenInstPath"
+                >
+                  {{ instPath }}
+                </Button>
+                <span v-if="locationMeta" class="truncate text-[12px] leading-4 text-text-muted">{{
+                  locationMeta
+                }}</span>
+                <span
+                  v-if="diskShortLabel"
+                  class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
+                  >{{ diskShortLabel }}</span
+                >
+                <PathDiskInfo
+                  issues-only
+                  :path-issues="pathIssues"
+                  :disk-space-loading="diskSpaceLoading"
+                  :disk-space="diskSpace"
+                  :estimated-size="estimatedInstallSize"
+                />
+              </div>
+              <Button
+                variant="secondary"
+                type="button"
+                class="config-path-browse flex-none px-3"
+                data-testid="config-summary-browse"
+                @click="handleBrowse"
+              >
+                {{ $t('common.browse') }}
+              </Button>
             </dd>
           </div>
           <div

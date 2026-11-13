@@ -15,7 +15,6 @@ withDefaults(
     diskSpaceLoading?: boolean
     diskSpace?: DiskSpaceInfo | null
     estimatedSize?: number
-    quiet?: boolean
   }>(),
   {
     placeholder: '',
@@ -25,8 +24,7 @@ withDefaults(
     pathIssues: () => [],
     diskSpaceLoading: false,
     diskSpace: null,
-    estimatedSize: 0,
-    quiet: false
+    estimatedSize: 0
   }
 )
 
@@ -37,10 +35,6 @@ defineEmits<{ browse: []; open: [] }>()
   <div class="install-location-field flex min-w-0 flex-col">
     <InputGroup
       class="config-input config-path-input min-w-0 gap-2.5 pr-1.5 pl-3 text-[13px]"
-      :class="
-        quiet &&
-        'config-path-input--quiet bg-transparent transition-colors hover:bg-secondary has-focus-visible:bg-secondary'
-      "
       data-testid="config-path-input"
     >
       <Button
