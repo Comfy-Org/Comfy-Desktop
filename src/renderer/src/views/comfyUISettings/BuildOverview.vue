@@ -169,18 +169,18 @@ function openLocation(): void {
         </Menu>
 
         <div
-          class="mt-auto flex min-w-0 items-center gap-2.5 pt-5 text-[12px]/4 text-muted-foreground"
+          class="mt-auto flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-3 pt-5 text-[12px]/4 text-muted-foreground"
           data-testid="build-overview-update"
         >
           <template v-if="updateAction">
-            <span class="flex min-w-0 flex-col">
-              <span class="truncate text-foreground">{{
+            <span class="flex min-w-36 flex-1 flex-col">
+              <span class="text-foreground">{{
                 switching
                   ? t('channelCards.switchTo', { channel: channel?.label ?? '' })
                   : t('buildOverview.available', { version: channel?.latestVersion ?? '' })
               }}</span>
-              <span class="truncate">{{ t('buildOverview.savesSnapshot') }}</span>
-              <span v-if="lastChecked" class="truncate">{{
+              <span>{{ t('buildOverview.savesSnapshot') }}</span>
+              <span v-if="lastChecked">{{
                 t('buildOverview.checked', { time: lastChecked })
               }}</span>
             </span>
@@ -211,8 +211,8 @@ function openLocation(): void {
             </SplitButton>
           </template>
           <template v-else-if="switching">
-            <span class="flex min-w-0 flex-col">
-              <span class="truncate text-foreground">{{
+            <span class="flex min-w-36 flex-1 flex-col">
+              <span class="text-foreground">{{
                 t('channelCards.switchTo', { channel: channel?.label ?? '' })
               }}</span>
               <span v-if="!switchAction" class="line-clamp-2">{{ t('channelCards.noInfo') }}</span>
@@ -231,8 +231,8 @@ function openLocation(): void {
             </Button>
           </template>
           <template v-else>
-            <span class="flex min-w-0 flex-col">
-              <span class="truncate text-foreground">{{ t('channelCards.upToDate') }}</span>
+            <span class="flex min-w-36 flex-1 flex-col">
+              <span class="text-foreground">{{ t('channelCards.upToDate') }}</span>
               <span v-if="channel?.enriching" class="inline-flex items-center gap-1 truncate">
                 <Loader2
                   :size="12"
@@ -241,7 +241,7 @@ function openLocation(): void {
                 />
                 {{ t('channelCards.computingCommitsAhead') }}
               </span>
-              <span v-else-if="lastChecked" class="truncate">{{
+              <span v-else-if="lastChecked">{{
                 t('buildOverview.checked', { time: lastChecked })
               }}</span>
             </span>
@@ -281,7 +281,7 @@ function openLocation(): void {
           >{{ torchVersion }}</span
         >
         <div class="-mr-2 -mb-1.5 mt-auto flex min-w-0 items-center justify-between gap-2">
-          <span class="truncate text-[12px]/4 text-muted-foreground">{{
+          <span class="line-clamp-2 min-w-0 text-[12px]/4 text-muted-foreground">{{
             model.facts.variant?.value
           }}</span>
           <Menu
