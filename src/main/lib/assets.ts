@@ -8,7 +8,8 @@ import type { AssetKind, AssetSummary } from '../../types/ipc'
 
 const ASSETS_LIST_CHANNEL = 'assets:list'
 
-const LIST_QUERY = 'tags_any=output&sort=created_at&order=desc&limit=100'
+const PAGE_SIZE = 100
+const LIST_QUERY = `tags_any=output&sort=created_at&order=desc&limit=${PAGE_SIZE}`
 const REQUEST_TIMEOUT_MS = 20_000
 const PREVIEW_BATCH_TIMEOUT_MS = 30_000
 const SIGNED_URL_CONCURRENCY = 6
@@ -88,7 +89,7 @@ async function fetchAssetRows(url: string, headers: Record<string, string>): Pro
   const body: unknown = await res.json().catch(() => null)
   const rows = body && typeof body === 'object' ? (body as { assets?: unknown }).assets : undefined
   if (!Array.isArray(rows)) throw new Error('List assets returned an invalid page')
-  return rows.filter(isAssetRow)
+  return rows.filter(isAssetRow).slice(0, PAGE_SIZE)
 }
 
 export function signedStorageUrl(location: string | null): string | null {
