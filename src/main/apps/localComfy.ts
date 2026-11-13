@@ -57,6 +57,7 @@ import {
   noteRun,
   promptIdOf,
   queueAnswer,
+  queueView,
   readCapped,
   reconnectDelay,
   type RunEnd,
@@ -98,6 +99,23 @@ interface LocalRun {
 
 const MAX_LOCAL_RUNS = 50
 const localRuns = new Map<string, LocalRun>()
+
+interface EarlyEnd {
+  end: RunEnd
+  startedAt: number | undefined
+  at: number
+}
+
+const earlyEnds = new Map<string, EarlyEnd>()
+
+function keepNewest<T>(map: Map<string, T>, id: string, value: T): void {
+  map.delete(id)
+  map.set(id, value)
+  for (const old of map.keys()) {
+    if (map.size <= MAX_LOCAL_RUNS) break
+    map.delete(old)
+  }
+}
 
 interface Target {
   id: string
@@ -339,20 +357,19 @@ export function cancelSetup(): { cancelled: boolean } {
   return cancelAppsSetup()
 }
 
-function rememberRun(id: string, app: string, installId: string): void {
+function rememberRun(id: string, app: string, installId: string, submittedAt: number): void {
   const own = target?.own === true && target.id === installId
-  localRuns.delete(id)
-  localRuns.set(id, {
+  const run: LocalRun = {
     app,
     installId,
     comfy: own ? 'own' : 'apps_build',
     version: target?.id === installId ? target.version : null,
-    submittedAt: Date.now()
-  })
-  for (const old of localRuns.keys()) {
-    if (localRuns.size <= MAX_LOCAL_RUNS) break
-    localRuns.delete(old)
+    submittedAt
   }
+  const early = earlyEnds.get(id)
+  if (!early) return keepNewest(localRuns, id, run)
+  earlyEnds.delete(id)
+  void reportRunFinished(run, early.end, early.startedAt, early.at).catch(() => {})
 }
 
 async function comfyVersion(run: LocalRun): Promise<string | undefined> {
@@ -392,10 +409,38 @@ async function reportRunFinished(
 
 function finishRun(msg: { type: string; data: unknown }, now: number): void {
   const end = runEnd(msg)
-  const run = end ? localRuns.get(end.id) : undefined
-  if (!end || !run) return
+  if (!end) return
+  const startedAt = runsSeen.get(end.id)?.startedAt
+  const run = localRuns.get(end.id)
+  if (!run) return keepNewest(earlyEnds, end.id, { end, startedAt, at: now })
   localRuns.delete(end.id)
-  void reportRunFinished(run, end, runsSeen.get(end.id)?.startedAt, now).catch(() => {})
+  void reportRunFinished(run, end, startedAt, now).catch(() => {})
+}
+
+async function comfyJson(port: number, path: string): Promise<unknown> {
+  const res = await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(5000) })
+  if (!res.ok) throw new Error(`ComfyUI answered ${res.status} for ${path}`)
+  const body = await readCapped(res, MAX_UPLOAD_BYTES)
+  if (!body) throw new Error(`ComfyUI answered more than 50 MB for ${path}`)
+  return JSON.parse(new TextDecoder().decode(body)) as unknown
+}
+
+async function droppedBeforeStart(port: number, id: string): Promise<boolean> {
+  const queue = queueView(await comfyJson(port, '/queue'))
+  if ([...queue.running, ...queue.pending].some((r) => r.id === id)) return false
+  const history = await comfyJson(port, `/history/${id}`)
+  return !history || typeof history !== 'object' || !Object.hasOwn(history, id)
+}
+
+async function reportDropped(port: number, ids: readonly string[]): Promise<void> {
+  for (const id of ids) {
+    if (!localRuns.has(id) || runsSeen.has(id)) continue
+    if (!(await droppedBeforeStart(port, id).catch(() => false))) continue
+    const run = localRuns.get(id)
+    if (!run || runsSeen.has(id)) continue
+    localRuns.delete(id)
+    await reportRunFinished(run, { id, outcome: 'cancelled' }, undefined, Date.now())
+  }
 }
 
 export async function localFetch(input: unknown, app: string | null = null): Promise<LocalAnswer> {
@@ -417,6 +462,7 @@ export async function localFetch(input: unknown, app: string | null = null): Pro
       : req.kind === 'upload'
         ? { method: 'POST', body: uploadForm(req.bytes, req.fileName), signal }
         : { method: 'GET', signal }
+  const sentAt = Date.now()
   try {
     const res = await fetch(`http://127.0.0.1:${run.port}${req.path}`, init)
     const body = await readCapped(res, MAX_UPLOAD_BYTES)
@@ -425,7 +471,11 @@ export async function localFetch(input: unknown, app: string | null = null): Pro
     if (req.kind === 'prompt' && res.ok) {
       const id = promptIdOf(body)
       const runApp = localAppId(req.json) ?? app
-      if (id && runApp) rememberRun(id, runApp, run.id)
+      if (id && runApp) rememberRun(id, runApp, run.id, sentAt)
+    }
+    if (req.kind === 'json' && req.path === '/queue' && res.ok) {
+      const ids = (JSON.parse(req.json) as { delete: string[] }).delete
+      void reportDropped(run.port, ids).catch(() => {})
     }
     return {
       status: res.status,
@@ -445,7 +495,6 @@ const downloads = new Map<string, Promise<LocalDownload>>()
 
 function trackDownload(
   app: string | null,
-  req: DownloadRequest,
   outcome: 'started' | 'finished' | 'failed',
   startedAt: number,
   bytes = 0
@@ -454,7 +503,6 @@ function trackDownload(
     ...(app ? { app } : {}),
     stage: 'model',
     outcome,
-    model_file: req.name,
     ...(bytes > 0 ? { bytes } : {}),
     ...(outcome === 'started' ? {} : { seconds: (Date.now() - startedAt) / 1000 })
   })
@@ -479,11 +527,11 @@ async function runDownload(
     return { state: 'failed', error }
   }
   const failed = (error: string): LocalDownload => {
-    trackDownload(app, req, 'failed', startedAt, done)
+    trackDownload(app, 'failed', startedAt, done)
     localRunFailed(app, 'model_download')
     return stopped(error)
   }
-  trackDownload(app, req, 'started', startedAt)
+  trackDownload(app, 'started', startedAt)
   const handle = await startManagedModelJob({
     url: req.url,
     filename: req.name,
@@ -515,7 +563,7 @@ async function runDownload(
     () => total
   )
   done = total = size
-  trackDownload(app, req, 'finished', startedAt, size)
+  trackDownload(app, 'finished', startedAt, size)
   send('done')
   return { state: 'done' }
 }
@@ -588,6 +636,7 @@ function closeSocket(): void {
   socket = null
   runsSeen.clear()
   localRuns.clear()
+  earlyEnds.clear()
 }
 
 export function syncLocalSocket(): void {
