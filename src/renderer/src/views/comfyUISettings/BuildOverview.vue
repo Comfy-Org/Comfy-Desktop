@@ -77,13 +77,24 @@ const lastChecked = computed(() => {
   return c.lastChecked ?? ''
 })
 
-const updateTooltip = computed(() =>
-  [
-    updateAction.value?.tooltip,
-    lastChecked.value && t('buildOverview.checked', { time: lastChecked.value })
-  ]
-    .filter(Boolean)
-    .join(' · ')
+const checkedText = computed(() =>
+  lastChecked.value
+    ? t('buildOverview.checked', {
+        time: lastChecked.value.charAt(0).toLocaleLowerCase() + lastChecked.value.slice(1)
+      })
+    : ''
+)
+const updateNote = computed(() =>
+  [t('buildOverview.savesSnapshot'), checkedText.value].filter(Boolean).join(' · ')
+)
+
+const switchHeadline = computed(() =>
+  t('channelCards.switchTo', { channel: channel.value?.label ?? '' })
+)
+const updateHeadline = computed(() =>
+  switching.value
+    ? switchHeadline.value
+    : t('buildOverview.available', { version: channel.value?.latestVersion ?? '' })
 )
 
 const checkRunning = computed(
@@ -112,25 +123,30 @@ function openLocation(): void {
 <template>
   <div class="build-overview @container/overview w-full" data-testid="build-overview">
     <div
-      class="build-overview-grid grid gap-2.5 @[760px]/overview:grid-cols-[minmax(0,1.25fr)_minmax(0,3fr)]"
+      class="build-overview-grid grid gap-2.5 @[760px]/overview:grid-cols-[minmax(0,1.35fr)_minmax(0,3fr)]"
     >
       <section
-        class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
+        class="build-overview-card flex min-w-0 flex-col gap-1 overflow-hidden rounded-[14px] bg-card px-[18px] py-4 @[760px]/overview:[contain:size]"
         aria-labelledby="build-overview-comfyui"
         data-testid="build-overview-comfyui"
       >
         <span id="build-overview-comfyui" class="text-[12px]/4 text-muted-foreground">{{
           t('buildOverview.comfyui')
         }}</span>
-        <span
-          class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-          :title="comfyVersion.main"
-          data-testid="build-overview-comfyui-version"
-          >{{ comfyVersion.main }}</span
-        >
-        <span v-if="comfyVersion.rest" class="truncate text-[12px]/4 text-muted-foreground">{{
-          comfyVersion.rest
-        }}</span>
+        <span class="flex min-w-0 items-baseline gap-2">
+          <span
+            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+            :title="comfyVersion.main"
+            data-testid="build-overview-comfyui-version"
+            >{{ comfyVersion.main }}</span
+          >
+          <span
+            v-if="comfyVersion.rest"
+            class="min-w-0 truncate text-[12px]/4 text-muted-foreground"
+            :title="comfyVersion.rest"
+            >{{ comfyVersion.rest }}</span
+          >
+        </span>
         <Menu
           :modal="false"
           align="start"
@@ -180,24 +196,22 @@ function openLocation(): void {
         </Menu>
 
         <div
-          class="mt-auto flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-3 pt-3 text-[12px]/4 text-muted-foreground"
+          class="mt-auto flex min-w-0 items-end gap-2.5 pt-3 text-[12px]/4 text-muted-foreground"
           data-testid="build-overview-update"
         >
           <template v-if="updateAction">
-            <span class="flex min-w-0 flex-auto flex-col">
-              <span class="text-foreground">{{
-                switching
-                  ? t('channelCards.switchTo', { channel: channel?.label ?? '' })
-                  : t('buildOverview.available', { version: channel?.latestVersion ?? '' })
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate text-foreground" :title="updateHeadline">{{
+                updateHeadline
               }}</span>
-              <span>{{ t('buildOverview.savesSnapshot') }}</span>
+              <span class="truncate" :title="updateNote">{{ updateNote }}</span>
             </span>
             <SplitButton
               v-model:open="updateMenuOpen"
               class="ml-auto shrink-0"
               :label="updateAction.label"
               :menu-label="t('buildOverview.moreUpdateOptions')"
-              :tooltip="updateTooltip"
+              :tooltip="updateAction.tooltip"
               :main-testid="TID.updateActionButton(updateAction.id)"
               :menu-testid="TID.buildOverviewUpdateMenu"
               @run="run(updateAction)"
@@ -219,11 +233,13 @@ function openLocation(): void {
             </SplitButton>
           </template>
           <template v-else-if="switching">
-            <span class="flex min-w-0 flex-auto flex-col">
-              <span class="text-foreground">{{
-                t('channelCards.switchTo', { channel: channel?.label ?? '' })
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate text-foreground" :title="switchHeadline">{{
+                switchHeadline
               }}</span>
-              <span v-if="!switchAction" class="line-clamp-2">{{ t('channelCards.noInfo') }}</span>
+              <span v-if="!switchAction" class="truncate" :title="t('channelCards.noInfo')">{{
+                t('channelCards.noInfo')
+              }}</span>
             </span>
             <Button
               v-if="switchAction"
@@ -239,8 +255,8 @@ function openLocation(): void {
             </Button>
           </template>
           <template v-else>
-            <span class="flex min-w-0 flex-auto flex-col">
-              <span class="text-foreground">{{
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate text-foreground">{{
                 channel?.latestVersion ? t('channelCards.upToDate') : t('buildOverview.notChecked')
               }}</span>
               <span v-if="channel?.enriching" class="inline-flex items-center gap-1 truncate">
@@ -251,8 +267,8 @@ function openLocation(): void {
                 />
                 {{ t('channelCards.computingCommitsAhead') }}
               </span>
-              <span v-else-if="lastChecked">{{
-                t('buildOverview.checked', { time: lastChecked })
+              <span v-else-if="checkedText" class="truncate" :title="checkedText">{{
+                checkedText
               }}</span>
             </span>
             <Button

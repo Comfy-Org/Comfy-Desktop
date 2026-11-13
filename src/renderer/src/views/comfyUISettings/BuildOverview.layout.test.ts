@@ -105,6 +105,7 @@ function model(
 }
 
 interface Shape {
+  comfyui: number
   location: number
   pytorch: number
   disk: number
@@ -138,6 +139,7 @@ async function measure(
   return {
     root,
     shape: {
+      comfyui: height('build-overview-comfyui'),
       location: height('build-overview-facts'),
       pytorch: height('build-overview-pytorch'),
       disk: height('build-overview-disk'),
@@ -158,7 +160,7 @@ beforeEach(() => {
 })
 
 describe.each(Object.entries(WIDTHS))('BuildOverview keeps its shape (%s window)', (_, width) => {
-  it('gives Location and the fact cards the same height in every update state and with long names', async () => {
+  it('gives the ComfyUI card, Location and the fact cards the same height in every update state and with long names', async () => {
     const { shape: baseline } = await measure(width, SHORT, STATES['up to date'])
     const variants = [
       ...Object.entries(STATES).flatMap(([name, state]) => [
@@ -212,4 +214,26 @@ describe.each(Object.entries(WIDTHS))('BuildOverview keeps its shape (%s window)
     oneLine('[data-testid="build-overview-comfyui-version"]')
     oneLine('[data-testid="build-overview-location"] .font-mono')
   })
+})
+
+describe('BuildOverview columns (wide window)', () => {
+  it.each(Object.entries(STATES))(
+    'ends the ComfyUI card on the same line as Location, with nothing cut off (%s)',
+    async (_, state) => {
+      for (const texts of [SHORT, LONG]) {
+        const { root } = await measure(WIDTHS.wide, texts, state)
+        const box = (id: string): HTMLElement =>
+          root.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
+        const comfyui = box('build-overview-comfyui')
+        const bottomGap =
+          comfyui.getBoundingClientRect().bottom -
+          box('build-overview-facts').getBoundingClientRect().bottom
+        expect(Math.abs(bottomGap)).toBeLessThanOrEqual(0.5)
+        expect(comfyui.getBoundingClientRect().top).toBe(
+          box('build-overview-pytorch').getBoundingClientRect().top
+        )
+        expect(comfyui.scrollHeight).toBeLessThanOrEqual(comfyui.clientHeight)
+      }
+    }
+  )
 })
