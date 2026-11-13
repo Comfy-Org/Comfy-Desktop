@@ -444,6 +444,14 @@ describe('embeddedSession', () => {
   })
 })
 
+describe('EMBEDDED_SESSION_CHANNELS', () => {
+  it('names the billing handoff channel the preload invokes', () => {
+    expect(EMBEDDED_SESSION_CHANNELS.issueBillingHandoff).toBe(
+      'desktop2-auth:issue-billing-handoff'
+    )
+  })
+})
+
 describe('billingHandoffForSender', () => {
   const ENTRY_URL = 'https://billing.comfy.org/handoff?code=abc'
 
