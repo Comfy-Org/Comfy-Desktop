@@ -807,7 +807,8 @@
     "viewLogs": "查看日志",
     "cancelTitle": "取消此次安装？",
     "cancelMessage": "{name} 将停止安装，已下载的文件会被删除。",
-    "cancelConfirm": "取消安装"
+    "cancelConfirm": "取消安装",
+    "failedTitle": "ComfyUI 未能安装"
   },
   "announcement": {
     "comfyApi": {

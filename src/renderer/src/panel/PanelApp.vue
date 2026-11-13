@@ -7,6 +7,7 @@ import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
+import BuildProgressDialog from './BuildProgressDialog.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
@@ -130,14 +131,16 @@ const {
   openOverlay,
   closeOverlay,
   handleShowProgress,
-  viewOperation,
   handleProgressClose,
   openFirstUseTakeover,
   dismissTakeoverDirect,
   switchPanel
 } = overlays
 
-provideInstallLogs((id) => void viewOperation(id))
+const buildProgressId = ref<string | null>(null)
+provideInstallLogs((id) => {
+  buildProgressId.value = id
+})
 
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
@@ -581,6 +584,11 @@ onUnmounted(() => {
       />
     </template>
 
+    <BuildProgressDialog
+      v-if="buildProgressId"
+      :installation-id="buildProgressId"
+      @close="buildProgressId = null"
+    />
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 

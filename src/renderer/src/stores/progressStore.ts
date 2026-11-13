@@ -19,7 +19,6 @@ export interface Operation {
   returnTo?: string
   opKind: NonNullable<ShowProgressOpts['opKind']>
   destroysInstance: boolean
-  background: boolean
   chainSpan: 'install' | 'launch' | null
   successTerminal: NonNullable<ShowProgressOpts['successTerminal']> | null
   steps: ProgressStep[] | null
@@ -113,7 +112,6 @@ export const useProgressStore = defineStore('progress', () => {
     chainSpan?: ShowProgressOpts['chainSpan']
     successTerminal?: ShowProgressOpts['successTerminal']
     actionId?: string
-    background?: boolean
   }): void {
     const {
       installationId,
@@ -124,8 +122,7 @@ export const useProgressStore = defineStore('progress', () => {
       destroysInstance,
       chainSpan,
       successTerminal,
-      actionId,
-      background
+      actionId
     } = opts
 
     const outgoing = operations.get(installationId)
@@ -145,7 +142,6 @@ export const useProgressStore = defineStore('progress', () => {
       returnTo,
       opKind: opKind ?? 'generic',
       destroysInstance: !!destroysInstance,
-      background: !!background,
       chainSpan: chainSpan ?? null,
       successTerminal: successTerminal ?? null,
       steps: null,

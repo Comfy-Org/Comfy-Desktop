@@ -95,7 +95,6 @@ export interface UsePanelOverlaysApi {
   closeOverlay: ReturnType<typeof useOverlay>['closeOverlay']
 
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
-  viewOperation: (installationId: string) => Promise<void>
   handleProgressClose: () => void
   openFlowTakeover: (component: FlowComponent, entrypoint: string) => Promise<void>
   openFirstUseTakeover: () => Promise<void>
@@ -162,7 +161,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     FLOW_PANELS.has(initialPanel) ? defaultBodyPanel() : initialPanel
   )
 
-  function startOperationOnce(showOpts: ShowProgressOpts, background = false): void {
+  function startOperationOnce(showOpts: ShowProgressOpts): void {
     const existing = progressStore.operations.get(showOpts.installationId)
     if (existing && !existing.finished) return
     progressStore.startOperation({
@@ -175,8 +174,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       destroysInstance: showOpts.destroysInstance,
       chainSpan: showOpts.chainSpan,
       successTerminal: showOpts.successTerminal,
-      actionId: showOpts.actionId,
-      background
+      actionId: showOpts.actionId
     })
   }
 
@@ -198,7 +196,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
     if (installsInBackground(showOpts)) {
       opts.firstUseChain?.onBackgroundInstall()
-      startOperationOnce({ ...showOpts, chainSpan: undefined }, true)
+      startOperationOnce({ ...showOpts, chainSpan: undefined })
       if (currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
       opts.onBackgroundInstall?.(showOpts.installationId)
       return
@@ -215,15 +213,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     }
     await nextTick()
     progressRef.value?.showOperation(showOpts.installationId)
-  }
-
-  async function viewOperation(id: string): Promise<void> {
-    const op = progressStore.operations.get(id)
-    if (!op) return
-    const ok = await openProgressTakeover(id, op.title.split(' — ')[0] || op.title)
-    if (!ok) return
-    await nextTick()
-    progressRef.value?.showOperation(id)
   }
 
   function handleProgressClose(): void {
@@ -309,7 +298,6 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     openOverlay,
     closeOverlay,
     handleShowProgress,
-    viewOperation,
     handleProgressClose,
     openFlowTakeover,
     openFirstUseTakeover,

@@ -807,7 +807,8 @@
     "viewLogs": "View logs",
     "cancelTitle": "Cancel this install?",
     "cancelMessage": "{name} stops installing and the files it downloaded are deleted.",
-    "cancelConfirm": "Cancel install"
+    "cancelConfirm": "Cancel install",
+    "failedTitle": "ComfyUI didn't install"
   },
   "announcement": {
     "comfyApi": {

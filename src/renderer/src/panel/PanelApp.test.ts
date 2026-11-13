@@ -2831,11 +2831,13 @@ describe('PanelApp', () => {
 
     await wrapper.get('[data-testid="home-build-view-logs"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(true)
-
-    await wrapper.findComponent({ name: 'ProgressModal' }).vm.$emit('close')
-    await flushPromises()
+    const dialog = () => document.body.querySelector('[data-testid="build-progress-dialog"]')
+    expect(dialog()).not.toBeNull()
     expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
+
+    document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()
+    await flushPromises()
+    expect(dialog()).toBeNull()
     expect(wrapper.find('[data-testid="home-build-installing"]').exists()).toBe(true)
   })
 
