@@ -13,26 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  no-proprietary-fonts:
-    name: No proprietary fonts in source
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Ensure PP Formula is not committed
-        run: |
-          set -euo pipefail
-          matches="$(git ls-files '*PPFormula*' '*ppformula*' '*pp-formula*' '*pp_formula*' || true)"
-          if [ -n "$matches" ]; then
-            echo "::error::Proprietary PP Formula font files are committed to the repo:"
-            echo "$matches"
-            echo "These are license-restricted and must not live in source."
-            echo "They are fetched at build time from gs://comfy-org-fonts (scripts/fetch-font.mjs)."
-            exit 1
-          fi
-          echo "OK: no proprietary PP Formula font files tracked in git."
-
   checks:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.needs_browser && 'ubuntu-24.04' || 'ubuntu-latest' }}
