@@ -246,7 +246,7 @@ export const SPACES = reactive<Space[]>([
         id: 'nw-relight',
         name: 'Product relight',
         blurb: 'Drop a product photo, pick a light setup.',
-        thumbId: 'template_product_placement',
+        thumbId: 'template_product_placement~space-nw-relight',
         flavor: 'app',
         source: 'App · Product relight',
         version: 'Product Shots v4',
@@ -259,7 +259,7 @@ export const SPACES = reactive<Space[]>([
         id: 'nw-packshot',
         name: 'Packshot cleanup',
         blurb: 'White background, shadows and retouch.',
-        thumbId: 'api_google_nano_banana2_image_edit',
+        thumbId: 'api_google_nano_banana2_image_edit~space-nw-packshot',
         flavor: 'workflow',
         source: 'Workflow · banana-edit-batch.json',
         version: null,
@@ -272,7 +272,7 @@ export const SPACES = reactive<Space[]>([
         id: 'nw-seasonal',
         name: 'Seasonal backgrounds',
         blurb: 'Place products in seasonal scenes.',
-        thumbId: 'image_flux2',
+        thumbId: 'image_flux2~space-nw-seasonal',
         flavor: 'app',
         source: 'App · Seasonal scenes',
         version: 'Product Shots v4',
@@ -286,7 +286,7 @@ export const SPACES = reactive<Space[]>([
         id: 'nw-poster',
         name: 'Poster resizer',
         blurb: 'One key visual, every banner size.',
-        thumbId: 'templates_graphic_design_recomposer',
+        thumbId: 'templates_graphic_design_recomposer~space-nw-poster',
         flavor: 'app',
         source: 'App · Poster resizer',
         version: null,
@@ -299,7 +299,7 @@ export const SPACES = reactive<Space[]>([
         id: 'nw-video',
         name: 'Product spin video',
         blurb: 'A 5 s turntable from one photo.',
-        thumbId: 'video_ltx2_5_i2v',
+        thumbId: 'video_ltx2_5_i2v~space-nw-video',
         flavor: 'workflow',
         source: 'Workflow · rice-terraces-i2v.json',
         version: 'Video Lab v2',
@@ -357,7 +357,7 @@ export const SPACES = reactive<Space[]>([
     library: [
       {
         id: 'o1',
-        thumbId: 'template_product_placement',
+        thumbId: 'template_product_placement~space-o1',
         tool: 'Product relight',
         by: 'Maya Chen',
         when: '12 min ago',
@@ -366,7 +366,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'o2',
-        thumbId: 'image_flux2',
+        thumbId: 'image_flux2~space-o2',
         tool: 'Seasonal backgrounds',
         by: 'Tom Reyes',
         when: '1 h ago',
@@ -374,7 +374,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'o3',
-        thumbId: 'api_google_nano_banana2_image_edit',
+        thumbId: 'api_google_nano_banana2_image_edit~space-o3',
         tool: 'Packshot cleanup',
         by: 'Ana Silva',
         when: '2 h ago',
@@ -382,7 +382,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'o4',
-        thumbId: 'templates_graphic_design_recomposer',
+        thumbId: 'templates_graphic_design_recomposer~space-o4',
         tool: 'Poster resizer',
         by: 'Maya Chen',
         when: 'Yesterday',
@@ -390,7 +390,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'o5',
-        thumbId: 'image_krea2_turbo_t2i',
+        thumbId: 'image_krea2_turbo_t2i~space-o5',
         tool: 'Seasonal backgrounds',
         by: 'Ivy Brooks',
         when: 'Yesterday',
@@ -398,7 +398,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'o6',
-        thumbId: 'image_z_image_turbo',
+        thumbId: 'image_z_image_turbo~space-o6',
         tool: 'Product relight',
         by: 'Tom Reyes',
         when: '2 days ago',
@@ -468,7 +468,7 @@ export const SPACES = reactive<Space[]>([
         id: 'hc-retouch',
         name: 'Model photo retouch',
         blurb: 'Skin, stray hairs and colour match.',
-        thumbId: 'image_qwen_image_edit_2511',
+        thumbId: 'image_qwen_image_edit_2511~space-hc-retouch',
         flavor: 'workflow',
         source: 'Workflow · angles-sheet.json',
         version: 'My Local 1 v3',
@@ -481,7 +481,7 @@ export const SPACES = reactive<Space[]>([
         id: 'hc-swatch',
         name: 'Shade swatches',
         blurb: 'Every shade from one hero shot.',
-        thumbId: 'image_krea2_turbo_t2i',
+        thumbId: 'image_krea2_turbo_t2i~space-hc-swatch',
         flavor: 'app',
         source: 'App · Shade swatches',
         version: null,
@@ -494,7 +494,7 @@ export const SPACES = reactive<Space[]>([
         id: 'hc-video',
         name: 'Photo to video',
         blurb: 'Subtle motion for social.',
-        thumbId: 'video_wan2_2_14B_i2v',
+        thumbId: 'video_wan2_2_14B_i2v~space-hc-video',
         flavor: 'app',
         source: 'App · Photo to video',
         version: null,
@@ -543,7 +543,7 @@ export const SPACES = reactive<Space[]>([
     library: [
       {
         id: 'h1',
-        thumbId: 'image_qwen_image_edit_2511',
+        thumbId: 'image_qwen_image_edit_2511~space-h1',
         tool: 'Model photo retouch',
         by: 'Priya Nair',
         when: '1 h ago',
@@ -551,7 +551,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'h2',
-        thumbId: 'image_krea2_turbo_t2i',
+        thumbId: 'image_krea2_turbo_t2i~space-h2',
         tool: 'Shade swatches',
         by: 'Jules Martin',
         when: '3 h ago',
@@ -559,7 +559,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'h3',
-        thumbId: 'video_wan2_2_14B_i2v',
+        thumbId: 'video_wan2_2_14B_i2v~space-h3',
         tool: 'Photo to video',
         by: 'Jules Martin',
         when: 'Yesterday',
@@ -567,7 +567,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'h4',
-        thumbId: 'image_z_image_turbo',
+        thumbId: 'image_z_image_turbo~space-h4',
         tool: 'Model photo retouch',
         by: 'Priya Nair',
         when: 'Yesterday',
@@ -612,7 +612,7 @@ export const SPACES = reactive<Space[]>([
         id: 'at-config',
         name: 'Configurator renders',
         blurb: 'Any trim, any colour, any backdrop.',
-        thumbId: 'image_z_image_turbo',
+        thumbId: 'image_z_image_turbo~space-at-config',
         flavor: 'app',
         source: 'App · Car configurator',
         version: 'Flux Sandbox v2',
@@ -625,7 +625,7 @@ export const SPACES = reactive<Space[]>([
         id: 'at-upscale',
         name: '4K upscaler',
         blurb: 'Print-ready from any render.',
-        thumbId: 'utility_seedvr2_image_upscale',
+        thumbId: 'utility_seedvr2_image_upscale~space-at-upscale',
         flavor: 'app',
         source: 'App · 4K upscaler',
         version: null,
@@ -638,7 +638,7 @@ export const SPACES = reactive<Space[]>([
         id: 'at-3d',
         name: 'Image to 3D prop',
         blurb: 'Turn a part photo into a 3D model.',
-        thumbId: '3d_pixal3d_trellis2_image_to_model',
+        thumbId: '3d_pixal3d_trellis2_image_to_model~space-at-3d',
         flavor: 'workflow',
         source: 'Workflow · trellis-props.json',
         version: null,
@@ -675,7 +675,7 @@ export const SPACES = reactive<Space[]>([
     library: [
       {
         id: 'a1',
-        thumbId: 'image_z_image_turbo',
+        thumbId: 'image_z_image_turbo~space-a1',
         tool: 'Configurator renders',
         by: 'Erik Lund',
         when: 'Today',
@@ -683,7 +683,7 @@ export const SPACES = reactive<Space[]>([
       },
       {
         id: 'a2',
-        thumbId: 'utility_seedvr2_image_upscale',
+        thumbId: 'utility_seedvr2_image_upscale~space-a2',
         tool: '4K upscaler',
         by: 'Sara Kim',
         when: '2 days ago',
@@ -718,7 +718,7 @@ export const SPACES = reactive<Space[]>([
         id: 'kt-char',
         name: 'Character angles',
         blurb: 'Turnarounds from one concept.',
-        thumbId: 'image_qwen_image_edit_2511',
+        thumbId: 'image_qwen_image_edit_2511~space-kt-char',
         flavor: 'app',
         source: 'App · Character angles',
         version: null,
@@ -786,9 +786,21 @@ export const ROLE_LABEL: Record<SpaceRole, string> = {
 export const FLAVOR_LABEL: Record<Flavor, string> = { app: 'App', workflow: 'Workflow' }
 
 export const GUIDES = [
-  { title: 'Getting great product shots', minutes: 4, thumbId: 'template_product_placement' },
-  { title: 'Prompts that stay on brand', minutes: 3, thumbId: 'image_flux2' },
-  { title: 'Exporting for web and print', minutes: 2, thumbId: 'utility_seedvr2_image_upscale' }
+  {
+    title: 'Getting great product shots',
+    minutes: 4,
+    thumbId: 'template_product_placement~space-getting-great-product-shots'
+  },
+  {
+    title: 'Prompts that stay on brand',
+    minutes: 3,
+    thumbId: 'image_flux2~space-prompts-that-stay-on-brand'
+  },
+  {
+    title: 'Exporting for web and print',
+    minutes: 2,
+    thumbId: 'utility_seedvr2_image_upscale~space-exporting-for-web-and-print'
+  }
 ]
 
 /** Open a space's portal, as its client would see it. */

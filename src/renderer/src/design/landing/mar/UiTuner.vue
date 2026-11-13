@@ -1,0 +1,510 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { Check, Link, X } from 'lucide-vue-next'
+import Button from '../ui/Button.vue'
+import { DIRECTIONS, look } from '../look'
+import { KNOBS, tuner, tuning, type Tuning } from './uiTuner'
+import { onCloud, SURFACES, surface } from './shell/surface'
+import { homeBackground, type HomeBackground } from './shell/marShell'
+import { DISPLAYS, SCREENS, ZOOMS, screen } from './screen'
+import Switch from '../ui/Switch.vue'
+import Select from '../ui/Select.vue'
+import { COVERS, cover } from './cover'
+import { BUILD_CARDS, buildCard } from './pages/buildCard'
+import { BUILD_PAGES, buildPage } from './build/buildPage'
+import { syncPrevious } from './build/syncPrevious'
+import { assetsEverywhere } from './assets/assetsEverywhere'
+import { FOLDER_DEPTHS, folderDepth } from './assets/folderDepth'
+import { FULL_ASSETS, fullAssets } from './graph/fullAssets'
+import { APPS_STAGES, appsStage } from './apps/appsStage'
+import { APP_EXAMPLES_AT, APP_PAGE_LOOKS, appExamplesAt, appPage } from './apps/appPage'
+import { TEMPLATE_STYLES, templateStyle } from './brand/templateStyle'
+import { BRAND_MOTIFS, brandMotif } from './brand/brandMotif'
+import { CREDITS_STATES, creditsState } from './credits'
+import { COMFY_LOOKS, comfyLook } from './graph/comfyLook'
+import { FIRST_RUNS, firstRun } from './firstRun'
+import {
+  ONBOARDINGS,
+  AFTER_INSTALLS,
+  CARD_ATS,
+  NODES_AT,
+  SETUP_SCOPES,
+  MACHINES,
+  SETUP_GPUS,
+  SETUP_OSES,
+  SETUP_SCREENS,
+  flow,
+  localSetup,
+  showHome,
+  showNodes,
+  showScreen,
+  type Screen
+} from './setup/setupFlow'
+import { EXAMPLE_LOOKS, exampleLook } from './userStates/exampleLook'
+import { HOME_ARC_MIXES, homeArcMix } from './userStates/homeArcMix'
+import { EDITOR_ENTRIES, editorEntry } from './userStates/editorEntry'
+import { MAR_USERS, marUser, setUser } from './userStates/userState'
+import { PAGE_STATES, pageState } from './pages/pageState'
+import { LOOKS, marLook } from './looks/looks'
+import { SCENARIOS, dep, scenarioPick, type Scenario } from './deploy/deployData'
+import { proto } from '../useProto'
+import { can } from '../milestones'
+import { pageName, shownPorts, TWEAKS, when, type TweakId } from './tunerContext'
+import { copyShareUrl, shareSummary, shareUrl } from './shareLink'
+import NavOptionsTuner from './NavOptionsTuner.vue'
+import Seg from './tuner/TunerSeg.vue'
+import Row from './tuner/TunerRow.vue'
+import GroupHead from './tuner/TunerGroupHead.vue'
+
+/** The UI tuner panel (Prototype menu › UI Playground, ⌘.). Global
+ *  (where, the brand motif), States (the situation being
+ *  simulated), This page (design options for the screen you're on),
+ *  and More, folded (rare and exploratory). States and
+ *  This page list only what changes the screen now (tunerContext.ts says
+ *  when); a hidden tweak keeps its value. */
+/** Local setup › Jump to: the last screen picked. */
+const setupScreen = ref<Screen | null>(null)
+
+const BACKGROUNDS: { value: HomeBackground; label: string }[] = [
+  { value: 'spotlight', label: 'Spotlight · soft light' },
+  { value: 'bloom', label: 'Latent bloom · colour out of grain' },
+  { value: 'output', label: 'Latest output · blurred' },
+  { value: 'canvas', label: 'Canvas · the editor’s dot grid' },
+  { value: 'wires', label: 'Wires · a graph traced in light' },
+  { value: 'grade', label: 'Latent grade · latest output, duotone' }
+]
+const ACCOUNTS = [
+  { value: 'in', label: 'Signed in' },
+  { value: 'out', label: 'Signed out' }
+] as const
+const account = computed({
+  get: () => (proto.signedIn ? 'in' : 'out'),
+  set: (v: 'in' | 'out') => (proto.signedIn = v === 'in')
+})
+const SURFACE_OPTIONS = SURFACES.map((sf) => ({
+  value: sf.value,
+  label: sf.value === 'desktop' ? 'Desktop' : 'Cloud'
+}))
+/** Desktop's start point: the onboarding (its first screen) or the Home. */
+const START_AT = [
+  { value: 'onboarding', label: 'Onboarding' },
+  { value: 'home', label: 'Home' }
+] as const
+const startAt = computed({
+  get: () => (flow.open && flow.takeover ? 'onboarding' : 'home'),
+  set: (v: 'onboarding' | 'home') =>
+    v === 'onboarding' ? showScreen((setupScreen.value = 'first')) : showHome()
+})
+const DEPLOY_STATES = SCENARIOS.map((s) => ({ value: s.id, label: s.label }))
+const deployState = computed({
+  get: () => dep.scenario,
+  set: (s: Scenario) => (scenarioPick.want = s)
+})
+
+const zoomOptions = ZOOMS.map((z) => ({ value: String(z), label: `${Math.round(z * 100)}%` }))
+const zoomPick = computed({
+  get: () => String(screen.zoom),
+  set: (v: string) => (screen.zoom = Number(v))
+})
+const screenOptions = SCREENS.map((sc) => ({
+  value: sc.id,
+  label: sc.note,
+  hint: sc.w ? sc.label : undefined
+}))
+const displayOptions = DISPLAYS.map((d) => ({ value: d.id, label: `${d.label} · ${d.note}` }))
+
+function set(key: keyof Tuning, value: string): void {
+  ;(tuning as Record<string, string>)[key] = value
+}
+
+// Which tweaks each group holds. This page lists only the ones whose
+// predicate holds now; Reset and the dot follow what's listed.
+const GLOBAL: TweakId[] = ['brandMotif']
+// States: the situation being simulated (who, what's installed, signed in,
+// how a page or the credits are doing), apart from the design options.
+const STATES: { id: TweakId; show: () => boolean }[] = [
+  // First run lives on Home.
+  { id: 'user', show: () => can.value.home },
+  { id: 'appsStage', show: () => when.appsStage.value },
+  { id: 'account', show: () => true },
+  { id: 'pageState', show: () => when.pageState.value },
+  { id: 'credits', show: () => when.credits.value },
+  { id: 'deployState', show: () => when.deployState.value }
+]
+const PAGE: { id: TweakId; show: () => boolean }[] = [
+  { id: 'homeBackground', show: () => when.homeBackground.value },
+  { id: 'firstRun', show: () => when.firstRun.value },
+  { id: 'exampleLook', show: () => when.exampleLook.value },
+  { id: 'homeArcMix', show: () => when.homeArcMix.value },
+  { id: 'appPage', show: () => when.appPage.value },
+  { id: 'appExamplesAt', show: () => when.appExamplesAt.value },
+  { id: 'editorEntry', show: () => when.editorEntry.value },
+  { id: 'templates', show: () => when.templates.value },
+  { id: 'buildCard', show: () => when.buildCard.value },
+  { id: 'buildPage', show: () => when.buildPage.value },
+  { id: 'syncPrevious', show: () => when.syncPrevious.value },
+  { id: 'assetsEverywhere', show: () => when.assetsEverywhere.value },
+  { id: 'folderDepth', show: () => when.folderDepth.value },
+  { id: 'fullAssets', show: () => when.fullAssets.value },
+  { id: 'cover', show: () => when.cover.value },
+  { id: 'comfyLook', show: () => when.graph.value },
+  { id: 'ports', show: () => shownPorts.value.length > 0 }
+]
+const MORE: TweakId[] = ['screen', 'look', 'knobs']
+const pageIds = computed(() => PAGE.filter((p) => p.show()).map((p) => p.id))
+const stateIds = computed(() => STATES.filter((p) => p.show()).map((p) => p.id))
+const shows = (id: TweakId): boolean => pageIds.value.includes(id) || stateIds.value.includes(id)
+const dirty = (ids: TweakId[]): boolean => ids.some((id) => !TWEAKS[id].isDefault())
+const resetGroup = (ids: TweakId[]): void => ids.forEach((id) => TWEAKS[id].reset())
+function resetAll(): void {
+  resetGroup(Object.keys(TWEAKS) as TweakId[])
+}
+
+// The panel unmounts when closed; it comes back where it was scrolled to
+// and with More open or folded as it was left.
+const body = ref<HTMLElement>()
+let scrolled = 0
+const moreOpen = ref(false)
+watch(body, (el) => el && requestAnimationFrame(() => (el.scrollTop = scrolled)), {
+  flush: 'post'
+})
+function onScroll(e: Event): void {
+  scrolled = (e.target as HTMLElement).scrollTop
+}
+
+// Copy link: this screen and every tweak off its default, in one URL.
+const copied = ref(false)
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+async function copyLink(): Promise<void> {
+  if (!(await copyShareUrl())) return
+  copied.value = true
+  clearTimeout(copiedTimer)
+  copiedTimer = setTimeout(() => (copied.value = false), 1600)
+}
+// The link itself, shown as it will be copied.
+const linkUrl = computed(() => shareUrl())
+// What the link opens, in a line: the milestone, then what it changes.
+const linkSays = computed(() => {
+  const [milestone = '', ...changes] = shareSummary()
+  const m = `M${milestone.split(' · ')[0]}`
+  return {
+    line: changes.length
+      ? `${m} · ${changes.length} ${changes.length === 1 ? 'change' : 'changes'}`
+      : `${m} · defaults`,
+    all: [milestone, ...changes].join('\n')
+  }
+})
+</script>
+
+<template>
+  <!-- In the app's root (its theme applies) but outside the prototype's
+       frame, so the screen simulator never scales it. -->
+  <Teleport to="#app">
+    <aside
+      v-if="tuner.open"
+      aria-label="UI tuner"
+      class="proto-ui fixed top-14 right-4 bottom-4 z-[80] flex w-72 flex-col rounded-panel border border-border-default bg-card-background shadow-popover [-webkit-app-region:no-drag]"
+    >
+      <header class="flex shrink-0 items-center justify-between px-4 pt-4 pb-2">
+        <h2 class="text-ui font-semibold">
+          UI Playground
+          <kbd
+            class="ml-1.5 rounded-[5px] bg-secondary-background px-1.5 py-px font-sans text-[11px] font-normal text-subtle-foreground"
+            >⌘.</kbd
+          >
+        </h2>
+        <Button variant="ghost" size="icon-sm" aria-label="Close" @click="tuner.open = false">
+          <X :size="14" />
+        </Button>
+      </header>
+
+      <div
+        ref="body"
+        class="mar-tuner-body flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4"
+        @scroll.passive="onScroll"
+      >
+        <!-- Start: where, then (on Desktop) where it opens. The rest
+             of the panel follows from here. -->
+        <section aria-label="Start" class="mb-6 flex flex-col">
+          <GroupHead
+            title="Start"
+            :changed="dirty(['surface', 'localSetup'])"
+            @reset="resetGroup(['surface', 'localSetup'])"
+          />
+          <!-- Cloud's first screen is Home: before it, only the desktop app. -->
+          <Row v-if="can.home" label="Surface">
+            <Seg v-model="surface.id" label="Surface" :options="SURFACE_OPTIONS" />
+          </Row>
+          <Row v-if="can.design && !onCloud" label="Start at">
+            <Seg v-model="startAt" label="Start at" :options="START_AT" />
+          </Row>
+          <!-- The proposed onboarding (mar/setup), on Desktop: its options
+               show while it's on screen. -->
+          <template v-if="can.design && !onCloud && startAt === 'onboarding'">
+            <!-- M1 ships Builds only: no Home, no example workflows. -->
+            <Row label="Scope">
+              <Seg v-model="localSetup.scope" label="Scope" :options="SETUP_SCOPES" />
+            </Row>
+            <!-- Home first needs the Home, so it is offered past M1 only. -->
+            <Row v-if="localSetup.scope === 'next'" label="Onboarding">
+              <Select v-model="localSetup.onboarding" :options="ONBOARDINGS" class="w-full" />
+            </Row>
+            <Row v-if="localSetup.scope === 'next'" label="After install">
+              <Select v-model="localSetup.after" :options="AFTER_INSTALLS" class="w-full" />
+            </Row>
+            <!-- Home first: the install card on its own at the top, or
+                 inside Builds where it stays. -->
+            <Row v-if="localSetup.scope === 'next'" label="Install card">
+              <Seg v-model="localSetup.card" label="Install card" :options="CARD_ATS" />
+            </Row>
+            <!-- DESK-243: where a new user gets the recommended node packs. -->
+            <Row label="Custom nodes">
+              <Select
+                :model-value="localSetup.nodes"
+                :options="NODES_AT"
+                class="w-full"
+                @update:model-value="(v) => v && showNodes(v)"
+              />
+            </Row>
+            <Row label="Jump to">
+              <Select
+                :model-value="setupScreen ?? 'first'"
+                :options="SETUP_SCREENS"
+                class="w-full"
+                @update:model-value="(v) => v && showScreen((setupScreen = v))"
+              />
+            </Row>
+            <Row label="Operating system">
+              <Select v-model="localSetup.os" :options="SETUP_OSES" class="w-full" />
+            </Row>
+            <Row v-if="localSetup.os !== 'mac'" label="Graphics">
+              <Select v-model="localSetup.gpu" :options="SETUP_GPUS" class="w-full" />
+            </Row>
+            <Row label="This computer">
+              <Select v-model="localSetup.machine" :options="MACHINES" class="w-full" />
+            </Row>
+          </template>
+        </section>
+
+        <!-- Global: the brand motif. Applies everywhere. -->
+        <section aria-label="Global" class="mb-6 flex flex-col">
+          <GroupHead title="Global" :changed="dirty(GLOBAL)" @reset="resetGroup(GLOBAL)" />
+          <!-- The trio in empty states, step progress and loaders. -->
+          <Row label="Brand motif">
+            <Seg v-model="brandMotif.id" label="Brand motif" :options="BRAND_MOTIFS" />
+          </Row>
+        </section>
+
+        <!-- States: the situation on screen (who, what's installed, signed
+             in, how the page and the credits are doing). Each one shows
+             only where it applies. -->
+        <section aria-label="States" class="flex flex-col">
+          <GroupHead title="States" :changed="dirty(stateIds)" @reset="resetGroup(stateIds)" />
+          <!-- The Deploy as API modal's states, first while it's open. -->
+          <Row :show="shows('deployState')" label="Deploy state">
+            <Select v-model="deployState" :options="DEPLOY_STATES" class="w-full" />
+          </Row>
+          <!-- Who is looking, and what is on this computer: two axes. A
+               first-time user starts with no local install; a returning
+               one may have none either (they work on Cloud). -->
+          <Row label="User">
+            <Seg
+              label="User"
+              :options="MAR_USERS"
+              :model-value="marUser.user"
+              @update:model-value="setUser"
+            />
+          </Row>
+          <Row :show="shows('appsStage')" label="Apps stage">
+            <Seg v-model="appsStage.id" label="Apps stage" :options="APPS_STAGES" />
+          </Row>
+          <Row label="Account">
+            <Seg v-model="account" label="Account" :options="ACCOUNTS" />
+          </Row>
+          <Row :show="shows('pageState')" label="Page state">
+            <Select v-model="pageState.id" :options="PAGE_STATES" class="w-full" />
+          </Row>
+          <Row :show="shows('credits')" label="Credits state">
+            <Select v-model="creditsState.id" :options="CREDITS_STATES" class="w-full" />
+          </Row>
+        </section>
+
+        <!-- This page: only what changes the screen on view now. -->
+        <section aria-label="This page" class="mt-6 flex flex-col">
+          <GroupHead
+            title="This page"
+            :note="pageName"
+            :changed="dirty(pageIds)"
+            @reset="resetGroup(pageIds)"
+          />
+          <Row :show="!pageIds.length">
+            <p class="text-ui text-subtle-foreground">Nothing to tweak on this page</p>
+          </Row>
+          <Row :show="shows('homeBackground')" label="Background">
+            <Select v-model="homeBackground.id" :options="BACKGROUNDS" class="w-full" />
+          </Row>
+          <Row :show="shows('firstRun')" label="First run">
+            <Select v-model="firstRun.id" :options="FIRST_RUNS" class="w-full" />
+          </Row>
+          <Row :show="shows('exampleLook')" label="Examples">
+            <Select v-model="exampleLook.id" :options="EXAMPLE_LOOKS" class="w-full" />
+          </Row>
+          <Row :show="shows('homeArcMix')" label="Apps and templates">
+            <Select v-model="homeArcMix.id" :options="HOME_ARC_MIXES" class="w-full" />
+          </Row>
+          <Row :show="shows('appPage')" label="App page">
+            <Select v-model="appPage.id" :options="APP_PAGE_LOOKS" class="w-full" />
+          </Row>
+          <Row :show="shows('appExamplesAt')" label="App examples">
+            <Select v-model="appExamplesAt.id" :options="APP_EXAMPLES_AT" class="w-full" />
+          </Row>
+          <Row :show="shows('editorEntry')" label="Node editor entry">
+            <Select v-model="editorEntry.id" :options="EDITOR_ENTRIES" class="w-full" />
+          </Row>
+          <Row :show="shows('templates')" label="Template cards">
+            <Select v-model="templateStyle.id" :options="TEMPLATE_STYLES" class="w-full" />
+          </Row>
+          <Row :show="shows('buildCard')" label="Builds view">
+            <Seg v-model="buildCard.id" label="Builds view" :options="BUILD_CARDS" />
+          </Row>
+          <Row :show="shows('buildPage')" label="Build page">
+            <Select v-model="buildPage.id" :options="BUILD_PAGES" class="w-full" />
+          </Row>
+          <Row :show="shows('syncPrevious')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Sync with previous versions</span>
+              <Switch
+                :model-value="syncPrevious.id === 'on'"
+                aria-label="Sync with previous versions"
+                @update:model-value="syncPrevious.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >Adds what Builds already has: Settings, build problems and Remote.</span
+            >
+          </Row>
+          <Row :show="shows('assetsEverywhere')">
+            <div class="flex items-center justify-between gap-3">
+              <span class="min-w-0 text-ui text-base-foreground">Everywhere in Assets</span>
+              <Switch
+                :model-value="assetsEverywhere.id === 'on'"
+                aria-label="Everywhere in Assets"
+                @update:model-value="assetsEverywhere.id = $event ? 'on' : 'off'"
+              />
+            </div>
+            <span class="text-ui text-subtle-foreground"
+              >Adds Everywhere to the build picker: every running build at once.</span
+            >
+          </Row>
+          <Row :show="shows('folderDepth')" label="Folders">
+            <Seg v-model="folderDepth.id" label="Folders" :options="FOLDER_DEPTHS" />
+          </Row>
+          <Row :show="shows('fullAssets')" label="Full Assets">
+            <Seg v-model="fullAssets.id" label="Full Assets" :options="FULL_ASSETS" />
+            <span class="text-ui text-subtle-foreground">{{
+              fullAssets.id === 'home'
+                ? "The panel's expand opens Home's Assets, on this build."
+                : 'The panel grows into a tab beside the workflows.'
+            }}</span>
+          </Row>
+          <Row :show="shows('cover')" label="Workflow cover">
+            <Seg v-model="cover.id" label="Workflow cover" :options="COVERS" />
+          </Row>
+          <Row :show="shows('comfyLook')" label="ComfyUI">
+            <Seg v-model="comfyLook.id" label="ComfyUI" :options="COMFY_LOOKS" />
+            <span class="text-ui text-subtle-foreground">{{
+              comfyLook.id === 'production'
+                ? 'As it ships, plus Better Assets Phase 1. Inspect asset opens a tab.'
+                : 'Our take on the new structure.'
+            }}</span>
+          </Row>
+          <Row :show="shows('ports')"><NavOptionsTuner /></Row>
+        </section>
+
+        <!-- More: the screen simulator, the token knobs and the Figma
+             Not the direction; only for reference. -->
+        <details
+          class="mar-tuner-more mt-6"
+          :open="moreOpen"
+          @toggle="moreOpen = ($event.target as HTMLDetailsElement).open"
+        >
+          <summary
+            class="flex h-6 cursor-pointer list-none items-center gap-1.5 rounded-[5px] text-ui font-medium text-base-foreground outline-none focus-visible:ring-2 focus-visible:ring-border-focus [&::-webkit-details-marker]:hidden"
+          >
+            <span>More</span>
+            <span class="font-normal text-subtle-foreground">· screen, surfaces</span>
+            <span
+              v-if="dirty(MORE)"
+              class="size-1.5 shrink-0 rounded-full bg-muted-foreground"
+              title="Changed from default"
+              aria-label="Changed from default"
+              role="img"
+            />
+            <button
+              v-if="dirty(MORE)"
+              type="button"
+              class="ml-auto shrink-0 rounded-[5px] px-1 text-ui font-normal text-subtle-foreground outline-none hover:text-base-foreground focus-visible:ring-2 focus-visible:ring-border-focus"
+              @click.prevent.stop="resetGroup(MORE)"
+            >
+              Reset
+            </button>
+          </summary>
+          <div class="flex flex-col pt-1">
+            <Row label="Screen">
+              <div class="flex gap-1.5">
+                <Select v-model="screen.id" :options="screenOptions" class="min-w-0 flex-1" />
+                <Select v-model="zoomPick" :options="zoomOptions" class="w-22 shrink-0" />
+              </div>
+            </Row>
+            <Row label="Colour">
+              <Select v-model="screen.display" :options="displayOptions" class="w-full" />
+            </Row>
+            <Row v-if="LOOKS.length > 1" label="Look">
+              <Select v-model="marLook.id" :options="LOOKS" class="w-full" />
+            </Row>
+            <Row v-if="DIRECTIONS.length > 1" label="UI">
+              <Seg v-model="look.direction" label="UI" :options="DIRECTIONS" />
+            </Row>
+            <Row v-for="k in KNOBS" :key="k.key" :label="k.label">
+              <Seg
+                :label="k.label"
+                :options="k.options"
+                :model-value="tuning[k.key]"
+                @update:model-value="(v) => set(k.key, v)"
+              />
+            </Row>
+          </div>
+        </details>
+      </div>
+
+      <!-- Share: a link that opens this screen with these tweaks, for
+           anyone (mar/shareLink.ts). -->
+      <footer class="shrink-0 border-t border-border-default px-4 pt-3 pb-4">
+        <p class="mb-1.5 truncate text-ui text-subtle-foreground" :title="linkSays.all">
+          Link opens {{ pageName }} · {{ linkSays.line }}
+        </p>
+        <input
+          :value="linkUrl"
+          readonly
+          aria-label="Share link"
+          class="mb-2.5 h-7 w-full truncate rounded-[7px] bg-secondary-background px-2 font-mono text-[11px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+          @focus="($event.target as HTMLInputElement).select()"
+        />
+        <div class="flex items-center justify-between gap-2">
+          <Button variant="ghost" size="sm" class="-ml-2" @click="resetAll">Reset all</Button>
+          <Button variant="secondary" size="sm" @click="copyLink">
+            <Check v-if="copied" :size="13" />
+            <Link v-else :size="13" />
+            {{ copied ? 'Copied' : 'Copy link' }}
+          </Button>
+        </div>
+      </footer>
+    </aside>
+  </Teleport>
+</template>
+
+<style scoped>
+.mar-tuner-body {
+  scrollbar-width: thin;
+}
+</style>

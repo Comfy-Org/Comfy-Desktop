@@ -1,0 +1,270 @@
+/* Local MCP (Comfy-Desktop#2032): the nudge on a local build's canvas and
+ * the setup modal, drawn with the asset view's frame (.mad). */
+.mcp-nudge {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  max-width: calc(100% - 32px);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 16px;
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, var(--color-content-background));
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 30px 80px -20px rgb(0 0 0 / 0.6);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.mcp-nudge-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.mcp-nudge-title {
+  font-weight: 600;
+}
+.mcp-nudge-lead {
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-nudge-go {
+  height: 32px;
+  flex: none;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--color-base-foreground);
+  color: var(--color-content-background);
+  font-weight: 600;
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-nudge-go:hover {
+  opacity: 0.88;
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-nudge-x {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-nudge-x:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-base-foreground);
+}
+.mcp-nudge-enter-active,
+.mcp-nudge-leave-active {
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+.mcp-nudge-enter-from,
+.mcp-nudge-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcp-nudge-enter-active,
+  .mcp-nudge-leave-active {
+    transition: none;
+  }
+}
+
+/* The modal: the template view's frame, fixed over the app, with a wider
+ * details panel for the commands. */
+:root .proto-ui.mad.mcp {
+  position: fixed;
+  z-index: 61;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 32vw, 440px);
+}
+:root .proto-ui.mad.mcp[data-state='open'] {
+  animation: mad-in 0.18s ease-out;
+}
+:root .proto-ui.proto-ui.proto-ui.mcp .mad-x {
+  position: fixed;
+  z-index: 62;
+}
+.mcp-stage {
+  background: #000;
+}
+.mcp-film {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-sound {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgb(14 14 16 / 0.28);
+  color: rgb(255 255 255 / 0.92);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-sound:hover {
+  background: rgb(14 14 16 / 0.45);
+}
+.mcp-head {
+  display: grid;
+  gap: 6px;
+  padding: 20px 20px 4px;
+}
+.mcp-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  text-wrap: balance;
+}
+.mcp-lead,
+.mcp-body {
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  line-height: 20px;
+  text-wrap: pretty;
+}
+.mcp-body {
+  color: var(--color-base-foreground);
+}
+.mcp-paths {
+  padding: 8px 20px 4px;
+}
+.mcp-steps {
+  display: grid;
+  gap: 20px;
+}
+.mcp-steps li {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+.mcp-step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.mcp-step-n {
+  width: 12px;
+  flex: none;
+  color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.mcp-code {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+.mcp-code code {
+  min-width: 0;
+  flex: 1;
+  padding-block: 2px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-copy {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+.mcp-code:hover .mcp-copy,
+.mcp-code:focus-within .mcp-copy {
+  opacity: 1;
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-copy:hover {
+  color: var(--color-base-foreground);
+}
+.mcp-hint {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-link {
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+:root .proto-ui.proto-ui.proto-ui .mcp-link:hover {
+  text-decoration: underline;
+}
+.mcp-terminal {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+}
+.mcp-terminal-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+.mcp-terminal-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.mcp-agents {
+  display: grid;
+  gap: 4px;
+}
+.mcp-agent {
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--color-base-foreground) 5%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+}
+.mcp-agent:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+.mcp-agent svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: currentColor;
+}
+.mcp-agent-name {
+  font-weight: 500;
+}
+.mcp-agent-meta,
+.mcp-agent-go {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mcp-agent-go {
+  margin-left: auto;
+}
+.mcp-foot {
+  padding-top: 12px;
+}

@@ -1,6 +1,8 @@
 import { computed, reactive, watch } from 'vue'
 import { go, goIn, proto, requireLogin, toast } from './useProto'
 import { APPS } from './mock'
+import { can } from './milestones'
+import { onHubPage } from './mar/apps/appPage'
 import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './appTheme'
 
 /**
@@ -15,14 +17,8 @@ import { BRAND_KITS, newTheme, THEMES, themeFromWords, type AppTheme } from './a
  * Agents prepare. People publish: access and money always need a click.
  */
 
-/** How the creator customizes the app's look (the Prototype menu's
- *  "Customize" switch): an inspector panel, curated themes, brand kits
- *  first, or describing it to the agent. */
-export type LookVariant = 'panel' | 'themes' | 'brand' | 'describe'
-
 const KEY = 'comfy.design.apps'
 const saved = ((): {
-  look?: LookVariant
   tabs?: string[]
   front?: string
   added?: string[]
@@ -36,7 +32,6 @@ const saved = ((): {
 })()
 
 export const appsProto = reactive({
-  look: (saved.look ?? 'panel') as LookVariant,
   /** Apps open in tabs in the title bar (app ids), and the one in front
    *  ('' = the launcher or a build is in front). */
   tabs: (saved.tabs ?? []) as string[],
@@ -66,7 +61,7 @@ export interface SourceWorkflow {
 export const SOURCES: SourceWorkflow[] = [
   {
     name: 'product-relight-studio',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~product-relight-studio',
     nodes: 9,
     settings: 31,
     model: 'Flux 2 dev',
@@ -74,7 +69,7 @@ export const SOURCES: SourceWorkflow[] = [
   },
   {
     name: 'packshot-clean',
-    thumbId: 'api_google_nano_banana2_image_edit',
+    thumbId: 'api_google_nano_banana2_image_edit~packshot-clean',
     nodes: 6,
     settings: 18,
     model: 'Nano Banana 2',
@@ -82,7 +77,7 @@ export const SOURCES: SourceWorkflow[] = [
   },
   {
     name: 'seasonal-scenes',
-    thumbId: 'image_flux2',
+    thumbId: 'image_flux2~seasonal-scenes',
     nodes: 11,
     settings: 40,
     model: 'Flux 2 dev',
@@ -90,7 +85,7 @@ export const SOURCES: SourceWorkflow[] = [
   },
   {
     name: 'spin-video',
-    thumbId: 'video_ltx2_5_i2v',
+    thumbId: 'video_ltx2_5_i2v~spin-video',
     nodes: 8,
     settings: 27,
     model: 'LTX 2.5',
@@ -111,6 +106,21 @@ export interface Field {
   on: boolean
   options?: string[]
   placeholder?: string
+  /** How the editor shows it when a plain field won't do, as in the hub
+   *  apps' own panels: a list, a number with its unit, on or off, a seed. */
+  control?: 'select' | 'number' | 'switch' | 'seed'
+  /** Where it starts, when that isn't the first option. */
+  value?: string
+  min?: number
+  max?: number
+  step?: number
+  unit?: string
+  /** A line under it: what a clip should be, say. */
+  hint?: string
+  /** A picture, or a clip. */
+  accept?: 'image' | 'video'
+  /** The panel section it sits under, as on the hub. */
+  group?: string
 }
 
 export interface Person {
@@ -287,7 +297,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'relight',
     name: 'Product relight',
     blurb: 'Drop a product photo, pick a light. Get studio shots.',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~app-product-relight',
     team: true,
     link: true,
     people: [{ name: 'Sam Ortiz', email: 'sam@northwind.co', role: 'Can run' }],
@@ -312,7 +322,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'angles',
     name: 'Character angles',
     blurb: 'One character, eight angles.',
-    thumbId: 'image_qwen_image_edit_2511',
+    thumbId: 'image_qwen_image_edit_2511~app-character-angles',
     state: 'draft',
     updated: 'Sep 4',
     fields: simpleFields('Character')
@@ -321,7 +331,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'upscale',
     name: '4K upscaler',
     blurb: 'Any render to clean 4K.',
-    thumbId: 'utility_seedvr2_image_upscale',
+    thumbId: 'utility_seedvr2_image_upscale~app-4k-upscaler',
     team: true,
     runs: 2210,
     cost: 0.02,
@@ -335,7 +345,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'poster',
     name: 'Poster resizer',
     blurb: 'One poster, every format.',
-    thumbId: 'templates_graphic_design_recomposer',
+    thumbId: 'templates_graphic_design_recomposer~app-poster-resizer',
     owner: 'Jane Park',
     group: 'team',
     team: true,
@@ -347,7 +357,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'i2v',
     name: 'Photo to video',
     blurb: 'A still becomes a 5 s clip.',
-    thumbId: 'video_ltx2_5_i2v',
+    thumbId: 'video_ltx2_5_i2v~app-photo-to-video',
     owner: 'Marcus Lin',
     group: 'team',
     team: true,
@@ -362,7 +372,7 @@ export const LIB = reactive<LibApp[]>([
     id: 'prop3d',
     name: 'Image to 3D prop',
     blurb: 'A photo of a prop, as a 3D model.',
-    thumbId: '3d_pixal3d_trellis2_image_to_model',
+    thumbId: '3d_pixal3d_trellis2_image_to_model~app-image-to-3d-prop',
     owner: 'Alex Carmoid · Studio Atlas',
     group: 'shared',
     link: true,
@@ -492,6 +502,400 @@ function hub(
 }
 const EXPLORE_APPS = EXPLORE.flatMap((s) => s.apps)
 
+const describeField = (placeholder: string): Field => ({
+  id: 'scene',
+  label: 'Describe it',
+  kind: 'text',
+  node: 'Prompt #2',
+  on: true,
+  placeholder
+})
+/** What Home's examples open once apps are in (mar/userStates/examples.ts):
+ *  each example as the app, under the name the card gave it. Not listed in
+ *  Explore. Costs are samples. */
+export const EXAMPLE_APPS: LibApp[] = [
+  hub(
+    'e-background',
+    'Remove a background',
+    'A clean cutout in one run.',
+    'template_product_placement~start-remove-a-background',
+    'Comfy',
+    0.02
+  ),
+  hub(
+    'e-video',
+    'Turn a photo into video',
+    'A still becomes a 5 s clip.',
+    'video_ltx2_5_i2v~clip-eye',
+    'Comfy',
+    0.31
+  ),
+  hub(
+    'e-reshoot',
+    'Reshoot your product',
+    'Put your product in a new scene.',
+    'api_google_nano_banana2_image_edit~app-reshoot-your-product',
+    'Comfy',
+    0.06
+  ),
+  hub(
+    'e-upscale',
+    'Upscale to 4K',
+    'Any render to clean 4K.',
+    'utility_seedvr2_image_upscale~start-upscale-to-4k',
+    'Comfy',
+    0.04
+  ),
+  hub(
+    'e-relight',
+    'Relight a scene',
+    'New light on any scene.',
+    'image_z_image_turbo~app-relight-a-scene',
+    'Comfy',
+    0.04
+  )
+]
+
+const select = (
+  id: string,
+  label: string,
+  node: string,
+  options: string[],
+  value: string,
+  group?: string
+): Field => ({
+  id,
+  label,
+  kind: 'choice',
+  node,
+  on: true,
+  control: 'select',
+  options,
+  value,
+  group
+})
+const seedField = (node: string): Field => ({
+  id: 'seed',
+  label: 'Seed',
+  kind: 'count',
+  node,
+  on: true,
+  control: 'seed',
+  group: 'Advanced'
+})
+const DIRECTION = 'Direction'
+
+/** What each starter asks for: the settings of its panel on the hub
+ *  (comfy.org/hub/apps), in the same order, with the same choices and
+ *  where they start. */
+const CINEMATIC_FIELDS: Field[] = [
+  {
+    id: 'mode',
+    label: 'Make',
+    kind: 'choice',
+    node: 'Mode #1',
+    on: true,
+    options: ['Image', 'Video']
+  },
+  select(
+    'model',
+    'Model',
+    'Model #2',
+    ['Seedream 5.0 Pro', 'Nano Banana Pro', 'GPT Image 2'],
+    'Seedream 5.0 Pro'
+  ),
+  {
+    id: 'scene',
+    label: 'Scene',
+    kind: 'text',
+    node: 'Prompt #3',
+    on: true,
+    placeholder: 'Describe the moment. Who, where, what is happening.'
+  },
+  {
+    id: 'character',
+    label: 'Character reference',
+    kind: 'image',
+    node: 'Load Image #4',
+    on: true,
+    hint: 'Optional'
+  },
+  {
+    id: 'enhance',
+    label: 'AI prompt',
+    kind: 'choice',
+    node: 'Prompt enhancer #5',
+    on: true,
+    control: 'switch',
+    options: ['On', 'Off']
+  },
+  select(
+    'camera',
+    'Camera',
+    'Direction #6',
+    ['Auto', 'Digital cinema', 'Large format', 'Super 35', '35mm film', '16mm film', 'Handheld'],
+    'Large format',
+    DIRECTION
+  ),
+  select(
+    'lens',
+    'Lens',
+    'Direction #6',
+    ['Auto', 'Spherical', 'Anamorphic', 'Vintage', 'Macro', 'Tilt-shift'],
+    'Anamorphic',
+    DIRECTION
+  ),
+  select(
+    'framing',
+    'Framing',
+    'Direction #6',
+    [
+      'Auto',
+      'Extreme wide',
+      'Wide',
+      'Medium',
+      'Close-up',
+      'Extreme close-up',
+      'Over the shoulder',
+      'Low angle'
+    ],
+    'Medium',
+    DIRECTION
+  ),
+  select(
+    'light',
+    'Light',
+    'Direction #6',
+    [
+      'Auto',
+      'Golden hour',
+      'Overcast',
+      'Blue hour',
+      'Practical night',
+      'Neon',
+      'Low key',
+      'Silhouette'
+    ],
+    'Practical night',
+    DIRECTION
+  ),
+  select(
+    'film',
+    'Film',
+    'Direction #6',
+    [
+      'Auto',
+      'Digital clean',
+      'Tungsten 500T',
+      'Daylight 250D',
+      'Black & white 400',
+      'Reversal slide',
+      'Expired film',
+      'Bleach bypass'
+    ],
+    'Tungsten 500T',
+    DIRECTION
+  ),
+  select(
+    'look',
+    'Look',
+    'Direction #6',
+    [
+      'Auto',
+      'Neo-noir',
+      'Western',
+      'Science fiction',
+      'Period drama',
+      'Thriller',
+      'Documentary',
+      'Road movie'
+    ],
+    'Neo-noir',
+    DIRECTION
+  ),
+  select(
+    'grade',
+    'Grade',
+    'Direction #6',
+    ['Auto', 'Teal and orange', 'Noir', 'Kodachrome', 'Neon night', 'Desert dust', 'Nordic cold'],
+    'Teal and orange',
+    DIRECTION
+  ),
+  select(
+    'aspect',
+    'Aspect ratio',
+    'Format #7',
+    ['21:9', '16:9', '4:3', '3:2', '2:3', '1:1', '9:16'],
+    '16:9',
+    'Format'
+  ),
+  {
+    ...select('size', 'Resolution', 'Format #7', ['1K', '2K'], '2K', 'Format'),
+    control: undefined
+  },
+  {
+    id: 'count',
+    label: 'Takes',
+    kind: 'count',
+    node: 'Batch size #8',
+    on: true,
+    options: ['1', '2', '3', '4'],
+    group: 'Format'
+  }
+]
+
+const axis = (
+  id: string,
+  label: string,
+  value: number,
+  min: number,
+  max: number,
+  step: number,
+  unit?: string
+): Field => ({
+  id,
+  label,
+  kind: 'count',
+  node: 'Camera #2',
+  on: true,
+  control: 'number',
+  value: String(value),
+  min,
+  max,
+  step,
+  unit,
+  group: 'New camera'
+})
+const RESHOOT_FIELDS: Field[] = [
+  {
+    id: 'clip',
+    label: 'Your clip',
+    kind: 'image',
+    node: 'Load Video #1',
+    on: true,
+    accept: 'video',
+    hint: '5–15 seconds, clear subject, no black bars'
+  },
+  axis('rotation', 'Rotation', -30, -180, 180, 5, '°'),
+  axis('tilt', 'Tilt', 15, -45, 45, 5, '°'),
+  axis('distance', 'Distance', 1, 0.5, 2, 0.05),
+  axis('lens', 'Lens', 50, 20, 120, 5, '°'),
+  axis('height', 'Height', 0, -1, 1, 0.05),
+  {
+    id: 'aim',
+    label: "Keep the source camera's aim",
+    kind: 'choice',
+    node: 'Camera #2',
+    on: true,
+    control: 'switch',
+    options: ['Off', 'On'],
+    group: 'New camera'
+  },
+  {
+    id: 'reveal',
+    label: 'What the new view reveals',
+    kind: 'text',
+    node: 'Prompt #3',
+    on: true,
+    placeholder: 'Optional, e.g. a stone wall behind her, more wheat to the left'
+  },
+  select(
+    'aspect',
+    'Aspect ratio',
+    'Format #4',
+    ['Match source', '16:9', '9:16', '1:1'],
+    'Match source',
+    'Format'
+  ),
+  {
+    ...select('size', 'Output size', 'Format #4', ['480p', '768p'], '480p', 'Format'),
+    control: undefined
+  },
+  select('sound', 'Sound', 'Audio #5', ['Generated', 'Original audio'], 'Generated', 'Format'),
+  seedField('Sampler #6')
+]
+
+const OPENJUTSU_FIELDS: Field[] = [
+  {
+    id: 'clip',
+    label: 'Video',
+    kind: 'image',
+    node: 'Load Video #1',
+    on: true,
+    accept: 'video',
+    hint: 'MP4 or MOV · up to 15 s is used'
+  },
+  { id: 'photo', label: 'Character image', kind: 'image', node: 'Load Image #2', on: true },
+  {
+    id: 'direction',
+    label: 'Extra direction',
+    kind: 'text',
+    node: 'Prompt #3',
+    on: true,
+    placeholder:
+      'Optional: add character details or fix the last take, e.g. darker jacket, keep the glasses, less smiling.'
+  },
+  select(
+    'quality',
+    'Quality',
+    'Resolution #4',
+    ['768p · Sharper', '480p · Faster'],
+    '768p · Sharper'
+  ),
+  seedField('Sampler #5')
+]
+
+/** The starter apps, first in Explore: the apps on comfy.org, plus Image
+ *  Generator as the fourth. Costs are samples. */
+export const STARTER_APPS: LibApp[] = [
+  {
+    ...hub(
+      's-cine',
+      'Cinematic Studio',
+      'Direct your shot like a film set',
+      'app~app-cinematic-studio',
+      'Comfy',
+      0.31
+    ),
+    fields: CINEMATIC_FIELDS
+  },
+  {
+    ...hub(
+      's-reshoot',
+      'Re-shoot a video',
+      'Re-shoot from any angle',
+      'app~app-reshoot-a-video',
+      'Comfy',
+      0.31
+    ),
+    fields: RESHOOT_FIELDS
+  },
+  {
+    ...hub(
+      's-jutsu',
+      'Openjutsu',
+      'Swap a character in a video',
+      'app~app-openjutsu',
+      'Comfy',
+      0.31
+    ),
+    fields: OPENJUTSU_FIELDS
+  },
+  {
+    ...hub(
+      's-image',
+      'Image Generator',
+      'Describe it, get an image',
+      'image_z_image_turbo',
+      'Comfy',
+      0.04
+    ),
+    fields: [describeField('A ceramic lamp on a linen table')]
+  }
+]
+
+export const isStarter = (id: string): boolean => STARTER_APPS.some((a) => a.id === id)
+
 /** Add an Explore app to your library, or take it out. You stay its user:
  *  it opens as the app, never the admin page. */
 export const addedApps = computed(() => EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)))
@@ -530,7 +934,10 @@ function syncAdded(a: LibApp): void {
 EXPLORE_APPS.filter((a) => appsProto.added.includes(a.id)).forEach(syncAdded)
 
 export const libApp = (id: string): LibApp | undefined =>
-  LIB.find((a) => a.id === id) ?? EXPLORE_APPS.find((a) => a.id === id)
+  LIB.find((a) => a.id === id) ??
+  EXPLORE_APPS.find((a) => a.id === id) ??
+  STARTER_APPS.find((a) => a.id === id) ??
+  EXAMPLE_APPS.find((a) => a.id === id)
 
 /** Who can use it, in one phrase. */
 export function accessLabel(a: LibApp): string {
@@ -1071,6 +1478,15 @@ export function suggestions(): string[] {
 
 /** The live app's page, in Create. */
 export function openApp(id: string): void {
+  // An app's own page comes with the Agent; before that it opens as the app.
+  if (proto.milestone < 10) return openAppUrl(id)
+  openAppPage(id)
+}
+/** An app's page: what it does and Run, with Open app for its own tab. */
+export function openAppPage(id: string): void {
+  // The Hub editor (mar/apps/appPage.ts) opens in a tab of its own.
+  const a = libApp(id)
+  if (a && can.value.exploreApps && onHubPage(a)) return openAppUrl(id)
   goIn('create', `app:${id}`)
 }
 

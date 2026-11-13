@@ -12,6 +12,8 @@ const { label, value, hint } = defineProps<{ label: string; value: string; hint?
       }}</span>
       <slot />
     </div>
-    <span v-if="hint" class="truncate text-ui text-subtle-foreground">{{ hint }}</span>
+    <span v-if="hint || $slots.hint" class="truncate text-ui text-subtle-foreground"
+      ><slot name="hint">{{ hint }}</slot></span
+    >
   </div>
 </template>

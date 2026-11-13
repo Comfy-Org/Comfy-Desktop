@@ -13,7 +13,7 @@ import { can } from '../../milestones'
 
 /**
  * The browser preview's build switcher (the stand-in title bar's chevron):
- * Home, the open builds, then the others to open. In the app the real
+ * the open builds, then the others to open (Home is the crumb beside it). In the app the real
  * title bar shows it as a popup with each build's state (TitleBarApp).
  * `top` is where the bar ends.
  */
@@ -41,12 +41,13 @@ const closedBuilds = computed(() => instances.value.filter((i) => !isOpen(i.id))
       />
     </DropdownMenuTrigger>
     <DropdownMenuContent align="start" :side-offset="2" class="w-64">
-      <DropdownMenuItem @select="openFromMenu('home')">
-        <Home :size="16" /><span class="flex-1">{{ can.home ? 'Home' : 'All builds' }}</span>
+      <!-- Home is already the crumb beside this chevron. -->
+      <DropdownMenuItem v-if="!can.home" @select="openFromMenu('home')">
+        <Home :size="16" /><span class="flex-1">All builds</span>
         <Check v-if="proto.activeTab === 'home'" :size="14" />
       </DropdownMenuItem>
       <template v-if="openBuilds.length">
-        <DropdownMenuSeparator />
+        <DropdownMenuSeparator v-if="!can.home" />
         <DropdownMenuLabel>Open</DropdownMenuLabel>
         <DropdownMenuItem v-for="e in openBuilds" :key="e.id" @select="openFromMenu(e.id)">
           <LocationIcon :kind="e.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />

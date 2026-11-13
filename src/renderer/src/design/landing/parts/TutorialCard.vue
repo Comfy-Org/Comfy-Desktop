@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { LayoutGrid, SquareArrowOutUpRight, Waypoints } from 'lucide-vue-next'
+import { SquareArrowOutUpRight } from 'lucide-vue-next'
+import { GraphIcon, AppIcon } from '../mar/icons/kindIcons'
 import Badge from '../ui/Badge.vue'
 import MediaCard from '../ui/MediaCard.vue'
 import { toast } from '../useProto'
@@ -17,7 +18,7 @@ const { t } = defineProps<{ t: Tutorial }>()
   >
     <template #top-left>
       <Badge variant="overlay" size="md">
-        <Waypoints v-if="t.kind === 'graph'" :size="12" /><LayoutGrid v-else :size="12" />
+        <GraphIcon v-if="t.kind === 'graph'" :size="12" /><AppIcon v-else :size="12" />
         {{ t.kind === 'graph' ? 'Node graph' : 'App' }}
       </Badge>
     </template>

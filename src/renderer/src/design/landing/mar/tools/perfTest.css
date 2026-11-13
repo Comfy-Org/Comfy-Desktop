@@ -1,0 +1,421 @@
+/* Performance Tests (Comfy-Desktop#2018): one setup row of filter buttons,
+ * a status line, then Results, System information and Logs on the page. */
+.mar-pt {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  container: mar-pt / inline-size;
+}
+.mar-pt-setup {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pt-filter {
+  display: inline-flex;
+  height: 32px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 150ms;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pt-filter:hover,
+:root .proto-ui.proto-ui.proto-ui .mar-pt-filter[data-state='open'] {
+  background: var(--color-secondary-background-hover);
+}
+.mar-pt-filter:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.mar-pt-filter:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.mar-pt-tag {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.mar-pt-drop {
+  display: flex;
+  min-width: 0;
+  margin: -4px;
+  padding: 4px;
+  border-radius: 12px;
+  outline: 1px dashed transparent;
+  outline-offset: -1px;
+  transition:
+    outline-color 140ms,
+    background-color 140ms;
+}
+.mar-pt-drop.is-over {
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+  outline-color: color-mix(in oklch, var(--color-base-foreground) 35%, transparent);
+}
+.mar-pt-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mar-pt-chip {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 12px;
+  border-radius: 8px;
+  background: var(--color-secondary-background);
+  color: var(--color-subtle-foreground);
+  font-size: 13px;
+  line-height: 20px;
+  transition: background-color 150ms;
+}
+.mar-pt-chip:hover,
+.mar-pt-chip:focus-within {
+  background: var(--color-secondary-background-hover);
+}
+.mar-pt-chip > input {
+  width: 36px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  outline: none;
+  appearance: textfield;
+}
+.mar-pt-chip > input::-webkit-inner-spin-button,
+.mar-pt-chip > input::-webkit-outer-spin-button {
+  appearance: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-pt-run {
+  min-width: 80px;
+  margin-left: auto;
+}
+.mar-pt-what,
+.mar-pt-how {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mar-pt-how {
+  flex: 1 1 auto;
+}
+/* Medium: what to test on the first row, how to run on the second.
+   Narrow: Build and Workflow each take a full row. */
+@container mar-pt (max-width: 64rem) {
+  .mar-pt-how {
+    flex-basis: 100%;
+  }
+}
+@container mar-pt (max-width: 36rem) {
+  .mar-pt-what,
+  .mar-pt-what > .mar-pt-filter,
+  .mar-pt-drop,
+  .mar-pt-drop .mar-pt-filter {
+    width: 100% !important;
+    max-width: none !important;
+  }
+  .mar-pt-drop {
+    width: calc(100% + 8px) !important;
+  }
+}
+.mar-pt-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.mar-pt-danger,
+.mar-pt-danger > svg {
+  color: var(--color-status-danger) !important;
+}
+.mar-pt-dl {
+  display: block;
+  width: 144px;
+  height: 3px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+.mar-pt-dl > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-base-foreground);
+  transition: width 400ms ease;
+}
+.mar-pt-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+.mar-pt-head {
+  display: flex;
+  min-height: 32px;
+  min-width: 0;
+  align-items: center;
+}
+.mar-pt-label,
+:root .proto-ui.proto-ui.proto-ui .mar-pt-toggle {
+  margin: 0;
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mar-pt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.mar-pt-toggle:hover {
+  color: var(--color-base-foreground);
+}
+.mar-pt-chev {
+  transition: transform 150ms;
+}
+.mar-pt-chev.is-open {
+  transform: rotate(90deg);
+}
+.mar-pt-summary {
+  min-width: 0;
+  margin-left: 12px;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-pt-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  margin: 0 -8px 0 auto;
+  padding-left: 12px;
+}
+.mar-pt-actions > button,
+:root .proto-ui.proto-ui.proto-ui .mar-pt-actions > button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.mar-pt-actions > button:hover {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+@container mar-pt (max-width: 640px) {
+  .mar-pt-actions > button {
+    font-size: 0;
+    gap: 0;
+  }
+}
+.mar-pt-run-no {
+  color: var(--color-base-foreground);
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.mar-pt-track {
+  display: flex;
+  height: 6px;
+  gap: 4px;
+}
+.mar-pt-track > i {
+  display: block;
+  height: 100%;
+  flex: 1;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+  transition: background-color 180ms;
+}
+.mar-pt-track > i.is-warm {
+  background: color-mix(in oklch, var(--color-base-foreground) 40%, transparent);
+}
+.mar-pt-track > i.is-done {
+  background: var(--color-base-foreground);
+}
+.mar-pt-track > i.is-now {
+  background: color-mix(in oklch, var(--color-base-foreground) 25%, transparent);
+  animation: mar-pt-pulse 1.2s ease-in-out infinite alternate;
+}
+.mar-pt-track-one {
+  display: block;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mar-pt-track-one > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-base-foreground);
+  transition: width 180ms;
+}
+@keyframes mar-pt-pulse {
+  to {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-pt-track > i.is-now {
+    animation: none;
+  }
+  .mar-pt-chev,
+  .mar-pt-dl > span,
+  .mar-pt-track-one > i {
+    transition: none;
+  }
+}
+.mar-pt-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  align-items: center;
+  gap: 20px 48px;
+}
+@container mar-pt (max-width: 640px) {
+  .mar-pt-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mar-pt-median {
+  color: var(--color-base-foreground);
+  font-size: 44px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.mar-pt-bar {
+  display: grid;
+  min-height: 28px;
+  grid-template-columns: 96px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 12px;
+}
+.mar-pt-bar > dt {
+  font-size: 12px;
+}
+.mar-pt-bar-track {
+  height: 6px;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--color-base-foreground) 8%, transparent);
+}
+.mar-pt-bar-track > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in oklch, var(--color-base-foreground) 35%, transparent);
+}
+.mar-pt-bar-track > i.is-hi {
+  background: var(--color-base-foreground);
+}
+.mar-pt-bar-value {
+  margin: 0;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mar-pt-bar-value.is-hi {
+  color: var(--color-base-foreground);
+  font-weight: 500;
+}
+.mar-pt-facts {
+  display: grid;
+  margin: 10px 0 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+@container mar-pt (max-width: 800px) {
+  .mar-pt-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.mar-pt-facts > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.mar-pt-facts dt {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-pt-facts dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-pt-mono {
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+.mar-pt-logs {
+  max-height: min(360px, 37.5vh);
+  margin-top: 6px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, black 35%, transparent);
+  color: var(--color-muted-foreground);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.mar-pt-example {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+.mar-pt-example:hover,
+.mar-pt-example.is-on {
+  background: var(--color-secondary-background);
+}

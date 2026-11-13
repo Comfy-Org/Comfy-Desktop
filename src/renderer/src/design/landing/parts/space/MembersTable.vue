@@ -43,9 +43,10 @@ defineExpose({ invite: () => (open.value = true) })
 </script>
 
 <template>
-  <Card class="overflow-hidden">
+  <!-- is-mar-*: hooks for Mar's one table (mar/table/table.css). -->
+  <Card class="is-mar-table overflow-hidden">
     <div
-      class="grid h-10 grid-cols-[minmax(0,1fr)_160px_120px_80px] items-center gap-4 border-b border-border-default px-5 text-ui text-subtle-foreground"
+      class="is-mar-head grid h-10 grid-cols-[minmax(0,1fr)_160px_120px_80px] items-center gap-4 border-b border-border-default px-5 text-ui text-subtle-foreground"
     >
       <span>{{ space.members.length }} people</span><span>Role</span><span>Last active</span
       ><span class="text-right">Runs</span>
@@ -53,7 +54,7 @@ defineExpose({ invite: () => (open.value = true) })
     <div
       v-for="m in space.members"
       :key="m.email"
-      class="grid min-h-14 grid-cols-[minmax(0,1fr)_160px_120px_80px] items-center gap-4 border-b border-border-default px-5 last:border-b-0"
+      class="is-mar-row grid min-h-14 grid-cols-[minmax(0,1fr)_160px_120px_80px] items-center gap-4 border-b border-border-default px-5 last:border-b-0"
     >
       <span class="flex min-w-0 items-center gap-3">
         <MemberAvatar :name="m.name" />

@@ -7,19 +7,21 @@ import {
   Compass,
   GraduationCap,
   Home,
-  Images,
   KeyRound,
   LayoutDashboard,
   Rocket,
   ScrollText,
+  Search,
   Server,
   SquareArrowOutUpRight,
   Workflow
 } from 'lucide-vue-next'
+import { ComfyAssets } from '../../mar/icons/comfyIcons'
 import Button from '../../ui/Button.vue'
 import { cn } from '../../ui/cn'
-import { go, proto, toast, type Mode, type Page } from '../../useProto'
+import { go, isNewUser, proto, toast, type Mode, type Page } from '../../useProto'
 import { can } from '../../milestones'
+import { search } from '../../mar/search/search'
 
 /**
  * Navigation for one lens. Create: make things. Build: ship them as an API.
@@ -40,20 +42,37 @@ interface Item {
 }
 const NAV = computed<Record<Mode, Item[]>>(() => ({
   agent: [],
-  // Home from Milestone 4, Explore and Learn from 5; the builds follow in
+  // Home from Milestone 4, Explore from 3 (4.7), Learn from 5; the builds follow in
   // the sidebar group. Projects (Milestone 8) add the libraries, and the
   // builds move here (the sidebar group lists projects instead).
   create: [
     { page: 'overview', label: 'Home', icon: Home },
-    ...(can.value.exploreApps
-      ? [{ page: 'explore' as Page, label: 'Explore', icon: Compass }]
+    // Explore comes with Milestone 3; at Milestone 2 apps live in Apps.
+    ...(can.value.explore
+      ? [
+          {
+            page: 'explore' as Page,
+            label: 'Explore',
+            icon: Compass,
+            // An app's page sits under Explore when there is no Apps library.
+            ...(proto.signedIn ? {} : { prefix: 'app:' })
+          }
+        ]
       : []),
-    // The library of added apps, before Projects brings the Libraries group.
-    ...(can.value.explore && !can.value.projects && proto.signedIn
+    // Workflows (with Learn) and the apps (Milestone 2 only: from Explore
+    // on they live inside it), before Projects brings the Libraries group.
+    ...(can.value.workflows && !can.value.projects
+      ? [{ page: 'workflows' as Page, label: 'Workflows', icon: Workflow }]
+      : []),
+    ...(can.value.exploreApps && !can.value.explore && proto.signedIn
       ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
       : []),
-    ...(can.value.explore
+    ...(can.value.learn
       ? [{ page: 'tutorials' as Page, label: 'Learn', icon: GraduationCap }]
+      : []),
+    // Where an app's results land, before Projects brings the Libraries group.
+    ...(can.value.exploreApps && !can.value.projects
+      ? [{ page: 'assets' as Page, label: 'Assets', icon: ComfyAssets }]
       : []),
     ...(can.value.projects
       ? [
@@ -67,8 +86,9 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
           ...(proto.signedIn
             ? [{ page: 'apps' as Page, label: 'Apps', icon: AppWindow, prefix: 'app:' }]
             : []),
-          { page: 'assets' as Page, label: 'Assets', icon: Images },
-          ...(proto.fresh || !proto.signedIn
+          { page: 'assets' as Page, label: 'Assets', icon: ComfyAssets },
+          // No builds to list: a new user before any install, or logged out.
+          ...((isNewUser.value && proto.fresh) || !proto.signedIn
             ? []
             : [
                 {
@@ -85,10 +105,10 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
   build: [
     {
       page: 'build-overview',
-      label: proto.fresh ? 'Get started' : 'Overview',
+      label: isNewUser.value ? 'Get started' : 'Overview',
       icon: LayoutDashboard
     },
-    ...(proto.fresh
+    ...(isNewUser.value
       ? []
       : [
           {
@@ -109,7 +129,7 @@ const NAV = computed<Record<Mode, Item[]>>(() => ({
             : [])
         ]),
     { page: 'router', label: 'Models', icon: Boxes },
-    ...(proto.fresh ? [] : [{ page: 'logs' as Page, label: 'Logs', icon: ScrollText }]),
+    ...(isNewUser.value ? [] : [{ page: 'logs' as Page, label: 'Logs', icon: ScrollText }]),
     { page: 'keys', label: 'API keys', icon: KeyRound },
     { label: 'Docs', icon: BookOpen, href: 'docs' }
   ]
@@ -136,7 +156,19 @@ function open(i: Item): void {
     <span>{{ label }}</span>
   </div>
   <nav class="flex flex-col gap-px" :aria-label="mode === 'create' ? 'Create' : 'Build'">
-    <template v-for="i in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
+    <template v-for="(i, idx) in NAV[mode].filter((n) => !omit.includes(n.label))" :key="i.label">
+      <!-- The global search (⌘K) right under the first place (Home), by
+           default. Search finds Create things: not in Build, and not before
+           Learn (Milestones 2 and 3 ship without it). -->
+      <Button
+        v-if="idx === 1 && mode !== 'build' && can.search"
+        variant="ghost"
+        class="h-8 w-full justify-start gap-2.5 px-3 text-ui font-normal"
+        @click="search.open = true"
+      >
+        <Search :size="15" />
+        <span class="sidebar-label text-left">Search</span>
+      </Button>
       <div
         v-if="i.section"
         class="mt-5.5 flex h-6.5 items-center px-3 text-ui font-medium tracking-wider text-subtle-foreground uppercase"

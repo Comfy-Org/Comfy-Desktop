@@ -24,5 +24,7 @@ const spaces = computed(() => placementsOf({ kind, name }).spaces)
     </Tooltip>
     <span class="truncate">{{ spaces.length }} {{ spaces.length === 1 ? 'space' : 'spaces' }}</span>
   </span>
-  <span v-else class="text-ui text-subtle-foreground">Not in a space</span>
+  <Tooltip v-else content="Not in a space yet" wrap>
+    <span class="mar-draft-chip" tabindex="0">Draft</span>
+  </Tooltip>
 </template>

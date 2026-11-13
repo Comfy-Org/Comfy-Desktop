@@ -1,14 +1,28 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Folder, LayoutGrid, Plus } from 'lucide-vue-next'
+import { Folder, LoaderCircle, Plus, TriangleAlert } from 'lucide-vue-next'
 import Button from '../../ui/Button.vue'
 import Tooltip from '../../ui/Tooltip.vue'
 import { cn } from '../../ui/cn'
 import InstanceGlyph from '../InstanceGlyph.vue'
-import { envById } from './env'
+import { envById, envStatus } from './env'
 import { allWorkflows } from '../../gallery'
-import { go, hostActions, instances, proto, toast, type Page } from '../../useProto'
+import {
+  go,
+  hostActions,
+  instances,
+  proto,
+  recentInstances,
+  toast,
+  type Page
+} from '../../useProto'
 import { PROJECTS } from '../../mock'
+import { can } from '../../milestones'
+import { errorOf } from '../../mar/build/buildErrors'
+import { stateOf } from '../../mar/build/buildFacts'
+import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
+// Local setup › Home first: the first install runs behind the Home (mar/setup).
+import { BUILD_NAME, flow, installingBehind, installPending } from '../../mar/setup/setupFlow'
 
 /**
  * The organising list under Create.
@@ -33,15 +47,23 @@ const rows = computed<Row[]>(() =>
         envId: p.envId,
         count: allWorkflows.value.filter((w) => w.project === p.name).length
       }))
-    : instances.value.map((i) => ({
+    : // Most recently used first, the order Home and the build picker use (#2042).
+      recentInstances.value.map((i) => ({
         page: `environment:${i.id}` as Page,
-        label: i.name,
+        label: stateOf(i).name,
         envId: i.id,
-        count: allWorkflows.value.filter((w) => w.envId === i.id).length,
-        live: i.state === 'running'
+        // The count is the build's workflows, so it waits for the milestone
+        // where a build's page lists them (its Workflows tab).
+        count: can.value.workflows
+          ? allWorkflows.value.filter((w) => w.envId === i.id).length
+          : undefined,
+        live: envStatus(i).live,
+        failed: errorOf(i.id)
       }))
 )
-const show = computed(() => proto.signedIn || instances.value.some((i) => i.kind === 'local'))
+const show = computed(
+  () => proto.signedIn || instances.value.some((i) => i.kind === 'local') || installPending.value
+)
 const title = computed(() => (proto.projects ? 'Projects' : 'Builds'))
 const overviewPage = computed<Page>(() => (proto.projects ? 'projects' : 'environments'))
 const overviewActive = computed(() => proto.page === overviewPage.value)
@@ -55,14 +77,13 @@ const itemClass = (page: Page): string =>
 <template>
   <div v-if="show" class="mt-5.5 flex shrink-0 flex-col">
     <div class="flex h-6.5 items-center justify-between pr-1 pl-3">
-      <span class="text-ui font-medium tracking-wider text-subtle-foreground uppercase">{{
-        title
-      }}</span>
+      <MarGroupTitle :title="title" :active="overviewActive" @click="go(overviewPage)" />
       <Tooltip :content="proto.projects ? 'New project' : 'New build'">
         <Button
           variant="ghost"
           size="icon-xs"
           :aria-label="proto.projects ? 'New project' : 'New build'"
+          :disabled="installingBehind"
           @click="
             proto.projects ? toast('New project - pick its build') : hostActions.newInstance()
           "
@@ -71,22 +92,29 @@ const itemClass = (page: Page): string =>
         </Button>
       </Tooltip>
     </div>
-    <!-- Overview of the whole group -->
+    <!-- Local setup › Home first: the build being installed, in grey, with its
+         progress; it opens the Home, where the card is. -->
     <Button
+      v-if="installingBehind"
       variant="ghost"
-      :aria-current="overviewActive ? 'page' : undefined"
-      :class="
-        cn(itemClass(overviewPage), !overviewActive && 'bg-transparent text-muted-foreground')
-      "
-      @click="go(overviewPage)"
+      :class="itemClass('overview')"
+      class="text-subtle-foreground"
+      @click="go('overview')"
     >
-      <LayoutGrid :size="15" />
-      <span class="sidebar-label text-left">{{
-        proto.projects ? 'All projects' : 'All builds'
+      <TriangleAlert v-if="flow.step === 'error'" :size="15" />
+      <LoaderCircle v-else :size="15" class="mar-side-spin" />
+      <span class="sidebar-label text-left">{{ flow.another ? flow.buildName : BUILD_NAME }}</span>
+      <span class="text-ui text-subtle-foreground tabular-nums">{{
+        flow.step === 'error' ? 'Failed' : `${flow.percent}%`
       }}</span>
-      <span class="text-ui text-subtle-foreground tabular-nums">{{ rows.length }}</span>
     </Button>
-
+    <!-- None yet (a first-time user): say what goes here. -->
+    <p
+      v-if="!rows.length && !installingBehind"
+      class="flex h-8 items-center gap-2.5 px-3 text-ui text-subtle-foreground"
+    >
+      <Folder :size="15" />{{ proto.projects ? 'Group work by client' : 'No builds yet' }}
+    </p>
     <Button
       v-for="r in rows"
       :key="r.page"
@@ -96,9 +124,23 @@ const itemClass = (page: Page): string =>
       @click="go(r.page)"
     >
       <Folder v-if="proto.projects" :size="15" />
-      <InstanceGlyph v-else-if="envById(r.envId!)" :inst="envById(r.envId!)!" size="xs" />
+      <!-- Running or didn't start: a dot on the build's mark; the reason on hover. -->
+      <Tooltip
+        v-else-if="envById(r.envId!) && 'failed' in r && r.failed"
+        :content="`Failed to start · ${r.failed}`"
+      >
+        <span class="inline-flex" aria-label="Failed to start"
+          ><InstanceGlyph :inst="envById(r.envId!)!" size="xs" dot failed
+        /></span>
+      </Tooltip>
+      <InstanceGlyph
+        v-else-if="envById(r.envId!)"
+        :inst="envById(r.envId!)!"
+        size="xs"
+        dot
+        :live="r.live"
+      />
       <span class="sidebar-label text-left">{{ r.label }}</span>
-      <span v-if="r.live" class="size-1.5 rounded-full bg-status-running" />
       <!-- Projects: the environment the project runs on -->
       <Tooltip
         v-if="proto.projects && envById(r.envId!)"
@@ -114,3 +156,19 @@ const itemClass = (page: Page): string =>
     </Button>
   </div>
 </template>
+
+<style scoped>
+.mar-side-spin {
+  animation: mar-side-spin 1s linear infinite;
+}
+@keyframes mar-side-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-side-spin {
+    animation: none;
+  }
+}
+</style>

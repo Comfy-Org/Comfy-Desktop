@@ -1,0 +1,719 @@
+/* Mar's template modal (MarTemplateModal.vue). Global on purpose: its
+   buttons have to get past the prototype's button reset, which scoped
+   styles can't reach. Everything is under .mar-tpl.
+
+   The modal wears the asset view's format (assets/AssetDetail.vue, .mad-*):
+   the frame, the media stage, the details panel a step lighter (.mad-side),
+   uppercase section labels, the primary at the bottom with More at its
+   right. This file only adds what a template has and an asset doesn't:
+   the graph, what it needs, and the Open in picker. No lines anywhere. */
+
+.mar-tpl {
+  --tpl-ink: var(--color-base-foreground);
+  --tpl-line: color-mix(in oklch, var(--tpl-ink) 8%, transparent);
+  --tpl-well: color-mix(in oklch, var(--tpl-ink) 4%, transparent);
+  --tpl-well-2: color-mix(in oklch, var(--tpl-ink) 7%, transparent);
+  --tpl-ok: var(--color-status-running);
+  --tpl-warn: oklch(0.8 0.14 75);
+  --tpl-gold: oklch(0.84 0.13 85);
+  /* Nodes from the palette, as on ComfyUI's canvas (graph/CanvasNode.vue):
+     the foreground mixed into the page background, no hue of their own. */
+  --tpl-node: color-mix(in oklch, var(--color-base-foreground) 6%, var(--color-content-background));
+  --tpl-node-head: color-mix(
+    in oklch,
+    var(--color-base-foreground) 9%,
+    var(--color-content-background)
+  );
+
+  /* The modal glass material (DS › Materials keeps it as a specimen). */
+  overflow: hidden;
+  border-radius: 22px;
+  color: var(--tpl-ink);
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--tpl-ink) 5%, var(--color-card-background)) 90%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.3);
+  box-shadow:
+    inset 0 0 0 1px var(--tpl-line),
+    0 1px 2px rgb(0 0 0 / 0.25),
+    0 32px 80px -24px rgb(0 0 0 / 0.7);
+  outline: none;
+}
+.mar-tpl[data-state='open'] {
+  animation: mar-tpl-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes mar-tpl-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.mar-tpl-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background-color: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(6px);
+}
+.mar-tpl-scrim[data-state='open'] {
+  animation: mar-tpl-fade 200ms ease-out;
+}
+@keyframes mar-tpl-fade {
+  from {
+    opacity: 0;
+  }
+}
+:root[data-ds-theme='light'] .mar-tpl {
+  --tpl-line: color-mix(in oklch, var(--tpl-ink) 9%, transparent);
+  --tpl-well: color-mix(in oklch, var(--tpl-ink) 3.5%, transparent);
+  --tpl-well-2: color-mix(in oklch, var(--tpl-ink) 6%, transparent);
+  --tpl-ok: oklch(0.58 0.14 155);
+  --tpl-warn: oklch(0.62 0.15 60);
+  --tpl-gold: oklch(0.56 0.13 65);
+  --tpl-node: var(--color-content-background);
+  --tpl-node-head: color-mix(
+    in oklch,
+    var(--color-base-foreground) 4%,
+    var(--color-content-background)
+  );
+  background-color: color-mix(in oklch, var(--color-card-background) 94%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--tpl-line),
+    0 1px 2px rgb(0 0 0 / 0.06),
+    0 28px 64px -20px rgb(0 0 0 / 0.28);
+}
+:root[data-ds-theme='light'] .mar-tpl-scrim {
+  background-color: rgb(20 20 30 / 0.22);
+}
+
+/* ── The frame: the asset view's (.mad), fixed over the app ──────── */
+:root .proto-ui.mad.mar-tpl {
+  position: fixed;
+  z-index: 61;
+  border-radius: 20px;
+  background: var(--color-content-background);
+  backdrop-filter: none;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 7%, transparent),
+    0 30px 80px -20px rgb(0 0 0 / 0.6);
+}
+/* Fades in like the asset view; no transform, so the close outside the
+   frame stays put. */
+:root .proto-ui.mad.mar-tpl[data-state='open'] {
+  animation: mad-in 0.18s ease-out;
+}
+.mar-tpl-dim[data-state='open'] {
+  animation: mad-in 0.18s ease-out;
+}
+/* Close: just outside the frame's top-right corner, as on an asset. */
+:root .proto-ui.proto-ui.proto-ui.mar-tpl .mad-x {
+  position: fixed;
+  z-index: 62;
+}
+.mar-tpl .mad-x:focus-visible,
+.mar-tpl .mad-btn:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+/* No filmstrip under a template: the picture (or the graph) takes the
+   room down to the zoom's row, where the asset view has it. */
+.mar-tpl .mad-view {
+  bottom: 72px;
+}
+
+/* ── Stage: the output, or its graph ─────────────────────────────── */
+/* The graph has the whole stage (the stage clips at its rounded edges);
+   TplGraph fits it inside the picture's room. */
+.mar-tpl-gview {
+  position: absolute;
+  inset: 0;
+}
+.mar-tpl .mad-media img {
+  user-select: none;
+}
+.mar-tpl-quad {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  border-radius: 7px;
+  padding: 0 8px;
+  color: oklch(1 0 0 / 0.92);
+  font-size: 11.5px;
+  font-weight: 500;
+  /* Glass over pictures. */
+  background: rgb(14 14 16 / 0.28);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  pointer-events: none;
+}
+.mar-tpl-quad[data-q='0'] {
+  top: calc(50% - 32px);
+  left: 10px;
+}
+.mar-tpl-quad[data-q='1'] {
+  top: calc(50% - 32px);
+  left: calc(50% + 10px);
+}
+.mar-tpl-quad[data-q='2'] {
+  bottom: 10px;
+  left: 10px;
+}
+.mar-tpl-quad[data-q='3'] {
+  bottom: 10px;
+  left: calc(50% + 10px);
+}
+
+/* ── Panel ───────────────────────────────────────────────────────── */
+.mar-tpl-by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+}
+.mar-tpl-by > i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+.mar-tpl-author {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+/* Favorited: a quiet star by the name, full ink like on cards. */
+.mar-tpl-fav {
+  animation: mar-tpl-pop 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes mar-tpl-pop {
+  40% {
+    transform: scale(1.25);
+  }
+}
+.mar-tpl-total {
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* What it makes: free text, so it sits in a box. */
+.mar-tpl-about {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--mad-fill);
+}
+.mar-tpl-about > p {
+  color: var(--color-muted-foreground);
+  font-size: 12.5px;
+  line-height: 19px;
+  text-wrap: pretty;
+}
+.mar-tpl-about > p.is-clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-more {
+  align-self: flex-start;
+  height: auto;
+  margin-top: -4px;
+  padding: 0;
+  background: transparent;
+  color: var(--color-base-foreground);
+  font-size: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mar-tpl-more:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.mar-tpl-tutorial {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: inherit;
+  text-decoration: none;
+}
+.mar-tpl-tutorial:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* What it needs: one box like Open in's row, its line (how much, where it
+   stands, a chevron) folding the files open inside the same box. */
+.mar-tpl-needs-box {
+  border-radius: 10px;
+  background: var(--mad-fill);
+}
+.mar-tpl-needs-box > summary {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  cursor: default;
+  list-style: none;
+}
+.mar-tpl-needs-box > summary:hover {
+  background: color-mix(in oklch, var(--color-base-foreground) 4%, transparent);
+}
+.mar-tpl-needs-box > summary::-webkit-details-marker {
+  display: none;
+}
+.mar-tpl-state {
+  margin-left: auto;
+  white-space: nowrap;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-tpl-state[data-m='here'],
+.mar-tpl-state[data-m='cloud'] {
+  color: var(--tpl-ok);
+}
+.mar-tpl-fold {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-muted-foreground);
+  transition: transform 160ms ease;
+}
+.mar-tpl-state + .mar-tpl-fold {
+  margin-left: 0;
+}
+.mar-tpl-needs-box[open] .mar-tpl-fold {
+  transform: rotate(180deg);
+}
+.mar-tpl-needs-box > summary:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-tpl-fold {
+    transition: none;
+  }
+}
+
+/* What it needs: rows spaced, no lines between. */
+/* The files sit in one box (a fill, no lines), set like Details' rows:
+   the UI's type, the size and its mark lined up at the right. */
+.mar-tpl-needs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px 8px;
+}
+.mar-tpl-needs > li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto 14px;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-tpl-file {
+  overflow: hidden;
+  color: var(--color-base-foreground);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-file.is-ui {
+  font-family: inherit;
+  font-size: 12px;
+}
+.mar-tpl-size {
+  color: var(--tpl-ink);
+  font-variant-numeric: tabular-nums;
+}
+.mar-tpl-mark {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+}
+.mar-tpl-mark[data-m='here'],
+.mar-tpl-mark[data-m='cloud'] {
+  color: var(--tpl-ok);
+}
+.mar-tpl-mark[data-m='get'] {
+  color: var(--tpl-ink);
+  background: var(--tpl-well-2);
+}
+.mar-tpl-mark[data-m='warn'] {
+  color: var(--tpl-warn);
+}
+
+/* Open in: the build it opens on, one filled row that is the picker
+   (UI-RULES: a fill, no line), its chevron at the right; the other builds
+   open under it. */
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on {
+  display: grid;
+  width: 100%;
+  height: auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 10px;
+  background: var(--mad-fill);
+  color: var(--color-base-foreground);
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on:not(:disabled):hover,
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on[aria-expanded='true'] {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-on:disabled {
+  cursor: default;
+}
+.mar-tpl-on:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+.mar-tpl-chev {
+  color: var(--color-muted-foreground);
+  transition: rotate 160ms ease;
+}
+.mar-tpl-on[aria-expanded='true'] .mar-tpl-chev {
+  rotate: 180deg;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-tpl-chev {
+    transition: none;
+  }
+}
+.mar-tpl-glyph {
+  position: relative;
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--tpl-well-2);
+}
+.mar-tpl-glyph > i {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tpl-ok);
+  /* A ring the row's colour (panel plus its fill), so the dot sits off
+     the tile. */
+  box-shadow: 0 0 0 2px
+    color-mix(in oklch, var(--color-base-foreground) 11%, var(--color-content-background));
+}
+.mar-tpl-row-text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+.mar-tpl-row-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-row-status {
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-cost {
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mar-tpl-cost[data-s='running'],
+.mar-tpl-cost[data-s='ready'] {
+  color: var(--tpl-ok);
+}
+.mar-tpl-cost[data-s='memory'] {
+  color: var(--tpl-warn);
+}
+.mar-tpl-fit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+}
+.mar-tpl-fit > svg {
+  flex: none;
+  color: var(--tpl-ok);
+}
+/* The other builds: one row each, the pick filled (one choice marks its
+   row), what blocks one in its own line, greyed. */
+/* Open in sits at the panel's foot, right over the button it sets. */
+/* The foot: the one action, lined up with the sections' edges. */
+.mar-tpl .mad-actions {
+  margin: 0 20px;
+  padding-top: 12px;
+}
+/* Favorite and Copy link, quiet icons at the name's right. */
+:root .proto-ui.proto-ui.proto-ui .mad-head .mar-tpl-head-btn {
+  width: 28px;
+  height: 28px;
+  margin-top: -4px;
+  border-radius: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-head .mar-tpl-head-btn.is-on {
+  color: var(--color-base-foreground);
+}
+.mad-menu.mar-tpl-builds {
+  right: 0;
+  left: 0;
+  min-width: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-builds button {
+  display: grid;
+  height: auto;
+  grid-template-columns: 15px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 6px 10px;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-builds button.is-on {
+  background: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-builds button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-tpl-builds button:disabled:hover {
+  background: transparent;
+}
+
+/* ── Actions: what happens, then the primary with More at its right ─ */
+.mar-tpl-note {
+  order: -3;
+  padding: 0 2px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 18px;
+  text-wrap: pretty;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mar-tpl-go {
+  position: relative;
+  overflow: hidden;
+  gap: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .mad-actions .mar-tpl-go:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.mar-tpl-go > span {
+  position: relative;
+  font-variant-numeric: tabular-nums;
+}
+/* Launching: the button fills as it goes. */
+.mar-tpl-go::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in oklch, var(--color-content-background) 14%, transparent);
+  transform: scaleX(var(--p, 0));
+  transform-origin: left;
+}
+.mar-tpl-go > kbd {
+  position: relative;
+  display: inline-flex;
+  height: 18px;
+  min-width: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 11px;
+  background: color-mix(in oklch, var(--color-content-background) 10%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui.mar-tpl .mad-menu button[aria-pressed='true'] svg {
+  color: var(--color-base-foreground);
+}
+
+/* ── Graph ───────────────────────────────────────────────────────── */
+.mar-tpl-graph {
+  /* On the stage itself, like the picture: no box, no grid. */
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.mar-tpl-graph:active {
+  cursor: grabbing;
+}
+.mar-tpl-graph-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.mar-tpl-graph-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.mar-tpl-graph-wires > path {
+  opacity: 0.85;
+}
+.mar-tpl-node {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--tpl-node);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--tpl-ink) 10%, transparent),
+    0 10px 28px -12px rgb(0 0 0 / 0.55);
+  font-size: 13px;
+  user-select: none;
+}
+:root[data-ds-theme='light'] .mar-tpl-node {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--tpl-ink) 10%, transparent),
+    0 8px 22px -12px rgb(0 0 0 / 0.22);
+}
+.mar-tpl-node-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--tpl-ink);
+  font-weight: 600;
+  background: var(--tpl-node-head);
+  box-shadow: inset 0 -1px 0 color-mix(in oklch, var(--tpl-ink) 7%, transparent);
+  white-space: nowrap;
+}
+.mar-tpl-node-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: oklch(0.72 0.12 250);
+}
+.mar-tpl-node[data-role='loader'] .mar-tpl-node-dot {
+  background: oklch(0.72 0.11 300);
+}
+.mar-tpl-node[data-role='input'] .mar-tpl-node-dot {
+  background: oklch(0.75 0.13 230);
+}
+.mar-tpl-node[data-role='output'] .mar-tpl-node-dot {
+  background: oklch(0.78 0.15 155);
+}
+.mar-tpl-node-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+}
+.mar-tpl-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.mar-tpl-slot > i {
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--tpl-node);
+}
+.mar-tpl-slot.is-out > i {
+  margin-right: -4.5px;
+  margin-left: 0;
+}
+.mar-tpl-node-widgets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 0;
+}
+.mar-tpl-widget {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 7px;
+  padding: 0 9px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  background: var(--tpl-well-2);
+}
+.mar-tpl-widget > b {
+  overflow: hidden;
+  color: var(--tpl-ink);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mar-tpl-node-text {
+  height: 64px;
+  margin: 6px 10px 0;
+  overflow: hidden;
+  border-radius: 7px;
+  padding: 7px 9px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 17px;
+  background: var(--tpl-well-2);
+}
+.mar-tpl-node-img {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 8px 10px 0;
+  border-radius: 8px;
+  object-fit: cover;
+}
+@media (max-height: 640px) {
+  .mar-tpl .mad-view {
+    top: 56px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-tpl[data-state='open'],
+  .mar-tpl-scrim[data-state='open'],
+  .mar-tpl-fav {
+    animation: none;
+  }
+}

@@ -1,0 +1,443 @@
+/* Benchmarks (Comfy-Desktop#2015): the toolbar, one table per group, the
+ * bar with its range, Vs baseline and the floating selection bar. Groups
+ * sit on the page background (UI-RULES › Sections have no fill). */
+
+/* Toolbar: one row when wide; the four filters on a row of their own when
+ * medium; search on top and the six menus in two columns when narrow.
+ * Measured on the toolbar itself, so it follows the panel. */
+:root .proto-ui.proto-ui.proto-ui .mar-page-bar > .bench-toolbar {
+  display: block;
+  width: 100%;
+  container: bench-toolbar / inline-size;
+}
+.bench-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bench-menus {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.bench-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-search {
+  width: 160px;
+}
+@container bench-toolbar (max-width: 68rem) {
+  .bench-bar {
+    flex-wrap: wrap;
+  }
+  .bench-filters {
+    flex-basis: 100%;
+  }
+}
+@container bench-toolbar (max-width: 36rem) {
+  .bench-menus {
+    display: grid;
+    flex-basis: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  :root .proto-ui.proto-ui.proto-ui .bench-menus .bench-filter {
+    max-width: none;
+  }
+  .bench-tools {
+    order: -1;
+    flex-basis: 100%;
+  }
+  :root .proto-ui.proto-ui.proto-ui .bench-search {
+    width: auto;
+    flex: 1;
+  }
+}
+.bench-menu-title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Groups */
+.bench-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  padding-bottom: 72px;
+}
+.bench-group.is-collapsed + .bench-group.is-collapsed {
+  margin-top: -28px;
+}
+.bench-group-head {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding-left: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-group-toggle {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 60%;
+  flex-shrink: 1;
+  align-items: center;
+  gap: 6px;
+  margin-left: -4px;
+  padding: 4px;
+  border-radius: 8px;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-group-toggle.is-label {
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-group-toggle.is-named {
+  color: var(--color-base-foreground);
+  font-size: 14px;
+  font-weight: 600;
+}
+.bench-chevron {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+  transform: rotate(90deg);
+  transition: transform 150ms ease;
+}
+.is-collapsed .bench-chevron {
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bench-chevron {
+    transition: none;
+  }
+}
+:root .proto-ui.proto-ui.proto-ui .bench-group-meta {
+  flex-shrink: 0;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.bench-note {
+  margin: 0 0 8px 16px;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+}
+
+/* Table: the one table (table.css), in its own grid. On a narrow window
+ * the columns scroll inside the group. */
+.bench-scroll {
+  overflow-x: auto;
+}
+.bench-table {
+  min-width: 860px;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-row {
+  align-items: center;
+  cursor: default;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-sort {
+  overflow: hidden;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bench-sort:hover,
+.bench-sort.is-metric {
+  color: var(--color-muted-foreground);
+}
+.bench-sort:hover {
+  color: var(--color-base-foreground);
+}
+.bench-sort.is-num {
+  text-align: right;
+}
+.bench-vs-head {
+  padding-right: 32px;
+}
+.bench-lead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -6px;
+}
+.bench-grip {
+  display: inline-flex;
+  flex: none;
+  border-radius: 4px;
+  color: var(--color-subtle-foreground);
+  cursor: grab;
+  opacity: 0;
+  outline: none;
+}
+.bench-grip:active {
+  cursor: grabbing;
+}
+.bench-grip:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+:is(.bench-row:hover, .bench-row:focus-within) :is(.bench-grip, .bench-check),
+.bench-grip.is-on,
+.bench-grip:focus-visible,
+.bench-check.is-on {
+  opacity: 1;
+}
+.bench-check {
+  opacity: 0;
+}
+.bench-row.is-dragging {
+  opacity: 0.55;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-row.is-drop {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+}
+:root .proto-ui.proto-ui.proto-ui .bench-name {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin-left: -4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  cursor: text;
+}
+.bench-name:hover,
+.bench-name:focus-visible {
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+}
+.bench-name-pen {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.bench-name:hover .bench-name-pen {
+  opacity: 1;
+}
+.bench-name-input {
+  width: 100%;
+  height: 22px;
+  margin-left: -4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.bench-text {
+  color: var(--color-base-foreground);
+}
+
+/* Bar: the metric from zero on one scale per group, with a min-max
+ * whisker. The fastest run's bar is the brightest. */
+.bench-bar-cell {
+  min-width: 0;
+}
+.bench-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--color-base-foreground) 6%, transparent);
+  outline: none;
+}
+.bench-track:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-border-focus);
+}
+.bench-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--color-base-foreground) 20%, transparent);
+}
+.bench-fill.is-best {
+  background: color-mix(in oklch, var(--color-base-foreground) 65%, transparent);
+}
+.bench-range {
+  position: absolute;
+  top: 3px;
+  height: 2px;
+  background: color-mix(in oklch, var(--color-base-foreground) 35%, transparent);
+}
+.bench-range::before,
+.bench-range::after {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 8px;
+  background: inherit;
+  content: '';
+}
+.bench-range::before {
+  left: 0;
+}
+.bench-range::after {
+  right: 0;
+}
+
+/* Values */
+.bench-value {
+  color: var(--color-base-foreground);
+  font-weight: 600;
+}
+.bench-best {
+  color: var(--color-status-success, #4ade80);
+  font-weight: 600;
+}
+.bench-vs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bench-faster {
+  color: var(--color-status-success, #4ade80);
+}
+.bench-pill {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: color-mix(in oklch, var(--color-status-success, #4ade80) 14%, transparent);
+  color: var(--color-status-success, #4ade80);
+  font-size: 11px;
+  font-weight: 600;
+}
+.bench-pill.is-baseline {
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+}
+.bench-flag,
+.bench-flag-gap {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+.bench-flag {
+  color: var(--color-muted-foreground);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.bench-flag:hover {
+  background: var(--color-secondary-background);
+  color: var(--color-base-foreground);
+}
+.bench-flag.is-on,
+.bench-flag:focus-visible,
+.bench-row:hover .bench-flag {
+  opacity: 1;
+}
+.bench-flag.is-on {
+  color: var(--color-base-foreground);
+}
+
+:root .proto-ui.proto-ui.proto-ui .bench-row .mar-kebab:not(.is-open) {
+  opacity: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-row:is(:hover, :focus-within) .mar-kebab {
+  opacity: 1;
+}
+.bench-foot {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  padding-left: 12px;
+  color: var(--color-subtle-foreground);
+  font-size: 12px;
+}
+
+/* Floating selection bar */
+.bench-selection {
+  position: sticky;
+  bottom: 24px;
+  z-index: 30;
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin: -48px auto 0;
+  padding: 6px 6px 6px 14px;
+  border-radius: 12px;
+  background: #f5f5f5;
+  box-shadow: var(--shadow-popover);
+  color: #171717;
+  font-size: 13px;
+}
+:root .proto-ui.proto-ui.proto-ui .bench-selection-btn {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: rgb(23 23 23 / 0.07);
+  font-weight: 500;
+}
+.bench-selection-btn:hover {
+  background: rgb(23 23 23 / 0.12);
+}
+.bench-selection-btn:disabled {
+  opacity: 0.5;
+}
+.bench-selection-x {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #525252;
+}
+.bench-selection-x:hover {
+  background: rgb(23 23 23 / 0.07);
+  color: #171717;
+}
+.bench-sel-enter-active,
+.bench-sel-leave-active {
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+.bench-sel-enter-from,
+.bench-sel-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bench-sel-enter-active,
+  .bench-sel-leave-active {
+    transition: none;
+  }
+}

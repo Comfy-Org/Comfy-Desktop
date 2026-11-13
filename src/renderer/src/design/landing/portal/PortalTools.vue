@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { LayoutGrid, Waypoints } from 'lucide-vue-next'
+import { LayoutGrid } from 'lucide-vue-next'
+import { GraphIcon, AppIcon } from '../mar/icons/kindIcons'
 import EmptyState from '../ui/EmptyState.vue'
 import PageHeader from '../ui/PageHeader.vue'
 import SearchInput from '../ui/SearchInput.vue'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 import ToolCard from '../parts/space/ToolCard.vue'
-import { currentSpace, STUDIO, type Flavor } from '../spaces'
+import { currentSpace, type Flavor } from '../spaces'
 import { proto } from '../useProto'
 
 /** Everything the studio published into this space. */
@@ -22,15 +23,15 @@ const list = computed(() =>
 
 <template>
   <div class="mx-auto w-full max-w-280 px-10 pb-16">
-    <PageHeader title="Tools" :description="`Built for ${currentSpace.name} by ${STUDIO.name}.`" />
+    <PageHeader title="Tools" />
     <div class="mb-4 flex items-center justify-between gap-3">
       <SegmentedControl
         v-model="kind"
         variant="contained"
         :options="[
           { value: 'all', label: 'All', count: visible.length },
-          { value: 'app', label: 'Apps', icon: LayoutGrid },
-          { value: 'workflow', label: 'Workflows', icon: Waypoints }
+          { value: 'app', label: 'Apps', icon: AppIcon },
+          { value: 'workflow', label: 'Workflows', icon: GraphIcon }
         ]"
       />
       <SearchInput v-model="q" placeholder="Search tools" class="w-56" />

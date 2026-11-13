@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AssetViewMenu from '../mar/assets/AssetViewMenu.vue'
 import { computed, ref } from 'vue'
 import { Cloud, Download, FolderInput, Images, Laptop, Trash2, X } from 'lucide-vue-next'
 import Button from '../ui/Button.vue'
@@ -124,14 +125,14 @@ function addFolder(path: string): void {
         size: '3.4 MB',
         modified: 'Last month',
         kind: 'image',
-        thumbId: 'image_krea2_turbo_t2i'
+        thumbId: 'image_krea2_turbo_t2i~moodboard-01'
       },
       {
         name: 'moodboard_02.jpg',
         size: '2.9 MB',
         modified: 'Last month',
         kind: 'image',
-        thumbId: 'image_flux2'
+        thumbId: 'image_flux2~moodboard-02'
       }
     ]
   })
@@ -141,15 +142,7 @@ function addFolder(path: string): void {
 
 <template>
   <div :class="embedded ? 'mt-3' : 'mx-auto w-full max-w-300 px-10 pb-16'">
-    <PageHeader
-      v-if="!embedded"
-      title="Assets"
-      :description="
-        scope
-          ? `Inputs and outputs of ${scope.name}.`
-          : 'Everything you\'ve made, on this computer and on Comfy Cloud.'
-      "
-    />
+    <PageHeader v-if="!embedded" title="Assets" />
 
     <!-- One row. Selection swaps the filters for bulk actions in place. -->
     <div class="flex h-12 items-center gap-2">
@@ -175,6 +168,7 @@ function addFolder(path: string): void {
         <div class="ml-auto flex items-center gap-2">
           <SearchInput v-model="q" placeholder="Search assets" class="w-52" />
           <Select v-model="sort" label="Sort" :options="sorts" class="w-35" />
+          <AssetViewMenu />
         </div>
       </template>
       <template v-else>
@@ -227,7 +221,7 @@ function addFolder(path: string): void {
       </p>
       <div
         v-if="list.length"
-        class="mt-3 grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3.5"
+        class="mar-asset-grid mt-3 grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3.5"
       >
         <AssetTile
           v-for="a in list"

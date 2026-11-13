@@ -1,0 +1,132 @@
+/* Menu layers (Mar's proposal): how every dropdown and popover is built,
+   from the workspace menu. Three levels:
+   1. The glass: the menu itself, dark-tinted and heavily blurred so what
+      is behind it reads as colour, not detail (overrides the family's
+      surface in mar/shell/marShell.css; this file loads after it).
+   2. The raised panel (.mar-menu-panel): a menu's summary or header (who
+      and where, credits, the current pick), a lighter surface nested in
+      the glass: radius 8 = 14 of the menu − 6 of padding.
+   3. The list below it, on the glass, split by hairlines. The current
+      pick of a choice list is a raised row, like the active project in
+      the sidebar.
+   Simple lists stay simple: glass and rows, no panel. */
+
+/* Controls that sit on a picture (the asset view's Result/Graph and zoom)
+   take the same glass as the menus they open, so both read as one. */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.proto-ui .mad-bar .mar-pseg,
+:root[data-mar-ui='on'] .mad-foot .zc::before {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-card-background) 80%, black) 86%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.2);
+}
+:root[data-mar-ui='on'][data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mad-bar .mar-pseg,
+:root[data-mar-ui='on'][data-ds-theme='light'] .mad-foot .zc::before {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 3%, var(--color-card-background)) 78%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.6);
+}
+:root[data-mar-ui='on']
+  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
+  --mar-menu-radius: 14px;
+  --mar-menu-pad: 6px;
+  /* Tinted dark, like polarised glass, so a bright picture behind it
+     never washes it out; the blur stays. */
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-card-background) 80%, black) 86%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.2);
+}
+:root[data-mar-ui='on'][data-ds-theme='light']
+  :is([role='menu'], [role='listbox'], [data-reka-popper-content-wrapper] > [role='dialog']) {
+  background-color: color-mix(
+    in oklch,
+    color-mix(in oklch, var(--color-base-foreground) 3%, var(--color-card-background)) 78%,
+    transparent
+  );
+  backdrop-filter: blur(32px) saturate(1.6);
+}
+
+/* 2. The raised panel. */
+.mar-menu-panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: calc(var(--mar-menu-radius, 14px) - var(--mar-menu-pad, 6px));
+  /* The lighter fill already lifts it off the glass; no shadow. */
+  background: color-mix(in oklch, var(--color-base-foreground) 7%, transparent);
+}
+.mar-menu-panel + :is([role='separator'], .mar-menu-sep) {
+  display: none;
+}
+.mar-menu-panel:not(:last-child) {
+  margin-bottom: var(--mar-menu-pad, 6px);
+}
+[data-ds-theme='light'] .mar-menu-panel {
+  background: var(--color-card-background);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+    0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+/* 3. The current pick of a choice list: a raised row. Covers the items
+   that mark it with a check (instances, open builds, modes, params) and
+   checked radio items and options. */
+:root[data-mar-ui='on']
+  :is([role='menu'], [role='listbox'])
+  :is(
+    [role='menuitem']:has(> .lucide-check-icon),
+    [role='menuitemradio'][data-state='checked'],
+    [role='option'][data-state='checked']
+  ) {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 9%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.22);
+}
+:root[data-mar-ui='on']
+  :is([role='menu'], [role='listbox'])
+  :is(
+    [role='menuitem']:has(> .lucide-check-icon),
+    [role='menuitemradio'][data-state='checked'],
+    [role='option'][data-state='checked']
+  )[data-highlighted] {
+  background-color: color-mix(in oklch, var(--color-base-foreground) 12%, transparent);
+}
+:root[data-mar-ui='on'][data-ds-theme='light']
+  :is([role='menu'], [role='listbox'])
+  :is(
+    [role='menuitem']:has(> .lucide-check-icon),
+    [role='menuitemradio'][data-state='checked'],
+    [role='option'][data-state='checked']
+  ) {
+  background-color: var(--color-card-background);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-base-foreground) 6%, transparent),
+    0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+/* Group titles: the sidebar's section label (LIBRARIES, PROJECTS):
+   uppercase, tracked, subtle. Groups are set apart by space, not by a
+   hairline, so a divider right before a title goes; the one before the
+   footer actions stays. */
+:root[data-mar-ui='on'] .mar-menu-label {
+  padding: 8px 10px 4px;
+  color: var(--color-subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+:root[data-mar-ui='on'] .mar-menu-label:not(:first-child) {
+  margin-top: 8px;
+}
+:root[data-mar-ui='on']
+  :is([role='menu'], [role='listbox'])
+  :is([role='separator'], .mar-menu-sep):has(+ .mar-menu-label) {
+  display: none;
+}

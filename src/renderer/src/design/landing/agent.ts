@@ -55,18 +55,23 @@ export interface AgentMessage {
 export const WORKFLOW_LIBRARY: AgentWorkflow[] = [
   {
     name: 'product-relight-studio',
-    thumbId: 'template_product_placement',
+    thumbId: 'template_product_placement~product-relight-studio',
     nodes: 9,
     model: 'Flux 2 dev'
   },
   {
     name: 'packshot-clean',
-    thumbId: 'api_google_nano_banana2_image_edit',
+    thumbId: 'api_google_nano_banana2_image_edit~packshot-clean',
     nodes: 6,
     model: 'Nano Banana 2'
   },
-  { name: 'seasonal-scenes', thumbId: 'image_flux2', nodes: 11, model: 'Flux 2 dev' },
-  { name: 'spin-video', thumbId: 'video_ltx2_5_i2v', nodes: 8, model: 'LTX 2.5' }
+  {
+    name: 'seasonal-scenes',
+    thumbId: 'image_flux2~seasonal-scenes',
+    nodes: 11,
+    model: 'Flux 2 dev'
+  },
+  { name: 'spin-video', thumbId: 'video_ltx2_5_i2v~spin-video', nodes: 8, model: 'LTX 2.5' }
 ]
 
 export const agent = reactive({
