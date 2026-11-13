@@ -127,7 +127,7 @@ function onKeydown(e: KeyboardEvent): void {
         }}</span>
       </li>
       <li
-        class="args-raw-input-ac-hint mt-0.5 cursor-default border-t border-solid border-[var(--border)] px-2 pt-1 pb-0.5 text-right text-[10px] text-[color:color-mix(in_srgb,var(--text-muted)_70%,transparent)]"
+        class="args-raw-input-ac-hint mt-0.5 cursor-default border-t border-solid border-[var(--border)] px-3 pt-1 pb-0.5 text-right text-[10px] text-[color:color-mix(in_srgb,var(--text-muted)_70%,transparent)]"
         aria-hidden="true"
       >
         {{ t('comfyUISettings.argsAutocompleteHint') }}

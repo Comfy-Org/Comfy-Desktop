@@ -18,7 +18,6 @@ interface MenuItem {
   id?: string
   label?: string
   labelKey?: string
-  checked?: boolean
   kind?: 'separator'
 }
 

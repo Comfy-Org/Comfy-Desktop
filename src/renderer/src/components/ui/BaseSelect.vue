@@ -107,7 +107,8 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         :value="option.key"
         :disabled="option.disabled"
         :text-value="option.label"
-        class="ui-select-option min-h-7 rounded-md px-3 py-1.5 text-xs [&>span:last-child]:hidden"
+        class="ui-select-option min-h-7 rounded-md px-3 py-1.5"
+        :class="{ 'text-xs': compact }"
         text-class="min-w-0 whitespace-normal"
       >
         <span class="ui-select-option-body flex min-w-0 flex-col gap-0.5">

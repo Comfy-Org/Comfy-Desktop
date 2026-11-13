@@ -126,15 +126,3 @@ describe('MenuView keyboard', () => {
     expect(focusedLabel()).toBe('Settings')
   })
 })
-
-describe('MenuView picked item', () => {
-  it('marks a checked item as picked without drawing a check', () => {
-    const wrapper = mountMenu([
-      { id: 'performance-test', label: 'Performance Tests' },
-      { id: 'benchmarks', label: 'Benchmarks', checked: true } as (typeof items)[number]
-    ])
-    const rows = wrapper.findAll('[role="menuitem"]')
-    expect(rows.map((row) => row.attributes('aria-checked'))).toEqual([undefined, 'true'])
-    expect(rows[1]!.find('svg').exists()).toBe(false)
-  })
-})

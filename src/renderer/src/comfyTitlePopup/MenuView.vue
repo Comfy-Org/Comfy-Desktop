@@ -6,7 +6,6 @@ interface MenuItem {
   id?: string
   label?: string
   labelKey?: string
-  checked?: boolean
   kind?: 'separator'
 }
 
@@ -110,8 +109,6 @@ onUnmounted(() => {
       <li
         v-else
         class="item box-border flex h-7 cursor-pointer items-center gap-2 rounded-md px-3 py-0 text-xs whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-        :class="{ 'bg-muted hover:bg-muted': item.checked }"
-        :aria-checked="item.checked || undefined"
         :role="item.id ? 'menuitem' : 'none'"
         :data-index="idx"
         :tabindex="item.id ? -1 : undefined"

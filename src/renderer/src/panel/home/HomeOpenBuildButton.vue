@@ -86,7 +86,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
               <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="14" aria-hidden="true" />
               <span
                 v-if="problem(build) || isLive(build)"
-                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full border-2 border-background group-data-[state=checked]:border-muted"
+                class="absolute -right-0.5 -bottom-0.5 size-2 rounded-full border-2 border-popover group-data-[state=checked]:border-[color-mix(in_srgb,var(--color-popover),white_6%)]"
                 :class="problem(build) ? 'bg-destructive' : 'bg-[#59d38c]'"
                 aria-hidden="true"
                 data-testid="home-open-build-status-dot"
