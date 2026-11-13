@@ -847,7 +847,8 @@ describe('ComfyUISettingsContent', () => {
               options: [{ value: 'stable', label: 'Stable', data: { lastCheckedAt: Date.now() } }]
             }
           ]
-        }
+        },
+        { tab: 'status', fields: [{ label: 'Install Method', value: 'Portable' }] }
       ]
       useComfyUISettingsState.sectionsFresh.value = true
       return mountContent({ installation, initialTab: 'update' })
@@ -866,6 +867,7 @@ describe('ComfyUISettingsContent', () => {
       } as Installation)
       expect(wrapper.find('[data-testid="build-overview"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="settings-section-list-stub"]').exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'StatusFactPanel' }).exists()).toBe(true)
     })
   })
 
