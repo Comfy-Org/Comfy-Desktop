@@ -4,21 +4,18 @@ import { useI18n } from 'vue-i18n'
 import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
 import TemplatesGallery from './TemplatesGallery.vue'
+import { Search } from 'lucide-vue-next'
+import BaseInput from '../components/ui/BaseInput.vue'
 import ExploreFilter from './ExploreFilter.vue'
-import type { CategoryCounts } from './exploreCategories'
+import ExploreViewOptions from './ExploreViewOptions.vue'
+import type { CardSize, ExploreView, FilterGroup } from './exploreCards'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { useAppsEnabled } from '../composables/useAppsEnabled'
 import type { ExploreTab } from './exploreTab'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type {
-  AppOutputAction,
-  AppOutputs,
-  AssetKind,
-  CatalogApp,
-  CatalogCategory
-} from '../types/ipc'
+import type { AppOutputAction, AppOutputs, AssetKind, CatalogApp } from '../types/ipc'
 
 interface ShownAppOutputs {
   items: OutputDetailItem[]
@@ -60,16 +57,22 @@ const tabOptions = computed(() => [
 ])
 let pendingLaunch = launchApp
 
-const picked = ref<Record<ExploreTab, CatalogCategory[]>>({ apps: [], templates: [] })
-const counts = ref<Record<ExploreTab, CategoryCounts>>({ apps: {}, templates: {} })
-const shownPicked = computed({
-  get: () => picked.value[shownTab.value],
-  set: (value) => (picked.value = { ...picked.value, [shownTab.value]: value })
+const views = ref<Record<ExploreTab, ExploreView>>({
+  apps: { query: '', picks: {}, sort: 'recommended' },
+  templates: { query: '', picks: {}, sort: 'recommended' }
 })
-const filterShown = computed(() => Object.keys(counts.value[shownTab.value]).length > 0)
-function setCounts(on: ExploreTab, value: CategoryCounts): void {
-  counts.value = { ...counts.value, [on]: value }
+const groups = ref<Record<ExploreTab, FilterGroup[]>>({ apps: [], templates: [] })
+const cardSize = ref<CardSize>('medium')
+const shownView = computed(() => views.value[shownTab.value])
+function setView(patch: Partial<ExploreView>): void {
+  views.value = { ...views.value, [shownTab.value]: { ...shownView.value, ...patch } }
 }
+function setGroups(on: ExploreTab, value: FilterGroup[]): void {
+  groups.value = { ...groups.value, [on]: value }
+}
+const searchLabel = computed(() =>
+  shownTab.value === 'apps' ? t('explore.searchApps') : t('explore.searchWorkflows')
+)
 
 watch(
   [appsEnabled, shownTab],
@@ -191,8 +194,9 @@ onBeforeUnmount(() => {
       </h1>
     </header>
     <div
-      v-if="(appsEnabled || filterShown) && !appFillsPage"
+      v-if="!appFillsPage"
       class="mx-auto flex w-full max-w-300 items-center gap-3 px-10 py-3"
+      data-testid="explore-toolbar"
     >
       <SegmentedControl
         v-if="appsEnabled"
@@ -201,23 +205,46 @@ onBeforeUnmount(() => {
         :label="t('explore.sections')"
         data-testid="explore-tabs"
       />
-      <span v-if="filterShown" class="ml-auto inline-flex">
-        <ExploreFilter v-model="shownPicked" :counts="counts[shownTab]" />
-      </span>
+      <div class="ml-auto flex items-center gap-2">
+        <ExploreFilter
+          :model-value="shownView.picks"
+          :groups="groups[shownTab]"
+          @update:model-value="setView({ picks: $event })"
+        />
+        <div class="w-[220px]">
+          <BaseInput
+            :model-value="shownView.query"
+            class="h-8 [&_input]:text-ui"
+            :placeholder="searchLabel"
+            :aria-label="searchLabel"
+            data-testid="explore-search"
+            @update:model-value="setView({ query: String($event ?? '') })"
+          >
+            <template #leading><Search :size="14" /></template>
+          </BaseInput>
+        </div>
+        <ExploreViewOptions
+          v-model:size="cardSize"
+          :sort="shownView.sort"
+          @update:sort="setView({ sort: $event })"
+        />
+      </div>
     </div>
     <AppsGallery
       v-if="visitedTabs.has('apps')"
       v-show="shownTab === 'apps' && !appFillsPage"
       :load-failed-url="loadFailedUrl"
-      :categories="picked.apps"
+      :view="views.apps"
+      :size="cardSize"
       @open="openCatalogApp"
-      @counts="setCounts('apps', $event)"
+      @groups="setGroups('apps', $event)"
     />
     <TemplatesGallery
       v-if="visitedTabs.has('templates')"
       v-show="shownTab === 'templates'"
-      :categories="picked.templates"
-      @counts="setCounts('templates', $event)"
+      :view="views.templates"
+      :size="cardSize"
+      @groups="setGroups('templates', $event)"
     />
   </div>
   <AppsHost

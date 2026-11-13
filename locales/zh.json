@@ -133,7 +133,29 @@
     "templatesFailed": "无法加载工作流。",
     "templatesEmpty": "暂无工作流。",
     "filters": "筛选",
-    "filterType": "类型"
+    "filterType": "类型",
+    "filterUseCase": "用途",
+    "filterModel": "模型",
+    "filterRunsOn": "运行位置",
+    "runsOn": {
+      "cloud": "Comfy Cloud",
+      "local": "本机"
+    },
+    "searchApps": "搜索应用",
+    "searchWorkflows": "搜索工作流",
+    "viewOptions": "视图选项",
+    "sizeLabel": "大小",
+    "size": {
+      "small": "小",
+      "medium": "中",
+      "large": "大"
+    },
+    "sortLabel": "排序方式",
+    "sort": {
+      "recommended": "推荐",
+      "az": "名称 A 到 Z"
+    },
+    "noMatches": "没有匹配项。请尝试其他筛选或搜索。"
   },
   "home": {
     "title": "欢迎。开始创作吧！",

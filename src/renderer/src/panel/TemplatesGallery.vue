@@ -1,31 +1,37 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CardBottom from '@comfyorg/design-system/content-card/CardBottom'
 import CardContainer from '@comfyorg/design-system/content-card/CardContainer'
 import CardTop from '@comfyorg/design-system/content-card/CardTop'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import CategoryBadge from './CategoryBadge.vue'
-import { byCategory, countCategories, type CategoryCounts } from './exploreCategories'
-import type { CatalogCategory, CatalogWorkflow } from '../types/ipc'
+import {
+  exploreGridClass,
+  useExploreCards,
+  type CardSize,
+  type ExploreView,
+  type FilterGroup
+} from './exploreCards'
+import type { CatalogWorkflow } from '../types/ipc'
 
 const SKELETON_COUNT = 8
-const GRID_CLASS = 'm-0 grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4 p-0'
 
-const { categories = [] } = defineProps<{ categories?: CatalogCategory[] }>()
+const { view, size } = defineProps<{ view: ExploreView; size: CardSize }>()
 
-const emit = defineEmits<{ counts: [counts: CategoryCounts] }>()
+const emit = defineEmits<{ groups: [groups: FilterGroup[]] }>()
 
 const { t } = useI18n()
 const templates = ref<CatalogWorkflow[]>([])
 const loading = ref(true)
 const failed = ref(false)
-const shown = computed(() => byCategory(templates.value, categories))
+const { shown, groups } = useExploreCards(templates, () => view)
+const gridClass = computed(() => exploreGridClass(size))
+watch(groups, (value) => emit('groups', value), { immediate: true })
 
 onMounted(async () => {
   try {
     templates.value = await window.api.listHomeWorkflows()
-    emit('counts', countCategories(templates.value))
   } catch {
     failed.value = true
   } finally {
@@ -41,7 +47,7 @@ function openTemplate(template: CatalogWorkflow): void {
 <template>
   <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
     <div v-if="loading" role="status" :aria-label="t('common.loading')">
-      <ul :class="GRID_CLASS" data-testid="templates-gallery-skeleton">
+      <ul :class="gridClass" data-testid="templates-gallery-skeleton">
         <li
           v-for="n in SKELETON_COUNT"
           :key="n"
@@ -67,7 +73,14 @@ function openTemplate(template: CatalogWorkflow): void {
     >
       {{ t('explore.templatesEmpty') }}
     </p>
-    <ul v-else :class="GRID_CLASS" data-testid="templates-gallery">
+    <p
+      v-else-if="shown.length === 0"
+      class="m-0 text-ui text-muted-foreground"
+      data-testid="explore-no-matches"
+    >
+      {{ t('explore.noMatches') }}
+    </p>
+    <ul v-else :class="gridClass" data-testid="templates-gallery">
       <li v-for="template in shown" :key="template.id">
         <button
           type="button"

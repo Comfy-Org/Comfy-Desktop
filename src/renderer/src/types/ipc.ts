@@ -10,6 +10,8 @@ export type {
   CatalogApp,
   CatalogCategory,
   CatalogWorkflow,
+  CatalogRunsOn,
+  CatalogUseCase,
   Unsubscribe,
   BetaActivationNotice,
   BetaArgView,

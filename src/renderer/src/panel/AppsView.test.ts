@@ -644,7 +644,7 @@ describe('Explore categories', () => {
   }
 
   async function flip(wrapper: Awaited<ReturnType<typeof mountApps>>, category: string) {
-    await wrapper.get(`[data-testid="explore-filter-${category}"]`).trigger('click')
+    await wrapper.get(`[data-testid="explore-filter-type-${category}"]`).trigger('click')
     await flushPromises()
   }
 
@@ -674,10 +674,10 @@ describe('Explore categories', () => {
     const wrapper = await mountApps({ initialTab: 'templates' })
     await openFilter(wrapper)
 
-    const rows = wrapper.findAll('[data-testid^="explore-filter-"]')
+    const rows = wrapper.findAll('[data-testid^="explore-filter-type-"]')
     expect(rows.map((row) => row.attributes('data-testid'))).toEqual([
-      'explore-filter-image',
-      'explore-filter-video'
+      'explore-filter-type-image',
+      'explore-filter-type-video'
     ])
     expect(rows.map((row) => row.text())).toEqual(['Image2', 'Video2'])
   })
@@ -690,9 +690,9 @@ describe('Explore categories', () => {
     await openFilter(wrapper)
     await flip(wrapper, 'video')
     expect(ids()).toEqual(['animate', 'talk'])
-    expect(wrapper.get('[data-testid="explore-filter-video"]').attributes('aria-checked')).toBe(
-      'true'
-    )
+    expect(
+      wrapper.get('[data-testid="explore-filter-type-video"]').attributes('aria-checked')
+    ).toBe('true')
     expect(wrapper.get('[data-testid="explore-filter-count"]').text()).toBe('1')
 
     await flip(wrapper, 'image')
@@ -737,5 +737,204 @@ describe('Explore categories', () => {
     await openFilter(wrapper)
     await flip(wrapper, 'audio')
     expect(cardIds(wrapper, 'app-card-')).toEqual(['song'])
+  })
+})
+
+describe('Explore toolbar', () => {
+  type Wrapper = Awaited<ReturnType<typeof mountApps>>
+
+  function hubWorkflow(
+    id: string,
+    over: Partial<CatalogWorkflow> & { use?: [string, string, number] } = {}
+  ): CatalogWorkflow {
+    const { use, ...rest } = over
+    return {
+      id,
+      title: id,
+      description: '',
+      thumbnailUrl: null,
+      category: null,
+      useCase: use ? { id: use[0], label: use[1], order: use[2] } : null,
+      models: [],
+      runsOn: 'cloud',
+      rank: null,
+      ...rest
+    }
+  }
+
+  const UPSCALE = ['upscale', 'Upscale & restore', 3] as [string, string, number]
+  const VIDEOS = ['videos', 'Create & edit videos', 0] as [string, string, number]
+
+  function ids(wrapper: Wrapper, prefix = 'template-card-'): string[] {
+    return wrapper
+      .findAll(`[data-testid^="${prefix}"]`)
+      .map((card) => card.attributes('data-testid')!.slice(prefix.length))
+  }
+
+  async function openMenu(wrapper: Wrapper, testid: string) {
+    await wrapper.get(`[data-testid="${testid}"]`).trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+  }
+
+  async function pick(wrapper: Wrapper, testid: string) {
+    await wrapper.get(`[data-testid="${testid}"]`).trigger('click')
+    await flushPromises()
+  }
+
+  async function search(wrapper: Wrapper, text: string) {
+    await wrapper.get('[data-testid="explore-search"] input').setValue(text)
+    await flushPromises()
+  }
+
+  async function switchTab(wrapper: Wrapper, index: number) {
+    const tab = wrapper.findAll('[data-testid="explore-tabs"] button')[index]!
+    await tab.trigger('mousedown')
+    await tab.trigger('click')
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    listCatalogApps.mockResolvedValue([
+      catalogApp('studio', 'Cinematic Studio'),
+      catalogApp('background', 'Remove Background')
+    ])
+    listHomeWorkflows.mockResolvedValue([
+      hubWorkflow('talk', { use: VIDEOS, models: ['LTX-2.3'], rank: 2, category: 'video' }),
+      hubWorkflow('upscale', { use: UPSCALE, models: ['SeedVR2'], rank: 1, category: 'image' }),
+      hubWorkflow('motion', { use: VIDEOS, models: ['LTX-2.3'], rank: 3, category: 'video' }),
+      hubWorkflow('video-upscale', {
+        use: UPSCALE,
+        models: ['SeedVR2'],
+        rank: 2,
+        description: 'Increase video resolution.',
+        category: 'video'
+      })
+    ])
+  })
+
+  it('keeps search and view options in the same place on both tabs', async () => {
+    const wrapper = await mountApps()
+    const tools = () => [
+      wrapper.find('[data-testid="explore-search"]').exists(),
+      wrapper.find('[data-testid="explore-view-options"]').exists()
+    ]
+    expect(tools()).toEqual([true, true])
+    expect(wrapper.get('[data-testid="explore-search"] input').attributes('placeholder')).toBe(
+      'Search apps'
+    )
+
+    await switchTab(wrapper, 1)
+
+    expect(tools()).toEqual([true, true])
+    expect(wrapper.get('[data-testid="explore-search"] input').attributes('placeholder')).toBe(
+      'Search workflows'
+    )
+  })
+
+  it('lists the workflows in the catalog’s recommended order, or by name', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    expect(ids(wrapper)).toEqual(['upscale', 'talk', 'video-upscale', 'motion'])
+
+    await openMenu(wrapper, 'explore-view-options')
+    await pick(wrapper, 'explore-sort-az')
+
+    expect(ids(wrapper)).toEqual(['motion', 'talk', 'upscale', 'video-upscale'])
+  })
+
+  it('searches titles, descriptions, use cases and models', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+
+    await search(wrapper, 'resolution')
+    expect(ids(wrapper)).toEqual(['video-upscale'])
+
+    await search(wrapper, 'create & edit')
+    expect(ids(wrapper)).toEqual(['talk', 'motion'])
+
+    await search(wrapper, 'seedvr2')
+    expect(ids(wrapper)).toEqual(['upscale', 'video-upscale'])
+
+    await search(wrapper, 'nothing like this')
+    expect(ids(wrapper)).toEqual([])
+    expect(wrapper.get('[data-testid="explore-no-matches"]').text()).toBe(
+      'Nothing matches. Try another filter or search.'
+    )
+  })
+
+  it('filters workflows by type, use case and model, counting what each pick would show', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    await openMenu(wrapper, 'explore-filter')
+
+    const groupKeys = wrapper
+      .findAll('[data-testid^="explore-filter-group-"]')
+      .map((group) => group.text())
+    expect(groupKeys).toEqual(['Type', 'Use case', 'Model'])
+    const row = (testid: string) => wrapper.get(`[data-testid="explore-filter-${testid}"]`).text()
+    expect(row('use-videos')).toBe('Create & edit videos2')
+    expect(row('use-upscale')).toBe('Upscale & restore2')
+    expect(row('model-LTX-2.3')).toBe('LTX-2.32')
+
+    await pick(wrapper, 'explore-filter-use-upscale')
+    expect(ids(wrapper)).toEqual(['upscale', 'video-upscale'])
+    expect(row('type-video')).toBe('Video1')
+    expect(row('model-LTX-2.3')).toBe('LTX-2.30')
+    expect(
+      wrapper.get('[data-testid="explore-filter-model-LTX-2.3"]').attributes('aria-disabled')
+    ).toBe('true')
+
+    await pick(wrapper, 'explore-filter-type-video')
+    expect(ids(wrapper)).toEqual(['video-upscale'])
+    expect(wrapper.get('[data-testid="explore-filter-count"]').text()).toBe('2')
+  })
+
+  it('leaves out Runs on while every workflow runs in the same place', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    await openMenu(wrapper, 'explore-filter')
+
+    expect(wrapper.find('[data-testid="explore-filter-group-runs"]').exists()).toBe(false)
+  })
+
+  it('offers Runs on once the workflows run in more than one place', async () => {
+    listHomeWorkflows.mockResolvedValue([
+      hubWorkflow('cloud-one', { runsOn: 'cloud' }),
+      hubWorkflow('local-one', { runsOn: 'local' })
+    ])
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    await openMenu(wrapper, 'explore-filter')
+
+    expect(wrapper.get('[data-testid="explore-filter-runs-local"]').text()).toBe('This computer1')
+    await pick(wrapper, 'explore-filter-runs-local')
+    expect(ids(wrapper)).toEqual(['local-one'])
+  })
+
+  it('keeps each tab its own search, and one card size for both', async () => {
+    const wrapper = await mountApps()
+    await search(wrapper, 'studio')
+    expect(ids(wrapper, 'app-card-')).toEqual(['studio'])
+
+    await openMenu(wrapper, 'explore-view-options')
+    await pick(wrapper, 'explore-size-large')
+    expect(wrapper.get('[data-testid="apps-gallery"]').classes()).toContain('grid-cols-3')
+
+    await switchTab(wrapper, 1)
+    expect(wrapper.get('[data-testid="explore-search"] input').element).toHaveProperty('value', '')
+    expect(ids(wrapper)).toHaveLength(4)
+    expect(wrapper.get('[data-testid="templates-gallery"]').classes()).toContain('grid-cols-3')
+
+    await switchTab(wrapper, 0)
+    expect(wrapper.get('[data-testid="explore-search"] input').element).toHaveProperty(
+      'value',
+      'studio'
+    )
+    expect(ids(wrapper, 'app-card-')).toEqual(['studio'])
+  })
+
+  it('shows four cards across by default, five when small', async () => {
+    const wrapper = await mountApps()
+    expect(wrapper.get('[data-testid="apps-gallery"]').classes()).toContain('grid-cols-4')
+
+    await openMenu(wrapper, 'explore-view-options')
+    await pick(wrapper, 'explore-size-small')
+
+    expect(wrapper.get('[data-testid="apps-gallery"]').classes()).toContain('grid-cols-5')
   })
 })

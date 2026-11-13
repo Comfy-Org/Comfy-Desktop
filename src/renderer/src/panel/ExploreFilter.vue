@@ -5,36 +5,53 @@ import { Check, ListFilter } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import type { CatalogCategory } from '../types/ipc'
-import { CATEGORY_ORDER, type CategoryCounts } from './exploreCategories'
+import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
+import type { ExplorePicks, FacetKey, FilterGroup, FilterOption } from './exploreCards'
 
-const { counts } = defineProps<{ counts: CategoryCounts }>()
-const picked = defineModel<CatalogCategory[]>({ required: true })
+const { groups } = defineProps<{ groups: FilterGroup[] }>()
+const picks = defineModel<ExplorePicks>({ required: true })
 
 const { t } = useI18n()
 
-const options = computed(() =>
-  CATEGORY_ORDER.filter((category) => (counts[category] ?? 0) > 0).map((category) => ({
-    value: category,
-    label: t(`home.category.${category}`),
-    count: counts[category] ?? 0
-  }))
+const pickedCount = computed(() =>
+  Object.values(picks.value).reduce((total, picked) => total + (picked?.length ?? 0), 0)
 )
 
-function flip(category: CatalogCategory): void {
-  picked.value = picked.value.includes(category)
-    ? picked.value.filter((value) => value !== category)
-    : CATEGORY_ORDER.filter((value) => value === category || picked.value.includes(value))
+const TITLES: Record<FacetKey, string> = {
+  type: 'explore.filterType',
+  use: 'explore.filterUseCase',
+  model: 'explore.filterModel',
+  runs: 'explore.filterRunsOn'
+}
+
+function optionLabel(key: FacetKey, option: FilterOption): string {
+  if (key === 'type') return t(`home.category.${option.value}`)
+  if (key === 'runs') return t(`explore.runsOn.${option.value}`)
+  return option.label
+}
+
+function isOn(key: FacetKey, value: string): boolean {
+  return picks.value[key]?.includes(value) ?? false
+}
+
+function flip(group: FilterGroup, value: string): void {
+  const picked = picks.value[group.key] ?? []
+  const next = picked.includes(value)
+    ? picked.filter((item) => item !== value)
+    : group.options
+        .map((option) => option.value)
+        .filter((item) => item === value || picked.includes(item))
+  picks.value = { ...picks.value, [group.key]: next }
 }
 </script>
 
 <template>
   <Menu
-    v-if="options.length"
+    v-if="groups.length"
     :modal="false"
     align="end"
-    class="z-20 min-w-[180px]"
-    :aria-label="t('explore.filterType')"
+    class="z-20 max-h-[min(70vh,520px)] min-w-[220px] overflow-y-auto"
+    :aria-label="t('explore.filters')"
   >
     <template #trigger>
       <Button
@@ -47,31 +64,38 @@ function flip(category: CatalogCategory): void {
         <ListFilter :size="15" aria-hidden="true" />
         {{ t('explore.filters') }}
         <span
-          v-if="picked.length"
+          v-if="pickedCount"
           class="min-w-4 rounded-full bg-foreground px-1 text-center text-[11px]/4 font-semibold text-background tabular-nums"
           data-testid="explore-filter-count"
         >
-          {{ picked.length }}
+          {{ pickedCount }}
         </span>
       </Button>
     </template>
-    <div class="px-3 pt-2 pb-1 text-ui text-subtle-foreground">
-      {{ t('explore.filterType') }}
-    </div>
-    <MenuItem
-      v-for="option in options"
-      :key="option.value"
-      as="button"
-      type="button"
-      role="menuitemcheckbox"
-      :aria-checked="picked.includes(option.value)"
-      class="w-full"
-      :data-testid="`explore-filter-${option.value}`"
-      @select.prevent="flip(option.value)"
-    >
-      <span class="flex-1 text-left">{{ option.label }}</span>
-      <Check v-if="picked.includes(option.value)" :size="15" aria-hidden="true" />
-      <span v-else class="text-subtle-foreground tabular-nums">{{ option.count }}</span>
-    </MenuItem>
+    <template v-for="(group, index) in groups" :key="group.key">
+      <MenuSeparator v-if="index > 0" />
+      <div
+        class="px-3 pt-2 pb-1 text-ui text-subtle-foreground"
+        :data-testid="`explore-filter-group-${group.key}`"
+      >
+        {{ t(TITLES[group.key]) }}
+      </div>
+      <MenuItem
+        v-for="option in group.options"
+        :key="option.value"
+        as="button"
+        type="button"
+        role="menuitemcheckbox"
+        :aria-checked="isOn(group.key, option.value)"
+        :disabled="option.count === 0 && !isOn(group.key, option.value)"
+        class="w-full"
+        :data-testid="`explore-filter-${group.key}-${option.value}`"
+        @select.prevent="flip(group, option.value)"
+      >
+        <span class="min-w-0 flex-1 truncate text-left">{{ optionLabel(group.key, option) }}</span>
+        <Check v-if="isOn(group.key, option.value)" :size="15" aria-hidden="true" />
+        <span v-else class="text-subtle-foreground tabular-nums">{{ option.count }}</span>
+      </MenuItem>
+    </template>
   </Menu>
 </template>

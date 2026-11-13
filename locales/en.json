@@ -133,7 +133,29 @@
     "templatesFailed": "Couldn't load the workflows.",
     "templatesEmpty": "No workflows yet.",
     "filters": "Filters",
-    "filterType": "Type"
+    "filterType": "Type",
+    "filterUseCase": "Use case",
+    "filterModel": "Model",
+    "filterRunsOn": "Runs on",
+    "runsOn": {
+      "cloud": "Comfy Cloud",
+      "local": "This computer"
+    },
+    "searchApps": "Search apps",
+    "searchWorkflows": "Search workflows",
+    "viewOptions": "View options",
+    "sizeLabel": "Size",
+    "size": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
+    "sortLabel": "Sort by",
+    "sort": {
+      "recommended": "Recommended",
+      "az": "Name A to Z"
+    },
+    "noMatches": "Nothing matches. Try another filter or search."
   },
   "home": {
     "title": "Welcome. Let's create!",
