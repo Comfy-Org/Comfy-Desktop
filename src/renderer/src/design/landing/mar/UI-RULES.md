@@ -136,7 +136,10 @@ DS's Motion page (`ds/motion.ts`).
   moves or gets cut (Comfy-Desktop#2060).
 - **Builds are tiles from Milestone 2**, the same card as Home's builds:
   the machine in the build's hue, the state on top, name, version, the
-  action and ⋯ on the right (Comfy-Desktop#2025).
+  action and ⋯ on the right (Comfy-Desktop#2025). The action is Start or
+  Open only (Open when running, starting, errored, Cloud or Remote); Update
+  and Migrate are buttons before it; Stop lives in ⋯; problems are red text
+  in the state line.
 - **Templates, not Workflows,** for the Hub's catalog (Home, Explore).
   Workflows are the person's own (Recent workflows, the Workflows library).
 - **Counts go in the tabs**, not beside the title ("Images 4", not "17
