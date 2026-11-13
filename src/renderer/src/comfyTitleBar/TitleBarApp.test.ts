@@ -270,7 +270,7 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp)
     await flushPromises()
-    const fileBtn = wrapper.find('.title-menu-button')
+    const fileBtn = wrapper.find('.title-menu-button[aria-haspopup="menu"]')
     expect(fileBtn.exists()).toBe(true)
     expect(fileBtn.attributes('aria-label')).toBe('Menu')
     expect(fileBtn.classes()).toContain('title-menu-button--icon')
@@ -307,7 +307,7 @@ describe('TitleBarApp', () => {
     const { default: TitleBarApp } = await import('./TitleBarApp.vue')
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
-    await wrapper.find('.title-menu-button').trigger('click')
+    await wrapper.find('.title-menu-button[aria-haspopup="menu"]').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
     const anchor = bridgeState.fileMenuAnchors[0]!
     expect(typeof anchor.x).toBe('number')
@@ -393,13 +393,13 @@ describe('TitleBarApp', () => {
     const wrapper = mount(TitleBarApp, { attachTo: document.body })
     await flushPromises()
 
-    await wrapper.find('.title-menu-button').trigger('click')
+    await wrapper.find('.title-menu-button[aria-haspopup="menu"]').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
 
     bridgeState.menuClosedCallbacks.forEach((cb) => cb({ menu: 'menu' }))
     await flushPromises()
 
-    await wrapper.find('.title-menu-button').trigger('click')
+    await wrapper.find('.title-menu-button[aria-haspopup="menu"]').trigger('click')
     expect(bridgeState.fileMenuAnchors.length).toBe(1)
 
     wrapper.unmount()
@@ -1005,7 +1005,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button').element as HTMLElement
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]').element as HTMLElement
       btn.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))
       vi.advanceTimersByTime(1000)
       await flushPromises()
@@ -1023,7 +1023,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp)
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button')
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]')
       expect(btn.attributes('aria-label')).toBe('Menu')
       expect(btn.attributes('data-title-tooltip')).toBe('Menu')
       expect(btn.attributes('title')).toBeUndefined()
@@ -1035,7 +1035,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp)
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button')
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]')
       expect(btn.attributes('aria-label')).toBe('Menu')
       expect(btn.attributes('title')).toBe('Menu')
       expect(btn.attributes('data-title-tooltip')).toBeUndefined()
@@ -1051,7 +1051,7 @@ describe('TitleBarApp', () => {
       const { default: TitleBarApp } = await import('./TitleBarApp.vue')
       const wrapper = mount(TitleBarApp, { attachTo: document.body })
       await flushPromises()
-      const btn = wrapper.find('.title-menu-button').element as HTMLElement
+      const btn = wrapper.find('.title-menu-button[aria-haspopup="menu"]').element as HTMLElement
       btn.getBoundingClientRect = () =>
         ({ left: 20, top: 6, right: 50, bottom: 30, width: 30, height: 24, x: 20, y: 6 }) as DOMRect
       btn.dispatchEvent(new PointerEvent('pointermove', { bubbles: true }))

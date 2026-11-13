@@ -10,14 +10,17 @@ import { getCloudSession } from '../devplatform/session'
 import * as installations from '../installations'
 import * as settings from '../settings'
 import { buildSaveDialogFilters } from './comfyDownloadManager'
-import { _runningSessions, sourceMap } from './ipc/shared'
+import { sourceMap } from './ipc/shared'
+import { outputFilePath } from './outputFolders'
 import { runPool } from '../sources/standalone/templateDownloadCore'
+import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
 
 const ASSETS_LIST_CHANNEL = 'assets:list'
 const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 
-const LIST_QUERY = 'tags_any=output&sort=created_at&order=desc&limit=100'
+const PAGE_SIZE = 100
+const LIST_QUERY = `tags_any=output&sort=created_at&order=desc&limit=${PAGE_SIZE}`
 const REQUEST_TIMEOUT_MS = 20_000
 const PREVIEW_BATCH_TIMEOUT_MS = 30_000
 const SIGNED_URL_CONCURRENCY = 6
@@ -44,7 +47,6 @@ interface AssetRow {
   tags?: unknown
 }
 
-type AssetSource = { kind: 'cloud'; accessToken: string } | { kind: 'local'; origin: string }
 type ContentDisposition = 'inline' | 'attachment'
 
 function isOptional(value: unknown, type: 'string' | 'number'): boolean {
@@ -84,7 +86,8 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
     tags: Array.isArray(row.tags)
       ? row.tags.filter((tag): tag is string => typeof tag === 'string')
       : [],
-    previewUrl
+    previewUrl,
+    thumbnailUrl: null
   }
 }
 
@@ -97,7 +100,7 @@ async function fetchAssetRows(url: string, headers: Record<string, string>): Pro
   const body: unknown = await res.json().catch(() => null)
   const rows = body && typeof body === 'object' ? (body as { assets?: unknown }).assets : undefined
   if (!Array.isArray(rows)) throw new Error('List assets returned an invalid page')
-  return rows.filter(isAssetRow)
+  return rows.filter(isAssetRow).slice(0, PAGE_SIZE)
 }
 
 export function signedStorageUrl(location: string | null): string | null {
@@ -134,17 +137,10 @@ async function resolveCloudContentUrl(
   }
 }
 
-async function resolveSource(installationId: string): Promise<AssetSource | null> {
+async function cloudAccessToken(installationId: string): Promise<string | null> {
   const inst = await installations.get(installationId)
-  if (!inst) return null
-  const category = sourceMap[inst.sourceId]?.category
-  if (category === 'cloud') {
-    const accessToken = await getCloudSession().getAccessToken()
-    return accessToken ? { kind: 'cloud', accessToken } : null
-  }
-  if (category !== 'local') return null
-  const port = _runningSessions.get(installationId)?.port
-  return port ? { kind: 'local', origin: `http://127.0.0.1:${port}` } : null
+  if (!inst || sourceMap[inst.sourceId]?.category !== 'cloud') return null
+  return getCloudSession().getAccessToken()
 }
 
 async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
@@ -166,36 +162,25 @@ async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
   return summaries
 }
 
-function localPreviewUrl(row: AssetRow, origin: string): string {
-  const fallback = new URL(contentPath(row.id, 'inline'), origin)
-  const preview = row.preview_url ? URL.parse(row.preview_url, origin) : null
-  return (
-    preview?.origin === fallback.origin && preview.pathname.startsWith('/api/') ? preview : fallback
-  ).toString()
-}
-
-async function listLocalAssets(origin: string): Promise<AssetSummary[]> {
-  const rows = await fetchAssetRows(`${origin}/api/assets?${LIST_QUERY}`, {})
-  return rows.map((row) => toSummary(row, localPreviewUrl(row, origin)))
-}
-
 export async function listAssets(installationId: string): Promise<AssetSummary[]> {
-  const source = await resolveSource(installationId)
-  if (!source) return []
-  return source.kind === 'cloud'
-    ? listCloudAssets(source.accessToken)
-    : listLocalAssets(source.origin)
+  const accessToken = await cloudAccessToken(installationId)
+  return accessToken ? listCloudAssets(accessToken) : []
 }
 
-async function downloadUrl(source: AssetSource, assetId: string): Promise<string | null> {
-  return source.kind === 'cloud'
-    ? resolveCloudContentUrl(
-        assetId,
-        source.accessToken,
-        'attachment',
-        AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-      )
-    : `${source.origin}${contentPath(assetId, 'attachment')}`
+type SaveTo = (filePath: string) => Promise<void>
+
+async function writeThroughPartFile(
+  filePath: string,
+  write: (partPath: string) => Promise<void>
+): Promise<void> {
+  const partPath = `${filePath}.${randomUUID()}.part`
+  try {
+    await write(partPath)
+    await fs.promises.rename(partPath, filePath)
+  } catch (error) {
+    await fs.promises.rm(partPath, { force: true }).catch(() => {})
+    throw error
+  }
 }
 
 async function saveDownload(url: string, filePath: string): Promise<void> {
@@ -205,23 +190,42 @@ async function saveDownload(url: string, filePath: string): Promise<void> {
     clearTimeout(timer)
     timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   }
-  const partPath = `${filePath}.${randomUUID()}.part`
   try {
     const res = await fetch(url, { signal: controller.signal })
     if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
     const body = Readable.fromWeb(res.body as WebReadableStream)
     body.on('data', keepAlive)
-    try {
-      await pipeline(body, fs.createWriteStream(partPath, { flags: 'wx' }))
-      await fs.promises.rename(partPath, filePath)
-    } catch (error) {
-      await fs.promises.rm(partPath, { force: true }).catch(() => {})
-      throw error
-    }
+    await writeThroughPartFile(filePath, (partPath) =>
+      pipeline(body, fs.createWriteStream(partPath, { flags: 'wx' }))
+    )
   } finally {
     clearTimeout(timer)
     controller.abort()
   }
+}
+
+async function cloudSaveTo(installationId: string, assetId: string): Promise<SaveTo | null> {
+  const accessToken = await cloudAccessToken(installationId)
+  if (!accessToken) return null
+  return async (filePath) => {
+    const url = await resolveCloudContentUrl(
+      assetId,
+      accessToken,
+      'attachment',
+      AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    )
+    if (!url) throw new Error('The asset has no download link.')
+    await saveDownload(url, filePath)
+  }
+}
+
+async function localSaveTo(assetId: string): Promise<SaveTo | null> {
+  const file = await outputFilePath(assetId)
+  if (!file) return null
+  return (filePath) =>
+    writeThroughPartFile(filePath, (partPath) =>
+      fs.promises.copyFile(file, partPath, fs.constants.COPYFILE_EXCL)
+    )
 }
 
 function isUsableFileName(name: string): boolean {
@@ -234,12 +238,13 @@ function safeFileName(fileName: string, assetId: string): string {
 
 export async function downloadAsset(
   win: BrowserWindow,
-  installationId: string,
+  source: string,
   assetId: string,
   fileName: string
 ): Promise<boolean> {
-  const source = await resolveSource(installationId)
-  if (!source) throw new Error('This build is not running.')
+  const saveTo =
+    source === LOCAL_ASSETS_SOURCE ? await localSaveTo(assetId) : await cloudSaveTo(source, assetId)
+  if (!saveTo) throw new Error('This asset is not available.')
   const name = safeFileName(fileName, assetId)
   const remembered = settings.get('lastSaveDialogDir')
   const startDir = remembered && fs.existsSync(remembered) ? remembered : app.getPath('downloads')
@@ -249,9 +254,7 @@ export async function downloadAsset(
   })
   if (canceled || !filePath) return false
   settings.set('lastSaveDialogDir', path.dirname(filePath))
-  const url = await downloadUrl(source, assetId)
-  if (!url) throw new Error('The asset has no download link.')
-  await saveDownload(url, filePath)
+  await saveTo(filePath)
   return true
 }
 
@@ -261,15 +264,10 @@ export function registerAssetsHandlers(): void {
   )
   ipcMain.handle(
     ASSETS_DOWNLOAD_CHANNEL,
-    (event, installationId: unknown, assetId: unknown, fileName: unknown) => {
+    (event, source: unknown, assetId: unknown, fileName: unknown) => {
       const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow()
-      if (!win || typeof installationId !== 'string' || typeof assetId !== 'string') return false
-      return downloadAsset(
-        win,
-        installationId,
-        assetId,
-        typeof fileName === 'string' ? fileName : assetId
-      )
+      if (!win || typeof source !== 'string' || typeof assetId !== 'string') return false
+      return downloadAsset(win, source, assetId, typeof fileName === 'string' ? fileName : assetId)
     }
   )
 }

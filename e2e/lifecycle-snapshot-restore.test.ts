@@ -320,13 +320,12 @@ test('picker-driven restore surfaces inline op-card + auto-dismisses on success 
     .toBe(true)
 
   await expect
-    .poll(async () => popup.evaluate<boolean>(`!!document.querySelector('.snapshots-rail-cta')`), {
-      timeout: 8_000,
-      intervals: [200, 400]
-    })
+    .poll(
+      async () =>
+        popup.evaluate<boolean>(
+          `!document.querySelector('${byTestId(TID.snapshotsOpCard)}') && document.querySelector('${byTestId(TID.snapshotsSaveCta)}')?.disabled === false`
+        ),
+      { timeout: 8_000, intervals: [200, 400] }
+    )
     .toBe(true)
-
-  expect(
-    await popup.evaluate<boolean>(`!!document.querySelector('${byTestId(TID.snapshotsOpCard)}')`)
-  ).toBe(false)
 })

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
-const runningSessions = new Map<string, { port?: number }>()
+const outputFile = vi.fn()
 
 const showSaveDialog = vi.fn()
 const written = new Map<string, string>()
@@ -32,13 +32,18 @@ const renameFile = vi.fn(async (from: string, to: string) => {
   written.set(to, written.get(from) ?? '')
   written.delete(from)
 })
+const copyFile = vi.fn(async (from: string, to: string, _mode: number) => {
+  written.set(to, `copy of ${from}`)
+})
 const savedSettings = new Map<string, string>()
 vi.mock('fs', () => ({
   default: {
+    constants: { COPYFILE_EXCL: 1 },
     existsSync: (dir: string) => dir === '/remembered',
     createWriteStream: (filePath: string, options?: { flags: string }) =>
       createWriteStream(filePath, options),
     promises: {
+      copyFile: (from: string, to: string, mode: number) => copyFile(from, to, mode),
       rm: (path: string, options: { force: boolean }) => removeFile(path, options),
       rename: (from: string, to: string) => renameFile(from, to)
     }
@@ -51,12 +56,12 @@ vi.mock('../settings', () => ({
 vi.mock('./comfyDownloadManager', () => ({
   buildSaveDialogFilters: (name: string) => [{ name, extensions: ['*'] }]
 }))
+vi.mock('./outputFolders', () => ({ outputFilePath: (target: string) => outputFile(target) }))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({ getAccessToken })
 }))
 vi.mock('./ipc/shared', () => ({
-  _runningSessions: runningSessions,
   sourceMap: {
     cloud: { category: 'cloud' },
     standalone: { category: 'local' },
@@ -77,7 +82,6 @@ function jsonResponse(body: unknown): Response {
 
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
-  runningSessions.clear()
   written.clear()
   savedSettings.clear()
 })
@@ -113,121 +117,56 @@ describe('signedStorageUrl', () => {
 })
 
 describe('listAssets', () => {
-  it('lists a running local build with previews served by that build', async () => {
+  it('never asks a local or remote build over HTTP', async () => {
     getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [
-          {
-            id: 'a1',
-            name: 'still.png',
-            size: 2048,
-            mime_type: 'image/png',
-            tags: ['output'],
-            created_at: '2026-11-09T10:00:00Z',
-            preview_url: '/api/view?type=output&filename=still.png'
-          }
-        ]
-      })
-    )
-
-    const assets = await listAssets('local-1')
-
-    expect(fetchMock.mock.calls[0]![0]).toBe(
-      'http://127.0.0.1:8188/api/assets?tags_any=output&sort=created_at&order=desc&limit=100'
-    )
-    expect(assets).toEqual([
-      {
-        id: 'a1',
-        name: 'still.png',
-        kind: 'image',
-        sizeBytes: 2048,
-        createdAt: '2026-11-09T10:00:00Z',
-        mimeType: 'image/png',
-        tags: ['output'],
-        previewUrl: 'http://127.0.0.1:8188/api/view?type=output&filename=still.png'
-      }
-    ])
-  })
-
-  it('skips remote builds instead of asking this machine', async () => {
+    expect(await listAssets('local-1')).toEqual([])
     getInstallation.mockResolvedValue({ id: 'remote-1', sourceId: 'remote' })
-    runningSessions.set('remote-1', { port: 8188 })
-
     expect(await listAssets('remote-1')).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('serves local previews only from the build itself', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [{ id: 'a1', name: 'still.png', preview_url: 'http://127.0.0.1:9999/evil.png' }]
-      })
-    )
+  it('returns nothing for Cloud when signed out', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue(null)
 
-    const [summary] = await listAssets('local-1')
-
-    expect(summary!.previewUrl).toBe(
-      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
-    )
-  })
-
-  it('serves local previews only from the build API', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [{ id: 'a1', name: 'still.png', preview_url: '/extensions/evil.png', size: 0 }]
-      })
-    )
-
-    const [summary] = await listAssets('local-1')
-
-    expect(summary!.previewUrl).toBe(
-      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
-    )
-    expect(summary!.sizeBytes, 'an empty file keeps its size').toBe(0)
-  })
-
-  it('falls back to the content link when a preview link cannot be parsed', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({ assets: [{ id: 'a1', name: 'still.png', preview_url: 'http://' }] })
-    )
-
-    const [summary] = await listAssets('local-1')
-
-    expect(summary!.previewUrl).toBe(
-      'http://127.0.0.1:8188/api/assets/a1/content?disposition=inline'
-    )
-  })
-
-  it('drops rows whose fields have the wrong type', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        assets: [
-          { id: 'bad', name: 'bad.png', mime_type: 1 },
-          { id: 'good', name: 'good.png', mime_type: null, created_at: null }
-        ]
-      })
-    )
-
-    const assets = await listAssets('local-1')
-
-    expect(assets.map((a) => a.id)).toEqual(['good'])
-  })
-
-  it('returns nothing for a local build that is not running', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-
-    expect(await listAssets('local-1')).toEqual([])
+    expect(await listAssets('cloud-1')).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('drops Cloud rows whose fields have the wrong type and keeps an empty size', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assets: [
+            { id: 'bad', name: 'bad.png', mime_type: 1 },
+            { id: 'good', name: 'good.png', mime_type: null, created_at: null, size: 0 }
+          ]
+        })
+      )
+      .mockResolvedValue(new Response(null, { status: 404 }))
+
+    const assets = await listAssets('cloud-1')
+
+    expect(assets.map((a) => [a.id, a.sizeBytes])).toEqual([['good', 0]])
+  })
+
+  it('keeps one page of Cloud rows when the server sends more than it was asked for', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assets: Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, name: `a${i}.bin` }))
+        })
+      )
+      .mockResolvedValue(new Response(null, { status: 404 }))
+
+    const assets = await listAssets('cloud-1')
+
+    expect(assets).toHaveLength(100)
+    expect(assets.at(-1)!.id).toBe('a99')
   })
 
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
@@ -267,105 +206,146 @@ describe('listAssets', () => {
 
 describe('downloadAsset', () => {
   const win = {} as Parameters<typeof downloadAsset>[0]
+  const signedUrl = 'https://storage.googleapis.com/bucket/v1?sig=1'
   const partFilePath = (): string => createWriteStream.mock.calls[0]![0]
 
-  it('saves a local build asset where the user picks', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    fetchMock.mockResolvedValue(new Response('bytes'))
+  function fileOnThisComputer(file: string): void {
+    outputFile.mockImplementation(async (target: string) => (target === file ? file : null))
+  }
 
-    expect(await downloadAsset(win, 'local-1', 'a1', '../still.png')).toBe(true)
-    expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/still.png')
-    expect(fetchMock.mock.calls[0]![0]).toBe(
-      'http://127.0.0.1:8188/api/assets/a1/content?disposition=attachment'
+  function cloudFile(storage: (init: { signal: AbortSignal }) => Response): void {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock.mockImplementation(async (url: string, init: { signal: AbortSignal }) =>
+      url === signedUrl
+        ? storage(init)
+        : new Response(null, { status: 302, headers: { Location: signedUrl } })
     )
-    expect(written.get('/picked/still.png')).toBe('bytes')
+  }
+
+  it('copies a file on this computer to where the user picks, without asking a build', async () => {
+    fileOnThisComputer('/out/still.png')
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+
+    expect(await downloadAsset(win, 'local', '/out/still.png', '../still.png')).toBe(true)
+    expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/still.png')
+    expect(copyFile.mock.calls[0]![0]).toBe('/out/still.png')
+    expect(copyFile.mock.calls[0]![1]).toMatch(/^\/picked\/still\.png\..+\.part$/)
+    expect(copyFile.mock.calls[0]![2], 'never overwrites a partial file').toBe(1)
+    expect(written.get('/picked/still.png')).toBe('copy of /out/still.png')
     expect(savedSettings.get('lastSaveDialogDir')).toBe('/picked')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('writes each download to its own new partial file next to the picked file', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
+  it('refuses a file outside the output folders before asking where to save it', async () => {
+    outputFile.mockResolvedValue(null)
+
+    await expect(downloadAsset(win, 'local', '/etc/passwd', 'passwd')).rejects.toThrow(
+      'not available'
+    )
+    expect(showSaveDialog).not.toHaveBeenCalled()
+    expect(copyFile).not.toHaveBeenCalled()
+  })
+
+  it('removes the partial copy when copying a file on this computer fails', async () => {
+    fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    fetchMock.mockImplementation(async () => new Response('bytes'))
+    copyFile.mockRejectedValueOnce(new Error('disk full'))
 
-    await downloadAsset(win, 'local-1', 'a1', 'still.png')
-    await downloadAsset(win, 'local-1', 'a1', 'still.png')
-
-    const [first, second] = createWriteStream.mock.calls
-    expect(first![0]).toMatch(/^\/picked\/still\.png\..+\.part$/)
-    expect(second![0]).not.toBe(first![0])
-    expect(first![1]).toEqual({ flags: 'wx' })
+    await expect(downloadAsset(win, 'local', '/out/still.png', 'still.png')).rejects.toThrow(
+      'disk full'
+    )
+    expect(removeFile).toHaveBeenCalledWith(copyFile.mock.calls[0]![1], { force: true })
+    expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
   })
 
   it('offers only a plain file name in the save dialog when the name is unusable', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
+    fileOnThisComputer('/out/a1')
     showSaveDialog.mockResolvedValue({ canceled: true })
 
-    await downloadAsset(win, 'local-1', '../../a1', '..')
+    await downloadAsset(win, 'local', '/out/a1', '..')
 
     expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/downloads/a1')
   })
 
   it('starts the save dialog in the folder the user picked last time', async () => {
     savedSettings.set('lastSaveDialogDir', '/remembered')
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
+    fileOnThisComputer('/out/still.png')
     showSaveDialog.mockResolvedValue({ canceled: true })
 
-    await downloadAsset(win, 'local-1', 'a1', 'still.png')
+    await downloadAsset(win, 'local', '/out/still.png', 'still.png')
 
     expect(showSaveDialog.mock.calls[0]![1].defaultPath).toBe('/remembered/still.png')
   })
 
+  it('writes nothing when the save dialog is cancelled', async () => {
+    fileOnThisComputer('/out/still.png')
+    showSaveDialog.mockResolvedValue({ canceled: true })
+
+    expect(await downloadAsset(win, 'local', '/out/still.png', 'still.png')).toBe(false)
+    expect(copyFile).not.toHaveBeenCalled()
+    expect(createWriteStream).not.toHaveBeenCalled()
+  })
+
   it('saves a Cloud asset through its signed storage link', async () => {
-    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
-    getAccessToken.mockResolvedValue('token')
+    cloudFile(() => new Response('video'))
     showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response(null, {
-          status: 302,
-          headers: { Location: 'https://storage.googleapis.com/bucket/v1?sig=1' }
-        })
-      )
-      .mockResolvedValueOnce(new Response('video'))
 
     expect(await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).toBe(true)
-    expect(fetchMock.mock.calls[1]![0]).toBe('https://storage.googleapis.com/bucket/v1?sig=1')
+    expect(fetchMock.mock.calls[0]![0]).toContain('/api/assets/v1/content?disposition=attachment')
+    expect(fetchMock.mock.calls[1]![0]).toBe(signedUrl)
     expect(written.get('/picked/clip.mp4')).toBe('video')
   })
 
-  it('fails without writing a file when the build cannot serve the asset', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+  it('fails before asking where to save when signed out of Cloud', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue(null)
+
+    await expect(downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).rejects.toThrow('not available')
+    expect(showSaveDialog).not.toHaveBeenCalled()
+  })
+
+  it('writes each Cloud download to its own new partial file next to the picked file', async () => {
+    cloudFile(() => new Response('bytes'))
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    const [first, second] = createWriteStream.mock.calls
+    expect(first![0]).toMatch(/^\/picked\/clip\.mp4\..+\.part$/)
+    expect(second![0]).not.toBe(first![0])
+    expect(first![1]).toEqual({ flags: 'wx' })
+  })
+
+  it('fails without writing a file when storage cannot serve the asset', async () => {
     let signal: AbortSignal | undefined
-    fetchMock.mockImplementation(async (_url: string, init: { signal: AbortSignal }) => {
+    cloudFile((init) => {
       signal = init.signal
       return new Response('Service Unavailable', { status: 503 })
     })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
-    await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow('HTTP 503')
+    await expect(downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).rejects.toThrow('HTTP 503')
     expect(createWriteStream).not.toHaveBeenCalled()
     expect(signal?.aborted, 'the failed response is released').toBe(true)
   })
 
   it('removes the half-written file when the download breaks off', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    const broken = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('part'))
-        controller.error(new Error('connection reset'))
-      }
-    })
-    fetchMock.mockResolvedValue(new Response(broken))
+    cloudFile(
+      () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('part'))
+              controller.error(new Error('connection reset'))
+            }
+          })
+        )
+    )
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
 
-    await expect(downloadAsset(win, 'local-1', 'a1', 'still.png')).rejects.toThrow(
+    await expect(downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')).rejects.toThrow(
       'connection reset'
     )
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
@@ -373,21 +353,21 @@ describe('downloadAsset', () => {
   })
 
   it('gives up and removes the partial file when the download stops sending data', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
-    fetchMock.mockImplementation(async (_url: string, init: { signal: AbortSignal }) => {
-      const stalled = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode('part'))
-          init.signal.addEventListener('abort', () => controller.error(new Error('stalled')))
-        }
-      })
-      return new Response(stalled)
-    })
+    cloudFile(
+      (init) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('part'))
+              init.signal.addEventListener('abort', () => controller.error(new Error('stalled')))
+            }
+          })
+        )
+    )
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const download = downloadAsset(win, 'local-1', 'a1', 'still.png')
+      const download = downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
       const failed = expect(download).rejects.toThrow('stalled')
       await vi.advanceTimersByTimeAsync(20_000)
       await failed
@@ -395,15 +375,5 @@ describe('downloadAsset', () => {
       vi.useRealTimers()
     }
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
-  })
-
-  it('writes nothing when the save dialog is cancelled', async () => {
-    getInstallation.mockResolvedValue({ id: 'local-1', sourceId: 'standalone' })
-    runningSessions.set('local-1', { port: 8188 })
-    showSaveDialog.mockResolvedValue({ canceled: true })
-
-    expect(await downloadAsset(win, 'local-1', 'a1', 'still.png')).toBe(false)
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(createWriteStream).not.toHaveBeenCalled()
   })
 })

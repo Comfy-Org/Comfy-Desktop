@@ -190,6 +190,19 @@ describe('useDashboardScopeStore', () => {
     expect(scope.selectedWorkspaceId).toBe('w3')
   })
 
+  it('follows a return to a personal anchor', async () => {
+    const scope = useDashboardScopeStore()
+    await scope.initialize()
+    authChanged({ ...signedIn, workspaceId: 'w2' })
+    await flushPromises()
+    expect(scope.selectedWorkspaceId).toBe('w2')
+
+    authChanged({ signedIn: true, workspaceId: 'p1', workspaceType: 'personal' })
+    await flushPromises()
+
+    expect(scope.selectedWorkspaceId).toBe('personal')
+  })
+
   it('follows authenticated switches only while viewing the old active scope', async () => {
     const scope = useDashboardScopeStore()
     await scope.initialize()
@@ -208,5 +221,87 @@ describe('useDashboardScopeStore', () => {
     authChanged(signedIn)
     await flushPromises()
     expect(scope.selectedWorkspaceId).toBe('w1')
+  })
+
+  describe('takeChosenSelection', () => {
+    let settingsChanged: (change: { key: string }) => void
+
+    async function readyStore() {
+      api.onSettingsChanged.mockImplementation((callback) => {
+        settingsChanged = callback
+        return () => {}
+      })
+      api.comfybuilder.getAuthStatus.mockResolvedValue(signedIn)
+      api.comfybuilder.listWorkspaces.mockResolvedValue(workspaces)
+      const store = useDashboardScopeStore()
+      await store.initialize()
+      await flushPromises()
+      return store
+    }
+
+    it('answers once for a person picking a workspace', async () => {
+      const store = await readyStore()
+
+      store.selectWorkspace('w2')
+
+      expect(store.takeChosenSelection()).toBe(true)
+      expect(store.takeChosenSelection()).toBe(false)
+    })
+
+    it('does not count a restored selection', async () => {
+      api.getSetting.mockResolvedValue('w2')
+      const store = await readyStore()
+
+      expect(store.selectedWorkspaceId).toBe('w2')
+      expect(store.takeChosenSelection()).toBe(false)
+    })
+
+    it('does not count picking what is already selected', async () => {
+      const store = await readyStore()
+
+      store.selectWorkspace(store.selectedWorkspaceId)
+
+      expect(store.takeChosenSelection()).toBe(false)
+    })
+
+    it('drops a pick another window has replaced', async () => {
+      const store = await readyStore()
+      store.selectWorkspace('w2')
+      api.setSetting.mockResolvedValue(undefined)
+      await flushPromises()
+
+      api.getSetting.mockResolvedValue('w1')
+      settingsChanged({ key: 'dashboardWorkspaceId' })
+      await flushPromises()
+
+      expect(store.selectedWorkspaceId).toBe('w1')
+      expect(store.takeChosenSelection()).toBe(false)
+    })
+
+    it('does not count a selection another window brought back to the old pick', async () => {
+      const store = await readyStore()
+      store.selectWorkspace('w2')
+      await flushPromises()
+
+      api.getSetting.mockResolvedValue('w1')
+      settingsChanged({ key: 'dashboardWorkspaceId' })
+      await flushPromises()
+      api.getSetting.mockResolvedValue('w2')
+      settingsChanged({ key: 'dashboardWorkspaceId' })
+      await flushPromises()
+
+      expect(store.selectedWorkspaceId).toBe('w2')
+      expect(store.takeChosenSelection()).toBe(false)
+    })
+
+    it('keeps a pick that the membership check confirms', async () => {
+      const store = await readyStore()
+      store.selectWorkspace('w2')
+
+      await useAuthStore().fetchWorkspaces()
+      await flushPromises()
+
+      expect(store.takeChosenSelection()).toBe(true)
+    })
   })
 })

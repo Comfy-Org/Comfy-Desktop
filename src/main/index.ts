@@ -30,6 +30,7 @@ import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
@@ -123,6 +124,8 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
+import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
+import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
 import { initUserTier } from './lib/userTier'
 import { readSmartAppControlState } from './lib/smartAppControl'
@@ -191,6 +194,8 @@ try {
 if (settings.get('hardwareAcceleration') === false) {
   app.disableHardwareAcceleration()
 }
+
+registerOutputFilesScheme()
 
 todesktop.init({ autoUpdater: false })
 
@@ -934,6 +939,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
     setHostFactories({ createChooser: openChooserHostWindow })
     registerPanelViewIpc()
+    registerOutputFolderHandlers()
 
     migrateXdgPaths()
     persistWinDataRootChoice()
@@ -1016,6 +1022,10 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
+
+    void initWorkspaceMintSwitchFlag({ distinctId: installationId })
+
+    getCloudSession().resumeRevocations()
 
     const locale = (settings.get('language') as string | undefined) || app.getLocale().split('-')[0]
     i18n.init(locale)

@@ -15,6 +15,7 @@ import {
 } from 'lucide-vue-next'
 import InfoTooltip from '../../components/InfoTooltip.vue'
 import StorageItemIcon from '../../components/StorageItemIcon.vue'
+import StorageTag from '../../components/StorageTag.vue'
 
 interface ModelsDir {
   path: string
@@ -29,6 +30,7 @@ interface ModelsDir {
 interface Props {
   dirs: ModelsDir[]
   addLabel?: string
+  hideSharedTag?: boolean
 }
 
 const props = defineProps<Props>()
@@ -44,6 +46,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const actionClass = 'models-dir-action shrink-0'
+const nameClass =
+  'models-dir-name static block min-w-0 max-w-full truncate gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
 const openMenuIndex = ref<number | null>(null)
 
 function canPromote(dir: ModelsDir): boolean {
@@ -117,14 +121,11 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <div
-    class="models-dir-list flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)]"
-    @click="closeMenu()"
-  >
+  <div class="models-dir-list flex flex-col rounded-[14px] bg-white/5 p-1.5" @click="closeMenu()">
     <div
       v-for="row in rows"
       :key="row.path"
-      class="models-dir-row flex min-w-0 items-center gap-2 border-t border-solid border-border-hover px-2.5 py-2 first:border-t-0"
+      class="models-dir-row flex min-h-11 min-w-0 items-center gap-2.5 rounded-[10px] py-1.5 pr-1.5 pl-3 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_5%,transparent)]"
       :class="{
         'is-just-promoted animate-[models-dir-promote_1200ms_ease-out]':
           row.path === justPromotedPath
@@ -138,33 +139,30 @@ const rows = computed(() =>
       <div class="models-dir-main flex min-w-0 flex-auto items-center">
         <Button
           type="button"
-          variant="link"
+          variant="textonly"
           size="unset"
-          class="models-dir-name block min-w-0 max-w-full truncate p-0 text-left text-[13px] leading-[18px] font-normal"
+          :class="nameClass"
           :title="row.isExtra ? t('comfyUISettings.viewCustomPathDetails') : t('models.openDir')"
           @click.stop="row.isExtra ? emit('details', row.index) : emit('open', row.index)"
         >
           {{ row.path }}
         </Button>
       </div>
-      <span
-        v-if="row.isPrimary"
-        class="models-dir-tag tag-primary inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[color-mix(in_srgb,var(--action)_35%,transparent)] bg-[color-mix(in_srgb,var(--action)_10%,transparent)] text-[var(--action)]"
-      >
+      <StorageTag v-if="row.isPrimary" class="models-dir-tag tag-primary">
         {{ t('models.primary') }}
         <InfoTooltip :text="t('tooltips.modelsPrimary')" />
-      </span>
-      <span
-        v-if="row.locked || row.isExtra"
-        class="models-dir-tag tag-local inline-flex shrink-0 items-center gap-0.5 rounded-[999px] px-1.5 py-px text-[10px] leading-[14px] font-medium uppercase tracking-[0.02em] border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--text)_6%,transparent)] text-text-muted"
-      >
+      </StorageTag>
+      <StorageTag v-if="row.shared && !props.hideSharedTag" class="models-dir-tag tag-shared">
+        {{ t('models.sharedTag') }}
+      </StorageTag>
+      <StorageTag v-if="row.locked || row.isExtra" class="models-dir-tag tag-local">
         {{ row.isExtra ? t('comfyUISettings.yamlTag') : t('models.instanceOnly') }}
         <InfoTooltip
           :text="
             row.isExtra ? t('tooltips.extraModelPathsInstance') : t('tooltips.instanceOwnModelsDir')
           "
         />
-      </span>
+      </StorageTag>
       <div class="models-dir-actions inline-flex shrink-0 items-center gap-0.5">
         <Button
           v-if="row.isExtra"
@@ -226,16 +224,19 @@ const rows = computed(() =>
       </div>
     </div>
 
-    <Button
-      type="button"
-      variant="muted-textonly"
-      size="md"
-      class="models-dir-add w-full rounded-none border-t border-solid border-border-hover"
-      @click="emit('add')"
-    >
-      <Plus :size="14" aria-hidden="true" />
-      <span>{{ props.addLabel ?? t('models.addDir') }}</span>
-    </Button>
+    <div class="models-dir-foot flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 px-1 pt-1">
+      <Button
+        type="button"
+        variant="muted-textonly"
+        size="md"
+        class="models-dir-add rounded-[10px] px-2"
+        @click="emit('add')"
+      >
+        <Plus :size="14" aria-hidden="true" />
+        <span>{{ props.addLabel ?? t('models.addDir') }}</span>
+      </Button>
+      <slot name="footer" />
+    </div>
   </div>
 </template>
 

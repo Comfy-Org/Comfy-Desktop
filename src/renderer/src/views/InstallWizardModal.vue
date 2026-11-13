@@ -8,6 +8,7 @@ import { HardDrive, CircleAlert, RefreshCw } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
 import type {
   InstallBuildResult,
@@ -591,6 +592,7 @@ async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Pro
     let status = authStore.status
     if (status.workspaceId !== targetWorkspaceId) {
       authorizingWorkspace.value = true
+      useDashboardScopeStore().takeChosenSelection()
       try {
         status = await authStore.switchWorkspace(targetWorkspaceId)
       } finally {
@@ -609,6 +611,11 @@ async function initializeManagedBuilds(gen: number, refreshBuilds: boolean): Pro
   } catch {
     if (gen === modeGeneration && managedBuildMode.value) emit('close')
   }
+}
+
+async function refreshManagedBuilds(): Promise<void> {
+  if (authStore.status.workspaceId === managedWorkspaceId.value) await authStore.fetchBuilds()
+  else await initializeManagedBuilds(modeGeneration, true)
 }
 
 async function initializeLocalInstall(gen: number, requestedSource?: Source): Promise<void> {
@@ -1281,8 +1288,8 @@ defineExpose({ open })
                   class="workspace-build-refresh"
                   :title="$t('newInstall.refreshWorkspaceBuilds')"
                   :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
-                  :disabled="authStore.loadingBuilds"
-                  @click="authStore.fetchBuilds()"
+                  :disabled="authStore.loadingBuilds || authorizingWorkspace"
+                  @click="refreshManagedBuilds"
                 >
                   <RefreshCw
                     :size="14"
@@ -1310,8 +1317,8 @@ defineExpose({ open })
               variant="destructive-textonly"
               type="button"
               class="wizard-build-retry whitespace-normal text-left"
-              :disabled="authStore.loadingBuilds"
-              @click="authStore.fetchBuilds()"
+              :disabled="authStore.loadingBuilds || authorizingWorkspace"
+              @click="refreshManagedBuilds"
             >
               {{ $t('devPlatform.build.loadError') }}
             </Button>

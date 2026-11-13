@@ -19,7 +19,7 @@ test('cold start lands on first-use start screen with the waffle menu hidden @li
   await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
 
-  expect(await ctx.titleBar.exists('.title-menu-button')).toBe(false)
+  expect(await ctx.titleBar.exists('.title-menu-button[aria-haspopup="menu"]')).toBe(false)
 })
 
 test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals the chooser @lifecycle', async () => {
@@ -45,10 +45,10 @@ test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals t
 
   expect(await ctx.panel.click('[data-testid="first-use-continue"]')).toBe(true)
 
-  await ctx.titleBar.waitForVisible('.title-menu-button', { timeout: 15_000 })
+  await ctx.titleBar.waitForVisible('.title-menu-button[aria-haspopup="menu"]', { timeout: 15_000 })
   await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
 
-  expect(await ctx.titleBar.click('.title-menu-button')).toBe(true)
+  expect(await ctx.titleBar.click('.title-menu-button[aria-haspopup="menu"]')).toBe(true)
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible('li.item', { timeout: 10_000 })
