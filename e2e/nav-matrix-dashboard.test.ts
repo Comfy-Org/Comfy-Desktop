@@ -3,7 +3,7 @@ import path from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { expectChooserVisible } from './support/chooserHelpers'
+import { expectChooserVisible, openManageViaDashboard } from './support/chooserHelpers'
 import { closeTitlePopupIfOpen, isPopupVisible, titlePopupPage } from './support/cdpPages'
 import {
   clearRunningSessions,
@@ -12,6 +12,7 @@ import {
   seedRunningSession
 } from './support/devHooks'
 import { expectNoIpcInvocation, liveWindowCount, openPicker } from './support/navMatrixHelpers'
+import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 let installPathA: string
@@ -73,6 +74,24 @@ test.beforeEach(async () => {
   await resetIpcInvocations(ctx.app, 'run-action')
   await resetIpcInvocations(ctx.app, 'open-install-new-window')
   await clearRunningSessions(ctx.app)
+})
+
+test('Home → Builds → Update settings opens the selected installation @windows @macos @linux @lifecycle', async () => {
+  expect(await ctx.panel.click('[data-testid="app-sidebar-home"]')).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="home-view"]')
+  expect(await ctx.panel.exists('.chooser-view')).toBe(true)
+  expect(await ctx.panel.isVisible('.chooser-view')).toBe(false)
+
+  const popup = await openManageViaDashboard(ctx.app, ctx.panel, INSTALL_A_ID, 'update')
+
+  expect(await ctx.panel.isVisible('.chooser-view')).toBe(true)
+  expect(await ctx.panel.exists('[data-testid="home-view"]')).toBe(false)
+  await popup.waitForVisible(byTestId(TID.pickerSettingsSections))
+  expect(
+    await popup.evaluate(
+      `document.querySelector('${byTestId(TID.pickerSettingsSections)}')?.getAttribute('data-install-id')`
+    )
+  ).toBe(INSTALL_A_ID)
 })
 
 test('Dashboard → stopped instance: same-window launch, no new window @windows @macos @linux', async () => {
