@@ -63,10 +63,18 @@ vi.mock('../settings', () => ({
 vi.mock('./comfyDownloadManager', () => ({
   buildSaveDialogFilters: (name: string) => [{ name, extensions: ['*'] }]
 }))
+const panelSender = { panel: true }
+const trashOutputFile = vi.fn()
 vi.mock('../host/registry', () => ({
-  findHostWindowByPanelSender: (sender: unknown) => panelHostWindow(sender)
+  findHostWindowByPanelSender: (sender: unknown) => panelHostWindow(sender),
+  isPanelSender: (sender: unknown) => sender === panelSender
 }))
-vi.mock('./outputFolders', () => ({ outputFilePath: (target: string) => outputFile(target) }))
+vi.mock('./outputFolders', () => ({
+  outputFilePath: (target: string) => outputFile(target),
+  revealOutputFile: vi.fn(),
+  copyOutputImage: vi.fn(),
+  trashOutputFile: (target: string) => trashOutputFile(target)
+}))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({ getAccessToken })
@@ -521,5 +529,20 @@ describe('the download handler', () => {
     await handlers.get('assets:download')!({ sender }, 'local', '/out/still.png', 'still.png')
 
     expect(showSaveDialog.mock.calls[0]![0]).toBe(owner)
+  })
+})
+
+describe('the delete handler', () => {
+  it('moves a file on this computer to the Trash only when the Assets page asks', async () => {
+    trashOutputFile.mockResolvedValue(true)
+    registerAssetsHandlers()
+    const trash = handlers.get('assets:trash')!
+
+    expect(await trash({ sender: {} }, 'local', '/out/still.png'), 'another page').toBe(false)
+    expect(await trash({ sender: panelSender }, 'cloud', 'c1'), 'a Cloud file').toBe(false)
+    expect(trashOutputFile).not.toHaveBeenCalled()
+
+    expect(await trash({ sender: panelSender }, 'local', '/out/still.png')).toBe(true)
+    expect(trashOutputFile).toHaveBeenCalledExactlyOnceWith('/out/still.png')
   })
 })

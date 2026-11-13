@@ -12,7 +12,11 @@ import type { AssetSummary, Installation } from '../types/ipc'
 const listAssets = vi.fn()
 const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
+const revealAsset = vi.fn()
+const copyAsset = vi.fn()
+const trashAsset = vi.fn()
 const alert = vi.fn()
+const confirm = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
 const MASONRY_GAP = 14
 const FOUR_COLUMN_PAGE_WIDTH = 1100
@@ -34,7 +38,7 @@ function picture(id: string, height: number): AssetSummary {
 }
 
 vi.mock('../composables/useModal', () => ({
-  useModal: () => ({ alert })
+  useModal: () => ({ alert, confirm })
 }))
 
 function asset(
@@ -77,6 +81,29 @@ async function signInWith(cloud: AssetSummary[]): Promise<void> {
   await flushPromises()
 }
 
+function menuLabels(): string[] {
+  return [...document.querySelectorAll('[data-testid^="context-menu-item-"]')].map(
+    (item) => item.textContent?.trim() ?? ''
+  )
+}
+
+async function pickMenuItem(id: string): Promise<void> {
+  document.querySelector<HTMLElement>(`[data-testid="context-menu-item-${id}"]`)!.click()
+  await flushPromises()
+}
+
+async function rightClick(element: Element): Promise<MouseEvent> {
+  const event = new MouseEvent('contextmenu', {
+    bubbles: true,
+    cancelable: true,
+    clientX: 100,
+    clientY: 100
+  })
+  element.dispatchEvent(event)
+  await flushPromises()
+  return event
+}
+
 function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] {
   return wrapper
     .get('[data-testid="assets-grid"]')
@@ -96,6 +123,10 @@ beforeEach(() => {
     listAssets,
     listLocalAssets,
     downloadAsset,
+    revealAsset,
+    copyAsset,
+    trashAsset,
+    platform: 'darwin',
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -445,5 +476,63 @@ describe('AssetsView', () => {
     const wrapper = await mountAssets(Promise.reject(new Error('disk')))
 
     expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+  })
+
+  it('opens the asset menu on right-click instead of the browser menu, with actions for a file on this computer', async () => {
+    const wrapper = await mountAssets([picture('b', 300)])
+
+    const event = await rightClick(wrapper.get('[data-testid="asset-b"]').element)
+
+    expect(event.defaultPrevented, 'the browser menu with Save Image does not open').toBe(true)
+    expect(menuLabels()).toEqual(['Download', 'Show in Finder', 'Copy', 'Delete'])
+    await pickMenuItem('reveal')
+    expect(revealAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+  })
+
+  it('offers only Download and Copy for a Cloud file, from the more actions button', async () => {
+    const wrapper = await mountAssets()
+    await signInWith([picture('c', 300)])
+
+    await wrapper.get('[data-testid="asset-more-c"]').trigger('click')
+    await flushPromises()
+
+    expect(menuLabels()).toEqual(['Download', 'Copy'])
+    await pickMenuItem('download')
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('cloud', 'c', 'c.svg')
+  })
+
+  it('asks before moving a file to the Trash, then takes its card off the page', async () => {
+    trashAsset.mockResolvedValue(true)
+    const wrapper = await mountAssets([picture('keep', 300), picture('gone', 300)])
+
+    confirm.mockResolvedValueOnce(false)
+    await rightClick(wrapper.get('[data-testid="asset-gone"]').element)
+    await pickMenuItem('delete')
+    expect(trashAsset, 'nothing is deleted when the user cancels').not.toHaveBeenCalled()
+
+    confirm.mockResolvedValueOnce(true)
+    await rightClick(wrapper.get('[data-testid="asset-gone"]').element)
+    await pickMenuItem('delete')
+
+    expect(confirm.mock.calls[1]![0]).toMatchObject({
+      title: 'Delete gone.svg?',
+      message: 'It moves to the Trash.'
+    })
+    expect(trashAsset).toHaveBeenCalledExactlyOnceWith('local', 'gone')
+    expect(assetNames(wrapper)).toEqual(['keep.svg'])
+  })
+
+  it('tells the user when a picture could not be copied', async () => {
+    copyAsset.mockResolvedValue(false)
+    const wrapper = await mountAssets([picture('b', 300)])
+
+    await rightClick(wrapper.get('[data-testid="asset-b"]').element)
+    await pickMenuItem('copy')
+
+    expect(copyAsset).toHaveBeenCalledExactlyOnceWith('local', 'b')
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't copy asset",
+      message: 'b.svg'
+    })
   })
 })

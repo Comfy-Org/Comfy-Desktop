@@ -1147,6 +1147,9 @@ export interface ElectronApi {
   listAssets(installationId: string): Promise<AssetSummary[]>
   listLocalAssets(): Promise<AssetSummary[]>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
+  revealAsset(source: string, assetId: string): Promise<boolean>
+  copyAsset(source: string, assetId: string): Promise<boolean>
+  trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>

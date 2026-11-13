@@ -7,13 +7,17 @@ import {
   AudioLines,
   Box,
   Check,
+  Copy,
   Download,
+  Ellipsis,
   File,
+  FolderOpen,
   LayoutGrid,
   LayoutDashboard,
   ListFilter,
   RefreshCw,
   Search,
+  Trash2,
   Video
 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -23,6 +27,7 @@ import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
+import ContextMenu from '../components/ContextMenu.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
@@ -33,9 +38,16 @@ import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type { ContextMenuItem } from '../types/context-menu'
 
 interface GalleryAsset extends AssetSummary {
   source: string
+}
+
+interface AssetMenu {
+  asset: GalleryAsset
+  x: number
+  y: number
 }
 
 type KindFilter = 'all' | AssetKind
@@ -295,6 +307,86 @@ async function download(asset: GalleryAsset): Promise<void> {
   }
 }
 
+const assetMenu = ref<AssetMenu | null>(null)
+const ASSET_MENU_WIDTH = 200
+const ASSET_TOOL_CLASS =
+  'flex size-[26px] items-center justify-center rounded-full bg-[rgb(27_27_28/0.6)] text-foreground outline-none backdrop-blur-[12px] transition-colors hover:bg-[rgb(27_27_28/0.8)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)] disabled:opacity-50'
+
+function isLocal(asset: GalleryAsset): boolean {
+  return asset.source === LOCAL_ASSETS_SOURCE
+}
+
+function revealLabel(): string {
+  if (window.api.platform === 'darwin') return t('assets.showInFinder')
+  if (window.api.platform === 'win32') return t('assets.showInExplorer')
+  return t('assets.showInFolder')
+}
+
+const assetMenuItems = computed<ContextMenuItem[]>(() => {
+  const asset = assetMenu.value?.asset
+  if (!asset) return []
+  return [
+    { id: 'download', label: t('assets.download'), icon: Download },
+    ...(isLocal(asset) ? [{ id: 'reveal', label: revealLabel(), icon: FolderOpen }] : []),
+    ...(asset.kind === 'image' && asset.previewUrl
+      ? [{ id: 'copy', label: t('assets.copy'), icon: Copy }]
+      : []),
+    ...(isLocal(asset)
+      ? [
+          {
+            id: 'delete',
+            label: t('assets.delete'),
+            icon: Trash2,
+            style: 'danger' as const,
+            separator: true
+          }
+        ]
+      : [])
+  ]
+})
+
+function openAssetMenu(asset: GalleryAsset, event: MouseEvent): void {
+  assetMenu.value = { asset, x: event.clientX, y: event.clientY }
+}
+
+function openAssetMenuBelow(asset: GalleryAsset, event: MouseEvent): void {
+  const button = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  assetMenu.value = { asset, x: button.right - ASSET_MENU_WIDTH, y: button.bottom + 4 }
+}
+
+function isMenuOpenFor(asset: GalleryAsset): boolean {
+  const open = assetMenu.value?.asset
+  return !!open && cardKey(open) === cardKey(asset)
+}
+
+async function copy(asset: GalleryAsset): Promise<void> {
+  const copied = await window.api.copyAsset(asset.source, asset.id).catch(() => false)
+  if (!copied) await modal.alert({ title: t('assets.copyFailed'), message: asset.name })
+}
+
+async function moveToTrash(asset: GalleryAsset): Promise<void> {
+  const confirmed = await modal.confirm({
+    title: t('assets.deleteTitle', { name: asset.name }),
+    message:
+      window.api.platform === 'win32' ? t('assets.deleteToRecycleBin') : t('assets.deleteToTrash'),
+    confirmLabel: t('assets.delete')
+  })
+  if (!confirmed) return
+  const removed = await window.api.trashAsset(asset.source, asset.id).catch(() => false)
+  if (removed) assets.value = assets.value.filter((other) => cardKey(other) !== cardKey(asset))
+  else await modal.alert({ title: t('assets.deleteFailed'), message: asset.name })
+}
+
+async function runAssetAction(action: string): Promise<void> {
+  const asset = assetMenu.value?.asset
+  assetMenu.value = null
+  if (!asset) return
+  if (action === 'download') await download(asset)
+  else if (action === 'reveal') await window.api.revealAsset(asset.source, asset.id)
+  else if (action === 'copy') await copy(asset)
+  else if (action === 'delete') await moveToTrash(asset)
+}
+
 function assetDetails(asset: AssetSummary): string {
   return [
     asset.createdAt ? formatRelativeFromMs(Date.parse(asset.createdAt), t) : null,
@@ -542,6 +634,7 @@ function extensionOf(name: string): string {
           class="group rounded-card bg-[rgb(29_29_29/0.72)] p-1"
           :style="cardStyle(card)"
           :data-testid="`asset-${asset.id}`"
+          @contextmenu.prevent="openAssetMenu(asset, $event)"
         >
           <Tooltip
             :text="asset.name"
@@ -605,21 +698,45 @@ function extensionOf(name: string): string {
             </div>
           </Tooltip>
 
-          <Button
-            type="button"
-            variant="muted-textonly"
-            size="icon"
-            class="absolute top-2 right-2 bg-media-overlay text-foreground opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
-            :aria-label="t('assets.download')"
-            :title="t('assets.download')"
-            :disabled="downloading.has(cardKey(asset))"
-            :data-testid="`asset-download-${asset.id}`"
-            @click="download(asset)"
+          <div
+            class="absolute top-3 right-3 flex gap-1 opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+            :class="isMenuOpenFor(asset) && 'opacity-100'"
           >
-            <Download :size="14" aria-hidden="true" />
-          </Button>
+            <button
+              type="button"
+              :class="ASSET_TOOL_CLASS"
+              :aria-label="t('assets.download')"
+              :title="t('assets.download')"
+              :disabled="downloading.has(cardKey(asset))"
+              :data-testid="`asset-download-${asset.id}`"
+              @click="download(asset)"
+            >
+              <Download :size="14" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              :class="ASSET_TOOL_CLASS"
+              aria-haspopup="menu"
+              :aria-expanded="isMenuOpenFor(asset)"
+              :aria-label="t('assets.moreActions')"
+              :title="t('assets.moreActions')"
+              :data-testid="`asset-more-${asset.id}`"
+              @click="openAssetMenuBelow(asset, $event)"
+            >
+              <Ellipsis :size="15" aria-hidden="true" />
+            </button>
+          </div>
         </li>
       </ul>
     </div>
+
+    <ContextMenu
+      :open="assetMenu !== null"
+      :x="assetMenu?.x ?? 0"
+      :y="assetMenu?.y ?? 0"
+      :items="assetMenuItems"
+      @close="assetMenu = null"
+      @select="runAssetAction"
+    />
   </div>
 </template>

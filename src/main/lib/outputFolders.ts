@@ -2,7 +2,7 @@ import fsp from 'fs/promises'
 import type { Dirent } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { ipcMain, nativeImage, net, protocol } from 'electron'
+import { clipboard, ipcMain, nativeImage, net, protocol, shell } from 'electron'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
@@ -89,6 +89,29 @@ export async function outputFilePath(target: string): Promise<string | null> {
   if (!file) return null
   const stat = await fsp.stat(file).catch(() => null)
   return stat?.isFile() ? file : null
+}
+
+export async function revealOutputFile(target: string): Promise<boolean> {
+  const file = await outputFilePath(target)
+  if (!file) return false
+  shell.showItemInFolder(file)
+  return true
+}
+
+export async function trashOutputFile(target: string): Promise<boolean> {
+  const file = await outputFilePath(target)
+  if (!file) return false
+  await shell.trashItem(file)
+  return true
+}
+
+export async function copyOutputImage(target: string): Promise<boolean> {
+  const file = await outputFilePath(target)
+  if (!file || assetKind(file) !== 'image') return false
+  const image = nativeImage.createFromPath(file)
+  if (image.isEmpty()) return false
+  clipboard.writeImage(image)
+  return true
 }
 
 export function outputFileUrl(file: string, thumbnailOf?: number): string {

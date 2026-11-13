@@ -4,15 +4,15 @@ import path from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import type { ReadableStream as WebReadableStream } from 'stream/web'
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
-import { findHostWindowByPanelSender } from '../host/registry'
+import { findHostWindowByPanelSender, isPanelSender } from '../host/registry'
 import * as installations from '../installations'
 import * as settings from '../settings'
 import { buildSaveDialogFilters } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
-import { outputFilePath } from './outputFolders'
+import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
@@ -20,6 +20,9 @@ import type { AssetKind, AssetSummary } from '../../types/ipc'
 
 const ASSETS_LIST_CHANNEL = 'assets:list'
 const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
+const ASSETS_REVEAL_CHANNEL = 'assets:reveal'
+const ASSETS_COPY_CHANNEL = 'assets:copy'
+const ASSETS_TRASH_CHANNEL = 'assets:trash'
 
 const PAGE_SIZE = 100
 const LIST_QUERY = `tags_any=output&sort=created_at&order=desc&limit=${PAGE_SIZE}`
@@ -308,6 +311,33 @@ export async function downloadAsset(
   return true
 }
 
+async function copyCloudImage(installationId: string, assetId: string): Promise<boolean> {
+  const accessToken = await cloudAccessToken(installationId)
+  if (!accessToken) return false
+  const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  const url = await resolveCloudContentUrl(assetId, accessToken, 'inline', deadline)
+  if (!url) return false
+  const res = await fetch(url, { redirect: 'error', signal: deadline })
+  if (!res.ok) return false
+  const image = nativeImage.createFromBuffer(Buffer.from(await res.arrayBuffer()))
+  if (image.isEmpty()) return false
+  clipboard.writeImage(image)
+  return true
+}
+
+export function copyAsset(source: string, assetId: string): Promise<boolean> {
+  return source === LOCAL_ASSETS_SOURCE ? copyOutputImage(assetId) : copyCloudImage(source, assetId)
+}
+
+function localFileAction(
+  action: (assetId: string) => Promise<boolean>
+): (event: Electron.IpcMainInvokeEvent, source: unknown, assetId: unknown) => Promise<boolean> {
+  return async (event, source, assetId) =>
+    isPanelSender(event.sender) && source === LOCAL_ASSETS_SOURCE && typeof assetId === 'string'
+      ? action(assetId)
+      : false
+}
+
 export function registerAssetsHandlers(): void {
   ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown) =>
     typeof installationId === 'string' ? listAssets(installationId) : []
@@ -322,5 +352,12 @@ export function registerAssetsHandlers(): void {
       if (!win || typeof source !== 'string' || typeof assetId !== 'string') return false
       return downloadAsset(win, source, assetId, typeof fileName === 'string' ? fileName : assetId)
     }
+  )
+  ipcMain.handle(ASSETS_REVEAL_CHANNEL, localFileAction(revealOutputFile))
+  ipcMain.handle(ASSETS_TRASH_CHANNEL, localFileAction(trashOutputFile))
+  ipcMain.handle(ASSETS_COPY_CHANNEL, (event, source: unknown, assetId: unknown) =>
+    isPanelSender(event.sender) && typeof source === 'string' && typeof assetId === 'string'
+      ? copyAsset(source, assetId)
+      : false
   )
 }
