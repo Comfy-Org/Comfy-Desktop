@@ -433,7 +433,7 @@ const statusLine = computed(() =>
       data-testid="channel-picker-status"
     >
       <span
-        v-if="preview"
+        v-if="statusBadge"
         class="channel-picker-status-icon grid size-8 flex-none place-items-center rounded-full"
         :class="
           statusBadgeTone === 'update'
