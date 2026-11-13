@@ -302,7 +302,8 @@ describe('applyStorageLaunchArgs', () => {
       preLaunchExtras: [],
       manageModelFolders: true,
       modelDirsForLaunch: [path.resolve(shared), path.resolve(owned)],
-      modelSyncOptions: { yamlPath: target, primaryDir: path.resolve(shared) }
+      modelSyncOptions: { yamlPath: target, primaryDir: path.resolve(shared) },
+      inputDir: globalInput
     })
   })
 

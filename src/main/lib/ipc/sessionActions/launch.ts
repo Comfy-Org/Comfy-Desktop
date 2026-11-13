@@ -474,6 +474,7 @@ export interface StorageLaunchState {
   manageModelFolders: boolean
   modelDirsForLaunch: string[] | undefined
   modelSyncOptions: ModelPathsOptions
+  inputDir: string | undefined
 }
 
 export function applyStorageLaunchArgs(
@@ -487,6 +488,7 @@ export function applyStorageLaunchArgs(
   let modelDirsForLaunch: string[] | undefined
   let modelSyncOptions: ModelPathsOptions = {}
   let manageModelFolders = false
+  let inputDir: string | undefined
   if (argsAvailable) {
     const sharedDirs = storage.modelsDirs ?? []
     const { dirs, primaryDir } = resolveLauncherModelDirs(inst, sharedDirs)
@@ -513,16 +515,12 @@ export function applyStorageLaunchArgs(
   if (argsAvailable) {
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
     const useSharedOutput = (inst.useSharedOutput as boolean | undefined) !== false
-    if (useSharedInput) {
-      const inputDir = storage.inputDir || settings.defaults.inputDir
+    inputDir = useSharedInput
+      ? storage.inputDir || settings.defaults.inputDir
+      : (inst.inputDir as string | undefined) || undefined
+    if (inputDir) {
       fs.mkdirSync(inputDir, { recursive: true })
       launchCmd.args!.push('--input-directory', inputDir)
-    } else {
-      const perInstallInput = inst.inputDir as string | undefined
-      if (perInstallInput) {
-        fs.mkdirSync(perInstallInput, { recursive: true })
-        launchCmd.args!.push('--input-directory', perInstallInput)
-      }
     }
     if (useSharedOutput) {
       const outputDir = storage.outputDir || settings.defaults.outputDir
@@ -537,7 +535,7 @@ export function applyStorageLaunchArgs(
     }
   }
 
-  return { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions }
+  return { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions, inputDir }
 }
 
 export function isCrashedExit(code: number | null, signal: NodeJS.Signals | null): boolean {
@@ -1403,7 +1401,7 @@ async function runLaunch(
   }
   startHandedBack()
 
-  const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
+  const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions, inputDir } =
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
   let serverUp = false
@@ -1583,6 +1581,7 @@ async function runLaunch(
         mode,
         installationName: inst.name,
         coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+        inputDir,
         getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
         flushTelemetry: () => {
           execTap.flushSummary()
@@ -2165,6 +2164,7 @@ async function runLaunch(
       mode,
       installationName: inst.name,
       coreBetaArgs: coreBeta.applied.map(toBetaArgView),
+      inputDir,
       getAcceleratorInfo: () => hwTap.getAcceleratorInfo(),
       flushTelemetry: () => {
         execTap.flushSummary()

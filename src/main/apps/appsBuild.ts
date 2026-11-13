@@ -101,6 +101,10 @@ export async function reusableLocal(): Promise<InstallationRecord[]> {
   return reusableInstalls(await installations.list(), categoryOf)
 }
 
+export function sharedInputDir(): string {
+  return settings.get('inputDir') || settings.defaults.inputDir
+}
+
 export async function installVersion(inst: InstallationRecord): Promise<string | null> {
   const file = path.join(resolveComfyDir(inst.installPath), 'comfyui_version.py')
   const text = await fsp.readFile(file, 'utf8').catch(() => null)

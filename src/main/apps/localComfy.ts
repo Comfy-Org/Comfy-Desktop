@@ -27,7 +27,8 @@ import {
   launchAppsBuild,
   launchConsole,
   planAppsBuild,
-  reusableLocal
+  reusableLocal,
+  sharedInputDir
 } from './appsBuild'
 import {
   APPS_BUILD_NAME,
@@ -200,8 +201,14 @@ async function candidate(inst: InstallationRecord, own: boolean): Promise<Candid
   }
 }
 
+function readsSharedInput(inst: InstallationRecord): boolean {
+  const session = localSession(inst.id)
+  return !session || session.inputDir === sharedInputDir()
+}
+
 async function choose(min: string, apps: InstallationRecord | null): Promise<Candidate | null> {
-  const own = await Promise.all((await reusableLocal()).map((inst) => candidate(inst, true)))
+  const reusable = (await reusableLocal()).filter(readsSharedInput)
+  const own = await Promise.all(reusable.map((inst) => candidate(inst, true)))
   const appsRunningNow = apps && localSession(apps.id) ? [await candidate(apps, false)] : []
   return pickComfy([...own, ...appsRunningNow], reuseMinimum(min), appsRunning()?.id)
 }

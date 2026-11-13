@@ -10,6 +10,7 @@ interface FakeSession {
   mode: string
   installationName: string
   startedAt: number
+  inputDir?: string
 }
 
 interface FakeInstall {
@@ -33,6 +34,7 @@ interface FakeComfy {
 }
 
 const fake = vi.hoisted(() => ({
+  sharedInput: '/shared/input',
   sessions: new Map<string, FakeSession>(),
   lifecycle: null as EventEmitter | null,
   installs: [] as FakeInstall[],
@@ -53,7 +55,8 @@ function sessionFor(id: string, mode = 'console'): FakeSession {
     port: fake.ports.get(id)!,
     mode,
     installationName: inst?.name ?? id,
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    inputDir: inst?.useSharedInput === false ? inst.inputDir : fake.sharedInput
   }
 }
 
@@ -116,7 +119,8 @@ vi.mock('./appsBuild', async () => {
     launchAppsBuild: launchConsole,
     launchConsole,
     planAppsBuild: async () => ({ data: {}, bytes: 0 }),
-    reusableLocal: async () => reusableInstalls(fake.installs, () => 'local')
+    reusableLocal: async () => reusableInstalls(fake.installs, () => 'local'),
+    sharedInputDir: () => fake.sharedInput
   }
 })
 
@@ -272,6 +276,7 @@ beforeEach(() => {
   fake.versionGate = null
   fake.promptGate = null
   fake.queueGate = null
+  fake.sharedInput = '/shared/input'
   launchConsole.mockClear()
   stopRunning.mockClear()
   vi.stubGlobal('fetch', vi.fn(fakeFetch))
@@ -580,6 +585,43 @@ describe('a ComfyUI that keeps its own input folder', () => {
     addInstall('x', 8188, '0.42.4')
     fake.installs[0]!.useSharedInput = false
     run('x')
+    const local = await load()
+
+    expect((await local.getLocal({ minVersion: '0.37.0' })).own).toBeUndefined()
+  })
+
+  it.each([
+    ['its own folder', '/x/private-input'],
+    ['no folder named', undefined]
+  ])(
+    'is not reused while it still runs with %s after shared input is turned on',
+    async (_, inputDir) => {
+      addInstall('x', 8188, '0.42.4')
+      Object.assign(fake.installs[0]!, { useSharedInput: false, inputDir })
+      run('x')
+      fake.installs[0]!.useSharedInput = true
+      const local = await load()
+
+      const state = await local.getLocal({ minVersion: '0.37.0' })
+
+      expect(state.own, 'the running process still reads its private folder').toBeUndefined()
+      expect(fake.servers.get(8188)!.calls).toEqual([])
+    }
+  )
+
+  it('is not reused while it runs with a shared folder that is no longer the shared one', async () => {
+    addInstall('x', 8188, '0.42.4')
+    run('x')
+    fake.sharedInput = '/moved/input'
+    const local = await load()
+
+    expect((await local.getLocal({ minVersion: '0.37.0' })).own).toBeUndefined()
+  })
+
+  it('is not reused when its session does not say which input folder it reads', async () => {
+    addInstall('x', 8188, '0.42.4')
+    run('x')
+    delete fake.sessions.get('x')!.inputDir
     const local = await load()
 
     expect((await local.getLocal({ minVersion: '0.37.0' })).own).toBeUndefined()

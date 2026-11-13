@@ -291,6 +291,7 @@ export interface SessionInfo {
   flushTelemetry?: () => void
   getAcceleratorInfo?: () => AcceleratorSnapshot | null
   coreBetaArgs?: readonly BetaArgView[]
+  inputDir?: string
 }
 
 export interface LaunchCallbackInfo {
@@ -917,7 +918,8 @@ export function _addSession(
     installationName,
     flushTelemetry,
     getAcceleratorInfo,
-    coreBetaArgs
+    coreBetaArgs,
+    inputDir
   }: Omit<SessionInfo, 'startedAt'>,
   bootTimeMs?: number,
   retries?: { portRetries: number; rebootRetries: number },
@@ -933,6 +935,7 @@ export function _addSession(
     flushTelemetry,
     getAcceleratorInfo,
     coreBetaArgs,
+    inputDir,
     startedAt: Date.now()
   })
   _launchingInstances.delete(installationId)
