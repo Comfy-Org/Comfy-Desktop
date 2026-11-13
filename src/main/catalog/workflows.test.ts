@@ -58,9 +58,25 @@ describe('Home example workflows from the Comfy content catalog', () => {
         id: 'picked-for-desktop',
         title: 'Upscale and restore detail',
         description: 'Enlarge an image and restore fine detail.',
-        thumbnailUrl: 'https://comfy.org/catalog-media/picked-for-desktop/v1'
+        thumbnailUrl: 'https://comfy.org/catalog-media/picked-for-desktop/v1',
+        category: null
       }
     ])
+  })
+
+  it('tags each workflow with the kind of media it makes', async () => {
+    serveCatalog({
+      desktop: [
+        catalogItem({ uid: 'from-outputs', data: { outputs: [{ kind: 'video' }] } }),
+        catalogItem({ uid: 'from-generation', data: { generation_type: 'edit-images' } }),
+        catalogItem({ uid: 'untagged' })
+      ],
+      everything: []
+    })
+
+    const workflows = await listHomeWorkflows('en')
+
+    expect(workflows.map((workflow) => workflow.category)).toEqual(['video', 'image', null])
   })
 
   it("falls back to the catalog's own order while no workflow is marked for Desktop", async () => {

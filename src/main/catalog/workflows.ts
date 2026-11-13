@@ -1,5 +1,6 @@
 import { CLOUD_CONFIG } from '../cloud/config'
 import { fetchJSON } from '../lib/fetch'
+import { catalogCategory } from './category'
 import type { CatalogWorkflow } from '../../types/ipc'
 
 export const HUB_ORIGIN = 'https://comfy.org'
@@ -93,7 +94,8 @@ export function toCatalogWorkflow(item: unknown, locale: string): ResolvedWorkfl
       id,
       title,
       description: text(translation?.description) ?? text(data.description) ?? '',
-      thumbnailUrl: thumbnailUrlFor(data)
+      thumbnailUrl: thumbnailUrlFor(data),
+      category: catalogCategory(data)
     }
   }
 }

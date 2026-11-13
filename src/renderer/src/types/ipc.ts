@@ -8,6 +8,7 @@ export type {
   OutputFolder,
   OutputFolderListing,
   CatalogApp,
+  CatalogCategory,
   CatalogWorkflow,
   Unsubscribe,
   BetaActivationNotice,

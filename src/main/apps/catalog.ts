@@ -1,4 +1,5 @@
 import type { CatalogApp } from '../../types/ipc'
+import { catalogCategory } from '../catalog/category'
 import { isTemporaryLaunchApp } from './temporaryLaunchApps'
 
 const DESKTOP_SURFACE = 'desktop_starters'
@@ -51,6 +52,7 @@ export function toCatalogApp(item: CatalogItem, listUrl: string): CatalogApp | n
     title,
     description: typeof description === 'string' ? description : '',
     thumbnailUrl: thumbnailUrl(item.data?.website_media),
+    category: catalogCategory(item.data),
     url
   }
 }
