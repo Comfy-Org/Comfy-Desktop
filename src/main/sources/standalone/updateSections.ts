@@ -333,17 +333,19 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
         : (installation.version as string | undefined) || 'unknown'
     },
     {
+      key: 'variant',
       label: t('standalone.variant'),
       value: (installation.variant as string | undefined)
         ? getVariantLabel(installation.variant as string)
         : '—'
     },
     {
+      key: 'python',
       label: t('standalone.python'),
       value: (installation.pythonVersion as string | undefined) || '—'
     },
-    { label: t('standalone.pytorch'), value: getTorchVersion(installation) || '—' },
-    { label: t('common.location'), value: installation.installPath || '—' }
+    { key: 'pytorch', label: t('standalone.pytorch'), value: getTorchVersion(installation) || '—' },
+    { key: 'location', label: t('common.location'), value: installation.installPath || '—' }
   ]
 
   const copiedFrom = installation.copiedFrom as string | undefined
@@ -362,6 +364,7 @@ export function getDetailSections(installation: InstallationRecord): Record<stri
     const dateStr = copiedAt ? new Date(copiedAt).toLocaleString() : ''
     const nameStr = copiedFromName || copiedFrom
     infoFields.push({
+      key: 'lineage',
       label: t('standalone.lineage'),
       value: dateStr ? `${reasonLabel}: ${nameStr}  ·  ${dateStr}` : `${reasonLabel}: ${nameStr}`
     })

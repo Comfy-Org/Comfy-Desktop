@@ -13,7 +13,6 @@ import {
   ChevronUp,
   HardDrive,
   SlidersHorizontal,
-  Info,
   RefreshCw,
   History,
   SquareTerminal,
@@ -46,6 +45,9 @@ import MoreMenu, { type MenuAction } from '../../views/comfyUISettings/MoreMenu.
 import ArgsBuilderPage from '../../views/comfyUISettings/ArgsBuilderPage.vue'
 import SnapshotsView from '../../views/comfyUISettings/SnapshotsView.vue'
 import StatusFactPanel from '../../views/comfyUISettings/StatusFactPanel.vue'
+import BuildOverview from '../../views/comfyUISettings/BuildOverview.vue'
+import { buildOverviewModel } from '../../views/comfyUISettings/overviewModel'
+import { formatBytes } from '../../lib/downloadFormatters'
 import InlineNameEdit from '../InlineNameEdit.vue'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
@@ -126,19 +128,23 @@ const { t } = useI18n()
 const isPage = computed(() => props.pageActionsTarget !== undefined)
 const menuChevron = computed(() => (isPage.value ? ChevronDown : ChevronUp))
 
-const activeTab = ref<ComfyUISettingsTab>(props.initialTab)
+function overviewTab(tab: ComfyUISettingsTab): ComfyUISettingsTab {
+  return tab === 'status' ? 'update' : tab
+}
+
+const activeTab = ref<ComfyUISettingsTab>(overviewTab(props.initialTab))
 
 watch(
   () => props.initialTab,
   (next) => {
-    activeTab.value = next
+    activeTab.value = overviewTab(next)
   }
 )
 
 watch(
   () => props.installation?.id ?? null,
   (next, prev) => {
-    if (next !== prev) activeTab.value = props.initialTab
+    if (next !== prev) activeTab.value = overviewTab(props.initialTab)
   }
 )
 
@@ -164,6 +170,7 @@ const {
   runningActionIds,
   sectionsForTab,
   diskUsageItem,
+  diskSpace,
   pinBottomActions,
   reload
 } = useComfyUISettings({
@@ -248,9 +255,9 @@ const ALL_TABS: TabDef[] = [
   {
     key: 'update',
     sectionTab: 'update',
-    label: t('comfyUISettings.tabUpdate'),
-    icon: RefreshCw,
-    tooltip: t('tooltips.tabUpdate')
+    label: t('comfyUISettings.tabOverview'),
+    icon: LayoutDashboard,
+    tooltip: t('tooltips.tabOverview')
   },
   {
     key: 'config',
@@ -279,13 +286,6 @@ const ALL_TABS: TabDef[] = [
     label: t('comfyUISettings.tabTerminal'),
     icon: SquareTerminal,
     tooltip: t('tooltips.console')
-  },
-  {
-    key: 'status',
-    sectionTab: 'status',
-    label: t('comfyUISettings.tabStatus'),
-    icon: Info,
-    tooltip: t('tooltips.tabStatus')
   }
 ]
 
@@ -297,14 +297,32 @@ const showConsoleTab = computed(
 
 const isCloud = computed(() => installation.value?.sourceCategory === 'cloud')
 
+function tabHasContent(tab: TabDef): boolean {
+  if (tab.key === 'console') return showConsoleTab.value
+  if (tab.key === 'update' && statusSections.value.length > 0) return true
+  return sectionsForTab(tab.sectionTab).value.length > 0
+}
+
 const tabs = computed<TabDef[]>(() =>
-  ALL_TABS.filter((tab) =>
-    tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
-  ).map((tab) =>
+  ALL_TABS.filter(tabHasContent).map((tab) =>
     isCloud.value && tab.key === 'config'
       ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
       : tab
   )
+)
+
+const statusSections = computed(() => sectionsForTab('status').value)
+
+const overviewModel = computed(() =>
+  activeTab.value === 'update'
+    ? buildOverviewModel(visibleSections.value, statusSections.value)
+    : null
+)
+
+const diskFree = computed(() =>
+  diskSpace.value && Number.isFinite(diskSpace.value.free)
+    ? formatBytes(diskSpace.value.free)
+    : null
 )
 
 const isStartupArgsPage = computed(
@@ -328,8 +346,6 @@ const visibleSections = computed(() => {
   const tab = tabs.value.find((tt) => tt.key === activeTab.value)?.sectionTab ?? 'settings'
   return sectionsForTab(tab).value
 })
-
-const statusSections = computed(() => sectionsForTab('status').value)
 
 const storageSections = computed(() => sectionsForTab('storage').value)
 
@@ -904,21 +920,6 @@ defineExpose({
                   />
                 </div>
                 <div
-                  v-else-if="activeTab === 'status' && installation"
-                  :key="`tab-status-${paneInstallKey}`"
-                  class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
-                >
-                  <StatusFactPanel
-                    :installation="installation"
-                    :sections="statusSections"
-                    :disk-usage="diskUsageItem"
-                    :on-rename="renameHandler"
-                    :on-update-url="handleUrlUpdate"
-                    :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
-                    :hide-hero="!!pageTitleTarget"
-                  />
-                </div>
-                <div
                   v-else-if="activeTab === 'storage'"
                   :key="`tab-storage-${paneInstallKey}`"
                   class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
@@ -1105,18 +1106,39 @@ defineExpose({
                       key="sections"
                       class="settings-v2-tab-pane flex w-full flex-auto flex-col gap-[inherit]"
                     >
-                      <SettingsSectionList
-                        :sections="visibleSections"
-                        :columns="isStartupArgsPage"
-                        :installation-id="installation?.id"
+                      <BuildOverview
+                        v-if="overviewModel && installation"
+                        :installation="installation"
+                        :model="overviewModel"
+                        :disk-usage="diskUsageItem?.value ?? null"
+                        :disk-free="diskFree"
                         :running-action-ids="runningActionIds"
-                        :pending-restart-field-ids="pendingRestartFieldIds"
-                        :field-error-messages="fieldErrorMessages"
-                        @update-field="updateField"
-                        @run-action="runAction"
-                        @open-args-page="openArgsPage"
-                        @open-path="handleOpenPath"
+                        @action="runAction"
                       />
+                      <template v-else>
+                        <SettingsSectionList
+                          :sections="visibleSections"
+                          :columns="isStartupArgsPage"
+                          :installation-id="installation?.id"
+                          :running-action-ids="runningActionIds"
+                          :pending-restart-field-ids="pendingRestartFieldIds"
+                          :field-error-messages="fieldErrorMessages"
+                          @update-field="updateField"
+                          @run-action="runAction"
+                          @open-args-page="openArgsPage"
+                          @open-path="handleOpenPath"
+                        />
+                        <StatusFactPanel
+                          v-if="activeTab === 'update' && installation && statusSections.length > 0"
+                          :installation="installation"
+                          :sections="statusSections"
+                          :disk-usage="diskUsageItem"
+                          :on-rename="renameHandler"
+                          :on-update-url="handleUrlUpdate"
+                          :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
+                          :hide-hero="!!pageTitleTarget"
+                        />
+                      </template>
                     </div>
                   </Transition>
                 </div>

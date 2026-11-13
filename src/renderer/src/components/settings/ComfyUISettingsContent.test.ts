@@ -474,14 +474,7 @@ describe('ComfyUISettingsContent', () => {
     const CONSOLE_TOOLTIP =
       "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
-    const TAB_LABELS = new Set([
-      'Update',
-      'Startup Args',
-      'Snapshots',
-      'Storage',
-      'Terminal',
-      'About'
-    ])
+    const TAB_LABELS = new Set(['Overview', 'Startup Args', 'Snapshots', 'Storage', 'Terminal'])
 
     function tabTooltips(w: VueWrapper) {
       return w
