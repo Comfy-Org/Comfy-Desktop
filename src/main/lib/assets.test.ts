@@ -99,6 +99,23 @@ describe('listAssets', () => {
     expect(assets.map((a) => [a.id, a.sizeBytes])).toEqual([['good', 0]])
   })
 
+  it('keeps one page of Cloud rows when the server sends more than it was asked for', async () => {
+    getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
+    getAccessToken.mockResolvedValue('token')
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assets: Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, name: `a${i}.bin` }))
+        })
+      )
+      .mockResolvedValue(new Response(null, { status: 404 }))
+
+    const assets = await listAssets('cloud-1')
+
+    expect(assets).toHaveLength(100)
+    expect(assets.at(-1)!.id).toBe('a99')
+  })
+
   it('lists the signed-in cloud workspace and resolves signed media links for playable kinds', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue('token')
