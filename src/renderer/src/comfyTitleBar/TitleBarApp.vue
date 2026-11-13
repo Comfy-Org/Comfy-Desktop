@@ -222,9 +222,6 @@ const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
 const titleClusterRef = useTemplateRef<HTMLElement>('titleCluster')
 const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
-const trailingWidthPx = ref(0)
-let trailingObserver: ResizeObserver | undefined
-
 type CollapseMode = 'full' | 'no-feedback' | 'icons-only'
 const collapseMode = ref<CollapseMode>('full')
 const collapsedFeedback = computed(
@@ -398,18 +395,6 @@ let unsubCoachmarkSettled: (() => void) | undefined
 let unsubCoachmarkDisplaced: (() => void) | undefined
 
 onMounted(() => {
-  if (titleTrailingRef.value && typeof ResizeObserver !== 'undefined') {
-    trailingObserver = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry) return
-      const width = Math.ceil(entry.contentRect.width)
-      if (width !== trailingWidthPx.value) {
-        trailingWidthPx.value = width
-      }
-    })
-    trailingObserver.observe(titleTrailingRef.value)
-  }
-
   if (titleBarRef.value && typeof ResizeObserver !== 'undefined') {
     fitObserver = new ResizeObserver(() => scheduleFit())
     fitObserver.observe(titleBarRef.value)
@@ -489,8 +474,6 @@ onUnmounted(() => {
   unsubCoachmarkDisplaced?.()
   bridge?.hideCoachmark()
   hideTip()
-  trailingObserver?.disconnect()
-  trailingObserver = undefined
   fitObserver?.disconnect()
   fitObserver = undefined
   if (fitRaf !== null) {
@@ -525,14 +508,10 @@ onUnmounted(() => {
     :style="{
       color: themeText ?? undefined,
       '--titlebar-bg-active': themeBg ?? undefined,
-      '--titlebar-icon': themeText ?? undefined,
-      '--title-trailing-width': `${trailingWidthPx}px`
+      '--titlebar-icon': themeText ?? undefined
     }"
   >
-    <div
-      ref="titleCluster"
-      class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
-    >
+    <div ref="titleCluster" class="title-cluster flex items-center gap-1">
       <Button
         v-if="homeButtonShown"
         type="button"
