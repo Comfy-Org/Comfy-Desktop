@@ -43,6 +43,7 @@ test.afterAll(async () => {
 
 interface BuildsLayout {
   total: number
+  firstText: string
   visible: string[]
   columns: number
 }
@@ -56,6 +57,7 @@ function layoutAtWidth(width: string): Promise<BuildsLayout> {
     const list = section.querySelector('ul')
     return {
       total: items.length,
+      firstText: items[0].innerText,
       visible: items.filter((item) => getComputedStyle(item).display !== 'none').map((item) => item.innerText),
       columns: getComputedStyle(list).gridTemplateColumns.split(' ').length
     }
@@ -68,6 +70,7 @@ test('A narrow Home shows the latest build and Cloud in two columns @windows @ma
   expect(layout.total).toBe(3)
   expect(layout.columns).toBe(2)
   expect(layout.visible).toHaveLength(2)
+  expect(layout.visible).toContain(layout.firstText)
   expect(layout.visible.some((text) => text.includes('Comfy Cloud'))).toBe(true)
 })
 
