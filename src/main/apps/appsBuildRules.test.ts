@@ -480,6 +480,15 @@ describe('which of the person own installs an app run may use', () => {
     ]
     expect(reusableInstalls(list, category)).toEqual([])
   })
+
+  it('leaves out installs that keep their own input folder instead of the shared one apps use', () => {
+    const list = [
+      { id: 'shared', sourceId: 'standalone', useSharedInput: true, ...base },
+      { id: 'default', sourceId: 'standalone', ...base },
+      { id: 'private', sourceId: 'standalone', useSharedInput: false, ...base }
+    ]
+    expect(reusableInstalls(list, category).map((i) => i.id)).toEqual(['shared', 'default'])
+  })
 })
 
 describe('which ComfyUI an app run uses', () => {

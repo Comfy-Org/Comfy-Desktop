@@ -63,7 +63,7 @@ import {
   noteRun,
   promptRunId,
   queueAnswer,
-  queueView,
+  queueIds,
   readCapped,
   reconnectDelay,
   requestFile,
@@ -113,6 +113,17 @@ let selections = 0
 const LAUNCHING = 'launching'
 const startedHere = new Map<string, SessionInfo | typeof LAUNCHING>()
 const owned = new AppsOwnership()
+const sending = new Map<string, number>()
+
+function submitting(id: string): boolean {
+  return (sending.get(id) ?? 0) > 0
+}
+
+function markSending(id: string, step: 1 | -1): void {
+  const left = (sending.get(id) ?? 0) + step
+  if (left > 0) sending.set(id, left)
+  else sending.delete(id)
+}
 
 function touch(): void {
   lastUse = Date.now()
@@ -255,8 +266,10 @@ type Adoption = 'aimed' | 'stale' | 'busy'
 async function adopt(pick: Candidate | null, gen: number, forStart: boolean): Promise<Adoption> {
   if (!selectionCurrent(gen, forStart)) return 'stale'
   const run = appsRunning()
-  if (run && (pick?.id ?? appsBuildId()) !== run.id && (await appsWorkOn(run))) return 'busy'
+  const moving = !!run && (pick?.id ?? appsBuildId()) !== run.id
+  if (moving && (await appsWorkOn(run))) return 'busy'
   if (!selectionCurrent(gen, forStart)) return 'stale'
+  if (moving && submitting(run.id)) return 'busy'
   aimAt(pick)
   return 'aimed'
 }
@@ -448,7 +461,24 @@ export async function localFetch(input: unknown, page = 0): Promise<LocalAnswer>
   if (personal && file && owned.fileOwner(page, file) !== run.id) {
     return textAnswer(403, NOT_APPS_FILE)
   }
-  if (req.kind === 'prompt' && owned.full()) return textAnswer(429, TOO_MANY_RUNS)
+  if (req.kind !== 'prompt') return send(req, runs, run, personal, page)
+  markSending(run.id, 1)
+  try {
+    if (owned.full()) await settleDropped()
+    if (owned.full()) return textAnswer(429, TOO_MANY_RUNS)
+    return await send(req, runs, run, personal, page)
+  } finally {
+    markSending(run.id, -1)
+  }
+}
+
+async function send(
+  req: LocalRequest,
+  runs: string[],
+  run: Serving,
+  personal: boolean,
+  page: number
+): Promise<LocalAnswer> {
   touch()
   syncLocalSocket()
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
@@ -461,7 +491,7 @@ export async function localFetch(input: unknown, page = 0): Promise<LocalAnswer>
           signal
         }
       : req.kind === 'upload'
-        ? { method: 'POST', body: uploadForm(req.bytes, req.fileName), signal }
+        ? { method: 'POST', body: uploadForm(req.bytes, req.fileName, !personal), signal }
         : { method: 'GET', signal }
   try {
     const res = await fetch(`http://127.0.0.1:${run.port}${req.path}`, init)
@@ -488,20 +518,34 @@ export type LocalDownload = { state: 'done' } | { state: 'failed'; error: string
 
 const downloads = new Map<string, Promise<LocalDownload>>()
 
-async function appsWorkOn(run: Serving): Promise<boolean> {
-  if (downloads.size > 0) return true
-  const ids = new Set(owned.runsOn(run.id))
-  if (!ids.size) return false
+async function liveRuns(port: number): Promise<Set<string> | null> {
   try {
-    const res = await fetch(`http://127.0.0.1:${run.port}/queue`, {
+    const res = await fetch(`http://127.0.0.1:${port}/queue`, {
       signal: AbortSignal.timeout(5000)
     })
-    if (!res.ok) return true
-    const q = queueView(await res.json())
-    return [...q.running, ...q.pending].some((r) => ids.has(r.id))
+    return res.ok ? queueIds(await res.json()) : null
   } catch {
-    return localSession(run.id) !== null
+    return null
   }
+}
+
+async function appsWorkOn(run: Serving): Promise<boolean> {
+  if (downloads.size > 0 || submitting(run.id)) return true
+  const ids = owned.runsOn(run.id)
+  if (!ids.length) return false
+  const live = await liveRuns(run.port)
+  if (!live) return localSession(run.id) !== null
+  return ids.some((id) => live.has(id))
+}
+
+async function settleDropped(): Promise<void> {
+  await Promise.all(
+    [...owned.unfinished()].map(async ([owner, ids]) => {
+      const on = serving(owner)
+      const live = on ? await liveRuns(on.port) : null
+      if (live) for (const id of ids) if (!live.has(id)) owned.finish(id)
+    })
+  )
 }
 
 async function runDownload(installationId: string, req: DownloadRequest): Promise<LocalDownload> {

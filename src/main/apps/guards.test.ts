@@ -41,6 +41,7 @@ import {
   outputKind,
   promptRunId,
   queueAnswer,
+  queueIds,
   queueJson,
   queueView,
   readable,
@@ -402,6 +403,12 @@ describe('uploadForm', () => {
     expect(form.get('overwrite')).toBe('true')
     expect(form.getAll('image')).toHaveLength(1)
     expect(form.getAll('overwrite')).toEqual(['true'])
+  })
+
+  it('leaves overwrite off when asked, so ComfyUI gives a taken name a new one', () => {
+    const form = uploadForm(new Uint8Array([7]), 'photo.png', false)
+    expect((form.get('image') as File).name).toBe('photo.png')
+    expect(form.has('overwrite')).toBe(false)
   })
 })
 
@@ -1132,6 +1139,33 @@ describe('which ComfyUI owns the runs and files apps made', () => {
     owned.finishAll((id) => id !== 'x')
     expect(owned.full()).toBe(false)
     expect(owned.runOwner('r1')).toBe('x')
+  })
+
+  it('lists the runs that have not finished by the ComfyUI they went to', () => {
+    const owned = new AppsOwnership()
+    owned.addRun('r1', 'x', 1)
+    owned.addRun('r2', 'y', 1)
+    owned.addRun('r3', 'x', 2)
+    owned.finish('r3')
+    expect([...owned.unfinished()]).toEqual([
+      ['x', ['r1']],
+      ['y', ['r2']]
+    ])
+  })
+})
+
+describe('the runs a ComfyUI still has queued', () => {
+  it('names every running and waiting run, past the 100 apps are shown', () => {
+    const pending = Array.from({ length: 150 }, (_, i) => [i, `p${i}`, {}, {}, []])
+    const ids = queueIds({ queue_running: [[0, 'r0', {}, {}, []]], queue_pending: pending })
+    expect(ids.size).toBe(151)
+    expect(ids.has('r0')).toBe(true)
+    expect(ids.has('p149')).toBe(true)
+  })
+
+  it('names nothing for a queue it cannot read', () => {
+    expect(queueIds(null).size).toBe(0)
+    expect(queueIds({ queue_pending: 'x', queue_running: [['bad']] }).size).toBe(0)
   })
 })
 

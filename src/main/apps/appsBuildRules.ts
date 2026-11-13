@@ -237,6 +237,7 @@ export interface ReuseInstall {
   installPath?: string
   status?: string
   appsBuild?: unknown
+  useSharedInput?: boolean
 }
 
 export function reusableInstalls<T extends ReuseInstall>(
@@ -250,7 +251,8 @@ export function reusableInstalls<T extends ReuseInstall>(
       !isAppsBuild(inst) &&
       inst.status === 'installed' &&
       typeof inst.installPath === 'string' &&
-      inst.installPath !== ''
+      inst.installPath !== '' &&
+      inst.useSharedInput !== false
   )
 }
 

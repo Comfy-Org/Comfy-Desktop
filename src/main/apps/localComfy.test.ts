@@ -18,6 +18,8 @@ interface FakeInstall {
   sourceId: string
   installPath: string
   status: string
+  useSharedInput?: boolean
+  inputDir?: string
 }
 
 interface FakeComfy {
@@ -27,6 +29,7 @@ interface FakeComfy {
   history: Record<string, unknown>
   files: Set<string>
   calls: string[]
+  replaced: string[]
 }
 
 const fake = vi.hoisted(() => ({
@@ -37,6 +40,7 @@ const fake = vi.hoisted(() => ({
   ports: new Map<string, number>(),
   apps: { id: null as string | null, inst: null as FakeInstall | null },
   versionGate: null as Promise<void> | null,
+  promptGate: null as Promise<void> | null,
   servers: new Map<number, FakeComfy>(),
   sockets: [] as Array<{ url: string; closed: boolean }>
 }))
@@ -83,34 +87,37 @@ vi.mock('../lib/ipc/shared', async () => {
     stopRunning
   }
 })
-vi.mock('./appsBuild', () => ({
-  appsBuildId: () => fake.apps.id,
-  appsLocalOff: async () => null,
-  appsSetupRunning: () => false,
-  cancelAppsSetup: () => ({ cancelled: false }),
-  ensureAppsBuild: async () => {
-    fake.apps.inst = {
-      id: 'apps',
-      name: 'Apps',
-      sourceId: 'standalone',
-      installPath: '/apps',
-      status: 'installed'
-    }
-    fake.apps.id = 'apps'
-    return fake.apps.inst
-  },
-  findApps: async () => fake.apps.inst,
-  installVersion: async (inst: { id: string }) => {
-    const gate = fake.versionGate
-    fake.versionGate = null
-    if (gate) await gate
-    return fake.diskVersion.get(inst.id) ?? null
-  },
-  launchAppsBuild: launchConsole,
-  launchConsole,
-  planAppsBuild: async () => ({ data: {}, bytes: 0 }),
-  reusableLocal: async () => fake.installs
-}))
+vi.mock('./appsBuild', async () => {
+  const { reusableInstalls } = await import('./appsBuildRules')
+  return {
+    appsBuildId: () => fake.apps.id,
+    appsLocalOff: async () => null,
+    appsSetupRunning: () => false,
+    cancelAppsSetup: () => ({ cancelled: false }),
+    ensureAppsBuild: async () => {
+      fake.apps.inst = {
+        id: 'apps',
+        name: 'Apps',
+        sourceId: 'standalone',
+        installPath: '/apps',
+        status: 'installed'
+      }
+      fake.apps.id = 'apps'
+      return fake.apps.inst
+    },
+    findApps: async () => fake.apps.inst,
+    installVersion: async (inst: { id: string }) => {
+      const gate = fake.versionGate
+      fake.versionGate = null
+      if (gate) await gate
+      return fake.diskVersion.get(inst.id) ?? null
+    },
+    launchAppsBuild: launchConsole,
+    launchConsole,
+    planAppsBuild: async () => ({ data: {}, bytes: 0 }),
+    reusableLocal: async () => reusableInstalls(fake.installs, () => 'local')
+  }
+})
 
 class FakeSocket {
   url: string
@@ -154,7 +161,8 @@ function fakeFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   if (p === '/prompt') {
     const id = `apps-${url.port}-${server.calls.length}`
     server.pending.push([server.pending.length, id, {}, {}, []])
-    return Promise.resolve(json({ prompt_id: id, number: 1, node_errors: {} }))
+    const answer = () => json({ prompt_id: id, number: 1, node_errors: {} })
+    return fake.promptGate ? fake.promptGate.then(answer) : Promise.resolve(answer())
   }
   if (p === '/queue' && method === 'GET') {
     return Promise.resolve(json({ queue_running: server.running, queue_pending: server.pending }))
@@ -176,8 +184,17 @@ function fakeFetch(input: string | URL, init?: RequestInit): Promise<Response> {
     )
   }
   if (p === '/upload/image') {
-    server.files.add('input//photo.png')
-    return Promise.resolve(json({ name: 'photo.png', subfolder: '', type: 'input' }))
+    const form = init!.body as FormData
+    const asked = (form.get('image') as File).name
+    const overwrite = form.get('overwrite') === 'true'
+    const dot = asked.lastIndexOf('.')
+    let name = asked
+    for (let i = 1; !overwrite && server.files.has(`input//${name}`); i++) {
+      name = `${asked.slice(0, dot)} (${i})${asked.slice(dot)}`
+    }
+    if (server.files.has(`input//${name}`)) server.replaced.push(name)
+    server.files.add(`input//${name}`)
+    return Promise.resolve(json({ name, subfolder: '', type: 'input' }))
   }
   return Promise.resolve(new Response('', { status: 200 }))
 }
@@ -198,7 +215,8 @@ function addInstall(id: string, port: number, disk: string, served = disk): Fake
     pending: [],
     history: {},
     files: new Set(),
-    calls: []
+    calls: [],
+    replaced: []
   }
   fake.servers.set(port, server)
   return server
@@ -212,7 +230,8 @@ function addAppsServer(port: number): FakeComfy {
     pending: [],
     history: {},
     files: new Set(),
-    calls: []
+    calls: [],
+    replaced: []
   }
   fake.servers.set(port, server)
   return server
@@ -244,6 +263,7 @@ beforeEach(() => {
   fake.apps.id = null
   fake.apps.inst = null
   fake.versionGate = null
+  fake.promptGate = null
   launchConsole.mockClear()
   stopRunning.mockClear()
   vi.stubGlobal('fetch', vi.fn(fakeFetch))
@@ -281,6 +301,56 @@ describe('an app run keeps its ComfyUI while another app asks for a newer one', 
     const history = await local.localFetch({ method: 'GET', path: `/history/${runId}` })
     expect(history.status).toBe(200)
     expect(JSON.parse(text(history.body))).toHaveProperty(runId)
+    expect(fake.sockets.filter((s) => !s.closed).map((s) => s.url)).toEqual([
+      expect.stringContaining(':8188/')
+    ])
+  })
+
+  it('keeps the first ComfyUI while an app run sent to it has not been answered yet', async () => {
+    const x = addInstall('x', 8188, '0.36.0')
+    addInstall('y', 8288, '0.42.4')
+    run('x')
+    const local = await load()
+    expect(await local.getLocal({ minVersion: '0.36.0' })).toMatchObject({ own: true })
+
+    let answer!: () => void
+    fake.promptGate = new Promise<void>((r) => (answer = r))
+    const sending = local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(x.pending, 'ComfyUI x has the run but has not answered').toHaveLength(1)
+
+    await local.getLocal({ minVersion: '0.37.0' })
+    const second = await local.startLocal({ minVersion: '0.37.0' })
+
+    expect(second.error).toMatch(/busy/)
+    expect(launchConsole).not.toHaveBeenCalled()
+    answer()
+    const runId = JSON.parse(text((await sending).body)).prompt_id as string
+    x.history[runId] = { status: { completed: true }, outputs: {} }
+    expect((await local.localFetch({ method: 'GET', path: `/history/${runId}` })).status).toBe(200)
+    expect(fake.sockets.filter((s) => !s.closed).map((s) => s.url)).toEqual([
+      expect.stringContaining(':8188/')
+    ])
+  })
+
+  it('keeps the first ComfyUI while its app run waits behind more than 100 of the person runs', async () => {
+    const x = addInstall('x', 8188, '0.36.0')
+    addInstall('y', 8288, '0.42.4')
+    run('x')
+    const local = await load()
+    expect(await local.getLocal({ minVersion: '0.36.0' })).toMatchObject({ own: true })
+    const queued = await local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
+    const runId = JSON.parse(text(queued.body)).prompt_id as string
+    x.pending = [
+      ...Array.from({ length: 150 }, (_, i) => [i, `mine-${i}`, {}, {}, []]),
+      [150, runId, {}, {}, []]
+    ]
+
+    await local.getLocal({ minVersion: '0.37.0' })
+    const second = await local.startLocal({ minVersion: '0.37.0' })
+
+    expect(second.error).toMatch(/busy/)
+    expect(launchConsole).not.toHaveBeenCalled()
     expect(fake.sockets.filter((s) => !s.closed).map((s) => s.url)).toEqual([
       expect.stringContaining(':8188/')
     ])
@@ -443,6 +513,46 @@ describe('reusing a ComfyUI old enough to stop every run on interrupt', () => {
   })
 })
 
+describe('a ComfyUI that keeps its own input folder', () => {
+  it('is not reused, so apps cannot list or load the files in it', async () => {
+    addInstall('x', 8188, '0.42.4')
+    Object.assign(fake.installs[0]!, { useSharedInput: false, inputDir: '/x/private-input' })
+    run('x')
+    const local = await load()
+
+    const state = await local.getLocal({ minVersion: '0.37.0' })
+
+    expect(state.own).toBeUndefined()
+    expect(state.name).toBe('Apps')
+    expect(fake.servers.get(8188)!.calls).toEqual([])
+  })
+
+  it('is not reused even with no folder named, since ComfyUI then reads its own', async () => {
+    addInstall('x', 8188, '0.42.4')
+    fake.installs[0]!.useSharedInput = false
+    run('x')
+    const local = await load()
+
+    expect((await local.getLocal({ minVersion: '0.37.0' })).own).toBeUndefined()
+  })
+
+  it('leaves the next ComfyUI that shares the apps input folder to be reused', async () => {
+    addInstall('x', 8188, '0.42.4')
+    fake.installs[0]!.useSharedInput = false
+    addInstall('y', 8288, '0.42.4')
+    fake.installs[1]!.useSharedInput = true
+    run('x')
+    run('y')
+    const local = await load()
+
+    expect(await local.getLocal({ minVersion: '0.37.0' })).toMatchObject({
+      state: 'running',
+      own: true,
+      name: 'ComfyUI y'
+    })
+  })
+})
+
 describe('stopping a ComfyUI that apps started when apps go idle', () => {
   async function startedThenIdle(replace: boolean): Promise<void> {
     vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
@@ -597,6 +707,62 @@ describe('what apps can see on a ComfyUI the person already uses', () => {
 
     const after = await local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
     expect(after.status, 'a finished run makes room for a new one').toBe(200)
+  })
+
+  it('takes new runs again after the person clears apps runs from the ComfyUI queue', async () => {
+    const { local, server, runId } = await reused()
+    for (let i = 0; i < 1999; i++) {
+      await local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
+    }
+    expect(
+      (await local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })).status
+    ).toBe(429)
+
+    server.pending = server.pending.filter((p) => (p as unknown[])[1] === runId)
+
+    const after = await local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
+    expect(after.status, 'runs ComfyUI dropped no longer hold a place').toBe(200)
+    const stop = await local.localFetch({
+      method: 'POST',
+      path: '/interrupt',
+      body: { prompt_id: runId }
+    })
+    expect(stop.status, 'a run still in the queue stays the app run').toBe(200)
+    expect((await local.localFetch({ method: 'GET', path: `/history/${runId}` })).status).toBe(200)
+    expect(
+      (
+        await local.localFetch({
+          method: 'POST',
+          path: '/interrupt',
+          body: { prompt_id: 'mine-1' }
+        })
+      ).status
+    ).toBe(403)
+  })
+
+  it('does not replace an input file of the same name already in the person ComfyUI', async () => {
+    const { local, server } = await reused()
+    server.files.add('input//photo.png')
+
+    const up = await local.localFetch({
+      method: 'POST',
+      path: '/upload/image',
+      body: new Uint8Array([1]),
+      fileName: 'photo.png'
+    })
+
+    expect(up.status).toBe(200)
+    expect(server.replaced).toEqual([])
+    const name = JSON.parse(text(up.body)).name as string
+    expect(name).toBe('photo (1).png')
+    expect(
+      (await local.localFetch({ method: 'GET', path: view(name, '', 'input') })).status,
+      'the page opens the file under the name ComfyUI gave it'
+    ).toBe(200)
+    expect(
+      (await local.localFetch({ method: 'GET', path: view('photo.png', '', 'input') })).status,
+      'the person file stays closed to apps'
+    ).toBe(403)
   })
 
   it('opens every file of a run that made more than 2,000', async () => {

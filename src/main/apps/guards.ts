@@ -263,10 +263,10 @@ export function isVersionsIndex(bytes: unknown): bytes is Uint8Array {
   }
 }
 
-export function uploadForm(bytes: Uint8Array, name: unknown): FormData {
+export function uploadForm(bytes: Uint8Array, name: unknown, overwrite = true): FormData {
   const form = new FormData()
   form.append('image', new Blob([new Uint8Array(bytes)]), safeUploadName(name))
-  form.append('overwrite', 'true')
+  if (overwrite) form.append('overwrite', 'true')
   return form
 }
 
@@ -456,6 +456,19 @@ export function queueView(
     running: queueRuns(q.queue_running, seen, owned),
     pending: queueRuns(q.queue_pending, seen, owned)
   }
+}
+
+export function queueIds(raw: unknown): Set<string> {
+  const q = (raw && typeof raw === 'object' ? raw : {}) as {
+    queue_running?: unknown
+    queue_pending?: unknown
+  }
+  const ids = new Set<string>()
+  for (const list of [q.queue_running, q.queue_pending]) {
+    if (!Array.isArray(list)) continue
+    for (const item of list) if (Array.isArray(item) && isRunId(item[1])) ids.add(item[1])
+  }
+  return ids
 }
 
 export function queueAnswer(
@@ -667,6 +680,17 @@ export class AppsOwnership {
 
   runsOn(owner: string): string[] {
     return [...this.runs].filter(([, r]) => r.owner === owner).map(([id]) => id)
+  }
+
+  unfinished(): Map<string, string[]> {
+    const byOwner = new Map<string, string[]>()
+    for (const [id, run] of this.runs) {
+      if (this.finished.has(id)) continue
+      const ids = byOwner.get(run.owner)
+      if (ids) ids.push(id)
+      else byOwner.set(run.owner, [id])
+    }
+    return byOwner
   }
 
   addRunFiles(runId: string, page: number | null, files: readonly string[]): void {
