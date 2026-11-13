@@ -2,10 +2,12 @@
 import { computed, ref } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
+import { can } from '../../milestones'
 import ExampleArc from './ExampleArc.vue'
 import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import WorkflowCard from '../WorkflowCard.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import { ARC_APPS, ARC_TEMPLATES, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
@@ -18,9 +20,9 @@ import { exploreStart } from '../explore/exploreStart'
 const FEATURED = 12
 
 const kind = ref<'apps' | 'templates'>('apps')
-const KINDS = [
-  { value: 'apps' as const, label: 'Apps' },
-  { value: 'templates' as const, label: 'Templates' }
+const KINDS: { value: 'apps' | 'templates'; label: string }[] = [
+  { value: 'apps', label: 'Apps' },
+  { value: 'templates', label: 'Workflows' }
 ]
 
 type Topic = 'all' | ArcItem['topic']
@@ -38,8 +40,12 @@ const TOPICS = computed(() =>
   ).filter((t) => t.value === 'all' || EVERY.filter((x) => x.topic === t.value).length >= 3)
 )
 
+/** Milestone 2 always shows the tabs; from Milestone 3 the layout follows
+ *  UI Playground › Apps and templates. */
+const mix = computed(() => (can.value.explore ? homeArcMix.id : 'tabs'))
+
 const items = computed<ArcItem[]>(() => {
-  switch (homeArcMix.id) {
+  switch (mix.value) {
     case 'tabs':
       return (kind.value === 'apps' ? ARC_APPS : ARC_TEMPLATES).slice(0, FEATURED)
     case 'mixed':
@@ -56,19 +62,22 @@ const items = computed<ArcItem[]>(() => {
 })
 
 const allLabel = computed(() => {
-  if (homeArcMix.id === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all templates'
-  if (homeArcMix.id === 'topics' && topic.value !== 'all')
+  // Milestone 2 has a page for apps only, so the Workflows tab has no See all.
+  if (!can.value.explore) return kind.value === 'apps' ? 'See all apps' : ''
+  if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
+  if (mix.value === 'topics' && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
-  if (homeArcMix.id === 'row') return 'See all apps'
+  if (mix.value === 'row') return 'See all apps'
   return 'Explore all'
 })
 
 function seeAll(on: 'apps' | 'templates'): void {
+  if (!can.value.explore) return go('apps')
   exploreStart.value = on
   go('explore')
 }
 const allOn = computed(() =>
-  homeArcMix.id === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
+  mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
 )
 
 const row = ref<InstanceType<typeof ScrollRow> | null>(null)
@@ -80,27 +89,11 @@ function scrollRow(by: number): void {
 
 <template>
   <div class="mar-arcmix">
-    <div
-      v-if="homeArcMix.id === 'tabs'"
-      class="mar-arcmix-picker"
-      role="tablist"
-      aria-label="Show"
-      data-no-pill
-    >
-      <button
-        v-for="k in KINDS"
-        :key="k.value"
-        type="button"
-        role="tab"
-        class="mar-arcmix-tab"
-        :aria-selected="kind === k.value"
-        @click="kind = k.value"
-      >
-        {{ k.label }}
-      </button>
+    <div v-if="mix === 'tabs'" class="mar-arcmix-picker">
+      <MarSeg v-model="kind" :options="KINDS" label="Show" />
     </div>
     <div
-      v-else-if="homeArcMix.id === 'topics'"
+      v-else-if="mix === 'topics'"
       class="mar-arcmix-picker"
       role="tablist"
       aria-label="Use case"
@@ -120,19 +113,19 @@ function scrollRow(by: number): void {
 
     <ExampleArc :items="items" :all-label="allLabel" @all="seeAll(allOn)" />
 
-    <section v-if="homeArcMix.id === 'row'" class="mar-arcmix-row">
+    <section v-if="mix === 'row'" class="mar-arcmix-row">
       <SectionHeader
         class="mar-sec"
-        title="Templates"
-        link="See all templates"
+        title="Workflows"
+        link="See all workflows"
         @link="seeAll('templates')"
       >
         <template #controls>
           <span class="mar-arcmix-steps">
-            <button type="button" aria-label="Previous templates" @click="scrollRow(-1)">
+            <button type="button" aria-label="Previous workflows" @click="scrollRow(-1)">
               <ChevronLeft :size="16" />
             </button>
-            <button type="button" aria-label="Next templates" @click="scrollRow(1)">
+            <button type="button" aria-label="Next workflows" @click="scrollRow(1)">
               <ChevronRight :size="16" />
             </button>
           </span>
@@ -177,42 +170,6 @@ function scrollRow(by: number): void {
 :root .proto-ui.proto-ui.proto-ui .mar-arcmix-chip[aria-selected='true'] {
   background: var(--color-base-foreground);
   color: var(--color-base-background);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab {
-  position: relative;
-  width: auto;
-  height: 28px;
-  padding: 0 8px;
-  background: none;
-  color: var(--color-muted-foreground);
-  font-size: 14px;
-  font-weight: 500;
-  transition: color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab:hover {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab[aria-selected='true'] {
-  color: var(--color-base-foreground);
-}
-.mar-arcmix-tab::after {
-  position: absolute;
-  right: 8px;
-  bottom: 0;
-  left: 8px;
-  height: 2px;
-  border-radius: 1px;
-  background: currentColor;
-  content: '';
-  opacity: 0;
-  transform: scaleX(0.4);
-  transition:
-    opacity 160ms ease,
-    transform 200ms cubic-bezier(0.2, 0, 0, 1);
-}
-.mar-arcmix-tab[aria-selected='true']::after {
-  opacity: 1;
-  transform: none;
 }
 .mar-arcmix-row {
   margin-top: 28px;

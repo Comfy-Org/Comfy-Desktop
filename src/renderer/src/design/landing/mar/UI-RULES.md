@@ -128,11 +128,12 @@ DS's Motion page (`ds/motion.ts`).
   empty or not, so the bar never shifts. An empty one says what lands there
   ("No 3D files yet"), never "Nothing matches", which is only for a search
   or a filter.
-- **Home's Apps | Templates tabs are plain text** centred over the arc: the
-  picked one bright and underlined, the other muted, no pill around them.
-  The cards carry no type badge; the tab says what's on the arc.
+- **Home's Apps | Workflows tabs are the design system's tabs** (MarSeg),
+  centred over the arc, from Milestone 2. The front card's badge says
+  what it makes (Image, Video, 3D, Audio), never App or Workflow: the tab
+  already says that. In Milestone 2 the Workflows tab has no See all.
 - **Arc cards show only their title** (two lines at most). Pointing at the
-  front card fades a white arrow in a rounded square (9px) into its top
+  front card fades a white arrow on a translucent grey rounded square (9px) into its top
   right corner; nothing
   moves or gets cut (Comfy-Desktop#2060).
 - **Builds are tiles from Milestone 2**, the same card as Home's builds:
@@ -141,11 +142,11 @@ DS's Motion page (`ds/motion.ts`).
   Open only (Open when running, starting, errored, Cloud or Remote); Update
   and Migrate are buttons before it; Stop lives in ⋯; problems are red text
   in the state line.
-- **Templates, not Workflows,** for the Hub's catalog (Home, Explore).
-  Workflows are the person's own (Recent workflows, the Workflows library).
-- **Counts go in the tabs**, not beside the title ("Images 4", not "17
-  assets" after the heading). They follow the open folder, filter and
-  search (the type aside). Assets' type tabs only; other tab rows keep counts off.
+- **Templates, not Workflows,** for the Hub's catalog in Explore. Home's
+  tab says Workflows (Apps | Workflows). Workflows are otherwise the
+  person's own (Recent workflows, the Workflows library).
+- **No counts in tabs.** Tabs carry only their label, Assets' type tabs
+  included ("Images", not "Images 11").
 
 ## Feedback
 
