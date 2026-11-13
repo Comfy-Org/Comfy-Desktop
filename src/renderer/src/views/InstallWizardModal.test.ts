@@ -309,6 +309,55 @@ describe('InstallWizardModal install-location field', () => {
     expect(wrapper.find('button.config-path-open').exists()).toBe(false)
     expect(window.api.openPath).not.toHaveBeenCalled()
   })
+
+  describe('required space on the summary', () => {
+    const hardwareSource = {
+      id: 'standalone',
+      label: 'Standalone',
+      fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+    }
+
+    async function openSummaryWithFreeSpace(free: number) {
+      ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([hardwareSource])
+      ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          value: 'mac-mps',
+          label: 'Apple Silicon',
+          recommended: true,
+          data: { variantId: 'mac-mps', downloadFiles: [{ size: 8_000_000_000 }] }
+        }
+      ])
+      ;(window.api.getDiskSpace as ReturnType<typeof vi.fn>).mockResolvedValue({
+        free,
+        total: 1_000_000_000_000
+      })
+      const wrapper = mountModal()
+      ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+      await flushPromises()
+      await vi.waitFor(() =>
+        expect(wrapper.get('.config-summary-location').text()).toContain('free')
+      )
+      return wrapper
+    }
+
+    it('sits beside the free space when the build fits', async () => {
+      const wrapper = await openSummaryWithFreeSpace(500_000_000_000)
+
+      expect(wrapper.get('.config-summary-location').text()).toContain(
+        '466 GB free · ~16.76 GB required'
+      )
+      expect(wrapper.find('.config-path-required').exists()).toBe(false)
+    })
+
+    it('is named once, as a warning, when the disk is short', async () => {
+      const wrapper = await openSummaryWithFreeSpace(5_000_000_000)
+
+      const location = wrapper.get('.config-summary-location').text()
+      expect(wrapper.get('.config-path-required').text()).toBe('Needs about 16.76 GB')
+      expect(location).toContain('5 GB free')
+      expect(location.split('16.76 GB')).toHaveLength(2)
+    })
+  })
 })
 
 describe('InstallWizardModal workspace Builds', () => {
@@ -1104,6 +1153,53 @@ describe('InstallWizardModal onboarding->install handoff telemetry (#1224)', () 
       express: false
     })
   })
+
+  it('does not report a cancelled wizard once a build added from Change setup is saved', async () => {
+    const api = window.api as unknown as Record<string, ReturnType<typeof vi.fn>>
+    api.probeInstallation = vi
+      .fn()
+      .mockResolvedValue([
+        { sourceId: 'portable', sourceLabel: 'Portable', installPath: '/home/user/Picked' }
+      ])
+    api.trackInstallation = vi.fn().mockResolvedValue({ ok: true })
+    const { events, stop } = captureTelemetry()
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    await showChangeSetup(wrapper)
+
+    await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('.track-location .config-path-browse').trigger('click')
+    await flushPromises()
+    await wrapper.get('.track-save').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('navigate-list')).toHaveLength(1)
+
+    wrapper.unmount()
+    stop()
+
+    expect(events.map((e) => e.actionName)).toContain('comfy.desktop.track_existing.saved')
+    expect(events.map((e) => e.actionName)).not.toContain('comfy.desktop.install.not_started')
+  })
+
+  it('does not report a cancelled wizard once a snapshot loaded from Change setup starts installing', async () => {
+    const { events, stop } = captureTelemetry()
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    await showChangeSetup(wrapper)
+
+    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
+    await flushPromises()
+    wrapper
+      .getComponent(LoadSnapshotModal)
+      .vm.$emit('show-progress', { installationId: 'inst-1', title: 'Installing' })
+    wrapper.unmount()
+    stop()
+
+    expect(events.map((e) => e.actionName)).not.toContain('comfy.desktop.install.not_started')
+  })
 })
 
 describe('InstallWizardModal hardware warning', () => {
@@ -1309,6 +1405,64 @@ describe('InstallWizardModal Change setup', () => {
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
     expect(wrapper.get('.config-release-version').exists()).toBe(true)
+  })
+
+  it('holds Change until Desktop has picked a setup, so Discard goes back to that setup', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    mockReleaseOptions()
+    let finishHardwareCheck: (result: { supported: boolean }) => void = () => {}
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishHardwareCheck = resolve
+      })
+    )
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    const change = wrapper.get('[data-testid="config-change-setup"]')
+    expect(change.attributes('disabled')).toBeDefined()
+
+    finishHardwareCheck({ supported: true })
+    await flushPromises()
+    expect(change.attributes('disabled')).toBeUndefined()
+
+    await showChangeSetup(wrapper)
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+
+    const summary = wrapper.get('[data-testid="config-summary"]').text()
+    expect(summary).toContain('Stable')
+    expect(summary).toContain('v0.4.2')
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
+  })
+
+  it('holds Change while the managed Builds are still loading', async () => {
+    const status = { signedIn: true, workspaceId: 'personal-server-id', workspaceType: 'personal' }
+    ;(window.api.comfybuilder.getAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValue(status)
+    let finishBuilds: (builds: unknown[]) => void = () => {}
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishBuilds = resolve
+      })
+    )
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+
+    const change = wrapper.get('[data-testid="config-change-setup"]')
+    expect(change.attributes('disabled')).toBeDefined()
+
+    finishBuilds([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    await flushPromises()
+    expect(change.attributes('disabled')).toBeUndefined()
+
+    await showChangeSetup(wrapper)
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="config-summary"]').text()).toContain('Ready Build')
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
   })
 
   it('restarts a field load that Discard interrupted so Install comes back', async () => {

@@ -17,7 +17,12 @@ describe('formatFreeSpace', () => {
     expect(formatFreeSpace(400 * 1048576)).toBe('400 MB')
   })
 
-  it('returns an empty string for no space', () => {
-    expect(formatFreeSpace(0)).toBe('')
+  it('never rounds less than 1 GB up to a gigabyte', () => {
+    expect(formatFreeSpace(0.6 * GIB)).toBe('614 MB')
+    expect(formatFreeSpace(GIB - 1)).toBe('1024 MB')
+  })
+
+  it('reads a full disk as 0 MB', () => {
+    expect(formatFreeSpace(0)).toBe('0 MB')
   })
 })

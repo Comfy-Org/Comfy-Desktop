@@ -37,7 +37,7 @@ const focusableValue = computed(() => {
 const NEXT_KEYS = ['ArrowDown', 'ArrowRight']
 const PREVIOUS_KEYS = ['ArrowUp', 'ArrowLeft']
 
-function moveSelection(event: KeyboardEvent, index: number): void {
+function moveFocus(event: KeyboardEvent, index: number): void {
   const step = NEXT_KEYS.includes(event.key) ? 1 : PREVIOUS_KEYS.includes(event.key) ? -1 : 0
   if (step === 0) return
   event.preventDefault()
@@ -46,7 +46,6 @@ function moveSelection(event: KeyboardEvent, index: number): void {
     const target = (index + step * offset + count * offset) % count
     const option = props.options[target]
     if (!option || option.disabled) continue
-    emit('select', option.value)
     optionEls.value[target]?.focus()
     return
   }
@@ -84,7 +83,7 @@ function setOptionEl(el: unknown, index: number): void {
           : 'bg-white/4 text-neutral-200 hover:bg-white/7'
       ]"
       @click="emit('select', opt.value)"
-      @keydown="moveSelection($event, index)"
+      @keydown="moveFocus($event, index)"
     >
       <span
         class="setup-option__icon inline-flex size-8 flex-none items-center justify-center overflow-hidden rounded-[9px] bg-white/7"

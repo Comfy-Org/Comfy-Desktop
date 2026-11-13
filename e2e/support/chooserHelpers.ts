@@ -158,7 +158,9 @@ export async function expectNewBuildModalOpen(panel: WebContentsPage): Promise<v
 }
 
 export async function openNewBuildChangeSetup(panel: WebContentsPage): Promise<void> {
-  await panel.waitForVisible('[data-testid="config-change-setup"]', { timeout: 10_000 })
+  await panel.waitForSelector('[data-testid="config-change-setup"]:not([disabled])', {
+    timeout: 15_000
+  })
   expect(await panel.click('[data-testid="config-change-setup"]'), 'Change setup clicked').toBe(
     true
   )

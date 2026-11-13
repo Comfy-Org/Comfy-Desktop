@@ -44,9 +44,18 @@ test('title bar shows install-less pill on chooser host @windows @macos @linux',
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
+  const pickedSource = (): Promise<string | null> =>
+    ctx.panel.evaluate<string | null>(
+      `document.querySelector('[data-testid="install-source-tabs"] [aria-checked="true"]')?.getAttribute('data-testid') ?? null`
+    )
   await openNewBuildChangeSetup(ctx.panel)
   expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
   expect(await ctx.panel.exists('.setup-modal-close')).toBe(false)
+  const sourceBeforeDiscard = await pickedSource()
+  expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
+  await ctx.panel.waitForVisible('.setup-modal-close')
+  await openNewBuildChangeSetup(ctx.panel)
+  expect(await pickedSource(), 'Discard keeps the source Desktop picked').toBe(sourceBeforeDiscard)
   expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
   await ctx.panel.waitForVisible('.setup-modal-close')
   expect(await ctx.panel.click('.setup-modal-close')).toBe(true)

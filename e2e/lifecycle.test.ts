@@ -331,11 +331,11 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   })
 
   await ctx.panel.waitForSelector(
-    '#source-fields button[role="combobox"][aria-label="ComfyUI version"]:not([disabled])',
+    '#source-fields button[role="combobox"][aria-label="Version"]:not([disabled])',
     { timeout: 60_000 }
   )
   expect(
-    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="ComfyUI version"]')
+    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="Version"]')
   ).toBe(true)
   await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
   expect(

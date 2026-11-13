@@ -128,6 +128,9 @@ const managedBuildMode = computed(
   () => managedWorkspaceId.value !== null && workspaceInstallMode.value === 'managed'
 )
 const localInstallMode = computed(() => !managedBuildMode.value)
+const setupPicked = computed(
+  () => !initializing.value || (localInstallMode.value && currentSource.value !== null)
+)
 
 type InstallSourceTab =
   | { key: 'managed'; kind: 'managed' }
@@ -1241,18 +1244,16 @@ const diskFreeLabel = computed(() =>
     ? t('diskSpace.free', { size: formatFreeSpace(diskSpace.value.free) })
     : ''
 )
-const locationMeta = computed(() => {
-  if (!diskFreeLabel.value) return ''
-  const required = estimatedInstallSize.value
-  return required > 0
-    ? `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
-    : diskFreeLabel.value
-})
 const diskShortLabel = computed(() => {
   const required = estimatedInstallSize.value
   if (diskSpaceLoading.value || !diskSpace.value || required <= 0) return ''
   if (diskSpace.value.free >= required) return ''
   return t('newInstall.requiredSpace', { size: formatBytes(required) })
+})
+const locationMeta = computed(() => {
+  const required = estimatedInstallSize.value
+  if (!diskFreeLabel.value || required <= 0 || diskShortLabel.value) return diskFreeLabel.value
+  return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
 })
 
 interface ChangeSetupDraft {
@@ -1538,6 +1539,16 @@ function closeBuildImport(): void {
   buildImportFlow.value = null
 }
 
+function handOffImportedBuild(): void {
+  resolved.value = true
+  emit('navigate-list')
+}
+
+function handOffSnapshotInstall(opts: ShowProgressOpts): void {
+  resolved.value = true
+  emit('show-progress', opts)
+}
+
 defineExpose({ open })
 </script>
 
@@ -1638,6 +1649,7 @@ defineExpose({ open })
             type="button"
             class="config-change ml-auto flex-none px-3"
             data-testid="config-change-setup"
+            :disabled="!setupPicked"
             @click="openChangeSetup"
           >
             {{ $t('newInstall.change') }}
@@ -2239,13 +2251,13 @@ defineExpose({ open })
     v-if="buildImportFlow === 'track'"
     ref="trackModalRef"
     @close="closeBuildImport"
-    @navigate-list="emit('navigate-list')"
+    @navigate-list="handOffImportedBuild"
   />
   <LoadSnapshotModal
     v-if="buildImportFlow === 'load-snapshot'"
     ref="loadSnapshotModalRef"
     @close="closeBuildImport"
-    @show-progress="emit('show-progress', $event)"
+    @show-progress="handOffSnapshotInstall"
   />
 </template>
 

@@ -29,16 +29,28 @@ describe('SetupOptionCards keyboard', () => {
     wrapper.unmount()
   })
 
-  it('moves the pick with arrow keys, skipping disabled options and wrapping', async () => {
+  it('moves focus with arrow keys, skipping disabled options and wrapping', async () => {
     const wrapper = mountCards('a')
     const radios = wrapper.findAll('[role="radio"]')
 
     await radios[0]!.trigger('keydown', { key: 'ArrowDown' })
-    await radios[2]!.trigger('keydown', { key: 'ArrowRight' })
-    await radios[0]!.trigger('keydown', { key: 'ArrowUp' })
-
-    expect(wrapper.emitted('select')).toEqual([['c'], ['a'], ['c']])
     expect(document.activeElement).toBe(radios[2]!.element)
+    await radios[2]!.trigger('keydown', { key: 'ArrowRight' })
+    expect(document.activeElement).toBe(radios[0]!.element)
+    await radios[0]!.trigger('keydown', { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(radios[2]!.element)
+    wrapper.unmount()
+  })
+
+  it('picks an option only when it is pressed, never while arrowing past it', async () => {
+    const wrapper = mountCards('a')
+    const radios = wrapper.findAll('[role="radio"]')
+
+    await radios[0]!.trigger('keydown', { key: 'ArrowDown' })
+    expect(wrapper.emitted('select')).toBeUndefined()
+
+    await radios[2]!.trigger('click')
+    expect(wrapper.emitted('select')).toEqual([['c']])
     wrapper.unmount()
   })
 })
