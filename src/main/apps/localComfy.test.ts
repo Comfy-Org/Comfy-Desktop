@@ -58,6 +58,7 @@ class FakeSocket {
   close(): void {}
 }
 
+import { MAX_UPLOAD_BYTES } from './guards'
 import { initLocalComfy, localDownload, localFetch, startLocal } from './localComfy'
 
 const appsSession = {
@@ -126,6 +127,7 @@ afterAll(() => {
 })
 
 beforeEach(() => {
+  vi.mocked(fetch).mockReset()
   telemetry.capture.mockReset()
   telemetry.emit.mockReset()
   sessions.clear()
@@ -191,11 +193,113 @@ describe('run_finished for This computer app runs', () => {
     expect(captured('run_finished')).toEqual([])
   })
 
+  it('sends one run_finished for a run that ends before Desktop reads its submit answer', async () => {
+    const id = runId()
+    let answer: (res: Response) => void = () => {}
+    vi.mocked(fetch).mockReturnValueOnce(new Promise<Response>((resolve) => (answer = resolve)))
+    const submitted = localFetch(
+      {
+        method: 'POST',
+        path: '/prompt',
+        body: {
+          prompt: { '1': { class_type: 'SaveImage', inputs: {} } },
+          extra_data: { comfy_app: { name: 'Upscale', id: 'upscale' } }
+        }
+      },
+      null
+    )
+    socketSays('execution_start', { prompt_id: id })
+    socketSays('execution_cached', { prompt_id: id, nodes: ['1'] })
+    socketSays('execution_success', { prompt_id: id })
+    answer(new Response(JSON.stringify({ prompt_id: id, number: 1, node_errors: {} })))
+    await submitted
+    await settle()
+
+    const sent = captured('run_finished')
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ app: 'upscale', outcome: 'success' })
+  })
+
   it('sends nothing for runs Desktop did not submit for an app', async () => {
     socketSays('execution_success', { prompt_id: runId() })
     await settle()
 
     expect(captured('run_finished')).toEqual([])
+  })
+})
+
+describe('stopping a This computer run that is still queued', () => {
+  function answerEmpty(): void {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 200 }))
+  }
+
+  async function stop(id: string, queue: unknown, history: unknown): Promise<void> {
+    answerEmpty()
+    answerWith(queue)
+    answerWith(history)
+    await localFetch({ method: 'POST', path: '/queue', body: { delete: [id] } })
+    await settle()
+    answerEmpty()
+    await localFetch({ method: 'POST', path: '/interrupt', body: { prompt_id: id } })
+    await settle()
+  }
+
+  it('sends one cancelled run_finished when ComfyUI drops the queued run', async () => {
+    const id = runId()
+    await submit(id, { name: 'Upscale', id: 'upscale' }, null)
+    await stop(id, { queue_running: [], queue_pending: [] }, {})
+
+    const sent = captured('run_finished')
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ app: 'upscale', outcome: 'cancelled' })
+    expect(sent[0]).not.toHaveProperty('queue_seconds')
+  })
+
+  it.each(['queue', 'history'] as const)(
+    'sends no run_finished when the %s check after a stop answers more than 50 MB',
+    async (oversized) => {
+      const id = runId()
+      await submit(id, { name: 'Upscale', id: 'upscale' }, null)
+      const tooLarge = { 'content-length': String(MAX_UPLOAD_BYTES + 1) }
+      answerEmpty()
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ queue_running: [], queue_pending: [] }), {
+          status: 200,
+          headers: oversized === 'queue' ? tooLarge : {}
+        })
+      )
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response('{}', { status: 200, headers: oversized === 'history' ? tooLarge : {} })
+      )
+
+      const answer = await localFetch({ method: 'POST', path: '/queue', body: { delete: [id] } })
+      await settle()
+
+      expect(answer.status).toBe(200)
+      expect(captured('run_finished')).toEqual([])
+    }
+  )
+
+  it('reports how the run ended when it started before the delete reached ComfyUI', async () => {
+    const id = runId()
+    await submit(id, { name: 'Upscale', id: 'upscale' }, null)
+    await stop(id, { queue_running: [[1, id, {}, {}, ['9']]], queue_pending: [] }, {})
+    socketSays('execution_start', { prompt_id: id })
+    socketSays('execution_success', { prompt_id: id })
+    await settle()
+
+    expect(captured('run_finished').map((p) => p['outcome'])).toEqual(['success'])
+  })
+
+  it('reports how the run ended when it finished before the delete reached ComfyUI', async () => {
+    const id = runId()
+    await submit(id, { name: 'Upscale', id: 'upscale' }, null)
+    await stop(id, { queue_running: [], queue_pending: [] }, { [id]: { outputs: {} } })
+    socketSays('execution_start', { prompt_id: id })
+    socketSays('execution_success', { prompt_id: id })
+    await settle()
+
+    expect(captured('run_finished').map((p) => p['outcome'])).toEqual(['success'])
   })
 })
 
@@ -242,7 +346,7 @@ describe('model downloads', () => {
     name: '4x-UltraSharp.pth'
   }
 
-  it('sends setup started and finished with the public model file name', async () => {
+  it('sends setup started and finished without the model file name', async () => {
     downloads.startManagedModelJob.mockResolvedValueOnce({
       completion: Promise.resolve({ status: 'done', savePath: '/nonexistent/4x-UltraSharp.pth' }),
       release: vi.fn()
@@ -253,12 +357,11 @@ describe('model downloads', () => {
     const sent = captured('setup')
     expect(sent.map((p) => p['outcome'])).toEqual(['started', 'finished'])
     for (const props of sent) {
-      expect(props).toMatchObject({
-        app: 'upscale',
-        stage: 'model',
-        model_file: '4x-UltraSharp.pth'
-      })
-      expect(JSON.stringify(props)).not.toMatch(/huggingface|nonexistent|upscale_models/)
+      expect(props).toMatchObject({ app: 'upscale', stage: 'model' })
+      expect(props).not.toHaveProperty('model_file')
+      expect(JSON.stringify(props)).not.toMatch(
+        /UltraSharp|\.pth|huggingface|nonexistent|upscale_models/
+      )
     }
     expect(captured('run_failed')).toEqual([])
   })
