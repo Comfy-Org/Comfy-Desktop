@@ -102,4 +102,35 @@ describe('LoadSnapshotModal preview', () => {
     await flushPromises()
     expect(api.previewSnapshotFile).toHaveBeenCalledTimes(2)
   })
+
+  it('keeps the snapshot while Create build is running', async () => {
+    installApi()
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.createFromSnapshot = vi.fn(() => new Promise(() => {}))
+    const wrapper = mountLoadSnapshot()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await wrapper.get('.load-snapshot-tertiary').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('.load-snapshot-create').trigger('click')
+    await flushPromises()
+    await wrapper.get('.load-snapshot-file .config-path-browse').trigger('click')
+    await flushPromises()
+
+    expect(api.previewSnapshotFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides folded snapshot lists from assistive technology', async () => {
+    installApi()
+    const wrapper = mountLoadSnapshot()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await wrapper.get('.load-snapshot-tertiary').trigger('click')
+    await flushPromises()
+
+    const wraps = wrapper.findAll('.load-snapshot-disclosure__wrap')
+    expect(wraps.map((wrap) => wrap.attributes('aria-hidden'))).toEqual(['false', 'true', 'true'])
+    expect(wraps.map((wrap) => wrap.attributes('inert') !== undefined)).toEqual([false, true, true])
+  })
 })

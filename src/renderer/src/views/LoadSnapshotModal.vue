@@ -45,6 +45,7 @@ let optionsGeneration = 0
 const nodesExpanded = ref(true)
 const pipExpanded = ref(false)
 const timelineExpanded = ref(false)
+const replacingSnapshot = ref(false)
 
 const cardRef = ref<HTMLElement | null>(null)
 
@@ -208,6 +209,16 @@ async function loadFromPath(filePath: string): Promise<void> {
 }
 
 async function handleBrowse(): Promise<void> {
+  if (creating.value || replacingSnapshot.value) return
+  replacingSnapshot.value = true
+  try {
+    await browseSnapshotFile()
+  } finally {
+    replacingSnapshot.value = false
+  }
+}
+
+async function browseSnapshotFile(): Promise<void> {
   const result = await window.api.previewSnapshotFile()
   if (!result.ok) {
     if (result.message) {
@@ -266,7 +277,7 @@ function selectVariantByValue(value: string): void {
 }
 
 async function handleCreate(): Promise<void> {
-  if (!preview.value || creating.value) return
+  if (!preview.value || creating.value || replacingSnapshot.value) return
   creating.value = true
   const filePath = preview.value.filePath
   const releaseTag = selectedRelease.value?.value
@@ -501,6 +512,8 @@ defineExpose({ open })
                 </Button>
                 <div
                   class="load-snapshot-disclosure__wrap grid grid-rows-[0fr] transition-[grid-template-rows] duration-280 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:grid-rows-[1fr] motion-reduce:transition-none"
+                  :inert="!nodesExpanded"
+                  :aria-hidden="!nodesExpanded"
                 >
                   <div
                     class="load-snapshot-disclosure__body min-h-0 overflow-hidden opacity-0 [transform:translateY(-4px)] transition-[opacity,transform] [transition-duration:220ms,260ms] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] [transition-delay:60ms,40ms] group-[.is-open]/disclosure:mt-2 group-[.is-open]/disclosure:opacity-100 group-[.is-open]/disclosure:[transform:translateY(0)] motion-reduce:transition-none"
@@ -562,6 +575,8 @@ defineExpose({ open })
                 </Button>
                 <div
                   class="load-snapshot-disclosure__wrap grid grid-rows-[0fr] transition-[grid-template-rows] duration-280 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:grid-rows-[1fr] motion-reduce:transition-none"
+                  :inert="!pipExpanded"
+                  :aria-hidden="!pipExpanded"
                 >
                   <div
                     class="load-snapshot-disclosure__body min-h-0 overflow-hidden opacity-0 [transform:translateY(-4px)] transition-[opacity,transform] [transition-duration:220ms,260ms] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] [transition-delay:60ms,40ms] group-[.is-open]/disclosure:mt-2 group-[.is-open]/disclosure:opacity-100 group-[.is-open]/disclosure:[transform:translateY(0)] motion-reduce:transition-none"
@@ -611,6 +626,8 @@ defineExpose({ open })
                 </Button>
                 <div
                   class="load-snapshot-disclosure__wrap grid grid-rows-[0fr] transition-[grid-template-rows] duration-280 ease-[cubic-bezier(0.22,1,0.36,1)] group-[.is-open]/disclosure:grid-rows-[1fr] motion-reduce:transition-none"
+                  :inert="!timelineExpanded"
+                  :aria-hidden="!timelineExpanded"
                 >
                   <div
                     class="load-snapshot-disclosure__body min-h-0 overflow-hidden opacity-0 [transform:translateY(-4px)] transition-[opacity,transform] [transition-duration:220ms,260ms] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] [transition-delay:60ms,40ms] group-[.is-open]/disclosure:mt-2 group-[.is-open]/disclosure:opacity-100 group-[.is-open]/disclosure:[transform:translateY(0)] motion-reduce:transition-none"
@@ -660,7 +677,7 @@ defineExpose({ open })
         size="lg"
         variant="inverted"
         class="load-snapshot-create h-9 min-w-[104px] rounded-[10px]"
-        :disabled="creating || !selectedVariant"
+        :disabled="creating || replacingSnapshot || !selectedVariant"
         @click="handleCreate"
       >
         {{ creating ? `${$t('newInstall.installing')}…` : $t('list.snapshotCreateInstall') }}
