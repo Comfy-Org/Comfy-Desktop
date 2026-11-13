@@ -350,9 +350,15 @@ function openLocation(): void {
                   >
                     <span class="flex min-w-0 flex-col text-left">
                       <span>{{ v.version }}</span>
-                      <span class="text-[12px]/4 text-muted-foreground">{{
-                        v.current ? t('buildOverview.inUse') : v.description
+                      <span v-if="v.current" class="text-[12px]/4 text-muted-foreground">{{
+                        t('buildOverview.inUse')
                       }}</span>
+                      <span
+                        v-if="v.description"
+                        class="line-clamp-2 text-[12px]/4 text-muted-foreground"
+                        :title="v.description"
+                        >{{ v.description }}</span
+                      >
                     </span>
                   </MenuItem>
                 </template>
