@@ -100,6 +100,11 @@ export function buildElectronApi(): ElectronApi {
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
     listLocalAssets: () => ipcRenderer.invoke('assets:list-local'),
+    downloadAsset: (source, assetId, fileName) =>
+      ipcRenderer.invoke('assets:download', source, assetId, fileName),
+    revealAsset: (source, assetId) => ipcRenderer.invoke('assets:reveal', source, assetId),
+    copyAsset: (source, assetId) => ipcRenderer.invoke('assets:copy', source, assetId),
+    trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
     openCatalogWorkflowHub: () => ipcRenderer.invoke('catalog:open-workflow-hub'),

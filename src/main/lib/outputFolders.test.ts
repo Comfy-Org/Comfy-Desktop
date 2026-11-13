@@ -11,7 +11,10 @@ const {
   installs,
   fetchFile,
   thumbnailImage,
-  fullImage
+  fullImage,
+  shownInFolder,
+  trashed,
+  copiedImage
 } = await vi.hoisted(async () => {
   const nodeFs = await import('node:fs')
   const nodeOs = await import('node:os')
@@ -28,12 +31,20 @@ const {
     installs: vi.fn(),
     fetchFile: vi.fn(async (url: string) => new Response(`file ${url}`)),
     thumbnailImage: vi.fn(),
-    fullImage: vi.fn()
+    fullImage: vi.fn(),
+    shownInFolder: vi.fn(),
+    trashed: vi.fn(async (file: string) => nodeFs.rmSync(file)),
+    copiedImage: vi.fn()
   }
 })
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
+  shell: {
+    showItemInFolder: (file: string) => shownInFolder(file),
+    trashItem: (file: string) => trashed(file)
+  },
+  clipboard: { writeImage: (image: unknown) => copiedImage(image) },
   protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
   net: { fetch: (url: string) => fetchFile(url) },
   nativeImage: {
@@ -71,9 +82,13 @@ import {
   MAX_FOLDER_DEPTH,
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
+  copyOutputImage,
+  revealOutputFile,
+  trashOutputFile,
   listLocalAssets,
   listOutputFolders,
   outputDirOverride,
+  outputFilePath,
   outputFileUrl,
   serveOutputFile
 } from './outputFolders'
@@ -247,6 +262,21 @@ describe('listLocalAssets', () => {
   })
 })
 
+describe('outputFilePath', () => {
+  it('finds a file inside an output folder and refuses folders and files outside', async () => {
+    const inside = path.join(ownDir, 'nested', 'still.png')
+    const outside = path.join(outsideDir, 'secret.png')
+    write(inside)
+    write(outside)
+
+    expect(await outputFilePath(inside)).toBe(inside)
+    expect(await outputFilePath(path.join(ownDir, 'nested'))).toBeNull()
+    expect(await outputFilePath(outside)).toBeNull()
+    expect(await outputFilePath(path.join(ownDir, '..', 'outside', 'secret.png'))).toBeNull()
+    expect(await outputFilePath('still.png')).toBeNull()
+  })
+})
+
 describe('serveOutputFile', () => {
   it('serves the file itself when the OS thumbnail is slow, then the thumbnail once it is made', async () => {
     write(path.join(sharedDir, 'slow.png'))
@@ -356,5 +386,29 @@ describe('serveOutputFile', () => {
       new Request(outputFileUrl(path.join(sharedDir, 'broken.png'), 1))
     )
     expect(await none.text()).toMatch(/^file file:\/\/.*broken\.png$/)
+  })
+})
+
+describe('acting on a file from its card', () => {
+  it('shows, copies and moves to the Trash only files inside an output folder', async () => {
+    const inside = path.join(sharedDir, 'portrait.png')
+    const outside = path.join(outsideDir, 'secret.png')
+    write(inside)
+    write(outside)
+    fullImage.mockReturnValue({ isEmpty: () => false })
+
+    expect(await revealOutputFile(outside), 'a file outside is not shown').toBe(false)
+    expect(await copyOutputImage(outside), 'a file outside is not copied').toBe(false)
+    expect(await trashOutputFile(outside), 'a file outside is not deleted').toBe(false)
+    expect(fs.existsSync(outside)).toBe(true)
+    expect(shownInFolder).not.toHaveBeenCalled()
+    expect(copiedImage).not.toHaveBeenCalled()
+
+    expect(await revealOutputFile(inside)).toBe(true)
+    expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(inside)
+    expect(await copyOutputImage(inside)).toBe(true)
+    expect(copiedImage).toHaveBeenCalledOnce()
+    expect(await trashOutputFile(inside)).toBe(true)
+    expect(fs.existsSync(inside), 'the picture left the output folder').toBe(false)
   })
 })
