@@ -39,7 +39,7 @@ import {
   uploadForm,
   VERSIONS_FILE
 } from './guards'
-import { stallGuard, streamToFile } from './download'
+import { stallGuard, streamToFile, writeNewFile } from './download'
 import {
   cancelSetup,
   getLocal,
@@ -483,8 +483,7 @@ async function saveFile(
   const e = saveExt(ext)
   if (!(bytes instanceof Uint8Array) || !e) throw new Error('Apps cannot save that file.')
   if (bytes.byteLength > MAX_RESULT_BYTES) throw new Error('Apps can save files up to 100 MB here.')
-  const write = (file: string) => fsp.writeFile(file, bytes, { flag: 'wx' })
-  return { path: await saveResult(app, label, e, write) }
+  return { path: await saveResult(app, label, e, (file) => writeNewFile(file, bytes)) }
 }
 
 async function readSaved(file: unknown): Promise<Uint8Array> {

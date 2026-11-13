@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { stallGuard, streamToFile } from './download'
+import { stallGuard, streamToFile, writeNewFile } from './download'
 
 const MB = 1024 * 1024
 
@@ -18,6 +18,44 @@ function chunked(count: number, size: number): ReadableStream<Uint8Array> {
     }
   })
 }
+
+describe('writeNewFile', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'apps-write-'))
+  })
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await fsp.rm(dir, { recursive: true, force: true })
+  })
+
+  it('writes a new file', async () => {
+    const file = path.join(dir, 'still.png')
+    await writeNewFile(file, new Uint8Array([1, 2, 3]))
+    expect((await fsp.stat(file)).size).toBe(3)
+  })
+
+  it('removes the half-written file when the write fails', async () => {
+    const file = path.join(dir, 'still.png')
+    vi.spyOn(fsp, 'writeFile').mockImplementationOnce(async (target) => {
+      await fsp.appendFile(target as string, 'part')
+      throw Object.assign(new Error('no space left'), { code: 'ENOSPC' })
+    })
+
+    await expect(writeNewFile(file, new Uint8Array(8))).rejects.toMatchObject({ code: 'ENOSPC' })
+    await expect(fsp.stat(file)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('leaves a file that was already there alone', async () => {
+    const file = path.join(dir, 'taken.png')
+    await fsp.writeFile(file, 'keep')
+
+    await expect(writeNewFile(file, new Uint8Array(8))).rejects.toMatchObject({ code: 'EEXIST' })
+    expect(await fsp.readFile(file, 'utf8')).toBe('keep')
+  })
+})
 
 describe('streamToFile', () => {
   let dir: string

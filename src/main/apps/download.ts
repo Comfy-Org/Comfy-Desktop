@@ -24,6 +24,17 @@ export function stallGuard(ms: number): StallGuard {
 
 class TooLarge extends Error {}
 
+export async function writeNewFile(file: string, bytes: Uint8Array): Promise<void> {
+  try {
+    await fsp.writeFile(file, bytes, { flag: 'wx' })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+      await fsp.rm(file, { force: true }).catch(() => {})
+    }
+    throw err
+  }
+}
+
 export async function streamToFile(
   body: ReadableStream<Uint8Array> | null,
   file: string,
