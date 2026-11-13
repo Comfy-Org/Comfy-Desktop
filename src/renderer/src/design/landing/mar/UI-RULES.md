@@ -45,6 +45,13 @@ DS's Motion page (`ds/motion.ts`).
   the check on hover.
 - **More (⋯) sits at the right** of the row it belongs to (the asset view:
   beside Open workflow, under Download).
+- **Modal footers: × closes, one white primary, Discard only for edits.**
+  The round × closes the topmost window, with no Cancel or Back that does
+  the same. The footer has one white primary on the right (Install, Add
+  build, Create build, Save changes). A grey Discard sits beside it only
+  where you edit something that is saved on another screen (Change setup
+  over the New Build summary); there the × hides, so Discard or Save changes
+  are the only ways back. Never two buttons with the same effect.
 
 ## Menus
 
