@@ -20,6 +20,7 @@
     "navigation": "导航",
     "home": "主页",
     "apps": "应用",
+    "explore": "探索",
     "assets": "资产",
     "tools": "工具",
     "collapse": "收起侧边栏",
@@ -123,6 +124,46 @@
     "comingSoon": "即将推出",
     "loadFailed": "无法加载应用：{url}"
   },
+  "explore": {
+    "title": "探索",
+    "sections": "探索分区",
+    "apps": "应用",
+    "templates": "工作流",
+    "openTemplate": "在 Comfy Hub 打开 {title}",
+    "templatesFailed": "无法加载工作流。",
+    "templatesEmpty": "暂无工作流。",
+    "filters": "筛选",
+    "filterType": "类型",
+    "filterUseCase": "用途",
+    "filterModel": "模型",
+    "filterRunsOn": "运行位置",
+    "runsOn": {
+      "cloud": "Comfy Cloud",
+      "local": "本机"
+    },
+    "searchApps": "搜索应用",
+    "searchWorkflows": "搜索工作流",
+    "viewOptions": "视图选项",
+    "sizeLabel": "大小",
+    "size": {
+      "small": "小",
+      "medium": "中",
+      "large": "大"
+    },
+    "sortLabel": "排序方式",
+    "sort": {
+      "recommended": "推荐",
+      "az": "名称 A 到 Z"
+    },
+    "noMatches": "没有匹配项。请尝试其他筛选或搜索。",
+    "all": "全部",
+    "clearFilters": "清除筛选",
+    "clearSearch": "清除搜索",
+    "searchModels": "搜索模型",
+    "noFilterMatches": "无匹配项",
+    "smaller": "更小",
+    "bigger": "更大"
+  },
   "home": {
     "title": "欢迎。开始创作吧！",
     "openComfyUI": "打开 ComfyUI",
@@ -137,7 +178,20 @@
     "showWorkflow": "显示 {title}",
     "openWorkflow": "在 Comfy Hub 打开 {title}",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",
-    "retry": "重试"
+    "retry": "重试",
+    "showing": "在主页显示",
+    "apps": "应用",
+    "workflows": "工作流",
+    "seeAllApps": "查看全部应用",
+    "showApp": "显示 {title}",
+    "openApp": "打开 {title}",
+    "appsUnavailable": "无法加载应用。请检查网络连接后重试。",
+    "category": {
+      "image": "图像",
+      "video": "视频",
+      "3d": "3D",
+      "audio": "音频"
+    }
   },
   "installType": {
     "standalone": "独立版",

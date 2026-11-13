@@ -58,9 +58,77 @@ describe('Home example workflows from the Comfy content catalog', () => {
         id: 'picked-for-desktop',
         title: 'Upscale and restore detail',
         description: 'Enlarge an image and restore fine detail.',
-        thumbnailUrl: 'https://comfy.org/catalog-media/picked-for-desktop/v1'
+        thumbnailUrl: 'https://comfy.org/catalog-media/picked-for-desktop/v1',
+        category: null,
+        useCase: null,
+        models: [],
+        runsOn: null,
+        rank: null
       }
     ])
+  })
+
+  it('tags each workflow with the kind of media it makes', async () => {
+    serveCatalog({
+      desktop: [
+        catalogItem({ uid: 'from-outputs', data: { outputs: [{ kind: 'video' }] } }),
+        catalogItem({ uid: 'from-generation', data: { generation_type: 'edit-images' } }),
+        catalogItem({ uid: 'untagged' })
+      ],
+      everything: []
+    })
+
+    const workflows = await listHomeWorkflows('en')
+
+    expect(workflows.map((workflow) => workflow.category)).toEqual(['video', 'image', null])
+  })
+
+  it("reads each workflow's Hub use case, models, where it runs and its rank", async () => {
+    const website = {
+      category: 'upscale',
+      categoryLabel: { en: 'Upscale & restore', 'zh-CN': '放大与修复' },
+      categoryOrder: 3,
+      models: ['SeedVR2', 'SeedVR2', 7],
+      type: 'CLOUD',
+      recommendedRank: 2
+    }
+    serveCatalog({
+      desktop: [
+        catalogItem({ uid: 'hub-facts', data: { compatibility: { website } } }),
+        catalogItem({ uid: 'odd', data: { compatibility: { website: { type: 'GPU' } } } })
+      ],
+      everything: []
+    })
+
+    const [facts, odd] = await listHomeWorkflows('zh-CN')
+
+    expect(facts).toMatchObject({
+      useCase: { id: 'upscale', label: '放大与修复', order: 3 },
+      models: ['SeedVR2'],
+      runsOn: 'cloud',
+      rank: 2
+    })
+    expect(odd).toMatchObject({ useCase: null, models: [], runsOn: null, rank: null })
+  })
+
+  it('falls back to the English use case label for a locale the catalog lacks', async () => {
+    serveCatalog({
+      desktop: [
+        catalogItem({
+          uid: 'labelled',
+          data: {
+            compatibility: {
+              website: { category: 'upscale', categoryLabel: { en: 'Upscale & restore' } }
+            }
+          }
+        })
+      ],
+      everything: []
+    })
+
+    const [workflow] = await listHomeWorkflows('fr')
+
+    expect(workflow!.useCase).toEqual({ id: 'upscale', label: 'Upscale & restore', order: 0 })
   })
 
   it("falls back to the catalog's own order while no workflow is marked for Desktop", async () => {

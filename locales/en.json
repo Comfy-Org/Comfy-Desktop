@@ -20,6 +20,7 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "explore": "Explore",
     "assets": "Assets",
     "tools": "Tools",
     "collapse": "Collapse sidebar",
@@ -123,6 +124,46 @@
     "comingSoon": "Coming soon",
     "loadFailed": "The app at {url} could not load."
   },
+  "explore": {
+    "title": "Explore",
+    "sections": "Explore sections",
+    "apps": "Apps",
+    "templates": "Workflows",
+    "openTemplate": "Open {title} on Comfy Hub",
+    "templatesFailed": "Couldn't load the workflows.",
+    "templatesEmpty": "No workflows yet.",
+    "filters": "Filters",
+    "filterType": "Type",
+    "filterUseCase": "Use case",
+    "filterModel": "Model",
+    "filterRunsOn": "Runs on",
+    "runsOn": {
+      "cloud": "Comfy Cloud",
+      "local": "This computer"
+    },
+    "searchApps": "Search apps",
+    "searchWorkflows": "Search workflows",
+    "viewOptions": "View options",
+    "sizeLabel": "Size",
+    "size": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
+    "sortLabel": "Sort by",
+    "sort": {
+      "recommended": "Recommended",
+      "az": "Name A to Z"
+    },
+    "noMatches": "Nothing matches. Try another filter or search.",
+    "all": "All",
+    "clearFilters": "Clear filters",
+    "clearSearch": "Clear search",
+    "searchModels": "Search models",
+    "noFilterMatches": "No matches",
+    "smaller": "Smaller",
+    "bigger": "Bigger"
+  },
   "home": {
     "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
@@ -137,7 +178,20 @@
     "showWorkflow": "Show {title}",
     "openWorkflow": "Open {title} on Comfy Hub",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "showing": "Show on Home",
+    "apps": "Apps",
+    "workflows": "Workflows",
+    "seeAllApps": "See all apps",
+    "showApp": "Show {title}",
+    "openApp": "Open {title}",
+    "appsUnavailable": "Apps couldn't be loaded. Check your connection and try again.",
+    "category": {
+      "image": "Image",
+      "video": "Video",
+      "3d": "3D",
+      "audio": "Audio"
+    }
   },
   "installType": {
     "standalone": "Standalone",

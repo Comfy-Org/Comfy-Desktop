@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { AppWindow, ChartColumn, Gauge, House, Images, Server } from 'lucide-vue-next'
+import { ChartColumn, Compass, Gauge, House, Images, Server } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -44,34 +44,9 @@ function toggleCollapsed(): void {
 }
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
 
-const appsEnabled = ref(false)
-let appsSwitchPushed = false
-let stopAppsSwitch: (() => void) | null = null
-
-function followAppsSwitch(enabled: boolean): void {
-  appsEnabled.value = enabled
-  if (!enabled && activePage === 'apps') navigate('home')
-}
-
-onMounted(async () => {
-  stopAppsSwitch = window.api.onAppsEnabledChanged(({ enabled }) => {
-    appsSwitchPushed = true
-    followAppsSwitch(enabled === true)
-  })
-  const enabled = await window.api.getAppsEnabled().then(
-    (on) => on === true,
-    () => false
-  )
-  if (!appsSwitchPushed) followAppsSwitch(enabled)
-})
-
-onBeforeUnmount(() => stopAppsSwitch?.())
-
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
-  ...(appsEnabled.value
-    ? [{ page: 'apps' as const, label: t('sidebar.apps'), icon: AppWindow }]
-    : []),
+  { page: 'apps', label: t('sidebar.explore'), icon: Compass },
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])

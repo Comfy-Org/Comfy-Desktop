@@ -122,11 +122,26 @@ export type DashboardPage =
   | 'benchmarks'
   | 'performance-test'
 
+export type CatalogCategory = 'image' | 'video' | '3d' | 'audio'
+
+export interface CatalogUseCase {
+  id: string
+  label: string
+  order: number
+}
+
+export type CatalogRunsOn = 'cloud' | 'local'
+
 export interface CatalogWorkflow {
   id: string
   title: string
   description: string
   thumbnailUrl: string | null
+  category: CatalogCategory | null
+  useCase?: CatalogUseCase | null
+  models?: string[]
+  runsOn?: CatalogRunsOn | null
+  rank?: number | null
 }
 
 export type AssetKind = 'image' | 'video' | 'audio' | '3d'
@@ -136,6 +151,7 @@ export interface CatalogApp {
   title: string
   description: string
   thumbnailUrl: string | null
+  category: CatalogCategory | null
   url: string
 }
 

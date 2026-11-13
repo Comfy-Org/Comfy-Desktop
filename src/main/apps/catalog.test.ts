@@ -55,8 +55,18 @@ describe('toCatalogApp', () => {
       title: 'Text to Image',
       description: 'Text to Image description',
       thumbnailUrl: 'https://comfy.org/catalog-media/text-to-image/v1',
+      category: null,
       url: 'https://apps.example/apps/#/text-to-image'
     })
+  })
+
+  it('tags the app with the kind of media its generation type makes', () => {
+    const reshoot = item('uid-reshoot', {
+      title: 'Reshoot',
+      slug: 'reshoot',
+      generation_type: 'edit-videos'
+    })
+    expect(toCatalogApp(reshoot, LIST)?.category).toBe('video')
   })
 
   it('keeps an odd slug inside the route', () => {

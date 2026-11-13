@@ -1,6 +1,7 @@
 import { CLOUD_CONFIG } from '../cloud/config'
 import { fetchJSON } from '../lib/fetch'
-import type { CatalogWorkflow } from '../../types/ipc'
+import { catalogCategory } from './category'
+import type { CatalogRunsOn, CatalogUseCase, CatalogWorkflow } from '../../types/ipc'
 
 export const HUB_ORIGIN = 'https://comfy.org'
 export const HUB_WORKFLOWS_URL = `${HUB_ORIGIN}/hub/workflows`
@@ -78,6 +79,39 @@ function thumbnailUrlFor(data: JsonRecord): string | null {
   return null
 }
 
+function localized(labels: JsonRecord | null, locale: string): string | null {
+  if (!labels) return null
+  const language = locale.split('-')[0]
+  const key =
+    Object.keys(labels).find((candidate) => candidate === locale) ??
+    Object.keys(labels).find((candidate) => candidate.split('-')[0] === language)
+  return text(key ? labels[key] : null) ?? text(labels.en)
+}
+
+function useCaseFor(site: JsonRecord | null, locale: string): CatalogUseCase | null {
+  const id = text(site?.category)
+  const label = localized(asRecord(site?.categoryLabel), locale)
+  if (!id || !label) return null
+  const order = site?.categoryOrder
+  return { id, label, order: typeof order === 'number' && Number.isFinite(order) ? order : 0 }
+}
+
+function modelsFor(site: JsonRecord | null): string[] {
+  const models = site?.models
+  if (!Array.isArray(models)) return []
+  return [...new Set(models.map(text).filter((model): model is string => model !== null))]
+}
+
+function runsOnFor(site: JsonRecord | null): CatalogRunsOn | null {
+  const type = text(site?.type)?.toLowerCase()
+  return type === 'cloud' || type === 'local' ? type : null
+}
+
+function rankFor(site: JsonRecord | null): number | null {
+  const rank = site?.recommendedRank
+  return typeof rank === 'number' && Number.isFinite(rank) ? rank : null
+}
+
 export function toCatalogWorkflow(item: unknown, locale: string): ResolvedWorkflow | null {
   const record = asRecord(item)
   const data = asRecord(record?.data)
@@ -87,13 +121,19 @@ export function toCatalogWorkflow(item: unknown, locale: string): ResolvedWorkfl
   const translation = locale.startsWith('en') ? null : translationFor(data, locale)
   const title = text(translation?.title) ?? text(data.title)
   if (!id || !hubUrl || !title) return null
+  const site = asRecord(asRecord(data.compatibility)?.website)
   return {
     hubUrl,
     card: {
       id,
       title,
       description: text(translation?.description) ?? text(data.description) ?? '',
-      thumbnailUrl: thumbnailUrlFor(data)
+      thumbnailUrl: thumbnailUrlFor(data),
+      category: catalogCategory(data),
+      useCase: useCaseFor(site, locale),
+      models: modelsFor(site),
+      runsOn: runsOnFor(site),
+      rank: rankFor(site)
     }
   }
 }

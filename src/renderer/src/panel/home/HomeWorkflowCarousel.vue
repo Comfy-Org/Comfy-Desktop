@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ImageOff } from 'lucide-vue-next'
-import type { CatalogWorkflow } from '../../types/ipc'
+import { ArrowUpRight, ImageOff } from 'lucide-vue-next'
+import CategoryBadge from '../CategoryBadge.vue'
+import type { CarouselCard, CarouselKind } from './carouselCard'
 
 interface ArcSlot {
   transform: string
@@ -37,23 +38,32 @@ const ARC_SLOTS: Record<number, ArcSlot> = {
   }
 }
 
-const { workflows } = defineProps<{
-  workflows: readonly CatalogWorkflow[]
+const { cards, kind = 'workflows' } = defineProps<{
+  cards: readonly CarouselCard[]
+  kind?: CarouselKind
 }>()
 
-const emit = defineEmits<{ open: [workflow: CatalogWorkflow] }>()
+const emit = defineEmits<{ open: [card: CarouselCard] }>()
 
 const { t } = useI18n()
+
+function cardLabel(card: { workflow: CarouselCard; offset: number }): string {
+  const title = card.workflow.title
+  if (kind === 'apps') {
+    return card.offset === 0 ? t('home.openApp', { title }) : t('home.showApp', { title })
+  }
+  return card.offset === 0 ? t('home.openWorkflow', { title }) : t('home.showWorkflow', { title })
+}
 
 const frontPosition = ref(0)
 const jumpedAcross = ref(new Set<string>())
 const loadedThumbnails = ref(new Set<string>())
 const brokenThumbnails = ref(new Set<string>())
 
-const wraps = computed(() => workflows.length > ARC_REACH * 2)
+const wraps = computed(() => cards.length > ARC_REACH * 2)
 
 function offsetFrom(position: number, index: number): number {
-  const count = workflows.length
+  const count = cards.length
   const distance = index - position
   if (!wraps.value) return distance
   const turned = ((distance % count) + count) % count
@@ -61,19 +71,19 @@ function offsetFrom(position: number, index: number): number {
 }
 
 const arcCards = computed(() =>
-  workflows.map((workflow, index) => {
+  cards.map((workflow, index) => {
     const offset = offsetFrom(frontPosition.value, index)
     return { workflow, offset, onStage: Math.abs(offset) <= ARC_REACH }
   })
 )
 
 function moveTo(position: number): void {
-  const last = workflows.length - 1
+  const last = cards.length - 1
   const next = wraps.value ? position : Math.min(Math.max(position, 0), last)
   const moved = next - frontPosition.value
   if (moved === 0) return
   jumpedAcross.value = new Set(
-    workflows
+    cards
       .filter(
         (_workflow, index) =>
           offsetFrom(next, index) !== offsetFrom(frontPosition.value, index) - moved
@@ -84,9 +94,9 @@ function moveTo(position: number): void {
 }
 
 watch(
-  () => workflows.length,
+  () => cards.length,
   () => {
-    jumpedAcross.value = new Set(workflows.map((workflow) => workflow.id))
+    jumpedAcross.value = new Set(cards.map((workflow) => workflow.id))
     frontPosition.value = 0
   }
 )
@@ -104,15 +114,15 @@ function slotStyle(offset: number): Record<string, string> {
   }
 }
 
-function showsThumbnail(workflow: CatalogWorkflow): boolean {
+function showsThumbnail(workflow: CarouselCard): boolean {
   return workflow.thumbnailUrl !== null && !brokenThumbnails.value.has(workflow.id)
 }
 
-function markThumbnailLoaded(workflow: CatalogWorkflow): void {
+function markThumbnailLoaded(workflow: CarouselCard): void {
   loadedThumbnails.value = new Set(loadedThumbnails.value).add(workflow.id)
 }
 
-function markThumbnailBroken(workflow: CatalogWorkflow): void {
+function markThumbnailBroken(workflow: CarouselCard): void {
   brokenThumbnails.value = new Set(brokenThumbnails.value).add(workflow.id)
 }
 
@@ -151,7 +161,7 @@ function startDrag(event: PointerEvent): void {
 
 onBeforeUnmount(stopDrag)
 
-function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
+function activate(card: { workflow: CarouselCard; offset: number }): void {
   if (clickBelongsToDrag) return
   if (card.offset === 0) emit('open', card.workflow)
   else moveTo(frontPosition.value + card.offset)
@@ -170,7 +180,7 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
     <li v-for="card in arcCards" :key="card.workflow.id" class="contents">
       <button
         type="button"
-        class="absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="group/card absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
         :class="[
           jumpedAcross.has(card.workflow.id)
             ? 'transition-none'
@@ -178,11 +188,7 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
           !card.onStage && 'pointer-events-none'
         ]"
         :style="slotStyle(card.offset)"
-        :aria-label="
-          card.offset === 0
-            ? t('home.openWorkflow', { title: card.workflow.title })
-            : t('home.showWorkflow', { title: card.workflow.title })
-        "
+        :aria-label="cardLabel(card)"
         :aria-current="card.offset === 0 ? 'true' : undefined"
         :aria-hidden="card.onStage ? undefined : 'true'"
         :tabindex="card.onStage ? undefined : -1"
@@ -215,12 +221,27 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
           class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
           aria-hidden="true"
         />
-        <span class="absolute inset-x-3.5 bottom-4 flex flex-col">
-          <span class="truncate text-sm/[17px] font-medium text-white">
+        <CategoryBadge
+          v-if="card.offset === 0 && card.workflow.category"
+          :category="card.workflow.category"
+          class="absolute top-3 left-3"
+          data-testid="home-card-category"
+        />
+        <span
+          class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+          :class="
+            card.offset === 0
+              ? 'scale-90 group-hover/card:scale-100 group-hover/card:opacity-100 group-hover/card:delay-100 group-focus-visible/card:scale-100 group-focus-visible/card:opacity-100'
+              : 'scale-90'
+          "
+          aria-hidden="true"
+          data-testid="home-workflow-cta"
+        >
+          <ArrowUpRight :size="16" :stroke-width="2.25" />
+        </span>
+        <span class="absolute inset-x-3.5 bottom-4 flex flex-col" data-testid="home-workflow-name">
+          <span class="line-clamp-2 text-sm/[17px] font-medium text-white">
             {{ card.workflow.title }}
-          </span>
-          <span v-if="card.workflow.description" class="truncate text-[13px]/[18px] text-white/70">
-            {{ card.workflow.description }}
           </span>
         </span>
         <span

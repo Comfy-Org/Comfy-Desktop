@@ -1,27 +1,40 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CardBottom from '@comfyorg/design-system/content-card/CardBottom'
 import CardContainer from '@comfyorg/design-system/content-card/CardContainer'
 import CardTop from '@comfyorg/design-system/content-card/CardTop'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
+import CategoryBadge from './CategoryBadge.vue'
+import {
+  exploreGridClass,
+  useExploreCards,
+  type CardSize,
+  type ExploreView,
+  type FilterGroup
+} from './exploreCards'
 import type { CatalogApp } from '../types/ipc'
 
 const SKELETON_COUNT = 8
-const GRID_CLASS = 'm-0 grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4 p-0'
 
-defineProps<{
+const { view, size } = defineProps<{
   loadFailedUrl: string | null
+  view: ExploreView
+  size: CardSize
 }>()
 
 const emit = defineEmits<{
   open: [app: CatalogApp]
+  groups: [groups: FilterGroup[]]
 }>()
 
 const { t } = useI18n()
 const apps = ref<CatalogApp[]>([])
 const loading = ref(true)
 const failed = ref(false)
+const { shown, groups } = useExploreCards(apps, () => view)
+const gridClass = computed(() => exploreGridClass(size))
+watch(groups, (value) => emit('groups', value), { immediate: true })
 
 onMounted(async () => {
   try {
@@ -44,7 +57,7 @@ onMounted(async () => {
       {{ t('apps.loadFailed', { url: loadFailedUrl }) }}
     </p>
     <div v-if="loading" role="status" :aria-label="t('common.loading')">
-      <ul :class="GRID_CLASS" data-testid="apps-gallery-skeleton">
+      <ul :class="gridClass" data-testid="apps-gallery-skeleton">
         <li
           v-for="n in SKELETON_COUNT"
           :key="n"
@@ -70,8 +83,15 @@ onMounted(async () => {
     >
       {{ t('apps.comingSoon') }}
     </p>
-    <ul v-else :class="GRID_CLASS" data-testid="apps-gallery">
-      <li v-for="app in apps" :key="app.id">
+    <p
+      v-else-if="shown.length === 0"
+      class="m-0 text-ui text-muted-foreground"
+      data-testid="explore-no-matches"
+    >
+      {{ t('explore.noMatches') }}
+    </p>
+    <ul v-else :class="gridClass" data-testid="apps-gallery">
+      <li v-for="app in shown" :key="app.id">
         <button
           type="button"
           class="group block w-full cursor-pointer rounded-xl text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
@@ -95,6 +115,12 @@ onMounted(async () => {
                   alt=""
                   loading="lazy"
                   class="absolute inset-0 size-full object-cover"
+                />
+                <CategoryBadge
+                  v-if="app.category"
+                  :category="app.category"
+                  class="absolute top-2.5 left-2.5"
+                  data-testid="explore-card-category"
                 />
               </CardTop>
             </template>
