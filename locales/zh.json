@@ -448,7 +448,7 @@
     "buildTarget": "发布目标",
     "newBuildTitle": "新建构建",
     "changeSetupTitle": "更改设置",
-    "changeSetupLead": "这里的所有选项都已按这台电脑预先设置。返回会保持原样。",
+    "changeSetupLead": "这里的所有选项都已按这台电脑预先设置。",
     "change": "更改",
     "detected": "已检测",
     "getComfyFrom": "ComfyUI 来源",

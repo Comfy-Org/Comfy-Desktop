@@ -448,7 +448,7 @@
     "buildTarget": "Hardware",
     "newBuildTitle": "New Build",
     "changeSetupTitle": "Change setup",
-    "changeSetupLead": "Everything here is already set to what fits this computer. Back keeps it as it was.",
+    "changeSetupLead": "Everything here is already set to what fits this computer.",
     "change": "Change",
     "detected": "Detected",
     "getComfyFrom": "Get ComfyUI from",

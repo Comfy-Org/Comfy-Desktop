@@ -495,7 +495,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await flushPromises()
 
     expect(wrapper.get('.wizard-lead').text()).toBe(
-      'Everything here is already set to what fits this computer. Back keeps it as it was.'
+      'Everything here is already set to what fits this computer.'
     )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('.config-advanced').classes()).toContain('config-advanced--direct')
@@ -635,7 +635,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await flushPromises()
 
     expect(wrapper.get('.wizard-lead').text()).toBe(
-      'Everything here is already set to what fits this computer. Back keeps it as it was.'
+      'Everything here is already set to what fits this computer.'
     )
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
@@ -709,7 +709,7 @@ describe('InstallWizardModal workspace Builds', () => {
     const wrapper = await openWorkspaceModal()
 
     expect(wrapper.get('.wizard-lead').text()).toBe(
-      'Everything here is already set to what fits this computer. Back keeps it as it was.'
+      'Everything here is already set to what fits this computer.'
     )
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
