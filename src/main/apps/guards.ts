@@ -618,20 +618,116 @@ export function eventFiles(msg: { type: string; data: unknown }): {
   }
 }
 
+export function historyHas(body: Uint8Array, runId: string): boolean {
+  const v = jsonOf(body)
+  return !!v && typeof v === 'object' && runId in v
+}
+
+export function endedRun(msg: { type: string; data: unknown }): string | null {
+  if (!RUN_END_TYPES.includes(msg.type)) return null
+  const id = (msg.data as { prompt_id?: unknown } | null)?.prompt_id
+  return isRunId(id) ? id : null
+}
+
 export const MAX_OWNED = 2000
 
-export function noteOwner(
-  owners: Map<string, string>,
-  key: string,
-  owner: string,
-  max = MAX_OWNED
-): void {
-  owners.delete(key)
-  owners.set(key, owner)
-  for (const old of owners.keys()) {
-    if (owners.size <= max) break
-    owners.delete(old)
+interface OwnedRun {
+  owner: string
+  page: number
+  order: number
+  claims: Set<string>
+}
+
+interface FileClaim {
+  owner: string
+  order: number
+}
+
+export class AppsOwnership {
+  private readonly runs = new Map<string, OwnedRun>()
+  private readonly finished = new Set<string>()
+  private readonly files = new Map<string, FileClaim>()
+  private readonly uploads: Array<{ key: string; claim: FileClaim }> = []
+  private order = 0
+
+  constructor(private readonly max = MAX_OWNED) {}
+
+  full(): boolean {
+    return this.runs.size - this.finished.size >= this.max
   }
+
+  addRun(id: string, owner: string, page: number): void {
+    this.forget(id)
+    this.runs.set(id, { owner, page, order: ++this.order, claims: new Set() })
+  }
+
+  runOwner(id: string): string | undefined {
+    return this.runs.get(id)?.owner
+  }
+
+  runsOn(owner: string): string[] {
+    return [...this.runs].filter(([, r]) => r.owner === owner).map(([id]) => id)
+  }
+
+  addRunFiles(runId: string, page: number | null, files: readonly string[]): void {
+    const run = this.runs.get(runId)
+    if (!run) return
+    for (const file of files) {
+      const key = claimKey(page ?? run.page, file)
+      const claim = { owner: run.owner, order: run.order }
+      if (this.claim(key, claim)) run.claims.add(key)
+    }
+  }
+
+  addUpload(page: number, file: string, owner: string): void {
+    const key = claimKey(page, file)
+    const claim = { owner, order: ++this.order }
+    if (!this.claim(key, claim)) return
+    this.uploads.push({ key, claim })
+    while (this.uploads.length > this.max) {
+      const old = this.uploads.shift()!
+      if (this.files.get(old.key) === old.claim) this.files.delete(old.key)
+    }
+  }
+
+  fileOwner(page: number, file: string): string | undefined {
+    return this.files.get(claimKey(page, file))?.owner
+  }
+
+  finish(id: string): void {
+    if (!this.runs.has(id) || this.finished.has(id)) return
+    this.finished.add(id)
+    for (const old of this.finished) {
+      if (this.finished.size <= this.max) break
+      this.forget(old)
+    }
+  }
+
+  finishAll(stillRunning: (owner: string) => boolean): void {
+    for (const [id, run] of this.runs) if (!stillRunning(run.owner)) this.finish(id)
+  }
+
+  private claim(key: string, claim: FileClaim): boolean {
+    const held = this.files.get(key)
+    if (held && held.order > claim.order) return false
+    this.files.set(key, claim)
+    return true
+  }
+
+  private forget(id: string): void {
+    const run = this.runs.get(id)
+    if (!run) return
+    for (const key of run.claims) {
+      const held = this.files.get(key)
+      if (held?.owner === run.owner && held.order === run.order) this.files.delete(key)
+    }
+    this.runs.delete(id)
+    this.finished.delete(id)
+  }
+}
+
+function claimKey(page: number, file: string): string {
+  return `${page}\n${file}`
 }
 
 export async function readCapped(

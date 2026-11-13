@@ -47,16 +47,19 @@ import {
   wantedVersion
 } from './appsBuildRules'
 import {
+  AppsOwnership,
   type DownloadRequest,
   downloadRequest,
+  endedRun,
   eventFiles,
   historyFiles,
+  historyHas,
   type LocalAnswer,
   localEvent,
   type LocalRequest,
   localRequest,
+  MAX_OWNED,
   MAX_UPLOAD_BYTES,
-  noteOwner,
   noteRun,
   promptRunId,
   queueAnswer,
@@ -91,6 +94,7 @@ const BUSY_ERROR =
   'ComfyUI on this computer is busy with another app. Run this one when it finishes.'
 const NOT_APPS_RUN = 'Apps can only see and stop the runs they started.'
 const NOT_APPS_FILE = 'Apps can only open files their runs made or they uploaded.'
+const TOO_MANY_RUNS = `Apps already have ${MAX_OWNED.toLocaleString('en-US')} runs waiting on ComfyUI. Run this one when some finish.`
 
 let appsPages: () => WebContents[] = () => []
 let starting: Promise<LocalState> | null = null
@@ -108,8 +112,7 @@ let target: Target | null = null
 let selections = 0
 const LAUNCHING = 'launching'
 const startedHere = new Map<string, SessionInfo | typeof LAUNCHING>()
-const appsRuns = new Map<string, string>()
-const appsFiles = new Map<string, string>()
+const owned = new AppsOwnership()
 
 function touch(): void {
   lastUse = Date.now()
@@ -401,35 +404,51 @@ export function cancelSetup(): { cancelled: boolean } {
   return cancelAppsSetup()
 }
 
-function routeFor(runs: string[], file: string | null): Serving | null {
-  const owner = runs.length ? appsRuns.get(runs[0]!) : file ? appsFiles.get(file) : undefined
+function routeFor(runs: string[], file: string | null, page: number): Serving | null {
+  const owner = runs.length
+    ? owned.runOwner(runs[0]!)
+    : file
+      ? owned.fileOwner(page, file)
+      : undefined
   return serving(owner) ?? appsRunning()
 }
 
-function noteOwned(req: LocalRequest, runs: string[], body: Uint8Array, owner: string): void {
+function noteOwned(
+  req: LocalRequest,
+  runs: string[],
+  body: Uint8Array,
+  owner: string,
+  page: number
+): void {
   if (req.kind === 'prompt') {
     const id = promptRunId(body)
-    if (id) noteOwner(appsRuns, id, owner)
+    if (id) owned.addRun(id, owner, page)
   } else if (req.kind === 'upload') {
     const file = uploadedFile(body)
-    if (file) noteOwner(appsFiles, file, owner)
+    if (file) owned.addUpload(page, file, owner)
   } else if (req.kind === 'get' && runs.length) {
-    for (const file of historyFiles(body, runs[0]!)) noteOwner(appsFiles, file, owner)
+    owned.addRunFiles(runs[0]!, page, historyFiles(body, runs[0]!))
+    if (historyHas(body, runs[0]!)) owned.finish(runs[0]!)
+  } else if (req.kind === 'json' && req.path === '/queue') {
+    for (const id of runs) owned.finish(id)
   }
 }
 
-export async function localFetch(input: unknown): Promise<LocalAnswer> {
+export async function localFetch(input: unknown, page = 0): Promise<LocalAnswer> {
   const req = localRequest(input)
   if (!('kind' in req)) return textAnswer(req.status, req.error)
   const runs = requestRuns(req)
   const file = requestFile(req)
-  const run = routeFor(runs, file)
+  const run = routeFor(runs, file, page)
   if (!run) return textAnswer(503, 'ComfyUI for apps is not running on this computer.')
   const personal = run.id !== appsBuildId()
-  if (personal && runs.some((id) => appsRuns.get(id) !== run.id)) {
+  if (personal && runs.some((id) => owned.runOwner(id) !== run.id)) {
     return textAnswer(403, NOT_APPS_RUN)
   }
-  if (personal && file && appsFiles.get(file) !== run.id) return textAnswer(403, NOT_APPS_FILE)
+  if (personal && file && owned.fileOwner(page, file) !== run.id) {
+    return textAnswer(403, NOT_APPS_FILE)
+  }
+  if (req.kind === 'prompt' && owned.full()) return textAnswer(429, TOO_MANY_RUNS)
   touch()
   syncLocalSocket()
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
@@ -449,10 +468,10 @@ export async function localFetch(input: unknown): Promise<LocalAnswer> {
     const body = await readCapped(res, MAX_UPLOAD_BYTES)
     if (!body) return textAnswer(502, 'ComfyUI answered more than 50 MB.')
     if (req.kind === 'queue') {
-      const owned = personal ? (id: string) => appsRuns.get(id) === run.id : undefined
-      return queueAnswer(res.status, body, runsSeen, owned)
+      const ours = personal ? (id: string) => owned.runOwner(id) === run.id : undefined
+      return queueAnswer(res.status, body, runsSeen, ours)
     }
-    if (res.ok) noteOwned(req, runs, body, run.id)
+    if (res.ok) noteOwned(req, runs, body, run.id, page)
     return {
       status: res.status,
       contentType: res.headers.get('content-type') ?? 'application/octet-stream',
@@ -471,7 +490,7 @@ const downloads = new Map<string, Promise<LocalDownload>>()
 
 async function appsWorkOn(run: Serving): Promise<boolean> {
   if (downloads.size > 0) return true
-  const ids = new Set([...appsRuns].filter(([, owner]) => owner === run.id).map(([id]) => id))
+  const ids = new Set(owned.runsOn(run.id))
   if (!ids.size) return false
   try {
     const res = await fetch(`http://127.0.0.1:${run.port}/queue`, {
@@ -591,9 +610,9 @@ function connect(s: Socket): void {
 
 function noteMade(msg: { type: string; data: unknown }): void {
   const made = eventFiles(msg)
-  const owner = made ? appsRuns.get(made.runId) : undefined
-  if (!made || !owner) return
-  for (const file of made.files) noteOwner(appsFiles, file, owner)
+  if (made) owned.addRunFiles(made.runId, null, made.files)
+  const ended = endedRun(msg)
+  if (ended) owned.finish(ended)
 }
 
 function closeSocket(): void {
@@ -690,6 +709,7 @@ export function initLocalComfy(pages: () => WebContents[]): void {
   appsPages = pages
   sessionLifecycleEvents.on('changed', () => {
     trackStarted()
+    owned.finishAll((id) => localSession(id) !== null)
     syncLocalSocket()
   })
   setInterval(() => void stopWhenIdle(), IDLE_CHECK_MS).unref?.()

@@ -152,7 +152,7 @@ function fakeFetch(input: string | URL, init?: RequestInit): Promise<Response> {
     )
   }
   if (p === '/prompt') {
-    const id = `apps-${server.calls.length}`
+    const id = `apps-${url.port}-${server.calls.length}`
     server.pending.push([server.pending.length, id, {}, {}, []])
     return Promise.resolve(json({ prompt_id: id, number: 1, node_errors: {} }))
   }
@@ -171,7 +171,7 @@ function fakeFetch(input: string | URL, init?: RequestInit): Promise<Response> {
     ].join('/')
     return Promise.resolve(
       server.files.has(key)
-        ? new Response(new Uint8Array([1, 2, 3]))
+        ? new Response(new TextEncoder().encode(`${url.port}/${key}`))
         : new Response('', { status: 404 })
     )
   }
@@ -302,6 +302,77 @@ describe('an app run keeps its ComfyUI while another app asks for a newer one', 
     release()
     await slow
     expect(local.ownInUse()).toBe('y')
+  })
+})
+
+describe('files two ComfyUIs give the same name', () => {
+  const made = {
+    status: { completed: true },
+    outputs: {
+      '9': { images: [{ filename: 'ComfyUI_00001_.png', subfolder: '', type: 'output' }] }
+    }
+  }
+  const sameName = '/view?filename=ComfyUI_00001_.png&subfolder=&type=output'
+
+  async function runOnEach(
+    pageX: number,
+    pageY: number
+  ): Promise<{ local: LocalComfy; runX: string; runY: string }> {
+    const x = addInstall('x', 8188, '0.37.0')
+    const y = addInstall('y', 8288, '0.42.4')
+    run('x')
+    const local = await load()
+    expect(await local.getLocal({ minVersion: '0.37.0' })).toMatchObject({ name: 'ComfyUI x' })
+    const queuedX = await local.localFetch(
+      { method: 'POST', path: '/prompt', body: { prompt: {} } },
+      pageX
+    )
+    const runX = JSON.parse(text(queuedX.body)).prompt_id as string
+    x.pending.length = 0
+    x.history[runX] = made
+    x.files.add('output//ComfyUI_00001_.png')
+
+    run('y')
+    expect(await local.getLocal({ minVersion: '0.41.0' })).toMatchObject({ name: 'ComfyUI y' })
+    const queuedY = await local.localFetch(
+      { method: 'POST', path: '/prompt', body: { prompt: {} } },
+      pageY
+    )
+    const runY = JSON.parse(text(queuedY.body)).prompt_id as string
+    y.pending.length = 0
+    y.history[runY] = made
+    y.files.add('output//ComfyUI_00001_.png')
+    return { local, runX, runY }
+  }
+
+  it('gives each page the file from the ComfyUI its run used, whichever history came last', async () => {
+    const { local, runX, runY } = await runOnEach(1, 2)
+
+    expect((await local.localFetch({ method: 'GET', path: `/history/${runY}` }, 2)).status).toBe(
+      200
+    )
+    expect((await local.localFetch({ method: 'GET', path: `/history/${runX}` }, 1)).status).toBe(
+      200
+    )
+
+    const forY = await local.localFetch({ method: 'GET', path: sameName }, 2)
+    expect(text(forY.body), 'the Y page gets the picture Y made').toBe(
+      '8288/output//ComfyUI_00001_.png'
+    )
+    const forX = await local.localFetch({ method: 'GET', path: sameName }, 1)
+    expect(text(forX.body), 'the X page gets the picture X made').toBe(
+      '8188/output//ComfyUI_00001_.png'
+    )
+  })
+
+  it('keeps the newer run file when a late history of an older run on another ComfyUI arrives', async () => {
+    const { local, runX, runY } = await runOnEach(1, 1)
+
+    await local.localFetch({ method: 'GET', path: `/history/${runY}` }, 1)
+    await local.localFetch({ method: 'GET', path: `/history/${runX}` }, 1)
+
+    const file = await local.localFetch({ method: 'GET', path: sameName }, 1)
+    expect(text(file.body)).toBe('8288/output//ComfyUI_00001_.png')
   })
 })
 
@@ -498,6 +569,52 @@ describe('what apps can see on a ComfyUI the person already uses', () => {
     expect(up.status).toBe(200)
     const file = await local.localFetch({ method: 'GET', path: view('photo.png', '', 'input') })
     expect(file.status).toBe(200)
+  })
+
+  it('keeps a run it can read and stop while 2,000 newer runs wait behind it', async () => {
+    const { local, server, runId } = await reused()
+    const statuses: number[] = []
+    for (let i = 0; i < 2000; i++) {
+      const queued = await local.localFetch({
+        method: 'POST',
+        path: '/prompt',
+        body: { prompt: {} }
+      })
+      statuses.push(queued.status)
+    }
+
+    expect(statuses.slice(0, 1999).every((s) => s === 200)).toBe(true)
+    expect(statuses[1999], 'Desktop refuses a run it could not keep track of').toBe(429)
+    const stop = await local.localFetch({
+      method: 'POST',
+      path: '/interrupt',
+      body: { prompt_id: runId }
+    })
+    expect(stop.status).toBe(200)
+    const history = await local.localFetch({ method: 'GET', path: `/history/${runId}` })
+    expect(history.status).toBe(200)
+    expect(server.calls.filter((c) => c === 'POST /prompt')).toHaveLength(2000)
+
+    const after = await local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
+    expect(after.status, 'a finished run makes room for a new one').toBe(200)
+  })
+
+  it('opens every file of a run that made more than 2,000', async () => {
+    const { local, server, runId } = await reused()
+    const images = Array.from({ length: 2001 }, (_, i) => {
+      server.files.add(`output/apps/many_${i}.png`)
+      return { filename: `many_${i}.png`, subfolder: 'apps', type: 'output' }
+    })
+    server.history[runId] = { status: { completed: true }, outputs: { '9': { images } } }
+
+    expect((await local.localFetch({ method: 'GET', path: `/history/${runId}` })).status).toBe(200)
+    for (const i of [0, 2000]) {
+      const file = await local.localFetch({
+        method: 'GET',
+        path: view(`many_${i}.png`, 'apps', 'output')
+      })
+      expect(file.status, `file ${i}`).toBe(200)
+    }
   })
 
   it('keeps reading any run on the Apps build, which only apps use', async () => {

@@ -564,6 +564,16 @@ function handleFromApps<A extends unknown[], R>(
   })
 }
 
+function handleFromAppsPage<A, R>(
+  channel: string,
+  fn: (arg: A, page: number) => Promise<R> | R
+): void {
+  ipcMain.handle(channel, async (event, arg) => {
+    if (!fromAppsPage(event)) throw new Error('Not allowed.')
+    return fn(arg as A, event.sender.id)
+  })
+}
+
 function appsPages(): WebContents[] {
   return [...views.values()]
     .map((v) => v.webContents)
@@ -595,7 +605,7 @@ export function registerAppsIpc(): void {
   handleFromApps('comfy-apps:start-local', startLocal)
   handleFromApps('comfy-apps:cancel-setup', cancelSetup)
   handleFromApps('comfy-apps:local-builds', localBuilds)
-  handleFromApps('comfy-apps:local-fetch', localFetch)
+  handleFromAppsPage('comfy-apps:local-fetch', localFetch)
   handleFromApps('comfy-apps:local-download', localDownload)
   handleFromApps('comfy-apps:open-in-comfy', openInComfy)
 }

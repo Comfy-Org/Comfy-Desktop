@@ -4,15 +4,18 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   isAllowedAppsPermission,
+  AppsOwnership,
   appsOrigin,
   appsUrl,
   cleanSaveName,
   COMFY_READY_SCRIPT,
   collectOutputs,
   downloadRequest,
+  endedRun,
   eventFiles,
   fileKey,
   historyFiles,
+  historyHas,
   inJobGrace,
   interruptJson,
   JOB_GRACE_MS,
@@ -31,7 +34,6 @@ import {
   localEvent,
   localInstalls,
   localRequest,
-  noteOwner,
   noteRun,
   noteSubmitted,
   openRequest,
@@ -1040,12 +1042,100 @@ describe('what ComfyUI says apps made', () => {
     expect(eventFiles({ type: 'progress', data: { prompt_id: 'r1' } })).toBeNull()
   })
 
-  it('keeps only the newest owners', () => {
-    const owners = new Map<string, string>()
-    for (let i = 0; i < 5; i++) noteOwner(owners, `r${i}`, 'x', 3)
-    expect([...owners.keys()]).toEqual(['r2', 'r3', 'r4'])
+  it('tells when a history answer has the run, finished or not', () => {
+    expect(historyHas(bytes({ r1: { outputs: {} } }), 'r1')).toBe(true)
+    expect(historyHas(bytes({}), 'r1')).toBe(false)
+    expect(historyHas(new TextEncoder().encode('not json'), 'r1')).toBe(false)
   })
 
+  it('reads which run an end event is about', () => {
+    expect(endedRun({ type: 'execution_success', data: { prompt_id: 'r1' } })).toBe('r1')
+    expect(endedRun({ type: 'execution_interrupted', data: { prompt_id: 'r1' } })).toBe('r1')
+    expect(endedRun({ type: 'executing', data: { prompt_id: 'r1' } })).toBeNull()
+  })
+})
+
+describe('which ComfyUI owns the runs and files apps made', () => {
+  const file = fileKey({ filename: 'ComfyUI_00001_.png', subfolder: '', type: 'output' })
+
+  it('keeps every run that has not finished and says when no more fit', () => {
+    const owned = new AppsOwnership(3)
+    for (let i = 0; i < 3; i++) owned.addRun(`r${i}`, 'x', 1)
+    expect(owned.full()).toBe(true)
+    expect(owned.runOwner('r0')).toBe('x')
+    owned.finish('r0')
+    expect(owned.full()).toBe(false)
+  })
+
+  it('forgets the oldest finished run first, and its files with it', () => {
+    const owned = new AppsOwnership(2)
+    for (let i = 0; i < 3; i++) {
+      owned.addRun(`r${i}`, 'x', 1)
+      owned.addRunFiles(`r${i}`, 1, [fileKey({ filename: `${i}.png`, type: 'output' })])
+    }
+    owned.addRun('live', 'x', 1)
+    for (const id of ['r0', 'r1', 'r2']) owned.finish(id)
+    expect(owned.runOwner('r0')).toBeUndefined()
+    expect(owned.fileOwner(1, fileKey({ filename: '0.png', type: 'output' }))).toBeUndefined()
+    expect(owned.runOwner('r2')).toBe('x')
+    expect(owned.fileOwner(1, fileKey({ filename: '2.png', type: 'output' }))).toBe('x')
+    expect(owned.runOwner('live')).toBe('x')
+  })
+
+  it('keeps every file one history answer names', () => {
+    const owned = new AppsOwnership(2)
+    owned.addRun('r1', 'x', 1)
+    const files = [0, 1, 2, 3].map((i) => fileKey({ filename: `${i}.png`, type: 'output' }))
+    owned.addRunFiles('r1', 1, files)
+    owned.finish('r1')
+    for (const f of files) expect(owned.fileOwner(1, f)).toBe('x')
+  })
+
+  it('keeps each page file on the ComfyUI its run used', () => {
+    const owned = new AppsOwnership()
+    owned.addRun('rx', 'x', 1)
+    owned.addRun('ry', 'y', 2)
+    owned.addRunFiles('ry', 2, [file])
+    owned.addRunFiles('rx', 1, [file])
+    expect(owned.fileOwner(2, file)).toBe('y')
+    expect(owned.fileOwner(1, file)).toBe('x')
+    expect(owned.fileOwner(3, file)).toBeUndefined()
+  })
+
+  it('does not let a late answer about an older run take a file from a newer one', () => {
+    const owned = new AppsOwnership()
+    owned.addRun('rx', 'x', 1)
+    owned.addRun('ry', 'y', 1)
+    owned.addRunFiles('ry', 1, [file])
+    owned.addRunFiles('rx', 1, [file])
+    expect(owned.fileOwner(1, file)).toBe('y')
+  })
+
+  it('gives files a run made to the page that queued it', () => {
+    const owned = new AppsOwnership()
+    owned.addRun('r1', 'x', 4)
+    owned.addRunFiles('r1', null, [file])
+    expect(owned.fileOwner(4, file)).toBe('x')
+  })
+
+  it('keeps the newest uploads', () => {
+    const owned = new AppsOwnership(2)
+    const ups = [0, 1, 2].map((i) => fileKey({ filename: `${i}.png`, type: 'input' }))
+    for (const f of ups) owned.addUpload(1, f, 'x')
+    expect(ups.map((f) => owned.fileOwner(1, f))).toEqual([undefined, 'x', 'x'])
+  })
+
+  it('finishes the runs of a ComfyUI that stopped', () => {
+    const owned = new AppsOwnership(1)
+    owned.addRun('r1', 'x', 1)
+    expect(owned.full()).toBe(true)
+    owned.finishAll((id) => id !== 'x')
+    expect(owned.full()).toBe(false)
+    expect(owned.runOwner('r1')).toBe('x')
+  })
+})
+
+describe('the queue apps see', () => {
   it('hides the queued runs apps do not own but keeps their place', () => {
     const raw = {
       queue_running: [[0, 'theirs', {}, { comfy_app: { name: 'Mine' } }, []]],
