@@ -198,6 +198,21 @@ describe('AppsView', () => {
     )
   })
 
+  it('places the app over the whole Apps page the first time, not in the room the cards leave', async () => {
+    const wrapper = await mountApps()
+    const pageBox = page.getBoundingClientRect()
+
+    await wrapper.get('[data-testid="app-card-sdr-to-hdr"]').trigger('click')
+
+    expect(showAppPage).toHaveBeenCalledTimes(1)
+    expect(showAppPage.mock.calls[0]?.[1]).toMatchObject({
+      x: pageBox.x,
+      y: pageBox.y,
+      width: pageBox.width,
+      height: pageBox.height
+    })
+  })
+
   it("returns to the cards, on the card that was opened, when the app's page goes back to all apps", async () => {
     const wrapper = await mountApps()
     await wrapper.get('input').setValue('hdr')

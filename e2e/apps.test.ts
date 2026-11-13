@@ -14,6 +14,7 @@ const APPS_GRID = '[data-testid="apps-grid"]'
 const CUTOUT_CARD = '[data-testid="app-card-remove-background"]'
 const DOWN_CARD = '[data-testid="app-card-down-for-now"]'
 const APP_HOST = '[data-testid="app-page-host"]'
+const SIDEBAR = '[data-testid="app-sidebar"]'
 const APP_FAILED = '[data-testid="app-page-failed"]'
 const APP_RETRY = '[data-testid="app-page-retry"]'
 const CUTOUT_PAGE = '/apps/remove-background/desktop.html'
@@ -125,9 +126,16 @@ class FakeAppsSite {
   }
 }
 
+interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 interface HostedView {
   visible: boolean
-  bounds: { x: number; y: number; width: number; height: number }
+  bounds: Box
 }
 
 function viewShowing(app: ElectronApplication, marker: string): Promise<HostedView | null> {
@@ -153,6 +161,25 @@ let inheritedEnv: Record<string, string | undefined>
 
 function cutoutPage(): WebContentsPage {
   return new WebContentsPage(ctx.app, CUTOUT_PAGE)
+}
+
+function sidebarHasFoldedToItsRail(): Promise<boolean> {
+  return ctx.panel.evaluate<boolean>(
+    `(() => { const sidebar = document.querySelector('${SIDEBAR}'); return sidebar.dataset.collapsed === 'true' && sidebar.getAnimations().length === 0 })()`
+  )
+}
+
+async function appPageAreaInWindow(): Promise<Box> {
+  const area = await ctx.panel.evaluate<Box>(
+    `(() => { const r = document.querySelector('${APP_HOST}').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`
+  )
+  const panel = await viewShowing(ctx.app, 'panel.html')
+  return {
+    x: (panel?.bounds.x ?? 0) + Math.round(area.x),
+    y: (panel?.bounds.y ?? 0) + Math.round(area.y),
+    width: Math.round(area.width),
+    height: Math.round(area.height)
+  }
 }
 
 function allowPageToCallCloud(res: ServerResponse): void {
@@ -237,7 +264,7 @@ test("Apps lists the website's apps as cards, without the one that opens another
     .toEqual(['Remove Background', 'Down For Now'])
 })
 
-test('A card opens its app page inside Desktop, exactly over the Apps page @macos @windows @linux', async () => {
+test('A card opens its app page inside Desktop, exactly over the Apps page beside the folded sidebar @macos @windows @linux', async () => {
   expect(await ctx.panel.click(CUTOUT_CARD)).toBe(true)
 
   await expect
@@ -245,17 +272,11 @@ test('A card opens its app page inside Desktop, exactly over the Apps page @maco
     .toBe(true)
   expect(await cutoutPage().textOf('#title')).toBe('Remove Background page')
 
-  const host = await ctx.panel.evaluate<{ x: number; y: number; width: number; height: number }>(
-    `(() => { const r = document.querySelector('${APP_HOST}').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } })()`
-  )
-  const panel = await viewShowing(ctx.app, 'panel.html')
-  const hosted = await viewShowing(ctx.app, CUTOUT_PAGE)
-  expect(hosted?.bounds).toEqual({
-    x: (panel?.bounds.x ?? 0) + Math.round(host.x),
-    y: (panel?.bounds.y ?? 0) + Math.round(host.y),
-    width: Math.round(host.width),
-    height: Math.round(host.height)
-  })
+  await expect.poll(sidebarHasFoldedToItsRail, LONG_WAIT).toBe(true)
+  await expect(async () => {
+    const area = await appPageAreaInWindow()
+    expect((await viewShowing(ctx.app, CUTOUT_PAGE))?.bounds).toEqual(area)
+  }).toPass(LONG_WAIT)
 })
 
 test("The app page sees Desktop's sign-in, signed out, and none of Desktop's other controls @macos @windows @linux", async () => {
