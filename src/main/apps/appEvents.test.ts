@@ -198,13 +198,19 @@ describe('trackApps', () => {
     ])
   })
 
+  it('sends output_saved with no where when Desktop cannot know where the result ran', () => {
+    trackApps('output_saved', { app: 'upscale' })
+
+    expect(telemetry.capture).toHaveBeenCalledExactlyOnceWith('comfy.desktop.apps.output_saved', {
+      app: 'upscale',
+      apps_enabled: true
+    })
+  })
+
   it.each<[string, Parameters<typeof trackApps<'setup'>>[1]]>([
     ['a started ComfyUI setup', { stage: 'comfyui', outcome: 'started', bytes: 2_500_000_000 }],
     ['a finished setup with its time', { stage: 'comfyui', outcome: 'finished', seconds: 300 }],
-    [
-      'a model download with its public file name',
-      { app: 'upscale', stage: 'model', outcome: 'finished', model_file: '4x-UltraSharp.pth' }
-    ]
+    ['a finished model download', { app: 'upscale', stage: 'model', outcome: 'finished' }]
   ])('sends setup for %s', (_why, fields) => {
     trackApps('setup', fields)
 
@@ -229,14 +235,6 @@ describe('trackApps', () => {
     ['an OS not on the list', ['run_finished', { ...finished, os: 'aix' }]],
     ['a GPU not on the list', ['run_finished', { ...finished, gpu: 'mps' as 'apple' }]],
     ['a ComfyUI version with a path', ['run_finished', { ...finished, comfy_version: '../x' }]],
-    [
-      'a model file that is a path',
-      ['setup', { stage: 'model', outcome: 'started', model_file: '/models/a.safetensors' }]
-    ],
-    [
-      'a model file that is not a model',
-      ['setup', { stage: 'model', outcome: 'started', model_file: 'notes.txt' }]
-    ],
     ['a setup stage not on the list', ['setup', { stage: 'pip' as 'model', outcome: 'started' }]],
     ['negative bytes', ['setup', { stage: 'model', outcome: 'failed', bytes: -5 }]]
   ])('drops %s', (_why, [name, fields]) => {
@@ -267,8 +265,48 @@ describe('cloudRefusal', () => {
     expect(cloudRefusal(429, null)).toEqual({ step: 'rate_limited', error_class: 'http_429' })
   })
 
-  it.each([401, 403])('reads %s as a sign-in failure', (status) => {
+  it.each([401, 403])('reads a bare %s as a sign-in failure', (status) => {
     expect(cloudRefusal(status, null)).toEqual({ step: 'sign_in', error_class: `http_${status}` })
+  })
+
+  it.each([
+    [401, { error: { type: 'PARTNER_NODE_DISABLED' } }],
+    [403, { error: { type: 'UNAUTHORIZED', message: 'User authentication required' } }],
+    [403, { code: 'FORBIDDEN', message: 'not allowed' }]
+  ])('reads %s as a sign-in failure unless a 403 names a refusal type', (status, answer) => {
+    expect(cloudRefusal(status, answer)).toEqual({
+      step: 'sign_in',
+      error_class: `http_${status}`
+    })
+  })
+
+  it('reads a signed-in workspace policy 403 as rejected with the node types only', () => {
+    const answer = {
+      error: {
+        type: 'PARTNER_NODE_DISABLED',
+        message:
+          "This workspace's partner-provider policy does not allow the following partner nodes: " +
+          'GeminiImageNode, ../../etc/passwd',
+        class_types: ['GeminiImageNode', '../../etc/passwd', 'GeminiImageNode'],
+        providers: ['gemini']
+      }
+    }
+
+    const refusal = cloudRefusal(403, answer)
+
+    expect(refusal).toEqual({
+      step: 'rejected',
+      error_class: 'http_403',
+      node_types: ['GeminiImageNode']
+    })
+    expect(JSON.stringify(refusal)).not.toMatch(/policy|passwd|gemini"/)
+  })
+
+  it('reads a plan-limit 403 as rejected, not a sign-in failure', () => {
+    expect(cloudRefusal(403, { error: { type: 'FREE_TIER_NOT_ALLOWED' } })).toEqual({
+      step: 'rejected',
+      error_class: 'http_403'
+    })
   })
 
   it('reads node_errors as rejected with the node types and nothing they said', () => {

@@ -973,7 +973,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       isPackaged: app.isPackaged,
       sessionStartProps: {
         prior_session_unclean: priorSessionUnclean,
-        apps_enabled: isAppsEnabled()
+        apps_enabled: isAppsEnabled
       }
     })
     mainTelemetry.setConsentState(initialConsent)
