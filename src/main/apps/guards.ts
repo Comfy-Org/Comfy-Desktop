@@ -21,8 +21,12 @@ const ALLOWED_APPS_PERMISSIONS: ReadonlySet<string> = new Set([
   'fullscreen'
 ])
 
-export function isAllowedAppsPermission(permission: string): boolean {
-  return ALLOWED_APPS_PERMISSIONS.has(permission)
+export function isAllowedAppsPermission(
+  permission: string,
+  requestingUrl: string,
+  origin: string | null
+): boolean {
+  return ALLOWED_APPS_PERMISSIONS.has(permission) && isAppsFrameUrl(requestingUrl, origin)
 }
 
 export function isAppsFrameUrl(frameUrl: string, origin: string | null): boolean {

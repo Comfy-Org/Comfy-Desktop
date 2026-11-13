@@ -90,16 +90,27 @@ describe('appsOrigin', () => {
 })
 
 describe('isAllowedAppsPermission', () => {
+  const origin = 'https://apps.comfy.org'
+
   it.each(['clipboard-sanitized-write', 'fullscreen'])('lets an app page use %s', (permission) => {
-    expect(isAllowedAppsPermission(permission)).toBe(true)
+    expect(isAllowedAppsPermission(permission, 'https://apps.comfy.org/app/x', origin)).toBe(true)
+    expect(isAllowedAppsPermission(permission, origin, origin)).toBe(true)
   })
 
   it.each(['media', 'geolocation', 'notifications', 'clipboard-read', 'openExternal'])(
     'denies %s',
     (permission) => {
-      expect(isAllowedAppsPermission(permission)).toBe(false)
+      expect(isAllowedAppsPermission(permission, origin, origin)).toBe(false)
     }
   )
+
+  it('denies a frame from another origin inside the app page', () => {
+    expect(isAllowedAppsPermission('fullscreen', 'https://ads.example.com/frame', origin)).toBe(
+      false
+    )
+    expect(isAllowedAppsPermission('fullscreen', '', origin)).toBe(false)
+    expect(isAllowedAppsPermission('fullscreen', origin, null)).toBe(false)
+  })
 })
 
 describe('isAppsFrameUrl', () => {
