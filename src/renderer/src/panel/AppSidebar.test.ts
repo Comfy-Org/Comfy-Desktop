@@ -59,10 +59,15 @@ async function mountSidebar(
 }
 
 describe('AppSidebar', () => {
-  it('lists Home then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
-    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual(['Home', 'Builds', ''])
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Assets',
+      'Builds',
+      ''
+    ])
     expect(wrapper.get('[data-testid="app-sidebar-new-build"]').attributes('aria-label')).toBe(
       'New build'
     )
@@ -82,6 +87,7 @@ describe('AppSidebar', () => {
 
   it.each<[string, DashboardPage]>([
     ['app-sidebar-home', 'home'],
+    ['app-sidebar-assets', 'assets'],
     ['app-sidebar-chooser', 'chooser']
   ])('navigates from %s', async (testId, page) => {
     const wrapper = await mountSidebar()
