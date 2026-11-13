@@ -2,19 +2,31 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AppsView from './AppsView.vue'
+import AppsGallery from './AppsGallery.vue'
 import type { AppOutputs, CatalogApp } from '../types/ipc'
 import { useModal } from '../composables/useModal'
 
 const showApps = vi.fn()
 const hideApps = vi.fn()
 const listCatalogApps = vi.fn()
+const listHomeWorkflows = vi.fn()
+const openCatalogWorkflow = vi.fn()
+const getAppsEnabled = vi.fn()
+let pushAppsSwitch: ((info: { enabled: boolean }) => void) | null = null
 let appsLoadFailed: ((info: { url: string }) => void) | null = null
 let appsAppOpen: ((info: { open: boolean }) => void) | null = null
 let appsSettled: (() => void) | null = null
 let appsOutput: ((outputs: AppOutputs) => void) | null = null
 const appsOutputAction = vi.fn()
 
-async function mountApps(props: { growBy?: number; obscured?: boolean } = {}) {
+async function mountApps(
+  props: {
+    growBy?: number
+    obscured?: boolean
+    initialTab?: 'apps' | 'templates'
+    launchApp?: CatalogApp | null
+  } = {}
+) {
   const wrapper = mount(AppsView, {
     props,
     global: { stubs: { teleport: { template: '<div><slot /></div>' } } }
@@ -35,6 +47,7 @@ function catalogApp(id: string, title: string): CatalogApp {
     title,
     description: `${title} description`,
     thumbnailUrl: `https://comfy.org/catalog-media/${id}/v1`,
+    category: null,
     url: `https://apps.example/apps/${id}/desktop.html`
   }
 }
@@ -42,10 +55,20 @@ function catalogApp(id: string, title: string): CatalogApp {
 beforeEach(() => {
   vi.clearAllMocks()
   listCatalogApps.mockResolvedValue([])
+  listHomeWorkflows.mockResolvedValue([])
+  openCatalogWorkflow.mockResolvedValue(true)
+  getAppsEnabled.mockResolvedValue(true)
   ;(window as unknown as { api: unknown }).api = {
     showApps,
     hideApps,
     listCatalogApps,
+    listHomeWorkflows,
+    openCatalogWorkflow,
+    getAppsEnabled,
+    onAppsEnabledChanged: vi.fn((callback: (info: { enabled: boolean }) => void) => {
+      pushAppsSwitch = callback
+      return () => (pushAppsSwitch = null)
+    }),
     onAppsLoadFailed: vi.fn((callback: (info: { url: string }) => void) => {
       appsLoadFailed = callback
       return () => (appsLoadFailed = null)
@@ -500,5 +523,106 @@ describe('AppsView', () => {
     expect(showApps).toHaveBeenCalledWith(
       expect.objectContaining({ fresh: true, url: 'https://apps.example/apps/studio/desktop.html' })
     )
+  })
+})
+
+describe('Explore', () => {
+  function tabs(wrapper: Awaited<ReturnType<typeof mountApps>>) {
+    return wrapper.get('[data-testid="explore-tabs"]').findAll('button')
+  }
+
+  async function pickTab(wrapper: Awaited<ReturnType<typeof mountApps>>, index: number) {
+    const tab = tabs(wrapper)[index]!
+    await tab.trigger('mousedown')
+    await tab.trigger('click')
+    await flushPromises()
+  }
+
+  it('heads the page Explore with Apps and Templates tabs, starting on Apps', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+
+    expect(wrapper.get('h1').text()).toBe('Explore')
+    expect(tabs(wrapper).map((tab) => tab.text())).toEqual(['Apps', 'Templates'])
+    expect(tabs(wrapper)[0]!.attributes('data-state')).toBe('on')
+    expect(wrapper.getComponent(AppsGallery).attributes('style')).toBeUndefined()
+    expect(wrapper.find('[data-testid="app-card-studio"]').exists()).toBe(true)
+    expect(listHomeWorkflows).not.toHaveBeenCalled()
+  })
+
+  it('lists the catalog workflows on the Templates tab and opens one on Comfy Hub', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    listHomeWorkflows.mockResolvedValue([
+      {
+        id: 'upscale',
+        title: 'Upscale and restore detail',
+        description: 'Enlarge an image.',
+        thumbnailUrl: null,
+        category: 'image'
+      }
+    ])
+    const wrapper = await mountApps()
+
+    await pickTab(wrapper, 1)
+
+    expect(wrapper.getComponent(AppsGallery).attributes('style')).toContain('display: none')
+    const card = wrapper.get('[data-testid="template-card-upscale"]')
+    expect(card.text()).toContain('Upscale and restore detail')
+    await card.trigger('click')
+    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('upscale')
+  })
+
+  it('opens on the tab it is asked for', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+
+    expect(tabs(wrapper)[1]!.attributes('data-state')).toBe('on')
+    expect(wrapper.find('[data-testid="templates-empty"]').exists()).toBe(true)
+    expect(listCatalogApps).not.toHaveBeenCalled()
+  })
+
+  it('says when the templates cannot be loaded', async () => {
+    listHomeWorkflows.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountApps({ initialTab: 'templates' })
+
+    expect(wrapper.get('[data-testid="templates-catalog-failed"]').text()).toBe(
+      "Couldn't load the templates."
+    )
+  })
+
+  it('shows only the templates, without tabs, while the remote apps switch is off', async () => {
+    getAppsEnabled.mockResolvedValue(false)
+    const wrapper = await mountApps()
+
+    expect(wrapper.get('h1').text()).toBe('Explore')
+    expect(wrapper.find('[data-testid="explore-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="templates-empty"]').exists()).toBe(true)
+    expect(listCatalogApps).not.toHaveBeenCalled()
+  })
+
+  it('stays on Explore and moves to the templates when the remote apps switch turns off', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+
+    pushAppsSwitch!({ enabled: false })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="explore-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="templates-empty"]').exists()).toBe(true)
+  })
+
+  it('opens the app it is handed as soon as it shows', async () => {
+    const studio = catalogApp('studio', 'Cinematic Studio')
+    listCatalogApps.mockResolvedValue([studio])
+    const wrapper = await mountApps({ launchApp: studio })
+
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://apps.example/apps/studio/desktop.html' })
+    )
+    expect(wrapper.emitted('app-open')).toEqual([[true]])
   })
 })

@@ -50,7 +50,8 @@ import {
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { CatalogApp, DashboardPage, Installation } from '../types/ipc'
+import type { ExploreTab } from './exploreTab'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -171,6 +172,8 @@ const appsVisit = ref(0)
 const appsAppOpen = ref(false)
 const appsAppEntered = ref(false)
 const assetsFocusName = ref<string | null>(null)
+const exploreTab = ref<ExploreTab>('apps')
+const exploreLaunchApp = ref<CatalogApp | null>(null)
 const sidebarCollapsed = useLocalStorage(SIDEBAR_COLLAPSED_KEY, false)
 const appsGrowBy = computed(() => (sidebarCollapsed.value ? 0 : SIDEBAR_WIDTH - SIDEBAR_RAIL_WIDTH))
 
@@ -200,8 +203,16 @@ function viewInAssets(name: string): void {
   assetsFocusName.value = name
 }
 
+function openExplore(tab: ExploreTab, app: CatalogApp | null = null): void {
+  handleSidebarNavigate('apps')
+  exploreTab.value = tab
+  exploreLaunchApp.value = app
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
   assetsFocusName.value = null
+  exploreTab.value = 'apps'
+  exploreLaunchApp.value = null
   if (page === 'apps' && appsAppOpen.value) appsVisit.value++
   appsAppOpen.value = false
   appsAppEntered.value = false
@@ -488,12 +499,16 @@ onUnmounted(() => {
               v-if="dashboardHomePage === 'home'"
               @pick="openBuild"
               @show-builds="dashboardHomePage = 'chooser'"
+              @see-all="openExplore"
+              @open-app="openExplore('apps', $event)"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
               :key="appsVisit"
               :grow-by="appsGrowBy"
               :obscured="currentOverlay?.kind === 'takeover'"
+              :initial-tab="exploreTab"
+              :launch-app="exploreLaunchApp"
               @app-open="appsAppOpen = $event"
               @app-entered="appsAppEntered = $event"
               @view-in-assets="viewInAssets"

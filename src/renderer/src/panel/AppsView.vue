@@ -3,6 +3,10 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
+import TemplatesGallery from './TemplatesGallery.vue'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import { useAppsEnabled } from '../composables/useAppsEnabled'
+import type { ExploreTab } from './exploreTab'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
@@ -13,9 +17,16 @@ interface ShownAppOutputs {
   backdropUrl: string | null
 }
 
-const { growBy = 0, obscured = false } = defineProps<{
+const {
+  growBy = 0,
+  obscured = false,
+  initialTab = 'apps',
+  launchApp = null
+} = defineProps<{
   growBy?: number
   obscured?: boolean
+  initialTab?: ExploreTab
+  launchApp?: CatalogApp | null
 }>()
 
 const emit = defineEmits<{
@@ -31,6 +42,31 @@ const appEntered = ref(false)
 const appOutputs = ref<ShownAppOutputs | null>(null)
 const appOutputIndex = ref(0)
 const appOutputsShown = ref(0)
+const appsEnabled = useAppsEnabled()
+const tab = ref<ExploreTab>(initialTab)
+const shownTab = computed<ExploreTab>(() => (appsEnabled.value ? tab.value : 'templates'))
+const visitedTabs = ref(new Set<ExploreTab>())
+const tabOptions = computed(() => [
+  { value: 'apps' as const, label: t('explore.apps') },
+  { value: 'templates' as const, label: t('explore.templates') }
+])
+let pendingLaunch = launchApp
+
+watch(
+  [appsEnabled, shownTab],
+  ([enabled, shown]) => {
+    if (enabled === null) return
+    visitedTabs.value = new Set(visitedTabs.value).add(shown)
+    if (!enabled) {
+      openApp.value = null
+      pendingLaunch = null
+    } else if (pendingLaunch) {
+      openCatalogApp(pendingLaunch)
+      pendingLaunch = null
+    }
+  },
+  { immediate: true }
+)
 
 watch(openApp, (app) => {
   if (!app) {
@@ -132,10 +168,24 @@ onBeforeUnmount(() => {
   >
     <header v-if="!appFillsPage" class="mx-auto w-full max-w-300 px-10 pt-9 pb-3">
       <h1 class="m-0 font-display text-display font-semibold text-foreground">
-        {{ t('sidebar.apps') }}
+        {{ t('explore.title') }}
       </h1>
     </header>
-    <AppsGallery v-show="!appFillsPage" :load-failed-url="loadFailedUrl" @open="openCatalogApp" />
+    <div v-if="appsEnabled && !appFillsPage" class="mx-auto w-full max-w-300 px-10 py-3">
+      <SegmentedControl
+        v-model="tab"
+        :options="tabOptions"
+        :label="t('explore.sections')"
+        data-testid="explore-tabs"
+      />
+    </div>
+    <AppsGallery
+      v-if="visitedTabs.has('apps')"
+      v-show="shownTab === 'apps' && !appFillsPage"
+      :load-failed-url="loadFailedUrl"
+      @open="openCatalogApp"
+    />
+    <TemplatesGallery v-if="visitedTabs.has('templates')" v-show="shownTab === 'templates'" />
   </div>
   <AppsHost
     v-if="openApp"

@@ -1300,6 +1300,7 @@ describe('PanelApp', () => {
     })
     const wrapper = mountPanel()
     await flushPromises()
+    listCatalogApps.mockClear()
     const clickApps = async () => {
       await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
       await flushPromises()
@@ -1316,6 +1317,65 @@ describe('PanelApp', () => {
     await clickApps()
     expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="app-card-studio"]').isVisible()).toBe(true)
+  })
+
+  it('opens the app in front on Home inside Explore', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const showApps = vi.fn()
+    Object.assign(window.api, {
+      listCatalogApps: vi.fn().mockResolvedValue([
+        {
+          id: 'studio',
+          title: 'Cinematic Studio',
+          description: '',
+          thumbnailUrl: null,
+          category: 'image',
+          url: 'https://apps.example/apps/studio/desktop.html'
+        }
+      ]),
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
+      showApps,
+      hideApps: vi.fn(),
+      onAppsLoadFailed: vi.fn(() => () => {}),
+      onAppsAppOpen: vi.fn(() => () => {}),
+      onAppsOutput: vi.fn(() => () => {}),
+      onAppsSettled: vi.fn(() => () => {})
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-workflow-card"][data-arc-offset="0"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-testid="apps-host"]').exists()).toBe(true)
+    expect(showApps).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'https://apps.example/apps/studio/desktop.html' })
+    )
+  })
+
+  it('opens Explore on Templates from See all workflows on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    Object.assign(window.api, {
+      listHomeWorkflows: vi.fn().mockResolvedValue([
+        {
+          id: 'upscale',
+          title: 'Upscale and restore detail',
+          description: '',
+          thumbnailUrl: null,
+          category: null
+        }
+      ])
+    })
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-testid="explore-tabs"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="template-card-upscale"]').exists()).toBe(true)
   })
 
   it('moves to Assets with the Cloud file open when an app result asks for it', async () => {

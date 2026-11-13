@@ -20,6 +20,7 @@
     "navigation": "Navigation",
     "home": "Home",
     "apps": "Apps",
+    "explore": "Explore",
     "assets": "Assets",
     "tools": "Tools",
     "collapse": "Collapse sidebar",
@@ -123,6 +124,15 @@
     "comingSoon": "Coming soon",
     "loadFailed": "The app at {url} could not load."
   },
+  "explore": {
+    "title": "Explore",
+    "sections": "Explore sections",
+    "apps": "Apps",
+    "templates": "Templates",
+    "openTemplate": "Open {title} on Comfy Hub",
+    "templatesFailed": "Couldn't load the templates.",
+    "templatesEmpty": "No templates yet."
+  },
   "home": {
     "title": "Welcome. Let's create!",
     "openComfyUI": "Open ComfyUI",
@@ -137,7 +147,20 @@
     "showWorkflow": "Show {title}",
     "openWorkflow": "Open {title} on Comfy Hub",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "showing": "Show on Home",
+    "apps": "Apps",
+    "workflows": "Workflows",
+    "seeAllApps": "See all apps",
+    "showApp": "Show {title}",
+    "openApp": "Open {title}",
+    "appsUnavailable": "Apps couldn't be loaded. Check your connection and try again.",
+    "category": {
+      "image": "Image",
+      "video": "Video",
+      "3d": "3D",
+      "audio": "Audio"
+    }
   },
   "installType": {
     "standalone": "Standalone",

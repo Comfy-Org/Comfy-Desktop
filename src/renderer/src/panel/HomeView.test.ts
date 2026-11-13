@@ -1,19 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { CatalogWorkflow, Installation } from '../types/ipc'
+import type { CatalogApp, CatalogWorkflow, Installation } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
 const openCatalogWorkflowHub = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
+const listCatalogApps = vi.fn<() => Promise<CatalogApp[]>>()
+const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 
 function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
-  return { id, title, description: '', thumbnailUrl }
+  return { id, title, description: '', thumbnailUrl, category: null }
 }
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
@@ -24,7 +26,8 @@ const UPSCALE: CatalogWorkflow = {
   id: 'upscale',
   title: 'Upscale and restore detail',
   description: 'Enlarge an image and restore fine detail.',
-  thumbnailUrl: 'https://comfy.org/catalog-media/upscale/v1'
+  thumbnailUrl: 'https://comfy.org/catalog-media/upscale/v1',
+  category: null
 }
 const TALK = workflow('talk', 'Make your character talk')
 const SEVEN_WORKFLOWS = Array.from({ length: 7 }, (_, index) =>
@@ -61,8 +64,13 @@ beforeEach(() => {
   openCatalogWorkflow.mockResolvedValue(true)
   openCatalogWorkflowHub.mockResolvedValue(true)
   getInstallations.mockResolvedValue([])
+  listCatalogApps.mockResolvedValue([])
+  getAppsEnabled.mockResolvedValue(false)
   ;(window as unknown as { api: unknown }).api = {
     listHomeWorkflows,
+    listCatalogApps,
+    getAppsEnabled,
+    onAppsEnabledChanged: vi.fn(() => () => {}),
     openCatalogWorkflow,
     openCatalogWorkflowHub,
     getInstallations,
@@ -284,13 +292,14 @@ describe('Home example workflows', () => {
     expect(cardAt(wrapper, 1).attributes('aria-label')).toBe('Show Make your character talk')
   })
 
-  it('opens the full list of workflows on Comfy Hub from See all workflows', async () => {
+  it('opens Explore on its Templates tab from See all workflows', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE])
     const wrapper = await openHome()
 
     await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
 
-    expect(openCatalogWorkflowHub).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('see-all')).toEqual([['templates']])
+    expect(openCatalogWorkflowHub).not.toHaveBeenCalled()
   })
 
   it('shows placeholders while the catalog is loading', async () => {
@@ -316,6 +325,159 @@ describe('Home example workflows', () => {
 
     expect(wrapper.find('[data-testid="home-workflows-unavailable"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-testid="home-workflow-card"]')).toHaveLength(1)
+  })
+})
+
+function catalogApp(
+  id: string,
+  title: string,
+  category: CatalogApp['category'] = null
+): CatalogApp {
+  return {
+    id,
+    title,
+    description: '',
+    thumbnailUrl: null,
+    category,
+    url: `https://apps.example/apps/#/${id}`
+  }
+}
+
+const FOURTEEN_APPS = Array.from({ length: 14 }, (_, index) =>
+  catalogApp(`app-${index}`, `App ${index}`)
+)
+
+function homeTabs(wrapper: VueWrapper) {
+  return wrapper.get('[data-testid="home-tabs"]').findAll('button')
+}
+
+async function pickHomeTab(wrapper: VueWrapper, label: string): Promise<void> {
+  const tab = homeTabs(wrapper).find((button) => button.text() === label)!
+  await tab.trigger('mousedown')
+  await tab.trigger('click')
+  await flushPromises()
+}
+
+function frontTitle(wrapper: VueWrapper): string {
+  return cardAt(wrapper, 0).get('.truncate').text()
+}
+
+function seeAllLabel(wrapper: VueWrapper): string {
+  return wrapper.get('[data-testid="home-see-all-workflows"]').text()
+}
+
+describe('Home tabs', () => {
+  it('shows no tabs and only workflows while the remote apps switch is off', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+
+    expect(wrapper.find('[data-testid="home-tabs"]').exists()).toBe(false)
+    expect(frontTitle(wrapper)).toBe('Workflow 0')
+    expect(seeAllLabel(wrapper)).toBe('See all workflows')
+    expect(listCatalogApps).not.toHaveBeenCalled()
+  })
+
+  it('shows Apps then Workflows with Apps picked, and the first twelve apps in the carousel', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listCatalogApps.mockResolvedValue(FOURTEEN_APPS)
+    const wrapper = await openHome()
+
+    expect(homeTabs(wrapper).map((tab) => tab.text())).toEqual(['Apps', 'Workflows'])
+    expect(homeTabs(wrapper)[0]!.attributes('data-state')).toBe('on')
+    expect(wrapper.findAll('[data-testid="home-workflow-card"]')).toHaveLength(12)
+    expect(frontTitle(wrapper)).toBe('App 0')
+    expect(cardAt(wrapper, 0).attributes('aria-label')).toBe('Open App 0')
+    expect(seeAllLabel(wrapper)).toBe('See all apps')
+  })
+
+  it('opens the front app in Explore', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    listCatalogApps.mockResolvedValue(FOURTEEN_APPS)
+    const wrapper = await openHome()
+
+    await cardAt(wrapper, 0).trigger('click')
+
+    expect(wrapper.emitted('open-app')).toEqual([[FOURTEEN_APPS[0]]])
+    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('opens Explore on its Apps tab from See all apps', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    listCatalogApps.mockResolvedValue(FOURTEEN_APPS)
+    const wrapper = await openHome()
+
+    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
+
+    expect(wrapper.emitted('see-all')).toEqual([['apps']])
+  })
+
+  it('fades the apps out and brings the workflows in, changing See all with the cards', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listCatalogApps.mockResolvedValue(FOURTEEN_APPS)
+    const wrapper = await openHome()
+    const stage = () => wrapper.get('[data-testid="home-carousel-stage"]')
+
+    await pickHomeTab(wrapper, 'Workflows')
+
+    expect(stage().attributes('data-fading')).toBe('true')
+    expect(frontTitle(wrapper)).toBe('App 0')
+    expect(seeAllLabel(wrapper)).toBe('See all apps')
+
+    await vi.waitFor(() => expect(stage().attributes('data-fading')).toBe('false'), {
+      timeout: 3000
+    })
+    expect(frontTitle(wrapper)).toBe('Workflow 0')
+    expect(seeAllLabel(wrapper)).toBe('See all workflows')
+
+    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
+    expect(wrapper.emitted('see-all')).toEqual([['templates']])
+  })
+
+  it('swaps the cards at once when motion is reduced', async () => {
+    const matchMedia = vi
+      .spyOn(window, 'matchMedia')
+      .mockImplementation((query) => ({ matches: query.includes('reduce') }) as MediaQueryList)
+    onTestFinished(() => matchMedia.mockRestore())
+    getAppsEnabled.mockResolvedValue(true)
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    listCatalogApps.mockResolvedValue(FOURTEEN_APPS)
+    const wrapper = await openHome()
+
+    await pickHomeTab(wrapper, 'Workflows')
+
+    expect(wrapper.get('[data-testid="home-carousel-stage"]').attributes('data-fading')).toBe(
+      'false'
+    )
+    expect(frontTitle(wrapper)).toBe('Workflow 0')
+    expect(seeAllLabel(wrapper)).toBe('See all workflows')
+  })
+
+  it('labels the front card with the kind of media it makes, and only the front card', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    listCatalogApps.mockResolvedValue([
+      catalogApp('reshoot', 'Re-shoot a video', 'video'),
+      catalogApp('studio', 'Cinematic Studio', 'image'),
+      catalogApp('plain', 'Plain app')
+    ])
+    const wrapper = await openHome()
+
+    const badges = wrapper.findAll('[data-testid="home-card-category"]')
+    expect(badges).toHaveLength(1)
+    expect(cardAt(wrapper, 0).get('[data-testid="home-card-category"]').text()).toBe('Video')
+
+    await cardAt(wrapper, 1).trigger('click')
+
+    expect(cardAt(wrapper, 0).get('[data-testid="home-card-category"]').text()).toBe('Image')
+  })
+
+  it('shows no label on a front card without a category', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    listCatalogApps.mockResolvedValue([catalogApp('plain', 'Plain app')])
+    const wrapper = await openHome()
+
+    expect(wrapper.find('[data-testid="home-card-category"]').exists()).toBe(false)
   })
 })
 
