@@ -2255,14 +2255,33 @@ body:has(.mss-first) [data-reka-popper-content-wrapper] {
   font-size: 12px;
 }
 
-:root .proto-ui.proto-ui.proto-ui .mss-quiet-input {
-  flex: 1;
-  margin-left: -15px;
-  border-color: transparent;
-  background: transparent;
-  transition: background-color 120ms ease;
+:root .proto-ui.proto-ui.proto-ui .mss-newbuild-name {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 4px 16px;
 }
-:root .proto-ui.proto-ui.proto-ui .mss-quiet-input:hover,
-:root .proto-ui.proto-ui.proto-ui .mss-quiet-input:focus-within {
-  background: var(--color-secondary-background);
+:root .proto-ui.proto-ui.proto-ui .mss-newbuild-name + .mss-machine.is-hero {
+  margin-top: 12px;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-name-input {
+  border-color: transparent;
+}
+/* New build's list sits on the modal itself, no fill. */
+:root .proto-ui.proto-ui.proto-ui .mss-summary.is-plain {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mss-summary.is-plain .mss-row dt,
+:root .proto-ui.proto-ui.proto-ui .mss-newbuild-name .mss-form-label {
+  color: var(--color-muted-foreground);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+:root .proto-ui.proto-ui.proto-ui .mss-browse-outline {
+  color: var(--color-base-foreground);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.16);
 }

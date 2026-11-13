@@ -606,6 +606,12 @@ function rowState(i: number): string {
                 ? `Another ComfyUI on ${DETECTED.noun}, with its own version and nodes. It installs in Builds while you keep working.`
                 : `Checked for your ${DETECTED.chip}. Change anything before you install.`
             }}</DialogDescription>
+            <!-- New build: the name, the one thing the first install never
+                 asked, on top with a field you can see is editable. -->
+            <div v-if="newBuild" class="mss-newbuild-name">
+              <label class="mss-form-label" for="mss-build-name"><Tag :size="15" />Name</label>
+              <Input id="mss-build-name" v-model="buildName" class="mss-name-input" />
+            </div>
             <!-- The machine it checked, drawn large: the subject of the
                  screen. What it gets is the list below. -->
             <div class="mss-machine is-hero">
@@ -626,15 +632,11 @@ function rowState(i: number): string {
             <!-- What gets installed: one grouped list, as the Home's settings,
                  a line each: what it is, its value, its detail. Only a problem
                  gets a mark. -->
-            <dl class="mss-summary is-stacked" aria-label="Install summary">
-              <!-- New build: the name, the one thing the first install never
-                   asked, first in the list; its field shows only on hover. -->
-              <div v-if="newBuild" class="mss-row mss-name-row">
-                <dt><Tag :size="15" /><label for="mss-build-name">Name</label></dt>
-                <dd>
-                  <Input id="mss-build-name" v-model="buildName" class="mss-quiet-input" />
-                </dd>
-              </div>
+            <dl
+              class="mss-summary is-stacked"
+              :class="newBuild && 'is-plain'"
+              aria-label="Install summary"
+            >
               <div class="mss-row">
                 <dt><Package :size="15" />Release</dt>
                 <dd>
@@ -678,7 +680,13 @@ function rowState(i: number): string {
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
-                <Button size="sm" variant="subtle" @click="flow.movedDisk = true">Browse</Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="mss-browse-outline"
+                  @click="flow.movedDisk = true"
+                  >Browse</Button
+                >
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
               <div v-if="localSetup.machine === 'legacy' && flow.bringOver" class="mss-row">
@@ -826,7 +834,7 @@ function rowState(i: number): string {
                 />
               </div>
             </div>
-            <!-- New build asks its name on the summary, first in its list. -->
+            <!-- New build asks its name on the summary, in its own row on top. -->
             <div v-if="!simple && (flow.takeover || flow.homeCard)" class="mss-form-row">
               <span class="mss-form-label"><Tag :size="15" />Name</span>
               <Input v-model="name" aria-label="Name" />
