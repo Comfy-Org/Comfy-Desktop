@@ -6,6 +6,8 @@ import InstallWizardModal from './InstallWizardModal.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import SetupOptionCards from '../components/SetupOptionCards.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
+import TrackModal from './TrackModal.vue'
+import LoadSnapshotModal from './LoadSnapshotModal.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -76,9 +78,9 @@ describe('InstallWizardModal heading', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    expect(wrapper.get('.wizard-title').text()).toBe('New Build')
+    expect(wrapper.get('.setup-modal-title').text()).toBe('New Build')
     expect(wrapper.find('[aria-label="New Build"]').exists()).toBe(true)
-    expect(wrapper.get('.wizard-lead').text()).toBe('Setup a fresh ComfyUI install.')
+    expect(wrapper.get('.setup-modal-lead').text()).toBe('Setup a fresh ComfyUI install.')
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(false)
   })
@@ -112,7 +114,7 @@ describe('InstallWizardModal heading', () => {
 
     await showChangeSetup(wrapper)
 
-    expect(wrapper.get('.wizard-title').text()).toBe('Change setup')
+    expect(wrapper.get('.setup-modal-title').text()).toBe('Change setup')
     expect(wrapper.get('#source-fields').text()).toContain('Apple Silicon (MPS)')
     expect(wrapper.find('[data-testid="install-location-field"]').exists()).toBe(true)
 
@@ -494,7 +496,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe(
+    expect(wrapper.get('.setup-modal-lead').text()).toBe(
       'Everything here is already set to what fits this computer.'
     )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
@@ -634,7 +636,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe(
+    expect(wrapper.get('.setup-modal-lead').text()).toBe(
       'Everything here is already set to what fits this computer.'
     )
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
@@ -708,7 +710,7 @@ describe('InstallWizardModal workspace Builds', () => {
     signInToWorkspace([])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('.wizard-lead').text()).toBe(
+    expect(wrapper.get('.setup-modal-lead').text()).toBe(
       'Everything here is already set to what fits this computer.'
     )
     expect(
@@ -1366,15 +1368,40 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.find('.setup-option__icon svg').exists()).toBe(true)
   })
 
-  it('opens Add existing build and Load snapshot from the aside line', async () => {
+  it('stacks Add existing build and Load snapshot over Change setup, keeping it underneath', async () => {
     const wrapper = await openChangeSetup()
     expect(wrapper.get('[data-testid="config-add-existing"]').text()).toBe('Add existing build')
     expect(wrapper.get('[data-testid="config-load-snapshot"]').text()).toBe('Load snapshot')
 
     await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
-    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="track-modal"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(true)
 
-    expect(wrapper.emitted('show-build-import')).toEqual([['track'], ['load-snapshot']])
+    await wrapper.get('[data-testid="track-modal"] .setup-modal-close').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="track-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="load-snapshot-modal"]').exists()).toBe(true)
+  })
+
+  it('passes a finished build import on to the panel', async () => {
+    const wrapper = await openChangeSetup()
+
+    await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
+    await flushPromises()
+    wrapper.getComponent(TrackModal).vm.$emit('navigate-list')
+    expect(wrapper.emitted('navigate-list')).toHaveLength(1)
+
+    wrapper.getComponent(TrackModal).vm.$emit('close')
+    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
+    await flushPromises()
+    const progress = { installationId: 'inst-1', title: 'Installing' }
+    wrapper.getComponent(LoadSnapshotModal).vm.$emit('show-progress', progress)
+    expect(wrapper.emitted('show-progress')).toEqual([[progress]])
   })
 
   it('leaves the build import links out of the first-use chain', async () => {

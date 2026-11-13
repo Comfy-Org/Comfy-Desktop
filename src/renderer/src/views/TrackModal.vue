@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import InputGroupAddon from '@comfyorg/design-system/input-group/InputGroupAddon'
 import { ref, computed, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { TID } from '../../../shared/testIds'
-import { HardDrive } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
-import BrandTakeoverLayout from '../components/BrandTakeoverLayout.vue'
-import TakeoverBack from '../components/TakeoverBack.vue'
+import SetupModal from '../components/SetupModal.vue'
+import SetupFormRow from '../components/SetupFormRow.vue'
+import InstallLocationRow from '../components/InstallLocationRow.vue'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 
@@ -20,11 +19,6 @@ const emit = defineEmits<{
   close: []
   'navigate-list': []
 }>()
-
-const brandInputClass =
-  'flex w-full items-center gap-2.5 rounded-md border border-solid border-[var(--color-border)] bg-[var(--brand-surface-bg)] text-[length:var(--takeover-fs-body)] text-neutral-100 [font-family:inherit] transition-[border-color,background] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] has-[input:focus-visible]:[box-shadow:0_0_0_2px_color-mix(in_srgb,var(--action)_35%,transparent)]'
-const browseClass =
-  'static flex h-10 items-center justify-center rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-0 text-[13px] leading-[inherit] font-medium whitespace-normal text-neutral-100 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[var(--brand-surface-border-hover)] enabled:hover:bg-[var(--brand-surface-bg-hover)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55'
 
 const { t } = useI18n()
 const modal = useModal()
@@ -198,163 +192,83 @@ defineExpose({ open })
 </script>
 
 <template>
-  <BrandTakeoverLayout
+  <SetupModal
     v-if="isOpen"
-    dismissible
-    :aria-label="$t('track.grandTitle')"
+    :dialog-label="$t('track.grandTitle')"
+    :title="$t('track.grandTitle')"
+    :lead="$t('track.grandSubtitle')"
+    dismiss-on-escape
+    data-testid="track-modal"
     @close="emit('close')"
   >
-    <div
-      class="track-shell mx-auto flex h-full max-h-full min-h-0 w-full max-w-[640px] flex-col items-center justify-center self-stretch py-[clamp(1.5rem,4vh,3rem)] text-center"
-      data-testid="track-modal"
-    >
-      <h1
-        class="track-title m-0 text-[length:var(--takeover-fs-title)] leading-[1.15] font-extrabold text-white [font-family:var(--font-display)] opacity-85 text-center"
-      >
-        {{ $t('track.grandTitle') }}
-      </h1>
-      <p
-        class="track-lead mt-[var(--takeover-gap-md)] mr-0 mb-[var(--takeover-gap-lg)] ml-0 text-[length:var(--takeover-fs-lead)] leading-[normal] font-normal text-neutral-200 [font-family:var(--font-sans)] text-center"
-      >
-        {{ $t('track.grandSubtitle') }}
-      </p>
-      <div
-        class="track-card flex max-h-full w-full flex-col overflow-hidden rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-left [backdrop-filter:blur(var(--brand-surface-blur))]"
-      >
-        <div
-          class="track-card-body flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
-            <label class="track-label text-[13px] text-neutral-200">{{
-              $t('track.installDir')
-            }}</label>
-            <div class="track-path-row flex items-stretch gap-2">
-              <div :class="[brandInputClass, 'track-path-input h-10 min-w-0 flex-auto px-3 py-0']">
-                <HardDrive :size="14" aria-hidden="true" />
-                <Button
-                  v-if="trackPath"
-                  variant="textonly"
-                  size="unset"
-                  type="button"
-                  class="track-path-open static block min-w-0 flex-[0_1_auto] cursor-pointer overflow-hidden rounded-lg border-none bg-transparent p-0 text-left text-ellipsis whitespace-nowrap text-inherit [font:inherit] appearance-auto touch-auto [&]:[appearance:button] transition-none hover:bg-transparent hover:text-inherit hover:underline focus-visible:bg-transparent focus-visible:text-inherit focus-visible:underline focus-visible:[box-shadow:none] focus-visible:outline-none"
-                  :title="$t('actions.openDirectory')"
-                  :aria-label="`${$t('actions.openDirectory')}: ${trackPath}`"
-                  @click="handleOpenTrackPath"
-                >
-                  {{ trackPath }}
-                </Button>
-                <span
-                  v-else
-                  class="track-path-placeholder min-w-0 flex-[0_1_auto] cursor-default overflow-hidden border-none bg-transparent p-0 text-left text-ellipsis whitespace-nowrap text-neutral-400 [font:inherit]"
-                  >{{ $t('track.selectDir') }}</span
-                >
-              </div>
-              <Button
-                variant="textonly"
-                size="unset"
-                :class="browseClass"
-                :data-testid="TID.trackBrowse"
-                type="button"
-                @click="handleBrowse"
-              >
-                {{ $t('common.browse') }}
-              </Button>
-            </div>
-          </div>
-
-          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
-            <label class="track-label text-[13px] text-neutral-200" for="track-name">{{
-              $t('common.name')
-            }}</label>
-            <InputGroup>
-              <InputGroupInput
-                id="track-name"
-                v-model="trackName"
-                data-initial-focus
-                type="text"
-                :placeholder="suggestedName || $t('common.namePlaceholder')"
-              />
-            </InputGroup>
-          </div>
-
-          <div class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]">
-            <label class="track-label text-[13px] text-neutral-200">{{
-              $t('track.detectedType')
-            }}</label>
-            <BaseSelect
-              :model-value="selectedProbeValue"
-              :options="probeOptions"
-              :placeholder="selectPlaceholder"
-              :disabled="probing || probeResults.length <= 1"
-              :aria-label="$t('track.detectedType')"
-              @update:model-value="onProbeSelect"
-            />
-          </div>
-
-          <div
-            v-if="detailFields.length > 0"
-            class="track-summary flex flex-col gap-0.5 rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-3.5"
-          >
-            <div
-              v-for="field in detailFields"
-              :key="field.label"
-              class="track-summary-row flex items-baseline justify-between gap-3 py-1.5 text-[length:var(--takeover-fs-body)] [&+&]:border-t [&+&]:border-solid [&+&]:border-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]"
-            >
-              <span class="track-summary-label flex-none text-neutral-300">{{ field.label }}</span>
-              <span class="track-summary-value max-w-[60%] truncate font-medium text-neutral-100">{{
-                field.value
-              }}</span>
-            </div>
-          </div>
-
-          <div
-            v-if="showVenvField"
-            class="track-field flex flex-col gap-2 [&_.ui-select-trigger]:text-[14px]"
-          >
-            <label class="track-label text-[13px] text-neutral-200">{{ $t('git.venv') }}</label>
-            <div class="track-path-row flex items-stretch gap-2">
-              <InputGroup class="track-path-input min-w-0 flex-auto">
-                <InputGroupAddon><HardDrive :size="14" aria-hidden="true" /></InputGroupAddon>
-                <InputGroupInput
-                  type="text"
-                  :model-value="effectiveVenvName || $t('git.venvNotFound')"
-                  disabled
-                />
-              </InputGroup>
-              <Button
-                variant="textonly"
-                size="unset"
-                :class="browseClass"
-                type="button"
-                @click="handleBrowseVenv"
-              >
-                {{ $t('common.browse') }}
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div
-          class="track-card-footer flex flex-none items-center justify-end gap-3 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-5 py-3.5"
-        >
-          <Button
-            variant="inverted"
-            size="unset"
-            class="track-save static inline-flex min-w-[120px] items-center justify-center rounded-lg border border-solid border-comfy-yellow bg-comfy-yellow px-4 py-2.5 text-[length:var(--takeover-fs-body)] leading-[inherit] font-medium whitespace-normal text-neutral-900 appearance-auto touch-auto [&]:[appearance:button] transition-[background,border-color,color] duration-[120ms] ease-[ease] enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] focus-visible:[box-shadow:none] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:bg-comfy-yellow"
-            :disabled="saveDisabled"
-            @click="handleSave"
-          >
-            {{ $t('track.trackInstallation') }}
-          </Button>
-        </div>
-      </div>
-    </div>
-    <template #footer-left>
-      <TakeoverBack
-        class="track-back-to-dashboard absolute bottom-[clamp(1.25rem,2vw,2rem)] left-[clamp(1.25rem,2vw,2rem)] z-2"
-        :label="$t('common.backToDashboard')"
-        @back="emit('close')"
+    <div class="track-form mt-4 flex flex-col">
+      <InstallLocationRow
+        class="track-location"
+        :label="$t('track.installDir')"
+        :path="trackPath"
+        :placeholder="$t('track.selectDir')"
+        :browse-test-id="TID.trackBrowse"
+        @browse="handleBrowse"
+        @open="handleOpenTrackPath"
       />
+
+      <SetupFormRow :label="$t('common.name')" label-for="track-name">
+        <InputGroup class="config-input">
+          <InputGroupInput
+            id="track-name"
+            v-model="trackName"
+            data-initial-focus
+            type="text"
+            :placeholder="suggestedName || $t('common.namePlaceholder')"
+          />
+        </InputGroup>
+      </SetupFormRow>
+
+      <SetupFormRow :label="$t('track.detectedType')">
+        <BaseSelect
+          :model-value="selectedProbeValue"
+          :options="probeOptions"
+          :placeholder="selectPlaceholder"
+          :disabled="probing || probeResults.length <= 1"
+          :aria-label="$t('track.detectedType')"
+          @update:model-value="onProbeSelect"
+        />
+      </SetupFormRow>
+
+      <SetupFormRow
+        v-for="field in detailFields"
+        :key="field.label"
+        class="track-summary-row"
+        :label="field.label"
+        control-height="line"
+      >
+        <span class="track-summary-value truncate text-[13px] leading-5 text-neutral-100">{{
+          field.value
+        }}</span>
+      </SetupFormRow>
+
+      <InstallLocationRow
+        v-if="showVenvField"
+        class="track-venv"
+        :label="$t('git.venv')"
+        path=""
+        :placeholder="effectiveVenvName || $t('git.venvNotFound')"
+        @browse="handleBrowseVenv"
+      />
+    </div>
+
+    <template #footer>
+      <span class="flex-1" />
+      <Button
+        type="button"
+        size="lg"
+        variant="inverted"
+        class="track-save h-9 min-w-[104px] rounded-[10px]"
+        :disabled="saveDisabled"
+        @click="handleSave"
+      >
+        {{ $t('track.trackInstallation') }}
+      </Button>
     </template>
-  </BrandTakeoverLayout>
+  </SetupModal>
 </template>

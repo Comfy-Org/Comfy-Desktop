@@ -159,7 +159,7 @@ test('open-new-install dismisses the popup and opens the New Build modal @window
   const tail = await ctx.panel.evaluate<number | null>(
     `(() => {
       const summary = document.querySelector('[data-testid="config-summary"]')
-      const box = summary?.closest('.install-wizard-body')
+      const box = summary?.closest('.setup-modal-body')
       if (!summary || !box) return null
       const top = box.getBoundingClientRect().top - box.scrollTop
       const contentEnd = summary.getBoundingClientRect().bottom - top

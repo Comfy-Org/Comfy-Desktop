@@ -46,7 +46,7 @@ test('clicking New Install tile opens the new-install takeover @windows @macos @
   await expectNewBuildModalOpen(ctx.panel)
   await openNewBuildChangeSetup(ctx.panel)
   expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
-  expect(await ctx.panel.click('.config-back-to-dashboard')).toBe(true)
+  expect(await ctx.panel.click('.setup-modal-close')).toBe(true)
   await expect.poll(() => ctx.panel.exists('[data-testid="new-build-modal"]')).toBe(false)
   await expectChooserVisible(ctx.panel)
 })
@@ -71,7 +71,7 @@ test('Builds dropdown opens both import flows and restores focus on Escape @wind
     await ctx.panel.waitForVisible(item)
     expect(await ctx.panel.click(item)).toBe(true)
     await ctx.panel.waitForVisible(`[data-testid="${modal}"]`)
-    expect(await ctx.panel.click('.takeover-back')).toBe(true)
+    expect(await ctx.panel.click('.setup-modal-close')).toBe(true)
     await expect.poll(() => ctx.panel.exists(`[data-testid="${modal}"]`)).toBe(false)
     await expectChooserVisible(ctx.panel)
   }

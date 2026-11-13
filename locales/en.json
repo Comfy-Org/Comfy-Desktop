@@ -369,11 +369,11 @@
   },
   "list": {
     "loadSnapshot": "Load Snapshot",
-    "snapshotSourceName": "Source Build",
-    "snapshotCount": "Total Snapshots",
-    "snapshotTimeline": "Snapshot History",
+    "snapshotSourceName": "Source build",
+    "snapshotCount": "Total snapshots",
+    "snapshotTimeline": "Snapshot history",
     "snapshotNewestDetail": "Newest Snapshot (will be restored)",
-    "snapshotCreateInstall": "Create Build",
+    "snapshotCreateInstall": "Create build",
     "snapshotDropHint": "Drop a snapshot .json file here",
     "snapshotNameHint": "Characters like < > : \" / \\ | ? * will be removed",
     "snapshotRelease": "Release",
@@ -393,7 +393,7 @@
     "confirmInstall": "Install ComfyUI"
   },
   "loadSnapshot": {
-    "grandTitle": "Load Snapshot",
+    "grandTitle": "Load snapshot",
     "grandSubtitle": "Load a snapshot file to install a build."
   },
   "newInstall": {
@@ -516,7 +516,7 @@
   },
   "track": {
     "title": "Add Existing Build",
-    "grandTitle": "Add Existing Build",
+    "grandTitle": "Add existing build",
     "grandSubtitle": "Add an existing ComfyUI install to Comfy Desktop.",
     "installDir": "Install location",
     "selectDir": "Select a directory…",
@@ -524,7 +524,7 @@
     "browseDirFirst": "Browse to a directory first",
     "detecting": "Detecting…",
     "noDetected": "No known install detected",
-    "trackInstallation": "Add Build",
+    "trackInstallation": "Add build",
     "cannotTrack": "Cannot Add Build",
     "version": "Version",
     "repository": "Repository",
