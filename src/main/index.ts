@@ -1111,6 +1111,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           })
           return
         }
+        if (!allowDuplicate) claimAttachHost(installationId, target.windowKey)
         mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
           to_installation_id: installationId,
           method: 'picker'
