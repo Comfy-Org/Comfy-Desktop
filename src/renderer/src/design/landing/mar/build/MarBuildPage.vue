@@ -31,26 +31,20 @@ import {
 } from 'lucide-vue-next'
 import Badge from '../../ui/Badge.vue'
 import Button from '../../ui/Button.vue'
-import Card from '../../ui/Card.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
-import Sparkline from '../../ui/Sparkline.vue'
 import StatusDot from '../../ui/StatusDot.vue'
 import AssetsPage from '../../pages/AssetsPage.vue'
 import ProjectWorkflows from '../../pages/project/ProjectWorkflows.vue'
 import InstanceGlyph from '../../parts/InstanceGlyph.vue'
 import WorkflowCard from '../../parts/WorkflowCard.vue'
 import EnvLaunchButton from '../../parts/env/EnvLaunchButton.vue'
-import StatTile from '../../parts/env/StatTile.vue'
 import {
   deploymentsOf,
   envKind,
   envStatus,
-  fmt,
   fmtCompact,
-  fmtGpu,
   isPublished,
   runsOn,
-  statsOf,
   versionsOf
 } from '../../parts/env/env'
 import { allWorkflows } from '../../gallery'
@@ -140,7 +134,6 @@ const pending = computed(() => pendingOf(env))
 
 const k = computed(() => envKind(env))
 const st = computed(() => envStatus(env))
-const s = computed(() => statsOf(env))
 const versions = computed(() => versionsOf(env))
 // Deployments come with the Builder (Milestone 6).
 const deps = computed(() => (can.value.builder ? deploymentsOf(env.id) : []))
@@ -548,36 +541,10 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
       <BuildTerminal v-else-if="tab === 'terminal'" :env />
     </template>
 
+    <!-- Overview: the build's facts as cards (Comfy-Desktop#2062), then
+         the workflows made on it. -->
     <template v-else-if="tab === 'overview'">
-      <Card
-        class="grid divide-x divide-border-default"
-        :class="can.builder ? 'grid-cols-4' : 'grid-cols-3'"
-      >
-        <StatTile label="Runs · 7 days" :value="fmt(s.runs7d)"
-          ><Sparkline :values="s.trend"
-        /></StatTile>
-        <StatTile label="GPU time · 7 days" :value="fmtGpu(s.gpuMin7d)" :hint="env.gpu" />
-        <StatTile
-          v-if="k === 'local'"
-          label="On disk"
-          :value="`${s.storageGb} GB`"
-          hint="412 GB free"
-        />
-        <StatTile
-          v-else
-          label="Credits · 7 days"
-          :value="fmt(s.spend7d)"
-          hint="Sessions on Comfy Cloud"
-        />
-        <StatTile
-          v-if="can.builder"
-          label="API requests · 7 days"
-          :value="deps.length ? fmtCompact(deps.reduce((n, d) => n + d.requests7d, 0)) : '—'"
-          :hint="
-            deps.length ? `${deps.length} deployment${deps.length > 1 ? 's' : ''}` : 'Not deployed'
-          "
-        />
-      </Card>
+      <BuildOverview :env :own on-page />
       <SectionHeader
         title="Recent workflows"
         class="mar-sec mt-7"
