@@ -57,7 +57,13 @@ export const MILESTONES = [
 // Each run of the app opens on the latest milestone; within a run (a
 // reload included) it stays on the one picked.
 const MILESTONE_KEY = 'comfy.design.milestone'
-proto.milestone = Number(sessionStorage.getItem(MILESTONE_KEY) ?? MILESTONES.at(-1)!.value)
+// A shared link can open on one milestone: ?milestone=4.7 (Milestone 3).
+const fromUrl = new URLSearchParams(location.search).get('milestone')
+proto.milestone = Number(
+  (fromUrl && MILESTONES.some((m) => m.value === fromUrl) ? fromUrl : null) ??
+    sessionStorage.getItem(MILESTONE_KEY) ??
+    MILESTONES.at(-1)!.value
+)
 watch(
   () => proto.milestone,
   (m) => sessionStorage.setItem(MILESTONE_KEY, String(m))
