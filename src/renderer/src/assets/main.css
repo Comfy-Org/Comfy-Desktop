@@ -322,3 +322,7 @@
   font-size: 12px;
   line-height: 16px;
 }
+
+[data-reka-menu-content] [role='separator'] {
+  margin-inline: -4px;
+}

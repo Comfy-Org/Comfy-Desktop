@@ -104,7 +104,7 @@ onUnmounted(() => {
     <template v-for="(item, idx) in items" :key="idx">
       <li
         v-if="item.kind === 'separator'"
-        class="separator mx-1 my-1 h-px bg-border opacity-100"
+        class="separator -mx-1 my-1 h-px bg-border opacity-100"
         role="separator"
       />
       <li
