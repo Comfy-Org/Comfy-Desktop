@@ -27,6 +27,7 @@ import {
   isVersionsIndex,
   isWorkflow,
   MAX_UPLOAD_BYTES,
+  openAppId,
   readCapped,
   type OutputFile,
   readable,
@@ -47,7 +48,7 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
-import { isAppsEnabled } from './appsSwitch'
+import { isAppsEnabled, onAppsEnabledChanged } from './appsSwitch'
 import {
   type CloudRefusal,
   cloudRefusal,
@@ -56,6 +57,7 @@ import {
   trackFromPage,
   type Where
 } from './appEvents'
+import { desktopAppIds } from './desktopApps'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
 const APPS_ORIGIN = appsOrigin(APPS_URL)
@@ -67,12 +69,9 @@ const failedViews = new WeakSet<WebContentsView>()
 
 export const APPS_LOAD_FAILED_CHANNEL = 'comfy-apps:load-failed'
 export const APPS_APP_OPEN_CHANNEL = 'comfy-apps:app-open'
+export const APPS_ENABLED_CHANNEL = 'comfy-apps:enabled'
 
 const appOpen = new Map<number, boolean>()
-
-interface AppPage {
-  app: string | null
-}
 
 export interface AppsRect {
   x: number
@@ -90,6 +89,15 @@ function openOutside(url: string): void {
 
 function tellPanelLoadFailed(panel: WebContents | undefined, url: string): void {
   if (panel && !panel.isDestroyed()) panel.send(APPS_LOAD_FAILED_CHANNEL, { url })
+}
+
+function tellPanelAppsEnabled(panel: WebContents | undefined, on: boolean): void {
+  if (panel && !panel.isDestroyed()) panel.send(APPS_ENABLED_CHANNEL, { enabled: on })
+}
+
+function tellPanelsAppsEnabled(on: boolean): void {
+  for (const entry of comfyWindows.values()) tellPanelAppsEnabled(entry.panelView?.webContents, on)
+  if (!on) for (const view of views.values()) view.setVisible(false)
 }
 
 function tellPanelAppOpen(key: number): void {
@@ -123,8 +131,8 @@ function secureAppsSession(): void {
   securedSession = appsSession
 }
 
-function keepOnAppsOrigin(event: { preventDefault(): void }, url: string): void {
-  if (isAppsFrameUrl(url, APPS_ORIGIN)) return
+function keepInApps(event: { preventDefault(): void }, url: string): void {
+  if (isAppsFrameUrl(url, APPS_URL)) return
   event.preventDefault()
   openOutside(url)
 }
@@ -142,9 +150,9 @@ function createAppsView(key: number): WebContentsView {
   })
   view.setBorderRadius(14)
   const wc = view.webContents
-  wc.on('will-navigate', keepOnAppsOrigin)
+  wc.on('will-navigate', keepInApps)
   wc.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) keepOnAppsOrigin(event, url)
+    if (isMainFrame) keepInApps(event, url)
   })
   wc.setWindowOpenHandler(({ url }) => {
     openOutside(url)
@@ -161,6 +169,7 @@ function createAppsView(key: number): WebContentsView {
     if (isMainFrame) trackAppOpen(key, url)
   })
   wc.loadURL(APPS_URL).catch(() => {})
+  void desktopAppIds()
   return view
 }
 
@@ -174,7 +183,7 @@ function entryForPanel(
 }
 
 function showApps(event: IpcMainEvent, rect: unknown): void {
-  if (!isAppsEnabled()) return
+  if (!isAppsEnabled()) return tellPanelAppsEnabled(event.sender, false)
   const found = entryForPanel(event.sender)
   if (!found) return
   if (!APPS_ORIGIN) return tellPanelLoadFailed(event.sender, APPS_URL)
@@ -217,12 +226,11 @@ function hideApps(event: IpcMainEvent): void {
   views.get(found[0])?.setVisible(false)
 }
 
-function fromAppsPage(event: IpcMainInvokeEvent): boolean {
+function appsPageUrl(event: IpcMainInvokeEvent): string | null {
   const ours = [...views.values()].some((v) => v.webContents === event.sender)
   const frame = event.senderFrame
-  return (
-    ours && !!frame && frame === event.sender.mainFrame && isAppsFrameUrl(frame.url, APPS_ORIGIN)
-  )
+  if (!ours || !frame || frame !== event.sender.mainFrame) return null
+  return isAppsFrameUrl(frame.url, APPS_URL) ? frame.url : null
 }
 
 function authState(): AppsAuthState {
@@ -275,15 +283,19 @@ function cloudRunFailed(app: string | null, why: CloudRefusal): void {
   if (app) trackApps('run_failed', { app, where: 'cloud', ...why })
 }
 
-async function run(page: AppPage, workflow: unknown, app?: unknown): Promise<{ runId: string }> {
+async function run(
+  pageUrl: string,
+  workflow: unknown,
+  options?: unknown
+): Promise<{ runId: string }> {
   if (!isWorkflow(workflow)) throw new Error('That is not a workflow.')
-  const tag = cloudAppTag(app)
-  const appId = tag?.id ?? page.app
+  const appId = appOfPage(pageUrl, APPS_URL)
   const token = await getCloudSession().getAccessToken()
   if (!token) {
     cloudRunFailed(appId, { step: 'sign_in' })
     throw new Error('Sign in to Comfy to use apps.')
   }
+  const tag = cloudAppTag(openAppId(pageUrl, APPS_URL), await desktopAppIds(), options)
   const res = await cloudFetch('/prompt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -416,6 +428,15 @@ async function saveResult(
   }
 }
 
+const isWhere = (value: unknown): value is Where => value === 'cloud' || value === 'local'
+
+function tellOutputSaved(app: unknown, where: unknown): void {
+  if (typeof app !== 'string' || !isWhere(where)) return
+  try {
+    trackApps('output_saved', { app, where })
+  } catch {}
+}
+
 async function savedPath(file: unknown): Promise<string> {
   if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error('Unknown file.')
   const real = await fsp.realpath(file).catch(() => null)
@@ -423,8 +444,7 @@ async function savedPath(file: unknown): Promise<string> {
   return real
 }
 
-async function getOutput(
-  page: AppPage,
+export async function getOutput(
   file: unknown,
   save?: unknown
 ): Promise<{ type: string; bytes: Uint8Array; path?: string }> {
@@ -441,32 +461,23 @@ async function getOutput(
   if (save === undefined || !ext) return { type, bytes }
   const s = (save ?? {}) as { app?: unknown; label?: unknown }
   const saved = await saveResult(s.app, s.label, ext, bytes)
-  outputSaved(page, s.label, ext, 'cloud')
+  tellOutputSaved(s.app, 'cloud')
   return { type, bytes, path: saved }
 }
 
-function isWorkflowCopy(label: unknown, ext: string): boolean {
-  return label === 'workflow' && ext === 'json'
-}
-
-function outputSaved(page: AppPage, label: unknown, ext: string, where?: Where): void {
-  if (!page.app || isWorkflowCopy(label, ext)) return
-  trackApps('output_saved', { app: page.app, ...(where ? { where } : {}) })
-}
-
-async function saveFile(
-  page: AppPage,
+export async function saveFile(
   bytes: unknown,
   app: unknown,
   label: unknown,
-  ext: unknown
+  ext: unknown,
+  where?: unknown
 ): Promise<{ path: string }> {
   const e = saveExt(ext)
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES || !e) {
     throw new Error('Apps cannot save that file.')
   }
   const saved = await saveResult(app, label, e, bytes)
-  outputSaved(page, label, e)
+  tellOutputSaved(app, where)
   return { path: saved }
 }
 
@@ -526,10 +537,10 @@ async function showInFolder(file: unknown): Promise<void> {
   shell.showItemInFolder(await savedPath(file))
 }
 
-function uploadFailed(page: AppPage, errorClass: string | undefined): void {
-  if (!page.app) return
+function uploadFailed(app: string | null, errorClass: string | undefined): void {
+  if (!app) return
   trackApps('run_failed', {
-    app: page.app,
+    app,
     where: 'cloud',
     step: 'upload',
     ...(errorClass ? { error_class: errorClass } : {})
@@ -537,44 +548,42 @@ function uploadFailed(page: AppPage, errorClass: string | undefined): void {
 }
 
 async function uploadImage(
-  page: AppPage,
+  pageUrl: string,
   bytes: unknown,
   name: unknown
 ): Promise<{ name: string }> {
+  const app = appOfPage(pageUrl, APPS_URL)
   if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_UPLOAD_BYTES) {
-    uploadFailed(page, 'too_large')
+    uploadFailed(app, 'too_large')
     throw new Error('Pick a file under 50 MB.')
   }
   let res: Response
   try {
     res = await cloudFetch('/upload/image', { method: 'POST', body: uploadForm(bytes, name) })
   } catch (err) {
-    uploadFailed(page, errorClassOf(err))
+    uploadFailed(app, errorClassOf(err))
     throw err
   }
   if (!res.ok) {
-    uploadFailed(page, `http_${res.status}`)
+    uploadFailed(app, `http_${res.status}`)
     throw await failure(res)
   }
   const body = (await res.json()) as { name?: string }
   if (typeof body.name !== 'string') {
-    uploadFailed(page, 'no_file_name')
+    uploadFailed(app, 'no_file_name')
     throw new Error('Comfy Cloud did not keep the file.')
   }
   return { name: body.name }
 }
 
-function pageOf(event: IpcMainInvokeEvent): AppPage {
-  return { app: appOfPage(event.senderFrame?.url ?? '', APPS_URL) }
-}
-
-function handleFromAppPage<A extends unknown[], R>(
+function handleFromAppsPage<A extends unknown[], R>(
   channel: string,
-  fn: (page: AppPage, ...args: A) => Promise<R> | R
+  fn: (pageUrl: string, ...args: A) => Promise<R> | R
 ): void {
   ipcMain.handle(channel, async (event, ...args) => {
-    if (!fromAppsPage(event)) throw new Error('Not allowed.')
-    return fn(pageOf(event), ...(args as A))
+    const pageUrl = appsPageUrl(event)
+    if (pageUrl === null) throw new Error('Not allowed.')
+    return fn(pageUrl, ...(args as A))
   })
 }
 
@@ -582,18 +591,19 @@ function handleFromApps<A extends unknown[], R>(
   channel: string,
   fn: (...args: A) => Promise<R> | R
 ): void {
-  handleFromAppPage(channel, (_page, ...args: A) => fn(...args))
+  handleFromAppsPage(channel, (_pageUrl, ...args: A) => fn(...args))
 }
 
 function appsPages(): WebContents[] {
   return [...views.values()]
     .map((v) => v.webContents)
-    .filter((wc) => !wc.isDestroyed() && isAppsFrameUrl(wc.getURL(), APPS_ORIGIN))
+    .filter((wc) => !wc.isDestroyed() && isAppsFrameUrl(wc.getURL(), APPS_URL))
 }
 
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  onAppsEnabledChanged(tellPanelsAppsEnabled)
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)
@@ -601,12 +611,12 @@ export function registerAppsIpc(): void {
     await signInToCloud()
     return authState()
   })
-  handleFromAppPage('comfy-apps:run', run)
+  handleFromAppsPage('comfy-apps:run', run)
   handleFromApps('comfy-apps:get-run', getRun)
   handleFromApps('comfy-apps:cancel-run', cancelRun)
-  handleFromAppPage('comfy-apps:get-output', getOutput)
-  handleFromAppPage('comfy-apps:upload-image', uploadImage)
-  handleFromAppPage('comfy-apps:save-file', saveFile)
+  handleFromApps('comfy-apps:get-output', getOutput)
+  handleFromAppsPage('comfy-apps:upload-image', uploadImage)
+  handleFromApps('comfy-apps:save-file', saveFile)
   handleFromApps('comfy-apps:read-saved', readSaved)
   handleFromApps('comfy-apps:show-in-folder', showInFolder)
   handleFromApps('comfy-apps:save-versions', saveVersions)

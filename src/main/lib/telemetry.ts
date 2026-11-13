@@ -340,7 +340,20 @@ export interface InitOptions {
   appVersion: string
   appEnv: string
   isPackaged: boolean
-  sessionStartProps?: Record<string, TelemetryValue>
+  sessionStartProps?: Record<string, SessionStartValue>
+}
+
+export type SessionStartValue = TelemetryValue | (() => TelemetryValue)
+
+function sessionStartValues(
+  props: Record<string, SessionStartValue>
+): Record<string, TelemetryValue> {
+  return Object.fromEntries(
+    Object.entries(props).map(([key, value]) => [
+      key,
+      typeof value === 'function' ? value() : value
+    ])
+  )
 }
 
 export function initTelemetry(opts: InitOptions): void {
@@ -389,7 +402,7 @@ export function initTelemetry(opts: InitOptions): void {
   }
 }
 
-let pendingSessionStart: Record<string, TelemetryValue> | null = null
+let pendingSessionStart: Record<string, SessionStartValue> | null = null
 let pendingFirstLaunch: TelemetryContext | null = null
 let pendingPersonSet: Record<string, TelemetryValue> | null = null
 let pendingPersonSetOnce: Record<string, TelemetryValue> | null = null
@@ -555,7 +568,10 @@ function tryFlushDeferred(): void {
       pendingPersonSetOnce = null
     }
   }
-  if (pendingSessionStart && capture('comfy.desktop.session.started', pendingSessionStart)) {
+  if (
+    pendingSessionStart &&
+    capture('comfy.desktop.session.started', sessionStartValues(pendingSessionStart))
+  ) {
     pendingSessionStart = null
   }
   if (pendingFirstLaunch && capture('comfy.desktop.app.first_launch', pendingFirstLaunch)) {

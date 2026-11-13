@@ -8,6 +8,7 @@ import {
   appsOrigin,
   appsUrl,
   cleanSaveName,
+  catalogAppIds,
   cloudAppTag,
   cloudPromptBody,
   COMFY_READY_SCRIPT,
@@ -30,6 +31,7 @@ import {
   localInstalls,
   localRequest,
   noteRun,
+  openAppId,
   openRequest,
   openWorkflowScript,
   outputKind,
@@ -126,11 +128,37 @@ describe('isAllowedAppsPermission', () => {
 
 describe('isAppsFrameUrl', () => {
   it('matches the exact origin', () => {
-    const origin = 'https://apps.comfy.org'
-    expect(isAppsFrameUrl('https://apps.comfy.org/upscale', origin)).toBe(true)
-    expect(isAppsFrameUrl('https://apps.comfy.org.evil.com/', origin)).toBe(false)
-    expect(isAppsFrameUrl('https://evil.com/?https://apps.comfy.org', origin)).toBe(false)
-    expect(isAppsFrameUrl('https://apps.comfy.org/', null)).toBe(false)
+    const apps = 'https://apps.comfy.org/'
+    expect(isAppsFrameUrl('https://apps.comfy.org/upscale', apps)).toBe(true)
+    expect(isAppsFrameUrl('https://apps.comfy.org.evil.com/', apps)).toBe(false)
+    expect(isAppsFrameUrl('https://evil.com/?https://apps.comfy.org', apps)).toBe(false)
+    expect(isAppsFrameUrl('http://apps.comfy.org/', 'http://apps.comfy.org/')).toBe(false)
+    expect(isAppsFrameUrl('https://apps.comfy.org/', 'not a url')).toBe(false)
+  })
+
+  it.each([DEFAULT_APPS_URL, 'https://comfy-website-preview-pr-384.vercel.app/apps/'])(
+    'keeps %s to its apps pages',
+    (apps) => {
+      const site = new URL(apps).origin
+      expect(isAppsFrameUrl(`${site}/apps/`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/apps`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/apps/some-app`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/apps/text-to-image/desktop.html#/run`, apps)).toBe(true)
+      expect(isAppsFrameUrl(`${site}/hub/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/appsfoo`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/apps-evil/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/apps/../hub/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/apps/%2e%2e/hub/`, apps)).toBe(false)
+      expect(isAppsFrameUrl(`${site}/hub/?next=/apps/`, apps)).toBe(false)
+    }
+  )
+
+  it('lets a development site at its root use the whole origin', () => {
+    const apps = 'http://localhost:5173/'
+    expect(isAppsFrameUrl('http://localhost:5173/', apps)).toBe(true)
+    expect(isAppsFrameUrl('http://localhost:5173/some-app/desktop.html', apps)).toBe(true)
+    expect(isAppsFrameUrl('http://localhost:5174/', apps)).toBe(false)
   })
 })
 
@@ -935,46 +963,101 @@ describe('reading the local queue', () => {
   })
 })
 
+describe('openAppId', () => {
+  it.each<[string, string, string | null]>([
+    ['an app page', 'https://comfy.org/apps/remove-background/desktop.html', 'remove-background'],
+    ['an app folder', 'https://comfy.org/apps/upscale/', 'upscale'],
+    [
+      'an app page with a query and hash',
+      'https://comfy.org/apps/upscale/desktop.html?x=1#top',
+      'upscale'
+    ],
+    ['the list page', 'https://comfy.org/apps/', null],
+    ['an app opened on the list page', 'https://comfy.org/apps/#/upscale', null],
+    ['an app address with no trailing slash', 'https://comfy.org/apps/upscale', null],
+    ['a page outside the apps folder', 'https://comfy.org/blog/upscale/', null],
+    ['another site', 'https://example.com/apps/upscale/desktop.html', null],
+    ['a folder that is not a slug', 'https://comfy.org/apps/Upscale/desktop.html', null],
+    ['an encoded folder', 'https://comfy.org/apps/up%2Fscale/desktop.html', null],
+    ['not an address', 'nope', null]
+  ])('%s', (_why, page, id) => {
+    expect(openAppId(page, DEFAULT_APPS_URL)).toBe(id)
+  })
+
+  it('reads the id under a list address that has no trailing slash', () => {
+    expect(
+      openAppId('http://127.0.0.1:8080/apps/upscale/desktop.html', 'http://127.0.0.1:8080/apps')
+    ).toBe('upscale')
+  })
+})
+
+describe('catalogAppIds', () => {
+  it('reads the slug of each catalog item', () => {
+    const body = {
+      items: [
+        { data: { slug: 'upscale' } },
+        { data: { slug: 'remove-background' } },
+        { data: { slug: 'Not a slug' } },
+        { data: null },
+        null,
+        'upscale'
+      ]
+    }
+    expect([...catalogAppIds(body)]).toEqual(['upscale', 'remove-background'])
+  })
+
+  it.each<[string, unknown]>([
+    ['nothing', null],
+    ['no item list', {}],
+    ['an item list that is not a list', { items: 'upscale' }]
+  ])('throws for %s', (_why, body) => {
+    expect(() => catalogAppIds(body)).toThrow()
+  })
+})
+
 describe('cloudAppTag', () => {
-  it('tags a Cloud run with the app and its model', () => {
-    expect(cloudAppTag({ app: 'text-to-image', model: 'flux-2-klein' })).toEqual({
+  const onList: ReadonlySet<string> = new Set(['remove-background', 'upscale', 'text-to-image'])
+
+  it('tags a Cloud run with the open app and its model', () => {
+    expect(cloudAppTag('text-to-image', onList, { model: 'flux-2-klein' })).toEqual({
       id: 'text-to-image',
       model: 'flux-2-klein',
       where: 'cloud'
     })
   })
 
-  it('tags a Cloud run with only the app when no model is named', () => {
-    expect(cloudAppTag({ app: 'remove-background' })).toEqual({
+  it('takes the id from the open app, never from the page', () => {
+    expect(cloudAppTag('remove-background', onList, { app: 'upscale' })).toEqual({
       id: 'remove-background',
       where: 'cloud'
     })
   })
 
-  it('leaves a model that is not a slug out of the tag', () => {
-    expect(cloudAppTag({ app: 'upscale', model: 'My Model/v2' })).toEqual({
-      id: 'upscale',
-      where: 'cloud'
-    })
-  })
-
   it.each<[string, unknown]>([
-    ['nothing, from a page that predates the tag', undefined],
+    ['nothing, from a page that predates the options', undefined],
     ['null', null],
-    ['a bare string', 'upscale'],
-    ['a list', ['upscale']],
-    ['no app', { model: 'flux-2' }],
-    ['a display name', { app: 'Remove background' }],
-    ['a path', { app: '../upscale' }],
-    ['65 characters', { app: 'a'.repeat(65) }],
-    ['a number', { app: 3 }]
-  ])('sends no tag for %s', (_why, input) => {
-    expect(cloudAppTag(input)).toBeNull()
+    ['a bare string', 'flux-2'],
+    ['a list', ['flux-2']],
+    ['a model that is not a slug', { model: 'My Model/v2' }],
+    ['a model of 65 characters', { model: 'a'.repeat(65) }],
+    ['a number', { model: 3 }]
+  ])('tags the open app with no model for %s', (_why, options) => {
+    expect(cloudAppTag('upscale', onList, options)).toEqual({ id: 'upscale', where: 'cloud' })
   })
 
-  it('takes only id, model and where from the page', () => {
+  it.each<[string, string | null, ReadonlySet<string>]>([
+    ['no app is open', null, onList],
+    ['the open app is not on the Desktop app list', 'secret-beta', onList],
+    ['the Desktop app list could not be read', 'upscale', new Set()]
+  ])('sends no tag when %s', (_why, open, list) => {
+    expect(cloudAppTag(open, list, { app: 'upscale', model: 'esrgan' })).toBeNull()
+  })
+
+  it('takes only id, model and where', () => {
     expect(
-      Object.keys(cloudAppTag({ app: 'upscale', model: 'x', prompt: 'a cat', where: 'local' })!)
+      Object.keys(
+        cloudAppTag('upscale', onList, { app: 'x', model: 'x', prompt: 'a cat', where: 'local' })!
+      )
     ).toEqual(['id', 'model', 'where'])
   })
 })
