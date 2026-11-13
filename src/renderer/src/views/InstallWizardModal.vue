@@ -440,6 +440,7 @@ watch(instPath, (newPath) => {
 
 let loadGeneration = 0
 let modeGeneration = 0
+let changeSetupSession = 0
 
 const nameError = computed(() =>
   instName.value.length > 0 && instName.value.trim().length === 0
@@ -713,6 +714,7 @@ async function selectManagedInstallMode(): Promise<void> {
   if (authorizingWorkspace.value || managedBuildMode.value) return
   let authenticatedNow = false
   if (!authStore.isSignedIn) {
+    const session = changeSetupSession
     authorizingWorkspace.value = true
     try {
       const status = await authStore.signIn()
@@ -724,6 +726,7 @@ async function selectManagedInstallMode(): Promise<void> {
     } finally {
       authorizingWorkspace.value = false
     }
+    if (session !== changeSetupSession) return
   }
   if (!managedWorkspaceId.value) {
     await modal.alert({
@@ -1297,13 +1300,18 @@ async function restoreSourceCard(key: string): Promise<void> {
 }
 
 async function discardChangeSetup(): Promise<void> {
+  changeSetupSession++
   const draft = changeSetupDraft
   changeSetupDraft = null
   view.value = 'summary'
   if (!draft) return
   if (draft.sourceKey !== selectedSourceCard.value) {
     if (draft.sourceKey) await restoreSourceCard(draft.sourceKey)
-    else resetSourceState(null)
+    else {
+      modeGeneration++
+      workspaceInstallMode.value = 'public'
+      resetSourceState(null)
+    }
   }
   if (draft.sourceKey !== selectedSourceCard.value) return
   instPath.value = draft.instPath
@@ -1321,6 +1329,9 @@ async function discardChangeSetup(): Promise<void> {
   textFieldValues.value = draft.textFieldValues
   saveDisabled.value = draft.saveDisabled
   sourceError.value = draft.sourceError
+  const interruptedLoad =
+    currentSource.value?.fields.findIndex((field) => draft.fieldLoading.get(field.id)) ?? -1
+  if (interruptedLoad >= 0) await loadFieldOptions(interruptedLoad)
 }
 
 function isHiddenWhenEmpty(field: SourceField): boolean {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Component } from 'vue'
+import { computed, ref, type Component } from 'vue'
 import { Check, Crown } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 
@@ -15,7 +15,7 @@ export interface SetupOptionCard {
   disabled?: boolean
 }
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     options: SetupOptionCard[]
     selectedValue?: string | null
@@ -25,7 +25,37 @@ withDefaults(
   { selectedValue: null, ariaLabel: undefined, layout: 'list' }
 )
 
-defineEmits<{ select: [value: string] }>()
+const emit = defineEmits<{ select: [value: string] }>()
+
+const optionEls = ref<HTMLElement[]>([])
+
+const focusableValue = computed(() => {
+  const enabled = props.options.filter((opt) => !opt.disabled)
+  return (enabled.find((opt) => opt.value === props.selectedValue) ?? enabled[0])?.value ?? null
+})
+
+const NEXT_KEYS = ['ArrowDown', 'ArrowRight']
+const PREVIOUS_KEYS = ['ArrowUp', 'ArrowLeft']
+
+function moveSelection(event: KeyboardEvent, index: number): void {
+  const step = NEXT_KEYS.includes(event.key) ? 1 : PREVIOUS_KEYS.includes(event.key) ? -1 : 0
+  if (step === 0) return
+  event.preventDefault()
+  const count = props.options.length
+  for (let offset = 1; offset <= count; offset++) {
+    const target = (index + step * offset + count * offset) % count
+    const option = props.options[target]
+    if (!option || option.disabled) continue
+    emit('select', option.value)
+    optionEls.value[target]?.focus()
+    return
+  }
+}
+
+function setOptionEl(el: unknown, index: number): void {
+  const node = (el as { $el?: HTMLElement } | null)?.$el ?? (el as HTMLElement | null)
+  if (node) optionEls.value[index] = node
+}
 </script>
 
 <template>
@@ -36,8 +66,9 @@ defineEmits<{ select: [value: string] }>()
     :aria-label="ariaLabel"
   >
     <Button
-      v-for="opt in options"
+      v-for="(opt, index) in options"
       :key="opt.value"
+      :ref="(el) => setOptionEl(el, index)"
       size="unset"
       variant="textonly"
       type="button"
@@ -45,13 +76,15 @@ defineEmits<{ select: [value: string] }>()
       :data-testid="opt.testId"
       :aria-checked="selectedValue === opt.value"
       :disabled="opt.disabled"
+      :tabindex="opt.value === focusableValue ? 0 : -1"
       :class="[
         'setup-option static flex w-full min-w-0 appearance-auto items-center justify-normal gap-3 rounded-[12px] py-3 pr-3.5 pl-3 text-left [font:inherit] whitespace-normal transition-[background-color] duration-120 ease-[ease] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] active:transition-none',
         selectedValue === opt.value
           ? 'setup-option--selected bg-white/8 text-neutral-100 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.2)] hover:bg-white/8'
           : 'bg-white/5 text-neutral-200 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.09)] hover:bg-white/9'
       ]"
-      @click="$emit('select', opt.value)"
+      @click="emit('select', opt.value)"
+      @keydown="moveSelection($event, index)"
     >
       <span
         class="setup-option__icon inline-flex size-8 flex-none items-center justify-center overflow-hidden rounded-[9px] bg-white/7"

@@ -1308,6 +1308,27 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('.config-release-version').exists()).toBe(true)
   })
 
+  it('restarts a field load that Discard interrupted so Install comes back', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    let versionCalls = 0
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_source: string, fieldId: string) => {
+        if (fieldId === 'release') return [{ value: 'stable', label: 'Stable', recommended: true }]
+        versionCalls++
+        if (versionCalls === 1) return new Promise(() => {})
+        return [{ value: 'v0.4.2', label: 'v0.4.2', recommended: true }]
+      }
+    )
+    const wrapper = await openChangeSetup()
+    expect(versionCalls).toBe(1)
+
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(versionCalls).toBe(2)
+    expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
+  })
+
   it('keeps the edits when Save changes is pressed', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,
