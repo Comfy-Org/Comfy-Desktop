@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuRadioGroup } from 'reka-ui'
 import { Cloud, Laptop } from 'lucide-vue-next'
-import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
+import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -71,14 +71,14 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     <span>{{ t('home.openComfyUI') }}</span>
     <span class="sr-only" data-testid="home-open-comfyui-build">{{ target.name }}</span>
     <template v-if="builds.length > 1" #menu>
-      <DropdownMenuRadioGroup :model-value="target.id" class="flex flex-col gap-0.5">
+      <DropdownMenuRadioGroup :model-value="target.id">
         <Tooltip v-for="build in builds" :key="build.id" :text="problem(build)" side="left">
-          <MenuRadioItem
+          <BaseMenuRadioItem
             as="button"
             type="button"
             :value="build.id"
             :disabled="brokenReason(build) !== undefined"
-            class="group ui-select-option w-full pr-5 data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
+            class="group ui-select-option w-full"
             data-testid="home-open-build-option"
             @select="emit('open', build)"
           >
@@ -96,7 +96,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
             <span class="min-w-0 flex-1 truncate text-left" :title="build.name">{{
               build.name
             }}</span>
-          </MenuRadioItem>
+          </BaseMenuRadioItem>
         </Tooltip>
       </DropdownMenuRadioGroup>
     </template>

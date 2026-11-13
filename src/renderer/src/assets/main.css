@@ -323,6 +323,19 @@
   line-height: 16px;
 }
 
+[data-reka-menu-content],
+[data-reka-menu-content] [role='group'] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-reka-menu-content] > *,
+[data-reka-menu-content] [role='group'] > * {
+  flex: none;
+}
+
 [data-reka-menu-content] [role='separator'] {
+  margin-block: 2px;
   margin-inline: -4px;
 }
