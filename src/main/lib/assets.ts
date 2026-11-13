@@ -7,6 +7,7 @@ import type { ReadableStream as WebReadableStream } from 'stream/web'
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
+import { findHostWindowByPanelSender } from '../host/registry'
 import * as installations from '../installations'
 import * as settings from '../settings'
 import { buildSaveDialogFilters } from './comfyDownloadManager'
@@ -268,7 +269,10 @@ export function registerAssetsHandlers(): void {
   ipcMain.handle(
     ASSETS_DOWNLOAD_CHANNEL,
     (event, source: unknown, assetId: unknown, fileName: unknown) => {
-      const win = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow()
+      const win =
+        findHostWindowByPanelSender(event.sender) ??
+        BrowserWindow.fromWebContents(event.sender) ??
+        BrowserWindow.getFocusedWindow()
       if (!win || typeof source !== 'string' || typeof assetId !== 'string') return false
       return downloadAsset(win, source, assetId, typeof fileName === 'string' ? fileName : assetId)
     }

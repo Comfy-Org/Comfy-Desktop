@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const getInstallation = vi.fn()
 const getAccessToken = vi.fn()
 const outputFile = vi.fn()
+const panelHostWindow = vi.fn()
+const handlers = new Map<string, (...args: unknown[]) => unknown>()
 
 const showSaveDialog = vi.fn()
 const written = new Map<string, string>()
@@ -23,9 +25,12 @@ const createWriteStream = vi.fn((filePath: string, _options?: { flags: string })
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/downloads' },
-  BrowserWindow: {},
+  BrowserWindow: { fromWebContents: () => null, getFocusedWindow: () => ({ focused: true }) },
   dialog: { showSaveDialog: (...args: unknown[]) => showSaveDialog(...args) },
-  ipcMain: { handle: vi.fn() }
+  ipcMain: {
+    handle: (channel: string, handler: (...args: unknown[]) => unknown) =>
+      handlers.set(channel, handler)
+  }
 }))
 const removeFile = vi.fn(async (_path: string, _options: { force: boolean }) => {})
 const renameFile = vi.fn(async (from: string, to: string) => {
@@ -56,6 +61,9 @@ vi.mock('../settings', () => ({
 vi.mock('./comfyDownloadManager', () => ({
   buildSaveDialogFilters: (name: string) => [{ name, extensions: ['*'] }]
 }))
+vi.mock('../host/registry', () => ({
+  findHostWindowByPanelSender: (sender: unknown) => panelHostWindow(sender)
+}))
 vi.mock('./outputFolders', () => ({ outputFilePath: (target: string) => outputFile(target) }))
 vi.mock('../installations', () => ({ get: (id: string) => getInstallation(id) }))
 vi.mock('../devplatform/session', () => ({
@@ -69,7 +77,8 @@ vi.mock('./ipc/shared', () => ({
   }
 }))
 
-const { assetKind, downloadAsset, listAssets, signedStorageUrl } = await import('./assets')
+const { assetKind, downloadAsset, listAssets, registerAssetsHandlers, signedStorageUrl } =
+  await import('./assets')
 
 const fetchMock = vi.fn()
 
@@ -435,5 +444,20 @@ describe('downloadAsset', () => {
       vi.useRealTimers()
     }
     expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true })
+  })
+})
+
+describe('the download handler', () => {
+  it('opens the save dialog over the window that holds the Assets page', async () => {
+    const owner = { owner: true }
+    const sender = {}
+    panelHostWindow.mockImplementation((wc: unknown) => (wc === sender ? owner : null))
+    outputFile.mockResolvedValue('/out/still.png')
+    showSaveDialog.mockResolvedValue({ canceled: true })
+    registerAssetsHandlers()
+
+    await handlers.get('assets:download')!({ sender }, 'local', '/out/still.png', 'still.png')
+
+    expect(showSaveDialog.mock.calls[0]![0]).toBe(owner)
   })
 })
