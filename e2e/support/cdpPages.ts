@@ -118,23 +118,38 @@ export class WebContentsPage {
         wc.focus()
         const point = (await wc.executeJavaScript(`(async () => {
         const deadline = performance.now() + 5000
+        let previousElement = null
+        let previousRect = null
+        let stableFrames = 0
         for (;;) {
           const el = ${payload.elementExpression}
           if (!el) return 'missing'
           el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
           const rect = el.getBoundingClientRect()
+          const unchanged = el === previousElement && previousRect &&
+            rect.x === previousRect.x && rect.y === previousRect.y &&
+            rect.width === previousRect.width && rect.height === previousRect.height
+          stableFrames = unchanged ? stableFrames + 1 : 0
+          previousElement = el
+          previousRect = rect
           const left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right)
           const top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom)
           const x = Math.floor((left + right) / 2), y = Math.floor((top + bottom) / 2)
           const hit = document.elementFromPoint(x, y)
-          if (right > left && bottom > top && hit && el.contains(hit)) {
+          if (stableFrames >= 2 && right > left && bottom > top && hit && el.contains(hit)) {
             window.__e2eInputHandled = new Promise(resolve => {
               window.addEventListener('mouseup', () => setTimeout(resolve), { capture: true, once: true })
             })
             return { x, y }
           }
           if (performance.now() >= deadline) return 'blocked'
-          await new Promise(resolve => setTimeout(resolve, 50))
+          await new Promise(resolve => {
+            const timer = setTimeout(resolve, Math.max(0, deadline - performance.now()))
+            requestAnimationFrame(() => {
+              clearTimeout(timer)
+              resolve()
+            })
+          })
         }
       })()`)) as { x: number; y: number } | 'missing' | 'blocked'
         if (typeof point === 'string') return point
@@ -155,7 +170,7 @@ export class WebContentsPage {
     const outcome = await this.sendClick(elementExpression)
     if (outcome === 'blocked') {
       throw new Error(
-        `click: element is covered or has no interactive area (${elementExpression}, marker=${this.marker})`
+        `click: element is moving, covered or has no interactive area (${elementExpression}, marker=${this.marker})`
       )
     }
     return outcome === 'clicked'

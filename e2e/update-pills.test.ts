@@ -84,6 +84,37 @@ test('clicking the ready desktop-update pill opens the embedded system-modal res
     .toBe(true)
 })
 
+test('clicking the ready desktop-update pill waits for its position to settle @windows @macos @linux', async () => {
+  await setAppUpdateState(ctx.app, { kind: 'ready', version: '1.2.3', autoUpdate: true })
+  await ctx.titleBar.waitForVisible('.title-update-pill.is-app-update.is-ready')
+  await ctx.titleBar.evaluate(`(() => {
+    const pill = document.querySelector('.title-update-pill.is-app-update')
+    const getBounds = pill.getBoundingClientRect.bind(pill)
+    pill.getBoundingClientRect = () => {
+      const bounds = getBounds()
+      pill.getBoundingClientRect = getBounds
+      queueMicrotask(() => { pill.style.transform = 'translateX(-160px)' })
+      return bounds
+    }
+  })()`)
+
+  try {
+    expect(await ctx.titleBar.click('.title-update-pill.is-app-update')).toBe(true)
+    await expect
+      .poll(() => isSystemModalVisible(ctx.app), {
+        timeout: 5_000,
+        intervals: [100, 200]
+      })
+      .toBe(true)
+  } finally {
+    await ctx.titleBar.evaluate(`(() => {
+      const pill = document.querySelector('.title-update-pill.is-app-update')
+      delete pill.getBoundingClientRect
+      pill.style.removeProperty('transform')
+    })()`)
+  }
+})
+
 test('install-update chip stays hidden on the install-less chooser host even with an override @windows @macos @linux', async () => {
   await setInstallUpdate(ctx.app, { available: true, version: '99.0.0' })
   await new Promise((r) => setTimeout(r, 250))
