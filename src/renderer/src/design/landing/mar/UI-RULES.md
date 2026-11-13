@@ -142,11 +142,11 @@ DS's Motion page (`ds/motion.ts`).
   Open only (Open when running, starting, errored, Cloud or Remote); Update
   and Migrate are buttons before it; Stop lives in ⋯; problems are red text
   in the state line.
-- **Templates, not Workflows,** for the Hub's catalog (Home, Explore).
-  Workflows are the person's own (Recent workflows, the Workflows library).
-- **Counts go in the tabs**, not beside the title ("Images 4", not "17
-  assets" after the heading). They follow the open folder, filter and
-  search (the type aside). Assets' type tabs only; other tab rows keep counts off.
+- **Templates, not Workflows,** for the Hub's catalog in Explore. Home's
+  tab says Workflows (Apps | Workflows). Workflows are otherwise the
+  person's own (Recent workflows, the Workflows library).
+- **No counts in tabs.** Tabs carry only their label, Assets' type tabs
+  included ("Images", not "Images 11").
 
 ## Feedback
 

@@ -7,9 +7,9 @@ import {
   Box,
   ChevronLeft,
   ChevronRight,
-  Image,
   Video
 } from 'lucide-vue-next'
+import ImageGlyph from '../apps/ImageGlyph.vue'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion } from './examples'
@@ -39,7 +39,7 @@ const emit = defineEmits<{ all: [] }>()
 const items = computed(() => given ?? ARC_APPS)
 
 const TOPIC = {
-  image: { label: 'Image', icon: Image },
+  image: { label: 'Image', icon: ImageGlyph },
   video: { label: 'Video', icon: Video },
   '3d': { label: '3D', icon: Box },
   audio: { label: 'Audio', icon: AudioLines }

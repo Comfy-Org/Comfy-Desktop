@@ -196,7 +196,6 @@ const browsable = computed(
   () => inGraph || !!fixedProject || (build.value !== '' && status.value === 'running')
 )
 const unpicked = computed(() => !inGraph && !fixedProject && build.value === '')
-const count = (k: Kind): number => scoped.value.filter((a) => k === 'all' || a.type === k).length
 const KINDS = computed(() =>
   (
     [
@@ -209,7 +208,7 @@ const KINDS = computed(() =>
   )
     // Every type keeps its tab, empty or not: the bar never shifts, and it
     // says what a library can hold; an empty one says so (scopeEmpty).
-    .map(([value, label]) => ({ value: value as Kind, label, count: count(value) }))
+    .map(([value, label]) => ({ value: value as Kind, label }))
 )
 const WHERE = [
   { value: 'all', label: 'Everywhere' },

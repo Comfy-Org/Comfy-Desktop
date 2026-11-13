@@ -10,7 +10,7 @@ import MarSearchField from '../../pages/MarSearchField.vue'
 import MarViewToggle from '../../pages/MarViewToggle.vue'
 import MarModeSeg from '../../modes/MarModeSeg.vue'
 import TunerSeg from '../../tuner/TunerSeg.vue'
-// Assets' type tabs show their counts (.mar-asset-seg, the Assets page's styles).
+// Assets' type tabs (.mar-asset-seg, the Assets page's styles).
 import '../../pages/MarAssetsPage.vue'
 import AppShot from '../kit/AppShot.vue'
 import Cell from '../kit/Cell.vue'
@@ -20,11 +20,11 @@ import Stage from '../kit/Stage.vue'
 
 // Assets' type tabs: every kind, with what it holds; an empty one stays.
 const KINDS = [
-  { value: 'all', label: 'All', count: 29 },
-  { value: 'image', label: 'Images', count: 11 },
-  { value: 'video', label: 'Videos', count: 10 },
-  { value: '3d', label: '3D', count: 0 },
-  { value: 'audio', label: 'Audio', count: 3 }
+  { value: 'all', label: 'All' },
+  { value: 'image', label: 'Images' },
+  { value: 'video', label: 'Videos' },
+  { value: '3d', label: '3D' },
+  { value: 'audio', label: 'Audio' }
 ]
 const MORE_TYPES = [
   { value: 'text', label: 'Text' },
@@ -113,7 +113,7 @@ const TOOLBAR: [number, number, number, number] = [290, 172, 960, 60]
 
   <Section
     title="Tabs"
-    note="One tab for every page: MarSeg (mar/pages/MarSeg.vue). A soft track, no border; a pill slides to the picked tab, built into every tab group (Sliding pill, below). Counts stay off, except in Assets' type tabs. Underline tabs are retired: Pablo's ui/Tabs.vue draws this same track in the New UI."
+    note="One tab for every page: MarSeg (mar/pages/MarSeg.vue). A soft track, no border; a pill slides to the picked tab, built into every tab group (Sliding pill, below). No counts. Underline tabs are retired: Pablo's ui/Tabs.vue draws this same track in the New UI."
   >
     <Cells :min="320">
       <Cell label="sections · Project">
@@ -130,11 +130,11 @@ const TOOLBAR: [number, number, number, number] = [290, 172, 960, 60]
   </Section>
 
   <Section
-    title="Type tabs: counts, and they stay"
-    note="Assets' type tabs (All, Images, Videos, 3D, Audio) always show, empty or not, so the bar never shifts. Their counts sit in the tabs, not beside the title, and follow the open folder, filter and search (the type aside). An empty tab says what lands there; Nothing matches is only for a search or a filter."
+    title="Type tabs stay"
+    note="Assets' type tabs (All, Images, Videos, 3D, Audio) always show, empty or not, so the bar never shifts. No counts: a tab carries only its label. An empty tab says what lands there; Nothing matches is only for a search or a filter."
   >
     <Cells :min="420">
-      <Cell label="counts in the tabs">
+      <Cell label="type tabs">
         <MarSeg v-model="kind" :options="KINDS" label="Type" class="mar-asset-seg" />
       </Cell>
       <Cell label="an empty type, picked" fill>
