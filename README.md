@@ -7,7 +7,7 @@
 **Install, run, and manage [ComfyUI](https://github.com/Comfy-Org/ComfyUI) from one app — no dependency hell.**
 
 [![Release](https://img.shields.io/github/v/release/Comfy-Org/Comfy-Desktop?display_name=tag&style=flat&label=release&color=4f46e5)](https://github.com/Comfy-Org/Comfy-Desktop/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/Comfy-Org/Comfy-Desktop/ci.yml?branch=main&style=flat&label=CI)](https://github.com/Comfy-Org/Comfy-Desktop/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Comfy-Org/Comfy-Desktop/ci.yml?event=merge_group&style=flat&label=CI)](https://github.com/Comfy-Org/Comfy-Desktop/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Comfy-Org/Comfy-Desktop?style=flat&color=blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Comfy-Org/Comfy-Desktop?style=flat&logo=github&color=f5c518)](https://github.com/Comfy-Org/Comfy-Desktop/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-comfy.org-5865F2?style=flat&logo=discord&logoColor=white)](https://www.comfy.org/discord)
