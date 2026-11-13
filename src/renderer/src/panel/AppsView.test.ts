@@ -781,6 +781,11 @@ describe('Explore toolbar', () => {
     await flushPromises()
   }
 
+  async function openSub(wrapper: Wrapper, testid: string) {
+    await wrapper.get(`[data-testid="${testid}"]`).trigger('click')
+    await flushPromises()
+  }
+
   async function search(wrapper: Wrapper, text: string) {
     await wrapper.get('[data-testid="explore-search"] input').setValue(text)
     await flushPromises()
@@ -812,6 +817,20 @@ describe('Explore toolbar', () => {
     ])
   })
 
+  it('clears the search with its button or Escape', async () => {
+    const wrapper = await mountApps()
+    await search(wrapper, 'studio')
+    expect(ids(wrapper, 'app-card-')).toEqual(['studio'])
+
+    await pick(wrapper, 'explore-search-clear')
+    expect(ids(wrapper, 'app-card-')).toHaveLength(2)
+
+    await search(wrapper, 'studio')
+    await wrapper.get('[data-testid="explore-search"] input').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(ids(wrapper, 'app-card-')).toHaveLength(2)
+  })
+
   it('keeps search and view options in the same place on both tabs', async () => {
     const wrapper = await mountApps()
     const tools = () => [
@@ -836,9 +855,13 @@ describe('Explore toolbar', () => {
     expect(ids(wrapper)).toEqual(['upscale', 'talk', 'video-upscale', 'motion'])
 
     await openMenu(wrapper, 'explore-view-options')
+    expect(wrapper.get('[data-testid="explore-sort-value"]').text()).toBe('Recommended')
+    await openSub(wrapper, 'explore-sort')
     await pick(wrapper, 'explore-sort-az')
 
     expect(ids(wrapper)).toEqual(['motion', 'talk', 'upscale', 'video-upscale'])
+    await openMenu(wrapper, 'explore-view-options')
+    expect(wrapper.get('[data-testid="explore-sort-value"]').text()).toBe('Name A to Z')
   })
 
   it('searches titles, descriptions, use cases and models', async () => {
@@ -866,24 +889,83 @@ describe('Explore toolbar', () => {
 
     const groupKeys = wrapper
       .findAll('[data-testid^="explore-filter-group-"]')
-      .map((group) => group.text())
-    expect(groupKeys).toEqual(['Type', 'Use case', 'Model'])
+      .map((group) => group.attributes('data-testid'))
+    expect(groupKeys).toEqual([
+      'explore-filter-group-type',
+      'explore-filter-group-use',
+      'explore-filter-group-model'
+    ])
+    const value = (key: string) => wrapper.get(`[data-testid="explore-filter-value-${key}"]`).text()
+    expect(value('use')).toBe('All')
     const row = (testid: string) => wrapper.get(`[data-testid="explore-filter-${testid}"]`).text()
+
+    await openSub(wrapper, 'explore-filter-group-use')
     expect(row('use-videos')).toBe('Create & edit videos2')
     expect(row('use-upscale')).toBe('Upscale & restore2')
-    expect(row('model-LTX-2.3')).toBe('LTX-2.32')
-
     await pick(wrapper, 'explore-filter-use-upscale')
     expect(ids(wrapper)).toEqual(['upscale', 'video-upscale'])
-    expect(row('type-video')).toBe('Video1')
-    expect(row('model-LTX-2.3')).toBe('LTX-2.30')
-    expect(
-      wrapper.get('[data-testid="explore-filter-model-LTX-2.3"]').attributes('aria-disabled')
-    ).toBe('true')
+    expect(value('use')).toBe('Upscale & restore')
 
+    await openSub(wrapper, 'explore-filter-group-type')
+    expect(row('type-video')).toBe('Video1')
     await pick(wrapper, 'explore-filter-type-video')
     expect(ids(wrapper)).toEqual(['video-upscale'])
     expect(wrapper.get('[data-testid="explore-filter-count"]').text()).toBe('2')
+
+    await openSub(wrapper, 'explore-filter-group-model')
+    expect(wrapper.find('[data-testid="explore-filter-model-LTX-2.3"]').exists()).toBe(false)
+    expect(row('model-SeedVR2')).toBe('SeedVR21')
+  })
+
+  it('opens one filter group at a time', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    await openMenu(wrapper, 'explore-filter')
+
+    await openSub(wrapper, 'explore-filter-group-use')
+    expect(wrapper.find('[data-testid="explore-filter-use-videos"]').exists()).toBe(true)
+    await openSub(wrapper, 'explore-filter-group-type')
+
+    expect(wrapper.find('[data-testid="explore-filter-use-videos"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="explore-filter-type-video"]').exists()).toBe(true)
+  })
+
+  it('searches the models inside the Model filter', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    await openMenu(wrapper, 'explore-filter')
+    await openSub(wrapper, 'explore-filter-group-model')
+    const models = () =>
+      wrapper
+        .findAll('[data-testid^="explore-filter-model-"]')
+        .map((option) => option.attributes('data-testid'))
+
+    expect(models()).toEqual(['explore-filter-model-LTX-2.3', 'explore-filter-model-SeedVR2'])
+    await wrapper.get('[data-testid="explore-filter-search-model"]').setValue('seed')
+    await flushPromises()
+    expect(models()).toEqual(['explore-filter-model-SeedVR2'])
+
+    await wrapper.get('[data-testid="explore-filter-search-model"]').setValue('nothing')
+    await flushPromises()
+    expect(models()).toEqual([])
+  })
+
+  it('clears every filter from the menu or with the shortcut', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    await openMenu(wrapper, 'explore-filter')
+    expect(wrapper.find('[data-testid="explore-filter-clear"]').exists()).toBe(false)
+    await openSub(wrapper, 'explore-filter-group-use')
+    await pick(wrapper, 'explore-filter-use-upscale')
+    expect(ids(wrapper)).toHaveLength(2)
+
+    await pick(wrapper, 'explore-filter-clear')
+    expect(ids(wrapper)).toHaveLength(4)
+    expect(wrapper.find('[data-testid="explore-filter-count"]').exists()).toBe(false)
+
+    await openMenu(wrapper, 'explore-filter')
+    await openSub(wrapper, 'explore-filter-group-use')
+    await pick(wrapper, 'explore-filter-use-upscale')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', metaKey: true }))
+    await flushPromises()
+    expect(ids(wrapper)).toHaveLength(4)
   })
 
   it('leaves out Runs on while every workflow runs in the same place', async () => {
@@ -902,6 +984,12 @@ describe('Explore toolbar', () => {
     await openMenu(wrapper, 'explore-filter')
 
     expect(wrapper.get('[data-testid="explore-filter-runs-local"]').text()).toBe('This computer1')
+    expect(
+      wrapper.find('[data-testid="explore-filter-runs-local"] .lucide-laptop-minimal').exists()
+    ).toBe(true)
+    expect(wrapper.find('[data-testid="explore-filter-runs-cloud"] .lucide-cloud').exists()).toBe(
+      true
+    )
     await pick(wrapper, 'explore-filter-runs-local')
     expect(ids(wrapper)).toEqual(['local-one'])
   })
@@ -933,8 +1021,13 @@ describe('Explore toolbar', () => {
     expect(wrapper.get('[data-testid="apps-gallery"]').classes()).toContain('grid-cols-4')
 
     await openMenu(wrapper, 'explore-view-options')
-    await pick(wrapper, 'explore-size-small')
+    await pick(wrapper, 'explore-size-smaller')
 
     expect(wrapper.get('[data-testid="apps-gallery"]').classes()).toContain('grid-cols-5')
+    expect(wrapper.get('[data-testid="explore-size-smaller"]').attributes('disabled')).toBeDefined()
+    await pick(wrapper, 'explore-size-bigger')
+    await pick(wrapper, 'explore-size-bigger')
+    expect(wrapper.get('[data-testid="apps-gallery"]').classes()).toContain('grid-cols-3')
+    expect(wrapper.get('[data-testid="explore-size-bigger"]').attributes('disabled')).toBeDefined()
   })
 })

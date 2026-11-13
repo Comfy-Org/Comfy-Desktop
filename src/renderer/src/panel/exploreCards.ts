@@ -136,7 +136,8 @@ export function useExploreCards<T extends ExploreCard>(
   }
 }
 
-export type CardSize = 'small' | 'medium' | 'large'
+export const CARD_SIZES = ['small', 'medium', 'large'] as const
+export type CardSize = (typeof CARD_SIZES)[number]
 
 const GRID_COLUMNS: Record<CardSize, string> = {
   small: 'grid-cols-5',

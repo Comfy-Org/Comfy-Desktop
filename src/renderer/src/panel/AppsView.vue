@@ -4,9 +4,8 @@ import { useI18n } from 'vue-i18n'
 import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
 import TemplatesGallery from './TemplatesGallery.vue'
-import { Search } from 'lucide-vue-next'
-import BaseInput from '../components/ui/BaseInput.vue'
 import ExploreFilter from './ExploreFilter.vue'
+import ExploreSearchField from './ExploreSearchField.vue'
 import ExploreViewOptions from './ExploreViewOptions.vue'
 import type { CardSize, ExploreView, FilterGroup } from './exploreCards'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
@@ -211,18 +210,12 @@ onBeforeUnmount(() => {
           :groups="groups[shownTab]"
           @update:model-value="setView({ picks: $event })"
         />
-        <div class="w-[220px]">
-          <BaseInput
-            :model-value="shownView.query"
-            class="h-8 [&_input]:text-ui"
-            :placeholder="searchLabel"
-            :aria-label="searchLabel"
-            data-testid="explore-search"
-            @update:model-value="setView({ query: String($event ?? '') })"
-          >
-            <template #leading><Search :size="14" /></template>
-          </BaseInput>
-        </div>
+        <ExploreSearchField
+          :model-value="shownView.query"
+          :placeholder="searchLabel"
+          data-testid="explore-search"
+          @update:model-value="setView({ query: $event })"
+        />
         <ExploreViewOptions
           v-model:size="cardSize"
           :sort="shownView.sort"

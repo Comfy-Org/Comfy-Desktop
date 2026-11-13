@@ -155,7 +155,14 @@
       "recommended": "推荐",
       "az": "名称 A 到 Z"
     },
-    "noMatches": "没有匹配项。请尝试其他筛选或搜索。"
+    "noMatches": "没有匹配项。请尝试其他筛选或搜索。",
+    "all": "全部",
+    "clearFilters": "清除筛选",
+    "clearSearch": "清除搜索",
+    "searchModels": "搜索模型",
+    "noFilterMatches": "无匹配项",
+    "smaller": "更小",
+    "bigger": "更大"
   },
   "home": {
     "title": "欢迎。开始创作吧！",

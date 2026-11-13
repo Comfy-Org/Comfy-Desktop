@@ -155,7 +155,14 @@
       "recommended": "Recommended",
       "az": "Name A to Z"
     },
-    "noMatches": "Nothing matches. Try another filter or search."
+    "noMatches": "Nothing matches. Try another filter or search.",
+    "all": "All",
+    "clearFilters": "Clear filters",
+    "clearSearch": "Clear search",
+    "searchModels": "Search models",
+    "noFilterMatches": "No matches",
+    "smaller": "Smaller",
+    "bigger": "Bigger"
   },
   "home": {
     "title": "Welcome. Let's create!",
