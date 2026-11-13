@@ -2036,7 +2036,7 @@ defineExpose({ open })
 
               <p
                 v-if="remoteSource || offersBuildImport"
-                class="config-other-ways m-0 mt-4 mb-2 flex flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
+                class="config-other-ways m-0 mt-4 mb-2 pl-[164px] flex flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
               >
                 <Button
                   v-if="remoteSelected"
