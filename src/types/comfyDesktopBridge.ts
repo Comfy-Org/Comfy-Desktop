@@ -208,6 +208,7 @@ export interface ComfyDesktop2Bridge {
    *  Resolves `true` when the host has taken ownership of the request.
    *  On `false` or rejection the frontend falls back to opening a new tab. */
   openModelAccessPage?: (url: string) => Promise<boolean>
+  openMcpSetup?: () => Promise<boolean>
   downloadModel?: (url: string, filename: string, directory: string) => Promise<boolean>
   downloadAsset?: (url: string, filename: string, authToken?: string) => Promise<boolean>
   /** Resolve only assets declared by this template. `null` means Desktop cannot

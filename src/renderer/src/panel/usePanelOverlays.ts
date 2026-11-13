@@ -25,6 +25,7 @@ export type PanelKey =
   | 'quick-install'
   | 'progress'
   | 'announcement'
+  | 'mcp-setup'
 
 const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'comfy',
@@ -38,7 +39,8 @@ const VALID_PANELS: ReadonlySet<PanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'announcement'
+  'announcement',
+  'mcp-setup'
 ])
 
 const FLOW_PANELS: ReadonlySet<PanelKey> = new Set([

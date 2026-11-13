@@ -124,6 +124,7 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
+import { initMcpNudgeFlag } from './lib/mcpNudgeFlag'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -1021,6 +1022,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
+
+    void initMcpNudgeFlag({ distinctId: installationId })
 
     void initWorkspaceMintSwitchFlag({ distinctId: installationId })
 

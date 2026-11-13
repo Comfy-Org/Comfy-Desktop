@@ -1394,6 +1394,15 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
 
   ipcMain.handle('comfy-window:build-storage-snapshot', () => buildPickerStorageSlice())
 
+  ipcMain.handle('desktop2-open-mcp-setup', (event): boolean => {
+    const parentEntry = findEntryByComfySender(event.sender)
+    if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false
+    const panelView = bindings.ensurePanelViewForEntry(parentEntry)
+    if (panelView.webContents.isDestroyed()) return false
+    bindings.setActivePanel(parentEntry.windowKey, 'mcp-setup')
+    return true
+  })
+
   ipcMain.handle('desktop2-open-terminal', (event): boolean => {
     const parentEntry = findEntryByComfySender(event.sender)
     if (!parentEntry?.installationId || parentEntry.sourceCategory !== 'local') return false

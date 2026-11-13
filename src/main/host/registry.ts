@@ -18,6 +18,7 @@ export type ComfyPanelKey =
   | 'quick-install'
   | 'progress'
   | 'announcement'
+  | 'mcp-setup'
 
 export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'comfy',
@@ -29,7 +30,8 @@ export const VALID_PANELS: ReadonlySet<ComfyPanelKey> = new Set([
   'load-snapshot',
   'quick-install',
   'progress',
-  'announcement'
+  'announcement',
+  'mcp-setup'
 ])
 
 export type BodyMode =
@@ -45,6 +47,7 @@ export type BodyMode =
   | 'load-snapshot'
   | 'quick-install'
   | 'announcement'
+  | 'mcp-setup'
 
 export interface ComfyWindowEntry {
   windowKey: number

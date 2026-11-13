@@ -3,6 +3,8 @@ import { getAppVersion } from '../lib/ipc'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
+import { getMcpNudgeContentScript } from '../lib/mcpNudgeContentScript'
+import { isMcpNudgeEnabled } from '../lib/mcpNudgeFlag'
 import { closeInstallPopouts } from '../lib/popoutWindows'
 import { _operationAborts, sourceMap } from '../lib/ipc/shared'
 import { readableSymbolColor } from '../lib/theme'
@@ -37,6 +39,8 @@ import type { ComfyWindowEntry } from './registry'
 const APP_VERSION = getAppVersion()
 
 const TERMINAL_INJECTION_SOURCE_IDS = new Set(['standalone', 'portable', 'git'])
+
+const MCP_NUDGE_SOURCE_IDS = new Set([...TERMINAL_INJECTION_SOURCE_IDS, 'comfybuilder'])
 
 export type ZoomResetSource = 'titlebar' | 'menu' | 'shortcut'
 
@@ -109,6 +113,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   }
 
   let currentInstallName = installation.name
+  let attachActive = true
 
   let currentPageTitle = ''
   const refreshOsWindowTitle = (): void => {
@@ -280,12 +285,19 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `}catch(_){}` +
     `})()`
 
+  const injectMcpNudge = async (): Promise<void> => {
+    const enabled = await isMcpNudgeEnabled()
+    if (!enabled || !attachActive || comfyContents.isDestroyed()) return
+    comfyContents.executeJavaScript(getMcpNudgeContentScript()).catch(() => {})
+  }
+
   const onDomReady = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
     }
+    if (isLocal && MCP_NUDGE_SOURCE_IDS.has(installation.sourceId)) void injectMcpNudge()
     void refreshStaffFlagTargeting(comfyContents)
 
     if (!isLocal) {
@@ -438,6 +450,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
     entry._installCleanup = null
+    attachActive = false
     deactivateFirebaseAuthReporter(comfyContents)
     installationEvents.off('updated', onInstallationUpdated)
     cancelFailRetry()
