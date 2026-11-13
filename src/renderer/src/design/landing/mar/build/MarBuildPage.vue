@@ -390,7 +390,7 @@ const saveVersion = (): void => toast(`Saved ${env.name} v${versions.value.lengt
 <template>
   <div class="mar-bp mx-auto w-full max-w-440 px-11 pb-24">
     <MarEntityHeader
-      :back="marTabsOn || mvp ? 'Builds' : undefined"
+      :back="(marTabsOn || mvp) && !can.buildOverview ? 'Builds' : undefined"
       :title="mvp ? state.name : env.name"
       :status="status.id"
       :status-label="status.label"
