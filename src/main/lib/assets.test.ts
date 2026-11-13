@@ -352,6 +352,46 @@ describe('downloadAsset', () => {
     expect(renameFile, 'the file the user picked is never overwritten').not.toHaveBeenCalled()
   })
 
+  it('keeps a Cloud download going while a slow disk catches up', async () => {
+    cloudFile(
+      (init) =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('a'))
+              controller.enqueue(new TextEncoder().encode('b'))
+              setTimeout(() => controller.close(), 50_000)
+              init.signal.addEventListener('abort', () => controller.error(new Error('aborted')))
+            }
+          })
+        )
+    )
+    createWriteStream.mockImplementationOnce((filePath: string) => {
+      const chunks: Buffer[] = []
+      return new Writable({
+        highWaterMark: 1,
+        write(chunk: Buffer, _encoding, done) {
+          chunks.push(chunk)
+          setTimeout(done, 30_000)
+        },
+        final(done) {
+          written.set(filePath, Buffer.concat(chunks).toString())
+          done()
+        }
+      })
+    })
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const download = downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+      await vi.advanceTimersByTimeAsync(90_000)
+      expect(await download).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(written.get('/picked/clip.mp4')).toBe('ab')
+  })
+
   it('gives up and removes the partial file when the download stops sending data', async () => {
     cloudFile(
       (init) =>

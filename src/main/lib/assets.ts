@@ -195,9 +195,12 @@ async function saveDownload(url: string, filePath: string): Promise<void> {
     if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
     const body = Readable.fromWeb(res.body as WebReadableStream)
     body.on('data', keepAlive)
-    await writeThroughPartFile(filePath, (partPath) =>
-      pipeline(body, fs.createWriteStream(partPath, { flags: 'wx' }))
-    )
+    body.on('pause', () => clearTimeout(timer))
+    await writeThroughPartFile(filePath, (partPath) => {
+      const file = fs.createWriteStream(partPath, { flags: 'wx' })
+      file.on('drain', keepAlive)
+      return pipeline(body, file)
+    })
   } finally {
     clearTimeout(timer)
     controller.abort()
