@@ -17,6 +17,7 @@ const props = withDefaults(
     closable?: boolean
     closeTitle?: string
     dismissOnEscape?: boolean
+    covered?: boolean
   }>(),
   {
     title: '',
@@ -25,7 +26,8 @@ const props = withDefaults(
     brandBackdrop: false,
     closable: true,
     closeTitle: undefined,
-    dismissOnEscape: false
+    dismissOnEscape: false,
+    covered: false
   }
 )
 
@@ -39,8 +41,10 @@ const hostProps = computed(() =>
         ariaLabel: props.dialogLabel,
         dismissOnEscape: props.dismissOnEscape,
         dismissOnOutside: false,
-        overlayClass:
-          'setup-modal-overlay fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/60 p-6 animate-fade-in motion-reduce:animate-none',
+        overlayClass: [
+          'setup-modal-overlay fixed inset-0 z-50 grid place-items-center overflow-y-auto p-6 animate-fade-in motion-reduce:animate-none',
+          props.covered ? 'bg-transparent' : 'bg-black/60'
+        ].join(' '),
         contentClass: 'setup-modal-surface relative max-w-full outline-none'
       }
 )
@@ -59,7 +63,10 @@ const hostProps = computed(() =>
       <section
         v-bind="$attrs"
         class="setup-modal-panel relative flex max-h-[calc(100vh-48px)] max-w-full flex-col rounded-[16px] bg-neutral-900 text-left [box-shadow:0_24px_64px_rgb(0_0_0/0.5),inset_0_0_0_1px_rgb(255_255_255/0.06)] animate-pop-in motion-reduce:animate-none"
-        :class="wide ? 'w-[min(960px,calc(100vw-48px))]' : 'w-[min(760px,calc(100vw-48px))]'"
+        :class="[
+          wide ? 'w-[min(960px,calc(100vw-48px))]' : 'w-[min(760px,calc(100vw-48px))]',
+          covered && 'setup-modal-panel--covered invisible'
+        ]"
       >
         <Button
           v-if="closable"

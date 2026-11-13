@@ -1541,6 +1541,7 @@ defineExpose({ open })
     :brand-backdrop="useTakeoverHost"
     :closable="step === 'configure' && !hideBackToDashboard"
     :close-title="$t('common.backToDashboard')"
+    :covered="buildImportFlow !== null"
     data-testid="new-build-modal"
     @close="emit('close')"
   >

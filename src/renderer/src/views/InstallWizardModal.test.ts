@@ -1406,11 +1406,17 @@ describe('InstallWizardModal Change setup', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="track-modal"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="new-build-modal"]').classes()).toContain(
+      'setup-modal-panel--covered'
+    )
 
     await wrapper.get('[data-testid="track-modal"] .setup-modal-close').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="track-modal"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="new-build-modal"]').classes()).not.toContain(
+      'setup-modal-panel--covered'
+    )
 
     await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
     await flushPromises()
