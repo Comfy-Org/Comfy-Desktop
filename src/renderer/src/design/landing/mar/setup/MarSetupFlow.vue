@@ -651,7 +651,7 @@ function rowState(i: number): string {
                 </dd>
               </div>
               <div class="mss-row">
-                <dt><SlidersHorizontal :size="15" />ComfyUI version</dt>
+                <dt><SlidersHorizontal :size="15" />Version</dt>
                 <dd>
                   <span class="text-base-foreground">{{
                     channel === 'stable' ? version : 'latest'
