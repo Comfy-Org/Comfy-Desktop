@@ -275,7 +275,7 @@
     "backToDashboard": "返回仪表板",
     "close": "关闭",
     "copy": "复制",
-    "browse": "浏览…",
+    "browse": "浏览",
     "resetDefault": "重置",
     "or": "或",
     "cancel": "取消",
@@ -462,7 +462,6 @@
     "publicBuildsMeta": "公共构建",
     "saveChanges": "保存更改",
     "discardChanges": "放弃",
-    "browse": "浏览",
     "requiredSpace": "约需 {size}"
   },
   "templateQuit": {

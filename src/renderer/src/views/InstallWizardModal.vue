@@ -1721,7 +1721,7 @@ defineExpose({ open })
                     class="config-summary-browse"
                     @click="handleBrowse"
                   >
-                    {{ $t('newInstall.browse') }}
+                    {{ $t('common.browse') }}
                   </Button>
                 </div>
                 <div

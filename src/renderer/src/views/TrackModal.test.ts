@@ -48,7 +48,7 @@ function mountTrack() {
 }
 
 function browseButton(wrapper: ReturnType<typeof mountTrack>) {
-  const button = wrapper.findAll('button').find((button) => button.text() === 'Browse…')
+  const button = wrapper.findAll('button').find((button) => button.text() === 'Browse')
   if (!button) throw new Error('Browse button not found')
   return button
 }

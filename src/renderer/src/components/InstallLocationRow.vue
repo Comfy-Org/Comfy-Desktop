@@ -55,7 +55,7 @@ defineEmits<{ browse: []; open: [] }>()
           class="config-path-browse flex-none"
           @click="$emit('browse')"
         >
-          {{ $t('newInstall.browse') }}
+          {{ $t('common.browse') }}
         </Button>
       </InputGroup>
       <PathDiskInfo

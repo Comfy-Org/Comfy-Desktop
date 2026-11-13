@@ -275,7 +275,7 @@
     "backToDashboard": "Back to Dashboard",
     "close": "Close",
     "copy": "Copy",
-    "browse": "Browse…",
+    "browse": "Browse",
     "resetDefault": "Reset",
     "or": "or",
     "cancel": "Cancel",
@@ -462,7 +462,6 @@
     "publicBuildsMeta": "Public builds",
     "saveChanges": "Save changes",
     "discardChanges": "Discard",
-    "browse": "Browse",
     "requiredSpace": "Needs about {size}"
   },
   "templateQuit": {
