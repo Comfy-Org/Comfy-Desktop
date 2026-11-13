@@ -132,7 +132,8 @@ DS's Motion page (`ds/motion.ts`).
   picked one bright and underlined, the other muted, no pill around them.
   The cards carry no type badge; the tab says what's on the arc.
 - **Arc cards show only their title** (two lines at most). Pointing at the
-  front card fades a round white arrow into its top right corner; nothing
+  front card fades a white arrow in a rounded square (9px) into its top
+  right corner; nothing
   moves or gets cut (Comfy-Desktop#2060).
 - **Builds are tiles from Milestone 2**, the same card as Home's builds:
   the machine in the build's hue, the state on top, name, version, the
