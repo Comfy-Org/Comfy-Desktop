@@ -462,6 +462,8 @@
     "publicBuildsMeta": "公共构建",
     "saveChanges": "保存更改",
     "discardChanges": "放弃",
+    "addExistingBuild": "添加现有构建",
+    "loadSnapshot": "加载快照",
     "requiredSpace": "约需 {size}"
   },
   "templateQuit": {

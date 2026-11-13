@@ -462,6 +462,8 @@
     "publicBuildsMeta": "Public builds",
     "saveChanges": "Save changes",
     "discardChanges": "Discard",
+    "addExistingBuild": "Add existing build",
+    "loadSnapshot": "Load snapshot",
     "requiredSpace": "Needs about {size}"
   },
   "templateQuit": {

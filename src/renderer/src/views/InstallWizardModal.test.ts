@@ -1347,8 +1347,8 @@ describe('InstallWizardModal Change setup', () => {
 
   it('opens Add existing build and Load snapshot from the aside line', async () => {
     const wrapper = await openChangeSetup()
-    expect(wrapper.get('[data-testid="config-add-existing"]').text()).toBe('Add Existing Build')
-    expect(wrapper.get('[data-testid="config-load-snapshot"]').text()).toBe('Load Snapshot')
+    expect(wrapper.get('[data-testid="config-add-existing"]').text()).toBe('Add existing build')
+    expect(wrapper.get('[data-testid="config-load-snapshot"]').text()).toBe('Load snapshot')
 
     await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
     await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')

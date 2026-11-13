@@ -2034,61 +2034,68 @@ defineExpose({ open })
                 @open="handleOpenInstPath"
               />
 
-              <p
+              <div
                 v-if="remoteSource || offersBuildImport"
-                class="config-other-ways m-0 mt-4 mb-2 pl-[164px] flex flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
+                class="config-form-row config-other-ways grid grid-cols-[148px_minmax(0,1fr)] items-center gap-4 py-3"
+                data-testid="config-other-ways"
               >
-                <Button
-                  v-if="remoteSelected"
-                  size="link"
-                  variant="link"
-                  type="button"
-                  class="config-install-here text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
-                  data-testid="install-source-here"
-                  @click="selectStandaloneSource"
+                <span class="config-label text-[13px] font-medium text-text-muted">{{
+                  remoteSelected ? '' : $t('newInstall.alreadyHaveComfy')
+                }}</span>
+                <p
+                  class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
                 >
-                  {{ $t('newInstall.installHereInstead') }}
-                </Button>
-                <template v-else>
-                  <span>{{ $t('newInstall.alreadyHaveComfy') }}</span>
                   <Button
-                    v-if="remoteSource"
+                    v-if="remoteSelected"
                     size="link"
                     variant="link"
                     type="button"
-                    class="config-connect-remote text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
-                    data-testid="install-source-remote"
-                    :disabled="authorizingWorkspace"
-                    @click="selectRemoteSource"
+                    class="config-install-here text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+                    data-testid="install-source-here"
+                    @click="selectStandaloneSource"
                   >
-                    {{ $t('newInstall.connectToServer') }}
+                    {{ $t('newInstall.installHereInstead') }}
                   </Button>
-                  <template v-if="offersBuildImport">
-                    <span v-if="remoteSource" aria-hidden="true">·</span>
+                  <template v-else>
                     <Button
+                      v-if="remoteSource"
                       size="link"
                       variant="link"
                       type="button"
-                      class="config-add-existing text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
-                      data-testid="config-add-existing"
-                      @click="emit('show-build-import', 'track')"
+                      class="config-connect-remote text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+                      data-testid="install-source-remote"
+                      :disabled="authorizingWorkspace"
+                      @click="selectRemoteSource"
                     >
-                      {{ $t('fileMenu.addExistingInstall') }}
+                      {{ $t('newInstall.connectToServer') }}
                     </Button>
-                    <span aria-hidden="true">·</span>
-                    <Button
-                      size="link"
-                      variant="link"
-                      type="button"
-                      class="config-load-snapshot text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
-                      data-testid="config-load-snapshot"
-                      @click="emit('show-build-import', 'load-snapshot')"
-                    >
-                      {{ $t('fileMenu.loadSnapshot') }}
-                    </Button>
+                    <template v-if="offersBuildImport">
+                      <span v-if="remoteSource" aria-hidden="true">·</span>
+                      <Button
+                        size="link"
+                        variant="link"
+                        type="button"
+                        class="config-add-existing text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+                        data-testid="config-add-existing"
+                        @click="emit('show-build-import', 'track')"
+                      >
+                        {{ $t('newInstall.addExistingBuild') }}
+                      </Button>
+                      <span aria-hidden="true">·</span>
+                      <Button
+                        size="link"
+                        variant="link"
+                        type="button"
+                        class="config-load-snapshot text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100"
+                        data-testid="config-load-snapshot"
+                        @click="emit('show-build-import', 'load-snapshot')"
+                      >
+                        {{ $t('newInstall.loadSnapshot') }}
+                      </Button>
+                    </template>
                   </template>
-                </template>
-              </p>
+                </p>
+              </div>
             </div>
           </template>
 
