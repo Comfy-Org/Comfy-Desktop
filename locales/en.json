@@ -508,6 +508,7 @@
     "computingCommitsAhead": "Computing commits ahead…"
   },
   "buildOverview": {
+    "notChecked": "Not checked yet",
     "comfyui": "ComfyUI",
     "pytorch": "PyTorch",
     "onDisk": "On disk",

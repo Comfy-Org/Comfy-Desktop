@@ -314,7 +314,7 @@ const tabs = computed<TabDef[]>(() =>
 const statusSections = computed(() => sectionsForTab('status').value)
 
 const overviewModel = computed(() =>
-  activeTab.value === 'update'
+  activeTab.value === 'update' && props.installation?.sourceId === 'standalone'
     ? buildOverviewModel(visibleSections.value, statusSections.value)
     : null
 )

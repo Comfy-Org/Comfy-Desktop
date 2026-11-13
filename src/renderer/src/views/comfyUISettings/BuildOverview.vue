@@ -233,7 +233,9 @@ function openLocation(): void {
           </template>
           <template v-else>
             <span class="flex min-w-36 flex-1 flex-col">
-              <span class="text-foreground">{{ t('channelCards.upToDate') }}</span>
+              <span class="text-foreground">{{
+                channel?.latestVersion ? t('channelCards.upToDate') : t('buildOverview.notChecked')
+              }}</span>
               <span v-if="channel?.enriching" class="inline-flex items-center gap-1 truncate">
                 <Loader2
                   :size="12"

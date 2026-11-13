@@ -126,6 +126,16 @@ describe('BuildOverview — ComfyUI card', () => {
     expect(update).toContain('Checked 5m ago')
   })
 
+  it('says a build never checked for updates is not checked yet', () => {
+    const w = mountOverview({
+      model: model({ channels: [channel({ latestVersion: undefined, lastCheckedAt: undefined })] })
+    })
+    const update = w.get('[data-testid="build-overview-update"]').text()
+    expect(update).toContain('Not checked yet')
+    expect(update).not.toContain('Up to date')
+    expect(w.find('[data-testid="update-action-check-update"]').exists()).toBe(true)
+  })
+
   it('checks for updates from the card and spins while it checks', async () => {
     const w = mountOverview()
     await w.get('[data-testid="update-action-check-update"]').trigger('click')

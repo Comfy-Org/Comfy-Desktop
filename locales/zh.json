@@ -508,6 +508,7 @@
     "computingCommitsAhead": "正在计算领先的提交…"
   },
   "buildOverview": {
+    "notChecked": "尚未检查",
     "comfyui": "ComfyUI",
     "pytorch": "PyTorch",
     "onDisk": "磁盘占用",

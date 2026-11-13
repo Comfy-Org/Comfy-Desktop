@@ -905,8 +905,8 @@ async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
   const picker = await readPytorchPicker(verifyPopup)
   expect(picker.current.value).toBe(option.value)
   await expect
-    .poll(() => verifyPopup.textOf('button[role="combobox"][aria-label="PyTorch"]'))
-    .toContain(option.label)
+    .poll(() => verifyPopup.textOf('[data-testid="build-overview-pytorch"]'))
+    .toContain(option.label.replace(/^PyTorch\s+/, ''))
   await closeTitlePopupIfOpen(ctx.app)
 }
 
