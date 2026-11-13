@@ -5,6 +5,7 @@ import Button from '../../ui/Button.vue'
 import Card from '../../ui/Card.vue'
 import type { ProtoInstance } from '../../mock'
 import BuildUpdateSummary from './BuildUpdateSummary.vue'
+import SectionHeader from '../../ui/SectionHeader.vue'
 import { factsOf, selectedTorch } from './buildFacts'
 import { runOp } from './buildOps'
 import './buildTabs.css'
@@ -49,8 +50,8 @@ function changeTorch(v: string, copy: boolean): void {
 <template>
   <BuildUpdateSummary v-if="!torchOnly" :env />
 
-  <section class="mar-bt-section">
-    <header class="mar-bt-head"><h2 class="mar-bt-h2">PyTorch</h2></header>
+  <section class="mar-bt-section bus-torch">
+    <SectionHeader class="mar-sec" title="PyTorch" />
     <p class="mar-bt-lead">
       Official builds tested with this install. Switching replaces torch, torchvision and
       torchaudio; the rest of the environment is kept.

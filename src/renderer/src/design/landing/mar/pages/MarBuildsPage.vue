@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   ArrowUpCircle,
   Camera,
+  Check,
   CircleStop,
   CloudUpload,
   Copy,
@@ -32,7 +33,17 @@ import Select from '../../ui/Select.vue'
 import LocationIcon from '../../ui/LocationIcon.vue'
 import { hostActions, instances, proto, toast } from '../../useProto'
 import SetupCancelConfirm from '../setup/SetupCancelConfirm.vue'
-import { BUILD_NAME, DETECTED, flow, installingBehind, showInstall } from '../setup/setupFlow'
+import SetupLaptop from '../setup/SetupLaptop.vue'
+import SetupCloud from '../setup/SetupCloud.vue'
+import '../setup/setup.css'
+import {
+  BUILD_NAME,
+  DETECTED,
+  flow,
+  installingBehind,
+  localSetup,
+  showInstall
+} from '../setup/setupFlow'
 import { can } from '../../milestones'
 import { buildsAsM1 } from '../build/buildsAsM1'
 import { deploymentsOf, versionsOf } from '../../parts/env/env'
@@ -137,6 +148,19 @@ const view = ref<'grid' | 'list'>(building.value ? 'list' : 'grid')
 // One-line rows: all Milestone 1 has, and the default after it
 // (UI Playground › Builds view).
 const rowsOnly = computed(() => (buildsAsM1.value || buildCard.id === 'rows') && !building.value)
+// From Milestone 2 on the rows are tiles, the same cards as Home's builds
+// (Comfy-Desktop#2025): the machine drawn in the build's hue, the state on
+// top, the name, the version; Start or Open and ⋯ on the right.
+const tiles = computed(() => rowsOnly.value && can.value.exploreApps)
+// A tile's state line: Ready (a check) for a build that isn't running,
+// Always on for Cloud, a dot for a live one, a spinner while it changes.
+function tileState(b: Build): { label: string; mark: 'dot' | 'spin' | 'check' } {
+  const s = m1State(b)
+  if (s.spin) return { label: s.label, mark: 'spin' }
+  if (s.tone === 'ok') return { label: s.label, mark: 'dot' }
+  if (b.kind === 'cloud' && !isRemote(b)) return { label: 'Always on', mark: 'dot' }
+  return { label: 'Ready', mark: 'check' }
+}
 
 // Cloud and Remote show only when there are builds there (ChooserView).
 const countWhere = (w: BuildWhere): number => builds.items.filter((b) => whereOf(b) === w).length
@@ -601,7 +625,7 @@ const newLabel = computed(() =>
 
     <!-- One build to a line: where as a small mark, the name and its specs,
          the state as a badge, then one action that says where it runs. -->
-    <div v-if="rowsOnly" class="mar-bc-rows">
+    <div v-if="rowsOnly" class="mar-bc-rows" :class="tiles && 'is-tiles'">
       <!-- The build installing, first, in the install's state: the badge
            spins with the percent, View logs opens the install, Cancel asks. -->
       <MarItem
@@ -612,9 +636,14 @@ const newLabel = computed(() =>
         :lines="[]"
         :selectable="false"
         class="mar-bc-row"
+        :class="tiles && 'is-tile mbr-card'"
+        :style="tiles ? { '--h': 48 } : undefined"
         @open="showInstall"
       >
-        <template #media><LocationIcon kind="local" :size="16" /></template>
+        <template #media
+          ><span v-if="tiles" class="mbr-device"><SetupLaptop :os="localSetup.os" /></span
+          ><LocationIcon v-else kind="local" :size="16"
+        /></template>
         <template #meta
           ><span class="mar-bc-specs-text"
             >This computer · {{ DETECTED.chip }} · ComfyUI {{ DETECTED.version }}</span
@@ -652,18 +681,52 @@ const newLabel = computed(() =>
         :selectable="false"
         context-menu
         class="mar-bc-row"
-        :class="stopping.has(b.id) && 'is-stopping'"
+        :class="[stopping.has(b.id) && 'is-stopping', tiles && 'is-tile mbr-card']"
+        :style="tiles ? { '--h': b.hue } : undefined"
         @open="!stopping.has(b.id) && open(b)"
       >
         <template #media>
-          <Server v-if="whereOf(b) === 'remote'" :size="16" />
+          <Server v-if="whereOf(b) === 'remote'" :size="tiles ? 22 : 16" />
+          <span v-else-if="tiles" class="mbr-device">
+            <SetupCloud v-if="b.kind === 'cloud'" :hue="b.hue" />
+            <template v-else>
+              <SetupLaptop :os="localSetup.os" />
+              <span class="mbr-screen" aria-hidden="true"></span>
+            </template>
+          </span>
           <LocationIcon v-else :kind="b.kind === 'cloud' ? 'cloud' : 'local'" :size="16" />
+        </template>
+        <template v-if="tiles" #eyebrow>
+          <!-- What needs a look takes the state's place (Desktop's tile). -->
+          <span v-if="b.state === 'error' || problemOf(b)" class="mar-bc-tile-state"
+            ><button
+              v-if="b.state === 'error'"
+              type="button"
+              class="mar-bc-chip is-bad"
+              title="View error details"
+              @click.stop="crashOf = b"
+            >
+              <OctagonAlert :size="12" aria-hidden="true" />Error</button
+            ><button v-else type="button" class="mar-bc-chip is-bad" @click.stop="fixProblem(b)">
+              <OctagonAlert :size="12" aria-hidden="true" />{{ PROBLEM_LABEL[problemOf(b)!] }}
+            </button></span
+          >
+          <span v-else class="mss-machine-kicker mar-bc-tile-state"
+            ><Loader2 v-if="tileState(b).mark === 'spin'" :size="12" class="animate-spin" /><i
+              v-else-if="tileState(b).mark === 'dot'"
+              class="mar-bc-tile-dot"
+              aria-hidden="true"
+            /><Check v-else :size="12" aria-hidden="true" />{{ tileState(b).label
+            }}<span v-if="b.id === 'cloud' && !proto.signedIn" class="mar-bc-tile-free"
+              >Try free</span
+            ></span
+          >
         </template>
         <template #meta
           ><span class="mar-bc-specs-text">{{ specs(b) }}</span
           ><!-- One chip after the specs: what needs a look (Desktop's order). -->
           <button
-            v-if="b.state === 'error'"
+            v-if="b.state === 'error' && !tiles"
             type="button"
             class="mar-bc-chip is-bad"
             title="View error details"
@@ -672,7 +735,7 @@ const newLabel = computed(() =>
             <OctagonAlert :size="12" aria-hidden="true" />Error
           </button>
           <button
-            v-else-if="problemOf(b)"
+            v-else-if="problemOf(b) && !tiles"
             type="button"
             class="mar-bc-chip is-bad"
             @click.stop="fixProblem(b)"
@@ -692,7 +755,7 @@ const newLabel = computed(() =>
             <ArrowRightLeft :size="12" aria-hidden="true" />Migrate
           </button>
           <button
-            v-else-if="b.state === 'update' && !updating.has(b.id)"
+            v-else-if="b.state === 'update' && !updating.has(b.id) && !tiles"
             type="button"
             class="mar-bc-update"
             :disabled="busy(b)"
@@ -704,7 +767,7 @@ const newLabel = computed(() =>
             >
           </button>
           <template v-else-if="b.id === 'cloud' && !proto.signedIn">
-            <span class="mar-bc-free">Try free</span>
+            <span v-if="!tiles" class="mar-bc-free">Try free</span>
             <Tooltip
               content="Run on fast cloud GPUs with nothing to install. Your first runs are free."
             >
@@ -713,7 +776,7 @@ const newLabel = computed(() =>
               </button>
             </Tooltip> </template
         ></template>
-        <template #cols>
+        <template v-if="!tiles" #cols>
           <span class="mar-item-col mar-bc-row-state"
             ><span
               v-if="!problemOf(b)"
@@ -727,6 +790,16 @@ const newLabel = computed(() =>
           >
         </template>
         <template #actions>
+          <Button
+            v-if="tiles && b.state === 'update' && !updating.has(b.id) && !problemOf(b)"
+            variant="secondary"
+            size="md"
+            class="mar-bc-main"
+            :disabled="busy(b)"
+            title="Update to v0.37.6"
+            @click.stop="update(b)"
+            ><ArrowUpCircle :size="13" />Update</Button
+          >
           <Button
             v-if="problemOf(b)"
             variant="secondary"
@@ -1253,6 +1326,86 @@ const newLabel = computed(() =>
 }
 :root .proto-ui.proto-ui.proto-ui .mar-bc-update:disabled {
   opacity: 0.8;
+}
+/* From Milestone 2: tiles, two to a row, the same card as Home's builds
+   (setup.css .mbr-card: the hue lit from the corner, grown on hover). */
+.mar-bc-rows.is-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+@media (max-width: 860px) {
+  .mar-bc-rows.is-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row.is-tile {
+  height: 100px;
+  gap: 18px;
+  padding: 0 12px 0 18px;
+  border-radius: 16px;
+  background: oklch(0.6 0 0 / 0.05);
+}
+:root .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row.is-tile:is(:hover, .is-menu) {
+  background: oklch(0.6 0 0 / 0.09);
+}
+:root[data-ds-theme='light'] .proto-ui.proto-ui.proto-ui .mar-item.is-list.mar-bc-row.is-tile {
+  background: var(--color-card-background, #fff);
+}
+.mar-bc-row.is-tile.is-menu::before {
+  transform: scale(2.6);
+}
+.mar-bc-row.is-tile > .mar-item-media {
+  width: auto;
+  height: auto;
+  color: var(--color-muted-foreground);
+}
+.mar-bc-row.is-tile > .mar-item-media > svg {
+  width: 64px;
+}
+/* State on top, then the name, then the version: one column. */
+.mar-bc-row.is-tile > .mar-item-text {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-row.is-tile .mar-item-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 21px;
+  text-overflow: ellipsis;
+}
+.mar-bc-row.is-tile .mar-item-meta {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--color-subtle-foreground);
+}
+.mar-bc-tile-state {
+  height: 16px;
+  margin-bottom: 4px;
+}
+.mar-bc-tile-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: #59d38c;
+  box-shadow: 0 0 0 3px rgb(89 211 140 / 0.36);
+}
+/* Try free: a small grey chip by the state. */
+.mar-bc-tile-free {
+  display: inline-flex;
+  height: 16px;
+  align-items: center;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  color: var(--color-base-foreground);
+  font-size: 11px;
+  font-weight: 500;
 }
 /* Stopping: the row waits, dimmed, with nothing to click. */
 .mar-bc-row.is-stopping {

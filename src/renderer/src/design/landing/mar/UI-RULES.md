@@ -131,6 +131,12 @@ DS's Motion page (`ds/motion.ts`).
 - **Home's Apps | Templates tabs are plain text** centred over the arc: the
   picked one bright and underlined, the other muted, no pill around them.
   The cards carry no type badge; the tab says what's on the arc.
+- **Arc cards show only their title** (two lines at most). Pointing at the
+  front card fades a round white arrow into its top right corner; nothing
+  moves or gets cut (Comfy-Desktop#2060).
+- **Builds are tiles from Milestone 2**, the same card as Home's builds:
+  the machine in the build's hue, the state on top, name, version, the
+  action and ⋯ on the right (Comfy-Desktop#2025).
 - **Templates, not Workflows,** for the Hub's catalog (Home, Explore).
   Workflows are the person's own (Recent workflows, the Workflows library).
 - **Counts go in the tabs**, not beside the title ("Images 4", not "17
