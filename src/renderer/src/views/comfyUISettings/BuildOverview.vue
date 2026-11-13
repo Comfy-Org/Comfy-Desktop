@@ -103,16 +103,18 @@ function openLocation(): void {
 <template>
   <div class="build-overview @container/overview w-full" data-testid="build-overview">
     <div
-      class="build-overview-grid grid grid-cols-2 gap-2.5 @[760px]/overview:grid-cols-[minmax(0,1.25fr)_repeat(3,minmax(0,1fr))]"
+      class="build-overview-grid grid gap-2.5 @[760px]/overview:grid-cols-[minmax(0,1.25fr)_minmax(0,3fr)]"
     >
       <section
-        class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4 @[760px]/overview:row-span-2"
+        class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
         aria-labelledby="build-overview-comfyui"
         data-testid="build-overview-comfyui"
       >
-        <span id="build-overview-comfyui" class="text-[12px]/4 text-muted-foreground">{{
-          t('buildOverview.comfyui')
-        }}</span>
+        <span
+          id="build-overview-comfyui"
+          class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+          >{{ t('buildOverview.comfyui') }}</span
+        >
         <span
           class="text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
           data-testid="build-overview-comfyui-version"
@@ -271,58 +273,96 @@ function openLocation(): void {
         </div>
       </section>
 
-      <section
-        class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
-        aria-labelledby="build-overview-pytorch"
-        data-testid="build-overview-pytorch"
+      <div
+        class="build-overview-facts grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2.5 self-start"
       >
-        <span id="build-overview-pytorch" class="text-[12px]/4 text-muted-foreground">{{
-          model.torch?.label ?? t('buildOverview.pytorch')
-        }}</span>
-        <span
-          class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-          >{{ torchVersion }}</span
+        <section
+          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
+          aria-labelledby="build-overview-pytorch"
+          data-testid="build-overview-pytorch"
         >
-        <div class="-mr-2 -mb-1.5 mt-auto flex min-w-0 items-center justify-between gap-2">
-          <span class="line-clamp-2 min-w-0 text-[12px]/4 text-muted-foreground">{{
-            model.facts.variant?.value
-          }}</span>
-          <Menu
-            v-if="torchGroups.length > 0"
-            :modal="false"
-            align="end"
-            :side-offset="6"
-            class="z-20 max-w-80 min-w-64"
-            :aria-label="model.torch?.label"
+          <span
+            id="build-overview-pytorch"
+            class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+            >{{ model.torch?.label ?? t('buildOverview.pytorch') }}</span
           >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="muted-textonly"
-                size="sm"
-                class="shrink-0 gap-0.5 text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
-                :data-testid="TID.buildOverviewPytorchChange"
-              >
-                {{ t('buildOverview.change') }}
-                <ChevronDown :size="13" aria-hidden="true" />
-              </Button>
-            </template>
-            <template v-for="group in torchGroups" :key="group.id">
-              <DropdownMenuLabel
-                v-if="showTorchGroupLabels || group === torchGroups[0]"
-                class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-              >
-                {{ showTorchGroupLabels ? group.label : model.torch?.label }}
-              </DropdownMenuLabel>
-              <div class="flex flex-col gap-0.5">
-                <template v-for="v in group.versions" :key="v.value">
-                  <MenuSub v-if="v.actions.length > 0">
-                    <MenuSubTrigger
+          <span
+            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+            >{{ torchVersion }}</span
+          >
+          <div class="-mr-2 -mb-1.5 mt-auto flex min-w-0 items-center justify-between gap-2">
+            <span class="line-clamp-2 min-w-0 text-[12px]/4 text-muted-foreground">{{
+              model.facts.variant?.value
+            }}</span>
+            <Menu
+              v-if="torchGroups.length > 0"
+              :modal="false"
+              align="end"
+              :side-offset="6"
+              class="z-20 max-w-80 min-w-64"
+              :aria-label="model.torch?.label"
+            >
+              <template #trigger>
+                <Button
+                  type="button"
+                  variant="muted-textonly"
+                  size="sm"
+                  class="shrink-0 gap-0.5 text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                  :data-testid="TID.buildOverviewPytorchChange"
+                >
+                  {{ t('buildOverview.change') }}
+                  <ChevronDown :size="13" aria-hidden="true" />
+                </Button>
+              </template>
+              <template v-for="group in torchGroups" :key="group.id">
+                <DropdownMenuLabel
+                  v-if="showTorchGroupLabels || group === torchGroups[0]"
+                  class="px-3 pt-1.5 pb-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+                >
+                  {{ showTorchGroupLabels ? group.label : model.torch?.label }}
+                </DropdownMenuLabel>
+                <div class="flex flex-col gap-0.5">
+                  <template v-for="v in group.versions" :key="v.value">
+                    <MenuSub v-if="v.actions.length > 0">
+                      <MenuSubTrigger
+                        class="h-auto items-start py-1.5"
+                        :data-testid="TID.buildOverviewPytorchOption(v.value)"
+                      >
+                        <span class="flex min-w-0 flex-col text-left">
+                          <span>{{ v.version }}</span>
+                          <span
+                            v-if="v.description"
+                            class="line-clamp-2 text-[12px]/4 text-muted-foreground"
+                            :title="v.description"
+                            >{{ v.description }}</span
+                          >
+                        </span>
+                      </MenuSubTrigger>
+                      <MenuSubContent class="z-20 min-w-48">
+                        <Tooltip v-for="a in v.actions" :key="a.id" :text="a.tooltip" side="right">
+                          <MenuItem
+                            class="w-full pr-5"
+                            :disabled="a.enabled === false"
+                            :data-testid="TID.updateActionButton(a.id)"
+                            @select="run(a)"
+                          >
+                            {{ a.label }}
+                          </MenuItem>
+                        </Tooltip>
+                      </MenuSubContent>
+                    </MenuSub>
+                    <MenuItem
+                      v-else
                       class="h-auto items-start py-1.5"
+                      :class="v.current && 'bg-muted data-highlighted:bg-muted'"
                       :data-testid="TID.buildOverviewPytorchOption(v.value)"
+                      @select.prevent
                     >
                       <span class="flex min-w-0 flex-col text-left">
                         <span>{{ v.version }}</span>
+                        <span v-if="v.current" class="text-[12px]/4 text-muted-foreground">{{
+                          t('buildOverview.inUse')
+                        }}</span>
                         <span
                           v-if="v.description"
                           class="line-clamp-2 text-[12px]/4 text-muted-foreground"
@@ -330,132 +370,113 @@ function openLocation(): void {
                           >{{ v.description }}</span
                         >
                       </span>
-                    </MenuSubTrigger>
-                    <MenuSubContent class="z-20 min-w-48">
-                      <Tooltip v-for="a in v.actions" :key="a.id" :text="a.tooltip" side="right">
-                        <MenuItem
-                          class="w-full pr-5"
-                          :disabled="a.enabled === false"
-                          :data-testid="TID.updateActionButton(a.id)"
-                          @select="run(a)"
-                        >
-                          {{ a.label }}
-                        </MenuItem>
-                      </Tooltip>
-                    </MenuSubContent>
-                  </MenuSub>
-                  <MenuItem
-                    v-else
-                    class="h-auto items-start py-1.5"
-                    :class="v.current && 'bg-muted data-highlighted:bg-muted'"
-                    :data-testid="TID.buildOverviewPytorchOption(v.value)"
-                    @select.prevent
-                  >
-                    <span class="flex min-w-0 flex-col text-left">
-                      <span>{{ v.version }}</span>
-                      <span v-if="v.current" class="text-[12px]/4 text-muted-foreground">{{
-                        t('buildOverview.inUse')
-                      }}</span>
-                      <span
-                        v-if="v.description"
-                        class="line-clamp-2 text-[12px]/4 text-muted-foreground"
-                        :title="v.description"
-                        >{{ v.description }}</span
-                      >
-                    </span>
-                  </MenuItem>
-                </template>
-              </div>
-            </template>
-          </Menu>
-        </div>
-      </section>
+                    </MenuItem>
+                  </template>
+                </div>
+              </template>
+            </Menu>
+          </div>
+        </section>
 
-      <section
-        class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
-        aria-labelledby="build-overview-disk"
-        data-testid="build-overview-disk"
-      >
-        <span id="build-overview-disk" class="text-[12px]/4 text-muted-foreground">{{
-          t('buildOverview.onDisk')
-        }}</span>
-        <span
-          class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-          >{{ diskUsage ?? '—' }}</span
+        <section
+          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
+          aria-labelledby="build-overview-disk"
+          data-testid="build-overview-disk"
         >
-        <span v-if="diskFree" class="truncate text-[12px]/4 text-muted-foreground">{{
-          t('buildOverview.free', { size: diskFree })
-        }}</span>
-      </section>
-
-      <section
-        class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
-        aria-labelledby="build-overview-python"
-        data-testid="build-overview-python"
-      >
-        <span id="build-overview-python" class="text-[12px]/4 text-muted-foreground">{{
-          t('buildOverview.python')
-        }}</span>
-        <span
-          class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
-          >{{ model.facts.python?.value ?? '—' }}</span
-        >
-        <span class="truncate text-[12px]/4 text-muted-foreground">{{
-          installation.sourceLabel
-        }}</span>
-      </section>
-
-      <section
-        class="build-overview-card col-span-full flex min-w-0 flex-col justify-center rounded-[14px] bg-card px-[18px] py-2 @[760px]/overview:col-span-3"
-        :aria-label="t('buildOverview.details')"
-        data-testid="build-overview-facts"
-      >
-        <div
-          v-if="location"
-          class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
-          data-testid="build-overview-location"
-        >
-          <span class="text-[12px]/4 text-muted-foreground">{{ model.facts.location?.label }}</span>
-          <span class="flex min-w-0 items-center gap-0.5">
-            <span
-              class="mr-auto min-w-0 truncate pr-3 font-mono text-[12px]/4 text-foreground"
-              :title="location"
-              >{{ location }}</span
-            >
-            <Button
-              type="button"
-              variant="muted-textonly"
-              size="icon"
-              class="size-7 shrink-0"
-              :aria-label="t('buildOverview.openFolder')"
-              :title="t('buildOverview.openFolder')"
-              data-testid="build-overview-open-folder"
-              @click="openLocation"
-            >
-              <FolderOpen :size="14" aria-hidden="true" />
-            </Button>
-            <BaseCopyButton :value="location" :aria-label="t('buildOverview.copyPath')" />
-          </span>
-        </div>
-        <div
-          v-if="lineage"
-          class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
-          data-testid="build-overview-lineage"
-        >
-          <span class="text-[12px]/4 text-muted-foreground">{{ lineage.label }}</span>
-          <span class="truncate text-[13px]/5 text-foreground" :title="lineage.value">{{
-            lineage.value
+          <span
+            id="build-overview-disk"
+            class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+            >{{ t('buildOverview.onDisk') }}</span
+          >
+          <span
+            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+            >{{ diskUsage ?? '—' }}</span
+          >
+          <span v-if="diskFree" class="truncate text-[12px]/4 text-muted-foreground">{{
+            t('buildOverview.free', { size: diskFree })
           }}</span>
-        </div>
-        <div
-          v-if="port"
-          class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
-          data-testid="build-overview-port"
+        </section>
+
+        <section
+          class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
+          aria-labelledby="build-overview-python"
+          data-testid="build-overview-python"
         >
-          <span class="text-[12px]/4 text-muted-foreground">{{ port.label }}</span>
-          <span class="text-[13px]/5 text-foreground tabular-nums">{{ port.value }}</span>
-        </div>
-      </section>
+          <span
+            id="build-overview-python"
+            class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+            >{{ t('buildOverview.python') }}</span
+          >
+          <span
+            class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+            >{{ model.facts.python?.value ?? '—' }}</span
+          >
+          <span class="truncate text-[12px]/4 text-muted-foreground">{{
+            installation.sourceLabel
+          }}</span>
+        </section>
+
+        <section
+          class="build-overview-card col-span-full flex min-w-0 flex-col justify-center rounded-[14px] bg-card px-[18px] py-2"
+          :aria-label="t('buildOverview.details')"
+          data-testid="build-overview-facts"
+        >
+          <div
+            v-if="location"
+            class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
+            data-testid="build-overview-location"
+          >
+            <span
+              class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+              >{{ model.facts.location?.label }}</span
+            >
+            <span class="flex min-w-0 items-center gap-0.5">
+              <span
+                class="mr-auto min-w-0 truncate pr-3 font-mono text-[12px]/4 text-foreground"
+                :title="location"
+                >{{ location }}</span
+              >
+              <Button
+                type="button"
+                variant="muted-textonly"
+                size="icon"
+                class="size-7 shrink-0"
+                :aria-label="t('buildOverview.openFolder')"
+                :title="t('buildOverview.openFolder')"
+                data-testid="build-overview-open-folder"
+                @click="openLocation"
+              >
+                <FolderOpen :size="14" aria-hidden="true" />
+              </Button>
+              <BaseCopyButton :value="location" :aria-label="t('buildOverview.copyPath')" />
+            </span>
+          </div>
+          <div
+            v-if="lineage"
+            class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
+            data-testid="build-overview-lineage"
+          >
+            <span
+              class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+              >{{ lineage.label }}</span
+            >
+            <span class="truncate text-[13px]/5 text-foreground" :title="lineage.value">{{
+              lineage.value
+            }}</span>
+          </div>
+          <div
+            v-if="port"
+            class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
+            data-testid="build-overview-port"
+          >
+            <span
+              class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+              >{{ port.label }}</span
+            >
+            <span class="text-[13px]/5 text-foreground tabular-nums">{{ port.value }}</span>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 </template>
