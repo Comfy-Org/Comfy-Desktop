@@ -189,6 +189,15 @@ async function menuOptions(wrapper: VueWrapper, key: string): Promise<string[]> 
   return labels
 }
 
+async function checkedOptions(wrapper: VueWrapper, key: string): Promise<string[]> {
+  await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
+  const labels = Array.from(document.body.querySelectorAll('[role="menu"] [role="menuitemradio"]'))
+    .filter((item) => item.querySelector('[data-testid="menu-radio-item-check"]'))
+    .map((item) => item.textContent!.trim())
+  await closeMenu()
+  return labels
+}
+
 async function chooseOption(wrapper: VueWrapper, key: string, label: string): Promise<void> {
   await openMenu(wrapper, `[data-testid="benchmarks-filter-${key}"]`)
   const option = Array.from(
@@ -755,8 +764,10 @@ describe('BenchmarksView', () => {
     )
     expect(wrapper.find('.benchmarks__single-note').exists()).toBe(false)
     expect(await menuOptions(wrapper, 'group-by')).toEqual(['None', 'Workflow', 'Hardware'])
+    expect(await checkedOptions(wrapper, 'group-by')).toEqual(['None'])
 
     await chooseOption(wrapper, 'group-by', 'Workflow')
+    expect(await checkedOptions(wrapper, 'group-by')).toEqual(['Workflow'])
     expect(wrapper.findAll('.benchmarks__group-toggle').map((toggle) => toggle.text())).toEqual([
       'portrait.json',
       'landscape.json'

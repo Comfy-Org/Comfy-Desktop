@@ -2,7 +2,16 @@
 import { computed, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ArrowRight, Cloud, House, Images, Laptop, Plus, Server } from 'lucide-vue-next'
+import {
+  ArrowRight,
+  Cloud,
+  House,
+  Images,
+  Laptop,
+  LoaderCircle,
+  Plus,
+  Server
+} from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -11,6 +20,8 @@ import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
+import { buildProgressOf } from '../composables/useBuildProgress'
+import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
@@ -53,6 +64,7 @@ const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>((
 
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
+const progressStore = useProgressStore()
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
@@ -78,7 +90,15 @@ function failureText(build: Installation): string | null {
 const buildRows = computed(() =>
   visibleInstalls.value
     .filter((build) => isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId))
-    .map((build) => ({ build, failure: failureText(build), live: isLive(build) }))
+    .map((build) => {
+      const install = buildProgressOf(progressStore, build.id)
+      return {
+        build,
+        install,
+        failure: install ? null : failureText(build),
+        live: !install && isLive(build)
+      }
+    })
 )
 
 function navigate(page: DashboardPage): void {
@@ -200,7 +220,7 @@ function navigate(page: DashboardPage): void {
             <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
           </p>
           <Button
-            v-for="{ build, failure, live } in buildRows"
+            v-for="{ build, install, failure, live } in buildRows"
             :key="build.id"
             variant="muted-textonly"
             size="unset"
@@ -211,7 +231,14 @@ function navigate(page: DashboardPage): void {
             :data-testid="`app-sidebar-build-${build.id}`"
             @click="emit('open-build', build)"
           >
-            <span class="relative flex shrink-0">
+            <LoaderCircle
+              v-if="install"
+              :size="16"
+              class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+              aria-hidden="true"
+              data-testid="app-sidebar-build-installing"
+            />
+            <span v-else class="relative flex shrink-0">
               <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="16" aria-hidden="true" />
               <span
                 v-if="failure || live"
@@ -225,6 +252,12 @@ function navigate(page: DashboardPage): void {
               />
             </span>
             <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
+            <span
+              v-if="install?.kind === 'install' && install.percent !== null"
+              class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
+              data-testid="app-sidebar-build-percent"
+              >{{ t('installProgress.percent', { percent: install.percent }) }}</span
+            >
           </Button>
         </div>
       </template>

@@ -15,6 +15,8 @@ import {
   Check
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
+import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { useProgressStore } from '../../stores/progressStore'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import {
   buildDeviceKind,
@@ -61,6 +63,14 @@ const { t } = useI18n()
 const sessionStore = useSessionStore()
 
 const inst = computed(() => props.installation)
+const install = useBuildProgress(() => props.installation)
+const progressStore = useProgressStore()
+
+function viewError(): void {
+  if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
+  else emit('view-error', inst.value)
+}
+const isInstalling = computed(() => install.progress.value !== null)
 const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
 
 const isRunning = computed(() =>
@@ -202,7 +212,8 @@ const actionPill = computed(() => {
 })
 
 const showLaunch = computed(
-  () => !isUpdating.value && !isStopping.value && !props.isPromotingToWorkspace
+  () =>
+    !isInstalling.value && !isUpdating.value && !isStopping.value && !props.isPromotingToWorkspace
 )
 const opensExisting = computed(
   () =>
@@ -218,6 +229,10 @@ const launchLabel = computed(() =>
 )
 
 function openDetails(): void {
+  if (isInstalling.value) {
+    install.viewLogs()
+    return
+  }
   if (isStopping.value || isUpdating.value) return
   emit('open-details', inst.value)
 }
@@ -228,7 +243,7 @@ function launch(): void {
 }
 
 function handleContextMenu(event: MouseEvent): void {
-  if (!props.showMenu || isUpdating.value) return
+  if (!props.showMenu || isUpdating.value || isInstalling.value) return
   emit('open-card-menu', event, inst.value)
 }
 
@@ -275,14 +290,30 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
 
     <div class="chooser-tile-body relative flex min-w-0 flex-1 flex-col">
       <div class="flex h-4 min-w-0 items-center gap-1.5 text-xs/4 text-muted-foreground">
+        <span
+          v-if="isInstalling"
+          class="chooser-tile-status flex min-w-0 items-center gap-1.5"
+          :data-testid="`chooser-tile-progress-${inst.id}`"
+        >
+          <LoaderCircle
+            :size="12"
+            class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+          <span class="truncate">{{
+            install.progress.value?.kind === 'launch'
+              ? t('chooser.statusLaunching')
+              : t('installProgress.tileStatus', { percent: install.progress.value?.percent ?? 0 })
+          }}</span>
+        </span>
         <Button
-          v-if="hasError"
+          v-else-if="hasError"
           variant="destructive-textonly"
           size="unset"
           type="button"
           class="chooser-tile-error-badge h-4 gap-1 text-xs/4 font-medium"
           :title="t('chooser.viewErrorTooltip')"
-          @click.stop="emit('view-error', inst)"
+          @click.stop="viewError"
           @keydown.enter.stop
           @keydown.space.stop
         >
@@ -375,7 +406,34 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     </div>
 
     <div class="chooser-tile-footer relative flex shrink-0 items-center gap-1">
-      <Tooltip v-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
+      <template v-if="isInstalling">
+        <Button
+          type="button"
+          variant="muted-textonly"
+          size="unset"
+          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+          :data-testid="`chooser-tile-view-logs-${inst.id}`"
+          @click.stop="install.viewLogs"
+          @keydown.enter.stop
+          @keydown.space.stop
+        >
+          {{ t('installProgress.viewLogs') }}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="unset"
+          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
+          :disabled="install.progress.value?.cancelling"
+          :data-testid="`chooser-tile-cancel-${inst.id}`"
+          @click.stop="install.cancel"
+          @keydown.enter.stop
+          @keydown.space.stop
+        >
+          {{ t('common.cancel') }}
+        </Button>
+      </template>
+      <Tooltip v-else-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
         <Button
           type="button"
           variant="secondary"
@@ -411,7 +469,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       </Button>
       <div class="chooser-tile-actions flex items-center">
         <Button
-          v-if="props.showMenu && !isUpdating"
+          v-if="props.showMenu && !isUpdating && !isInstalling"
           variant="muted-textonly"
           size="unset"
           type="button"

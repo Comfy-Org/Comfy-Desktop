@@ -9,6 +9,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
+import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useQuickUpdate } from '../composables/useQuickUpdate'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
@@ -117,11 +118,15 @@ const sortOptions = computed(() => [
   { value: 'name', label: t('chooser.sortName') }
 ])
 
+const isInstalling = useInstallingBuilds()
 const scopedVisibleInstalls = computed(() => {
   const inScope = visibleInstalls.value.filter(installationIsInSelectedScope)
-  return sortOrder.value === 'name'
-    ? [...inScope].sort((a, b) => a.name.localeCompare(b.name))
-    : inScope
+  const sorted =
+    sortOrder.value === 'name' ? [...inScope].sort((a, b) => a.name.localeCompare(b.name)) : inScope
+  return [
+    ...sorted.filter((inst) => isInstalling(inst.id)),
+    ...sorted.filter((inst) => !isInstalling(inst.id))
+  ]
 })
 const scopedInstalls = computed(() => effectiveInstalls.value.filter(installationIsInSelectedScope))
 

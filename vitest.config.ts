@@ -4,7 +4,6 @@ import { playwright } from '@vitest/browser-playwright'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
-const INTEGRATION_TESTS = 'src/**/*.integration.test.ts'
 const RENDERER_TESTS_THAT_READ_FILES = [
   'src/renderer/csp.test.ts',
   'src/renderer/src/lib/localeCoverage.test.ts'
@@ -44,7 +43,7 @@ export default defineConfig({
             'scripts/eslint/**/*.test.ts',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
-          exclude: [INTEGRATION_TESTS, 'node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]
+          exclude: ['node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]
         }
       },
       {
@@ -57,7 +56,7 @@ export default defineConfig({
           name: 'browser',
           sequence: { groupOrder: 1 },
           include: ['src/renderer/**/*.test.ts', ...INJECTED_PAGE_SCRIPT_TESTS],
-          exclude: [INTEGRATION_TESTS, 'node_modules', ...RENDERER_TESTS_THAT_READ_FILES],
+          exclude: ['node_modules', ...RENDERER_TESTS_THAT_READ_FILES],
           setupFiles: ['./vitest.setup.ts'],
           browser: {
             enabled: true,

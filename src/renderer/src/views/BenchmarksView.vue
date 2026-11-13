@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
-import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import {
@@ -25,6 +24,7 @@ import type { PerformanceTestBenchmark, PerformanceTestResultValue } from '../ty
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
+import BaseMenuRadioItem from '../components/ui/BaseMenuRadioItem.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import {
   createBenchmarkComparisonSvg,
@@ -734,16 +734,15 @@ onActivated(() => {
                   </Button>
                 </template>
                 <DropdownMenuRadioGroup :model-value="menu.value">
-                  <MenuRadioItem
+                  <BaseMenuRadioItem
                     v-for="option in menu.options"
                     :key="option.value"
                     :value="option.value"
                     :data-value="option.value"
-                    class="data-[state=checked]:bg-accent"
                     @select="menu.set(option.value)"
                   >
                     <span class="flex-1 text-left">{{ option.label }}</span>
-                  </MenuRadioItem>
+                  </BaseMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </Menu>
             </div>
