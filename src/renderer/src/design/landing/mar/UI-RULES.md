@@ -74,6 +74,10 @@ DS's Motion page (`ds/motion.ts`).
   filled, no check. For launch that is this solid look everywhere; the
   proto's smoked glass comes later, to all menus at once, never to one
   menu alone.
+- **Menu dividers run edge to edge.** A divider inside a menu cancels the
+  menu's padding (negative margin equal to it, like
+  `ui/DropdownMenuSeparator.vue`), so it touches both sides; 1px, the
+  border colour.
 
 ## Split button
 
