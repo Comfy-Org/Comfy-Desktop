@@ -311,3 +311,14 @@
 :root {
   --titlebar-height: 37px;
 }
+
+[data-reka-menu-content] {
+  background-color: var(--color-popover);
+  padding: 4px;
+}
+
+[data-reka-menu-content] :is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox']) {
+  min-height: 28px;
+  font-size: 12px;
+  line-height: 16px;
+}
