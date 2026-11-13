@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
-import { can } from '../../milestones'
 import ExampleArc from './ExampleArc.vue'
 import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
@@ -40,9 +39,7 @@ const TOPICS = computed(() =>
   ).filter((t) => t.value === 'all' || EVERY.filter((x) => x.topic === t.value).length >= 3)
 )
 
-/** Milestone 2 always shows the tabs; from Milestone 3 the layout follows
- *  UI Playground › Apps and templates. */
-const mix = computed(() => (can.value.explore ? homeArcMix.id : 'tabs'))
+const mix = computed(() => homeArcMix.id)
 
 const items = computed<ArcItem[]>(() => {
   switch (mix.value) {
@@ -62,8 +59,6 @@ const items = computed<ArcItem[]>(() => {
 })
 
 const allLabel = computed(() => {
-  // Milestone 2 has a page for apps only, so the Workflows tab has no See all.
-  if (!can.value.explore) return kind.value === 'apps' ? 'See all apps' : ''
   if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
   if (mix.value === 'topics' && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
@@ -72,7 +67,6 @@ const allLabel = computed(() => {
 })
 
 function seeAll(on: 'apps' | 'templates'): void {
-  if (!can.value.explore) return go('apps')
   exploreStart.value = on
   go('explore')
 }

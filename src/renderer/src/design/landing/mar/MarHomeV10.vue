@@ -191,10 +191,11 @@ const recent = computed<Recent[]>(() =>
     <template v-if="gated"></template>
     <MarStart v-else-if="firstRun && !cardInBuilds" />
     <div v-else>
-      <!-- The Apps stage: the examples arc leads for everyone, from
-           Milestone 2 on, with Apps | Workflows tabs over it; from
-           Milestone 3 its layout follows UI Playground › Apps and templates. -->
-      <HomeArcMix v-if="can.exploreApps" class="mt-6" />
+      <!-- The Apps stage: the apps arc leads for everyone from Milestone 2
+           on; from Milestone 3 Apps | Workflows tabs sit over it (layout in
+           UI Playground › Apps and templates). -->
+      <HomeArcMix v-if="can.explore" class="mt-6" />
+      <ExampleArc v-else-if="can.exploreApps" class="mt-6" />
       <MarBuildsRow v-if="!onCloud" />
       <!-- A first-time user with a build: nothing of theirs yet, so the
            examples take Recently used's place (UI Playground › First-time
