@@ -1,5 +1,6 @@
 import type {
   ComfyDesktop2BillingHandoff,
+  ComfyDesktop2BillingHandoffIntent,
   ComfyDesktop2BillingHandoffReceiver
 } from '../../types/comfyDesktopBridge'
 import { CLOUD_CONFIG } from './config'
@@ -10,6 +11,7 @@ export interface BillingHandoffRequest {
   workspaceId: string
   receiver: ComfyDesktop2BillingHandoffReceiver
   clientVersion: string
+  intent?: ComfyDesktop2BillingHandoffIntent
 }
 
 export interface IssueBillingHandoffOptions {
@@ -44,7 +46,7 @@ function refusedFrom(body: unknown): RefusedHandoff {
 
 export async function issueBillingHandoff(
   accessToken: string,
-  { workspaceId, receiver, clientVersion }: BillingHandoffRequest,
+  { workspaceId, receiver, clientVersion, intent }: BillingHandoffRequest,
   options: IssueBillingHandoffOptions = {}
 ): Promise<ComfyDesktop2BillingHandoff> {
   const base = (options.apiBase ?? CLOUD_CONFIG.apiBase).replace(/\/+$/, '')
@@ -61,7 +63,8 @@ export async function issueBillingHandoff(
         workspace_id: workspaceId,
         receiver,
         surface: 'desktop',
-        client_version: clientVersion
+        client_version: clientVersion,
+        ...(intent === undefined ? {} : { intent })
       }),
       signal: AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS)
     })

@@ -458,9 +458,17 @@ describe('billingHandoffForSender', () => {
     vi.unstubAllGlobals()
   })
 
-  function issue(workspaceId: unknown = 'ws-1', receiver: unknown = 'billing_web') {
+  function sentBody(): unknown {
+    return JSON.parse(String(vi.mocked(fetch).mock.lastCall?.[1]?.body))
+  }
+
+  function issue(
+    workspaceId: unknown = 'ws-1',
+    receiver: unknown = 'billing_web',
+    intent: unknown = undefined
+  ) {
     const { event } = view('http://127.0.0.1:8000')
-    return billingHandoffForSender(event, workspaceId, receiver, '1.2.3')
+    return billingHandoffForSender(event, workspaceId, receiver, intent, '1.2.3')
   }
 
   it('posts the handoff request with the grant access token as Bearer', async () => {
@@ -546,15 +554,42 @@ describe('billingHandoffForSender', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['an empty workspace', '', 'billing_web'],
-    ['a non-string workspace', 42, 'billing_web'],
-    ['an unknown receiver', 'ws-1', 'checkout'],
-    ['a null receiver', 'ws-1', null]
-  ])('is disabled for %s', async (_name, workspaceId, receiver) => {
+  it.each(['top-up', 'subscription'])('sends the %s landing intent to Cloud', async (intent) => {
     respond(201, { entry_url: ENTRY_URL })
 
-    await expect(issue(workspaceId, receiver)).resolves.toEqual({ status: 'disabled' })
+    await expect(issue('ws-1', 'billing_web', intent)).resolves.toEqual({
+      status: 'issued',
+      entryUrl: ENTRY_URL
+    })
+    expect(sentBody()).toEqual({
+      workspace_id: 'ws-1',
+      receiver: 'billing_web',
+      surface: 'desktop',
+      client_version: '1.2.3',
+      intent
+    })
+  })
+
+  it('leaves intent out of the request when the view sends none', async () => {
+    respond(201, { entry_url: ENTRY_URL })
+
+    await issue('ws-1', 'billing_web')
+
+    expect(sentBody()).not.toHaveProperty('intent')
+  })
+
+  it.each([
+    ['an empty workspace', '', 'billing_web', undefined],
+    ['a non-string workspace', 42, 'billing_web', undefined],
+    ['an unknown receiver', 'ws-1', 'checkout', undefined],
+    ['a null receiver', 'ws-1', null, undefined],
+    ['an unknown intent', 'ws-1', 'billing_web', 'refund'],
+    ['a null intent', 'ws-1', 'billing_web', null],
+    ['a non-string intent', 'ws-1', 'billing_web', 1]
+  ])('is disabled for %s', async (_name, workspaceId, receiver, intent) => {
+    respond(201, { entry_url: ENTRY_URL })
+
+    await expect(issue(workspaceId, receiver, intent)).resolves.toEqual({ status: 'disabled' })
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -566,7 +601,9 @@ describe('billingHandoffForSender', () => {
     respond(201, { entry_url: ENTRY_URL })
     const { event } = view(comfyUrl, options)
 
-    await expect(billingHandoffForSender(event, 'ws-1', 'billing_web', '1.2.3')).resolves.toEqual({
+    await expect(
+      billingHandoffForSender(event, 'ws-1', 'billing_web', undefined, '1.2.3')
+    ).resolves.toEqual({
       status: 'disabled'
     })
     expect(fetch).not.toHaveBeenCalled()

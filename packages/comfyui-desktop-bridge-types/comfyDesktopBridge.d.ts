@@ -125,6 +125,7 @@ export type ComfyDesktop2AuthState =
       workspaceId?: string
     }
 export type ComfyDesktop2BillingHandoffReceiver = 'billing_web' | 'platform'
+export type ComfyDesktop2BillingHandoffIntent = 'top-up' | 'subscription'
 export type ComfyDesktop2BillingHandoff =
   | {
       status: 'issued'
@@ -165,10 +166,11 @@ export interface ComfyDesktop2AuthBridge {
   switchWorkspace(workspaceId: string): Promise<ComfyDesktop2AuthState>
   /** Fires when Desktop signs in, signs out or switches workspace. */
   onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
-  /** Issues a billing handoff with Desktop's credential and resolves with only its https entry URL; absent on older Desktop builds. */
+  /** Issues a billing handoff with Desktop's credential and resolves with only its https entry URL; `intent` picks the landing page. Absent on older Desktop builds. */
   issueBillingHandoff?(
     workspaceId: string,
-    receiver: ComfyDesktop2BillingHandoffReceiver
+    receiver: ComfyDesktop2BillingHandoffReceiver,
+    intent?: ComfyDesktop2BillingHandoffIntent
   ): Promise<ComfyDesktop2BillingHandoff>
 }
 export interface ComfyDesktop2TerminalBridge {
