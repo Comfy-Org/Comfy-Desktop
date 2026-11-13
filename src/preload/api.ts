@@ -245,6 +245,12 @@ export function buildElectronApi(): ElectronApi {
     getCloudUserTier: () => ipcRenderer.invoke('get-cloud-user-tier'),
     getCloudFreeRunsEnabled: () => ipcRenderer.invoke('get-cloud-free-runs-enabled'),
     getAppsEnabled: () => ipcRenderer.invoke('get-apps-enabled'),
+    onAppsEnabledChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, info: unknown) =>
+        callback(info as Parameters<typeof callback>[0])
+      ipcRenderer.on('comfy-apps:enabled', handler)
+      return () => ipcRenderer.removeListener('comfy-apps:enabled', handler)
+    },
     quitApp: () => ipcRenderer.invoke('quit-app'),
     relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
     resetZoom: () => ipcRenderer.invoke('reset-zoom'),
