@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { evalWithRetry } from './support/evalRetry'
 import { launchApp, type AppContext } from './launchApp'
+import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 
 let ctx: AppContext
 
@@ -14,25 +15,24 @@ test.afterAll(async () => {
   await ctx.cleanup()
 })
 
-test('cold start lands on first-use start screen @lifecycle', async () => {
-  await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
-  await ctx.panel.waitForVisible('[data-testid="first-use-pick-cloud"]')
-  await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
+test('cold start lands on Set up @lifecycle', async () => {
+  await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
+  await ctx.panel.waitForVisible('[data-testid="setup-install"]')
 })
 
-test('accept ToS + pick cloud auto-launches the seeded Cloud install @lifecycle', async () => {
-  expect(await ctx.panel.click('[data-testid="first-use-pick-cloud"]')).toBe(true)
+test('skipping Set up and opening the Comfy Cloud card launches the seeded Cloud install @lifecycle', async () => {
+  expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
 
-  expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
-  await ctx.panel.waitFor(
-    async () =>
-      ctx.panel.evaluate<boolean>(
-        `!document.querySelector('[data-testid="first-use-continue"]').disabled`
-      ),
-    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' }
-  )
+  await ctx.titleBar.waitForVisible('.title-menu-button[aria-haspopup="menu"]', { timeout: 15_000 })
+  expect(await ctx.titleBar.click('.title-menu-button[aria-haspopup="menu"]')).toBe(true)
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+  await popup.waitForVisible('li.item', { timeout: 10_000 })
+  expect(await popup.clickByText('li.item', 'Skip Onboarding')).toBe(true)
 
-  expect(await ctx.panel.click('[data-testid="first-use-continue"]')).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="home-view"]', { timeout: 10_000 })
+  expect(await ctx.panel.clickByText('[data-testid="home-build"]', 'Comfy Cloud')).toBe(true)
 
   await expect
     .poll(() => ctx.titleBar.exists('.title-install-pill:not(.is-install-less)'), {

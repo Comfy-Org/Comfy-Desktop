@@ -832,7 +832,19 @@ defineExpose({ startOperation, showOperation })
           <div class="brand-progress__footer-left inline-flex items-center gap-2.5">
             <template v-if="!currentOp.finished">
               <Button
-                v-if="currentOp.destroysInstance"
+                v-if="currentOp.background"
+                size="unset"
+                variant="textonly"
+                type="button"
+                :class="[footerButtonClass, secondaryClass]"
+                data-testid="progress-hide"
+                @click="emit('close')"
+              >
+                <ArrowLeft :size="14" />
+                {{ $t('common.back') }}
+              </Button>
+              <Button
+                v-else-if="currentOp.destroysInstance"
                 size="unset"
                 variant="textonly"
                 type="button"

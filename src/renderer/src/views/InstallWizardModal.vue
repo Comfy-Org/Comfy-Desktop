@@ -19,6 +19,7 @@ import type {
   ShowProgressOpts
 } from '../types/ipc'
 import { stripVariantPrefix, sortedCardOptions } from '../lib/variants'
+import { INSTALL_SPACE_FACTOR } from '../lib/setupPlan'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { PERSONAL_WORKSPACE_ID, workspaceContextId } from '../../../shared/workspaces'
 import { emitTelemetryAction, toSizeBucket, toVariantBucket, toErrorBucket } from '../lib/telemetry'
@@ -48,7 +49,7 @@ const emit = defineEmits<{
   close: []
   'show-progress': [opts: ShowProgressOpts]
   'navigate-list': []
-  'back-to-local-branch': []
+  'back-to-setup': []
 }>()
 
 const spinnerClass =
@@ -247,7 +248,7 @@ let hardwareValidation: HardwareValidation | null = null
 const estimatedInstallSize = computed(() => {
   if (!localInstallMode.value) {
     const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
-    return sizeBytes > 0 ? Math.ceil(sizeBytes * 2.25) : 0
+    return sizeBytes > 0 ? Math.ceil(sizeBytes * INSTALL_SPACE_FACTOR) : 0
   }
   let downloadBytes = 0
   for (const selected of Object.values(selections.value)) {
@@ -256,7 +257,7 @@ const estimatedInstallSize = computed(() => {
       downloadBytes += files.reduce((sum, f) => sum + f.size, 0)
     }
   }
-  return downloadBytes > 0 ? Math.ceil(downloadBytes * 2.25) : 0
+  return downloadBytes > 0 ? Math.ceil(downloadBytes * INSTALL_SPACE_FACTOR) : 0
 })
 
 const entrypoint = ref('unknown')
@@ -486,22 +487,22 @@ onBeforeUnmount(() => {
   clearTimeout(templateNudgeTimer)
 })
 
-function handleBackToLocalBranch(): void {
+function handleBackToSetup(): void {
   resolved.value = true
   emitTelemetryAction('comfy.desktop.install.not_started', {
     ...installHandoffProps(),
-    reason: 'back_to_local_branch'
+    reason: 'back_to_setup'
   })
-  emit('back-to-local-branch')
+  emit('back-to-setup')
 }
 
 interface OpenOpts {
-  cameFromLocalBranch?: boolean
+  cameFromSetup?: boolean
   entrypoint?: string
   workspaceId?: string
 }
 
-const cameFromLocalBranch = ref(false)
+const cameFromSetup = ref(false)
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
@@ -511,7 +512,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   workspaceInstallMode.value = 'public'
   selectedBuildId.value = ''
   selectedBuildTargetId.value = ''
-  cameFromLocalBranch.value = opts.cameFromLocalBranch === true
+  cameFromSetup.value = opts.cameFromSetup === true
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
@@ -1080,7 +1081,8 @@ async function handleSave(): Promise<void> {
         | Array<{ size: number }>
         | undefined
       const downloadBytes = downloadFiles ? downloadFiles.reduce((sum, f) => sum + f.size, 0) : 0
-      const estimatedRequired = downloadBytes > 0 ? Math.ceil(downloadBytes * 2.25) : 0
+      const estimatedRequired =
+        downloadBytes > 0 ? Math.ceil(downloadBytes * INSTALL_SPACE_FACTOR) : 0
 
       if (
         !(await checkDiskSpaceOrWarn({
@@ -1563,7 +1565,7 @@ defineExpose({ open })
         </div>
 
         <div
-          v-if="cameFromLocalBranch"
+          v-if="cameFromSetup"
           class="config-card__footer flex flex-none items-center justify-end gap-3 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-5 py-3.5"
         >
           <Button
@@ -1571,8 +1573,8 @@ defineExpose({ open })
             variant="textonly"
             type="button"
             class="config-back mr-auto"
-            data-testid="config-back-to-local-branch"
-            @click="handleBackToLocalBranch"
+            data-testid="config-back-to-setup"
+            @click="handleBackToSetup"
           >
             {{ $t('common.back') }}
           </Button>

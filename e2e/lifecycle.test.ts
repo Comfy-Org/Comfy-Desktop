@@ -272,52 +272,26 @@ async function comfyFrontendIsLoaded(): Promise<boolean> {
   )
 }
 
-test('cold start lands on first-use start screen @sec-setup @lifecycle', async () => {
+test('cold start lands on Set up with the detected computer and one Install @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
-  await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
-  await ctx.panel.waitForVisible('[data-testid="first-use-pick-cloud"]')
-  await ctx.panel.waitForVisible('[data-testid="first-use-pick-local"]')
-  await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
+  await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
+  await ctx.panel.waitForVisible('[data-testid="setup-machine"]')
+  await ctx.panel.waitForVisible('[data-testid="setup-change"]')
+  await ctx.panel.waitForVisible('[data-testid="setup-install"]')
 })
 
-test('accept ToS + pick local (non-express) opens New Install takeover with form pre-filled @sec-setup @lifecycle', async () => {
+test('accept ToS + Change opens New Install takeover with form pre-filled @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
 
-  expect(await ctx.panel.click('[data-testid="first-use-pick-local"]')).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
-
-  const expressCheckbox = '[data-testid="first-use-express-install"] [role="checkbox"]'
+  expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
   expect(
     await ctx.panel.evaluate<boolean>(
-      `document.querySelector(${JSON.stringify(expressCheckbox)})?.getAttribute('aria-checked') === 'false'`
+      `document.querySelector('[data-testid="setup-consent-tos"] [role="checkbox"]')?.getAttribute('aria-checked') === 'true'`
     ),
-    'Express Install should default to unchecked on Local pick'
-  ).toBe(true)
-  expect(await ctx.panel.click(expressCheckbox)).toBe(true)
-  expect(
-    await ctx.panel.evaluate<boolean>(
-      `document.querySelector(${JSON.stringify(expressCheckbox)})?.getAttribute('aria-checked') === 'true'`
-    ),
-    'Express Install checkbox did not check'
-  ).toBe(true)
-  expect(await ctx.panel.click(expressCheckbox)).toBe(true)
-  expect(
-    await ctx.panel.evaluate<boolean>(
-      `document.querySelector(${JSON.stringify(expressCheckbox)})?.getAttribute('aria-checked') === 'false'`
-    ),
-    'Express Install checkbox did not uncheck'
+    'ToS checkbox did not check'
   ).toBe(true)
 
-  expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
-  await ctx.panel.waitFor(
-    async () =>
-      ctx.panel.evaluate<boolean>(
-        `!document.querySelector('[data-testid="first-use-continue"]').disabled`
-      ),
-    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' }
-  )
-
-  expect(await ctx.panel.click('[data-testid="first-use-continue"]')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
   await expectTakeoverOpen(ctx.panel)
 
   await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
@@ -364,7 +338,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   }
 })
 
-test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle', async () => {
+test('installs on the Home build card, then Open ComfyUI launches it @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
   const LINUX_AMD = LIFECYCLE_VARIANT === 'amd' && process.platform === 'linux'
   test.setTimeout(LINUX_AMD ? 1_020_000 : 600_000)
@@ -373,16 +347,28 @@ test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle',
   await ctx.panel.waitForVisible('.template-skip', { timeout: 10_000 })
   expect(await ctx.panel.clickByText('.template-skip', 'Skip & Install')).toBe(true)
 
-  await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
+  await ctx.panel.waitForVisible('[data-testid="home-build-installing"]', { timeout: 15_000 })
+  expect(
+    await ctx.panel.exists('[data-testid="home-open-comfyui"]'),
+    'Open ComfyUI stays hidden while the only local build installs'
+  ).toBe(false)
+  await expect
+    .poll(() => ctx.panel.exists('[data-testid="home-open-comfyui"]'), {
+      timeout: LINUX_AMD ? 840_000 : 420_000,
+      intervals: [1_000, 2_000]
+    })
+    .toBe(true)
+  expect(await ctx.panel.exists('[data-testid="home-build-installing"]')).toBe(false)
+  expect(await ctx.panel.click('[data-testid="home-open-comfyui"]')).toBe(true)
   await expect
     .poll(comfyFrontendIsLoaded, {
-      timeout: LINUX_AMD ? 900_000 : 480_000,
+      timeout: 180_000,
       intervals: [1_000, 2_000]
     })
     .toBe(true)
 })
 
-test('first-use Local chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @lifecycle', async () => {
+test('first-use Change chain marks firstUseCompleted once and cycles firstUseMode @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use IPC log only exists on the boot that drove the chain')
   const setSettingCalls = (await getIpcInvocations(ctx.app, 'set-setting')) as Array<{
     key: string
@@ -406,8 +392,8 @@ test('first-use Local chain marks firstUseCompleted once and cycles firstUseMode
   )
 })
 
-test('auto-launch landed on a single host window (in-place attach) @sec-setup @lifecycle', async () => {
-  test.skip(HYDRATED, 'reuse mode: install was not auto-launched on this boot')
+test('the launch landed on a single host window (in-place attach) @sec-setup @lifecycle', async () => {
+  test.skip(HYDRATED, 'reuse mode: install was not launched on this boot')
   const state = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
       const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())

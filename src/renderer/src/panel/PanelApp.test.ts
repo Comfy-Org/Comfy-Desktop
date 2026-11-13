@@ -105,15 +105,23 @@ vi.mock('../views/QuickInstallModal.vue', () => ({
 vi.mock('../views/FirstUseTakeover.vue', () => ({
   default: {
     name: 'FirstUseTakeover',
-    emits: ['close', 'complete-cloud', 'complete-skip', 'chain-local', 'chain-migrate'],
+    emits: ['install', 'change', 'complete-skip', 'chain-migrate'],
+    data: () => ({
+      plan: {
+        sourceId: 'standalone',
+        selections: { release: { value: 'stable', label: 'Stable' } },
+        installRoot: '/Users/ada/ComfyUI-Installs',
+        downloadBytes: 1024 ** 3,
+        requiredBytes: 2 * 1024 ** 3
+      }
+    }),
     template:
       '<div data-testid="first-use-takeover">' +
-      '<button data-testid="first-use-cloud" @click="$emit(\'complete-cloud\')">Cloud</button>' +
+      '<button data-testid="first-use-install" @click="$emit(\'install\', plan)">Install</button>' +
+      '<button data-testid="first-use-change" @click="$emit(\'change\')">Change</button>' +
       '<button data-testid="first-use-skip" @click="$emit(\'complete-skip\')">Skip</button>' +
-      '<button data-testid="first-use-local" @click="$emit(\'chain-local\')">Local</button>' +
-      '<button data-testid="first-use-close" @click="$emit(\'close\')">Close</button>' +
       '</div>',
-    methods: { open: vi.fn() }
+    methods: { open: vi.fn(), resetContinue: vi.fn() }
   }
 }))
 vi.mock('../views/MigrateConfirmTakeover.vue', () => ({
@@ -2782,31 +2790,53 @@ describe('PanelApp', () => {
     expect(api.getFieldOptions).not.toHaveBeenCalled()
   })
 
-  it('marks firstUseCompleted=true and closes the takeover on Cloud-branch pick', async () => {
+  it('Install on Set up lands on Home with the build installing there, not behind a progress screen', async () => {
     mockState.settings.firstUseCompleted = false
     mockState.installations = [
       { id: 'cloud-id', name: 'Comfy Cloud', sourceLabel: 'Cloud', sourceCategory: 'cloud' }
     ]
+    const api = (window as unknown as { api: Record<string, unknown> }).api
+    const installInstance = vi.fn(() => {
+      mockState.installationsChangedCallbacks.forEach((cb) => cb())
+      return new Promise(() => {})
+    })
+    Object.assign(api, {
+      getDiskSpace: vi.fn(async () => ({ free: 400 * 1024 ** 3, total: 1000 * 1024 ** 3 })),
+      buildInstallation: vi.fn(async () => ({ sourceId: 'standalone', sourceCategory: 'local' })),
+      getUniqueName: vi.fn(async (name: string) => name),
+      addInstallation: vi.fn(async (data: Record<string, unknown>) => {
+        const entry = { ...data, id: 'inst-new', name: String(data.name), sourceCategory: 'local' }
+        mockState.installations = [...mockState.installations, entry as InstallationLike]
+        return { ok: true, entry }
+      }),
+      installInstance,
+      onInstallProgress: vi.fn(() => () => {})
+    })
     window.history.replaceState({}, '', '/?panel=chooser')
     const wrapper = mountPanel()
     await flushPromises()
-    const api = (
-      window as unknown as {
-        api: {
-          setSetting: ReturnType<typeof vi.fn>
-          getListActions: ReturnType<typeof vi.fn>
-        }
-      }
-    ).api
-    expect(api.setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
 
-    await wrapper.find('[data-testid="first-use-cloud"]').trigger('click')
+    await wrapper.find('[data-testid="first-use-install"]').trigger('click')
     await flushPromises()
 
+    expect(installInstance).toHaveBeenCalledWith('inst-new', true)
     expect(api.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="chooser-view"]').exists()).toBe(true)
-    expect(api.getListActions).toHaveBeenCalledWith('cloud-id')
+    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    const card = wrapper.get('[data-testid="home-build-installing"]')
+    expect(card.attributes('data-build-id')).toBe('inst-new')
+    expect(card.text()).toContain('Installing ComfyUI')
+    expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="home-build-view-logs"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(true)
+
+    await wrapper.findComponent({ name: 'ProgressModal' }).vm.$emit('close')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-build-installing"]').exists()).toBe(true)
   })
 
   it('marks firstUseCompleted=true on returning-user complete-skip WITHOUT auto-launching cloud', async () => {
@@ -2837,13 +2867,13 @@ describe('PanelApp', () => {
     expect(api.getListActions).not.toHaveBeenCalled()
   })
 
-  it('chains into the new-install takeover on Local-branch pick and marks completion when new-install closes', async () => {
+  it('Change on Set up opens every install option and marks completion when that closes', async () => {
     mockState.settings.firstUseCompleted = false
     window.history.replaceState({}, '', '/?panel=chooser')
     const wrapper = mountPanel()
     await flushPromises()
 
-    await wrapper.find('[data-testid="first-use-local"]').trigger('click')
+    await wrapper.find('[data-testid="first-use-change"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
@@ -3219,13 +3249,13 @@ describe('PanelApp', () => {
       })
     })
 
-    it('fires comfy.desktop.install.flow.opened with entrypoint=first_use on the first-use Local-branch chain', async () => {
+    it('fires comfy.desktop.install.flow.opened with entrypoint=first_use when Set up opens Change', async () => {
       mockState.settings.firstUseCompleted = false
       window.history.replaceState({}, '', '/?panel=chooser')
       const wrapper = mountPanel()
       await flushPromises()
       const events = captureTelemetry()
-      await wrapper.find('[data-testid="first-use-local"]').trigger('click')
+      await wrapper.find('[data-testid="first-use-change"]').trigger('click')
       await flushPromises()
       const flowEvents = events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')
       expect(flowEvents).toHaveLength(1)
