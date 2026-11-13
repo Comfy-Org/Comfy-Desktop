@@ -91,7 +91,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       }}</SelectValue>
     </SelectTrigger>
     <SelectContent
-      class="ui-select-listbox z-[9999] mt-0 max-h-[min(280px,var(--reka-select-content-available-height))] w-min min-w-[var(--reka-select-trigger-width)] bg-popover [overflow-wrap:anywhere]"
+      class="ui-select-listbox z-[9999] mt-0 max-h-[min(360px,var(--reka-select-content-available-height))] w-min min-w-[var(--reka-select-trigger-width)] border bg-popover p-1 shadow-lg [overflow-wrap:anywhere]"
       :class="{ 'ui-select-listbox--compact': compact }"
       :side-offset="2"
       :collision-padding="8"
@@ -107,8 +107,8 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         :value="option.key"
         :disabled="option.disabled"
         :text-value="option.label"
-        class="ui-select-option"
-        :class="compact ? 'py-1.5 text-xs' : 'py-2'"
+        class="ui-select-option mt-0.5 min-h-7 shrink-0 rounded-md px-3 py-1.5 first:mt-0 data-[state=checked]:data-highlighted:bg-accent"
+        :class="{ 'text-xs': compact, 'py-2': option.description }"
         text-class="min-w-0 whitespace-normal"
       >
         <span class="ui-select-option-body flex min-w-0 flex-col gap-0.5">

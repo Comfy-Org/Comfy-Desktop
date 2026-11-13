@@ -4,10 +4,10 @@ import { useEventListener } from '@vueuse/core'
 import { DropdownMenuRadioGroup } from 'reka-ui'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
-import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown } from 'lucide-vue-next'
+import { ChevronDown } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
+import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import DevPlatformAvatar from './DevPlatformAvatar.vue'
 import { useAuthStore } from '../../stores/authStore'
 import { isPersonalWorkspace, PERSONAL_WORKSPACE_ID } from '../../../../shared/workspaces'
@@ -136,7 +136,7 @@ function onSelectWorkspace(workspaceId: string): void {
         >{{ $t('devPlatform.workspace.loadError') }}</MenuItem
       >
       <DropdownMenuRadioGroup :model-value="currentWorkspaceId">
-        <MenuRadioItem
+        <BaseMenuRadioItem
           as="button"
           type="button"
           :value="PERSONAL_WORKSPACE_ID"
@@ -150,13 +150,8 @@ function onSelectWorkspace(workspaceId: string): void {
               $t('devPlatform.workspace.personalLabel')
             }}</span></span
           >
-          <Check
-            v-if="currentWorkspaceId === PERSONAL_WORKSPACE_ID"
-            :size="15"
-            aria-hidden="true"
-          />
-        </MenuRadioItem>
-        <MenuRadioItem
+        </BaseMenuRadioItem>
+        <BaseMenuRadioItem
           v-for="workspace in teamWorkspaces"
           :key="workspace.id"
           as="button"
@@ -179,8 +174,7 @@ function onSelectWorkspace(workspaceId: string): void {
               >{{ workspace.type }}</span
             >
           </span>
-          <Check v-if="workspace.id === currentWorkspaceId" :size="15" aria-hidden="true" />
-        </MenuRadioItem>
+        </BaseMenuRadioItem>
       </DropdownMenuRadioGroup>
       <slot name="footer" />
     </Menu>
