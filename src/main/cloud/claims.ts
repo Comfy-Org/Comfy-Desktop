@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer'
 
+import { PARTNER_NODE_MINT_SCOPE, WORKSPACE_MINT_SCOPE } from './config'
 import type { AuthStatus } from './types'
 
 interface AccessTokenClaims {
@@ -8,6 +9,10 @@ interface AccessTokenClaims {
   workspace_id?: string
   workspace_type?: string
   role?: string
+  scope?: string
+  fam?: unknown
+  iat?: unknown
+  exp?: unknown
 }
 
 function decodeJwtPayload(token: string): AccessTokenClaims | null {
@@ -35,6 +40,31 @@ export function statusFromAccessToken(accessToken: string): AuthStatus {
 
 export function workspaceIdOf(accessToken: string): string | null {
   return decodeJwtPayload(accessToken)?.workspace_id ?? null
+}
+
+function holdsScope(accessToken: string, scope: string): boolean {
+  const granted = decodeJwtPayload(accessToken)?.scope
+  return typeof granted === 'string' && granted.split(' ').includes(scope)
+}
+
+export function canMintWorkspaceTokens(accessToken: string): boolean {
+  return holdsScope(accessToken, WORKSPACE_MINT_SCOPE)
+}
+
+export function holdsPartnerNodeScope(accessToken: string): boolean {
+  return holdsScope(accessToken, PARTNER_NODE_MINT_SCOPE)
+}
+
+export function lifetimeSecondsOf(accessToken: string): number | null {
+  const { iat, exp } = decodeJwtPayload(accessToken) ?? {}
+  if (typeof iat !== 'number' || typeof exp !== 'number') return null
+  const lifetime = exp - iat
+  return Number.isFinite(lifetime) ? lifetime : null
+}
+
+export function grantFamilyOf(accessToken: string): string | null {
+  const fam = decodeJwtPayload(accessToken)?.fam
+  return typeof fam === 'string' ? fam : null
 }
 
 export function subjectOf(accessToken: string): string | null {

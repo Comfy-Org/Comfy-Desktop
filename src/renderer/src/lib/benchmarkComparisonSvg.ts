@@ -1,4 +1,5 @@
 import comfyWordmarkSource from '../components/icons/ComfyWordmark.vue?raw'
+import { formatSeconds } from './benchmarkGroups'
 import {
   getRelativeSpeedOffset,
   getRelativeSpeedScale,
@@ -99,10 +100,6 @@ function propertyLines(
     .join('')
 }
 
-function formatDuration(value: number): string {
-  return `${value.toFixed(2).replace(/\.?0+$/, '')} s`
-}
-
 export const MAX_BENCHMARK_COMPARISON_EXPORT_RUNS = 20
 
 export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData): string {
@@ -195,14 +192,14 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
         ? `<line x1="${fastestX}" y1="${trackY}" x2="${slowestX}" y2="${trackY}" stroke="${escapeXml(run.color)}" class="chart-range" />
              <circle cx="${fastestX}" cy="${trackY}" r="4" fill="${escapeXml(run.color)}" />
              <circle cx="${slowestX}" cy="${trackY}" r="4" fill="${escapeXml(run.color)}" />
-             ${text(fastestX - 4, trackY + 4, formatDuration(fastest), 'chart-point-label', 'end')}
-             ${text(slowestX + 4, trackY + 4, formatDuration(slowest), 'chart-point-label', 'start')}`
+             ${text(fastestX - 4, trackY + 4, formatSeconds(fastest), 'chart-point-label', 'end')}
+             ${text(slowestX + 4, trackY + 4, formatSeconds(slowest), 'chart-point-label', 'start')}`
         : ''
     const averageMarker =
       average === null || averageX === null
         ? ''
         : `<circle cx="${averageX}" cy="${trackY}" r="5" fill="${escapeXml(run.color)}" class="chart-average" />
-             ${text(averageX, trackY + 22, formatDuration(average), 'chart-point-label', 'middle')}`
+             ${text(averageX, trackY + 22, formatSeconds(average), 'chart-point-label', 'middle')}`
     return [
       `<line x1="${margin + chartLabelWidth + chartLabelGap}" y1="${trackY}" x2="${width - margin}" y2="${trackY}" class="chart-track" />`,
       range,
@@ -229,7 +226,7 @@ export function createBenchmarkComparisonSvg(data: BenchmarkComparisonImageData)
       kind === 'baseline'
         ? `<line x1="${relativeCenterX}" y1="${trackY - 12}" x2="${relativeCenterX}" y2="${trackY + 12}" class="relative-baseline-marker" />`
         : ''
-    const duration = durationSeconds === null ? '—' : formatDuration(durationSeconds)
+    const duration = durationSeconds === null ? '—' : formatSeconds(durationSeconds)
     const factorLabel = factor === null ? '—' : `${factor.toFixed(2)}×`
     const result = relative?.status ? `${factorLabel} ${relative.status}` : factorLabel
     return [

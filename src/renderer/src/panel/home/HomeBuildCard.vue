@@ -6,7 +6,7 @@ import BuildDeviceArt from './BuildDeviceArt.vue'
 import {
   HOME_BUILD_TONES,
   homeBuildDetail,
-  isCloudBuild,
+  buildDeviceKind,
   isComfyCloud,
   type HomeBuildStatus,
   type HomeBuildTone
@@ -64,7 +64,7 @@ const isLive = computed(() => status === 'running' || status === 'always-on')
     />
     <BuildDeviceArt
       class="relative shrink-0"
-      :kind="isCloudBuild(build) ? 'cloud' : 'laptop'"
+      :kind="buildDeviceKind(build)"
       :glow="toneStyle.glow"
     />
     <span class="relative flex min-w-0 flex-col">

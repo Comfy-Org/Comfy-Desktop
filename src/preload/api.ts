@@ -243,8 +243,8 @@ export function buildElectronApi(): ElectronApi {
         return () => ipcRenderer.removeListener('comfybuilder:authChanged', handler)
       },
       listWorkspaces: () => ipcRenderer.invoke('comfybuilder:listWorkspaces'),
-      switchWorkspace: (workspaceId) =>
-        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
+      switchWorkspace: (workspaceId, intent) =>
+        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId, intent),
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),

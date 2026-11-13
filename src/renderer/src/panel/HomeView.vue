@@ -5,8 +5,9 @@ import { ArrowRight, ChevronRight } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
+import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
-import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
+import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -19,7 +20,7 @@ type LoadState = 'loading' | 'ready' | 'unavailable'
 
 const HOME_BUILD_LIMIT = 3
 const TEXT_LINK_CLASS =
-  'h-6 gap-1.5 rounded-[7px] px-1.5 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
+  '-my-1 h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
 
 const emit = defineEmits<{
   pick: [installation: Installation]
@@ -41,8 +42,17 @@ const workspaceBuilds = computed(() =>
   )
 )
 const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
-const buildTones = computed(() => homeBuildTones(builds.value))
+const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
+const narrowBuildIds = computed(() => {
+  const [latest, ...rest] = builds.value
+  if (!latest) return new Set<string>()
+  const second = rest.find((build) => isCloudBuild(build)) ?? rest[0]
+  return new Set([latest.id, ...(second ? [second.id] : [])])
+})
 const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
+function buildStatus(build: Installation) {
+  return homeBuildStatus(build, sessionStore)
+}
 
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
@@ -78,18 +88,14 @@ onMounted(() => {
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="home-view"
   >
-    <Button
+    <HomeOpenBuildButton
       v-if="mostRecentBuild"
-      type="button"
-      variant="inverted"
-      size="md"
-      class="absolute top-4 right-4 z-10 gap-1.5 px-3 text-[13px]/5 font-medium"
-      data-testid="home-open-comfyui"
-      @click="emit('pick', mostRecentBuild)"
-    >
-      {{ t('home.openComfyUI') }}
-      <ArrowRight :size="14" aria-hidden="true" />
-    </Button>
+      class="absolute top-4 right-4 z-10"
+      :builds="workspaceBuilds"
+      :target="mostRecentBuild"
+      :status-of="buildStatus"
+      @open="emit('pick', $event)"
+    />
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
       <h1
@@ -144,7 +150,7 @@ onMounted(() => {
 
       <section
         v-if="builds.length > 0"
-        class="mt-[50px]"
+        class="@container/home-builds mt-[50px]"
         aria-labelledby="home-builds"
         data-testid="home-builds"
       >
@@ -169,12 +175,20 @@ onMounted(() => {
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
-          :class="builds.length > 2 ? 'grid-cols-3' : 'grid-cols-2'"
+          :class="
+            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2'
+          "
         >
-          <li v-for="(build, index) in builds" :key="build.id" class="min-w-0">
+          <li
+            v-for="(build, index) in builds"
+            :key="build.id"
+            class="min-w-0"
+            :class="!narrowBuildIds.has(build.id) && '@max-[56rem]/home-builds:hidden'"
+            :data-narrow-hidden="narrowBuildIds.has(build.id) ? undefined : 'true'"
+          >
             <HomeBuildCard
               :build="build"
-              :status="homeBuildStatus(build, sessionStore)"
+              :status="buildStatus(build)"
               :tone="buildTones[index]!"
               @open="emit('pick', build)"
             />

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { identityOf, statusFromAccessToken, subjectOf, workspaceIdOf } from './claims'
+import {
+  canMintWorkspaceTokens,
+  holdsPartnerNodeScope,
+  identityOf,
+  statusFromAccessToken,
+  subjectOf,
+  workspaceIdOf
+} from './claims'
 
 function jwt(payload: Record<string, unknown>): string {
   const b64 = (o: unknown): string => Buffer.from(JSON.stringify(o)).toString('base64url')
@@ -38,6 +45,25 @@ describe('claims', () => {
   it('subjectOf reads the account identity', () => {
     expect(subjectOf(jwt({ sub: 'user-7' }))).toBe('user-7')
     expect(subjectOf('garbage')).toBeNull()
+  })
+
+  it.each<[string, unknown, boolean, boolean]>([
+    [
+      'both scopes',
+      'comfy-cloud:user:read comfy-cloud:jobs:write comfy-cloud:workspace-token:mint',
+      true,
+      true
+    ],
+    ['only the mint scope', 'comfy-cloud:user:read comfy-cloud:workspace-token:mint', true, false],
+    ['only the partner-node scope', 'comfy-cloud:jobs:write', false, true],
+    ['a scope that only starts like one', 'comfy-cloud:jobs:write:all', false, false],
+    ['no scope claim', undefined, false, false],
+    ['a scope claim that is not text', ['comfy-cloud:jobs:write'], false, false]
+  ])('reads the mint and partner-node scopes from %s', (_name, scope, canMint, partnerNode) => {
+    const token = jwt({ sub: 'u-1', scope })
+
+    expect(canMintWorkspaceTokens(token)).toBe(canMint)
+    expect(holdsPartnerNodeScope(token)).toBe(partnerNode)
   })
 
   it('reads the identity the hosted view needs, or null without a subject', () => {

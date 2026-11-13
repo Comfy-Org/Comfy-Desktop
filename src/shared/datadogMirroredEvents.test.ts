@@ -14,6 +14,18 @@ describe('isDatadogMirroredEvent', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.comfyui.boot_completed')).toBe(false)
   })
 
+  it('mirrors view_token_mint_failed but not view_token_minted', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.view_token_mint_failed')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.view_token_minted')).toBe(false)
+  })
+
+  it('mirrors workspace_switch_browser but not workspace_switch', () => {
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch_browser')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_returned_to_anchor')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.mint_scope_not_granted')).toBe(true)
+    expect(isDatadogMirroredEvent('comfy.desktop.auth.workspace_switch')).toBe(false)
+  })
+
   it('mirrors install.not_started but not install.dispatched', () => {
     expect(isDatadogMirroredEvent('comfy.desktop.install.not_started')).toBe(true)
     expect(isDatadogMirroredEvent('comfy.desktop.install.dispatched')).toBe(false)
@@ -22,6 +34,18 @@ describe('isDatadogMirroredEvent', () => {
   it.each([
     ['comfy.desktop.auth.host_sign_in', true],
     ['comfy.desktop.auth.sign_in_failed', true],
+    ['comfy.desktop.auth.signed_out', true],
+    ['comfy.desktop.auth.expired_grant_rejected', true],
+    ['comfy.desktop.auth.grant_revocation', true],
+    ['comfy.desktop.auth.partner_node_token_failed', true],
+    ['comfy.desktop.auth.partner_node_token_issued', false],
+    ['comfy.desktop.auth.session_sign_in', true],
+    ['comfy.desktop.auth.grant_refresh_failed', true],
+    ['comfy.desktop.auth.workspace_token_mint_failed', true],
+    ['comfy.desktop.auth.stored_session_failed', true],
+    ['comfy.desktop.auth.stored_session_restored', false],
+    ['comfy.desktop.auth.embedded_session_disabled', true],
+    ['comfy.desktop.auth.view_token_refused', true],
     ['comfy.desktop.auth.sign_in_started', false]
   ])('mirrors %s: %s', (name, mirrored) => {
     expect(isDatadogMirroredEvent(name)).toBe(mirrored)
