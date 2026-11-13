@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
+import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
 import type { CatalogWorkflow } from '../../types/ipc'
 
 interface ArcSlot {
@@ -252,25 +252,30 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
             class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
             aria-hidden="true"
           />
-          <span class="absolute inset-x-3.5 bottom-4 flex items-center gap-2.5">
-            <span class="flex min-w-0 flex-1 flex-col" data-testid="home-workflow-name">
-              <span class="truncate text-sm/[17px] font-medium text-white">
-                {{ card.workflow.title }}
-              </span>
-              <span
-                v-if="card.workflow.description"
-                class="truncate text-[13px]/[18px] text-white/70"
-              >
-                {{ card.workflow.description }}
-              </span>
+          <span
+            class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+            :class="
+              card.offset === 0
+                ? 'scale-90 group-hover/card:scale-100 group-hover/card:opacity-100 group-hover/card:delay-100 group-focus-visible/card:scale-100 group-focus-visible/card:opacity-100'
+                : 'scale-90'
+            "
+            aria-hidden="true"
+            data-testid="home-workflow-cta"
+          >
+            <ArrowUpRight :size="16" :stroke-width="2.25" />
+          </span>
+          <span
+            class="absolute inset-x-3.5 bottom-4 flex flex-col"
+            data-testid="home-workflow-name"
+          >
+            <span class="truncate text-sm/[17px] font-medium text-white">
+              {{ card.workflow.title }}
             </span>
             <span
-              v-if="card.offset === 0"
-              class="hidden h-[30px] flex-none items-center rounded-[var(--radius-control)] bg-white px-3.5 text-[12.5px] font-semibold text-[#111] shadow-[0_0_0_1px_rgb(0_0_0/0.06),0_8px_20px_-6px_rgb(0_0_0/0.5)] transition-[opacity,translate,display] transition-discrete duration-200 ease-[cubic-bezier(0.19,1,0.22,1)] group-hover/card:inline-flex group-focus-visible/card:inline-flex starting:translate-y-1 starting:opacity-0 motion-reduce:transition-none"
-              aria-hidden="true"
-              data-testid="home-workflow-cta"
+              v-if="card.workflow.description"
+              class="truncate text-[13px]/[18px] text-white/70"
             >
-              {{ t('home.openWorkflowCta') }}
+              {{ card.workflow.description }}
             </span>
           </span>
           <span

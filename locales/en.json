@@ -47,7 +47,6 @@
     "seeAllWorkflows": "See all workflows",
     "showWorkflow": "Show {title}",
     "openWorkflow": "Open {title} on Comfy Hub",
-    "openWorkflowCta": "Open",
     "previousWorkflow": "Previous workflow",
     "nextWorkflow": "Next workflow",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
