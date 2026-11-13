@@ -4,7 +4,8 @@ import {
   clickNewInstallTile,
   openTitleMenu,
   expectChooserVisible,
-  expectTakeoverOpen,
+  expectNewBuildModalOpen,
+  openNewBuildChangeSetup,
   pickFromTitleMenu,
   showBuildsPage
 } from './support/chooserHelpers'
@@ -42,10 +43,23 @@ test('title bar shows install-less pill on chooser host @windows @macos @linux',
 
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
   await clickNewInstallTile(ctx.panel)
-  await expectTakeoverOpen(ctx.panel)
+  await expectNewBuildModalOpen(ctx.panel)
+  const pickedSource = (): Promise<string | null> =>
+    ctx.panel.evaluate<string | null>(
+      `document.querySelector('[data-testid="install-source-tabs"] [aria-checked="true"]')?.getAttribute('data-testid') ?? null`
+    )
+  await openNewBuildChangeSetup(ctx.panel)
   expect(await ctx.panel.exists('[data-testid="workspace-install-source-managed"]')).toBe(true)
-  expect(await ctx.panel.click('.config-back-to-dashboard')).toBe(true)
-  await expect.poll(() => ctx.panel.exists('.brand-takeover-root')).toBe(false)
+  expect(await ctx.panel.exists('.setup-modal-close')).toBe(false)
+  const sourceBeforeDiscard = await pickedSource()
+  expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
+  await ctx.panel.waitForVisible('.setup-modal-close')
+  await openNewBuildChangeSetup(ctx.panel)
+  expect(await pickedSource(), 'Discard keeps the source Desktop picked').toBe(sourceBeforeDiscard)
+  expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
+  await ctx.panel.waitForVisible('.setup-modal-close')
+  expect(await ctx.panel.click('.setup-modal-close')).toBe(true)
+  await expect.poll(() => ctx.panel.exists('[data-testid="new-build-modal"]')).toBe(false)
   await expectChooserVisible(ctx.panel)
 })
 
@@ -69,7 +83,7 @@ test('Builds dropdown opens both import flows and restores focus on Escape @wind
     await ctx.panel.waitForVisible(item)
     expect(await ctx.panel.click(item)).toBe(true)
     await ctx.panel.waitForVisible(`[data-testid="${modal}"]`)
-    expect(await ctx.panel.click('.takeover-back')).toBe(true)
+    expect(await ctx.panel.click('.setup-modal-close')).toBe(true)
     await expect.poll(() => ctx.panel.exists(`[data-testid="${modal}"]`)).toBe(false)
     await expectChooserVisible(ctx.panel)
   }

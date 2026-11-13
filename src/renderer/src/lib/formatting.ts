@@ -11,3 +11,11 @@ export function formatBytesCoarse(bytes: number): string {
   if (bytes < 1073741824) return `${Math.round(bytes / 1048576)} MB`
   return `${Math.round(bytes / 1073741824)} GB`
 }
+
+export function formatFreeSpace(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 MB'
+  if (bytes < 1073741824) return formatBytesCoarse(bytes)
+  const gb = Math.round(bytes / 1073741824)
+  if (gb >= 1000) return `${(bytes / 1099511627776).toFixed(1)} TB`
+  return `${gb} GB`
+}

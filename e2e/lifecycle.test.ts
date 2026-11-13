@@ -10,8 +10,11 @@ import {
   clickInstallTile,
   clickNewInstallTile,
   expectChooserVisible,
+  expectNewBuildModalOpen,
   expectTakeoverOpen,
   openManageViaDashboard,
+  openNewBuildChangeSetup,
+  saveNewBuildChangeSetup,
   openPickerViaTitlePill
 } from './support/chooserHelpers'
 import {
@@ -321,17 +324,18 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
   await expectTakeoverOpen(ctx.panel)
 
   await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
+  await openNewBuildChangeSetup(ctx.panel)
 
   await ctx.panel.waitForSelector('#source-fields button[role="combobox"]', {
     timeout: 5_000
   })
 
   await ctx.panel.waitForSelector(
-    '#source-fields button[role="combobox"][aria-label="ComfyUI version"]:not([disabled])',
+    '#source-fields button[role="combobox"][aria-label="Version"]:not([disabled])',
     { timeout: 60_000 }
   )
   expect(
-    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="ComfyUI version"]')
+    await ctx.panel.click('#source-fields button[role="combobox"][aria-label="Version"]')
   ).toBe(true)
   await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
   expect(
@@ -339,29 +343,28 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox'
   ).toBe(true)
 
-  await waitForConfigContinueEnabled(
-    'Continue button never re-enabled after picking the older stable tag'
-  )
+  await ctx.panel.waitForSelector('#source-fields .setup-option--selected', { timeout: 60_000 })
 
   if (LIFECYCLE_VARIANT !== 'default') {
     const rowLabel =
       LIFECYCLE_VARIANT === 'nvidia' ? 'NVIDIA' : LIFECYCLE_VARIANT === 'amd' ? 'AMD' : 'CPU'
-    await ctx.panel.waitForSelector('.brand-variant-row', { timeout: 5_000 })
+    await ctx.panel.waitForSelector('.setup-option', { timeout: 5_000 })
     expect(
-      await ctx.panel.clickByText('.brand-variant-row', rowLabel),
+      await ctx.panel.clickByText('.setup-option', rowLabel),
       `${rowLabel} variant row clicked`
     ).toBe(true)
     await ctx.panel.waitFor(
       async () =>
         ctx.panel.evaluate<boolean>(
           `(() => {
-          const sel = document.querySelector('.brand-variant-row--selected .brand-variant-row__label')
+          const sel = document.querySelector('#source-fields .setup-option--selected .setup-option__label')
           return !!sel && new RegExp(${JSON.stringify(rowLabel)}, 'i').test(sel.textContent || '')
         })()`
         ),
       { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` }
     )
   }
+  await saveNewBuildChangeSetup(ctx.panel)
 })
 
 test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle', async () => {
@@ -2453,19 +2456,24 @@ test('creates a Remote Connection record pointed at the running local server thr
 
   _remoteWindowId = await openDashboardWindowViaPickerHome()
   await clickNewInstallTile(ctx.panel)
-  await expectTakeoverOpen(ctx.panel)
+  await expectNewBuildModalOpen(ctx.panel)
   await waitForConfigContinueEnabled(
     'Continue never enabled after the wizard opened (standalone pre-fill)'
   )
 
-  await ctx.panel.waitForVisible('.config-method-row', { timeout: 10_000 })
+  await openNewBuildChangeSetup(ctx.panel)
   expect(
-    await ctx.panel.clickByText('.config-method-row button', 'Remote Connection'),
-    'Remote Connection source pill clicked'
+    await ctx.panel.click('[data-testid="install-source-remote"]'),
+    'Remote Connection link clicked'
   ).toBe(true)
 
   await ctx.panel.waitForVisible('#sf-url', { timeout: 10_000 })
   await ctx.panel.fill('#sf-url', origin!)
+  expect(
+    await ctx.panel.click('[data-testid="config-save-changes"]'),
+    'Saved the Remote Connection to the New Build summary'
+  ).toBe(true)
+  await ctx.panel.waitForVisible('#inst-name-standalone', { timeout: 5_000 })
   _remoteName = `Remote Loopback E2E ${randomUUID().slice(0, 8)}`
   await ctx.panel.fill('#inst-name-standalone', _remoteName)
 
