@@ -48,6 +48,19 @@ export default defineConfig({
       },
       {
         extends: true,
+        test: {
+          name: 'integration',
+          sequence: { groupOrder: 0 },
+          environment: 'node',
+          include: [INTEGRATION_TESTS],
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
+          restoreMocks: true,
+          clearMocks: true
+        }
+      },
+      {
+        extends: true,
         resolve: {
           alias: [{ find: /^vue$/, replacement: VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS }]
         },
