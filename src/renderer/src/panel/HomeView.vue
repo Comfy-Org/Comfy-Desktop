@@ -7,7 +7,7 @@ import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
-import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
+import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -43,6 +43,12 @@ const workspaceBuilds = computed(() =>
 )
 const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
 const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
+const narrowBuildIds = computed(() => {
+  const [latest, ...rest] = builds.value
+  if (!latest) return new Set<string>()
+  const second = rest.find((build) => isCloudBuild(build)) ?? rest[0]
+  return new Set([latest.id, ...(second ? [second.id] : [])])
+})
 const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
 function buildStatus(build: Installation) {
   return homeBuildStatus(build, sessionStore)
@@ -144,7 +150,7 @@ onMounted(() => {
 
       <section
         v-if="builds.length > 0"
-        class="mt-[50px]"
+        class="@container/home-builds mt-[50px]"
         aria-labelledby="home-builds"
         data-testid="home-builds"
       >
@@ -169,9 +175,17 @@ onMounted(() => {
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
-          :class="builds.length > 2 ? 'grid-cols-3' : 'grid-cols-2'"
+          :class="
+            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2'
+          "
         >
-          <li v-for="(build, index) in builds" :key="build.id" class="min-w-0">
+          <li
+            v-for="(build, index) in builds"
+            :key="build.id"
+            class="min-w-0"
+            :class="!narrowBuildIds.has(build.id) && '@max-[56rem]/home-builds:hidden'"
+            :data-narrow-hidden="narrowBuildIds.has(build.id) ? undefined : 'true'"
+          >
             <HomeBuildCard
               :build="build"
               :status="buildStatus(build)"
