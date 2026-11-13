@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check } from 'lucide-vue-next'
 import Menu from '@comfyorg/design-system/menu/Menu'
-import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
-import { DropdownMenuItemIndicator, DropdownMenuRadioGroup } from 'reka-ui'
+import { DropdownMenuRadioGroup } from 'reka-ui'
+import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import FilterButton from '../../components/ui/FilterButton.vue'
 
 export interface BuildOption {
@@ -48,7 +47,7 @@ const selected = computed(() => props.options.find((option) => option.value === 
       :model-value="selectedId ?? ''"
       @update:model-value="selectedId = typeof $event === 'string' && $event ? $event : null"
     >
-      <MenuRadioItem
+      <BaseMenuRadioItem
         v-for="option in options"
         :key="option.value"
         :value="option.value"
@@ -62,10 +61,7 @@ const selected = computed(() => props.options.find((option) => option.value === 
             >{{ option.description }}</span
           >
         </span>
-        <DropdownMenuItemIndicator class="shrink-0">
-          <Check :size="15" aria-hidden="true" />
-        </DropdownMenuItemIndicator>
-      </MenuRadioItem>
+      </BaseMenuRadioItem>
     </DropdownMenuRadioGroup>
   </Menu>
 </template>

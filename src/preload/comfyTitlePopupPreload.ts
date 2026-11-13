@@ -8,7 +8,6 @@ export interface TitlePopupMenuItem {
   id?: string
   label?: string
   labelKey?: string
-  checked?: boolean
   kind?: 'separator'
 }
 

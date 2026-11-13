@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
+import '../assets/main.css'
 import AssetsView from './AssetsView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
@@ -13,6 +14,24 @@ const listLocalAssets = vi.fn()
 const downloadAsset = vi.fn()
 const alert = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
+const MASONRY_GAP = 14
+const FOUR_COLUMN_PAGE_WIDTH = 1100
+const TALL_PAGE_HEIGHT = 3000
+
+let page: HTMLElement
+
+const panelLayout = document.createElement('style')
+panelLayout.textContent = '[data-panel-page] > div { display: flex; height: 100%; }'
+document.head.append(panelLayout)
+
+function picture(id: string, height: number): AssetSummary {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="${height}"/>`
+  return asset(id, `${id}.svg`, 'image', {
+    previewUrl: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+    width: 200,
+    height
+  })
+}
 
 vi.mock('../composables/useModal', () => ({
   useModal: () => ({ alert })
@@ -34,6 +53,8 @@ function asset(
     tags: ['output'],
     previewUrl: null,
     thumbnailUrl: null,
+    width: null,
+    height: null,
     ...extra
   }
 }
@@ -44,7 +65,7 @@ function cloudBuild(id: string): Installation {
 
 async function mountAssets(local: AssetSummary[] | Promise<AssetSummary[]> = []) {
   listLocalAssets.mockReturnValue(Promise.resolve(local))
-  const wrapper = mount(AssetsView)
+  const wrapper = mount(AssetsView, { attachTo: page })
   await flushPromises()
   return wrapper
 }
@@ -64,6 +85,10 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
 }
 
 beforeEach(() => {
+  page = document.createElement('div')
+  page.dataset.panelPage = ''
+  page.style.cssText = `width: ${FOUR_COLUMN_PAGE_WIDTH}px; height: ${TALL_PAGE_HEIGHT}px`
+  document.body.append(page)
   vi.clearAllMocks()
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
@@ -82,22 +107,116 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-describe('AssetsView', () => {
-  it('starts in masonry with file names and details hidden', async () => {
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+afterEach(() => page.remove())
 
-    expect(wrapper.get('[data-testid="assets-grid"]').classes()).toContain('columns-[200px]')
-    expect(wrapper.get('[data-testid="asset-a"]').text()).not.toContain('forest.png')
+describe('AssetsView', () => {
+  it('shows each file name and its details under the card by default', async () => {
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image', { sizeBytes: 2048 })])
+
+    expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('forest.png')
+    expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('2 KB')
+  })
+
+  it('shows a video in its own shape with how long it runs, and a picture without a size as a square', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'clip.mp4', 'video', { width: 320, height: 480, durationSeconds: 7.4 }),
+      asset('still', 'still.png', 'image', { previewUrl: picture('x', 300).previewUrl })
+    ])
+
+    await vi.waitFor(() => {
+      const shapeOf = (id: string) => {
+        const media = wrapper
+          .get(`[data-testid="asset-${id}"] .rounded-control`)
+          .element.getBoundingClientRect()
+        return Number((media.height / media.width).toFixed(2))
+      }
+      expect(shapeOf('clip'), 'the portrait video stays tall').toBe(1.5)
+      expect(shapeOf('still'), 'a picture with no known size is a square crop').toBe(1)
+    })
+    expect(wrapper.get('[data-testid="asset-clip"] [data-testid="asset-duration"]').text()).toBe(
+      '0:07'
+    )
+  })
+
+  it('starts in masonry, newest across the top, each next card under the shortest column', async () => {
+    const heights = [300, 300, 300, 100, 100, 100, 100, 100]
+    const wrapper = await mountAssets(heights.map((height, i) => picture(`card-${i}`, height)))
+    const gallery = wrapper.get('[data-testid="assets-grid"]').element
+
+    await vi.waitFor(() => {
+      const cards = wrapper
+        .findAll('[data-testid="assets-grid"] > li')
+        .map((card) => card.element.getBoundingClientRect())
+      expect(cards, 'every card is on the page').toHaveLength(8)
+      expect(
+        wrapper.findAll('[data-testid="assets-grid"] img').map((img) => {
+          const box = img.element.getBoundingClientRect()
+          return Number((box.height / box.width).toFixed(2))
+        }),
+        'each picture keeps its own shape'
+      ).toEqual(heights.map((height) => height / 200))
+
+      const topRow = cards.slice(0, 4)
+      expect(
+        topRow.map((card) => card.top),
+        'the four newest cards share the top row'
+      ).toEqual(topRow.map(() => gallery.getBoundingClientRect().top))
+      expect(
+        topRow.map((card) => card.left),
+        'the four newest cards read left to right'
+      ).toEqual(topRow.map((card) => card.left).toSorted((a, b) => a - b))
+
+      const columns = Map.groupBy(cards, (card) => Math.round(card.left))
+      expect(columns.size, 'cards fill four columns').toBe(4)
+      for (const column of columns.values()) {
+        column.slice(1).forEach((card, i) => {
+          expect(
+            card.top - column[i]!.bottom,
+            'cards in a column sit one gap apart, to the half pixel'
+          ).toBeCloseTo(MASONRY_GAP, 0)
+        })
+      }
+      const lastCardTops = [...columns.values()].map((column) => column.at(-1)!.top)
+      const columnBottoms = [...columns.values()].map((column) => column.at(-1)!.bottom)
+      expect(
+        Math.max(...lastCardTops),
+        'no card starts below the bottom of a shorter column'
+      ).toBeLessThanOrEqual(Math.min(...columnBottoms) + MASONRY_GAP + 0.5)
+    })
+  })
+
+  it('puts only the cards on screen on the page, and the rest as the user scrolls', async () => {
+    page.style.height = '600px'
+    const wrapper = await mountAssets(
+      Array.from({ length: 300 }, (_, i) => picture(`card-${i}`, 300))
+    )
+    const cardCount = () => wrapper.findAll('[data-testid="assets-grid"] > li').length
+
+    await vi.waitFor(() => expect(cardCount(), 'the first rows are on the page').toBeGreaterThan(0))
+    expect(cardCount(), 'cards far below the window are not').toBeLessThan(40)
+
+    const view = wrapper.get('[data-testid="assets-view"]').element
+    view.scrollTop = view.scrollHeight
+    await vi.waitFor(() =>
+      expect(
+        wrapper.find('[data-testid="asset-card-299"]').exists(),
+        'the oldest card shows at the end'
+      ).toBe(true)
+    )
+    expect(cardCount(), 'the cards scrolled past are gone').toBeLessThan(40)
   })
 
   it('opens with the view setup the user saved last time', async () => {
     window.localStorage.setItem('comfy.desktop.assets.layout', 'grid')
-    window.localStorage.setItem('comfy.desktop.assets.showName', 'true')
+    window.localStorage.setItem('comfy.desktop.assets.showName', 'false')
 
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+    const wrapper = await mountAssets([picture('a', 300)])
 
-    expect(wrapper.get('[data-testid="assets-grid"]').classes()).toContain('grid')
-    expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('forest.png')
+    const media = wrapper.get('[data-testid="asset-a"] img').element.getBoundingClientRect()
+    expect(media.width / media.height, 'grid crops every card to the same wide shape').toBeCloseTo(
+      16 / 9
+    )
+    expect(wrapper.get('[data-testid="asset-a"]').text()).not.toContain('a.svg')
   })
 
   it('shows the files on this computer without any build running or a Cloud login', async () => {

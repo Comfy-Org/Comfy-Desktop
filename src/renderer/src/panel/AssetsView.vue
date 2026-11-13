@@ -12,9 +12,9 @@ import {
   LayoutGrid,
   LayoutDashboard,
   ListFilter,
-  Play,
   RefreshCw,
-  Search
+  Search,
+  Video
 } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
@@ -27,8 +27,9 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { useVirtualMasonry } from '../composables/useVirtualMasonry'
 import { formatBytes } from '../lib/downloadFormatters'
-import { formatRelativeFromMs } from '../lib/datetime'
+import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
@@ -41,8 +42,30 @@ type KindFilter = 'all' | AssetKind
 type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
 
+interface Shape {
+  width: number
+  height: number
+}
+
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
+const MIN_CARD_WIDTH = 240
+const CARD_GAP = 14
+const CARD_INSET = 4
+const CAPTION_PADDING = 18
+const CAPTION_LINE_GAP = 2
+const NAME_LINE_HEIGHT = 18.2
+const DETAILS_LINE_HEIGHT = 16.8
+const WIDE: Shape = { width: 16, height: 9 }
+const SQUARE: Shape = { width: 1, height: 1 }
+const FILE: Shape = { width: 4, height: 3 }
+const TALL: Shape = { width: 3, height: 4 }
+const PLACEHOLDER_TINT = {
+  audio:
+    'bg-[linear-gradient(174deg,rgb(222_211_200/0.09),rgb(255_255_255/0.02))] text-[rgb(176_163_157)]',
+  '3d': 'bg-[linear-gradient(160deg,rgb(200_211_211/0.09),rgb(255_255_255/0.02))] text-[rgb(157_168_170)]',
+  file: 'bg-[linear-gradient(168deg,rgb(200_211_222/0.09),rgb(255_255_255/0.02))] text-[rgb(160_166_175)]'
+} as const
 
 const { t } = useI18n()
 const modal = useModal()
@@ -55,8 +78,8 @@ const signingIn = ref(false)
 const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
-const showName = useLocalStorage('comfy.desktop.assets.showName', false)
-const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
+const showName = useLocalStorage('comfy.desktop.assets.showName', true)
+const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -103,12 +126,6 @@ function cardKey(asset: GalleryAsset): string {
   return `${asset.source}:${asset.id}`
 }
 
-const layoutClass = computed(() =>
-  layout.value === 'masonry'
-    ? 'columns-[200px] gap-4 [&>li]:mb-4 [&>li]:break-inside-avoid'
-    : 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5'
-)
-
 const visibleAssets = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   const filtered = assets.value.filter(
@@ -119,6 +136,67 @@ const visibleAssets = computed(() => {
   const direction = sortOrder.value === 'newest' ? -1 : 1
   return filtered.toSorted((a, b) => direction * (createdMs(a) - createdMs(b)))
 })
+
+const showSkeleton = computed(() => loading.value && assets.value.length === 0)
+
+function assetShape(asset: AssetSummary): Shape {
+  if (layout.value === 'grid' || asset.kind === 'audio') return WIDE
+  if (asset.kind === '3d') return SQUARE
+  if (asset.kind === null) return FILE
+  if (asset.width && asset.height) return { width: asset.width, height: asset.height }
+  return asset.kind === 'image' ? SQUARE : WIDE
+}
+
+function placeholderTint(asset: AssetSummary): string {
+  return asset.kind === 'audio' || asset.kind === '3d'
+    ? PLACEHOLDER_TINT[asset.kind]
+    : PLACEHOLDER_TINT.file
+}
+
+function skeletonShape(index: number): Shape {
+  return layout.value === 'masonry' && index % 3 === 0 ? TALL : WIDE
+}
+
+function aspectStyle(shape: Shape): { aspectRatio: string } {
+  return { aspectRatio: `${shape.width} / ${shape.height}` }
+}
+
+const captionHeight = computed(() => {
+  if (!showName.value && !showDetails.value) return 0
+  const lines =
+    (showName.value ? NAME_LINE_HEIGHT : 0) + (showDetails.value ? DETAILS_LINE_HEIGHT : 0)
+  return CAPTION_PADDING + lines + (showName.value && showDetails.value ? CAPTION_LINE_GAP : 0)
+})
+
+function cardShape(index: number): Shape {
+  const asset = visibleAssets.value[index]
+  return showSkeleton.value || !asset ? skeletonShape(index) : assetShape(asset)
+}
+
+const { cards, galleryStyle, cardStyle, measureCard } = useVirtualMasonry({
+  scroller,
+  gallery: useTemplateRef<HTMLElement>('gallery'),
+  count: () => (showSkeleton.value ? SKELETON_COUNT : visibleAssets.value.length),
+  itemKey: (index) => {
+    const asset = visibleAssets.value[index]
+    return showSkeleton.value || !asset ? `skeleton:${index}` : cardKey(asset)
+  },
+  estimateHeight: (index, columnWidth) => {
+    const shape = cardShape(index)
+    const mediaWidth = columnWidth - 2 * CARD_INSET
+    return 2 * CARD_INSET + (mediaWidth * shape.height) / shape.width + captionHeight.value
+  },
+  minColumnWidth: MIN_CARD_WIDTH,
+  gap: CARD_GAP,
+  relayoutWhen: () => [visibleAssets.value, showSkeleton.value, layout.value, captionHeight.value]
+})
+
+const assetCards = computed(() =>
+  cards.value.flatMap((card) => {
+    const asset = visibleAssets.value[card.index]
+    return asset ? [{ card, asset }] : []
+  })
+)
 
 interface EmptyState {
   title: string
@@ -235,7 +313,7 @@ function extensionOf(name: string): string {
 <template>
   <div
     ref="scroller"
-    class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
+    class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="assets-view"
   >
@@ -395,14 +473,26 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
-        <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
-          <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
+      <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
+        <ul
+          ref="gallery"
+          class="m-0 list-none p-0"
+          :style="galleryStyle"
+          data-testid="assets-skeleton"
+        >
+          <li
+            v-for="card in cards"
+            :key="String(card.key)"
+            :ref="measureCard"
+            :data-index="card.index"
+            class="flex flex-col rounded-card bg-[rgb(29_29_29/0.72)] p-1"
+            :style="cardStyle(card)"
+          >
             <Skeleton
-              class="w-full rounded-none"
-              :class="layout === 'masonry' && n % 3 === 1 ? 'aspect-[3/4]' : 'aspect-video'"
+              class="w-full rounded-control"
+              :style="aspectStyle(skeletonShape(card.index))"
             />
-            <div v-if="showName || showDetails" class="flex flex-col gap-2 px-3 py-3">
+            <div v-if="showName || showDetails" class="flex flex-col gap-2 px-2 pt-3 pb-2.5">
               <Skeleton v-if="showName" class="h-2.5 w-3/4 rounded-full" />
               <Skeleton v-if="showDetails" class="h-2 w-2/5 rounded-full" />
             </div>
@@ -437,16 +527,20 @@ function extensionOf(name: string): string {
 
       <ul
         v-else
+        ref="gallery"
         class="m-0 list-none p-0"
-        :class="layoutClass"
+        :style="galleryStyle"
         data-testid="assets-grid"
         @pointerenter="warmNameTooltips"
         @pointerleave="coolNameTooltips"
       >
         <li
-          v-for="asset in visibleAssets"
-          :key="cardKey(asset)"
-          class="group relative bg-secondary"
+          v-for="{ card, asset } in assetCards"
+          :key="String(card.key)"
+          :ref="measureCard"
+          :data-index="card.index"
+          class="group rounded-card bg-[rgb(29_29_29/0.72)] p-1"
+          :style="cardStyle(card)"
           :data-testid="`asset-${asset.id}`"
         >
           <Tooltip
@@ -457,20 +551,15 @@ function extensionOf(name: string): string {
           >
             <div class="block w-full">
               <span
-                class="relative block overflow-hidden"
-                :class="
-                  layout === 'grid' || !asset.previewUrl || asset.kind !== 'image'
-                    ? 'aspect-video'
-                    : ''
-                "
+                class="relative block overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
+                :style="aspectStyle(assetShape(asset))"
               >
                 <img
                   v-if="asset.previewUrl && asset.kind === 'image'"
                   :src="asset.thumbnailUrl ?? asset.previewUrl"
                   :alt="asset.name"
                   loading="lazy"
-                  class="block w-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  :class="layout === 'grid' && 'h-full'"
+                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                 />
                 <video
                   v-else-if="asset.previewUrl && asset.kind === 'video'"
@@ -481,30 +570,37 @@ function extensionOf(name: string): string {
                 />
                 <span
                   v-else
-                  class="flex size-full flex-col items-center justify-center gap-1 text-muted-foreground transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  class="flex size-full flex-col items-center justify-center gap-2 text-[14px]/[14px] font-semibold transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                  :class="placeholderTint(asset)"
                 >
-                  <AudioLines v-if="asset.kind === 'audio'" :size="28" aria-hidden="true" />
-                  <Box v-else-if="asset.kind === '3d'" :size="28" aria-hidden="true" />
-                  <File v-else :size="28" aria-hidden="true" />
-                  <span class="text-ui">{{ extensionOf(asset.name) }}</span>
+                  <AudioLines v-if="asset.kind === 'audio'" :size="40" aria-hidden="true" />
+                  <Box v-else-if="asset.kind === '3d'" :size="40" aria-hidden="true" />
+                  <File v-else :size="40" aria-hidden="true" />
+                  <span>{{ extensionOf(asset.name) }}</span>
                 </span>
                 <span
-                  v-if="asset.kind === 'video'"
-                  class="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-md bg-media-overlay text-foreground"
+                  v-if="asset.kind === 'video' && asset.durationSeconds"
+                  class="absolute bottom-2 left-2 flex h-[22px] items-center gap-[5px] rounded-full bg-[rgb(14_14_14/0.28)] pr-2 pl-[7px] text-[11.5px]/[16.1px] font-medium text-white"
+                  data-testid="asset-duration"
                 >
-                  <Play :size="12" aria-hidden="true" />
+                  <Video :size="12" class="opacity-92" aria-hidden="true" />
+                  {{ formatPlaybackTime(asset.durationSeconds) }}
                 </span>
               </span>
               <span
                 v-if="showName || showDetails"
-                class="flex min-w-0 flex-col gap-0.5 px-3 py-2.5"
+                class="flex min-w-0 flex-col gap-0.5 px-2 pt-2.5 pb-2"
               >
-                <span v-if="showName" class="truncate text-ui font-medium text-foreground">{{
-                  asset.name
-                }}</span>
-                <span v-if="showDetails" class="truncate text-ui text-subtle-foreground">{{
-                  assetDetails(asset)
-                }}</span>
+                <span
+                  v-if="showName"
+                  class="truncate text-[13px]/[18.2px] font-medium text-foreground"
+                  >{{ asset.name }}</span
+                >
+                <span
+                  v-if="showDetails"
+                  class="truncate text-[12px]/[16.8px] text-subtle-foreground"
+                  >{{ assetDetails(asset) }}</span
+                >
               </span>
             </div>
           </Tooltip>

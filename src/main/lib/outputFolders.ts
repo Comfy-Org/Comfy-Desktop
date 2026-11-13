@@ -7,6 +7,7 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import { assetKind } from './assets'
+import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
@@ -125,8 +126,15 @@ function localSummary(file: string, sizeBytes: number, modifiedMs: number): Asse
     mimeType: null,
     tags: ['output'],
     previewUrl: kind && SERVED_KINDS.has(kind) ? outputFileUrl(file) : null,
-    thumbnailUrl: kind === 'image' ? outputFileUrl(file, modifiedMs) : null
+    thumbnailUrl: kind === 'image' ? outputFileUrl(file, modifiedMs) : null,
+    width: null,
+    height: null,
+    durationSeconds: null
   }
+}
+
+async function addMediaFacts(asset: AssetSummary): Promise<void> {
+  Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
 export async function listLocalAssets(): Promise<AssetSummary[]> {
@@ -139,7 +147,11 @@ export async function listLocalAssets(): Promise<AssetSummary[]> {
     const modifiedMs = Number.isFinite(stat.mtimeMs) ? stat.mtimeMs : 0
     found.push(localSummary(file, stat.size, modifiedMs))
   })
-  return found.sort((a, b) => b.createdAt!.localeCompare(a.createdAt!)).slice(0, MAX_LOCAL_ASSETS)
+  const newest = found
+    .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
+    .slice(0, MAX_LOCAL_ASSETS)
+  await runPool(newest, STATS_AT_ONCE, addMediaFacts)
+  return newest
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {

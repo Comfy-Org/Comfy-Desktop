@@ -14,6 +14,7 @@ import { buildSaveDialogFilters } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
 import { outputFilePath } from './outputFolders'
 import { runPool } from '../sources/standalone/templateDownloadCore'
+import { mediaFactsFromBytes } from './mediaFacts'
 import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
 
@@ -26,6 +27,10 @@ const REQUEST_TIMEOUT_MS = 20_000
 const PREVIEW_BATCH_TIMEOUT_MS = 30_000
 const SIGNED_URL_CONCURRENCY = 6
 const SIGNED_STORAGE_HOST = 'storage.googleapis.com'
+const HEADER_BYTES: Partial<Record<AssetKind, number>> = {
+  image: 64 * 1024,
+  video: 512 * 1024
+}
 
 const KIND_BY_EXTENSION = new Map<string, AssetKind>([
   ...['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif', 'tif', 'tiff', 'svg'].map(
@@ -88,7 +93,10 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
       ? row.tags.filter((tag): tag is string => typeof tag === 'string')
       : [],
     previewUrl,
-    thumbnailUrl: null
+    thumbnailUrl: null,
+    width: null,
+    height: null,
+    durationSeconds: null
   }
 }
 
@@ -138,6 +146,43 @@ async function resolveCloudContentUrl(
   }
 }
 
+async function firstBytes(response: Response, limit: number): Promise<Uint8Array> {
+  const reader = response.body?.getReader()
+  if (!reader) return new Uint8Array()
+  const chunks: Uint8Array[] = []
+  let length = 0
+  while (length < limit) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    length += value.length
+  }
+  await reader.cancel().catch(() => {})
+  const bytes = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.length
+  }
+  return bytes.subarray(0, limit)
+}
+
+async function addMediaFacts(summary: AssetSummary, deadline: AbortSignal): Promise<void> {
+  const limit = summary.kind ? HEADER_BYTES[summary.kind] : undefined
+  if (!summary.previewUrl || !limit) return
+  try {
+    const res = await fetch(summary.previewUrl, {
+      headers: { Range: `bytes=0-${limit - 1}` },
+      signal: AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), deadline])
+    })
+    if (!res.ok) return
+    const bytes = await firstBytes(res, limit)
+    Object.assign(summary, await mediaFactsFromBytes(bytes, summary.kind, summary.mimeType))
+  } catch {
+    return
+  }
+}
+
 async function cloudAccessToken(installationId: string): Promise<string | null> {
   const inst = await installations.get(installationId)
   if (!inst || sourceMap[inst.sourceId]?.category !== 'cloud') return null
@@ -157,6 +202,7 @@ async function listCloudAssets(accessToken: string): Promise<AssetSummary[]> {
     async (summary) => {
       if (summary.kind === null || summary.kind === '3d') return
       summary.previewUrl = await resolveCloudContentUrl(summary.id, accessToken, 'inline', deadline)
+      await addMediaFacts(summary, deadline)
     },
     deadline
   )

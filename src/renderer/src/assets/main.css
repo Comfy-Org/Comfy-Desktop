@@ -311,3 +311,31 @@
 :root {
   --titlebar-height: 37px;
 }
+
+[data-reka-menu-content] {
+  background-color: var(--color-popover);
+  padding: 4px;
+}
+
+[data-reka-menu-content] :is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox']) {
+  min-height: 28px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+[data-reka-menu-content],
+[data-reka-menu-content] [role='group'] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+[data-reka-menu-content] > *,
+[data-reka-menu-content] [role='group'] > * {
+  flex: none;
+}
+
+[data-reka-menu-content] [role='separator'] {
+  margin-block: 2px;
+  margin-inline: -4px;
+}

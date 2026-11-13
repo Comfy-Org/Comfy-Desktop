@@ -8,7 +8,7 @@ import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers
 import { getIpcInvocations, hasActiveLaunch, resetIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
-const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
+const NEW_INSTALL_WIZARD = '[data-testid="new-build-modal"]'
 
 interface BuildCase {
   id: string
@@ -109,8 +109,10 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
     )
     .toBe(true)
 
-  await ctx.panel.waitForVisible('.brand-progress', { timeout: 10_000 })
   expect(await ctx.panel.exists(NEW_INSTALL_WIZARD)).toBe(false)
+  expect(await ctx.panel.exists('.brand-progress'), 'starts on its tile, not a takeover').toBe(
+    false
+  )
 
   await expect
     .poll(() => hasActiveLaunch(ctx.app, INSTALLED.id), {
@@ -118,8 +120,7 @@ test('clicking an installed ComfyBuilder tile launches it instead of opening the
       intervals: [250, 500]
     })
     .toBe(false)
-  await ctx.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 10_000 })
-  expect(await ctx.panel.click(byTestId(TID.progressBack))).toBe(true)
+  await ctx.panel.waitForVisible('.chooser-tile-error-badge', { timeout: 10_000 })
   await expectChooserVisible(ctx.panel)
 })
 

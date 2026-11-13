@@ -61,7 +61,9 @@ vi.mock('./models', () => ({
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
-    ({ png: 'image', mp4: 'video', wav: 'audio', glb: '3d' })[name.split('.').pop() ?? ''] ?? null
+    ({ png: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
+      name.split('.').pop() ?? ''
+    ] ?? null
 }))
 
 import type { InstallationRecord } from '../installations'
@@ -88,7 +90,25 @@ function install(name: string, extra: Record<string, unknown> = {}): Installatio
   }
 }
 
-function write(file: string, body = 'x', modified = new Date('2026-11-01T00:00:00Z')): void {
+const SAMPLE_VIDEO = path.resolve('src/renderer/public/install-showcase-scene/Assets/earpods.webm')
+
+function pngHeader(width: number, height: number): Buffer {
+  const header = Buffer.alloc(33)
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header, 0)
+  header.writeUInt32BE(13, 8)
+  header.write('IHDR', 12, 'ascii')
+  header.writeUInt32BE(width, 16)
+  header.writeUInt32BE(height, 20)
+  header.writeUInt8(8, 24)
+  header.writeUInt8(2, 25)
+  return header
+}
+
+function write(
+  file: string,
+  body: string | Buffer = 'x',
+  modified = new Date('2026-11-01T00:00:00Z')
+): void {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, body)
   fs.utimesSync(file, modified, modified)
@@ -168,13 +188,35 @@ describe('listLocalAssets', () => {
       mimeType: null,
       tags: ['output'],
       previewUrl: outputFileUrl(newVideo),
-      thumbnailUrl: null
+      thumbnailUrl: null,
+      width: null,
+      height: null,
+      durationSeconds: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
     expect(assets[3]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
       outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs)
     )
     expect(assets[2]!.previewUrl, '3D files have no preview').toBeNull()
+  })
+
+  it('reports the size of each picture and video, and how long a video runs, before they load', async () => {
+    write(path.join(sharedDir, 'portrait.png'), pngHeader(640, 960))
+    write(path.join(sharedDir, 'clip.webm'), fs.readFileSync(SAMPLE_VIDEO))
+    write(path.join(sharedDir, 'broken.png'), 'not a picture')
+
+    const facts = Object.fromEntries(
+      (await listLocalAssets()).map((a) => [
+        a.name,
+        [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
+      ])
+    )
+
+    expect(facts).toEqual({
+      'portrait.png': [640, 960, null],
+      'clip.webm': [714, 530, 8],
+      'broken.png': [null, null, null]
+    })
   })
 
   it('finds a file once when two builds save to the same folder', async () => {

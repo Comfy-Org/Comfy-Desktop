@@ -153,6 +153,27 @@ export async function expectTakeoverOpen(panel: WebContentsPage): Promise<void> 
   await panel.waitForVisible('.brand-takeover-root', { timeout: 10_000 })
 }
 
+export async function expectNewBuildModalOpen(panel: WebContentsPage): Promise<void> {
+  await panel.waitForVisible('[data-testid="new-build-modal"]', { timeout: 10_000 })
+}
+
+export async function openNewBuildChangeSetup(panel: WebContentsPage): Promise<void> {
+  await panel.waitForSelector('[data-testid="config-change-setup"]:not([disabled])', {
+    timeout: 15_000
+  })
+  expect(await panel.click('[data-testid="config-change-setup"]'), 'Change setup clicked').toBe(
+    true
+  )
+  await panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
+}
+
+export async function saveNewBuildChangeSetup(panel: WebContentsPage): Promise<void> {
+  expect(await panel.click('[data-testid="config-save-changes"]'), 'Save changes clicked').toBe(
+    true
+  )
+  await panel.waitForVisible('[data-testid="config-summary"]', { timeout: 5_000 })
+}
+
 export async function dismissOverlay(panel: WebContentsPage): Promise<void> {
   await panel.pressKey('Escape')
 }
