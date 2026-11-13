@@ -1287,7 +1287,7 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('button.config-path-open').text()).toBe('/home/user/Picked')
   })
 
-  it('keeps the setup as it was when Discard changes is pressed', async () => {
+  it('keeps the setup as it was when Discard is pressed', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,
       remoteSource

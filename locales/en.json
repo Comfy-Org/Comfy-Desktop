@@ -461,7 +461,7 @@
     "managedBuildsMeta": "Managed builds",
     "publicBuildsMeta": "Public builds",
     "saveChanges": "Save changes",
-    "discardChanges": "Discard changes",
+    "discardChanges": "Discard",
     "browse": "Browse",
     "requiredSpace": "Needs about {size}"
   },

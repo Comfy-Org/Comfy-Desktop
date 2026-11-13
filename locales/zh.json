@@ -461,7 +461,7 @@
     "managedBuildsMeta": "托管构建",
     "publicBuildsMeta": "公共构建",
     "saveChanges": "保存更改",
-    "discardChanges": "放弃更改",
+    "discardChanges": "放弃",
     "browse": "浏览",
     "requiredSpace": "约需 {size}"
   },
