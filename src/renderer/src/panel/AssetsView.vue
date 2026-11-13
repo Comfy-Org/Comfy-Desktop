@@ -25,6 +25,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
+import { useMasonryLayout } from '../composables/useMasonryLayout'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
@@ -40,6 +41,8 @@ type SortOrder = 'newest' | 'oldest'
 
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
+const MASONRY_MIN_COLUMN_WIDTH = 200
+const MASONRY_GAP = 16
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -56,6 +59,14 @@ const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
+const { containerStyle: masonryStyle, itemStyle: masonryItemStyle } = useMasonryLayout(
+  useTemplateRef<HTMLElement>('gallery'),
+  {
+    minColumnWidth: MASONRY_MIN_COLUMN_WIDTH,
+    gap: MASONRY_GAP,
+    enabled: () => layout.value === 'masonry'
+  }
+)
 const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
@@ -101,9 +112,7 @@ function cardKey(asset: GalleryAsset): string {
 }
 
 const layoutClass = computed(() =>
-  layout.value === 'masonry'
-    ? 'columns-[200px] gap-4 [&>li]:mb-4 [&>li]:break-inside-avoid'
-    : 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5'
+  layout.value === 'grid' ? 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5' : ''
 )
 
 const visibleAssets = computed(() => {
@@ -380,8 +389,19 @@ function extensionOf(name: string): string {
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
       <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
-        <ul class="m-0 list-none p-0" :class="layoutClass" data-testid="assets-skeleton">
-          <li v-for="n in SKELETON_COUNT" :key="n" class="flex flex-col bg-secondary">
+        <ul
+          ref="gallery"
+          class="m-0 list-none p-0"
+          :class="layoutClass"
+          :style="masonryStyle"
+          data-testid="assets-skeleton"
+        >
+          <li
+            v-for="n in SKELETON_COUNT"
+            :key="n"
+            class="flex flex-col bg-secondary"
+            :style="masonryItemStyle(n - 1)"
+          >
             <Skeleton
               class="w-full rounded-none"
               :class="layout === 'masonry' && n % 3 === 1 ? 'aspect-[3/4]' : 'aspect-video'"
@@ -421,16 +441,19 @@ function extensionOf(name: string): string {
 
       <ul
         v-else
+        ref="gallery"
         class="m-0 list-none p-0"
         :class="layoutClass"
+        :style="masonryStyle"
         data-testid="assets-grid"
         @pointerenter="warmNameTooltips"
         @pointerleave="coolNameTooltips"
       >
         <li
-          v-for="asset in visibleAssets"
+          v-for="(asset, index) in visibleAssets"
           :key="cardKey(asset)"
           class="group relative bg-secondary"
+          :style="masonryItemStyle(index)"
           :data-testid="`asset-${asset.id}`"
         >
           <Tooltip

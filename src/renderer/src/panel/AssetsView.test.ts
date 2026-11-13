@@ -11,6 +11,12 @@ import type { AssetSummary, Installation } from '../types/ipc'
 const listAssets = vi.fn()
 const listLocalAssets = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
+const MASONRY_GAP = 16
+
+function svgImage(height: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="${height}"/>`
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`
+}
 
 function asset(
   id: string,
@@ -76,11 +82,65 @@ beforeEach(() => {
 })
 
 describe('AssetsView', () => {
-  it('starts in masonry with file names and details hidden', async () => {
+  it('starts with file names and details hidden', async () => {
     const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
 
-    expect(wrapper.get('[data-testid="assets-grid"]').classes()).toContain('columns-[200px]')
     expect(wrapper.get('[data-testid="asset-a"]').text()).not.toContain('forest.png')
+  })
+
+  it('starts in masonry, newest across the top, each next card under the shortest column', async () => {
+    const host = document.createElement('div')
+    host.style.width = `${4 * 200 + 3 * MASONRY_GAP}px`
+    document.body.append(host)
+    const imageHeights = [300, 300, 300, 100, 100, 100, 100, 100]
+    listLocalAssets.mockResolvedValue(
+      imageHeights.map((height, i) =>
+        asset(`card-${i}`, `card-${i}.svg`, 'image', { previewUrl: svgImage(height) })
+      )
+    )
+    try {
+      const wrapper = mount(AssetsView, { attachTo: host })
+      await flushPromises()
+      const gallery = wrapper.get('[data-testid="assets-grid"]').element
+
+      await vi.waitFor(() => {
+        const cards = wrapper
+          .findAll('[data-testid="assets-grid"] > li')
+          .map((card) => card.element.getBoundingClientRect())
+        expect(
+          cards.map((card) => card.height >= 100),
+          'every image has loaded'
+        ).not.toContain(false)
+
+        const topRow = cards.slice(0, 4)
+        expect(
+          topRow.map((card) => card.top),
+          'the four newest cards share the top row'
+        ).toEqual(topRow.map(() => gallery.getBoundingClientRect().top))
+        expect(
+          topRow.map((card) => card.left),
+          'the four newest cards read left to right'
+        ).toEqual(topRow.map((card) => card.left).toSorted((a, b) => a - b))
+
+        const columns = Map.groupBy(cards, (card) => Math.round(card.left))
+        expect(columns.size, 'cards fill four columns').toBe(4)
+        for (const column of columns.values()) {
+          column.slice(1).forEach((card, i) => {
+            expect(card.top - column[i]!.bottom, 'cards in a column sit one gap apart').toBeCloseTo(
+              MASONRY_GAP
+            )
+          })
+        }
+        const lastCardTops = [...columns.values()].map((column) => column.at(-1)!.top)
+        const columnBottoms = [...columns.values()].map((column) => column.at(-1)!.bottom)
+        expect(
+          Math.max(...lastCardTops),
+          'no card starts below the bottom of a shorter column'
+        ).toBeLessThanOrEqual(Math.min(...columnBottoms) + MASONRY_GAP + 0.5)
+      })
+    } finally {
+      host.remove()
+    }
   })
 
   it('opens with the view setup the user saved last time', async () => {
