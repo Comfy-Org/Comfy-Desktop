@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { runInNewContext } from 'vm'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   appOfPage,
@@ -14,7 +14,10 @@ import {
   COMFY_READY_SCRIPT,
   collectOutputs,
   downloadRequest,
+  inJobGrace,
   interruptJson,
+  JOB_GRACE_MS,
+  jobsAnswer,
   DEFAULT_APPS_URL,
   isAppOpen,
   isAppsFrameUrl,
@@ -31,6 +34,7 @@ import {
   localInstalls,
   localRequest,
   noteRun,
+  noteSubmitted,
   openAppId,
   openRequest,
   openWorkflowScript,
@@ -453,6 +457,55 @@ describe('readCapped', () => {
     expect(await readCapped(new Response(new Uint8Array(4)), 3)).toBeNull()
     const declared = new Response('x', { headers: { 'content-length': '10' } })
     expect(await readCapped(declared, 3)).toBeNull()
+  })
+
+  it('calls each chunk it reads', async () => {
+    const onChunk = vi.fn()
+    await readCapped(new Response(new Uint8Array([1, 2, 3])), 3, onChunk)
+    expect(onChunk).toHaveBeenCalled()
+  })
+})
+
+describe('jobs answers after a submit', () => {
+  const runId = '11111111-2222-3333-4444-555555555555'
+  const pollAt = (submitted: Map<string, number>, status: number, now: number) =>
+    jobsAnswer(status, inJobGrace(submitted, runId, now))
+
+  it('keeps polling a 404 inside the grace period and reads the 200 that follows', () => {
+    const submitted = new Map<string, number>()
+    noteSubmitted(submitted, runId, 1000)
+    expect(pollAt(submitted, 404, 1000 + 2_000)).toBe('wait')
+    expect(pollAt(submitted, 200, 1000 + 4_000)).toBe('read')
+  })
+
+  it('ends the run on a 404 after the grace period', () => {
+    const submitted = new Map<string, number>()
+    noteSubmitted(submitted, runId, 1000)
+    const answer = pollAt(submitted, 404, 1000 + JOB_GRACE_MS)
+    expect(answer).toEqual({ error: expect.stringMatching(/cannot find this run/) })
+    expect(submitted.has(runId)).toBe(false)
+  })
+
+  it('ends the run on a 404 for a run this app did not submit', () => {
+    expect(pollAt(new Map(), 404, 1000)).toEqual({ error: expect.any(String) })
+  })
+
+  it('names sign-in for 401 and access for 403, even inside the grace period', () => {
+    expect(jobsAnswer(401, true)).toEqual({ error: expect.stringMatching(/Sign in again/) })
+    expect(jobsAnswer(403, true)).toEqual({ error: expect.stringMatching(/access/) })
+  })
+
+  it('refuses other 4xx answers and waits on busy and server errors', () => {
+    expect(jobsAnswer(400, true)).toBe('refused')
+    expect(jobsAnswer(410, false)).toBe('refused')
+    expect(jobsAnswer(429, false)).toBe('wait')
+    expect(jobsAnswer(503, false)).toBe('wait')
+  })
+
+  it('forgets old submits when a new run starts', () => {
+    const submitted = new Map<string, number>([['old', 0]])
+    noteSubmitted(submitted, runId, JOB_GRACE_MS + 1)
+    expect([...submitted.keys()]).toEqual([runId])
   })
 })
 

@@ -56,6 +56,12 @@ function failNextWrite(): void {
   )
 }
 
+function failNextOpen(): void {
+  vi.spyOn(fsp, 'open').mockRejectedValueOnce(
+    Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+  )
+}
+
 beforeEach(() => {
   outputDir.current = mkdtempSync(path.join(tmpdir(), 'apps-view-test-'))
   appEvents.trackApps.mockReset()
@@ -88,7 +94,7 @@ describe('getOutput', () => {
   })
 
   it('sends nothing when the write fails', async () => {
-    failNextWrite()
+    failNextOpen()
 
     await expect(getOutput(OUTPUT, { app: 'upscale', label: 'my result' })).rejects.toThrow(
       'disk full'
