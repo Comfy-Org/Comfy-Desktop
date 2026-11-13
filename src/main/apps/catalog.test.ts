@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { catalogUrl, listCatalogApps, toCatalogApp } from './catalog'
+import { _resetCatalogAppsForTest, catalogUrl, listCatalogApps, toCatalogApp } from './catalog'
 
 const LIST = 'https://apps.example/apps/'
 const fetchMock = vi.fn()
@@ -20,6 +20,7 @@ function catalogApp(slug: string, title: string, order: number) {
 }
 
 beforeEach(() => {
+  _resetCatalogAppsForTest()
   vi.stubGlobal('fetch', fetchMock)
 })
 
@@ -141,5 +142,39 @@ describe('listCatalogApps', () => {
   it('fails when the catalog does not answer', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 503 }))
     await expect(listCatalogApps(LIST)).rejects.toThrow('HTTP 503')
+  })
+
+  it('answers again from the last list without asking the catalog', async () => {
+    fetchMock.mockResolvedValue(Response.json({ items: [catalogApp('genjutsu', 'First', 0)] }))
+    await listCatalogApps(LIST)
+    const again = await listCatalogApps(LIST)
+    expect(again.map((app) => app.title)).toEqual(['First'])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares one request between callers that ask at the same time', async () => {
+    fetchMock.mockImplementation(async () =>
+      Response.json({ items: [catalogApp('genjutsu', 'First', 0)] })
+    )
+    const [first, second] = await Promise.all([listCatalogApps(LIST), listCatalogApps(LIST)])
+    expect(second).toBe(first)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the last list when a later request fails', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchMock.mockResolvedValueOnce(
+        Response.json({ items: [catalogApp('genjutsu', 'First', 0)] })
+      )
+      await listCatalogApps(LIST)
+      vi.advanceTimersByTime(11 * 60 * 1000)
+      fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }))
+      const apps = await listCatalogApps(LIST)
+      expect(apps.map((app) => app.title)).toEqual(['First'])
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
