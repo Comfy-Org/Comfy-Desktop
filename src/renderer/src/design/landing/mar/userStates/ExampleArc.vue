@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, PanelsTopLeft } from 'lucide-vue-next'
+import {
+  ArrowRight,
+  ArrowUpRight,
+  AudioLines,
+  Box,
+  ChevronLeft,
+  ChevronRight,
+  Image,
+  Video
+} from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion } from './examples'
@@ -28,6 +37,13 @@ const { items: given, allLabel = 'See all apps' } = defineProps<{
 const emit = defineEmits<{ all: [] }>()
 
 const items = computed(() => given ?? ARC_APPS)
+
+const TOPIC = {
+  image: { label: 'Image', icon: Image },
+  video: { label: 'Video', icon: Video },
+  '3d': { label: '3D', icon: Box },
+  audio: { label: 'Audio', icon: AudioLines }
+} as const
 const N = computed(() => items.value.length)
 const ANGLE = 25 // degrees between neighbours on the cylinder
 const RADIUS = 600 // px, the cylinder's radius
@@ -266,10 +282,12 @@ function wheel(e: WheelEvent): void {
         />
         <span class="mar-arc-fade" />
         <span class="mar-arc-scrim" />
-        <!-- Apps only (Milestone 2): App as a badge up top. From Milestone 3 the
-             Home's tabs say what's on the arc, so no badge. -->
-        <span v-if="!given" class="mar-arc-text">
-          <span class="mar-arc-app"><PanelsTopLeft :size="11" />App</span>
+        <!-- The badge says what it makes (Image, Video, 3D, Audio); the Home's
+             tabs already say whether it's an app or a workflow. -->
+        <span class="mar-arc-text">
+          <span class="mar-arc-app"
+            ><component :is="TOPIC[x.topic].icon" :size="11" />{{ TOPIC[x.topic].label }}</span
+          >
         </span>
         <span class="mar-arc-dim" />
         <!-- Only the title, up to two lines, over the fade; pointing at the
@@ -294,7 +312,7 @@ function wheel(e: WheelEvent): void {
 
     <div class="mar-arc-actions">
       <button
-        v-if="can.exploreApps"
+        v-if="can.exploreApps && allLabel"
         type="button"
         class="mar-arc-all"
         @click="given ? emit('all') : go(can.explore ? 'explore' : 'apps')"

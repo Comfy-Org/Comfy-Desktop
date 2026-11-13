@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
+import { can } from '../../milestones'
 import ExampleArc from './ExampleArc.vue'
 import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
@@ -21,7 +22,7 @@ const FEATURED = 12
 const kind = ref<'apps' | 'templates'>('apps')
 const KINDS: { value: 'apps' | 'templates'; label: string }[] = [
   { value: 'apps', label: 'Apps' },
-  { value: 'templates', label: 'Templates' }
+  { value: 'templates', label: 'Workflows' }
 ]
 
 type Topic = 'all' | ArcItem['topic']
@@ -39,8 +40,12 @@ const TOPICS = computed(() =>
   ).filter((t) => t.value === 'all' || EVERY.filter((x) => x.topic === t.value).length >= 3)
 )
 
+/** Milestone 2 always shows the tabs; from Milestone 3 the layout follows
+ *  UI Playground › Apps and templates. */
+const mix = computed(() => (can.value.explore ? homeArcMix.id : 'tabs'))
+
 const items = computed<ArcItem[]>(() => {
-  switch (homeArcMix.id) {
+  switch (mix.value) {
     case 'tabs':
       return (kind.value === 'apps' ? ARC_APPS : ARC_TEMPLATES).slice(0, FEATURED)
     case 'mixed':
@@ -57,19 +62,22 @@ const items = computed<ArcItem[]>(() => {
 })
 
 const allLabel = computed(() => {
-  if (homeArcMix.id === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all templates'
-  if (homeArcMix.id === 'topics' && topic.value !== 'all')
+  // Milestone 2 has a page for apps only, so the Workflows tab has no See all.
+  if (!can.value.explore) return kind.value === 'apps' ? 'See all apps' : ''
+  if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
+  if (mix.value === 'topics' && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
-  if (homeArcMix.id === 'row') return 'See all apps'
+  if (mix.value === 'row') return 'See all apps'
   return 'Explore all'
 })
 
 function seeAll(on: 'apps' | 'templates'): void {
+  if (!can.value.explore) return go('apps')
   exploreStart.value = on
   go('explore')
 }
 const allOn = computed(() =>
-  homeArcMix.id === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
+  mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
 )
 
 const row = ref<InstanceType<typeof ScrollRow> | null>(null)
@@ -81,11 +89,11 @@ function scrollRow(by: number): void {
 
 <template>
   <div class="mar-arcmix">
-    <div v-if="homeArcMix.id === 'tabs'" class="mar-arcmix-picker">
+    <div v-if="mix === 'tabs'" class="mar-arcmix-picker">
       <MarSeg v-model="kind" :options="KINDS" label="Show" />
     </div>
     <div
-      v-else-if="homeArcMix.id === 'topics'"
+      v-else-if="mix === 'topics'"
       class="mar-arcmix-picker"
       role="tablist"
       aria-label="Use case"
@@ -105,19 +113,19 @@ function scrollRow(by: number): void {
 
     <ExampleArc :items="items" :all-label="allLabel" @all="seeAll(allOn)" />
 
-    <section v-if="homeArcMix.id === 'row'" class="mar-arcmix-row">
+    <section v-if="mix === 'row'" class="mar-arcmix-row">
       <SectionHeader
         class="mar-sec"
-        title="Templates"
-        link="See all templates"
+        title="Workflows"
+        link="See all workflows"
         @link="seeAll('templates')"
       >
         <template #controls>
           <span class="mar-arcmix-steps">
-            <button type="button" aria-label="Previous templates" @click="scrollRow(-1)">
+            <button type="button" aria-label="Previous workflows" @click="scrollRow(-1)">
               <ChevronLeft :size="16" />
             </button>
-            <button type="button" aria-label="Next templates" @click="scrollRow(1)">
+            <button type="button" aria-label="Next workflows" @click="scrollRow(1)">
               <ChevronRight :size="16" />
             </button>
           </span>

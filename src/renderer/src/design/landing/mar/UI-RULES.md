@@ -128,9 +128,10 @@ DS's Motion page (`ds/motion.ts`).
   empty or not, so the bar never shifts. An empty one says what lands there
   ("No 3D files yet"), never "Nothing matches", which is only for a search
   or a filter.
-- **Home's Apps | Templates tabs are the design system's tabs** (MarSeg),
-  centred over the arc. The cards carry no type badge; the tab says
-  what's on the arc.
+- **Home's Apps | Workflows tabs are the design system's tabs** (MarSeg),
+  centred over the arc, from Milestone 2. The front card's badge says
+  what it makes (Image, Video, 3D, Audio), never App or Workflow: the tab
+  already says that. In Milestone 2 the Workflows tab has no See all.
 - **Arc cards show only their title** (two lines at most). Pointing at the
   front card fades a white arrow on a translucent grey rounded square (9px) into its top
   right corner; nothing
