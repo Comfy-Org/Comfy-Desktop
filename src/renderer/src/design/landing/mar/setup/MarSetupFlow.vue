@@ -923,7 +923,7 @@ function rowState(i: number): string {
         <footer class="mar-wizard-foot mss-foot">
           <!-- Discard leaves things as they were; both actions sit on the right. -->
           <span class="mr-auto"></span>
-          <Button variant="ghost" size="lg" @click="discardChanges">Discard changes</Button>
+          <Button variant="ghost" size="lg" @click="discardChanges">Discard</Button>
           <Button
             v-if="method === 'remote'"
             variant="primary"
