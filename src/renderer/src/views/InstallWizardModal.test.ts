@@ -77,6 +77,24 @@ beforeEach(() => {
 })
 
 describe('InstallWizardModal heading', () => {
+  it('returns to Set up from the New Build footer after editing the first-use setup', async () => {
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="config-back-to-setup"]').text()).toBe('Back')
+
+    await showChangeSetup(wrapper)
+    expect(wrapper.find('[data-testid="config-back-to-setup"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await wrapper.get('[data-testid="config-back-to-setup"]').trigger('click')
+
+    expect(wrapper.emitted('back-to-setup')).toEqual([[]])
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(window.api.addInstallation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('uses the install-build title and local-install subtitle', async () => {
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()

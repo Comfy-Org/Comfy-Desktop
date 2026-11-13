@@ -61,7 +61,9 @@ export async function launchApp(
   const titleBar = titleBarPage(application)
 
   await panel.waitForSelector('.panel-shell', { timeout: 30_000 })
-  await panel.waitForSelector('.chooser-view, .panel-chooser, .start-hero', { timeout: 15_000 })
+  await panel.waitForSelector('.chooser-view, .panel-chooser, [data-testid="setup-screen"]', {
+    timeout: 15_000
+  })
   await titleBar.waitForSelector('.title-bar', { timeout: 15_000 })
 
   if (!launchOptions.stayOnHome && (await panel.isVisible(HOME_VIEW))) {

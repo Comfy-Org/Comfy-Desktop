@@ -7,6 +7,7 @@ import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
+import BuildProgressDialog from './BuildProgressDialog.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
@@ -47,6 +48,7 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
+import { provideInstallLogs } from '../composables/useInstallProgress'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { DashboardPage, Installation } from '../types/ipc'
 
@@ -97,17 +99,17 @@ const firstUseChain = useFirstUseChain({
   switchPanel: (panel, entrypoint) => overlays.switchPanel(panel, entrypoint),
   handleShowProgress: (showOpts) => overlays.handleShowProgress(showOpts),
   performChooserLaunch: (inst, onMissing) => chooserHandoff.performChooserLaunch(inst, onMissing),
-  openFirstUseTakeover: (firstUseOpts) => overlays.openFirstUseTakeover(firstUseOpts),
+  openFirstUseTakeover: () => overlays.openFirstUseTakeover(),
   resetFirstUseSpinner: () => firstUseRef.value?.resetContinue()
 })
 const {
   chainingFirstUseToNewInstall,
   completeFirstUseAndDismiss,
-  handleFirstUseComplete,
-  handleFirstUseChainLocal,
+  handleSetupInstall,
+  handleSetupChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
-  handleNewInstallBackToLocalBranch
+  handleNewInstallBackToSetup
 } = firstUseChain
 
 overlays = usePanelOverlays({
@@ -119,7 +121,8 @@ overlays = usePanelOverlays({
   quickInstallRef,
   firstUseRef,
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
-  firstUseChain: firstUseChain.hooks
+  firstUseChain: firstUseChain.hooks,
+  onBackgroundInstall: () => void showHome()
 })
 const {
   activePanel,
@@ -133,6 +136,11 @@ const {
   dismissTakeoverDirect,
   switchPanel
 } = overlays
+
+const buildProgressId = ref<string | null>(null)
+provideInstallLogs((id) => {
+  buildProgressId.value = id
+})
 
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
@@ -206,6 +214,13 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
     await nextTick()
   }
   openBuildDetails(inst)
+}
+
+async function showHome(): Promise<void> {
+  closeBuildDetails()
+  dashboardHomePage.value = 'home'
+  if (activePanel.value !== 'chooser') await switchPanel('chooser', 'install')
+  window.api.navigatePanel('home')
 }
 
 function handleSidebarNavigate(page: DashboardPage): void {
@@ -492,6 +507,7 @@ onUnmounted(() => {
             <HomeView
               v-if="dashboardHomePage === 'home'"
               @pick="handleChooserPick"
+              @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
             />
             <BuildDetailsView
@@ -538,7 +554,7 @@ onUnmounted(() => {
         @close="handleNewInstallTakeoverClose"
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
-        @back-to-local-branch="handleNewInstallBackToLocalBranch"
+        @back-to-setup="handleNewInstallBackToSetup"
       />
       <TrackModal
         v-else-if="currentOverlay.component === 'track'"
@@ -561,13 +577,18 @@ onUnmounted(() => {
       <FirstUseTakeover
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
-        @complete-cloud="handleFirstUseComplete"
+        @install="handleSetupInstall"
+        @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"
-        @chain-local="handleFirstUseChainLocal"
         @chain-migrate="handleFirstUseChainMigrate"
       />
     </template>
 
+    <BuildProgressDialog
+      v-if="buildProgressId"
+      :installation-id="buildProgressId"
+      @close="buildProgressId = null"
+    />
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 

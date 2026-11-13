@@ -9,6 +9,7 @@ import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
 import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
+import { useInstallingBuilds } from '../composables/useInstallProgress'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -24,6 +25,7 @@ const TEXT_LINK_CLASS =
 
 const emit = defineEmits<{
   pick: [installation: Installation]
+  'open-build': [installation: Installation]
   'show-builds': []
 }>()
 
@@ -41,7 +43,13 @@ const workspaceBuilds = computed(() =>
     isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
   )
 )
-const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
+const isInstalling = useInstallingBuilds()
+const builds = computed(() =>
+  [
+    ...workspaceBuilds.value.filter((build) => isInstalling(build.id)),
+    ...workspaceBuilds.value.filter((build) => !isInstalling(build.id))
+  ].slice(0, HOME_BUILD_LIMIT)
+)
 const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
 const narrowBuildIds = computed(() => {
   const [latest, ...rest] = builds.value
@@ -49,7 +57,21 @@ const narrowBuildIds = computed(() => {
   const second = rest.find((build) => isCloudBuild(build)) ?? rest[0]
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
-const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
+const openableBuilds = computed(() =>
+  workspaceBuilds.value.filter((build) => !isInstalling(build.id))
+)
+const mostRecentBuild = computed(
+  () =>
+    openableBuilds.value.find(
+      (build) =>
+        build.statusTag?.style !== 'danger' &&
+        (typeof build.lastLaunchedAt === 'number' || !isCloudBuild(build))
+    ) ?? null
+)
+function openBuild(build: Installation): void {
+  if (build.statusTag?.style === 'danger') emit('open-build', build)
+  else emit('pick', build)
+}
 function buildStatus(build: Installation) {
   return homeBuildStatus(build, sessionStore)
 }
@@ -91,7 +113,7 @@ onMounted(() => {
     <HomeOpenBuildButton
       v-if="mostRecentBuild"
       class="absolute top-4 right-4 z-10"
-      :builds="workspaceBuilds"
+      :builds="openableBuilds"
       :target="mostRecentBuild"
       :status-of="buildStatus"
       @open="emit('pick', $event)"
@@ -190,7 +212,7 @@ onMounted(() => {
               :build="build"
               :status="buildStatus(build)"
               :tone="buildTones[index]!"
-              @open="emit('pick', build)"
+              @open="openBuild(build)"
             />
           </li>
         </ul>

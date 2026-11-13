@@ -22,14 +22,17 @@ export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
 }
 
+export function deviceKindForPlatform(platform: string | undefined): BuildDeviceKind {
+  if (platform === 'win32') return 'pc-laptop'
+  if (platform === 'linux') return 'monitor'
+  return 'laptop'
+}
+
 export function buildDeviceKind(
   build: Installation,
   platform: string | undefined = window.api?.platform
 ): BuildDeviceKind {
-  if (isCloudBuild(build)) return 'cloud'
-  if (platform === 'win32') return 'pc-laptop'
-  if (platform === 'linux') return 'monitor'
-  return 'laptop'
+  return isCloudBuild(build) ? 'cloud' : deviceKindForPlatform(platform)
 }
 
 export function isComfyCloud(build: Installation): boolean {
