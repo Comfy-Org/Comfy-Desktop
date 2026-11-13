@@ -59,9 +59,11 @@ export async function clickInstallTile(
   expect(launched, `Install tile matching "${nameSubstring}" launched`).toBe(true)
 }
 
+const TITLE_MENU_BUTTON = '.title-menu-button--icon[aria-haspopup="menu"]'
+
 export async function openTitleMenu(titleBar: WebContentsPage): Promise<void> {
-  await titleBar.waitForVisible('.title-menu-button--icon')
-  const ok = await titleBar.click('.title-menu-button--icon')
+  await titleBar.waitForVisible(TITLE_MENU_BUTTON)
+  const ok = await titleBar.click(TITLE_MENU_BUTTON)
   expect(ok, 'Title menu button click dispatched').toBe(true)
 }
 

@@ -68,6 +68,8 @@ import {
   startExampleModelDownload
 } from '../performanceTestExampleWorkflows'
 
+export const MISSING_PATH_ERROR = 'The path does not exist.'
+
 export function registerAppHandlers(): void {
   const benchmarksDir = defaultBenchmarksDir()
 
@@ -492,7 +494,7 @@ export function registerAppHandlers(): void {
     if (typeof targetPath !== 'string' || !targetPath) return ''
     if (/^https?:\/\//i.test(targetPath)) return shell.openExternal(targetPath)
     const resolved = path.resolve(targetPath)
-    if (!fs.existsSync(resolved)) return ''
+    if (!fs.existsSync(resolved)) return MISSING_PATH_ERROR
     return openPath(resolved)
   })
   ipcMain.on('reveal-path', (_event, targetPath: unknown) => {

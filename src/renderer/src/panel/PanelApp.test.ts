@@ -1277,6 +1277,36 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
+  it('releases the window opened for a build when the user cancels its launch', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    mountPanel()
+    await flushPromises()
+    const api = window.api as unknown as {
+      claimAttachHost: ReturnType<typeof vi.fn>
+      releaseAttachHostPreview: ReturnType<typeof vi.fn>
+      getListActions: ReturnType<typeof vi.fn>
+    }
+    api.getListActions.mockResolvedValue([
+      {
+        id: 'launch',
+        label: 'Launch',
+        style: 'primary',
+        showProgress: false,
+        confirm: { title: 'Launch?', message: 'Launch this build?' }
+      }
+    ])
+    mockModal.confirm.mockResolvedValue(false)
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'picker-pick-install', installationId: SAMPLE_INSTALL.id })
+    )
+    await flushPromises()
+
+    expect(mockModal.confirm).toHaveBeenCalled()
+    expect(api.claimAttachHost).not.toHaveBeenCalled()
+    expect(api.releaseAttachHostPreview).toHaveBeenCalled()
+  })
+
   it('closes an open app when Apps is clicked in the sidebar, and otherwise keeps the page', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const listCatalogApps = vi.fn().mockResolvedValue([
