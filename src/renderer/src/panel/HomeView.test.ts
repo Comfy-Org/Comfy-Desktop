@@ -291,16 +291,17 @@ describe('Home example workflows', () => {
     expect(document.activeElement).toBe(cardAt(wrapper, 0).element)
   })
 
-  it('offers Open on the front card only, and opens that workflow from it', async () => {
+  it('shows the open arrow on hover of the front card only, and opens that workflow from it', async () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
-    const ctas = wrapper.findAll('[data-testid="home-workflow-cta"]')
+    const front = cardAt(wrapper, 0).get('[data-testid="home-workflow-cta"]')
+    const side = cardAt(wrapper, 1).get('[data-testid="home-workflow-cta"]')
 
-    expect(ctas).toHaveLength(1)
-    expect(cardAt(wrapper, 0).find('[data-testid="home-workflow-cta"]').text()).toBe('Open')
-    expect(ctas[0]!.attributes('aria-hidden')).toBe('true')
+    expect(front.classes()).toContain('group-hover/card:opacity-100')
+    expect(side.classes()).not.toContain('group-hover/card:opacity-100')
+    expect(front.attributes('aria-hidden')).toBe('true')
 
-    await ctas[0]!.trigger('click')
+    await front.trigger('click')
 
     expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
   })
