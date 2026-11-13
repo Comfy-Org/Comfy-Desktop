@@ -1333,6 +1333,22 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
   })
 
+  it("returns from a build's details to the list when Builds is picked in the sidebar", async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await showBuilds(wrapper)
+    wrapper.findComponent({ name: 'ChooserView' }).vm.$emit('open-details', SAMPLE_INSTALL)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="build-details"]').text()).toBe(SAMPLE_INSTALL.name)
+
+    await wrapper.get('[data-testid="app-sidebar-chooser"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="build-details"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+  })
+
   it("leaves a build's details when the window switches screens", async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
