@@ -44,3 +44,5 @@ docs/telemetry.md
 __pycache__/
 *.pyc
 coverage/
+
+.apps-url

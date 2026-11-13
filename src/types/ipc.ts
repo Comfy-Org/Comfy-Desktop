@@ -126,7 +126,13 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'home' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage =
+  | 'home'
+  | 'apps'
+  | 'assets'
+  | 'chooser'
+  | 'benchmarks'
+  | 'performance-test'
 
 export interface CatalogWorkflow {
   id: string
@@ -1146,6 +1152,10 @@ export interface ElectronApi {
   listAssets(installationId: string): Promise<AssetSummary[]>
   listLocalAssets(): Promise<AssetSummary[]>
   downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
+  showApps(rect: { x: number; y: number; width: number; height: number; fresh?: boolean }): void
+  hideApps(): void
+  onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
+  onAppsAppOpen(callback: (info: { open: boolean }) => void): Unsubscribe
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>

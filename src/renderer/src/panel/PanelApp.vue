@@ -10,6 +10,7 @@ import AppSidebar from './AppSidebar.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
+import AppsView from './AppsView.vue'
 import AssetsView from './AssetsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
@@ -163,7 +164,7 @@ if (params.get('e2e') === '1') {
   })
 }
 
-type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser' | 'assets'>
+type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser' | 'apps' | 'assets'>
 
 const dashboardHomePage = ref<DashboardHomePage>('home')
 
@@ -211,7 +212,8 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
 
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
-  if (page === 'home' || page === 'chooser' || page === 'assets') dashboardHomePage.value = page
+  if (page === 'home' || page === 'chooser' || page === 'apps' || page === 'assets')
+    dashboardHomePage.value = page
 }
 
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
@@ -494,6 +496,10 @@ onUnmounted(() => {
               v-if="dashboardHomePage === 'home'"
               @pick="handleChooserPick"
               @show-builds="dashboardHomePage = 'chooser'"
+            />
+            <AppsView
+              v-else-if="dashboardHomePage === 'apps'"
+              :obscured="currentOverlay?.kind === 'takeover'"
             />
             <AssetsView v-else-if="dashboardHomePage === 'assets'" />
             <BuildDetailsView

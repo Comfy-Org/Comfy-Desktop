@@ -310,6 +310,29 @@ describe('installations.getRecent', () => {
     expect(recent!.id).toBe(b.id)
     expect(recent!.id).not.toBe(a.id)
   })
+
+  it('never picks the Apps build, so it is not opened on startup', async () => {
+    const installations = await loadInstallations()
+    const mine = await installations.add({
+      name: 'Mine',
+      installPath: path.join(tmpRoot, 'mine'),
+      sourceId: 'standalone',
+      status: 'installed',
+      lastLaunchedAt: 100
+    })
+    await installations.add({
+      name: 'Apps',
+      installPath: path.join(tmpRoot, 'apps'),
+      sourceId: 'standalone',
+      status: 'installed',
+      appsBuild: true,
+      lastLaunchedAt: 900,
+      lastLaunchedAtByCategory: { local: 900 }
+    })
+    expect((await installations.getRecent())!.id).toBe(mine.id)
+    expect((await installations.resolveAutoLaunchInstall('last'))!.id).toBe(mine.id)
+    expect((await installations.getRecentByCategory('local', resolveCategory))!.id).toBe(mine.id)
+  })
 })
 
 describe('installations.resolveAutoLaunchInstall', () => {

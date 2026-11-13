@@ -59,11 +59,12 @@ async function mountSidebar(
 }
 
 describe('AppSidebar', () => {
-  it('lists Home, Assets, then the Builds group, with the tools left to the menu', async () => {
+  it('lists Home, Apps, Assets, then the Builds group, with the tools left to the menu', async () => {
     const wrapper = await mountSidebar()
 
     expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
       'Home',
+      'Apps',
       'Assets',
       'Builds',
       ''
@@ -87,6 +88,7 @@ describe('AppSidebar', () => {
 
   it.each<[string, DashboardPage]>([
     ['app-sidebar-home', 'home'],
+    ['app-sidebar-apps', 'apps'],
     ['app-sidebar-assets', 'assets'],
     ['app-sidebar-chooser', 'chooser']
   ])('navigates from %s', async (testId, page) => {

@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { dataDir } from './lib/paths'
 import { readFileSafeAsync, writeFileSafe, writeFileSafeAsync } from './lib/safe-file'
 import type { ComfyVersion } from './lib/version'
+import { isAppsBuild } from '../shared/appsBuild'
 
 export const installationEvents = new EventEmitter()
 
@@ -380,6 +381,7 @@ export async function getRecent(): Promise<InstallationRecord | null> {
   let best: InstallationRecord | null = null
   let bestTs = -Infinity
   for (const inst of list) {
+    if (isAppsBuild(inst)) continue
     const ts = typeof inst.lastLaunchedAt === 'number' ? inst.lastLaunchedAt : -Infinity
     if (ts > bestTs) {
       bestTs = ts
@@ -397,7 +399,7 @@ export async function getRecentByCategory(
   let best: InstallationRecord | null = null
   let bestTs = -Infinity
   for (const inst of list) {
-    if (resolveCategory(inst) !== category) continue
+    if (resolveCategory(inst) !== category || isAppsBuild(inst)) continue
     const byCat = inst.lastLaunchedAtByCategory as Record<string, number> | undefined
     const perCategoryTs = byCat?.[category]
     const ts =

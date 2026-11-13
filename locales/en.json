@@ -19,6 +19,7 @@
     "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
+    "apps": "Apps",
     "assets": "Assets",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
@@ -67,6 +68,9 @@
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
     "signIn": "Log in to Comfy Cloud"
+  },
+  "apps": {
+    "loadFailed": "The apps page at {url} could not load."
   },
   "home": {
     "title": "Welcome. Let's create!",

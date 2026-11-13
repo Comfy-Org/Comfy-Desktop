@@ -102,6 +102,20 @@ export function buildElectronApi(): ElectronApi {
     listLocalAssets: () => ipcRenderer.invoke('assets:list-local'),
     downloadAsset: (source, assetId, fileName) =>
       ipcRenderer.invoke('assets:download', source, assetId, fileName),
+    showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),
+    hideApps: () => ipcRenderer.send('comfy-apps:hide'),
+    onAppsLoadFailed: (callback) => {
+      const handler = (_event: IpcRendererEvent, info: unknown) =>
+        callback(info as Parameters<typeof callback>[0])
+      ipcRenderer.on('comfy-apps:load-failed', handler)
+      return () => ipcRenderer.removeListener('comfy-apps:load-failed', handler)
+    },
+    onAppsAppOpen: (callback) => {
+      const handler = (_event: IpcRendererEvent, info: unknown) =>
+        callback(info as Parameters<typeof callback>[0])
+      ipcRenderer.on('comfy-apps:app-open', handler)
+      return () => ipcRenderer.removeListener('comfy-apps:app-open', handler)
+    },
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
     openCatalogWorkflowHub: () => ipcRenderer.invoke('catalog:open-workflow-hub'),
