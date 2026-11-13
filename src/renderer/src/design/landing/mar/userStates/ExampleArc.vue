@@ -434,7 +434,8 @@ function wheel(e: WheelEvent): void {
   pointer-events: none;
   transition: opacity 250ms ease;
 }
-/* Open: a round white arrow in the front card's top right corner. Every
+/* Open: a white arrow in a rounded square (9px corners, like the icon
+   buttons) in the front card's top right corner. Every
    card carries it, so it eases in as a card reaches the front; it shows
    after a short wait on hover or focus, so it doesn't flash while the arc
    turns. */
@@ -446,7 +447,7 @@ function wheel(e: WheelEvent): void {
   width: 32px;
   height: 32px;
   place-items: center;
-  border-radius: 50%;
+  border-radius: 9px;
   background: #fff;
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.06),

@@ -153,11 +153,13 @@ const rowsOnly = computed(() => (buildsAsM1.value || buildCard.id === 'rows') &&
 // top, the name, the version; Start or Open and ⋯ on the right.
 const tiles = computed(() => rowsOnly.value && can.value.exploreApps)
 // A tile's state line: Ready (a check) for a build that isn't running,
-// Always on for Cloud, a dot for a live one, a spinner while it changes.
-function tileState(b: Build): { label: string; mark: 'dot' | 'spin' | 'check' } {
+// Always on for Cloud, a dot for a live one, a spinner while it changes,
+// Update available (an arrow) when there's one.
+function tileState(b: Build): { label: string; mark: 'dot' | 'spin' | 'check' | 'update' } {
   const s = m1State(b)
   if (s.spin) return { label: s.label, mark: 'spin' }
   if (s.tone === 'ok') return { label: s.label, mark: 'dot' }
+  if (b.state === 'update') return { label: 'Update available', mark: 'update' }
   if (b.kind === 'cloud' && !isRemote(b)) return { label: 'Always on', mark: 'dot' }
   return { label: 'Ready', mark: 'check' }
 }
@@ -340,6 +342,25 @@ function launch(b: Build): { label: string; icon: Component; run: () => void } {
 }
 const launchWhere = (b: Build): string =>
   isRemote(b) ? 'on Remote' : b.kind === 'cloud' ? 'on Cloud' : 'on this computer'
+// A tile's button, as Desktop's (ChooserInstallTile): Open where there is
+// something to open (running, starting, errored, Cloud, Remote), else Start.
+// None while it updates or stops.
+const tileLaunchShown = (b: Build): boolean =>
+  !updating.has(b.id) && !stopping.has(b.id) && !creating.has(b.id)
+function tileLaunch(b: Build): { label: string; icon: Component; run: () => void } {
+  const open =
+    b.state === 'running' || b.state === 'launching' || b.state === 'error' || b.kind === 'cloud'
+  const run = (): void => {
+    if (b.state === 'launching') return
+    if (b.state === 'running') return hostActions.launch(original(b))
+    if (b.state === 'error') return void (crashOf.value = b)
+    if (problemOf(b)) return fixProblem(b)
+    start(b)
+  }
+  return open ? { label: 'Open', icon: ExternalLink, run } : { label: 'Start', icon: Play, run }
+}
+// A tile's meta line: Comfy Cloud says just Cloud; the rest as the rows.
+const tileSpecs = (b: Build): string => (b.id === 'cloud' ? 'Cloud' : specs(b))
 // The state, one word: the chip after the name says what else is going on.
 function m1State(b: Build): {
   label: string
@@ -702,12 +723,18 @@ const newLabel = computed(() =>
             ><button
               v-if="b.state === 'error'"
               type="button"
-              class="mar-bc-chip is-bad"
+              class="mar-bc-tile-alert"
               title="View error details"
               @click.stop="crashOf = b"
             >
               <OctagonAlert :size="12" aria-hidden="true" />Error</button
-            ><button v-else type="button" class="mar-bc-chip is-bad" @click.stop="fixProblem(b)">
+            ><button
+              v-else
+              type="button"
+              class="mar-bc-tile-alert"
+              title="View error details"
+              @click.stop="fixProblem(b)"
+            >
               <OctagonAlert :size="12" aria-hidden="true" />{{ PROBLEM_LABEL[problemOf(b)!] }}
             </button></span
           >
@@ -716,6 +743,10 @@ const newLabel = computed(() =>
               v-else-if="tileState(b).mark === 'dot'"
               class="mar-bc-tile-dot"
               aria-hidden="true"
+            /><ArrowUpCircle
+              v-else-if="tileState(b).mark === 'update'"
+              :size="12"
+              aria-hidden="true"
             /><Check v-else :size="12" aria-hidden="true" />{{ tileState(b).label
             }}<span v-if="b.id === 'cloud' && !proto.signedIn" class="mar-bc-tile-free"
               >Try free</span
@@ -723,7 +754,7 @@ const newLabel = computed(() =>
           >
         </template>
         <template #meta
-          ><span class="mar-bc-specs-text">{{ specs(b) }}</span
+          ><span class="mar-bc-specs-text">{{ tiles ? tileSpecs(b) : specs(b) }}</span
           ><!-- One chip after the specs: what needs a look (Desktop's order). -->
           <button
             v-if="b.state === 'error' && !tiles"
@@ -743,7 +774,7 @@ const newLabel = computed(() =>
             <OctagonAlert :size="12" aria-hidden="true" />{{ PROBLEM_LABEL[problemOf(b)!] }}
           </button>
           <button
-            v-else-if="extraOf(b.id).migrate && !updating.has(b.id)"
+            v-else-if="extraOf(b.id).migrate && !updating.has(b.id) && !tiles"
             type="button"
             class="mar-bc-update"
             :disabled="busy(b) || b.state === 'running'"
@@ -789,17 +820,43 @@ const newLabel = computed(() =>
             ></span
           >
         </template>
-        <template #actions>
+        <!-- Tiles, as Desktop's: Update or Migrate before it, then Start or
+             Open; Stop and the rest live in ⋯. -->
+        <template v-if="tiles" #actions>
           <Button
-            v-if="tiles && b.state === 'update' && !updating.has(b.id) && !problemOf(b)"
+            v-if="b.state === 'update' && !updating.has(b.id) && !problemOf(b)"
             variant="secondary"
             size="md"
-            class="mar-bc-main"
+            class="mar-bc-tile-btn"
             :disabled="busy(b)"
             title="Update to v0.37.6"
             @click.stop="update(b)"
             ><ArrowUpCircle :size="13" />Update</Button
           >
+          <Button
+            v-else-if="extraOf(b.id).migrate && !updating.has(b.id)"
+            variant="secondary"
+            size="md"
+            class="mar-bc-tile-btn"
+            :disabled="busy(b) || b.state === 'running'"
+            :title="
+              b.state === 'running' ? 'Stop the running instance first.' : 'Migrate to Standalone'
+            "
+            @click.stop="migrate(b)"
+            ><ArrowRightLeft :size="13" />Migrate</Button
+          >
+          <Button
+            v-if="tileLaunchShown(b)"
+            variant="secondary"
+            size="md"
+            class="mar-bc-tile-btn"
+            @click.stop="tileLaunch(b).run()"
+            ><component :is="tileLaunch(b).icon" :size="13" aria-hidden="true" />{{
+              tileLaunch(b).label
+            }}</Button
+          >
+        </template>
+        <template v-else #actions>
           <Button
             v-if="problemOf(b)"
             variant="secondary"
@@ -1393,6 +1450,39 @@ const newLabel = computed(() =>
   border-radius: 50%;
   background: #59d38c;
   box-shadow: 0 0 0 3px rgb(89 211 140 / 0.36);
+}
+/* What needs a look takes the state's place: red text, no fill. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-alert {
+  display: inline-flex;
+  height: 16px;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-status-danger);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  cursor: pointer;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-alert:hover {
+  text-decoration: underline;
+}
+:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-alert:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+/* A tile's buttons: small secondaries, 32px tall, 13px text. */
+:root .proto-ui.proto-ui.proto-ui .mar-bc-tile-btn {
+  height: 32px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 20px;
 }
 /* Try free: a small grey chip by the state. */
 .mar-bc-tile-free {
