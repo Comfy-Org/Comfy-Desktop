@@ -7,6 +7,8 @@ import { launchApp, type AppContext } from './launchApp'
 const SIDEBAR_ASSETS = '[data-testid="app-sidebar-assets"]'
 const ASSETS_GRID = '[data-testid="assets-grid"]'
 const SAMPLE_IMAGE = path.resolve('src/renderer/src/assets/sidebar/hills-sunset.jpg')
+const SAMPLE_VIDEO = path.resolve('src/renderer/public/install-showcase-scene/Assets/earpods.webm')
+const SAMPLE_VIDEO_SHAPE = 714 / 530
 
 let ctx: AppContext
 let outputDir: string
@@ -17,6 +19,7 @@ test.beforeAll(async () => {
   outputDir = await mkdtemp(path.join(os.tmpdir(), 'comfy-assets-output-'))
   await mkdir(path.join(outputDir, 'landscapes'), { recursive: true })
   await copyFile(SAMPLE_IMAGE, path.join(outputDir, 'landscapes', 'ComfyUI_00001_.jpg'))
+  await copyFile(SAMPLE_VIDEO, path.join(outputDir, 'ComfyUI_00002_.webm'))
   ctx = await launchApp(
     { settings: { firstUseCompleted: true, telemetryEnabled: false, outputDir } },
     { stayOnHome: true }
@@ -49,4 +52,18 @@ test('Assets shows the images in the output folder with no build running and no 
   )
   expect(src.startsWith('comfy-output://file/')).toBe(true)
   expect(decodeURIComponent(src)).toContain('ComfyUI_00001_.jpg')
+})
+
+test('A video in the output folder keeps its shape and shows how long it runs @windows @macos @linux', async () => {
+  const lengthLabel = `document.querySelector('${ASSETS_GRID} [data-testid="asset-duration"]')`
+  await expect
+    .poll(() => ctx.panel.evaluate<string | null>(`${lengthLabel}?.textContent?.trim() ?? null`), {
+      message: 'the video card shows its length, read from the file',
+      timeout: 20_000
+    })
+    .toBe('0:08')
+  const shape = await ctx.panel.evaluate<number>(
+    `(() => { const box = ${lengthLabel}.parentElement.getBoundingClientRect(); return box.width / box.height })()`
+  )
+  expect(shape, 'the card has the video shape, not a 16:9 crop').toBeCloseTo(SAMPLE_VIDEO_SHAPE, 1)
 })
