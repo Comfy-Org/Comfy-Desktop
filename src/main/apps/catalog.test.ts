@@ -38,6 +38,14 @@ describe('catalogUrl', () => {
       limit: '100'
     })
   })
+
+  it('reads the production catalog even when Desktop runs against another Cloud', async () => {
+    vi.stubEnv('COMFY_CLOUD_ISSUER', 'https://stagingcloud.comfy.org')
+    vi.resetModules()
+    const { catalogUrl: stagingCatalogUrl } = await import('./catalog')
+    expect(new URL(stagingCatalogUrl()).origin).toBe('https://cloud.comfy.org')
+    vi.unstubAllEnvs()
+  })
 })
 
 describe('toCatalogApp', () => {

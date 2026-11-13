@@ -1,8 +1,8 @@
-import { CLOUD_CONFIG } from '../cloud/config'
 import type { CatalogApp } from '../../types/ipc'
 import { isTemporaryLaunchApp } from './temporaryLaunchApps'
 
 const DESKTOP_SURFACE = 'desktop_starters'
+const CATALOG_ORIGIN = 'https://cloud.comfy.org'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
 const CATALOG_MEDIA_PATH = '/catalog-media/'
 const CATALOG_TIMEOUT_MS = 8000
@@ -20,7 +20,7 @@ interface CatalogItem {
 }
 
 export function catalogUrl(): string {
-  const url = new URL('/api/v1/catalog/items', CLOUD_CONFIG.issuer)
+  const url = new URL('/api/v1/catalog/items', CATALOG_ORIGIN)
   url.searchParams.set('type', 'app')
   url.searchParams.set('surface', DESKTOP_SURFACE)
   url.searchParams.set('limit', '100')
