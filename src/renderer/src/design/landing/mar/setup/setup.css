@@ -1880,6 +1880,12 @@
 .mar-wizard.mss:not(.mss-in-takeover) {
   overflow: visible;
 }
+/* The build modals take Desktop's solid panel (SetupModal, neutral-900),
+   not the smoked glass of the menus. */
+:root[data-mar-ui='on'] .proto-ui.proto-ui.mar-wizard.mss:not(.mss-in-takeover) {
+  background-color: oklch(0.205 0 0);
+  backdrop-filter: none;
+}
 .mar-wizard.mss:not(.mss-in-takeover) > .mar-wizard-body:first-child {
   border-radius: var(--radius-panel, 16px) var(--radius-panel, 16px) 0 0;
 }
