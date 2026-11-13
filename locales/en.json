@@ -51,7 +51,8 @@
     "nextWorkflow": "Next workflow",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
     "retry": "Try again",
-    "buildInstalling": "Installing ComfyUI"
+    "buildInstalling": "Installing ComfyUI",
+    "buildStartingComfyUI": "Starting ComfyUI"
   },
   "installType": {
     "standalone": "Standalone",
@@ -827,7 +828,9 @@
     "cancelTitle": "Cancel this install?",
     "cancelMessage": "{name} stops installing and the files it downloaded are deleted.",
     "cancelConfirm": "Cancel install",
-    "failedTitle": "ComfyUI didn't install"
+    "failedTitle": "ComfyUI didn't install",
+    "launchFailedTitle": "ComfyUI didn't start",
+    "startAgain": "Start again"
   },
   "announcement": {
     "comfyApi": {

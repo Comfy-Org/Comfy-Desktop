@@ -43,6 +43,7 @@
     "buildAlwaysOn": "始终在线",
     "buildDidntStart": "未能启动",
     "buildInstalling": "正在安装 ComfyUI",
+    "buildStartingComfyUI": "正在启动 ComfyUI",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "示例工作流",
     "seeAllWorkflows": "查看全部工作流",
@@ -827,7 +828,9 @@
     "cancelTitle": "取消此次安装？",
     "cancelMessage": "{name} 将停止安装，已下载的文件会被删除。",
     "cancelConfirm": "取消安装",
-    "failedTitle": "ComfyUI 未能安装"
+    "failedTitle": "ComfyUI 未能安装",
+    "launchFailedTitle": "ComfyUI 未能启动",
+    "startAgain": "重新启动"
   },
   "announcement": {
     "comfyApi": {

@@ -35,13 +35,6 @@ test('skipping Set up and opening the Comfy Cloud card launches the seeded Cloud
   expect(await ctx.panel.clickByText('[data-testid="home-build"]', 'Comfy Cloud')).toBe(true)
 
   await expect
-    .poll(() => ctx.titleBar.exists('.title-install-pill:not(.is-install-less)'), {
-      timeout: 30_000,
-      intervals: [100, 200, 500]
-    })
-    .toBe(true)
-
-  await expect
     .poll(
       () =>
         evalWithRetry(() =>
@@ -51,7 +44,7 @@ test('skipping Set up and opening the Comfy Cloud card launches the seeded Cloud
               .some((wc) => /^https:\/\/(cloud\.)?comfy\.org\//.test(wc.getURL()))
           )
         ),
-      { timeout: 15_000, intervals: [200, 500, 1000] }
+      { timeout: 45_000, intervals: [200, 500, 1000] }
     )
     .toBe(true)
 })

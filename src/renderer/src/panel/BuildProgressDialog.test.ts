@@ -55,12 +55,12 @@ beforeEach(() => {
   })
 })
 
-async function openDialog() {
+async function openDialog(opKind: 'install' | 'launch' = 'install') {
   const wrapper = mount(BuildProgressDialog, { props: { installationId: ID } })
   useProgressStore().startOperation({
     installationId: ID,
     title: 'Installing — ComfyUI',
-    opKind: 'install',
+    opKind,
     apiCall: () =>
       new Promise<ActionResult>((resolve) => {
         settle = resolve
@@ -163,5 +163,26 @@ describe('BuildProgressDialog', () => {
 
     await loadAs(708, 708)
     expect(video.attributes('data-shape')).toBe('wide')
+  })
+
+  it('starts a build without the Cloud pitch, cancels without asking, and offers Start again', async () => {
+    const w = await openDialog('launch')
+    expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Starting ComfyUI')
+    expect(w.find('[data-testid="build-progress-try-cloud"]').exists()).toBe(false)
+
+    settle({ ok: false, message: 'ComfyUI exited with code 1' })
+    await flushPromises()
+    expect(w.find('[role="dialog"]').attributes('aria-label')).toBe("ComfyUI didn't start")
+    await w.get('[data-testid="build-progress-retry"]').trigger('click')
+    expect(w.emitted('retry')).toHaveLength(1)
+  })
+
+  it('stops a starting build straight away', async () => {
+    const w = await openDialog('launch')
+    await w.get('[data-testid="build-progress-cancel"]').trigger('click')
+    await flushPromises()
+    expect(modal.confirm).not.toHaveBeenCalled()
+    expect(window.api.cancelOperation).toHaveBeenCalledWith(ID)
+    expect(w.emitted('close')).toHaveLength(1)
   })
 })

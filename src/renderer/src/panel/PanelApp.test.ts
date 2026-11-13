@@ -1274,6 +1274,72 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
+  it('restores the build open at quit into this window, in place, on startup', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.getListActions.mockResolvedValue([
+      { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
+    ])
+    api.runAction.mockReturnValueOnce(new Promise(() => {}))
+    Object.assign(api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      resolveStartupRestoreReveal: vi.fn()
+    })
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    mockState.panelTriggerOverlayCallbacks.forEach((cb) =>
+      cb({ kind: 'picker-pick-install', installationId: 'test-id', startupRestore: true })
+    )
+    await flushPromises()
+
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
+    expect(api.claimAttachHost).toHaveBeenCalledWith('test-id')
+    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(true)
+    expect(api.resolveStartupRestoreReveal).toHaveBeenCalledWith('takeover-ready')
+  })
+
+  it('Start on a Home build card starts it there and leaves this window on Home', async () => {
+    mockState.installations = [SAMPLE_INSTALL]
+    const api = (window as unknown as { api: Record<string, ReturnType<typeof vi.fn>> }).api
+    api.getListActions.mockResolvedValue([
+      { id: 'launch', label: 'Start', style: 'primary', showProgress: true }
+    ])
+    let finishLaunch: (result: { ok: boolean; message?: string }) => void = () => {}
+    api.runAction.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishLaunch = resolve
+      })
+    )
+    Object.assign(api, { onInstallProgress: vi.fn(() => () => {}) })
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-build"][data-build-id="test-id"]').trigger('click')
+    await flushPromises()
+
+    expect(api.runAction).toHaveBeenCalledWith('test-id', 'launch')
+    expect(api.claimAttachHost).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="progress-modal"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="home-build-starting"]').text()).toContain('Starting ComfyUI')
+
+    finishLaunch({ ok: false, message: 'ComfyUI exited with code 1' })
+    await flushPromises()
+    const card = wrapper.get('[data-testid="home-build"][data-build-id="test-id"]')
+    expect(card.text()).toContain("Didn't start")
+
+    await card.trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('[data-testid="build-progress-dialog"]')
+    expect(dialog?.textContent).toContain("ComfyUI didn't start")
+    expect(dialog?.textContent).toContain('ComfyUI exited with code 1')
+    document.body.querySelector<HTMLButtonElement>('[data-testid="build-progress-close"]')!.click()
+    await flushPromises()
+  })
+
   it('opens on Home, with the list of builds hidden until Builds is picked', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
@@ -1654,7 +1720,7 @@ describe('PanelApp', () => {
     await flushPromises()
   }
 
-  it('opens a picked instance in its own window while this window runs a test', async () => {
+  it('opens a picked instance in its own window, with or without a test running here', async () => {
     const { wrapper, api } = await mountWithInstance()
     api.preparePerformanceTestExampleWorkflow.mockResolvedValue({
       ok: true,
@@ -1693,9 +1759,15 @@ describe('PanelApp', () => {
 
     finishLaunch({ ok: false, cancelled: true })
     await flushPromises()
+    const launches = (): number =>
+      hostApi.runAction.mock.calls.filter(
+        ([id, action]) => id === 'workspace-install' && action === 'launch'
+      ).length
+    const before = launches()
     await pick()
 
-    expect(hostApi.claimAttachHost).toHaveBeenCalledWith('workspace-install')
+    expect(launches()).toBe(before + 1)
+    expect(hostApi.claimAttachHost).not.toHaveBeenCalled()
   })
 
   it('prepares an example workflow and blocks the run until its models are downloaded', async () => {

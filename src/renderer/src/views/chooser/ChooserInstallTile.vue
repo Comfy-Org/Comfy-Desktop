@@ -15,7 +15,8 @@ import {
   Check
 } from 'lucide-vue-next'
 import { useSessionStore } from '../../stores/sessionStore'
-import { useInstallProgress } from '../../composables/useInstallProgress'
+import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { useProgressStore } from '../../stores/progressStore'
 import { progressOpKindForActionId } from '../../lib/progressOpKind'
 import {
   buildDeviceKind,
@@ -62,7 +63,13 @@ const { t } = useI18n()
 const sessionStore = useSessionStore()
 
 const inst = computed(() => props.installation)
-const install = useInstallProgress(() => props.installation)
+const install = useBuildProgress(() => props.installation)
+const progressStore = useProgressStore()
+
+function viewError(): void {
+  if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
+  else emit('view-error', inst.value)
+}
 const isInstalling = computed(() => install.progress.value !== null)
 const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
 
@@ -286,7 +293,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         <span
           v-if="isInstalling"
           class="chooser-tile-status flex min-w-0 items-center gap-1.5"
-          :data-testid="`chooser-tile-installing-${inst.id}`"
+          :data-testid="`chooser-tile-progress-${inst.id}`"
         >
           <LoaderCircle
             :size="12"
@@ -294,7 +301,9 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             aria-hidden="true"
           />
           <span class="truncate">{{
-            t('installProgress.tileStatus', { percent: install.progress.value?.percent ?? 0 })
+            install.progress.value?.kind === 'launch'
+              ? t('chooser.statusLaunching')
+              : t('installProgress.tileStatus', { percent: install.progress.value?.percent ?? 0 })
           }}</span>
         </span>
         <Button
@@ -304,7 +313,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           type="button"
           class="chooser-tile-error-badge h-4 gap-1 text-xs/4 font-medium"
           :title="t('chooser.viewErrorTooltip')"
-          @click.stop="emit('view-error', inst)"
+          @click.stop="viewError"
           @keydown.enter.stop
           @keydown.space.stop
         >

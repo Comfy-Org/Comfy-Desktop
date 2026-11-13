@@ -46,7 +46,7 @@ const BUILD_PROGRESS_VIDEOS = [
 const LOG_TAIL_CHARS = 20_000
 
 const { installationId } = defineProps<{ installationId: string }>()
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; retry: [] }>()
 
 const { t } = useI18n()
 const progressStore = useProgressStore()
@@ -114,9 +114,14 @@ const steps = computed<StepRow[]>(() => {
 })
 
 const failed = computed(() => !!op.value?.finished && !!op.value.error)
-const title = computed(() =>
-  failed.value ? t('installProgress.failedTitle') : t('home.buildInstalling')
-)
+const launching = computed(() => op.value?.opKind === 'launch')
+const offersCloud = computed(() => !launching.value && !failed.value && cloudGate.canOffer.value)
+const title = computed(() => {
+  if (launching.value) {
+    return failed.value ? t('installProgress.launchFailedTitle') : t('home.buildStartingComfyUI')
+  }
+  return failed.value ? t('installProgress.failedTitle') : t('home.buildInstalling')
+})
 const cancelling = computed(() => !!op.value?.cancelRequested)
 const logText = computed(() => {
   const output = op.value?.terminalOutput ?? ''
@@ -139,7 +144,12 @@ watch(logText, async () => {
   if (pinned) el.scrollTop = el.scrollHeight
 })
 
-async function cancelInstall(): Promise<void> {
+async function cancel(): Promise<void> {
+  if (launching.value) {
+    progressStore.cancelOperation(installationId)
+    emit('close')
+    return
+  }
   const confirmed = await modal.confirm({
     title: t('installProgress.cancelTitle'),
     message: t('installProgress.cancelMessage', { name: build.value?.name ?? '' }),
@@ -241,7 +251,7 @@ async function tryCloud(): Promise<void> {
                   </span>
                   <span
                     v-if="step.detail"
-                    class="mt-[5px] text-xs/[15px] break-words"
+                    class="mt-[5px] text-xs/[15px] break-words whitespace-pre-line"
                     :class="step.state === 'failed' ? 'text-destructive' : 'text-subtle-foreground'"
                     data-testid="build-progress-step-detail"
                   >
@@ -303,7 +313,7 @@ async function tryCloud(): Promise<void> {
         </div>
 
         <div class="mt-[60px] flex min-h-9 items-center gap-2">
-          <template v-if="cloudGate.canOffer.value && !failed">
+          <template v-if="offersCloud">
             <Cloud
               :size="13"
               class="mt-px shrink-0 self-start text-muted-foreground"
@@ -324,29 +334,41 @@ async function tryCloud(): Promise<void> {
               {{ t('installShowcase.cloudCta') }}
             </Button>
           </template>
-          <Button
-            v-if="failed"
-            type="button"
-            variant="secondary"
-            size="unset"
-            class="ml-auto h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal"
-            data-testid="build-progress-close-failed"
-            @click="emit('close')"
-          >
-            {{ t('common.close') }}
-          </Button>
+          <template v-if="failed">
+            <Button
+              type="button"
+              variant="muted-textonly"
+              size="unset"
+              class="ml-auto h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
+              data-testid="build-progress-close-failed"
+              @click="emit('close')"
+            >
+              {{ t('common.close') }}
+            </Button>
+            <Button
+              v-if="launching"
+              type="button"
+              variant="secondary"
+              size="unset"
+              class="h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
+              data-testid="build-progress-retry"
+              @click="emit('retry')"
+            >
+              {{ t('installProgress.startAgain') }}
+            </Button>
+          </template>
           <Button
             v-else
             type="button"
             variant="muted-textonly"
             size="unset"
             class="h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
-            :class="!cloudGate.canOffer.value && 'ml-auto'"
+            :class="!offersCloud && 'ml-auto'"
             :disabled="cancelling"
             data-testid="build-progress-cancel"
-            @click="cancelInstall"
+            @click="cancel"
           >
-            {{ t('installProgress.cancelConfirm') }}
+            {{ launching ? t('common.cancel') : t('installProgress.cancelConfirm') }}
           </Button>
         </div>
       </div>

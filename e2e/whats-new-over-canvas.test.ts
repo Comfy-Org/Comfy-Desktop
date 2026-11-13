@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { test, expect } from '@playwright/test'
+import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
@@ -68,6 +69,7 @@ test("What's New shows over the live canvas and closing brings the canvas back @
       )) === true,
     { timeout: 90_000, message: 'the ComfyUI stub never came up' }
   )
+  await keepOnlyComfyHostWindow(ctx.app)
   await expect.poll(panelViewVisible, { timeout: 30_000 }).toBe(false)
 
   expect(await ctx.titleBar.click(BELL)).toBe(true)
