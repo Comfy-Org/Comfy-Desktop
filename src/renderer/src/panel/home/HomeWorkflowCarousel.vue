@@ -268,8 +268,14 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
             class="absolute inset-x-3.5 bottom-4 flex flex-col"
             data-testid="home-workflow-name"
           >
-            <span class="line-clamp-2 text-sm/[17px] font-medium text-white">
+            <span class="truncate text-sm/[17px] font-medium text-white">
               {{ card.workflow.title }}
+            </span>
+            <span
+              v-if="card.workflow.description"
+              class="truncate text-[13px]/[18px] text-white/70"
+            >
+              {{ card.workflow.description }}
             </span>
           </span>
           <span

@@ -354,7 +354,10 @@ describe('Home example workflows', () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
 
-    expect(arc(wrapper)).toEqual(['0:Upscale and restore detail', '1:Make your character talk'])
+    expect(arc(wrapper)).toEqual([
+      '0:Upscale and restore detailEnlarge an image and restore fine detail.',
+      '1:Make your character talk'
+    ])
 
     await wrapper
       .get('[data-testid="home-workflow-carousel"]')
