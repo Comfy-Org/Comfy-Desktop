@@ -50,6 +50,8 @@ vi.mock('electron', () => ({
 }))
 
 const windows = vi.hoisted(() => new Map<number, unknown>())
+vi.mock('./appsBuild', () => ({ findApps: async () => null }))
+vi.mock('../lib/outputFolders', () => ({ allowedPath: () => false, outputLocator: () => null }))
 vi.mock('../host/registry', () => ({ comfyWindows: windows }))
 
 vi.mock('../cloud/config', () => ({

@@ -46,6 +46,8 @@ vi.mock('../cloud/config', () => ({
   CLOUD_CONFIG: { issuer: 'https://cloud.comfy.org', apiBase: 'https://cloud.comfy.org/api' }
 }))
 vi.mock('../devplatform/session', () => ({ getCloudSession: vi.fn() }))
+vi.mock('./appsBuild', () => ({ findApps: async () => null }))
+vi.mock('../lib/outputFolders', () => ({ allowedPath: () => false, outputLocator: () => null }))
 vi.mock('../host/registry', () => ({ comfyWindows }))
 vi.mock('../lib/ipc/registerDevPlatformHandlers', () => ({ signInToCloud: vi.fn() }))
 vi.mock('../settings', () => ({}))
