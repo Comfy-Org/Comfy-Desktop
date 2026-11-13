@@ -159,6 +159,10 @@ describe('AssetsView', () => {
 
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('Log in to see your assets')
+    expect(
+      wrapper.get('[data-testid="assets-empty-action"]').classes(),
+      'the label keeps the inverted button text color'
+    ).toContain('text-background')
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
 
     expect(signIn).toHaveBeenCalledOnce()

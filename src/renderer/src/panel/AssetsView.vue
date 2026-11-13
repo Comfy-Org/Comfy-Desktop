@@ -263,7 +263,7 @@ function extensionOf(name: string): string {
                 type="button"
                 variant="secondary"
                 size="md"
-                class="gap-1.5 px-3 text-ui"
+                class="gap-1.5 px-3 text-[13px]/5"
                 data-testid="assets-filter"
               >
                 <ListFilter :size="15" aria-hidden="true" />
@@ -410,7 +410,7 @@ function extensionOf(name: string): string {
           type="button"
           variant="inverted"
           size="md"
-          class="mt-6 px-4 text-ui"
+          class="mt-6 px-4 text-[13px]/5"
           :disabled="signingIn"
           data-testid="assets-empty-action"
           @click="emptyState.action.run"
