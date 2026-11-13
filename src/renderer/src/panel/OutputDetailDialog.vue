@@ -183,7 +183,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           :src="item.previewUrl"
           :alt="item.name"
           class="m-auto rounded-lg"
-          :class="zoom === 'fit' && 'max-h-full max-w-full object-contain'"
+          :class="zoom === 'fit' ? 'max-h-full max-w-full object-contain' : 'shrink-0'"
           :style="zoomedWidth ? { width: zoomedWidth, maxWidth: 'none' } : undefined"
           @load="onImageLoad"
         />

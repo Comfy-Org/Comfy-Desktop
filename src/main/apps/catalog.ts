@@ -6,6 +6,7 @@ const DESKTOP_SURFACE = 'desktop_starters'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
 const CATALOG_MEDIA_PATH = '/catalog-media/'
 const CATALOG_TIMEOUT_MS = 8000
+const CATALOG_CACHE_TTL_MS = 10 * 60 * 1000
 const THUMBNAIL_FIELDS = ['$.static_thumb', '$.hero_poster']
 
 interface CatalogItem {
@@ -64,7 +65,7 @@ function isCatalogItem(item: unknown): item is CatalogItem {
   return typeof item === 'object' && item !== null
 }
 
-export async function listCatalogApps(listUrl: string): Promise<CatalogApp[]> {
+async function fetchCatalogApps(listUrl: string): Promise<CatalogApp[]> {
   const res = await fetch(catalogUrl(), { signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS) })
   if (!res.ok) throw new Error(`Catalog request failed: HTTP ${res.status}`)
   const body = (await res.json()) as { items?: unknown } | null
@@ -80,4 +81,38 @@ export async function listCatalogApps(listUrl: string): Promise<CatalogApp[]> {
       seen.add(entry.id)
       return true
     })
+}
+
+interface CatalogCache {
+  listUrl: string
+  loadedAt: number
+  apps: CatalogApp[]
+}
+
+let cache: CatalogCache | null = null
+let inFlight: { listUrl: string; request: Promise<CatalogApp[]> } | null = null
+
+export function listCatalogApps(listUrl: string): Promise<CatalogApp[]> {
+  if (cache?.listUrl === listUrl && Date.now() - cache.loadedAt < CATALOG_CACHE_TTL_MS)
+    return Promise.resolve(cache.apps)
+  if (inFlight?.listUrl === listUrl) return inFlight.request
+  const request = fetchCatalogApps(listUrl)
+    .then((apps) => {
+      cache = { listUrl, loadedAt: Date.now(), apps }
+      return apps
+    })
+    .catch((err: unknown) => {
+      if (cache?.listUrl === listUrl) return cache.apps
+      throw err
+    })
+    .finally(() => {
+      if (inFlight?.request === request) inFlight = null
+    })
+  inFlight = { listUrl, request }
+  return request
+}
+
+export function _resetCatalogAppsForTest(): void {
+  cache = null
+  inFlight = null
 }
