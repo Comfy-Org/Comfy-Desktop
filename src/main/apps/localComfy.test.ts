@@ -41,6 +41,7 @@ const fake = vi.hoisted(() => ({
   apps: { id: null as string | null, inst: null as FakeInstall | null },
   versionGate: null as Promise<void> | null,
   promptGate: null as Promise<void> | null,
+  queueGate: null as { open: Promise<void>; answerAsAsked: boolean } | null,
   servers: new Map<number, FakeComfy>(),
   sockets: [] as Array<{ url: string; closed: boolean }>
 }))
@@ -165,7 +166,13 @@ function fakeFetch(input: string | URL, init?: RequestInit): Promise<Response> {
     return fake.promptGate ? fake.promptGate.then(answer) : Promise.resolve(answer())
   }
   if (p === '/queue' && method === 'GET') {
-    return Promise.resolve(json({ queue_running: server.running, queue_pending: server.pending }))
+    const answer = () => json({ queue_running: server.running, queue_pending: server.pending })
+    const gate = fake.queueGate
+    fake.queueGate = null
+    if (!gate) return Promise.resolve(answer())
+    if (!gate.answerAsAsked) return gate.open.then(answer)
+    const asked = answer()
+    return gate.open.then(() => asked)
   }
   if (p.startsWith('/history/')) {
     const id = p.slice('/history/'.length)
@@ -264,6 +271,7 @@ beforeEach(() => {
   fake.apps.inst = null
   fake.versionGate = null
   fake.promptGate = null
+  fake.queueGate = null
   launchConsole.mockClear()
   stopRunning.mockClear()
   vi.stubGlobal('fetch', vi.fn(fakeFetch))
@@ -332,6 +340,47 @@ describe('an app run keeps its ComfyUI while another app asks for a newer one', 
       expect.stringContaining(':8188/')
     ])
   })
+
+  it.each([
+    ['answered before the new run reached it', true],
+    ['answered after the new run reached it', false]
+  ])(
+    'keeps the first ComfyUI when an app run is sent and accepted while its queue is checked, %s',
+    async (_when, answerAsAsked) => {
+      const x = addInstall('x', 8188, '0.37.0')
+      addInstall('y', 8288, '0.42.4')
+      run('x')
+      const local = await load()
+      expect(await local.getLocal({ minVersion: '0.37.0' })).toMatchObject({ own: true })
+      const earlier = await local.localFetch({
+        method: 'POST',
+        path: '/prompt',
+        body: { prompt: {} }
+      })
+      expect(earlier.status).toBe(200)
+      x.pending.length = 0
+
+      let release!: () => void
+      fake.queueGate = { open: new Promise<void>((r) => (release = r)), answerAsAsked }
+      const second = local.startLocal({ minVersion: '0.41.0' })
+      await vi.waitFor(() => expect(x.calls).toContain('GET /queue'))
+
+      const sent = await local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
+      expect(sent.status, 'ComfyUI x took the new run').toBe(200)
+      const runId = JSON.parse(text(sent.body)).prompt_id as string
+      release()
+
+      expect((await second).error).toMatch(/busy/)
+      expect(launchConsole).not.toHaveBeenCalled()
+      x.history[runId] = { status: { completed: true }, outputs: {} }
+      expect((await local.localFetch({ method: 'GET', path: `/history/${runId}` })).status).toBe(
+        200
+      )
+      expect(fake.sockets.filter((s) => !s.closed).map((s) => s.url)).toEqual([
+        expect.stringContaining(':8188/')
+      ])
+    }
+  )
 
   it('keeps the first ComfyUI while its app run waits behind more than 100 of the person runs', async () => {
     const x = addInstall('x', 8188, '0.36.0')

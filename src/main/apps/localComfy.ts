@@ -114,12 +114,14 @@ const LAUNCHING = 'launching'
 const startedHere = new Map<string, SessionInfo | typeof LAUNCHING>()
 const owned = new AppsOwnership()
 const sending = new Map<string, number>()
+let sendsStarted = 0
 
 function submitting(id: string): boolean {
   return (sending.get(id) ?? 0) > 0
 }
 
 function markSending(id: string, step: 1 | -1): void {
+  if (step > 0) sendsStarted++
   const left = (sending.get(id) ?? 0) + step
   if (left > 0) sending.set(id, left)
   else sending.delete(id)
@@ -267,9 +269,10 @@ async function adopt(pick: Candidate | null, gen: number, forStart: boolean): Pr
   if (!selectionCurrent(gen, forStart)) return 'stale'
   const run = appsRunning()
   const moving = !!run && (pick?.id ?? appsBuildId()) !== run.id
+  const sendsBefore = sendsStarted
   if (moving && (await appsWorkOn(run))) return 'busy'
   if (!selectionCurrent(gen, forStart)) return 'stale'
-  if (moving && submitting(run.id)) return 'busy'
+  if (moving && (submitting(run.id) || sendsStarted !== sendsBefore)) return 'busy'
   aimAt(pick)
   return 'aimed'
 }
