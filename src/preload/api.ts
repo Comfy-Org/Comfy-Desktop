@@ -98,6 +98,8 @@ export function buildElectronApi(): ElectronApi {
     closeAnnouncement: () => ipcRenderer.send('comfy-window:close-announcement'),
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
+    listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
+    listLocalAssets: () => ipcRenderer.invoke('assets:list-local'),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
     openCatalogWorkflowHub: () => ipcRenderer.invoke('catalog:open-workflow-hub'),

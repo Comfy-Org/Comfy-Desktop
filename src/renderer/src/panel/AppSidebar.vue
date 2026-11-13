@@ -2,7 +2,16 @@
 import { computed, toRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ArrowRight, Cloud, House, Laptop, LoaderCircle, Plus, Server } from 'lucide-vue-next'
+import {
+  ArrowRight,
+  Cloud,
+  House,
+  Images,
+  Laptop,
+  LoaderCircle,
+  Plus,
+  Server
+} from 'lucide-vue-next'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -43,6 +52,7 @@ const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('s
 
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
+  { page: 'assets', label: t('sidebar.assets'), icon: Images },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>(() => [

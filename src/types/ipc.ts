@@ -126,13 +126,30 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'home' | 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage = 'home' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
 
 export interface CatalogWorkflow {
   id: string
   title: string
   description: string
   thumbnailUrl: string | null
+}
+
+export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export interface AssetSummary {
+  id: string
+  name: string
+  kind: AssetKind | null
+  sizeBytes: number | null
+  createdAt: string | null
+  mimeType: string | null
+  tags: string[]
+  previewUrl: string | null
+  thumbnailUrl: string | null
+  width: number | null
+  height: number | null
+  durationSeconds: number | null
 }
 
 export interface BuildStorageSnapshot {
@@ -1127,6 +1144,8 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  listAssets(installationId: string): Promise<AssetSummary[]>
+  listLocalAssets(): Promise<AssetSummary[]>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>

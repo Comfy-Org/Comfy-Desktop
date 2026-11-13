@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import { defineConfig } from 'vitest/config'
 import { playwright } from '@vitest/browser-playwright'
 import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
 
 const RENDERER_TESTS_THAT_READ_FILES = [
   'src/renderer/csp.test.ts',
@@ -47,6 +48,7 @@ export default defineConfig({
       },
       {
         extends: true,
+        plugins: [tailwindcss()],
         resolve: {
           alias: [{ find: /^vue$/, replacement: VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS }]
         },
