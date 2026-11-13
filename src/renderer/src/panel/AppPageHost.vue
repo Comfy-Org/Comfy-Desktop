@@ -125,18 +125,22 @@ onBeforeUnmount(() => {
     />
     <div
       v-else-if="status === 'loading'"
-      class="flex size-full gap-3 p-3"
+      class="flex size-full gap-2"
       data-testid="app-page-loading"
     >
       <span class="sr-only">{{ t('apps.pageLoading', { app: title }) }}</span>
-      <div class="flex w-90 shrink-0 flex-col gap-3 rounded-panel bg-[rgb(29_29_29/0.72)] p-4">
+      <div
+        class="flex w-90 shrink-0 flex-col gap-3 rounded-shell bg-sidebar-background px-5 pt-4 pb-5"
+      >
         <Skeleton class="h-6 w-2/3 rounded-md" />
         <Skeleton class="mt-2 aspect-3/2 w-full rounded-card" />
         <Skeleton class="h-4 w-1/3 rounded-md" />
         <Skeleton class="h-20 w-full rounded-card" />
         <Skeleton class="mt-auto h-10 w-full rounded-card" />
       </div>
-      <div class="flex min-w-0 flex-1 flex-col gap-3 rounded-panel bg-[rgb(29_29_29/0.72)] p-4">
+      <div
+        class="flex min-w-0 flex-1 flex-col gap-3 rounded-shell bg-sidebar-background px-5 pt-4 pb-5"
+      >
         <Skeleton class="h-8 w-48 rounded-lg" />
         <Skeleton class="min-h-0 w-full flex-1 rounded-card opacity-60" />
       </div>

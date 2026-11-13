@@ -107,6 +107,21 @@ describe('AppPageHost', () => {
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-busy')).toBe('false')
   })
 
+  it('lays the placeholder out where the app page puts its two panes: 360px, an 8px gap, the rest', async () => {
+    const wrapper = await mountHost('loading')
+    const [controls, results] = Array.from(
+      wrapper.get('[data-testid="app-page-loading"]').element.querySelectorAll(':scope > div')
+    ).map((pane) => pane.getBoundingClientRect())
+
+    expect(controls).toMatchObject({ x: PAGE_LEFT, y: PAGE_TOP, width: 360, height: PAGE_HEIGHT })
+    expect(results).toMatchObject({
+      x: PAGE_LEFT + 368,
+      y: PAGE_TOP,
+      width: PAGE_WIDTH - 368,
+      height: PAGE_HEIGHT
+    })
+  })
+
   it('says the app did not load, loads it again on Try again, and offers the way back', async () => {
     const wrapper = await mountHost('failed')
 
