@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -79,8 +79,15 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
+const mounted: VueWrapper[] = []
+
+afterEach(() => {
+  while (mounted.length) mounted.pop()?.unmount()
+})
+
 async function openHome() {
   const wrapper = mount(HomeView, { attachTo: document.body })
+  mounted.push(wrapper)
   await flushPromises()
   return wrapper
 }
@@ -104,6 +111,15 @@ function pressCarouselAt(wrapper: VueWrapper, clientX: number): void {
   wrapper
     .get('[data-testid="home-workflow-carousel"]')
     .element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX, bubbles: true }))
+}
+
+async function openBuildMenu(wrapper: VueWrapper): Promise<void> {
+  await wrapper.get('[data-testid="home-open-build-menu"]').trigger('keydown', { key: 'ArrowDown' })
+  await flushPromises()
+}
+
+function buildOptions(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-testid="home-open-build-option"]')]
 }
 
 describe('Home example workflows', () => {
@@ -491,6 +507,138 @@ describe('Home builds', () => {
     await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
 
     expect(wrapper.emitted('pick')).toEqual([[NEWEST]])
+  })
+
+  it('shows which build Open ComfyUI opens', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
+  })
+
+  it('marks Open ComfyUI with the kind of build it opens', async () => {
+    getInstallations.mockResolvedValue([CLOUD, OLDEST])
+    const wrapper = await openHome()
+
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('cloud')
+  })
+
+  it('hides the Open ComfyUI tooltip while the build menu is open', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+    wrapper
+      .get('[data-testid="home-open-build"] .tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+        `Opens in ${NEWEST.name}`
+      )
+    )
+
+    await openBuildMenu(wrapper)
+
+    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
+  })
+
+  it('lists every build of the workspace in the Open ComfyUI menu, with a dot only on live builds', async () => {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(RUNNING.id, {
+      installationId: RUNNING.id,
+      installationName: RUNNING.name,
+      mode: 'window'
+    })
+    await openBuildMenu(wrapper)
+
+    expect(buildOptions().map((option) => option.textContent?.trim())).toEqual([
+      'My Local 1',
+      'Video Lab',
+      'Comfy Cloud',
+      'Flux Sandbox'
+    ])
+    expect(buildOptions().map((option) => option.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false'
+    ])
+    expect(
+      buildOptions().map(
+        (option) =>
+          option
+            .querySelector('[data-testid="home-open-build-status-dot"]')
+            ?.getAttribute('data-tone') ?? null
+      )
+    ).toEqual([null, 'live', 'live', null])
+  })
+
+  it('marks a broken build red and keeps it from opening, with the reason on hover', async () => {
+    const BROKEN = build({
+      id: 'broken',
+      name: 'Broken Build',
+      statusTag: { style: 'danger', label: 'Install failed' }
+    })
+    getInstallations.mockResolvedValue([OLDEST, BROKEN])
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+
+    const broken = buildOptions()[1]!
+    expect(
+      broken.querySelector('[data-testid="home-open-build-status-dot"]')?.getAttribute('data-tone')
+    ).toBe('danger')
+    expect(broken.hasAttribute('data-disabled')).toBe(true)
+
+    broken.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    broken
+      .closest('.tooltip-wrap')!
+      .dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Install failed')
+    )
+  })
+
+  it('marks a build that did not start red, and still lets you open it', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+    useSessionStore().errorInstances.set(OLDEST.id, { installationName: OLDEST.name })
+    await openBuildMenu(wrapper)
+
+    const failed = buildOptions()[1]!
+    expect(
+      failed.querySelector('[data-testid="home-open-build-status-dot"]')?.getAttribute('data-tone')
+    ).toBe('danger')
+    failed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toEqual([[OLDEST]])
+  })
+
+  it('opens ComfyUI in the build picked in the menu, without changing the current one', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+
+    buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
+  })
+
+  it('leaves the build menu out with one build, keeping the icon and no arrow', async () => {
+    getInstallations.mockResolvedValue([OLDEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Flux Sandbox')
+    expect(wrapper.find('[data-testid="home-open-build-menu"]').exists()).toBe(false)
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('local')
+    expect(wrapper.get('[data-testid="home-open-comfyui"]').findAll('svg')).toHaveLength(1)
   })
 
   it('goes to the full list from All builds', async () => {
