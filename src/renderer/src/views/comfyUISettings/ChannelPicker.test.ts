@@ -108,7 +108,7 @@ describe('ChannelPicker — headline product + version', () => {
         }
       ])
     )
-    expect(wrapper.find('.channel-picker-badge').text()).toBe('Up to date')
+    expect(wrapper.get('.channel-picker-status-line').text()).toContain('Up to date')
   })
 
   it('hides the "Up to date" badge when the card opts out (PyTorch current stack)', () => {
@@ -129,7 +129,7 @@ describe('ChannelPicker — headline product + version', () => {
         'stack-cu130'
       )
     )
-    expect(wrapper.find('.channel-picker-badge').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Up to date')
   })
 
   it('still shows the "Update available" badge when the opt-out card has an update', () => {
@@ -151,7 +151,7 @@ describe('ChannelPicker — headline product + version', () => {
         'stack-cu130'
       )
     )
-    expect(wrapper.find('.channel-picker-badge').text()).toBe('Update available')
+    expect(wrapper.get('.channel-picker-status-line').text()).toContain('Update available')
   })
 
   it('renders no product span when the card data carries no productName', () => {
