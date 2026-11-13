@@ -7,7 +7,7 @@ import path from 'path'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import { comfyWindows } from '../host/registry'
-import { signInToCloud } from '../lib/ipc/registerDevPlatformHandlers'
+import { onCloudAuthChanged, signInToCloud } from '../lib/ipc/registerDevPlatformHandlers'
 import * as settings from '../settings'
 import {
   appsOrigin,
@@ -50,7 +50,7 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { localBuilds, openInComfy } from './openInComfy'
-import { isAppsEnabled, onAppsEnabledChanged } from './appsSwitch'
+import { isAppsEnabled, onAppsEnabledChanged, refreshAppsSwitch } from './appsSwitch'
 import { trackApps, trackFromPage, type Where } from './appEvents'
 
 const APPS_URL = appsUrl(process.env, app.isPackaged, CLOUD_CONFIG.issuer)
@@ -598,6 +598,7 @@ export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
   onAppsEnabledChanged(tellPanelsAppsEnabled)
+  onCloudAuthChanged(() => void refreshAppsSwitch())
   initLocalComfy(appsPages)
 
   handleFromApps('comfy-apps:get-auth-state', authState)
