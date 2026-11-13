@@ -50,7 +50,7 @@ export function registerEmbeddedSessionHandlers(): void {
 
   ipcMain.handle(
     EMBEDDED_SESSION_CHANNELS.issueBillingHandoff,
-    (event, workspaceId: unknown, receiver: unknown, intent: unknown) =>
-      billingHandoffForSender(event, workspaceId, receiver, intent, app.getVersion())
+    (event, workspaceId: unknown, receiver: unknown, intent: unknown, amountCents: unknown) =>
+      billingHandoffForSender(event, workspaceId, receiver, intent, amountCents, app.getVersion())
   )
 }

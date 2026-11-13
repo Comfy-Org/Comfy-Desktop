@@ -166,11 +166,12 @@ export interface ComfyDesktop2AuthBridge {
   switchWorkspace(workspaceId: string): Promise<ComfyDesktop2AuthState>
   /** Fires when Desktop signs in, signs out or switches workspace. */
   onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
-  /** Issues a billing handoff with Desktop's credential and resolves with only its https entry URL; `intent` picks the landing page. Absent on older Desktop builds. */
+  /** Issues a billing handoff with Desktop's credential and resolves with only its https entry URL; `intent` picks the landing page and `amountCents` the top-up amount. Absent on older Desktop builds. */
   issueBillingHandoff?(
     workspaceId: string,
     receiver: ComfyDesktop2BillingHandoffReceiver,
-    intent?: ComfyDesktop2BillingHandoffIntent
+    intent?: ComfyDesktop2BillingHandoffIntent,
+    amountCents?: number
   ): Promise<ComfyDesktop2BillingHandoff>
 }
 export interface ComfyDesktop2TerminalBridge {

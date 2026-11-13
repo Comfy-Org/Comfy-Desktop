@@ -165,18 +165,30 @@ function isOptionalBillingHandoffIntent(
   return value === undefined || BILLING_HANDOFF_INTENTS.has(value)
 }
 
+function isOptionalTopUpAmountCents(
+  value: unknown,
+  intent: ComfyDesktop2BillingHandoffIntent | undefined
+): value is number | undefined {
+  return (
+    value === undefined ||
+    (intent === 'top-up' && typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+  )
+}
+
 export async function billingHandoffForSender(
   event: EmbeddedSessionSender,
   workspaceId: unknown,
   receiver: unknown,
   intent: unknown,
+  amountCents: unknown,
   clientVersion: string
 ): Promise<ComfyDesktop2BillingHandoff> {
   if (
     typeof workspaceId !== 'string' ||
     workspaceId === '' ||
     !isBillingHandoffReceiver(receiver) ||
-    !isOptionalBillingHandoffIntent(intent)
+    !isOptionalBillingHandoffIntent(intent) ||
+    !isOptionalTopUpAmountCents(amountCents, intent)
   )
     return { status: 'disabled' }
   if (!isTrustedSender(event)) return { status: 'disabled' }
@@ -189,7 +201,8 @@ export async function billingHandoffForSender(
     workspaceId,
     receiver,
     clientVersion,
-    intent
+    intent,
+    amountCents
   })
   if (handoff.status === 'sign_in_again') {
     rejectAccessToken(accessToken)
