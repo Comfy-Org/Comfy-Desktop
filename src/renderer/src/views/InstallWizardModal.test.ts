@@ -127,7 +127,7 @@ describe('InstallWizardModal heading', () => {
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
 
-    await wrapper.get('.config-summary-browse').trigger('click')
+    await wrapper.get('.config-summary-location .config-path-browse').trigger('click')
     await flushPromises()
 
     expect(window.api.browseFolder).toHaveBeenCalledWith('/home/user/ComfyUI')

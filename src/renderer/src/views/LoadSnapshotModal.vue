@@ -457,7 +457,7 @@ defineExpose({ open })
         </SetupFormRow>
 
         <SetupFormRow :label="$t('loadSnapshot.contents')" control-height="cards">
-          <div class="load-snapshot-contents flex flex-col gap-3 rounded-[12px] bg-white/4 p-4">
+          <div class="load-snapshot-contents flex flex-col gap-3 rounded-[14px] bg-white/4 p-4">
             <dl class="load-snapshot-summary m-0 grid grid-cols-2 gap-x-6 gap-y-3">
               <div
                 v-for="entry in summaryEntries"
@@ -507,7 +507,7 @@ defineExpose({ open })
                   >
                     <div
                       v-if="preview.newestSnapshot.customNodes.length > 0"
-                      class="load-snapshot-recessed-list flex max-h-60 flex-col gap-[3px] overflow-y-auto rounded-[10px] bg-white/4 p-1.5"
+                      class="load-snapshot-recessed-list flex max-h-60 flex-col gap-[3px] overflow-y-auto rounded-[10px] bg-black/15 p-1.5"
                     >
                       <div
                         v-for="node in preview.newestSnapshot.customNodes"
@@ -568,7 +568,7 @@ defineExpose({ open })
                   >
                     <div
                       v-if="preview.newestSnapshot.pipPackageCount > 0"
-                      class="load-snapshot-recessed-list flex max-h-60 flex-col gap-[3px] overflow-y-auto rounded-[10px] bg-white/4 p-1.5"
+                      class="load-snapshot-recessed-list flex max-h-60 flex-col gap-[3px] overflow-y-auto rounded-[10px] bg-black/15 p-1.5"
                     >
                       <div
                         v-for="(version, name) in preview.newestSnapshot.pipPackages"
@@ -616,12 +616,12 @@ defineExpose({ open })
                     class="load-snapshot-disclosure__body min-h-0 overflow-hidden opacity-0 [transform:translateY(-4px)] transition-[opacity,transform] [transition-duration:220ms,260ms] [transition-timing-function:ease,cubic-bezier(0.22,1,0.36,1)] [transition-delay:60ms,40ms] group-[.is-open]/disclosure:mt-2 group-[.is-open]/disclosure:opacity-100 group-[.is-open]/disclosure:[transform:translateY(0)] motion-reduce:transition-none"
                   >
                     <div
-                      class="load-snapshot-timeline flex max-h-[200px] flex-col gap-1 overflow-y-auto rounded-[10px] bg-white/4 p-1.5"
+                      class="load-snapshot-timeline flex max-h-[200px] flex-col gap-1 overflow-y-auto rounded-[10px] bg-black/15 p-1.5"
                     >
                       <div
                         v-for="(snap, i) in preview.snapshots"
                         :key="snap.filename"
-                        class="load-snapshot-timeline-item flex items-center gap-2 rounded-[8px] bg-white/4 px-2.5 py-1.5 text-[13px]"
+                        class="load-snapshot-timeline-item flex items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[13px]"
                       >
                         <span
                           class="load-snapshot-trigger shrink-0 rounded-[4px] bg-white/8 px-1.5 py-px text-[11px] font-semibold tracking-[0.3px] uppercase"

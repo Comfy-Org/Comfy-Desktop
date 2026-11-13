@@ -63,8 +63,8 @@ import SetupMachineIllustration from '../components/SetupMachineIllustration.vue
 import SetupOptionCards, { type SetupOptionCard } from '../components/SetupOptionCards.vue'
 import { toHardwareCards, toOptionCards } from '../lib/setupOptionCards'
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
-import PathDiskInfo from '../components/PathDiskInfo.vue'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
+import InstallLocationField from '../components/InstallLocationField.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { formatBytes, formatFreeSpace } from '../lib/formatting'
@@ -1564,7 +1564,7 @@ defineExpose({ open })
 
       <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
         <div
-          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[12px] bg-white/6 px-4 py-3 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.07)]"
+          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
         >
           <label
             class="config-label pl-6 text-[13px] font-medium text-text-muted"
@@ -1594,7 +1594,7 @@ defineExpose({ open })
         </div>
 
         <div
-          class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[18px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+          class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
           :class="machineBlocked && 'config-machine--unsupported'"
         >
           <SetupMachineIllustration
@@ -1670,29 +1670,24 @@ defineExpose({ open })
           </div>
           <div
             v-if="showLocation"
-            class="config-summary-row config-summary-location grid min-h-12 grid-cols-[132px_minmax(0,1fr)_auto] items-center gap-4 rounded-[10px] px-3.5 py-2"
+            class="config-summary-row config-summary-location grid min-h-12 grid-cols-[132px_minmax(0,1fr)] items-center gap-4 rounded-[10px] px-3.5 py-2"
           >
             <dt class="flex items-center gap-2.5 text-[13px] text-text-muted">
               <HardDrive :size="15" aria-hidden="true" />{{ $t('common.location') }}
             </dt>
-            <dd class="m-0 grid min-w-0 [&_.path-disk-info]:mt-0 [&_.path-disk-info]:text-[12px]">
-              <span class="truncate text-[13px] leading-5 text-neutral-100">{{ instPath }}</span>
-              <PathDiskInfo
+            <dd class="m-0 min-w-0">
+              <InstallLocationField
+                :path="instPath"
+                :free-label="diskFreeLabel"
+                :short-label="diskShortLabel"
                 :path-issues="pathIssues"
                 :disk-space-loading="diskSpaceLoading"
                 :disk-space="diskSpace"
                 :estimated-size="estimatedInstallSize"
+                @browse="handleBrowse"
+                @open="handleOpenInstPath"
               />
             </dd>
-            <Button
-              size="sm"
-              variant="secondary"
-              type="button"
-              class="config-summary-browse self-center"
-              @click="handleBrowse"
-            >
-              {{ $t('common.browse') }}
-            </Button>
           </div>
           <div
             v-if="initializing && summaryRows.length === 0"
@@ -1766,7 +1761,7 @@ defineExpose({ open })
                   size="icon-sm"
                   variant="muted-textonly"
                   type="button"
-                  class="workspace-build-refresh rounded-[8px]"
+                  class="workspace-build-refresh"
                   :title="$t('newInstall.refreshWorkspaceBuilds')"
                   :aria-label="$t('newInstall.refreshWorkspaceBuilds')"
                   :disabled="authStore.loadingBuilds || authorizingWorkspace"
