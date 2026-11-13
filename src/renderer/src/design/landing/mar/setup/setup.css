@@ -2257,7 +2257,7 @@ body:has(.mss-first) [data-reka-popper-content-wrapper] {
 }
 .mss-summary.is-stacked .mss-row dd {
   display: grid;
-  gap: 0;
+  gap: 4px;
 }
 .mss-summary.is-stacked .mss-row-meta {
   font-size: 12px;
