@@ -14,6 +14,7 @@ import {
   expectTakeoverOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
+  saveNewBuildChangeSetup,
   openPickerViaTitlePill
 } from './support/chooserHelpers'
 import {
@@ -342,9 +343,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox'
   ).toBe(true)
 
-  await waitForConfigContinueEnabled(
-    'Continue button never re-enabled after picking the older stable tag'
-  )
+  await ctx.panel.waitForSelector('#source-fields .setup-option--selected', { timeout: 60_000 })
 
   if (LIFECYCLE_VARIANT !== 'default') {
     const rowLabel =
@@ -365,6 +364,7 @@ test('accept ToS + pick local (non-express) opens New Install takeover with form
       { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` }
     )
   }
+  await saveNewBuildChangeSetup(ctx.panel)
 })
 
 test('completes install (auto-launches via brand chrome) @sec-setup @lifecycle', async () => {
@@ -2470,8 +2470,8 @@ test('creates a Remote Connection record pointed at the running local server thr
   await ctx.panel.waitForVisible('#sf-url', { timeout: 10_000 })
   await ctx.panel.fill('#sf-url', origin!)
   expect(
-    await ctx.panel.click('[data-testid="config-summary-back"]'),
-    'Back to the New Build summary'
+    await ctx.panel.click('[data-testid="config-save-changes"]'),
+    'Saved the Remote Connection to the New Build summary'
   ).toBe(true)
   await ctx.panel.waitForVisible('#inst-name-standalone', { timeout: 5_000 })
   _remoteName = `Remote Loopback E2E ${randomUUID().slice(0, 8)}`

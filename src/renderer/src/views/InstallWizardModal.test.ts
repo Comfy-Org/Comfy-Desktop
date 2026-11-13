@@ -112,7 +112,7 @@ describe('InstallWizardModal heading', () => {
 
     await showChangeSetup(wrapper)
 
-    expect(wrapper.get('.wizard-title').text()).toBe('Change Setup')
+    expect(wrapper.get('.wizard-title').text()).toBe('Change setup')
     expect(wrapper.get('#source-fields').text()).toContain('Apple Silicon (MPS)')
     expect(wrapper.find('[data-testid="install-location-field"]').exists()).toBe(true)
 
@@ -158,9 +158,9 @@ describe('InstallWizardModal heading', () => {
     expect(
       wrapper
         .get('[data-testid="install-source-tabs"]')
-        .findAll('button')
-        .map((button) => button.text())
-    ).toEqual(['Public Builds', 'Managed Builds'])
+        .findAll('.setup-option__label')
+        .map((label) => label.text())
+    ).toEqual(['Official release', "Your team's builds"])
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
@@ -286,7 +286,7 @@ describe('InstallWizardModal install-location field', () => {
     await showChangeSetup(wrapper)
 
     expect(wrapper.get('[data-testid="install-location-field"] .config-label').text()).toBe(
-      'Install location'
+      'Location'
     )
     const pathBtn = wrapper.find('button.config-path-open')
     expect(pathBtn.exists()).toBe(true)
@@ -362,9 +362,9 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(
       wrapper
         .get('[data-testid="install-source-tabs"]')
-        .findAll('button')
-        .map((button) => button.text())
-    ).toEqual(['Public Builds', 'Managed Builds', 'Portable'])
+        .findAll('.setup-option__label')
+        .map((label) => label.text())
+    ).toEqual(['Official release', "Your team's builds", 'Portable'])
     expect(wrapper.get('[data-testid="install-source-remote"]').text()).toBe('Connect to a server')
     expect(wrapper.get('[data-testid="install-source-tabs"]').text()).not.toContain('RECOMMENDED')
     expect(wrapper.find('[data-testid="workspace-install-source-public"]').exists()).toBe(false)
@@ -486,16 +486,16 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
     const wrapper = await openWorkspaceModal()
 
-    expect(wrapper.get('[data-testid="workspace-install-source-managed"]').text()).toBe(
-      'Managed Builds'
-    )
+    expect(
+      wrapper.get('[data-testid="workspace-install-source-managed"] .setup-option__label').text()
+    ).toBe("Your team's builds")
     expect(wrapper.find('[data-testid="workspace-install-source-public"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.wizard-lead').text()).toBe(
-      'Everything here starts on what fits this computer.'
+      'Everything here is already set to what fits this computer. Back keeps it as it was.'
     )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('.config-advanced').classes()).toContain('config-advanced--direct')
@@ -512,6 +512,7 @@ describe('InstallWizardModal workspace Builds', () => {
 
     expect((wrapper.get('.config-source-field').element as HTMLElement).style.display).toBe('none')
 
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
@@ -543,6 +544,7 @@ describe('InstallWizardModal workspace Builds', () => {
 
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
@@ -596,6 +598,7 @@ describe('InstallWizardModal workspace Builds', () => {
 
     await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
@@ -632,7 +635,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await flushPromises()
 
     expect(wrapper.get('.wizard-lead').text()).toBe(
-      'Everything here starts on what fits this computer.'
+      'Everything here is already set to what fits this computer. Back keeps it as it was.'
     )
     expect(wrapper.get('[data-testid="workspace-build-field"]').exists()).toBe(true)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
@@ -664,6 +667,7 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
     await flushPromises()
 
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
@@ -705,7 +709,7 @@ describe('InstallWizardModal workspace Builds', () => {
     const wrapper = await openWorkspaceModal()
 
     expect(wrapper.get('.wizard-lead').text()).toBe(
-      'Everything here starts on what fits this computer.'
+      'Everything here is already set to what fits this computer. Back keeps it as it was.'
     )
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
@@ -1050,6 +1054,7 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(targetPicker.props('selectedValue')).toBe('cuda')
 
     await targetPicker.findAll('button')[1]!.trigger('click')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
@@ -1154,7 +1159,7 @@ describe('InstallWizardModal hardware warning', () => {
     await showChangeSetup(wrapper)
     await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
 
     expect(wrapper.find('[data-testid="wizard-hardware-warning"]').exists()).toBe(false)
   })
@@ -1195,9 +1200,166 @@ describe('InstallWizardModal hardware warning', () => {
     await showChangeSetup(wrapper)
     await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
 
     expect(wrapper.find('.config-machine--unsupported').exists()).toBe(false)
     expect(wrapper.get('[data-testid="detected-gpu-field"]').text()).toBe('Old GPU')
+  })
+})
+
+describe('InstallWizardModal Change setup', () => {
+  const releaseSource = {
+    id: 'standalone',
+    label: 'Standalone',
+    fields: [
+      { id: 'release', label: 'Release', type: 'select' },
+      { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' }
+    ]
+  }
+  const remoteSource = { id: 'remote', label: 'Remote Connection', skipInstall: true, fields: [] }
+
+  function mockReleaseOptions(): void {
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockImplementation(
+      async (_source: string, fieldId: string, selections: Record<string, { value: string }>) => {
+        if (fieldId === 'release') {
+          return [
+            { value: 'stable', label: 'Stable', recommended: true },
+            { value: 'latest', label: 'Latest on GitHub' }
+          ]
+        }
+        if (selections.release?.value !== 'stable') return []
+        return [
+          { value: 'v0.4.2', label: 'v0.4.2', recommended: true },
+          { value: 'v0.4.1', label: 'v0.4.1' }
+        ]
+      }
+    )
+  }
+
+  async function openChangeSetup(props: { hideBackToDashboard?: boolean } = {}) {
+    const wrapper = mountModal(props)
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    await showChangeSetup(wrapper)
+    return wrapper
+  }
+
+  it('picks the release with a segmented control and shows the version only for Stable', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    mockReleaseOptions()
+    const wrapper = await openChangeSetup()
+
+    const release = wrapper.get('[data-testid="config-release"] [role="group"]')
+    expect(release.findAll('button').map((button) => button.text())).toEqual([
+      'Stable',
+      'Latest on GitHub'
+    ])
+    const version = wrapper.get('.config-release-version')
+    expect(version.get('.ui-select-leading').text()).toBe('ComfyUI')
+    expect(version.get('.ui-select-label').text()).toBe('v0.4.2')
+    expect(
+      wrapper
+        .findAll('.config-source-field')
+        .map((row) => (row.element as HTMLElement).style.display)
+    ).toEqual(['', 'none'])
+
+    await release.findAll('button')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.config-release-version').exists()).toBe(false)
+  })
+
+  it('puts the free space and Browse inside the location field', async () => {
+    ;(window.api.getDiskSpace as ReturnType<typeof vi.fn>).mockResolvedValue({
+      free: 50_000_000_000,
+      total: 1_000_000_000_000
+    })
+    const wrapper = await openChangeSetup()
+    await vi.waitFor(() => expect(wrapper.find('.config-path-free').exists()).toBe(true))
+
+    const input = wrapper.get('[data-testid="config-path-input"]')
+    expect(input.find('.config-path-free').text()).toContain('free')
+    expect(input.find('.config-path-browse').text()).toBe('Browse')
+    expect(wrapper.find('.config-path-required').exists()).toBe(false)
+
+    await input.get('.config-path-browse').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('button.config-path-open').text()).toBe('/home/user/Picked')
+  })
+
+  it('keeps the setup as it was when Back is pressed', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      releaseSource,
+      remoteSource
+    ])
+    mockReleaseOptions()
+    const wrapper = await openChangeSetup()
+
+    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.config-continue').text()).toBe('Install')
+    await showChangeSetup(wrapper)
+    expect(
+      wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+    ).toBe('true')
+    expect(wrapper.get('.config-release-version').exists()).toBe(true)
+  })
+
+  it('keeps the edits when Save changes is pressed', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      releaseSource,
+      remoteSource
+    ])
+    mockReleaseOptions()
+    const wrapper = await openChangeSetup()
+
+    await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+
+    expect(wrapper.get('.config-continue').text()).toBe('Connect')
+  })
+
+  it('puts Location before Hardware and draws hardware with an icon', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'mps', label: 'Apple Silicon (MPS)', recommended: true, data: { variantId: 'mps' } }
+    ])
+    const wrapper = await openChangeSetup()
+
+    const rows = wrapper.findAll('#source-fields > *')
+    expect(rows.map((row) => row.attributes('data-testid') ?? row.classes()[0])).toEqual([
+      'install-location-field',
+      'config-form-row'
+    ])
+    expect(wrapper.find('.setup-option__icon img').exists()).toBe(false)
+    expect(wrapper.find('.setup-option__icon svg').exists()).toBe(true)
+  })
+
+  it('opens Add existing build and Load snapshot from the aside line', async () => {
+    const wrapper = await openChangeSetup()
+    expect(wrapper.get('[data-testid="config-add-existing"]').text()).toBe('Add Existing Build')
+    expect(wrapper.get('[data-testid="config-load-snapshot"]').text()).toBe('Load Snapshot')
+
+    await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
+    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
+
+    expect(wrapper.emitted('show-build-import')).toEqual([['track'], ['load-snapshot']])
+  })
+
+  it('leaves the build import links out of the first-use chain', async () => {
+    const wrapper = await openChangeSetup({ hideBackToDashboard: true })
+
+    expect(wrapper.find('[data-testid="config-add-existing"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-load-snapshot"]').exists()).toBe(false)
   })
 })

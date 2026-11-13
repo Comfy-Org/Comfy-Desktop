@@ -22,6 +22,7 @@ interface Props {
   loadingLabel?: string
   disabled?: boolean
   compact?: boolean
+  leading?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -30,7 +31,8 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
   loadingLabel: '',
   disabled: false,
-  compact: false
+  compact: false,
+  leading: undefined
 })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 defineOptions({ inheritAttrs: false })
@@ -86,6 +88,9 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
       :aria-label="ariaLabel"
       :aria-busy="loading || undefined"
     >
+      <span v-if="leading" class="ui-select-leading flex-none text-muted-foreground">{{
+        leading
+      }}</span>
       <SelectValue class="ui-select-label" :placeholder="placeholder">{{
         triggerLabel
       }}</SelectValue>
