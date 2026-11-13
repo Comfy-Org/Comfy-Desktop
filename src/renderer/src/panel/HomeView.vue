@@ -42,7 +42,7 @@ const workspaceBuilds = computed(() =>
   )
 )
 const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
-const buildTones = computed(() => homeBuildTones(builds.value))
+const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
 const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
 function buildStatus(build: Installation) {
   return homeBuildStatus(build, sessionStore)

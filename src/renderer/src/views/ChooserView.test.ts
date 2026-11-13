@@ -258,7 +258,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('open-details')).toBeUndefined()
   })
 
-  it('leads with Update and keeps starting as a named icon', async () => {
+  it('shows Update beside Start and keeps Start as the action', async () => {
     installMockApi([
       makeInstall({
         id: 'a',
@@ -270,10 +270,11 @@ describe('ChooserView', () => {
     await flushPromises()
 
     expect(wrapper.get('.chooser-tile-pill-update').text()).toBe('Update')
+    expect(wrapper.get('.chooser-tile-footer').find('.chooser-tile-pill-update').exists()).toBe(
+      true
+    )
     const start = wrapper.get('.chooser-tile-launch')
-    expect(start.text()).toBe('')
-    expect(start.attributes('aria-label')).toBe('Start')
-    expect(wrapper.get('.chooser-tile-footer').text()).toContain('Update available')
+    expect(start.text()).toBe('Start')
   })
 
   it('renders a cloud install through the same tile component as local installs', async () => {
