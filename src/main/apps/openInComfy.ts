@@ -62,15 +62,23 @@ async function localInstallId(build?: string): Promise<string | null> {
   return build === undefined ? appsBuildWindow() : null
 }
 
-async function cloudInstallId(): Promise<string | null> {
+type InstallTarget = { id: string } | { error: string }
+
+async function cloudInstallTarget(): Promise<InstallTarget> {
   const usable = (i: installations.InstallationRecord) =>
     i.sourceId === installations.CLOUD_SOURCE_ID &&
     (i.status === undefined || i.status === 'installed')
   const inst = (await installations.list()).find(usable)
-  if (!inst) return null
-  if (_runningSessions.has(inst.id)) return inst.id
+  if (!inst) return { error: 'Add Comfy Cloud in Comfy Desktop first.' }
+  if (_runningSessions.has(inst.id)) return { id: inst.id }
   const result = await launchInstall(inst)
-  return result.ok || _runningSessions.has(inst.id) ? inst.id : null
+  if (result.ok || _runningSessions.has(inst.id)) return { id: inst.id }
+  return { error: result.message || 'Comfy Desktop could not open Comfy Cloud.' }
+}
+
+async function localInstallTarget(build?: string): Promise<InstallTarget> {
+  const id = await localInstallId(build)
+  return id ? { id } : { error: 'Comfy Desktop could not start your ComfyUI.' }
 }
 
 function liveEntry(installationId: string): ComfyWindowEntry | null {
@@ -116,16 +124,10 @@ async function loadInto(installationId: string, req: OpenRequest): Promise<boole
 export async function openInComfy(input: unknown): Promise<OpenResult> {
   const req = openRequest(input)
   if ('error' in req) throw new Error(req.error)
-  const id = req.where === 'local' ? await localInstallId(req.build) : await cloudInstallId()
-  if (!id) {
-    return {
-      opened: false,
-      error:
-        req.where === 'local'
-          ? 'Comfy Desktop could not start your ComfyUI.'
-          : 'Add Comfy Cloud in Comfy Desktop first.'
-    }
-  }
+  const target =
+    req.where === 'local' ? await localInstallTarget(req.build) : await cloudInstallTarget()
+  if ('error' in target) return { opened: false, error: target.error }
+  const { id } = target
   const entry = await windowFor(id)
   if (!entry) return { opened: false, error: 'Comfy Desktop has no window for that ComfyUI.' }
   bringForward(entry)
