@@ -19,6 +19,7 @@
     "builds": "Builds",
     "navigation": "Navigation",
     "home": "Home",
+    "apps": "Apps",
     "assets": "Assets",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
@@ -30,6 +31,18 @@
     "crashedWithCode": "Crashed (exit code {code})",
     "crashedWithSignal": "Crashed ({signal})",
     "failedToStartReason": "Failed to start: {reason}"
+  },
+  "apps": {
+    "search": "Search apps",
+    "failedTitle": "Apps didn't load",
+    "failedBody": "Check your internet connection, then try again.",
+    "retry": "Try again",
+    "emptyTitle": "No apps yet",
+    "emptyBody": "New apps will show up here.",
+    "noMatches": "No apps match “{query}”",
+    "allApps": "All apps",
+    "pageLoading": "Loading {app}",
+    "pageFailedTitle": "{app} didn't load"
   },
   "assets": {
     "kindLabel": "Asset type",

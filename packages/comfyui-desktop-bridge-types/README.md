@@ -39,6 +39,27 @@ async function openModelAccessPage(url: string): Promise<void> {
 every top-level member required, so Desktop's preload cannot claim the contract
 while omitting part of it.
 
+## Comfy pages hosted in Desktop's Apps view
+
+A Comfy page that Desktop shows in its Apps view gets `window.comfyDesktopAuth`
+instead: Desktop's account session, and nothing else of the bridge above.
+
+```ts
+import type { ComfyDesktopHostedAuthBridge } from '@comfyorg/comfyui-desktop-bridge-types'
+
+declare global {
+  interface Window {
+    comfyDesktopAuth?: ComfyDesktopHostedAuthBridge
+  }
+}
+```
+
+The page reads the session with `getState()`, follows it with `onChanged()`,
+asks for the workspace credential with `getWorkspaceToken(workspaceId)` each
+time it calls Comfy Cloud, and starts a sign-in with `requestSignIn()`. It
+cannot sign Desktop out or switch workspace. The object is absent in a
+browser, so a page keeps its own sign-in as the fallback.
+
 ## Provenance
 
 Generated from `src/types/comfyDesktopBridge.ts` in

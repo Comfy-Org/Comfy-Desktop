@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
+  AppWindow,
   ArrowRight,
   Cloud,
   House,
@@ -28,9 +29,14 @@ import { useSessionStore } from '../stores/sessionStore'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import type { DashboardPage, Installation } from '../types/ipc'
 
-const { activePage, activeBuildId = null } = defineProps<{
+const {
+  activePage,
+  activeBuildId = null,
+  makeRoom = false
+} = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
+  makeRoom?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -47,11 +53,34 @@ interface SidebarRow {
 
 const { t } = useI18n()
 
-const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
+const collapsedByChoice = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
+const reopenedWhileMakingRoom = ref(false)
+watch(
+  () => makeRoom,
+  () => {
+    reopenedWhileMakingRoom.value = false
+  }
+)
+const collapsed = computed(() =>
+  makeRoom ? !reopenedWhileMakingRoom.value : collapsedByChoice.value
+)
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
+
+function toggleCollapsed(): void {
+  if (makeRoom) reopenedWhileMakingRoom.value = !reopenedWhileMakingRoom.value
+  else collapsedByChoice.value = !collapsedByChoice.value
+}
+
+const appsEnabled = ref(false)
+onMounted(async () => {
+  appsEnabled.value = await window.api.getAppsEnabled().catch(() => false)
+})
 
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
+  ...(appsEnabled.value
+    ? [{ page: 'apps' as const, label: t('sidebar.apps'), icon: AppWindow }]
+    : []),
   { page: 'assets', label: t('sidebar.assets'), icon: Images },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
@@ -140,7 +169,7 @@ function navigate(page: DashboardPage): void {
         :aria-label="toggleLabel"
         :aria-expanded="!collapsed"
         :title="toggleLabel"
-        @click="collapsed = !collapsed"
+        @click="toggleCollapsed"
       >
         <SidebarToggleIcon />
       </Button>
