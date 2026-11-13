@@ -333,6 +333,8 @@ function installMockApi(initial?: {
     openExternal: state.openExternal,
     getAppVersion: state.getAppVersion,
     onSettingsChanged: vi.fn(() => () => {}),
+    getAppsEnabled: vi.fn().mockResolvedValue(false),
+    onAppsEnabledChanged: vi.fn(() => () => {}),
     onCloseRequest: vi.fn((cb: (d: { requestId: string }) => void) => {
       state.closeRequestCallbacks.push(cb)
       return () => {}
@@ -374,6 +376,7 @@ function installMockApi(initial?: {
     transferHostBoundsToInstall: vi.fn(async () => {}),
     closeHostWindow: vi.fn(async () => {}),
     focusComfyWindow: vi.fn(async () => {}),
+    openInstallInNewWindow: vi.fn(),
     navigatePanel: vi.fn(),
     listHomeWorkflows: vi.fn(async () => []),
     openCatalogWorkflow: vi.fn(async () => true),
@@ -1250,6 +1253,30 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
   })
 
+  it('opens a build picked on the dashboard in its own window and keeps the dashboard here', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    const wrapper = mountPanel()
+    await flushPromises()
+    await showBuilds(wrapper)
+    const api = (
+      window as unknown as {
+        api: {
+          openInstallInNewWindow: ReturnType<typeof vi.fn>
+          claimAttachHost: ReturnType<typeof vi.fn>
+          getListActions: ReturnType<typeof vi.fn>
+        }
+      }
+    ).api
+
+    wrapper.getComponent({ name: 'ChooserView' }).vm.$emit('pick', SAMPLE_INSTALL)
+    await flushPromises()
+
+    expect(api.openInstallInNewWindow).toHaveBeenCalledWith(SAMPLE_INSTALL.id)
+    expect(api.getListActions).not.toHaveBeenCalled()
+    expect(api.claimAttachHost).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('true')
+  })
+
   it('closes an open app when Apps is clicked in the sidebar, and otherwise keeps the page', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const listCatalogApps = vi.fn().mockResolvedValue([
@@ -1263,6 +1290,7 @@ describe('PanelApp', () => {
     ])
     Object.assign(window.api, {
       listCatalogApps,
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       showApps: vi.fn(),
       hideApps: vi.fn(),
       onAppsLoadFailed: vi.fn(() => () => {}),
@@ -1295,6 +1323,7 @@ describe('PanelApp', () => {
     Object.assign(window.api, {
       listCatalogApps: vi.fn().mockResolvedValue([]),
       listAssets: vi.fn().mockResolvedValue([]),
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       onAppsLoadFailed: vi.fn(() => () => {}),
       onAppsAppOpen: vi.fn(() => () => {}),
       onAppsOutput: vi.fn(() => () => {}),
@@ -1332,6 +1361,7 @@ describe('PanelApp', () => {
           url: 'https://apps.example/apps/studio/desktop.html'
         }
       ]),
+      getAppsEnabled: vi.fn().mockResolvedValue(true),
       showApps: vi.fn(),
       hideApps: vi.fn(),
       onAppsLoadFailed: vi.fn(() => () => {}),

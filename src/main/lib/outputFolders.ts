@@ -1,3 +1,4 @@
+import fs from 'fs'
 import fsp from 'fs/promises'
 import path from 'path'
 import { pathToFileURL } from 'url'
@@ -6,6 +7,7 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import { isInside } from '../apps/guards'
+import type { ComfyOutputFile } from '../apps/outputs'
 import { assetKind } from './assets'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
@@ -24,6 +26,10 @@ const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
+const MAX_MATCH_ENTRIES = 5000
+const MAX_MATCH_DEPTH = 4
+const APPS_OUTPUT_FOLDER = 'apps'
+const MAX_SAME_SIZE_FILES = 4
 
 const thumbnails = new Map<string, Buffer>()
 const thumbnailQueue: (() => void)[] = []
@@ -71,12 +77,126 @@ export async function listOutputFolders(): Promise<OutputFolder[]> {
   return [...byPath.values()]
 }
 
-async function allowedPath(target: string): Promise<string | null> {
+export async function allowedPath(target: string): Promise<string | null> {
   if (!path.isAbsolute(target)) return null
   if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS) await listOutputFolders()
   const real = await fsp.realpath(target).catch(() => null)
   if (!real) return null
   return allowedRoots.some((root) => real === root || isInside(real, root, path.sep)) ? real : null
+}
+
+async function buildOutputRoot(inst: InstallationRecord): Promise<string | null> {
+  const dir = outputDirFor(inst, sharedOutputDir())
+  return dir ? realDir(dir) : null
+}
+
+const READ_SAFELY =
+  fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0)
+
+async function hasBytes(file: string, wanted: Buffer): Promise<boolean> {
+  const handle = await fsp.open(file, READ_SAFELY).catch(() => null)
+  if (!handle) return false
+  try {
+    const stat = await handle.stat()
+    if (!stat.isFile() || stat.size !== wanted.byteLength) return false
+    const content = Buffer.alloc(wanted.byteLength)
+    let read = 0
+    while (read < content.byteLength) {
+      const { bytesRead } = await handle.read(content, read, content.byteLength - read, read)
+      if (bytesRead === 0) return false
+      read += bytesRead
+    }
+    return content.equals(wanted)
+  } catch {
+    return false
+  } finally {
+    await handle.close().catch(() => {})
+  }
+}
+
+async function checkedOutput(root: string, file: string, wanted: Buffer): Promise<string | null> {
+  const real = await allowedPath(file)
+  if (!real || !isInside(real, root, path.sep)) return null
+  return (await hasBytes(real, wanted)) ? real : null
+}
+
+const asBuffer = (bytes: Uint8Array) =>
+  Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+
+export async function comfyOutputPath(
+  inst: InstallationRecord,
+  file: ComfyOutputFile,
+  bytes: Uint8Array
+): Promise<string | null> {
+  const root = await buildOutputRoot(inst)
+  if (!root) return null
+  return checkedOutput(root, path.join(root, file.subfolder, file.filename), asBuffer(bytes))
+}
+
+async function filesBySize(
+  root: string,
+  stillWanted: () => boolean
+): Promise<Map<number, string[]>> {
+  const bySize = new Map<number, string[]>()
+  const appsDir = path.join(root, APPS_OUTPUT_FOLDER)
+  const walk = async (start: string, startDepth: number): Promise<void> => {
+    const queue = [{ dir: start, depth: startDepth }]
+    let seen = 0
+    while (queue.length > 0 && seen < MAX_MATCH_ENTRIES && stillWanted()) {
+      const { dir, depth } = queue.shift()!
+      const dirents = (await fsp.readdir(dir, { withFileTypes: true }).catch(() => []))
+        .filter((dirent) => !dirent.name.startsWith('.'))
+        .slice(0, MAX_MATCH_ENTRIES - seen)
+      seen += dirents.length
+      for (const dirent of dirents) {
+        const full = path.join(dir, dirent.name)
+        if (dirent.isDirectory() && depth < MAX_MATCH_DEPTH && full !== appsDir)
+          queue.push({ dir: full, depth: depth + 1 })
+      }
+      const files = dirents.filter((dirent) => dirent.isFile())
+      await runPool(files, STATS_AT_ONCE, async (dirent) => {
+        const full = path.join(dir, dirent.name)
+        const stat = await fsp.stat(full).catch(() => null)
+        if (stat) bySize.set(stat.size, [...(bySize.get(stat.size) ?? []), full])
+      })
+    }
+  }
+  const appsStat = await fsp.lstat(appsDir).catch(() => null)
+  if (appsStat?.isDirectory()) await walk(appsDir, 1)
+  await walk(root, 0)
+  return bySize
+}
+
+function outputMatcher(
+  inst: InstallationRecord,
+  stillWanted: () => boolean
+): (bytes: Uint8Array) => Promise<string | null> {
+  let scan: Promise<{ root: string; bySize: Map<number, string[]> } | null> | null = null
+  return async (bytes) => {
+    if (bytes.byteLength === 0 || !stillWanted()) return null
+    scan ??= buildOutputRoot(inst).then(async (root) =>
+      root ? { root, bySize: await filesBySize(root, stillWanted) } : null
+    )
+    const found = await scan
+    if (!found) return null
+    const wanted = asBuffer(bytes)
+    const candidates = (found.bySize.get(bytes.byteLength) ?? []).slice(0, MAX_SAME_SIZE_FILES)
+    for (const file of candidates) {
+      if (!stillWanted()) return null
+      const real = await checkedOutput(found.root, file, wanted)
+      if (real) return real
+    }
+    return null
+  }
+}
+
+export function outputLocator(
+  inst: InstallationRecord,
+  stillWanted: () => boolean = () => true
+): (file: ComfyOutputFile | null, bytes: Uint8Array) => Promise<string | null> {
+  const sameBytes = outputMatcher(inst, stillWanted)
+  return async (file, bytes) =>
+    (file ? await comfyOutputPath(inst, file, bytes) : null) ?? sameBytes(bytes)
 }
 
 export function outputFileUrl(file: string, thumbnailOf?: number): string {

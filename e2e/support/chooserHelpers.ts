@@ -99,6 +99,8 @@ export async function openManageViaDashboard(
   return popup
 }
 
+const NOT_LOCKED_DOWN = '.title-announcement-button'
+
 export async function openPickerViaTitlePill(
   app: ElectronApplication,
   titleBar: WebContentsPage,
@@ -106,14 +108,16 @@ export async function openPickerViaTitlePill(
 ): Promise<WebContentsPage> {
   if (await isPopupVisible(app, 'comfyTitlePopup.html')) {
     throw new Error(
-      'openPickerViaTitlePill: picker popup is already open - close it before re-entering via the pill'
+      'openPickerViaTitlePill: picker popup is already open - close it before opening it again'
     )
   }
-  await titleBar.waitForVisible('.title-install-pill.is-interactive', { timeout: 15_000 })
-  expect(
-    await titleBar.click('.title-install-pill.is-interactive'),
-    'title-bar install pill clicked'
-  ).toBe(true)
+  await expect
+    .poll(() => titleBar.exists(NOT_LOCKED_DOWN), {
+      timeout: 15_000,
+      intervals: [100, 250]
+    })
+    .toBe(true)
+  await titleBar.evaluate('window.api.openInstancePicker()')
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {

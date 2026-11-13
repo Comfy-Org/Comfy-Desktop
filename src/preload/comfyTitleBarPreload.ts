@@ -42,6 +42,7 @@ export interface ComfyTitleBarBridge {
   getInstallationId(): string | null
   isMac(): boolean
   setPanel(panel: ComfyPanelKey): void
+  showHome(): void
   openNewWindow(): void
   openFileMenu(anchor: TitleMenuAnchor): void
   dismissFileMenu(): void
@@ -71,7 +72,6 @@ export interface ComfyTitleBarBridge {
   clickInstallUpdatePill(): void
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void
   clickDownloadsTray(anchor: TitleMenuAnchor): void
-  clickInstallPill(anchor: TitleMenuAnchor): void
   clickFeedback(): void
   clickAnnouncement(): void
   clickRefreshInstance(): void
@@ -118,6 +118,9 @@ const bridge: ComfyTitleBarBridge = {
   isMac: () => (g.navigator?.userAgent ?? '').toLowerCase().includes('mac'),
   setPanel: (panel) => {
     ipcRenderer.send('comfy-window:set-panel', { panel })
+  },
+  showHome: () => {
+    ipcRenderer.send('comfy-window:show-home')
   },
   openNewWindow: () => {
     ipcRenderer.send('comfy-window:new-chooser-window')
@@ -251,9 +254,6 @@ const bridge: ComfyTitleBarBridge = {
   },
   clickDownloadsTray: (anchor) => {
     ipcRenderer.send('comfy-window:click-downloads-tray', { anchor })
-  },
-  clickInstallPill: (anchor) => {
-    ipcRenderer.send('comfy-window:click-install-pill', { anchor })
   },
   clickFeedback: () => {
     ipcRenderer.send('comfy-window:click-feedback')

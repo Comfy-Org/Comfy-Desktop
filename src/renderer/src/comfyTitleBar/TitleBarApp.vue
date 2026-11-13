@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import {
   ArrowDownToLine,
   Bell,
-  ChevronDown,
+  House,
   CloudDownload,
   Loader2,
   Menu as MenuIcon,
@@ -18,9 +18,9 @@ import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
 import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
-import { useCentralPillCoachmark } from './useCentralPillCoachmark'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
 import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
+import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
 
 const { t, locale } = useI18n()
@@ -60,6 +60,7 @@ interface Bridge {
   getInstallationId: () => string | null
   isMac: () => boolean
   setPanel: (panel: ComfyPanelKey) => void
+  showHome: () => void
   openNewWindow: () => void
   openFileMenu: (anchor: MenuAnchor) => void
   dismissFileMenu: () => void
@@ -108,7 +109,6 @@ interface Bridge {
   clickInstallUpdatePill: () => void
   onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
   clickDownloadsTray: (anchor: MenuAnchor) => void
-  clickInstallPill: (anchor: MenuAnchor) => void
   clickFeedback: () => void
   clickAnnouncement: () => void
   clickRefreshInstance: () => void
@@ -123,19 +123,8 @@ const titleMenuButtonClass =
 
 const titleInstallPillClass = [
   '[-webkit-app-region:no-drag] inline-flex h-7 items-center gap-2 [inline-size:fit-content] [min-inline-size:200px] [max-inline-size:clamp(200px,22cqi,360px)] rounded-[999px] border border-solid border-transparent bg-[var(--chooser-surface-bg)] py-[5px] pr-2.5 pl-3 [font-family:inherit] text-[12px] leading-[inherit] font-normal text-neutral-100 cursor-default transition-[background-color,border-color,color] duration-[120ms] ease-[ease]',
-  '[&.is-interactive]:cursor-pointer',
-  '[&.is-interactive:focus-visible]:outline-none [&.is-interactive:focus-visible]:outline-current',
-  '[&.is-install-less]:opacity-85',
-  '[.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [.title-bar.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
-  '[&.is-interactive:focus-visible:not(.is-open)]:bg-[var(--chooser-surface-bg-hover)] [&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-50)_35%,transparent)] [&.is-interactive:focus-visible:not(.is-open)]:text-[color-mix(in_srgb,var(--neutral-50)_70%,var(--neutral-100))]',
-  '[&.is-interactive.is-open]:border-neutral-50 [&.is-interactive.is-open]:text-neutral-50',
   '[.title-bar.is-light_&]:bg-[rgba(0,0,0,0.04)] [.title-bar.is-light_&]:text-neutral-700',
-  '[.title-bar:not(.is-light)_&]:border-border [.title-bar:not(.is-light)_&]:bg-[oklch(1_0_0/0.04)] [.title-bar:not(.is-light)_&]:text-text-muted',
-  '[.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light.is-hover-active_&.is-interactive:hover:not(.is-open)]:text-neutral-700',
-  '[.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:bg-[rgba(0,0,0,0.07)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:border-[color-mix(in_srgb,var(--neutral-700)_35%,transparent)] [.title-bar.is-light_&.is-interactive:focus-visible:not(.is-open)]:text-neutral-700',
-  '[.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:border-[oklch(1_0_0/0.12)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:bg-[oklch(1_0_0/0.07)] [.title-bar.is-hover-active:not(.is-light)_&.is-interactive:hover:not(.is-open)]:text-text',
-  '[.title-bar:not(.is-light)_&.is-interactive.is-open]:border-[oklch(1_0_0/0.3)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:bg-[oklch(1_0_0/0.07)] [.title-bar:not(.is-light)_&.is-interactive.is-open]:text-text',
-  '[.title-bar.is-light_&.is-interactive.is-open]:border-[color-mix(in_srgb,var(--neutral-700)_55%,transparent)] [.title-bar.is-light_&.is-interactive.is-open]:text-neutral-700'
+  '[.title-bar:not(.is-light)_&]:border-border [.title-bar:not(.is-light)_&]:bg-[oklch(1_0_0/0.04)] [.title-bar:not(.is-light)_&]:text-text-muted'
 ].join(' ')
 
 const titleDownloadsBadgeClass =
@@ -183,11 +172,8 @@ const {
   appUpdateState,
   appUpdatePillLabel,
   appUpdatePillTooltip,
-  installUpdatePillLabel,
   showAppUpdatePill,
-  showInstallUpdatePill,
-  handleAppUpdatePill,
-  handleInstallUpdatePill
+  handleAppUpdatePill
 } = useUpdatePills({ bridge, isInstallLess })
 
 function handleFeedback(): void {
@@ -233,7 +219,7 @@ const titleBarRef = useTemplateRef<HTMLElement>('titleBar')
 const fileBtnRef = useTemplateRef<HTMLButtonElement>('fileBtn')
 const downloadsBtnRef = useTemplateRef<HTMLButtonElement>('downloadsBtn')
 const announcementBtnRef = useTemplateRef<HTMLButtonElement>('announcementBtn')
-const installPillRef = useTemplateRef<HTMLElement>('installPill')
+const titleClusterRef = useTemplateRef<HTMLElement>('titleCluster')
 const titleTrailingRef = useTemplateRef<HTMLElement>('titleTrailing')
 
 const trailingWidthPx = ref(0)
@@ -263,13 +249,16 @@ interface FitMeasurement {
 function measureFit(): FitMeasurement {
   const bar = titleBarRef.value
   const trailing = titleTrailingRef.value
-  const pill = installPillRef.value
-  if (!bar || !trailing || !pill) return { gap: Infinity, trailingWidth: NaN }
+  const cluster = titleClusterRef.value
+  if (!bar || !trailing || !cluster) return { gap: Infinity, trailingWidth: NaN }
   const barRect = bar.getBoundingClientRect()
   if (barRect.width === 0) return { gap: Infinity, trailingWidth: NaN }
   const trailingRect = trailing.getBoundingClientRect()
-  const pillRect = pill.getBoundingClientRect()
-  return { gap: trailingRect.left - pillRect.right, trailingWidth: trailingRect.width }
+  const leadingRight = Math.max(
+    cluster.getBoundingClientRect().left,
+    ...Array.from(cluster.children).map((child) => child.getBoundingClientRect().right)
+  )
+  return { gap: trailingRect.left - leadingRight, trailingWidth: trailingRect.width }
 }
 
 function scheduleFit(): void {
@@ -334,33 +323,18 @@ const { isHoverActive } = useTitleBarHoverGate({ hideTip, handleTooltipPointer }
 
 const {
   isDownloadsOpen,
-  isInstancePickerOpen,
   downloadsActiveCount,
   unseenFinishedCount,
   unseenErrorCount,
   downloadsTrayLabel,
   downloadsStartedAt,
   handleFileMenu,
-  handleDownloadsTray,
-  handleInstallPill
+  handleDownloadsTray
 } = useTitleBarMenus({
   bridge,
   hideTip,
   fileBtnRef,
-  downloadsBtnRef,
-  installPillRef
-})
-
-const coachmark = useCentralPillCoachmark({
-  bridge,
-  isInstallLess,
-  isFirstUseLockdown,
-  isLoadingLockdown,
-  ownsPopup: () => coachmark.isShowing.value,
-  installPillRef,
-  title: t('titleBar.pillHintTitle'),
-  body: t('titleBar.pillHintBody'),
-  dismissLabel: t('titleBar.pillHintDismiss')
+  downloadsBtnRef
 })
 
 const betaNotice = useBetaActivationNotice({
@@ -370,7 +344,6 @@ const betaNotice = useBetaActivationNotice({
   isFirstUseLockdown,
   isLoadingLockdown,
   anchorRef: announcementBtnRef,
-  isSuppressed: () => coachmark.isShowing.value,
   copyFor: ({ direction, description }) => {
     const keys =
       direction === 'disabled'
@@ -390,19 +363,13 @@ const betaNotice = useBetaActivationNotice({
   }
 })
 
-function handleInstallPillWithCoachmark(): void {
-  void coachmark.acknowledgeViaPillOpen().then(retryBetaNoticeAfterHint)
-  handleInstallPill()
+const homeButtonShown = computed(() => !isInstallLess.value && !isFirstUseLockdown.value)
+
+function showHome(): void {
+  bridge?.showHome()
 }
 
-function reshowCoachmarksAfterMove(): void {
-  if (unmounted) return
-  void coachmark.maybeShow().then(() => {
-    if (!unmounted) void betaNotice.maybeShow()
-  })
-}
-
-function retryBetaNoticeAfterHint(): void {
+function retryBetaNotice(): void {
   if (unmounted) return
   void nextTick().then(() => {
     if (!unmounted) void betaNotice.maybeShow()
@@ -469,26 +436,23 @@ onMounted(() => {
         bridge.hideCoachmark()
         betaNotice.forgetWithoutAcknowledging()
       }
-      retryBetaNoticeAfterHint()
+      retryBetaNotice()
     }
   })
   unsubCoachmarkDismissed = bridge.onCoachmarkDismissed(({ kind }) => {
     if (kind === 'beta-notice') void betaNotice.dismiss()
-    else void coachmark.dismiss().then(retryBetaNoticeAfterHint)
   })
   unsubCoachmarkAction = bridge.onCoachmarkAction(({ kind }) => {
     if (kind === 'beta-notice') void betaNotice.openSettings()
   })
   unsubCoachmarkAutoHidden = bridge.onCoachmarkAutoHidden(({ kind }) => {
     if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
-    else coachmark.forgetWithoutAcknowledging()
   })
   unsubCoachmarkSettled = bridge.onCoachmarkSettled(() => {
-    reshowCoachmarksAfterMove()
+    if (!unmounted) void betaNotice.maybeShow()
   })
   unsubCoachmarkDisplaced = bridge.onCoachmarkDisplaced(({ kind }) => {
     if (kind === 'beta-notice') betaNotice.forgetWithoutAcknowledging()
-    else coachmark.forgetWithoutAcknowledging()
   })
   bridge.ready()
 })
@@ -502,26 +466,15 @@ watch(
     }
     void nextTick().then(() => {
       requestAnimationFrame(() => {
-        if (unmounted) return
-        void coachmark.maybeShow().then(() => {
-          if (!unmounted) void betaNotice.maybeShow()
-        })
+        if (!unmounted) void betaNotice.maybeShow()
       })
     })
   },
   { immediate: true }
 )
 
-watch(
-  [
-    locale,
-    installLabel,
-    appUpdatePillLabel,
-    showAppUpdatePill,
-    showInstallUpdatePill,
-    isFirstUseLockdown
-  ],
-  () => invalidateRestoreCosts()
+watch([locale, installLabel, appUpdatePillLabel, showAppUpdatePill, isFirstUseLockdown], () =>
+  invalidateRestoreCosts()
 )
 
 onUnmounted(() => {
@@ -577,98 +530,22 @@ onUnmounted(() => {
     }"
   >
     <div
+      ref="titleCluster"
       class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
     >
-      <button
-        v-if="!isConsentLockdown"
-        ref="fileBtn"
+      <Button
+        v-if="homeButtonShown"
         type="button"
-        class="title-menu-button title-menu-button--icon"
-        :class="titleMenuButtonClass"
-        aria-haspopup="menu"
-        v-bind="tooltipAttrs(t('titleBar.menu'))"
-        @click="handleFileMenu"
+        variant="outline"
+        size="sm"
+        class="[-webkit-app-region:no-drag] [.title-bar:not(.is-hover-active)_&]:hover:bg-transparent"
+        data-testid="title-home-button"
+        @click="showHome"
       >
-        <MenuIcon :size="18" />
-      </button>
-      <button
-        v-if="showRefreshButton"
-        type="button"
-        class="title-menu-button title-menu-button--icon title-refresh-button"
-        :class="titleMenuButtonClass"
-        v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
-        @click="handleRefreshInstance"
-      >
-        <RotateCw :size="16" />
-      </button>
-    </div>
-
-    <div
-      class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
-    >
-      <div
-        v-if="!isFirstUseLockdown"
-        ref="installPill"
-        class="title-install-pill is-interactive"
-        :class="[
-          titleInstallPillClass,
-          {
-            'is-open': isInstancePickerOpen,
-            'is-coachmark': coachmark.isShowing.value,
-            'is-install-less': isInstallLess
-          }
-        ]"
-        role="button"
-        tabindex="0"
-        aria-haspopup="dialog"
-        :aria-expanded="isInstancePickerOpen"
-        @click="handleInstallPillWithCoachmark"
-        @keydown.enter.prevent="handleInstallPillWithCoachmark"
-        @keydown.space.prevent="handleInstallPillWithCoachmark"
-      >
-        <div
-          class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
-        >
-          <ComfyCLogo
-            v-if="showBrandMark"
-            class="title-install-brand-mark shrink-0 text-current"
-            :size="16"
-          />
-          <component
-            :is="installTypeMeta.icon"
-            v-else-if="showInstallTypeIcon"
-            :size="16"
-            class="title-install-type-icon shrink-0 opacity-85"
-            v-bind="tooltipAttrs(installTypeLabel)"
-          />
-        </div>
-        <div
-          class="title-install-slot title-install-slot--center inline-flex min-w-0 flex-auto items-center justify-center gap-1.5"
-        >
-          <span class="title-install-name min-w-0 truncate">{{ installLabel }}</span>
-          <button
-            v-if="showInstallUpdatePill"
-            type="button"
-            class="title-install-update-chip [-webkit-app-region:no-drag] ml-1 inline-flex shrink-0 items-center rounded-[999px] border border-solid border-[color-mix(in_srgb,var(--comfy-yellow)_55%,transparent)] bg-[color-mix(in_srgb,var(--comfy-yellow)_12%,transparent)] px-2 py-px [font-family:inherit] text-[11px] leading-4 font-normal text-comfy-yellow cursor-pointer transition-[background-color,border-color] duration-[120ms] ease-[ease] [.title-bar.is-hover-active_&]:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_20%,transparent)] [.title-bar.is-hover-active_&]:hover:border-comfy-yellow [.title-bar.is-light_&]:bg-[color-mix(in_srgb,var(--comfy-yellow)_22%,transparent)] [.title-bar.is-light_&]:border-[color-mix(in_srgb,var(--comfy-yellow)_70%,var(--neutral-700))] [.title-bar.is-light_&]:text-neutral-700 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-1"
-            v-bind="tooltipAttrs(installUpdatePillLabel)"
-            @click.stop="handleInstallUpdatePill"
-            @keydown.enter.stop
-            @keydown.space.stop
-          >
-            {{ t('titleBar.installUpdateShort') }}
-          </button>
-        </div>
-        <div
-          class="title-install-slot title-install-slot--trailing inline-flex flex-[0_0_18px] items-center justify-center"
-        >
-          <ChevronDown
-            :size="12"
-            class="title-install-caret shrink-0 text-current opacity-70"
-            aria-hidden="true"
-          />
-        </div>
-      </div>
-      <div v-else ref="installPill" class="title-install-pill" :class="titleInstallPillClass">
+        <House :size="14" aria-hidden="true" />
+        {{ t('sidebar.home') }}
+      </Button>
+      <div v-else-if="isFirstUseLockdown" class="title-install-pill" :class="titleInstallPillClass">
         <div
           class="title-install-slot title-install-slot--leading inline-flex flex-[0_0_18px] items-center justify-center"
         >
@@ -695,6 +572,10 @@ onUnmounted(() => {
         ></div>
       </div>
     </div>
+
+    <div
+      class="title-center flex min-w-0 max-w-full items-center justify-center gap-1 justify-self-center"
+    ></div>
 
     <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
       <button
@@ -732,6 +613,16 @@ onUnmounted(() => {
           <span class="title-zoom-reset-percent tracking-[0.01em]">{{ zoomPercent }}%</span>
         </button>
       </Transition>
+      <button
+        v-if="showRefreshButton"
+        type="button"
+        class="title-menu-button title-menu-button--icon title-refresh-button"
+        :class="titleMenuButtonClass"
+        v-bind="tooltipAttrs(t('titleBar.refreshInstanceTooltip'))"
+        @click="handleRefreshInstance"
+      >
+        <RotateCw :size="16" />
+      </button>
       <button
         v-if="!isFirstUseLockdown"
         ref="announcementBtn"
@@ -801,6 +692,18 @@ onUnmounted(() => {
           class="title-downloads-error-dot pointer-events-none absolute -top-[3px] -left-[3px] size-2 rounded-[999px] bg-[var(--danger)] [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))]"
           aria-hidden="true"
         />
+      </button>
+      <button
+        v-if="!isConsentLockdown"
+        ref="fileBtn"
+        type="button"
+        class="title-menu-button title-menu-button--icon"
+        :class="titleMenuButtonClass"
+        aria-haspopup="menu"
+        v-bind="tooltipAttrs(t('titleBar.menu'))"
+        @click="handleFileMenu"
+      >
+        <MenuIcon :size="18" />
       </button>
     </div>
   </header>

@@ -27,15 +27,13 @@ import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
-import { useSessionStore } from '../stores/sessionStore'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
+import type { AssetKind, AssetSummary } from '../types/ipc'
 
 interface GalleryAsset extends AssetSummary {
   installationId: string
-  buildName: string
 }
 
 type Place = 'cloud' | 'computer'
@@ -53,7 +51,6 @@ const { t } = useI18n()
 const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
-const sessionStore = useSessionStore()
 
 const savedPlace = useLocalStorage<Place>('comfy.desktop.assets.place', 'cloud')
 const place = ref<Place>(focusName ? 'cloud' : savedPlace.value)
@@ -75,22 +72,14 @@ const { y: scrollTop } = useScroll(scroller)
 const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
-const loadedBuildIds = ref<string[]>([])
+const cloudLoaded = ref(false)
 const failed = ref(false)
 
-function isCloudBuild(inst: Installation): boolean {
-  return inst.sourceCategory === 'cloud'
-}
-
-function isReachable(inst: Installation): boolean {
-  return isCloudBuild(inst) ? authStore.isSignedIn : sessionStore.isRunning(inst.id)
-}
-
-const reachableBuildIds = computed(() => {
-  const reachable = installationStore.installations.filter(isReachable)
-  const accountCloud = reachable.find(isCloudBuild)
-  return reachable.filter((b) => !isCloudBuild(b) || b === accountCloud).map((b) => b.id)
-})
+const cloudBuildId = computed(() =>
+  authStore.isSignedIn
+    ? (installationStore.installations.find((inst) => inst.sourceCategory === 'cloud')?.id ?? null)
+    : null
+)
 
 const placeOptions = computed(() => [
   { value: 'cloud' as const, label: t('assets.place.cloud') },
@@ -177,17 +166,21 @@ async function loadAssets(): Promise<void> {
   loading.value = true
   failed.value = false
   try {
-    const ids = reachableBuildIds.value
-    const results = await Promise.allSettled(ids.map((id) => window.api.listAssets(id)))
+    const installationId = cloudBuildId.value
+    if (!installationId) {
+      assets.value = []
+      cloudLoaded.value = false
+      return
+    }
+    const listed = await window.api.listAssets(installationId)
     if (current !== requestId) return
-    loadedBuildIds.value = ids.filter((_, i) => results[i]!.status === 'fulfilled')
-    assets.value = results.flatMap((result, i) => {
-      if (result.status === 'rejected') return []
-      const installationId = ids[i]!
-      const buildName = installationStore.getById(installationId)?.name ?? ''
-      return result.value.map((asset) => ({ ...asset, installationId, buildName }))
-    })
-    failed.value = assets.value.length === 0 && results.some((r) => r.status === 'rejected')
+    assets.value = listed.map((asset) => ({ ...asset, installationId }))
+    cloudLoaded.value = true
+  } catch {
+    if (current !== requestId) return
+    assets.value = []
+    cloudLoaded.value = false
+    failed.value = true
   } finally {
     if (current === requestId) loading.value = false
   }
@@ -199,20 +192,9 @@ const accountContext = computed(
 
 watch(accountContext, () => (assets.value = []))
 
-watch(
-  () => [...reachableBuildIds.value, accountContext.value].join('\n'),
-  () => void loadAssets(),
-  { immediate: true }
-)
+watch([cloudBuildId, accountContext], () => void loadAssets(), { immediate: true })
 
 let pendingFocus: string | null = null
-
-function isCloudId(installationId: string): boolean {
-  const inst = installationStore.getById(installationId)
-  return !!inst && isCloudBuild(inst)
-}
-
-const cloudLoaded = computed(() => loadedBuildIds.value.some(isCloudId))
 
 watch(
   () => focusName,
@@ -233,7 +215,7 @@ watch(
     pendingFocus = null
     if (place.value !== 'cloud') return
     const newest = list
-      .filter((asset) => asset.name === name && isCloudId(asset.installationId))
+      .filter((asset) => asset.name === name)
       .reduce<GalleryAsset | null>(
         (best, asset) => (best && createdMs(best) >= createdMs(asset) ? best : asset),
         null

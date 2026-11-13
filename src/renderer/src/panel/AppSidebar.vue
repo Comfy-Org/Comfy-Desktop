@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import { AppWindow, ChartColumn, Gauge, House, Images, Server } from 'lucide-vue-next'
@@ -46,14 +46,27 @@ function toggleCollapsed(): void {
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
 
 const appsEnabled = ref(false)
+let appsSwitchPushed = false
+let stopAppsSwitch: (() => void) | null = null
+
+function followAppsSwitch(enabled: boolean): void {
+  appsEnabled.value = enabled
+  if (!enabled && activePage === 'apps') navigate('home')
+}
 
 onMounted(async () => {
-  try {
-    appsEnabled.value = (await window.api.getAppsEnabled()) === true
-  } catch {
-    appsEnabled.value = false
-  }
+  stopAppsSwitch = window.api.onAppsEnabledChanged(({ enabled }) => {
+    appsSwitchPushed = true
+    followAppsSwitch(enabled === true)
+  })
+  const enabled = await window.api.getAppsEnabled().then(
+    (on) => on === true,
+    () => false
+  )
+  if (!appsSwitchPushed) followAppsSwitch(enabled)
 })
+
+onBeforeUnmount(() => stopAppsSwitch?.())
 
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },

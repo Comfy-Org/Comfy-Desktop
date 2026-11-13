@@ -10,7 +10,7 @@ import {
   ChevronDown,
   Download,
   File,
-  FolderOpen,
+  FolderSearch,
   Images,
   Workflow,
   X
@@ -23,6 +23,7 @@ import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import InfoTooltip from '../components/InfoTooltip.vue'
 import { formatBytes } from '../lib/downloadFormatters'
+import { revealInFolderKey } from '../composables/usePlatform'
 import type { AssetKind } from '../types/ipc'
 
 export interface OutputDetailItem {
@@ -59,6 +60,7 @@ const emit = defineEmits<{
 }>()
 
 const { t, locale } = useI18n()
+const revealKey = revealInFolderKey(window.api.platform)
 const preferredMotion = usePreferredReducedMotion()
 const filmstrip = useTemplateRef<HTMLOListElement>('filmstrip')
 const natural = ref<{ width: number; height: number } | null>(null)
@@ -374,8 +376,8 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
           data-testid="output-detail-show-in-folder"
           @click="emit('show-in-folder', index)"
         >
-          <FolderOpen :size="15" aria-hidden="true" />
-          {{ t('assets.showInFolder') }}
+          <FolderSearch :size="15" aria-hidden="true" />
+          {{ t(revealKey) }}
         </Button>
         <Button
           v-if="item.inCloud"

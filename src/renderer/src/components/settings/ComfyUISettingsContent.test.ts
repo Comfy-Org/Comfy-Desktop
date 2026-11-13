@@ -536,7 +536,7 @@ describe('ComfyUISettingsContent', () => {
       return calls?.[0]?.[0] as { window: string; verb: string } | undefined
     }
 
-    it('labels "Start" and emits a same-window switch decision when not running', async () => {
+    it('labels "Start" and emits a new-window decision when not running', async () => {
       const w = await mountContent({
         currentView: 'dashboard',
         currentCategory: null,
@@ -544,7 +544,7 @@ describe('ComfyUISettingsContent', () => {
       })
       expect(w.find('.settings-v2-relaunch').text()).toBe('Start')
       await w.find('.settings-v2-relaunch').trigger('click')
-      expect(emittedDecision(w)).toMatchObject({ window: 'same', verb: 'switch' })
+      expect(emittedDecision(w)).toMatchObject({ window: 'new', verb: 'open-new' })
     })
 
     it('labels "Restart" and emits a restart decision when running in THIS window', async () => {
@@ -628,7 +628,7 @@ describe('ComfyUISettingsContent', () => {
       expect(w.find('.settings-v2-cta-caret').exists()).toBe(false)
     })
 
-    it('stopped cloud target (dashboard host) → caret still offers "Open in new window"', async () => {
+    it('stopped cloud target (dashboard host) → no "Open in new window" caret, Open already does it', async () => {
       useComfyUISettingsState.pinBottomActions.value = []
       const w = await mountContent({
         currentView: 'dashboard',
@@ -637,7 +637,7 @@ describe('ComfyUISettingsContent', () => {
         installation: { ...SAMPLE_INSTALL, sourceCategory: 'cloud' }
       })
       const actions = caretActions(w)
-      expect(actions?.some((a) => a.id.startsWith('nav:'))).toBe(true)
+      expect(actions?.some((a) => a.id.startsWith('nav:')) ?? false).toBe(false)
     })
   })
 

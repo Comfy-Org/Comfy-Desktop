@@ -53,6 +53,7 @@ export interface ComfyWindowEntry {
   titleBarView: WebContentsView
   panelView: WebContentsView | null
   activePanel: ComfyPanelKey
+  overlayReturnPanel?: ComfyPanelKey
   pendingOverlayReveal?: boolean
   overlayRevealTimer?: ReturnType<typeof setTimeout>
 
@@ -224,6 +225,29 @@ export function findPreferredHostByVisibility(
     if (minimisedFallback === null) minimisedFallback = entry
   }
   return minimisedFallback
+}
+
+export function findHostLaunching(installationId: string): ComfyWindowEntry | undefined {
+  const claimedKey = pendingAttachClaims.get(installationId)
+  for (const entry of comfyWindows.values()) {
+    if (entry.window.isDestroyed() || !isChooserHost(entry)) continue
+    if (entry.previewInstallationId === installationId || entry.windowKey === claimedKey) {
+      return entry
+    }
+  }
+  return undefined
+}
+
+function isLaunchingABuild(entry: ComfyWindowEntry): boolean {
+  if (entry.previewInstallationId !== null) return true
+  for (const claimedKey of pendingAttachClaims.values()) {
+    if (claimedKey === entry.windowKey) return true
+  }
+  return false
+}
+
+export function findHomeHostEntry(): ComfyWindowEntry | null {
+  return findPreferredHostByVisibility((e) => isChooserHost(e) && !isLaunchingABuild(e))
 }
 
 export function findPreferredChooserHostWindow(): BrowserWindow | null {

@@ -1312,6 +1312,7 @@ export interface ElectronApi {
   getCloudUserTier(): Promise<CloudUserTier>
   getCloudFreeRunsEnabled(): Promise<boolean>
   getAppsEnabled(): Promise<boolean>
+  onAppsEnabledChanged(callback: (info: { enabled: boolean }) => void): Unsubscribe
   quitApp(): Promise<void>
   relaunchApp(): Promise<void>
   resetZoom(): Promise<void>

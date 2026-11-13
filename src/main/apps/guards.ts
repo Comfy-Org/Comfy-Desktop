@@ -38,10 +38,14 @@ export function isAllowedAppsPermission(permission: string): boolean {
   return ALLOWED_APPS_PERMISSIONS.has(permission)
 }
 
-export function isAppsFrameUrl(frameUrl: string, origin: string | null): boolean {
+export function isAppsFrameUrl(frameUrl: string, appsPage: string): boolean {
+  const origin = appsOrigin(appsPage)
   if (!origin) return false
   try {
-    return new URL(frameUrl).origin === origin
+    const frame = new URL(frameUrl)
+    const base = new URL(appsPage).pathname.replace(/\/+$/, '')
+    if (frame.origin !== origin) return false
+    return frame.pathname === base || frame.pathname.startsWith(`${base}/`)
   } catch {
     return false
   }
@@ -73,6 +77,8 @@ export function isAppOpen(pageUrl: string, listUrl: string): boolean {
 
 const MAX_WORKFLOW_BYTES = 1_000_000
 export const MAX_UPLOAD_BYTES = 50_000_000
+export const MAX_RESULT_BYTES = 100_000_000
+export const MAX_SAVE_BYTES = 2_000_000_000
 
 export function isWorkflow(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -117,11 +123,44 @@ export interface CloudAppTag {
   where: 'cloud'
 }
 
-export function cloudAppTag(input: unknown): CloudAppTag | null {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return null
-  const { app, model } = input as { app?: unknown; model?: unknown }
-  if (!isAppSlug(app)) return null
-  return { id: app, ...(isAppSlug(model) ? { model } : {}), where: 'cloud' }
+export function openAppId(pageUrl: string, listUrl: string): string | null {
+  let page: URL
+  let list: URL
+  try {
+    page = new URL(pageUrl)
+    list = new URL(listUrl)
+  } catch {
+    return null
+  }
+  if (page.origin !== list.origin) return null
+  const folder = list.pathname.endsWith('/') ? list.pathname : `${list.pathname}/`
+  if (!page.pathname.startsWith(folder)) return null
+  const [id, ...rest] = page.pathname.slice(folder.length).split('/')
+  return rest.length > 0 && isAppSlug(id) ? id : null
+}
+
+export function catalogAppIds(body: unknown): Set<string> {
+  const items = (body as { items?: unknown } | null)?.items
+  if (!Array.isArray(items)) throw new Error('The catalog answer has no item list.')
+  const ids = new Set<string>()
+  for (const item of items) {
+    const slug = (item as { data?: { slug?: unknown } | null } | null)?.data?.slug
+    if (isAppSlug(slug)) ids.add(slug)
+  }
+  return ids
+}
+
+export function cloudAppTag(
+  openApp: string | null,
+  desktopApps: ReadonlySet<string>,
+  options: unknown
+): CloudAppTag | null {
+  if (!openApp || !desktopApps.has(openApp)) return null
+  const model =
+    options && typeof options === 'object' && !Array.isArray(options)
+      ? (options as { model?: unknown }).model
+      : undefined
+  return { id: openApp, ...(isAppSlug(model) ? { model } : {}), where: 'cloud' }
 }
 
 export function cloudPromptBody(
@@ -640,7 +679,11 @@ export function localRequest(input: unknown): LocalRequest | LocalRefusal {
   return { status: 405, error: 'Apps can only GET and POST.' }
 }
 
-export async function readCapped(res: Response, max: number): Promise<Uint8Array | null> {
+export async function readCapped(
+  res: Response,
+  max: number,
+  onChunk: () => void = () => {}
+): Promise<Uint8Array | null> {
   if (Number(res.headers.get('content-length')) > max) {
     await res.body?.cancel().catch(() => {})
     return null
@@ -658,6 +701,7 @@ export async function readCapped(res: Response, max: number): Promise<Uint8Array
       return null
     }
     chunks.push(value)
+    onChunk()
   }
   const out = new Uint8Array(size)
   let at = 0
@@ -666,6 +710,34 @@ export async function readCapped(res: Response, max: number): Promise<Uint8Array
     at += c.byteLength
   }
   return out
+}
+
+export const JOB_GRACE_MS = 30_000
+
+export function noteSubmitted(submitted: Map<string, number>, runId: string, now: number): void {
+  for (const [id, at] of submitted) if (now - at >= JOB_GRACE_MS) submitted.delete(id)
+  submitted.set(runId, now)
+}
+
+export function inJobGrace(submitted: Map<string, number>, runId: string, now: number): boolean {
+  const at = submitted.get(runId)
+  if (at === undefined) return false
+  if (now - at < JOB_GRACE_MS) return true
+  submitted.delete(runId)
+  return false
+}
+
+export type JobsAnswer = 'read' | 'wait' | 'refused' | { error: string }
+
+export function jobsAnswer(status: number, inGrace: boolean): JobsAnswer {
+  if (status >= 200 && status < 300) return 'read'
+  if (status === 429 || status >= 500) return 'wait'
+  if (status === 404) {
+    return inGrace ? 'wait' : { error: 'Comfy Cloud cannot find this run. Run the app again.' }
+  }
+  if (status === 401) return { error: 'Your Comfy sign-in ended. Sign in again, then run the app.' }
+  if (status === 403) return { error: 'Your Comfy account does not have access to this run.' }
+  return 'refused'
 }
 
 export const LOCAL_EVENT_TYPES = [
