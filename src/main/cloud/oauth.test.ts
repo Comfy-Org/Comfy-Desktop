@@ -197,7 +197,7 @@ describe('oauth.signIn', () => {
     expect(status.signedIn).toBe(true)
   })
 
-  it('asks for the partner-node and workspace mint scopes by default', async () => {
+  it('asks for the partner-node, workspace mint and billing write scopes by default', async () => {
     stub(200, { access_token: 'tok', refresh_token: 'r1', expires_in: 3600 })
     let requested: string[] = []
     vi.mocked(shell.openExternal).mockImplementation(async (authorizeUrl: string) => {
@@ -216,7 +216,8 @@ describe('oauth.signIn', () => {
       expect.arrayContaining([
         'comfy-cloud:user:read',
         'comfy-cloud:jobs:write',
-        'comfy-cloud:workspace-token:mint'
+        'comfy-cloud:workspace-token:mint',
+        'comfy-cloud:billing:write'
       ])
     )
   })
