@@ -191,7 +191,7 @@ async function saveDownload(url: string, filePath: string): Promise<void> {
     timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   }
   try {
-    const res = await fetch(url, { signal: controller.signal })
+    const res = await fetch(url, { redirect: 'error', signal: controller.signal })
     if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
     const body = Readable.fromWeb(res.body as WebReadableStream)
     body.on('data', keepAlive)
@@ -256,8 +256,8 @@ export async function downloadAsset(
     filters: buildSaveDialogFilters(name)
   })
   if (canceled || !filePath) return false
-  settings.set('lastSaveDialogDir', path.dirname(filePath))
   await saveTo(filePath)
+  settings.set('lastSaveDialogDir', path.dirname(filePath))
   return true
 }
 

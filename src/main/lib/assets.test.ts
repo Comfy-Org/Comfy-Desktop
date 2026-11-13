@@ -297,6 +297,26 @@ describe('downloadAsset', () => {
     expect(written.get('/picked/clip.mp4')).toBe('video')
   })
 
+  it('does not follow a redirect away from the signed storage link', async () => {
+    cloudFile(() => new Response('video'))
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/clip.mp4' })
+
+    await downloadAsset(win, 'cloud-1', 'v1', 'clip.mp4')
+
+    expect(fetchMock.mock.calls[1]![1].redirect).toBe('error')
+  })
+
+  it('remembers the save folder only after the file is saved', async () => {
+    fileOnThisComputer('/out/still.png')
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    copyFile.mockRejectedValueOnce(new Error('disk full'))
+
+    await expect(downloadAsset(win, 'local', '/out/still.png', 'still.png')).rejects.toThrow(
+      'disk full'
+    )
+    expect(savedSettings.has('lastSaveDialogDir')).toBe(false)
+  })
+
   it('fails before asking where to save when signed out of Cloud', async () => {
     getInstallation.mockResolvedValue({ id: 'cloud-1', sourceId: 'cloud' })
     getAccessToken.mockResolvedValue(null)
