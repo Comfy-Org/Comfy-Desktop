@@ -149,6 +149,7 @@ export interface AssetSummary {
   thumbnailUrl: string | null
   width: number | null
   height: number | null
+  durationSeconds: number | null
 }
 
 export interface BuildStorageSnapshot {

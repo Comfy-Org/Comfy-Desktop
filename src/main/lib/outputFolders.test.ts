@@ -61,7 +61,9 @@ vi.mock('./models', () => ({
 }))
 vi.mock('./assets', () => ({
   assetKind: (name: string) =>
-    ({ png: 'image', mp4: 'video', wav: 'audio', glb: '3d' })[name.split('.').pop() ?? ''] ?? null
+    ({ png: 'image', mp4: 'video', webm: 'video', wav: 'audio', glb: '3d' })[
+      name.split('.').pop() ?? ''
+    ] ?? null
 }))
 
 import type { InstallationRecord } from '../installations'
@@ -86,6 +88,8 @@ function install(name: string, extra: Record<string, unknown> = {}): Installatio
     ...extra
   }
 }
+
+const SAMPLE_VIDEO = path.resolve('src/renderer/public/install-showcase-scene/Assets/earpods.webm')
 
 function pngHeader(width: number, height: number): Buffer {
   const header = Buffer.alloc(33)
@@ -185,7 +189,8 @@ describe('listLocalAssets', () => {
       previewUrl: outputFileUrl(newVideo),
       thumbnailUrl: null,
       width: null,
-      height: null
+      height: null,
+      durationSeconds: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
     expect(assets[3]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
@@ -194,15 +199,23 @@ describe('listLocalAssets', () => {
     expect(assets[2]!.previewUrl, '3D files have no preview').toBeNull()
   })
 
-  it('reports the pixel size of each picture so the gallery can place it before it loads', async () => {
+  it('reports the size of each picture and video, and how long a video runs, before they load', async () => {
     write(path.join(sharedDir, 'portrait.png'), pngHeader(640, 960))
+    write(path.join(sharedDir, 'clip.webm'), fs.readFileSync(SAMPLE_VIDEO))
     write(path.join(sharedDir, 'broken.png'), 'not a picture')
 
-    const sizes = Object.fromEntries(
-      (await listLocalAssets()).map((a) => [a.name, [a.width, a.height]])
+    const facts = Object.fromEntries(
+      (await listLocalAssets()).map((a) => [
+        a.name,
+        [a.width, a.height, a.durationSeconds && Math.round(a.durationSeconds)]
+      ])
     )
 
-    expect(sizes).toEqual({ 'portrait.png': [640, 960], 'broken.png': [null, null] })
+    expect(facts).toEqual({
+      'portrait.png': [640, 960, null],
+      'clip.webm': [714, 530, 8],
+      'broken.png': [null, null, null]
+    })
   })
 
   it('finds a file once when two builds save to the same folder', async () => {

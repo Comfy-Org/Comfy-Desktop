@@ -3,11 +3,11 @@ import type { Dirent } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { ipcMain, nativeImage, net, protocol } from 'electron'
-import { imageSizeFromFile } from 'image-size/fromFile'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import { assetKind } from './assets'
+import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
@@ -26,7 +26,6 @@ const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
-const FIRST_SIDEWAYS_EXIF_ORIENTATION = 5
 
 const thumbnails = new Map<string, Buffer>()
 const thumbnailsInFlight = new Map<string, Promise<Buffer | null>>()
@@ -122,17 +121,13 @@ function localSummary(file: string, sizeBytes: number, modifiedMs: number): Asse
     previewUrl: kind && SERVED_KINDS.has(kind) ? outputFileUrl(file) : null,
     thumbnailUrl: kind === 'image' ? outputFileUrl(file, modifiedMs) : null,
     width: null,
-    height: null
+    height: null,
+    durationSeconds: null
   }
 }
 
-async function addPixelSize(asset: AssetSummary): Promise<void> {
-  if (asset.kind !== 'image') return
-  const size = await imageSizeFromFile(asset.id).catch(() => null)
-  if (!size?.width || !size.height) return
-  const sideways = (size.orientation ?? 0) >= FIRST_SIDEWAYS_EXIF_ORIENTATION
-  asset.width = sideways ? size.height : size.width
-  asset.height = sideways ? size.width : size.height
+async function addMediaFacts(asset: AssetSummary): Promise<void> {
+  Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
 export async function listLocalAssets(): Promise<AssetSummary[]> {
@@ -148,7 +143,7 @@ export async function listLocalAssets(): Promise<AssetSummary[]> {
   const newest = found
     .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
     .slice(0, MAX_LOCAL_ASSETS)
-  await runPool(newest, STATS_AT_ONCE, addPixelSize)
+  await runPool(newest, STATS_AT_ONCE, addMediaFacts)
   return newest
 }
 

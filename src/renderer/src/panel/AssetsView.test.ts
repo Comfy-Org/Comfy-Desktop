@@ -12,8 +12,8 @@ import type { AssetSummary, Installation } from '../types/ipc'
 const listAssets = vi.fn()
 const listLocalAssets = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
-const MASONRY_GAP = 16
-const FOUR_COLUMN_PAGE_WIDTH = 1000
+const MASONRY_GAP = 14
+const FOUR_COLUMN_PAGE_WIDTH = 1100
 const TALL_PAGE_HEIGHT = 3000
 
 let page: HTMLElement
@@ -103,10 +103,32 @@ beforeEach(() => {
 afterEach(() => page.remove())
 
 describe('AssetsView', () => {
-  it('starts with file names and details hidden', async () => {
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+  it('shows each file name and its details under the card by default', async () => {
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image', { sizeBytes: 2048 })])
 
-    expect(wrapper.get('[data-testid="asset-a"]').text()).not.toContain('forest.png')
+    expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('forest.png')
+    expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('2 KB')
+  })
+
+  it('shows a video in its own shape with how long it runs, and a picture without a size as a square', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'clip.mp4', 'video', { width: 320, height: 480, durationSeconds: 7.4 }),
+      asset('still', 'still.png', 'image', { previewUrl: picture('x', 300).previewUrl })
+    ])
+
+    await vi.waitFor(() => {
+      const shapeOf = (id: string) => {
+        const media = wrapper
+          .get(`[data-testid="asset-${id}"] .rounded-control`)
+          .element.getBoundingClientRect()
+        return Number((media.height / media.width).toFixed(2))
+      }
+      expect(shapeOf('clip'), 'the portrait video stays tall').toBe(1.5)
+      expect(shapeOf('still'), 'a picture with no known size is a square crop').toBe(1)
+    })
+    expect(wrapper.get('[data-testid="asset-clip"] [data-testid="asset-duration"]').text()).toBe(
+      '0:07'
+    )
   })
 
   it('starts in masonry, newest across the top, each next card under the shortest column', async () => {
@@ -141,9 +163,10 @@ describe('AssetsView', () => {
       expect(columns.size, 'cards fill four columns').toBe(4)
       for (const column of columns.values()) {
         column.slice(1).forEach((card, i) => {
-          expect(card.top - column[i]!.bottom, 'cards in a column sit one gap apart').toBeCloseTo(
-            MASONRY_GAP
-          )
+          expect(
+            card.top - column[i]!.bottom,
+            'cards in a column sit one gap apart, to the half pixel'
+          ).toBeCloseTo(MASONRY_GAP, 0)
         })
       }
       const lastCardTops = [...columns.values()].map((column) => column.at(-1)!.top)
@@ -178,7 +201,7 @@ describe('AssetsView', () => {
 
   it('opens with the view setup the user saved last time', async () => {
     window.localStorage.setItem('comfy.desktop.assets.layout', 'grid')
-    window.localStorage.setItem('comfy.desktop.assets.showName', 'true')
+    window.localStorage.setItem('comfy.desktop.assets.showName', 'false')
 
     const wrapper = await mountAssets([picture('a', 300)])
 
@@ -186,7 +209,7 @@ describe('AssetsView', () => {
     expect(media.width / media.height, 'grid crops every card to the same wide shape').toBeCloseTo(
       16 / 9
     )
-    expect(wrapper.get('[data-testid="asset-a"]').text()).toContain('a.svg')
+    expect(wrapper.get('[data-testid="asset-a"]').text()).not.toContain('a.svg')
   })
 
   it('shows the files on this computer without any build running or a Cloud login', async () => {

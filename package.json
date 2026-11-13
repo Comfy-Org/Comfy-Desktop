@@ -81,6 +81,7 @@
     "@xterm/xterm": "^5.5.0",
     "electron-updater": "^6.7.3",
     "image-size": "^2.0.4",
+    "music-metadata": "^12.3.2",
     "node-pty": "^1.1.0",
     "posthog-node": "^5.30.7",
     "semver": "^7.7.4",
