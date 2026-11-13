@@ -20,12 +20,14 @@ export const MAX_FOLDER_DEPTH = 6
 const THUMBNAIL_SIZE = 480
 const MAX_CACHED_THUMBNAILS = 400
 const THUMBNAILS_AT_ONCE = 2
+export const THUMBNAIL_WAIT_MS = 1500
 const STATS_AT_ONCE = 32
 const ROOTS_FRESH_MS = 5000
 const MAX_LINUX_THUMBNAIL_SOURCE_BYTES = 40 * 1024 * 1024
 const SERVED_KINDS = new Set(['image', 'video', 'audio'])
 
 const thumbnails = new Map<string, Buffer>()
+const thumbnailsInFlight = new Map<string, Promise<Buffer | null>>()
 const thumbnailQueue: (() => void)[] = []
 let thumbnailsRunning = 0
 let allowedRoots: string[] = []
@@ -180,11 +182,30 @@ async function thumbnailFor(file: string): Promise<Buffer | null> {
   const key = `${file}\n${stat.mtimeMs}`
   const cached = thumbnails.get(key)
   if (cached) return cached
-  const made = await fewAtATime(() => makeThumbnail(file, stat.size))
-  if (!made) return null
-  thumbnails.set(key, made)
-  if (thumbnails.size > MAX_CACHED_THUMBNAILS) thumbnails.delete(thumbnails.keys().next().value!)
-  return made
+  let making = thumbnailsInFlight.get(key)
+  if (!making) {
+    making = fewAtATime(() => makeThumbnail(file, stat.size))
+      .then((made) => {
+        if (made) {
+          thumbnails.set(key, made)
+          if (thumbnails.size > MAX_CACHED_THUMBNAILS)
+            thumbnails.delete(thumbnails.keys().next().value!)
+        }
+        return made
+      })
+      .catch(() => null)
+      .finally(() => thumbnailsInFlight.delete(key))
+    thumbnailsInFlight.set(key, making)
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const tooSlow = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), THUMBNAIL_WAIT_MS)
+  })
+  try {
+    return await Promise.race([making, tooSlow])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 function decodedPath(url: URL): string | null {
