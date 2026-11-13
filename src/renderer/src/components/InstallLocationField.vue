@@ -15,6 +15,7 @@ withDefaults(
     diskSpaceLoading?: boolean
     diskSpace?: DiskSpaceInfo | null
     estimatedSize?: number
+    quiet?: boolean
   }>(),
   {
     placeholder: '',
@@ -24,7 +25,8 @@ withDefaults(
     pathIssues: () => [],
     diskSpaceLoading: false,
     diskSpace: null,
-    estimatedSize: 0
+    estimatedSize: 0,
+    quiet: false
   }
 )
 
@@ -34,7 +36,11 @@ defineEmits<{ browse: []; open: [] }>()
 <template>
   <div class="install-location-field flex min-w-0 flex-col">
     <InputGroup
-      class="config-input config-path-input min-w-0 gap-2.5 pr-1.5 pl-3"
+      class="config-input config-path-input min-w-0 gap-2.5 pr-1.5 pl-3 text-[13px]"
+      :class="
+        quiet &&
+        'config-path-input--quiet bg-transparent transition-colors hover:bg-secondary has-focus-visible:bg-secondary'
+      "
       data-testid="config-path-input"
     >
       <Button
@@ -42,7 +48,7 @@ defineEmits<{ browse: []; open: [] }>()
         size="link"
         variant="link"
         type="button"
-        class="config-path-open block min-w-0 flex-1 truncate py-0 text-left text-inherit"
+        class="config-path-open block min-w-0 flex-1 truncate py-0 text-left text-[13px] text-neutral-100"
         :title="$t('actions.openDirectory')"
         :aria-label="`${$t('actions.openDirectory')}: ${path}`"
         @click="$emit('open')"

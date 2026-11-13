@@ -380,7 +380,7 @@ defineExpose({ open })
             size="md"
             variant="secondary"
             type="button"
-            class="load-snapshot-tertiary"
+            class="load-snapshot-tertiary px-3"
             @click="handleBrowse"
           >
             {{ $t('common.browse') }}

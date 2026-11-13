@@ -23,6 +23,7 @@ import {
   Package,
   RefreshCw,
   SlidersHorizontal,
+  Tag,
   Users,
   Zap
 } from 'lucide-vue-next'
@@ -1565,37 +1566,7 @@ defineExpose({ open })
 
       <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
         <div
-          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
-        >
-          <label
-            class="config-label pl-6 text-[13px] font-medium text-text-muted"
-            for="inst-name-standalone"
-            >{{ $t('common.name') }}</label
-          >
-          <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
-            <InputGroupInput
-              id="inst-name-standalone"
-              :data-initial-focus="hideBackToDashboard || undefined"
-              :model-value="instName"
-              type="text"
-              :placeholder="suggestedName || $t('common.namePlaceholder')"
-              :aria-invalid="!!nameError"
-              :aria-describedby="nameError ? 'inst-name-error' : undefined"
-              @input="instName = ($event.target as HTMLInputElement).value"
-            />
-          </InputGroup>
-          <div
-            v-if="nameError"
-            id="inst-name-error"
-            class="config-field-error col-start-2 mt-1.5 text-[13px] text-[var(--danger)]"
-            role="alert"
-          >
-            {{ nameError }}
-          </div>
-        </div>
-
-        <div
-          class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+          class="config-machine relative mt-4 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
           :class="machineBlocked && 'config-machine--unsupported'"
         >
           <SetupMachineIllustration
@@ -1626,7 +1597,7 @@ defineExpose({ open })
             size="md"
             variant="secondary"
             type="button"
-            class="config-change ml-auto flex-none"
+            class="config-change ml-auto flex-none px-3"
             data-testid="config-change-setup"
             @click="openChangeSetup"
           >
@@ -1655,6 +1626,43 @@ defineExpose({ open })
           :aria-label="$t('newInstall.installSummary')"
         >
           <div
+            class="config-summary-row config-name-row grid min-h-12 grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[10px] px-3.5 py-2"
+          >
+            <dt class="flex items-center gap-2.5 text-[13px] text-text-muted">
+              <Tag :size="15" aria-hidden="true" /><label
+                class="config-label"
+                for="inst-name-standalone"
+                >{{ $t('common.name') }}</label
+              >
+            </dt>
+            <dd class="m-0 min-w-0">
+              <InputGroup
+                class="config-input config-name-input -ml-4 transition-colors hover:bg-secondary has-focus:bg-secondary"
+                :class="nameError ? 'config-input--invalid' : 'bg-transparent'"
+              >
+                <InputGroupInput
+                  class="text-[13px] text-neutral-100"
+                  id="inst-name-standalone"
+                  :data-initial-focus="hideBackToDashboard || undefined"
+                  :model-value="instName"
+                  type="text"
+                  :placeholder="suggestedName || $t('common.namePlaceholder')"
+                  :aria-invalid="!!nameError"
+                  :aria-describedby="nameError ? 'inst-name-error' : undefined"
+                  @input="instName = ($event.target as HTMLInputElement).value"
+                />
+              </InputGroup>
+              <div
+                v-if="nameError"
+                id="inst-name-error"
+                class="config-field-error mt-1.5 text-[13px] text-[var(--danger)]"
+                role="alert"
+              >
+                {{ nameError }}
+              </div>
+            </dd>
+          </div>
+          <div
             v-for="row in summaryRows"
             :key="row.key"
             class="config-summary-row grid min-h-12 grid-cols-[132px_minmax(0,1fr)] items-center gap-4 rounded-[10px] px-3.5 py-2"
@@ -1662,7 +1670,7 @@ defineExpose({ open })
             <dt class="flex items-center gap-2.5 text-[13px] text-text-muted">
               <component :is="row.icon" :size="15" aria-hidden="true" />{{ row.label }}
             </dt>
-            <dd class="m-0 grid min-w-0">
+            <dd class="m-0 grid min-w-0 gap-1">
               <span class="truncate text-[13px] leading-5 text-neutral-100">{{ row.value }}</span>
               <span v-if="row.meta" class="truncate text-[12px] leading-4 text-text-muted">{{
                 row.meta
@@ -1678,6 +1686,8 @@ defineExpose({ open })
             </dt>
             <dd class="m-0 min-w-0">
               <InstallLocationField
+                class="-ml-3"
+                quiet
                 :path="instPath"
                 :free-label="diskFreeLabel"
                 :short-label="diskShortLabel"
