@@ -5,6 +5,7 @@ import { isAppsBuild } from '../../shared/appsBuild'
 export const APPS_BUILD_NAME = 'Apps'
 export const APPS_BUILD_RELEASE = 'v0.42.1-env1'
 export const APPS_BUILD_VERSION = releaseVersion(APPS_BUILD_RELEASE)!
+export const TARGETED_INTERRUPT_VERSION = '0.3.57'
 export const APPS_BUILD_FIRST_PORT = 8288
 export const APPS_BUILD_LAST_PORT = 8388
 export const APPS_BUILD_IDLE_MS = 10 * 60_000
@@ -212,6 +213,19 @@ export function wantedVersion(input: unknown): string {
   return releaseVersion(raw) ?? APPS_BUILD_VERSION
 }
 
+export function reuseMinimum(min: string): string {
+  return semver.gt(min, TARGETED_INTERRUPT_VERSION) ? min : TARGETED_INTERRUPT_VERSION
+}
+
+export function meetsMinimum(version: string | null, min: string): boolean {
+  return version !== null && semver.gte(version, min)
+}
+
+export function statsVersion(stats: unknown): string | null {
+  const system = (stats as { system?: { comfyui_version?: unknown } } | null)?.system
+  return releaseVersion(system?.comfyui_version)
+}
+
 export function comfyuiFileVersion(text: string): string | null {
   const m = /^__version__\s*=\s*['"]([^'"]+)['"]/m.exec(text)
   return m ? releaseVersion(m[1]) : null
@@ -254,7 +268,7 @@ export function pickComfy<T extends ComfyChoice>(
 ): T | null {
   const fits = list
     .map((c, i) => ({ c, i }))
-    .filter(({ c }) => !c.busy && c.version !== null && semver.gte(c.version, min))
+    .filter(({ c }) => !c.busy && meetsMinimum(c.version, min))
   const kept = fits.find(({ c }) => c.running && c.id === inUse)
   if (kept) return kept.c
   fits.sort(

@@ -28,9 +28,12 @@ import {
   queueEmpty,
   releaseVersion,
   reusableInstalls,
+  reuseMinimum,
   setupEnd,
   setupEvent,
   shouldStopIdle,
+  statsVersion,
+  TARGETED_INTERRUPT_VERSION,
   wantedVersion
 } from './appsBuildRules'
 import { localInstalls } from './guards'
@@ -396,6 +399,31 @@ describe('the ComfyUI version an app needs', () => {
     expect(releaseVersion('v0.42.1-env1')).toBe('0.42.1')
     expect(releaseVersion('0.44.0')).toBe('0.44.0')
     expect(releaseVersion('abc1234')).toBeNull()
+  })
+})
+
+describe('the lowest ComfyUI an app run may reuse', () => {
+  it('is the first release whose interrupt stops only the named run', () => {
+    expect(TARGETED_INTERRUPT_VERSION).toBe('0.3.57')
+    expect(reuseMinimum('0.3.31')).toBe('0.3.57')
+    expect(reuseMinimum('0.37.0')).toBe('0.37.0')
+  })
+
+  it('keeps an older install out of the pick even when the page allows it', () => {
+    const old = { id: 'old', version: '0.3.56', running: true, busy: false }
+    expect(pickComfy([old], reuseMinimum('0.3.31'))).toBeNull()
+  })
+})
+
+describe('reading the ComfyUI version a running process reports', () => {
+  it('reads system_stats', () => {
+    expect(statsVersion({ system: { comfyui_version: '0.36.0' } })).toBe('0.36.0')
+  })
+
+  it('gives no version when system_stats names none', () => {
+    expect(statsVersion({ system: {} })).toBeNull()
+    expect(statsVersion(null)).toBeNull()
+    expect(statsVersion({ system: { comfyui_version: 'dev' } })).toBeNull()
   })
 })
 

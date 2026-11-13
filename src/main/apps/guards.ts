@@ -407,13 +407,25 @@ function appTag(extra: unknown): { app: string | null; seconds: number | null } 
   }
 }
 
-function queueRuns(list: unknown, seen: ReadonlyMap<string, RunSeen>): QueueRun[] {
+export type RunOwned = (runId: string) => boolean
+
+const HIDDEN_RUN: QueueRun = { id: '', app: null, seconds: null }
+
+function queueRuns(
+  list: unknown,
+  seen: ReadonlyMap<string, RunSeen>,
+  owned?: RunOwned
+): QueueRun[] {
   if (!Array.isArray(list)) return []
   const runs: Array<{ n: number; run: QueueRun }> = []
   for (const item of list) {
     if (!Array.isArray(item)) continue
     const n = typeof item[0] === 'number' && Number.isFinite(item[0]) ? item[0] : 0
     const id = isRunId(item[1]) ? item[1] : ''
+    if (owned && !owned(id)) {
+      runs.push({ n, run: { ...HIDDEN_RUN } })
+      continue
+    }
     const s = id ? seen.get(id) : undefined
     runs.push({
       n,
@@ -431,18 +443,26 @@ function queueRuns(list: unknown, seen: ReadonlyMap<string, RunSeen>): QueueRun[
     .map((r) => r.run)
 }
 
-export function queueView(raw: unknown, seen: ReadonlyMap<string, RunSeen> = new Map()): QueueView {
+export function queueView(
+  raw: unknown,
+  seen: ReadonlyMap<string, RunSeen> = new Map(),
+  owned?: RunOwned
+): QueueView {
   const q = (raw && typeof raw === 'object' ? raw : {}) as {
     queue_running?: unknown
     queue_pending?: unknown
   }
-  return { running: queueRuns(q.queue_running, seen), pending: queueRuns(q.queue_pending, seen) }
+  return {
+    running: queueRuns(q.queue_running, seen, owned),
+    pending: queueRuns(q.queue_pending, seen, owned)
+  }
 }
 
 export function queueAnswer(
   status: number,
   body: Uint8Array,
-  seen: ReadonlyMap<string, RunSeen>
+  seen: ReadonlyMap<string, RunSeen>,
+  owned?: RunOwned
 ): LocalAnswer {
   if (status < 200 || status >= 300) return textAnswer(status, 'ComfyUI did not show its queue.')
   let raw: unknown
@@ -454,7 +474,7 @@ export function queueAnswer(
   return {
     status: 200,
     contentType: 'application/json',
-    body: new TextEncoder().encode(JSON.stringify(queueView(raw, seen)))
+    body: new TextEncoder().encode(JSON.stringify(queueView(raw, seen, owned)))
   }
 }
 
@@ -528,6 +548,90 @@ export function localRequest(input: unknown): LocalRequest | LocalRefusal {
     return { status: 404, error: 'Apps cannot send ComfyUI that.' }
   }
   return { status: 405, error: 'Apps can only GET and POST.' }
+}
+
+export function fileKey(file: { filename: string; subfolder?: string; type: string }): string {
+  return [file.type, file.subfolder ?? '', file.filename].join('\n')
+}
+
+const HISTORY_PATH = /^\/history\/([A-Za-z0-9-]{1,64})$/
+
+export function requestRuns(req: LocalRequest): string[] {
+  if (req.kind === 'get') {
+    const id = HISTORY_PATH.exec(req.path)?.[1]
+    return id ? [id] : []
+  }
+  if (req.kind !== 'json') return []
+  const v = JSON.parse(req.json) as { prompt_id?: string; delete?: string[] }
+  return req.path === '/interrupt' ? [v.prompt_id!] : v.delete!
+}
+
+export function requestFile(req: LocalRequest): string | null {
+  if (req.kind !== 'get' || !req.path.startsWith('/view?')) return null
+  const q = new URLSearchParams(req.path.slice('/view?'.length))
+  return fileKey({
+    filename: q.get('filename') ?? '',
+    subfolder: q.get('subfolder') ?? '',
+    type: q.get('type') ?? ''
+  })
+}
+
+function jsonOf(body: Uint8Array): unknown {
+  try {
+    return JSON.parse(new TextDecoder().decode(body))
+  } catch {
+    return null
+  }
+}
+
+export function promptRunId(body: Uint8Array): string | null {
+  const id = (jsonOf(body) as { prompt_id?: unknown } | null)?.prompt_id
+  return isRunId(id) ? id : null
+}
+
+export function uploadedFile(body: Uint8Array): string | null {
+  const v = jsonOf(body) as { name?: unknown; subfolder?: unknown; type?: unknown } | null
+  if (typeof v?.name !== 'string' || !v.name) return null
+  return fileKey({
+    filename: v.name,
+    subfolder: typeof v.subfolder === 'string' ? v.subfolder : '',
+    type: typeof v.type === 'string' ? v.type : 'input'
+  })
+}
+
+export function historyFiles(body: Uint8Array, runId: string): string[] {
+  const entry = (jsonOf(body) as Record<string, { outputs?: unknown }> | null)?.[runId]
+  return collectOutputs(entry?.outputs).files.map(fileKey)
+}
+
+export function eventFiles(msg: { type: string; data: unknown }): {
+  runId: string
+  files: string[]
+} | null {
+  if (msg.type !== 'executed') return null
+  const data = (msg.data ?? {}) as { prompt_id?: unknown; node?: unknown; output?: unknown }
+  if (!isRunId(data.prompt_id)) return null
+  const node = typeof data.node === 'string' ? data.node : ''
+  return {
+    runId: data.prompt_id,
+    files: collectOutputs({ [node]: data.output }).files.map(fileKey)
+  }
+}
+
+export const MAX_OWNED = 2000
+
+export function noteOwner(
+  owners: Map<string, string>,
+  key: string,
+  owner: string,
+  max = MAX_OWNED
+): void {
+  owners.delete(key)
+  owners.set(key, owner)
+  for (const old of owners.keys()) {
+    if (owners.size <= max) break
+    owners.delete(old)
+  }
 }
 
 export async function readCapped(

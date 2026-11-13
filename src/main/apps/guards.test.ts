@@ -10,6 +10,9 @@ import {
   COMFY_READY_SCRIPT,
   collectOutputs,
   downloadRequest,
+  eventFiles,
+  fileKey,
+  historyFiles,
   inJobGrace,
   interruptJson,
   JOB_GRACE_MS,
@@ -28,23 +31,28 @@ import {
   localEvent,
   localInstalls,
   localRequest,
+  noteOwner,
   noteRun,
   noteSubmitted,
   openRequest,
   openWorkflowScript,
   outputKind,
+  promptRunId,
   queueAnswer,
   queueJson,
   queueView,
   readable,
   readCapped,
   reconnectDelay,
+  requestFile,
+  requestRuns,
   type RunSeen,
   safeUploadName,
   saveExt,
   savedFileName,
   textAnswer,
   toOutputFile,
+  uploadedFile,
   uploadForm,
   viewQuery,
   workflowName
@@ -959,5 +967,93 @@ describe('reading the local queue', () => {
     expect(queueAnswer(500, bytes, new Map()).status).toBe(500)
     expect(queueAnswer(500, bytes, new Map()).body).not.toEqual(bytes)
     expect(queueAnswer(200, new TextEncoder().encode('not json'), new Map()).status).toBe(502)
+  })
+})
+
+describe('which runs and files a local request touches', () => {
+  const ask = (input: unknown) => {
+    const req = localRequest(input)
+    if (!('kind' in req)) throw new Error(req.error)
+    return req
+  }
+
+  it('names the run a history read, an interrupt or a queue removal is about', () => {
+    expect(requestRuns(ask({ method: 'GET', path: '/history/ab-1' }))).toEqual(['ab-1'])
+    expect(
+      requestRuns(ask({ method: 'POST', path: '/interrupt', body: { prompt_id: 'ab-1' } }))
+    ).toEqual(['ab-1'])
+    expect(
+      requestRuns(ask({ method: 'POST', path: '/queue', body: { delete: ['a', 'b'] } }))
+    ).toEqual(['a', 'b'])
+    expect(requestRuns(ask({ method: 'GET', path: '/queue' }))).toEqual([])
+    expect(requestRuns(ask({ method: 'GET', path: '/system_stats' }))).toEqual([])
+  })
+
+  it('names the file a view reads', () => {
+    const req = ask({ method: 'GET', path: '/view?filename=a.png&subfolder=apps&type=output' })
+    expect(requestFile(req)).toBe(fileKey({ filename: 'a.png', subfolder: 'apps', type: 'output' }))
+    expect(requestFile(ask({ method: 'GET', path: '/history/ab-1' }))).toBeNull()
+  })
+})
+
+describe('what ComfyUI says apps made', () => {
+  const bytes = (v: unknown) => new TextEncoder().encode(JSON.stringify(v))
+
+  it('reads the run id a queued prompt got', () => {
+    expect(promptRunId(bytes({ prompt_id: 'ab-1', number: 3 }))).toBe('ab-1')
+    expect(promptRunId(bytes({ error: 'x' }))).toBeNull()
+    expect(promptRunId(new TextEncoder().encode('not json'))).toBeNull()
+  })
+
+  it('reads the input file an upload kept', () => {
+    expect(uploadedFile(bytes({ name: 'p.png', subfolder: '', type: 'input' }))).toBe(
+      fileKey({ filename: 'p.png', subfolder: '', type: 'input' })
+    )
+    expect(uploadedFile(bytes({}))).toBeNull()
+  })
+
+  it('reads the output files of one run from its history', () => {
+    const history = {
+      r1: {
+        outputs: { '9': { images: [{ filename: 'a.png', subfolder: 'apps', type: 'output' }] } }
+      }
+    }
+    expect(historyFiles(bytes(history), 'r1')).toEqual([
+      fileKey({ filename: 'a.png', subfolder: 'apps', type: 'output' })
+    ])
+    expect(historyFiles(bytes(history), 'r2')).toEqual([])
+  })
+
+  it('reads the files an executed event names', () => {
+    const msg = {
+      type: 'executed',
+      data: {
+        prompt_id: 'r1',
+        node: '9',
+        output: { images: [{ filename: 'a.png', type: 'temp' }] }
+      }
+    }
+    expect(eventFiles(msg)).toEqual({
+      runId: 'r1',
+      files: [fileKey({ filename: 'a.png', subfolder: '', type: 'temp' })]
+    })
+    expect(eventFiles({ type: 'progress', data: { prompt_id: 'r1' } })).toBeNull()
+  })
+
+  it('keeps only the newest owners', () => {
+    const owners = new Map<string, string>()
+    for (let i = 0; i < 5; i++) noteOwner(owners, `r${i}`, 'x', 3)
+    expect([...owners.keys()]).toEqual(['r2', 'r3', 'r4'])
+  })
+
+  it('hides the queued runs apps do not own but keeps their place', () => {
+    const raw = {
+      queue_running: [[0, 'theirs', {}, { comfy_app: { name: 'Mine' } }, []]],
+      queue_pending: [[1, 'ours', {}, {}, []]]
+    }
+    expect(queueView(raw, new Map(), (id) => id === 'ours')).toEqual({
+      running: [{ id: '', app: null, seconds: null }],
+      pending: [{ id: 'ours', app: null, seconds: null }]
+    })
   })
 })
