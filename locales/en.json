@@ -131,7 +131,9 @@
     "templates": "Workflows",
     "openTemplate": "Open {title} on Comfy Hub",
     "templatesFailed": "Couldn't load the workflows.",
-    "templatesEmpty": "No workflows yet."
+    "templatesEmpty": "No workflows yet.",
+    "filters": "Filters",
+    "filterType": "Type"
   },
   "home": {
     "title": "Welcome. Let's create!",

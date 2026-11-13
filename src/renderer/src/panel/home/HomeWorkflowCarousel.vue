@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AudioLines, Box, Image, ImageOff, Video } from 'lucide-vue-next'
-import type { Component } from 'vue'
-import type { CatalogCategory } from '../../types/ipc'
+import { ImageOff } from 'lucide-vue-next'
+import CategoryBadge from '../CategoryBadge.vue'
 import type { CarouselCard, CarouselKind } from './carouselCard'
 
 interface ArcSlot {
@@ -37,13 +36,6 @@ const ARC_SLOTS: Record<number, ArcSlot> = {
     dim: 0.9,
     layer: 0
   }
-}
-
-const CATEGORY_ICONS: Record<CatalogCategory, Component> = {
-  image: Image,
-  video: Video,
-  '3d': Box,
-  audio: AudioLines
 }
 
 const { cards, kind = 'workflows' } = defineProps<{
@@ -229,15 +221,12 @@ function activate(card: { workflow: CarouselCard; offset: number }): void {
           class="absolute inset-0 bg-linear-to-t from-black/75 via-black/40 via-30% to-transparent to-55%"
           aria-hidden="true"
         />
-        <span
+        <CategoryBadge
           v-if="card.offset === 0 && card.workflow.category"
-          class="absolute top-3 left-3 flex h-[22px] items-center gap-1.5 rounded-full bg-[rgb(14_14_16/0.28)] px-2.5 text-[10px] font-semibold tracking-[0.08em] text-white uppercase backdrop-blur-[14px]"
+          :category="card.workflow.category"
+          class="absolute top-3 left-3"
           data-testid="home-card-category"
-          :data-category="card.workflow.category"
-        >
-          <component :is="CATEGORY_ICONS[card.workflow.category]" :size="11" aria-hidden="true" />
-          {{ t(`home.category.${card.workflow.category}`) }}
-        </span>
+        />
         <span class="absolute inset-x-3.5 bottom-4 flex flex-col">
           <span class="truncate text-sm/[17px] font-medium text-white">
             {{ card.workflow.title }}

@@ -4,13 +4,21 @@ import { useI18n } from 'vue-i18n'
 import AppsGallery from './AppsGallery.vue'
 import AppsHost from './AppsHost.vue'
 import TemplatesGallery from './TemplatesGallery.vue'
+import ExploreFilter from './ExploreFilter.vue'
+import type { CategoryCounts } from './exploreCategories'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import { useAppsEnabled } from '../composables/useAppsEnabled'
 import type { ExploreTab } from './exploreTab'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
-import type { AppOutputAction, AppOutputs, AssetKind, CatalogApp } from '../types/ipc'
+import type {
+  AppOutputAction,
+  AppOutputs,
+  AssetKind,
+  CatalogApp,
+  CatalogCategory
+} from '../types/ipc'
 
 interface ShownAppOutputs {
   items: OutputDetailItem[]
@@ -51,6 +59,17 @@ const tabOptions = computed(() => [
   { value: 'templates' as const, label: t('explore.templates') }
 ])
 let pendingLaunch = launchApp
+
+const picked = ref<Record<ExploreTab, CatalogCategory[]>>({ apps: [], templates: [] })
+const counts = ref<Record<ExploreTab, CategoryCounts>>({ apps: {}, templates: {} })
+const shownPicked = computed({
+  get: () => picked.value[shownTab.value],
+  set: (value) => (picked.value = { ...picked.value, [shownTab.value]: value })
+})
+const filterShown = computed(() => Object.keys(counts.value[shownTab.value]).length > 0)
+function setCounts(on: ExploreTab, value: CategoryCounts): void {
+  counts.value = { ...counts.value, [on]: value }
+}
 
 watch(
   [appsEnabled, shownTab],
@@ -171,21 +190,35 @@ onBeforeUnmount(() => {
         {{ t('explore.title') }}
       </h1>
     </header>
-    <div v-if="appsEnabled && !appFillsPage" class="mx-auto w-full max-w-300 px-10 py-3">
+    <div
+      v-if="(appsEnabled || filterShown) && !appFillsPage"
+      class="mx-auto flex w-full max-w-300 items-center gap-3 px-10 py-3"
+    >
       <SegmentedControl
+        v-if="appsEnabled"
         v-model="tab"
         :options="tabOptions"
         :label="t('explore.sections')"
         data-testid="explore-tabs"
       />
+      <span v-if="filterShown" class="ml-auto inline-flex">
+        <ExploreFilter v-model="shownPicked" :counts="counts[shownTab]" />
+      </span>
     </div>
     <AppsGallery
       v-if="visitedTabs.has('apps')"
       v-show="shownTab === 'apps' && !appFillsPage"
       :load-failed-url="loadFailedUrl"
+      :categories="picked.apps"
       @open="openCatalogApp"
+      @counts="setCounts('apps', $event)"
     />
-    <TemplatesGallery v-if="visitedTabs.has('templates')" v-show="shownTab === 'templates'" />
+    <TemplatesGallery
+      v-if="visitedTabs.has('templates')"
+      v-show="shownTab === 'templates'"
+      :categories="picked.templates"
+      @counts="setCounts('templates', $event)"
+    />
   </div>
   <AppsHost
     v-if="openApp"

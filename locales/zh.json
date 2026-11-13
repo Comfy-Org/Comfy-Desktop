@@ -131,7 +131,9 @@
     "templates": "工作流",
     "openTemplate": "在 Comfy Hub 打开 {title}",
     "templatesFailed": "无法加载工作流。",
-    "templatesEmpty": "暂无工作流。"
+    "templatesEmpty": "暂无工作流。",
+    "filters": "筛选",
+    "filterType": "类型"
   },
   "home": {
     "title": "欢迎。开始创作吧！",

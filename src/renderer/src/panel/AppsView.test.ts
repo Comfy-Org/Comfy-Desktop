@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import AppsView from './AppsView.vue'
 import AppsGallery from './AppsGallery.vue'
-import type { AppOutputs, CatalogApp } from '../types/ipc'
+import type { AppOutputs, CatalogApp, CatalogWorkflow } from '../types/ipc'
 import { useModal } from '../composables/useModal'
 
 const showApps = vi.fn()
@@ -624,5 +624,118 @@ describe('Explore', () => {
       expect.objectContaining({ url: 'https://apps.example/apps/studio/desktop.html' })
     )
     expect(wrapper.emitted('app-open')).toEqual([[true]])
+  })
+})
+
+describe('Explore categories', () => {
+  function workflow(id: string, category: CatalogWorkflow['category']): CatalogWorkflow {
+    return { id, title: id, description: '', thumbnailUrl: null, category }
+  }
+
+  function cardIds(wrapper: Awaited<ReturnType<typeof mountApps>>, prefix: string): string[] {
+    return wrapper
+      .findAll(`[data-testid^="${prefix}"]`)
+      .map((card) => card.attributes('data-testid')!.slice(prefix.length))
+  }
+
+  async function openFilter(wrapper: Awaited<ReturnType<typeof mountApps>>) {
+    await wrapper.get('[data-testid="explore-filter"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+  }
+
+  async function flip(wrapper: Awaited<ReturnType<typeof mountApps>>, category: string) {
+    await wrapper.get(`[data-testid="explore-filter-${category}"]`).trigger('click')
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    listHomeWorkflows.mockResolvedValue([
+      workflow('upscale', 'image'),
+      workflow('animate', 'video'),
+      workflow('material', 'image'),
+      workflow('talk', 'video'),
+      workflow('loose', null)
+    ])
+  })
+
+  it('labels each card with its category, and only the cards that have one', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+
+    const badge = (id: string) =>
+      wrapper
+        .get(`[data-testid="template-card-${id}"]`)
+        .find('[data-testid="explore-card-category"]')
+    expect(badge('upscale').text()).toBe('Image')
+    expect(badge('animate').text()).toBe('Video')
+    expect(badge('loose').exists()).toBe(false)
+  })
+
+  it('offers only the categories the cards carry, with how many each has', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    await openFilter(wrapper)
+
+    const rows = wrapper.findAll('[data-testid^="explore-filter-"]')
+    expect(rows.map((row) => row.attributes('data-testid'))).toEqual([
+      'explore-filter-image',
+      'explore-filter-video'
+    ])
+    expect(rows.map((row) => row.text())).toEqual(['Image2', 'Video2'])
+  })
+
+  it('narrows the cards to the picked categories and widens them back', async () => {
+    const wrapper = await mountApps({ initialTab: 'templates' })
+    const ids = () => cardIds(wrapper, 'template-card-')
+    expect(ids()).toEqual(['upscale', 'animate', 'material', 'talk', 'loose'])
+
+    await openFilter(wrapper)
+    await flip(wrapper, 'video')
+    expect(ids()).toEqual(['animate', 'talk'])
+    expect(wrapper.get('[data-testid="explore-filter-video"]').attributes('aria-checked')).toBe(
+      'true'
+    )
+    expect(wrapper.get('[data-testid="explore-filter-count"]').text()).toBe('1')
+
+    await flip(wrapper, 'image')
+    expect(ids()).toEqual(['upscale', 'animate', 'material', 'talk'])
+    expect(wrapper.get('[data-testid="explore-filter-count"]').text()).toBe('2')
+
+    await flip(wrapper, 'video')
+    await flip(wrapper, 'image')
+    expect(ids()).toEqual(['upscale', 'animate', 'material', 'talk', 'loose'])
+    expect(wrapper.find('[data-testid="explore-filter-count"]').exists()).toBe(false)
+  })
+
+  it('keeps each tab its own filter, and hides it on a tab whose cards carry no category', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    expect(wrapper.find('[data-testid="explore-filter"]').exists()).toBe(false)
+
+    await wrapper.findAll('[data-testid="explore-tabs"] button')[1]!.trigger('mousedown')
+    await wrapper.findAll('[data-testid="explore-tabs"] button')[1]!.trigger('click')
+    await flushPromises()
+    await openFilter(wrapper)
+    await flip(wrapper, 'image')
+    expect(cardIds(wrapper, 'template-card-')).toEqual(['upscale', 'material'])
+
+    await wrapper.findAll('[data-testid="explore-tabs"] button')[0]!.trigger('mousedown')
+    await wrapper.findAll('[data-testid="explore-tabs"] button')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="explore-filter"]').exists()).toBe(false)
+    expect(cardIds(wrapper, 'app-card-')).toEqual(['studio'])
+  })
+
+  it('filters the apps by category when the catalog gives them one', async () => {
+    listCatalogApps.mockResolvedValue([
+      { ...catalogApp('song', 'Make a Song'), category: 'audio' },
+      { ...catalogApp('shot', 'Product shot'), category: 'image' }
+    ])
+    const wrapper = await mountApps()
+    expect(
+      wrapper.get('[data-testid="app-card-song"] [data-testid="explore-card-category"]').text()
+    ).toBe('Audio')
+
+    await openFilter(wrapper)
+    await flip(wrapper, 'audio')
+    expect(cardIds(wrapper, 'app-card-')).toEqual(['song'])
   })
 })

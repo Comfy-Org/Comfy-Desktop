@@ -1,23 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CardBottom from '@comfyorg/design-system/content-card/CardBottom'
 import CardContainer from '@comfyorg/design-system/content-card/CardContainer'
 import CardTop from '@comfyorg/design-system/content-card/CardTop'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
-import type { CatalogWorkflow } from '../types/ipc'
+import CategoryBadge from './CategoryBadge.vue'
+import { byCategory, countCategories, type CategoryCounts } from './exploreCategories'
+import type { CatalogCategory, CatalogWorkflow } from '../types/ipc'
 
 const SKELETON_COUNT = 8
 const GRID_CLASS = 'm-0 grid list-none grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4 p-0'
+
+const { categories = [] } = defineProps<{ categories?: CatalogCategory[] }>()
+
+const emit = defineEmits<{ counts: [counts: CategoryCounts] }>()
 
 const { t } = useI18n()
 const templates = ref<CatalogWorkflow[]>([])
 const loading = ref(true)
 const failed = ref(false)
+const shown = computed(() => byCategory(templates.value, categories))
 
 onMounted(async () => {
   try {
     templates.value = await window.api.listHomeWorkflows()
+    emit('counts', countCategories(templates.value))
   } catch {
     failed.value = true
   } finally {
@@ -60,7 +68,7 @@ function openTemplate(template: CatalogWorkflow): void {
       {{ t('explore.templatesEmpty') }}
     </p>
     <ul v-else :class="GRID_CLASS" data-testid="templates-gallery">
-      <li v-for="template in templates" :key="template.id">
+      <li v-for="template in shown" :key="template.id">
         <button
           type="button"
           class="group block w-full cursor-pointer rounded-xl text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
@@ -86,6 +94,12 @@ function openTemplate(template: CatalogWorkflow): void {
                   alt=""
                   loading="lazy"
                   class="absolute inset-0 size-full object-cover"
+                />
+                <CategoryBadge
+                  v-if="template.category"
+                  :category="template.category"
+                  class="absolute top-2.5 left-2.5"
+                  data-testid="explore-card-category"
                 />
               </CardTop>
             </template>
