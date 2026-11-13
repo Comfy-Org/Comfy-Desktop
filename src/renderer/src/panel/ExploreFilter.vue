@@ -229,7 +229,7 @@ useEventListener(window, 'keydown', (event: KeyboardEvent) => {
     </template>
 
     <template v-if="pickedCount">
-      <MenuSeparator />
+      <MenuSeparator class="-mx-1" />
       <MenuItem
         as="button"
         type="button"

@@ -64,7 +64,7 @@ function stepTo(index: number): void {
         <Minus :size="13" aria-hidden="true" />
       </button>
       <div
-        class="flex h-[18px] w-24 overflow-hidden rounded-md bg-white/7"
+        class="flex h-[18px] w-24 gap-0.5 overflow-hidden rounded-md"
         role="group"
         :aria-label="t('explore.sizeLabel')"
       >
@@ -72,8 +72,8 @@ function stepTo(index: number): void {
           v-for="(value, index) in CARD_SIZES"
           :key="value"
           type="button"
-          class="flex-1 [&+&]:shadow-[inset_1px_0_0_rgb(255_255_255/0.1)]"
-          :class="index <= step && 'bg-white/38'"
+          class="flex-1"
+          :class="index <= step ? 'bg-white/38' : 'bg-white/7'"
           :aria-label="t(`explore.size.${value}`)"
           :aria-pressed="value === size"
           :data-testid="`explore-size-${value}`"
