@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ImageOff } from 'lucide-vue-next'
+import { ArrowUpRight, ImageOff } from 'lucide-vue-next'
 import CategoryBadge from '../CategoryBadge.vue'
 import type { CarouselCard, CarouselKind } from './carouselCard'
 
@@ -180,7 +180,7 @@ function activate(card: { workflow: CarouselCard; offset: number }): void {
     <li v-for="card in arcCards" :key="card.workflow.id" class="contents">
       <button
         type="button"
-        class="absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        class="group/card absolute top-0 left-1/2 -ml-32 h-75 w-64 cursor-[inherit] overflow-hidden rounded-[18px] border-0 bg-[#1d1d1d] p-0 text-left shadow-[0_28px_56px_rgb(0_0_0/0.8)] outline-none focus-visible:ring-2 focus-visible:ring-ring"
         :class="[
           jumpedAcross.has(card.workflow.id)
             ? 'transition-none'
@@ -227,12 +227,21 @@ function activate(card: { workflow: CarouselCard; offset: number }): void {
           class="absolute top-3 left-3"
           data-testid="home-card-category"
         />
-        <span class="absolute inset-x-3.5 bottom-4 flex flex-col">
-          <span class="truncate text-sm/[17px] font-medium text-white">
+        <span
+          class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+          :class="
+            card.offset === 0
+              ? 'scale-90 group-hover/card:scale-100 group-hover/card:opacity-100 group-hover/card:delay-100 group-focus-visible/card:scale-100 group-focus-visible/card:opacity-100'
+              : 'scale-90'
+          "
+          aria-hidden="true"
+          data-testid="home-workflow-cta"
+        >
+          <ArrowUpRight :size="16" :stroke-width="2.25" />
+        </span>
+        <span class="absolute inset-x-3.5 bottom-4 flex flex-col" data-testid="home-workflow-name">
+          <span class="line-clamp-2 text-sm/[17px] font-medium text-white">
             {{ card.workflow.title }}
-          </span>
-          <span v-if="card.workflow.description" class="truncate text-[13px]/[18px] text-white/70">
-            {{ card.workflow.description }}
           </span>
         </span>
         <span

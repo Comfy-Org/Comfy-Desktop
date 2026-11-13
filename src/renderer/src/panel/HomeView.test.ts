@@ -257,10 +257,7 @@ describe('Home example workflows', () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
 
-    expect(arc(wrapper)).toEqual([
-      '0:Upscale and restore detailEnlarge an image and restore fine detail.',
-      '1:Make your character talk'
-    ])
+    expect(arc(wrapper)).toEqual(['0:Upscale and restore detail', '1:Make your character talk'])
 
     await wrapper
       .get('[data-testid="home-workflow-carousel"]')
@@ -359,12 +356,47 @@ async function pickHomeTab(wrapper: VueWrapper, label: string): Promise<void> {
 }
 
 function frontTitle(wrapper: VueWrapper): string {
-  return cardAt(wrapper, 0).get('.truncate').text()
+  return cardAt(wrapper, 0).get('[data-testid="home-workflow-name"]').text()
 }
 
 function seeAllLabel(wrapper: VueWrapper): string {
   return wrapper.get('[data-testid="home-see-all-workflows"]').text()
 }
+
+describe('Home arc cards', () => {
+  it('shows the open arrow on hover or focus of the front card only, and opens it from there', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    const front = cardAt(wrapper, 0).get('[data-testid="home-workflow-cta"]')
+    const side = cardAt(wrapper, 1).get('[data-testid="home-workflow-cta"]')
+
+    expect(front.classes()).toEqual(
+      expect.arrayContaining([
+        'opacity-0',
+        'rounded-[9px]',
+        'bg-white/20',
+        'group-hover/card:opacity-100',
+        'group-focus-visible/card:opacity-100'
+      ])
+    )
+    expect(side.classes()).not.toContain('group-hover/card:opacity-100')
+    expect(front.attributes('aria-hidden')).toBe('true')
+
+    await front.trigger('click')
+
+    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
+  })
+
+  it('shows only the title, clamped to two lines', async () => {
+    listHomeWorkflows.mockResolvedValue([UPSCALE])
+    const wrapper = await openHome()
+
+    const name = cardAt(wrapper, 0).get('[data-testid="home-workflow-name"]')
+    expect(name.text()).toBe('Upscale and restore detail')
+    expect(name.get('span').classes()).toContain('line-clamp-2')
+    expect(cardAt(wrapper, 0).text()).not.toContain('Enlarge an image')
+  })
+})
 
 describe('Home tabs', () => {
   it('shows no tabs and only workflows while the remote apps switch is off', async () => {
@@ -470,6 +502,22 @@ describe('Home tabs', () => {
     await cardAt(wrapper, 1).trigger('click')
 
     expect(cardAt(wrapper, 0).get('[data-testid="home-card-category"]').text()).toBe('Image')
+  })
+
+  it('draws the Image label with the image glyph, on glass', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio', 'image')])
+    const wrapper = await openHome()
+
+    const badge = cardAt(wrapper, 0).get('[data-testid="home-card-category"]')
+    expect(badge.get('svg').attributes('viewBox')).toBe('0 0 24 17')
+    expect(badge.classes()).toEqual(
+      expect.arrayContaining([
+        'bg-[rgb(14_14_16/0.28)]',
+        'backdrop-blur-[14px]',
+        'backdrop-saturate-150'
+      ])
+    )
   })
 
   it('shows no label on a front card without a category', async () => {
