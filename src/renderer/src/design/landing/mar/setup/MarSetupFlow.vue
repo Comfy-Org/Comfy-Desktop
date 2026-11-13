@@ -768,8 +768,7 @@ function rowState(i: number): string {
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <DialogTitle as="h3" class="text-title font-semibold">Change setup</DialogTitle>
           <DialogDescription
-            >Everything here is already set to what fits this computer. Back keeps it as it
-            was.</DialogDescription
+            >Everything here is already set to what fits this computer.</DialogDescription
           >
           <!-- A settings sheet: label on the left, control on the right,
                a hairline between rows. Picks are radio cards. -->
