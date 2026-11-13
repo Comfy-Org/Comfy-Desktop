@@ -59,7 +59,10 @@ vi.mock('../devplatform/session', () => ({
   })
 }))
 
-vi.mock('../lib/ipc/registerDevPlatformHandlers', () => ({ signInToCloud: async () => {} }))
+vi.mock('../lib/ipc/registerDevPlatformHandlers', () => ({
+  signInToCloud: async () => {},
+  onCloudAuthChanged: () => () => {}
+}))
 vi.mock('../settings', () => ({ get: () => '' }))
 vi.mock('./localComfy', () => ({
   cancelSetup: () => {},
@@ -71,7 +74,11 @@ vi.mock('./localComfy', () => ({
   syncLocalSocket: () => {}
 }))
 vi.mock('./openInComfy', () => ({ localBuilds: async () => [], openInComfy: async () => ({}) }))
-vi.mock('./appsSwitch', () => ({ isAppsEnabled: () => true }))
+vi.mock('./appsSwitch', () => ({
+  isAppsEnabled: () => true,
+  onAppsEnabledChanged: () => () => {},
+  refreshAppsSwitch: async () => {}
+}))
 vi.mock('./appEvents', () => ({ trackFromPage: () => {} }))
 
 const desktopApps = vi.hoisted(() => ({
