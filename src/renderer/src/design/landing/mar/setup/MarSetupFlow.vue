@@ -674,7 +674,7 @@ function rowState(i: number): string {
                     free · ~{{ REQUIRED_GB }} GB required</span
                   >
                 </dd>
-                <Button size="sm" variant="ghost" @click="flow.movedDisk = true">Browse</Button>
+                <Button size="sm" variant="subtle" @click="flow.movedDisk = true">Browse</Button>
               </div>
               <!-- Migrate, ticked on the first screen: today's migrate op. -->
               <div v-if="localSetup.machine === 'legacy' && flow.bringOver" class="mss-row">
