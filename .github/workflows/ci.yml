@@ -199,6 +199,11 @@ jobs:
       - name: Build app
         run: pnpm run build
 
+      - name: Setup Python for the fake ComfyUI install
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
       - name: Run E2E (${{ matrix.platform }})
         run: ${{ matrix.platform == 'linux' && format('xvfb-run --auto-servernum {0}', matrix.command) || matrix.command }}
 

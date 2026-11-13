@@ -9,7 +9,11 @@ import { waitForAppExit } from './support/electronHarness'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { getIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
-import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
+import {
+  isProcessAlive as isAlive,
+  reserveFreePort,
+  writeFakeComfyInstall
+} from './support/fakeComfyInstall'
 
 const INSTALL_ID = 'inst-process-ownership'
 const INSTALL_NAME = 'Process Ownership Install'
@@ -59,15 +63,6 @@ function seed(): SeedOptions {
         }
       }
     ]
-  }
-}
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM'
   }
 }
 

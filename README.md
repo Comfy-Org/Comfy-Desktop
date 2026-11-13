@@ -136,6 +136,15 @@ pnpm test
 
 Main, preload, and shared code is tested in Node. Renderer tests run in headless Chromium through [Vitest browser mode](https://vitest.dev/guide/browser/). To watch them in a visible browser, run `pnpm exec vitest --project browser --browser.headless=false`.
 
+End-to-end specs drive the built app with Playwright:
+
+```bash
+pnpm run build
+pnpm run test:e2e:macos         # or test:e2e:windows / test:e2e:linux
+```
+
+Specs that launch ComfyUI use a fake one ([`e2e/support/fakeComfy/main.py`](e2e/support/fakeComfy/main.py)) inside a real venv, so they need Python 3 on `PATH` (`python3`, or `python` on Windows). Set `E2E_PYTHON` to use a specific interpreter.
+
 ## Releasing
 
 > Production builds go through [ToDesktop](https://www.todesktop.com/) in CI — nothing is built locally. Any maintainer can cut a release; it's one workflow run plus a PR merge.
