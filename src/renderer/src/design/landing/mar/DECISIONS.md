@@ -65,3 +65,8 @@ list's problem states on the cards; Remote builds. Migrate stays in Builds.
 Builds is one-line rows in every milestone, past Builds too (B1). The other
 card looks are gone; UI Playground › Builds view keeps Photos in case the last
 things made on a build can be shown later.
+
+Sidebar build counts (the number beside each build) show only from the
+milestone where a build lists its workflows (7 · Learn & Recents, its
+Workflows tab). Before that a build has no workflows to count. (Design
+crit, 2026-11-12.)

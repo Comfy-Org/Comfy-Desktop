@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ArrowRight, ChevronLeft, ChevronRight, PanelsTopLeft } from 'lucide-vue-next'
+import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, PanelsTopLeft } from 'lucide-vue-next'
 import { go } from '../../useProto'
 import { can } from '../../milestones'
 import { EXAMPLES, reducedMotion } from './examples'
@@ -272,16 +272,14 @@ function wheel(e: WheelEvent): void {
           <span class="mar-arc-app"><PanelsTopLeft :size="11" />App</span>
         </span>
         <span class="mar-arc-dim" />
-        <!-- As on the app cards: the name and what it does on the left,
-             the white Open on the right on hover, one row over the fade. -->
+        <!-- Only the title, up to two lines, over the fade; pointing at the
+             front card fades a round arrow into its top right corner, so
+             nothing moves or gets cut (Comfy-Desktop#2060). -->
+        <span class="mar-arc-go" aria-hidden="true"
+          ><ArrowUpRight :size="16" :stroke-width="2.25"
+        /></span>
         <span class="mar-arc-bar">
-          <span class="mar-arc-name">
-            <span class="mar-arc-title">{{ x.label }}</span>
-            <span class="mar-arc-does">{{ x.does }}</span>
-          </span>
-          <span class="mar-arc-go" aria-hidden="true">{{
-            x.kind === 'template' ? 'Open template' : 'Open'
-          }}</span>
+          <span class="mar-arc-title">{{ x.label }}</span>
         </span>
       </button>
     </div>
@@ -419,24 +417,13 @@ function wheel(e: WheelEvent): void {
   align-items: center;
   gap: 10px;
 }
-.mar-arc-name {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-  text-align: left;
-}
-.mar-arc-name > span {
+.mar-arc-bar .mar-arc-title {
+  display: -webkit-box;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mar-arc-does {
-  color: rgb(255 255 255 / 0.7);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  text-align: left;
 }
 /* Run at the bottom: a white button over a soft scrim, shown on the front
    card when you point at it (or focus it). */
@@ -447,42 +434,36 @@ function wheel(e: WheelEvent): void {
   pointer-events: none;
   transition: opacity 250ms ease;
 }
+/* Open: a round white arrow in the front card's top right corner. Every
+   card carries it, so it eases in as a card reaches the front; it shows
+   after a short wait on hover or focus, so it doesn't flash while the arc
+   turns. */
 .mar-arc-go {
-  display: inline-flex;
-  height: 30px;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: 0 14px;
-  border-radius: var(--radius-control);
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
   background: #fff;
   box-shadow:
     0 0 0 1px rgb(0 0 0 / 0.06),
     0 8px 20px -6px rgb(0 0 0 / 0.5);
   color: #111;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(4px);
+  scale: 0.9;
   transition:
-    opacity 200ms ease,
-    transform 300ms cubic-bezier(0.19, 1, 0.22, 1),
-    background-color 160ms ease;
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .mar-arc-card.is-front:hover .mar-arc-go,
 .mar-arc-card.is-front:focus-visible .mar-arc-go {
   opacity: 1;
-  pointer-events: auto;
-  transform: none;
-}
-.mar-arc-card .mar-arc-go:hover {
-  background: rgb(255 255 255 / 0.9);
-}
-.mar-arc-card .mar-arc-go:active {
-  scale: 0.98;
+  scale: 1;
+  transition-delay: 100ms;
 }
 .mar-arc-actions {
   display: flex;

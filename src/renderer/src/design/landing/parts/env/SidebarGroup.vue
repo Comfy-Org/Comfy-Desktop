@@ -52,8 +52,9 @@ const rows = computed<Row[]>(() =>
         page: `environment:${i.id}` as Page,
         label: stateOf(i).name,
         envId: i.id,
-        // Nothing links a workflow to its build before the breadcrumb milestone.
-        count: can.value.breadcrumb
+        // The count is the build's workflows, so it waits for the milestone
+        // where a build's page lists them (its Workflows tab).
+        count: can.value.workflows
           ? allWorkflows.value.filter((w) => w.envId === i.id).length
           : undefined,
         live: envStatus(i).live,
