@@ -5,6 +5,7 @@ import { ArrowRight, ChevronRight } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
+import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
 import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
@@ -19,7 +20,7 @@ type LoadState = 'loading' | 'ready' | 'unavailable'
 
 const HOME_BUILD_LIMIT = 3
 const TEXT_LINK_CLASS =
-  'h-6 gap-1.5 rounded-[7px] px-1.5 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
+  '-my-1 h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
 
 const emit = defineEmits<{
   pick: [installation: Installation]
@@ -43,6 +44,9 @@ const workspaceBuilds = computed(() =>
 const builds = computed(() => workspaceBuilds.value.slice(0, HOME_BUILD_LIMIT))
 const buildTones = computed(() => homeBuildTones(builds.value, installationStore.installations))
 const mostRecentBuild = computed(() => workspaceBuilds.value[0] ?? null)
+function buildStatus(build: Installation) {
+  return homeBuildStatus(build, sessionStore)
+}
 
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
@@ -78,18 +82,14 @@ onMounted(() => {
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="home-view"
   >
-    <Button
+    <HomeOpenBuildButton
       v-if="mostRecentBuild"
-      type="button"
-      variant="inverted"
-      size="md"
-      class="absolute top-4 right-4 z-10 gap-1.5 px-3 text-[13px]/5 font-medium"
-      data-testid="home-open-comfyui"
-      @click="emit('pick', mostRecentBuild)"
-    >
-      {{ t('home.openComfyUI') }}
-      <ArrowRight :size="14" aria-hidden="true" />
-    </Button>
+      class="absolute top-4 right-4 z-10"
+      :builds="workspaceBuilds"
+      :target="mostRecentBuild"
+      :status-of="buildStatus"
+      @open="emit('pick', $event)"
+    />
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
       <h1
@@ -174,7 +174,7 @@ onMounted(() => {
           <li v-for="(build, index) in builds" :key="build.id" class="min-w-0">
             <HomeBuildCard
               :build="build"
-              :status="homeBuildStatus(build, sessionStore)"
+              :status="buildStatus(build)"
               :tone="buildTones[index]!"
               @open="emit('pick', build)"
             />

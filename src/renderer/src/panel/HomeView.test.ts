@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -79,8 +79,15 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
+const mounted: VueWrapper[] = []
+
+afterEach(() => {
+  while (mounted.length) mounted.pop()?.unmount()
+})
+
 async function openHome() {
   const wrapper = mount(HomeView, { attachTo: document.body })
+  mounted.push(wrapper)
   await flushPromises()
   return wrapper
 }
@@ -88,7 +95,10 @@ async function openHome() {
 function arc(wrapper: VueWrapper): string[] {
   return wrapper
     .findAll('[data-testid="home-workflow-card"]:not([aria-hidden="true"])')
-    .map((card) => ({ offset: Number(card.attributes('data-arc-offset')), text: card.text() }))
+    .map((card) => ({
+      offset: Number(card.attributes('data-arc-offset')),
+      text: card.get('[data-testid="home-workflow-name"]').text()
+    }))
     .sort((left, right) => left.offset - right.offset)
     .map((card) => `${card.offset}:${card.text}`)
 }
@@ -101,6 +111,15 @@ function pressCarouselAt(wrapper: VueWrapper, clientX: number): void {
   wrapper
     .get('[data-testid="home-workflow-carousel"]')
     .element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX, bubbles: true }))
+}
+
+async function openBuildMenu(wrapper: VueWrapper): Promise<void> {
+  await wrapper.get('[data-testid="home-open-build-menu"]').trigger('keydown', { key: 'ArrowDown' })
+  await flushPromises()
+}
+
+function buildOptions(): HTMLElement[] {
+  return [...document.querySelectorAll<HTMLElement>('[data-testid="home-open-build-option"]')]
 }
 
 describe('Home example workflows', () => {
@@ -199,6 +218,91 @@ describe('Home example workflows', () => {
 
     await carousel.trigger('keydown', { key: 'ArrowLeft' })
     expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+  })
+
+  it('turns the carousel with the previous and next arrows', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    const next = wrapper.get('[data-testid="home-workflow-next"]')
+    const previous = wrapper.get('[data-testid="home-workflow-previous"]')
+
+    expect(next.attributes('aria-label')).toBe('Next workflow')
+    expect(previous.attributes('aria-label')).toBe('Previous workflow')
+
+    await next.trigger('click')
+    await next.trigger('click')
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+
+    await previous.trigger('click')
+    await previous.trigger('click')
+    await previous.trigger('click')
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 6')
+    expect(openCatalogWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('stops the arrows at the ends of a short list and leaves them out for a single card', async () => {
+    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    const wrapper = await openHome()
+    const next = wrapper.get('[data-testid="home-workflow-next"]')
+    const previous = wrapper.get('[data-testid="home-workflow-previous"]')
+
+    expect(previous.attributes('disabled')).toBeDefined()
+    expect(next.attributes('disabled')).toBeUndefined()
+
+    await next.trigger('click')
+    expect(cardAt(wrapper, 0).text()).toContain('Make your character talk')
+    expect(next.attributes('disabled')).toBeDefined()
+    expect(previous.attributes('disabled')).toBeUndefined()
+
+    listHomeWorkflows.mockResolvedValue([UPSCALE])
+    const single = await openHome()
+    expect(single.find('[data-testid="home-workflow-next"]').exists()).toBe(false)
+    expect(single.find('[data-testid="home-workflow-previous"]').exists()).toBe(false)
+  })
+
+  it('keeps keyboard focus on an arrow when the one in use reaches the end of a short list', async () => {
+    listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
+    const wrapper = await openHome()
+    const next = wrapper.get<HTMLButtonElement>('[data-testid="home-workflow-next"]')
+    const previous = wrapper.get<HTMLButtonElement>('[data-testid="home-workflow-previous"]')
+
+    next.element.focus()
+    await next.trigger('click')
+    await flushPromises()
+
+    expect(next.element.disabled).toBe(true)
+    expect(document.activeElement).toBe(previous.element)
+  })
+
+  it('turns with the arrow keys from an arrow button and moves card focus to the new front card', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+
+    const next = wrapper.get('[data-testid="home-workflow-next"]')
+    await next.trigger('keydown', { key: 'ArrowRight' })
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
+
+    const front = cardAt(wrapper, 0).element as HTMLButtonElement
+    front.focus()
+    await cardAt(wrapper, 0).trigger('keydown', { key: 'ArrowRight' })
+    await flushPromises()
+
+    expect(cardAt(wrapper, 0).text()).toContain('Workflow 2')
+    expect(document.activeElement).toBe(cardAt(wrapper, 0).element)
+  })
+
+  it('offers Open on the front card only, and opens that workflow from it', async () => {
+    listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
+    const wrapper = await openHome()
+    const ctas = wrapper.findAll('[data-testid="home-workflow-cta"]')
+
+    expect(ctas).toHaveLength(1)
+    expect(cardAt(wrapper, 0).find('[data-testid="home-workflow-cta"]').text()).toBe('Open')
+    expect(ctas[0]!.attributes('aria-hidden')).toBe('true')
+
+    await ctas[0]!.trigger('click')
+
+    expect(openCatalogWorkflow).toHaveBeenCalledExactlyOnceWith('workflow-0')
   })
 
   it('turns the carousel when it is dragged, and does not open the card the drag ends on', async () => {
@@ -403,6 +507,138 @@ describe('Home builds', () => {
     await wrapper.get('[data-testid="home-open-comfyui"]').trigger('click')
 
     expect(wrapper.emitted('pick')).toEqual([[NEWEST]])
+  })
+
+  it('shows which build Open ComfyUI opens', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
+  })
+
+  it('marks Open ComfyUI with the kind of build it opens', async () => {
+    getInstallations.mockResolvedValue([CLOUD, OLDEST])
+    const wrapper = await openHome()
+
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('cloud')
+  })
+
+  it('hides the Open ComfyUI tooltip while the build menu is open', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+    wrapper
+      .get('[data-testid="home-open-build"] .tooltip-wrap')
+      .element.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain(
+        `Opens in ${NEWEST.name}`
+      )
+    )
+
+    await openBuildMenu(wrapper)
+
+    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
+  })
+
+  it('lists every build of the workspace in the Open ComfyUI menu, with a dot only on live builds', async () => {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(RUNNING.id, {
+      installationId: RUNNING.id,
+      installationName: RUNNING.name,
+      mode: 'window'
+    })
+    await openBuildMenu(wrapper)
+
+    expect(buildOptions().map((option) => option.textContent?.trim())).toEqual([
+      'My Local 1',
+      'Video Lab',
+      'Comfy Cloud',
+      'Flux Sandbox'
+    ])
+    expect(buildOptions().map((option) => option.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false'
+    ])
+    expect(
+      buildOptions().map(
+        (option) =>
+          option
+            .querySelector('[data-testid="home-open-build-status-dot"]')
+            ?.getAttribute('data-tone') ?? null
+      )
+    ).toEqual([null, 'live', 'live', null])
+  })
+
+  it('marks a broken build red and keeps it from opening, with the reason on hover', async () => {
+    const BROKEN = build({
+      id: 'broken',
+      name: 'Broken Build',
+      statusTag: { style: 'danger', label: 'Install failed' }
+    })
+    getInstallations.mockResolvedValue([OLDEST, BROKEN])
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+
+    const broken = buildOptions()[1]!
+    expect(
+      broken.querySelector('[data-testid="home-open-build-status-dot"]')?.getAttribute('data-tone')
+    ).toBe('danger')
+    expect(broken.hasAttribute('data-disabled')).toBe(true)
+
+    broken.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toBeUndefined()
+
+    broken
+      .closest('.tooltip-wrap')!
+      .dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse', buttons: 0 }))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Install failed')
+    )
+  })
+
+  it('marks a build that did not start red, and still lets you open it', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+    useSessionStore().errorInstances.set(OLDEST.id, { installationName: OLDEST.name })
+    await openBuildMenu(wrapper)
+
+    const failed = buildOptions()[1]!
+    expect(
+      failed.querySelector('[data-testid="home-open-build-status-dot"]')?.getAttribute('data-tone')
+    ).toBe('danger')
+    failed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(wrapper.emitted('pick')).toEqual([[OLDEST]])
+  })
+
+  it('opens ComfyUI in the build picked in the menu, without changing the current one', async () => {
+    getInstallations.mockResolvedValue([OLDEST, NEWEST, CLOUD])
+    const wrapper = await openHome()
+    await openBuildMenu(wrapper)
+
+    buildOptions()[1]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.emitted('pick')).toEqual([[CLOUD]])
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('My Local 1')
+  })
+
+  it('leaves the build menu out with one build, keeping the icon and no arrow', async () => {
+    getInstallations.mockResolvedValue([OLDEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-open-comfyui-build"]').text()).toBe('Flux Sandbox')
+    expect(wrapper.find('[data-testid="home-open-build-menu"]').exists()).toBe(false)
+    expect(
+      (wrapper.get('[data-testid="home-open-comfyui-icon"]').element as SVGElement).dataset.kind
+    ).toBe('local')
+    expect(wrapper.get('[data-testid="home-open-comfyui"]').findAll('svg')).toHaveLength(1)
   })
 
   it('goes to the full list from All builds', async () => {

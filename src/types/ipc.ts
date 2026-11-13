@@ -748,8 +748,15 @@ export interface PerformanceTestBenchmark {
   averageJobDurationSeconds: number | null
   medianJobDurationSeconds: number | null
   measuredJobCount: number
-  hardwareName: string | null
+  machine: PerformanceTestMachine
   result: Record<string, PerformanceTestResultValue>
+}
+
+export interface PerformanceTestMachine {
+  gpu: string | null
+  cpu: string | null
+  memoryGb: number | null
+  platform: string | null
 }
 
 export interface SnapshotDiffEntry {
