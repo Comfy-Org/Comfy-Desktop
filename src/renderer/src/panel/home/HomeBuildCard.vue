@@ -12,7 +12,8 @@ import {
   type HomeBuildStatus,
   type HomeBuildTone
 } from './homeBuild'
-import { useInstallProgress } from '../../composables/useInstallProgress'
+import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
+import { useProgressStore } from '../../stores/progressStore'
 import type { Installation } from '../../types/ipc'
 
 const { build, status, tone } = defineProps<{
@@ -24,15 +25,19 @@ const { build, status, tone } = defineProps<{
 const emit = defineEmits<{ open: [] }>()
 
 const { t } = useI18n()
-const install = useInstallProgress(() => build)
+const install = useBuildProgress(() => build)
+const progressStore = useProgressStore()
 const installing = computed(() => install.progress.value !== null)
-const broken = computed(() =>
-  build.statusTag?.style === 'danger' ? build.statusTag.label : undefined
-)
+const starting = computed(() => install.progress.value?.kind === 'launch')
+const broken = computed(() => {
+  if (build.statusTag?.style === 'danger') return build.statusTag.label
+  return launchFailed(progressStore, build.id) ? t('home.buildDidntStart') : undefined
+})
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
-  if (installing.value) return t('home.buildInstalling')
+  if (installing.value)
+    return t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
@@ -63,7 +68,7 @@ const CARD_CLASS =
     v-if="installing"
     :class="CARD_CLASS"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
-    data-testid="home-build-installing"
+    :data-testid="starting ? 'home-build-starting' : 'home-build-installing'"
     :data-build-id="build.id"
   >
     <span
@@ -121,10 +126,11 @@ const CARD_CLASS =
       </Button>
     </span>
     <span
+      v-if="install.progress.value?.percent != null"
       class="absolute bottom-0 left-0 h-[3px] rounded-r-full bg-foreground transition-[width] duration-500 ease-out motion-reduce:transition-none"
       :style="{ width: `${install.progress.value?.percent ?? 0}%` }"
       role="progressbar"
-      :aria-label="t('home.buildInstalling')"
+      :aria-label="statusLabel"
       :aria-valuenow="install.progress.value?.percent ?? 0"
       aria-valuemin="0"
       aria-valuemax="100"

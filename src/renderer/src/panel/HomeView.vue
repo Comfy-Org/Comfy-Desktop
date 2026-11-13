@@ -9,7 +9,13 @@ import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
 import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
-import { useInstallingBuilds } from '../composables/useInstallProgress'
+import {
+  buildProgressOf,
+  launchFailed,
+  useInstallingBuilds,
+  useViewBuildLogs
+} from '../composables/useBuildProgress'
+import { useProgressStore } from '../stores/progressStore'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -44,6 +50,8 @@ const workspaceBuilds = computed(() =>
   )
 )
 const isInstalling = useInstallingBuilds()
+const progressStore = useProgressStore()
+const viewBuildLogs = useViewBuildLogs()
 const builds = computed(() =>
   [
     ...workspaceBuilds.value.filter((build) => isInstalling(build.id)),
@@ -58,7 +66,7 @@ const narrowBuildIds = computed(() => {
   return new Set([latest.id, ...(second ? [second.id] : [])])
 })
 const openableBuilds = computed(() =>
-  workspaceBuilds.value.filter((build) => !isInstalling(build.id))
+  workspaceBuilds.value.filter((build) => buildProgressOf(progressStore, build.id) === null)
 )
 const mostRecentBuild = computed(
   () =>
@@ -70,6 +78,7 @@ const mostRecentBuild = computed(
 )
 function openBuild(build: Installation): void {
   if (build.statusTag?.style === 'danger') emit('open-build', build)
+  else if (launchFailed(progressStore, build.id)) viewBuildLogs(build.id)
   else emit('pick', build)
 }
 function buildStatus(build: Installation) {

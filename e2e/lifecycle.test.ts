@@ -5,6 +5,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { resolve } from 'node:path'
 import { test, expect } from '@playwright/test'
+import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import {
   clickInstallTile,
@@ -191,10 +192,7 @@ test.beforeAll(async () => {
       )
 
       try {
-        await clickInstallTile(ctx.panel, 'ComfyUI')
-        await expect
-          .poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] })
-          .toBe(true)
+        await launchFromDashboard('ComfyUI')
         await ensureInstallPanelView(ctx.app, _updateInstallId)
         await waitForWebContents(ctx.app, 'panel.html')
         console.log(
@@ -394,7 +392,7 @@ test('first-use Change chain marks firstUseCompleted once and cycles firstUseMod
   )
 })
 
-test('the launch landed on a single host window (in-place attach) @sec-setup @lifecycle', async () => {
+test('the launch opened ComfyUI in its own window next to the dashboard @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: install was not launched on this boot')
   const state = await evalWithRetry(() =>
     ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
@@ -406,11 +404,19 @@ test('the launch landed on a single host window (in-place attach) @sec-setup @li
             /^http:\/\/(127\.0\.0\.1|localhost):/.test(v.webContents.getURL())
         )
       )
-      return { count: wins.length, comfyHostId: comfyHost?.id ?? null }
+      const dashboard = wins.find((w) => w.id !== comfyHost?.id)
+      return {
+        count: wins.length,
+        comfyHostId: comfyHost?.id ?? null,
+        dashboardId: dashboard?.id ?? null
+      }
     })
   )
-  expect(state.count).toBe(1)
+  expect(state.count).toBe(2)
   expect(state.comfyHostId).not.toBeNull()
+  expect(state.dashboardId).not.toBeNull()
+
+  await closeExtraWindowsKeepComfyHost()
 })
 
 test('ComfyUI window has dark background and split-view architecture @sec-setup @lifecycle', async () => {
@@ -452,35 +458,16 @@ test('ComfyUI window has dark background and split-view architecture @sec-setup 
   expect(arch!.comfyBounds.height, 'comfyView height is 0').toBeGreaterThan(0)
 })
 
-async function closeExtraWindowsKeepComfyHost(): Promise<void> {
-  await evalWithRetry(() =>
-    ctx.app.evaluate(({ BrowserWindow, WebContentsView }) => {
-      const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed())
-      const comfyHost = wins.find((w) =>
-        w.contentView.children.some(
-          (v) =>
-            v instanceof WebContentsView &&
-            /^http:\/\/(127\.0\.0\.1|localhost):/.test(v.webContents.getURL())
-        )
-      )
-      if (!comfyHost) throw new Error('running comfy host window not found')
-      for (const win of wins) {
-        if (win.id !== comfyHost.id) win.close()
-      }
-    })
-  )
+async function launchFromDashboard(name: string): Promise<void> {
+  await clickInstallTile(ctx.panel, name)
   await expect
-    .poll(
-      () =>
-        evalWithRetry(() =>
-          ctx.app.evaluate(
-            ({ BrowserWindow }) =>
-              BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length
-          )
-        ),
-      { timeout: 15_000, intervals: [200, 500] }
-    )
-    .toBe(1)
+    .poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] })
+    .toBe(true)
+  await closeExtraWindowsKeepComfyHost()
+}
+
+async function closeExtraWindowsKeepComfyHost(): Promise<void> {
+  await keepOnlyComfyHostWindow(ctx.app)
 }
 
 test('picker Dashboard opens a chooser without stopping the running install @sec-setup @lifecycle', async () => {
@@ -781,8 +768,7 @@ test('update-comfyui drives the real updater and moves HEAD forward @sec-update 
 })
 
 test('re-launch ComfyUI after update validates the updated install runs @sec-update @lifecycle', async () => {
-  await clickInstallTile(ctx.panel, 'ComfyUI')
-  await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
+  await launchFromDashboard('ComfyUI')
 })
 
 interface PytorchPickerOption {
@@ -1430,10 +1416,7 @@ test('per-install Manager security level + network mode land in Manager config.i
   }
 
   await stopAndReturnToDashboardViaUI()
-  await clickInstallTile(ctx.panel, 'ComfyUI')
-  await expect
-    .poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000, 2_000] })
-    .toBe(true)
+  await launchFromDashboard('ComfyUI')
   expect(await ensureInstallPanelView(ctx.app, _updateInstallId)).toBe(true)
   await waitForWebContents(ctx.app, 'panel.html')
 
@@ -2051,7 +2034,7 @@ test('restart clicked during a FRESH chooser boot (unattached window) cancels it
     expect(await isInstallLaunching(ctx.app, _updateInstallId)).toBe(true)
     expect(await getRunningSessionSnapshot(ctx.app, _updateInstallId)).toBeNull()
 
-    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    const popup = await openManageViaDashboard(ctx.app, ctx.panel, _updateInstallId, 'config')
     await setPortArgViaPicker(popup, targetPort)
 
     await expect
@@ -2118,6 +2101,7 @@ test('restart clicked during a FRESH chooser boot (unattached window) cancels it
     ).rejects.toThrow()
     await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
     await closeTitlePopupIfOpen(ctx.app)
+    await closeExtraWindowsKeepComfyHost()
   } finally {
     await releaseLaunchSpawnHold(ctx.app)
   }
@@ -2414,8 +2398,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   test.setTimeout(120_000)
 
   if (!(await comfyFrontendIsLoaded())) {
-    await clickInstallTile(ctx.panel, 'ComfyUI')
-    await expect.poll(comfyFrontendIsLoaded, { timeout: 180_000, intervals: [1_000] }).toBe(true)
+    await launchFromDashboard('ComfyUI')
     await ensureInstallPanelView(ctx.app, _updateInstallId)
     await waitForWebContents(ctx.app, 'panel.html')
   }

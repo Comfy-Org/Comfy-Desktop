@@ -78,6 +78,7 @@ export interface UsePanelOverlaysOpts {
   ) => Promise<void>
   firstUseChain?: FirstUseChainHooks
   onBackgroundInstall?: (installationId: string) => void
+  launchesInPlace?: (installationId: string) => boolean
   progressRef: Ref<InstanceType<typeof ProgressModal> | null>
   newInstallRef: Ref<InstanceType<typeof InstallWizardModal> | null>
   trackRef: Ref<InstanceType<typeof TrackModal> | null>
@@ -178,8 +179,26 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     })
   }
 
-  function installsInBackground(showOpts: ShowProgressOpts): boolean {
-    return showOpts.opKind === 'install' && !installationId
+  function runsInBackground(showOpts: ShowProgressOpts): boolean {
+    if (installationId) return false
+    if (showOpts.opKind === 'install') return true
+    return showOpts.opKind === 'launch' && !opts.launchesInPlace?.(showOpts.installationId)
+  }
+
+  function resolvePortConflictInTakeover(id: string): void {
+    const stop = watch(
+      () => progressStore.operations.get(id)?.finished === true,
+      async (finished) => {
+        if (!finished) return
+        stop()
+        const op = progressStore.operations.get(id)
+        if (!op?.result?.portConflict) return
+        const ok = await openProgressTakeover(id, op.title.split(' — ')[0] || op.title)
+        if (!ok) return
+        await nextTick()
+        progressRef.value?.showOperation(id)
+      }
+    )
   }
 
   function openProgressTakeover(id: string, operationName: string): Promise<boolean> {
@@ -194,10 +213,14 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
 
   async function handleShowProgress(showOpts: ShowProgressOpts): Promise<void> {
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
-    if (installsInBackground(showOpts)) {
-      opts.firstUseChain?.onBackgroundInstall()
+    if (runsInBackground(showOpts)) {
       startOperationOnce({ ...showOpts, chainSpan: undefined })
       if (currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
+      if (showOpts.opKind === 'launch') {
+        resolvePortConflictInTakeover(showOpts.installationId)
+        return
+      }
+      opts.firstUseChain?.onBackgroundInstall()
       opts.onBackgroundInstall?.(showOpts.installationId)
       return
     }

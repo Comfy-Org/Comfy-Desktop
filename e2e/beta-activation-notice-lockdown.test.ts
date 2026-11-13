@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { expect, test, type ElectronApplication } from '@playwright/test'
+import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { WebContentsPage } from './support/cdpPages'
@@ -129,6 +130,7 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
       )) === true,
     { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
+  await keepOnlyComfyHostWindow(ctx.app)
 
   expect(
     await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)

@@ -11,7 +11,7 @@ import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
-import { installProgressOf } from '../composables/useInstallProgress'
+import { buildProgressOf } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
@@ -81,7 +81,7 @@ const buildRows = computed(() =>
   visibleInstalls.value
     .filter((build) => isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId))
     .map((build) => {
-      const install = installProgressOf(progressStore, build.id)
+      const install = buildProgressOf(progressStore, build.id)
       return {
         build,
         install,
@@ -243,7 +243,7 @@ function navigate(page: DashboardPage): void {
             </span>
             <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
             <span
-              v-if="install"
+              v-if="install?.kind === 'install' && install.percent !== null"
               class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
               data-testid="app-sidebar-build-percent"
               >{{ t('installProgress.percent', { percent: install.percent }) }}</span

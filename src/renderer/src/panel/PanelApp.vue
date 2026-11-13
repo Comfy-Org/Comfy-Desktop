@@ -48,7 +48,7 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
-import { provideInstallLogs } from '../composables/useInstallProgress'
+import { provideBuildLogs } from '../composables/useBuildProgress'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { DashboardPage, Installation } from '../types/ipc'
 
@@ -122,7 +122,8 @@ overlays = usePanelOverlays({
   firstUseRef,
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
   firstUseChain: firstUseChain.hooks,
-  onBackgroundInstall: () => void showHome()
+  onBackgroundInstall: () => void showHome(),
+  launchesInPlace: (id) => chooserHandoff.launchesInPlace(id)
 })
 const {
   activePanel,
@@ -138,7 +139,7 @@ const {
 } = overlays
 
 const buildProgressId = ref<string | null>(null)
-provideInstallLogs((id) => {
+provideBuildLogs((id) => {
   buildProgressId.value = id
 })
 
@@ -228,6 +229,12 @@ function handleSidebarNavigate(page: DashboardPage): void {
   if (page === 'home' || page === 'chooser') dashboardHomePage.value = page
 }
 
+function retryLaunch(id: string): void {
+  buildProgressId.value = null
+  const inst = installationStore.getById(id)
+  if (inst) void handleChooserPick(inst)
+}
+
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
   if (await focusRunningBuild(inst)) return
   await handleChooserPick(inst)
@@ -256,7 +263,7 @@ const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {
-    const outcome = await chooserHandoff.performChooserLaunch(inst)
+    const outcome = await chooserHandoff.performChooserLaunch(inst, undefined, { inPlace: true })
     await nextTick()
     const takeoverReady = outcome === 'launched' && currentOverlay.value?.kind === 'takeover'
     window.api.resolveStartupRestoreReveal(takeoverReady ? 'takeover-ready' : 'dashboard-fallback')
@@ -588,6 +595,7 @@ onUnmounted(() => {
       v-if="buildProgressId"
       :installation-id="buildProgressId"
       @close="buildProgressId = null"
+      @retry="retryLaunch(buildProgressId)"
     />
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />

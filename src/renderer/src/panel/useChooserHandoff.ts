@@ -20,8 +20,9 @@ export interface ChooserHandoffApi {
   performChooserLaunch: (
     installation: Installation,
     onMissingLaunchAction?: () => void,
-    opts?: { isRestart?: boolean }
+    opts?: { isRestart?: boolean; inPlace?: boolean }
   ) => Promise<ChooserLaunchOutcome>
+  launchesInPlace: (installationId: string) => boolean
   handleChooserPick: (installation: Installation, opts?: { isRestart?: boolean }) => Promise<void>
   handleChooserShowNewInstall: () => void
   performPickerLaunch: (
@@ -37,6 +38,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   })
 
   let pendingPickUnsub: (() => void) | null = null
+  const inPlaceLaunches = new Set<string>()
 
   async function prepareChooserHostHandoff(
     installationId: string,
@@ -60,7 +62,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   async function performChooserLaunch(
     installation: Installation,
     onMissingLaunchAction: () => void = () => {},
-    opts?: { isRestart?: boolean }
+    opts?: { isRestart?: boolean; inPlace?: boolean }
   ): Promise<ChooserLaunchOutcome> {
     if (sessionStore.isRunning(installation.id)) {
       await window.api.focusComfyWindow(installation.id)
@@ -73,11 +75,26 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
       onMissingLaunchAction()
       return 'missing-action'
     }
-    await executeChooserAction(installation, launchAction, {
-      onGuardsPassed: () => prepareChooserHostHandoff(installation.id),
-      isRestart: opts?.isRestart === true
-    })
+    if (!opts?.inPlace) {
+      await executeChooserAction(installation, launchAction, {
+        isRestart: opts?.isRestart === true
+      })
+      return 'launched'
+    }
+    inPlaceLaunches.add(installation.id)
+    try {
+      await executeChooserAction(installation, launchAction, {
+        onGuardsPassed: () => prepareChooserHostHandoff(installation.id),
+        isRestart: opts?.isRestart === true
+      })
+    } finally {
+      inPlaceLaunches.delete(installation.id)
+    }
     return 'launched'
+  }
+
+  function launchesInPlace(installationId: string): boolean {
+    return inPlaceLaunches.has(installationId)
   }
 
   async function handleChooserPick(
@@ -120,6 +137,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
   return {
     prepareChooserHostHandoff,
     performChooserLaunch,
+    launchesInPlace,
     handleChooserPick,
     handleChooserShowNewInstall,
     performPickerLaunch

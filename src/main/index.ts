@@ -557,7 +557,7 @@ function onLaunch({
     return
   }
 
-  entry.layoutViews()
+  prewarmAttachedPanel(entry)
 
   if (proc) {
     proc.on('exit', () => {})
@@ -620,7 +620,6 @@ ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }
       }
       return
     }
-    return
   }
 })
 
