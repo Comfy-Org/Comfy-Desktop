@@ -768,8 +768,7 @@ function rowState(i: number): string {
         <div :key="flow.step" class="mar-wizard-body mss-body">
           <DialogTitle as="h3" class="text-title font-semibold">Change setup</DialogTitle>
           <DialogDescription
-            >Everything here is already set to what fits this computer. Back keeps it as it
-            was.</DialogDescription
+            >Everything here is already set to what fits this computer.</DialogDescription
           >
           <!-- A settings sheet: label on the left, control on the right,
                a hairline between rows. Picks are radio cards. -->
@@ -921,11 +920,9 @@ function rowState(i: number): string {
           </div>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <!-- Back is the way out: it leaves things as they were. -->
-          <Button variant="ghost" size="lg" @click="discardChanges"
-            ><ArrowLeft :size="16" />Back</Button
-          >
+          <!-- Discard leaves things as they were; both actions sit on the right. -->
           <span class="mr-auto"></span>
+          <Button variant="ghost" size="lg" @click="discardChanges">Discard</Button>
           <Button
             v-if="method === 'remote'"
             variant="primary"
