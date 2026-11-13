@@ -7,6 +7,7 @@ defineProps<{
   diskSpaceLoading: boolean
   diskSpace: DiskSpaceInfo | null
   estimatedSize: number
+  issuesOnly?: boolean
 }>()
 </script>
 
@@ -35,7 +36,7 @@ defineProps<{
   >
     {{ $t('pathValidation.insideExistingInstallMessage') }}
   </div>
-  <div class="path-disk-info mt-1 min-h-[18px] text-[13px] text-text-muted">
+  <div v-if="!issuesOnly" class="path-disk-info mt-1 min-h-[18px] text-[13px] text-text-muted">
     <template v-if="diskSpaceLoading">
       {{ $t('diskSpace.checking') }}
     </template>

@@ -2,7 +2,16 @@
 import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import { ref, computed, watch, onMounted, onBeforeUnmount, toRaw, type Component } from 'vue'
+import {
+  ref,
+  computed,
+  watch,
+  nextTick,
+  onMounted,
+  onBeforeUnmount,
+  toRaw,
+  type Component
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   ArrowLeft,
@@ -55,6 +64,8 @@ import SetupOptionCards, { type SetupOptionCard } from '../components/SetupOptio
 import TemplatePickerStep from '../components/TemplatePickerStep.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
+import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import { formatBytes } from '../lib/formatting'
 import type { Build, BuildTarget } from '../devplatform/types'
 
 const emit = defineEmits<{
@@ -62,6 +73,7 @@ const emit = defineEmits<{
   'show-progress': [opts: ShowProgressOpts]
   'navigate-list': []
   'back-to-local-branch': []
+  'show-build-import': [flow: 'track' | 'load-snapshot']
 }>()
 
 const spinnerClass =
@@ -341,6 +353,7 @@ const diskTooSmallForAnyTemplate = computed(() => {
 })
 
 const asksForTemplate = computed(() => props.hideBackToDashboard)
+const offersBuildImport = computed(() => !props.hideBackToDashboard)
 
 const shouldShowPickerStep = computed(
   () =>
@@ -554,6 +567,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   machineUnsupported.value = false
   unsupportedReason.value = ''
   view.value = 'summary'
+  changeSetupDraft = null
   hardwareValidation = null
   hardwareWarning.value = ''
   resetDiskSpace()
@@ -1159,7 +1173,7 @@ function getSelectOptions(field: SourceField): BaseSelectOption[] {
   if (!options) return []
   return options.map((opt) => ({
     value: opt.value,
-    label: opt.recommended ? `${opt.label} (${t('newInstall.recommended')})` : opt.label,
+    label: opt.label,
     description: opt.description
   }))
 }
@@ -1178,6 +1192,119 @@ function onSelectFieldChange(field: SourceField, fieldIndex: number, value: stri
   const idx = options.findIndex((o) => o.value === value)
   if (idx < 0) return
   handleFieldSelectChange(field, fieldIndex, String(idx))
+}
+
+const releaseChoices = computed(() => {
+  const options = fieldOptions.value.get('release')
+  if (!options || options.length !== 2) return null
+  return options.map((option) => ({ value: option.value, label: option.label }))
+})
+
+function isSegmentedRelease(field: SourceField): boolean {
+  return field.id === 'release' && releaseChoices.value !== null
+}
+
+const versionFieldIndex = computed(
+  () => currentSource.value?.fields.findIndex((field) => field.id === 'comfyVersion') ?? -1
+)
+const inlineVersionField = computed(() => {
+  if (!releaseChoices.value) return null
+  const field = currentSource.value?.fields[versionFieldIndex.value]
+  return field && !isHiddenWhenEmpty(field) ? field : null
+})
+
+function isInlinedField(field: SourceField): boolean {
+  return field.id === 'comfyVersion' && releaseChoices.value !== null
+}
+
+function selectReleaseChoice(field: SourceField, fieldIndex: number, value: string): void {
+  if (selections.value[field.id]?.value === value) return
+  onSelectFieldChange(field, fieldIndex, value)
+}
+
+const diskFreeLabel = computed(() =>
+  !diskSpaceLoading.value && diskSpace.value
+    ? t('diskSpace.free', { size: formatBytes(diskSpace.value.free) })
+    : ''
+)
+const diskShortLabel = computed(() => {
+  const required = estimatedInstallSize.value
+  if (diskSpaceLoading.value || !diskSpace.value || required <= 0) return ''
+  if (diskSpace.value.free >= required) return ''
+  return t('newInstall.requiredSpace', { size: formatBytes(required) })
+})
+
+interface ChangeSetupDraft {
+  sourceKey: string | null
+  selections: Record<string, FieldOption>
+  fieldOptions: Map<string, FieldOption[]>
+  fieldLoading: Map<string, boolean>
+  fieldErrors: Map<string, string>
+  textFieldValues: Map<string, string>
+  saveDisabled: boolean
+  sourceError: string
+  instPath: string
+  selectedBuildId: string
+  selectedBuildTargetId: string
+}
+
+let changeSetupDraft: ChangeSetupDraft | null = null
+
+function openChangeSetup(): void {
+  changeSetupDraft = {
+    sourceKey: selectedSourceCard.value,
+    selections: { ...selections.value },
+    fieldOptions: new Map(fieldOptions.value),
+    fieldLoading: new Map(fieldLoading.value),
+    fieldErrors: new Map(fieldErrors.value),
+    textFieldValues: new Map(textFieldValues.value),
+    saveDisabled: saveDisabled.value,
+    sourceError: sourceError.value,
+    instPath: instPath.value,
+    selectedBuildId: selectedBuildId.value,
+    selectedBuildTargetId: selectedBuildTargetId.value
+  }
+  view.value = 'change'
+}
+
+function saveChangeSetup(): void {
+  changeSetupDraft = null
+  view.value = 'summary'
+}
+
+async function restoreSourceCard(key: string): Promise<void> {
+  const tab = installSourceTabs.value.find((candidate) => candidate.key === key)
+  if (!tab) return
+  if (tab.kind === 'managed') await selectManagedInstallMode()
+  else if (managedBuildMode.value) await selectSourceCard(tab.source)
+  else await selectSource(tab.source)
+}
+
+async function discardChangeSetup(): Promise<void> {
+  const draft = changeSetupDraft
+  changeSetupDraft = null
+  view.value = 'summary'
+  if (!draft) return
+  if (draft.sourceKey !== selectedSourceCard.value) {
+    if (draft.sourceKey) await restoreSourceCard(draft.sourceKey)
+    else resetSourceState(null)
+  }
+  if (draft.sourceKey !== selectedSourceCard.value) return
+  instPath.value = draft.instPath
+  if (managedBuildMode.value) {
+    selectedBuildId.value = draft.selectedBuildId
+    await nextTick()
+    selectedBuildTargetId.value = draft.selectedBuildTargetId
+    return
+  }
+  loadGeneration++
+  selections.value = draft.selections
+  fieldOptions.value = draft.fieldOptions
+  fieldLoading.value = draft.fieldLoading
+  fieldErrors.value = draft.fieldErrors
+  textFieldValues.value = draft.textFieldValues
+  saveDisabled.value = draft.saveDisabled
+  sourceError.value = draft.sourceError
 }
 
 function isHiddenWhenEmpty(field: SourceField): boolean {
@@ -1221,6 +1348,7 @@ const sourceCards = computed<SetupOptionCard[]>(() =>
         ? {
             value: tab.key,
             label: t('newInstall.managedBuilds'),
+            description: t('newInstall.managedBuildsMeta'),
             icon: Users,
             testId: 'workspace-install-source-managed',
             disabled: authorizingWorkspace.value
@@ -1228,7 +1356,10 @@ const sourceCards = computed<SetupOptionCard[]>(() =>
         : {
             value: tab.key,
             label: tab.source.id === 'standalone' ? t('newInstall.publicBuilds') : tab.source.label,
-            description: tab.source.description,
+            description:
+              tab.source.id === 'standalone'
+                ? t('newInstall.publicBuildsMeta')
+                : tab.source.description,
             icon: SOURCE_ICONS[tab.source.id] ?? Package,
             testId: `install-source-${tab.source.id}`,
             disabled: authorizingWorkspace.value
@@ -1496,7 +1627,7 @@ defineExpose({ open })
                   type="button"
                   class="config-change ml-auto flex-none"
                   data-testid="config-change-setup"
-                  @click="view = 'change'"
+                  @click="openChangeSetup"
                 >
                   {{ $t('newInstall.change') }}
                 </Button>
@@ -1709,7 +1840,7 @@ defineExpose({ open })
               >
                 <div
                   v-for="(field, fieldIndex) in currentSource.fields"
-                  v-show="!isHiddenWhenEmpty(field)"
+                  v-show="!isHiddenWhenEmpty(field) && !isInlinedField(field)"
                   :key="field.id"
                   class="config-form-row config-source-field grid grid-cols-[148px_minmax(0,1fr)] gap-4 py-3"
                   :class="field.renderAs === 'cards' ? 'items-start' : 'items-center'"
@@ -1798,6 +1929,34 @@ defineExpose({ open })
                     </div>
                   </div>
 
+                  <div
+                    v-else-if="isSegmentedRelease(field)"
+                    class="config-release flex min-w-0 flex-wrap items-center gap-2"
+                    data-testid="config-release"
+                  >
+                    <SegmentedControl
+                      :model-value="selections[field.id]?.value ?? ''"
+                      :options="releaseChoices ?? []"
+                      :label="field.label"
+                      @update:model-value="selectReleaseChoice(field, fieldIndex, $event)"
+                    />
+                    <BaseSelect
+                      v-if="inlineVersionField"
+                      class="config-release-version min-w-[160px] flex-1"
+                      :model-value="selections[inlineVersionField.id]?.value ?? ''"
+                      :options="getSelectOptions(inlineVersionField)"
+                      :placeholder="getSelectPlaceholder(inlineVersionField)"
+                      :disabled="
+                        fieldLoading.get(inlineVersionField.id) ||
+                        (fieldOptions.get(inlineVersionField.id)?.length ?? 0) === 0
+                      "
+                      :aria-label="inlineVersionField.label"
+                      @update:model-value="
+                        onSelectFieldChange(inlineVersionField, versionFieldIndex, $event)
+                      "
+                    />
+                  </div>
+
                   <BaseSelect
                     v-else
                     :model-value="selections[field.id]?.value ?? ''"
@@ -1823,62 +1982,74 @@ defineExpose({ open })
                   $t('newInstall.installLocation')
                 }}</label>
                 <div class="flex min-w-0 flex-col">
-                  <div class="config-path-row flex items-stretch gap-2">
-                    <InputGroup
-                      class="config-input config-path-input min-w-0 flex-auto gap-2.5 px-3"
-                    >
-                      <HardDrive :size="14" aria-hidden="true" />
-                      <Button
-                        v-if="instPath"
-                        size="link"
-                        variant="link"
-                        type="button"
-                        class="config-path-open block min-w-0 flex-[0_1_auto] truncate py-0 text-left text-inherit"
-                        :title="$t('actions.openDirectory')"
-                        :aria-label="`${$t('actions.openDirectory')}: ${instPath}`"
-                        @click="handleOpenInstPath"
-                      >
-                        {{ instPath }}
-                      </Button>
-                    </InputGroup>
+                  <InputGroup
+                    class="config-input config-path-input min-w-0 gap-2.5 pr-1 pl-3"
+                    data-testid="config-path-input"
+                  >
+                    <HardDrive :size="14" class="flex-none" aria-hidden="true" />
                     <Button
-                      size="lg"
-                      variant="secondary"
-                      class="h-10 px-3.5 py-0 text-[13px]"
+                      v-if="instPath"
+                      size="link"
+                      variant="link"
                       type="button"
+                      class="config-path-open block min-w-0 flex-1 truncate py-0 text-left text-inherit"
+                      :title="$t('actions.openDirectory')"
+                      :aria-label="`${$t('actions.openDirectory')}: ${instPath}`"
+                      @click="handleOpenInstPath"
+                    >
+                      {{ instPath }}
+                    </Button>
+                    <span v-else class="flex-1" />
+                    <span
+                      v-if="diskFreeLabel"
+                      class="config-path-free flex-none text-[12px] whitespace-nowrap text-text-muted"
+                      >{{ diskFreeLabel }}</span
+                    >
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      type="button"
+                      class="config-path-browse flex-none"
                       @click="handleBrowse"
                     >
                       {{ $t('common.browse') }}
                     </Button>
-                  </div>
+                  </InputGroup>
                   <PathDiskInfo
+                    issues-only
                     :path-issues="pathIssues"
                     :disk-space-loading="diskSpaceLoading"
                     :disk-space="diskSpace"
                     :estimated-size="estimatedInstallSize"
                   />
+                  <p
+                    v-if="diskShortLabel"
+                    class="config-path-required m-0 mt-1 text-[12px] leading-4 text-[var(--warning)]"
+                  >
+                    {{ diskShortLabel }}
+                  </p>
                 </div>
               </div>
 
               <p
-                v-if="remoteSource"
-                class="config-other-ways m-0 mt-4 mb-2 text-[12.5px] leading-[18px] text-text-muted"
+                v-if="remoteSource || offersBuildImport"
+                class="config-other-ways m-0 mt-4 mb-2 flex flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
               >
-                <template v-if="remoteSelected">
-                  <Button
-                    size="link"
-                    variant="link"
-                    type="button"
-                    class="config-install-here text-[12.5px] text-neutral-100"
-                    data-testid="install-source-here"
-                    @click="selectStandaloneSource"
-                  >
-                    {{ $t('newInstall.installHereInstead') }}
-                  </Button>
-                </template>
+                <Button
+                  v-if="remoteSelected"
+                  size="link"
+                  variant="link"
+                  type="button"
+                  class="config-install-here text-[12.5px] text-neutral-100"
+                  data-testid="install-source-here"
+                  @click="selectStandaloneSource"
+                >
+                  {{ $t('newInstall.installHereInstead') }}
+                </Button>
                 <template v-else>
-                  {{ $t('newInstall.alreadyHaveComfy') }}
+                  <span>{{ $t('newInstall.alreadyHaveComfy') }}</span>
                   <Button
+                    v-if="remoteSource"
                     size="link"
                     variant="link"
                     type="button"
@@ -1889,6 +2060,30 @@ defineExpose({ open })
                   >
                     {{ $t('newInstall.connectToServer') }}
                   </Button>
+                  <template v-if="offersBuildImport">
+                    <span v-if="remoteSource" aria-hidden="true">·</span>
+                    <Button
+                      size="link"
+                      variant="link"
+                      type="button"
+                      class="config-add-existing text-[12.5px] text-neutral-100"
+                      data-testid="config-add-existing"
+                      @click="emit('show-build-import', 'track')"
+                    >
+                      {{ $t('newInstall.addExistingBuild') }}
+                    </Button>
+                    <span aria-hidden="true">·</span>
+                    <Button
+                      size="link"
+                      variant="link"
+                      type="button"
+                      class="config-load-snapshot text-[12.5px] text-neutral-100"
+                      data-testid="config-load-snapshot"
+                      @click="emit('show-build-import', 'load-snapshot')"
+                    >
+                      {{ $t('newInstall.loadSnapshot') }}
+                    </Button>
+                  </template>
                 </template>
               </p>
             </div>
@@ -1950,21 +2145,33 @@ defineExpose({ open })
         <footer
           class="install-wizard-foot flex flex-none items-center gap-2 px-7 pt-4 pb-5 [box-shadow:inset_0_1px_0_rgb(255_255_255/0.06)]"
         >
-          <template v-if="step === 'configure'">
+          <template v-if="step === 'configure' && view === 'change'">
             <Button
-              v-if="view === 'change'"
               size="lg"
               variant="textonly"
               type="button"
               class="config-summary-back -ml-3"
               data-testid="config-summary-back"
-              @click="view = 'summary'"
+              @click="discardChangeSetup"
             >
               <ArrowLeft :size="16" aria-hidden="true" />
               {{ $t('common.back') }}
             </Button>
+            <span class="flex-1" />
             <Button
-              v-else-if="cameFromLocalBranch"
+              type="button"
+              size="lg"
+              variant="inverted"
+              class="config-save-changes min-w-[104px]"
+              data-testid="config-save-changes"
+              @click="saveChangeSetup"
+            >
+              {{ $t('newInstall.saveChanges') }}
+            </Button>
+          </template>
+          <template v-else-if="step === 'configure'">
+            <Button
+              v-if="cameFromLocalBranch"
               size="lg"
               variant="textonly"
               type="button"

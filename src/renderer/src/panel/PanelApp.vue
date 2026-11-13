@@ -513,6 +513,7 @@ onUnmounted(() => {
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
         @back-to-local-branch="handleNewInstallBackToLocalBranch"
+        @show-build-import="switchPanel($event, 'new-install')"
       />
       <TrackModal
         v-else-if="currentOverlay.component === 'track'"
