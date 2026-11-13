@@ -921,11 +921,9 @@ function rowState(i: number): string {
           </div>
         </div>
         <footer class="mar-wizard-foot mss-foot">
-          <!-- Back is the way out: it leaves things as they were. -->
-          <Button variant="ghost" size="lg" @click="discardChanges"
-            ><ArrowLeft :size="16" />Back</Button
-          >
+          <!-- Discard leaves things as they were; both actions sit on the right. -->
           <span class="mr-auto"></span>
+          <Button variant="ghost" size="lg" @click="discardChanges">Discard changes</Button>
           <Button
             v-if="method === 'remote'"
             variant="primary"
