@@ -194,13 +194,13 @@ watch(accountContext, () => (assets.value = []))
 
 watch([cloudBuildId, accountContext], () => void loadAssets(), { immediate: true })
 
-let pendingFocus: string | null = null
+const pendingFocus = ref<string | null>(null)
 
 watch(
   () => focusName,
   (name) => {
     if (!name) return
-    pendingFocus = name
+    pendingFocus.value = name
     place.value = 'cloud'
     emit('focus-used')
   },
@@ -208,11 +208,10 @@ watch(
 )
 
 watch(
-  [visibleAssets, loading, cloudLoaded],
-  ([list, busy, cloud]) => {
-    if (!pendingFocus || busy || !cloud) return
-    const name = pendingFocus
-    pendingFocus = null
+  [visibleAssets, loading, cloudLoaded, pendingFocus],
+  ([list, busy, cloud, name]) => {
+    if (!name || busy || !cloud) return
+    pendingFocus.value = null
     if (place.value !== 'cloud') return
     const newest = list
       .filter((asset) => asset.name === name)
