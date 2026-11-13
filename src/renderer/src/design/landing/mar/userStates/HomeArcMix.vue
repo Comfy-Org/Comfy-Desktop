@@ -6,6 +6,7 @@ import ExampleArc from './ExampleArc.vue'
 import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
 import WorkflowCard from '../WorkflowCard.vue'
+import MarSeg from '../pages/MarSeg.vue'
 import { ARC_APPS, ARC_TEMPLATES, interleave, type ArcItem } from './arcItems'
 import { homeArcMix } from './homeArcMix'
 import { exploreStart } from '../explore/exploreStart'
@@ -18,9 +19,9 @@ import { exploreStart } from '../explore/exploreStart'
 const FEATURED = 12
 
 const kind = ref<'apps' | 'templates'>('apps')
-const KINDS = [
-  { value: 'apps' as const, label: 'Apps' },
-  { value: 'templates' as const, label: 'Templates' }
+const KINDS: { value: 'apps' | 'templates'; label: string }[] = [
+  { value: 'apps', label: 'Apps' },
+  { value: 'templates', label: 'Templates' }
 ]
 
 type Topic = 'all' | ArcItem['topic']
@@ -80,24 +81,8 @@ function scrollRow(by: number): void {
 
 <template>
   <div class="mar-arcmix">
-    <div
-      v-if="homeArcMix.id === 'tabs'"
-      class="mar-arcmix-picker"
-      role="tablist"
-      aria-label="Show"
-      data-no-pill
-    >
-      <button
-        v-for="k in KINDS"
-        :key="k.value"
-        type="button"
-        role="tab"
-        class="mar-arcmix-tab"
-        :aria-selected="kind === k.value"
-        @click="kind = k.value"
-      >
-        {{ k.label }}
-      </button>
+    <div v-if="homeArcMix.id === 'tabs'" class="mar-arcmix-picker">
+      <MarSeg v-model="kind" :options="KINDS" label="Show" />
     </div>
     <div
       v-else-if="homeArcMix.id === 'topics'"
@@ -177,42 +162,6 @@ function scrollRow(by: number): void {
 :root .proto-ui.proto-ui.proto-ui .mar-arcmix-chip[aria-selected='true'] {
   background: var(--color-base-foreground);
   color: var(--color-base-background);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab {
-  position: relative;
-  width: auto;
-  height: 28px;
-  padding: 0 8px;
-  background: none;
-  color: var(--color-muted-foreground);
-  font-size: 14px;
-  font-weight: 500;
-  transition: color 140ms ease;
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab:hover {
-  color: var(--color-base-foreground);
-}
-:root .proto-ui.proto-ui.proto-ui .mar-arcmix-tab[aria-selected='true'] {
-  color: var(--color-base-foreground);
-}
-.mar-arcmix-tab::after {
-  position: absolute;
-  right: 8px;
-  bottom: 0;
-  left: 8px;
-  height: 2px;
-  border-radius: 1px;
-  background: currentColor;
-  content: '';
-  opacity: 0;
-  transform: scaleX(0.4);
-  transition:
-    opacity 160ms ease,
-    transform 200ms cubic-bezier(0.2, 0, 0, 1);
-}
-.mar-arcmix-tab[aria-selected='true']::after {
-  opacity: 1;
-  transform: none;
 }
 .mar-arcmix-row {
   margin-top: 28px;

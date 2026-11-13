@@ -128,11 +128,11 @@ DS's Motion page (`ds/motion.ts`).
   empty or not, so the bar never shifts. An empty one says what lands there
   ("No 3D files yet"), never "Nothing matches", which is only for a search
   or a filter.
-- **Home's Apps | Templates tabs are plain text** centred over the arc: the
-  picked one bright and underlined, the other muted, no pill around them.
-  The cards carry no type badge; the tab says what's on the arc.
+- **Home's Apps | Templates tabs are the design system's tabs** (MarSeg),
+  centred over the arc. The cards carry no type badge; the tab says
+  what's on the arc.
 - **Arc cards show only their title** (two lines at most). Pointing at the
-  front card fades a white arrow in a rounded square (9px) into its top
+  front card fades a white arrow on a translucent grey rounded square (9px) into its top
   right corner; nothing
   moves or gets cut (Comfy-Desktop#2060).
 - **Builds are tiles from Milestone 2**, the same card as Home's builds:

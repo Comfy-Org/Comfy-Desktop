@@ -448,11 +448,9 @@ function wheel(e: WheelEvent): void {
   height: 32px;
   place-items: center;
   border-radius: 9px;
-  background: #fff;
-  box-shadow:
-    0 0 0 1px rgb(0 0 0 / 0.06),
-    0 8px 20px -6px rgb(0 0 0 / 0.5);
-  color: #111;
+  background: rgb(255 255 255 / 0.2);
+  backdrop-filter: blur(14px) saturate(1.5);
+  color: #fff;
   opacity: 0;
   pointer-events: none;
   scale: 0.9;
