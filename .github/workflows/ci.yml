@@ -4,9 +4,6 @@ on:
   pull_request:
   merge_group:
     types: [checks_requested]
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -99,7 +96,6 @@ jobs:
   bridge-types-version:
     name: Bridge types version bumped
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
