@@ -1331,6 +1331,35 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
   })
 
+  it('stops loading when Discard cancels a managed Builds load started with no source picked', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    ;(window.api.validateHardware as ReturnType<typeof vi.fn>).mockResolvedValue({
+      supported: false,
+      error: 'This CPU is missing AVX support.'
+    })
+    ;(window.api.comfybuilder.signIn as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'personal-server-id',
+      workspaceType: 'personal'
+    })
+    let finishBuilds: (builds: unknown[]) => void = () => {}
+    ;(window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        finishBuilds = resolve
+      })
+    )
+    const wrapper = await openChangeSetup()
+
+    await wrapper.get('[data-testid="workspace-install-source-managed"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+    finishBuilds([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
+    await flushPromises()
+
+    expect(wrapper.find('.config-loading').exists()).toBe(false)
+  })
+
   it('keeps the edits when Save changes is pressed', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,

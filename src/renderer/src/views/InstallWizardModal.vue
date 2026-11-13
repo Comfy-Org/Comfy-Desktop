@@ -1302,6 +1302,8 @@ async function discardChangeSetup(): Promise<void> {
     if (draft.sourceKey) await restoreSourceCard(draft.sourceKey)
     else {
       modeGeneration++
+      initializing.value = false
+      authorizingWorkspace.value = false
       workspaceInstallMode.value = 'public'
       resetSourceState(null)
     }
