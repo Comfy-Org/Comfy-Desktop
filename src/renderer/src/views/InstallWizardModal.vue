@@ -1686,9 +1686,9 @@ defineExpose({ open })
             </dd>
             <Button
               size="sm"
-              variant="muted-textonly"
+              variant="secondary"
               type="button"
-              class="config-summary-browse"
+              class="config-summary-browse self-center"
               @click="handleBrowse"
             >
               {{ $t('common.browse') }}
