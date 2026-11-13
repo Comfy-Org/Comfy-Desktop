@@ -564,7 +564,7 @@ export function localRequest(input: unknown): LocalRequest | LocalRefusal {
 }
 
 export function fileKey(file: { filename: string; subfolder?: string; type: string }): string {
-  return [file.type, file.subfolder ?? '', file.filename].join('\n')
+  return JSON.stringify([file.type, file.subfolder ?? '', file.filename])
 }
 
 const HISTORY_PATH = /^\/history\/([A-Za-z0-9-]{1,64})$/

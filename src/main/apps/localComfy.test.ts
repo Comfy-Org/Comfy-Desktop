@@ -45,7 +45,9 @@ const fake = vi.hoisted(() => ({
   promptGate: null as Promise<void> | null,
   queueGate: null as { open: Promise<void>; answerAsAsked: boolean } | null,
   servers: new Map<number, FakeComfy>(),
-  sockets: [] as Array<{ url: string; closed: boolean }>
+  sockets: [] as FakeSocket[],
+  operations: new Map<string, AbortController>(),
+  sent: [] as Array<{ type: string; data: unknown }>
 }))
 
 function sessionFor(id: string, mode = 'console'): FakeSession {
@@ -85,7 +87,7 @@ vi.mock('../lib/ipc/shared', async () => {
     _getActiveLaunchIds: () => [],
     _getLaunchingInstances: () => [],
     _isStopping: () => false,
-    _operationAborts: new Map(),
+    _operationAborts: fake.operations,
     _runningSessions: fake.sessions,
     sessionLifecycleEvents: fake.lifecycle,
     stopRunning
@@ -256,7 +258,12 @@ type LocalComfy = typeof LocalComfyModule
 
 async function load(): Promise<LocalComfy> {
   const mod = await import('./localComfy')
-  mod.initLocalComfy(() => [{ isDestroyed: () => false, send: () => {} } as never])
+  mod.initLocalComfy(() => [
+    {
+      isDestroyed: () => false,
+      send: (_channel: string, msg: { type: string; data: unknown }) => fake.sent.push(msg)
+    } as never
+  ])
   return mod
 }
 
@@ -271,6 +278,8 @@ beforeEach(() => {
   fake.ports.clear()
   fake.servers.clear()
   fake.sockets.length = 0
+  fake.operations.clear()
+  fake.sent.length = 0
   fake.apps.id = null
   fake.apps.inst = null
   fake.versionGate = null
@@ -539,6 +548,20 @@ describe('the version of a ComfyUI that is already running', () => {
       own: true,
       version: '0.42.4'
     })
+  })
+})
+
+describe('a running ComfyUI the person is changing', () => {
+  it('is not reused while a Git Pull or other action runs on it', async () => {
+    addInstall('x', 8188, '0.42.4')
+    run('x')
+    fake.operations.set('x', new AbortController())
+    const local = await load()
+
+    const state = await local.getLocal({ minVersion: '0.37.0' })
+
+    expect(state.state).not.toBe('running')
+    expect(state.own).toBeUndefined()
   })
 })
 
@@ -874,6 +897,48 @@ describe('what apps can see on a ComfyUI the person already uses', () => {
     }
   })
 
+  it('passes the page live events of apps runs and the queue status, not of the person own runs', async () => {
+    const { runId } = await reused()
+    const ws = fake.sockets.find((s) => !s.closed && s.url.includes(':8188/'))!
+    const event = (type: string, data: unknown) =>
+      ws.onmessage!({ data: JSON.stringify({ type, data }) })
+
+    event('executing', { node: '3', prompt_id: 'mine-1' })
+    event('progress', { value: 1, max: 4, prompt_id: 'mine-1', node: '3' })
+    event('executed', {
+      node: '9',
+      prompt_id: 'mine-1',
+      output: { images: [{ filename: 'private.png', subfolder: '', type: 'output' }] }
+    })
+    event('executing', { node: '3', prompt_id: runId })
+    event('status', { status: { exec_info: { queue_remaining: 2 } } })
+
+    expect(fake.sent).toEqual([
+      { type: 'executing', data: { node: '3', prompt_id: runId } },
+      { type: 'status', data: { status: { exec_info: { queue_remaining: 2 } } } }
+    ])
+  })
+
+  it('passes the page events of an apps run that ComfyUI sends before it answers the run', async () => {
+    const { local, server } = await reused()
+    server.pending.length = 0
+    const ws = fake.sockets.find((s) => !s.closed && s.url.includes(':8188/'))!
+    const event = (type: string, data: unknown) =>
+      ws.onmessage!({ data: JSON.stringify({ type, data }) })
+    let answer!: () => void
+    fake.promptGate = new Promise<void>((r) => (answer = r))
+    const sending = local.localFetch({ method: 'POST', path: '/prompt', body: { prompt: {} } })
+    await vi.waitFor(() => expect(server.pending).toHaveLength(1))
+    const runId = (server.pending[0] as unknown[])[1] as string
+
+    event('execution_start', { prompt_id: runId })
+    event('execution_start', { prompt_id: 'mine-2' })
+    answer()
+    await sending
+
+    expect(fake.sent).toEqual([{ type: 'execution_start', data: { prompt_id: runId } }])
+  })
+
   it('keeps reading any run on the Apps build, which only apps use', async () => {
     const server = addAppsServer(8300)
     fake.apps.inst = {
@@ -890,5 +955,25 @@ describe('what apps can see on a ComfyUI the person already uses', () => {
     expect(await local.getLocal()).toMatchObject({ state: 'running', name: 'Apps' })
     const history = await local.localFetch({ method: 'GET', path: '/history/other' })
     expect(history.status).toBe(200)
+  })
+
+  it('passes the page live events of any run on the Apps build', async () => {
+    addAppsServer(8300)
+    fake.apps.inst = {
+      id: 'apps',
+      name: 'Apps',
+      sourceId: 'standalone',
+      installPath: '/apps',
+      status: 'installed'
+    }
+    fake.apps.id = 'apps'
+    run('apps')
+    const local = await load()
+    expect(await local.getLocal()).toMatchObject({ state: 'running', name: 'Apps' })
+    const ws = fake.sockets.find((s) => !s.closed && s.url.includes(':8300/'))!
+
+    ws.onmessage!({ data: JSON.stringify({ type: 'executing', data: { prompt_id: 'other' } }) })
+
+    expect(fake.sent).toEqual([{ type: 'executing', data: { prompt_id: 'other' } }])
   })
 })

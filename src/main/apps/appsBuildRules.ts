@@ -221,14 +221,18 @@ export function meetsMinimum(version: string | null, min: string): boolean {
   return version !== null && semver.gte(version, min)
 }
 
+function comfyVersion(raw: unknown): string | null {
+  return typeof raw === 'string' ? semver.valid(raw.trim()) : null
+}
+
 export function statsVersion(stats: unknown): string | null {
   const system = (stats as { system?: { comfyui_version?: unknown } } | null)?.system
-  return releaseVersion(system?.comfyui_version)
+  return comfyVersion(system?.comfyui_version)
 }
 
 export function comfyuiFileVersion(text: string): string | null {
   const m = /^__version__\s*=\s*['"]([^'"]+)['"]/m.exec(text)
-  return m ? releaseVersion(m[1]) : null
+  return m ? comfyVersion(m[1]) : null
 }
 
 export interface ReuseInstall {

@@ -1065,6 +1065,16 @@ describe('what ComfyUI says apps made', () => {
 describe('which ComfyUI owns the runs and files apps made', () => {
   const file = fileKey({ filename: 'ComfyUI_00001_.png', subfolder: '', type: 'output' })
 
+  it('does not let a file name with a line break claim a file in another folder', () => {
+    const owned = new AppsOwnership()
+    owned.addRun('r1', 'x', 1)
+    owned.addRunFiles('r1', 1, [fileKey({ filename: 'b\nc.png', subfolder: 'a', type: 'output' })])
+
+    expect(
+      owned.fileOwner(1, fileKey({ filename: 'c.png', subfolder: 'a\nb', type: 'output' }))
+    ).toBeUndefined()
+  })
+
   it('keeps every run that has not finished and says when no more fit', () => {
     const owned = new AppsOwnership(3)
     for (let i = 0; i < 3; i++) owned.addRun(`r${i}`, 'x', 1)

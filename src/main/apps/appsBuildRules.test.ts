@@ -420,6 +420,12 @@ describe('reading the ComfyUI version a running process reports', () => {
     expect(statsVersion({ system: { comfyui_version: '0.36.0' } })).toBe('0.36.0')
   })
 
+  it('keeps a prerelease, which is older than its release', () => {
+    expect(statsVersion({ system: { comfyui_version: '0.42.1-rc1' } })).toBe('0.42.1-rc1')
+    const rc = { id: 'rc', version: '0.42.1-rc1', running: true, busy: false }
+    expect(pickComfy([rc], '0.42.1')).toBeNull()
+  })
+
   it('gives no version when system_stats names none', () => {
     expect(statsVersion({ system: {} })).toBeNull()
     expect(statsVersion(null)).toBeNull()
@@ -431,6 +437,10 @@ describe('reading the ComfyUI version of an install', () => {
   it('reads comfyui_version.py', () => {
     expect(comfyuiFileVersion('# generated\n__version__ = "0.44.0"\n')).toBe('0.44.0')
     expect(comfyuiFileVersion("__version__='0.3.40'")).toBe('0.3.40')
+  })
+
+  it('keeps a prerelease in comfyui_version.py', () => {
+    expect(comfyuiFileVersion('__version__ = "0.42.1-rc1"')).toBe('0.42.1-rc1')
   })
 
   it('gives no version when the file names none', () => {

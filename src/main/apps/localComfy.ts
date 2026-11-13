@@ -116,6 +116,8 @@ const startedHere = new Map<string, SessionInfo | typeof LAUNCHING>()
 const owned = new AppsOwnership()
 const sending = new Map<string, number>()
 let sendsStarted = 0
+const MAX_HELD_EVENTS = 500
+const held: Array<{ id: string; msg: { type: string; data: unknown } }> = []
 
 function submitting(id: string): boolean {
   return (sending.get(id) ?? 0) > 0
@@ -169,7 +171,8 @@ function launching(id: string): boolean {
 
 function busy(id: string, running: boolean): boolean {
   if (_isStopping(id)) return true
-  if (running || startedHere.has(id)) return false
+  if (running) return _operationAborts.has(id)
+  if (startedHere.has(id)) return false
   return _operationAborts.has(id) || launching(id)
 }
 
@@ -446,6 +449,7 @@ function noteOwned(
   if (req.kind === 'prompt') {
     const id = promptRunId(body)
     if (id) owned.addRun(id, owner, page)
+    releaseHeld(owner)
   } else if (req.kind === 'upload') {
     const file = uploadedFile(body)
     if (file) owned.addUpload(page, file, owner)
@@ -479,6 +483,7 @@ export async function localFetch(input: unknown, page = 0): Promise<LocalAnswer>
     return await send(req, runs, run, personal, page)
   } finally {
     markSending(run.id, -1)
+    releaseHeld(run.id)
   }
 }
 
@@ -622,6 +627,7 @@ export async function localDownload(input: unknown): Promise<LocalDownload> {
 }
 
 interface Socket {
+  id: string
   port: number
   ws: WebSocket | null
   timer: ReturnType<typeof setTimeout> | null
@@ -652,7 +658,8 @@ function connect(s: Socket): void {
     noteRun(runsSeen, msg, Date.now())
     noteMade(msg)
     if (isRunEnd(msg.type)) scheduleFree(s.port)
-    forward(msg)
+    if (pageMaySee(s.id, msg)) forward(msg)
+    else if (submitting(s.id)) hold(s.id, msg)
   }
   ws.onerror = () => {}
   ws.onclose = () => {
@@ -660,6 +667,28 @@ function connect(s: Socket): void {
     s.ws = null
     s.timer = setTimeout(() => connect(s), reconnectDelay(s.attempt++))
   }
+}
+
+function pageMaySee(id: string, msg: { type: string; data: unknown }): boolean {
+  if (id === appsBuildId() || msg.type === 'status') return true
+  const runId = (msg.data as { prompt_id?: unknown } | null)?.prompt_id
+  return typeof runId === 'string' && owned.runOwner(runId) === id
+}
+
+function hold(id: string, msg: { type: string; data: unknown }): void {
+  held.push({ id, msg })
+  if (held.length > MAX_HELD_EVENTS) held.shift()
+}
+
+function releaseHeld(id: string): void {
+  const waiting = submitting(id)
+  const kept = held.filter((h) => {
+    if (h.id !== id) return true
+    if (pageMaySee(id, h.msg)) forward(h.msg)
+    else return waiting
+    return false
+  })
+  held.splice(0, held.length, ...kept)
 }
 
 function noteMade(msg: { type: string; data: unknown }): void {
@@ -676,14 +705,15 @@ function closeSocket(): void {
   socket.ws?.close()
   socket = null
   runsSeen.clear()
+  held.length = 0
 }
 
 export function syncLocalSocket(): void {
   const run = appsPages().length ? appsRunning() : null
-  if (socket && run && socket.port === run.port) return
+  if (socket && run && socket.port === run.port && socket.id === run.id) return
   closeSocket()
   if (!run) return
-  socket = { port: run.port, ws: null, timer: null, attempt: 0, closed: false }
+  socket = { id: run.id, port: run.port, ws: null, timer: null, attempt: 0, closed: false }
   connect(socket)
 }
 
