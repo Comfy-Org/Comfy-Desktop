@@ -9,13 +9,16 @@ import {
   Copy,
   Cpu,
   Crown,
+  Download,
   Ellipsis,
   FolderArchive,
+  Globe,
   Gpu,
   HardDrive,
   LoaderCircle,
   Package,
   SlidersHorizontal,
+  Tag,
   TriangleAlert,
   Users,
   Zap
@@ -603,13 +606,6 @@ function rowState(i: number): string {
                 ? `Another ComfyUI on ${DETECTED.noun}, with its own version and nodes. It installs in Builds while you keep working.`
                 : `Checked for your ${DETECTED.chip}. Change anything before you install.`
             }}</DialogDescription>
-            <!-- New build: the name, the one thing the first install never
-                 asked; the rest is the same list. -->
-            <div v-if="newBuild" class="mss-newbuild-name">
-              <span class="mss-form-label">Name</span>
-              <Input v-model="buildName" aria-label="Build name" />
-            </div>
-
             <!-- The machine it checked, drawn large: the subject of the
                  screen. What it gets is the list below. -->
             <div class="mss-machine is-hero">
@@ -631,6 +627,14 @@ function rowState(i: number): string {
                  a line each: what it is, its value, its detail. Only a problem
                  gets a mark. -->
             <dl class="mss-summary is-stacked" aria-label="Install summary">
+              <!-- New build: the name, the one thing the first install never
+                   asked, first in the list; its field shows only on hover. -->
+              <div v-if="newBuild" class="mss-row mss-name-row">
+                <dt><Tag :size="15" /><label for="mss-build-name">Name</label></dt>
+                <dd>
+                  <Input id="mss-build-name" v-model="buildName" class="mss-quiet-input" />
+                </dd>
+              </div>
               <div class="mss-row">
                 <dt><Package :size="15" />Release</dt>
                 <dd>
@@ -774,7 +778,9 @@ function rowState(i: number): string {
                a hairline between rows. Picks are radio cards. -->
           <div v-if="method !== 'remote'" class="mss-form">
             <div v-if="!simple" class="mss-form-row">
-              <span id="mss-from" class="mss-form-label">Get ComfyUI from</span>
+              <span id="mss-from" class="mss-form-label"
+                ><Download :size="15" />Get ComfyUI from</span
+              >
               <!-- Cards, not tabs: no sliding pill (tabSlide). -->
               <RadioGroupRoot
                 v-model="method"
@@ -802,14 +808,14 @@ function rowState(i: number): string {
             </div>
             <template v-if="simple"></template>
             <div v-else-if="method === 'managed'" class="mss-form-row">
-              <span class="mss-form-label">Release</span>
+              <span class="mss-form-label"><Package :size="15" />Release</span>
               <div class="mss-form-note">
                 <span>Sign in to see your workspace's builds.</span>
                 <Button size="sm" variant="secondary" @click="hostActions.signIn()">Sign in</Button>
               </div>
             </div>
             <div v-else class="mss-form-row">
-              <span class="mss-form-label">Release</span>
+              <span class="mss-form-label"><Package :size="15" />Release</span>
               <div class="flex flex-wrap items-center gap-2">
                 <MarSeg v-model="channel" label="Release" :options="CHANNELS" />
                 <Select
@@ -820,13 +826,13 @@ function rowState(i: number): string {
                 />
               </div>
             </div>
-            <!-- New build asks its name on the summary, in its own card. -->
+            <!-- New build asks its name on the summary, first in its list. -->
             <div v-if="!simple && (flow.takeover || flow.homeCard)" class="mss-form-row">
-              <span class="mss-form-label">Name</span>
+              <span class="mss-form-label"><Tag :size="15" />Name</span>
               <Input v-model="name" aria-label="Name" />
             </div>
             <div class="mss-form-row">
-              <span class="mss-form-label">Location</span>
+              <span class="mss-form-label"><HardDrive :size="15" />Location</span>
               <Input :model-value="where" readonly aria-label="Location">
                 <template #trailing>
                   <span class="text-ui whitespace-nowrap text-subtle-foreground"
@@ -843,7 +849,7 @@ function rowState(i: number): string {
               </Input>
             </div>
             <div class="mss-form-row">
-              <span id="mss-hw" class="mss-form-label">Hardware</span>
+              <span id="mss-hw" class="mss-form-label"><Zap :size="15" />Hardware</span>
               <RadioGroupRoot
                 v-model="hardware"
                 class="mss-opts is-list"
@@ -901,7 +907,7 @@ function rowState(i: number): string {
           <!-- Remote Connection: today's third method, behind the link. -->
           <div v-else class="mss-form">
             <div class="mss-form-row">
-              <span class="mss-form-label">Server URL</span>
+              <span class="mss-form-label"><Globe :size="15" />Server URL</span>
               <Input
                 v-model="serverUrl"
                 placeholder="http://192.168.1.20:8188"
@@ -909,7 +915,7 @@ function rowState(i: number): string {
               />
             </div>
             <div class="mss-form-row">
-              <span class="mss-form-label">Name</span>
+              <span class="mss-form-label"><Tag :size="15" />Name</span>
               <Input v-model="name" aria-label="Name" />
             </div>
             <p class="mss-form-aside">
