@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import { ref, computed, toRaw } from 'vue'
+import { ref, computed, toRaw, type Component } from 'vue'
+import { Box, GitBranch, GitFork, Package, ScanSearch, Tag } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { TID } from '../../../shared/testIds'
@@ -109,6 +110,7 @@ const selectPlaceholder = computed(() => {
 })
 
 interface DetailFieldEntry {
+  icon: Component
   label: string
   value: string
 }
@@ -118,13 +120,13 @@ const detailFields = computed<DetailFieldEntry[]>(() => {
   const p = selectedProbe.value
   const fields: DetailFieldEntry[] = []
   if (p.version && p.version !== 'unknown') {
-    fields.push({ label: t('track.version'), value: p.version })
+    fields.push({ icon: Package, label: t('track.version'), value: p.version })
   }
   if (p.repo) {
-    fields.push({ label: t('track.repository'), value: p.repo })
+    fields.push({ icon: GitFork, label: t('track.repository'), value: p.repo })
   }
   if (p.branch) {
-    fields.push({ label: t('track.branch'), value: p.branch })
+    fields.push({ icon: GitBranch, label: t('track.branch'), value: p.branch })
   }
   return fields
 })
@@ -212,11 +214,12 @@ defineExpose({ open })
         @open="handleOpenTrackPath"
       />
 
-      <SetupFormRow :label="$t('common.name')" label-for="track-name">
+      <SetupFormRow :label="$t('common.name')" :icon="Tag" label-for="track-name">
         <InputGroup class="config-input">
           <InputGroupInput
             id="track-name"
             v-model="trackName"
+            class="text-[13px] text-neutral-100"
             data-initial-focus
             type="text"
             :placeholder="suggestedName || $t('common.namePlaceholder')"
@@ -224,8 +227,9 @@ defineExpose({ open })
         </InputGroup>
       </SetupFormRow>
 
-      <SetupFormRow :label="$t('track.detectedType')">
+      <SetupFormRow :label="$t('track.detectedType')" :icon="ScanSearch">
         <BaseSelect
+          class="text-[13px]"
           :model-value="selectedProbeValue"
           :options="probeOptions"
           :placeholder="selectPlaceholder"
@@ -240,6 +244,7 @@ defineExpose({ open })
         :key="field.label"
         class="track-summary-row"
         :label="field.label"
+        :icon="field.icon"
         control-height="line"
       >
         <span class="track-summary-value truncate text-[13px] leading-5 text-neutral-100">{{
@@ -251,6 +256,7 @@ defineExpose({ open })
         v-if="showVenvField"
         class="track-venv"
         :label="$t('git.venv')"
+        :icon="Box"
         path=""
         :placeholder="effectiveVenvName || $t('git.venvNotFound')"
         @browse="handleBrowseVenv"

@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
+
 withDefaults(
   defineProps<{
     label: string
     labelFor?: string
+    icon?: Component
     controlHeight?: 'field' | 'cards' | 'line'
   }>(),
-  { labelFor: undefined, controlHeight: 'field' }
+  { labelFor: undefined, icon: undefined, controlHeight: 'field' }
 )
 </script>
 
@@ -15,10 +18,12 @@ withDefaults(
     :class="controlHeight === 'line' ? 'py-1.5' : 'py-3'"
   >
     <label
-      class="config-label text-[13px] font-medium text-text-muted"
+      class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
       :class="{ 'pt-2.5': controlHeight === 'field', 'pt-3.5': controlHeight === 'cards' }"
       :for="labelFor"
-      >{{ label }}</label
+      ><component :is="icon" v-if="icon" class="flex-none" :size="15" aria-hidden="true" />{{
+        label
+      }}</label
     >
     <div class="setup-form-row__control flex min-w-0 flex-col">
       <slot />

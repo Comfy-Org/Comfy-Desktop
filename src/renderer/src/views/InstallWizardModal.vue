@@ -17,6 +17,7 @@ import {
   ArrowLeft,
   Check,
   CircleAlert,
+  Download,
   FolderArchive,
   Globe,
   HardDrive,
@@ -1641,8 +1642,8 @@ defineExpose({ open })
                 :class="nameError ? 'config-input--invalid' : 'bg-transparent'"
               >
                 <InputGroupInput
-                  class="text-[13px] text-neutral-100"
                   id="inst-name-standalone"
+                  class="text-[13px] text-neutral-100"
                   :data-initial-focus="hideBackToDashboard || undefined"
                   :model-value="instName"
                   type="text"
@@ -1725,8 +1726,8 @@ defineExpose({ open })
         >
           <span
             id="config-source-label"
-            class="config-label pt-3.5 text-[13px] font-medium text-text-muted"
-            >{{ $t('newInstall.getComfyFrom') }}</span
+            class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted pt-3.5"
+            ><Download :size="15" aria-hidden="true" />{{ $t('newInstall.getComfyFrom') }}</span
           >
           <SetupOptionCards
             class="config-method-row"
@@ -1744,12 +1745,16 @@ defineExpose({ open })
             class="config-form-row config-field grid grid-cols-[148px_minmax(0,1fr)] items-start gap-4 py-3"
             data-testid="workspace-build-field"
           >
-            <label class="config-label pt-2.5 text-[13px] font-medium text-text-muted">{{
-              $t('newInstall.workspaceBuildLabel')
-            }}</label>
+            <label
+              class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted pt-2.5"
+              ><Users :size="15" aria-hidden="true" />{{
+                $t('newInstall.workspaceBuildLabel')
+              }}</label
+            >
             <div class="flex min-w-0 flex-col gap-2">
               <BaseSelect
                 v-model="selectedBuildId"
+                class="text-[13px]"
                 :options="workspaceBuildOptions"
                 :placeholder="$t('newInstall.selectWorkspaceBuild')"
                 :loading="authStore.loadingBuilds"
@@ -1817,9 +1822,10 @@ defineExpose({ open })
             class="config-form-row config-field grid grid-cols-[148px_minmax(0,1fr)] items-start gap-4 py-3"
             data-testid="workspace-build-targets"
           >
-            <label class="config-label pt-3.5 text-[13px] font-medium text-text-muted">{{
-              $t('newInstall.buildTarget')
-            }}</label>
+            <label
+              class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted pt-3.5"
+              ><Zap :size="15" aria-hidden="true" />{{ $t('newInstall.buildTarget') }}</label
+            >
             <SetupOptionCards
               :options="buildTargetCards"
               :selected-value="selectedBuildTargetId"
@@ -1853,10 +1859,15 @@ defineExpose({ open })
               :class="field.renderAs === 'cards' ? 'items-start' : 'items-center'"
             >
               <label
-                class="config-label text-[13px] font-medium text-text-muted"
+                class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
                 :class="field.renderAs === 'cards' && 'pt-3.5'"
                 :for="`sf-${field.id}`"
-                >{{ field.label }}</label
+                ><component
+                  :is="FIELD_ICONS[field.id] ?? SlidersHorizontal"
+                  class="flex-none"
+                  :size="15"
+                  aria-hidden="true"
+                />{{ field.label }}</label
               >
 
               <div v-if="field.type === 'text'" class="flex min-w-0 flex-col">
@@ -1867,6 +1878,7 @@ defineExpose({ open })
                   >
                     <InputGroupInput
                       :id="`sf-${field.id}`"
+                      class="text-[13px] text-neutral-100"
                       type="text"
                       :model-value="textFieldValues.get(field.id) ?? ''"
                       :placeholder="field.defaultValue || ''"
@@ -1972,6 +1984,7 @@ defineExpose({ open })
 
               <BaseSelect
                 v-else
+                class="text-[13px]"
                 :model-value="selections[field.id]?.value ?? ''"
                 :options="getSelectOptions(field)"
                 :placeholder="getSelectPlaceholder(field)"
@@ -2005,9 +2018,10 @@ defineExpose({ open })
           class="config-form-row config-other-ways grid grid-cols-[148px_minmax(0,1fr)] items-center gap-4 py-3"
           data-testid="config-other-ways"
         >
-          <span class="config-label text-[13px] font-medium text-text-muted">{{
-            remoteSelected ? '' : $t('newInstall.alreadyHaveComfy')
-          }}</span>
+          <span
+            class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
+            >{{ remoteSelected ? '' : $t('newInstall.alreadyHaveComfy') }}</span
+          >
           <p
             class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
           >

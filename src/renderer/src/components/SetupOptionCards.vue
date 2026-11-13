@@ -80,8 +80,8 @@ function setOptionEl(el: unknown, index: number): void {
       :class="[
         'setup-option static flex w-full min-w-0 appearance-auto items-center justify-normal gap-3 rounded-[12px] py-3 pr-3.5 pl-3 text-left [font:inherit] whitespace-normal transition-[background-color] duration-120 ease-[ease] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] active:transition-none',
         selectedValue === opt.value
-          ? 'setup-option--selected bg-white/8 text-neutral-100 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.2)] hover:bg-white/8'
-          : 'bg-white/5 text-neutral-200 [box-shadow:inset_0_0_0_1px_rgb(255_255_255/0.09)] hover:bg-white/9'
+          ? 'setup-option--selected bg-white/10 text-neutral-100 hover:bg-white/10'
+          : 'bg-white/4 text-neutral-200 hover:bg-white/7'
       ]"
       @click="emit('select', opt.value)"
       @keydown="moveSelection($event, index)"

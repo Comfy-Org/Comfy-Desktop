@@ -4,7 +4,7 @@ import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput
 import { ref, computed, watch, toRaw, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { ChevronRight, Upload } from 'lucide-vue-next'
+import { ChevronRight, FileArchive, List, Package, Tag, Upload, Zap } from 'lucide-vue-next'
 import { useModal } from '../composables/useModal'
 
 import type { SnapshotFilePreview, FieldOption, GPUInfo, ShowProgressOpts } from '../types/ipc'
@@ -392,18 +392,19 @@ defineExpose({ open })
         <InstallLocationRow
           class="load-snapshot-file"
           :label="$t('loadSnapshot.file')"
+          :icon="FileArchive"
           :path="preview.filePath"
           @browse="handleBrowse"
           @open="revealSnapshotFile"
         />
 
-        <SetupFormRow :label="$t('common.name')" label-for="ls-name">
+        <SetupFormRow :label="$t('common.name')" :icon="Tag" label-for="ls-name">
           <InputGroup class="config-input">
             <InputGroupInput
               id="ls-name"
               v-model="installName"
               data-initial-focus
-              class="load-snapshot-input"
+              class="load-snapshot-input text-[13px] text-neutral-100"
               type="text"
               :placeholder="$t('common.namePlaceholder')"
             />
@@ -416,8 +417,9 @@ defineExpose({ open })
           </p>
         </SetupFormRow>
 
-        <SetupFormRow :label="$t('list.snapshotRelease')">
+        <SetupFormRow :label="$t('list.snapshotRelease')" :icon="Package">
           <BaseSelect
+            class="text-[13px]"
             :model-value="selectedRelease?.value ?? ''"
             :options="releaseSelectOptions"
             :placeholder="releasePlaceholder"
@@ -437,7 +439,7 @@ defineExpose({ open })
           </p>
         </SetupFormRow>
 
-        <SetupFormRow :label="$t('list.snapshotDevice')" control-height="cards">
+        <SetupFormRow :label="$t('list.snapshotDevice')" :icon="Zap" control-height="cards">
           <div
             v-if="variantLoading"
             class="load-snapshot-loading py-2 text-[13px] text-text-muted flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-white/15 before:border-t-neutral-100 before:[animation-duration:0.6s] before:content-['']"
@@ -467,7 +469,7 @@ defineExpose({ open })
           </p>
         </SetupFormRow>
 
-        <SetupFormRow :label="$t('loadSnapshot.contents')" control-height="cards">
+        <SetupFormRow :label="$t('loadSnapshot.contents')" :icon="List" control-height="cards">
           <div class="load-snapshot-contents flex flex-col gap-3 rounded-[14px] bg-white/4 p-4">
             <dl class="load-snapshot-summary m-0 grid grid-cols-2 gap-x-6 gap-y-3">
               <div
