@@ -116,7 +116,7 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.get('#source-fields').text()).toContain('Apple Silicon (MPS)')
     expect(wrapper.find('[data-testid="install-location-field"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
   })
 
@@ -982,7 +982,7 @@ describe('InstallWizardModal workspace Builds', () => {
       entry: { id: 'managed-1', name: 'My Managed Instance' }
     })
     const wrapper = await openWorkspaceModal()
-    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
     await wrapper.get('#inst-name-standalone').setValue('My Managed Instance')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
@@ -1287,7 +1287,7 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('button.config-path-open').text()).toBe('/home/user/Picked')
   })
 
-  it('keeps the setup as it was when Back is pressed', async () => {
+  it('keeps the setup as it was when Discard changes is pressed', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,
       remoteSource
@@ -1297,7 +1297,7 @@ describe('InstallWizardModal Change setup', () => {
 
     await wrapper.get('[data-testid="install-source-remote"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="config-summary-back"]').trigger('click')
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('.config-continue').text()).toBe('Install')

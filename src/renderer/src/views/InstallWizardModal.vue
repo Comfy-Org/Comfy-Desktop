@@ -2149,18 +2149,17 @@ defineExpose({ open })
           class="install-wizard-foot flex min-h-16 flex-none items-center gap-2 px-8 py-3 [box-shadow:inset_0_1px_0_rgb(255_255_255/0.08)]"
         >
           <template v-if="step === 'configure' && view === 'change'">
+            <span class="flex-1" />
             <Button
               size="lg"
               variant="textonly"
               type="button"
-              class="h-9 rounded-[10px] config-summary-back -ml-3"
-              data-testid="config-summary-back"
+              class="h-9 rounded-[10px] config-discard-changes"
+              data-testid="config-discard-changes"
               @click="discardChangeSetup"
             >
-              <ArrowLeft :size="16" aria-hidden="true" />
-              {{ $t('common.back') }}
+              {{ $t('newInstall.discardChanges') }}
             </Button>
-            <span class="flex-1" />
             <Button
               type="button"
               size="lg"
