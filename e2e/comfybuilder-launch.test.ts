@@ -8,7 +8,7 @@ import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers
 import { getIpcInvocations, hasActiveLaunch, resetIpcInvocations } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
-const NEW_INSTALL_WIZARD = '.config-shell, .template-shell'
+const NEW_INSTALL_WIZARD = '[data-testid="new-build-modal"]'
 
 interface BuildCase {
   id: string

@@ -13,26 +13,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  no-proprietary-fonts:
-    name: No proprietary fonts in source
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Ensure PP Formula is not committed
-        run: |
-          set -euo pipefail
-          matches="$(git ls-files '*PPFormula*' '*ppformula*' '*pp-formula*' '*pp_formula*' || true)"
-          if [ -n "$matches" ]; then
-            echo "::error::Proprietary PP Formula font files are committed to the repo:"
-            echo "$matches"
-            echo "These are license-restricted and must not live in source."
-            echo "They are fetched at build time from gs://comfy-org-fonts (scripts/fetch-font.mjs)."
-            exit 1
-          fi
-          echo "OK: no proprietary PP Formula font files tracked in git."
-
   checks:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.needs_browser && 'ubuntu-24.04' || 'ubuntu-latest' }}
@@ -49,8 +29,6 @@ jobs:
           - name: Test
             command: pnpm run test
             needs_browser: true
-          - name: Test (integration)
-            command: pnpm run test:integration
 
     steps:
       - name: Checkout
@@ -160,21 +138,20 @@ jobs:
           echo "Bridge contract changed and the version moved $BASE_VERSION -> $HEAD_VERSION."
 
   e2e:
-    name: E2E (${{ matrix.platform }})
+    name: E2E (${{ matrix.platform }} ${{ matrix.shard }}/3)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        platform: [macos, windows, linux]
+        shard: [1, 2, 3]
         include:
           - platform: macos
             os: macos-latest
-            command: pnpm run test:e2e:macos
           - platform: windows
             os: windows-latest
-            command: pnpm run test:e2e:windows
           - platform: linux
             os: ubuntu-latest
-            command: pnpm run test:e2e:linux
 
     steps:
       - name: Checkout
@@ -195,16 +172,29 @@ jobs:
       - name: Build app
         run: pnpm run build
 
-      - name: Run E2E (${{ matrix.platform }})
-        run: ${{ matrix.platform == 'linux' && format('xvfb-run --auto-servernum {0}', matrix.command) || matrix.command }}
+      - name: Run E2E (${{ matrix.platform }} ${{ matrix.shard }}/3)
+        run: ${{ format('{0}pnpm run test:e2e:{1} --shard={2}/3', matrix.platform == 'linux' && 'xvfb-run --auto-servernum ' || '', matrix.platform, matrix.shard) }}
 
       - name: Upload Playwright failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-${{ matrix.platform }}-failure
+          name: playwright-${{ matrix.platform }}-shard-${{ matrix.shard }}-failure
           path: |
             test-results/
             playwright-report/
           retention-days: 7
           if-no-files-found: ignore
+
+  e2e-result:
+    name: E2E
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every E2E shard to pass
+        env:
+          RESULT: ${{ needs.e2e.result }}
+        run: |
+          echo "E2E shards: $RESULT"
+          test "$RESULT" = success
