@@ -282,7 +282,8 @@ function save(): void {
   font-size: 13px;
 }
 .bo-path > .truncate {
-  margin-right: 6px;
+  margin-right: auto;
+  padding-right: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
 }
