@@ -1539,7 +1539,7 @@ defineExpose({ open })
     :lead="modalLead"
     :wide="step === 'template'"
     :brand-backdrop="useTakeoverHost"
-    :closable="step === 'configure' && !hideBackToDashboard"
+    :closable="step === 'configure' && view === 'summary' && !hideBackToDashboard"
     :close-title="$t('common.backToDashboard')"
     :covered="buildImportFlow !== null"
     data-testid="new-build-modal"

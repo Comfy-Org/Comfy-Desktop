@@ -1360,6 +1360,22 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.find('.config-loading').exists()).toBe(false)
   })
 
+  it('hides the close button in Change setup so Discard and Save changes are the only ways back', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    mockReleaseOptions()
+    const wrapper = mountModal()
+    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await flushPromises()
+    expect(wrapper.find('.setup-modal-close').exists()).toBe(true)
+
+    await showChangeSetup(wrapper)
+    expect(wrapper.find('.setup-modal-close').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.setup-modal-close').exists()).toBe(true)
+  })
+
   it('keeps the edits when Save changes is pressed', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,
