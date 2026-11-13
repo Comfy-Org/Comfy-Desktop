@@ -1,7 +1,8 @@
 import { app } from 'electron'
 
+import { getCloudSession } from '../devplatform/session'
 import { makeOpsFlag, OPS_FLAGS_FILE, readPersistedResult } from '../lib/opsFlag'
-import type { FeatureFlagValue } from '../lib/telemetry'
+import type { FeatureFlagValue, OpsFlagAccount } from '../lib/telemetry'
 
 export const APPS_SWITCH_FLAG_KEY = 'desktop_apps_enabled'
 
@@ -31,12 +32,23 @@ export function onAppsEnabledChanged(listener: (on: boolean) => void): () => voi
   }
 }
 
+function signedInAccount(): OpsFlagAccount {
+  try {
+    const status = getCloudSession().status()
+    const email = status.signedIn ? status.email?.trim().toLowerCase() : undefined
+    return email ? { email } : {}
+  } catch {
+    return {}
+  }
+}
+
 const flag = makeOpsFlag<boolean>({
   key: APPS_SWITCH_FLAG_KEY,
   fallback,
   parse: remember,
   logLabel: 'apps-switch',
-  persist: true
+  persist: true,
+  account: signedInAccount
 })
 
 function saved(): boolean | undefined {
@@ -48,6 +60,8 @@ function saved(): boolean | undefined {
 }
 
 export const initAppsSwitch = flag.init
+
+export const refreshAppsSwitch = flag.refresh
 
 export const getAppsEnabledAsync = flag.get
 

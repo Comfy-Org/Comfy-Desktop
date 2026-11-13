@@ -923,6 +923,35 @@ describe('ops-flag person targeting', () => {
     expect(lastPersonProperties()).toEqual(BASE_PROPS)
   })
 
+  it('attaches the signed-in account email once consent is granted', async () => {
+    setupTelemetry({ consent: 'granted' })
+
+    await telemetry.getOpsFlagResult('desktop_apps_enabled', 'installation-id', 100, undefined, {
+      email: 'ada@comfy.org'
+    })
+
+    expect(lastPersonProperties()).toEqual({ ...BASE_PROPS, email: 'ada@comfy.org' })
+    expect(featureFlagResultCalls.at(-1)?.distinctId).toBe('installation-id')
+  })
+
+  it.each(['denied', null] as const)('sends no email with consent %s', async (consent) => {
+    setupTelemetry({ consent })
+
+    await telemetry.getOpsFlagResult('desktop_apps_enabled', 'installation-id', 100, undefined, {
+      email: 'ada@comfy.org'
+    })
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
+  it('sends no email for a check that passes no account', async () => {
+    setupTelemetry({ consent: 'granted' })
+
+    await evaluate()
+
+    expect(lastPersonProperties()).toEqual(BASE_PROPS)
+  })
+
   it('sends user_tier alongside comfy_staff for a consented paid staff install', async () => {
     setupTelemetry({ consent: 'granted' })
     telemetry.setFlagEvaluationStaff(true)
