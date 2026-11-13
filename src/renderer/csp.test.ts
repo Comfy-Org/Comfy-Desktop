@@ -47,6 +47,13 @@ describe('Content-Security-Policy: panel.html', () => {
     expect(csp['script-src']).toBe("'self'")
   })
 
+  it('shows output files from this computer only through the output-folder protocol', () => {
+    expect(csp['img-src']).toContain('comfy-output:')
+    expect(csp['media-src']).toContain('comfy-output:')
+    expect(csp['img-src']).not.toContain('127.0.0.1')
+    expect(csp['media-src']).not.toContain('127.0.0.1')
+  })
+
   it('restricts default-src to self only', () => {
     expect(csp['default-src']).toBe("'self'")
   })

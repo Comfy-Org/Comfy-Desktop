@@ -99,8 +99,9 @@ export function buildElectronApi(): ElectronApi {
     signalOverlayReady: () => ipcRenderer.send('comfy-window:overlay-ready'),
     navigatePanel: (page) => ipcRenderer.send('comfy-window:navigate-panel', page),
     listAssets: (installationId) => ipcRenderer.invoke('assets:list', installationId),
-    downloadAsset: (installationId, assetId, fileName) =>
-      ipcRenderer.invoke('assets:download', installationId, assetId, fileName),
+    listLocalAssets: () => ipcRenderer.invoke('assets:list-local'),
+    downloadAsset: (source, assetId, fileName) =>
+      ipcRenderer.invoke('assets:download', source, assetId, fileName),
     showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),
     hideApps: () => ipcRenderer.send('comfy-apps:hide'),
     onAppsLoadFailed: (callback) => {
@@ -258,8 +259,8 @@ export function buildElectronApi(): ElectronApi {
         return () => ipcRenderer.removeListener('comfybuilder:authChanged', handler)
       },
       listWorkspaces: () => ipcRenderer.invoke('comfybuilder:listWorkspaces'),
-      switchWorkspace: (workspaceId) =>
-        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId),
+      switchWorkspace: (workspaceId, intent) =>
+        ipcRenderer.invoke('comfybuilder:switchWorkspace', workspaceId, intent),
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),

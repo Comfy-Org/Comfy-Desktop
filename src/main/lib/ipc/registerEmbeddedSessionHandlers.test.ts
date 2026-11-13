@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   emit: vi.fn(),
   handle: vi.fn(),
   signInToCloud: vi.fn(),
-  stateForSender: vi.fn()
+  stateForSender: vi.fn(),
+  switchWorkspaceForSender: vi.fn(),
+  switchCloudWorkspace: vi.fn()
 }))
 
 vi.mock('electron', () => ({ ipcMain: { handle: mocks.handle } }))
@@ -20,19 +22,21 @@ vi.mock('../embeddedSession', () => ({
   EMBEDDED_SESSION_CHANNELS: {
     getState: 'desktop2-auth:get-state',
     getWorkspaceToken: 'desktop2-auth:get-workspace-token',
+    getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
     requestSignIn: 'desktop2-auth:request-sign-in',
     signOut: 'desktop2-auth:sign-out',
     switchWorkspace: 'desktop2-auth:switch-workspace'
   },
+  partnerNodeTokenForSender: vi.fn(),
   stateForSender: mocks.stateForSender,
-  switchWorkspaceForSender: vi.fn(),
+  switchWorkspaceForSender: mocks.switchWorkspaceForSender,
   workspaceTokenForSender: vi.fn()
 }))
 
 vi.mock('./registerDevPlatformHandlers', () => ({
   signInToCloud: mocks.signInToCloud,
   signOutOfCloud: vi.fn(),
-  switchCloudWorkspace: vi.fn()
+  switchCloudWorkspace: mocks.switchCloudWorkspace
 }))
 
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
@@ -162,5 +166,21 @@ describe('desktop2-auth:request-sign-in telemetry', () => {
       { stage: 'requested', host: 'desktop' },
       { stage: 'completed', host: 'desktop' }
     ])
+  })
+})
+
+describe('desktop2-auth:switch-workspace', () => {
+  it('switches as a view request, which never mints a new workspace silently', async () => {
+    const call = mocks.handle.mock.calls.find(
+      ([channel]) => channel === 'desktop2-auth:switch-workspace'
+    )
+    const event = {}
+    await (call![1] as (event: unknown, id: unknown) => Promise<unknown>)(event, 'ws-2')
+    const [sender, workspaceId, switchWorkspace] = mocks.switchWorkspaceForSender.mock.calls[0]!
+
+    await switchWorkspace('ws-2')
+
+    expect([sender, workspaceId]).toEqual([event, 'ws-2'])
+    expect(mocks.switchCloudWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2', 'requested')
   })
 })

@@ -139,9 +139,11 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
     class="downloads flex size-full flex-col bg-neutral-800 [--downloads-card:var(--color-card-hover)] [--downloads-bar-rest:var(--color-card)]"
   >
     <header
-      class="downloads-head flex flex-none items-center justify-between gap-2 border-b border-solid border-white/10 px-4 py-3"
+      class="downloads-head flex flex-none items-center justify-between gap-2 px-4 pt-3.5 pb-1"
     >
-      <h2 class="downloads-title m-0 text-[14px] font-bold text-neutral-100">
+      <h2
+        class="downloads-title m-0 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase"
+      >
         {{ t('downloadsPopup.title') }}
       </h2>
     </header>
@@ -236,14 +238,12 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
       </li>
     </ul>
 
-    <footer
-      class="downloads-foot flex flex-none items-center border-t border-solid border-white/10 p-2"
-    >
+    <footer class="downloads-foot flex flex-none items-center p-1">
       <Button
         type="button"
         variant="textonly"
         size="md"
-        class="downloads-link flex-auto justify-start"
+        class="downloads-link h-8 flex-auto justify-start rounded-control px-3 text-[13px] font-normal hover:bg-[oklch(1_0_0/0.07)]"
         @click="viewAllDownloads"
       >
         {{ t('downloadsPopup.viewAllInSettings') }}
