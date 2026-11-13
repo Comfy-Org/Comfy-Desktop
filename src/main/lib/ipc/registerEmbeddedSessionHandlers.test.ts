@@ -44,6 +44,7 @@ vi.mock('./registerDevPlatformHandlers', () => ({
   switchCloudWorkspace: mocks.switchCloudWorkspace
 }))
 
+import { billingHandoffForSender } from '../embeddedSession'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
 
 const SIGNED_IN: ComfyDesktop2AuthState = {
@@ -187,5 +188,34 @@ describe('desktop2-auth:switch-workspace', () => {
 
     expect([sender, workspaceId]).toEqual([event, 'ws-2'])
     expect(mocks.switchCloudWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2', 'requested')
+  })
+})
+
+describe('desktop2-auth:issue-billing-handoff', () => {
+  it('issues for the sender with the view arguments in order and the Desktop version', async () => {
+    const call = mocks.handle.mock.calls.find(
+      ([channel]) => channel === 'desktop2-auth:issue-billing-handoff'
+    )
+    const event = {}
+    vi.mocked(billingHandoffForSender).mockResolvedValue({ status: 'disabled' })
+
+    await expect(
+      (call![1] as (event: unknown, ...args: unknown[]) => Promise<unknown>)(
+        event,
+        'ws-1',
+        'billing_web',
+        'top-up',
+        2500
+      )
+    ).resolves.toEqual({ status: 'disabled' })
+
+    expect(billingHandoffForSender).toHaveBeenCalledExactlyOnceWith(
+      event,
+      'ws-1',
+      'billing_web',
+      'top-up',
+      2500,
+      '1.2.3'
+    )
   })
 })

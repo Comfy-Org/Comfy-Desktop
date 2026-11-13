@@ -401,6 +401,20 @@ describe('comfyPreload auth bridge', () => {
     ])
   })
 
+  it('asks Desktop for a billing handoff with the workspace, receiver, intent and amount in order', async () => {
+    mocks.invoke.mockResolvedValue({ status: 'disabled' })
+
+    await hostedBridge().Auth.issueBillingHandoff?.('ws-1', 'billing_web', 'top-up', 2500)
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      'desktop2-auth:issue-billing-handoff',
+      'ws-1',
+      'billing_web',
+      'top-up',
+      2500
+    )
+  })
+
   it('delivers session changes until unsubscribed', () => {
     const { Auth } = hostedBridge()
     const callback = vi.fn()

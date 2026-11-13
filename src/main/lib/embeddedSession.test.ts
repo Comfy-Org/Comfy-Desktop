@@ -690,6 +690,19 @@ describe('billingHandoffForSender', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
+  it('withholds the entry url when Desktop signs out while Cloud issues it', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        mocks.current = null
+        return new Response(JSON.stringify({ entry_url: ENTRY_URL }), { status: 201 })
+      })
+    )
+
+    await expect(issue()).resolves.toEqual({ status: 'disabled' })
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
   it('is disabled while the embedded session is off', async () => {
     respond(201, { entry_url: ENTRY_URL })
     mocks.enabled = false
