@@ -33,10 +33,10 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
   getInfo: () => ({ bridge: BRIDGE, calls: CALLS }),
   getAuthState: () => ipcRenderer.invoke('comfy-apps:get-auth-state'),
   signIn: () => ipcRenderer.invoke('comfy-apps:sign-in'),
-  run: (workflow: unknown, app?: { app: string; model?: string }) =>
-    app === undefined
+  run: (workflow: unknown, options?: { model?: string }) =>
+    options === undefined
       ? ipcRenderer.invoke('comfy-apps:run', workflow)
-      : ipcRenderer.invoke('comfy-apps:run', workflow, app),
+      : ipcRenderer.invoke('comfy-apps:run', workflow, options),
   getRun: (runId: string) => ipcRenderer.invoke('comfy-apps:get-run', runId),
   cancelRun: (runId: string) => ipcRenderer.invoke('comfy-apps:cancel-run', runId),
   openInComfy: (req: { prompt: unknown; where: 'local' | 'cloud'; name: string; build?: string }) =>
@@ -49,8 +49,13 @@ contextBridge.exposeInMainWorld('comfyDesktopApps', {
     ipcRenderer.invoke('comfy-apps:upload-image', bytes, name),
   uploadFile: (bytes: Uint8Array, name: string) =>
     ipcRenderer.invoke('comfy-apps:upload-image', bytes, name),
-  saveFile: (bytes: Uint8Array, app: string, label: string, ext: string) =>
-    ipcRenderer.invoke('comfy-apps:save-file', bytes, app, label, ext),
+  saveFile: (
+    bytes: Uint8Array,
+    app: string,
+    label: string,
+    ext: string,
+    where?: 'local' | 'cloud'
+  ) => ipcRenderer.invoke('comfy-apps:save-file', bytes, app, label, ext, where),
   readSaved: (path: string) => ipcRenderer.invoke('comfy-apps:read-saved', path),
   showInFolder: (path: string) => ipcRenderer.invoke('comfy-apps:show-in-folder', path),
   saveVersions: (app: string, bytes: Uint8Array) =>

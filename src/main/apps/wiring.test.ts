@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 const preload = readFileSync(resolve(__dirname, '../../preload/appsPreload.ts'), 'utf8')
 const main = readFileSync(resolve(__dirname, 'appsView.ts'), 'utf8')
 const local = readFileSync(resolve(__dirname, 'localComfy.ts'), 'utf8')
+const panelPreload = readFileSync(resolve(__dirname, '../../preload/api.ts'), 'utf8')
 
 const all = (text: string, re: RegExp) => [...text.matchAll(re)].map((m) => m[1]!)
 
@@ -15,7 +16,7 @@ const exposed = all(
   /^ {2}(\w+):/gm
 )
 const invoked = all(preload, /ipcRenderer\.invoke\('([\w:-]+)'/g)
-const handled = all(main, /handleFromApp(?:s|Page)\('([\w:-]+)'/g)
+const handled = all(main, /handleFromApps(?:Page)?\('([\w:-]+)'/g)
 
 describe('Apps bridge wiring', () => {
   it('getInfo names exactly the calls the page gets', () => {
@@ -43,10 +44,14 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
-  it('passes the app tag with a Cloud run only when the page gives one', () => {
+  it('a Cloud run takes only the model from the page and the app from its address', () => {
     expect(preload).toMatch(/const BRIDGE = 3\n/)
-    expect(preload).toContain("ipcRenderer.invoke('comfy-apps:run', workflow, app)")
-    expect(main).toMatch(/async function run\(page: AppPage, workflow: unknown, app\?: unknown\)/)
+    expect(preload).toContain('run: (workflow: unknown, options?: { model?: string }) =>')
+    expect(preload).toContain("ipcRenderer.invoke('comfy-apps:run', workflow, options)")
+    expect(main).toContain("handleFromAppsPage('comfy-apps:run', run)")
+    expect(main).toContain(
+      'cloudAppTag(openAppId(pageUrl, APPS_URL), await desktopAppIds(), options)'
+    )
     expect(main).toContain('body: cloudPromptBody(workflow, token, tag)')
   })
 
@@ -55,20 +60,37 @@ describe('Apps bridge wiring', () => {
     expect(main).toContain('cloudRunFailed(appId, cloudRefusal(res.status, answer))')
     expect(main).toContain('cloudRunFailed(appId, cloudRefusal(res.status, body))')
     expect(main).toContain("step: 'upload'")
-    expect(main).toContain("trackApps('output_saved', { app: page.app, where })")
-    for (const channel of ['run', 'upload-image', 'save-file', 'local-fetch']) {
-      expect(main).toContain(`handleFromAppPage('comfy-apps:${channel}'`)
+    for (const channel of ['run', 'upload-image']) {
+      expect(main).toContain(`handleFromAppsPage('comfy-apps:${channel}'`)
     }
   })
 
   it('tells the local calls which app page asked', () => {
-    expect(main).toContain('startLocal(want, page.app)')
-    expect(main).toContain('localFetch(req, page.app)')
-    expect(main).toContain('localDownload(req, page.app)')
+    expect(main).toContain('startLocal(want, appOfPage(pageUrl, APPS_URL))')
+    expect(main).toContain('localFetch(req, appOfPage(pageUrl, APPS_URL))')
+    expect(main).toContain('localDownload(req, appOfPage(pageUrl, APPS_URL))')
   })
 
-  it('refuses to show the apps page while the remote switch is off', () => {
-    expect(main).toMatch(/function showApps\([^)]*\): void \{\n {2}if \(!isAppsEnabled\(\)\) return\n/)
+  it('reports both save paths, with where only when Desktop knows it', () => {
+    const getOutput = main.slice(main.indexOf('async function getOutput('))
+    const saveFile = main.slice(main.indexOf('async function saveFile('))
+    expect(getOutput.slice(0, getOutput.indexOf('\n}\n'))).toContain(
+      "tellOutputSaved(s.app, 'cloud')"
+    )
+    expect(saveFile.slice(0, saveFile.indexOf('\n}\n'))).toContain('tellOutputSaved(app, where)')
+    expect(main).not.toMatch(/pageWhere|noteLocalRun/)
+  })
+
+  it('the Apps switch goes out on the channel the panel preload listens to', () => {
+    const sent = main.match(/APPS_ENABLED_CHANNEL = '([\w:-]+)'/)![1]
+    expect(panelPreload).toContain(`ipcRenderer.on('${sent}'`)
+    expect(panelPreload).toContain(`ipcRenderer.removeListener('${sent}'`)
+  })
+
+  it('every apps-page check is held to the Apps URL path, not just its origin', () => {
+    const checks = all(main, /isAppsFrameUrl\([^,]+, (\w+)\)/g)
+    expect(checks).toHaveLength(3)
+    expect(new Set(checks)).toEqual(new Set(['APPS_URL']))
   })
 
   it('local events go out on the channel the preload listens to', () => {
