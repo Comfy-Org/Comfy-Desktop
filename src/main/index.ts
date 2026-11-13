@@ -1076,16 +1076,18 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       })
     }
 
+    const buildsBeingOpened = new Set<string>()
     const openInstallInNewWindow = async (
       installationId: string,
       opts?: { allowDuplicate?: boolean }
     ): Promise<void> => {
+      const allowDuplicate = opts?.allowDuplicate === true
+      if (!allowDuplicate && buildsBeingOpened.has(installationId)) return
       const existing = getEntryByInstallationId(installationId) ?? findHostLaunching(installationId)
-      const willFocusExisting =
-        !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
+      const willFocusExisting = !!existing && !existing.window.isDestroyed() && !allowDuplicate
       recordIpcInvocation('open-install-new-window', {
         installationId,
-        allowDuplicate: opts?.allowDuplicate === true,
+        allowDuplicate,
         focusedExisting: willFocusExisting
       })
       if (willFocusExisting) {
@@ -1093,6 +1095,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         existing.window.focus()
         return
       }
+      if (!allowDuplicate) buildsBeingOpened.add(installationId)
       try {
         const inst = await getInstallation(installationId)
         if (!inst) {
@@ -1115,6 +1118,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         deliverPickToEntry(target, installationId)
       } catch (err) {
         console.error('openInstallInNewWindow failed:', err)
+      } finally {
+        if (!allowDuplicate) buildsBeingOpened.delete(installationId)
       }
     }
 
