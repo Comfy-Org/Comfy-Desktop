@@ -24,6 +24,7 @@ import {
   consumeAttachClaim,
   dropAttachClaimsForWindow,
   dropInstallationIndex,
+  findHostWindowByPanelSender,
   findPreferredHostByVisibility,
   getEntryByInstallationId,
   hostInstallEvents,
@@ -464,6 +465,20 @@ describe('findPreferredHostByVisibility', () => {
     registerHostEntry(chooser)
     expect(findPreferredHostByVisibility((e) => e.installationId === null)).toBe(chooser)
     expect(findPreferredHostByVisibility((e) => e.installationId !== null)).toBe(install)
+  })
+})
+
+describe('findHostWindowByPanelSender', () => {
+  it('returns the window whose panel sent the message', () => {
+    const panelSender = {}
+    const other = makeEntry({ installationId: 'inst-A' })
+    const owner = makeEntry({ installationId: null })
+    owner.panelView = { webContents: panelSender } as unknown as ComfyWindowEntry['panelView']
+    registerHostEntry(other)
+    registerHostEntry(owner)
+
+    expect(findHostWindowByPanelSender(panelSender as never)).toBe(owner.window)
+    expect(findHostWindowByPanelSender({} as never)).toBeNull()
   })
 })
 

@@ -85,6 +85,13 @@ async function allowedPath(target: string): Promise<string | null> {
   return allowedRoots.some((root) => isInsideRoot(real, root)) ? real : null
 }
 
+export async function outputFilePath(target: string): Promise<string | null> {
+  const file = await allowedPath(target)
+  if (!file) return null
+  const stat = await fsp.stat(file).catch(() => null)
+  return stat?.isFile() ? file : null
+}
+
 export function outputFileUrl(file: string, thumbnailOf?: number): string {
   const url = `${OUTPUT_FILES_SCHEME}://file/${encodeURIComponent(file)}`
   return thumbnailOf === undefined ? url : `${url}?thumbnail=${Math.round(thumbnailOf)}`

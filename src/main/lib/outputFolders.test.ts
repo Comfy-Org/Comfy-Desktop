@@ -72,6 +72,7 @@ import {
   listLocalAssets,
   listOutputFolders,
   outputDirOverride,
+  outputFilePath,
   outputFileUrl,
   serveOutputFile
 } from './outputFolders'
@@ -231,6 +232,21 @@ describe('listLocalAssets', () => {
     write(path.join(deep, 'too-deep.png'))
 
     expect(await listLocalAssets()).toEqual([])
+  })
+})
+
+describe('outputFilePath', () => {
+  it('finds a file inside an output folder and refuses folders and files outside', async () => {
+    const inside = path.join(ownDir, 'nested', 'still.png')
+    const outside = path.join(outsideDir, 'secret.png')
+    write(inside)
+    write(outside)
+
+    expect(await outputFilePath(inside)).toBe(inside)
+    expect(await outputFilePath(path.join(ownDir, 'nested'))).toBeNull()
+    expect(await outputFilePath(outside)).toBeNull()
+    expect(await outputFilePath(path.join(ownDir, '..', 'outside', 'secret.png'))).toBeNull()
+    expect(await outputFilePath('still.png')).toBeNull()
   })
 })
 

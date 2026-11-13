@@ -1,12 +1,24 @@
-import { ipcMain } from 'electron'
+import { randomUUID } from 'crypto'
+import fs from 'fs'
+import path from 'path'
+import { Readable } from 'stream'
+import { pipeline } from 'stream/promises'
+import type { ReadableStream as WebReadableStream } from 'stream/web'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
+import { findHostWindowByPanelSender } from '../host/registry'
 import * as installations from '../installations'
+import * as settings from '../settings'
+import { buildSaveDialogFilters } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
+import { outputFilePath } from './outputFolders'
 import { runPool } from '../sources/standalone/templateDownloadCore'
+import { LOCAL_ASSETS_SOURCE } from '../../types/ipc'
 import type { AssetKind, AssetSummary } from '../../types/ipc'
 
 const ASSETS_LIST_CHANNEL = 'assets:list'
+const ASSETS_DOWNLOAD_CHANNEL = 'assets:download'
 
 const PAGE_SIZE = 100
 const LIST_QUERY = `tags_any=output&sort=created_at&order=desc&limit=${PAGE_SIZE}`
@@ -158,8 +170,113 @@ export async function listAssets(installationId: string): Promise<AssetSummary[]
   return accessToken ? listCloudAssets(accessToken) : []
 }
 
+type SaveTo = (filePath: string) => Promise<void>
+
+async function writeThroughPartFile(
+  filePath: string,
+  write: (partPath: string) => Promise<void>
+): Promise<void> {
+  const partPath = `${filePath}.${randomUUID()}.part`
+  try {
+    await write(partPath)
+    await fs.promises.rename(partPath, filePath)
+  } catch (error) {
+    await fs.promises.rm(partPath, { force: true }).catch(() => {})
+    throw error
+  }
+}
+
+async function saveDownload(url: string, filePath: string): Promise<void> {
+  const controller = new AbortController()
+  let timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const keepAlive = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  }
+  try {
+    const res = await fetch(url, { redirect: 'error', signal: controller.signal })
+    if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
+    const body = Readable.fromWeb(res.body as WebReadableStream)
+    body.on('data', keepAlive)
+    body.on('pause', () => clearTimeout(timer))
+    await writeThroughPartFile(filePath, (partPath) => {
+      const file = fs.createWriteStream(partPath, { flags: 'wx' })
+      file.on('drain', keepAlive)
+      return pipeline(body, file)
+    })
+  } finally {
+    clearTimeout(timer)
+    controller.abort()
+  }
+}
+
+async function cloudSaveTo(installationId: string, assetId: string): Promise<SaveTo | null> {
+  const accessToken = await cloudAccessToken(installationId)
+  if (!accessToken) return null
+  return async (filePath) => {
+    const url = await resolveCloudContentUrl(
+      assetId,
+      accessToken,
+      'attachment',
+      AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    )
+    if (!url) throw new Error('The asset has no download link.')
+    await saveDownload(url, filePath)
+  }
+}
+
+async function localSaveTo(assetId: string): Promise<SaveTo | null> {
+  const file = await outputFilePath(assetId)
+  if (!file) return null
+  return (filePath) =>
+    writeThroughPartFile(filePath, (partPath) =>
+      fs.promises.copyFile(file, partPath, fs.constants.COPYFILE_EXCL)
+    )
+}
+
+function isUsableFileName(name: string): boolean {
+  return name !== '' && name !== '.' && name !== '..'
+}
+
+function safeFileName(fileName: string, assetId: string): string {
+  return [fileName, assetId].map((name) => path.basename(name)).find(isUsableFileName) ?? 'download'
+}
+
+export async function downloadAsset(
+  win: BrowserWindow,
+  source: string,
+  assetId: string,
+  fileName: string
+): Promise<boolean> {
+  const saveTo =
+    source === LOCAL_ASSETS_SOURCE ? await localSaveTo(assetId) : await cloudSaveTo(source, assetId)
+  if (!saveTo) throw new Error('This asset is not available.')
+  const name = safeFileName(fileName, assetId)
+  const remembered = settings.get('lastSaveDialogDir')
+  const startDir = remembered && fs.existsSync(remembered) ? remembered : app.getPath('downloads')
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: path.join(startDir, name),
+    filters: buildSaveDialogFilters(name)
+  })
+  if (canceled || !filePath) return false
+  await saveTo(filePath)
+  settings.set('lastSaveDialogDir', path.dirname(filePath))
+  return true
+}
+
 export function registerAssetsHandlers(): void {
   ipcMain.handle(ASSETS_LIST_CHANNEL, (_event, installationId: unknown) =>
     typeof installationId === 'string' ? listAssets(installationId) : []
+  )
+  ipcMain.handle(
+    ASSETS_DOWNLOAD_CHANNEL,
+    (event, source: unknown, assetId: unknown, fileName: unknown) => {
+      const win =
+        findHostWindowByPanelSender(event.sender) ??
+        BrowserWindow.fromWebContents(event.sender) ??
+        BrowserWindow.getFocusedWindow()
+      if (!win || typeof source !== 'string' || typeof assetId !== 'string') return false
+      return downloadAsset(win, source, assetId, typeof fileName === 'string' ? fileName : assetId)
+    }
   )
 }

@@ -7,6 +7,7 @@ import {
   AudioLines,
   Box,
   Check,
+  Download,
   File,
   LayoutGrid,
   LayoutDashboard,
@@ -23,12 +24,14 @@ import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import BaseInput from '../components/ui/BaseInput.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
+import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useVirtualMasonry } from '../composables/useVirtualMasonry'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
+import { LOCAL_ASSETS_SOURCE } from '../types/ipc'
 import type { AssetKind, AssetSummary, Installation } from '../types/ipc'
 
 interface GalleryAsset extends AssetSummary {
@@ -55,12 +58,14 @@ const CAPTION_PADDING_ESTIMATE = 20
 const CAPTION_LINE_ESTIMATE = 20
 
 const { t } = useI18n()
+const modal = useModal()
 const authStore = useAuthStore()
 const installationStore = useInstallationStore()
 
 const kindFilter = ref<KindFilter>('all')
 const searchQuery = ref('')
 const signingIn = ref(false)
+const downloading = ref(new Set<string>())
 const layout = useLocalStorage<Layout>('comfy.desktop.assets.layout', 'masonry')
 const sortOrder = useLocalStorage<SortOrder>('comfy.desktop.assets.sort', 'newest')
 const showName = useLocalStorage('comfy.desktop.assets.showName', false)
@@ -73,8 +78,6 @@ const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
-
-const LOCAL_SOURCE = 'local'
 
 function isCloudBuild(inst: Installation): boolean {
   return inst.sourceCategory === 'cloud'
@@ -207,7 +210,7 @@ async function loadAssets(): Promise<void> {
   try {
     const cloudId = cloudBuildId.value
     const sources = [
-      { source: LOCAL_SOURCE, load: () => window.api.listLocalAssets() },
+      { source: LOCAL_ASSETS_SOURCE, load: () => window.api.listLocalAssets() },
       ...(cloudId ? [{ source: cloudId, load: () => window.api.listAssets(cloudId) }] : [])
     ]
     const results = await Promise.allSettled(sources.map(({ load }) => load()))
@@ -256,6 +259,19 @@ async function signIn(): Promise<void> {
     return
   } finally {
     signingIn.value = false
+  }
+}
+
+async function download(asset: GalleryAsset): Promise<void> {
+  const key = cardKey(asset)
+  if (downloading.value.has(key)) return
+  downloading.value.add(key)
+  try {
+    await window.api.downloadAsset(asset.source, asset.id, asset.name)
+  } catch {
+    await modal.alert({ title: t('assets.downloadFailed'), message: asset.name })
+  } finally {
+    downloading.value.delete(key)
   }
 }
 
@@ -555,6 +571,20 @@ function extensionOf(name: string): string {
               </span>
             </div>
           </Tooltip>
+
+          <Button
+            type="button"
+            variant="muted-textonly"
+            size="icon"
+            class="absolute top-2 right-2 bg-media-overlay text-foreground opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+            :aria-label="t('assets.download')"
+            :title="t('assets.download')"
+            :disabled="downloading.has(cardKey(asset))"
+            :data-testid="`asset-download-${asset.id}`"
+            @click="download(asset)"
+          >
+            <Download :size="14" aria-hidden="true" />
+          </Button>
         </li>
       </ul>
     </div>

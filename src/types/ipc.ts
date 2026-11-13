@@ -1145,6 +1145,7 @@ export interface ElectronApi {
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
   listLocalAssets(): Promise<AssetSummary[]>
+  downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>
@@ -1393,6 +1394,8 @@ export interface ElectronApi {
     }) => void
   ): Unsubscribe
 }
+
+export const LOCAL_ASSETS_SOURCE = 'local'
 
 export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 

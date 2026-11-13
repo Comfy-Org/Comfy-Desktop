@@ -11,6 +11,8 @@ import type { AssetSummary, Installation } from '../types/ipc'
 
 const listAssets = vi.fn()
 const listLocalAssets = vi.fn()
+const downloadAsset = vi.fn()
+const alert = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
 const MASONRY_GAP = 16
 const FOUR_COLUMN_PAGE_WIDTH = 1000
@@ -30,6 +32,10 @@ function picture(id: string, height: number): AssetSummary {
     height
   })
 }
+
+vi.mock('../composables/useModal', () => ({
+  useModal: () => ({ alert })
+}))
 
 function asset(
   id: string,
@@ -89,6 +95,7 @@ beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
     listLocalAssets,
+    downloadAsset,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
@@ -289,6 +296,55 @@ describe('AssetsView', () => {
     const wrapper = await mountAssets(new Promise(() => {}))
 
     expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
+  })
+
+  it('downloads a file on this computer from its card', async () => {
+    const wrapper = await mountAssets([
+      asset('a', 'surfer.mp4', 'video'),
+      asset('b', 'forest.png', 'image')
+    ])
+
+    await wrapper.get('[data-testid="asset-download-b"]').trigger('click')
+
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
+  })
+
+  it('downloads a Cloud file through the Cloud build', async () => {
+    const wrapper = await mountAssets()
+    await signInWith([asset('c', 'cloud.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-download-c"]').trigger('click')
+
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('cloud', 'c', 'cloud.png')
+  })
+
+  it('starts one download at a time for a file', async () => {
+    let finish: () => void = () => {}
+    downloadAsset.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)))
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+    const button = wrapper.get('[data-testid="asset-download-a"]')
+
+    await button.trigger('click')
+    await button.trigger('click')
+
+    expect(downloadAsset).toHaveBeenCalledOnce()
+    expect(button.attributes('disabled')).toBeDefined()
+    finish()
+    await flushPromises()
+    expect(button.attributes('disabled')).toBeUndefined()
+  })
+
+  it('tells the user when a download fails', async () => {
+    downloadAsset.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
+
+    await wrapper.get('[data-testid="asset-download-a"]').trigger('click')
+    await flushPromises()
+
+    expect(alert).toHaveBeenCalledExactlyOnceWith({
+      title: "Couldn't download asset",
+      message: 'forest.png'
+    })
   })
 
   it('does not reload when a build changes but the account stays the same', async () => {

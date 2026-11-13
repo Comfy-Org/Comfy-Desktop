@@ -59,6 +59,8 @@
     "emptyTitle": "暂无资产",
     "emptyBody": "打开一个应用来生成资产。",
     "loadFailed": "无法加载资产",
+    "download": "下载",
+    "downloadFailed": "无法下载资产",
     "noMatches": "没有匹配的资产",
     "noMatchesHint": "试试其他类型或搜索词。",
     "filter": "筛选",

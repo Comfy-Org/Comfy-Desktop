@@ -59,6 +59,8 @@
     "emptyTitle": "No assets yet",
     "emptyBody": "Open an app to make assets.",
     "loadFailed": "Couldn't load assets",
+    "download": "Download",
+    "downloadFailed": "Couldn't download asset",
     "noMatches": "No matching assets",
     "noMatchesHint": "Try another type or search.",
     "filter": "Filter",
