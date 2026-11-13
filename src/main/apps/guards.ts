@@ -67,6 +67,8 @@ export function isAppOpen(pageUrl: string, listUrl: string): boolean {
 
 const MAX_WORKFLOW_BYTES = 1_000_000
 export const MAX_UPLOAD_BYTES = 50_000_000
+export const MAX_RESULT_BYTES = 100_000_000
+export const MAX_SAVE_BYTES = 2_000_000_000
 
 export function isWorkflow(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
@@ -545,7 +547,11 @@ export function localRequest(input: unknown): LocalRequest | LocalRefusal {
   return { status: 405, error: 'Apps can only GET and POST.' }
 }
 
-export async function readCapped(res: Response, max: number): Promise<Uint8Array | null> {
+export async function readCapped(
+  res: Response,
+  max: number,
+  onChunk: () => void = () => {}
+): Promise<Uint8Array | null> {
   if (Number(res.headers.get('content-length')) > max) {
     await res.body?.cancel().catch(() => {})
     return null
@@ -563,6 +569,7 @@ export async function readCapped(res: Response, max: number): Promise<Uint8Array
       return null
     }
     chunks.push(value)
+    onChunk()
   }
   const out = new Uint8Array(size)
   let at = 0
@@ -571,6 +578,34 @@ export async function readCapped(res: Response, max: number): Promise<Uint8Array
     at += c.byteLength
   }
   return out
+}
+
+export const JOB_GRACE_MS = 30_000
+
+export function noteSubmitted(submitted: Map<string, number>, runId: string, now: number): void {
+  for (const [id, at] of submitted) if (now - at >= JOB_GRACE_MS) submitted.delete(id)
+  submitted.set(runId, now)
+}
+
+export function inJobGrace(submitted: Map<string, number>, runId: string, now: number): boolean {
+  const at = submitted.get(runId)
+  if (at === undefined) return false
+  if (now - at < JOB_GRACE_MS) return true
+  submitted.delete(runId)
+  return false
+}
+
+export type JobsAnswer = 'read' | 'wait' | 'refused' | { error: string }
+
+export function jobsAnswer(status: number, inGrace: boolean): JobsAnswer {
+  if (status >= 200 && status < 300) return 'read'
+  if (status === 429 || status >= 500) return 'wait'
+  if (status === 404) {
+    return inGrace ? 'wait' : { error: 'Comfy Cloud cannot find this run. Run the app again.' }
+  }
+  if (status === 401) return { error: 'Your Comfy sign-in ended. Sign in again, then run the app.' }
+  if (status === 403) return { error: 'Your Comfy account does not have access to this run.' }
+  return 'refused'
 }
 
 export const LOCAL_EVENT_TYPES = [
