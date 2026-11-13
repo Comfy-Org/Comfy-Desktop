@@ -3,7 +3,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { EventEmitter } from 'events'
-import type { TelemetryValue } from './telemetry'
+import type { SessionStartValue, TelemetryValue } from './telemetry'
 import { DEFAULT_POSTHOG_API_KEY, DEFAULT_POSTHOG_HOST } from '../../shared/posthogConfig'
 
 vi.mock('electron', () => ({
@@ -246,6 +246,7 @@ interface SetupTelemetryOptions {
   appEnv?: string
   isPackaged?: boolean
   env?: Partial<Record<PostHogEnvName, string | undefined>>
+  sessionStartProps?: Record<string, SessionStartValue>
 }
 
 type PostHogEnvName =
@@ -285,7 +286,8 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
     appVersion = '0.0.0',
     appEnv = 'test',
     isPackaged = true,
-    env = {}
+    env = {},
+    sessionStartProps
   } = options
   captured.length = 0
   identifies.length = 0
@@ -302,7 +304,7 @@ function setupTelemetry(options: SetupTelemetryOptions = {}): void {
   }
   telemetry._resetForTest()
   telemetry._resetTelemetryRelayTargets()
-  telemetry.initTelemetry({ appVersion, appEnv, isPackaged })
+  telemetry.initTelemetry({ appVersion, appEnv, isPackaged, sessionStartProps })
   if (consent) telemetry.setConsentState(consent)
   if (bind) bindTestAnonymous(bind)
   telemetry._test_resetVolumeGuards()
@@ -388,6 +390,22 @@ describe('telemetry default event properties', () => {
 
     const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
     expect(started?.properties).toMatchObject({ sac_state: 'on' })
+  })
+
+  it('reads a session.started value when the event goes out, not at start-up', () => {
+    let appsEnabled = false
+    setupTelemetry({
+      consent: 'undecided',
+      bind: null,
+      sessionStartProps: { apps_enabled: () => appsEnabled }
+    })
+    bindTestAnonymous('boot-id')
+    appsEnabled = true
+
+    telemetry.setConsentState('granted')
+
+    const started = captured.find((c) => c.event === 'comfy.desktop.session.started')
+    expect(started?.properties).toMatchObject({ apps_enabled: true })
   })
 
   it('adds sac_state to every capture once read, keeping installation_id', () => {
