@@ -27,7 +27,7 @@ defineEmits<{ browse: []; open: [] }>()
     }}</label>
     <div class="flex min-w-0 flex-col">
       <InputGroup
-        class="config-input config-path-input min-w-0 gap-2.5 pr-1 pl-3"
+        class="config-input config-path-input min-w-0 gap-2.5 pr-1.5 pl-3"
         data-testid="config-path-input"
       >
         <Button

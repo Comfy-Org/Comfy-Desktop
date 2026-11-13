@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PathIssue, DiskSpaceInfo } from '../types/ipc'
-import { formatBytes } from '../lib/formatting'
+import { formatBytes, formatFreeSpace } from '../lib/formatting'
 
 defineProps<{
   pathIssues: PathIssue[]
@@ -41,7 +41,7 @@ defineProps<{
       {{ $t('diskSpace.checking') }}
     </template>
     <template v-else-if="diskSpace">
-      {{ $t('diskSpace.free', { size: formatBytes(diskSpace.free) }) }}
+      {{ $t('diskSpace.free', { size: formatFreeSpace(diskSpace.free) }) }}
       <template v-if="estimatedSize > 0">
         · {{ $t('diskSpace.estimatedRequired', { size: formatBytes(estimatedSize) }) }}
       </template>

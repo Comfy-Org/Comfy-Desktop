@@ -68,7 +68,7 @@ import PathDiskInfo from '../components/PathDiskInfo.vue'
 import InstallLocationRow from '../components/InstallLocationRow.vue'
 import { BaseSelect, type BaseSelectOption } from '../components/ui'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
-import { formatBytes } from '../lib/formatting'
+import { formatBytes, formatFreeSpace } from '../lib/formatting'
 import type { Build, BuildTarget } from '../devplatform/types'
 
 const emit = defineEmits<{
@@ -1240,7 +1240,7 @@ function selectReleaseChoice(field: SourceField, fieldIndex: number, value: stri
 
 const diskFreeLabel = computed(() =>
   !diskSpaceLoading.value && diskSpace.value
-    ? t('diskSpace.free', { size: formatBytes(diskSpace.value.free) })
+    ? t('diskSpace.free', { size: formatFreeSpace(diskSpace.value.free) })
     : ''
 )
 const diskShortLabel = computed(() => {
