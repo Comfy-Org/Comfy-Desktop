@@ -441,6 +441,26 @@ describe('Home builds', () => {
     ])
   })
 
+  it('keeps only the latest build and Cloud when the window is narrow', async () => {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, RUNNING, NEWEST])
+    const wrapper = await openHome()
+    const kept = wrapper
+      .findAll('[data-testid="home-builds"] li:not([data-narrow-hidden])')
+      .map((item) => item.get('[data-testid="home-build"] .font-semibold').text())
+
+    expect(kept).toEqual(['My Local 1', 'Comfy Cloud'])
+  })
+
+  it('keeps the two latest builds when the window is narrow and there is no Cloud', async () => {
+    getInstallations.mockResolvedValue([OLDEST, RUNNING, NEWEST])
+    const wrapper = await openHome()
+    const kept = wrapper
+      .findAll('[data-testid="home-builds"] li:not([data-narrow-hidden])')
+      .map((item) => item.get('[data-testid="home-build"] .font-semibold').text())
+
+    expect(kept).toEqual(['My Local 1', 'Video Lab'])
+  })
+
   it('shows a stopped local build as ready, with its ComfyUI version and folder', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
