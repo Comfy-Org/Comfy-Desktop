@@ -140,7 +140,12 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
     timeout: 30_000,
     message: 'beta notice never drew after the launch that armed it'
   })
-  expect(await popupVisible(ctx.app)).toBe(true)
+  await expect
+    .poll(async () => popupVisible(ctx.app), {
+      timeout: 15_000,
+      message: 'the beta notice drew its card but the popup never came on screen'
+    })
+    .toBe(true)
   expect(await lockdownEngaged(ctx.titleBar)).toBe(false)
 
   await ctx.panel.evaluate(`window.api.setFirstUseMode('post-consent')`)
