@@ -1,11 +1,17 @@
 import type { WebContents, WebFrameMain } from 'electron'
 
 import { identityOf } from '../cloud/claims'
-import { getCloudSession } from '../devplatform/session'
+import { getCloudSession, rejectAccessToken } from '../devplatform/session'
 import { comfyWindows, findEntryByComfySender } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import type { WorkspaceSwitchOutcome } from '../cloud/types'
-import type { ComfyDesktop2AuthState } from '../../types/comfyDesktopBridge'
+import { issueBillingHandoff } from '../cloud/billingHandoff'
+import type {
+  ComfyDesktop2AuthState,
+  ComfyDesktop2BillingHandoff,
+  ComfyDesktop2BillingHandoffIntent,
+  ComfyDesktop2BillingHandoffReceiver
+} from '../../types/comfyDesktopBridge'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 import * as mainTelemetry from './telemetry'
 import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
@@ -19,6 +25,7 @@ export const EMBEDDED_SESSION_CHANNELS = {
   requestSignIn: 'desktop2-auth:request-sign-in',
   signOut: 'desktop2-auth:sign-out',
   switchWorkspace: 'desktop2-auth:switch-workspace',
+  issueBillingHandoff: 'desktop2-auth:issue-billing-handoff',
   changed: 'desktop2-auth:changed'
 } as const
 
@@ -138,6 +145,70 @@ export async function switchWorkspaceForSender(
   const { reached } = await switchWorkspace(workspaceId)
   if (reached) grants.allowView(event.sender, workspaceId)
   return stateForSender(event)
+}
+
+const BILLING_HANDOFF_RECEIVERS: ReadonlySet<unknown> =
+  new Set<ComfyDesktop2BillingHandoffReceiver>(['billing_web', 'platform'])
+
+function isBillingHandoffReceiver(value: unknown): value is ComfyDesktop2BillingHandoffReceiver {
+  return BILLING_HANDOFF_RECEIVERS.has(value)
+}
+
+const BILLING_HANDOFF_INTENTS: ReadonlySet<unknown> = new Set<ComfyDesktop2BillingHandoffIntent>([
+  'top-up',
+  'subscription'
+])
+
+function isOptionalBillingHandoffIntent(
+  value: unknown
+): value is ComfyDesktop2BillingHandoffIntent | undefined {
+  return value === undefined || BILLING_HANDOFF_INTENTS.has(value)
+}
+
+function isOptionalTopUpAmountCents(
+  value: unknown,
+  intent: ComfyDesktop2BillingHandoffIntent | undefined
+): value is number | undefined {
+  return (
+    value === undefined ||
+    (intent === 'top-up' && typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+  )
+}
+
+export async function billingHandoffForSender(
+  event: EmbeddedSessionSender,
+  workspaceId: unknown,
+  receiver: unknown,
+  intent: unknown,
+  amountCents: unknown,
+  clientVersion: string
+): Promise<ComfyDesktop2BillingHandoff> {
+  if (
+    typeof workspaceId !== 'string' ||
+    workspaceId === '' ||
+    !isBillingHandoffReceiver(receiver) ||
+    !isOptionalBillingHandoffIntent(intent) ||
+    !isOptionalTopUpAmountCents(amountCents, intent)
+  )
+    return { status: 'disabled' }
+  if (!isTrustedSender(event)) return { status: 'disabled' }
+  const grants = getViewWorkspaceGrants()
+  if (!grants.mayHold(event.sender, workspaceId) || !(await enabledForLocalView()))
+    return { status: 'disabled' }
+  const accessToken = await getCloudSession().getGrantAccessToken()
+  if (!accessToken) return { status: 'sign_in_again' }
+  const handoff = await issueBillingHandoff(accessToken, {
+    workspaceId,
+    receiver,
+    clientVersion,
+    intent,
+    amountCents
+  })
+  if (handoff.status === 'sign_in_again') {
+    rejectAccessToken(accessToken)
+    return handoff
+  }
+  return grants.mayHold(event.sender, workspaceId) ? handoff : { status: 'disabled' }
 }
 
 let broadcastGeneration = 0

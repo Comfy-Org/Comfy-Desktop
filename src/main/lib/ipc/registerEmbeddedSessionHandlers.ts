@@ -1,8 +1,9 @@
-import { ipcMain } from 'electron'
+import { app, ipcMain } from 'electron'
 
 import { findEntryByComfySender } from '../../host/registry'
 import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
 import {
+  billingHandoffForSender,
   EMBEDDED_SESSION_CHANNELS,
   partnerNodeTokenForSender,
   stateForSender,
@@ -45,5 +46,11 @@ export function registerEmbeddedSessionHandlers(): void {
 
   ipcMain.handle(EMBEDDED_SESSION_CHANNELS.switchWorkspace, (event, workspaceId: unknown) =>
     switchWorkspaceForSender(event, workspaceId, (id) => switchCloudWorkspace(id, 'requested'))
+  )
+
+  ipcMain.handle(
+    EMBEDDED_SESSION_CHANNELS.issueBillingHandoff,
+    (event, workspaceId: unknown, receiver: unknown, intent: unknown, amountCents: unknown) =>
+      billingHandoffForSender(event, workspaceId, receiver, intent, amountCents, app.getVersion())
   )
 }
