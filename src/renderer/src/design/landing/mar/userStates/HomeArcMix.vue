@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import { ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { go } from '../../useProto'
-import { can } from '../../milestones'
 import ExampleArc from './ExampleArc.vue'
 import ScrollRow from '../../ui/ScrollRow.vue'
 import SectionHeader from '../../ui/SectionHeader.vue'
@@ -40,9 +39,7 @@ const TOPICS = computed(() =>
   ).filter((t) => t.value === 'all' || EVERY.filter((x) => x.topic === t.value).length >= 3)
 )
 
-/** Milestone 2 always shows the tabs; from Milestone 3 the layout follows
- *  UI Playground › Apps and templates. */
-const mix = computed(() => (can.value.explore ? homeArcMix.id : 'tabs'))
+const mix = computed(() => homeArcMix.id)
 
 const items = computed<ArcItem[]>(() => {
   switch (mix.value) {
@@ -62,8 +59,6 @@ const items = computed<ArcItem[]>(() => {
 })
 
 const allLabel = computed(() => {
-  // Milestone 2 has a page for apps only, so the Workflows tab has no See all.
-  if (!can.value.explore) return kind.value === 'apps' ? 'See all apps' : ''
   if (mix.value === 'tabs') return kind.value === 'apps' ? 'See all apps' : 'See all workflows'
   if (mix.value === 'topics' && topic.value !== 'all')
     return `See all ${TOPICS.value.find((t) => t.value === topic.value)?.label}`
@@ -72,12 +67,57 @@ const allLabel = computed(() => {
 })
 
 function seeAll(on: 'apps' | 'templates'): void {
-  if (!can.value.explore) return go('apps')
   exploreStart.value = on
   go('explore')
 }
 const allOn = computed(() =>
   mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
+)
+
+/**
+ * Switching tabs (or chips) swaps the whole arc: the old cards fade down,
+ * the new ones' front pictures load out of sight, then the arc fades back
+ * up with them in place. The arc never shows half-loaded or jumping cards.
+ */
+const OUT_MS = 150
+const next = computed(() => ({ items: items.value, label: allLabel.value, on: allOn.value }))
+const shown = shallowRef(next.value)
+const leaving = ref(false)
+function preload(list: ArcItem[]): Promise<unknown> {
+  // The front card and two each side are what shows first.
+  const near = [...list.slice(0, 3), ...list.slice(-2)]
+  return Promise.all(
+    near.map((x) => {
+      const img = new Image()
+      img.src = x.src
+      return img.decode().catch(() => {})
+    })
+  )
+}
+let swap = 0
+watch(
+  () => next.value.items,
+  async () => {
+    const id = ++swap
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+    leaving.value = !reduce
+    await Promise.all([
+      reduce ? null : new Promise((r) => setTimeout(r, OUT_MS)),
+      preload(next.value.items)
+    ])
+    if (id !== swap) return
+    shown.value = next.value
+    await nextTick()
+    requestAnimationFrame(() => {
+      if (id === swap) leaving.value = false
+    })
+  }
+)
+watch(
+  () => [next.value.label, next.value.on],
+  () => {
+    if (shown.value.items === next.value.items) shown.value = next.value
+  }
 )
 
 const row = ref<InstanceType<typeof ScrollRow> | null>(null)
@@ -111,7 +151,9 @@ function scrollRow(by: number): void {
       </button>
     </div>
 
-    <ExampleArc :items="items" :all-label="allLabel" @all="seeAll(allOn)" />
+    <div class="mar-arcmix-stage" :class="leaving && 'is-leaving'">
+      <ExampleArc :items="shown.items" :all-label="shown.label" @all="seeAll(shown.on)" />
+    </div>
 
     <section v-if="mix === 'row'" class="mar-arcmix-row">
       <SectionHeader
@@ -146,6 +188,22 @@ function scrollRow(by: number): void {
 </template>
 
 <style>
+.mar-arcmix-stage {
+  transition:
+    opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.mar-arcmix-stage.is-leaving {
+  opacity: 0;
+  transform: translateY(6px) scale(0.985);
+  transition-duration: 150ms;
+  transition-timing-function: ease-in;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mar-arcmix-stage {
+    transition: none;
+  }
+}
 .mar-arcmix-picker {
   display: flex;
   justify-content: center;
