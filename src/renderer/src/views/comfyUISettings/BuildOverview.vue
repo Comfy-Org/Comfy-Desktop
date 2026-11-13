@@ -77,6 +77,15 @@ const lastChecked = computed(() => {
   return c.lastChecked ?? ''
 })
 
+const updateTooltip = computed(() =>
+  [
+    updateAction.value?.tooltip,
+    lastChecked.value && t('buildOverview.checked', { time: lastChecked.value })
+  ]
+    .filter(Boolean)
+    .join(' · ')
+)
+
 const checkRunning = computed(
   () => !!model.checkAction && runningActionIds.has(model.checkAction.id)
 )
@@ -110,13 +119,12 @@ function openLocation(): void {
         aria-labelledby="build-overview-comfyui"
         data-testid="build-overview-comfyui"
       >
+        <span id="build-overview-comfyui" class="text-[12px]/4 text-muted-foreground">{{
+          t('buildOverview.comfyui')
+        }}</span>
         <span
-          id="build-overview-comfyui"
-          class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-          >{{ t('buildOverview.comfyui') }}</span
-        >
-        <span
-          class="text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+          class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
+          :title="comfyVersion.main"
           data-testid="build-overview-comfyui-version"
           >{{ comfyVersion.main }}</span
         >
@@ -135,13 +143,13 @@ function openLocation(): void {
               type="button"
               variant="muted-textonly"
               size="sm"
-              class="-mx-2 mt-0.5 gap-0.5 self-start text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
+              class="-mx-2 mt-0.5 max-w-[calc(100%+1rem)] min-w-0 gap-0.5 self-start text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
               :aria-label="`${model.channelLabel}: ${channel?.label ?? ''}`"
               :title="model.channelTooltip"
               :data-testid="TID.buildOverviewChannel"
             >
-              {{ channel?.label }}
-              <ChevronDown :size="13" aria-hidden="true" />
+              <span class="truncate">{{ channel?.label }}</span>
+              <ChevronDown :size="13" class="shrink-0" aria-hidden="true" />
             </Button>
           </template>
           <DropdownMenuLabel
@@ -172,27 +180,24 @@ function openLocation(): void {
         </Menu>
 
         <div
-          class="mt-auto flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-3 pt-5 text-[12px]/4 text-muted-foreground"
+          class="mt-auto flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-3 pt-3 text-[12px]/4 text-muted-foreground"
           data-testid="build-overview-update"
         >
           <template v-if="updateAction">
-            <span class="flex min-w-36 flex-1 flex-col">
+            <span class="flex min-w-0 flex-auto flex-col">
               <span class="text-foreground">{{
                 switching
                   ? t('channelCards.switchTo', { channel: channel?.label ?? '' })
                   : t('buildOverview.available', { version: channel?.latestVersion ?? '' })
               }}</span>
               <span>{{ t('buildOverview.savesSnapshot') }}</span>
-              <span v-if="lastChecked">{{
-                t('buildOverview.checked', { time: lastChecked })
-              }}</span>
             </span>
             <SplitButton
               v-model:open="updateMenuOpen"
               class="ml-auto shrink-0"
               :label="updateAction.label"
               :menu-label="t('buildOverview.moreUpdateOptions')"
-              :tooltip="updateAction.tooltip"
+              :tooltip="updateTooltip"
               :main-testid="TID.updateActionButton(updateAction.id)"
               :menu-testid="TID.buildOverviewUpdateMenu"
               @run="run(updateAction)"
@@ -214,7 +219,7 @@ function openLocation(): void {
             </SplitButton>
           </template>
           <template v-else-if="switching">
-            <span class="flex min-w-36 flex-1 flex-col">
+            <span class="flex min-w-0 flex-auto flex-col">
               <span class="text-foreground">{{
                 t('channelCards.switchTo', { channel: channel?.label ?? '' })
               }}</span>
@@ -234,7 +239,7 @@ function openLocation(): void {
             </Button>
           </template>
           <template v-else>
-            <span class="flex min-w-36 flex-1 flex-col">
+            <span class="flex min-w-0 flex-auto flex-col">
               <span class="text-foreground">{{
                 channel?.latestVersion ? t('channelCards.upToDate') : t('buildOverview.notChecked')
               }}</span>
@@ -273,27 +278,29 @@ function openLocation(): void {
         </div>
       </section>
 
-      <div
-        class="build-overview-facts grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2.5 self-start"
-      >
+      <div class="build-overview-facts grid grid-cols-3 gap-2.5 self-start">
         <section
           class="build-overview-card flex min-w-0 flex-col gap-1 rounded-[14px] bg-card px-[18px] py-4"
           aria-labelledby="build-overview-pytorch"
           data-testid="build-overview-pytorch"
         >
-          <span
-            id="build-overview-pytorch"
-            class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-            >{{ model.torch?.label ?? t('buildOverview.pytorch') }}</span
-          >
+          <span id="build-overview-pytorch" class="text-[12px]/4 text-muted-foreground">{{
+            model.torch?.label ?? t('buildOverview.pytorch')
+          }}</span>
           <span
             class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
             >{{ torchVersion }}</span
           >
-          <div class="-mr-2 -mb-1.5 mt-auto flex min-w-0 items-center justify-between gap-2">
-            <span class="line-clamp-2 min-w-0 text-[12px]/4 text-muted-foreground">{{
-              model.facts.variant?.value
-            }}</span>
+          <div
+            class="mt-auto flex min-w-0 items-center justify-between gap-2"
+            :class="torchGroups.length > 0 && '-mr-2'"
+          >
+            <span
+              class="min-w-0 truncate text-[12px]/4 text-muted-foreground"
+              :title="model.facts.variant?.value"
+              data-testid="build-overview-variant"
+              >{{ model.facts.variant?.value }}</span
+            >
             <Menu
               v-if="torchGroups.length > 0"
               :modal="false"
@@ -307,7 +314,7 @@ function openLocation(): void {
                   type="button"
                   variant="muted-textonly"
                   size="sm"
-                  class="shrink-0 gap-0.5 text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                  class="-my-1.5 h-7 shrink-0 gap-0.5 text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
                   :data-testid="TID.buildOverviewPytorchChange"
                 >
                   {{ t('buildOverview.change') }}
@@ -383,11 +390,9 @@ function openLocation(): void {
           aria-labelledby="build-overview-disk"
           data-testid="build-overview-disk"
         >
-          <span
-            id="build-overview-disk"
-            class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-            >{{ t('buildOverview.onDisk') }}</span
-          >
+          <span id="build-overview-disk" class="text-[12px]/4 text-muted-foreground">{{
+            t('buildOverview.onDisk')
+          }}</span>
           <span
             class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
             >{{ diskUsage ?? '—' }}</span
@@ -402,11 +407,9 @@ function openLocation(): void {
           aria-labelledby="build-overview-python"
           data-testid="build-overview-python"
         >
-          <span
-            id="build-overview-python"
-            class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-            >{{ t('buildOverview.python') }}</span
-          >
+          <span id="build-overview-python" class="text-[12px]/4 text-muted-foreground">{{
+            t('buildOverview.python')
+          }}</span>
           <span
             class="truncate text-[22px]/7 font-semibold tracking-[-0.01em] text-foreground tabular-nums"
             >{{ model.facts.python?.value ?? '—' }}</span
@@ -426,10 +429,9 @@ function openLocation(): void {
             class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
             data-testid="build-overview-location"
           >
-            <span
-              class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-              >{{ model.facts.location?.label }}</span
-            >
+            <span class="text-[12px]/4 text-muted-foreground">{{
+              model.facts.location?.label
+            }}</span>
             <span class="flex min-w-0 items-center gap-0.5">
               <span
                 class="mr-auto min-w-0 truncate pr-3 font-mono text-[12px]/4 text-foreground"
@@ -456,10 +458,7 @@ function openLocation(): void {
             class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
             data-testid="build-overview-lineage"
           >
-            <span
-              class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-              >{{ lineage.label }}</span
-            >
+            <span class="text-[12px]/4 text-muted-foreground">{{ lineage.label }}</span>
             <span class="truncate text-[13px]/5 text-foreground" :title="lineage.value">{{
               lineage.value
             }}</span>
@@ -469,10 +468,7 @@ function openLocation(): void {
             class="grid min-h-9 grid-cols-[110px_minmax(0,1fr)] items-center gap-4"
             data-testid="build-overview-port"
           >
-            <span
-              class="text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
-              >{{ port.label }}</span
-            >
+            <span class="text-[12px]/4 text-muted-foreground">{{ port.label }}</span>
             <span class="text-[13px]/5 text-foreground tabular-nums">{{ port.value }}</span>
           </div>
         </section>

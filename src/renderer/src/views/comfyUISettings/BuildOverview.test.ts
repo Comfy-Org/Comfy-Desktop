@@ -5,6 +5,7 @@ import { setActivePinia } from 'pinia'
 
 import { useSessionStore } from '../../stores/sessionStore'
 import BuildOverview from './BuildOverview.vue'
+import SplitButton from '../../components/ui/SplitButton.vue'
 import type { BuildOverviewModel, OverviewChannel } from './overviewModel'
 import type { ActionDef, Installation } from '../../types/ipc'
 
@@ -162,6 +163,8 @@ describe('BuildOverview — ComfyUI card', () => {
     const update = w.get('[data-testid="build-overview-update"]').text()
     expect(update).toContain('v0.3.65 available')
     expect(update).toContain('Saves a snapshot first')
+    expect(update).not.toContain('Checked')
+    expect(w.findComponent(SplitButton).props('tooltip')).toBe('Checked 5m ago')
     expect(w.find('[data-testid="update-action-check-update"]').exists()).toBe(false)
 
     await w.get('[data-testid="update-action-update-comfyui"]').trigger('click')
