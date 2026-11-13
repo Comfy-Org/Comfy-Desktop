@@ -44,6 +44,15 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
+  it('the only handler outside the apps-page check answers the panel alone', () => {
+    expect(new Set(all(main, /ipcMain\.handle\((\w+)/g))).toEqual(
+      new Set(['channel', 'APPS_CATALOG_CHANNEL'])
+    )
+    expect(main).toMatch(
+      /ipcMain\.handle\(APPS_CATALOG_CHANNEL, \(event\) =>\s+entryForPanel\(event\.sender\)/
+    )
+  })
+
   it('a page says it settled on the channel main relays to the panel', () => {
     const settled = main.match(/APPS_PAGE_SETTLED_CHANNEL = '([\w:-]+)'/)![1]
     expect(preload).toContain(`ipcRenderer.send('${settled}')`)
