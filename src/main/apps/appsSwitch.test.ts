@@ -13,6 +13,13 @@ vi.mock('../lib/telemetry', () => ({
   getOpsFlagResult: (...args: unknown[]) => getOpsFlagResult(...args)
 }))
 
+const cloud = vi.hoisted(() => ({
+  status: { signedIn: false } as { signedIn: boolean; email?: string }
+}))
+vi.mock('../devplatform/session', () => ({
+  getCloudSession: () => ({ status: () => cloud.status })
+}))
+
 let testConfigDir = ''
 vi.mock('../lib/paths', () => ({
   configDir: () => testConfigDir
@@ -35,8 +42,13 @@ function storedAnswer(): unknown {
   ]?.value
 }
 
+function lastAccountSent(): unknown {
+  return getOpsFlagResult.mock.calls.at(-1)?.[4]
+}
+
 beforeEach(() => {
   getOpsFlagResult.mockReset()
+  cloud.status = { signedIn: false }
   testConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'apps-switch-'))
 })
 
@@ -55,8 +67,85 @@ describe('appsSwitch', () => {
       'desktop_apps_enabled',
       'install-1',
       expect.any(Number),
-      expect.any(Function)
+      expect.any(Function),
+      {}
     )
+  })
+
+  it('sends the signed-in Comfy account email with the flag check', async () => {
+    cloud.status = { signedIn: true, email: ' Ada@Comfy.org ' }
+    const s = await load(true)
+    getOpsFlagResult.mockResolvedValue(answer(true))
+    await s.initAppsSwitch({ distinctId: 'install-1' })
+
+    expect(lastAccountSent()).toEqual({ email: 'ada@comfy.org' })
+  })
+
+  it('checks without an email when the token carries none', async () => {
+    cloud.status = { signedIn: true }
+    const s = await load(true)
+    getOpsFlagResult.mockResolvedValue(answer(false))
+    await s.initAppsSwitch({ distinctId: 'install-1' })
+
+    expect(lastAccountSent()).toEqual({})
+  })
+
+  it('checks again with the email on sign-in and shows Apps', async () => {
+    const s = await load(true)
+    getOpsFlagResult.mockResolvedValue(answer(false))
+    await s.initAppsSwitch({ distinctId: 'install-1' })
+    expect(lastAccountSent()).toEqual({})
+    const heard = vi.fn()
+    s.onAppsEnabledChanged(heard)
+
+    cloud.status = { signedIn: true, email: 'ada@comfy.org' }
+    getOpsFlagResult.mockResolvedValue(answer(true))
+    await s.refreshAppsSwitch()
+
+    expect(getOpsFlagResult).toHaveBeenCalledTimes(2)
+    expect(lastAccountSent()).toEqual({ email: 'ada@comfy.org' })
+    expect(await s.getAppsEnabledAsync()).toBe(true)
+    expect(s.isAppsEnabled()).toBe(true)
+    expect(heard.mock.calls).toEqual([[true]])
+  })
+
+  it('checks again without the email on sign-out and hides Apps', async () => {
+    cloud.status = { signedIn: true, email: 'ada@comfy.org' }
+    const s = await load(true)
+    getOpsFlagResult.mockResolvedValue(answer(true))
+    await s.initAppsSwitch({ distinctId: 'install-1' })
+    const heard = vi.fn()
+    s.onAppsEnabledChanged(heard)
+
+    cloud.status = { signedIn: false }
+    getOpsFlagResult.mockResolvedValue(answer(false))
+    await s.refreshAppsSwitch()
+
+    expect(getOpsFlagResult).toHaveBeenCalledTimes(2)
+    expect(lastAccountSent()).toEqual({})
+    expect(s.isAppsEnabled()).toBe(false)
+    expect(heard.mock.calls).toEqual([[false]])
+  })
+
+  it('keeps the last answer when the sign-in check gets no answer', async () => {
+    const s = await load(true)
+    getOpsFlagResult.mockResolvedValue(answer(true))
+    await s.initAppsSwitch({ distinctId: 'install-1' })
+
+    cloud.status = { signedIn: true, email: 'ada@comfy.org' }
+    getOpsFlagResult.mockResolvedValue(unreachable)
+    await s.refreshAppsSwitch()
+
+    expect(await s.getAppsEnabledAsync()).toBe(true)
+    expect(s.isAppsEnabled()).toBe(true)
+  })
+
+  it('does not check on a sign-in before start-up has checked once', async () => {
+    const s = await load(true)
+
+    await s.refreshAppsSwitch()
+
+    expect(getOpsFlagResult).not.toHaveBeenCalled()
   })
 
   it.each([

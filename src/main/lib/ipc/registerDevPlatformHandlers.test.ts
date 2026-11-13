@@ -110,7 +110,11 @@ vi.mock('./shared', () => ({
   i18n: { t: mocks.translate }
 }))
 
-import { registerDevPlatformHandlers, signInToCloud } from './registerDevPlatformHandlers'
+import {
+  onCloudAuthChanged,
+  registerDevPlatformHandlers,
+  signInToCloud
+} from './registerDevPlatformHandlers'
 import { comfyWindows, type ComfyWindowEntry } from '../../host/registry'
 
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown
@@ -204,6 +208,39 @@ describe('registerDevPlatformHandlers', () => {
     await handler('comfybuilder:signOut')({})
 
     expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', { signedIn: false })
+  })
+
+  it('tells main-process listeners on sign-in, sign-out and a rejected token', async () => {
+    mocks.getAllWindows.mockReturnValue([])
+    const heard = vi.fn()
+    const stop = onCloudAuthChanged(heard)
+    mocks.login.mockResolvedValue({ signedIn: true, email: 'ada@comfy.org' })
+
+    await signInToCloud()
+    await handler('comfybuilder:signOut')({})
+    ;(mocks.setUnauthorizedHandler.mock.calls[0]![0] as () => void)()
+    stop()
+    await signInToCloud()
+
+    expect(heard.mock.calls).toEqual([
+      [{ signedIn: true, email: 'ada@comfy.org' }],
+      [{ signedIn: false }],
+      [{ signedIn: false }]
+    ])
+  })
+
+  it('keeps broadcasting when a main-process listener throws', async () => {
+    mocks.getAllWindows.mockReturnValue([])
+    const panel = registerHostWithPanel(1)
+    const stop = onCloudAuthChanged(() => {
+      throw new Error('listener failed')
+    })
+    mocks.login.mockResolvedValue({ signedIn: true, email: 'ada@comfy.org' })
+
+    const status = await signInToCloud()
+    stop()
+
+    expect(panel).toHaveBeenCalledWith('comfybuilder:authChanged', status)
   })
 
   it('merges the server Personal workspace into the stable local identity', async () => {
