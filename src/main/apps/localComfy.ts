@@ -150,7 +150,17 @@ function serving(id: string | null | undefined): Serving | null {
   return id && s ? { id, name: s.installationName, port: s.port } : null
 }
 
+function readsSharedInput(id: string): boolean {
+  const session = localSession(id)
+  return !session || session.inputDir === sharedInputDir()
+}
+
+function reusable(id: string): boolean {
+  return id === appsBuildId() || readsSharedInput(id)
+}
+
 export function appsRunning(): Serving | null {
+  if (target && !reusable(target.id)) target = null
   return serving(target?.id ?? appsBuildId())
 }
 
@@ -204,13 +214,8 @@ async function candidate(inst: InstallationRecord, own: boolean): Promise<Candid
   }
 }
 
-function readsSharedInput(inst: InstallationRecord): boolean {
-  const session = localSession(inst.id)
-  return !session || session.inputDir === sharedInputDir()
-}
-
 async function choose(min: string, apps: InstallationRecord | null): Promise<Candidate | null> {
-  const reusable = (await reusableLocal()).filter(readsSharedInput)
+  const reusable = (await reusableLocal()).filter((inst) => readsSharedInput(inst.id))
   const own = await Promise.all(reusable.map((inst) => candidate(inst, true)))
   const appsRunningNow = apps && localSession(apps.id) ? [await candidate(apps, false)] : []
   return pickComfy([...own, ...appsRunningNow], reuseMinimum(min), appsRunning()?.id)
@@ -436,7 +441,7 @@ function routeFor(runs: string[], file: string | null, page: number): Serving | 
     : file
       ? owned.fileOwner(page, file)
       : undefined
-  return serving(owner) ?? appsRunning()
+  return (owner && reusable(owner) ? serving(owner) : null) ?? appsRunning()
 }
 
 function noteOwned(

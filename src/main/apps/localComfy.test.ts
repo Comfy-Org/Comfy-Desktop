@@ -650,6 +650,31 @@ describe('a ComfyUI that keeps its own input folder', () => {
     expect((await local.getLocal({ minVersion: '0.37.0' })).own).toBeUndefined()
   })
 
+  it('stops getting app requests once the person restarts it with its own folder', async () => {
+    const server = addInstall('x', 8188, '0.42.4')
+    run('x')
+    const local = await load()
+    expect(await local.getLocal({ minVersion: '0.37.0' })).toMatchObject({ own: true })
+    Object.assign(fake.installs[0]!, { useSharedInput: false, inputDir: '/x/private-input' })
+    fake.sessions.delete('x')
+    fake.lifecycle!.emit('changed')
+    run('x')
+    fake.lifecycle!.emit('changed')
+    server.calls.length = 0
+
+    const nodes = await local.localFetch({ method: 'GET', path: '/object_info/LoadImage' })
+    const queued = await local.localFetch({
+      method: 'POST',
+      path: '/prompt',
+      body: { prompt: {} }
+    })
+
+    expect(nodes.status).toBe(503)
+    expect(queued.status).toBe(503)
+    expect(server.calls, 'the private input folder is never read').toEqual([])
+    expect(local.ownInUse()).toBeNull()
+  })
+
   it('leaves the next ComfyUI that shares the apps input folder to be reused', async () => {
     addInstall('x', 8188, '0.42.4')
     fake.installs[0]!.useSharedInput = false
