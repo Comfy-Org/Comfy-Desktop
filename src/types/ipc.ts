@@ -185,12 +185,14 @@ export interface AppOutputItem {
 export interface AppOutputs {
   items: AppOutputItem[]
   index: number
+  turn: number
   backdrop: Uint8Array<ArrayBuffer> | null
 }
 
 export interface AppOutputAction {
   action: 'download' | 'open-workflow' | 'show-in-folder'
   index: number
+  turn: number
 }
 
 export interface BuildStorageSnapshot {

@@ -196,21 +196,29 @@ describe('resolveOutputFiles', () => {
 })
 
 describe('outputAction', () => {
-  it('passes on a download, an open-workflow or a show-in-folder for one output', () => {
-    expect(outputAction({ action: 'show-in-folder', index: 1 })).toEqual({
+  it('passes on a download, an open-workflow or a show-in-folder for one output of one turn', () => {
+    expect(outputAction({ action: 'show-in-folder', index: 1, turn: 2 })).toEqual({
       action: 'show-in-folder',
-      index: 1
+      index: 1,
+      turn: 2
     })
-    expect(outputAction({ action: 'download', index: 2 })).toEqual({ action: 'download', index: 2 })
-    expect(outputAction({ action: 'open-workflow', index: 0 })).toEqual({
+    expect(outputAction({ action: 'download', index: 2, turn: 1 })).toEqual({
+      action: 'download',
+      index: 2,
+      turn: 1
+    })
+    expect(outputAction({ action: 'open-workflow', index: 0, turn: 5 })).toEqual({
       action: 'open-workflow',
-      index: 0
+      index: 0,
+      turn: 5
     })
   })
 
   it('drops anything else', () => {
-    expect(outputAction({ action: 'delete', index: 0 })).toBeNull()
-    expect(outputAction({ action: 'download', index: 1.5 })).toBeNull()
+    expect(outputAction({ action: 'delete', index: 0, turn: 1 })).toBeNull()
+    expect(outputAction({ action: 'download', index: 1.5, turn: 1 })).toBeNull()
+    expect(outputAction({ action: 'download', index: 1 })).toBeNull()
+    expect(outputAction({ action: 'download', index: 1, turn: -1 })).toBeNull()
     expect(outputAction('download')).toBeNull()
   })
 })

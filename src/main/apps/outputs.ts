@@ -118,11 +118,15 @@ export async function resolveOutputFiles(
   return { items: shown, files }
 }
 
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
 export function outputAction(input: unknown): AppOutputAction | null {
   if (!input || typeof input !== 'object') return null
-  const { action, index } = input as { action?: unknown; index?: unknown }
+  const { action, index, turn } = input as { action?: unknown; index?: unknown; turn?: unknown }
   if (action !== 'download' && action !== 'open-workflow' && action !== 'show-in-folder')
     return null
-  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null
-  return { action, index }
+  if (!isCount(index) || !isCount(turn)) return null
+  return { action, index, turn }
 }
