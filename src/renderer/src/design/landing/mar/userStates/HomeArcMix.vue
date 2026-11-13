@@ -70,7 +70,7 @@ function seeAll(on: 'apps' | 'templates'): void {
   exploreStart.value = on
   go('explore')
 }
-const allOn = computed(() =>
+const allOn = computed<'apps' | 'templates'>(() =>
   mix.value === 'tabs' && kind.value === 'templates' ? 'templates' : 'apps'
 )
 
