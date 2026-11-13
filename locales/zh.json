@@ -47,7 +47,6 @@
     "seeAllWorkflows": "查看全部工作流",
     "showWorkflow": "显示 {title}",
     "openWorkflow": "在 Comfy Hub 打开 {title}",
-    "openWorkflowCta": "打开",
     "previousWorkflow": "上一个工作流",
     "nextWorkflow": "下一个工作流",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",
