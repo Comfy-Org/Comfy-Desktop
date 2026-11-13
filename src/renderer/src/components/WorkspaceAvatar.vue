@@ -12,7 +12,20 @@ const {
   size?: 'sm' | 'md'
 }>()
 
-const initial = computed(() => [...workspaceName][0]?.toUpperCase() ?? '?')
+const graphemes = new Intl.Segmenter()
+
+function firstGrapheme(text: string): string | undefined {
+  return graphemes.segment(text.trim())[Symbol.iterator]().next().value?.segment
+}
+
+function initialOf(name: string): string {
+  const first = firstGrapheme(name)
+  if (!first) return '?'
+  const upper = first.toUpperCase()
+  return firstGrapheme(upper) === upper ? upper : first
+}
+
+const initial = computed(() => initialOf(workspaceName))
 const avatarStyle = computed(() => workspaceAvatarStyle(workspaceName, subscriptionTier))
 </script>
 

@@ -218,6 +218,57 @@ describe('AppsView', () => {
     createObjectURL.mockRestore()
   })
 
+  it('hides the app without a still when its still does not come back in time', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    hideApps.mockClear()
+    captureApps.mockReturnValueOnce(new Promise(() => {}))
+
+    vi.useFakeTimers()
+    try {
+      await wrapper.setProps({ sidebarMenuOpen: true })
+      await vi.advanceTimersByTimeAsync(1500)
+    } finally {
+      vi.useRealTimers()
+    }
+    await flushPromises()
+
+    expect(hideApps).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(false)
+  })
+
+  it('keeps the still behind an output dialog when the sidebar menu closes under it', async () => {
+    listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
+    const wrapper = await mountApps()
+    await wrapper.get('[data-testid="app-card-studio"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.emitted('app-entered')).toEqual([[true]]))
+    await wrapper.setProps({ sidebarMenuOpen: true })
+    await flushPromises()
+    appsOutput!({
+      items: [
+        {
+          name: 'picture-1.png',
+          mimeType: 'image/png',
+          bytes: new Uint8Array([1]),
+          tags: [],
+          workflow: false
+        }
+      ],
+      index: 0,
+      turn: 1,
+      backdrop: null
+    })
+    await flushPromises()
+
+    await wrapper.setProps({ sidebarMenuOpen: false })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="apps-host-backdrop"]').exists()).toBe(true)
+  })
+
   it('leaves the gallery alone when the sidebar menu opens with no app open', async () => {
     const wrapper = await mountApps()
 

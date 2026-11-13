@@ -91,6 +91,7 @@ const BACKDROP_QUALITY = 80
 export const APPS_ENABLED_CHANNEL = 'comfy-apps:enabled'
 
 const appOpen = new Map<number, boolean>()
+const pendingCaptures = new Map<number, Promise<Buffer | null>>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
 const parkedApps = new Set<number>()
@@ -301,11 +302,17 @@ function hideApps(event: IpcMainEvent): void {
   views.get(found[0])?.setVisible(false)
 }
 
-async function captureApps(event: IpcMainInvokeEvent): Promise<Buffer | null> {
+function captureApps(event: IpcMainInvokeEvent): Promise<Buffer | null> {
   const found = entryForPanel(event.sender)
-  const page = found ? views.get(found[0])?.webContents : undefined
-  if (!page || page.isDestroyed()) return null
-  return captureBackdrop(page)
+  if (!found || event.senderFrame !== event.sender.mainFrame) return Promise.resolve(null)
+  const [key] = found
+  const page = views.get(key)?.webContents
+  if (!appOpen.get(key) || !page || page.isDestroyed()) return Promise.resolve(null)
+  const pending = pendingCaptures.get(key)
+  if (pending) return pending
+  const capture = captureBackdrop(page).finally(() => pendingCaptures.delete(key))
+  pendingCaptures.set(key, capture)
+  return capture
 }
 
 function appsPageUrl(event: IpcMainInvokeEvent): string | null {

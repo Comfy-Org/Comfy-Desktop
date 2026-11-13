@@ -199,6 +199,17 @@ describe('SidebarAccount', () => {
     expect(body.find('[data-testid="workspace-menu"]').exists()).toBe(false)
   })
 
+  it('closes the menu when the current workspace is picked again', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN)
+
+    const body = await openWorkspaces(wrapper)
+    await body.get('[data-testid="workspace-option-w1"]').trigger('click')
+    await flushPromises()
+
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('w1')
+    expect(body.find('[data-testid="workspace-menu"]').exists()).toBe(false)
+  })
+
   it('maps the personal workspace row to the personal dashboard scope', async () => {
     const { wrapper } = await mountAccount(SIGNED_IN)
 

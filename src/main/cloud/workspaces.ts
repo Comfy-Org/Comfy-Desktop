@@ -8,7 +8,7 @@ interface WorkspaceRow {
   name: string
   type: string
   role: string
-  subscription_tier?: string | null
+  subscription_tier?: unknown
   created_at?: string
   joined_at?: string
 }
@@ -30,6 +30,10 @@ interface WorkspaceMemberRow {
 interface WorkspaceMembersResponse {
   members?: WorkspaceMemberRow[]
   pagination?: { has_more?: boolean }
+}
+
+function isPlanTier(value: unknown): value is string | null {
+  return typeof value === 'string' || value === null
 }
 
 function isWorkspaceRow(value: unknown): value is WorkspaceRow {
@@ -66,7 +70,7 @@ export async function listWorkspaces(
     name: w.name,
     type: w.type,
     role: w.role,
-    ...(w.subscription_tier !== undefined ? { subscriptionTier: w.subscription_tier } : {}),
+    ...(isPlanTier(w.subscription_tier) ? { subscriptionTier: w.subscription_tier } : {}),
     ...(w.created_at ? { createdAt: w.created_at } : {}),
     ...(w.joined_at ? { joinedAt: w.joined_at } : {})
   }))

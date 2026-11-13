@@ -152,8 +152,7 @@ function focusCurrentWorkspace(event: Event): void {
 }
 
 function selectWorkspace(workspace: Workspace): void {
-  if (isCurrent(workspace)) return
-  dashboardScope.selectWorkspace(scopeId(workspace))
+  if (!isCurrent(workspace)) dashboardScope.selectWorkspace(scopeId(workspace))
   menuOpen.value = false
 }
 
