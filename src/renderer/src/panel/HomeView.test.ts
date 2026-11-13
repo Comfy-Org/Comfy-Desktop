@@ -292,7 +292,7 @@ describe('Home example workflows', () => {
     expect(cardAt(wrapper, 1).attributes('aria-label')).toBe('Show Make your character talk')
   })
 
-  it('opens Explore on its Templates tab from See all workflows', async () => {
+  it('opens Explore on its Workflows tab from See all workflows', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE])
     const wrapper = await openHome()
 

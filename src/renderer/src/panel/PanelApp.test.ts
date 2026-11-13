@@ -1354,7 +1354,7 @@ describe('PanelApp', () => {
     )
   })
 
-  it('opens Explore on Templates from See all workflows on Home', async () => {
+  it('opens Explore on Workflows from See all workflows on Home', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     Object.assign(window.api, {
       listHomeWorkflows: vi.fn().mockResolvedValue([

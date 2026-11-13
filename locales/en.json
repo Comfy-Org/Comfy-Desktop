@@ -128,10 +128,10 @@
     "title": "Explore",
     "sections": "Explore sections",
     "apps": "Apps",
-    "templates": "Templates",
+    "templates": "Workflows",
     "openTemplate": "Open {title} on Comfy Hub",
-    "templatesFailed": "Couldn't load the templates.",
-    "templatesEmpty": "No templates yet."
+    "templatesFailed": "Couldn't load the workflows.",
+    "templatesEmpty": "No workflows yet."
   },
   "home": {
     "title": "Welcome. Let's create!",

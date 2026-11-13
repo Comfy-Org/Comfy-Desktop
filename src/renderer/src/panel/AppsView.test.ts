@@ -538,19 +538,19 @@ describe('Explore', () => {
     await flushPromises()
   }
 
-  it('heads the page Explore with Apps and Templates tabs, starting on Apps', async () => {
+  it('heads the page Explore with Apps and Workflows tabs, starting on Apps', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountApps()
 
     expect(wrapper.get('h1').text()).toBe('Explore')
-    expect(tabs(wrapper).map((tab) => tab.text())).toEqual(['Apps', 'Templates'])
+    expect(tabs(wrapper).map((tab) => tab.text())).toEqual(['Apps', 'Workflows'])
     expect(tabs(wrapper)[0]!.attributes('data-state')).toBe('on')
     expect(wrapper.getComponent(AppsGallery).attributes('style')).toBeUndefined()
     expect(wrapper.find('[data-testid="app-card-studio"]').exists()).toBe(true)
     expect(listHomeWorkflows).not.toHaveBeenCalled()
   })
 
-  it('lists the catalog workflows on the Templates tab and opens one on Comfy Hub', async () => {
+  it('lists the catalog workflows on the Workflows tab and opens one on Comfy Hub', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     listHomeWorkflows.mockResolvedValue([
       {
@@ -580,16 +580,16 @@ describe('Explore', () => {
     expect(listCatalogApps).not.toHaveBeenCalled()
   })
 
-  it('says when the templates cannot be loaded', async () => {
+  it('says when the workflows cannot be loaded', async () => {
     listHomeWorkflows.mockRejectedValue(new Error('offline'))
     const wrapper = await mountApps({ initialTab: 'templates' })
 
     expect(wrapper.get('[data-testid="templates-catalog-failed"]').text()).toBe(
-      "Couldn't load the templates."
+      "Couldn't load the workflows."
     )
   })
 
-  it('shows only the templates, without tabs, while the remote apps switch is off', async () => {
+  it('shows only the workflows, without tabs, while the remote apps switch is off', async () => {
     getAppsEnabled.mockResolvedValue(false)
     const wrapper = await mountApps()
 
@@ -599,7 +599,7 @@ describe('Explore', () => {
     expect(listCatalogApps).not.toHaveBeenCalled()
   })
 
-  it('stays on Explore and moves to the templates when the remote apps switch turns off', async () => {
+  it('stays on Explore and moves to the workflows when the remote apps switch turns off', async () => {
     listCatalogApps.mockResolvedValue([catalogApp('studio', 'Cinematic Studio')])
     const wrapper = await mountApps()
     await wrapper.get('[data-testid="app-card-studio"]').trigger('click')

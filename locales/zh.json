@@ -128,10 +128,10 @@
     "title": "探索",
     "sections": "探索分区",
     "apps": "应用",
-    "templates": "模板",
+    "templates": "工作流",
     "openTemplate": "在 Comfy Hub 打开 {title}",
-    "templatesFailed": "无法加载模板。",
-    "templatesEmpty": "暂无模板。"
+    "templatesFailed": "无法加载工作流。",
+    "templatesEmpty": "暂无工作流。"
   },
   "home": {
     "title": "欢迎。开始创作吧！",
