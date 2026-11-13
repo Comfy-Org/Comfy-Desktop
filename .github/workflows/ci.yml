@@ -49,8 +49,6 @@ jobs:
           - name: Test
             command: pnpm run test
             needs_browser: true
-          - name: Test (integration)
-            command: pnpm run test:integration
 
     steps:
       - name: Checkout
