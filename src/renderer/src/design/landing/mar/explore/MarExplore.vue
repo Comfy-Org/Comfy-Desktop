@@ -7,7 +7,6 @@ import {
   Cloud,
   Clock,
   Cpu,
-  GraduationCap,
   Image,
   ListFilter,
   PanelsTopLeft,
@@ -39,7 +38,6 @@ import { EXPLORE, STARTER_APPS, libApp, openAppPage } from '../../appFlow'
 import { APP_EXAMPLES, openOn, type AppExample } from '../apps/appExamples'
 import { goIn, openDetail, toast } from '../../useProto'
 import { can } from '../../milestones'
-import { ComfyModel, ComfyWorkflow } from '../icons/comfyIcons'
 import MarPage from '../pages/MarPage.vue'
 import MarAppsPage from '../pages/MarAppsPage.vue'
 import MarSeg from '../pages/MarSeg.vue'
@@ -80,11 +78,10 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
       {
         value: 'apps',
         label: 'Apps',
-        count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length,
-        icon: PanelsTopLeft
+        count: STARTER_APPS.length + EXPLORE.flatMap((s) => s.apps).length
       },
-      // Icons on every tab, like Apps' own row.
-      { value: 'templates', label: 'Workflows', count: HUB_WORKFLOWS.length, icon: ComfyWorkflow },
+      // No icons on Explore's tabs: the names say it.
+      { value: 'templates', label: 'Workflows', count: HUB_WORKFLOWS.length },
       // Models and Tutorials come with Learn (Milestone 3 is the Hub's apps
       // and templates only).
       ...(can.value.learn
@@ -92,14 +89,12 @@ const TABS: { value: Tab; label: string; count: number; icon?: Component }[] = a
             {
               value: 'models' as const,
               label: 'Models',
-              count: ROUTER_MODELS.length,
-              icon: ComfyModel
+              count: ROUTER_MODELS.length
             },
             {
               value: 'tutorials' as const,
               label: 'Tutorials',
-              count: TUTORIALS.length,
-              icon: GraduationCap
+              count: TUTORIALS.length
             }
           ]
         : [])
