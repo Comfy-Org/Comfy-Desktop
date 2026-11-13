@@ -253,7 +253,7 @@ function activate(card: { workflow: CatalogWorkflow; offset: number }): void {
             aria-hidden="true"
           />
           <span
-            class="absolute top-3 right-3 grid size-8 place-items-center rounded-full bg-white text-[#111] opacity-0 shadow-[0_0_0_1px_rgb(0_0_0/0.06),0_8px_20px_-6px_rgb(0_0_0/0.5)] transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+            class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
             :class="
               card.offset === 0
                 ? 'scale-90 group-hover/card:scale-100 group-hover/card:opacity-100 group-hover/card:delay-100 group-focus-visible/card:scale-100 group-focus-visible/card:opacity-100'
