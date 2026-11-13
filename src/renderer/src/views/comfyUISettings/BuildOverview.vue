@@ -16,6 +16,7 @@ import Tooltip from '../../components/ui/Tooltip.vue'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { ActionDef, Installation } from '../../types/ipc'
+import { TID } from '../../../../shared/testIds'
 import { channelAction, splitVersion, type BuildOverviewModel } from './overviewModel'
 
 const {
@@ -135,7 +136,7 @@ function openLocation(): void {
               class="-mx-2 mt-0.5 gap-0.5 self-start text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
               :aria-label="`${model.channelLabel}: ${channel?.label ?? ''}`"
               :title="model.channelTooltip"
-              data-testid="build-overview-channel"
+              :data-testid="TID.buildOverviewChannel"
             >
               {{ channel?.label }}
               <ChevronDown :size="13" aria-hidden="true" />
@@ -156,7 +157,7 @@ function openLocation(): void {
               :key="c.value"
               :value="c.value"
               class="h-auto items-start py-1.5 data-[state=checked]:bg-muted data-[state=checked]:data-highlighted:bg-muted"
-              :data-testid="`build-overview-channel-${c.value}`"
+              :data-testid="TID.buildOverviewChannelOption(c.value)"
             >
               <span class="flex min-w-0 flex-col text-left">
                 <span>{{ c.label }}</span>
@@ -190,8 +191,8 @@ function openLocation(): void {
               :label="updateAction.label"
               :menu-label="t('buildOverview.moreUpdateOptions')"
               :tooltip="updateAction.tooltip"
-              main-testid="build-overview-update-now"
-              menu-testid="build-overview-update-menu"
+              :main-testid="TID.updateActionButton(updateAction.id)"
+              :menu-testid="TID.buildOverviewUpdateMenu"
               @run="run(updateAction)"
             >
               <ArrowUpCircle :size="14" aria-hidden="true" />
@@ -201,7 +202,7 @@ function openLocation(): void {
                   <MenuItem
                     class="w-full pr-5"
                     :disabled="copyUpdateAction.enabled === false"
-                    data-testid="build-overview-copy-update"
+                    :data-testid="TID.updateActionButton(copyUpdateAction.id)"
                     @select="run(copyUpdateAction)"
                   >
                     {{ copyUpdateAction.label }}
@@ -224,7 +225,7 @@ function openLocation(): void {
               size="md"
               class="ml-auto shrink-0 px-3 text-[13px]/5"
               :disabled="switchAction.enabled === false"
-              data-testid="build-overview-switch-channel"
+              :data-testid="TID.updateActionButton(switchAction.id)"
               @click="run(switchAction)"
             >
               {{ switchAction.label }}
@@ -253,7 +254,7 @@ function openLocation(): void {
               class="ml-auto shrink-0 gap-1.5 px-2.5 text-[12px]/4"
               :disabled="model.checkAction.enabled === false || checkRunning"
               :title="model.checkAction.tooltip"
-              data-testid="build-overview-check-update"
+              :data-testid="TID.updateActionButton(model.checkAction.id)"
               @click="run(model.checkAction)"
             >
               <Loader2
@@ -298,7 +299,7 @@ function openLocation(): void {
                 variant="muted-textonly"
                 size="sm"
                 class="shrink-0 gap-0.5 text-[12px]/4 font-normal data-[state=open]:bg-accent data-[state=open]:text-foreground"
-                data-testid="build-overview-pytorch-change"
+                :data-testid="TID.buildOverviewPytorchChange"
               >
                 {{ t('buildOverview.change') }}
                 <ChevronDown :size="13" aria-hidden="true" />
@@ -316,7 +317,7 @@ function openLocation(): void {
                   <MenuSub v-if="v.actions.length > 0">
                     <MenuSubTrigger
                       class="h-auto items-start py-1.5"
-                      :data-testid="`build-overview-pytorch-${v.value}`"
+                      :data-testid="TID.buildOverviewPytorchOption(v.value)"
                     >
                       <span class="flex min-w-0 flex-col text-left">
                         <span>{{ v.version }}</span>
@@ -333,7 +334,7 @@ function openLocation(): void {
                         <MenuItem
                           class="w-full pr-5"
                           :disabled="a.enabled === false"
-                          :data-testid="`build-overview-pytorch-action-${a.id}`"
+                          :data-testid="TID.updateActionButton(a.id)"
                           @select="run(a)"
                         >
                           {{ a.label }}
@@ -345,7 +346,7 @@ function openLocation(): void {
                     v-else
                     class="h-auto items-start py-1.5"
                     :class="v.current && 'bg-muted data-highlighted:bg-muted'"
-                    :data-testid="`build-overview-pytorch-${v.value}`"
+                    :data-testid="TID.buildOverviewPytorchOption(v.value)"
                     @select.prevent
                   >
                     <span class="flex min-w-0 flex-col text-left">

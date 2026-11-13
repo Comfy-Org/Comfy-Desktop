@@ -76,14 +76,17 @@ test('copy-update keeps the new install when the chained update fails @lifecycle
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
 
+  const updateMenu = byTestId(TID.buildOverviewUpdateMenu)
+  await popup.waitForVisible(updateMenu, { timeout: 30_000 })
+  expect(await popup.click(updateMenu)).toBe(true)
   const copyUpdateButton = byTestId(TID.updateActionButton('copy-update'))
   await popup.waitForVisible(copyUpdateButton, { timeout: 30_000 })
   await popup.waitFor(
     () =>
       popup.evaluate<boolean>(
-        `(() => { const el = document.querySelector(${JSON.stringify(copyUpdateButton)}); return !!el && !el.disabled })()`
+        `(() => { const el = document.querySelector(${JSON.stringify(copyUpdateButton)}); return !!el && !el.hasAttribute('data-disabled') })()`
       ),
-    { timeout: 30_000, message: 'copy-update button never became enabled' }
+    { timeout: 30_000, message: 'copy-update menu item never became enabled' }
   )
   expect(await popup.click(copyUpdateButton)).toBe(true)
 

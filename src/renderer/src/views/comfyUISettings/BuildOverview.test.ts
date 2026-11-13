@@ -128,11 +128,11 @@ describe('BuildOverview — ComfyUI card', () => {
 
   it('checks for updates from the card and spins while it checks', async () => {
     const w = mountOverview()
-    await w.get('[data-testid="build-overview-check-update"]').trigger('click')
+    await w.get('[data-testid="update-action-check-update"]').trigger('click')
     expect(w.emitted('action')).toEqual([[checkUpdate]])
 
     await w.setProps({ runningActionIds: new Set(['check-update']) })
-    const button = w.get('[data-testid="build-overview-check-update"]')
+    const button = w.get('[data-testid="update-action-check-update"]')
     expect(button.attributes('disabled')).toBeDefined()
     expect(button.find('.animate-spin').exists()).toBe(true)
   })
@@ -152,13 +152,13 @@ describe('BuildOverview — ComfyUI card', () => {
     const update = w.get('[data-testid="build-overview-update"]').text()
     expect(update).toContain('v0.3.65 available')
     expect(update).toContain('Saves a snapshot first')
-    expect(w.find('[data-testid="build-overview-check-update"]').exists()).toBe(false)
+    expect(w.find('[data-testid="update-action-check-update"]').exists()).toBe(false)
 
-    await w.get('[data-testid="build-overview-update-now"]').trigger('click')
+    await w.get('[data-testid="update-action-update-comfyui"]').trigger('click')
     expect(w.emitted('action')).toEqual([[updateNow]])
 
     await openMenu(w, 'build-overview-update-menu')
-    await select('build-overview-copy-update')
+    await select('update-action-copy-update')
     expect(w.emitted('action')).toEqual([[updateNow], [copyUpdate]])
   })
 
@@ -182,7 +182,7 @@ describe('BuildOverview — ComfyUI card', () => {
 
     expect(w.get('[data-testid="build-overview-channel"]').text()).toBe('Latest')
     expect(w.get('[data-testid="build-overview-update"]').text()).toContain('Switch to Latest')
-    await w.get('[data-testid="build-overview-switch-channel"]').trigger('click')
+    await w.get('[data-testid="update-action-switch-channel"]').trigger('click')
     expect(w.emitted('action')).toEqual([[switchChannel]])
   })
 
@@ -210,7 +210,7 @@ describe('BuildOverview — PyTorch card', () => {
     expect(byTestId('build-overview-pytorch-b')!.textContent).toContain('torchvision 0.22.1')
 
     await openSubmenu('build-overview-pytorch-b')
-    await select('build-overview-pytorch-action-copy-pytorch')
+    await select('update-action-copy-pytorch')
     expect(w.emitted('action')).toEqual([[copyTorch]])
   })
 

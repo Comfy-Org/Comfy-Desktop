@@ -847,7 +847,7 @@ async function readPytorchPicker(popup: WebContentsPage): Promise<{
       }
     )
     .toBe(true)
-  await popup.waitForVisible('button[role="combobox"][aria-label="PyTorch"]', { timeout: 60_000 })
+  await popup.waitForVisible(byTestId(TID.buildOverviewPytorchChange), { timeout: 60_000 })
   expect(
     result.current,
     'PyTorch picker has no catalog option matching the installed stack'
@@ -859,20 +859,12 @@ async function selectPytorchOption(
   popup: WebContentsPage,
   option: PytorchPickerOption
 ): Promise<void> {
-  for (let level = 0; level < option.groupLabels.length; level++) {
-    const groupSelect = `${byTestId(TID.channelGroupSelect(level))} button[role="combobox"]`
-    await popup.waitForVisible(groupSelect, { timeout: 60_000 })
-    expect(await popup.click(groupSelect)).toBe(true)
-    await popup.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
-    expect(
-      await popup.clickByText('[role="listbox"] [role="option"]', option.groupLabels[level]!)
-    ).toBe(true)
-  }
-  const stackSelect = 'button[role="combobox"][aria-label="PyTorch"]'
-  await popup.waitForVisible(stackSelect, { timeout: 60_000 })
-  expect(await popup.click(stackSelect)).toBe(true)
-  await popup.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
-  expect(await popup.clickByText('[role="listbox"] [role="option"]', option.label)).toBe(true)
+  const change = byTestId(TID.buildOverviewPytorchChange)
+  await popup.waitForVisible(change, { timeout: 60_000 })
+  expect(await popup.click(change)).toBe(true)
+  const version = byTestId(TID.buildOverviewPytorchOption(option.value))
+  await popup.waitForVisible(version, { timeout: 10_000 })
+  expect(await popup.click(version)).toBe(true)
 }
 
 async function changePytorchStack(option: PytorchPickerOption): Promise<void> {
@@ -1544,14 +1536,12 @@ test('picker-driven cross-channel update-comfyui (stable → latest) IN_PLACE_RE
 
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'update')
 
-  const channelSelect = 'button[role="combobox"][aria-label="Update Channel"]'
-  await popup.waitForSelector(channelSelect, { timeout: 60_000 })
-  expect(await popup.click(channelSelect)).toBe(true)
-  await popup.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
-  expect(
-    await popup.clickByText('[role="listbox"] [role="option"]', 'Latest on GitHub'),
-    '"Latest on GitHub" option missing from BaseSelect listbox'
-  ).toBe(true)
+  const channelMenu = byTestId(TID.buildOverviewChannel)
+  await popup.waitForSelector(channelMenu, { timeout: 60_000 })
+  expect(await popup.click(channelMenu)).toBe(true)
+  const latest = byTestId(TID.buildOverviewChannelOption('latest'))
+  await popup.waitForVisible(latest, { timeout: 10_000 })
+  expect(await popup.click(latest), '"Latest on GitHub" missing from the channel menu').toBe(true)
 
   await popup.waitForSelector(byTestId(TID.updateActionButton('update-comfyui')), {
     timeout: 60_000
