@@ -274,9 +274,9 @@ function openLocation(): void {
             <Button
               v-if="model.checkAction"
               type="button"
-              variant="muted-textonly"
+              variant="secondary"
               size="md"
-              class="ml-auto shrink-0 gap-1.5 px-2.5 text-[12px]/4"
+              class="ml-auto shrink-0 gap-1.5 px-3 text-[13px]/5"
               :disabled="model.checkAction.enabled === false || checkRunning"
               :title="model.checkAction.tooltip"
               :data-testid="TID.updateActionButton(model.checkAction.id)"
