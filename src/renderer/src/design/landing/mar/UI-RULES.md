@@ -79,6 +79,16 @@ DS's Motion page (`ds/motion.ts`).
 - **What a pick changes sits right under it.** Open in comes first, What
   it needs straight under it (it changes with the build) and unfolds
   downward; the foot keeps only the main action.
+- **Modal footers: × closes, one white primary, Discard only for edits.**
+  The round × closes the topmost window, with no Cancel or Back that does
+  the same. The footer has one white primary on the right (Install, Add
+  build, Create build, Save changes). A grey Discard sits beside it only
+  where you edit something that is saved on another screen (Change setup
+  over the New Build summary); there the × hides, so Discard or Save changes
+  are the only ways back. Never two buttons with the same effect.
+
+## Menus
+
 - **Confirm inside the menu.** A destructive line that asks first turns the
   same menu into the question (`confirm` on a `MenuLine`, see
   `pages/MarItemMenu.vue`); never a box in the page. Nothing to lose
