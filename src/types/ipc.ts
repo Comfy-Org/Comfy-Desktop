@@ -147,6 +147,8 @@ export interface AssetSummary {
   tags: string[]
   previewUrl: string | null
   thumbnailUrl: string | null
+  width: number | null
+  height: number | null
 }
 
 export interface BuildStorageSnapshot {

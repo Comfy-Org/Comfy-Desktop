@@ -87,7 +87,23 @@ function install(name: string, extra: Record<string, unknown> = {}): Installatio
   }
 }
 
-function write(file: string, body = 'x', modified = new Date('2026-11-01T00:00:00Z')): void {
+function pngHeader(width: number, height: number): Buffer {
+  const header = Buffer.alloc(33)
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header, 0)
+  header.writeUInt32BE(13, 8)
+  header.write('IHDR', 12, 'ascii')
+  header.writeUInt32BE(width, 16)
+  header.writeUInt32BE(height, 20)
+  header.writeUInt8(8, 24)
+  header.writeUInt8(2, 25)
+  return header
+}
+
+function write(
+  file: string,
+  body: string | Buffer = 'x',
+  modified = new Date('2026-11-01T00:00:00Z')
+): void {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, body)
   fs.utimesSync(file, modified, modified)
@@ -167,13 +183,26 @@ describe('listLocalAssets', () => {
       mimeType: null,
       tags: ['output'],
       previewUrl: outputFileUrl(newVideo),
-      thumbnailUrl: null
+      thumbnailUrl: null,
+      width: null,
+      height: null
     })
     const oldPicture = path.join(sharedDir, 'old.png')
     expect(assets[3]!.thumbnailUrl, 'an image thumbnail link changes when the file does').toBe(
       outputFileUrl(oldPicture, fs.statSync(oldPicture).mtimeMs)
     )
     expect(assets[2]!.previewUrl, '3D files have no preview').toBeNull()
+  })
+
+  it('reports the pixel size of each picture so the gallery can place it before it loads', async () => {
+    write(path.join(sharedDir, 'portrait.png'), pngHeader(640, 960))
+    write(path.join(sharedDir, 'broken.png'), 'not a picture')
+
+    const sizes = Object.fromEntries(
+      (await listLocalAssets()).map((a) => [a.name, [a.width, a.height]])
+    )
+
+    expect(sizes).toEqual({ 'portrait.png': [640, 960], 'broken.png': [null, null] })
   })
 
   it('finds a file once when two builds save to the same folder', async () => {

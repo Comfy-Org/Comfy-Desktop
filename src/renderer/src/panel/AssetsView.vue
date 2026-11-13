@@ -25,7 +25,7 @@ import BaseInput from '../components/ui/BaseInput.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
 import { useInstallationStore } from '../stores/installationStore'
-import { useMasonryLayout } from '../composables/useMasonryLayout'
+import { useVirtualMasonry } from '../composables/useVirtualMasonry'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatRelativeFromMs } from '../lib/datetime'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
@@ -39,10 +39,20 @@ type KindFilter = 'all' | AssetKind
 type Layout = 'masonry' | 'grid'
 type SortOrder = 'newest' | 'oldest'
 
+interface Shape {
+  width: number
+  height: number
+}
+
 const SKELETON_COUNT = 8
 const NAME_TOOLTIP_DELAY_MS = 600
-const MASONRY_MIN_COLUMN_WIDTH = 200
-const MASONRY_GAP = 16
+const MIN_CARD_WIDTH = 200
+const CARD_GAP: Record<Layout, number> = { masonry: 16, grid: 2 }
+const WIDE: Shape = { width: 16, height: 9 }
+const SQUARE: Shape = { width: 1, height: 1 }
+const TALL: Shape = { width: 3, height: 4 }
+const CAPTION_PADDING_ESTIMATE = 20
+const CAPTION_LINE_ESTIMATE = 20
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -59,14 +69,6 @@ const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', false)
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const { y: scrollTop } = useScroll(scroller)
-const { containerStyle: masonryStyle, itemStyle: masonryItemStyle } = useMasonryLayout(
-  useTemplateRef<HTMLElement>('gallery'),
-  {
-    minColumnWidth: MASONRY_MIN_COLUMN_WIDTH,
-    gap: MASONRY_GAP,
-    enabled: () => layout.value === 'masonry'
-  }
-)
 const nameTooltipsWarm = ref(false)
 let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
@@ -111,10 +113,6 @@ function cardKey(asset: GalleryAsset): string {
   return `${asset.source}:${asset.id}`
 }
 
-const layoutClass = computed(() =>
-  layout.value === 'grid' ? 'grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-0.5' : ''
-)
-
 const visibleAssets = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   const filtered = assets.value.filter(
@@ -125,6 +123,57 @@ const visibleAssets = computed(() => {
   const direction = sortOrder.value === 'newest' ? -1 : 1
   return filtered.toSorted((a, b) => direction * (createdMs(a) - createdMs(b)))
 })
+
+const showSkeleton = computed(() => loading.value && assets.value.length === 0)
+
+function assetShape(asset: AssetSummary): Shape {
+  if (layout.value === 'grid' || asset.kind !== 'image' || !asset.previewUrl) return WIDE
+  return asset.width && asset.height ? { width: asset.width, height: asset.height } : SQUARE
+}
+
+function skeletonShape(index: number): Shape {
+  return layout.value === 'masonry' && index % 3 === 0 ? TALL : WIDE
+}
+
+function aspectStyle(shape: Shape): { aspectRatio: string } {
+  return { aspectRatio: `${shape.width} / ${shape.height}` }
+}
+
+const captionHeight = computed(() =>
+  showName.value || showDetails.value
+    ? CAPTION_PADDING_ESTIMATE +
+      CAPTION_LINE_ESTIMATE * (Number(showName.value) + Number(showDetails.value))
+    : 0
+)
+
+function cardShape(index: number): Shape {
+  const asset = visibleAssets.value[index]
+  return showSkeleton.value || !asset ? skeletonShape(index) : assetShape(asset)
+}
+
+const { cards, galleryStyle, cardStyle, measureCard } = useVirtualMasonry({
+  scroller,
+  gallery: useTemplateRef<HTMLElement>('gallery'),
+  count: () => (showSkeleton.value ? SKELETON_COUNT : visibleAssets.value.length),
+  itemKey: (index) => {
+    const asset = visibleAssets.value[index]
+    return showSkeleton.value || !asset ? `skeleton:${index}` : cardKey(asset)
+  },
+  estimateHeight: (index, columnWidth) => {
+    const shape = cardShape(index)
+    return (columnWidth * shape.height) / shape.width + captionHeight.value
+  },
+  minColumnWidth: MIN_CARD_WIDTH,
+  gap: () => CARD_GAP[layout.value],
+  relayoutWhen: () => [visibleAssets.value, showSkeleton.value, layout.value, captionHeight.value]
+})
+
+const assetCards = computed(() =>
+  cards.value.flatMap((card) => {
+    const asset = visibleAssets.value[card.index]
+    return asset ? [{ card, asset }] : []
+  })
+)
 
 interface EmptyState {
   title: string
@@ -228,7 +277,7 @@ function extensionOf(name: string): string {
 <template>
   <div
     ref="scroller"
-    class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto"
+    class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="assets-view"
   >
@@ -388,24 +437,22 @@ function extensionOf(name: string): string {
     </div>
 
     <div class="mx-auto w-full max-w-300 px-10 pt-2 pb-24">
-      <div v-if="loading && assets.length === 0" role="status" :aria-label="t('common.loading')">
+      <div v-if="showSkeleton" role="status" :aria-label="t('common.loading')">
         <ul
           ref="gallery"
           class="m-0 list-none p-0"
-          :class="layoutClass"
-          :style="masonryStyle"
+          :style="galleryStyle"
           data-testid="assets-skeleton"
         >
           <li
-            v-for="n in SKELETON_COUNT"
-            :key="n"
+            v-for="card in cards"
+            :key="String(card.key)"
+            :ref="measureCard"
+            :data-index="card.index"
             class="flex flex-col bg-secondary"
-            :style="masonryItemStyle(n - 1)"
+            :style="cardStyle(card)"
           >
-            <Skeleton
-              class="w-full rounded-none"
-              :class="layout === 'masonry' && n % 3 === 1 ? 'aspect-[3/4]' : 'aspect-video'"
-            />
+            <Skeleton class="w-full rounded-none" :style="aspectStyle(skeletonShape(card.index))" />
             <div v-if="showName || showDetails" class="flex flex-col gap-2 px-3 py-3">
               <Skeleton v-if="showName" class="h-2.5 w-3/4 rounded-full" />
               <Skeleton v-if="showDetails" class="h-2 w-2/5 rounded-full" />
@@ -443,17 +490,18 @@ function extensionOf(name: string): string {
         v-else
         ref="gallery"
         class="m-0 list-none p-0"
-        :class="layoutClass"
-        :style="masonryStyle"
+        :style="galleryStyle"
         data-testid="assets-grid"
         @pointerenter="warmNameTooltips"
         @pointerleave="coolNameTooltips"
       >
         <li
-          v-for="(asset, index) in visibleAssets"
-          :key="cardKey(asset)"
-          class="group relative bg-secondary"
-          :style="masonryItemStyle(index)"
+          v-for="{ card, asset } in assetCards"
+          :key="String(card.key)"
+          :ref="measureCard"
+          :data-index="card.index"
+          class="group bg-secondary"
+          :style="cardStyle(card)"
           :data-testid="`asset-${asset.id}`"
         >
           <Tooltip
@@ -463,21 +511,13 @@ function extensionOf(name: string): string {
             class="w-full align-top"
           >
             <div class="block w-full">
-              <span
-                class="relative block overflow-hidden"
-                :class="
-                  layout === 'grid' || !asset.previewUrl || asset.kind !== 'image'
-                    ? 'aspect-video'
-                    : ''
-                "
-              >
+              <span class="relative block overflow-hidden" :style="aspectStyle(assetShape(asset))">
                 <img
                   v-if="asset.previewUrl && asset.kind === 'image'"
                   :src="asset.thumbnailUrl ?? asset.previewUrl"
                   :alt="asset.name"
                   loading="lazy"
-                  class="block w-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                  :class="layout === 'grid' && 'h-full'"
+                  class="block size-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                 />
                 <video
                   v-else-if="asset.previewUrl && asset.kind === 'video'"

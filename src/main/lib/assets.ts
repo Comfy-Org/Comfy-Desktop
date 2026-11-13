@@ -76,7 +76,9 @@ function toSummary(row: AssetRow, previewUrl: string | null): AssetSummary {
       ? row.tags.filter((tag): tag is string => typeof tag === 'string')
       : [],
     previewUrl,
-    thumbnailUrl: null
+    thumbnailUrl: null,
+    width: null,
+    height: null
   }
 }
 
