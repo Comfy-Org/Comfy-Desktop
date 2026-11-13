@@ -73,7 +73,23 @@ function isPromotableLocalInstallation(inst: InstallationRecord): boolean {
   )
 }
 
+const authChangedListeners = new Set<(status: AuthStatus) => void>()
+
+export function onCloudAuthChanged(listener: (status: AuthStatus) => void): () => void {
+  authChangedListeners.add(listener)
+  return () => {
+    authChangedListeners.delete(listener)
+  }
+}
+
 export function broadcastAuthChanged(status: AuthStatus): void {
+  for (const listener of authChangedListeners) {
+    try {
+      listener(status)
+    } catch (err) {
+      console.log('[devplatform] auth listener error:', err)
+    }
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.webContents.isDestroyed())
       win.webContents.send(DEVPLATFORM_CHANNELS.authChanged, status)

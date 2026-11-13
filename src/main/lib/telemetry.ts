@@ -210,7 +210,11 @@ export function setSmartAppControlState(state: SmartAppControlState): void {
   defaultEventProperties = { ...defaultEventProperties, sac_state: state }
 }
 
-function opsFlagPersonProperties(): Record<string, string> {
+export interface OpsFlagAccount {
+  email?: string
+}
+
+function opsFlagPersonProperties(account: OpsFlagAccount = {}): Record<string, string> {
   const properties: Record<string, string> = {}
   if (flagEvaluationAppVersion) properties['app_version'] = flagEvaluationAppVersion
   properties['platform'] = process.platform
@@ -219,6 +223,7 @@ function opsFlagPersonProperties(): Record<string, string> {
   if (consentState === 'granted' && flagEvaluationUserTier) {
     properties['user_tier'] = flagEvaluationUserTier
   }
+  if (consentState === 'granted' && account.email) properties['email'] = account.email
   return properties
 }
 
@@ -1081,7 +1086,8 @@ export async function getOpsFlagResult(
   key: string,
   distinctId: string,
   timeoutMs: number,
-  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void
+  onLateResult?: (result: Extract<OpsFlagFetchResult, { kind: 'value' }>) => void,
+  account?: OpsFlagAccount
 ): Promise<OpsFlagFetchResult> {
   if (!client) return { kind: 'unreachable' }
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -1089,7 +1095,7 @@ export async function getOpsFlagResult(
   try {
     const flagPromise = client.getFeatureFlagResult(key, distinctId, {
       sendFeatureFlagEvents: false,
-      personProperties: opsFlagPersonProperties()
+      personProperties: opsFlagPersonProperties(account)
     })
     const timeoutPromise = new Promise<typeof OPS_FLAG_DEADLINE>((resolve) => {
       timer = setTimeout(() => resolve(OPS_FLAG_DEADLINE), timeoutMs)

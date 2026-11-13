@@ -5,7 +5,7 @@ import { inspect } from 'util'
 import { configDir } from './paths'
 import { readFileSafe, writeFileSafe } from './safe-file'
 import * as mainTelemetry from './telemetry'
-import type { FeatureFlagValue, OpsFlagFetchResult } from './telemetry'
+import type { FeatureFlagValue, OpsFlagAccount, OpsFlagFetchResult } from './telemetry'
 
 type OpsFlagValueResult = Extract<OpsFlagFetchResult, { kind: 'value' }>
 
@@ -141,8 +141,9 @@ export function makeOpsFlag<T>(opts: {
   timeoutMs?: number
   persist?: true
   persistFile?: string
+  account?: () => OpsFlagAccount
 }): OpsFlag<T> {
-  const { key, fallback, parse, logLabel, timeoutMs, persist } = opts
+  const { key, fallback, parse, logLabel, timeoutMs, persist, account } = opts
   const persistFile = opts.persistFile ?? OPS_FLAGS_FILE
   let cached: T = fallback
   let initPromise: Promise<void> | null = null
@@ -176,13 +177,14 @@ export function makeOpsFlag<T>(opts: {
   ): Promise<void> {
     const generationAtInit = generation
     const seq = ++fetchSeq
-    return mainTelemetry
-      .getOpsFlagResult(
-        key,
-        fetchOpts.distinctId,
-        fetchOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        persist ? (late) => persistLate(generationAtInit, seq, late) : undefined
-      )
+    const flagTimeoutMs = fetchOpts.timeoutMs ?? timeoutMs ?? DEFAULT_TIMEOUT_MS
+    const onLate = persist
+      ? (late: OpsFlagValueResult) => persistLate(generationAtInit, seq, late)
+      : undefined
+    const request = account
+      ? mainTelemetry.getOpsFlagResult(key, fetchOpts.distinctId, flagTimeoutMs, onLate, account())
+      : mainTelemetry.getOpsFlagResult(key, fetchOpts.distinctId, flagTimeoutMs, onLate)
+    return request
       .then((result) => {
         if (generationAtInit !== generation) return
         if (seq !== fetchSeq) return
