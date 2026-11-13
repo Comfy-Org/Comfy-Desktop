@@ -88,8 +88,9 @@ function save(): void {
 
       <section class="bo-cell" aria-label="PyTorch">
         <span class="bo-label">PyTorch</span>
-        <span class="bo-row"
-          ><span class="bo-num">{{ current.v }}</span>
+        <span class="bo-num">{{ current.v }}</span>
+        <span class="bo-row bo-foot"
+          ><span class="bo-hint">{{ backend }} · official build</span>
           <DropdownMenuRoot :modal="false">
             <DropdownMenuTrigger as-child>
               <Button variant="ghost" size="sm">Change<ChevronDown :size="13" /></Button>
@@ -132,7 +133,6 @@ function save(): void {
             </DropdownMenuContent>
           </DropdownMenuRoot>
         </span>
-        <span class="bo-hint">{{ backend }} · official build</span>
       </section>
 
       <section class="bo-cell" aria-label="On disk">
@@ -253,6 +253,11 @@ function save(): void {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+.bo-foot {
+  margin-top: auto;
+  margin-right: -8px;
+  margin-bottom: -6px;
 }
 .bo-main > :deep(button) {
   align-self: flex-start;
