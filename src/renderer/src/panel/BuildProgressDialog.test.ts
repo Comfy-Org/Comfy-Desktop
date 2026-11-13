@@ -142,4 +142,26 @@ describe('BuildProgressDialog', () => {
     await toggle.trigger('click')
     expect(logs().display).toBe('')
   })
+
+  it('plays one of the build videos, filling the slot when tall and spanning it when wide', async () => {
+    const w = await openDialog()
+    const video = w.get<HTMLVideoElement>('[data-testid="build-progress-video"]')
+    expect(video.attributes('src')).toMatch(/^\.\/build-progress\/[a-z_]+\.webm$/)
+
+    const loadAs = async (width: number, height: number): Promise<void> => {
+      Object.defineProperty(video.element, 'videoWidth', { configurable: true, value: width })
+      Object.defineProperty(video.element, 'videoHeight', { configurable: true, value: height })
+      await video.trigger('loadedmetadata')
+    }
+    await loadAs(480, 640)
+    expect(video.attributes('data-shape')).toBe('tall')
+    expect(video.classes()).toContain('h-[340px]')
+
+    await loadAs(942, 530)
+    expect(video.attributes('data-shape')).toBe('wide')
+    expect(video.classes()).toContain('h-auto')
+
+    await loadAs(708, 708)
+    expect(video.attributes('data-shape')).toBe('wide')
+  })
 })

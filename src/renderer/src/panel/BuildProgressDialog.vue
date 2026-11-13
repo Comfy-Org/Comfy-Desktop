@@ -20,16 +20,28 @@ interface StepRow {
   detail: string
 }
 
-const SHOWCASE_VIDEOS = [
+const BUILD_PROGRESS_VIDEOS = [
   'city_skyline',
+  'crystal_shard',
   'dinosaur_eye',
   'driving',
   'earpods',
+  'girl_riding_bike',
+  'gundam',
+  'man_sitting_on_roof',
   'milk_coffee',
   'moon_racer',
   'mow_the_lawn',
+  'northern_lights',
+  'puppy',
+  'rubber_duck',
+  'samurai_on_beach',
   'snow_leopard',
-  'steak'
+  'space_cowboy',
+  'steak',
+  'train',
+  'waitress',
+  'woman_smoking'
 ] as const
 const LOG_TAIL_CHARS = 20_000
 
@@ -46,9 +58,15 @@ const op = computed(() => progressStore.operations.get(installationId) ?? null)
 const build = computed(() => installationStore.getById(installationId) ?? null)
 const logsOpen = ref(true)
 const logsRef = ref<HTMLElement | null>(null)
-const video = `./install-showcase-scene/Assets/${
-  SHOWCASE_VIDEOS[Math.floor(Math.random() * SHOWCASE_VIDEOS.length)]
+const video = `./build-progress/${
+  BUILD_PROGRESS_VIDEOS[Math.floor(Math.random() * BUILD_PROGRESS_VIDEOS.length)]
 }.webm`
+const videoShape = ref<'tall' | 'wide' | null>(null)
+
+function measureVideo(event: Event): void {
+  const el = event.target as HTMLVideoElement
+  videoShape.value = el.videoHeight > el.videoWidth ? 'tall' : 'wide'
+}
 
 const steps = computed<StepRow[]>(() => {
   const current = op.value
@@ -264,14 +282,22 @@ async function tryCloud(): Promise<void> {
 
           <div class="flex h-[340px] w-[272px] shrink-0 items-center justify-center">
             <video
-              class="h-[150px] w-[272px] rounded-xl object-cover"
+              class="w-[272px] transition-opacity duration-200 motion-reduce:transition-none"
+              :class="[
+                videoShape === 'tall'
+                  ? 'h-[340px] rounded-[18px] border border-white/8 bg-[#161619] object-cover'
+                  : 'h-auto max-h-[340px] rounded-xl',
+                videoShape ? 'opacity-100' : 'opacity-0'
+              ]"
               :src="video"
               autoplay
               muted
               loop
               playsinline
               aria-hidden="true"
+              :data-shape="videoShape ?? undefined"
               data-testid="build-progress-video"
+              @loadedmetadata="measureVideo"
             />
           </div>
         </div>
