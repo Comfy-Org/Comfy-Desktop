@@ -537,6 +537,21 @@ describe('AssetsView opened for one Cloud file', () => {
     expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
   })
 
+  it('opens a file asked for after the Comfy Cloud assets have loaded', async () => {
+    listAssets.mockResolvedValue([
+      asset('a', 'forest.png', 'image'),
+      asset('b', 'cloud-cutout.png', 'image')
+    ])
+    const wrapper = await mountAssets()
+    expect(wrapper.find('[data-testid="output-detail-panel"]').exists()).toBe(false)
+
+    await wrapper.setProps({ focusName: 'cloud-cutout.png' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="output-detail-panel"] h2').text()).toBe('cloud-cutout.png')
+    expect(wrapper.emitted('focus-used')).toHaveLength(1)
+  })
+
   it('just shows the Comfy Cloud assets when the file is not there', async () => {
     listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
 

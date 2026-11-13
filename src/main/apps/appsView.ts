@@ -332,6 +332,10 @@ async function captureBackdrop(page: WebContents): Promise<Buffer | null> {
   }
 }
 
+function isOnScreen(key: number): boolean {
+  return views.get(key)?.getVisible() === true
+}
+
 async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const outputs = outputRequest(request)
   if (!outputs) throw new Error('These outputs cannot be shown.')
@@ -339,7 +343,7 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const entry = key === null ? undefined : comfyWindows.get(key)
   const panel = entry?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
-  if (!views.get(key)?.getVisible()) throw new Error('The app is not on screen.')
+  if (!isOnScreen(key)) throw new Error('The app is not on screen.')
   const turn = nextOutputTurn(key)
   const current = () => latestOutputRequest.get(key) === turn && !page.isDestroyed()
   const apps = outputs.items.some(needsLookup) ? await findApps() : null
@@ -350,6 +354,7 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   if (!current()) return
   const backdrop = await captureBackdrop(page)
   if (panel.isDestroyed() || !appOpen.get(key) || !current()) return
+  if (!isOnScreen(key)) throw new Error('The app is not on screen.')
   shownOutputFiles.set(key, { turn, files })
   if (entry?.window.isFocused()) panel.focus()
   panel.send(APPS_OUTPUT_CHANNEL, { items, index: outputs.index, turn, backdrop })

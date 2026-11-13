@@ -63,6 +63,7 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     opts?: { isRestart?: boolean }
   ): Promise<ChooserLaunchOutcome> {
     if (sessionStore.isRunning(installation.id)) {
+      void window.api.releaseAttachHostPreview()
       await window.api.focusComfyWindow(installation.id)
       return 'focused-running'
     }
@@ -70,13 +71,19 @@ export function useChooserHandoff(opts: ChooserHandoffOpts): ChooserHandoffApi {
     const launchAction =
       actions.find((a) => a.id === 'launch') ?? actions.find((a) => a.style === 'primary') ?? null
     if (!launchAction) {
+      void window.api.releaseAttachHostPreview()
       onMissingLaunchAction()
       return 'missing-action'
     }
+    let guardsPassed = false
     await executeChooserAction(installation, launchAction, {
-      onGuardsPassed: () => prepareChooserHostHandoff(installation.id),
+      onGuardsPassed: () => {
+        guardsPassed = true
+        return prepareChooserHostHandoff(installation.id)
+      },
       isRestart: opts?.isRestart === true
     })
+    if (!guardsPassed) void window.api.releaseAttachHostPreview()
     return 'launched'
   }
 

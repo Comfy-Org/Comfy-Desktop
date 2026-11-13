@@ -22,8 +22,8 @@ const GRANT_MIN_CORE = '0.3.80'
 let ctx: AppContext
 let installPath: string
 
-function coachmarkPopup(app: ElectronApplication): WebContentsPage {
-  return new WebContentsPage(app, 'comfyTitleTooltip')
+function buildWindowPage(app: ElectronApplication, marker: string): WebContentsPage {
+  return new WebContentsPage(app, marker, `:${port}`)
 }
 
 async function cardTitle(popup: WebContentsPage): Promise<string | null> {
@@ -36,22 +36,23 @@ async function cardTitle(popup: WebContentsPage): Promise<string | null> {
 }
 
 async function popupVisible(app: ElectronApplication): Promise<boolean | 'detached'> {
-  return app.evaluate(({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0]
-    if (!win) return 'detached' as const
-    const kids = (win.contentView?.children ?? []) as Array<{
-      webContents?: { getURL?: () => string; isDestroyed?: () => boolean }
-      getVisible?: () => boolean
-    }>
-    const hit = kids.find(
-      (k) =>
-        k.webContents &&
-        !k.webContents.isDestroyed?.() &&
-        (k.webContents.getURL?.() ?? '').includes('comfyTitleTooltip')
+  return app.evaluate(({ BrowserWindow, WebContentsView }, windowMarker) => {
+    const win = BrowserWindow.getAllWindows().find((candidate) =>
+      candidate.contentView.children.some(
+        (child) =>
+          child instanceof WebContentsView && child.webContents.getURL().includes(windowMarker)
+      )
     )
-    if (!hit?.getVisible) return 'detached' as const
+    if (!win) return 'detached' as const
+    const hit = win.contentView.children.find(
+      (child) =>
+        child instanceof WebContentsView &&
+        !child.webContents.isDestroyed() &&
+        child.webContents.getURL().includes('comfyTitleTooltip')
+    )
+    if (!hit) return 'detached' as const
     return hit.getVisible()
-  })
+  }, `:${port}`)
 }
 
 async function lockdownEngaged(titleBar: WebContentsPage): Promise<boolean> {
@@ -111,12 +112,10 @@ test.afterAll(async () => {
 })
 
 test('first-use lockdown never costs the user the beta notice @linux', async () => {
-  const popup = coachmarkPopup(ctx.app)
-
   await ctx.panel.evaluate(`window.api.setFirstUseMode('post-consent')`)
   await ctx.titleBar.waitFor(async () => lockdownEngaged(ctx.titleBar), {
     timeout: 10_000,
-    message: 'first-use lockdown never reached the title bar'
+    message: 'first-use lockdown never reached the Home title bar'
   })
 
   await clickInstallTile(ctx.panel, INSTALL_NAME)
@@ -130,21 +129,25 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
     { timeout: 90_000, message: 'ComfyUI stub never came up / the host never attached' }
   )
 
+  const popup = buildWindowPage(ctx.app, 'comfyTitleTooltip')
+  const buildTitleBar = buildWindowPage(ctx.app, 'comfyTitleBar.html')
+  const buildPanel = buildWindowPage(ctx.app, 'panel.html')
+
   expect(
-    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
+    await buildTitleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
   ).not.toBeNull()
 
   await popup.waitFor(async () => (await cardTitle(popup)) === 'A beta feature is on', {
     timeout: 30_000,
-    message: 'beta notice never drew after the launch that armed it'
+    message: 'beta notice never drew in the build window'
   })
   expect(await popupVisible(ctx.app)).toBe(true)
-  expect(await lockdownEngaged(ctx.titleBar)).toBe(false)
+  expect(await lockdownEngaged(buildTitleBar)).toBe(false)
 
-  await ctx.panel.evaluate(`window.api.setFirstUseMode('post-consent')`)
-  await ctx.titleBar.waitFor(async () => lockdownEngaged(ctx.titleBar), {
+  await buildPanel.evaluate(`window.api.setFirstUseMode('post-consent')`)
+  await buildTitleBar.waitFor(async () => lockdownEngaged(buildTitleBar), {
     timeout: 10_000,
-    message: 'the re-asserted lockdown never reached the title bar'
+    message: 'the lockdown never reached the build title bar'
   })
   await expect
     .poll(async () => popupVisible(ctx.app), {
@@ -154,10 +157,10 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
     .toBe(false)
 
   expect(
-    await ctx.titleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
+    await buildTitleBar.evaluate(`window.api.getPendingBetaNotice(${JSON.stringify(INSTALL_ID)})`)
   ).not.toBeNull()
 
-  await ctx.panel.evaluate(`window.api.setFirstUseMode('none')`)
+  await buildPanel.evaluate(`window.api.setFirstUseMode('none')`)
   await expect
     .poll(async () => popupVisible(ctx.app), {
       timeout: 20_000,

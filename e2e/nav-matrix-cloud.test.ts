@@ -17,17 +17,16 @@ async function newWindowCalls(): Promise<{ installationId?: string; focusedExist
   return (await getIpcInvocations(ctx.app, 'open-install-new-window')) as never
 }
 
-async function openCloudInNewWindow(): Promise<void> {
+async function openCloud(): Promise<void> {
   await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
   const popup = titlePopupPage(ctx.app)
   const cloudRow = byTestId(TID.pickerRow(CLOUD_ID))
   await popup.waitForVisible(cloudRow)
   expect(await popup.click(cloudRow), 'Cloud instance selected').toBe(true)
-  await popup.waitForVisible(byTestId(TID.pickerNewWindow))
-  expect(await popup.click(byTestId(TID.pickerNewWindow)), 'Window options clicked').toBe(true)
-  const openNewItem = byTestId(TID.pinBottomAction('nav:0'))
-  await popup.waitForVisible(openNewItem)
-  expect(await popup.click(openNewItem), 'Open in new window clicked').toBe(true)
+  const openCloudButton = `${byTestId(TID.pickerPrimaryCta)}:not(:disabled)`
+  await popup.waitForVisible(openCloudButton)
+  expect(await popup.exists(byTestId(TID.pickerNewWindow)), 'no window options caret').toBe(false)
+  expect(await popup.click(openCloudButton), 'Open Cloud clicked').toBe(true)
   await expect
     .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
       timeout: 5_000,
@@ -58,7 +57,7 @@ test.beforeEach(async () => {
 
 test('cloud target with no window: opens a new window @windows @macos @linux', async () => {
   const before = await liveWindowCount(ctx.app)
-  await openCloudInNewWindow()
+  await openCloud()
 
   await expect
     .poll(
