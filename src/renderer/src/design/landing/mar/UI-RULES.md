@@ -68,6 +68,11 @@ DS's Motion page (`ds/motion.ts`).
   spacing drifts from the filters. A single choice fills the picked row
   with the DS selected color (`bg-muted`, `selectedMenuButtonClass`), no check.
   Rows sit 2px apart (`gap-0.5`) so two highlighted rows never touch.
+- **Every dropdown looks the same in Desktop.** Menus and select lists
+  (`BaseSelect`) share one look: the DS menu background, padding and row
+  height, the picked row filled, no check. For launch that is the DS solid
+  menu everywhere; the proto's smoked glass comes later, to all menus at
+  once, never to one menu alone.
 
 ## Split button
 
