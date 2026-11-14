@@ -180,6 +180,93 @@ export type ComfyDesktopHostedAuthBridge = Required<
   >
 >
 
+/** What a hosted page needs from the ComfyUI on this computer. */
+export interface ComfyDesktopLocalRequirements {
+  /** The oldest ComfyUI the page can run on, such as `0.41.0`. */
+  minVersion?: string
+}
+
+/**
+ * The ComfyUI on this computer that Desktop uses for a hosted page.
+ * `running`: it answers now. `stopped`: one of the person's builds fits and
+ * `startLocal` starts it. `unsupported`: no build here can run the page, and
+ * `error` says why in words for the person.
+ */
+export interface ComfyDesktopLocalComfy {
+  state: 'running' | 'stopped' | 'unsupported'
+  /** True when it is one of the person's own builds. */
+  own?: boolean
+  name?: string
+  version?: string
+  /** The `client_id` Desktop listens with; updates for runs sent through `localFetch` arrive on `onLocalEvent`. */
+  clientId?: string
+  error?: string
+}
+
+/**
+ * One call to that ComfyUI. Desktop forwards only what a run needs:
+ * `GET /queue`, `GET /history/<run>`, `GET /view`, `GET /object_info/<node>`,
+ * `POST /prompt`, `POST /upload/image`, `POST /queue` to take a run out, and
+ * `POST /interrupt` to stop one. History, files, removal and stopping work
+ * only for runs the page started through this bridge.
+ */
+export interface ComfyDesktopLocalRequest {
+  method?: 'GET' | 'POST'
+  path: string
+  /** JSON text, or a file's bytes for `/upload/image`. */
+  body?: string | Uint8Array
+  /** The name to save an upload under. */
+  fileName?: string
+}
+
+/** ComfyUI's answer, or status 403 for a call Desktop does not forward. */
+export interface ComfyDesktopLocalAnswer {
+  status: number
+  contentType: string
+  body: Uint8Array
+}
+
+/** A safetensors file on Hugging Face to save as `name` in the models folder `folder`. */
+export interface ComfyDesktopLocalModel {
+  url: string
+  folder: string
+  name: string
+}
+
+export interface ComfyDesktopLocalDownload {
+  state: 'done' | 'failed' | 'cancelled'
+  error?: string
+}
+
+/**
+ * A model download's progress (`type: 'download'`, with `name`, `done` and
+ * `total` bytes in `data`), or one ComfyUI socket message about a run the page
+ * started (`execution_start`, `executing`, `progress`, `progress_state`,
+ * `execution_success`, `execution_error`, `execution_interrupted`).
+ */
+export interface ComfyDesktopLocalEvent {
+  type: string
+  data?: Record<string, unknown>
+}
+
+/**
+ * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
+ * Desktop's Apps view. Desktop exposes it to that page as
+ * `window.comfyDesktopLocal`. The page builds and follows its own runs;
+ * Desktop finds or starts the ComfyUI, forwards the page's calls to it and
+ * downloads a model the page asks for.
+ */
+export interface ComfyDesktopHostedLocalBridge {
+  getLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
+  /** Starts the ComfyUI if it is stopped and resolves once it answers, or with the state and `error` if it could not start. */
+  startLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
+  /** Rejects when no ComfyUI is running to forward to. */
+  localFetch(request: ComfyDesktopLocalRequest): Promise<ComfyDesktopLocalAnswer>
+  /** Downloads into the running ComfyUI's models folder and resolves when the file is there. */
+  localDownload(model: ComfyDesktopLocalModel): Promise<ComfyDesktopLocalDownload>
+  onLocalEvent(callback: (event: ComfyDesktopLocalEvent) => void): () => void
+}
+
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>
