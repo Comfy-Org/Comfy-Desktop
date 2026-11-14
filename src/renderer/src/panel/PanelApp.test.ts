@@ -385,7 +385,6 @@ function installMockApi(initial?: {
     navigatePanel: vi.fn(),
     listHomeWorkflows: vi.fn(async () => []),
     openCatalogWorkflow: vi.fn(async () => true),
-    openCatalogWorkflowHub: vi.fn(async () => true),
     getAppsEnabled: vi.fn(async () => false),
     listApps: vi.fn(async () => []),
     showAppPage: vi.fn(async () => 'loading'),
@@ -1378,6 +1377,20 @@ describe('PanelApp', () => {
 
     expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+  })
+
+  it('opens Apps from See all apps on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-see-all-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
   })
 
   it('goes back to all apps when Apps is picked again while an app is open', async () => {

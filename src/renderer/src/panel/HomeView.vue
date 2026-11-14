@@ -33,6 +33,7 @@ const emit = defineEmits<{
   pick: [installation: Installation]
   'open-build': [installation: Installation]
   'show-builds': []
+  'show-apps': []
 }>()
 
 const { t } = useI18n()
@@ -103,13 +104,12 @@ function openWorkflow(workflow: CatalogWorkflow): void {
   void window.api.openCatalogWorkflow(workflow.id)
 }
 
-function seeAllApps(): void {
-  void window.api.openCatalogWorkflowHub()
-}
+const appsEnabled = ref(false)
 
-onMounted(() => {
+onMounted(async () => {
   void loadWorkflows()
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
+  appsEnabled.value = await window.api.getAppsEnabled().catch(() => false)
 })
 </script>
 
@@ -164,14 +164,14 @@ onMounted(() => {
           </Button>
         </div>
 
-        <div class="mt-[30px] flex justify-center">
+        <div v-if="appsEnabled" class="mt-[30px] flex justify-center">
           <Button
             type="button"
             variant="muted-textonly"
             size="unset"
             :class="TEXT_LINK_CLASS"
             data-testid="home-see-all-apps"
-            @click="seeAllApps"
+            @click="emit('show-apps')"
           >
             {{ t('home.seeAllApps') }}
             <ArrowRight :size="14" aria-hidden="true" />
