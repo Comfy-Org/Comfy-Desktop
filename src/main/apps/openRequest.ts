@@ -1,4 +1,4 @@
-const MAX_WORKFLOW_CHARS = 1_000_000
+const MAX_WORKFLOW_BYTES = 1_000_000
 const MAX_NODES = 500
 const BUILD_ID = /^[A-Za-z0-9_-]{1,64}$/
 const WORKFLOW_NAME = /^[\p{L}\p{N} .,()'&_-]{1,80}$/u
@@ -27,9 +27,9 @@ function isNode(value: unknown): value is { class_type: string; inputs: Record<s
   )
 }
 
-function serializedLength(value: unknown): number {
+function serializedBytes(value: unknown): number {
   try {
-    return JSON.stringify(value).length
+    return Buffer.byteLength(JSON.stringify(value), 'utf8')
   } catch {
     return Infinity
   }
@@ -39,7 +39,7 @@ export function isApiWorkflow(value: unknown): value is Record<string, unknown> 
   if (!isRecord(value)) return false
   const nodes = Object.values(value)
   if (nodes.length < 1 || nodes.length > MAX_NODES) return false
-  return nodes.every(isNode) && serializedLength(value) <= MAX_WORKFLOW_CHARS
+  return nodes.every(isNode) && serializedBytes(value) <= MAX_WORKFLOW_BYTES
 }
 
 export function isBuildId(value: unknown): value is string {

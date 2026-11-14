@@ -59,6 +59,12 @@ describe('an API-format workflow', () => {
       false
     )
   })
+
+  it('measures the 1 MB in UTF-8 bytes, so text in a multi-byte script cannot pass it', () => {
+    const text = (chars: number) => ({ a: { class_type: 'X', inputs: { t: '图'.repeat(chars) } } })
+    expect(isApiWorkflow(text(300_000))).toBe(true)
+    expect(isApiWorkflow(text(400_000))).toBe(false)
+  })
 })
 
 describe('a request to open a workflow in ComfyUI', () => {
