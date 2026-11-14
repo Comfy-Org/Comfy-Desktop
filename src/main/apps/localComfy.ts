@@ -8,6 +8,7 @@ import type {
 } from '../../types/comfyDesktopBridge'
 import { getEntryByInstallationId } from '../host/registry'
 import * as installations from '../installations'
+import type { InstallationRecord } from '../installations'
 import { startManagedModelJob } from '../lib/comfyDownloadManager'
 import { probeQueue } from '../lib/comfyProcessRecord'
 import * as i18n from '../lib/i18n'
@@ -163,6 +164,10 @@ async function chooseTarget(page: WebContents, want: unknown): Promise<LocalBuil
   return choice.build
 }
 
+export function pageBuildId(page: WebContents): string | null {
+  return targetByPage.get(page)?.id ?? null
+}
+
 export async function localState(
   page: WebContents,
   want: unknown
@@ -188,21 +193,26 @@ async function waitForOtherLaunch(installationId: string): Promise<ActionResult>
 const QUIET_SENDER = { isDestroyed: () => false, send: () => {} } as unknown as WebContents
 const QUIET_EVENT = { sender: QUIET_SENDER } as unknown as IpcMainInvokeEvent
 
+export function launchQuietly(
+  inst: InstallationRecord,
+  actionData?: Record<string, unknown>
+): Promise<ActionResult> {
+  return handleLaunch({ event: QUIET_EVENT, installationId: inst.id, inst, actionData })
+}
+
 async function launchWithoutWindow(installationId: string): Promise<ActionResult> {
   if (_hasActiveLaunch(installationId)) return waitForOtherLaunch(installationId)
   const inst = await installations.get(installationId)
   if (!inst) return { ok: false }
-  const result = await handleLaunch({
-    event: QUIET_EVENT,
-    installationId,
-    inst,
-    actionData: { launchModeOverride: 'console', autoPortOnConflict: true }
+  const result = await launchQuietly(inst, {
+    launchModeOverride: 'console',
+    autoPortOnConflict: true
   })
   if (result.ok) startedHere.add(installationId)
   return result
 }
 
-function launchOnce(installationId: string): Promise<ActionResult> {
+export function launchOnce(installationId: string): Promise<ActionResult> {
   const pending = launches.get(installationId)
   if (pending) return pending
   const launch = launchWithoutWindow(installationId)
