@@ -6,6 +6,7 @@ interface FakeBuild {
   id: string
   name: string
   port: number | null
+  lastLaunchedAt?: number
 }
 
 const mocks = vi.hoisted(() => ({
@@ -332,6 +333,20 @@ describe('the builds a page can pick from', () => {
     expect(await localBuilds()).toEqual([
       { id: STUDIO.id, name: STUDIO.name },
       { id: LAB.id, name: LAB.name }
+    ])
+  })
+
+  it('come most recently launched first, which the page labels Last used', async () => {
+    mocks.builds = [
+      { ...STUDIO, lastLaunchedAt: 100 },
+      { ...LAB, lastLaunchedAt: 300 },
+      { id: 'inst-never', name: 'Never launched', port: null, lastLaunchedAt: 0 }
+    ]
+
+    expect((await localBuilds()).map((build) => build.id)).toEqual([
+      LAB.id,
+      STUDIO.id,
+      'inst-never'
     ])
   })
 })

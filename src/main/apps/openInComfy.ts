@@ -42,8 +42,11 @@ function refusalText(refusal: OpenRefusal): string {
   }
 }
 
+/** This computer's builds, most recently launched first: the page labels the first one "Last used". */
 export async function localBuilds(): Promise<ComfyDesktopLocalBuild[]> {
-  return (await usableLocalBuilds()).map((build) => ({ id: build.id, name: build.name }))
+  return (await usableLocalBuilds())
+    .sort((a, b) => b.lastLaunchedAt - a.lastLaunchedAt)
+    .map((build) => ({ id: build.id, name: build.name }))
 }
 
 function pickLocal(builds: LocalBuild[], wanted: string | null): LocalBuild | null {
