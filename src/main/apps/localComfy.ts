@@ -238,7 +238,22 @@ export function isRunningForAppsOnly(installationId: string): boolean {
   )
 }
 
+export function hasBuildsRunningForAppsOnly(): boolean {
+  return [...startedHere].some(isRunningForAppsOnly)
+}
+
+async function stopIfIdle(installationId: string): Promise<void> {
+  if ((await idleState(installationId)) !== 'idle') return
+  startedHere.delete(installationId)
+  await stopRunning(installationId)
+}
+
 export async function stopBuildsRunningForAppsOnly(): Promise<void> {
+  await Promise.all([...startedHere].filter(isRunningForAppsOnly).map(stopIfIdle))
+  noteUse()
+}
+
+export async function stopEveryBuildRunningForAppsOnly(): Promise<void> {
   const ids = [...startedHere].filter(isRunningForAppsOnly)
   for (const id of ids) startedHere.delete(id)
   noteUse()

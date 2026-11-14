@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const mocks = vi.hoisted(() => ({
+  confirmBeforeClosing: false,
+  appsBuildRunning: false,
+  agrees: true,
+  asked: [] as { spec: { message: string } }[],
+  stopAppsBuilds: vi.fn(async () => {})
+}))
+
 vi.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -15,9 +23,34 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+vi.mock('../apps/localComfy', () => ({
+  hasBuildsRunningForAppsOnly: () => mocks.appsBuildRunning,
+  stopEveryBuildRunningForAppsOnly: () => mocks.stopAppsBuilds()
+}))
+vi.mock('../popups/systemModal', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../popups/systemModal')>()),
+  openSystemModalAsync: async (options: { spec: { message: string } }) => {
+    mocks.asked.push(options)
+    return mocks.agrees
+  }
+}))
+vi.mock('../settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../settings')>()
+  return {
+    ...actual,
+    get: (key: string) =>
+      key === 'confirmBeforeClosingWindow' ? mocks.confirmBeforeClosing : actual.get(key)
+  }
+})
+
 import { _runningSessions } from '../lib/ipc/shared'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from './registry'
-import { closeAllHostWindows, detachOrphanedInstallHosts, preClearedClose } from './detach'
+import {
+  closeAllHostWindows,
+  confirmAndCloseHostWindow,
+  detachOrphanedInstallHosts,
+  preClearedClose
+} from './detach'
 
 interface FakeWindow {
   destroyed: boolean
@@ -191,5 +224,44 @@ describe('preClearedClose', () => {
     preClearedClose.add(a as unknown as Electron.BrowserWindow)
     expect(preClearedClose.delete(a as unknown as Electron.BrowserWindow)).toBe(true)
     expect(preClearedClose.has(a as unknown as Electron.BrowserWindow)).toBe(false)
+  })
+})
+
+describe('closing the last Desktop window while an app uses a ComfyUI Desktop started for it', () => {
+  function openDashboard(): FakeWindow {
+    const win = makeWindow()
+    const entry = makeEntry(win)
+    comfyWindows.set(entry.windowKey, entry)
+    return win
+  }
+
+  beforeEach(() => {
+    mocks.confirmBeforeClosing = true
+    mocks.appsBuildRunning = true
+    mocks.agrees = true
+    mocks.asked = []
+    mocks.stopAppsBuilds.mockClear()
+  })
+
+  it('asks first, and Cancel keeps both the window and that ComfyUI', async () => {
+    mocks.agrees = false
+    const win = openDashboard()
+
+    await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+    expect(mocks.asked.map((asked) => asked.spec.message)).toEqual([
+      'Close this window? This stops ComfyUI and quits Comfy Desktop.'
+    ])
+    expect(win.closed).toBe(false)
+    expect(mocks.stopAppsBuilds).not.toHaveBeenCalled()
+  })
+
+  it('stops that ComfyUI and closes once the person agrees', async () => {
+    const win = openDashboard()
+
+    await confirmAndCloseHostWindow(win as unknown as Electron.BrowserWindow)
+
+    expect(mocks.stopAppsBuilds).toHaveBeenCalledTimes(1)
+    expect(win.closed).toBe(true)
   })
 })

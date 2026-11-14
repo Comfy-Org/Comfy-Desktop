@@ -793,6 +793,17 @@ describe('a ComfyUI that Desktop started for apps', () => {
     expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
   })
 
+  it('keeps running when every Desktop window closes while it has work queued, and is stopped after that', async () => {
+    mocks.probeQueue = async () => ({ running: 1, pending: 2 })
+    await local.stopBuildsRunningForAppsOnly()
+    expect(stopped).toEqual([])
+
+    mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
   it('is not stopped twice once the idle stop comes round after that', async () => {
     await local.stopBuildsRunningForAppsOnly()
     await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)

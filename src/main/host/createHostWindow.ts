@@ -3,6 +3,7 @@ import path from 'path'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
+import { hasBuildsRunningForAppsOnly, stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
 import { attachContextMenu } from '../lib/contextMenu'
 import { tryOpenExternalUrl } from '../lib/openExternal'
 import { guardPermissionRequests } from '../lib/sessionPermissions'
@@ -109,6 +110,13 @@ export function shouldShowInstallCloseConfirm(
     consult === 'defer' &&
     !forceClose
   )
+}
+
+export function closeStopsLocalComfy(
+  entry: ComfyWindowEntry | null | undefined,
+  isLastWindow: boolean
+): boolean {
+  return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
 }
 
 export function shouldBailAfterCloseChoice(
@@ -554,11 +562,13 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
         const entryForClose = comfyWindows.get(windowKey)
         const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
         const isLastInstallWindow = isLastWindow && isInstallHostWindow
+        const stopsLocalComfy = closeStopsLocalComfy(entryForClose, isLastWindow)
+        let agreedToStopAppsBuilds = false
         if (
           shouldShowInstallCloseConfirm(
             settings.get('confirmBeforeClosingWindow') === true,
             consult,
-            shouldConfirmKillForEntry(entryForClose),
+            stopsLocalComfy,
             fx.preClearedClose.has(comfyWindow),
             isLastInstallWindow
           ) &&
@@ -567,13 +577,15 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
           const closeChoice = await fx.confirmCloseInstanceWindow(
             comfyWindow,
             isLastWindow,
-            shouldConfirmKillForEntry(entryForClose),
+            stopsLocalComfy,
             entryForClose.lastTheme
           )
           if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) return
+          agreedToStopAppsBuilds = isLastWindow && closeChoice === 'close'
         }
         fx.preClearedClose.delete(comfyWindow)
         if (comfyWindow.isDestroyed()) return
+        if (agreedToStopAppsBuilds) void stopEveryBuildRunningForAppsOnly()
         const safeTeardown = (source: string, fn: () => void): void => {
           try {
             fn()
