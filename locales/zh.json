@@ -49,7 +49,15 @@
       "couldNotStart": "Comfy Desktop 无法启动{name}。",
       "notRunning": "这台电脑上的 ComfyUI 没有在运行。",
       "notForwarded": "Comfy Desktop 不会把这个请求转给 ComfyUI。",
-      "modelRefused": "Comfy Desktop 只从 Hugging Face 下载 safetensors 模型。"
+      "modelRefused": "Comfy Desktop 只从 Hugging Face 下载 safetensors 模型。",
+      "openNotWorkflow": "这不是 Comfy Desktop 能打开的工作流。",
+      "openUnknownPlace": "请在 Comfy Cloud 或这台电脑上打开。",
+      "openUnknownBuild": "这台电脑上没有这个 ComfyUI 构建。",
+      "openCarriesKeys": "Comfy Desktop 不会打开带有 Comfy 密钥的工作流。",
+      "openNoCloud": "请先在 Comfy Desktop 中添加 Comfy Cloud。",
+      "openCloudFailed": "Comfy Desktop 无法打开 Comfy Cloud。",
+      "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
+      "openNotTaken": "ComfyUI 没有打开这个工作流。"
     }
   },
   "assets": {
