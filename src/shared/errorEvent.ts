@@ -155,7 +155,7 @@ function embeddedCode(message: string): string | null {
   return node ? node[1]!.toUpperCase() : null
 }
 
-function findExceptionLine(text: string): string | null {
+export function findExceptionLine(text: string): string | null {
   let found: string | null = null
   for (const rawLine of text.split('\n')) {
     const line = rawLine.trim()
