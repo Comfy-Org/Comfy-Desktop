@@ -8,9 +8,9 @@ interface AppExit {
   signal: NodeJS.Signals | null
 }
 
-function appExit(ctx: AppContext): Promise<AppExit> {
+function appAndItsChildProcessesGone(ctx: AppContext): Promise<AppExit> {
   return new Promise((resolve) => {
-    ctx.app.process().once('exit', (code, signal) => resolve({ code, signal }))
+    ctx.app.process().once('close', (code, signal) => resolve({ code, signal }))
   })
 }
 
@@ -48,14 +48,16 @@ test('the app exits cleanly when garbage is collected while it quits @macos @win
   try {
     await expectChooserVisible(ctx.panel)
     await openInstancePicker(ctx)
-    const exited = appExit(ctx)
+    const exited = appAndItsChildProcessesGone(ctx)
 
     await quitWhileCollectingGarbage(ctx)
 
-    expect(
-      await exited,
-      'The app should exit with code 0, not crash while its views are garbage-collected'
-    ).toEqual({ code: 0, signal: null })
+    expect
+      .soft(
+        await exited,
+        'The app should exit with code 0, not crash while its views are garbage-collected'
+      )
+      .toEqual({ code: 0, signal: null })
   } finally {
     await ctx.cleanup()
   }
