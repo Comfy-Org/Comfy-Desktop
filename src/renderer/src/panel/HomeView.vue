@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowRight, ChevronRight } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
@@ -88,12 +88,15 @@ function buildStatus(build: Installation) {
   return homeBuildStatus(build, sessionStore)
 }
 
-const { state: appsState, apps, appsAreOn, loadApps } = useHomeApps()
+const { state: appsState, apps, loadApps } = useHomeApps()
+const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.value !== 'off')
 
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
-const carouselIsLoading = computed(
-  () => appsState.value === 'loading' || (appsState.value === 'off' && state.value === 'loading')
+const carouselIsLoading = computed(() =>
+  appsState.value === 'off'
+    ? state.value === 'loading'
+    : appsState.value === 'checking' || appsState.value === 'loading'
 )
 
 function coverOf(app: AppCard): string | null {
@@ -105,7 +108,6 @@ function thumbnailOf(workflow: CatalogWorkflow): string | null {
 }
 
 async function loadWorkflows(): Promise<void> {
-  if (await appsAreOn) return
   state.value = 'loading'
   try {
     workflows.value = await window.api.listHomeWorkflows()
@@ -120,12 +122,12 @@ function openWorkflow(workflow: CatalogWorkflow): void {
   void window.api.openCatalogWorkflow(workflow.id)
 }
 
-const appsEnabled = ref(false)
+watch(appsState, (now) => {
+  if (now === 'off') void loadWorkflows()
+})
 
-onMounted(async () => {
-  void loadWorkflows()
+onMounted(() => {
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
-  appsEnabled.value = await window.api.getAppsEnabled().catch(() => false)
 })
 </script>
 

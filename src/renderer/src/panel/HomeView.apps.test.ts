@@ -99,7 +99,9 @@ describe('Home apps', () => {
     ])
     expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(GENJUTSU.coverUrl)
     expect(cardAt(wrapper, 0).get('[data-testid="home-carousel-kind"]').text()).toBe('App')
+    expect(wrapper.get('[data-testid="home-see-all-apps"]').text()).toBe('See all apps')
     expect(listHomeWorkflows).not.toHaveBeenCalled()
+    expect(getAppsEnabled).toHaveBeenCalledOnce()
   })
 
   it('follows the website when the list of apps changes', async () => {
@@ -176,6 +178,7 @@ describe('Home apps', () => {
 
     expect(wrapper.find('[data-testid="home-apps-failed"]').exists()).toBe(false)
     expect(cardAt(wrapper, 0).text()).toContain('Genjutsu')
+    expect(wrapper.find('[data-testid="home-see-all-apps"]').exists()).toBe(true)
   })
 
   it('says there are no apps yet when the website lists none', async () => {
@@ -209,6 +212,7 @@ describe('Home while Apps is turned off', () => {
     const wrapper = await openHome()
 
     expect(arc(wrapper)).toEqual(['0:Upscale and restore detail'])
+    expect(wrapper.find('[data-testid="home-see-all-apps"]').exists()).toBe(false)
     expect(listApps).not.toHaveBeenCalled()
   })
 })

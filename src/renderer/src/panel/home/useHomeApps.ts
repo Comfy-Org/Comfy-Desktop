@@ -1,16 +1,15 @@
 import { ref, type Ref } from 'vue'
 import type { AppCard } from '../../types/ipc'
 
-export type HomeAppsState = 'loading' | 'ready' | 'empty' | 'failed' | 'off'
+export type HomeAppsState = 'checking' | 'off' | 'loading' | 'ready' | 'empty' | 'failed'
 
 export interface HomeApps {
   state: Ref<HomeAppsState>
   apps: Ref<AppCard[]>
-  appsAreOn: Promise<boolean>
   loadApps: () => Promise<void>
 }
 
-async function askWhetherAppsAreOn(): Promise<boolean> {
+async function appsAreOn(): Promise<boolean> {
   try {
     return await window.api.getAppsEnabled()
   } catch {
@@ -19,7 +18,7 @@ async function askWhetherAppsAreOn(): Promise<boolean> {
 }
 
 export function useHomeApps(): HomeApps {
-  const state = ref<HomeAppsState>('loading')
+  const state = ref<HomeAppsState>('checking')
   const apps = ref<AppCard[]>([])
 
   async function loadApps(): Promise<void> {
@@ -33,11 +32,10 @@ export function useHomeApps(): HomeApps {
     }
   }
 
-  const appsAreOn = askWhetherAppsAreOn()
-  void appsAreOn.then((on) => {
+  void appsAreOn().then((on) => {
     if (on) return loadApps()
     state.value = 'off'
   })
 
-  return { state, apps, appsAreOn, loadApps }
+  return { state, apps, loadApps }
 }
