@@ -278,6 +278,46 @@ const fieldLoading = ref(new Map<string, boolean>())
 const fieldErrors = ref(new Map<string, string>())
 const textFieldValues = ref(new Map<string, string>())
 
+interface HeldField {
+  options: FieldOption[]
+  selection: FieldOption | undefined
+  hidden: boolean
+}
+
+const heldFields = ref(new Map<string, HeldField>())
+
+function holdFieldsFrom(source: Source, fromIndex: number): void {
+  for (const field of source.fields.slice(fromIndex)) {
+    const options = fieldOptions.value.get(field.id)
+    if (!options || heldFields.value.has(field.id)) continue
+    heldFields.value.set(field.id, {
+      options,
+      selection: selections.value[field.id],
+      hidden: isHiddenWhenEmpty(field)
+    })
+  }
+}
+
+function releaseFieldsFrom(source: Source, fromIndex: number): void {
+  for (const field of source.fields.slice(fromIndex)) heldFields.value.delete(field.id)
+}
+
+function isRefreshing(field: SourceField): boolean {
+  return heldFields.value.has(field.id)
+}
+
+function shownOptions(field: SourceField): FieldOption[] | undefined {
+  return fieldOptions.value.get(field.id) ?? heldFields.value.get(field.id)?.options
+}
+
+const shownSelections = computed(() => {
+  const shown: Record<string, FieldOption> = {}
+  for (const [fieldId, held] of heldFields.value) {
+    if (held.selection) shown[fieldId] = held.selection
+  }
+  return { ...shown, ...selections.value }
+})
+
 const {
   diskSpace,
   diskSpaceLoading,
@@ -287,20 +327,28 @@ const {
 } = createDiskSpaceChecker()
 let hardwareValidation: HardwareValidation | null = null
 
-const estimatedInstallSize = computed(() => {
-  if (!localInstallMode.value) {
-    const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
-    return sizeBytes > 0 ? Math.ceil(sizeBytes * INSTALL_SPACE_FACTOR) : 0
-  }
+function installSizeOf(picked: Record<string, FieldOption>): number {
   let downloadBytes = 0
-  for (const selected of Object.values(selections.value)) {
+  for (const selected of Object.values(picked)) {
     const files = selected?.data?.downloadFiles as Array<{ size: number }> | undefined
     if (files) {
       downloadBytes += files.reduce((sum, f) => sum + f.size, 0)
     }
   }
   return downloadBytes > 0 ? Math.ceil(downloadBytes * INSTALL_SPACE_FACTOR) : 0
+}
+
+const estimatedInstallSize = computed(() => {
+  if (!localInstallMode.value) {
+    const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
+    return sizeBytes > 0 ? Math.ceil(sizeBytes * INSTALL_SPACE_FACTOR) : 0
+  }
+  return installSizeOf(selections.value)
 })
+
+const shownInstallSize = computed(() =>
+  localInstallMode.value ? installSizeOf(shownSelections.value) : estimatedInstallSize.value
+)
 
 const entrypoint = ref('unknown')
 const resolved = ref(false)
@@ -576,6 +624,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   fieldLoading.value.clear()
   fieldErrors.value.clear()
   textFieldValues.value.clear()
+  heldFields.value.clear()
 
   if (!gpuName.value && !gpuDetectionDone) detectedGpu.value = t('newInstall.detectingGpu')
   machineUnsupported.value = false
@@ -822,6 +871,7 @@ function resetSourceState(source: Source | null): void {
   fieldLoading.value.clear()
   fieldErrors.value.clear()
   textFieldValues.value.clear()
+  heldFields.value.clear()
   saveDisabled.value = true
   sourceError.value = ''
 }
@@ -857,6 +907,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
 
   const gen = loadGeneration
 
+  holdFieldsFrom(source, fieldIndex)
   fieldLoading.value.set(field.id, true)
   fieldOptions.value.delete(field.id)
   saveDisabled.value = true
@@ -894,6 +945,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
 
     fieldLoading.value.set(field.id, false)
     fieldOptions.value.set(field.id, options)
+    heldFields.value.delete(field.id)
 
     if (field.id === 'bundledTemplate' && !asksForTemplate.value) {
       const none = options.find((opt) => opt.value === NO_TEMPLATE_VALUE)
@@ -918,6 +970,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
   } catch (err: unknown) {
     if (gen !== loadGeneration) return
     fieldLoading.value.set(field.id, false)
+    releaseFieldsFrom(source, fieldIndex)
     const errMsg = (err as Error).message || String(err)
 
     let errorFieldId = field.errorTarget
@@ -952,10 +1005,15 @@ function handleFieldSelectChange(field: SourceField, fieldIndex: number, value: 
 
   const nextSelect = source.fields.findIndex((f, i) => i > fieldIndex && f.type !== 'text')
   if (nextSelect >= 0) {
-    loadFieldOptions(nextSelect)
+    supersedeFieldLoads(nextSelect)
   } else {
     saveDisabled.value = false
   }
+}
+
+function supersedeFieldLoads(fromIndex: number): void {
+  loadGeneration++
+  void loadFieldOptions(fromIndex)
 }
 
 function selectCardOption(field: SourceField, fieldIndex: number, option: FieldOption): void {
@@ -974,7 +1032,7 @@ function selectCardOption(field: SourceField, fieldIndex: number, option: FieldO
   if (!source) return
   const nextSelect = source.fields.findIndex((f, i) => i > fieldIndex && f.type !== 'text')
   if (nextSelect >= 0) {
-    loadFieldOptions(nextSelect)
+    supersedeFieldLoads(nextSelect)
   } else {
     saveDisabled.value = false
   }
@@ -1194,14 +1252,16 @@ async function handleSave(): Promise<void> {
   await handOffInstall(result, t('errors.cannotAdd'), templateHasModels.value)
 }
 
-function getSelectOptions(field: SourceField): BaseSelectOption[] {
-  const options = fieldOptions.value.get(field.id)
-  if (!options) return []
-  return options.map((opt) => ({
+function toSelectOptions(options: FieldOption[] | undefined): BaseSelectOption[] {
+  return (options ?? []).map((opt) => ({
     value: opt.value,
     label: opt.label,
     description: opt.description
   }))
+}
+
+function getSelectOptions(field: SourceField): BaseSelectOption[] {
+  return toSelectOptions(fieldOptions.value.get(field.id))
 }
 
 function getSelectPlaceholder(field: SourceField): string {
@@ -1262,13 +1322,13 @@ const diskFreeLabel = computed(() =>
     : ''
 )
 const diskShortLabel = computed(() => {
-  const required = estimatedInstallSize.value
+  const required = shownInstallSize.value
   if (diskSpaceLoading.value || !diskSpace.value || required <= 0) return ''
   if (diskSpace.value.free >= required) return ''
   return t('newInstall.requiredSpace', { size: formatBytes(required) })
 })
 const locationMeta = computed(() => {
-  const required = estimatedInstallSize.value
+  const required = shownInstallSize.value
   if (!diskFreeLabel.value || required <= 0 || diskShortLabel.value) return diskFreeLabel.value
   return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
 })
@@ -1351,6 +1411,7 @@ async function discardChangeSetup(): Promise<void> {
     return
   }
   loadGeneration++
+  heldFields.value.clear()
   selections.value = draft.selections
   fieldOptions.value = draft.fieldOptions
   fieldLoading.value = draft.fieldLoading
@@ -1364,6 +1425,8 @@ async function discardChangeSetup(): Promise<void> {
 }
 
 function isHiddenWhenEmpty(field: SourceField): boolean {
+  const held = heldFields.value.get(field.id)
+  if (held) return held.hidden
   if (field.id === 'bundledTemplate' && (!asksForTemplate.value || shouldShowPickerStep.value))
     return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
@@ -1967,28 +2030,27 @@ defineExpose({ open })
               </div>
 
               <div v-else-if="field.renderAs === 'cards'" class="min-w-0">
+                <SetupOptionCards
+                  v-if="shownOptions(field)?.length"
+                  :options="
+                    field.id === HARDWARE_FIELD_ID
+                      ? toHardwareCards(sortedCardOptions(shownOptions(field)!))
+                      : toOptionCards(sortedCardOptions(shownOptions(field)!))
+                  "
+                  :selected-value="shownSelections[field.id]?.value ?? null"
+                  :refreshing="isRefreshing(field)"
+                  :aria-label="field.label"
+                  @select="(value) => selectCardOptionByValue(field, fieldIndex, value)"
+                />
                 <div
-                  v-if="fieldLoading.get(field.id)"
+                  v-else-if="fieldLoading.get(field.id)"
                   class="config-loading py-3 text-[13px] text-text-muted"
                   :class="spinnerClass"
                 >
                   {{ $t('newInstall.loading') }}
                 </div>
-                <SetupOptionCards
-                  v-else-if="
-                    fieldOptions.has(field.id) && (fieldOptions.get(field.id)?.length ?? 0) > 0
-                  "
-                  :options="
-                    field.id === HARDWARE_FIELD_ID
-                      ? toHardwareCards(sortedCardOptions(fieldOptions.get(field.id)!))
-                      : toOptionCards(sortedCardOptions(fieldOptions.get(field.id)!))
-                  "
-                  :selected-value="selections[field.id]?.value ?? null"
-                  :aria-label="field.label"
-                  @select="(value) => selectCardOptionByValue(field, fieldIndex, value)"
-                />
                 <div
-                  v-else-if="fieldOptions.has(field.id)"
+                  v-else-if="shownOptions(field)"
                   class="config-loading py-3 text-[13px] text-text-muted"
                 >
                   {{
@@ -2015,8 +2077,8 @@ defineExpose({ open })
                   class="config-release-version w-auto flex-none gap-2.5"
                   compact
                   leading="ComfyUI"
-                  :model-value="selections[inlineVersionField.id]?.value ?? ''"
-                  :options="getSelectOptions(inlineVersionField)"
+                  :model-value="shownSelections[inlineVersionField.id]?.value ?? ''"
+                  :options="toSelectOptions(shownOptions(inlineVersionField))"
                   :placeholder="getSelectPlaceholder(inlineVersionField)"
                   :disabled="
                     fieldLoading.get(inlineVersionField.id) ||
