@@ -900,7 +900,20 @@
     "cancelConfirm": "Cancel install",
     "failedTitle": "ComfyUI didn't install",
     "launchFailedTitle": "ComfyUI didn't start",
-    "startAgain": "Start again"
+    "startAgain": "Start again",
+    "stepName": {
+      "launchStart": "Start ComfyUI",
+      "repair": "Repair the install",
+      "torchRepair": "Restore GPU PyTorch",
+      "agentRequirements": "Install agent requirements",
+      "frontendRestore": "Restore the frontend",
+      "securityScan": "Run security scan",
+      "mountLibraries": "Load libraries",
+      "gpu": "Initialize GPU",
+      "customNodes": "Load custom nodes",
+      "startingServer": "Start server",
+      "template-models": "Download models"
+    }
   },
   "announcement": {
     "comfyApi": {
@@ -1197,9 +1210,9 @@
     "deleteEnvConfirmTitle": "Delete Environment",
     "deleteEnvConfirmMessage": "Delete environment \"{env}\"? This cannot be undone.",
     "setupEnv": "Set up environment",
-    "cleanupEnv": "Clean up environment",
+    "cleanupEnv": "Optimize packages",
     "cleanupEnvStatus": "Removing redundant packages from template environment…",
-    "updateToStable": "Update to latest stable",
+    "updateToStable": "Get the latest ComfyUI",
     "latestVersion": "Latest Stable",
     "repairBinaries": "Repair macOS Binaries",
     "repairBinariesTitle": "Repairing macOS Binaries",

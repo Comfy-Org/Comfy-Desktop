@@ -16,6 +16,7 @@ vi.mock('../../lib/comfyui-releases', () => ({
 }))
 
 import { standalone, buildPinnedVariant } from './index'
+import en from '../../../../locales/en.json'
 import { resetTemplateCatalogCache } from './templateCatalog'
 import { CURATED_TEMPLATES, NO_TEMPLATE_VALUE, INDEX_URL } from './curatedTemplates'
 import { fetchJSON } from '../../lib/fetch'
@@ -717,5 +718,16 @@ describe('standalone.getFieldOptions architecture filter', () => {
     expect(card!.label).toBe('NVIDIA (ARM64)')
     expect(card!.recommended).toBe(true)
     expect(card!.description).toContain('ComfyUI 0.34.0')
+  })
+})
+
+describe('standalone install steps', () => {
+  it('names the cleanup and update steps for what a fresh install gets out of them', () => {
+    const labelOf = (phase: string) =>
+      standalone.installSteps?.find((step) => step.phase === phase)?.label
+    expect(labelOf('cleanup')).toBe('standalone.cleanupEnv')
+    expect(labelOf('update')).toBe('standalone.updateToStable')
+    expect(en.standalone.cleanupEnv).toBe('Optimize packages')
+    expect(en.standalone.updateToStable).toBe('Get the latest ComfyUI')
   })
 })

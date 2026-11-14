@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, Cloud, LoaderCircle, OctagonAlert, X } from 'lucide-vue-next'
+import { Check, ChevronDown, LoaderCircle, OctagonAlert, X } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
-import { useCloudGate } from '../composables/useCloudGate'
 import { useModal } from '../composables/useModal'
 import { useProgressStore } from '../stores/progressStore'
 import { useInstallationStore } from '../stores/installationStore'
-import { emitTelemetryAction } from '../lib/telemetry'
 
 type StepState = 'done' | 'active' | 'failed' | 'pending'
 
@@ -44,15 +42,16 @@ const BUILD_PROGRESS_VIDEOS = [
   'woman_smoking'
 ] as const
 const LOG_TAIL_CHARS = 20_000
+const MODELS_PHASE = 'template-models'
+const TRANSLATION_KEY = /^[a-z][\w-]*(?:\.[\w-]+)+$/i
 
 const { installationId } = defineProps<{ installationId: string }>()
 const emit = defineEmits<{ close: []; retry: [] }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
 const modal = useModal()
-const cloudGate = useCloudGate()
 
 const op = computed(() => progressStore.operations.get(installationId) ?? null)
 const build = computed(() => installationStore.getById(installationId) ?? null)
@@ -67,6 +66,29 @@ function measureVideo(event: Event): void {
   const el = event.target as HTMLVideoElement
   videoShape.value = el.videoHeight > el.videoWidth ? 'tall' : 'wide'
 }
+
+function stepName(phase: string, label: string): string {
+  if (label && label !== phase) return label
+  const key = `installProgress.stepName.${phase}`
+  return te(key) ? t(key) : label || phase
+}
+
+function readableStatus(raw: string | undefined): string {
+  const status = raw?.trim() ?? ''
+  if (!TRANSLATION_KEY.test(status)) return status
+  return te(status) ? t(status) : ''
+}
+
+const downloadsStarterModels = computed(() => {
+  const inst = build.value
+  return (
+    op.value?.opKind === 'install' &&
+    !!inst?.bundledTemplateId &&
+    inst.downloadTemplateModels === true &&
+    !!inst.pendingTemplateOpen &&
+    Number(inst.bundledTemplateSizeBytes ?? 0) > 0
+  )
+})
 
 const steps = computed<StepRow[]>(() => {
   const current = op.value
@@ -84,7 +106,7 @@ const steps = computed<StepRow[]>(() => {
     ]
   }
   const activeIndex = current.steps.findIndex((step) => step.phase === current.activePhase)
-  return current.steps.map((step, index): StepRow => {
+  const rows = current.steps.map((step, index): StepRow => {
     const state: StepState =
       activeIndex < 0
         ? 'pending'
@@ -95,27 +117,37 @@ const steps = computed<StepRow[]>(() => {
             : failed || current.phaseErrors[step.phase]
               ? 'failed'
               : 'active'
-    const status = current.lastStatus[step.phase]
+    const label = stepName(step.phase, step.label)
+    const status = readableStatus(current.lastStatus[step.phase])
     const detail =
       state === 'failed'
-        ? (current.error ?? status ?? '')
-        : state === 'active' && status && status !== step.phase && status !== step.label
+        ? current.error || status
+        : state === 'active' && status && ![step.phase, step.label, label].includes(status)
           ? status
           : ''
     return {
       phase: step.phase,
-      label: step.label,
+      label,
       state,
       percent:
         state === 'active' && current.activePercent >= 0 ? Math.round(current.activePercent) : null,
       detail
     }
   })
+  if (downloadsStarterModels.value && !rows.some((row) => row.phase === MODELS_PHASE)) {
+    rows.push({
+      phase: MODELS_PHASE,
+      label: stepName(MODELS_PHASE, MODELS_PHASE),
+      state: current.finished ? 'pending' : 'active',
+      percent: null,
+      detail: ''
+    })
+  }
+  return rows
 })
 
 const failed = computed(() => !!op.value?.finished && !!op.value.error)
 const launching = computed(() => op.value?.opKind === 'launch')
-const offersCloud = computed(() => !launching.value && !failed.value && cloudGate.canOffer.value)
 const title = computed(() => {
   if (launching.value) {
     return failed.value ? t('installProgress.launchFailedTitle') : t('home.buildStartingComfyUI')
@@ -159,17 +191,6 @@ async function cancel(): Promise<void> {
   if (!confirmed) return
   progressStore.cancelOperation(installationId)
   emit('close')
-}
-
-async function tryCloud(): Promise<void> {
-  emitTelemetryAction('comfy.desktop.install.showcase.cloud_open', {
-    phase: op.value?.activePhase ?? null
-  })
-  if (await cloudGate.openCloud()) return
-  await modal.alert({
-    title: t('installShowcase.cloudFailedTitle'),
-    message: t('installShowcase.cloudFailedMessage')
-  })
 }
 </script>
 
@@ -260,34 +281,6 @@ async function tryCloud(): Promise<void> {
                 </span>
               </li>
             </ol>
-
-            <Button
-              type="button"
-              variant="muted-textonly"
-              size="unset"
-              class="mt-8 h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
-              :aria-expanded="logsOpen"
-              aria-controls="build-progress-logs"
-              data-testid="build-progress-logs-toggle"
-              @click="logsOpen = !logsOpen"
-            >
-              <ChevronDown
-                :size="12"
-                class="transition-transform duration-150 motion-reduce:transition-none"
-                :class="!logsOpen && '-rotate-90'"
-                aria-hidden="true"
-              />
-              {{ t('installProgress.viewLogs') }}
-            </Button>
-            <pre
-              v-show="logsOpen"
-              id="build-progress-logs"
-              ref="logsRef"
-              class="m-0 mt-1 h-[82px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
-              tabindex="0"
-              data-testid="build-progress-logs"
-              >{{ logText || t('installProgress.starting') }}</pre
-            >
           </div>
 
           <div class="flex h-[340px] w-[272px] shrink-0 items-center justify-center">
@@ -312,28 +305,35 @@ async function tryCloud(): Promise<void> {
           </div>
         </div>
 
-        <div class="mt-[60px] flex min-h-9 items-center gap-2">
-          <template v-if="offersCloud">
-            <Cloud
-              :size="13"
-              class="mt-px shrink-0 self-start text-muted-foreground"
-              aria-hidden="true"
-            />
-            <span class="ml-2 flex min-w-0 flex-col text-[13px]/[18px]">
-              <span class="text-foreground">{{ t('installShowcase.cloud.title') }}</span>
-              <span class="text-muted-foreground">{{ t('installShowcase.cloud.body') }}</span>
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="unset"
-              class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
-              data-testid="build-progress-try-cloud"
-              @click="tryCloud"
-            >
-              {{ t('installShowcase.cloudCta') }}
-            </Button>
-          </template>
+        <Button
+          type="button"
+          variant="muted-textonly"
+          size="unset"
+          class="mt-8 h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
+          :aria-expanded="logsOpen"
+          aria-controls="build-progress-logs"
+          data-testid="build-progress-logs-toggle"
+          @click="logsOpen = !logsOpen"
+        >
+          <ChevronDown
+            :size="12"
+            class="transition-transform duration-150 motion-reduce:transition-none"
+            :class="!logsOpen && '-rotate-90'"
+            aria-hidden="true"
+          />
+          {{ t('installProgress.viewLogs') }}
+        </Button>
+        <pre
+          v-show="logsOpen"
+          id="build-progress-logs"
+          ref="logsRef"
+          class="m-0 mt-1 h-[148px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
+          tabindex="0"
+          data-testid="build-progress-logs"
+          >{{ logText || t('installProgress.starting') }}</pre
+        >
+
+        <div class="mt-6 flex min-h-9 items-center gap-2">
           <template v-if="failed">
             <Button
               type="button"
@@ -362,8 +362,7 @@ async function tryCloud(): Promise<void> {
             type="button"
             variant="muted-textonly"
             size="unset"
-            class="h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
-            :class="!offersCloud && 'ml-auto'"
+            class="ml-auto h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
             :disabled="cancelling"
             data-testid="build-progress-cancel"
             @click="cancel"
