@@ -1,5 +1,12 @@
 import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
+import {
+  aimAndWatchPressScript,
+  clickUntilLanded,
+  PRESS_OUTCOME_EXPRESSION,
+  PRESS_PATIENCE_MS
+} from './clickAim'
+import type { ClickAttempt, ClickOutcome } from './clickAim'
 import { evalWithRetry } from './evalRetry'
 
 export function findWebContentsId(
@@ -100,7 +107,7 @@ export class WebContentsPage {
     })()`)
   }
 
-  private async sendClick(elementExpression: string): Promise<'clicked' | 'missing' | 'blocked'> {
+  private async clickOnce(elementExpression: string, patienceMs: number): Promise<ClickAttempt> {
     const id = await findWebContentsId(this.app, this.marker)
     if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
     return this.app.evaluate(
@@ -116,39 +123,31 @@ export class WebContentsPage {
         )
         win?.focus()
         wc.focus()
-        const point = (await wc.executeJavaScript(`(async () => {
-        const deadline = performance.now() + 5000
-        for (;;) {
-          const el = ${payload.elementExpression}
-          if (!el) return 'missing'
-          el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
-          const rect = el.getBoundingClientRect()
-          const left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right)
-          const top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom)
-          const x = Math.floor((left + right) / 2), y = Math.floor((top + bottom) / 2)
-          const hit = document.elementFromPoint(x, y)
-          if (right > left && bottom > top && hit && el.contains(hit)) {
-            window.__e2eInputHandled = new Promise(resolve => {
-              window.addEventListener('mouseup', () => setTimeout(resolve), { capture: true, once: true })
-            })
-            return { x, y }
-          }
-          if (performance.now() >= deadline) return 'blocked'
-          await new Promise(resolve => setTimeout(resolve, 50))
-        }
-      })()`)) as { x: number; y: number } | 'missing' | 'blocked'
+        const point = (await wc.executeJavaScript(payload.aimAndWatchPress)) as
+          | { x: number; y: number }
+          | 'missing'
+          | 'blocked'
         if (typeof point === 'string') return point
         wc.sendInputEvent({ type: 'mouseMove', ...point })
         wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
         wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
-        await Promise.race([
-          wc.executeJavaScript('window.__e2eInputHandled').catch(() => undefined),
-          new Promise((resolve) => setTimeout(resolve, 1000))
+        const press = await Promise.race([
+          wc.executeJavaScript(payload.pressOutcome).catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, payload.pressPatienceMs))
         ])
-        return 'clicked'
+        return press === 'missed' ? 'missed' : 'clicked'
       },
-      { id, elementExpression }
+      {
+        id,
+        aimAndWatchPress: aimAndWatchPressScript(elementExpression, patienceMs),
+        pressOutcome: PRESS_OUTCOME_EXPRESSION,
+        pressPatienceMs: PRESS_PATIENCE_MS
+      }
     )
+  }
+
+  private sendClick(elementExpression: string): Promise<ClickOutcome> {
+    return clickUntilLanded((patienceMs) => this.clickOnce(elementExpression, patienceMs))
   }
 
   private async clickElement(elementExpression: string): Promise<boolean> {
@@ -156,6 +155,11 @@ export class WebContentsPage {
     if (outcome === 'blocked') {
       throw new Error(
         `click: element is covered or has no interactive area (${elementExpression}, marker=${this.marker})`
+      )
+    }
+    if (outcome === 'moving') {
+      throw new Error(
+        `click: element kept moving out from under the pointer (${elementExpression}, marker=${this.marker})`
       )
     }
     return outcome === 'clicked'
