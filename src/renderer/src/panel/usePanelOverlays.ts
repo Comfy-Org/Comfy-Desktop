@@ -67,7 +67,11 @@ export interface FirstUseChainHooks {
   shouldForceTakeover: () => boolean
   onShowProgress: (opts: ShowProgressOpts) => void
   onBackgroundInstall: () => void
-  consumeCameFromSetup: () => boolean
+  consumeSetupHandoff: () => SetupHandoff | null
+}
+
+export interface SetupHandoff {
+  needsConsent: boolean
 }
 
 export interface UsePanelOverlaysOpts {
@@ -253,15 +257,13 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     })
     await nextTick()
     if (component === 'new-install') {
-      const cameFromSetup = opts.firstUseChain
-        ? opts.firstUseChain.consumeCameFromSetup() === true
-        : false
+      const setupHandoff = opts.firstUseChain?.consumeSetupHandoff() ?? null
       await dashboardScope.initialize()
       if (currentOverlay.value !== openedOverlay) return
       await newInstallRef.value?.open({
         entrypoint,
         workspaceId: dashboardScope.selectedWorkspaceId,
-        ...(cameFromSetup ? { cameFromSetup } : {})
+        ...(setupHandoff ? { cameFromSetup: true, needsConsent: setupHandoff.needsConsent } : {})
       })
     } else if (component === 'track') trackRef.value?.open()
     else if (component === 'load-snapshot') loadSnapshotRef.value?.open()

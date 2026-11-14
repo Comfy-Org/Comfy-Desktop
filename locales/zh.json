@@ -539,7 +539,7 @@
     "installSummary": "安装摘要",
     "alreadyHaveComfy": "已经有 ComfyUI？",
     "connectToServer": "连接到服务器",
-    "installHereInstead": "改为安装在这台电脑上",
+    "connectToServerMeta": "在其他地方运行的 ComfyUI",
     "install": "安装",
     "connect": "连接",
     "managedBuildsMeta": "托管构建",

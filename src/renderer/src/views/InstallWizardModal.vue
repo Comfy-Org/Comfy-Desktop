@@ -60,6 +60,7 @@ import {
   templateSizeBytes
 } from '../lib/installHelpers'
 import SetupModal from '../components/SetupModal.vue'
+import TermsModal from '../components/TermsModal.vue'
 import TrackModal from './TrackModal.vue'
 import LoadSnapshotModal from './LoadSnapshotModal.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
@@ -81,6 +82,7 @@ const emit = defineEmits<{
   'show-progress': [opts: ShowProgressOpts]
   'navigate-list': []
   'back-to-setup': []
+  'consent-change': [accepted: boolean]
 }>()
 
 const inlineLinkClass =
@@ -146,8 +148,8 @@ type InstallSourceTab =
 const installSourceTabs = computed<InstallSourceTab[]>(() => {
   const sourceOrder = new Map([
     ['standalone', 0],
-    ['remote', 1],
-    ['portable', 2]
+    ['portable', 1],
+    ['remote', 2]
   ])
   const tabs: InstallSourceTab[] = [...sources.value]
     .sort(
@@ -392,6 +394,10 @@ function selectTemplate(option: FieldOption): void {
 }
 
 async function handleConfigureContinue(): Promise<void> {
+  if (needsConsent.value && !consentAccepted.value) {
+    consentNudge.value = true
+    return
+  }
   if (shouldShowPickerStep.value) {
     if (instPath.value) fetchDiskSpace(instPath.value)
     step.value = 'template'
@@ -550,11 +556,22 @@ function handleBackToSetup(): void {
 
 interface OpenOpts {
   cameFromSetup?: boolean
+  needsConsent?: boolean
   entrypoint?: string
   workspaceId?: string
 }
 
 const cameFromSetup = ref(false)
+const needsConsent = ref(false)
+const consentAccepted = ref(false)
+const consentNudge = ref(false)
+const termsDoc = ref<'eula' | 'tos' | null>(null)
+
+function onConsentToggle(value: boolean | 'indeterminate'): void {
+  consentAccepted.value = value === true
+  if (consentAccepted.value) consentNudge.value = false
+  emit('consent-change', consentAccepted.value)
+}
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
@@ -565,6 +582,10 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   selectedBuildId.value = ''
   selectedBuildTargetId.value = ''
   cameFromSetup.value = opts.cameFromSetup === true
+  needsConsent.value = cameFromSetup.value && opts.needsConsent === true
+  consentAccepted.value = false
+  consentNudge.value = false
+  termsDoc.value = null
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
@@ -580,7 +601,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   if (!gpuName.value && !gpuDetectionDone) detectedGpu.value = t('newInstall.detectingGpu')
   machineUnsupported.value = false
   unsupportedReason.value = ''
-  view.value = 'summary'
+  view.value = cameFromSetup.value ? 'change' : 'summary'
   changeSetupDraft = null
   hardwareValidation = null
   hardwareWarning.value = ''
@@ -1387,41 +1408,44 @@ const blockingFieldError = computed(
   () => urlFieldError.value || fieldErrors.value.values().next().value || ''
 )
 
-const remoteSource = computed(() => sources.value.find((source) => source.id === 'remote') ?? null)
-const remoteSelected = computed(
-  () => !managedBuildMode.value && !!remoteSource.value && currentSource.value?.id === 'remote'
-)
-
 const SOURCE_ICONS: Record<string, Component> = {
   standalone: Package,
-  portable: FolderArchive
+  portable: FolderArchive,
+  remote: Globe
+}
+
+function sourceCardLabel(source: Source): string {
+  if (source.id === 'standalone') return t('newInstall.publicBuilds')
+  if (source.id === 'remote') return t('newInstall.connectToServer')
+  return source.label
+}
+
+function sourceCardDescription(source: Source): string | undefined {
+  if (source.id === 'standalone') return t('newInstall.publicBuildsMeta')
+  if (source.id === 'remote') return t('newInstall.connectToServerMeta')
+  return source.description
 }
 
 const sourceCards = computed<SetupOptionCard[]>(() =>
-  installSourceTabs.value
-    .filter((tab) => !(tab.kind === 'source' && tab.source.id === 'remote'))
-    .map((tab) =>
-      tab.kind === 'managed'
-        ? {
-            value: tab.key,
-            label: t('newInstall.managedBuilds'),
-            description: t('newInstall.managedBuildsMeta'),
-            icon: Users,
-            testId: 'workspace-install-source-managed',
-            disabled: authorizingWorkspace.value
-          }
-        : {
-            value: tab.key,
-            label: tab.source.id === 'standalone' ? t('newInstall.publicBuilds') : tab.source.label,
-            description:
-              tab.source.id === 'standalone'
-                ? t('newInstall.publicBuildsMeta')
-                : tab.source.description,
-            icon: SOURCE_ICONS[tab.source.id] ?? Package,
-            testId: `install-source-${tab.source.id}`,
-            disabled: authorizingWorkspace.value
-          }
-    )
+  installSourceTabs.value.map((tab) =>
+    tab.kind === 'managed'
+      ? {
+          value: tab.key,
+          label: t('newInstall.managedBuilds'),
+          description: t('newInstall.managedBuildsMeta'),
+          icon: Users,
+          testId: 'workspace-install-source-managed',
+          disabled: authorizingWorkspace.value
+        }
+      : {
+          value: tab.key,
+          label: sourceCardLabel(tab.source),
+          description: sourceCardDescription(tab.source),
+          icon: SOURCE_ICONS[tab.source.id] ?? Package,
+          testId: `install-source-${tab.source.id}`,
+          disabled: authorizingWorkspace.value
+        }
+  )
 )
 
 const selectedSourceCard = computed(() => {
@@ -1436,18 +1460,9 @@ async function selectSourceCardByKey(key: string): Promise<void> {
   else await selectSourceCard(tab.source)
 }
 
-async function selectRemoteSource(): Promise<void> {
-  if (remoteSource.value) await selectSourceCard(remoteSource.value)
-}
-
-async function selectStandaloneSource(): Promise<void> {
-  const standalone = sources.value.find((source) => source.id === 'standalone')
-  if (standalone) await selectSourceCard(standalone)
-}
-
 function backToConfigure(): void {
   step.value = 'configure'
-  view.value = 'summary'
+  view.value = cameFromSetup.value ? 'change' : 'summary'
 }
 
 function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: string): void {
@@ -1608,38 +1623,39 @@ defineExpose({ open })
         {{ sourceError }}
       </div>
 
-      <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
-        <div
-          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+      <div
+        v-if="view === 'summary' || cameFromSetup"
+        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+      >
+        <label
+          class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
+          for="inst-name-standalone"
+          ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
         >
-          <label
-            class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
-            for="inst-name-standalone"
-            ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
-          >
-          <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
-            <InputGroupInput
-              id="inst-name-standalone"
-              class="text-[13px] text-neutral-100"
-              :data-initial-focus="hideBackToDashboard || undefined"
-              :model-value="instName"
-              type="text"
-              :placeholder="suggestedName || $t('common.namePlaceholder')"
-              :aria-invalid="!!nameError"
-              :aria-describedby="nameError ? 'inst-name-error' : undefined"
-              @input="instName = ($event.target as HTMLInputElement).value"
-            />
-          </InputGroup>
-          <div
-            v-if="nameError"
-            id="inst-name-error"
-            class="config-field-error col-start-2 mt-1.5 text-[13px] text-[var(--danger)]"
-            role="alert"
-          >
-            {{ nameError }}
-          </div>
+        <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
+          <InputGroupInput
+            id="inst-name-standalone"
+            class="text-[13px] text-neutral-100"
+            :data-initial-focus="hideBackToDashboard || undefined"
+            :model-value="instName"
+            type="text"
+            :placeholder="suggestedName || $t('common.namePlaceholder')"
+            :aria-invalid="!!nameError"
+            :aria-describedby="nameError ? 'inst-name-error' : undefined"
+            @input="instName = ($event.target as HTMLInputElement).value"
+          />
+        </InputGroup>
+        <div
+          v-if="nameError"
+          id="inst-name-error"
+          class="config-field-error col-start-2 mt-1.5 text-[13px] text-[var(--danger)]"
+          role="alert"
+        >
+          {{ nameError }}
         </div>
+      </div>
 
+      <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
         <div
           class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
           :class="machineBlocked && 'config-machine--unsupported'"
@@ -1776,7 +1792,12 @@ defineExpose({ open })
         </dl>
       </div>
 
-      <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
+      <div
+        v-else
+        class="config-change-form flex flex-col"
+        :class="cameFromSetup ? 'mt-3' : 'mt-4'"
+        data-testid="config-change-form"
+      >
         <div
           v-if="hardwareWarning && !currentSource?.skipInstall"
           class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
@@ -2061,70 +2082,84 @@ defineExpose({ open })
         />
 
         <SetupFormRow
-          v-if="remoteSource || offersBuildImport"
+          v-if="offersBuildImport"
           class="config-other-ways"
           data-testid="config-other-ways"
-          :label="remoteSelected ? '' : $t('newInstall.alreadyHaveComfy')"
+          :label="$t('newInstall.alreadyHaveComfy')"
           control-height="centered"
         >
           <p
             class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
           >
             <Button
-              v-if="remoteSelected"
               size="link"
               variant="link"
               type="button"
-              class="config-install-here"
+              class="config-add-existing"
               :class="inlineLinkClass"
-              data-testid="install-source-here"
-              @click="selectStandaloneSource"
+              data-testid="config-add-existing"
+              @click="openBuildImport('track')"
             >
-              {{ $t('newInstall.installHereInstead') }}
+              {{ $t('newInstall.addExistingBuild') }}
             </Button>
-            <template v-else>
-              <Button
-                v-if="remoteSource"
-                size="link"
-                variant="link"
-                type="button"
-                class="config-connect-remote"
-                :class="inlineLinkClass"
-                data-testid="install-source-remote"
-                :disabled="authorizingWorkspace"
-                @click="selectRemoteSource"
-              >
-                {{ $t('newInstall.connectToServer') }}
-              </Button>
-              <template v-if="offersBuildImport">
-                <span v-if="remoteSource" aria-hidden="true">·</span>
-                <Button
-                  size="link"
-                  variant="link"
-                  type="button"
-                  class="config-add-existing"
-                  :class="inlineLinkClass"
-                  data-testid="config-add-existing"
-                  @click="openBuildImport('track')"
-                >
-                  {{ $t('newInstall.addExistingBuild') }}
-                </Button>
-                <span aria-hidden="true">·</span>
-                <Button
-                  size="link"
-                  variant="link"
-                  type="button"
-                  class="config-load-snapshot"
-                  :class="inlineLinkClass"
-                  data-testid="config-load-snapshot"
-                  @click="openBuildImport('load-snapshot')"
-                >
-                  {{ $t('newInstall.loadSnapshot') }}
-                </Button>
-              </template>
-            </template>
+            <span aria-hidden="true">·</span>
+            <Button
+              size="link"
+              variant="link"
+              type="button"
+              class="config-load-snapshot"
+              :class="inlineLinkClass"
+              data-testid="config-load-snapshot"
+              @click="openBuildImport('load-snapshot')"
+            >
+              {{ $t('newInstall.loadSnapshot') }}
+            </Button>
           </p>
         </SetupFormRow>
+
+        <label
+          v-if="needsConsent"
+          class="config-consent mt-4 flex w-fit cursor-pointer items-center gap-2.5 text-[13px] leading-[1.4] text-text-muted"
+          data-testid="config-consent-tos"
+          :data-nudge="consentNudge || undefined"
+        >
+          <Checkbox
+            :model-value="consentAccepted"
+            :class="consentNudge && 'ring-[3px] ring-[rgb(241_178_52/0.35)]'"
+            :aria-describedby="consentNudge ? 'config-agree-hint' : undefined"
+            @update:model-value="onConsentToggle"
+          />
+          <span>
+            {{ $t('firstUse.consentTosHintPrefix') }}
+            <Button
+              size="link"
+              variant="link"
+              type="button"
+              :class="inlineLinkClass"
+              data-testid="config-eula-link"
+              @click.prevent="termsDoc = 'eula'"
+              >{{ $t('firstUse.eulaLinkLabel') }}</Button
+            >
+            {{ $t('firstUse.consentTosHintSep') }}
+            <Button
+              size="link"
+              variant="link"
+              type="button"
+              :class="inlineLinkClass"
+              data-testid="config-tos-link"
+              @click.prevent="termsDoc = 'tos'"
+              >{{ $t('firstUse.tosLinkLabel') }}</Button
+            >{{ $t('firstUse.consentTosHintSuffix') }}
+            <span
+              v-if="consentNudge"
+              id="config-agree-hint"
+              class="text-[var(--warning)]"
+              role="status"
+              data-testid="config-agree-hint"
+              >{{ $t('setup.agreeToInstall') }}</span
+            >
+          </span>
+        </label>
       </div>
     </template>
 
@@ -2171,7 +2206,7 @@ defineExpose({ open })
     </template>
 
     <template #footer>
-      <template v-if="step === 'configure' && view === 'change'">
+      <template v-if="step === 'configure' && view === 'change' && !cameFromSetup">
         <span class="flex-1" />
         <Button
           size="lg"
@@ -2258,6 +2293,7 @@ defineExpose({ open })
       </template>
     </template>
   </SetupModal>
+  <TermsModal v-if="termsDoc" :open="true" :doc="termsDoc" @close="termsDoc = null" />
   <TrackModal
     v-if="buildImportFlow === 'track'"
     ref="trackModalRef"

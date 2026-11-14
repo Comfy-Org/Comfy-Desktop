@@ -30,7 +30,7 @@ type ExitPath = 'local-new' | 'local-configure' | 'local-migrate' | 'skipped'
 
 const emit = defineEmits<{
   install: [plan: SetupPlan]
-  change: []
+  change: [{ consented: boolean }]
   'complete-skip': []
   'chain-migrate': [{ express: boolean }]
 }>()
@@ -175,7 +175,7 @@ async function saveConsent(): Promise<void> {
 
 async function request(action: SetupAction): Promise<void> {
   if (busy.value) return
-  if (!acceptedTos.value) {
+  if (action !== 'change' && !acceptedTos.value) {
     tosNudge.value = true
     return
   }
@@ -203,7 +203,7 @@ function route(action: SetupAction): void {
   }
   if (action === 'change') {
     emitCompleted('local-configure')
-    emit('change')
+    emit('change', { consented: acceptedTos.value })
     return
   }
   if (migrating.value) {
@@ -325,7 +325,9 @@ onMounted(() => {
 watch(
   step,
   (current) => {
-    window.api.setFirstUseMode(current === 'setup' ? 'consent-lockdown' : 'post-consent')
+    window.api.setFirstUseMode(
+      current === 'setup' || !acceptedTos.value ? 'consent-lockdown' : 'post-consent'
+    )
     emitTelemetryAction('comfy.desktop.first_use.step_viewed', {
       step: current,
       skip_pick: skipPick.value,

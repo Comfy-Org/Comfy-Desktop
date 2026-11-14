@@ -12,7 +12,7 @@ import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
-import type { FirstUseChainHooks, PanelKey } from './usePanelOverlays'
+import type { FirstUseChainHooks, PanelKey, SetupHandoff } from './usePanelOverlays'
 
 export interface FirstUseChainOpts {
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
@@ -31,7 +31,8 @@ export interface FirstUseChainApi {
   chainingFirstUseToNewInstall: Ref<boolean>
   completeFirstUseAndDismiss: () => Promise<void>
   handleSetupInstall: (plan: SetupPlan) => Promise<void>
-  handleSetupChange: () => Promise<void>
+  handleSetupChange: (payload?: { consented?: boolean }) => Promise<void>
+  handleNewInstallConsentChange: (accepted: boolean) => void
   handleFirstUseChainMigrate: (payload?: { express?: boolean }) => Promise<void>
   handleNewInstallTakeoverClose: () => Promise<void>
   handleNewInstallBackToSetup: () => Promise<void>
@@ -52,24 +53,24 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
 
   const pendingAutoLaunchId = ref<string | null>(null)
 
-  const pendingCameFromSetup = ref(false)
+  const pendingSetupHandoff = ref<SetupHandoff | null>(null)
 
   const pendingChainedLaunch = ref(false)
 
   async function finishFirstUse(): Promise<void> {
     chainingFirstUseToNewInstall.value = false
     pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromSetup.value = false
+    pendingSetupHandoff.value = null
     await launcherPrefs.markFirstUseCompleted()
     window.api.setFirstUseMode('none')
   }
 
   const hooks: FirstUseChainHooks = {
     shouldForceTakeover: () => chainingFirstUseToNewInstall.value,
-    consumeCameFromSetup: () => {
-      const v = pendingCameFromSetup.value
-      pendingCameFromSetup.value = false
-      return v
+    consumeSetupHandoff: () => {
+      const handoff = pendingSetupHandoff.value
+      pendingSetupHandoff.value = null
+      return handoff
     },
     onBackgroundInstall: () => {
       if (chainingFirstUseToNewInstall.value || !launcherPrefs.firstUseCompleted.value) {
@@ -157,18 +158,24 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     }
   }
 
-  async function handleSetupChange(): Promise<void> {
+  async function handleSetupChange(payload?: { consented?: boolean }): Promise<void> {
+    const needsConsent = payload?.consented === false
     chainingFirstUseToNewInstall.value = true
     pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromSetup.value = true
-    window.api.setFirstUseMode('post-consent')
+    pendingSetupHandoff.value = { needsConsent }
+    window.api.setFirstUseMode(needsConsent ? 'consent-lockdown' : 'post-consent')
     await opts.switchPanel('new-install', 'first_use')
+  }
+
+  function handleNewInstallConsentChange(accepted: boolean): void {
+    if (!chainingFirstUseToNewInstall.value) return
+    window.api.setFirstUseMode(accepted ? 'post-consent' : 'consent-lockdown')
   }
 
   async function handleNewInstallBackToSetup(): Promise<void> {
     chainingFirstUseToNewInstall.value = false
     pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromSetup.value = false
+    pendingSetupHandoff.value = null
     await opts.openFirstUseTakeover()
   }
 
@@ -276,6 +283,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     completeFirstUseAndDismiss,
     handleSetupInstall,
     handleSetupChange,
+    handleNewInstallConsentChange,
     handleFirstUseChainMigrate,
     handleNewInstallTakeoverClose,
     handleNewInstallBackToSetup
