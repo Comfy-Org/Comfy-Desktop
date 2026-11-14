@@ -86,10 +86,12 @@ export const APPS_PAGE_SETTLED_CHANNEL = 'comfy-apps:page-settled'
 export const APPS_CATALOG_CHANNEL = 'comfy-apps:catalog'
 export const APPS_OUTPUT_CHANNEL = 'comfy-apps:output'
 export const APPS_OUTPUT_ACTION_CHANNEL = 'comfy-apps:output-action'
+export const APPS_CAPTURE_CHANNEL = 'comfy-apps:capture'
 const BACKDROP_QUALITY = 80
 export const APPS_ENABLED_CHANNEL = 'comfy-apps:enabled'
 
 const appOpen = new Map<number, boolean>()
+const pendingCaptures = new Map<number, Promise<Buffer | null>>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
 const parkedApps = new Set<number>()
@@ -298,6 +300,19 @@ function hideApps(event: IpcMainEvent): void {
   const found = entryForPanel(event.sender)
   if (!found) return
   views.get(found[0])?.setVisible(false)
+}
+
+function captureApps(event: IpcMainInvokeEvent): Promise<Buffer | null> {
+  const found = entryForPanel(event.sender)
+  if (!found || event.senderFrame !== event.sender.mainFrame) return Promise.resolve(null)
+  const [key] = found
+  const page = views.get(key)?.webContents
+  if (!appOpen.get(key) || !page || page.isDestroyed()) return Promise.resolve(null)
+  const pending = pendingCaptures.get(key)
+  if (pending) return pending
+  const capture = captureBackdrop(page).finally(() => pendingCaptures.delete(key))
+  pendingCaptures.set(key, capture)
+  return capture
 }
 
 function appsPageUrl(event: IpcMainInvokeEvent): string | null {
@@ -817,6 +832,7 @@ function appsPages(): WebContents[] {
 export function registerAppsIpc(): void {
   ipcMain.on('comfy-apps:show', showApps)
   ipcMain.on('comfy-apps:hide', hideApps)
+  ipcMain.handle(APPS_CAPTURE_CHANNEL, captureApps)
   ipcMain.on(APPS_PAGE_SETTLED_CHANNEL, relayPageSettled)
   ipcMain.handle(APPS_CATALOG_CHANNEL, (event) =>
     entryForPanel(event.sender) ? listCatalogApps(APPS_URL) : []

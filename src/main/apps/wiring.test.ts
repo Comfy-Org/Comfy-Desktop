@@ -44,12 +44,16 @@ describe('Apps bridge wiring', () => {
     expect(main).not.toMatch(/ipcMain\.handle\('comfy-apps:/)
   })
 
-  it('the only handler outside the apps-page check answers the panel alone', () => {
+  it('the only handlers outside the apps-page check answer the panel alone', () => {
     expect(new Set(all(main, /ipcMain\.handle\((\w+)/g))).toEqual(
-      new Set(['channel', 'APPS_CATALOG_CHANNEL'])
+      new Set(['channel', 'APPS_CATALOG_CHANNEL', 'APPS_CAPTURE_CHANNEL'])
     )
     expect(main).toMatch(
       /ipcMain\.handle\(APPS_CATALOG_CHANNEL, \(event\) =>\s+entryForPanel\(event\.sender\)/
+    )
+    expect(main).toContain('ipcMain.handle(APPS_CAPTURE_CHANNEL, captureApps)')
+    expect(main).toMatch(
+      /function captureApps\(event: IpcMainInvokeEvent\)[^{]*\{\s+const found = entryForPanel\(event\.sender\)\s+if \(!found \|\| event\.senderFrame !== event\.sender\.mainFrame\)/
     )
   })
 

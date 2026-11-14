@@ -1441,8 +1441,6 @@
       "cta": "登录"
     },
     "account": {
-      "signOut": "退出登录",
-      "signedInAs": "已登录为 {email}",
       "installationInProgressTitle": "安装正在进行中",
       "installationInProgressMessage": "退出登录将取消安装。是否取消安装并退出登录？",
       "cancelInstallationAndSignOut": "取消安装并退出登录"
@@ -1460,6 +1458,22 @@
       "promoting": "正在创建...",
       "promoteFailedTitle": "无法上传构建",
       "promoteFailedMessage": "无法在 Comfy Developer Platform 中创建草稿。"
+    },
+    "workspaceMenu": {
+      "switchWorkspace": "切换工作区",
+      "workspaceSettings": "工作区设置",
+      "managePlanAndCredits": "管理套餐和积分",
+      "logOut": "退出登录",
+      "account": "账户",
+      "search": "搜索工作区",
+      "clearSearch": "清除搜索",
+      "loadFailed": "无法加载你的工作区。请稍后再试。",
+      "empty": "你还没有可访问的工作区。",
+      "noMatch": "没有匹配搜索的工作区。",
+      "role": {
+        "owner": "所有者",
+        "member": "成员"
+      }
     },
     "build": {
       "version": "构建 v{version}",

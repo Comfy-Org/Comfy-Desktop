@@ -8,14 +8,21 @@ import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { AppOutputAction, AppOutputs, AssetKind, CatalogApp } from '../types/ipc'
 
+const SIDEBAR_CAPTURE_MAX_MS = 1500
+
 interface ShownAppOutputs {
   items: OutputDetailItem[]
   turn: number
   backdropUrl: string | null
 }
 
-const { growBy = 0, obscured = false } = defineProps<{
+const {
+  growBy = 0,
+  sidebarMenuOpen = false,
+  obscured = false
+} = defineProps<{
   growBy?: number
+  sidebarMenuOpen?: boolean
   obscured?: boolean
 }>()
 
@@ -42,6 +49,45 @@ watch(openApp, (app) => {
 })
 watch(appEntered, (entered) => emit('app-entered', entered))
 
+const sidebarBackdropUrl = ref<string | null>(null)
+const coveredBySidebar = ref(false)
+let sidebarBackdrop: Blob | null = null
+let sidebarCoverRequest = 0
+
+function releaseSidebarBackdrop(): void {
+  if (sidebarBackdropUrl.value) URL.revokeObjectURL(sidebarBackdropUrl.value)
+  sidebarBackdropUrl.value = null
+  sidebarBackdrop = null
+}
+
+function captureAppsWithin(ms: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<null>((done) => (timer = setTimeout(() => done(null), ms)))
+  return Promise.race([window.api.captureApps().catch(() => null), timedOut]).finally(() =>
+    clearTimeout(timer)
+  )
+}
+
+watch(
+  () => sidebarMenuOpen && openApp.value !== null,
+  async (cover) => {
+    const request = ++sidebarCoverRequest
+    if (!cover) {
+      coveredBySidebar.value = false
+      releaseSidebarBackdrop()
+      return
+    }
+    const backdrop = await captureAppsWithin(SIDEBAR_CAPTURE_MAX_MS)
+    if (request !== sidebarCoverRequest) return
+    releaseSidebarBackdrop()
+    if (backdrop) {
+      sidebarBackdrop = new Blob([backdrop], { type: 'image/jpeg' })
+      sidebarBackdropUrl.value = URL.createObjectURL(sidebarBackdrop)
+    }
+    coveredBySidebar.value = true
+  }
+)
+
 const appFillsPage = computed(() => openApp.value !== null && appEntered.value)
 
 function openCatalogApp(app: CatalogApp): void {
@@ -65,6 +111,9 @@ function outputKind(mimeType: string): AssetKind | null {
 
 function showAppOutputs(outputs: AppOutputs): void {
   closeAppOutputs()
+  const backdrop = outputs.backdrop
+    ? new Blob([outputs.backdrop], { type: 'image/jpeg' })
+    : sidebarBackdrop
   appOutputs.value = {
     items: outputs.items.map((output, i) => ({
       key: `${i}:${output.name}`,
@@ -79,9 +128,7 @@ function showAppOutputs(outputs: AppOutputs): void {
       inCloud: output.savedOn === 'cloud'
     })),
     turn: outputs.turn,
-    backdropUrl: outputs.backdrop
-      ? URL.createObjectURL(new Blob([outputs.backdrop], { type: 'image/jpeg' }))
-      : null
+    backdropUrl: backdrop ? URL.createObjectURL(backdrop) : null
   }
   appOutputIndex.value = outputs.index
   appOutputsShown.value++
@@ -111,6 +158,8 @@ function viewInAssets(index: number): void {
 }
 
 onBeforeUnmount(() => {
+  sidebarCoverRequest++
+  releaseSidebarBackdrop()
   closeAppOutputs()
   if (openApp.value) emit('app-open', false)
   if (appEntered.value) emit('app-entered', false)
@@ -147,8 +196,8 @@ onBeforeUnmount(() => {
     class="absolute inset-0"
     :url="openApp.url"
     :grow-by="growBy"
-    :covered="appOutputs !== null"
-    :backdrop="appOutputs?.backdropUrl ?? null"
+    :covered="appOutputs !== null || coveredBySidebar"
+    :backdrop="appOutputs ? appOutputs.backdropUrl : sidebarBackdropUrl"
     :obscured="obscured"
     @failed="appFailed"
     @outputs="showAppOutputs"

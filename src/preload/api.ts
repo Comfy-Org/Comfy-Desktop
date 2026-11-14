@@ -105,6 +105,7 @@ export function buildElectronApi(): ElectronApi {
       ipcRenderer.invoke('assets:download', installationId, assetId, fileName),
     showApps: (rect) => ipcRenderer.send('comfy-apps:show', rect),
     hideApps: () => ipcRenderer.send('comfy-apps:hide'),
+    captureApps: () => ipcRenderer.invoke('comfy-apps:capture'),
     listCatalogApps: () => ipcRenderer.invoke('comfy-apps:catalog'),
     onAppsLoadFailed: (callback) => {
       const handler = (_event: IpcRendererEvent, info: unknown) =>
@@ -285,6 +286,8 @@ export function buildElectronApi(): ElectronApi {
       listBuilds: () => ipcRenderer.invoke('comfybuilder:listBuilds'),
       openBuildsPage: (workspaceId) =>
         ipcRenderer.invoke('comfybuilder:openBuildsPage', workspaceId),
+      openSettingsPage: (page, workspaceId) =>
+        ipcRenderer.invoke('comfybuilder:openSettingsPage', page, workspaceId),
       installBuild: (request) => ipcRenderer.invoke('comfybuilder:installBuild', request),
       promoteLocalInstance: (installationId) =>
         ipcRenderer.invoke('comfybuilder:promoteLocalInstance', installationId)
