@@ -73,7 +73,7 @@ async function conceal(): Promise<void> {
 
 function retry(): void {
   status.value = 'loading'
-  window.api.reloadAppPage()
+  window.api.reloadAppPage(appId)
 }
 
 watch(covered, (isCovered) => void (isCovered ? conceal() : reveal()))

@@ -21,5 +21,5 @@ export function registerAppsHandlers(): void {
 
   ipcMain.on('apps:hide-page', (event) => hideAppPage(event.sender))
 
-  ipcMain.on('apps:reload-page', (event) => reloadAppPage(event.sender))
+  ipcMain.on('apps:reload-page', (event, appId: unknown) => reloadAppPage(event.sender, appId))
 }

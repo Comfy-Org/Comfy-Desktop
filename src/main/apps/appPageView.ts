@@ -26,7 +26,7 @@ const NAVIGATION_ABORTED = -3
 const FIRST_HTTP_ERROR_STATUS = 400
 const PAGE_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-write', 'fullscreen'])
 
-type PageFailure = 'http_status' | 'network' | 'crashed'
+type PageFailure = 'http_status' | 'network' | 'crashed' | 'redirected'
 
 interface HostedPage {
   view: WebContentsView
@@ -171,7 +171,13 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   }
   contents.on('will-navigate', (event, url) => steer(event, url, true))
   contents.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) steer(event, url, false)
+    if (!isMainFrame) return
+    if (hosted.status === 'loading' && !isInAppsScope(location, url)) {
+      event.preventDefault()
+      fail(windowKey, hosted, 'redirected')
+      return
+    }
+    steer(event, url, false)
   })
   contents.setWindowOpenHandler(({ url }) => {
     openOutside(url)
@@ -311,11 +317,18 @@ export async function captureAppPage(panel: WebContents): Promise<string | null>
   }
 }
 
-export function reloadAppPage(panel: WebContents): void {
+export function reloadAppPage(panel: WebContents, appId: unknown): void {
   const host = hostOf(panel)
-  const hosted = host && hostedFor(host)
-  const pageUrl = hosted?.appId ? pageUrlForListedApp(hosted.appId) : null
-  if (!host || !hosted || !pageUrl) return
+  if (!host) return
+  const hosted = hostedFor(host)
+  const pageUrl =
+    hosted && typeof appId === 'string' && hosted.appId === appId
+      ? pageUrlForListedApp(appId)
+      : null
+  if (!hosted || !pageUrl) {
+    panelOf(host.windowKey)?.send(APP_PAGE_STATUS_CHANNEL, 'failed')
+    return
+  }
   load(host.windowKey, hosted, pageUrl)
 }
 
