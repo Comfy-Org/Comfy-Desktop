@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { WebContentsPage } from './support/cdpPages'
+import { waitForWebContents, WebContentsPage } from './support/cdpPages'
 import { getRunningSessionSnapshot } from './support/devHooks'
 import {
   FAKE_COMFY_API_SERVER,
@@ -222,6 +222,7 @@ test('An app page is offered the build on this computer, stopped, by name and ve
   expect(await ctx.panel.click(SIDEBAR_APPS)).toBe(true)
   await ctx.panel.waitForVisible(CUTOUT_CARD)
   expect(await ctx.panel.click(CUTOUT_CARD)).toBe(true)
+  await waitForWebContents(ctx.app, CUTOUT_PAGE)
 
   await expect
     .poll(() => appPage().textOf('#local'), LONG_WAIT)
