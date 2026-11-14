@@ -1,7 +1,7 @@
 <script setup lang="ts" generic="Card extends { id: string; title: string; description: string }">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
+import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
 
 interface ArcSlot {
   transform: string
@@ -54,7 +54,7 @@ const jumpedAcross = ref(new Set<string>())
 const loadedPictures = ref(new Set<string>())
 const brokenPictures = ref(new Set<string>())
 
-const opensInDesktop = computed(() => kind === 'apps')
+const listsApps = computed(() => kind === 'apps')
 const wraps = computed(() => cards.length > ARC_REACH * 2)
 const atFirst = computed(() => !wraps.value && frontPosition.value === 0)
 const atLast = computed(() => !wraps.value && frontPosition.value === cards.length - 1)
@@ -65,7 +65,7 @@ const stepButtons = useTemplateRef<HTMLButtonElement[]>('stepButtons')
 const steps = computed(() => [
   {
     direction: -1,
-    label: opensInDesktop.value ? t('home.previousApp') : t('home.previousWorkflow'),
+    label: listsApps.value ? t('home.previousApp') : t('home.previousWorkflow'),
     icon: ChevronLeft,
     side: 'left-[max(8px,calc(50%-420px))]',
     disabled: atFirst.value,
@@ -73,7 +73,7 @@ const steps = computed(() => [
   },
   {
     direction: 1,
-    label: opensInDesktop.value ? t('home.nextApp') : t('home.nextWorkflow'),
+    label: listsApps.value ? t('home.nextApp') : t('home.nextWorkflow'),
     icon: ChevronRight,
     side: 'right-[max(8px,calc(50%-420px))]',
     disabled: atLast.value,
@@ -147,9 +147,9 @@ function markPictureBroken(card: Card): void {
 function labelFor(placed: { card: Card; offset: number }): string {
   const { title } = placed.card
   if (placed.offset !== 0) {
-    return opensInDesktop.value ? t('home.showApp', { title }) : t('home.showWorkflow', { title })
+    return listsApps.value ? t('home.showApp', { title }) : t('home.showWorkflow', { title })
   }
-  return opensInDesktop.value ? t('home.openApp', { title }) : t('home.openWorkflow', { title })
+  return listsApps.value ? t('home.openApp', { title }) : t('home.openWorkflow', { title })
 }
 
 const dragging = ref(false)
@@ -258,14 +258,6 @@ function activate(placed: { card: Card; offset: number }): void {
             aria-hidden="true"
           />
           <span
-            v-if="opensInDesktop"
-            class="absolute top-[17px] left-4 text-xs/[17px] font-semibold tracking-[0.06em] text-white/78 uppercase"
-            aria-hidden="true"
-            data-testid="home-carousel-kind"
-          >
-            {{ t('home.appLabel') }}
-          </span>
-          <span
             class="absolute top-3 right-3 grid size-8 place-items-center rounded-[9px] bg-white/20 text-white opacity-0 backdrop-blur-[14px] backdrop-saturate-150 transition-[opacity,scale] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
             :class="
               placed.offset === 0
@@ -275,11 +267,7 @@ function activate(placed: { card: Card; offset: number }): void {
             aria-hidden="true"
             data-testid="home-carousel-cta"
           >
-            <component
-              :is="opensInDesktop ? ArrowRight : ArrowUpRight"
-              :size="16"
-              :stroke-width="2.25"
-            />
+            <ArrowUpRight :size="16" :stroke-width="2.25" />
           </span>
           <span
             class="absolute inset-x-3.5 bottom-4 flex flex-col"

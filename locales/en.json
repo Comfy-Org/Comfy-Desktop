@@ -120,7 +120,7 @@
     "previousWorkflow": "Previous workflow",
     "nextWorkflow": "Next workflow",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
-    "appLabel": "App",
+    "appsUnavailable": "Apps couldn't be loaded. Check your connection and try again.",
     "showApp": "Show {title}",
     "openApp": "Open {title}",
     "previousApp": "Previous app",

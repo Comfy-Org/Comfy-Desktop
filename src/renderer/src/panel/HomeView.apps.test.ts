@@ -98,7 +98,6 @@ describe('Home apps', () => {
       '2:SDR to HDR'
     ])
     expect(cardAt(wrapper, 0).get('img').attributes('src')).toBe(GENJUTSU.coverUrl)
-    expect(cardAt(wrapper, 0).get('[data-testid="home-carousel-kind"]').text()).toBe('App')
     expect(wrapper.get('[data-testid="home-see-all-apps"]').text()).toBe('See all apps')
     expect(listHomeWorkflows).not.toHaveBeenCalled()
     expect(getAppsEnabled).toHaveBeenCalledOnce()
@@ -169,7 +168,7 @@ describe('Home apps', () => {
     const wrapper = await openHome()
 
     const failed = wrapper.get('[data-testid="home-apps-failed"]')
-    expect(failed.text()).toContain("Apps didn't load")
+    expect(failed.text()).toContain("Apps couldn't be loaded")
     expect(wrapper.find('[data-testid="home-carousel-card"]').exists()).toBe(false)
     expect(listHomeWorkflows).not.toHaveBeenCalled()
 
@@ -198,7 +197,6 @@ describe('Home while Apps is turned off', () => {
 
     expect(arc(wrapper)).toEqual(['0:Upscale and restore detail'])
     expect(wrapper.get('section').attributes('aria-label')).toBe('Example workflows')
-    expect(wrapper.find('[data-testid="home-carousel-kind"]').exists()).toBe(false)
     expect(listApps).not.toHaveBeenCalled()
 
     await cardAt(wrapper, 0).trigger('click')

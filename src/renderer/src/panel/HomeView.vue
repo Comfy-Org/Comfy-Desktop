@@ -176,17 +176,14 @@ onMounted(() => {
         />
         <div
           v-else-if="appsState === 'failed'"
-          class="flex h-75 flex-col items-center justify-center gap-3 text-center"
+          class="flex h-75 flex-col items-center justify-center gap-3"
           data-testid="home-apps-failed"
         >
-          <div class="flex flex-col gap-1">
-            <p class="m-0 text-[13px]/5 font-medium text-foreground">
-              {{ t('apps.failedTitle') }}
-            </p>
-            <p class="m-0 text-[13px]/5 text-muted-foreground">{{ t('apps.failedBody') }}</p>
-          </div>
+          <p class="m-0 text-[13px]/5 text-muted-foreground">
+            {{ t('home.appsUnavailable') }}
+          </p>
           <Button type="button" variant="secondary" size="md" @click="loadApps">
-            {{ t('apps.retry') }}
+            {{ t('home.retry') }}
           </Button>
         </div>
         <div
