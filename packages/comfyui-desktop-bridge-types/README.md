@@ -80,7 +80,8 @@ Hugging Face into that build's models folder.
 `app_id`, the app whose page Desktop loaded in that view. An event the page
 sends while the view loads another app is dropped. A name is lowercase letters,
 digits and `_`, up to 48 characters; `app_opened` and `app_page_failed` are
-Desktop's own and are refused. Desktop keeps up to 16 properties, each a
+Desktop's own and are refused, and so is `error`. Desktop sends at most 60
+events a minute for one app and 1,000 page events a session. Desktop keeps up to 16 properties, each a
 boolean, a finite number or a slug of up to 64 characters, and drops free
 text, any other value, and an `app` or `app_id` from the page.
 

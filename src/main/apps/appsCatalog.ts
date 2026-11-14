@@ -1,4 +1,4 @@
-import { isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
+import { APP_ID_PATTERN, isAppsListUrl, isInAppsScope } from '../../shared/appsLocation'
 import type { AppsLocation } from '../../shared/appsLocation'
 import type { AppCard } from '../../types/ipc'
 import { fetchJSON } from '../lib/fetch'
@@ -9,7 +9,6 @@ const FETCH_TIMEOUT_MS = 8000
 const CACHE_TTL_MS = 5 * 60 * 1000
 const MAX_APPS = 200
 const MAX_TEXT_LENGTH = 4096
-const APP_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,127}$/i
 
 interface ListedApp {
   card: AppCard

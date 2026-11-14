@@ -730,6 +730,34 @@ describe('the app a hosted page has loaded', () => {
     expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
   })
 
+  it('keeps the app while the page moves within its own page, by query or hash', async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents
+
+    page.emit('did-navigate-in-page', {}, `${CUTOUT_URL}?example=dog`, true)
+    page.emit('did-navigate-in-page', {}, `${CUTOUT_URL}#result`, true)
+
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: CUTOUT, document: 1 })
+  })
+
+  it("keeps a hash-route app within its route, and drops it on another app's route", async () => {
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    finishLoading(UPSCALE_URL)
+    const page = hostedPage().webContents as unknown as WebContents
+    const moveTo = (url: string) =>
+      hostedPage().webContents.emit('did-navigate-in-page', {}, url, true)
+
+    moveTo(`${UPSCALE_URL}/step-2`)
+    expect(loadedAppPage(page)).toEqual({ appId: UPSCALE, document: 1 })
+
+    moveTo(`${APPS_URL}#/upscale-pro`)
+    expect(loadedAppPage(page)).toBeNull()
+
+    moveTo(`${APPS_URL}#/other-app`)
+    expect(loadedAppPage(page)).toBeNull()
+  })
+
   it('is no app for contents Desktop does not host', async () => {
     await openCutout()
     finishLoading()

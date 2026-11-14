@@ -133,9 +133,21 @@ const pagePath = (url: string): string | null => {
   }
 }
 
-function isAppsOwnPage(appId: string, url: string): boolean {
+const routeOf = (url: string): string => {
+  try {
+    return new URL(url).hash
+  } catch {
+    return ''
+  }
+}
+
+function isInAppRoute(appId: string, url: string): boolean {
   const own = pageUrlForListedApp(appId)
-  return own !== null && pagePath(own) !== null && pagePath(own) === pagePath(url)
+  if (own === null || pagePath(own) === null || pagePath(own) !== pagePath(url)) return false
+  const route = routeOf(own)
+  if (!route.startsWith('#/')) return true
+  const at = routeOf(url)
+  return at === route || at.startsWith(`${route}/`) || at.startsWith(`${route}?`)
 }
 
 function commitDocument(hosted: HostedPage, url: string): void {
@@ -145,17 +157,22 @@ function commitDocument(hosted: HostedPage, url: string): void {
   hosted.loadStarted = false
   hosted.loadingUrl = null
   hosted.loaded =
-    appId !== null && (started || isAppsOwnPage(appId, url))
+    appId !== null && (started || isInAppRoute(appId, url))
       ? { appId, document: hosted.documents }
       : null
 }
 
-function commitRoute(hosted: HostedPage, url: string): void {
+function moveWithinDocument(hosted: HostedPage, url: string): void {
   const appId = hosted.appId
-  if (!hosted.loadStarted || appId === null || url !== hosted.loadingUrl) return
-  hosted.loadStarted = false
-  hosted.loadingUrl = null
-  hosted.loaded = { appId, document: hosted.documents }
+  if (hosted.loadStarted) {
+    if (appId === null || url !== hosted.loadingUrl) return
+    hosted.loadStarted = false
+    hosted.loadingUrl = null
+    hosted.loaded = { appId, document: hosted.documents }
+    return
+  }
+  hosted.loaded =
+    appId !== null && isInAppRoute(appId, url) ? { appId, document: hosted.documents } : null
 }
 
 function load(windowKey: number, hosted: HostedPage, url: string): void {
@@ -238,7 +255,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
     if (!isMainFrame) return
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
-    else commitRoute(hosted, url)
+    else moveWithinDocument(hosted, url)
   })
   contents.on('dom-ready', () => {
     if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return

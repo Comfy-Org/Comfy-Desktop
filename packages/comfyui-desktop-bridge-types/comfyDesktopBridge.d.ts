@@ -271,7 +271,9 @@ export interface ComfyDesktopHostedLocalBridge {
  * exposes it to that page as `window.comfyDesktopTelemetry` and sends an event
  * as `comfy.desktop.apps.<name>` only when the person allows telemetry.
  * `name` matches `^[a-z][a-z0-9_]{0,47}$`; `app_opened` and `app_page_failed`
- * are refused because Desktop sends them itself. Desktop keeps at most 16
+ * are refused because Desktop sends them itself, and so is `error`. Desktop
+ * sends at most 60 events a minute for one app and 1,000 page events a
+ * session, and drops the rest. Desktop keeps at most 16
  * properties, each named `^[a-z][a-z0-9_]{0,31}$` with a boolean, a finite
  * number or a slug of at most 64 characters (`^[a-z0-9][a-z0-9._-]{0,63}$`),
  * and drops anything else. Desktop sets `app_id` itself, to the app whose
