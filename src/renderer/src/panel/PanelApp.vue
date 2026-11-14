@@ -237,7 +237,13 @@ function openAppFromHome(app: AppCard): void {
   dashboardHomePage.value = 'apps'
 }
 
+const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
+
 function handleSidebarNavigate(page: DashboardPage): void {
+  const fromPage = sidebarPage.value
+  if (page !== fromPage) {
+    emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, { page, from_page: fromPage })
+  }
   closeBuildDetails()
   if (page === 'apps') appsVisits.value += 1
   if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
