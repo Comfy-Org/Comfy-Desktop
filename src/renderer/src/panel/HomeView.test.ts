@@ -393,7 +393,7 @@ describe('Home example workflows', () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE])
     const wrapper = await openHome()
 
-    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
+    await wrapper.get('[data-testid="home-see-all-apps"]').trigger('click')
 
     expect(openCatalogWorkflowHub).toHaveBeenCalledOnce()
   })

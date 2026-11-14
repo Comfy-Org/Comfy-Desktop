@@ -103,7 +103,7 @@ function openWorkflow(workflow: CatalogWorkflow): void {
   void window.api.openCatalogWorkflow(workflow.id)
 }
 
-function seeAllWorkflows(): void {
+function seeAllApps(): void {
   void window.api.openCatalogWorkflowHub()
 }
 
@@ -170,10 +170,10 @@ onMounted(() => {
             variant="muted-textonly"
             size="unset"
             :class="TEXT_LINK_CLASS"
-            data-testid="home-see-all-workflows"
-            @click="seeAllWorkflows"
+            data-testid="home-see-all-apps"
+            @click="seeAllApps"
           >
-            {{ t('home.seeAllWorkflows') }}
+            {{ t('home.seeAllApps') }}
             <ArrowRight :size="14" aria-hidden="true" />
           </Button>
         </div>

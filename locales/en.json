@@ -106,7 +106,7 @@
     "buildDidntStart": "Didn't start",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "Example workflows",
-    "seeAllWorkflows": "See all apps",
+    "seeAllApps": "See all apps",
     "showWorkflow": "Show {title}",
     "openWorkflow": "Open {title} on Comfy Hub",
     "previousWorkflow": "Previous workflow",
