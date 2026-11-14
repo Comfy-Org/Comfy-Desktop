@@ -79,10 +79,12 @@ async function cloudTarget(): Promise<Target> {
   const inst = (await installations.list()).find(isUsableCloud)
   if (!inst) return { error: i18n.t('apps.local.openNoCloud') }
   if (_runningSessions.has(inst.id)) return { id: inst.id }
-  const launched = await launchQuietly(inst).catch((err: unknown): ActionResult => ({
-    ok: false,
-    message: (err as Error)?.message
-  }))
+  const launched = await launchQuietly(inst).catch(
+    (err: unknown): ActionResult => ({
+      ok: false,
+      message: (err as Error)?.message
+    })
+  )
   if (_runningSessions.has(inst.id)) return { id: inst.id }
   return { error: launched.message || i18n.t('apps.local.openCloudFailed') }
 }
