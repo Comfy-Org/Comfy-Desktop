@@ -52,7 +52,7 @@ import {
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -228,6 +228,12 @@ async function showHome(): Promise<void> {
 
 const appsVisits = ref(0)
 const appIsOpen = ref(false)
+const appPickedOnHome = ref<AppCard | null>(null)
+
+function openAppFromHome(app: AppCard): void {
+  appPickedOnHome.value = app
+  dashboardHomePage.value = 'apps'
+}
 
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
@@ -521,6 +527,7 @@ onUnmounted(() => {
           >
             <HomeView
               v-if="dashboardHomePage === 'home'"
+              @open-app="openAppFromHome"
               @pick="handleChooserPick"
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
@@ -528,6 +535,7 @@ onUnmounted(() => {
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
+              v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
               @app-open-change="appIsOpen = $event"
             />

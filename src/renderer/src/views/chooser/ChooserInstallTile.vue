@@ -26,6 +26,7 @@ import {
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
+import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -70,7 +71,18 @@ function viewError(): void {
   if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
   else emit('view-error', inst.value)
 }
-const isInstalling = computed(() => install.progress.value !== null)
+const isBusy = computed(() => install.progress.value !== null)
+const isUninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const progressLabel = computed(() => {
+  const current = install.progress.value
+  if (!current) return ''
+  if (current.kind === 'launch') return t('chooser.statusLaunching')
+  if (current.kind === 'install')
+    return t('installProgress.tileStatus', { percent: current.percent ?? 0 })
+  return current.percent === null
+    ? t('uninstallProgress.status')
+    : t('uninstallProgress.tileStatus', { percent: current.percent })
+})
 const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
 
 const isRunning = computed(() =>
@@ -212,8 +224,7 @@ const actionPill = computed(() => {
 })
 
 const showLaunch = computed(
-  () =>
-    !isInstalling.value && !isUpdating.value && !isStopping.value && !props.isPromotingToWorkspace
+  () => !isBusy.value && !isUpdating.value && !isStopping.value && !props.isPromotingToWorkspace
 )
 const opensExisting = computed(
   () =>
@@ -229,7 +240,7 @@ const launchLabel = computed(() =>
 )
 
 function openDetails(): void {
-  if (isInstalling.value) {
+  if (isBusy.value && !isUninstalling.value) {
     install.viewLogs()
     return
   }
@@ -243,7 +254,7 @@ function launch(): void {
 }
 
 function handleContextMenu(event: MouseEvent): void {
-  if (!props.showMenu || isUpdating.value || isInstalling.value) return
+  if (!props.showMenu || isUpdating.value || isBusy.value) return
   emit('open-card-menu', event, inst.value)
 }
 
@@ -291,7 +302,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     <div class="chooser-tile-body relative flex min-w-0 flex-1 flex-col">
       <div class="flex h-4 min-w-0 items-center gap-1.5 text-xs/4 text-muted-foreground">
         <span
-          v-if="isInstalling"
+          v-if="isBusy"
           class="chooser-tile-status flex min-w-0 items-center gap-1.5"
           :data-testid="`chooser-tile-progress-${inst.id}`"
         >
@@ -300,11 +311,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
             aria-hidden="true"
           />
-          <span class="truncate">{{
-            install.progress.value?.kind === 'launch'
-              ? t('chooser.statusLaunching')
-              : t('installProgress.tileStatus', { percent: install.progress.value?.percent ?? 0 })
-          }}</span>
+          <span class="truncate">{{ progressLabel }}</span>
         </span>
         <Button
           v-else-if="hasError"
@@ -406,8 +413,9 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     </div>
 
     <div class="chooser-tile-footer relative flex shrink-0 items-center gap-1">
-      <template v-if="isInstalling">
+      <template v-if="isBusy">
         <Button
+          v-if="!isUninstalling"
           type="button"
           variant="muted-textonly"
           size="unset"
@@ -469,7 +477,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       </Button>
       <div class="chooser-tile-actions flex items-center">
         <Button
-          v-if="props.showMenu && !isUpdating && !isInstalling"
+          v-if="props.showMenu && !isUpdating && !isBusy"
           variant="muted-textonly"
           size="unset"
           type="button"
@@ -486,5 +494,11 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         </Button>
       </div>
     </div>
+    <BuildProgressBar
+      v-if="install.progress.value?.percent != null"
+      :percent="install.progress.value.percent"
+      :label="progressLabel"
+      :data-testid="`chooser-tile-progress-bar-${inst.id}`"
+    />
   </div>
 </template>

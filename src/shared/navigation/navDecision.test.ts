@@ -12,7 +12,7 @@ import en from '../../../locales/en.json'
 
 const VIEWS: ViewKind[] = ['dashboard', 'instance', 'cloud']
 const TARGETS: TargetKind[] = ['dashboard', 'instance', 'cloud', 'new-instance']
-const RUNS: TargetRun[] = ['stopped', 'running-elsewhere', 'self']
+const RUNS: TargetRun[] = ['stopped', 'running-elsewhere', 'self', 'starting-unhosted']
 const INTENTS: Intent[] = ['primary', 'new-window']
 
 function input(over: Partial<NavInput>): NavInput {
@@ -44,6 +44,7 @@ describe('decideNavigation — totality', () => {
     const reachable: Array<[ViewKind, TargetKind, TargetRun]> = [
       ['dashboard', 'instance', 'stopped'],
       ['dashboard', 'instance', 'running-elsewhere'],
+      ['dashboard', 'instance', 'starting-unhosted'],
       ['dashboard', 'cloud', 'stopped'],
       ['dashboard', 'cloud', 'running-elsewhere'],
       ['instance', 'instance', 'stopped'],
@@ -89,6 +90,29 @@ describe('decideNavigation — the CURRENT-behavior matrix (baseline before #926
       primaryLabel: NAV_LABEL.switch
     })
     expect(decision.secondary).toHaveLength(0)
+  })
+  it('Dashboard → Instance (starting with no window): Restart, no caret', () => {
+    const decision = decisionFor('dashboard', 'instance', 'starting-unhosted')
+    expect(decision).toMatchObject({
+      window: 'same',
+      verb: 'restart',
+      primaryLabel: NAV_LABEL.restart
+    })
+    expect(decision.secondary).toHaveLength(0)
+  })
+  it('a build starting with no window reads as running elsewhere outside Dashboard → Instance', () => {
+    const elsewhere: Array<[ViewKind, TargetKind]> = [
+      ['dashboard', 'cloud'],
+      ['instance', 'instance'],
+      ['instance', 'cloud'],
+      ['cloud', 'instance'],
+      ['cloud', 'cloud']
+    ]
+    for (const [view, target] of elsewhere) {
+      expect(decisionFor(view, target, 'starting-unhosted')).toBe(
+        decisionFor(view, target, 'running-elsewhere')
+      )
+    }
   })
   it('Dashboard → Cloud (closed): Open Cloud same window + new-window caret', () => {
     const decision = decisionFor('dashboard', 'cloud', 'stopped')

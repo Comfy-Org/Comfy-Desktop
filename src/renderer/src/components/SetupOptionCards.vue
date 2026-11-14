@@ -22,8 +22,15 @@ const props = withDefaults(
     ariaLabel?: string
     layout?: 'grid' | 'list'
     activation?: 'automatic' | 'manual'
+    refreshing?: boolean
   }>(),
-  { selectedValue: null, ariaLabel: undefined, layout: 'list', activation: 'automatic' }
+  {
+    selectedValue: null,
+    ariaLabel: undefined,
+    layout: 'list',
+    activation: 'automatic',
+    refreshing: false
+  }
 )
 
 const emit = defineEmits<{ select: [value: string] }>()
@@ -63,10 +70,15 @@ function setOptionEl(el: unknown, index: number): void {
 
 <template>
   <div
-    class="setup-option-cards grid gap-2"
-    :class="layout === 'grid' ? 'grid-cols-2' : 'grid-cols-1'"
+    class="setup-option-cards grid gap-2 transition-opacity duration-200 motion-reduce:transition-none"
+    :class="[
+      layout === 'grid' ? 'grid-cols-2' : 'grid-cols-1',
+      refreshing && 'setup-option-cards--refreshing opacity-60 delay-300'
+    ]"
     role="radiogroup"
     :aria-label="ariaLabel"
+    :aria-busy="refreshing || undefined"
+    :inert="refreshing"
   >
     <Button
       v-for="(opt, index) in options"

@@ -94,22 +94,22 @@ async function openHome() {
 
 function arc(wrapper: VueWrapper): string[] {
   return wrapper
-    .findAll('[data-testid="home-workflow-card"]:not([aria-hidden="true"])')
+    .findAll('[data-testid="home-carousel-card"]:not([aria-hidden="true"])')
     .map((card) => ({
       offset: Number(card.attributes('data-arc-offset')),
-      text: card.get('[data-testid="home-workflow-name"]').text()
+      text: card.get('[data-testid="home-carousel-name"]').text()
     }))
     .sort((left, right) => left.offset - right.offset)
     .map((card) => `${card.offset}:${card.text}`)
 }
 
 function cardAt(wrapper: VueWrapper, offset: number) {
-  return wrapper.get(`[data-testid="home-workflow-card"][data-arc-offset="${offset}"]`)
+  return wrapper.get(`[data-testid="home-carousel-card"][data-arc-offset="${offset}"]`)
 }
 
 function pressCarouselAt(wrapper: VueWrapper, clientX: number): void {
   wrapper
-    .get('[data-testid="home-workflow-carousel"]')
+    .get('[data-testid="home-carousel"]')
     .element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX, bubbles: true }))
 }
 
@@ -172,7 +172,7 @@ describe('Home example workflows', () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
 
-    const offStage = wrapper.findAll('[data-testid="home-workflow-card"][aria-hidden="true"]')
+    const offStage = wrapper.findAll('[data-testid="home-carousel-card"][aria-hidden="true"]')
 
     expect(offStage.map((card) => card.text())).toEqual(['Workflow 3', 'Workflow 4'])
     expect(offStage.map((card) => card.attributes('tabindex'))).toEqual(['-1', '-1'])
@@ -186,7 +186,7 @@ describe('Home example workflows', () => {
       }))
     )
     const wrapper = await openHome()
-    const pictures = wrapper.findAll('[data-testid="home-workflow-card"] img')
+    const pictures = wrapper.findAll('[data-testid="home-carousel-card"] img')
 
     expect(pictures).toHaveLength(7)
     expect(pictures[4]!.attributes('data-loaded')).toBe('false')
@@ -210,7 +210,7 @@ describe('Home example workflows', () => {
   it('turns the carousel with the arrow keys', async () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
-    const carousel = wrapper.get('[data-testid="home-workflow-carousel"]')
+    const carousel = wrapper.get('[data-testid="home-carousel"]')
 
     await carousel.trigger('keydown', { key: 'ArrowRight' })
     await carousel.trigger('keydown', { key: 'ArrowRight' })
@@ -223,8 +223,8 @@ describe('Home example workflows', () => {
   it('turns the carousel with the previous and next arrows', async () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
-    const next = wrapper.get('[data-testid="home-workflow-next"]')
-    const previous = wrapper.get('[data-testid="home-workflow-previous"]')
+    const next = wrapper.get('[data-testid="home-carousel-next"]')
+    const previous = wrapper.get('[data-testid="home-carousel-previous"]')
 
     expect(next.attributes('aria-label')).toBe('Next workflow')
     expect(previous.attributes('aria-label')).toBe('Previous workflow')
@@ -243,8 +243,8 @@ describe('Home example workflows', () => {
   it('stops the arrows at the ends of a short list and leaves them out for a single card', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
-    const next = wrapper.get('[data-testid="home-workflow-next"]')
-    const previous = wrapper.get('[data-testid="home-workflow-previous"]')
+    const next = wrapper.get('[data-testid="home-carousel-next"]')
+    const previous = wrapper.get('[data-testid="home-carousel-previous"]')
 
     expect(previous.attributes('disabled')).toBeDefined()
     expect(next.attributes('disabled')).toBeUndefined()
@@ -256,15 +256,15 @@ describe('Home example workflows', () => {
 
     listHomeWorkflows.mockResolvedValue([UPSCALE])
     const single = await openHome()
-    expect(single.find('[data-testid="home-workflow-next"]').exists()).toBe(false)
-    expect(single.find('[data-testid="home-workflow-previous"]').exists()).toBe(false)
+    expect(single.find('[data-testid="home-carousel-next"]').exists()).toBe(false)
+    expect(single.find('[data-testid="home-carousel-previous"]').exists()).toBe(false)
   })
 
   it('keeps keyboard focus on an arrow when the one in use reaches the end of a short list', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE, TALK])
     const wrapper = await openHome()
-    const next = wrapper.get<HTMLButtonElement>('[data-testid="home-workflow-next"]')
-    const previous = wrapper.get<HTMLButtonElement>('[data-testid="home-workflow-previous"]')
+    const next = wrapper.get<HTMLButtonElement>('[data-testid="home-carousel-next"]')
+    const previous = wrapper.get<HTMLButtonElement>('[data-testid="home-carousel-previous"]')
 
     next.element.focus()
     await next.trigger('click')
@@ -278,7 +278,7 @@ describe('Home example workflows', () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
 
-    const next = wrapper.get('[data-testid="home-workflow-next"]')
+    const next = wrapper.get('[data-testid="home-carousel-next"]')
     await next.trigger('keydown', { key: 'ArrowRight' })
     expect(cardAt(wrapper, 0).text()).toContain('Workflow 1')
 
@@ -294,8 +294,8 @@ describe('Home example workflows', () => {
   it('shows the open arrow on hover of the front card only, and opens that workflow from it', async () => {
     listHomeWorkflows.mockResolvedValue(SEVEN_WORKFLOWS)
     const wrapper = await openHome()
-    const front = cardAt(wrapper, 0).get('[data-testid="home-workflow-cta"]')
-    const side = cardAt(wrapper, 1).get('[data-testid="home-workflow-cta"]')
+    const front = cardAt(wrapper, 0).get('[data-testid="home-carousel-cta"]')
+    const side = cardAt(wrapper, 1).get('[data-testid="home-carousel-cta"]')
 
     expect(front.classes()).toContain('group-hover/card:opacity-100')
     expect(side.classes()).not.toContain('group-hover/card:opacity-100')
@@ -359,9 +359,7 @@ describe('Home example workflows', () => {
       '1:Make your character talk'
     ])
 
-    await wrapper
-      .get('[data-testid="home-workflow-carousel"]')
-      .trigger('keydown', { key: 'ArrowLeft' })
+    await wrapper.get('[data-testid="home-carousel"]').trigger('keydown', { key: 'ArrowLeft' })
 
     expect(cardAt(wrapper, 0).text()).toContain('Upscale and restore detail')
   })
@@ -400,10 +398,10 @@ describe('Home example workflows', () => {
     listHomeWorkflows.mockReturnValue(new Promise(() => {}))
     const wrapper = await openHome()
 
-    expect(wrapper.get('[data-testid="home-workflows-loading"]').attributes('aria-busy')).toBe(
+    expect(wrapper.get('[data-testid="home-carousel-loading"]').attributes('aria-busy')).toBe(
       'true'
     )
-    expect(wrapper.find('[data-testid="home-workflow-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-carousel-card"]').exists()).toBe(false)
   })
 
   it('says the workflows could not be loaded and loads them when asked to try again', async () => {
@@ -418,7 +416,7 @@ describe('Home example workflows', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="home-workflows-unavailable"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-testid="home-workflow-card"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="home-carousel-card"]')).toHaveLength(1)
   })
 })
 

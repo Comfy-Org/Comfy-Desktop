@@ -49,7 +49,15 @@
       "couldNotStart": "Comfy Desktop 无法启动{name}。",
       "notRunning": "这台电脑上的 ComfyUI 没有在运行。",
       "notForwarded": "Comfy Desktop 不会把这个请求转给 ComfyUI。",
-      "modelRefused": "Comfy Desktop 只从 Hugging Face 下载 safetensors 模型。"
+      "modelRefused": "Comfy Desktop 只从 Hugging Face 下载 safetensors 模型。",
+      "openNotWorkflow": "这不是 Comfy Desktop 能打开的工作流。",
+      "openUnknownPlace": "请在 Comfy Cloud 或这台电脑上打开。",
+      "openUnknownBuild": "这台电脑上没有这个 ComfyUI 构建。",
+      "openCarriesKeys": "Comfy Desktop 不会打开带有 Comfy 密钥的工作流。",
+      "openNoCloud": "请先在 Comfy Desktop 中添加 Comfy Cloud。",
+      "openCloudFailed": "Comfy Desktop 无法打开 Comfy Cloud。",
+      "openNoWindow": "Comfy Desktop 无法显示 ComfyUI 窗口。",
+      "openNotTaken": "ComfyUI 没有打开这个工作流。"
     }
   },
   "assets": {
@@ -122,6 +130,11 @@
     "previousWorkflow": "上一个工作流",
     "nextWorkflow": "下一个工作流",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",
+    "appsUnavailable": "无法加载应用。请检查网络连接后重试。",
+    "showApp": "显示 {title}",
+    "openApp": "打开 {title}",
+    "previousApp": "上一个应用",
+    "nextApp": "下一个应用",
     "retry": "重试"
   },
   "installType": {
@@ -889,6 +902,7 @@
     "useMyBuilds": "使用我的版本"
   },
   "installProgress": {
+    "detail": "{phase} · {percent}%",
     "starting": "正在开始…",
     "cancelling": "正在取消…",
     "percent": "{percent}%",
@@ -900,6 +914,17 @@
     "failedTitle": "ComfyUI 未能安装",
     "launchFailedTitle": "ComfyUI 未能启动",
     "startAgain": "重新启动"
+  },
+  "uninstallProgress": {
+    "status": "正在卸载",
+    "tileStatus": "正在卸载 · {percent}%",
+    "removingFiles": "正在删除文件",
+    "cancelTitle": "停止卸载？",
+    "cancelMessage": "{name} 会保留在构建列表中。已删除的文件无法恢复，需要再次卸载才能完成。",
+    "cancelConfirm": "停止卸载",
+    "failedTitle": "卸载未完成",
+    "tryAgain": "重试",
+    "dismiss": "忽略"
   },
   "announcement": {
     "comfyApi": {

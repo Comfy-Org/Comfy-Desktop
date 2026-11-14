@@ -15,6 +15,8 @@ const SKELETON_CARD_COUNT = 8
 
 const { revisit = 0 } = defineProps<{ revisit?: number }>()
 
+const startWith = defineModel<AppCard | null>('startWith', { default: null })
+
 const emit = defineEmits<{ 'app-open-change': [open: boolean] }>()
 
 const { t } = useI18n()
@@ -71,6 +73,16 @@ watch(
 )
 
 watch(openApp, (app) => emit('app-open-change', app !== null))
+
+watch(
+  startWith,
+  (app) => {
+    if (!app) return
+    startWith.value = null
+    open(app)
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())
