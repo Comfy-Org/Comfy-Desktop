@@ -34,6 +34,12 @@ vi.mock('../telemetry', () => ({
 }))
 
 import {
+  PAGE_EVENTS_PER_MINUTE,
+  PAGE_EVENTS_PER_SESSION,
+  _resetPageEventLimitsForTest,
+  trackAppPageEvent
+} from '../../apps/appPageEvents'
+import {
   APPS_TELEMETRY_TRACK_CHANNEL,
   registerAppsTelemetryHandlers,
   trackFromAppsPage
@@ -49,6 +55,7 @@ beforeEach(() => {
   mocks.appsEnabled = true
   mocks.page = { appId: 'remove-background', document: 1 }
   mocks.whileAuthorizing = () => {}
+  _resetPageEventLimitsForTest()
   registerAppsTelemetryHandlers()
 })
 
@@ -156,5 +163,48 @@ describe('usage events from the hosted Apps page', () => {
       where: 'cloud',
       app_id: 'remove-background'
     })
+  })
+})
+
+describe('how many page events Desktop sends', () => {
+  const sent = () => mocks.capture.mock.calls.length
+
+  it(`sends at most ${PAGE_EVENTS_PER_MINUTE} a minute for one app, whatever their names, then again a minute later`, () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-11-14T10:00:00Z'))
+      for (let i = 0; i <= PAGE_EVENTS_PER_MINUTE; i++) {
+        trackAppPageEvent(`step_${i}`, {}, 'genjutsu')
+      }
+      expect(sent()).toBe(PAGE_EVENTS_PER_MINUTE)
+
+      expect(trackAppPageEvent('click', {}, 'upscale')).toBe(true)
+
+      vi.setSystemTime(new Date('2026-11-14T10:01:01Z'))
+      expect(trackAppPageEvent('click', {}, 'genjutsu')).toBe(true)
+      expect(sent()).toBe(PAGE_EVENTS_PER_MINUTE + 2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it(`sends at most ${PAGE_EVENTS_PER_SESSION} page events in all, so pages cannot use up Desktop's own telemetry`, () => {
+    vi.useFakeTimers()
+    try {
+      for (let i = 0; i < PAGE_EVENTS_PER_SESSION + 5; i++) {
+        vi.setSystemTime(new Date(Date.UTC(2026, 10, 14, 10, 0, 0) + i * 60_000))
+        trackAppPageEvent('click', {}, 'genjutsu')
+      }
+      expect(sent()).toBe(PAGE_EVENTS_PER_SESSION)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('counts no event it refuses', () => {
+    for (let i = 0; i < PAGE_EVENTS_PER_MINUTE; i++) trackAppPageEvent('error', {}, 'genjutsu')
+
+    expect(trackAppPageEvent('click', {}, 'genjutsu')).toBe(true)
+    expect(sent()).toBe(1)
   })
 })

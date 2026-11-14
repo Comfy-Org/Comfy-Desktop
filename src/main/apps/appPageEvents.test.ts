@@ -38,6 +38,8 @@ import {
   APP_PAGE_EVENT_PREFIX,
   DESKTOP_APP_EVENTS,
   MAX_PAGE_EVENT_PROPERTIES,
+  UNLIMITED_EVENT_NAMES,
+  _resetPageEventLimitsForTest,
   checkAppPageEvent,
   trackAppPageEvent
 } from './appPageEvents'
@@ -95,9 +97,24 @@ describe('checkAppPageEvent', () => {
 
   it.each([
     ['no app id', null],
-    ['an app id that is not a slug', 'Remove Background']
+    ['an app id the catalog would not list', 'Remove Background'],
+    ['an app id with a dot', 'remove.background'],
+    ['an app id longer than the catalog allows', `a${'b'.repeat(128)}`]
   ])('drops the event when Desktop holds %s for the page', (_why, appId) => {
     expect(checkAppPageEvent('click', { target: 'run' }, appId)).toBeNull()
+  })
+
+  it.each(['HDR', 'Upscale_4x', `a${'b'.repeat(127)}`])(
+    'keeps the catalog app id %s as Desktop holds it',
+    (appId) => {
+      expect(checkAppPageEvent('click', {}, appId)?.properties).toEqual({ app_id: appId })
+    }
+  )
+
+  it('refuses error, whose full name the shared telemetry limit lets through unlimited', () => {
+    expect(UNLIMITED_EVENT_NAMES.has('error')).toBe(true)
+    expect(checkAppPageEvent('error', {}, APP)).toBeNull()
+    expect(checkAppPageEvent('run_error', {}, APP)?.event).toBe('comfy.desktop.apps.run_error')
   })
 
   it('drops free text, bad values and bad property names, keeping the event', () => {
@@ -163,6 +180,7 @@ describe('trackAppPageEvent through Desktop telemetry', () => {
     process.env['POSTHOG_API_KEY'] = 'test-key'
     process.env['POSTHOG_ENABLED'] = '1'
     telemetry._resetForTest()
+    _resetPageEventLimitsForTest()
     telemetry.initTelemetry({ appVersion: '0.0.0', appEnv: 'test', isPackaged: true })
   })
 
