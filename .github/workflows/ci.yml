@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        load: [idle, busy]
+        load: [gdb, plain]
         replica: [1, 2, 3, 4, 5, 6]
 
     steps:
@@ -47,7 +47,6 @@ jobs:
         env:
           LOAD: ${{ matrix.load }}
         run: |
-          if [ "$LOAD" = busy ]; then
-            for i in 1 2 3; do ( while :; do :; done ) & done
-          fi
-          xvfb-run --auto-servernum pnpm exec playwright test --project=linux e2e/picker-cluster.test.ts --repeat-each=100 --retries=0 --reporter=list
+          for i in 1 2 3; do ( while :; do :; done ) & done
+          if [ "$LOAD" = gdb ]; then export TEARDOWN_DIAG_GDB=1; fi
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux e2e/picker-cluster.test.ts --repeat-each=80 --retries=0 --reporter=list

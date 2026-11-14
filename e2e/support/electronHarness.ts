@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { readlinkSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
@@ -253,6 +253,59 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     }
   })
 
+  const gdbOutput: string[] = []
+  if (process.env['TEARDOWN_DIAG_GDB'] === '1' && child.pid) {
+    const gdb = spawn(
+      'sudo',
+      [
+        'gdb',
+        '-q',
+        '-p',
+        String(child.pid),
+        '-batch',
+        '-ex',
+        'set pagination off',
+        '-ex',
+        'handle all nostop noprint pass',
+        '-ex',
+        'handle SIGABRT SIGSEGV SIGILL SIGBUS SIGFPE SIGTRAP stop print',
+        '-ex',
+        'echo GDB-ATTACHED\\n',
+        '-ex',
+        'continue',
+        '-ex',
+        'echo GDB-STOPPED\\n',
+        '-ex',
+        'info registers rip rsp rbp',
+        '-ex',
+        'x/1800gx $rsp',
+        '-ex',
+        'info proc mappings',
+        '-ex',
+        'kill'
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] }
+    )
+    const attached = new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 30_000)
+      const collect = (chunk: Buffer): void => {
+        const text = chunk.toString()
+        gdbOutput.push(text)
+        if (text.includes('GDB-ATTACHED')) {
+          clearTimeout(timer)
+          resolve()
+        }
+      }
+      gdb.stdout.on('data', collect)
+      gdb.stderr.on('data', collect)
+      gdb.once('exit', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
+    await attached
+  }
+
   const page = await application.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   await evalWithRetry(() =>
@@ -311,6 +364,12 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
         }
       }
     } catch {}
+    const gdbText = gdbOutput.join('')
+    if (gdbText.includes('received signal')) {
+      await new Promise((resolve) => setTimeout(resolve, 3_000))
+      stall = `[teardown-diag] GDB caught a signal\n${gdbOutput.join('')}\n== app output tail\n${appOutput.slice(-40).join('\n')}`
+      console.log(stall)
+    }
     if (!reuseDir) {
       await rm(homeDir, { recursive: true, force: true })
     }
@@ -321,40 +380,38 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
 }
 
 function describeStall(pid: number, stdioInodes: string[], appOutput: string[]): string {
-  const script = `
-echo "== main pid ${pid}"; if kill -0 ${pid} 2>/dev/null; then echo alive; else echo gone; fi
-echo "== status"; grep -E 'State|Threads|PPid' /proc/${pid}/status 2>&1
-echo "== main fds 0-4 at launch: ${stdioInodes.join(' ')}"
-echo "== main fds now"; ls -l /proc/${pid}/fd 2>&1 | head -60
-echo "== processes holding the launch stdio"
-for p in /proc/[0-9]*; do
-  q=\${p#/proc/}
-  for fd in $(ls $p/fd 2>/dev/null); do
-    l=$(readlink $p/fd/$fd 2>/dev/null)
-    for want in ${stdioInodes
-      .filter((inode) => /^(socket|pipe):/.test(inode))
-      .map((inode) => `'${inode}'`)
-      .join(' ')}; do
-      if [ "$l" = "$want" ]; then echo "$q fd$fd $l $(tr '\\0' ' ' < $p/cmdline | cut -c1-160)"; fi
-    done
-  done
-done
-echo "== ps"; ps -eo pid,ppid,pgid,stat,etime,args --forest | cut -c1-200 | tail -120
-echo "== gdb"; sudo gdb -p ${pid} -batch -ex 'set pagination off' -ex 'thread apply all bt 16' 2>&1 | grep -v '^\\[New LWP' | head -500
-`
-  const report = ((): string => {
+  const steps: [string, string][] = [
+    [
+      'core_pattern',
+      'cat /proc/sys/kernel/core_pattern /proc/sys/kernel/core_pipe_limit; ulimit -c'
+    ],
+    ['status', `grep -E 'State|Threads|TracerPid|PPid|VmRSS|VmSize' /proc/${pid}/status`],
+    ['kernel stack', `sudo cat /proc/${pid}/stack`],
+    [
+      'thread states',
+      `for t in /proc/${pid}/task/*; do echo "$(basename $t) $(cut -d' ' -f3 $t/stat 2>/dev/null) $(cat $t/comm 2>/dev/null)"; done | head -80`
+    ],
+    [
+      'ps',
+      "ps -eo pid,ppid,pgid,stat,etime,comm --forest | grep -E -i 'electron|apport|crashpad|coredump|systemd-cor|chrome|PID' | head -60"
+    ],
+    [
+      'apport',
+      'pgrep -a apport; pgrep -a systemd-coredum; ls -la /var/crash /var/lib/apport/coredump /var/lib/systemd/coredump 2>&1 | head -30'
+    ],
+    ['launch stdio', `echo ${stdioInodes.map((inode) => `'${inode}'`).join(' ')}`]
+  ]
+  const lines = [`[teardown-diag] STALL pid=${pid} at ${Date.now()}`]
+  for (const [label, command] of steps) {
+    lines.push(`== ${label}`)
     try {
-      return execFileSync('bash', ['-c', script], { encoding: 'utf8', timeout: 90_000 })
+      lines.push(execFileSync('bash', ['-c', command], { encoding: 'utf8', timeout: 6_000 }))
     } catch (err) {
-      return `diagnostics failed: ${String(err)}`
+      const failed = err as { stdout?: string; stderr?: string; message?: string }
+      lines.push(`(failed: ${failed.message ?? ''}) ${failed.stdout ?? ''} ${failed.stderr ?? ''}`)
     }
-  })()
-  return [
-    `[teardown-diag] STALL pid=${pid} at ${Date.now()}`,
-    report,
-    '== app output tail',
-    ...appOutput.slice(-120)
-  ].join('\n')
+  }
+  return [...lines, '== app output tail', ...appOutput.slice(-60)].join('\n')
 }
 
 export async function waitForAppExit(
