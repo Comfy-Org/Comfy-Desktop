@@ -889,7 +889,6 @@
     "useMyBuilds": "Use my builds"
   },
   "installProgress": {
-    "detail": "{phase} · {percent}%",
     "starting": "Starting…",
     "cancelling": "Cancelling…",
     "percent": "{percent}%",

@@ -460,12 +460,12 @@ describe('Home builds', () => {
     expect(kept).toEqual(['My Local 1', 'Video Lab'])
   })
 
-  it('shows a stopped local build as ready, with its ComfyUI version and folder', async () => {
+  it('shows a stopped local build as ready, with its ComfyUI version and no folder', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
     expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
-      'ReadyFlux SandboxComfyUI v0.42.4 · /Users/pablo/ComfyUI-Installs/Flux'
+      'ReadyFlux SandboxComfyUI v0.42.4'
     )
   })
 
