@@ -98,18 +98,19 @@ describe('toCatalogApp', () => {
 })
 
 describe('listCatalogApps', () => {
-  it('lists the apps in catalog order and leaves out ones it cannot open', async () => {
+  it('lists every app the catalog returns, in catalog order, and leaves out ones it cannot open', async () => {
     fetchMock.mockResolvedValue(
       Response.json({
         items: [
           catalogApp('product-ads', 'Second', 1),
           item('x', { title: 'No slug' }),
+          catalogApp('upscale', 'Third', 2),
           catalogApp('genjutsu', 'First', 0)
         ]
       })
     )
     const apps = await listCatalogApps(LIST)
-    expect(apps.map((app) => app.title)).toEqual(['First', 'Second'])
+    expect(apps.map((app) => app.title)).toEqual(['First', 'Second', 'Third'])
   })
 
   it('skips entries that are not objects and lists each app once', async () => {
