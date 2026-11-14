@@ -62,6 +62,9 @@ vi.mock('../views/ChooserView.vue', () => ({
       '<div data-testid="chooser-view" :data-visible="visible"><button data-testid="chooser-new-install" @click="$emit(\'show-new-install\')">New</button></div>'
   }
 }))
+vi.mock('./AssetsView.vue', () => ({
+  default: { name: 'AssetsView', template: '<div data-testid="assets-view" />' }
+}))
 vi.mock('./BuildDetailsView.vue', () => ({
   default: {
     name: 'BuildDetailsView',
@@ -1457,6 +1460,28 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="app-sidebar-chooser"]').attributes('aria-current')).toBe(
       'page'
     )
+  })
+
+  it('records each sidebar page the person opens, and not a click on the page already shown', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+    const events = captureTelemetry()
+    const opened = () =>
+      events.filter(({ actionName }) => actionName === 'comfy.desktop.sidebar.page_opened')
+
+    for (const page of ['home', 'apps', 'apps', 'assets', 'chooser', 'chooser', 'home']) {
+      await wrapper.get(`[data-testid="app-sidebar-${page}"]`).trigger('click')
+      await flushPromises()
+    }
+
+    expect(opened().map(({ context }) => context)).toEqual([
+      { page: 'apps', from_page: 'home' },
+      { page: 'assets', from_page: 'apps' },
+      { page: 'chooser', from_page: 'assets' },
+      { page: 'home', from_page: 'chooser' }
+    ])
   })
 
   it('returns to the list of builds from All builds on Home', async () => {

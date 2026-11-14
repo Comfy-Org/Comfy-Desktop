@@ -28,9 +28,19 @@ const PAGE_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-writ
 
 type PageFailure = 'http_status' | 'network' | 'crashed'
 
+export interface LoadedAppPage {
+  appId: string
+  document: number
+}
+
 interface HostedPage {
   view: WebContentsView
   appId: string | null
+  loaded: LoadedAppPage | null
+  loadStarted: boolean
+  loadingUrl: string | null
+  routeBase: string | null
+  documents: number
   status: AppPageStatus
   wanted: boolean
   focusWhenReady: boolean
@@ -115,13 +125,83 @@ function fail(windowKey: number, hosted: HostedPage, reason: PageFailure): void 
   setStatus(windowKey, hosted, 'failed')
 }
 
+const pagePath = (url: string): string | null => {
+  try {
+    const { origin, pathname } = new URL(url)
+    return origin + pathname.replace(/(\/index)?\.html$|\/$/, '')
+  } catch {
+    return null
+  }
+}
+
+const routeOf = (url: string): string => {
+  try {
+    return new URL(url).hash
+  } catch {
+    return ''
+  }
+}
+
+function isInAppRoute(base: string, url: string): boolean {
+  if (pagePath(base) === null || pagePath(base) !== pagePath(url)) return false
+  const route = routeOf(base)
+  if (!route.startsWith('#/')) return true
+  const at = routeOf(url)
+  return at === route || at.startsWith(`${route}/`) || at.startsWith(`${route}?`)
+}
+
+function routeBaseOf(hosted: HostedPage): string | null {
+  if (hosted.routeBase !== null) return hosted.routeBase
+  return hosted.appId === null ? null : pageUrlForListedApp(hosted.appId)
+}
+
+function isInLoadedRoute(hosted: HostedPage, url: string): boolean {
+  const base = routeBaseOf(hosted)
+  return base !== null && isInAppRoute(base, url)
+}
+
+function commitDocument(hosted: HostedPage, url: string): void {
+  hosted.documents += 1
+  const appId = hosted.appId
+  const started = hosted.loadStarted
+  hosted.loadStarted = false
+  hosted.loadingUrl = null
+  if (started) hosted.routeBase = url
+  hosted.loaded =
+    appId !== null && (started || isInLoadedRoute(hosted, url))
+      ? { appId, document: hosted.documents }
+      : null
+}
+
+function moveWithinDocument(hosted: HostedPage, url: string): void {
+  const appId = hosted.appId
+  if (hosted.loadStarted) {
+    if (appId === null || url !== hosted.loadingUrl) return
+    hosted.loadStarted = false
+    hosted.loadingUrl = null
+    hosted.routeBase = url
+    hosted.loaded = { appId, document: hosted.documents }
+    return
+  }
+  hosted.loaded =
+    appId !== null && isInLoadedRoute(hosted, url) ? { appId, document: hosted.documents } : null
+}
+
 function load(windowKey: number, hosted: HostedPage, url: string): void {
+  hosted.loaded = null
+  hosted.loadStarted = true
+  hosted.loadingUrl = url
+  hosted.routeBase = null
   setStatus(windowKey, hosted, 'loading')
   void hosted.view.webContents.loadURL(url).catch(() => {})
 }
 
 function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: boolean): void {
-  if (!pageStillShowsApp) hosted.appId = null
+  if (!pageStillShowsApp) {
+    hosted.appId = null
+    hosted.loaded = null
+    hosted.routeBase = null
+  }
   conceal(hosted)
   panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
 }
@@ -154,6 +234,11 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   const hosted: HostedPage = {
     view,
     appId: null,
+    loaded: null,
+    loadStarted: false,
+    loadingUrl: null,
+    routeBase: null,
+    documents: 0,
     status: 'loading',
     wanted: false,
     focusWhenReady: false,
@@ -178,11 +263,14 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     return { action: 'deny' }
   })
   contents.on('did-navigate', (_event, url, httpResponseCode) => {
+    commitDocument(hosted, url)
     if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
     else if (httpResponseCode >= FIRST_HTTP_ERROR_STATUS) fail(windowKey, hosted, 'http_status')
   })
   contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-    if (isMainFrame && isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
+    if (!isMainFrame) return
+    if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
+    else moveWithinDocument(hosted, url)
   })
   contents.on('dom-ready', () => {
     if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return
@@ -265,6 +353,13 @@ function concealWhenPanelGoes(windowKey: number, panel: WebContents): void {
   panel.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) concealHosted()
   })
+}
+
+export function loadedAppPage(contents: WebContents): LoadedAppPage | null {
+  for (const hosted of hostedByWindow.values()) {
+    if (hosted.view.webContents === contents) return hosted.loaded
+  }
+  return null
 }
 
 export async function showAppPage(
