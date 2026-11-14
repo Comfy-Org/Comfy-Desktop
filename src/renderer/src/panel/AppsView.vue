@@ -13,10 +13,9 @@ type LoadState = 'loading' | 'ready' | 'failed'
 
 const SKELETON_CARD_COUNT = 8
 
-const { revisit = 0, startWith = null } = defineProps<{
-  revisit?: number
-  startWith?: AppCard | null
-}>()
+const { revisit = 0 } = defineProps<{ revisit?: number }>()
+
+const startWith = defineModel<AppCard | null>('startWith', { default: null })
 
 const emit = defineEmits<{ 'app-open-change': [open: boolean] }>()
 
@@ -76,9 +75,11 @@ watch(
 watch(openApp, (app) => emit('app-open-change', app !== null))
 
 watch(
-  () => startWith,
+  startWith,
   (app) => {
-    if (app) open(app)
+    if (!app) return
+    startWith.value = null
+    open(app)
   },
   { immediate: true }
 )

@@ -252,6 +252,7 @@ describe('AppsView', () => {
     expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('SDR to HDR')
     expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(false)
     expect(wrapper.emitted('app-open-change')).toEqual([[true]])
+    expect(wrapper.emitted('update:startWith'), 'the pick is handed back as used').toEqual([[null]])
     expect(showAppPage).toHaveBeenCalledWith(
       'sdr-to-hdr',
       expect.objectContaining({

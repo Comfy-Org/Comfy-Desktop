@@ -235,10 +235,6 @@ function openAppFromHome(app: AppCard): void {
   dashboardHomePage.value = 'apps'
 }
 
-watch(dashboardHomePage, (page) => {
-  if (page !== 'apps') appPickedOnHome.value = null
-})
-
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   if (page === 'apps') appsVisits.value += 1
@@ -539,8 +535,8 @@ onUnmounted(() => {
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
+              v-model:start-with="appPickedOnHome"
               :revisit="appsVisits"
-              :start-with="appPickedOnHome"
               @app-open-change="appIsOpen = $event"
             />
             <AssetsView v-else-if="dashboardHomePage === 'assets'" />
