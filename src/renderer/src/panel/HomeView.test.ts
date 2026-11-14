@@ -9,7 +9,7 @@ import type { CatalogWorkflow, Installation } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
 const openCatalogWorkflow = vi.fn<(id: string) => Promise<boolean>>()
-const openCatalogWorkflowHub = vi.fn<() => Promise<boolean>>()
+const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 const getInstallations = vi.fn<() => Promise<Installation[]>>()
 
 function workflow(id: string, title: string, thumbnailUrl: string | null = null): CatalogWorkflow {
@@ -59,12 +59,12 @@ beforeEach(() => {
   vi.clearAllMocks()
   listHomeWorkflows.mockResolvedValue([])
   openCatalogWorkflow.mockResolvedValue(true)
-  openCatalogWorkflowHub.mockResolvedValue(true)
+  getAppsEnabled.mockResolvedValue(false)
   getInstallations.mockResolvedValue([])
   ;(window as unknown as { api: unknown }).api = {
     listHomeWorkflows,
     openCatalogWorkflow,
-    openCatalogWorkflowHub,
+    getAppsEnabled,
     getInstallations,
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
@@ -389,13 +389,11 @@ describe('Home example workflows', () => {
     expect(cardAt(wrapper, 1).attributes('aria-label')).toBe('Show Make your character talk')
   })
 
-  it('opens the full list of workflows on Comfy Hub from See all workflows', async () => {
+  it('leaves out See all apps while Apps is turned off', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE])
     const wrapper = await openHome()
 
-    await wrapper.get('[data-testid="home-see-all-workflows"]').trigger('click')
-
-    expect(openCatalogWorkflowHub).toHaveBeenCalledOnce()
+    expect(wrapper.find('[data-testid="home-see-all-apps"]').exists()).toBe(false)
   })
 
   it('shows placeholders while the catalog is loading', async () => {

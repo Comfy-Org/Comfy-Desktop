@@ -524,6 +524,7 @@ onUnmounted(() => {
               @pick="handleChooserPick"
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
+              @show-apps="handleSidebarNavigate('apps')"
             />
             <AppsView
               v-else-if="dashboardHomePage === 'apps'"
