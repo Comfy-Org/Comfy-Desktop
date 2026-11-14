@@ -766,6 +766,40 @@ describe('usage events from a hosted page that switches apps', () => {
     ])
   })
 
+  it('tags events again after the person goes back to the list and reopens an app drawn by a hash route', async () => {
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    finishLoading(UPSCALE_URL)
+    const page = hostedPage().webContents
+
+    page.url = `${APPS_URL}#/`
+    page.emit('did-navigate-in-page', {}, page.url, true)
+    expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
+
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    expect(await trackFromAppsPage(eventFrom(page), RUN)).toBe(false)
+
+    page.url = UPSCALE_URL
+    page.emit('did-navigate-in-page', {}, UPSCALE_URL, true)
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: UPSCALE, document: 1 })
+
+    await trackFromAppsPage(eventFrom(page), RUN)
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: UPSCALE }]
+    ])
+  })
+
+  it('takes no app from a hash change that is not the route Desktop is loading', async () => {
+    await openCutout()
+    finishLoading()
+    const page = hostedPage().webContents
+
+    await showAppPage(panelContents(), HDR, PLACEMENT)
+    page.emit('did-navigate-in-page', {}, `${CUTOUT_URL}#step-2`, true)
+    page.emit('did-navigate-in-page', {}, HDR_URL, false)
+
+    expect(loadedAppPage(page as unknown as WebContents)).toBeNull()
+  })
+
   it('drops an event whose page was replaced while Desktop was checking it', async () => {
     await openCutout()
     finishLoading()

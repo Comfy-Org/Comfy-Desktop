@@ -38,6 +38,7 @@ interface HostedPage {
   appId: string | null
   loaded: LoadedAppPage | null
   loadStarted: boolean
+  loadingUrl: string | null
   documents: number
   status: AppPageStatus
   wanted: boolean
@@ -142,15 +143,25 @@ function commitDocument(hosted: HostedPage, url: string): void {
   const appId = hosted.appId
   const started = hosted.loadStarted
   hosted.loadStarted = false
+  hosted.loadingUrl = null
   hosted.loaded =
     appId !== null && (started || isAppsOwnPage(appId, url))
       ? { appId, document: hosted.documents }
       : null
 }
 
+function commitRoute(hosted: HostedPage, url: string): void {
+  const appId = hosted.appId
+  if (!hosted.loadStarted || appId === null || url !== hosted.loadingUrl) return
+  hosted.loadStarted = false
+  hosted.loadingUrl = null
+  hosted.loaded = { appId, document: hosted.documents }
+}
+
 function load(windowKey: number, hosted: HostedPage, url: string): void {
   hosted.loaded = null
   hosted.loadStarted = true
+  hosted.loadingUrl = url
   setStatus(windowKey, hosted, 'loading')
   void hosted.view.webContents.loadURL(url).catch(() => {})
 }
@@ -194,6 +205,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     appId: null,
     loaded: null,
     loadStarted: false,
+    loadingUrl: null,
     documents: 0,
     status: 'loading',
     wanted: false,
@@ -224,7 +236,9 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     else if (httpResponseCode >= FIRST_HTTP_ERROR_STATUS) fail(windowKey, hosted, 'http_status')
   })
   contents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
-    if (isMainFrame && isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
+    if (!isMainFrame) return
+    if (isAppsListUrl(location, url)) closeForList(windowKey, hosted, false)
+    else commitRoute(hosted, url)
   })
   contents.on('dom-ready', () => {
     if (hosted.status !== 'loading' || !isInAppsScope(location, contents.getURL())) return
