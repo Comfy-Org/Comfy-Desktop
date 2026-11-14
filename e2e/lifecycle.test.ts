@@ -622,8 +622,11 @@ async function untrackViaManageDrawer(installationId: string): Promise<void> {
 
 async function stopAndReturnToDashboardViaUI(): Promise<void> {
   if (!(await comfyFrontendIsLoaded())) {
-    const chooserUp = await ctx.panel.exists('.chooser-view').catch(() => false)
-    if (chooserUp) return
+    const dashboardMounted = await ctx.panel.exists('.chooser-view').catch(() => false)
+    if (dashboardMounted) {
+      await expectChooserVisible(ctx.panel)
+      return
+    }
   }
   const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar)
   await popup.waitForVisible(byTestId(TID.pickerMoreTrigger), { timeout: 15_000 })
@@ -647,13 +650,7 @@ async function stopAndReturnToDashboardViaUI(): Promise<void> {
   expect(await ctx.panel.click(byTestId(TID.lifecycleReturnDashboard))).toBe(true)
 
   await expect.poll(comfyFrontendIsLoaded, { timeout: 30_000, intervals: [500] }).toBe(false)
-  await expect
-    .poll(
-      () =>
-        ctx.panel.evaluate<boolean>(`!!document.querySelector('.chooser-view')`).catch(() => false),
-      { timeout: 30_000, intervals: [250, 500] }
-    )
-    .toBe(true)
+  await expectChooserVisible(ctx.panel)
 }
 
 test('stop ComfyUI again so update-comfyui (requires stopped) can run @sec-update @lifecycle', async () => {
