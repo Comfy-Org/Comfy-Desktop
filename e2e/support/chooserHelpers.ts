@@ -94,6 +94,7 @@ export async function openManageViaDashboard(
   installationId: string,
   tabKey?: string
 ): Promise<WebContentsPage> {
+  await expectChooserVisible(panel)
   await panel.waitForVisible(byTestId(TID.dashboardTile(installationId)), { timeout: 15_000 })
   await panel.evaluate<void>(
     `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)} })`

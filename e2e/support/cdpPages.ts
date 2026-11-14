@@ -2,6 +2,12 @@ import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
 import { evalWithRetry } from './evalRetry'
 
+const PAGE_GONE_PATTERN = /webContents (not found|destroyed)/
+
+function isPageGone(err: unknown): boolean {
+  return PAGE_GONE_PATTERN.test(err instanceof Error ? err.message : String(err))
+}
+
 export function findWebContentsId(
   app: ElectronApplication,
   marker: string
@@ -245,11 +251,21 @@ export class WebContentsPage {
     opts: { timeout?: number; message?: string } = {}
   ): Promise<void> {
     await expect
-      .poll(async () => pred(), {
-        timeout: opts.timeout ?? 15_000,
-        intervals: [200, 400, 800],
-        message: opts.message
-      })
+      .poll(
+        async () => {
+          try {
+            return await pred()
+          } catch (err) {
+            if (isPageGone(err)) return false
+            throw err
+          }
+        },
+        {
+          timeout: opts.timeout ?? 15_000,
+          intervals: [200, 400, 800],
+          message: opts.message
+        }
+      )
       .toBe(true)
   }
 
