@@ -346,6 +346,7 @@ import {
   handleLaunch,
   recordCampaignEnrolments,
   isCrashedExit,
+  isPortInUseOutput,
   launchedCoreCommit,
   onProcessTerminated,
   writeLog,
@@ -5135,6 +5136,79 @@ describe('prior ComfyUI process handling at launch', () => {
     expect(started?.port_bumped_from).toBe(PORT)
   })
 
+  const neighbourOn = (port: number, proc: ChildProcess | null): void => {
+    _runningSessions.set('neighbour', {
+      proc,
+      port,
+      mode: 'window',
+      installationName: 'Studio',
+      startedAt: Date.now()
+    })
+  }
+
+  it('starts on the next port while the build that owns this one is restarting', async () => {
+    neighbourOn(PORT, fakeChild() as unknown as ChildProcess)
+
+    const res = await handleLaunch(ctxFor('port-of-restarting-neighbour'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(launchHarness.nextPort)
+    const [started] = eventsNamed('comfy.desktop.comfyui.boot_started')
+    expect(started?.port_bumped_from).toBe(PORT)
+  })
+
+  it('names the restarting build when the installation asks before changing port', async () => {
+    neighbourOn(PORT, fakeChild() as unknown as ChildProcess)
+
+    const res = await handleLaunch({
+      ...ctxFor('port-of-restarting-neighbour-ask'),
+      inst: { ...install(), portConflict: 'ask' } as InstallationRecord
+    })
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe('errors.portConflictLauncher')
+    expect(res.portConflict).toEqual({
+      port: PORT,
+      pids: [],
+      isComfy: true,
+      nextPort: launchHarness.nextPort
+    })
+    expect(children).toHaveLength(0)
+  })
+
+  it('does not hold a port for a session that connects to a server Desktop did not start', async () => {
+    neighbourOn(PORT, null)
+
+    const res = await handleLaunch(ctxFor('port-of-remote-neighbour'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(PORT)
+  })
+
+  it('moves to the next port when an older core on Windows cannot bind', async () => {
+    let attempt = 0
+    launchHarness.waitForPort = async () => {
+      attempt++
+      if (attempt > 1) return
+      const first = children[0]!
+      first.stderr.emit(
+        'data',
+        Buffer.from(
+          `OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', ${PORT}): ` +
+            'only one usage of each socket address (protocol/network address/port) is normally permitted\n'
+        )
+      )
+      first.emit('close', 1, null)
+      return new Promise<void>(() => {})
+    }
+
+    const res = await handleLaunch(ctxFor('port-taken-older-windows-core'))
+
+    expect(res.ok).toBe(true)
+    expect(res.port).toBe(launchHarness.nextPort)
+    expect(children).toHaveLength(2)
+  })
+
   it('does not retry on top of a failed boot whose process outlived the kill', async () => {
     launchHarness.killExits = false
     launchHarness.waitForPort = async () => {
@@ -5406,6 +5480,33 @@ describe('prior ComfyUI process handling at launch', () => {
       expect(res.ok).toBe(false)
       expect(children).toHaveLength(1)
     })
+  })
+})
+
+describe('isPortInUseOutput', () => {
+  it.each([
+    [
+      'a current core',
+      'Port 8188 is already in use on address 127.0.0.1. Please close the other application or use a different port with --port.'
+    ],
+    [
+      'an older core on macOS or Linux',
+      "OSError: [Errno 48] error while attempting to bind on address ('127.0.0.1', 8188): address already in use"
+    ],
+    [
+      'an older core on Windows',
+      "OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8188): only one usage of each socket address (protocol/network address/port) is normally permitted"
+    ],
+    ['a Node server', 'Error: listen EADDRINUSE: 127.0.0.1:8188']
+  ])('recognises the bind failure of %s', (_server, output) => {
+    expect(isPortInUseOutput(output)).toBe(true)
+  })
+
+  it.each([
+    ['a crash that mentions imports and memory in use', 'ImportError: viewport\nVRAM in use: 4 GB'],
+    ['a normal start', 'To see the GUI go to: http://127.0.0.1:8188']
+  ])('does not read %s as a taken port', (_case, output) => {
+    expect(isPortInUseOutput(output)).toBe(false)
   })
 })
 
