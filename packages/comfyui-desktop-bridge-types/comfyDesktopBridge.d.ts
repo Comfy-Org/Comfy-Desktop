@@ -266,6 +266,18 @@ export interface ComfyDesktopHostedLocalBridge {
   localDownload(model: ComfyDesktopLocalModel): Promise<ComfyDesktopLocalDownload>
   onLocalEvent(callback: (event: ComfyDesktopLocalEvent) => void): () => void
 }
+/**
+ * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop
+ * exposes it to that page as `window.comfyDesktopTelemetry` and sends an event
+ * as `comfy.desktop.apps.<name>` only when the person allows telemetry.
+ * Desktop takes `run_started` (`where`, and optionally `model`, `quality` and
+ * `seconds`), `example_used` (`example`) and `open_in_comfyui` (`where`), each
+ * with the app's catalog id in `app`. It drops any other event and any other
+ * property, and sends `app_opened` itself.
+ */
+export interface ComfyDesktopHostedTelemetryBridge {
+  track(name: string, props?: Record<string, string | number>): void
+}
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>

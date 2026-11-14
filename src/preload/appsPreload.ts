@@ -4,6 +4,7 @@ import type {
   ComfyDesktop2AuthState,
   ComfyDesktopHostedAuthBridge,
   ComfyDesktopHostedLocalBridge,
+  ComfyDesktopHostedTelemetryBridge,
   ComfyDesktopLocalEvent
 } from '../types/comfyDesktopBridge'
 
@@ -35,5 +36,10 @@ const local: ComfyDesktopHostedLocalBridge = {
   }
 }
 
+const telemetry: ComfyDesktopHostedTelemetryBridge = {
+  track: (name, props) => ipcRenderer.send('apps-telemetry:track', { name, props })
+}
+
 contextBridge.exposeInMainWorld('comfyDesktopAuth', auth)
 contextBridge.exposeInMainWorld('comfyDesktopLocal', local)
+contextBridge.exposeInMainWorld('comfyDesktopTelemetry', telemetry)

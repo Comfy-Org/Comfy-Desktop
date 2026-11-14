@@ -41,20 +41,23 @@ while omitting part of it.
 
 ## Comfy pages hosted in Desktop's Apps view
 
-A Comfy page that Desktop shows in its Apps view gets two objects instead, and
-nothing else of the bridge above: `window.comfyDesktopAuth`, Desktop's account
-session, and `window.comfyDesktopLocal`, a ComfyUI on this computer.
+A Comfy page that Desktop shows in its Apps view gets three objects instead,
+and nothing else of the bridge above: `window.comfyDesktopAuth`, Desktop's
+account session, `window.comfyDesktopLocal`, a ComfyUI on this computer, and
+`window.comfyDesktopTelemetry`, the page's usage events.
 
 ```ts
 import type {
   ComfyDesktopHostedAuthBridge,
-  ComfyDesktopHostedLocalBridge
+  ComfyDesktopHostedLocalBridge,
+  ComfyDesktopHostedTelemetryBridge
 } from '@comfyorg/comfyui-desktop-bridge-types'
 
 declare global {
   interface Window {
     comfyDesktopAuth?: ComfyDesktopHostedAuthBridge
     comfyDesktopLocal?: ComfyDesktopHostedLocalBridge
+    comfyDesktopTelemetry?: ComfyDesktopHostedTelemetryBridge
   }
 }
 ```
@@ -71,8 +74,14 @@ needs, and only for runs the page started; `onLocalEvent()` carries ComfyUI's
 updates for those runs. `localDownload()` saves a safetensors model from
 Hugging Face into that build's models folder.
 
-Both objects are absent in a browser, so a page keeps its own sign-in and its
-own way to reach a local ComfyUI as the fallback.
+`track(name, props)` reports what the person does on the page: `run_started`,
+`example_used` or `open_in_comfyui`, with the app's catalog id in `app`.
+Desktop checks each property, drops anything it does not know, and sends the
+event as `comfy.desktop.apps.<name>` only when the person allows telemetry.
+Desktop sends `app_opened` itself when it opens the page.
+
+All three objects are absent in a browser, so a page keeps its own sign-in and
+its own way to reach a local ComfyUI as the fallback, and sends no events.
 
 ## Provenance
 
