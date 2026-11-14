@@ -64,12 +64,15 @@ interface Desktop {
   installations: Installation[]
   uninstalls: PendingUninstall[]
   cancelled: string[]
+  startPickerUninstall: (id: string) => Promise<void>
   reportProgress: (data: ProgressData) => Promise<void>
   reportErrorDetail: (data: ErrorDetailData) => Promise<void>
   removeBuild: (id: string) => Promise<void>
 }
 
 function openDesktop(installations: Installation[]): Desktop {
+  const panelListeners = new Set<Parameters<typeof window.api.onPanelSwitch>[0]>()
+  const overlayListeners = new Set<Parameters<typeof window.api.onPanelTriggerOverlay>[0]>()
   const progressListeners = new Set<(data: ProgressData) => void>()
   const errorDetailListeners = new Set<(data: ErrorDetailData) => void>()
   const installationListeners = new Set<() => void>()
@@ -77,6 +80,21 @@ function openDesktop(installations: Installation[]): Desktop {
     installations,
     uninstalls: [],
     cancelled: [],
+    async startPickerUninstall(id) {
+      const build = desktop.installations.find((installation) => installation.id === id)!
+      panelListeners.forEach((listener) => listener({ panel: 'progress' }))
+      overlayListeners.forEach((listener) =>
+        listener({
+          kind: 'picker-show-progress',
+          installationId: id,
+          actionId: 'delete',
+          title: `Deleting — ${build.name}`,
+          opKind: 'destructive',
+          cancellable: true
+        })
+      )
+      await flushPromises()
+    },
     async reportProgress(data) {
       progressListeners.forEach((listener) => listener(data))
       await flushPromises()
@@ -121,6 +139,9 @@ function openDesktop(installations: Installation[]): Desktop {
     getDiskSpace: async () => null,
     getInstallationSize: async () => ({ sizeBytes: 0 }),
     getFirstUseState: async () => ({ skipPick: false, hasLegacyDesktop: false }),
+    closeCurrentPanel: () => panelListeners.forEach((listener) => listener({ panel: 'chooser' })),
+    onPanelSwitch: subscribe(panelListeners),
+    onPanelTriggerOverlay: subscribe(overlayListeners),
     onInstallationsChanged: subscribe(installationListeners),
     onInstallProgress: subscribe(progressListeners),
     onErrorDetail: subscribe(errorDetailListeners),
@@ -215,6 +236,35 @@ describe('uninstalling a build', () => {
     useOverlay().current.value = null
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     desktop = openDesktop([BUILD, OTHER_BUILD])
+  })
+
+  it('from the title-bar picker, keeps the builds list visible during and after uninstall', async () => {
+    await openBuildsList()
+
+    await desktop.startPickerUninstall(BUILD.id)
+
+    expect(desktop.uninstalls).toHaveLength(1)
+    expect(fullScreenProgress()).toBeNull()
+    expect(onPage('app-sidebar')).not.toBeNull()
+    expect(buildTile()!.checkVisibility()).toBe(true)
+    expect(buildTile()!.textContent).toContain('Uninstalling')
+    expect(onPage(`chooser-tile-cancel-${BUILD.id}`)).not.toBeNull()
+
+    await desktop.reportProgress({
+      installationId: BUILD.id,
+      phase: 'delete',
+      percent: 42,
+      status: 'Deleting… 42 / 100 items'
+    })
+
+    expect(progressBarIn(buildTile())).toBe('42')
+
+    desktop.uninstalls[0]!.finish({ ok: true, navigate: 'list' })
+    await desktop.removeBuild(BUILD.id)
+
+    await vi.waitFor(() => expect(buildTile()).toBeNull())
+    expect(onPage(TID.dashboardTile(OTHER_BUILD.id))!.checkVisibility()).toBe(true)
+    expect(fullScreenProgress()).toBeNull()
   })
 
   it('from the builds list, shows progress on the build and removes it when done', async () => {

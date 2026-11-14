@@ -216,7 +216,13 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
     if (runsInBackground(showOpts)) {
       startOperationOnce({ ...showOpts, chainSpan: undefined })
-      if (isUninstallOpKind(showOpts.opKind)) return
+      if (isUninstallOpKind(showOpts.opKind)) {
+        if (activePanel.value === 'progress') {
+          activePanel.value = defaultBodyPanel()
+          window.api.closeCurrentPanel()
+        }
+        return
+      }
       if (currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
       if (showOpts.opKind === 'launch') {
         resolvePortConflictInTakeover(showOpts.installationId)
