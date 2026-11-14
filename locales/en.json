@@ -120,6 +120,11 @@
     "previousWorkflow": "Previous workflow",
     "nextWorkflow": "Next workflow",
     "workflowsUnavailable": "Example workflows couldn't be loaded. Check your connection and try again.",
+    "appsUnavailable": "Apps couldn't be loaded. Check your connection and try again.",
+    "showApp": "Show {title}",
+    "openApp": "Open {title}",
+    "previousApp": "Previous app",
+    "nextApp": "Next app",
     "retry": "Try again",
     "buildInstalling": "Installing ComfyUI",
     "buildStartingComfyUI": "Starting ComfyUI"

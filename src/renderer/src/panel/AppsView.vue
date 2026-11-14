@@ -13,7 +13,10 @@ type LoadState = 'loading' | 'ready' | 'failed'
 
 const SKELETON_CARD_COUNT = 8
 
-const { revisit = 0 } = defineProps<{ revisit?: number }>()
+const { revisit = 0, startWith = null } = defineProps<{
+  revisit?: number
+  startWith?: AppCard | null
+}>()
 
 const emit = defineEmits<{ 'app-open-change': [open: boolean] }>()
 
@@ -71,6 +74,14 @@ watch(
 )
 
 watch(openApp, (app) => emit('app-open-change', app !== null))
+
+watch(
+  () => startWith,
+  (app) => {
+    if (app) open(app)
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())

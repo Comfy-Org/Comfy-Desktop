@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowRight, ChevronRight } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import HomeBuildCard from './home/HomeBuildCard.vue'
 import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
-import HomeWorkflowCarousel from './home/HomeWorkflowCarousel.vue'
+import HomeCarousel from './home/HomeCarousel.vue'
 import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
+import { useHomeApps } from './home/useHomeApps'
 import { useInstallList } from '../composables/useInstallList'
 import {
   buildProgressOf,
@@ -20,7 +21,7 @@ import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import type { CatalogWorkflow, Installation } from '../types/ipc'
+import type { AppCard, CatalogWorkflow, Installation } from '../types/ipc'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 type LoadState = 'loading' | 'ready' | 'unavailable'
@@ -30,6 +31,7 @@ const TEXT_LINK_CLASS =
   '-my-1 h-8 gap-1.5 rounded-lg px-3 text-[13px]/5 font-medium text-muted-foreground hover:bg-secondary hover:text-foreground'
 
 const emit = defineEmits<{
+  'open-app': [app: AppCard]
   pick: [installation: Installation]
   'open-build': [installation: Installation]
   'show-builds': []
@@ -86,8 +88,24 @@ function buildStatus(build: Installation) {
   return homeBuildStatus(build, sessionStore)
 }
 
+const { state: appsState, apps, loadApps } = useHomeApps()
+const appsEnabled = computed(() => appsState.value !== 'checking' && appsState.value !== 'off')
+
 const state = ref<LoadState>('loading')
 const workflows = ref<CatalogWorkflow[]>([])
+const carouselIsLoading = computed(() =>
+  appsState.value === 'off'
+    ? state.value === 'loading'
+    : appsState.value === 'checking' || appsState.value === 'loading'
+)
+
+function coverOf(app: AppCard): string | null {
+  return app.coverUrl
+}
+
+function thumbnailOf(workflow: CatalogWorkflow): string | null {
+  return workflow.thumbnailUrl
+}
 
 async function loadWorkflows(): Promise<void> {
   state.value = 'loading'
@@ -104,12 +122,12 @@ function openWorkflow(workflow: CatalogWorkflow): void {
   void window.api.openCatalogWorkflow(workflow.id)
 }
 
-const appsEnabled = ref(false)
+watch(appsState, (now) => {
+  if (now === 'off') void loadWorkflows()
+})
 
-onMounted(async () => {
-  void loadWorkflows()
+onMounted(() => {
   if (installationStore.installations.length === 0) void installationStore.fetchInstallations()
-  appsEnabled.value = await window.api.getAppsEnabled().catch(() => false)
 })
 </script>
 
@@ -135,22 +153,54 @@ onMounted(async () => {
         {{ t('home.title') }}
       </h1>
 
-      <section class="mt-[74px]" :aria-label="t('home.exampleWorkflows')">
-        <HomeWorkflowCarousel
-          v-if="state === 'ready'"
-          :workflows="workflows"
-          @open="openWorkflow"
-        />
+      <section
+        class="mt-[74px]"
+        :aria-label="appsState === 'off' ? t('home.exampleWorkflows') : t('sidebar.apps')"
+      >
         <div
-          v-else-if="state === 'loading'"
+          v-if="carouselIsLoading"
           class="flex h-75 items-center justify-center gap-2.5"
           aria-busy="true"
-          data-testid="home-workflows-loading"
+          data-testid="home-carousel-loading"
         >
           <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
           <Skeleton class="h-75 w-64 rounded-[18px]" />
           <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
         </div>
+        <HomeCarousel
+          v-else-if="appsState === 'ready'"
+          kind="apps"
+          :cards="apps"
+          :picture-of="coverOf"
+          @open="emit('open-app', $event)"
+        />
+        <div
+          v-else-if="appsState === 'failed'"
+          class="flex h-75 flex-col items-center justify-center gap-3"
+          data-testid="home-apps-failed"
+        >
+          <p class="m-0 text-[13px]/5 text-muted-foreground">
+            {{ t('home.appsUnavailable') }}
+          </p>
+          <Button type="button" variant="secondary" size="md" @click="loadApps">
+            {{ t('home.retry') }}
+          </Button>
+        </div>
+        <div
+          v-else-if="appsState === 'empty'"
+          class="flex h-75 flex-col items-center justify-center gap-1 text-center"
+          data-testid="home-apps-empty"
+        >
+          <p class="m-0 text-[13px]/5 font-medium text-foreground">{{ t('apps.emptyTitle') }}</p>
+          <p class="m-0 text-[13px]/5 text-muted-foreground">{{ t('apps.emptyBody') }}</p>
+        </div>
+        <HomeCarousel
+          v-else-if="state === 'ready'"
+          kind="workflows"
+          :cards="workflows"
+          :picture-of="thumbnailOf"
+          @open="openWorkflow"
+        />
         <div
           v-else
           class="flex h-75 flex-col items-center justify-center gap-3"
