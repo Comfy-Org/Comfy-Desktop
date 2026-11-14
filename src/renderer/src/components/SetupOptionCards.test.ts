@@ -70,3 +70,23 @@ describe('SetupOptionCards keyboard', () => {
     wrapper.unmount()
   })
 })
+
+describe('SetupOptionCards refreshing', () => {
+  it('keeps its options on screen but takes no focus while they are being refreshed', async () => {
+    const wrapper = mountCards('a')
+    const group = wrapper.get('[role="radiogroup"]')
+    const radios = wrapper.findAll('[role="radio"]')
+
+    await wrapper.setProps({ refreshing: true })
+    expect(group.attributes('aria-busy')).toBe('true')
+    expect(radios.map((radio) => radio.text())).toEqual(['A', 'B', 'C'])
+    ;(radios[2]!.element as HTMLElement).focus()
+    expect(document.activeElement).not.toBe(radios[2]!.element)
+
+    await wrapper.setProps({ refreshing: false })
+    expect(group.attributes('aria-busy')).toBeUndefined()
+    ;(radios[2]!.element as HTMLElement).focus()
+    expect(document.activeElement).toBe(radios[2]!.element)
+    wrapper.unmount()
+  })
+})

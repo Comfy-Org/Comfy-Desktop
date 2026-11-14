@@ -45,6 +45,7 @@ const releaseLoading = ref(false)
 const variantOptions = ref<FieldOption[]>([])
 const selectedVariant = ref<FieldOption | null>(null)
 const variantLoading = ref(false)
+const heldVariants = ref<{ options: FieldOption[]; selection: FieldOption | null } | null>(null)
 const detectedGpu = ref<GPUInfo | null>(null)
 let optionsGeneration = 0
 
@@ -55,8 +56,13 @@ const replacingSnapshot = ref(false)
 
 const cardRef = ref<HTMLElement | null>(null)
 
-const sortedVariants = computed(() => sortedCardOptions(variantOptions.value))
+const sortedVariants = computed(() =>
+  sortedCardOptions(heldVariants.value?.options ?? variantOptions.value)
+)
 const variantCards = computed(() => toHardwareCards(sortedVariants.value))
+const shownVariantValue = computed(
+  () => (heldVariants.value?.selection ?? selectedVariant.value)?.value
+)
 
 const snapshotGpuLabel = computed(() => {
   if (!preview.value) return null
@@ -127,6 +133,7 @@ function open(): void {
   selectedRelease.value = null
   variantOptions.value = []
   selectedVariant.value = null
+  heldVariants.value = null
   releaseLoading.value = false
   variantLoading.value = false
   nodesExpanded.value = true
@@ -143,6 +150,7 @@ async function loadReleaseOptions(): Promise<void> {
   selectedRelease.value = null
   variantOptions.value = []
   selectedVariant.value = null
+  heldVariants.value = null
   try {
     const gpu = await window.api.detectGPU()
     if (gen !== optionsGeneration) return
@@ -169,9 +177,13 @@ async function loadVariantOptions(): Promise<void> {
   if (!selectedRelease.value) {
     variantOptions.value = []
     selectedVariant.value = null
+    heldVariants.value = null
     return
   }
   const gen = ++optionsGeneration
+  if (variantOptions.value.length > 0) {
+    heldVariants.value ??= { options: variantOptions.value, selection: selectedVariant.value }
+  }
   variantLoading.value = true
   variantOptions.value = []
   selectedVariant.value = null
@@ -186,7 +198,10 @@ async function loadVariantOptions(): Promise<void> {
     const snapshotVariantId = preview.value?.newestSnapshot.comfyui.variant || ''
     selectedVariant.value = findBestVariant(options, snapshotVariantId)
   } finally {
-    if (gen === optionsGeneration) variantLoading.value = false
+    if (gen === optionsGeneration) {
+      variantLoading.value = false
+      heldVariants.value = null
+    }
   }
 }
 
@@ -447,20 +462,21 @@ defineExpose({ open })
         </SetupFormRow>
 
         <SetupFormRow :label="$t('list.snapshotDevice')" :icon="Zap" control-height="cards">
+          <SetupOptionCards
+            v-if="variantCards.length > 0"
+            :options="variantCards"
+            :selected-value="shownVariantValue"
+            :refreshing="variantLoading"
+            :aria-label="$t('list.snapshotDevice')"
+            @select="selectVariantByValue"
+          />
           <div
-            v-if="variantLoading"
+            v-else-if="variantLoading"
             class="load-snapshot-loading py-2 text-[13px] text-text-muted"
             :class="spinnerClass"
           >
             {{ $t('newInstall.loading') }}
           </div>
-          <SetupOptionCards
-            v-else-if="variantOptions.length > 0"
-            :options="variantCards"
-            :selected-value="selectedVariant?.value"
-            :aria-label="$t('list.snapshotDevice')"
-            @select="selectVariantByValue"
-          />
           <div v-else class="load-snapshot-loading py-2 text-[13px] text-text-muted">
             {{ $t('newInstall.noOptions') }}
           </div>
