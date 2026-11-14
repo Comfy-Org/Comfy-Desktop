@@ -43,9 +43,12 @@ document.head.append(mountPointFillsThePage)
 let page: HTMLElement
 let appPageClosed: () => void = () => {}
 
-async function mountApps(apps: AppCard[] | Promise<AppCard[]> = [CUTOUT, HDR, GENJUTSU]) {
+async function mountApps(
+  apps: AppCard[] | Promise<AppCard[]> = [CUTOUT, HDR, GENJUTSU],
+  props: { startWith?: AppCard } = {}
+) {
   listApps.mockReturnValue(Promise.resolve(apps))
-  const wrapper = mount(AppsView, { attachTo: page })
+  const wrapper = mount(AppsView, { attachTo: page, props })
   await flushPromises()
   return wrapper
 }
@@ -240,6 +243,40 @@ describe('AppsView', () => {
 
     expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
+  })
+
+  it('opens straight on the app that was picked on Home, over the whole Apps page', async () => {
+    const pageBox = page.getBoundingClientRect()
+    const wrapper = await mountApps([CUTOUT, HDR, GENJUTSU], { startWith: HDR })
+
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('SDR to HDR')
+    expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(false)
+    expect(wrapper.emitted('app-open-change')).toEqual([[true]])
+    expect(showAppPage).toHaveBeenCalledWith(
+      'sdr-to-hdr',
+      expect.objectContaining({
+        justOpened: true,
+        x: pageBox.x,
+        y: pageBox.y,
+        width: pageBox.width,
+        height: pageBox.height
+      })
+    )
+  })
+
+  it("goes from an app picked on Home back to all the cards, on that app's card", async () => {
+    const wrapper = await mountApps([CUTOUT, HDR, GENJUTSU], { startWith: HDR })
+
+    appPageClosed()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(
+      wrapper
+        .findAll('[data-testid="apps-grid"] button')
+        .map((card) => card.attributes('data-testid'))
+    ).toEqual(['app-card-remove-background', 'app-card-sdr-to-hdr', 'app-card-genjutsu'])
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="app-card-sdr-to-hdr"]').element)
   })
 
   it('lists the apps in the order the website gave them', async () => {
