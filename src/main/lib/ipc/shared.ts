@@ -901,6 +901,21 @@ export function _releasePort(port: number): void {
   _pendingPorts.delete(port)
 }
 
+function sessionsServingLocally(): SessionInfo[] {
+  return [..._runningSessions.values()].filter((session) => session.proc && session.port > 0)
+}
+
+export function _claimedPorts(): Set<number> {
+  return new Set([
+    ..._pendingPorts.keys(),
+    ...sessionsServingLocally().map((session) => session.port)
+  ])
+}
+
+export function _runningPortOwner(port: number): string | undefined {
+  return sessionsServingLocally().find((session) => session.port === port)?.installationName
+}
+
 export {
   _registerExtraBroadcastTarget,
   _unregisterExtraBroadcastTarget,
