@@ -746,6 +746,30 @@ describe('a ComfyUI that Desktop started for apps', () => {
     expect(stopped).toEqual([])
   })
 
+  it('keeps running when its window opens while the idle stop is still reading its queue', async () => {
+    let answer: (queue: unknown) => void = () => {}
+    mocks.probeQueue = () => new Promise((resolve) => (answer = resolve))
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    mocks.windows.set(STUDIO, { window: {} })
+    answer({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([])
+  })
+
+  it('keeps running when it was started again while the idle stop was reading its queue', async () => {
+    let answer: (queue: unknown) => void = () => {}
+    mocks.probeQueue = () => new Promise((resolve) => (answer = resolve))
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    running()
+    answer({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([])
+  })
+
   it('is known as running for apps only, so opening it shows a new ComfyUI window', () => {
     expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
   })
