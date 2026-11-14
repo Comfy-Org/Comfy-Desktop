@@ -290,6 +290,14 @@ describe('uninstalling a build', () => {
     expect(onPage(TID.dashboardTile(OTHER_BUILD.id))!.textContent).not.toContain('Uninstalling')
 
     desktop.uninstalls[0]!.finish({ ok: true, navigate: 'list' })
+    await flushPromises()
+
+    expect(
+      buildTile()!.textContent,
+      'the tile keeps uninstalling until the build leaves the list'
+    ).toContain('Uninstalling')
+    expect(onPage(TID.dashboardTileKebab(BUILD.id))).toBeNull()
+
     await desktop.removeBuild(BUILD.id)
 
     await vi.waitFor(() => expect(buildTile()).toBeNull())
@@ -345,6 +353,14 @@ describe('uninstalling a build', () => {
     expect(progressBarIn(buildPage())).toBe('63')
 
     desktop.uninstalls[0]!.finish({ ok: true, navigate: 'list' })
+    await flushPromises()
+
+    expect(
+      onPage('home-build-uninstalling'),
+      'the page keeps the uninstall card until the build leaves the list'
+    ).not.toBeNull()
+    expect(onPage(TID.pickerMoreTrigger)).toBeNull()
+
     await desktop.removeBuild(BUILD.id)
 
     await vi.waitFor(() => expect(buildPage()).toBeNull())

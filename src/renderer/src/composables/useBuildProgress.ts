@@ -29,21 +29,24 @@ export function buildProgressOf(
   installationId: string
 ): BuildProgress | null {
   const op = progressStore.operations.get(installationId)
-  if (!op || op.finished) return null
-  if (op.opKind === 'launch') {
-    return {
-      kind: 'launch',
-      percent: op.flatPercent >= 0 ? Math.round(op.flatPercent) : null,
-      phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? op.flatStatus,
-      cancelling: op.cancelRequested
-    }
-  }
+  if (!op) return null
   if (isUninstallOpKind(op.opKind)) {
+    const removedButStillListed = op.finished && op.result?.ok === true
+    if (op.finished && !removedButStillListed) return null
     const { percent, indeterminate } = progressStore.globalProgressFor(op)
     return {
       kind: 'uninstall',
       percent: indeterminate ? null : Math.round(percent),
       phase: '',
+      cancelling: op.cancelRequested
+    }
+  }
+  if (op.finished) return null
+  if (op.opKind === 'launch') {
+    return {
+      kind: 'launch',
+      percent: op.flatPercent >= 0 ? Math.round(op.flatPercent) : null,
+      phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? op.flatStatus,
       cancelling: op.cancelRequested
     }
   }
