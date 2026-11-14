@@ -118,12 +118,10 @@ describe('BuildDetailsView', () => {
     }
   )
 
-  it('returns to the list from the back link', async () => {
+  it('has no back link, since the sidebar returns to the list', async () => {
     const { wrapper } = await mountDetails()
 
-    await wrapper.get('.build-details-back').trigger('click')
-
-    expect(wrapper.emitted('back')).toHaveLength(1)
+    expect(wrapper.find('.build-details-back').exists()).toBe(false)
   })
 
   it('stops listening for settings changes when closed', async () => {

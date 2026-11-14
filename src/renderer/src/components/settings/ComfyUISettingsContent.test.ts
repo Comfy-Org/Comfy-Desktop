@@ -22,6 +22,7 @@ const useComfyUISettingsState = {
   pendingRestartFieldIds: ref<Set<string>>(new Set()),
   fieldErrorMessages: ref<Record<string, string>>({}),
   diskUsageItem: ref(null),
+  diskSpace: ref(null),
   runActionStub: vi.fn()
 }
 vi.mock('../../composables/useComfyUISettings', () => ({
@@ -31,12 +32,11 @@ vi.mock('../../composables/useComfyUISettings', () => ({
     renameInstallation: vi.fn().mockResolvedValue(true),
     runAction: useComfyUISettingsState.runActionStub,
     sectionsForTab: (tab: string) =>
-      computed(() => {
-        const hasTab = useComfyUISettingsState.sections.value.some(
-          (s) => (s as { tab?: string }).tab === tab
-        )
-        return hasTab ? [{ tab, fields: [] }] : []
-      }),
+      computed(() =>
+        (useComfyUISettingsState.sections.value as { tab?: string; fields?: unknown[] }[])
+          .filter((s) => s.tab === tab)
+          .map((s) => ({ ...s, fields: s.fields ?? [] }))
+      ),
     reload: vi.fn()
   })
 }))
@@ -474,14 +474,7 @@ describe('ComfyUISettingsContent', () => {
     const CONSOLE_TOOLTIP =
       "An interactive shell running in this build's folder. Works whether ComfyUI is running or stopped."
 
-    const TAB_LABELS = new Set([
-      'Update',
-      'Startup Args',
-      'Snapshots',
-      'Storage',
-      'Terminal',
-      'About'
-    ])
+    const TAB_LABELS = new Set(['Overview', 'Startup Args', 'Snapshots', 'Storage', 'Terminal'])
 
     function tabTooltips(w: VueWrapper) {
       return w
@@ -829,6 +822,52 @@ describe('ComfyUISettingsContent', () => {
 
     it('fires check-update when the selected card has never been checked', async () => {
       expect(await checkUpdateFireCount(undefined)).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  describe('Overview cards', () => {
+    let priorSections: unknown[] = []
+    beforeEach(() => {
+      priorSections = useComfyUISettingsState.sections.value
+    })
+    afterEach(() => {
+      useComfyUISettingsState.sections.value = priorSections
+    })
+
+    async function mountWithChannelCards(installation: Installation): Promise<VueWrapper> {
+      useComfyUISettingsState.sections.value = [
+        {
+          tab: 'update',
+          fields: [
+            {
+              id: 'updateChannel',
+              label: 'Update Channel',
+              editType: 'channel-cards',
+              value: 'stable',
+              options: [{ value: 'stable', label: 'Stable', data: { lastCheckedAt: Date.now() } }]
+            }
+          ]
+        },
+        { tab: 'status', fields: [{ label: 'Install Method', value: 'Portable' }] }
+      ]
+      useComfyUISettingsState.sectionsFresh.value = true
+      return mountContent({ installation, initialTab: 'update' })
+    }
+
+    it('shows the cards for a Standalone build', async () => {
+      const wrapper = await mountWithChannelCards(SAMPLE_INSTALL)
+      expect(wrapper.find('[data-testid="build-overview"]').exists()).toBe(true)
+    })
+
+    it('keeps the Update sections for a Portable build', async () => {
+      const wrapper = await mountWithChannelCards({
+        ...SAMPLE_INSTALL,
+        sourceId: 'portable',
+        sourceLabel: 'Portable'
+      } as Installation)
+      expect(wrapper.find('[data-testid="build-overview"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="settings-section-list-stub"]').exists()).toBe(true)
+      expect(wrapper.findComponent({ name: 'StatusFactPanel' }).exists()).toBe(true)
     })
   })
 
