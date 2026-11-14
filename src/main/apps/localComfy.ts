@@ -8,6 +8,7 @@ import type {
 } from '../../types/comfyDesktopBridge'
 import { getEntryByInstallationId } from '../host/registry'
 import * as installations from '../installations'
+import type { InstallationRecord } from '../installations'
 import { startManagedModelJob } from '../lib/comfyDownloadManager'
 import { probeQueue } from '../lib/comfyProcessRecord'
 import * as i18n from '../lib/i18n'
@@ -163,6 +164,10 @@ async function chooseTarget(page: WebContents, want: unknown): Promise<LocalBuil
   return choice.build
 }
 
+export function pageBuildId(page: WebContents): string | null {
+  return targetByPage.get(page)?.id ?? null
+}
+
 export async function localState(
   page: WebContents,
   want: unknown
@@ -177,32 +182,41 @@ function pause(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function waitForOtherLaunch(installationId: string): Promise<ActionResult> {
+export async function otherLaunchSettled(installationId: string): Promise<void> {
   const giveUpAt = Date.now() + COMFY_BOOT_TIMEOUT_MS
   while (_hasActiveLaunch(installationId) && Date.now() < giveUpAt) {
     await pause(OTHER_LAUNCH_POLL_MS)
   }
+}
+
+async function waitForOtherLaunch(installationId: string): Promise<ActionResult> {
+  await otherLaunchSettled(installationId)
   return { ok: runningPortOf(installationId) !== null }
 }
 
 const QUIET_SENDER = { isDestroyed: () => false, send: () => {} } as unknown as WebContents
 const QUIET_EVENT = { sender: QUIET_SENDER } as unknown as IpcMainInvokeEvent
 
+export function launchQuietly(
+  inst: InstallationRecord,
+  actionData?: Record<string, unknown>
+): Promise<ActionResult> {
+  return handleLaunch({ event: QUIET_EVENT, installationId: inst.id, inst, actionData })
+}
+
 async function launchWithoutWindow(installationId: string): Promise<ActionResult> {
   if (_hasActiveLaunch(installationId)) return waitForOtherLaunch(installationId)
   const inst = await installations.get(installationId)
   if (!inst) return { ok: false }
-  const result = await handleLaunch({
-    event: QUIET_EVENT,
-    installationId,
-    inst,
-    actionData: { launchModeOverride: 'console', autoPortOnConflict: true }
+  const result = await launchQuietly(inst, {
+    launchModeOverride: 'console',
+    autoPortOnConflict: true
   })
   if (result.ok) startedHere.add(installationId)
   return result
 }
 
-function launchOnce(installationId: string): Promise<ActionResult> {
+export function launchOnce(installationId: string): Promise<ActionResult> {
   const pending = launches.get(installationId)
   if (pending) return pending
   const launch = launchWithoutWindow(installationId)
