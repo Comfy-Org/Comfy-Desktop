@@ -2,8 +2,6 @@ name: CI
 
 on:
   pull_request:
-  merge_group:
-    types: [checks_requested]
 
 permissions:
   contents: read
@@ -13,145 +11,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  checks:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.needs_browser && 'ubuntu-24.04' || 'ubuntu-latest' }}
+  teardown-diag:
+    name: Teardown diag (${{ matrix.load }} ${{ matrix.replica }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Format
-            command: pnpm run format:check
-          - name: Lint
-            command: pnpm run lint
-          - name: Typecheck
-            command: pnpm run typecheck && pnpm run bridge-types:check
-          - name: Test
-            command: pnpm run test
-            needs_browser: true
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Chromium for browser tests
-        if: matrix.needs_browser
-        run: pnpm exec playwright install --with-deps --only-shell chromium
-
-      - name: Run ${{ matrix.name }}
-        run: ${{ matrix.command }}
-
-  python-git-helpers:
-    name: Test (Python git helpers)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-
-      - name: Install pygit2
-        run: python -m pip install pygit2
-
-      - name: Run tests
-        run: python -m unittest discover -s tests/python -v
-
-  bridge-types-version:
-    name: Bridge types version bumped
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Require a version bump when the contract changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          PACKAGE_JSON=packages/comfyui-desktop-bridge-types/package.json
-          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-          if git diff --quiet "$MERGE_BASE" "$HEAD_SHA" -- \
-            src/types/comfyDesktopBridge.ts \
-            'packages/comfyui-desktop-bridge-types/*.d.ts' \
-            packages/comfyui-desktop-bridge-types/index.js \
-            packages/comfyui-desktop-bridge-types/package.json \
-            packages/comfyui-desktop-bridge-types/LICENSE; then
-            echo "Bridge contract unchanged; no version bump required."
-            exit 0
-          fi
-          read_version() { git show "$1:$PACKAGE_JSON" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version"; }
-          BASE_VERSION=$(read_version "$MERGE_BASE")
-          HEAD_VERSION=$(read_version "$HEAD_SHA")
-          export BASE_VERSION HEAD_VERSION
-          if ! node -e '
-            const parse = (v) => {
-              const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(v)
-              if (!m) throw new Error("not a semantic version: " + v)
-              return { core: [+m[1], +m[2], +m[3]], pre: m[4] ? m[4].split(".") : [] }
-            }
-            const cmpId = (a, b) => {
-              const na = /^\d+$/.test(a), nb = /^\d+$/.test(b)
-              if (na && nb) return +a - +b
-              if (na !== nb) return na ? -1 : 1
-              return a < b ? -1 : a > b ? 1 : 0
-            }
-            const cmp = (a, b) => {
-              for (let i = 0; i < 3; i++) if (a.core[i] !== b.core[i]) return a.core[i] - b.core[i]
-              if (!a.pre.length || !b.pre.length) return b.pre.length - a.pre.length
-              for (let i = 0; i < Math.max(a.pre.length, b.pre.length); i++) {
-                if (a.pre[i] === undefined) return -1
-                if (b.pre[i] === undefined) return 1
-                const d = cmpId(a.pre[i], b.pre[i])
-                if (d) return d
-              }
-              return 0
-            }
-            process.exit(cmp(parse(process.env.HEAD_VERSION), parse(process.env.BASE_VERSION)) > 0 ? 0 : 1)
-          '; then
-            echo "::error title=Bump the bridge types version::This change touches the bridge contract, but ${PACKAGE_JSON} is still $HEAD_VERSION (base: $BASE_VERSION). Merging would leave npm serving the old contract." >&2
-            exit 1
-          fi
-          echo "Bridge contract changed and the version moved $BASE_VERSION -> $HEAD_VERSION."
-
-  e2e:
-    name: E2E (${{ matrix.platform }} ${{ matrix.shard }}/3)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform: [macos, windows, linux]
-        shard: [1, 2, 3]
-        include:
-          - platform: macos
-            os: macos-latest
-          - platform: windows
-            os: windows-latest
-          - platform: linux
-            os: ubuntu-latest
+        load: [idle, busy]
+        replica: [1, 2, 3, 4, 5, 6]
 
     steps:
       - name: Checkout
@@ -172,29 +40,14 @@ jobs:
       - name: Build app
         run: pnpm run build
 
-      - name: Run E2E (${{ matrix.platform }} ${{ matrix.shard }}/3)
-        run: ${{ format('{0}pnpm run test:e2e:{1} --shard={2}/3', matrix.platform == 'linux' && 'xvfb-run --auto-servernum ' || '', matrix.platform, matrix.shard) }}
+      - name: Install gdb
+        run: sudo apt-get install -y gdb
 
-      - name: Upload Playwright failure artifacts
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-${{ matrix.platform }}-shard-${{ matrix.shard }}-failure
-          path: |
-            test-results/
-            playwright-report/
-          retention-days: 7
-          if-no-files-found: ignore
-
-  e2e-result:
-    name: E2E
-    needs: e2e
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every E2E shard to pass
+      - name: Repeat the picker spec
         env:
-          RESULT: ${{ needs.e2e.result }}
+          LOAD: ${{ matrix.load }}
         run: |
-          echo "E2E shards: $RESULT"
-          test "$RESULT" = success
+          if [ "$LOAD" = busy ]; then
+            for i in 1 2 3; do ( while :; do :; done ) & done
+          fi
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux e2e/picker-cluster.test.ts --repeat-each=100 --retries=0 --reporter=list

@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process'
+import { readlinkSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -225,6 +227,32 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     env
   })
 
+  const appOutput: string[] = []
+  const child = application.process()
+  const remember =
+    (label: string) =>
+    (chunk: Buffer): void => {
+      for (const line of chunk.toString().split('\n')) {
+        if (line.trim()) appOutput.push(`${Date.now()} [${label}] ${line.slice(0, 400)}`)
+      }
+      if (appOutput.length > 300) appOutput.splice(0, appOutput.length - 300)
+    }
+  child.stdout?.on('data', remember('out'))
+  child.stderr?.on('data', remember('err'))
+  child.once('exit', (code, signal) => {
+    appOutput.push(`${Date.now()} [diag] child exit code=${code} signal=${signal}`)
+  })
+  child.once('close', (code, signal) => {
+    appOutput.push(`${Date.now()} [diag] child close code=${code} signal=${signal}`)
+  })
+  const stdioInodes = [0, 1, 2, 3, 4].map((fd) => {
+    try {
+      return readlinkSync(`/proc/${child.pid}/fd/${fd}`)
+    } catch {
+      return 'unreadable'
+    }
+  })
+
   const page = await application.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   await evalWithRetry(() =>
@@ -243,23 +271,90 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       if (!marked.__e2eRenderProcessGoneInstalled) {
         marked.__e2eRenderProcessGoneInstalled = true
         electronApp.on('render-process-gone', () => electronApp.exit(1))
+        const mainProcess = globalThis.process
+        const note = (text: string): void => {
+          mainProcess.stderr.write(`[quit-diag] ${Date.now()} ${text}\n`)
+        }
+        for (const name of ['before-quit', 'will-quit', 'quit', 'window-all-closed'] as const) {
+          electronApp.prependListener(name as 'quit', () => note(`${name} enter`))
+          electronApp.on(name as 'quit', () => note(`${name} leave`))
+        }
+        mainProcess.on('exit', (code) => note(`process exit ${code}`))
       }
     })
   )
 
   const cleanup = async (): Promise<void> => {
+    let stall: string | null = null
     try {
       const proc = application.process()
       if (proc && proc.exitCode === null) {
-        await application.close().catch(() => {})
+        const startedAt = Date.now()
+        const closed = application.close().then(
+          () => 'closed' as const,
+          () => 'closed' as const
+        )
+        const outcome = await Promise.race([
+          closed,
+          new Promise<'stalled'>((resolve) => setTimeout(() => resolve('stalled'), 12_000))
+        ])
+        if (outcome === 'stalled') {
+          stall = describeStall(proc.pid ?? 0, stdioInodes, appOutput)
+          console.log(stall)
+          try {
+            process.kill(-(proc.pid ?? 0), 'SIGKILL')
+          } catch {}
+          await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 5_000))])
+          console.log(`[teardown-diag] after SIGKILL, closed=${proc.exitCode !== null}`)
+        } else {
+          console.log(`[teardown-diag] close took ${Date.now() - startedAt}ms`)
+        }
       }
     } catch {}
     if (!reuseDir) {
       await rm(homeDir, { recursive: true, force: true })
     }
+    if (stall) throw new Error('[teardown-diag] the app did not close within 12s')
   }
 
   return { application, homeDir, cleanup }
+}
+
+function describeStall(pid: number, stdioInodes: string[], appOutput: string[]): string {
+  const script = `
+echo "== main pid ${pid}"; if kill -0 ${pid} 2>/dev/null; then echo alive; else echo gone; fi
+echo "== status"; grep -E 'State|Threads|PPid' /proc/${pid}/status 2>&1
+echo "== main fds 0-4 at launch: ${stdioInodes.join(' ')}"
+echo "== main fds now"; ls -l /proc/${pid}/fd 2>&1 | head -60
+echo "== processes holding the launch stdio"
+for p in /proc/[0-9]*; do
+  q=\${p#/proc/}
+  for fd in $(ls $p/fd 2>/dev/null); do
+    l=$(readlink $p/fd/$fd 2>/dev/null)
+    for want in ${stdioInodes
+      .filter((inode) => /^(socket|pipe):/.test(inode))
+      .map((inode) => `'${inode}'`)
+      .join(' ')}; do
+      if [ "$l" = "$want" ]; then echo "$q fd$fd $l $(tr '\\0' ' ' < $p/cmdline | cut -c1-160)"; fi
+    done
+  done
+done
+echo "== ps"; ps -eo pid,ppid,pgid,stat,etime,args --forest | cut -c1-200 | tail -120
+echo "== gdb"; sudo gdb -p ${pid} -batch -ex 'set pagination off' -ex 'thread apply all bt 16' 2>&1 | grep -v '^\\[New LWP' | head -500
+`
+  const report = ((): string => {
+    try {
+      return execFileSync('bash', ['-c', script], { encoding: 'utf8', timeout: 90_000 })
+    } catch (err) {
+      return `diagnostics failed: ${String(err)}`
+    }
+  })()
+  return [
+    `[teardown-diag] STALL pid=${pid} at ${Date.now()}`,
+    report,
+    '== app output tail',
+    ...appOutput.slice(-120)
+  ].join('\n')
 }
 
 export async function waitForAppExit(
