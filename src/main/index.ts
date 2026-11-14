@@ -132,6 +132,7 @@ import { initUserTier } from './lib/userTier'
 import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
+  canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
@@ -1487,8 +1488,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
         const parentEntry = comfyWindows.get(parentEntryId)
         if (!parentEntry || parentEntry.window.isDestroyed()) return
-        const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
-        if (boundInstallationId !== installationId) return
+        if (!canRestartFromPicker(parentEntry, installationId, _getLaunchingInstallationIds())) {
+          return
+        }
         if (opts?.confirmed !== true && shouldConfirmKillForEntry(parentEntry)) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,

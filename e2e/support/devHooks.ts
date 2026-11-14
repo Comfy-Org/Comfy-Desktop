@@ -362,6 +362,30 @@ export async function isLaunchSpawnHeld(app: ElectronApplication): Promise<boole
   )
 }
 
+type LaunchHoldHook = 'armLaunchReadyHold' | 'releaseLaunchReadyHold' | 'isLaunchReadyHeld'
+
+function callLaunchReadyHold(app: ElectronApplication, hook: LaunchHoldHook): Promise<unknown> {
+  return evalWithRetry(() =>
+    app.evaluate((_electron, name) => {
+      const helpers = (globalThis as unknown as { __e2e?: Record<string, () => unknown> }).__e2e
+      if (!helpers) throw new Error('E2E helpers not registered (process.env.E2E !== "1"?)')
+      return helpers[name]!()
+    }, hook)
+  )
+}
+
+export async function armLaunchReadyHold(app: ElectronApplication): Promise<void> {
+  await callLaunchReadyHold(app, 'armLaunchReadyHold')
+}
+
+export async function releaseLaunchReadyHold(app: ElectronApplication): Promise<void> {
+  await callLaunchReadyHold(app, 'releaseLaunchReadyHold')
+}
+
+export async function isLaunchReadyHeld(app: ElectronApplication): Promise<boolean> {
+  return (await callLaunchReadyHold(app, 'isLaunchReadyHeld')) === true
+}
+
 export async function getReleaseCacheCheckedAt(
   app: ElectronApplication,
   repo: string,
