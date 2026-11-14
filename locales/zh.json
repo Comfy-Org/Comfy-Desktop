@@ -42,7 +42,15 @@
     "noMatches": "没有与“{query}”匹配的应用",
     "allApps": "全部应用",
     "pageLoading": "正在加载{app}",
-    "pageFailedTitle": "{app}未能加载"
+    "pageFailedTitle": "{app}未能加载",
+    "local": {
+      "noBuilds": "请先在 Comfy Desktop 中添加一个本地构建，才能在这台电脑上运行应用。",
+      "tooOld": "此应用需要 ComfyUI {version} 或更高版本。请在 Comfy Desktop 中更新一个本地构建。",
+      "couldNotStart": "Comfy Desktop 无法启动{name}。",
+      "notRunning": "这台电脑上的 ComfyUI 没有在运行。",
+      "notForwarded": "Comfy Desktop 不会把这个请求转给 ComfyUI。",
+      "modelRefused": "Comfy Desktop 只从 Hugging Face 下载 safetensors 模型。"
+    }
   },
   "assets": {
     "kindLabel": "资产类型",

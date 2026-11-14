@@ -42,7 +42,15 @@
     "noMatches": "No apps match “{query}”",
     "allApps": "All apps",
     "pageLoading": "Loading {app}",
-    "pageFailedTitle": "{app} didn't load"
+    "pageFailedTitle": "{app} didn't load",
+    "local": {
+      "noBuilds": "Add a local build in Comfy Desktop to run apps on this computer.",
+      "tooOld": "This app needs ComfyUI {version} or newer. Update a local build in Comfy Desktop.",
+      "couldNotStart": "Comfy Desktop could not start {name}.",
+      "notRunning": "ComfyUI is not running on this computer.",
+      "notForwarded": "Comfy Desktop does not pass this request to ComfyUI.",
+      "modelRefused": "Comfy Desktop only downloads safetensors models from Hugging Face."
+    }
   },
   "assets": {
     "kindLabel": "Asset type",

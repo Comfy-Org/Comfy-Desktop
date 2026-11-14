@@ -2,7 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type {
   ComfyDesktop2AuthState,
-  ComfyDesktopHostedAuthBridge
+  ComfyDesktopHostedAuthBridge,
+  ComfyDesktopHostedLocalBridge,
+  ComfyDesktopLocalEvent
 } from '../types/comfyDesktopBridge'
 
 const auth: ComfyDesktopHostedAuthBridge = {
@@ -20,4 +22,18 @@ const auth: ComfyDesktopHostedAuthBridge = {
   }
 }
 
+const local: ComfyDesktopHostedLocalBridge = {
+  getLocal: (want) => ipcRenderer.invoke('apps-local:get', want),
+  startLocal: (want) => ipcRenderer.invoke('apps-local:start', want),
+  localFetch: (request) => ipcRenderer.invoke('apps-local:fetch', request),
+  localDownload: (model) => ipcRenderer.invoke('apps-local:download', model),
+  onLocalEvent: (callback) => {
+    const handler = (_event: IpcRendererEvent, update: ComfyDesktopLocalEvent): void =>
+      callback(update)
+    ipcRenderer.on('apps-local:event', handler)
+    return () => ipcRenderer.removeListener('apps-local:event', handler)
+  }
+}
+
 contextBridge.exposeInMainWorld('comfyDesktopAuth', auth)
+contextBridge.exposeInMainWorld('comfyDesktopLocal', local)
