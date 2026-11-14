@@ -125,6 +125,8 @@ import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
 import { initAppsFlag } from './apps/appsFlag'
+import { runningPortOf } from './apps/localBuild'
+import { isRunningForAppsOnly, stopBuildsRunningForAppsOnly } from './apps/localComfy'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -774,14 +776,32 @@ ipcMain.on('comfy-window:new-chooser-window', () => {
   openChooserHostWindow()
 })
 
-ipcMain.handle('focus-comfy-window', (_event, installationId: string) => {
-  recordIpcInvocation('focus-comfy-window', { installationId })
+function focusOpenComfyWindow(installationId: string): boolean {
   const entry = getEntryByInstallationId(installationId)
-  if (entry && !entry.window.isDestroyed()) {
-    entry.window.show()
-    entry.window.focus()
-    return true
-  }
+  if (!entry || entry.window.isDestroyed()) return false
+  entry.window.show()
+  entry.window.focus()
+  return true
+}
+
+async function openWindowForAppsBuild(installationId: string): Promise<boolean> {
+  const installation = await getInstallation(installationId)
+  if (focusOpenComfyWindow(installationId)) return true
+  const port = runningPortOf(installationId)
+  if (!installation || port === null) return false
+  onLaunch({
+    port,
+    process: ipc.getSessionProcess(installationId),
+    installation,
+    mode: 'window'
+  })
+  return focusOpenComfyWindow(installationId)
+}
+
+ipcMain.handle('focus-comfy-window', async (_event, installationId: string) => {
+  recordIpcInvocation('focus-comfy-window', { installationId })
+  if (focusOpenComfyWindow(installationId)) return true
+  if (isRunningForAppsOnly(installationId)) return openWindowForAppsBuild(installationId)
 
   const proc = ipc.getSessionProcess(installationId)
   if (proc?.pid) {
@@ -1691,8 +1711,11 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => {
-    if (!ipc.hasRunningSessions()) {
-      app.quit()
-    }
+    void stopBuildsRunningForAppsOnly().finally(() => {
+      if (BrowserWindow.getAllWindows().length > 0) return
+      if (!ipc.hasRunningSessions()) {
+        app.quit()
+      }
+    })
   })
 }
