@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   findEntryByComfySender: vi.fn(),
+  findInstallationIdByComfySender: vi.fn(),
+  subscribeToInstallationModelJobs: vi.fn(),
   fromWebContents: vi.fn(),
   handle: vi.fn(),
   on: vi.fn(),
@@ -18,7 +20,8 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('../../host/registry', () => ({
-  findEntryByComfySender: mocks.findEntryByComfySender
+  findEntryByComfySender: mocks.findEntryByComfySender,
+  findInstallationIdByComfySender: mocks.findInstallationIdByComfySender
 }))
 
 vi.mock('../comfyDownloadManager', () => ({
@@ -30,7 +33,8 @@ vi.mock('../comfyDownloadManager', () => ({
   pauseModelDownload: vi.fn(),
   resumeModelDownload: vi.fn(),
   retryDownload: vi.fn(),
-  startModelDownload: vi.fn()
+  startModelDownload: vi.fn(),
+  subscribeToInstallationModelJobs: mocks.subscribeToInstallationModelJobs
 }))
 
 vi.mock('../modelAccessPage', () => ({
@@ -72,6 +76,39 @@ describe('registerDownloadHandlers model access bridge', () => {
 
     expect(mocks.openModelAccessPageWindow).toHaveBeenCalledWith(sender, url)
   })
+})
+
+describe('registerDownloadHandlers model download snapshot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    registerDownloadHandlers()
+  })
+
+  function listModelDownloads(sender: unknown): unknown {
+    const call = mocks.handle.mock.calls.find(([name]) => name === 'desktop2-list-model-downloads')
+    expect(call).toBeDefined()
+    return (call![1] as (event: { sender: unknown }) => unknown)({ sender })
+  }
+
+  it("subscribes the sender to its installation's jobs and returns their snapshot", () => {
+    const sender = { id: 9 }
+    const snapshot = [{ id: 'job-1', url: 'https://host.example/a', status: 'paused' }]
+    mocks.findInstallationIdByComfySender.mockReturnValue('install-a')
+    mocks.subscribeToInstallationModelJobs.mockReturnValue(snapshot)
+
+    expect(listModelDownloads(sender)).toBe(snapshot)
+    expect(mocks.subscribeToInstallationModelJobs).toHaveBeenCalledWith('install-a', sender)
+  })
+
+  it.for([null, ''])(
+    'returns no jobs to a sender whose installation resolves to %j',
+    (installationId) => {
+      mocks.findInstallationIdByComfySender.mockReturnValue(installationId)
+
+      expect(listModelDownloads({ id: 10 })).toEqual([])
+      expect(mocks.subscribeToInstallationModelJobs).not.toHaveBeenCalled()
+    }
+  )
 })
 
 type SyncIpcEvent = { sender: unknown; senderFrame: unknown; returnValue?: unknown }
