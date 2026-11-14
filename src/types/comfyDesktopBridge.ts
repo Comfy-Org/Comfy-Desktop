@@ -166,6 +166,20 @@ export interface ComfyDesktop2AuthBridge {
   ): Promise<ComfyDesktop2BillingHandoff>
 }
 
+/**
+ * Desktop's own Comfy account session, as a Comfy page hosted in Desktop's
+ * Apps view sees it. Desktop exposes it to that page as
+ * `window.comfyDesktopAuth`. The page can read the session, hold the
+ * workspace and partner-node credentials, and start a sign-in; it cannot sign
+ * Desktop out or switch workspace.
+ */
+export type ComfyDesktopHostedAuthBridge = Required<
+  Pick<
+    ComfyDesktop2AuthBridge,
+    'getState' | 'getWorkspaceToken' | 'getPartnerNodeToken' | 'requestSignIn' | 'onChanged'
+  >
+>
+
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>
   unsubscribe(installationId?: string): Promise<void>

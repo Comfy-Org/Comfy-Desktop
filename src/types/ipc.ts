@@ -126,7 +126,31 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'home' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage =
+  | 'home'
+  | 'apps'
+  | 'assets'
+  | 'chooser'
+  | 'benchmarks'
+  | 'performance-test'
+
+export interface AppCard {
+  id: string
+  title: string
+  description: string
+  coverUrl: string | null
+}
+
+export type AppPageStatus = 'loading' | 'ready' | 'failed'
+
+export interface AppPagePlacement {
+  x: number
+  y: number
+  width: number
+  height: number
+  cornerRadius: number
+  justOpened?: boolean
+}
 
 export interface CatalogWorkflow {
   id: string
@@ -1153,6 +1177,14 @@ export interface ElectronApi {
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
   openCatalogWorkflowHub(): Promise<boolean>
+  getAppsEnabled(): Promise<boolean>
+  listApps(): Promise<AppCard[]>
+  showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
+  captureAppPage(): Promise<string | null>
+  hideAppPage(): void
+  reloadAppPage(): void
+  onAppPageStatusChanged(callback: (status: AppPageStatus) => void): () => void
+  onAppPageClosed(callback: () => void): () => void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(

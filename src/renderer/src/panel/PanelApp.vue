@@ -12,6 +12,7 @@ import BuildDetailsView from './BuildDetailsView.vue'
 import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import AssetsView from './AssetsView.vue'
+import AppsView from './AppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -172,7 +173,7 @@ if (params.get('e2e') === '1') {
   })
 }
 
-type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser' | 'assets'>
+type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
 
 const dashboardHomePage = ref<DashboardHomePage>('home')
 
@@ -225,9 +226,14 @@ async function showHome(): Promise<void> {
   window.api.navigatePanel('home')
 }
 
+const appsVisits = ref(0)
+const appIsOpen = ref(false)
+
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
-  if (page === 'home' || page === 'chooser' || page === 'assets') dashboardHomePage.value = page
+  if (page === 'apps') appsVisits.value += 1
+  if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
+    dashboardHomePage.value = page
 }
 
 function retryLaunch(id: string): void {
@@ -488,6 +494,7 @@ onUnmounted(() => {
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
+        :make-room="appIsOpen"
         @navigate="handleSidebarNavigate"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
@@ -517,6 +524,11 @@ onUnmounted(() => {
               @pick="handleChooserPick"
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
+            />
+            <AppsView
+              v-else-if="dashboardHomePage === 'apps'"
+              :revisit="appsVisits"
+              @app-open-change="appIsOpen = $event"
             />
             <AssetsView v-else-if="dashboardHomePage === 'assets'" />
             <BuildDetailsView

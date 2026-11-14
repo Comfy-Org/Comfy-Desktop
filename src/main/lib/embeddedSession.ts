@@ -12,6 +12,8 @@ import type {
   ComfyDesktop2BillingHandoffIntent,
   ComfyDesktop2BillingHandoffReceiver
 } from '../../types/comfyDesktopBridge'
+import { areAppsEnabled } from '../apps/appsConfig'
+import { isAppsPageSender, liveAppsPages } from '../apps/appsPages'
 import { isEmbeddedSessionEnabled } from './embeddedSessionFlag'
 import * as mainTelemetry from './telemetry'
 import { getViewWorkspaceGrants } from './viewWorkspaceGrants'
@@ -104,10 +106,19 @@ async function sessionState(
   }
 }
 
+type SessionGate = () => Promise<boolean>
+
+function gateForSender(event: EmbeddedSessionSender): SessionGate | null {
+  if (isTrustedSender(event)) return enabledForLocalView
+  if (isAppsPageSender(event.sender, event.senderFrame)) return areAppsEnabled
+  return null
+}
+
 export async function stateForSender(
   event: EmbeddedSessionSender
 ): Promise<ComfyDesktop2AuthState> {
-  return isTrustedSender(event) ? sessionState(enabledForLocalView) : DISABLED
+  const gate = gateForSender(event)
+  return gate ? sessionState(gate) : DISABLED
 }
 
 export async function workspaceTokenForSender(
@@ -115,8 +126,9 @@ export async function workspaceTokenForSender(
   workspaceId: unknown
 ): Promise<string | null> {
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
-  if (!isTrustedSender(event)) return null
-  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId, enabledForLocalView)
+  const gate = gateForSender(event)
+  if (!gate) return null
+  return getViewWorkspaceGrants().tokenFor(event.sender, workspaceId, gate)
 }
 
 export async function partnerNodeTokenForSender(
@@ -124,12 +136,9 @@ export async function partnerNodeTokenForSender(
   workspaceId: unknown
 ): Promise<string | null> {
   if (typeof workspaceId !== 'string' || workspaceId === '') return null
-  if (!isTrustedSender(event)) return null
-  return getViewWorkspaceGrants().partnerNodeTokenFor(
-    event.sender,
-    workspaceId,
-    enabledForLocalView
-  )
+  const gate = gateForSender(event)
+  if (!gate) return null
+  return getViewWorkspaceGrants().partnerNodeTokenFor(event.sender, workspaceId, gate)
 }
 
 export async function switchWorkspaceForSender(
@@ -138,6 +147,7 @@ export async function switchWorkspaceForSender(
   switchWorkspace: (workspaceId: string) => Promise<WorkspaceSwitchOutcome>
 ): Promise<ComfyDesktop2AuthState> {
   const state = await stateForSender(event)
+  if (!isTrustedSender(event)) return state
   if (state.status !== 'signed_in' || typeof workspaceId !== 'string' || workspaceId === '')
     return state
   const grants = getViewWorkspaceGrants()
@@ -215,12 +225,18 @@ let broadcastGeneration = 0
 
 export async function broadcastEmbeddedSessionChanged(): Promise<void> {
   const generation = ++broadcastGeneration
-  const state = await sessionState()
-  if (generation !== broadcastGeneration || state.status === 'disabled') return
-  for (const entry of comfyWindows.values()) {
-    const contents = entry.comfyView.webContents
-    if (contents.isDestroyed() || !servesEntry(entry, contents.getURL())) continue
-    contents.send(EMBEDDED_SESSION_CHANNELS.changed, state)
+  const [localState, appsState] = await Promise.all([sessionState(), sessionState(areAppsEnabled)])
+  if (generation !== broadcastGeneration) return
+  if (localState.status !== 'disabled') {
+    for (const entry of comfyWindows.values()) {
+      const contents = entry.comfyView.webContents
+      if (contents.isDestroyed() || !servesEntry(entry, contents.getURL())) continue
+      contents.send(EMBEDDED_SESSION_CHANNELS.changed, localState)
+    }
+  }
+  if (appsState.status === 'disabled') return
+  for (const contents of liveAppsPages()) {
+    contents.send(EMBEDDED_SESSION_CHANNELS.changed, appsState)
   }
 }
 

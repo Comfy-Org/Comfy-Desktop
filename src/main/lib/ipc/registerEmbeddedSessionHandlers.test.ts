@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   emit: vi.fn(),
   handle: vi.fn(),
   signInToCloud: vi.fn(),
+  signOutOfCloud: vi.fn(),
+  isTrustedSender: vi.fn(),
   stateForSender: vi.fn(),
   switchWorkspaceForSender: vi.fn(),
   switchCloudWorkspace: vi.fn()
@@ -32,6 +34,7 @@ vi.mock('../embeddedSession', () => ({
     issueBillingHandoff: 'desktop2-auth:issue-billing-handoff'
   },
   billingHandoffForSender: vi.fn(),
+  isTrustedSender: mocks.isTrustedSender,
   partnerNodeTokenForSender: vi.fn(),
   stateForSender: mocks.stateForSender,
   switchWorkspaceForSender: mocks.switchWorkspaceForSender,
@@ -40,7 +43,7 @@ vi.mock('../embeddedSession', () => ({
 
 vi.mock('./registerDevPlatformHandlers', () => ({
   signInToCloud: mocks.signInToCloud,
-  signOutOfCloud: vi.fn(),
+  signOutOfCloud: mocks.signOutOfCloud,
   switchCloudWorkspace: mocks.switchCloudWorkspace
 }))
 
@@ -217,5 +220,39 @@ describe('desktop2-auth:issue-billing-handoff', () => {
       2500,
       '1.2.3'
     )
+  })
+})
+
+describe('desktop2-auth:sign-out', () => {
+  type SignOut = (event: unknown) => Promise<ComfyDesktop2AuthState>
+
+  function signOut(): SignOut {
+    const call = mocks.handle.mock.calls.find(([channel]) => channel === 'desktop2-auth:sign-out')
+    expect(call).toBeDefined()
+    return call![1] as SignOut
+  }
+
+  it('signs Desktop out for a local ComfyUI view', async () => {
+    mocks.isTrustedSender.mockReturnValue(true)
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValueOnce(SIGNED_OUT)
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual(SIGNED_OUT)
+    expect(mocks.signOutOfCloud).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves Desktop signed in when the hosted Apps page asks', async () => {
+    mocks.isTrustedSender.mockReturnValue(false)
+    mocks.stateForSender.mockResolvedValue(SIGNED_IN)
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual(SIGNED_IN)
+    expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a view Desktop does not share its session with', async () => {
+    mocks.isTrustedSender.mockReturnValue(false)
+    mocks.stateForSender.mockResolvedValue({ status: 'disabled' })
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual({ status: 'disabled' })
+    expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
   })
 })

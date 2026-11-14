@@ -10,12 +10,19 @@ const mocks = vi.hoisted(() => ({
   mint: vi.fn(),
   partnerMint: vi.fn(),
   current: 'ws-1' as string | null,
-  entries: [] as unknown[]
+  entries: [] as unknown[],
+  appsEnabled: false,
+  appsPages: [] as unknown[]
 }))
 
 vi.mock('./telemetry', () => ({ emit: vi.fn() }))
 vi.mock('./embeddedSessionFlag', () => ({
   isEmbeddedSessionEnabled: async () => (mocks.flagRead ? mocks.flagRead : mocks.enabled)
+}))
+vi.mock('../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
+vi.mock('../apps/appsPages', () => ({
+  isAppsPageSender: (sender: unknown) => mocks.appsPages.includes(sender),
+  liveAppsPages: () => mocks.appsPages
 }))
 vi.mock('../devplatform/session', () => ({
   getCloudSession: () => ({
@@ -104,11 +111,26 @@ function view(comfyUrl: string, options: ViewOptions = {}) {
   return { event, webContents }
 }
 
+function appsPage() {
+  const mainFrame = { processId: 9, routingId: 1, url: 'https://comfy.org/apps/' }
+  const webContents = {
+    mainFrame,
+    isDestroyed: () => false,
+    getURL: () => mainFrame.url,
+    send: vi.fn()
+  }
+  mocks.appsPages.push(webContents)
+  const event = { sender: webContents, senderFrame: mainFrame } as unknown as EmbeddedSessionSender
+  return { event, webContents }
+}
+
 beforeEach(() => {
   mocks.enabled = true
   mocks.generation = 0
   mocks.flagRead = null
   mocks.entries = []
+  mocks.appsEnabled = false
+  mocks.appsPages = []
   mocks.getGrantAccessToken.mockReset().mockResolvedValue(ACCESS)
   mocks.mint.mockReset().mockImplementation(async (_grant: string, workspaceId: string) => ({
     kind: 'minted',
@@ -717,5 +739,90 @@ describe('billingHandoffForSender', () => {
 
     await expect(issue()).resolves.toEqual({ status: 'disabled' })
     expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('the hosted Apps page', () => {
+  const SIGNED_IN = {
+    status: 'signed_in',
+    userId: 'user-1',
+    email: 'a@example.com',
+    workspaceId: 'ws-1'
+  }
+
+  it('gets the session while Apps is on, whatever the local-view flag says', async () => {
+    mocks.appsEnabled = true
+    mocks.enabled = false
+    const { event } = appsPage()
+
+    await expect(stateForSender(event)).resolves.toEqual(SIGNED_IN)
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBe(MINTED)
+    await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBe(partnerNodeFor('ws-1'))
+    expect(disabledEvents()).toEqual([])
+  })
+
+  it('gets nothing while Apps is switched off', async () => {
+    const { event } = appsPage()
+
+    await expect(stateForSender(event)).resolves.toEqual({ status: 'disabled' })
+    await expect(workspaceTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    await expect(partnerNodeTokenForSender(event, 'ws-1')).resolves.toBeNull()
+    expect(mocks.getGrantAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('gets no token for a workspace Desktop is not in', async () => {
+    mocks.appsEnabled = true
+    const { event } = appsPage()
+
+    await expect(workspaceTokenForSender(event, 'ws-2')).resolves.toBeNull()
+    await expect(partnerNodeTokenForSender(event, 'ws-2')).resolves.toBeNull()
+  })
+
+  it('cannot move Desktop to another workspace', async () => {
+    mocks.appsEnabled = true
+    const { event } = appsPage()
+    const switchWorkspace = vi.fn()
+
+    await expect(switchWorkspaceForSender(event, 'ws-2', switchWorkspace)).resolves.toEqual(
+      SIGNED_IN
+    )
+    expect(switchWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('gets no billing handoff, which only a local ComfyUI view may ask for', async () => {
+    mocks.appsEnabled = true
+    vi.stubGlobal('fetch', vi.fn())
+    const { event } = appsPage()
+
+    await expect(
+      billingHandoffForSender(event, 'ws-1', 'billing_web', undefined, undefined, '1.2.3')
+    ).resolves.toEqual({ status: 'disabled' })
+    expect(fetch).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('hears about a sign-in or sign-out, also while local views are left out', async () => {
+    mocks.appsEnabled = true
+    mocks.enabled = false
+    const page = appsPage()
+    const local = view('http://127.0.0.1:8000')
+
+    await broadcastEmbeddedSessionChanged()
+
+    expect(page.webContents.send).toHaveBeenCalledWith(EMBEDDED_SESSION_CHANNELS.changed, SIGNED_IN)
+    expect(local.webContents.send).not.toHaveBeenCalled()
+  })
+
+  it('hears nothing while Apps is switched off', async () => {
+    const page = appsPage()
+    const local = view('http://127.0.0.1:8000')
+
+    await broadcastEmbeddedSessionChanged()
+
+    expect(page.webContents.send).not.toHaveBeenCalled()
+    expect(local.webContents.send).toHaveBeenCalledWith(
+      EMBEDDED_SESSION_CHANNELS.changed,
+      SIGNED_IN
+    )
   })
 })
