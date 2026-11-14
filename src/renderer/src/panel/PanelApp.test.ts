@@ -113,12 +113,20 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
         installRoot: '/Users/ada/ComfyUI-Installs',
         downloadBytes: 1024 ** 3,
         requiredBytes: 2 * 1024 ** 3
+      },
+      consent: {
+        acceptedTos: true,
+        telemetryEnabled: true,
+        betaFeaturesEnabled: true,
+        betaTouched: false,
+        preservePersistedBetaOptIn: false,
+        locale: 'en'
       }
     }),
     template:
       '<div data-testid="first-use-takeover">' +
       '<button data-testid="first-use-install" @click="$emit(\'install\', plan)">Install</button>' +
-      '<button data-testid="first-use-change" @click="$emit(\'change\')">Change</button>' +
+      '<button data-testid="first-use-change" @click="$emit(\'change\', consent)">Change</button>' +
       '<button data-testid="first-use-skip" @click="$emit(\'complete-skip\')">Skip</button>' +
       '</div>',
     methods: { open: vi.fn(), resetContinue: vi.fn() }

@@ -192,8 +192,10 @@ async function openChangeSetup(props: { hideBackToDashboard?: boolean } = {}) {
   })
   await wrapper.vm.open(props.hideBackToDashboard ? { cameFromSetup: true } : {})
   await flushPromises()
-  only('[data-testid="config-change-setup"]').click()
-  await flushPromises()
+  if (!props.hideBackToDashboard) {
+    only('[data-testid="config-change-setup"]').click()
+    await flushPromises()
+  }
   await finishEntranceAnimations()
   return wrapper
 }
