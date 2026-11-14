@@ -889,7 +889,6 @@
     "useMyBuilds": "使用我的版本"
   },
   "installProgress": {
-    "detail": "{phase} · {percent}%",
     "starting": "正在开始…",
     "cancelling": "正在取消…",
     "percent": "{percent}%",

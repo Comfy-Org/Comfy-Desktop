@@ -9,7 +9,6 @@ export type BuildProgressKind = 'install' | 'launch'
 export interface BuildProgress {
   kind: BuildProgressKind
   percent: number | null
-  phase: string
   cancelling: boolean
 }
 
@@ -34,7 +33,6 @@ export function buildProgressOf(
     return {
       kind: 'launch',
       percent: op.flatPercent >= 0 ? Math.round(op.flatPercent) : null,
-      phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? op.flatStatus,
       cancelling: op.cancelRequested
     }
   }
@@ -42,7 +40,6 @@ export function buildProgressOf(
   return {
     kind: 'install',
     percent: Math.round(percent),
-    phase: op.steps?.find((step) => step.phase === op.activePhase)?.label ?? '',
     cancelling: op.cancelRequested
   }
 }
@@ -62,7 +59,6 @@ export function useInstallingBuilds(): (installationId: string) => boolean {
 
 export function useBuildProgress(build: () => Installation): {
   progress: ComputedRef<BuildProgress | null>
-  detail: ComputedRef<string>
   viewLogs: () => void
   cancel: () => Promise<void>
 } {
@@ -72,14 +68,6 @@ export function useBuildProgress(build: () => Installation): {
   const view = useViewBuildLogs()
 
   const progress = computed(() => buildProgressOf(progressStore, build().id))
-  const detail = computed(() => {
-    const current = progress.value
-    if (!current) return ''
-    if (current.cancelling) return t('installProgress.cancelling')
-    if (!current.phase) return t('installProgress.starting')
-    if (current.percent === null) return current.phase
-    return t('installProgress.detail', { phase: current.phase, percent: current.percent })
-  })
 
   function viewLogs(): void {
     view(build().id)
@@ -100,5 +88,5 @@ export function useBuildProgress(build: () => Installation): {
     if (confirmed) progressStore.cancelOperation(current.id)
   }
 
-  return { progress, detail, viewLogs, cancel }
+  return { progress, viewLogs, cancel }
 }

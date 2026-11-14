@@ -36,6 +36,7 @@ const broken = computed(() => {
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
+  if (install.progress.value?.cancelling) return t('installProgress.cancelling')
   if (installing.value)
     return t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
   if (broken.value) return broken.value
@@ -54,10 +55,9 @@ const statusLabel = computed(() => {
       return status satisfies never
   }
 })
-const detail = computed(() => {
-  if (installing.value) return install.detail.value
-  return isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
-})
+const detail = computed(() =>
+  isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
+)
 const isLive = computed(() => !installing.value && (status === 'running' || status === 'always-on'))
 const CARD_CLASS =
   'group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left outline-none transition-colors'
@@ -79,12 +79,15 @@ const CARD_CLASS =
       aria-hidden="true"
     />
     <BuildDeviceArt
-      class="relative shrink-0"
+      class="relative shrink-0 @max-[56rem]/home-builds:hidden"
       :kind="buildDeviceKind(build)"
       :glow="toneStyle.glow"
     />
     <span class="relative flex min-w-0 flex-1 flex-col">
-      <span class="flex h-4 items-center gap-1.5 text-xs/4 text-muted-foreground">
+      <span
+        class="flex h-4 items-center gap-1.5 text-xs/4 text-muted-foreground"
+        data-testid="home-build-status"
+      >
         <LoaderCircle
           :size="12"
           class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
@@ -92,38 +95,35 @@ const CARD_CLASS =
         />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
-      <span class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground">
+      <span
+        class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground"
+        data-testid="home-build-name"
+      >
         {{ build.name }}
       </span>
-      <span
-        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
-        data-testid="home-build-install-detail"
-      >
-        {{ detail }}
+      <span class="mt-2 -ml-3 flex items-center gap-2">
+        <Button
+          type="button"
+          variant="muted-textonly"
+          size="unset"
+          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+          data-testid="home-build-view-logs"
+          @click="install.viewLogs"
+        >
+          {{ t('installProgress.viewLogs') }}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="unset"
+          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
+          :disabled="install.progress.value?.cancelling"
+          data-testid="home-build-cancel"
+          @click="install.cancel"
+        >
+          {{ t('common.cancel') }}
+        </Button>
       </span>
-    </span>
-    <span class="relative flex shrink-0 items-center gap-2">
-      <Button
-        type="button"
-        variant="muted-textonly"
-        size="unset"
-        class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-        data-testid="home-build-view-logs"
-        @click="install.viewLogs"
-      >
-        {{ t('installProgress.viewLogs') }}
-      </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        size="unset"
-        class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
-        :disabled="install.progress.value?.cancelling"
-        data-testid="home-build-cancel"
-        @click="install.cancel"
-      >
-        {{ t('common.cancel') }}
-      </Button>
     </span>
     <span
       v-if="install.progress.value?.percent != null"
