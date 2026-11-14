@@ -40,6 +40,7 @@ interface HostedPage {
   loaded: LoadedAppPage | null
   loadStarted: boolean
   loadingUrl: string | null
+  routeBase: string | null
   documents: number
   status: AppPageStatus
   wanted: boolean
@@ -137,13 +138,22 @@ const routeOf = (url: string): string => {
   }
 }
 
-function isInAppRoute(appId: string, url: string): boolean {
-  const own = pageUrlForListedApp(appId)
-  if (own === null || pagePath(own) === null || pagePath(own) !== pagePath(url)) return false
-  const route = routeOf(own)
+function isInAppRoute(base: string, url: string): boolean {
+  if (pagePath(base) === null || pagePath(base) !== pagePath(url)) return false
+  const route = routeOf(base)
   if (!route.startsWith('#/')) return true
   const at = routeOf(url)
   return at === route || at.startsWith(`${route}/`) || at.startsWith(`${route}?`)
+}
+
+function routeBaseOf(hosted: HostedPage): string | null {
+  if (hosted.routeBase !== null) return hosted.routeBase
+  return hosted.appId === null ? null : pageUrlForListedApp(hosted.appId)
+}
+
+function isInLoadedRoute(hosted: HostedPage, url: string): boolean {
+  const base = routeBaseOf(hosted)
+  return base !== null && isInAppRoute(base, url)
 }
 
 function commitDocument(hosted: HostedPage, url: string): void {
@@ -152,8 +162,9 @@ function commitDocument(hosted: HostedPage, url: string): void {
   const started = hosted.loadStarted
   hosted.loadStarted = false
   hosted.loadingUrl = null
+  if (started) hosted.routeBase = url
   hosted.loaded =
-    appId !== null && (started || isInAppRoute(appId, url))
+    appId !== null && (started || isInLoadedRoute(hosted, url))
       ? { appId, document: hosted.documents }
       : null
 }
@@ -164,17 +175,19 @@ function moveWithinDocument(hosted: HostedPage, url: string): void {
     if (appId === null || url !== hosted.loadingUrl) return
     hosted.loadStarted = false
     hosted.loadingUrl = null
+    hosted.routeBase = url
     hosted.loaded = { appId, document: hosted.documents }
     return
   }
   hosted.loaded =
-    appId !== null && isInAppRoute(appId, url) ? { appId, document: hosted.documents } : null
+    appId !== null && isInLoadedRoute(hosted, url) ? { appId, document: hosted.documents } : null
 }
 
 function load(windowKey: number, hosted: HostedPage, url: string): void {
   hosted.loaded = null
   hosted.loadStarted = true
   hosted.loadingUrl = url
+  hosted.routeBase = null
   setStatus(windowKey, hosted, 'loading')
   void hosted.view.webContents.loadURL(url).catch(() => {})
 }
@@ -183,6 +196,7 @@ function closeForList(windowKey: number, hosted: HostedPage, pageStillShowsApp: 
   if (!pageStillShowsApp) {
     hosted.appId = null
     hosted.loaded = null
+    hosted.routeBase = null
   }
   conceal(hosted)
   panelOf(windowKey)?.send(APP_PAGE_CLOSED_CHANNEL)
@@ -219,6 +233,7 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
     loaded: null,
     loadStarted: false,
     loadingUrl: null,
+    routeBase: null,
     documents: 0,
     status: 'loading',
     wanted: false,

@@ -56,6 +56,7 @@ beforeEach(() => {
   mocks.page = { appId: 'remove-background', document: 1 }
   mocks.whileAuthorizing = () => {}
   _resetPageEventLimitsForTest()
+  mocks.capture.mockReturnValue(true)
   registerAppsTelemetryHandlers()
 })
 
@@ -196,6 +197,25 @@ describe('how many page events Desktop sends', () => {
         trackAppPageEvent('click', {}, 'genjutsu')
       }
       expect(sent()).toBe(PAGE_EVENTS_PER_SESSION)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('counts no event telemetry did not send, as while consent is off', () => {
+    vi.useFakeTimers()
+    try {
+      mocks.capture.mockReturnValue(false)
+      for (let i = 0; i < PAGE_EVENTS_PER_SESSION + 5; i++) {
+        vi.setSystemTime(new Date(Date.UTC(2026, 10, 14, 10, 0, 0) + i * 60_000))
+        trackAppPageEvent('click', {}, 'genjutsu')
+      }
+      for (let i = 0; i < PAGE_EVENTS_PER_MINUTE; i++) {
+        trackAppPageEvent(`step_${i}`, {}, 'genjutsu')
+      }
+
+      mocks.capture.mockReturnValue(true)
+      expect(trackAppPageEvent('click', {}, 'genjutsu')).toBe(true)
     } finally {
       vi.useRealTimers()
     }
