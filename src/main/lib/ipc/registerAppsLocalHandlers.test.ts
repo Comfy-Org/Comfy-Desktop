@@ -61,10 +61,10 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(await call(APPS_LOCAL_CHANNELS.fetch, request)).toMatchObject({ status: 200 })
     expect(await call(APPS_LOCAL_CHANNELS.download, model)).toEqual({ state: 'done' })
 
-    expect(mocks.localState).toHaveBeenCalledWith(WANT)
-    expect(mocks.startLocal).toHaveBeenCalledWith(WANT)
-    expect(mocks.localFetch).toHaveBeenCalledWith(request)
-    expect(mocks.localDownload).toHaveBeenCalledWith(model)
+    expect(mocks.localState).toHaveBeenCalledWith(EVENT.sender, WANT)
+    expect(mocks.startLocal).toHaveBeenCalledWith(EVENT.sender, WANT)
+    expect(mocks.localFetch).toHaveBeenCalledWith(EVENT.sender, request)
+    expect(mocks.localDownload).toHaveBeenCalledWith(EVENT.sender, model)
   })
 
   it.each([

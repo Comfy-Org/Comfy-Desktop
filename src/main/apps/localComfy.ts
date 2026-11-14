@@ -27,6 +27,7 @@ import {
 } from './localCalls'
 import type { LocalCall } from './localCalls'
 import { readModelRequest } from './localModelRequest'
+import type { ModelRequest } from './localModelRequest'
 import { createLocalRelay } from './localRelay'
 import type { LocalRelay } from './localRelay'
 
@@ -56,13 +57,13 @@ const RUN_UPDATES: ReadonlySet<string> = new Set([
 interface Target {
   id: string
   name: string
-  version: string | null
 }
 
-let target: Target | null = null
-let relay: LocalRelay | null = null
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 let watchingSessions = false
+let downloadsUnderWay = 0
+const targetByPage = new WeakMap<WebContents, Target>()
+const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
 const launches = new Map<string, Promise<ActionResult>>()
 const ownRuns = new Set<string>()
@@ -93,14 +94,20 @@ function relayRunUpdate(message: unknown): void {
   sendToPages({ type: message['type'], data: message['data'] })
 }
 
-function theRelay(): LocalRelay {
-  relay ??= createLocalRelay(relayRunUpdate)
+function relayFor(installationId: string, port: number): LocalRelay {
+  const relay = relayByBuild.get(installationId) ?? createLocalRelay(relayRunUpdate)
+  relayByBuild.set(installationId, relay)
+  relay.follow(port)
   return relay
 }
 
 function stopFollowingStoppedBuilds(): void {
   for (const id of startedHere) if (runningPortOf(id) === null) startedHere.delete(id)
-  if (target && runningPortOf(target.id) === null) relay?.stop()
+  for (const [id, relay] of relayByBuild) {
+    if (runningPortOf(id) !== null) continue
+    relay.stop()
+    relayByBuild.delete(id)
+  }
 }
 
 function watchSessions(): void {
@@ -111,6 +118,7 @@ function watchSessions(): void {
 
 async function stopIdleBuilds(): Promise<void> {
   idleTimer = null
+  if (downloadsUnderWay > 0) return noteUse()
   for (const id of [...startedHere]) {
     const port = runningPortOf(id)
     if (port === null || getEntryByInstallationId(id)) {
@@ -144,22 +152,24 @@ function describe(build: LocalBuild): ComfyDesktopLocalComfy {
     own: true,
     name: build.name,
     ...(build.version ? { version: build.version } : {}),
-    ...(build.port === null ? {} : { clientId: theRelay().clientId })
+    ...(build.port === null ? {} : { clientId: relayFor(build.id, build.port).clientId })
   }
 }
 
-async function chooseTarget(want: unknown): Promise<LocalBuild | string> {
+async function chooseTarget(page: WebContents, want: unknown): Promise<LocalBuild | string> {
   const choice = chooseLocalBuild(await usableLocalBuilds(), wantedVersion(want))
   if (choice.kind !== 'build') return whyNoBuild(choice)
-  target = { id: choice.build.id, name: choice.build.name, version: choice.build.version }
+  targetByPage.set(page, { id: choice.build.id, name: choice.build.name })
   return choice.build
 }
 
-export async function localState(want: unknown): Promise<ComfyDesktopLocalComfy> {
-  const build = await chooseTarget(want)
+export async function localState(
+  page: WebContents,
+  want: unknown
+): Promise<ComfyDesktopLocalComfy> {
+  const build = await chooseTarget(page, want)
   if (typeof build === 'string') return { state: 'unsupported', error: build }
   watchSessions()
-  if (build.port !== null) theRelay().follow(build.port)
   return describe(build)
 }
 
@@ -202,8 +212,11 @@ function launchOnce(installationId: string): Promise<ActionResult> {
   return launch
 }
 
-export async function startLocal(want: unknown): Promise<ComfyDesktopLocalComfy> {
-  const build = await chooseTarget(want)
+export async function startLocal(
+  page: WebContents,
+  want: unknown
+): Promise<ComfyDesktopLocalComfy> {
+  const build = await chooseTarget(page, want)
   if (typeof build === 'string') return { state: 'unsupported', error: build }
   watchSessions()
   const launched = build.port === null ? await launchOnce(build.id) : null
@@ -214,8 +227,7 @@ export async function startLocal(want: unknown): Promise<ComfyDesktopLocalComfy>
       error: launched?.message || i18n.t('apps.local.couldNotStart', { name: build.name })
     }
   }
-  theRelay().follow(port)
-  await theRelay().whenOpen(RELAY_READY_MS)
+  await relayFor(build.id, port).whenOpen(RELAY_READY_MS)
   noteUse()
   return describe({ ...build, port })
 }
@@ -296,12 +308,13 @@ function uploadForm(call: Extract<LocalCall, { kind: 'upload' }>): FormData {
 
 async function sendRun(
   port: number,
+  relay: LocalRelay,
   call: Extract<LocalCall, { kind: 'prompt' }>
 ): Promise<ComfyDesktopLocalAnswer> {
-  await theRelay().whenOpen(RELAY_READY_MS)
+  await relay.whenOpen(RELAY_READY_MS)
   const answer = await forward(port, '/prompt', {
     method: 'POST',
-    json: { prompt: call.prompt, client_id: theRelay().clientId, extra_data: call.extraData }
+    json: { prompt: call.prompt, client_id: relay.clientId, extra_data: call.extraData }
   })
   const started = parsed(answer)
   if (isRecord(started) && typeof started['prompt_id'] === 'string') {
@@ -319,7 +332,11 @@ async function readRun(port: number, promptId: string): Promise<ComfyDesktopLoca
   return answer
 }
 
-async function answerCall(port: number, call: LocalCall): Promise<ComfyDesktopLocalAnswer> {
+async function answerCall(
+  port: number,
+  relay: LocalRelay,
+  call: LocalCall
+): Promise<ComfyDesktopLocalAnswer> {
   switch (call.kind) {
     case 'queue':
       return jsonAnswer(
@@ -331,7 +348,7 @@ async function answerCall(port: number, call: LocalCall): Promise<ComfyDesktopLo
     case 'upload':
       return forward(port, '/upload/image', { method: 'POST', form: uploadForm(call) })
     case 'prompt':
-      return sendRun(port, call)
+      return sendRun(port, relay, call)
     case 'history':
       return ownRuns.has(call.promptId) ? readRun(port, call.promptId) : refusal()
     case 'view':
@@ -351,14 +368,17 @@ async function answerCall(port: number, call: LocalCall): Promise<ComfyDesktopLo
   }
 }
 
-export async function localFetch(raw: unknown): Promise<ComfyDesktopLocalAnswer> {
+export async function localFetch(
+  page: WebContents,
+  raw: unknown
+): Promise<ComfyDesktopLocalAnswer> {
   const call = readLocalCall(raw)
   if (!call) return refusal()
+  const target = targetByPage.get(page)
   const port = target ? runningPortOf(target.id) : null
-  if (port === null) throw new Error(i18n.t('apps.local.notRunning'))
-  theRelay().follow(port)
+  if (!target || port === null) throw new Error(i18n.t('apps.local.notRunning'))
   noteUse()
-  return answerCall(port, call)
+  return answerCall(port, relayFor(target.id, port), call)
 }
 
 function downloadProgress(name: string): (done: number, total: number) => void {
@@ -371,18 +391,15 @@ function downloadProgress(name: string): (done: number, total: number) => void {
   }
 }
 
-export async function localDownload(raw: unknown): Promise<ComfyDesktopLocalDownload> {
-  const model = readModelRequest(raw)
-  if (!model) return { state: 'failed', error: i18n.t('apps.local.modelRefused') }
-  if (!target || runningPortOf(target.id) === null) {
-    return { state: 'failed', error: i18n.t('apps.local.notRunning') }
-  }
-  noteUse()
+async function downloadInto(
+  installationId: string,
+  model: ModelRequest
+): Promise<ComfyDesktopLocalDownload> {
   const job = await startManagedModelJob({
     url: model.url,
     filename: model.name,
     directory: model.folder,
-    installationId: target.id,
+    installationId,
     onProgress: downloadProgress(model.name)
   })
   try {
@@ -392,6 +409,24 @@ export async function localDownload(raw: unknown): Promise<ComfyDesktopLocalDown
     return { state: 'failed', error: outcome.error }
   } finally {
     job.release()
+  }
+}
+
+export async function localDownload(
+  page: WebContents,
+  raw: unknown
+): Promise<ComfyDesktopLocalDownload> {
+  const model = readModelRequest(raw)
+  if (!model) return { state: 'failed', error: i18n.t('apps.local.modelRefused') }
+  const target = targetByPage.get(page)
+  if (!target || runningPortOf(target.id) === null) {
+    return { state: 'failed', error: i18n.t('apps.local.notRunning') }
+  }
+  downloadsUnderWay += 1
+  try {
+    return await downloadInto(target.id, model)
+  } finally {
+    downloadsUnderWay -= 1
     noteUse()
   }
 }
@@ -399,9 +434,9 @@ export async function localDownload(raw: unknown): Promise<ComfyDesktopLocalDown
 export function _resetForTest(): void {
   if (idleTimer) clearTimeout(idleTimer)
   idleTimer = null
-  relay?.stop()
-  relay = null
-  target = null
+  downloadsUnderWay = 0
+  for (const relay of relayByBuild.values()) relay.stop()
+  relayByBuild.clear()
   if (watchingSessions) sessionLifecycleEvents.off('changed', stopFollowingStoppedBuilds)
   watchingSessions = false
   startedHere.clear()

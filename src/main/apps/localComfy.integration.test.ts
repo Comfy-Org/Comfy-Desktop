@@ -5,6 +5,7 @@ import { createServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
+import type { WebContents } from 'electron'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -52,9 +53,12 @@ vi.mock('../lib/models', () => ({ resolveComfyDir: (installPath: string) => inst
 vi.mock('../lib/process', () => ({ COMFY_BOOT_TIMEOUT_MS: 300_000 }))
 vi.mock('./appsPages', () => ({ liveAppsPages: () => mocks.pages }))
 
-import { _resetForTest, localFetch, localState } from './localComfy'
+import * as local from './localComfy'
 
 const WANT = { minVersion: '0.41.0' }
+const PAGE = {} as WebContents
+const localState = (want: unknown) => local.localState(PAGE, want)
+const localFetch = (raw: unknown) => local.localFetch(PAGE, raw)
 
 let comfy: ChildProcess
 let scriptDir = ''
@@ -95,7 +99,7 @@ beforeAll(async () => {
 })
 
 afterAll(() => {
-  _resetForTest()
+  local._resetForTest()
   comfy?.kill()
   if (scriptDir) rmSync(scriptDir, { recursive: true, force: true })
 })

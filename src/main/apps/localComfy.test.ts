@@ -1,3 +1,4 @@
+import type { WebContents } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -10,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   stopRunning: (_id: string): Promise<void> => Promise.resolve(),
   probeQueue: (_port: number): Promise<unknown> => Promise.resolve({ running: 0, pending: 0 }),
   startModelJob: (_options: Record<string, unknown>): Promise<unknown> => Promise.resolve(null),
-  relay: null as unknown,
+  makeRelay: (): unknown => null,
   hearFromComfy: (_message: unknown): void => {}
 }))
 
@@ -56,23 +57,19 @@ vi.mock('./appsPages', () => ({ liveAppsPages: () => mocks.pages }))
 vi.mock('./localRelay', () => ({
   createLocalRelay: (onMessage: (message: unknown) => void) => {
     mocks.hearFromComfy = onMessage
-    return mocks.relay
+    return mocks.makeRelay()
   }
 }))
 
 import { sessionLifecycleEvents } from '../lib/ipc/shared'
-import {
-  LOCAL_EVENT_CHANNEL,
-  LOCAL_IDLE_STOP_MS,
-  _resetForTest,
-  localDownload,
-  localFetch,
-  localState,
-  startLocal
-} from './localComfy'
+import * as local from './localComfy'
+
+const { LOCAL_EVENT_CHANNEL, LOCAL_IDLE_STOP_MS, _resetForTest } = local
 
 const STUDIO = 'studio'
 const PORT = 8190
+const LAB = 'lab'
+const LAB_PORT = 8191
 const RUN = '0b1c2d3e-aaaa-bbbb-cccc-0123456789ab'
 const OTHER_RUN = 'ffffffff-aaaa-bbbb-cccc-0123456789ab'
 const WANT = { minVersion: '0.41.0' }
@@ -84,6 +81,7 @@ const BIREFNET = {
 }
 
 interface Asked {
+  port: number
   method: string
   path: string
   body: unknown
@@ -105,13 +103,13 @@ class FakeComfy {
     const path = url.pathname + url.search
     const body =
       typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : (init.body ?? null)
-    this.asked.push({ method: init.method ?? 'GET', path, body })
+    this.asked.push({ port: Number(url.port), method: init.method ?? 'GET', path, body })
     const json = (value: unknown, status = 200) =>
       new Response(JSON.stringify(value), {
         status,
         headers: { 'content-type': 'application/json' }
       })
-    if (url.port !== String(PORT)) throw new TypeError('fetch failed')
+    if (![PORT, LAB_PORT].includes(Number(url.port))) throw new TypeError('fetch failed')
     if (url.pathname === '/queue' && init.method !== 'POST') return json(this.queue)
     if (url.pathname === '/prompt') return json(this.promptAnswer.body, this.promptAnswer.status)
     if (url.pathname === `/history/${RUN}`) {
@@ -142,9 +140,24 @@ interface FakeRelay {
   stop: ReturnType<typeof vi.fn>
 }
 
+type FakePage = { send: ReturnType<typeof vi.fn<(channel: string, event: unknown) => void>> }
+
 let comfy: FakeComfy
 let relay: FakeRelay
-let page: { send: ReturnType<typeof vi.fn<(channel: string, event: unknown) => void>> }
+let page: FakePage
+
+const asContents = (from: FakePage): WebContents => from as unknown as WebContents
+const localState = (want: unknown, from: FakePage = page) =>
+  local.localState(asContents(from), want)
+const startLocal = (want: unknown, from: FakePage = page) =>
+  local.startLocal(asContents(from), want)
+const localFetch = (raw: unknown, from: FakePage = page) => local.localFetch(asContents(from), raw)
+const localDownload = (raw: unknown, from: FakePage = page) =>
+  local.localDownload(asContents(from), raw)
+
+function fakeRelay(clientId: string): FakeRelay {
+  return { clientId, follow: vi.fn(), whenOpen: vi.fn(async () => true), stop: vi.fn() }
+}
 let launches: Record<string, unknown>[]
 let stopped: string[]
 
@@ -196,16 +209,11 @@ beforeEach(() => {
   _resetForTest()
   comfy = new FakeComfy()
   vi.stubGlobal('fetch', vi.fn(comfy.answer))
-  relay = {
-    clientId: 'desktop-client',
-    follow: vi.fn(),
-    whenOpen: vi.fn(async () => true),
-    stop: vi.fn()
-  }
+  relay = fakeRelay('desktop-client')
   page = { send: vi.fn<(channel: string, event: unknown) => void>() }
   launches = []
   stopped = []
-  mocks.relay = relay
+  mocks.makeRelay = () => relay
   mocks.pages = [page]
   mocks.records = [build()]
   mocks.sessions.clear()
@@ -374,6 +382,7 @@ describe('a run from an app page', () => {
     expect(textOf(answer)).toMatchObject({ prompt_id: RUN })
     expect(comfy.calls('/prompt')).toEqual([
       {
+        port: PORT,
         method: 'POST',
         path: '/prompt',
         body: { prompt, client_id: 'desktop-client', extra_data: extraData }
@@ -400,8 +409,8 @@ describe('a run from an app page', () => {
     expect((await post('/queue', { delete: [RUN] })).status).toBe(200)
     expect((await post('/interrupt', { prompt_id: RUN })).status).toBe(200)
     expect(comfy.asked.slice(-2)).toEqual([
-      { method: 'POST', path: '/queue', body: { delete: [RUN] } },
-      { method: 'POST', path: '/interrupt', body: { prompt_id: RUN } }
+      { port: PORT, method: 'POST', path: '/queue', body: { delete: [RUN] } },
+      { port: PORT, method: 'POST', path: '/interrupt', body: { prompt_id: RUN } }
     ])
   })
 
@@ -473,6 +482,35 @@ describe("what is not the page's own", () => {
   })
 })
 
+describe('two app pages open in two windows', () => {
+  it('each reach the ComfyUI their own app was given, as its own client', async () => {
+    const other: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+    const relays = [fakeRelay('client-for-studio'), fakeRelay('client-for-lab')]
+    mocks.makeRelay = () => relays.shift()
+    mocks.records = [
+      build({ version: 'v0.30.0', lastLaunchedAt: 900 }),
+      build({ id: LAB, name: 'Lab', installPath: '/builds/lab', lastLaunchedAt: 100 })
+    ]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+
+    const forOlderApp = await localState({ minVersion: '0.21.0' })
+    const forNewerApp = await localState({ minVersion: '0.41.0' }, other)
+    await post('/prompt', { prompt: { 1: {} } })
+    await localFetch(
+      { method: 'POST', path: '/prompt', body: JSON.stringify({ prompt: { 2: {} } }) },
+      other
+    )
+
+    expect(forOlderApp).toMatchObject({ name: 'Studio', clientId: 'client-for-studio' })
+    expect(forNewerApp).toMatchObject({ name: 'Lab', clientId: 'client-for-lab' })
+    expect(comfy.calls('/prompt').map(({ port, body }) => [port, body])).toEqual([
+      [PORT, { prompt: { 1: {} }, client_id: 'client-for-studio', extra_data: {} }],
+      [LAB_PORT, { prompt: { 2: {} }, client_id: 'client-for-lab', extra_data: {} }]
+    ])
+  })
+})
+
 describe('sending a picture', () => {
   it("puts it in the apps folder of ComfyUI's input, without replacing a file of that name", async () => {
     running()
@@ -510,7 +548,7 @@ describe('when ComfyUI is not there', () => {
   })
 
   it('rejects when the build stopped answering', async () => {
-    running(STUDIO, 9999)
+    running(STUDIO, 9_999)
     await localState(WANT)
 
     await expect(localFetch({ path: '/queue' })).rejects.toThrow()
@@ -681,6 +719,24 @@ describe('a ComfyUI that Desktop started for apps', () => {
     await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
 
     expect(stopped).toEqual([])
+  })
+
+  it('keeps running while a model is still downloading for an app, however long that takes', async () => {
+    let finish: (outcome: unknown) => void = () => {}
+    mocks.startModelJob = async () => ({
+      id: 'job',
+      release: vi.fn(),
+      completion: new Promise((resolve) => (finish = resolve))
+    })
+    const downloading = localDownload(BIREFNET)
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+    expect(stopped).toEqual([])
+
+    finish({ status: 'completed', savePath: '/models/x' })
+    await downloading
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(stopped).toEqual([STUDIO])
   })
 
   it('is left alone for good once the person opens its window', async () => {

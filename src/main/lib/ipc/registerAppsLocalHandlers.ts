@@ -27,23 +27,23 @@ function notOffered(): ComfyDesktopLocalComfy {
 
 export function registerAppsLocalHandlers(): void {
   ipcMain.handle(APPS_LOCAL_CHANNELS.get, async (event, want: unknown) =>
-    (await isFromAppsPage(event)) ? localState(want) : notOffered()
+    (await isFromAppsPage(event)) ? localState(event.sender, want) : notOffered()
   )
 
   ipcMain.handle(APPS_LOCAL_CHANNELS.start, async (event, want: unknown) =>
-    (await isFromAppsPage(event)) ? startLocal(want) : notOffered()
+    (await isFromAppsPage(event)) ? startLocal(event.sender, want) : notOffered()
   )
 
   ipcMain.handle(APPS_LOCAL_CHANNELS.fetch, async (event, request: unknown) => {
     if (!(await isFromAppsPage(event))) throw new Error(i18n.t('apps.local.notRunning'))
-    return localFetch(request)
+    return localFetch(event.sender, request)
   })
 
   ipcMain.handle(
     APPS_LOCAL_CHANNELS.download,
     async (event, model: unknown): Promise<ComfyDesktopLocalDownload> =>
       (await isFromAppsPage(event))
-        ? localDownload(model)
+        ? localDownload(event.sender, model)
         : { state: 'failed', error: i18n.t('apps.local.notRunning') }
   )
 }
