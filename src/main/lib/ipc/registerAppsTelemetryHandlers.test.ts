@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Listener = (event: unknown, payload: unknown) => void
+interface LoadedPage {
+  appId: string
+  document: number
+}
 
 const mocks = vi.hoisted(() => ({
   listeners: new Map<string, Listener>(),
   isAppsPage: true,
   appsEnabled: true,
-  pageAppId: 'remove-background' as string | null,
+  page: { appId: 'remove-background', document: 1 } as LoadedPage | null,
+  whileAuthorizing: () => {},
   capture: vi.fn<(event: string, properties: unknown) => boolean>(() => true)
 }))
 
@@ -15,9 +20,14 @@ vi.mock('electron', () => ({
     on: (channel: string, listener: Listener) => mocks.listeners.set(channel, listener)
   }
 }))
-vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
+vi.mock('../../apps/appsConfig', () => ({
+  areAppsEnabled: async () => {
+    mocks.whileAuthorizing()
+    return mocks.appsEnabled
+  }
+}))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
-vi.mock('../../apps/appPageView', () => ({ appIdOfPage: () => mocks.pageAppId }))
+vi.mock('../../apps/appPageView', () => ({ loadedAppPage: () => mocks.page }))
 vi.mock('../telemetry', () => ({
   capture: mocks.capture,
   DEFAULT_EVENT_PROPERTY_NAMES: new Set(['app_version', 'installation_id'])
@@ -37,7 +47,8 @@ beforeEach(() => {
   mocks.listeners.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
-  mocks.pageAppId = 'remove-background'
+  mocks.page = { appId: 'remove-background', document: 1 }
+  mocks.whileAuthorizing = () => {}
   registerAppsTelemetryHandlers()
 })
 
@@ -75,8 +86,8 @@ describe('usage events from the hosted Apps page', () => {
     ])
   })
 
-  it('fills app_id from the app Desktop opened in that view, not from the page', async () => {
-    mocks.pageAppId = 'upscale'
+  it('fills app_id from the app Desktop loaded in that view, not from the page', async () => {
+    mocks.page = { appId: 'upscale', document: 3 }
 
     await trackFromAppsPage(EVENT, {
       name: 'click',
@@ -92,9 +103,24 @@ describe('usage events from the hosted Apps page', () => {
   it.each([
     ['a sender that is not the hosted Apps page', { isAppsPage: false }],
     ['the Apps page while Apps is switched off', { appsEnabled: false }],
-    ['a page Desktop holds no app for', { pageAppId: null }]
+    ['a page Desktop holds no loaded app for, as while the next app loads', { page: null }]
   ])('refuses %s', async (_who, state) => {
     Object.assign(mocks, state)
+
+    expect(await trackFromAppsPage(EVENT, RUN)).toBe(false)
+
+    expect(mocks.capture).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['the next app loads', () => (mocks.page = null)],
+    [
+      'the page is replaced by another document',
+      () => (mocks.page = { appId: 'remove-background', document: 2 })
+    ],
+    ['the view moves to another app', () => (mocks.page = { appId: 'upscale', document: 2 })]
+  ])('drops an event when %s while Desktop checks the sender', async (_what, change) => {
+    mocks.whileAuthorizing = change
 
     expect(await trackFromAppsPage(EVENT, RUN)).toBe(false)
 
