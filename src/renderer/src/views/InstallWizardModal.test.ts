@@ -90,7 +90,13 @@ describe('InstallWizardModal heading', () => {
     await flushPromises()
 
     expect(wrapper.get('.setup-modal-title').text()).toBe('Change setup')
-    expect(wrapper.find('#inst-name-standalone').exists()).toBe(true)
+    expect(wrapper.find('.config-name-card').exists()).toBe(false)
+    const rows = wrapper
+      .get('[data-testid="config-change-form"]')
+      .findAll('.config-label')
+      .map((label) => label.text())
+    expect(rows).toEqual(['Get ComfyUI from', 'Name', 'Location', 'Hardware'])
+    expect(wrapper.find('.config-name-row #inst-name-standalone').exists()).toBe(true)
     expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="config-change-setup"]').exists()).toBe(false)

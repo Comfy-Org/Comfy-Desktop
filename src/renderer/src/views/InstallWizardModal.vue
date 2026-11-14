@@ -61,6 +61,7 @@ import {
 } from '../lib/installHelpers'
 import SetupModal from '../components/SetupModal.vue'
 import TermsModal from '../components/TermsModal.vue'
+import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackModal from './TrackModal.vue'
 import LoadSnapshotModal from './LoadSnapshotModal.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
@@ -1623,39 +1624,23 @@ defineExpose({ open })
         {{ sourceError }}
       </div>
 
-      <div
-        v-if="view === 'summary' || cameFromSetup"
-        class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
-      >
-        <label
-          class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
-          for="inst-name-standalone"
-          ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
-        >
-        <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
-          <InputGroupInput
-            id="inst-name-standalone"
-            class="text-[13px] text-neutral-100"
-            :data-initial-focus="hideBackToDashboard || undefined"
-            :model-value="instName"
-            type="text"
-            :placeholder="suggestedName || $t('common.namePlaceholder')"
-            :aria-invalid="!!nameError"
-            :aria-describedby="nameError ? 'inst-name-error' : undefined"
-            @input="instName = ($event.target as HTMLInputElement).value"
-          />
-        </InputGroup>
-        <div
-          v-if="nameError"
-          id="inst-name-error"
-          class="config-field-error col-start-2 mt-1.5 text-[13px] text-[var(--danger)]"
-          role="alert"
-        >
-          {{ nameError }}
-        </div>
-      </div>
-
       <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
+        <div
+          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+        >
+          <label
+            class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
+            for="inst-name-standalone"
+            ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
+          >
+          <InstallNameInput
+            v-model="instName"
+            :placeholder="suggestedName || $t('common.namePlaceholder')"
+            :error="nameError"
+            :initial-focus="hideBackToDashboard"
+          />
+        </div>
+
         <div
           class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
           :class="machineBlocked && 'config-machine--unsupported'"
@@ -1792,12 +1777,7 @@ defineExpose({ open })
         </dl>
       </div>
 
-      <div
-        v-else
-        class="config-change-form flex flex-col"
-        :class="cameFromSetup ? 'mt-3' : 'mt-4'"
-        data-testid="config-change-form"
-      >
+      <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
         <div
           v-if="hardwareWarning && !currentSource?.skipInstall"
           class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
@@ -1918,6 +1898,19 @@ defineExpose({ open })
           class="config-advanced config-advanced--direct is-open flex flex-col"
         >
           <template v-for="(field, fieldIndex) in currentSource.fields" :key="field.id">
+            <SetupFormRow
+              v-if="cameFromSetup && field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
+              class="config-name-row"
+              :label="$t('common.name')"
+              label-for="inst-name-standalone"
+              :icon="Tag"
+            >
+              <InstallNameInput
+                v-model="instName"
+                :placeholder="suggestedName || $t('common.namePlaceholder')"
+                :error="nameError"
+              />
+            </SetupFormRow>
             <InstallLocationRow
               v-if="field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
               :path="instPath"
@@ -2067,6 +2060,20 @@ defineExpose({ open })
             </SetupFormRow>
           </template>
         </div>
+
+        <SetupFormRow
+          v-if="cameFromSetup && !locationBeforeHardware"
+          class="config-name-row"
+          :label="$t('common.name')"
+          label-for="inst-name-standalone"
+          :icon="Tag"
+        >
+          <InstallNameInput
+            v-model="instName"
+            :placeholder="suggestedName || $t('common.namePlaceholder')"
+            :error="nameError"
+          />
+        </SetupFormRow>
 
         <InstallLocationRow
           v-if="showLocation && !locationBeforeHardware"
