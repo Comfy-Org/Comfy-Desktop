@@ -13,7 +13,6 @@ function platformProjects(name: string, tag: string) {
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: '**/e2e/support/**',
   timeout: 45_000,
   fullyParallel: false,
   workers: 1,
