@@ -14,6 +14,9 @@ const extraFileExtensions = ['.vue']
 
 const publishedApiSpecs = ['./src/types/comfyDesktopBridge.ts']
 
+const useOpenExternalHelper =
+  'Use openExternalUrl or tryOpenExternalUrl from src/main/lib/openExternal.ts. They hand the OS only http, https and mailto links.'
+
 const desktop = {
   rules: { 'no-comments': noComments, 'no-new-vue-style-blocks': noNewVueStyleBlocks }
 }
@@ -107,12 +110,17 @@ export default defineConfig([
     rules: {
       'no-restricted-properties': [
         'error',
-        {
-          object: 'shell',
-          property: 'openExternal',
-          message:
-            'Use openExternalUrl or tryOpenExternalUrl from src/main/lib/openExternal.ts. They hand the OS only http, https and mailto links.'
-        }
+        { object: 'shell', property: 'openExternal', message: useOpenExternalHelper }
+      ]
+    }
+  },
+  {
+    files: ['./src/{main,preload,shared}/**/*.ts'],
+    ignores: ['./src/main/lib/openExternal.ts', './src/**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        { property: 'openExternal', message: useOpenExternalHelper }
       ]
     }
   },
