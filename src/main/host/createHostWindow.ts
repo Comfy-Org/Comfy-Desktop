@@ -1,9 +1,11 @@
-import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
+import { BrowserWindow, WebContentsView, ipcMain } from 'electron'
 import path from 'path'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
 import { attachContextMenu } from '../lib/contextMenu'
+import { tryOpenExternalUrl } from '../lib/openExternal'
+import { guardPermissionRequests } from '../lib/sessionPermissions'
 import {
   attachSessionDownloadHandler,
   detachWindowDownloads,
@@ -689,6 +691,7 @@ export function buildComfyView(
   const comfyContents = comfyView.webContents
   trackFirebaseAuthReporter(comfyContents)
   attachSessionDownloadHandler(comfyContents.session)
+  guardPermissionRequests(comfyContents.session)
 
   let nextPopupIsCheckout = false
   let nextCheckoutOpenedAt = 0
@@ -718,7 +721,7 @@ export function buildComfyView(
         source: 'system_browser',
         user_tier: getUserTier()
       })
-      void shell.openExternal(childUrl)
+      void tryOpenExternalUrl(childUrl)
       return { action: 'deny' }
     }
 
@@ -732,7 +735,7 @@ export function buildComfyView(
       comfyContents.session.downloadURL(childUrl)
       return { action: 'deny' }
     }
-    shell.openExternal(childUrl)
+    void tryOpenExternalUrl(childUrl)
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {

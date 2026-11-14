@@ -102,6 +102,21 @@ export default defineConfig([
     rules: { 'desktop/no-comments': ['error', { allowDocComments: true }] }
   },
   {
+    files: ['./src/**/*.{ts,vue}'],
+    ignores: ['./src/main/lib/openExternal.ts', './src/**/*.test.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'shell',
+          property: 'openExternal',
+          message:
+            'Use openExternalUrl or tryOpenExternalUrl from src/main/lib/openExternal.ts. They hand the OS only http, https and mailto links.'
+        }
+      ]
+    }
+  },
+  {
     files: ['./e2e/support/**/*.cjs'],
     languageOptions: { globals: { ...globals.node } },
     rules: { '@typescript-eslint/no-require-imports': 'off' }
