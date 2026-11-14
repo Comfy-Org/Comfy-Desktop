@@ -202,6 +202,21 @@ async function launchWithoutWindow(installationId: string): Promise<ActionResult
   return result
 }
 
+export function isRunningForAppsOnly(installationId: string): boolean {
+  return (
+    startedHere.has(installationId) &&
+    runningPortOf(installationId) !== null &&
+    !getEntryByInstallationId(installationId)
+  )
+}
+
+export async function stopBuildsRunningForAppsOnly(): Promise<void> {
+  const ids = [...startedHere].filter(isRunningForAppsOnly)
+  for (const id of ids) startedHere.delete(id)
+  noteUse()
+  await Promise.all(ids.map((id) => stopRunning(id)))
+}
+
 function launchOnce(installationId: string): Promise<ActionResult> {
   const pending = launches.get(installationId)
   if (pending) return pending
