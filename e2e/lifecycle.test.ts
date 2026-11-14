@@ -2342,7 +2342,7 @@ test('cleans up the untracked kebab-copy on disk before the final Delete test ru
 
 let _remoteInstallId = ''
 let _remoteName = ''
-let _remoteWindowId = 0
+let _remoteDashboardWindowId = 0
 let _remoteWcId = 0
 let _remoteOutputRoot = ''
 let _remoteExpectedFile = ''
@@ -2437,7 +2437,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   _remoteExpectedFile = path.join(_remoteOutputRoot, 'nested', 'output_00001_.png')
   expect(existsSync(_remoteOutputRoot), 'unique output root unexpectedly pre-exists').toBe(false)
 
-  _remoteWindowId = await openDashboardWindowViaPickerHome()
+  _remoteDashboardWindowId = await openDashboardWindowViaPickerHome()
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
   await waitForConfigContinueEnabled(
@@ -2656,13 +2656,36 @@ test('cleans up the remote connection: window closed, record untracked, local in
       `(() => { try { window.__e2eRemoteWs && window.__e2eRemoteWs.close() } catch {} return true })()`
     ).catch(() => false)
   }
-  expect(_remoteWindowId, 'no remote window id captured').toBeGreaterThan(0)
+  expect(
+    _remoteDashboardWindowId,
+    'no id captured for the dashboard window the wizard ran in'
+  ).toBeGreaterThan(0)
+  expect(_remoteWcId, 'no webContents id captured for the remote connection').toBeGreaterThan(0)
+  const closing = { dashboardId: _remoteDashboardWindowId, remoteWcId: _remoteWcId }
   await evalWithRetry(() =>
-    ctx.app.evaluate(({ BrowserWindow }, id) => {
-      const win = BrowserWindow.fromId(id)
-      if (win && !win.isDestroyed()) win.close()
-    }, _remoteWindowId)
+    ctx.app.evaluate(({ BrowserWindow, WebContentsView }, { dashboardId, remoteWcId }) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed()) continue
+        const showsRemoteConnection = win.contentView.children.some(
+          (view) => view instanceof WebContentsView && view.webContents.id === remoteWcId
+        )
+        if (showsRemoteConnection || win.id === dashboardId) win.close()
+      }
+    }, closing)
   )
+  await expect
+    .poll(
+      () =>
+        evalWithRetry(() =>
+          ctx.app.evaluate(({ BrowserWindow, webContents }, { dashboardId, remoteWcId }) => {
+            const dashboard = BrowserWindow.fromId(dashboardId)
+            const remote = webContents.fromId(remoteWcId)
+            return (!dashboard || dashboard.isDestroyed()) && (!remote || remote.isDestroyed())
+          }, closing)
+        ),
+      { timeout: 15_000, intervals: [200, 500] }
+    )
+    .toBe(true)
   await expect
     .poll(async () => (await getRunningSessionSnapshot(ctx.app, _remoteInstallId)) === null, {
       timeout: 30_000,
