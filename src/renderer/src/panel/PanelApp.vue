@@ -106,6 +106,7 @@ const firstUseChain = useFirstUseChain({
 })
 const {
   chainingFirstUseToNewInstall,
+  setupConsent,
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
@@ -609,6 +610,7 @@ onUnmounted(() => {
       <FirstUseTakeover
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
+        :consent="setupConsent"
         @install="handleSetupInstall"
         @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"

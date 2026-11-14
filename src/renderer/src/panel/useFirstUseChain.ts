@@ -9,6 +9,7 @@ import { useOverlay } from '../composables/useOverlay'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
 import { checkDiskSpaceOrWarn } from '../lib/installHelpers'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
+import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import type { SetupPlan } from '../lib/setupPlan'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
@@ -29,9 +30,10 @@ export interface FirstUseChainOpts {
 export interface FirstUseChainApi {
   hooks: FirstUseChainHooks
   chainingFirstUseToNewInstall: Ref<boolean>
+  setupConsent: Ref<SetupConsent | null>
   completeFirstUseAndDismiss: () => Promise<void>
   handleSetupInstall: (plan: SetupPlan) => Promise<void>
-  handleSetupChange: (payload?: { consented?: boolean }) => Promise<void>
+  handleSetupChange: (consent: SetupConsent) => Promise<void>
   handleNewInstallConsentChange: (accepted: boolean) => void
   handleFirstUseChainMigrate: (payload?: { express?: boolean }) => Promise<void>
   handleNewInstallTakeoverClose: () => Promise<void>
@@ -55,12 +57,17 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
 
   const pendingSetupHandoff = ref<SetupHandoff | null>(null)
 
+  const setupConsent = ref<SetupConsent | null>(null)
+
+  let setupConsentSaved = false
+
   const pendingChainedLaunch = ref(false)
 
   async function finishFirstUse(): Promise<void> {
     chainingFirstUseToNewInstall.value = false
     pendingFirstUseAutoLaunchId.value = null
     pendingSetupHandoff.value = null
+    setupConsent.value = null
     await launcherPrefs.markFirstUseCompleted()
     window.api.setFirstUseMode('none')
   }
@@ -158,8 +165,10 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
     }
   }
 
-  async function handleSetupChange(payload?: { consented?: boolean }): Promise<void> {
-    const needsConsent = payload?.consented === false
+  async function handleSetupChange(consent: SetupConsent): Promise<void> {
+    const needsConsent = !consent.acceptedTos
+    setupConsent.value = consent
+    setupConsentSaved = consent.acceptedTos
     chainingFirstUseToNewInstall.value = true
     pendingFirstUseAutoLaunchId.value = null
     pendingSetupHandoff.value = { needsConsent }
@@ -170,6 +179,12 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   function handleNewInstallConsentChange(accepted: boolean): void {
     if (!chainingFirstUseToNewInstall.value) return
     window.api.setFirstUseMode(accepted ? 'post-consent' : 'consent-lockdown')
+    const consent = setupConsent.value
+    if (!consent) return
+    setupConsent.value = { ...consent, acceptedTos: accepted }
+    if (!accepted || setupConsentSaved) return
+    setupConsentSaved = true
+    void saveSetupConsent(consent)
   }
 
   async function handleNewInstallBackToSetup(): Promise<void> {
@@ -280,6 +295,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   return {
     hooks,
     chainingFirstUseToNewInstall,
+    setupConsent,
     completeFirstUseAndDismiss,
     handleSetupInstall,
     handleSetupChange,

@@ -121,14 +121,17 @@ describe('InstallWizardModal heading', () => {
     await wrapper.vm.open({ cameFromSetup: true, needsConsent: true, entrypoint: 'first_use' })
     await flushPromises()
 
-    const consent = wrapper.get('[data-testid="config-consent-tos"]')
+    const consent = wrapper.get('.setup-modal-foot [data-testid="config-consent-tos"]')
     expect(consent.text()).toContain('EULA')
+    expect(wrapper.find('.setup-modal-body [data-testid="config-consent-tos"]').exists()).toBe(
+      false
+    )
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
     expect(window.api.addInstallation).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="config-consent-tos"]').attributes('data-nudge')).toBe('true')
-    expect(wrapper.get('[data-testid="config-agree-hint"]').text()).toBe('Agree to install.')
+    expect(wrapper.get('[data-testid="config-agree-hint"]').text()).toBe('Agree to continue.')
 
     await wrapper.get('[data-testid="config-consent-tos"] [role="checkbox"]').trigger('click')
     await flushPromises()

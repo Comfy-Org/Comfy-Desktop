@@ -21,6 +21,14 @@ async function lastFirstUseMode(): Promise<string | undefined> {
   return calls[calls.length - 1]?.mode
 }
 
+async function telemetrySettingSaves(): Promise<unknown[]> {
+  const calls = (await getIpcInvocations(ctx.app, 'set-setting')) as Array<{
+    key: string
+    value: unknown
+  }>
+  return calls.filter((call) => call.key === 'telemetryEnabled').map((call) => call.value)
+}
+
 test('Change works before the EULA and opens the name with every option @lifecycle', async () => {
   await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
   await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
@@ -34,6 +42,10 @@ test('Change works before the EULA and opens the name with every option @lifecyc
   expect(await ctx.panel.exists('[data-testid="config-change-setup"]')).toBe(false)
   expect(await ctx.titleBar.exists('.title-menu-button[aria-haspopup="menu"]')).toBe(false)
   await expect.poll(lastFirstUseMode, { timeout: 5_000 }).toBe('consent-lockdown')
+  expect(
+    await telemetrySettingSaves(),
+    'usage data is not switched on before the EULA is accepted'
+  ).toEqual([])
 })
 
 test('installing from Change still needs the EULA @lifecycle', async () => {
@@ -49,11 +61,21 @@ test('installing from Change still needs the EULA @lifecycle', async () => {
     .poll(() => ctx.panel.exists('[data-testid="config-agree-hint"]'), { timeout: 5_000 })
     .toBe(false)
   await expect.poll(lastFirstUseMode, { timeout: 5_000 }).toBe('post-consent')
+  await expect
+    .poll(telemetrySettingSaves, {
+      timeout: 5_000,
+      message: 'the usage data choice from Set up is saved once the EULA is accepted'
+    })
+    .toEqual([false])
   await ctx.titleBar.waitForVisible('.title-menu-button[aria-haspopup="menu"]', { timeout: 15_000 })
 })
 
-test('Back returns to Set up from the Change step @lifecycle', async () => {
+test('Back returns to Set up with the EULA still agreed @lifecycle', async () => {
   expect(await ctx.panel.click('[data-testid="config-back-to-setup"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 10_000 })
+  await ctx.panel.waitForVisible(
+    '[data-testid="setup-consent-tos"] [role="checkbox"][aria-checked="true"]',
+    { timeout: 5_000 }
+  )
   await expect.poll(lastFirstUseMode, { timeout: 5_000 }).toBe('consent-lockdown')
 })

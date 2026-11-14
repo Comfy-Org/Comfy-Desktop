@@ -553,6 +553,7 @@
     "alreadyHaveComfy": "Already have ComfyUI?",
     "connectToServer": "Connect to a server",
     "connectToServerMeta": "ComfyUI running elsewhere",
+    "agreeToContinue": "Agree to continue.",
     "install": "Install",
     "connect": "Connect",
     "managedBuildsMeta": "Managed builds",

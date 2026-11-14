@@ -193,22 +193,60 @@ describe('Set up, the first screen', () => {
     )
   })
 
-  it('opens every option with Change before the EULA is ticked, and says so', async () => {
+  it('opens every option with Change before the EULA is ticked, and saves nothing yet', async () => {
     const w = await mountSetup()
+    await setChecked(w.find('[data-testid="setup-consent-telemetry"] [role="checkbox"]'), false)
     await w.find('[data-testid="setup-change"]').trigger('click')
     await flushPromises()
 
-    expect(w.emitted('change')).toEqual([[{ consented: false }]])
+    expect(w.emitted('change')).toEqual([
+      [expect.objectContaining({ acceptedTos: false, telemetryEnabled: false, locale: 'en' })]
+    ])
     expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(false)
+    expect(window.api.setSetting).not.toHaveBeenCalled()
+    expect(emitTelemetryAction).not.toHaveBeenCalledWith(
+      'comfy.desktop.first_use.consent_decision',
+      expect.anything()
+    )
   })
 
-  it('tells New Build the EULA is already agreed when it was ticked first', async () => {
+  it('saves the consent choices on Change when the EULA was ticked first', async () => {
     const w = await mountSetup()
     await agree(w)
     await w.find('[data-testid="setup-change"]').trigger('click')
     await flushPromises()
 
-    expect(w.emitted('change')).toEqual([[{ consented: true }]])
+    expect(w.emitted('change')).toEqual([
+      [expect.objectContaining({ acceptedTos: true, telemetryEnabled: true })]
+    ])
+    expect(window.api.setSetting).toHaveBeenCalledWith('telemetryEnabled', true)
+    expect(window.api.setSetting).toHaveBeenCalledWith('betaFeaturesEnabled', true)
+  })
+
+  it('comes back from Change with the same boxes ticked', async () => {
+    const w = mount(FirstUseTakeover, {
+      props: {
+        consent: {
+          acceptedTos: true,
+          telemetryEnabled: false,
+          betaFeaturesEnabled: false,
+          betaTouched: false,
+          preservePersistedBetaOptIn: false,
+          locale: 'en'
+        }
+      }
+    })
+    await flushPromises()
+
+    const checked = (id: string) =>
+      w.find(`[data-testid="${id}"] [role="checkbox"]`).attributes('aria-checked')
+    expect(checked('setup-consent-tos')).toBe('true')
+    expect(checked('setup-consent-telemetry')).toBe('false')
+    expect(checked('setup-consent-beta')).toBe('false')
+
+    await install(w)
+    expect(w.emitted('install')).toHaveLength(1)
+    expect(window.api.setSetting).toHaveBeenCalledWith('telemetryEnabled', false)
   })
 
   it('still needs the EULA to install, even after Change was usable', async () => {

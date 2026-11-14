@@ -61,6 +61,7 @@ import {
 } from '../lib/installHelpers'
 import SetupModal from '../components/SetupModal.vue'
 import TermsModal from '../components/TermsModal.vue'
+import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackModal from './TrackModal.vue'
 import LoadSnapshotModal from './LoadSnapshotModal.vue'
@@ -616,10 +617,10 @@ const consentAccepted = ref(false)
 const consentNudge = ref(false)
 const termsDoc = ref<'eula' | 'tos' | null>(null)
 
-function onConsentToggle(value: boolean | 'indeterminate'): void {
-  consentAccepted.value = value === true
-  if (consentAccepted.value) consentNudge.value = false
-  emit('consent-change', consentAccepted.value)
+function onConsentToggle(accepted: boolean): void {
+  consentAccepted.value = accepted
+  if (accepted) consentNudge.value = false
+  emit('consent-change', accepted)
 }
 
 async function open(opts: OpenOpts = {}): Promise<void> {
@@ -2185,50 +2186,6 @@ defineExpose({ open })
             </Button>
           </p>
         </SetupFormRow>
-
-        <label
-          v-if="needsConsent"
-          class="config-consent mt-4 flex w-fit cursor-pointer items-center gap-2.5 text-[13px] leading-[1.4] text-text-muted"
-          data-testid="config-consent-tos"
-          :data-nudge="consentNudge || undefined"
-        >
-          <Checkbox
-            :model-value="consentAccepted"
-            :class="consentNudge && 'ring-[3px] ring-[rgb(241_178_52/0.35)]'"
-            :aria-describedby="consentNudge ? 'config-agree-hint' : undefined"
-            @update:model-value="onConsentToggle"
-          />
-          <span>
-            {{ $t('firstUse.consentTosHintPrefix') }}
-            <Button
-              size="link"
-              variant="link"
-              type="button"
-              :class="inlineLinkClass"
-              data-testid="config-eula-link"
-              @click.prevent="termsDoc = 'eula'"
-              >{{ $t('firstUse.eulaLinkLabel') }}</Button
-            >
-            {{ $t('firstUse.consentTosHintSep') }}
-            <Button
-              size="link"
-              variant="link"
-              type="button"
-              :class="inlineLinkClass"
-              data-testid="config-tos-link"
-              @click.prevent="termsDoc = 'tos'"
-              >{{ $t('firstUse.tosLinkLabel') }}</Button
-            >{{ $t('firstUse.consentTosHintSuffix') }}
-            <span
-              v-if="consentNudge"
-              id="config-agree-hint"
-              class="text-[var(--warning)]"
-              role="status"
-              data-testid="config-agree-hint"
-              >{{ $t('setup.agreeToInstall') }}</span
-            >
-          </span>
-        </label>
       </div>
     </template>
 
@@ -2312,6 +2269,16 @@ defineExpose({ open })
           {{ $t('common.back') }}
         </Button>
         <span class="flex-1" />
+        <TermsConsentRow
+          v-if="needsConsent"
+          class="config-consent mr-2 min-w-0"
+          id-prefix="config"
+          :accepted="consentAccepted"
+          :nudge="consentNudge"
+          :hint="$t('newInstall.agreeToContinue')"
+          @update:accepted="onConsentToggle"
+          @open-terms="termsDoc = $event"
+        />
         <Button
           type="button"
           size="lg"
