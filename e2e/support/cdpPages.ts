@@ -1,27 +1,13 @@
-import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import type { ElectronApplication } from '@playwright/test'
 import { expect } from '@playwright/test'
+import {
+  aimAndWatchPressScript,
+  clickUntilLanded,
+  PRESS_OUTCOME_EXPRESSION,
+  PRESS_PATIENCE_MS
+} from './clickAim'
+import type { ClickAttempt, ClickOutcome } from './clickAim'
 import { evalWithRetry } from './evalRetry'
-
-const CLICK_TIMEOUT_MS = 5000
-const PAGE_LOOKUP_INTERVAL_MS = 50
-const PAGE_PROBE_TIMEOUT_MS = 1000
-const CLOSED_BY_THE_CLICK = /Target page, context or browser has been closed|Target closed/i
-
-async function showsWebContents(page: Page, id: number): Promise<boolean> {
-  const shown = await Promise.race([
-    page.evaluate('window.__e2eWebContentsId').catch(() => undefined),
-    new Promise((resolve) => setTimeout(resolve, PAGE_PROBE_TIMEOUT_MS))
-  ])
-  return shown === id
-}
-
-export interface ClickOptions {
-  noWaitAfter?: boolean
-}
-
-function exactText(text: string): RegExp {
-  return new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`)
-}
 
 const PAGE_GONE_PATTERN = /webContents (not found|destroyed)/
 
@@ -127,8 +113,10 @@ export class WebContentsPage {
     })()`)
   }
 
-  private async focusAndLabel(id: number): Promise<void> {
-    await this.app.evaluate(
+  private async clickOnce(elementExpression: string, patienceMs: number): Promise<ClickAttempt> {
+    const id = await findWebContentsId(this.app, this.marker)
+    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
+    return this.app.evaluate(
       async ({ BrowserWindow, WebContentsView, webContents }, payload) => {
         const wc = webContents.fromId(payload.id)
         if (!wc || wc.isDestroyed()) throw new Error('webContents destroyed')
@@ -141,51 +129,54 @@ export class WebContentsPage {
         )
         win?.focus()
         wc.focus()
-        await wc.executeJavaScript(`void (window.__e2eWebContentsId = ${payload.id})`)
+        const point = (await wc.executeJavaScript(payload.aimAndWatchPress)) as
+          | { x: number; y: number }
+          | 'missing'
+          | 'blocked'
+        if (typeof point === 'string') return point
+        wc.sendInputEvent({ type: 'mouseMove', ...point })
+        wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })
+        wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point })
+        const press = await Promise.race([
+          wc.executeJavaScript(payload.pressOutcome).catch(() => undefined),
+          new Promise((resolve) => setTimeout(resolve, payload.pressPatienceMs))
+        ])
+        return press === 'missed' ? 'missed' : 'clicked'
       },
-      { id }
+      {
+        id,
+        aimAndWatchPress: aimAndWatchPressScript(elementExpression, patienceMs),
+        pressOutcome: PRESS_OUTCOME_EXPRESSION,
+        pressPatienceMs: PRESS_PATIENCE_MS
+      }
     )
   }
 
-  private async playwrightPage(): Promise<Page> {
-    const id = await findWebContentsId(this.app, this.marker)
-    if (id === null) throw new Error(`webContents not found (marker=${this.marker})`)
-    await this.focusAndLabel(id)
-    const deadline = Date.now() + CLICK_TIMEOUT_MS
-    for (;;) {
-      for (const page of this.app.windows()) {
-        if (page.isClosed() || !page.url().includes(this.marker)) continue
-        if (await showsWebContents(page, id)) return page
-      }
-      if (Date.now() >= deadline) {
-        throw new Error(`click: Playwright has no page for the webContents (marker=${this.marker})`)
-      }
-      await new Promise((resolve) => setTimeout(resolve, PAGE_LOOKUP_INTERVAL_MS))
-    }
+  private sendClick(elementExpression: string): Promise<ClickOutcome> {
+    return clickUntilLanded((patienceMs) => this.clickOnce(elementExpression, patienceMs))
   }
 
-  private async clickLocator(
-    find: (page: Page) => Locator,
-    { noWaitAfter = false }: ClickOptions = {}
-  ): Promise<boolean> {
-    const target = find(await this.playwrightPage())
-    if ((await target.count()) === 0) return false
-    try {
-      const pressAsIs = await target.isDisabled({ timeout: CLICK_TIMEOUT_MS })
-      await target.click({ timeout: CLICK_TIMEOUT_MS, force: pressAsIs, noWaitAfter })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!CLOSED_BY_THE_CLICK.test(message)) throw error
+  private async clickElement(elementExpression: string): Promise<boolean> {
+    const outcome = await this.sendClick(elementExpression)
+    if (outcome === 'blocked') {
+      throw new Error(
+        `click: element is covered or has no interactive area (${elementExpression}, marker=${this.marker})`
+      )
     }
-    return true
+    if (outcome === 'moving') {
+      throw new Error(
+        `click: element kept moving out from under the pointer (${elementExpression}, marker=${this.marker})`
+      )
+    }
+    return outcome === 'clicked'
   }
 
-  click(selector: string, options: ClickOptions = {}): Promise<boolean> {
-    return this.clickLocator((page) => page.locator(`css=${selector}`).first(), options)
+  click(selector: string): Promise<boolean> {
+    return this.clickElement(`document.querySelector(${JSON.stringify(selector)})`)
   }
 
   clickNth(selector: string, index: number): Promise<boolean> {
-    return this.clickLocator((page) => page.locator(`css=${selector}`).nth(index))
+    return this.clickElement(`document.querySelectorAll(${JSON.stringify(selector)})[${index}]`)
   }
 
   async fill(selector: string, text: string): Promise<void> {
@@ -222,9 +213,11 @@ export class WebContentsPage {
   }
 
   clickByText(selector: string, textSubstring: string): Promise<boolean> {
-    return this.clickLocator((page) =>
-      page.locator(`css=${selector}`).filter({ hasText: textSubstring }).first()
-    )
+    return this.clickElement(`(() => {
+      const needle = ${JSON.stringify(textSubstring.toLowerCase())}
+      const els = Array.from(document.querySelectorAll(${JSON.stringify(selector)}))
+      return els.find(el => (el.textContent || '').toLowerCase().includes(needle))
+    })()`)
   }
 
   async pressKey(key: string): Promise<void> {
@@ -311,7 +304,8 @@ export class WebContentsPage {
       if (state === 'missing') {
         throw new Error(`clickUntilVisible: trigger ${trigger} not found`)
       }
-      if (state === 'closed') await this.click(trigger).catch(() => false)
+      if (state === 'closed')
+        await this.sendClick(`document.querySelector(${JSON.stringify(trigger)})`)
       const remaining = deadline - Date.now()
       if (remaining <= 0) {
         throw new Error(
@@ -342,19 +336,14 @@ export class WebContentsPage {
         throw new Error(`selectOption: trigger ${trigger} not found`)
       }
       if (state === 'closed') {
-        await this.click(trigger).catch(() => false)
+        await this.sendClick(`document.querySelector(${JSON.stringify(trigger)})`)
       } else {
-        const listboxId = await this.wcEval<string>(
-          `document.querySelector(${JSON.stringify(trigger)})?.getAttribute('aria-controls') || ''`
-        )
-        await this.clickLocator((page) =>
-          page
-            .locator(`css=[id=${JSON.stringify(listboxId)}] [role="option"]`)
-            .filter({
-              has: page.locator('css=.ui-select-option-label', { hasText: exactText(optionLabel) })
-            })
-            .first()
-        ).catch(() => false)
+        await this.sendClick(`(() => {
+          const trigger = document.querySelector(${JSON.stringify(trigger)})
+          const listbox = document.getElementById(trigger?.getAttribute('aria-controls') || '')
+          return Array.from(listbox?.querySelectorAll('[role="option"]') || []).find(option =>
+            option.querySelector('.ui-select-option-label')?.textContent.trim() === ${JSON.stringify(optionLabel)})
+        })()`)
       }
       if (Date.now() > deadline) {
         throw new Error(`selectOption: "${optionLabel}" did not land on ${trigger}`)

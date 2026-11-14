@@ -10,7 +10,8 @@ const RENDERER_TESTS_THAT_READ_FILES = [
 ]
 const INJECTED_PAGE_SCRIPT_TESTS = [
   'src/main/lib/comfyContentScript.test.ts',
-  'src/main/lib/comfyTerminalContentScript.test.ts'
+  'src/main/lib/comfyTerminalContentScript.test.ts',
+  'e2e/support/clickAim.test.ts'
 ]
 const VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS = 'vue/dist/vue.esm-bundler.js'
 const VUE_TEST_UTILS_STRING_SLOT_WARNING =
