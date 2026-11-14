@@ -15,6 +15,10 @@ async function showsWebContents(page: Page, id: number): Promise<boolean> {
   return shown === id
 }
 
+export interface ClickOptions {
+  noWaitAfter?: boolean
+}
+
 function exactText(text: string): RegExp {
   return new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`)
 }
@@ -160,12 +164,15 @@ export class WebContentsPage {
     }
   }
 
-  private async clickLocator(find: (page: Page) => Locator): Promise<boolean> {
+  private async clickLocator(
+    find: (page: Page) => Locator,
+    { noWaitAfter = false }: ClickOptions = {}
+  ): Promise<boolean> {
     const target = find(await this.playwrightPage())
     if ((await target.count()) === 0) return false
     try {
       const pressAsIs = await target.isDisabled({ timeout: CLICK_TIMEOUT_MS })
-      await target.click({ timeout: CLICK_TIMEOUT_MS, force: pressAsIs })
+      await target.click({ timeout: CLICK_TIMEOUT_MS, force: pressAsIs, noWaitAfter })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (!CLOSED_BY_THE_CLICK.test(message)) throw error
@@ -173,8 +180,8 @@ export class WebContentsPage {
     return true
   }
 
-  click(selector: string): Promise<boolean> {
-    return this.clickLocator((page) => page.locator(`css=${selector}`).first())
+  click(selector: string, options: ClickOptions = {}): Promise<boolean> {
+    return this.clickLocator((page) => page.locator(`css=${selector}`).first(), options)
   }
 
   clickNth(selector: string, index: number): Promise<boolean> {

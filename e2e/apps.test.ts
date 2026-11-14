@@ -21,6 +21,7 @@ const CUTOUT_PAGE = '/apps/remove-background/desktop.html'
 const DOWN_PAGE = '/apps/down-for-now/desktop.html'
 const OUTSIDE_LINK = 'https://docs.example.test/pricing'
 const LONG_WAIT = { timeout: 20_000 }
+const LINK_DESKTOP_TAKES_OVER = { noWaitAfter: true }
 
 function appPageHtml(title: string, cloudUrl: string): string {
   return `<!doctype html>
@@ -300,7 +301,7 @@ test("The app page sees Desktop's sign-in, signed out, and none of Desktop's oth
 })
 
 test('A link to another site goes to the browser and the app stays open @macos @windows @linux', async () => {
-  expect(await cutoutPage().click('#outside')).toBe(true)
+  expect(await cutoutPage().click('#outside', LINK_DESKTOP_TAKES_OVER)).toBe(true)
 
   await expect.poll(() => getShellOpenExternalCalls(ctx.app), LONG_WAIT).toContain(OUTSIDE_LINK)
   expect(await cutoutPage().url()).toBe(`${site.url}${CUTOUT_PAGE}`)
@@ -326,7 +327,7 @@ test('Signing in from the app page signs Desktop in, and a run reaches Comfy Clo
 })
 
 test('"All apps" on the app page returns to the cards without loading the website list @macos @windows @linux', async () => {
-  expect(await cutoutPage().click('#back')).toBe(true)
+  expect(await cutoutPage().click('#back', LINK_DESKTOP_TAKES_OVER)).toBe(true)
 
   await ctx.panel.waitForVisible(APPS_GRID)
   await expect
