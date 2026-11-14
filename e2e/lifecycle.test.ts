@@ -14,7 +14,6 @@ import {
   expectNewBuildModalOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
-  saveNewBuildChangeSetup,
   openPickerViaTitlePill
 } from './support/chooserHelpers'
 import {
@@ -280,7 +279,7 @@ test('cold start lands on Set up with the detected computer and one Install @sec
   await ctx.panel.waitForVisible('[data-testid="setup-install"]')
 })
 
-test('accept ToS + Change opens New Build with setup pre-filled @sec-setup @lifecycle', async () => {
+test('accept ToS + Change opens the name and every option in one step @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
 
   expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
@@ -295,7 +294,8 @@ test('accept ToS + Change opens New Build with setup pre-filled @sec-setup @life
   await expectNewBuildModalOpen(ctx.panel)
 
   await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
-  await openNewBuildChangeSetup(ctx.panel)
+  await ctx.panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
+  await ctx.panel.waitForVisible('#inst-name-standalone', { timeout: 5_000 })
 
   await ctx.panel.waitForSelector('#source-fields button[role="combobox"]', {
     timeout: 5_000
@@ -335,7 +335,6 @@ test('accept ToS + Change opens New Build with setup pre-filled @sec-setup @life
       { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` }
     )
   }
-  await saveNewBuildChangeSetup(ctx.panel)
 })
 
 test('installs on the Home build card, then Open ComfyUI launches it @sec-setup @lifecycle', async () => {

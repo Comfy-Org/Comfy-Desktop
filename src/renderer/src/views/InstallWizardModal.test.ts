@@ -77,16 +77,85 @@ beforeEach(() => {
 })
 
 describe('InstallWizardModal heading', () => {
-  it('returns to Set up from the New Build footer after editing the first-use setup', async () => {
+  it('opens Change from Set up as one step with the name and every option together', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
+    await flushPromises()
+
+    expect(wrapper.get('.setup-modal-title').text()).toBe('Change setup')
+    expect(wrapper.find('.config-name-card').exists()).toBe(false)
+    const rows = wrapper
+      .get('[data-testid="config-change-form"]')
+      .findAll('.config-label')
+      .map((label) => label.text())
+    expect(rows).toEqual(['Get ComfyUI from', 'Name', 'Location', 'Hardware'])
+    expect(wrapper.find('.config-name-row #inst-name-standalone').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-change-setup"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-save-changes"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="config-discard-changes"]').exists()).toBe(false)
+    expect(wrapper.find('.config-continue').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('asks for the EULA before installing when Change was opened without it', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'cpu', label: 'CPU' }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({ cameFromSetup: true, needsConsent: true, entrypoint: 'first_use' })
+    await flushPromises()
+
+    const consent = wrapper.get('[data-testid="config-consent-tos"]')
+    expect(consent.text()).toContain('EULA')
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+
+    expect(window.api.addInstallation).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="config-consent-tos"]').attributes('data-nudge')).toBe('true')
+    expect(wrapper.get('[data-testid="config-agree-hint"]').text()).toBe('Agree to install.')
+
+    await wrapper.get('[data-testid="config-consent-tos"] [role="checkbox"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('consent-change')).toEqual([[true]])
+    expect(wrapper.find('[data-testid="config-agree-hint"]').exists()).toBe(false)
+
+    await wrapper.get('.config-continue').trigger('click')
+    await flushPromises()
+    expect(window.api.addInstallation).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('does not ask for the EULA again when it was accepted on Set up', async () => {
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({ cameFromSetup: true, needsConsent: false, entrypoint: 'first_use' })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="config-consent-tos"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('returns to Set up from the footer of the first-use Change step', async () => {
     const wrapper = mountModal({ hideBackToDashboard: true })
     await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
     await flushPromises()
 
     expect(wrapper.get('[data-testid="config-back-to-setup"]').text()).toBe('Back')
-
-    await showChangeSetup(wrapper)
-    expect(wrapper.find('[data-testid="config-back-to-setup"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await wrapper.get('[data-testid="config-back-to-setup"]').trigger('click')
 
     expect(wrapper.emitted('back-to-setup')).toEqual([[]])
@@ -438,8 +507,10 @@ describe('InstallWizardModal workspace Builds', () => {
         .get('[data-testid="install-source-tabs"]')
         .findAll('.setup-option__label')
         .map((label) => label.text())
-    ).toEqual(['Official release', "Your team's builds", 'Portable'])
-    expect(wrapper.get('[data-testid="install-source-remote"]').text()).toBe('Connect to a server')
+    ).toEqual(['Official release', "Your team's builds", 'Portable', 'Connect to a server'])
+    expect(wrapper.find('[data-testid="config-other-ways"]').text()).not.toContain(
+      'Connect to a server'
+    )
     expect(wrapper.get('[data-testid="install-source-tabs"]').text()).not.toContain('RECOMMENDED')
     expect(wrapper.find('[data-testid="workspace-install-source-public"]').exists()).toBe(false)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
@@ -475,17 +546,15 @@ describe('InstallWizardModal workspace Builds', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="workspace-install-source-managed"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="install-source-remote"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="install-source-here"]').text()).toBe(
-      'Install on this computer instead'
+    expect(wrapper.get('[data-testid="install-source-remote"]').attributes('aria-checked')).toBe(
+      'true'
     )
     expect(wrapper.find('[data-testid="workspace-build-field"]').exists()).toBe(false)
     expect(wrapper.get('#source-fields').text()).toContain('Server URL')
     expect(window.api.getFieldOptions).not.toHaveBeenCalled()
     expect(window.api.validateHardware).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-testid="install-source-here"]').trigger('click')
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
     await flushPromises()
 
     expect(window.api.validateHardware).toHaveBeenCalledOnce()

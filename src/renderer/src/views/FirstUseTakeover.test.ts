@@ -193,16 +193,30 @@ describe('Set up, the first screen', () => {
     )
   })
 
-  it('opens every option with Change, once the terms are agreed', async () => {
+  it('opens every option with Change before the EULA is ticked, and says so', async () => {
     const w = await mountSetup()
     await w.find('[data-testid="setup-change"]').trigger('click')
     await flushPromises()
-    expect(w.emitted('change')).toBeUndefined()
 
+    expect(w.emitted('change')).toEqual([[{ consented: false }]])
+    expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(false)
+  })
+
+  it('tells New Build the EULA is already agreed when it was ticked first', async () => {
+    const w = await mountSetup()
     await agree(w)
     await w.find('[data-testid="setup-change"]').trigger('click')
     await flushPromises()
-    expect(w.emitted('change')).toHaveLength(1)
+
+    expect(w.emitted('change')).toEqual([[{ consented: true }]])
+  })
+
+  it('still needs the EULA to install, even after Change was usable', async () => {
+    const w = await mountSetup()
+    await install(w)
+
+    expect(w.emitted('install')).toBeUndefined()
+    expect(w.find('[data-testid="setup-agree-hint"]').exists()).toBe(true)
   })
 
   it('warns in the location row when the disk is too small', async () => {

@@ -109,6 +109,7 @@ const {
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
+  handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
   handleNewInstallBackToSetup
@@ -576,6 +577,7 @@ onUnmounted(() => {
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
         @back-to-setup="handleNewInstallBackToSetup"
+        @consent-change="handleNewInstallConsentChange"
       />
       <TrackModal
         v-else-if="currentOverlay.component === 'track'"

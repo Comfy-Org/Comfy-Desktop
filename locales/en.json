@@ -539,7 +539,7 @@
     "installSummary": "Install summary",
     "alreadyHaveComfy": "Already have ComfyUI?",
     "connectToServer": "Connect to a server",
-    "installHereInstead": "Install on this computer instead",
+    "connectToServerMeta": "ComfyUI running elsewhere",
     "install": "Install",
     "connect": "Connect",
     "managedBuildsMeta": "Managed builds",

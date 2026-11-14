@@ -236,15 +236,29 @@ describe('useFirstUseChain — Set up', () => {
 
   it('opens every install option from Change, with a way back to Set up', async () => {
     const chain = mountChain()
-    await chain.api!.handleSetupChange()
+    await chain.api!.handleSetupChange({ consented: true })
 
     expect(chain.switchPanel).toHaveBeenCalledWith('new-install', 'first_use')
     expect(testApi.setFirstUseMode).toHaveBeenCalledWith('post-consent')
-    expect(chain.api!.hooks.consumeCameFromSetup()).toBe(true)
-    expect(chain.api!.hooks.consumeCameFromSetup()).toBe(false)
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({ needsConsent: false })
+    expect(chain.api!.hooks.consumeSetupHandoff()).toBeNull()
 
     await chain.api!.handleNewInstallBackToSetup()
     expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the EULA lock through Change until the EULA is accepted in New Build', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange({ consented: false })
+
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({ needsConsent: true })
+
+    chain.api!.handleNewInstallConsentChange(true)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('post-consent')
+
+    chain.api!.handleNewInstallConsentChange(false)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
   })
 })
 
