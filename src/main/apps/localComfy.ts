@@ -127,13 +127,13 @@ function isEmpty(queue: QueueAnswer): boolean {
   return queue !== null && queue !== 'not_queue' && queue.running + queue.pending === 0
 }
 
-async function idleState(installationId: string): Promise<'gone' | 'busy' | 'idle'> {
+async function idleState(installationId: string): Promise<'gone' | 'busy' | 'replaced' | 'idle'> {
   const port = runningPortOf(installationId)
   if (port === null || !isRunningForAppsOnly(installationId)) return 'gone'
   const session = _runningSessions.get(installationId)
   const queue = await probeQueue(port)
   if (!isRunningForAppsOnly(installationId)) return 'gone'
-  if (_runningSessions.get(installationId) !== session) return 'gone'
+  if (_runningSessions.get(installationId) !== session) return 'replaced'
   return isEmpty(queue) ? 'idle' : 'busy'
 }
 
@@ -142,7 +142,7 @@ async function stopIdleBuilds(): Promise<void> {
   if (downloadsUnderWay > 0) return noteUse()
   for (const id of [...startedHere]) {
     const state = await idleState(id)
-    if (state === 'busy') continue
+    if (state === 'busy' || state === 'replaced') continue
     startedHere.delete(id)
     if (state === 'idle') await stopRunning(id)
   }
