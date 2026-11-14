@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import { useProgressStore } from '../stores/progressStore'
+import { useInstallationStore } from '../stores/installationStore'
 import type { ActionResult, ProgressData } from '../types/ipc'
 
 const modal = vi.hoisted(() => ({ confirm: vi.fn(), alert: vi.fn() }))
@@ -87,7 +88,6 @@ describe('BuildProgressDialog', () => {
     expect(active.text()).toContain('63%')
     expect(active.text()).toContain('760 of 1200 MB · about 24s left')
     expect(w.get('[data-testid="build-progress-logs"]').text()).toContain('Downloading torch')
-    expect(w.find('[data-testid="build-progress-try-cloud"]').exists()).toBe(true)
 
     progress({ phase: 'setup', percent: 10, status: 'Installing requirements…' })
     await flushPromises()
@@ -165,10 +165,93 @@ describe('BuildProgressDialog', () => {
     expect(video.attributes('data-shape')).toBe('wide')
   })
 
-  it('starts a build without the Cloud pitch, cancels without asking, and offers Start again', async () => {
+  it('never pitches Cloud while a build installs or starts', async () => {
+    const install = await openDialog()
+    expect(install.text()).not.toContain('Try Cloud')
+    install.unmount()
+    setActivePinia(createPinia())
+    const launch = await openDialog('launch')
+    expect(launch.text()).not.toContain('Try Cloud')
+  })
+
+  it('lays the logs under the steps and the video, across the whole dialog', async () => {
+    const w = await openDialog()
+    const logs = w.get('[data-testid="build-progress-logs"]')
+    expect(
+      logs.element.parentElement?.contains(w.get('[data-testid="build-progress-video"]').element)
+    ).toBe(true)
+    expect(
+      logs.element.parentElement?.contains(w.get('[data-testid="build-progress-steps"]').element)
+    ).toBe(true)
+    expect(logs.classes()).toContain('h-[148px]')
+  })
+
+  it('names each step of a start in words, not by its phase id', async () => {
+    const w = await openDialog('launch')
+    progress({
+      phase: 'steps',
+      steps: [
+        'launchStart',
+        'securityScan',
+        'mountLibraries',
+        'gpu',
+        'customNodes',
+        'startingServer',
+        'template-models'
+      ].map((phase) => ({ phase, label: phase }))
+    })
+    progress({ phase: 'gpu', percent: -1, status: 'launch.activity.optimizing' })
+    await flushPromises()
+
+    const labels = w
+      .findAll('[data-testid="build-progress-step"] > span:last-child > span:first-child')
+      .map((el) => el.text())
+    expect(labels).toEqual([
+      'Start ComfyUI',
+      'Run security scan',
+      'Load libraries',
+      'Initialize GPU',
+      'Load custom nodes',
+      'Start server',
+      'Download models'
+    ])
+    expect(labels.some((label) => label.endsWith('…'))).toBe(false)
+    expect(w.text()).not.toContain('launch.activity')
+  })
+
+  it('shows the starter workflow models downloading beside the install', async () => {
+    window.api.getInstallations = vi.fn(async () => [
+      {
+        id: ID,
+        name: 'ComfyUI',
+        sourceId: 'standalone',
+        bundledTemplateId: 'image_flux2_klein',
+        bundledTemplateSizeBytes: 9_000_000_000,
+        downloadTemplateModels: true,
+        pendingTemplateOpen: 'image_flux2_klein'
+      }
+    ]) as typeof window.api.getInstallations
+    await useInstallationStore().fetchInstallations()
+    const w = await openDialog()
+
+    const rows = w.findAll('[data-testid="build-progress-step"]')
+    expect(rows.map((row) => row.text())).toEqual([
+      expect.stringContaining('Download'),
+      'Extract',
+      'Set up environment',
+      'Download models'
+    ])
+    expect(stepStates(w)).toEqual(['active', 'pending', 'pending', 'active'])
+  })
+
+  it('shows no models step when the install downloads none', async () => {
+    const w = await openDialog()
+    expect(w.text()).not.toContain('Download models')
+  })
+
+  it('cancels a start without asking and offers Start again', async () => {
     const w = await openDialog('launch')
     expect(w.find('[role="dialog"]').attributes('aria-label')).toBe('Starting ComfyUI')
-    expect(w.find('[data-testid="build-progress-try-cloud"]').exists()).toBe(false)
 
     settle({ ok: false, message: 'ComfyUI exited with code 1' })
     await flushPromises()
