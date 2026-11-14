@@ -1,6 +1,5 @@
 import { CLOUD_CONFIG } from '../cloud/config'
 import type { CatalogApp } from '../../types/ipc'
-import { isTemporaryLaunchApp } from './temporaryLaunchApps'
 
 const DESKTOP_SURFACE = 'desktop_starters'
 const CATALOG_MEDIA_ORIGIN = 'https://comfy.org'
@@ -73,7 +72,6 @@ async function fetchCatalogApps(listUrl: string): Promise<CatalogApp[]> {
   const seen = new Set<string>()
   return body.items
     .filter(isCatalogItem)
-    .filter((item) => isTemporaryLaunchApp(item.data?.slug))
     .sort((a, b) => sortOrder(a) - sortOrder(b))
     .map((item) => toCatalogApp(item, listUrl))
     .filter((entry): entry is CatalogApp => {
