@@ -19,6 +19,7 @@ import {
   writePortLock,
   readPortLock,
   COMFY_BOOT_TIMEOUT_MS,
+  COMFY_BOOT_QUIET_MS,
   SENSITIVE_ARG_RE,
   _onLaunch,
   _onComfyExited,
@@ -812,9 +813,11 @@ export function attachLaunchStreams(
   agentTap: ReturnType<typeof createAgentTap>,
   tracker: LaunchProgressTracker,
   agentStartWatch?: AgentStartWatch
-): { getStderr: () => string } {
+): { getStderr: () => string; lastOutputAt: () => number } {
   let stderrBuf = ''
+  let lastOutput = Date.now()
   proc.stdout?.on('data', (chunk: Buffer) => {
+    lastOutput = Date.now()
     const text = chunk.toString('utf-8')
     writeLog(logStream, text)
     sendOutput(text)
@@ -826,6 +829,7 @@ export function attachLaunchStreams(
     tracker.ingest(stripAnsi(text))
   })
   proc.stderr?.on('data', (chunk: Buffer) => {
+    lastOutput = Date.now()
     const text = chunk.toString('utf-8')
     const clean = stripAnsi(text)
     stderrBuf += clean
@@ -839,7 +843,7 @@ export function attachLaunchStreams(
     agentStartWatch?.ingest(text, 'stderr')
     tracker.ingest(clean)
   })
-  return { getStderr: () => stderrBuf }
+  return { getStderr: () => stderrBuf, lastOutputAt: () => lastOutput }
 }
 
 export function _cleanupFailedLaunchSetup(
@@ -1889,7 +1893,11 @@ async function runLaunch(
 
   const bootId = randomUUID()
 
-  async function spawnComfy(): Promise<{ proc: ChildProcess; getStderr: () => string }> {
+  async function spawnComfy(): Promise<{
+    proc: ChildProcess
+    getStderr: () => string
+    lastOutputAt: () => number
+  }> {
     hwTap.beginBoot()
     assetsTap.flushSummary()
     assetsTap.beginBoot()
@@ -2002,6 +2010,8 @@ async function runLaunch(
       await Promise.race([
         waitForPort(launchCmd.port!, '127.0.0.1', {
           timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+          quietMs: COMFY_BOOT_QUIET_MS,
+          lastOutputAt: spawned.lastOutputAt,
           signal: abort.signal
         }),
         earlyExitPromise
@@ -2265,6 +2275,8 @@ async function runLaunch(
         await Promise.race([
           waitForPort(launchCmd.port!, '127.0.0.1', {
             timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+            quietMs: COMFY_BOOT_QUIET_MS,
+            lastOutputAt: respawned.lastOutputAt,
             signal: abort.signal
           }),
           relaunchEarlyExit
@@ -2331,6 +2343,8 @@ async function runLaunch(
           const checkSignal = rebootModelCheckAbort.signal
           waitForPort(launchCmd.port!, '127.0.0.1', {
             timeoutMs: COMFY_BOOT_TIMEOUT_MS,
+            quietMs: COMFY_BOOT_QUIET_MS,
+            lastOutputAt: spawned.lastOutputAt,
             signal: checkSignal
           })
             .then(async () => {
