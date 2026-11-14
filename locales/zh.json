@@ -902,6 +902,17 @@
     "launchFailedTitle": "ComfyUI 未能启动",
     "startAgain": "重新启动"
   },
+  "uninstallProgress": {
+    "status": "正在卸载",
+    "tileStatus": "正在卸载 · {percent}%",
+    "removingFiles": "正在删除文件",
+    "cancelTitle": "停止卸载？",
+    "cancelMessage": "{name} 会保留在构建列表中。已删除的文件无法恢复，需要再次卸载才能完成。",
+    "cancelConfirm": "停止卸载",
+    "failedTitle": "卸载未完成",
+    "tryAgain": "重试",
+    "dismiss": "忽略"
+  },
   "announcement": {
     "comfyApi": {
       "title": "Comfy API \u73b0\u5df2\u63a8\u51fa",

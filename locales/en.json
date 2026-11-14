@@ -902,6 +902,17 @@
     "launchFailedTitle": "ComfyUI didn't start",
     "startAgain": "Start again"
   },
+  "uninstallProgress": {
+    "status": "Uninstalling",
+    "tileStatus": "Uninstalling · {percent}%",
+    "removingFiles": "Removing files",
+    "cancelTitle": "Stop uninstalling?",
+    "cancelMessage": "{name} stays in your builds. Files already removed can't be restored, so uninstall it again to finish.",
+    "cancelConfirm": "Stop uninstalling",
+    "failedTitle": "Uninstall didn't finish",
+    "tryAgain": "Try again",
+    "dismiss": "Dismiss"
+  },
   "announcement": {
     "comfyApi": {
       "title": "Introducing Comfy API",

@@ -290,6 +290,26 @@ export const useProgressStore = defineStore('progress', () => {
     window.api.stopComfyUI(installationId)
   }
 
+  function retryOperation(installationId: string): void {
+    const op = operations.get(installationId)
+    if (!op?.finished || !op.apiCall) return
+    startOperation({
+      installationId,
+      title: op.title,
+      apiCall: op.apiCall,
+      returnTo: op.returnTo,
+      opKind: op.opKind,
+      destroysInstance: op.destroysInstance,
+      actionId: op.actionId
+    })
+  }
+
+  function dismissOperation(installationId: string): void {
+    if (!operations.get(installationId)?.finished) return
+    operations.delete(installationId)
+    sessionStore.clearErrorInstance(installationId)
+  }
+
   function globalProgressFor(op: Operation): {
     percent: number
     indeterminate: boolean
@@ -347,6 +367,8 @@ export const useProgressStore = defineStore('progress', () => {
     globalProgressFor,
     startOperation,
     cleanupOperation,
-    cancelOperation
+    cancelOperation,
+    retryOperation,
+    dismissOperation
   }
 })
