@@ -16,6 +16,9 @@ def is_auth_error(exc):
         or "callback" in msg
         or "unsupported url protocol" in msg
         or "credential" in msg
+        or "certificate" in msg
+        or "ssl" in msg
+        or "tls" in msg
     )
 
 

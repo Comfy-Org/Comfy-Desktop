@@ -198,6 +198,14 @@ class UpdateComfyUITest(unittest.TestCase):
         self.assert_clean_at(self.sha["v1"], V1)
         self.assertEqual(git(self.repo, "rev-parse", "master"), self.sha["v1"])
 
+    def test_certificate_rejection_is_treated_as_auth_like(self):
+        from importlib.util import module_from_spec, spec_from_file_location
+        spec = spec_from_file_location("update_comfyui_test", UPDATE)
+        module = module_from_spec(spec)
+        assert spec is not None and spec.loader is not None
+        spec.loader.exec_module(module)
+        self.assertTrue(module.is_auth_error(Exception("user rejected certificate for github.com")))
+
     def test_missing_origin_remote_leaves_the_install_untouched(self):
         git(self.repo, "remote", "remove", "origin")
         r = self.update("--stable")
