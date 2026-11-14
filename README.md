@@ -89,14 +89,17 @@ Contributions are welcome. The app is an [Electron](https://www.electronjs.org/)
 
 ### Prerequisites
 
-- [**Node.js**](https://nodejs.org/) 24 LTS (the version in `.nvmrc`)
+- [**Node.js**](https://nodejs.org/) 26 LTS (the version in `.nvmrc`)
 - [**pnpm**](https://pnpm.io/) v10 or later (via Corepack)
 
 ```bash
 nvm install
 nvm use
+npm install --global corepack
 corepack enable
 ```
+
+Development, CI and ToDesktop builds use Node 26. The application runs the Node 24 runtime bundled with Electron, so `@types/node` stays on major 24.
 
 ### Setup
 
