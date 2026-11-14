@@ -8,6 +8,7 @@ import type FirstUseTakeover from '../views/FirstUseTakeover.vue'
 import { useOverlay, type FlowComponent, type Overlay } from '../composables/useOverlay'
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
+import { isUninstallOpKind } from '../lib/progressOpKind'
 import type { ActionResult, ShowProgressOpts } from '../types/ipc'
 import type { FirstUseMode } from '../../../shared/firstUseMode'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
@@ -181,7 +182,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
 
   function runsInBackground(showOpts: ShowProgressOpts): boolean {
     if (installationId) return false
-    if (showOpts.opKind === 'install') return true
+    if (showOpts.opKind === 'install' || isUninstallOpKind(showOpts.opKind)) return true
     return showOpts.opKind === 'launch' && !opts.launchesInPlace?.(showOpts.installationId)
   }
 
@@ -215,6 +216,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
     const operationName = showOpts.title.split(' — ')[0] || showOpts.title
     if (runsInBackground(showOpts)) {
       startOperationOnce({ ...showOpts, chainSpan: undefined })
+      if (isUninstallOpKind(showOpts.opKind)) return
       if (currentOverlay.value?.kind === 'takeover') dismissTakeoverDirect()
       if (showOpts.opKind === 'launch') {
         resolvePortConflictInTakeover(showOpts.installationId)

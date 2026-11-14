@@ -331,7 +331,8 @@ export function useInstallContextMenu(
           cancellable: true,
           returnTo: 'list',
           opKind: progressOpKindForActionId('delete'),
-          destroysInstance: destroysInstanceForActionId('delete')
+          destroysInstance: destroysInstanceForActionId('delete'),
+          actionId: 'delete'
         })
         return
       }
