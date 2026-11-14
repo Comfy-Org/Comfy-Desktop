@@ -4,9 +4,12 @@ import type { IpcMainInvokeEvent } from 'electron'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { isAppsPageSender } from '../../apps/appsPages'
 import { localDownload, localFetch, localState, startLocal } from '../../apps/localComfy'
+import { localBuilds, openInComfy } from '../../apps/openInComfy'
 import type {
+  ComfyDesktopLocalBuild,
   ComfyDesktopLocalComfy,
-  ComfyDesktopLocalDownload
+  ComfyDesktopLocalDownload,
+  ComfyDesktopOpenInComfy
 } from '../../../types/comfyDesktopBridge'
 import * as i18n from '../i18n'
 
@@ -14,7 +17,9 @@ export const APPS_LOCAL_CHANNELS = {
   get: 'apps-local:get',
   start: 'apps-local:start',
   fetch: 'apps-local:fetch',
-  download: 'apps-local:download'
+  download: 'apps-local:download',
+  openInComfy: 'apps-local:open-in-comfy',
+  builds: 'apps-local:builds'
 } as const
 
 async function isFromAppsPage(event: IpcMainInvokeEvent): Promise<boolean> {
@@ -45,5 +50,19 @@ export function registerAppsLocalHandlers(): void {
       (await isFromAppsPage(event))
         ? localDownload(event.sender, model)
         : { state: 'failed', error: i18n.t('apps.local.notRunning') }
+  )
+
+  ipcMain.handle(
+    APPS_LOCAL_CHANNELS.openInComfy,
+    async (event, request: unknown): Promise<ComfyDesktopOpenInComfy> =>
+      (await isFromAppsPage(event))
+        ? openInComfy(event.sender, request)
+        : { opened: false, error: i18n.t('apps.local.notRunning') }
+  )
+
+  ipcMain.handle(
+    APPS_LOCAL_CHANNELS.builds,
+    async (event): Promise<ComfyDesktopLocalBuild[]> =>
+      (await isFromAppsPage(event)) ? localBuilds() : []
   )
 }

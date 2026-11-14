@@ -3,7 +3,6 @@ import { fetchJSON } from '../lib/fetch'
 import type { CatalogWorkflow } from '../../types/ipc'
 
 export const HUB_ORIGIN = 'https://comfy.org'
-export const HUB_WORKFLOWS_URL = `${HUB_ORIGIN}/hub/workflows`
 export const HOME_WORKFLOW_LIMIT = 12
 
 const HUB_WORKFLOW_PATH_PREFIX = '/hub/workflows/'

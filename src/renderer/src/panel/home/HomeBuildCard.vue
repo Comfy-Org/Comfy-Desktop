@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { Check, LoaderCircle, OctagonAlert } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import BuildDeviceArt from './BuildDeviceArt.vue'
+import BuildProgressBar from './BuildProgressBar.vue'
 import {
   HOME_BUILD_TONES,
   homeBuildDetail,
@@ -27,8 +28,13 @@ const emit = defineEmits<{ open: [] }>()
 const { t } = useI18n()
 const install = useBuildProgress(() => build)
 const progressStore = useProgressStore()
-const installing = computed(() => install.progress.value !== null)
+const busy = computed(() => install.progress.value !== null)
 const starting = computed(() => install.progress.value?.kind === 'launch')
+const uninstalling = computed(() => install.progress.value?.kind === 'uninstall')
+const busyTestId = computed(() => {
+  if (uninstalling.value) return 'home-build-uninstalling'
+  return starting.value ? 'home-build-starting' : 'home-build-installing'
+})
 const broken = computed(() => {
   if (build.statusTag?.style === 'danger') return build.statusTag.label
   return launchFailed(progressStore, build.id) ? t('home.buildDidntStart') : undefined
@@ -36,8 +42,8 @@ const broken = computed(() => {
 
 const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
-  if (installing.value)
-    return t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
+  if (uninstalling.value) return t('uninstallProgress.status')
+  if (busy.value) return t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
@@ -55,20 +61,20 @@ const statusLabel = computed(() => {
   }
 })
 const detail = computed(() => {
-  if (installing.value) return install.detail.value
+  if (busy.value) return install.detail.value
   return isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 })
-const isLive = computed(() => !installing.value && (status === 'running' || status === 'always-on'))
+const isLive = computed(() => !busy.value && (status === 'running' || status === 'always-on'))
 const CARD_CLASS =
   'group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left outline-none transition-colors'
 </script>
 
 <template>
   <div
-    v-if="installing"
+    v-if="busy"
     :class="CARD_CLASS"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
-    :data-testid="starting ? 'home-build-starting' : 'home-build-installing'"
+    :data-testid="busyTestId"
     :data-build-id="build.id"
   >
     <span
@@ -104,6 +110,7 @@ const CARD_CLASS =
     </span>
     <span class="relative flex shrink-0 items-center gap-2">
       <Button
+        v-if="!uninstalling"
         type="button"
         variant="muted-textonly"
         size="unset"
@@ -125,15 +132,10 @@ const CARD_CLASS =
         {{ t('common.cancel') }}
       </Button>
     </span>
-    <span
+    <BuildProgressBar
       v-if="install.progress.value?.percent != null"
-      class="absolute bottom-0 left-0 h-[3px] rounded-r-full bg-foreground transition-[width] duration-500 ease-out motion-reduce:transition-none"
-      :style="{ width: `${install.progress.value?.percent ?? 0}%` }"
-      role="progressbar"
-      :aria-label="statusLabel"
-      :aria-valuenow="install.progress.value?.percent ?? 0"
-      aria-valuemin="0"
-      aria-valuemax="100"
+      :percent="install.progress.value.percent"
+      :label="statusLabel"
       data-testid="home-build-progress"
     />
   </div>

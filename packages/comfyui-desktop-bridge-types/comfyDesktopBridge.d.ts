@@ -250,11 +250,40 @@ export interface ComfyDesktopLocalEvent {
   data?: Record<string, unknown>
 }
 /**
+ * A workflow a hosted page asks Desktop to open in a ComfyUI window.
+ * `prompt` is the API-format graph: an object of nodes that each have a
+ * `class_type` and `inputs`, at most 500 nodes and 1 MB. `where: 'local'`
+ * opens it in the build the page runs on, or in `build` (an id from
+ * `localBuilds`); `where: 'cloud'` opens it in the person's Comfy Cloud.
+ * `name` titles the workflow tab.
+ */
+export interface ComfyDesktopOpenInComfyRequest {
+  prompt: Record<string, unknown>
+  where: 'local' | 'cloud'
+  name: string
+  build?: string
+}
+/** Whether the workflow opened, and if not, why in words for the person. */
+export type ComfyDesktopOpenInComfy =
+  | {
+      opened: true
+    }
+  | {
+      opened: false
+      error: string
+    }
+/** One of the person's ComfyUI builds on this computer. */
+export interface ComfyDesktopLocalBuild {
+  id: string
+  name: string
+}
+/**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
  * Desktop's Apps view. Desktop exposes it to that page as
  * `window.comfyDesktopLocal`. The page builds and follows its own runs;
- * Desktop finds or starts the ComfyUI, forwards the page's calls to it and
- * downloads a model the page asks for.
+ * Desktop finds or starts the ComfyUI, forwards the page's calls to it,
+ * downloads a model the page asks for and opens a run's workflow in a ComfyUI
+ * window.
  */
 export interface ComfyDesktopHostedLocalBridge {
   getLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
@@ -265,6 +294,14 @@ export interface ComfyDesktopHostedLocalBridge {
   /** Downloads into the running ComfyUI's models folder and resolves when the file is there. */
   localDownload(model: ComfyDesktopLocalModel): Promise<ComfyDesktopLocalDownload>
   onLocalEvent(callback: (event: ComfyDesktopLocalEvent) => void): () => void
+  /**
+   * Opens the workflow in a ComfyUI window in Desktop, starting the build or
+   * showing its window first if needed, and resolves once ComfyUI has loaded
+   * it. Absent on Desktop builds that predate it.
+   */
+  openInComfy?(request: ComfyDesktopOpenInComfyRequest): Promise<ComfyDesktopOpenInComfy>
+  /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
+  localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
 }
 export interface ComfyDesktop2TerminalBridge {
   subscribe(installationId?: string): Promise<TerminalRestore>

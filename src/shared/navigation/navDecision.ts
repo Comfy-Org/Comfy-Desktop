@@ -2,7 +2,7 @@ import type { ViewKind } from '../viewKind'
 
 export type TargetKind = 'dashboard' | 'instance' | 'cloud' | 'new-instance'
 
-export type TargetRun = 'stopped' | 'running-elsewhere' | 'self'
+export type TargetRun = 'stopped' | 'running-elsewhere' | 'self' | 'starting-unhosted'
 
 export type Intent = 'primary' | 'new-window'
 
@@ -68,6 +68,10 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
   [
     cellKey('dashboard', 'instance', 'running-elsewhere'),
     dec({ window: 'same', verb: 'focus', primaryLabel: NAV_LABEL.switch })
+  ],
+  [
+    cellKey('dashboard', 'instance', 'starting-unhosted'),
+    dec({ window: 'same', verb: 'restart', primaryLabel: NAV_LABEL.restart })
   ],
   [
     cellKey('dashboard', 'cloud', 'stopped'),
@@ -157,8 +161,14 @@ const TABLE: ReadonlyMap<CellKey, NavDecision> = new Map<CellKey, NavDecision>([
   ]
 ])
 
+function tableCell(input: NavInput): NavDecision | undefined {
+  const exact = TABLE.get(cellKey(input.currentView, input.target, input.targetRun))
+  if (exact || input.targetRun !== 'starting-unhosted') return exact
+  return TABLE.get(cellKey(input.currentView, input.target, 'running-elsewhere'))
+}
+
 export function decideNavigation(input: NavInput): NavDecision {
-  const primary = TABLE.get(cellKey(input.currentView, input.target, input.targetRun)) ?? NO_OP
+  const primary = tableCell(input) ?? NO_OP
 
   if (input.intent === 'new-window') {
     const alt = primary.secondary.find((s) => s.window === 'new')

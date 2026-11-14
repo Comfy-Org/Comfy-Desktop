@@ -71,6 +71,7 @@ interface PickerSnapshot {
   runningInstallationIds: string[]
   runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds: string[]
+  unhostedLaunchingInstallationIds?: string[]
   selectedInstallationId: string | null
   pickerSelectionEpoch?: number
   selectedSettings: DetailSection[] | null
@@ -230,6 +231,11 @@ const selectedInstall = computed<Installation | null>(() => {
     if (found) return found
   }
   return null
+})
+
+const selectedStartsWithoutWindow = computed(() => {
+  const id = selectedInstall.value?.id
+  return id != null && (props.snapshot.unhostedLaunchingInstallationIds ?? []).includes(id)
 })
 
 const runningSet = computed(() => new Set(props.snapshot.runningInstallationIds))
@@ -587,6 +593,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
               :active-installation-id="snapshot.activeInstallationId"
               :current-view="snapshot.currentView ?? 'dashboard'"
               :current-category="snapshot.currentCategory ?? null"
+              :starting-without-window="selectedStartsWithoutWindow"
               class="picker-expanded-body min-h-0 flex-auto [--text-muted:var(--neutral-100)]"
               @show-progress="handleSettingsShowProgress"
               @navigate-list="handleSettingsNavigateList"
