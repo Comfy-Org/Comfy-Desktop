@@ -11,7 +11,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "homepage": "https://github.com/Comfy-Org/Comfy-Desktop",
   "engines": {
-    "node": ">=26.13.1",
+    "node": ">=24.13.0",
     "pnpm": ">=10"
   },
   "packageManager": "pnpm@10.28.1",
@@ -94,7 +94,7 @@
     "@electron/rebuild": "^3.7.2",
     "@eslint/js": "^10.0.1",
     "@pinia/testing": "^1.0.3",
-    "@playwright/test": "~1.60.0",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.1.8",
     "@tanstack/vue-virtual": "^3.13.48",
     "@types/node": "^24.19.2",
@@ -115,7 +115,7 @@
     "jiti": "^2.6.1",
     "lucide-vue-next": "^0.525.0",
     "pinia": "^3.0.3",
-    "playwright": "~1.60.0",
+    "playwright": "^1.58.2",
     "prettier": "^3.8.1",
     "reka-ui": "^2.11.0",
     "tailwindcss": "^4.1.8",
