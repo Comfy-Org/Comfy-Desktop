@@ -182,11 +182,15 @@ function pause(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function waitForOtherLaunch(installationId: string): Promise<ActionResult> {
+export async function otherLaunchSettled(installationId: string): Promise<void> {
   const giveUpAt = Date.now() + COMFY_BOOT_TIMEOUT_MS
   while (_hasActiveLaunch(installationId) && Date.now() < giveUpAt) {
     await pause(OTHER_LAUNCH_POLL_MS)
   }
+}
+
+async function waitForOtherLaunch(installationId: string): Promise<ActionResult> {
+  await otherLaunchSettled(installationId)
   return { ok: runningPortOf(installationId) !== null }
 }
 

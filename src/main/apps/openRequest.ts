@@ -67,18 +67,34 @@ export function readOpenRequest(raw: unknown): OpenRequest | OpenRefusal {
   return { prompt, where, name: workflowName(name), ...(build === undefined ? {} : { build }) }
 }
 
+const STALE_PAGE_MARK = '__comfyDesktopStalePage'
+
+export type ComfyPageState = 'starting' | 'no-workflow' | 'ready'
+
 const FIND_COMFY_APP =
   `var app=window.app||(window.comfyAPI&&window.comfyAPI.app&&window.comfyAPI.app.app);` +
-  `if(!app||!app.graph||!app.canvas||typeof app.loadApiJson!=='function')return false;` +
-  `var busy=document.querySelector('[data-testid="app-loading-overlay"]');` +
-  `if(busy&&busy.getAttribute('aria-busy')==='true')return false;`
+  `var usable=!!app&&!!app.graph&&!!app.canvas&&typeof app.loadApiJson==='function';`
 
-export const COMFY_READY_SCRIPT = `(function(){${FIND_COMFY_APP}return true})()`
+export const MARK_PAGE_STALE_SCRIPT = `window.${STALE_PAGE_MARK}=true`
+
+export const COMFY_STATE_SCRIPT =
+  `(function(){${FIND_COMFY_APP}` +
+  `if(!usable||window.${STALE_PAGE_MARK})return 'starting';` +
+  `var overlay=document.querySelector('[data-testid="app-loading-overlay"]');` +
+  `if(overlay&&overlay.getAttribute('aria-busy')==='true')return 'starting';` +
+  `var workspace=app.extensionManager;` +
+  `if(!workspace)return 'ready';` +
+  `if(workspace.spinner===true)return 'starting';` +
+  `var workflows=workspace.workflow;` +
+  `if(!workflows)return 'ready';` +
+  `if(workflows.isBusy===true)return 'starting';` +
+  `return workflows.activeWorkflow?'ready':'no-workflow'})()`
 
 export function openWorkflowScript(request: OpenRequest): string {
   return (
     `(function(promptText,name){` +
     FIND_COMFY_APP +
+    `if(!usable)return false;` +
     `return Promise.resolve(app.loadApiJson(JSON.parse(promptText),name))` +
     `.then(function(r){return r!==false},function(){return false});` +
     `})(${JSON.stringify(JSON.stringify(request.prompt))},${JSON.stringify(request.name)})`

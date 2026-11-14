@@ -3,11 +3,12 @@ import { runInNewContext } from 'vm'
 import { describe, expect, it } from 'vitest'
 
 import {
-  COMFY_READY_SCRIPT,
+  COMFY_STATE_SCRIPT,
   DEFAULT_WORKFLOW_NAME,
   isApiWorkflow,
   isBuildId,
   isComfyPage,
+  MARK_PAGE_STALE_SCRIPT,
   openWorkflowScript,
   readOpenRequest,
   workflowName
@@ -25,10 +26,12 @@ function accepted(raw: unknown): OpenRequest {
   return request
 }
 
-function page(app: unknown, busy = 'false'): Record<string, unknown> {
+function page(app: unknown, overlayBusy: string | null = null): Record<string, unknown> {
   return {
     window: { app },
-    document: { querySelector: () => ({ getAttribute: () => busy }) }
+    document: {
+      querySelector: () => (overlayBusy === null ? null : { getAttribute: () => overlayBusy })
+    }
   }
 }
 
@@ -137,15 +140,73 @@ describe('a request to open a workflow in ComfyUI', () => {
   )
 })
 
+describe('the script that tells whether ComfyUI has finished starting', () => {
+  const idle = { isBusy: false, activeWorkflow: { path: 'workflows/Unsaved Workflow.json' } }
+  const app = {
+    graph: {},
+    canvas: {},
+    loadApiJson: () => undefined,
+    extensionManager: { spinner: false, workflow: idle }
+  }
+  const stateOf = (context: Record<string, unknown>): unknown =>
+    runInNewContext(COMFY_STATE_SCRIPT, context)
+
+  it('is starting until ComfyUI has its canvas and can load an API workflow', () => {
+    expect(stateOf(page(undefined))).toBe('starting')
+    expect(stateOf(page({ ...app, canvas: undefined }))).toBe('starting')
+    expect(stateOf(page({ ...app, loadApiJson: 1 }))).toBe('starting')
+  })
+
+  it('is starting while ComfyUI blocks the page to restore the last session', () => {
+    const restoring = { ...app, extensionManager: { spinner: true, workflow: idle } }
+
+    expect(stateOf(page(restoring))).toBe('starting')
+    expect(stateOf(page(app, 'true'))).toBe('starting')
+  })
+
+  it('is starting while ComfyUI is opening a workflow', () => {
+    const opening = {
+      ...app,
+      extensionManager: { spinner: false, workflow: { ...idle, isBusy: true } }
+    }
+
+    expect(stateOf(page(opening))).toBe('starting')
+  })
+
+  it('has no workflow until ComfyUI has opened its first one', () => {
+    const empty = {
+      ...app,
+      extensionManager: { spinner: false, workflow: { isBusy: false, activeWorkflow: null } }
+    }
+
+    expect(stateOf(page(empty))).toBe('no-workflow')
+  })
+
+  it('is ready once ComfyUI is idle with a workflow open, with or without the loading overlay', () => {
+    expect(stateOf(page(app))).toBe('ready')
+    expect(stateOf(page(app, 'false'))).toBe('ready')
+  })
+
+  it('is ready on a ComfyUI that does not say how its start is going', () => {
+    expect(stateOf(page({ ...app, extensionManager: undefined }))).toBe('ready')
+  })
+
+  it('is never ready on a page Desktop marked as left from an earlier run', () => {
+    const context = page(app)
+
+    runInNewContext(MARK_PAGE_STALE_SCRIPT, context)
+
+    expect(stateOf(context)).toBe('starting')
+  })
+})
+
 describe('the script that loads the workflow into the ComfyUI page', () => {
   const app = { graph: {}, canvas: {}, loadApiJson: () => undefined }
 
-  it('waits until ComfyUI has its canvas and has finished starting', () => {
-    expect(runInNewContext(COMFY_READY_SCRIPT, page(undefined))).toBe(false)
-    expect(runInNewContext(COMFY_READY_SCRIPT, page({ ...app, canvas: undefined }))).toBe(false)
-    expect(runInNewContext(COMFY_READY_SCRIPT, page({ ...app, loadApiJson: 1 }))).toBe(false)
-    expect(runInNewContext(COMFY_READY_SCRIPT, page(app, 'true'))).toBe(false)
-    expect(runInNewContext(COMFY_READY_SCRIPT, page(app))).toBe(true)
+  it('does not open anything in a page with no ComfyUI in it', async () => {
+    const request = accepted({ prompt: PROMPT, where: 'local', name: 'x' })
+
+    expect(await runInNewContext(openWorkflowScript(request), page(undefined))).toBe(false)
   })
 
   it('hands the graph and name to loadApiJson as data, never as code', async () => {

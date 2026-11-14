@@ -14,9 +14,11 @@ const mocks = vi.hoisted(() => ({
   builds: [] as FakeBuild[],
   sessions: new Map<string, Record<string, unknown>>(),
   windows: new Map<string, unknown>(),
+  launchesUnderWay: new Set<string>(),
   pageBuild: null as string | null,
   launchOnce: vi.fn(),
   launchQuietly: vi.fn(),
+  otherLaunchSettled: vi.fn(),
   onLaunch: vi.fn(),
   setActivePanel: vi.fn()
 }))
@@ -36,6 +38,7 @@ vi.mock('../lib/i18n', () => ({
 }))
 vi.mock('../lib/ipc/shared', () => ({
   _onLaunch: (info: unknown) => mocks.onLaunch(info),
+  _hasActiveLaunch: (id: string) => mocks.launchesUnderWay.has(id),
   _runningSessions: mocks.sessions
 }))
 vi.mock('./localBuild', () => ({
@@ -49,10 +52,20 @@ vi.mock('./localBuild', () => ({
 vi.mock('./localComfy', () => ({
   launchOnce: mocks.launchOnce,
   launchQuietly: mocks.launchQuietly,
+  otherLaunchSettled: mocks.otherLaunchSettled,
   pageBuildId: () => mocks.pageBuild
 }))
 
-import { localBuilds, openInComfy, WINDOW_TIMEOUT_MS } from './openInComfy'
+import {
+  _resetForTest,
+  LOAD_TIMEOUT_MS,
+  localBuilds,
+  NO_WORKFLOW_GRACE_MS,
+  openInComfy,
+  WINDOW_TIMEOUT_MS
+} from './openInComfy'
+import { COMFY_STATE_SCRIPT, MARK_PAGE_STALE_SCRIPT } from './openRequest'
+import type { ComfyPageState } from './openRequest'
 
 const PAGE = {} as WebContents
 const STUDIO = { id: 'inst-studio', name: 'Studio', port: null }
@@ -68,7 +81,13 @@ class FakeWindow {
   comfyUrl: string
   shown = false
   scripts: string[] = []
+  state: ComfyPageState = 'ready'
   takesWorkflow = true
+  finishesLoading = true
+  leftFromAnEarlierRun = false
+  markedStale = false
+  loadedIntoAnEarlierRun = false
+  reloads: string[] = []
   windowKey = 7
   activePanel = 'comfy'
 
@@ -91,11 +110,27 @@ class FakeWindow {
       isDestroyed: () => false,
       isLoading: () => false,
       getURL: () => this.comfyUrl,
-      executeJavaScript: async (script: string) => {
+      executeJavaScript: (script: string): Promise<unknown> => {
         this.scripts.push(script)
-        return script.includes('loadApiJson(JSON.parse') ? this.takesWorkflow : true
+        if (script === MARK_PAGE_STALE_SCRIPT) {
+          this.markedStale = true
+          return Promise.resolve(true)
+        }
+        if (script === COMFY_STATE_SCRIPT) {
+          return Promise.resolve(this.markedStale ? 'starting' : this.state)
+        }
+        if (!this.finishesLoading) return new Promise(() => {})
+        this.loadedIntoAnEarlierRun ||= this.leftFromAnEarlierRun
+        return Promise.resolve(this.takesWorkflow)
       }
     }
+  }
+
+  reload(comfyUrl: string): void {
+    this.reloads.push(comfyUrl)
+    this.comfyUrl = comfyUrl
+    this.leftFromAnEarlierRun = false
+    this.markedStale = false
   }
 
   loaded(): string[] {
@@ -103,8 +138,22 @@ class FakeWindow {
   }
 }
 
+let launchCount = 0
+
 function runLocal(id: string, port: number, mode = 'console'): void {
-  mocks.sessions.set(id, { port, proc: null, mode })
+  launchCount += 1
+  mocks.sessions.set(id, { port, proc: null, mode, startedAt: launchCount })
+}
+
+function runCloud(id: string): void {
+  launchCount += 1
+  mocks.sessions.set(id, {
+    port: 0,
+    url: CLOUD_URL,
+    proc: null,
+    mode: 'window',
+    startedAt: launchCount
+  })
 }
 
 function windowFor(id: string, url: string): FakeWindow {
@@ -116,13 +165,17 @@ function windowFor(id: string, url: string): FakeWindow {
 function openWindowsOnLaunch(): void {
   mocks.onLaunch.mockImplementation(
     (info: { installation: { id: string }; port: number; url?: string }) => {
-      windowFor(info.installation.id, info.url ?? `http://127.0.0.1:${info.port}/`)
+      const comfyUrl = info.url ?? `http://127.0.0.1:${info.port}/`
+      const open = mocks.windows.get(info.installation.id) as FakeWindow | undefined
+      if (open) open.reload(comfyUrl)
+      else windowFor(info.installation.id, comfyUrl)
     }
   )
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  _resetForTest()
   mocks.records = [
     { id: STUDIO.id, name: STUDIO.name, sourceId: 'standalone', status: 'installed' },
     { id: LAB.id, name: LAB.name, sourceId: 'standalone', status: 'installed' }
@@ -130,9 +183,11 @@ beforeEach(() => {
   mocks.builds = [{ ...STUDIO }, { ...LAB }]
   mocks.sessions.clear()
   mocks.windows.clear()
+  mocks.launchesUnderWay.clear()
   mocks.pageBuild = STUDIO.id
   mocks.launchOnce.mockResolvedValue({ ok: false })
   mocks.launchQuietly.mockResolvedValue({ ok: false })
+  mocks.otherLaunchSettled.mockResolvedValue(undefined)
   openWindowsOnLaunch()
 })
 
@@ -177,6 +232,87 @@ describe('opening a run workflow in the ComfyUI on this computer', () => {
 
     expect(mocks.launchOnce).toHaveBeenCalledWith(STUDIO.id)
     expect(mocks.onLaunch).toHaveBeenCalledWith(expect.objectContaining({ mode: 'window' }))
+  })
+
+  it('reloads a window left open since the build last stopped, then loads into the fresh page', async () => {
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8188/')
+    studio.leftFromAnEarlierRun = true
+    mocks.launchOnce.mockImplementation(async (id: string) => {
+      runLocal(id, 8190)
+      return { ok: true }
+    })
+
+    expect(await openInComfy(PAGE, ON_THIS_COMPUTER)).toEqual({ opened: true })
+
+    expect(studio.reloads).toEqual(['http://127.0.0.1:8190/'])
+    expect(studio.loaded()).toHaveLength(1)
+    expect(studio.loadedIntoAnEarlierRun).toBe(false)
+  })
+
+  it('never loads into the page of an earlier run while its window reloads', async () => {
+    vi.useFakeTimers()
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8190/')
+    studio.leftFromAnEarlierRun = true
+    runLocal(STUDIO.id, 8190)
+    mocks.onLaunch.mockImplementation(() => {})
+
+    const opening = openInComfy(PAGE, ON_THIS_COMPUTER)
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(studio.loaded()).toHaveLength(0)
+
+    studio.reload('http://127.0.0.1:8190/')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await opening).toEqual({ opened: true })
+    expect(studio.loadedIntoAnEarlierRun).toBe(false)
+  })
+
+  it('leaves the window as it is for the next workflow', async () => {
+    runLocal(STUDIO.id, 8190)
+
+    expect(await openInComfy(PAGE, ON_THIS_COMPUTER)).toEqual({ opened: true })
+    expect(await openInComfy(PAGE, ON_THIS_COMPUTER)).toEqual({ opened: true })
+
+    const studio = mocks.windows.get(STUDIO.id) as FakeWindow
+    expect(mocks.onLaunch).toHaveBeenCalledTimes(1)
+    expect(studio.reloads).toEqual([])
+    expect(studio.loaded()).toHaveLength(2)
+  })
+
+  it('waits for ComfyUI to finish starting before it loads the workflow', async () => {
+    vi.useFakeTimers()
+    runLocal(STUDIO.id, 8190, 'window')
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8190/')
+    studio.state = 'starting'
+
+    const opening = openInComfy(PAGE, ON_THIS_COMPUTER)
+    await vi.advanceTimersByTimeAsync(3_000)
+
+    expect(studio.loaded()).toHaveLength(0)
+
+    studio.state = 'ready'
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await opening).toEqual({ opened: true })
+    expect(studio.loaded()).toHaveLength(1)
+  })
+
+  it('gives a ComfyUI with no workflow open a few seconds to open one, then loads anyway', async () => {
+    vi.useFakeTimers()
+    runLocal(STUDIO.id, 8190, 'window')
+    const studio = windowFor(STUDIO.id, 'http://127.0.0.1:8190/')
+    studio.state = 'no-workflow'
+
+    const opening = openInComfy(PAGE, ON_THIS_COMPUTER)
+    await vi.advanceTimersByTimeAsync(NO_WORKFLOW_GRACE_MS - 1_000)
+
+    expect(studio.loaded()).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    expect(await opening).toEqual({ opened: true })
+    expect(studio.loaded()).toHaveLength(1)
   })
 
   it('opens in the build the page names instead of the one it runs on', async () => {
@@ -247,7 +383,7 @@ describe('opening a run workflow in Comfy Cloud', () => {
 
   it('loads it into the Comfy Cloud window when Comfy Cloud is open', async () => {
     mocks.records.push(CLOUD)
-    mocks.sessions.set(CLOUD.id, { port: 0, url: CLOUD_URL, proc: null, mode: 'window' })
+    runCloud(CLOUD.id)
     const cloud = windowFor(CLOUD.id, CLOUD_URL)
 
     expect(await openInComfy(PAGE, ON_CLOUD)).toEqual({ opened: true })
@@ -259,7 +395,7 @@ describe('opening a run workflow in Comfy Cloud', () => {
   it('opens Comfy Cloud first when it is not open', async () => {
     mocks.records.push(CLOUD)
     mocks.launchQuietly.mockImplementation(async (inst: { id: string }) => {
-      mocks.sessions.set(inst.id, { port: 0, url: CLOUD_URL, proc: null, mode: 'window' })
+      runCloud(inst.id)
       windowFor(inst.id, CLOUD_URL)
       return { ok: true }
     })
@@ -268,6 +404,38 @@ describe('opening a run workflow in Comfy Cloud', () => {
 
     expect(mocks.launchQuietly).toHaveBeenCalledWith(CLOUD)
     expect(mocks.onLaunch).not.toHaveBeenCalled()
+  })
+
+  it('opens Comfy Cloud once for two workflows sent together', async () => {
+    mocks.records.push(CLOUD)
+    mocks.launchQuietly.mockImplementation(async (inst: { id: string }) => {
+      runCloud(inst.id)
+      windowFor(inst.id, CLOUD_URL)
+      return { ok: true }
+    })
+
+    expect(await Promise.all([openInComfy(PAGE, ON_CLOUD), openInComfy(PAGE, ON_CLOUD)])).toEqual([
+      { opened: true },
+      { opened: true }
+    ])
+
+    expect(mocks.launchQuietly).toHaveBeenCalledTimes(1)
+    expect((mocks.windows.get(CLOUD.id) as FakeWindow).loaded()).toHaveLength(2)
+  })
+
+  it('waits for a Comfy Cloud that is already opening instead of opening it again', async () => {
+    mocks.records.push(CLOUD)
+    mocks.launchesUnderWay.add(CLOUD.id)
+    mocks.otherLaunchSettled.mockImplementation(async (id: string) => {
+      runCloud(id)
+      windowFor(id, CLOUD_URL)
+      mocks.launchesUnderWay.delete(id)
+    })
+
+    expect(await openInComfy(PAGE, ON_CLOUD)).toEqual({ opened: true })
+
+    expect(mocks.launchQuietly).not.toHaveBeenCalled()
+    expect((mocks.windows.get(CLOUD.id) as FakeWindow).loaded()).toHaveLength(1)
   })
 
   it('reports why Comfy Cloud did not open instead of asking to add it again', async () => {
@@ -314,6 +482,17 @@ describe('when the workflow does not open', () => {
       opened: false,
       error: 'apps.local.openNotTaken'
     })
+  })
+
+  it('stops waiting on a workflow ComfyUI never finishes loading', async () => {
+    vi.useFakeTimers()
+    runLocal(STUDIO.id, 8190, 'window')
+    windowFor(STUDIO.id, 'http://127.0.0.1:8190/').finishesLoading = false
+
+    const opening = openInComfy(PAGE, ON_THIS_COMPUTER)
+    await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS + 1_000)
+
+    expect(await opening).toEqual({ opened: false, error: 'apps.local.openNotTaken' })
   })
 
   it('gives up when no ComfyUI window appears', async () => {
