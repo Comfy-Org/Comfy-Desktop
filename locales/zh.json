@@ -122,6 +122,11 @@
     "previousWorkflow": "上一个工作流",
     "nextWorkflow": "下一个工作流",
     "workflowsUnavailable": "无法加载示例工作流。请检查网络连接后重试。",
+    "appsUnavailable": "无法加载应用。请检查网络连接后重试。",
+    "showApp": "显示 {title}",
+    "openApp": "打开 {title}",
+    "previousApp": "上一个应用",
+    "nextApp": "下一个应用",
     "retry": "重试"
   },
   "installType": {
