@@ -275,8 +275,9 @@ export interface ComfyDesktopHostedLocalBridge {
  * are refused because Desktop sends them itself. Desktop keeps at most 16
  * properties, each named `^[a-z][a-z0-9_]{0,31}$` with a boolean, a finite
  * number or a slug of at most 64 characters (`^[a-z0-9][a-z0-9._-]{0,63}$`),
- * and drops anything else. Desktop sets `app_id` itself, to the app it opened
- * in that view; an `app` or `app_id` from the page is ignored.
+ * and drops anything else. Desktop sets `app_id` itself, to the app whose
+ * page it loaded in that view; an `app` or `app_id` from the page is ignored,
+ * and an event sent while the view loads another app is dropped.
  */
 export interface ComfyDesktopHostedTelemetryBridge {
   track(name: string, props?: Record<string, string | number | boolean>): void
