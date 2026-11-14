@@ -1,6 +1,6 @@
 import { ipcRenderer, webUtils } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
+import type { AppPageStatus, ElectronApi, ResolvedTheme, AdoptPromptRequest } from '../types/ipc'
 
 export function buildElectronApi(): ElectronApi {
   return {
@@ -108,6 +108,22 @@ export function buildElectronApi(): ElectronApi {
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
     openCatalogWorkflowHub: () => ipcRenderer.invoke('catalog:open-workflow-hub'),
+    getAppsEnabled: () => ipcRenderer.invoke('apps:get-enabled'),
+    listApps: () => ipcRenderer.invoke('apps:list'),
+    showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
+    captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
+    hideAppPage: () => ipcRenderer.send('apps:hide-page'),
+    reloadAppPage: () => ipcRenderer.send('apps:reload-page'),
+    onAppPageStatusChanged: (callback) => {
+      const handler = (_event: IpcRendererEvent, status: AppPageStatus): void => callback(status)
+      ipcRenderer.on('apps:page-status-changed', handler)
+      return () => ipcRenderer.removeListener('apps:page-status-changed', handler)
+    },
+    onAppPageClosed: (callback) => {
+      const handler = (): void => callback()
+      ipcRenderer.on('apps:page-closed', handler)
+      return () => ipcRenderer.removeListener('apps:page-closed', handler)
+    },
     getBuildStorageSnapshot: () => ipcRenderer.invoke('comfy-window:build-storage-snapshot'),
     resolveStartupRestoreReveal: (result) =>
       ipcRenderer.send('comfy-window:startup-restore-reveal', { result }),

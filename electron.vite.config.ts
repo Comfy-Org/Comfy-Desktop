@@ -28,6 +28,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/preload/index.ts'),
           comfyPreload: resolve(__dirname, 'src/preload/comfyPreload.ts'),
+          appsPreload: resolve(__dirname, 'src/preload/appsPreload.ts'),
           terminalPreload: resolve(__dirname, 'src/preload/terminalPreload.ts'),
           comfyTitleBarPreload: resolve(__dirname, 'src/preload/comfyTitleBarPreload.ts'),
           comfyTitlePopupPreload: resolve(__dirname, 'src/preload/comfyTitlePopupPreload.ts'),

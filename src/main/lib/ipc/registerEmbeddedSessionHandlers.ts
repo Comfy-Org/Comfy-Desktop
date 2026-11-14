@@ -5,6 +5,7 @@ import type { ComfyDesktop2AuthState } from '../../../types/comfyDesktopBridge'
 import {
   billingHandoffForSender,
   EMBEDDED_SESSION_CHANNELS,
+  isTrustedSender,
   partnerNodeTokenForSender,
   stateForSender,
   switchWorkspaceForSender,
@@ -38,7 +39,8 @@ export function registerEmbeddedSessionHandlers(): void {
   ipcMain.handle(
     EMBEDDED_SESSION_CHANNELS.signOut,
     async (event): Promise<ComfyDesktop2AuthState> => {
-      if ((await stateForSender(event)).status === 'disabled') return { status: 'disabled' }
+      const state = await stateForSender(event)
+      if (state.status === 'disabled' || !isTrustedSender(event)) return state
       await signOutOfCloud(findEntryByComfySender(event.sender) ?? undefined)
       return stateForSender(event)
     }

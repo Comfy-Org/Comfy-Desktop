@@ -19,6 +19,7 @@
     "builds": "构建",
     "navigation": "导航",
     "home": "主页",
+    "apps": "应用",
     "assets": "资产",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
@@ -30,6 +31,18 @@
     "crashedWithCode": "已崩溃（退出代码 {code}）",
     "crashedWithSignal": "已崩溃（{signal}）",
     "failedToStartReason": "启动失败：{reason}"
+  },
+  "apps": {
+    "search": "搜索应用",
+    "failedTitle": "应用未能加载",
+    "failedBody": "请检查网络连接，然后重试。",
+    "retry": "重试",
+    "emptyTitle": "暂无应用",
+    "emptyBody": "新应用会显示在这里。",
+    "noMatches": "没有与“{query}”匹配的应用",
+    "allApps": "全部应用",
+    "pageLoading": "正在加载{app}",
+    "pageFailedTitle": "{app}未能加载"
   },
   "assets": {
     "kindLabel": "资产类型",
