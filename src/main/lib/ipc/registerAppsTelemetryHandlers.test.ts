@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   listeners: new Map<string, Listener>(),
   isAppsPage: true,
   appsEnabled: true,
-  capture: vi.fn(() => true)
+  pageAppId: 'remove-background' as string | null,
+  capture: vi.fn<(event: string, properties: unknown) => boolean>(() => true)
 }))
 
 vi.mock('electron', () => ({
@@ -16,7 +17,11 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
-vi.mock('../telemetry', () => ({ capture: mocks.capture }))
+vi.mock('../../apps/appPageView', () => ({ appIdOfPage: () => mocks.pageAppId }))
+vi.mock('../telemetry', () => ({
+  capture: mocks.capture,
+  DEFAULT_EVENT_PROPERTY_NAMES: new Set(['app_version', 'installation_id'])
+}))
 
 import {
   APPS_TELEMETRY_TRACK_CHANNEL,
@@ -25,13 +30,14 @@ import {
 } from './registerAppsTelemetryHandlers'
 
 const EVENT = { sender: {}, senderFrame: {} } as unknown as Electron.IpcMainEvent
-const RUN = { name: 'run_started', props: { app: 'remove-background', where: 'cloud' } }
+const RUN = { name: 'run_started', props: { where: 'cloud' } }
 
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.listeners.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
+  mocks.pageAppId = 'remove-background'
   registerAppsTelemetryHandlers()
 })
 
@@ -45,45 +51,48 @@ describe('usage events from the hosted Apps page', () => {
 
     await vi.waitFor(() =>
       expect(mocks.capture).toHaveBeenCalledWith('comfy.desktop.apps.run_started', {
-        app_id: 'remove-background',
-        where: 'cloud'
+        where: 'cloud',
+        app_id: 'remove-background'
       })
     )
   })
 
-  it('sends a good event through Desktop telemetry with the Apps prefix', async () => {
-    expect(
-      await trackFromAppsPage(EVENT, {
-        name: 'run_started',
-        props: { app: 'genjutsu', where: 'local', model: 'scail-2', quality: 'fast', seconds: 90 }
-      })
-    ).toBe(true)
+  it('sends any well-formed event through Desktop telemetry with the Apps prefix', async () => {
+    expect(await trackFromAppsPage(EVENT, { name: 'click', props: { target: 'run' } })).toBe(true)
     expect(
       await trackFromAppsPage(EVENT, {
         name: 'example_used',
-        props: { app: 'genjutsu', example: 'dance-1' }
-      })
-    ).toBe(true)
-    expect(
-      await trackFromAppsPage(EVENT, {
-        name: 'open_in_comfyui',
-        props: { app: 'genjutsu', where: 'cloud' }
+        props: { example: 'dance-1', first: true, index: 2 }
       })
     ).toBe(true)
 
     expect(mocks.capture.mock.calls).toEqual([
+      ['comfy.desktop.apps.click', { target: 'run', app_id: 'remove-background' }],
       [
-        'comfy.desktop.apps.run_started',
-        { app_id: 'genjutsu', where: 'local', model: 'scail-2', quality: 'fast', seconds: 90 }
-      ],
-      ['comfy.desktop.apps.example_used', { app_id: 'genjutsu', example: 'dance-1' }],
-      ['comfy.desktop.apps.open_in_comfyui', { app_id: 'genjutsu', where: 'cloud' }]
+        'comfy.desktop.apps.example_used',
+        { example: 'dance-1', first: true, index: 2, app_id: 'remove-background' }
+      ]
     ])
   })
 
+  it('fills app_id from the app Desktop opened in that view, not from the page', async () => {
+    mocks.pageAppId = 'upscale'
+
+    await trackFromAppsPage(EVENT, {
+      name: 'click',
+      props: { app: 'remove-background', app_id: 'remove-background', target: 'run' }
+    })
+
+    expect(mocks.capture).toHaveBeenCalledWith('comfy.desktop.apps.click', {
+      target: 'run',
+      app_id: 'upscale'
+    })
+  })
+
   it.each([
-    ['a sender that is not the hosted Apps page', { isAppsPage: false, appsEnabled: true }],
-    ['the Apps page while Apps is switched off', { isAppsPage: true, appsEnabled: false }]
+    ['a sender that is not the hosted Apps page', { isAppsPage: false }],
+    ['the Apps page while Apps is switched off', { appsEnabled: false }],
+    ['a page Desktop holds no app for', { pageAppId: null }]
   ])('refuses %s', async (_who, state) => {
     Object.assign(mocks, state)
 
@@ -93,12 +102,10 @@ describe('usage events from the hosted Apps page', () => {
   })
 
   it.each([
-    ['app_opened, which Desktop sends itself', { name: 'app_opened', props: { app: 'genjutsu' } }],
-    [
-      'an event it does not know',
-      { name: 'run_finished', props: { app: 'genjutsu', where: 'cloud' } }
-    ],
-    ['a payload with no name', { props: { app: 'genjutsu', where: 'cloud' } }],
+    ['app_opened, which Desktop sends itself', { name: 'app_opened', props: {} }],
+    ['app_page_failed, which Desktop sends itself', { name: 'app_page_failed', props: {} }],
+    ['a name outside the pattern', { name: 'Run Started', props: {} }],
+    ['a payload with no name', { props: { where: 'cloud' } }],
     ['a payload that is not an object', 'run_started'],
     ['no payload', undefined]
   ])('drops %s', async (_what, payload) => {
@@ -107,37 +114,21 @@ describe('usage events from the hosted Apps page', () => {
     expect(mocks.capture).not.toHaveBeenCalled()
   })
 
-  it('drops bad and unknown properties before sending', async () => {
+  it('drops free text and properties Desktop sets itself before sending', async () => {
     await trackFromAppsPage(EVENT, {
       name: 'run_started',
       props: {
-        app: 'genjutsu',
         where: 'cloud',
-        model: 'Not A Slug',
-        quality: 'ultra',
-        seconds: -1,
         prompt: 'a cat on the moon',
-        file: '/Users/someone/me.png'
+        file: '/Users/someone/me.png',
+        app_version: '9.9.9',
+        installation_id: 'fake'
       }
     })
 
     expect(mocks.capture).toHaveBeenCalledWith('comfy.desktop.apps.run_started', {
-      app_id: 'genjutsu',
-      where: 'cloud'
+      where: 'cloud',
+      app_id: 'remove-background'
     })
-  })
-
-  it('drops an event whose app or required property is bad', async () => {
-    await trackFromAppsPage(EVENT, {
-      name: 'run_started',
-      props: { app: 'Genjutsu!', where: 'cloud' }
-    })
-    await trackFromAppsPage(EVENT, {
-      name: 'open_in_comfyui',
-      props: { app: 'genjutsu', where: 'web' }
-    })
-    await trackFromAppsPage(EVENT, { name: 'example_used', props: { app: 'genjutsu' } })
-
-    expect(mocks.capture).not.toHaveBeenCalled()
   })
 })

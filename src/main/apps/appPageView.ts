@@ -267,6 +267,13 @@ function concealWhenPanelGoes(windowKey: number, panel: WebContents): void {
   })
 }
 
+export function appIdOfPage(contents: WebContents): string | null {
+  for (const hosted of hostedByWindow.values()) {
+    if (hosted.view.webContents === contents) return hosted.appId
+  }
+  return null
+}
+
 export async function showAppPage(
   panel: WebContents,
   appId: unknown,

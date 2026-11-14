@@ -61,6 +61,7 @@ import {
   APP_PAGE_FAILED_EVENT,
   APP_PAGE_STATUS_CHANNEL,
   _resetForTest,
+  appIdOfPage,
   captureAppPage,
   hideAppPage,
   reloadAppPage,
@@ -668,5 +669,25 @@ describe('isAppsPageSender', () => {
     const page = hostedPage().webContents as unknown as WebContents
 
     expect(isAppsPageSender(page, null)).toBe(false)
+  })
+})
+
+describe('the app a hosted page shows', () => {
+  it('is the app Desktop opened in that view, and follows it to the next app', async () => {
+    expect(appIdOfPage(panelContents())).toBeNull()
+
+    await openCutout()
+    const page = hostedPage().webContents as unknown as WebContents
+    expect(appIdOfPage(page)).toBe(CUTOUT)
+
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    expect(appIdOfPage(page)).toBe(UPSCALE)
+  })
+
+  it('is no app for contents Desktop does not host', async () => {
+    await openCutout()
+
+    expect(appIdOfPage(panelContents())).toBeNull()
+    expect(appIdOfPage(new FakeContents() as unknown as WebContents)).toBeNull()
   })
 })

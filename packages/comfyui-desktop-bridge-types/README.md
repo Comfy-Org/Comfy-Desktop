@@ -74,11 +74,14 @@ needs, and only for runs the page started; `onLocalEvent()` carries ComfyUI's
 updates for those runs. `localDownload()` saves a safetensors model from
 Hugging Face into that build's models folder.
 
-`track(name, props)` reports what the person does on the page: `run_started`,
-`example_used` or `open_in_comfyui`, with the app's catalog id in `app`.
-Desktop checks each property, drops anything it does not know, and sends the
-event as `comfy.desktop.apps.<name>` only when the person allows telemetry.
-Desktop sends `app_opened` itself when it opens the page.
+`track(name, props)` reports what the person does on the page, such as
+`track('click', { target: 'run' })`. Desktop sends it as
+`comfy.desktop.apps.<name>` only when the person allows telemetry, and adds
+`app_id`, the app Desktop opened in that view. A name is lowercase letters,
+digits and `_`, up to 48 characters; `app_opened` and `app_page_failed` are
+Desktop's own and are refused. Desktop keeps up to 16 properties, each a
+boolean, a finite number or a slug of up to 64 characters, and drops free
+text, any other value, and an `app` or `app_id` from the page.
 
 All three objects are absent in a browser, so a page keeps its own sign-in and
 its own way to reach a local ComfyUI as the fallback, and sends no events.

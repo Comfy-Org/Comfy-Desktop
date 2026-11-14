@@ -34,107 +34,127 @@ vi.mock('posthog-node', () => ({
 }))
 
 import * as telemetry from '../lib/telemetry'
-import { APP_PAGE_EVENT_PREFIX, checkAppPageEvent, trackAppPageEvent } from './appPageEvents'
+import {
+  APP_PAGE_EVENT_PREFIX,
+  DESKTOP_APP_EVENTS,
+  MAX_PAGE_EVENT_PROPERTIES,
+  checkAppPageEvent,
+  trackAppPageEvent
+} from './appPageEvents'
+
+const APP = 'remove-background'
 
 describe('checkAppPageEvent', () => {
-  it('keeps a run start with every property it knows, under the Apps prefix', () => {
+  it('sends a page event under the Apps prefix with the app id Desktop holds', () => {
     expect(
-      checkAppPageEvent('run_started', {
-        app: 'remove-background',
-        where: 'cloud',
-        model: 'birefnet',
-        quality: 'best',
-        seconds: 12.4
-      })
+      checkAppPageEvent(
+        'run_started',
+        { where: 'cloud', model: 'birefnet', seconds: 12.4, fast: true },
+        APP
+      )
     ).toEqual({
       event: 'comfy.desktop.apps.run_started',
-      properties: {
-        app_id: 'remove-background',
-        where: 'cloud',
-        model: 'birefnet',
-        quality: 'best',
-        seconds: 12
-      }
+      properties: { where: 'cloud', model: 'birefnet', seconds: 12.4, fast: true, app_id: APP }
     })
   })
 
-  it('keeps an example use and an open in ComfyUI', () => {
-    expect(checkAppPageEvent('example_used', { app: 'genjutsu', example: 'dance-1' })).toEqual({
-      event: `${APP_PAGE_EVENT_PREFIX}example_used`,
-      properties: { app_id: 'genjutsu', example: 'dance-1' }
-    })
-    expect(checkAppPageEvent('open_in_comfyui', { app: 'genjutsu', where: 'local' })).toEqual({
-      event: `${APP_PAGE_EVENT_PREFIX}open_in_comfyui`,
-      properties: { app_id: 'genjutsu', where: 'local' }
-    })
-  })
+  it.each(['click', 'run_started', 'example_used', 'a', `a${'b'.repeat(47)}`, 'step_2_done'])(
+    'accepts the event name %s',
+    (name) => {
+      expect(checkAppPageEvent(name, {}, APP)?.event).toBe(`${APP_PAGE_EVENT_PREFIX}${name}`)
+    }
+  )
 
   it.each([
-    ['app_opened', { app: 'genjutsu' }],
-    ['app_page_failed', { app: 'genjutsu' }],
-    ['run_finished', { app: 'genjutsu', where: 'cloud' }],
-    ['toString', { app: 'genjutsu', where: 'cloud' }],
-    ['', { app: 'genjutsu' }],
-    [42, { app: 'genjutsu' }]
-  ])('drops the event %s, which a page may not send', (name, props) => {
-    expect(checkAppPageEvent(name, props)).toBeNull()
+    ['too long', `a${'b'.repeat(48)}`],
+    ['starting with a digit', '2fast'],
+    ['starting with an underscore', '_hidden'],
+    ['with capitals', 'RunStarted'],
+    ['with a dot', 'apps.run_started'],
+    ['with a dash', 'run-started'],
+    ['with a space', 'run started'],
+    ['empty', ''],
+    ['not a string', 42]
+  ])('refuses an event name %s', (_why, name) => {
+    expect(checkAppPageEvent(name, {}, APP)).toBeNull()
   })
 
-  it('leaves app_opened to Desktop, which sends it when it opens the page', () => {
-    expect(checkAppPageEvent('app_opened', { app: 'genjutsu' })).toBeNull()
+  it.each([...DESKTOP_APP_EVENTS])('refuses %s, which only Desktop sends', (name) => {
+    expect(['app_opened', 'app_page_failed']).toContain(name)
+    expect(checkAppPageEvent(name, {}, APP)).toBeNull()
   })
 
-  it.each([
-    ['no app', { where: 'cloud' }],
-    ['an app that is not a slug', { app: 'Remove Background', where: 'cloud' }],
-    ['an app that is too long', { app: 'a'.repeat(65), where: 'cloud' }],
-    ['no where', { app: 'genjutsu' }],
-    ['a where that is neither cloud nor local', { app: 'genjutsu', where: 'mars' }],
-    ['properties that are not an object', 'genjutsu'],
-    ['properties that are a list', ['genjutsu', 'cloud']],
-    ['no properties', undefined]
-  ])('drops a run start with %s', (_why, props) => {
-    expect(checkAppPageEvent('run_started', props)).toBeNull()
-  })
-
-  it('drops an example use whose example is not a slug', () => {
-    expect(checkAppPageEvent('example_used', { app: 'genjutsu', example: '../x' })).toBeNull()
-  })
-
-  it('drops properties it does not know and bad optional ones, keeping the event', () => {
+  it('takes app_id from Desktop and ignores the app the page names', () => {
     expect(
-      checkAppPageEvent('run_started', {
-        app: 'genjutsu',
-        where: 'local',
-        model: 'My Model.safetensors',
-        quality: 'ultra',
-        seconds: 86_401,
-        prompt: 'a cat on the moon',
-        path: '/Users/someone/Pictures/me.png',
-        app_id: 'other-app',
-        example: 'dance-1'
-      })
+      checkAppPageEvent('click', { app: 'other-app', app_id: 'other-app', target: 'run' }, APP)
+    ).toEqual({
+      event: 'comfy.desktop.apps.click',
+      properties: { target: 'run', app_id: APP }
+    })
+  })
+
+  it.each([
+    ['no app id', null],
+    ['an app id that is not a slug', 'Remove Background']
+  ])('drops the event when Desktop holds %s for the page', (_why, appId) => {
+    expect(checkAppPageEvent('click', { target: 'run' }, appId)).toBeNull()
+  })
+
+  it('drops free text, bad values and bad property names, keeping the event', () => {
+    expect(
+      checkAppPageEvent(
+        'run_started',
+        {
+          where: 'local',
+          prompt: 'a cat on the moon',
+          file: '/Users/someone/Pictures/me.png',
+          name: 'My Model.safetensors',
+          long: 'a'.repeat(65),
+          nan: Number.NaN,
+          forever: Number.POSITIVE_INFINITY,
+          nothing: null,
+          list: ['a'],
+          nested: { a: 1 },
+          Capital: 'x',
+          '1st': 'x',
+          [`a${'b'.repeat(32)}`]: 'x',
+          $set: 'x',
+          app_version: '9.9.9',
+          installation_id: 'fake',
+          ok: false,
+          count: 0
+        },
+        APP
+      )
     ).toEqual({
       event: 'comfy.desktop.apps.run_started',
-      properties: { app_id: 'genjutsu', where: 'local' }
+      properties: { where: 'local', ok: false, count: 0, app_id: APP }
     })
   })
 
+  it('keeps a 64-character slug and a 32-character property name', () => {
+    const key = `a${'b'.repeat(31)}`
+    const value = `a${'b'.repeat(63)}`
+    expect(checkAppPageEvent('click', { [key]: value }, APP)?.properties).toEqual({
+      [key]: value,
+      app_id: APP
+    })
+  })
+
+  it(`keeps at most ${MAX_PAGE_EVENT_PROPERTIES} properties besides app_id`, () => {
+    const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`p${i}`, i]))
+    const kept = checkAppPageEvent('click', many, APP)?.properties ?? {}
+    expect(Object.keys(kept)).toHaveLength(MAX_PAGE_EVENT_PROPERTIES + 1)
+    expect(kept).toMatchObject({ p0: 0, p15: 15, app_id: APP })
+    expect(kept).not.toHaveProperty('p16')
+  })
+
   it.each([
-    [0, undefined],
-    [-3, undefined],
-    [Number.NaN, undefined],
-    [Number.POSITIVE_INFINITY, undefined],
-    ['12', undefined],
-    [0.2, 1],
-    [59.5, 60],
-    [86_400, 86_400]
-  ])('reads seconds %s as %s', (seconds, kept) => {
-    expect(
-      checkAppPageEvent('run_started', { app: 'genjutsu', where: 'cloud', seconds })?.properties[
-        'seconds'
-      ]
-    ).toBe(kept)
+    ['not an object', 'run'],
+    ['a list', ['run']],
+    ['missing', undefined]
+  ])('sends only app_id when the properties are %s', (_why, props) => {
+    expect(checkAppPageEvent('click', props, APP)?.properties).toEqual({ app_id: APP })
   })
 })
 
@@ -161,13 +181,11 @@ describe('trackAppPageEvent through Desktop telemetry', () => {
     telemetry.setConsentState('granted')
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
 
-    expect(
-      trackAppPageEvent('run_started', { app: 'genjutsu', where: 'cloud', prompt: 'a cat' })
-    ).toBe(true)
+    expect(trackAppPageEvent('run_started', { where: 'cloud', prompt: 'a cat' }, APP)).toBe(true)
 
     const sent = appCaptures()
     expect(sent.map((c) => c.event)).toEqual(['comfy.desktop.apps.run_started'])
-    expect(sent[0]?.properties).toMatchObject({ app_id: 'genjutsu', where: 'cloud' })
+    expect(sent[0]?.properties).toMatchObject({ app_id: APP, where: 'cloud' })
     expect(sent[0]?.properties).not.toHaveProperty('prompt')
   })
 
@@ -175,18 +193,19 @@ describe('trackAppPageEvent through Desktop telemetry', () => {
     telemetry.setConsentState(consent)
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
 
-    expect(trackAppPageEvent('run_started', { app: 'genjutsu', where: 'cloud' })).toBe(false)
-    expect(trackAppPageEvent('example_used', { app: 'genjutsu', example: 'dance-1' })).toBe(false)
+    expect(trackAppPageEvent('run_started', { where: 'cloud' }, APP)).toBe(false)
+    expect(trackAppPageEvent('click', { target: 'run' }, APP)).toBe(false)
 
     expect(appCaptures()).toEqual([])
   })
 
-  it('sends nothing for an event it drops, even with consent', () => {
+  it('sends nothing for an event it refuses, even with consent', () => {
     telemetry.setConsentState('granted')
     telemetry.bindAnonymousId('anon-1', 'anon-1', {})
 
-    expect(trackAppPageEvent('app_opened', { app: 'genjutsu' })).toBe(false)
-    expect(trackAppPageEvent('mystery', { app: 'genjutsu' })).toBe(false)
+    expect(trackAppPageEvent('app_opened', {}, APP)).toBe(false)
+    expect(trackAppPageEvent('Not An Event', {}, APP)).toBe(false)
+    expect(trackAppPageEvent('click', {}, null)).toBe(false)
 
     expect(appCaptures()).toEqual([])
   })

@@ -271,13 +271,15 @@ export interface ComfyDesktopHostedLocalBridge {
  * Usage events from a Comfy page hosted in Desktop's Apps view. Desktop
  * exposes it to that page as `window.comfyDesktopTelemetry` and sends an event
  * as `comfy.desktop.apps.<name>` only when the person allows telemetry.
- * Desktop takes `run_started` (`where`, and optionally `model`, `quality` and
- * `seconds`), `example_used` (`example`) and `open_in_comfyui` (`where`), each
- * with the app's catalog id in `app`. It drops any other event and any other
- * property, and sends `app_opened` itself.
+ * `name` matches `^[a-z][a-z0-9_]{0,47}$`; `app_opened` and `app_page_failed`
+ * are refused because Desktop sends them itself. Desktop keeps at most 16
+ * properties, each named `^[a-z][a-z0-9_]{0,31}$` with a boolean, a finite
+ * number or a slug of at most 64 characters (`^[a-z0-9][a-z0-9._-]{0,63}$`),
+ * and drops anything else. Desktop sets `app_id` itself, to the app it opened
+ * in that view; an `app` or `app_id` from the page is ignored.
  */
 export interface ComfyDesktopHostedTelemetryBridge {
-  track(name: string, props?: Record<string, string | number>): void
+  track(name: string, props?: Record<string, string | number | boolean>): void
 }
 
 export interface ComfyDesktop2TerminalBridge {
