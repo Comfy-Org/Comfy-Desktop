@@ -11,20 +11,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quit-without-fix:
-    name: Quit with forced GC, without the fix (${{ matrix.platform }})
-    runs-on: ${{ matrix.os }}
+  quit-with-fix-under-gdb:
+    name: Quit with forced GC, with the fix, under gdb (${{ matrix.replica }})
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: macos
-            os: macos-latest
-          - platform: windows
-            os: windows-latest
-          - platform: linux
-            os: ubuntu-latest
+        replica: [1, 2]
 
     steps:
       - name: Checkout
@@ -45,5 +39,10 @@ jobs:
       - name: Build app
         run: pnpm run build
 
+      - name: Install gdb
+        run: (sudo apt-get update && sudo apt-get install -y --no-install-recommends gdb) || echo "gdb is not available"
+
       - name: Run the quit test
-        run: ${{ format('{0}pnpm run test:e2e:{1} e2e/quit-garbage-collection.test.ts --retries=0', matrix.platform == 'linux' && 'xvfb-run --auto-servernum ' || '', matrix.platform) }}
+        env:
+          TEARDOWN_DIAG_GDB: '1'
+        run: xvfb-run --auto-servernum pnpm exec playwright test --project=linux e2e/quit-garbage-collection.test.ts --retries=0 --reporter=list
