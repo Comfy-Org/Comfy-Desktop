@@ -3,6 +3,9 @@ import { isBackgroundRun } from './e2e/support/focusMode'
 
 const backgroundRun = isBackgroundRun()
 
+const ACT_WITHOUT_WAITING_FOR_A_NAVIGATION_DESKTOP_CANCELLED = 'PLAYWRIGHT_SKIP_NAVIGATION_CHECK'
+process.env[ACT_WITHOUT_WAITING_FOR_A_NAVIGATION_DESKTOP_CANCELLED] = '1'
+
 function platformProjects(name: string, tag: string) {
   if (!backgroundRun) return [{ name, grep: new RegExp(tag) }]
   return [
