@@ -18,6 +18,7 @@ import {
   openPickerViaTitlePill
 } from './support/chooserHelpers'
 import {
+  armLaunchReadyHold,
   armLaunchSpawnHold,
   ensureInstallPanelView,
   getIpcInvocations,
@@ -26,7 +27,9 @@ import {
   hasActiveLaunch,
   hasActiveOperation,
   isInstallLaunching,
+  isLaunchReadyHeld,
   isLaunchSpawnHeld,
+  releaseLaunchReadyHold,
   releaseLaunchSpawnHold,
   resetIpcInvocations
 } from './support/devHooks'
@@ -1848,6 +1851,14 @@ async function openBootWindowViaPickerRestart(): Promise<void> {
     .toBe(true)
 }
 
+async function restartAndHoldTheBootBeforeItCountsAsRunning(): Promise<void> {
+  await armLaunchReadyHold(ctx.app)
+  await openBootWindowViaPickerRestart()
+  await expect
+    .poll(() => isLaunchReadyHeld(ctx.app), { timeout: 300_000, intervals: [500, 1_000] })
+    .toBe(true)
+}
+
 test('boot-window --port edit surfaces Restart-to-apply and the restart applies it @sec-bootwindow @lifecycle', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
@@ -1865,14 +1876,18 @@ test('boot-window --port edit surfaces Restart-to-apply and the restart applies 
   const targetPort = await findFreeLoopbackPort(19100)
   expect(targetPort, 'target port must differ from the current one').not.toBe(before!.port)
 
-  await openBootWindowViaPickerRestart()
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
-  await setPortArgViaPicker(popup, targetPort)
-
-  expect(
-    await getRunningSessionSnapshot(ctx.app, _updateInstallId),
-    'boot completed before the boot-window edit landed - cannot exercise issue #1300'
-  ).toBeNull()
+  let popup: WebContentsPage
+  try {
+    await restartAndHoldTheBootBeforeItCountsAsRunning()
+    popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    await setPortArgViaPicker(popup, targetPort)
+    expect(
+      await getRunningSessionSnapshot(ctx.app, _updateInstallId),
+      'the held boot counted as running before the boot-window edit landed'
+    ).toBeNull()
+  } finally {
+    await releaseLaunchReadyHold(ctx.app)
+  }
 
   let booted: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
   await expect
@@ -1939,43 +1954,46 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
     .not.toBeNull()
   const targetPort = await findFreeLoopbackPort(19400)
 
-  await openBootWindowViaPickerRestart()
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
-  await setPortArgViaPicker(popup, targetPort)
-  expect(
-    await getRunningSessionSnapshot(ctx.app, _updateInstallId),
-    'boot completed before the boot-window edit landed - cannot exercise restart-during-boot'
-  ).toBeNull()
+  try {
+    await restartAndHoldTheBootBeforeItCountsAsRunning()
+    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    await setPortArgViaPicker(popup, targetPort)
 
-  await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
-  expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
-  expect(
-    await isInstallLaunching(ctx.app, _updateInstallId),
-    'boot finished before the restart click - this run did not exercise restart-during-boot'
-  ).toBe(true)
-  expect(await getRunningSessionSnapshot(ctx.app, _updateInstallId)).toBeNull()
-  await resetIpcInvocations(ctx.app, 'picker-restart:cancel-launching')
-  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
-  await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 10_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
-
-  await expect
-    .poll(
-      async () => {
-        const calls = (await getIpcInvocations(
-          ctx.app,
-          'picker-restart:cancel-launching'
-        )) as Array<{ installationId?: string; cancelled?: boolean }>
-        return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
-      },
-      { timeout: 90_000, intervals: [250, 500] }
+    await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
+    expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
+    await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+    expect(await isLaunchReadyHeld(ctx.app), 'the boot is still held at the restart click').toBe(
+      true
     )
-    .toBe(true)
+    expect(await isInstallLaunching(ctx.app, _updateInstallId)).toBe(true)
+    expect(await getRunningSessionSnapshot(ctx.app, _updateInstallId)).toBeNull()
+    await resetIpcInvocations(ctx.app, 'picker-restart:cancel-launching')
+    expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+    await expect
+      .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+        timeout: 10_000,
+        intervals: [100, 200]
+      })
+      .toBe(false)
+
+    await expect
+      .poll(
+        async () => {
+          const calls = (await getIpcInvocations(
+            ctx.app,
+            'picker-restart:cancel-launching'
+          )) as Array<{ installationId?: string; cancelled?: boolean }>
+          return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
+        },
+        { timeout: 90_000, intervals: [250, 500] }
+      )
+      .toBe(true)
+    await expect
+      .poll(() => isLaunchReadyHeld(ctx.app), { timeout: 10_000, intervals: [100, 250] })
+      .toBe(false)
+  } finally {
+    await releaseLaunchReadyHold(ctx.app)
+  }
 
   await expect
     .poll(
