@@ -112,7 +112,7 @@ export function buildElectronApi(): ElectronApi {
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),
     captureAppPage: () => ipcRenderer.invoke('apps:capture-page'),
     hideAppPage: () => ipcRenderer.send('apps:hide-page'),
-    reloadAppPage: () => ipcRenderer.send('apps:reload-page'),
+    reloadAppPage: (appId) => ipcRenderer.send('apps:reload-page', appId),
     onAppPageStatusChanged: (callback) => {
       const handler = (_event: IpcRendererEvent, status: AppPageStatus): void => callback(status)
       ipcRenderer.on('apps:page-status-changed', handler)

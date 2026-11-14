@@ -484,7 +484,7 @@ describe('an app page that cannot load', () => {
       reason: 'network'
     })
 
-    reloadAppPage(panelContents())
+    reloadAppPage(panelContents(), CUTOUT)
     expect(lastStatusSentToPanel()).toBe('loading')
     expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
     expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(CUTOUT_URL)
@@ -492,6 +492,41 @@ describe('an app page that cannot load', () => {
     finishLoading()
     expect(hostedPage().visible).toBe(true)
     expect(lastStatusSentToPanel()).toBe('ready')
+  })
+
+  it('says the page did not load, without opening the browser, when the site sends it to another site while it loads', async () => {
+    await openCutout()
+    const event = navigationEvent()
+    hostedPage().webContents.emit(
+      'will-redirect',
+      event,
+      'https://www.comfy.org/apps/',
+      false,
+      true
+    )
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(mocks.openExternal).not.toHaveBeenCalled()
+    expect(hostedPage().visible).toBe(false)
+    expect(lastStatusSentToPanel()).toBe('failed')
+    expect(mocks.capture).toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, {
+      app_id: CUTOUT,
+      reason: 'redirected'
+    })
+  })
+
+  it('says the page still did not load when the person retries an app this window never loaded', async () => {
+    await openCutout()
+    finishLoading()
+    hideAppPage(panelContents())
+    mocks.pages.delete(UPSCALE)
+    expect(await showAppPage(panelContents(), UPSCALE, PLACEMENT)).toBe('failed')
+
+    reloadAppPage(panelContents(), UPSCALE)
+
+    expect(lastStatusSentToPanel()).toBe('failed')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hostedPage().visible).toBe(false)
   })
 
   it('tries a failed app again when the person opens it once more', async () => {

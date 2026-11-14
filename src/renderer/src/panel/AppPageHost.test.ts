@@ -131,7 +131,7 @@ describe('AppPageHost', () => {
 
     await wrapper.get('[data-testid="app-page-retry"]').trigger('click')
 
-    expect(reloadAppPage).toHaveBeenCalledTimes(1)
+    expect(reloadAppPage).toHaveBeenCalledExactlyOnceWith('remove-background')
     expect(wrapper.get('[data-testid="app-page-loading"]').isVisible()).toBe(true)
 
     tellStatus('failed')
