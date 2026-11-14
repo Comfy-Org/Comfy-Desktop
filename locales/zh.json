@@ -108,7 +108,7 @@
     "buildStartingComfyUI": "正在启动 ComfyUI",
     "cloudHardware": "RTX 6000 Pro · 96 GB",
     "exampleWorkflows": "示例工作流",
-    "seeAllWorkflows": "查看全部工作流",
+    "seeAllWorkflows": "查看全部应用",
     "showWorkflow": "显示 {title}",
     "openWorkflow": "在 Comfy Hub 打开 {title}",
     "previousWorkflow": "上一个工作流",

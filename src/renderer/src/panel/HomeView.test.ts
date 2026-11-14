@@ -389,7 +389,7 @@ describe('Home example workflows', () => {
     expect(cardAt(wrapper, 1).attributes('aria-label')).toBe('Show Make your character talk')
   })
 
-  it('opens the full list of workflows on Comfy Hub from See all workflows', async () => {
+  it('opens the full list of workflows on Comfy Hub from See all apps', async () => {
     listHomeWorkflows.mockResolvedValue([UPSCALE])
     const wrapper = await openHome()
 
