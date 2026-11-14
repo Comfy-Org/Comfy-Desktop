@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   root,
@@ -67,7 +67,9 @@ vi.mock('./assets', () => ({
 import type { InstallationRecord } from '../installations'
 import {
   MAX_FILES,
+  comfyOutputPath,
   listOutputFolder,
+  outputLocator,
   listOutputFolders,
   outputDirOverride,
   outputFileUrl,
@@ -103,6 +105,11 @@ beforeEach(() => {
     install('Cloud', { sourceId: 'cloud' }),
     install('Old Desktop', { sourceId: 'desktop' })
   ])
+})
+
+afterEach(() => {
+  for (const link of ['escape', 'shared', 'shared.png'])
+    fs.rmSync(path.join(ownDir, link), { force: true })
 })
 
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -195,6 +202,149 @@ describe('listOutputFolder', () => {
     expect(await listOutputFolder('relative/path')).toBeNull()
     expect(await listOutputFolder(42)).toBeNull()
     fs.rmSync(path.join(sharedDir, 'escape'))
+  })
+})
+
+const bytesOf = (text: string) => new TextEncoder().encode(text)
+
+describe('comfyOutputPath', () => {
+  const apps = install('Apps', { useSharedOutput: false, outputDir: ownDir })
+
+  it("finds a ComfyUI output in the build's own output folder", async () => {
+    write(path.join(ownDir, 'apps', 'ComfyUI_00001_.png'), 'four')
+
+    expect(
+      await comfyOutputPath(
+        apps,
+        { filename: 'ComfyUI_00001_.png', subfolder: 'apps' },
+        bytesOf('four')
+      )
+    ).toBe(path.join(ownDir, 'apps', 'ComfyUI_00001_.png'))
+  })
+
+  it('finds an output of a build that saves to the shared folder', async () => {
+    write(path.join(sharedDir, 'ComfyUI_00002_.png'), 'shared')
+
+    expect(
+      await comfyOutputPath(
+        install('Test Instance'),
+        { filename: 'ComfyUI_00002_.png', subfolder: '' },
+        bytesOf('shared')
+      )
+    ).toBe(path.join(sharedDir, 'ComfyUI_00002_.png'))
+  })
+
+  it('refuses a file that is gone or does not match the bytes the page shows', async () => {
+    write(path.join(ownDir, 'ComfyUI_00003_.png'), 'four')
+    const file = { filename: 'ComfyUI_00003_.png', subfolder: '' }
+
+    expect(await comfyOutputPath(apps, file, bytesOf('fives'))).toBeNull()
+    expect(await comfyOutputPath(apps, file, bytesOf('five'))).toBeNull()
+    expect(
+      await comfyOutputPath(apps, { filename: 'missing.png', subfolder: '' }, bytesOf('four'))
+    ).toBeNull()
+  })
+
+  it("refuses paths that leave the build's output folder", async () => {
+    write(path.join(outsideDir, 'secret.png'), 'four')
+    write(path.join(sharedDir, 'other-build.png'), 'four')
+    fs.symlinkSync(outsideDir, path.join(ownDir, 'escape'))
+    fs.symlinkSync(sharedDir, path.join(ownDir, 'shared'))
+
+    const file = (subfolder: string, filename: string) =>
+      comfyOutputPath(apps, { filename, subfolder }, bytesOf('four'))
+    expect(await file('escape', 'secret.png')).toBeNull()
+    expect(await file('shared', 'other-build.png')).toBeNull()
+    expect(await file('../outside', 'secret.png')).toBeNull()
+    expect(await file('', '../outside/secret.png')).toBeNull()
+  })
+
+  it('refuses builds whose output folder Desktop does not manage', async () => {
+    write(path.join(sharedDir, 'ComfyUI_00004_.png'), 'four')
+    const file = { filename: 'ComfyUI_00004_.png', subfolder: '' }
+
+    const cloud = install('Cloud', { sourceId: 'cloud' })
+    const old = install('Old', { sourceId: 'desktop' })
+    expect(await comfyOutputPath(cloud, file, bytesOf('four'))).toBeNull()
+    expect(await comfyOutputPath(old, file, bytesOf('four'))).toBeNull()
+  })
+})
+
+describe('outputLocator', () => {
+  const apps = install('Apps', { useSharedOutput: false, outputDir: ownDir })
+  it("finds the file in the build's output folder with exactly the same bytes", async () => {
+    write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00001.png'), 'other picture')
+    write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png'), 'same picture!')
+    write(path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00003.png'), 'third picture')
+    const locate = outputLocator(apps)
+    const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
+
+    expect(await sameBytes(bytesOf('same picture!'))).toBe(
+      path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00002.png')
+    )
+    expect(await sameBytes(bytesOf('third picture'))).toBe(
+      path.join(ownDir, 'apps', 'sdr-to-hdr', 'hdr_00003.png')
+    )
+  })
+
+  it('finds nothing when no file has those bytes, or there are no bytes', async () => {
+    write(path.join(ownDir, 'kept.png'), 'kept')
+
+    const locate = outputLocator(apps)
+    const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
+    expect(await sameBytes(bytesOf('gone'))).toBeNull()
+    expect(await sameBytes(new Uint8Array())).toBeNull()
+  })
+
+  it('looks by bytes when the reference does not lead to the file', async () => {
+    write(path.join(ownDir, 'apps', 'renamed.png'), 'moved bytes')
+
+    expect(
+      await outputLocator(apps)(
+        { filename: 'old-name.png', subfolder: 'apps' },
+        new TextEncoder().encode('moved bytes')
+      )
+    ).toBe(path.join(ownDir, 'apps', 'renamed.png'))
+  })
+
+  it('finds outputs of any file type, such as AAC audio', async () => {
+    write(path.join(ownDir, 'apps', 'song.aac'), 'aac audio bytes')
+
+    expect(await outputLocator(apps)(null, bytesOf('aac audio bytes'))).toBe(
+      path.join(ownDir, 'apps', 'song.aac')
+    )
+  })
+
+  it('stops looking once the preview is no longer wanted', async () => {
+    write(path.join(ownDir, 'apps', 'wanted.png'), 'wanted bytes')
+
+    expect(await outputLocator(apps, () => false)(null, bytesOf('wanted bytes'))).toBeNull()
+  })
+
+  it('does not read an apps folder that is a link', async () => {
+    const linkedDir = path.join(root, 'linked-output')
+    fs.mkdirSync(linkedDir, { recursive: true })
+    write(path.join(outsideDir, 'linked.png'), 'linked bytes')
+    fs.symlinkSync(outsideDir, path.join(linkedDir, 'apps'))
+    const linked = install('Linked', { useSharedOutput: false, outputDir: linkedDir })
+
+    try {
+      expect(await outputLocator(linked)(null, bytesOf('linked bytes'))).toBeNull()
+    } finally {
+      fs.rmSync(path.join(linkedDir, 'apps'))
+    }
+  })
+
+  it("does not follow links out of the build's output folder", async () => {
+    write(path.join(outsideDir, 'secret.png'), 'secret bytes')
+    write(path.join(sharedDir, 'shared.png'), 'shared bytes')
+    fs.symlinkSync(outsideDir, path.join(ownDir, 'escape'))
+    fs.symlinkSync(path.join(sharedDir, 'shared.png'), path.join(ownDir, 'shared.png'))
+
+    const locate = outputLocator(apps)
+    const sameBytes = (bytes: Uint8Array) => locate(null, bytes)
+    expect(await sameBytes(bytesOf('secret bytes'))).toBeNull()
+    expect(await sameBytes(bytesOf('shared bytes'))).toBeNull()
   })
 })
 

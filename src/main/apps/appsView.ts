@@ -55,7 +55,9 @@ import {
   syncLocalSocket
 } from './localComfy'
 import { listCatalogApps } from './catalog'
-import { outputAction, outputRequest } from './outputs'
+import { needsLookup, outputAction, outputRequest, resolveOutputFiles } from './outputs'
+import { findApps } from './appsBuild'
+import { allowedPath, outputLocator } from '../lib/outputFolders'
 import { localBuilds, openInComfy } from './openInComfy'
 import { stackApps } from './stackApps'
 import { isAppsEnabled, onAppsEnabledChanged } from './appsSwitch'
@@ -88,12 +90,11 @@ const BACKDROP_QUALITY = 80
 export const APPS_ENABLED_CHANNEL = 'comfy-apps:enabled'
 
 const appOpen = new Map<number, boolean>()
-const capturingOutputs = new Set<number>()
-const pageDocuments = new Map<number, number>()
-const liveOutputCounts = new Map<number, number>()
 const awaitingCommit = new Set<number>()
 const settledPages = new Set<number>()
 const parkedApps = new Set<number>()
+const shownOutputFiles = new Map<number, { turn: number; files: (string | null)[] }>()
+const latestOutputRequest = new Map<number, number>()
 
 export interface AppsRect {
   x: number
@@ -191,8 +192,7 @@ function createAppsView(key: number, url: string): WebContentsView {
     if (isMainFrame && isPageLoadFailure(errorCode)) markLoadFailed(key, view, url)
   })
   wc.on('did-navigate', (_event, url, httpResponseCode) => {
-    pageDocuments.set(key, (pageDocuments.get(key) ?? 0) + 1)
-    liveOutputCounts.delete(key)
+    forgetOutputs(key)
     awaitingCommit.delete(key)
     settledPages.delete(key)
     if (isDocumentFailure(httpResponseCode)) markLoadFailed(key, view, url)
@@ -254,11 +254,10 @@ function showApps(event: IpcMainEvent, rect: unknown): void {
     entry.window.once('closed', () => {
       views.delete(key)
       appOpen.delete(key)
-      liveOutputCounts.delete(key)
-      pageDocuments.delete(key)
       awaitingCommit.delete(key)
       settledPages.delete(key)
       parkedApps.delete(key)
+      forgetOutputs(key)
       if (!view!.webContents.isDestroyed()) view!.webContents.close()
       syncLocalSocket()
     })
@@ -308,6 +307,17 @@ function appsPageUrl(event: IpcMainInvokeEvent): string | null {
   return isAppsFrameUrl(frame.url, APPS_URL) ? frame.url : null
 }
 
+function nextOutputTurn(key: number): number {
+  const turn = (latestOutputRequest.get(key) ?? 0) + 1
+  latestOutputRequest.set(key, turn)
+  return turn
+}
+
+function forgetOutputs(key: number): void {
+  shownOutputFiles.delete(key)
+  nextOutputTurn(key)
+}
+
 function keyForAppsPage(sender: WebContents): number | null {
   for (const [key, view] of views) if (view.webContents === sender) return key
   return null
@@ -334,25 +344,38 @@ async function showOutput(page: WebContents, request: unknown): Promise<void> {
   const panel = entry?.panelView?.webContents
   if (key === null || !appOpen.get(key) || !panel || panel.isDestroyed()) return
   if (!isOnScreen(key)) throw new Error('The app is not on screen.')
-  if (capturingOutputs.has(key)) throw new Error('Outputs are already opening.')
-  const pageDocument = pageDocuments.get(key)
-  capturingOutputs.add(key)
-  const backdrop = await captureBackdrop(page).finally(() => capturingOutputs.delete(key))
-  if (panel.isDestroyed() || !appOpen.get(key) || pageDocuments.get(key) !== pageDocument) return
+  const turn = nextOutputTurn(key)
+  const current = () => latestOutputRequest.get(key) === turn && !page.isDestroyed()
+  const apps = outputs.items.some(needsLookup) ? await findApps() : null
+  const { items, files } = await resolveOutputFiles(
+    outputs.items,
+    apps ? outputLocator(apps, current) : async () => null
+  )
+  if (!current()) return
+  const backdrop = await captureBackdrop(page)
+  if (panel.isDestroyed() || !appOpen.get(key) || !current()) return
   if (!isOnScreen(key)) throw new Error('The app is not on screen.')
-  liveOutputCounts.set(key, outputs.items.length)
+  shownOutputFiles.set(key, { turn, files })
   if (entry?.window.isFocused()) panel.focus()
-  panel.send(APPS_OUTPUT_CHANNEL, { ...outputs, backdrop })
+  panel.send(APPS_OUTPUT_CHANNEL, { items, index: outputs.index, turn, backdrop })
+}
+
+async function revealOutputFile(file: string): Promise<void> {
+  const real = await allowedPath(file)
+  if (real) shell.showItemInFolder(real)
 }
 
 function relayOutputAction(event: IpcMainEvent, input: unknown): void {
   const found = entryForPanel(event.sender)
   const action = outputAction(input)
   if (!found || !action) return
-  const count = liveOutputCounts.get(found[0]) ?? 0
+  const shown = shownOutputFiles.get(found[0])
+  if (!shown || shown.turn !== action.turn || action.index >= shown.files.length) return
+  const file = action.action === 'show-in-folder' ? shown.files[action.index] : null
+  if (file) return void revealOutputFile(file).catch(() => {})
   const page = views.get(found[0])?.webContents
-  if (action.index >= count || !page || page.isDestroyed()) return
-  page.send(APPS_OUTPUT_ACTION_CHANNEL, action)
+  if (!page || page.isDestroyed()) return
+  page.send(APPS_OUTPUT_ACTION_CHANNEL, { action: action.action, index: action.index })
 }
 
 function authState(): AppsAuthState {

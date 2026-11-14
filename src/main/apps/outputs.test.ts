@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 
-import { MAX_OUTPUTS, MAX_OUTPUTS_BYTES, outputAction, outputRequest } from './outputs'
+import {
+  MAX_OUTPUTS,
+  MAX_OUTPUTS_BYTES,
+  outputAction,
+  outputRequest,
+  resolveOutputFiles
+} from './outputs'
 
 const picture = (extra: Record<string, unknown> = {}) => ({
   name: 'picture-1.png',
@@ -58,6 +64,44 @@ describe('outputRequest', () => {
     expect(folderOf('/Users/me/out\nput')).toBeUndefined()
   })
 
+  it('keeps the ComfyUI output reference of an output made on this computer', () => {
+    const request = outputRequest({
+      items: [
+        picture({
+          savedOn: 'computer',
+          comfyFile: { filename: 'ComfyUI_00001_.png', subfolder: 'apps\\text', type: 'output' }
+        }),
+        picture({ savedOn: 'cloud', comfyFile: { filename: 'a.png', type: 'output' } })
+      ],
+      index: 0
+    })
+    expect(request?.items[0]?.comfyFile).toEqual({
+      filename: 'ComfyUI_00001_.png',
+      subfolder: 'apps/text'
+    })
+    expect(request?.items[1]).not.toHaveProperty('comfyFile')
+  })
+
+  it('drops a ComfyUI output reference that could climb out of the output folder', () => {
+    const fileOf = (comfyFile: unknown) =>
+      outputRequest({ items: [picture({ savedOn: 'computer', comfyFile })], index: 0 })?.items[0]
+        ?.comfyFile
+    expect(fileOf({ filename: 'a.png', type: 'output' })).toEqual({
+      filename: 'a.png',
+      subfolder: ''
+    })
+    expect(fileOf({ filename: 'a.png', subfolder: '', type: 'temp' })).toBeUndefined()
+    expect(fileOf({ filename: '../a.png', subfolder: '', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: '..', subfolder: '', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: '../other', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: 'apps/../..', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: '/etc', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: 'C:\\out', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a.png', subfolder: 'apps//x', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 'a\u202e.png', subfolder: '', type: 'output' })).toBeUndefined()
+    expect(fileOf({ filename: 7, subfolder: '', type: 'output' })).toBeUndefined()
+  })
+
   it('refuses outputs it cannot show', () => {
     expect(outputRequest(null)).toBeNull()
     expect(outputRequest({ items: [], index: 0 })).toBeNull()
@@ -88,22 +132,93 @@ describe('outputRequest', () => {
   })
 })
 
-describe('outputAction', () => {
-  it('passes on a download, an open-workflow or a show-in-folder for one output', () => {
-    expect(outputAction({ action: 'show-in-folder', index: 1 })).toEqual({
-      action: 'show-in-folder',
-      index: 1
-    })
-    expect(outputAction({ action: 'download', index: 2 })).toEqual({ action: 'download', index: 2 })
-    expect(outputAction({ action: 'open-workflow', index: 0 })).toEqual({
-      action: 'open-workflow',
+describe('resolveOutputFiles', () => {
+  it('shows the folder Desktop found and never one the page sent with the reference', async () => {
+    const request = outputRequest({
+      items: [
+        picture({
+          savedOn: 'computer',
+          comfyFile: { filename: 'found.png', subfolder: '', type: 'output' }
+        }),
+        picture({
+          savedOn: 'computer',
+          folder: '/Users/me/elsewhere',
+          comfyFile: { filename: 'gone.png', subfolder: '', type: 'output' }
+        }),
+        picture({ savedOn: 'computer', folder: '/Users/me/output/apps' }),
+        picture({ savedOn: 'cloud' })
+      ],
       index: 0
+    })
+    const resolve = async (file: { filename: string } | null) =>
+      file?.filename === 'found.png' ? '/Users/me/output/found.png' : null
+
+    const { items, files } = await resolveOutputFiles(request!.items, resolve)
+
+    expect(files).toEqual(['/Users/me/output/found.png', null, null, null])
+    expect(items[0]).toMatchObject({ savedOn: 'computer', folder: '/Users/me/output' })
+    expect(items[1]).not.toHaveProperty('folder')
+    expect(items[2]).toMatchObject({ folder: '/Users/me/output/apps' })
+    expect(items[3]).toMatchObject({ savedOn: 'cloud' })
+    for (const item of items) expect(item).not.toHaveProperty('comfyFile')
+  })
+
+  it('looks up an output made on this computer that has no reference or folder by its bytes', async () => {
+    const request = outputRequest({
+      items: [picture({ savedOn: 'computer' }), picture()],
+      index: 0
+    })
+    const seen: (unknown[] | null)[] = []
+    const { items, files } = await resolveOutputFiles(request!.items, async (file, bytes) => {
+      seen.push([file, [...bytes]])
+      return '/Users/me/output/apps/sdr-to-hdr/hdr_00003.avif'
+    })
+
+    expect(seen).toEqual([[null, [1, 2, 3]]])
+    expect(files).toEqual(['/Users/me/output/apps/sdr-to-hdr/hdr_00003.avif', null])
+    expect(items[0]).toMatchObject({
+      savedOn: 'computer',
+      folder: '/Users/me/output/apps/sdr-to-hdr'
+    })
+    expect(items[1]).not.toHaveProperty('savedOn')
+  })
+
+  it('treats a lookup that fails as not found', async () => {
+    const request = outputRequest({
+      items: [picture({ savedOn: 'computer', comfyFile: { filename: 'a.png', type: 'output' } })],
+      index: 0
+    })
+    const { files } = await resolveOutputFiles(request!.items, () =>
+      Promise.reject(new Error('disk gone'))
+    )
+    expect(files).toEqual([null])
+  })
+})
+
+describe('outputAction', () => {
+  it('passes on a download, an open-workflow or a show-in-folder for one output of one turn', () => {
+    expect(outputAction({ action: 'show-in-folder', index: 1, turn: 2 })).toEqual({
+      action: 'show-in-folder',
+      index: 1,
+      turn: 2
+    })
+    expect(outputAction({ action: 'download', index: 2, turn: 1 })).toEqual({
+      action: 'download',
+      index: 2,
+      turn: 1
+    })
+    expect(outputAction({ action: 'open-workflow', index: 0, turn: 5 })).toEqual({
+      action: 'open-workflow',
+      index: 0,
+      turn: 5
     })
   })
 
   it('drops anything else', () => {
-    expect(outputAction({ action: 'delete', index: 0 })).toBeNull()
-    expect(outputAction({ action: 'download', index: 1.5 })).toBeNull()
+    expect(outputAction({ action: 'delete', index: 0, turn: 1 })).toBeNull()
+    expect(outputAction({ action: 'download', index: 1.5, turn: 1 })).toBeNull()
+    expect(outputAction({ action: 'download', index: 1 })).toBeNull()
+    expect(outputAction({ action: 'download', index: 1, turn: -1 })).toBeNull()
     expect(outputAction('download')).toBeNull()
   })
 })

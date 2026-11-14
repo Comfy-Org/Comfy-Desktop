@@ -22,6 +22,8 @@ vi.mock('../devplatform/session', () => ({
     status: () => ({ signedIn: true })
   })
 }))
+vi.mock('./appsBuild', () => ({ findApps: async () => null }))
+vi.mock('../lib/outputFolders', () => ({ allowedPath: () => false, outputLocator: () => null }))
 vi.mock('../host/registry', () => ({ comfyWindows: new Map() }))
 vi.mock('../lib/ipc/registerDevPlatformHandlers', () => ({ signInToCloud: vi.fn() }))
 vi.mock('../settings', () => ({ get: () => outputDir.current }))
