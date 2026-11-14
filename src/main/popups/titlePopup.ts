@@ -64,7 +64,6 @@ interface TitlePopupMenuItem {
   id?: string
   label?: string
   labelKey?: string
-  checked?: boolean
   kind?: 'separator'
 }
 
@@ -451,7 +450,7 @@ function hidePopupBackdrop(parent: BrowserWindow): void {
 }
 
 const POPUP_WIDTH = 220
-const POPUP_ITEM_HEIGHT = 32
+const POPUP_ITEM_HEIGHT = 28
 const POPUP_SEPARATOR_HEIGHT = 9
 const POPUP_VPADDING = 8
 const POPUP_VBORDER = 2
@@ -475,7 +474,12 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     ]
   }
   const items: TitlePopupMenuItem[] = [
-    { id: 'new-window', label: 'Open Dashboard', labelKey: 'fileMenu.newWindow' },
+    {
+      id: 'performance-test',
+      label: 'Performance Tests',
+      labelKey: 'fileMenu.performanceTest'
+    },
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
     { kind: 'separator' },
     {
       id: 'settings',
@@ -1191,28 +1195,6 @@ function showInstancePickerForHost(
   })()
 }
 
-export type FlowMenuItemId = 'new-install' | 'track' | 'load-snapshot' | 'quick-install'
-
-const FLOW_MENU_ITEM_IDS: ReadonlySet<string> = new Set<FlowMenuItemId>([
-  'new-install',
-  'track',
-  'load-snapshot',
-  'quick-install'
-])
-
-export function isFlowMenuItemId(id: string): id is FlowMenuItemId {
-  return FLOW_MENU_ITEM_IDS.has(id)
-}
-
-export function decideFlowMenuItemTarget(
-  entry: ComfyWindowEntry,
-  id: FlowMenuItemId
-): { kind: 'set-active-panel' | 'open-chooser-host'; panel: ComfyPanelKey } {
-  return isChooserHost(entry)
-    ? { kind: 'set-active-panel', panel: id }
-    : { kind: 'open-chooser-host', panel: id }
-}
-
 export function activateTitlePopupMenuItem(
   entry: TitlePopupEntry,
   id: string,
@@ -1229,8 +1211,12 @@ export function activateTitlePopupMenuItem(
     bindings.openChooserHostWindow()
     releaseFocusToParent = false
   } else if (id === 'performance-test' || id === 'benchmarks') {
-    bindings.openChooserHostWindow(id)
-    releaseFocusToParent = false
+    if (parentEntry && isChooserHost(parentEntry)) {
+      bindings.setActivePanel(entry.parentEntryId, id)
+    } else {
+      bindings.openChooserHostWindow(id)
+      releaseFocusToParent = false
+    }
   } else if (id === 'return-to-dashboard') {
     void bindings.returnToDashboard(entry.parentEntryId)
   } else if (id === 'exit-window') {
@@ -1260,16 +1246,6 @@ export function activateTitlePopupMenuItem(
   } else if (id === 'reset-zoom') {
     if (parentEntry != null && parentEntry.installationId !== null) {
       bindings.resetComfyZoom(parentEntry.installationId)
-    }
-  } else if (isFlowMenuItemId(id)) {
-    if (parentEntry) {
-      const target = decideFlowMenuItemTarget(parentEntry, id)
-      if (target.kind === 'set-active-panel') {
-        bindings.setActivePanel(entry.parentEntryId, target.panel)
-      } else {
-        bindings.openChooserHostWindow(target.panel)
-        releaseFocusToParent = false
-      }
     }
   }
   hideTitlePopup(entry, { releaseFocusToParent })
@@ -1465,6 +1441,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     if (!entry) return
     const id = payload?.id
     if (typeof id !== 'string') return
+    if (!entry.view.isOpen) return
     activateTitlePopupMenuItem(entry, id, bindings)
   })
 

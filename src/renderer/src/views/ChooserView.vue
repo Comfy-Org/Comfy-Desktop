@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import { useEventListener } from '@vueuse/core'
 import { computed, onMounted, ref, toRef, watch } from 'vue'
@@ -10,16 +9,18 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
 import { useInstallList } from '../composables/useInstallList'
+import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useQuickUpdate } from '../composables/useQuickUpdate'
 import { useModal } from '../composables/useModal'
 import { useCloudGate } from '../composables/useCloudGate'
 import { emitTelemetryAction } from '../lib/telemetry'
-import { ChevronDown, Plus, RefreshCw, Search } from 'lucide-vue-next'
+import { Plus, RefreshCw, Search } from 'lucide-vue-next'
 import ContextMenu from '../components/ContextMenu.vue'
 import WhyTryCloudModal from '../components/WhyTryCloudModal.vue'
 import BaseInput from '../components/ui/BaseInput.vue'
 import BaseSelect from '../components/ui/BaseSelect.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
+import SplitButton from '../components/ui/SplitButton.vue'
 import ChooserFamilyGrid from './chooser/ChooserFamilyGrid.vue'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import { openInstallManager } from '../lib/openInstallManager'
@@ -117,11 +118,15 @@ const sortOptions = computed(() => [
   { value: 'name', label: t('chooser.sortName') }
 ])
 
+const isInstalling = useInstallingBuilds()
 const scopedVisibleInstalls = computed(() => {
   const inScope = visibleInstalls.value.filter(installationIsInSelectedScope)
-  return sortOrder.value === 'name'
-    ? [...inScope].sort((a, b) => a.name.localeCompare(b.name))
-    : inScope
+  const sorted =
+    sortOrder.value === 'name' ? [...inScope].sort((a, b) => a.name.localeCompare(b.name)) : inScope
+  return [
+    ...sorted.filter((inst) => isInstalling(inst.id)),
+    ...sorted.filter((inst) => !isInstalling(inst.id))
+  ]
 })
 const scopedInstalls = computed(() => effectiveInstalls.value.filter(installationIsInSelectedScope))
 
@@ -281,37 +286,19 @@ const gridHandlers = {
         <h1 class="m-0 text-[22px]/[1.4] font-semibold tracking-[-0.01em] text-foreground">
           {{ t('chooser.buildsTitle') }}
         </h1>
-        <div class="flex shrink-0">
-          <Button
-            type="button"
-            variant="inverted"
-            size="md"
-            class="chooser-tile-new gap-1.5 rounded-r-none px-3 text-[13px]/5"
-            :aria-label="t('chooser.newBuildLabel')"
-            @click="handleNewInstallClick"
-          >
-            <Plus :size="15" aria-hidden="true" />
+        <SplitButton
+          v-model:open="buildMenuOpen"
+          class="shrink-0"
+          :label="t('chooser.newBuildLabel')"
+          :menu-label="t('chooser.moreBuildOptions')"
+          menu-testid="build-actions-menu-trigger"
+          @run="handleNewInstallClick"
+        >
+          <span class="chooser-tile-new inline-flex items-center gap-1">
+            <Plus :size="14" aria-hidden="true" />
             {{ t('chooser.newBuild') }}
-          </Button>
-          <Menu
-            v-model:open="buildMenuOpen"
-            :modal="false"
-            align="end"
-            class="z-20 min-w-[200px]"
-            :aria-label="t('chooser.moreBuildOptions')"
-          >
-            <template #trigger>
-              <Button
-                type="button"
-                variant="inverted"
-                size="md"
-                class="rounded-l-none border-l border-background/20 px-2"
-                :aria-label="t('chooser.moreBuildOptions')"
-                data-testid="build-actions-menu-trigger"
-              >
-                <ChevronDown :size="15" aria-hidden="true" />
-              </Button>
-            </template>
+          </span>
+          <template #menu>
             <MenuItem
               as="button"
               type="button"
@@ -328,8 +315,8 @@ const gridHandlers = {
               @select="emit('show-build-import', 'load-snapshot')"
               >{{ t('fileMenu.loadSnapshot') }}</MenuItem
             >
-          </Menu>
-        </div>
+          </template>
+        </SplitButton>
       </header>
 
       <div class="chooser-toolbar mb-5 flex min-h-8 flex-wrap items-center gap-2">

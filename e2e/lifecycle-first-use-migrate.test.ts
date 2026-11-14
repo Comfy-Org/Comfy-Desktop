@@ -41,36 +41,27 @@ test.afterAll(async () => {
   if (legacyBasePath) await rm(legacyBasePath, { recursive: true, force: true })
 })
 
-test('cold start with legacy desktop lands on start screen and surfaces migrate sub-step @lifecycle', async () => {
-  await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
-
-  expect(await ctx.panel.click('[data-testid="first-use-pick-local"]')).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="first-use-migrate-existing"]', { timeout: 5_000 })
-  expect(await ctx.panel.click('[data-testid="first-use-migrate-existing"]')).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
+test('cold start with legacy desktop offers to migrate it on Set up, ticked by default @lifecycle', async () => {
+  await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
+  await ctx.panel.waitForVisible('[data-testid="setup-migrate-existing"]', { timeout: 5_000 })
   expect(
     await ctx.panel.evaluate<boolean>(
-      `!document.querySelector('[data-testid="first-use-express-install"] input').checked`
+      `document.querySelector('[data-testid="setup-migrate-existing"] [role="checkbox"]')?.getAttribute('aria-checked') === 'true'`
     )
   ).toBe(true)
-  expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
-  await ctx.panel.waitFor(
-    async () =>
-      ctx.panel.evaluate<boolean>(
-        `!document.querySelector('[data-testid="first-use-continue"]').disabled`
-      ),
-    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' }
-  )
-  expect(await ctx.panel.click('[data-testid="first-use-continue"]')).toBe(true)
-
-  await ctx.panel.waitForVisible('[data-testid="first-use-local-migrate"]', { timeout: 10_000 })
+  expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
+  expect(
+    await ctx.panel.evaluate<string>(
+      `document.querySelector('[data-testid="setup-install"]')?.textContent?.trim() ?? ''`
+    )
+  ).toBe('Migrate')
 })
 
-test('migrate sub-step opens MigrateConfirmTakeover (takeover surface) @lifecycle', async () => {
+test('Migrate on Set up opens MigrateConfirmTakeover (takeover surface) @lifecycle', async () => {
   await resetIpcInvocations(ctx.app, 'run-action')
   await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
 
-  expect(await ctx.panel.click('[data-testid="first-use-local-migrate"]')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="setup-install"]')).toBe(true)
 
   await ctx.panel.waitForVisible('[data-testid="migrate-takeover-confirm"]', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="migrate-takeover-cancel"]')

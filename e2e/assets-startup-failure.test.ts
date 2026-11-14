@@ -6,7 +6,6 @@ import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
 import { clickInstallTile, expectChooserVisible } from './support/chooserHelpers'
 import { hasActiveLaunch } from './support/devHooks'
-import { byTestId, TID } from './support/testIds'
 import { reserveFreePort, writeFakeComfyInstall } from './support/fakeComfyInstall'
 
 const INSTALL_ID = 'inst-assets-startup-failure'
@@ -31,10 +30,14 @@ function coreRefusal(kind: string, ...message: string[]): string {
 async function launchAndReadError(stderr: string): Promise<string | null> {
   await writeFile(path.join(installPath, 'startup-failure'), stderr)
   await clickInstallTile(ctx!.panel, INSTALL_NAME)
-  await ctx!.panel.waitForVisible(byTestId(TID.progressErrorMessage), { timeout: 60_000 })
-  await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 30_000 }).toBe(false)
-  const text = await ctx!.panel.textOf(byTestId(TID.progressErrorMessage))
-  expect(await ctx!.panel.click(byTestId(TID.progressBack))).toBe(true)
+  await expect.poll(() => hasActiveLaunch(ctx!.app, INSTALL_ID), { timeout: 60_000 }).toBe(false)
+  await ctx!.panel.waitForVisible('.chooser-tile-error-badge', { timeout: 30_000 })
+  expect(await ctx!.panel.click('.chooser-tile-error-badge')).toBe(true)
+  await ctx!.panel.waitForVisible('[data-testid="build-progress-step-detail"]', {
+    timeout: 10_000
+  })
+  const text = await ctx!.panel.textOf('[data-testid="build-progress-step-detail"]')
+  expect(await ctx!.panel.click('[data-testid="build-progress-close-failed"]')).toBe(true)
   await expectChooserVisible(ctx!.panel)
   return text
 }

@@ -2,6 +2,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
+import { keepOnlyComfyHostWindow } from './support/comfyHostWindow'
 import { launchApp, type AppContext } from './launchApp'
 import {
   clickInstallTile,
@@ -102,6 +103,7 @@ test('the pill follows the new session after a Restart that drops a grant @linux
       intervals: [500, 1_000]
     })
     .not.toBeNull()
+  await keepOnlyComfyHostWindow(ctx.app)
 
   let popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 15_000 })

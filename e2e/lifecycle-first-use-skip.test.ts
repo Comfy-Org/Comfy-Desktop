@@ -15,40 +15,24 @@ test.afterAll(async () => {
   await ctx?.cleanup()
 })
 
-test('cold start lands on first-use start screen with the waffle menu hidden @lifecycle', async () => {
-  await ctx.panel.waitForVisible('.start-hero', { timeout: 15_000 })
-  await ctx.panel.waitForVisible('[data-testid="first-use-continue"]')
+test('cold start lands on Set up with the waffle menu hidden @lifecycle', async () => {
+  await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
+  await ctx.panel.waitForVisible('[data-testid="setup-install"]')
 
-  expect(await ctx.titleBar.exists('.title-menu-button')).toBe(false)
+  expect(await ctx.titleBar.exists('.title-menu-button[aria-haspopup="menu"]')).toBe(false)
 })
 
-test('ToS + Local + Continue surfaces the waffle menu; Skip Onboarding reveals the chooser @lifecycle', async () => {
-  expect(await ctx.panel.click('[data-testid="first-use-pick-local"]')).toBe(true)
-  await ctx.panel.waitForVisible('[data-testid="first-use-express-install"]', { timeout: 5_000 })
-  await ctx.panel.evaluate<void>(
-    `(() => {
-      const wrap = document.querySelector('[data-testid="first-use-express-install"]')
-      const cb = wrap && wrap.querySelector('[role="checkbox"]')
-      if (cb && cb.getAttribute('aria-checked') === 'true') cb.click()
-    })()`
-  )
-  expect(await ctx.panel.click('[data-testid="first-use-consent-tos"]')).toBe(true)
-  await ctx.panel.waitFor(
-    async () =>
-      ctx.panel.evaluate<boolean>(
-        `!document.querySelector('[data-testid="first-use-continue"]').disabled`
-      ),
-    { timeout: 5_000, message: 'Continue never became enabled after ticking ToS' }
-  )
+test('ToS + Change surfaces the waffle menu; Skip Onboarding reveals Home @lifecycle', async () => {
+  expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
 
   await resetIpcInvocations(ctx.app, 'set-setting')
 
-  expect(await ctx.panel.click('[data-testid="first-use-continue"]')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
 
-  await ctx.titleBar.waitForVisible('.title-menu-button', { timeout: 15_000 })
+  await ctx.titleBar.waitForVisible('.title-menu-button[aria-haspopup="menu"]', { timeout: 15_000 })
   await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
 
-  expect(await ctx.titleBar.click('.title-menu-button')).toBe(true)
+  expect(await ctx.titleBar.click('.title-menu-button[aria-haspopup="menu"]')).toBe(true)
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
   await popup.waitForVisible('li.item', { timeout: 10_000 })

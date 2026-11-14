@@ -558,7 +558,7 @@ onUnmounted(() => {
 <template>
   <header
     ref="titleBar"
-    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac)]:pr-[140px] [&:not(.is-light)]:border-b-border"
+    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac)]:pr-[140px] [&:not(.is-light)]:border-b-border [&.is-collapsed-update]:grid-cols-[minmax(0,max-content)_minmax(200px,1fr)_auto] [&.is-collapsed-update]:gap-x-4"
     :class="{
       'is-mac': isMac,
       'is-light': isLight,
@@ -577,7 +577,12 @@ onUnmounted(() => {
     }"
   >
     <div
-      class="title-cluster flex min-w-[var(--title-trailing-width,0px)] items-center gap-1 [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]"
+      class="title-cluster flex items-center gap-1"
+      :class="
+        collapsedUpdate
+          ? 'w-[var(--title-trailing-width,0px)] min-w-0 max-w-full [.title-bar:not(.is-mac)_&]:w-[calc(var(--title-trailing-width,0px)_+_128px)]'
+          : 'min-w-[var(--title-trailing-width,0px)] [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]'
+      "
     >
       <button
         v-if="!isConsentLockdown"

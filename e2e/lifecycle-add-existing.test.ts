@@ -89,7 +89,10 @@ test('Builds menu → Add Existing → Browse probes the staged directory → Ad
 
   expect(await ctx.panel.click(byTestId(TID.trackBrowse))).toBe(true)
   await ctx.panel.waitFor(
-    async () => (await ctx.panel.allText('.track-path-open')).some((t) => t.includes(stagedPath)),
+    async () =>
+      (await ctx.panel.allText('.track-location .config-path-open')).some((t) =>
+        t.includes(stagedPath)
+      ),
     { timeout: 10_000, message: 'picked directory never appeared in the path field' }
   )
 

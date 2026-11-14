@@ -22,6 +22,8 @@ import type { BodyMode, ComfyPanelKey, ComfyWindowEntry } from './registry'
 
 const DASHBOARD_PAGE_PANELS: ReadonlyMap<unknown, ComfyPanelKey> = new Map([
   ['home', 'comfy'],
+  ['apps', 'comfy'],
+  ['assets', 'comfy'],
   ['chooser', 'comfy'],
   ['benchmarks', 'benchmarks'],
   ['performance-test', 'performance-test']

@@ -30,6 +30,7 @@ import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
@@ -123,6 +124,7 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
+import { initAppsFlag } from './apps/appsFlag'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -193,6 +195,8 @@ try {
 if (settings.get('hardwareAcceleration') === false) {
   app.disableHardwareAcceleration()
 }
+
+registerOutputFilesScheme()
 
 todesktop.init({ autoUpdater: false })
 
@@ -557,7 +561,7 @@ function onLaunch({
     return
   }
 
-  entry.layoutViews()
+  prewarmAttachedPanel(entry)
 
   if (proc) {
     proc.on('exit', () => {})
@@ -620,7 +624,6 @@ ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }
       }
       return
     }
-    return
   }
 })
 
@@ -936,6 +939,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
     setHostFactories({ createChooser: openChooserHostWindow })
     registerPanelViewIpc()
+    registerOutputFolderHandlers()
 
     migrateXdgPaths()
     persistWinDataRootChoice()
@@ -1018,6 +1022,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
+
+    void initAppsFlag({ distinctId: installationId })
 
     void initWorkspaceMintSwitchFlag({ distinctId: installationId })
 

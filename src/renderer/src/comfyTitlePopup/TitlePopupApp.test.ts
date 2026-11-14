@@ -4,7 +4,6 @@ import { mount, flushPromises } from '@vue/test-utils'
 interface MockMenuItem {
   id?: string
   label?: string
-  checked?: boolean
   kind?: 'separator'
 }
 
@@ -182,11 +181,7 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
     bridgeState.configCallbacks.forEach((cb) =>
       cb({
         kind: 'menu',
-        items: [
-          { id: 'a', label: 'Alpha' },
-          { kind: 'separator' },
-          { id: 'b', label: 'Beta', checked: true }
-        ],
+        items: [{ id: 'a', label: 'Alpha' }, { kind: 'separator' }, { id: 'b', label: 'Beta' }],
         theme: { bg: '#262729', text: '#dddddd' }
       })
     )
@@ -241,9 +236,7 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
         theme: { bg: '#262729', text: '#dddddd' }
       })
     )
-    await flushPromises()
-    await new Promise((r) => setTimeout(r, 20))
-    expect(bridgeState.notifyRenderedCalls).toBeGreaterThan(before)
+    await vi.waitFor(() => expect(bridgeState.notifyRenderedCalls).toBeGreaterThan(before))
   })
 
   it('asks main to close on Escape', async () => {

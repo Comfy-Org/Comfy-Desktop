@@ -1,6 +1,7 @@
 import type { Installation } from '../../types/ipc'
 
 export type HomeBuildTone = 'ember' | 'iris' | 'tide'
+export type BuildDeviceKind = 'laptop' | 'pc-laptop' | 'monitor' | 'cloud'
 export type HomeBuildStatus = 'running' | 'starting' | 'update' | 'always-on' | 'ready'
 
 export interface HomeBuildToneStyle {
@@ -21,14 +22,39 @@ export function isCloudBuild(build: Installation): boolean {
   return build.sourceCategory === 'cloud'
 }
 
+export function deviceKindForPlatform(platform: string | undefined): BuildDeviceKind {
+  if (platform === 'win32') return 'pc-laptop'
+  if (platform === 'linux') return 'monitor'
+  return 'laptop'
+}
+
+export function buildDeviceKind(
+  build: Installation,
+  platform: string | undefined = window.api?.platform
+): BuildDeviceKind {
+  return isCloudBuild(build) ? 'cloud' : deviceKindForPlatform(platform)
+}
+
 export function isComfyCloud(build: Installation): boolean {
   return build.sourceId === 'cloud'
 }
 
-export function homeBuildTones(builds: readonly Installation[]): HomeBuildTone[] {
-  let localCount = 0
+function installedAt(build: Installation): number {
+  const time = Date.parse(String(build.createdAt ?? ''))
+  return Number.isNaN(time) ? Number.MAX_SAFE_INTEGER : time
+}
+
+export function homeBuildTones(
+  builds: readonly Installation[],
+  everyBuild: readonly Installation[] = builds
+): HomeBuildTone[] {
+  const known = new Set(everyBuild.map((build) => build.id))
+  const locals = [...everyBuild, ...builds.filter((build) => !known.has(build.id))]
+    .filter((build) => !isCloudBuild(build))
+    .sort((a, b) => installedAt(a) - installedAt(b) || a.id.localeCompare(b.id))
+  const rank = new Map(locals.map((build, index) => [build.id, index]))
   return builds.map((build) =>
-    isCloudBuild(build) ? 'tide' : LOCAL_TONES[localCount++ % LOCAL_TONES.length]!
+    isCloudBuild(build) ? 'tide' : LOCAL_TONES[rank.get(build.id)! % LOCAL_TONES.length]!
   )
 }
 

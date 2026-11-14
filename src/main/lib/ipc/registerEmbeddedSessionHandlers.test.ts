@@ -7,12 +7,17 @@ const mocks = vi.hoisted(() => ({
   emit: vi.fn(),
   handle: vi.fn(),
   signInToCloud: vi.fn(),
+  signOutOfCloud: vi.fn(),
+  isTrustedSender: vi.fn(),
   stateForSender: vi.fn(),
   switchWorkspaceForSender: vi.fn(),
   switchCloudWorkspace: vi.fn()
 }))
 
-vi.mock('electron', () => ({ ipcMain: { handle: mocks.handle } }))
+vi.mock('electron', () => ({
+  app: { getVersion: () => '1.2.3' },
+  ipcMain: { handle: mocks.handle }
+}))
 
 vi.mock('../telemetry', () => ({ emit: mocks.emit }))
 
@@ -25,8 +30,11 @@ vi.mock('../embeddedSession', () => ({
     getPartnerNodeToken: 'desktop2-auth:get-partner-node-token',
     requestSignIn: 'desktop2-auth:request-sign-in',
     signOut: 'desktop2-auth:sign-out',
-    switchWorkspace: 'desktop2-auth:switch-workspace'
+    switchWorkspace: 'desktop2-auth:switch-workspace',
+    issueBillingHandoff: 'desktop2-auth:issue-billing-handoff'
   },
+  billingHandoffForSender: vi.fn(),
+  isTrustedSender: mocks.isTrustedSender,
   partnerNodeTokenForSender: vi.fn(),
   stateForSender: mocks.stateForSender,
   switchWorkspaceForSender: mocks.switchWorkspaceForSender,
@@ -35,10 +43,11 @@ vi.mock('../embeddedSession', () => ({
 
 vi.mock('./registerDevPlatformHandlers', () => ({
   signInToCloud: mocks.signInToCloud,
-  signOutOfCloud: vi.fn(),
+  signOutOfCloud: mocks.signOutOfCloud,
   switchCloudWorkspace: mocks.switchCloudWorkspace
 }))
 
+import { billingHandoffForSender } from '../embeddedSession'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
 
 const SIGNED_IN: ComfyDesktop2AuthState = {
@@ -182,5 +191,68 @@ describe('desktop2-auth:switch-workspace', () => {
 
     expect([sender, workspaceId]).toEqual([event, 'ws-2'])
     expect(mocks.switchCloudWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2', 'requested')
+  })
+})
+
+describe('desktop2-auth:issue-billing-handoff', () => {
+  it('issues for the sender with the view arguments in order and the Desktop version', async () => {
+    const call = mocks.handle.mock.calls.find(
+      ([channel]) => channel === 'desktop2-auth:issue-billing-handoff'
+    )
+    const event = {}
+    vi.mocked(billingHandoffForSender).mockResolvedValue({ status: 'disabled' })
+
+    await expect(
+      (call![1] as (event: unknown, ...args: unknown[]) => Promise<unknown>)(
+        event,
+        'ws-1',
+        'billing_web',
+        'top-up',
+        2500
+      )
+    ).resolves.toEqual({ status: 'disabled' })
+
+    expect(billingHandoffForSender).toHaveBeenCalledExactlyOnceWith(
+      event,
+      'ws-1',
+      'billing_web',
+      'top-up',
+      2500,
+      '1.2.3'
+    )
+  })
+})
+
+describe('desktop2-auth:sign-out', () => {
+  type SignOut = (event: unknown) => Promise<ComfyDesktop2AuthState>
+
+  function signOut(): SignOut {
+    const call = mocks.handle.mock.calls.find(([channel]) => channel === 'desktop2-auth:sign-out')
+    expect(call).toBeDefined()
+    return call![1] as SignOut
+  }
+
+  it('signs Desktop out for a local ComfyUI view', async () => {
+    mocks.isTrustedSender.mockReturnValue(true)
+    mocks.stateForSender.mockResolvedValueOnce(SIGNED_IN).mockResolvedValueOnce(SIGNED_OUT)
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual(SIGNED_OUT)
+    expect(mocks.signOutOfCloud).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves Desktop signed in when the hosted Apps page asks', async () => {
+    mocks.isTrustedSender.mockReturnValue(false)
+    mocks.stateForSender.mockResolvedValue(SIGNED_IN)
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual(SIGNED_IN)
+    expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a view Desktop does not share its session with', async () => {
+    mocks.isTrustedSender.mockReturnValue(false)
+    mocks.stateForSender.mockResolvedValue({ status: 'disabled' })
+
+    await expect(signOut()({ sender: {} })).resolves.toEqual({ status: 'disabled' })
+    expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
   })
 })

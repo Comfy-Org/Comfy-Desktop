@@ -60,9 +60,26 @@ export async function clickInstallTile(
 }
 
 export async function openTitleMenu(titleBar: WebContentsPage): Promise<void> {
-  await titleBar.waitForVisible('.title-menu-button--icon')
-  const ok = await titleBar.click('.title-menu-button--icon')
+  await titleBar.waitForVisible('.title-menu-button--icon[aria-haspopup="menu"]')
+  const ok = await titleBar.click('.title-menu-button--icon[aria-haspopup="menu"]')
   expect(ok, 'Title menu button click dispatched').toBe(true)
+}
+
+export async function pickFromTitleMenu(
+  app: ElectronApplication,
+  titleBar: WebContentsPage,
+  label: string
+): Promise<void> {
+  await waitForWebContents(app, 'comfyTitlePopup.html', 10_000)
+  await openTitleMenu(titleBar)
+  await expect
+    .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {
+      timeout: 5_000,
+      intervals: [100, 200]
+    })
+    .toBe(true)
+  const picked = await titlePopupPage(app).clickByText('li.item', label)
+  expect(picked, `${label} picked from the title menu`).toBe(true)
 }
 
 export async function openDownloadsTray(titleBar: WebContentsPage): Promise<void> {
@@ -134,6 +151,27 @@ export async function openPickerViaTitlePill(
 
 export async function expectTakeoverOpen(panel: WebContentsPage): Promise<void> {
   await panel.waitForVisible('.brand-takeover-root', { timeout: 10_000 })
+}
+
+export async function expectNewBuildModalOpen(panel: WebContentsPage): Promise<void> {
+  await panel.waitForVisible('[data-testid="new-build-modal"]', { timeout: 10_000 })
+}
+
+export async function openNewBuildChangeSetup(panel: WebContentsPage): Promise<void> {
+  await panel.waitForSelector('[data-testid="config-change-setup"]:not([disabled])', {
+    timeout: 15_000
+  })
+  expect(await panel.click('[data-testid="config-change-setup"]'), 'Change setup clicked').toBe(
+    true
+  )
+  await panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
+}
+
+export async function saveNewBuildChangeSetup(panel: WebContentsPage): Promise<void> {
+  expect(await panel.click('[data-testid="config-save-changes"]'), 'Save changes clicked').toBe(
+    true
+  )
+  await panel.waitForVisible('[data-testid="config-summary"]', { timeout: 5_000 })
 }
 
 export async function dismissOverlay(panel: WebContentsPage): Promise<void> {
