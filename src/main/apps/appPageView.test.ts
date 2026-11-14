@@ -741,6 +741,16 @@ describe('the app a hosted page has loaded', () => {
     expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: CUTOUT, document: 1 })
   })
 
+  it('keeps the app on the address its page was redirected to, through moves within it', async () => {
+    await openCutout()
+    const moved = `${APPS_URL}remove-background/v2/desktop.html`
+    finishLoading(moved)
+    const page = hostedPage().webContents
+
+    page.emit('did-navigate-in-page', {}, `${moved}#result`, true)
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: CUTOUT, document: 1 })
+  })
+
   it("keeps a hash-route app within its route, and drops it on another app's route", async () => {
     await showAppPage(panelContents(), UPSCALE, PLACEMENT)
     finishLoading(UPSCALE_URL)

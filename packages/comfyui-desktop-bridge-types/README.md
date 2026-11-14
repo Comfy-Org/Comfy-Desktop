@@ -78,12 +78,23 @@ Hugging Face into that build's models folder.
 `track('click', { target: 'run' })`. Desktop sends it as
 `comfy.desktop.apps.<name>` only when the person allows telemetry, and adds
 `app_id`, the app whose page Desktop loaded in that view. An event the page
-sends while the view loads another app is dropped. A name is lowercase letters,
-digits and `_`, up to 48 characters; `app_opened` and `app_page_failed` are
-Desktop's own and are refused, and so is `error`. Desktop sends at most 60
-events a minute for one app and 1,000 page events a session. Desktop keeps up to 16 properties, each a
-boolean, a finite number or a slug of up to 64 characters, and drops free
-text, any other value, and an `app` or `app_id` from the page.
+sends while the view loads another app is dropped.
+
+- A name starts with a lowercase letter, then lowercase letters, digits and
+  `_`, up to 48 characters in all (`^[a-z][a-z0-9_]{0,47}$`), so `2_click` is
+  dropped. `app_opened` and `app_page_failed` are Desktop's own and are
+  refused, and so is `error`.
+- Desktop keeps up to 16 properties. A key starts with a lowercase letter,
+  then lowercase letters, digits and `_`, up to 32 characters in all
+  (`^[a-z][a-z0-9_]{0,31}$`), so `{ Run: true }` is dropped. A value is a
+  boolean, a finite number or a slug of up to 64 characters
+  (`^[a-z0-9][a-z0-9._-]{0,63}$`). Free text, any other key or value, and an
+  `app` or `app_id` from the page are dropped.
+- Desktop sends at most 60 events a minute for one app and 1,000 page events a
+  session. Events telemetry did not send, as while consent is off, do not
+  count.
+
+The page is not told when Desktop drops an event.
 
 All three objects are absent in a browser, so a page keeps its own sign-in and
 its own way to reach a local ComfyUI as the fallback, and sends no events.

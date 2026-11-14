@@ -73,17 +73,22 @@ export function checkAppPageEvent(
 const sentThisMinute = new Map<string, number[]>()
 let sentThisSession = 0
 
-function withinPageLimits(appId: string, now: number): boolean {
-  if (sentThisSession >= PAGE_EVENTS_PER_SESSION) return false
+function recentFor(appId: string, now: number): number[] {
   const recent = (sentThisMinute.get(appId) ?? []).filter((at) => at > now - MINUTE_MS)
-  if (recent.length >= PAGE_EVENTS_PER_MINUTE) {
-    sentThisMinute.set(appId, recent)
-    return false
-  }
-  recent.push(now)
   sentThisMinute.set(appId, recent)
+  return recent
+}
+
+function isUnderPageLimits(appId: string, now: number): boolean {
+  return (
+    sentThisSession < PAGE_EVENTS_PER_SESSION &&
+    recentFor(appId, now).length < PAGE_EVENTS_PER_MINUTE
+  )
+}
+
+function countSent(appId: string, now: number): void {
+  recentFor(appId, now).push(now)
   sentThisSession++
-  return true
 }
 
 export function _resetPageEventLimitsForTest(): void {
@@ -94,8 +99,11 @@ export function _resetPageEventLimitsForTest(): void {
 export function trackAppPageEvent(name: unknown, props: unknown, appId: string | null): boolean {
   try {
     const checked = checkAppPageEvent(name, props, appId)
-    if (!checked || appId === null || !withinPageLimits(appId, Date.now())) return false
-    return mainTelemetry.capture(checked.event, checked.properties)
+    const now = Date.now()
+    if (!checked || appId === null || !isUnderPageLimits(appId, now)) return false
+    const sent = mainTelemetry.capture(checked.event, checked.properties)
+    if (sent) countSent(appId, now)
+    return sent
   } catch {
     return false
   }
