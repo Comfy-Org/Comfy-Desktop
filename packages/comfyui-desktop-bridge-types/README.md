@@ -90,9 +90,15 @@ sends while the view loads another app is dropped.
   boolean, a finite number or a slug of up to 64 characters
   (`^[a-z0-9][a-z0-9._-]{0,63}$`). Free text, any other key or value, and an
   `app` or `app_id` from the page are dropped.
+- Desktop sets these keys on every event itself, so the page's value for any
+  of them is dropped: `app_version`, `app_channel`, `app_env`, `is_packaged`,
+  `platform`, `arch`, `client`, `installation_id` and `sac_state`.
 - Desktop sends at most 60 events a minute for one app and 1,000 page events a
   session. Events telemetry did not send, as while consent is off, do not
   count.
+- Desktop's telemetry also sends at most 60 of one event name a minute, shared
+  by every app. If one app sends 60 `click` events in a minute, a `click` from
+  another app in that minute is dropped too.
 
 The page is not told when Desktop drops an event.
 
