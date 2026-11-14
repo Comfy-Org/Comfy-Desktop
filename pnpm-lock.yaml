@@ -62,7 +62,7 @@ importers:
         version: 1.3.0-alpha.1(@vueuse/core@14.4.0(vue@3.5.44(typescript@5.9.3)))(@vueuse/integrations@14.4.0(axios@1.13.6)(fuse.js@7.5.0)(vue@3.5.44(typescript@5.9.3)))(reka-ui@2.11.0(vue@3.5.44(typescript@5.9.3)))(tailwindcss@4.2.1)(typescript@5.9.3)(vue-component-type-helpers@3.3.13)(vue@3.5.44(typescript@5.9.3))
       '@datadog/datadog-ci':
         specifier: ^5.9.0
-        version: 5.9.0(@types/node@22.19.12)
+        version: 5.9.0(@types/node@24.19.2)
       '@electron/rebuild':
         specifier: ^3.7.2
         version: 3.7.2
@@ -77,22 +77,22 @@ importers:
         version: 1.58.2
       '@tailwindcss/vite':
         specifier: ^4.1.8
-        version: 4.2.1(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+        version: 4.2.1(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
       '@tanstack/vue-virtual':
         specifier: ^3.13.48
         version: 3.13.48(vue@3.5.44(typescript@5.9.3))
       '@types/node':
-        specifier: ^22.19.1
-        version: 22.19.12
+        specifier: ^24.19.2
+        version: 24.19.2
       '@types/semver':
         specifier: ^7.7.1
         version: 7.7.1
       '@vitejs/plugin-vue':
         specifier: ^6.0.2
-        version: 6.0.4(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vue@3.5.44(typescript@5.9.3))
+        version: 6.0.4(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vue@3.5.44(typescript@5.9.3))
       '@vitest/browser-playwright':
         specifier: ^4.1.12
-        version: 4.1.12(playwright@1.58.2)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)
+        version: 4.1.12(playwright@1.58.2)(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)
       '@vue/test-utils':
         specifier: ^2.4.6
         version: 2.4.6
@@ -107,7 +107,7 @@ importers:
         version: 26.8.1(electron-builder-squirrel-windows@26.8.1)
       electron-vite:
         specifier: ^5.0.0
-        version: 5.0.0(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+        version: 5.0.0(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
       eslint:
         specifier: ^10.0.1
         version: 10.0.2(jiti@2.6.1)
@@ -155,10 +155,10 @@ importers:
         version: 8.56.1(eslint@10.0.2(jiti@2.6.1))(typescript@5.9.3)
       vite:
         specifier: ^7.3.1
-        version: 7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
+        version: 7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
       vitest:
         specifier: ^4.1.12
-        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.19.12)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+        version: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
       vue:
         specifier: ^3.5.44
         version: 3.5.44(typescript@5.9.3)
@@ -1302,11 +1302,8 @@ packages:
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
 
-  '@types/node@22.19.12':
-    resolution: {integrity: sha512-0QEp0aPJYSyf6RrTjDB7HlKgNMTY+V2C7ESTaVt6G9gQ0rPLzTGz7OF2NXTLR5vcy7HJEtIUsyWLsfX0kTqJBA==}
-
-  '@types/node@24.10.14':
-    resolution: {integrity: sha512-OowOUbD1lBCOFIPOZ8xnMIhgqA4sCutMiYOmPHL1PTLt5+y1XA+g2+yC9OOyz8p+deMZqPZLxfMjYIfrKsPeFg==}
+  '@types/node@24.19.2':
+    resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
   '@types/plist@3.0.5':
     resolution: {integrity: sha512-E6OCaRmAe4WDmWNsL/9RMqdkkzDCY1etutkflWk4c+AcjDU07Pcz1fQwTX0TQz+Pxqn9i4L1TU3UFpjnrcDgxA==}
@@ -3864,11 +3861,8 @@ packages:
     resolution: {integrity: sha512-8iAasVS4wUx0gPLjH8Xtz2PeDzTSiy8QiLGu2DT3X5GU+egFEQhpnbtkehbAwjvDcxIERmCYcysiODFmE3Ud0Q==}
     engines: {node: '>=18'}
 
-  undici-types@6.21.0:
-    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
-
-  undici-types@7.16.0:
-    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+  undici-types@7.24.6:
+    resolution: {integrity: sha512-WRNW+sJgj5OBN4/0JpHFqtqzhpbnV0GuB+OozA9gCL7a993SmU+1JBZCzLNxYsbMfIeDL+lTsphD5jN5N+n0zg==}
 
   unique-filename@2.0.1:
     resolution: {integrity: sha512-ODWHtkkdx3IAR+veKxFV+VBkUMcN+FaqzUUd7IZzt+0zhDZFPFxhlqwPF3YQvMHx1TD0tdgYl+kuPnJ8E6ql7A==}
@@ -4309,7 +4303,7 @@ snapshots:
       '@datadog/browser-core': 6.28.1
       '@datadog/browser-rum-core': 6.28.1
 
-  '@datadog/datadog-ci-base@5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)':
+  '@datadog/datadog-ci-base@5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)':
     dependencies:
       '@antfu/install-pkg': 1.1.0
       '@types/datadog-metrics': 0.6.1
@@ -4323,7 +4317,7 @@ snapshots:
       fast-xml-parser: 5.4.2
       form-data: 4.0.5
       glob: 13.0.6
-      inquirer: 8.2.7(@types/node@22.19.12)
+      inquirer: 8.2.7(@types/node@24.19.2)
       jest-diff: 30.2.0
       js-yaml: 4.1.1
       jszip: 3.10.1
@@ -4348,7 +4342,7 @@ snapshots:
 
   '@datadog/datadog-ci-plugin-coverage@5.9.0(@datadog/datadog-ci-base@5.9.0)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       axios: 1.13.6(debug@4.4.3)
       chalk: 3.0.0
       fast-xml-parser: 5.4.2
@@ -4361,7 +4355,7 @@ snapshots:
 
   '@datadog/datadog-ci-plugin-deployment@5.9.0(@datadog/datadog-ci-base@5.9.0)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       axios: 1.13.6(debug@4.4.3)
       chalk: 3.0.0
       simple-git: 3.16.0
@@ -4371,7 +4365,7 @@ snapshots:
 
   '@datadog/datadog-ci-plugin-dora@5.9.0(@datadog/datadog-ci-base@5.9.0)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       axios: 1.13.6(debug@4.4.3)
       chalk: 3.0.0
       simple-git: 3.16.0
@@ -4381,7 +4375,7 @@ snapshots:
 
   '@datadog/datadog-ci-plugin-gate@5.9.0(@datadog/datadog-ci-base@5.9.0)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       '@types/uuid': 9.0.8
       axios: 1.13.6(debug@4.4.3)
       chalk: 3.0.0
@@ -4391,7 +4385,7 @@ snapshots:
 
   '@datadog/datadog-ci-plugin-junit@5.9.0(@datadog/datadog-ci-base@5.9.0)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       axios: 1.13.6(debug@4.4.3)
       chalk: 3.0.0
       fast-xml-parser: 5.4.2
@@ -4403,7 +4397,7 @@ snapshots:
 
   '@datadog/datadog-ci-plugin-sarif@5.9.0(@datadog/datadog-ci-base@5.9.0)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       ajv: 8.18.0
       ajv-formats: 3.0.1(ajv@8.18.0)
       axios: 1.13.6(debug@4.4.3)
@@ -4418,7 +4412,7 @@ snapshots:
 
   '@datadog/datadog-ci-plugin-sbom@5.9.0(@datadog/datadog-ci-base@5.9.0)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       ajv: 8.18.0
       ajv-formats: 3.0.1(ajv@8.18.0)
       axios: 1.13.6(debug@4.4.3)
@@ -4430,9 +4424,9 @@ snapshots:
       - debug
       - supports-color
 
-  '@datadog/datadog-ci@5.9.0(@types/node@22.19.12)':
+  '@datadog/datadog-ci@5.9.0(@types/node@24.19.2)':
     dependencies:
-      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@22.19.12)
+      '@datadog/datadog-ci-base': 5.9.0(@datadog/datadog-ci-plugin-coverage@5.9.0)(@datadog/datadog-ci-plugin-deployment@5.9.0)(@datadog/datadog-ci-plugin-dora@5.9.0)(@datadog/datadog-ci-plugin-gate@5.9.0)(@datadog/datadog-ci-plugin-junit@5.9.0)(@datadog/datadog-ci-plugin-sarif@5.9.0)(@datadog/datadog-ci-plugin-sbom@5.9.0)(@types/node@24.19.2)
       '@datadog/datadog-ci-plugin-coverage': 5.9.0(@datadog/datadog-ci-base@5.9.0)
       '@datadog/datadog-ci-plugin-deployment': 5.9.0(@datadog/datadog-ci-base@5.9.0)
       '@datadog/datadog-ci-plugin-dora': 5.9.0(@datadog/datadog-ci-base@5.9.0)
@@ -4845,12 +4839,12 @@ snapshots:
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
 
-  '@inquirer/external-editor@1.0.3(@types/node@22.19.12)':
+  '@inquirer/external-editor@1.0.3(@types/node@24.19.2)':
     dependencies:
       chardet: 2.1.1
       iconv-lite: 0.7.2
     optionalDependencies:
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
 
   '@internationalized/date@3.12.4':
     dependencies:
@@ -5147,12 +5141,12 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.2.1
       '@tailwindcss/oxide-win32-x64-msvc': 4.2.1
 
-  '@tailwindcss/vite@4.2.1(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))':
+  '@tailwindcss/vite@4.2.1(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))':
     dependencies:
       '@tailwindcss/node': 4.2.1
       '@tailwindcss/oxide': 4.2.1
       tailwindcss: 4.2.1
-      vite: 7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
+      vite: 7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
 
   '@tanstack/virtual-core@3.19.7': {}
 
@@ -5190,7 +5184,7 @@ snapshots:
     dependencies:
       '@types/http-cache-semantics': 4.2.0
       '@types/keyv': 3.1.4
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
       '@types/responselike': 1.0.3
 
   '@types/chai@5.2.3':
@@ -5212,7 +5206,7 @@ snapshots:
 
   '@types/fs-extra@9.0.13':
     dependencies:
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
 
   '@types/http-cache-semantics@4.2.0': {}
 
@@ -5220,27 +5214,23 @@ snapshots:
 
   '@types/keyv@3.1.4':
     dependencies:
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
 
   '@types/ms@2.1.0': {}
 
-  '@types/node@22.19.12':
+  '@types/node@24.19.2':
     dependencies:
-      undici-types: 6.21.0
-
-  '@types/node@24.10.14':
-    dependencies:
-      undici-types: 7.16.0
+      undici-types: 7.24.6
 
   '@types/plist@3.0.5':
     dependencies:
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
       xmlbuilder: 15.1.1
     optional: true
 
   '@types/responselike@1.0.3':
     dependencies:
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
 
   '@types/semver@7.7.1': {}
 
@@ -5256,7 +5246,7 @@ snapshots:
 
   '@types/yauzl@2.10.3':
     dependencies:
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
     optional: true
 
   '@typescript-eslint/eslint-plugin@8.56.1(@typescript-eslint/parser@8.56.1(eslint@10.0.2(jiti@2.6.1))(typescript@5.9.3))(eslint@10.0.2(jiti@2.6.1))(typescript@5.9.3)':
@@ -5350,35 +5340,35 @@ snapshots:
       '@typescript-eslint/types': 8.56.1
       eslint-visitor-keys: 5.0.1
 
-  '@vitejs/plugin-vue@6.0.4(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vue@3.5.44(typescript@5.9.3))':
+  '@vitejs/plugin-vue@6.0.4(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vue@3.5.44(typescript@5.9.3))':
     dependencies:
       '@rolldown/pluginutils': 1.0.0-rc.2
-      vite: 7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
+      vite: 7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
       vue: 3.5.44(typescript@5.9.3)
 
-  '@vitest/browser-playwright@4.1.12(playwright@1.58.2)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)':
+  '@vitest/browser-playwright@4.1.12(playwright@1.58.2)(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)':
     dependencies:
-      '@vitest/browser': 4.1.12(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)
-      '@vitest/mocker': 4.1.12(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+      '@vitest/browser': 4.1.12(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)
+      '@vitest/mocker': 4.1.12(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
       playwright: 1.58.2
       tinyrainbow: 3.2.0
-      vitest: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.19.12)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+      vitest: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
     transitivePeerDependencies:
       - bufferutil
       - msw
       - utf-8-validate
       - vite
 
-  '@vitest/browser@4.1.12(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)':
+  '@vitest/browser@4.1.12(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)':
     dependencies:
       '@blazediff/core': 1.9.1
-      '@vitest/mocker': 4.1.12(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+      '@vitest/mocker': 4.1.12(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
       '@vitest/utils': 4.1.12
       magic-string: 0.30.21
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.2.0
-      vitest: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.19.12)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+      vitest: 4.1.12(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
       ws: 8.22.2
     transitivePeerDependencies:
       - bufferutil
@@ -5395,13 +5385,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.2.0
 
-  '@vitest/mocker@4.1.12(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))':
+  '@vitest/mocker@4.1.12(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))':
     dependencies:
       '@vitest/spy': 4.1.12
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
+      vite: 7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
 
   '@vitest/pretty-format@4.1.12':
     dependencies:
@@ -6233,7 +6223,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron-vite@5.0.0(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)):
+  electron-vite@5.0.0(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)):
     dependencies:
       '@babel/core': 7.29.0
       '@babel/plugin-transform-arrow-functions': 7.27.1(@babel/core@7.29.0)
@@ -6241,7 +6231,7 @@ snapshots:
       esbuild: 0.25.12
       magic-string: 0.30.21
       picocolors: 1.1.1
-      vite: 7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
+      vite: 7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -6260,7 +6250,7 @@ snapshots:
   electron@40.4.1:
     dependencies:
       '@electron/get': 2.0.3
-      '@types/node': 24.10.14
+      '@types/node': 24.19.2
       extract-zip: 2.0.1
     transitivePeerDependencies:
       - supports-color
@@ -6901,9 +6891,9 @@ snapshots:
 
   ini@1.3.8: {}
 
-  inquirer@8.2.7(@types/node@22.19.12):
+  inquirer@8.2.7(@types/node@24.19.2):
     dependencies:
-      '@inquirer/external-editor': 1.0.3(@types/node@22.19.12)
+      '@inquirer/external-editor': 1.0.3(@types/node@24.19.2)
       ansi-escapes: 4.3.2
       chalk: 4.1.2
       cli-cursor: 3.1.0
@@ -8071,9 +8061,7 @@ snapshots:
 
   uint8array-extras@1.6.0: {}
 
-  undici-types@6.21.0: {}
-
-  undici-types@7.16.0: {}
+  undici-types@7.24.6: {}
 
   unique-filename@2.0.1:
     dependencies:
@@ -8120,7 +8108,7 @@ snapshots:
       extsprintf: 1.4.1
     optional: true
 
-  vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0):
+  vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0):
     dependencies:
       esbuild: 0.27.3
       fdir: 6.5.0(picomatch@4.0.3)
@@ -8129,16 +8117,16 @@ snapshots:
       rollup: 4.59.0
       tinyglobby: 0.2.15
     optionalDependencies:
-      '@types/node': 22.19.12
+      '@types/node': 24.19.2
       fsevents: 2.3.3
       jiti: 2.6.1
       lightningcss: 1.31.1
       yaml: 2.9.0
 
-  vitest@4.1.12(@opentelemetry/api@1.9.1)(@types/node@22.19.12)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)):
+  vitest@4.1.12(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/browser-playwright@4.1.12)(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)):
     dependencies:
       '@vitest/expect': 4.1.12
-      '@vitest/mocker': 4.1.12(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
+      '@vitest/mocker': 4.1.12(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))
       '@vitest/pretty-format': 4.1.12
       '@vitest/runner': 4.1.12
       '@vitest/snapshot': 4.1.12
@@ -8155,12 +8143,12 @@ snapshots:
       tinyexec: 1.3.1
       tinyglobby: 0.2.15
       tinyrainbow: 3.2.0
-      vite: 7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
+      vite: 7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
-      '@types/node': 22.19.12
-      '@vitest/browser-playwright': 4.1.12(playwright@1.58.2)(vite@7.3.1(@types/node@22.19.12)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)
+      '@types/node': 24.19.2
+      '@vitest/browser-playwright': 4.1.12(playwright@1.58.2)(vite@7.3.1(@types/node@24.19.2)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.9.0))(vitest@4.1.12)
     transitivePeerDependencies:
       - msw
 
