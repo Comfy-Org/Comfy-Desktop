@@ -113,12 +113,21 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
         installRoot: '/Users/ada/ComfyUI-Installs',
         downloadBytes: 1024 ** 3,
         requiredBytes: 2 * 1024 ** 3
+      },
+      consent: {
+        acceptedTos: true,
+        telemetryEnabled: true,
+        betaFeaturesEnabled: true,
+        betaTouched: false,
+        preservePersistedBetaOptIn: false,
+        locale: 'en'
       }
     }),
     template:
       '<div data-testid="first-use-takeover">' +
       '<button data-testid="first-use-install" @click="$emit(\'install\', plan)">Install</button>' +
-      '<button data-testid="first-use-change" @click="$emit(\'change\')">Change</button>' +
+      '<button data-testid="first-use-change" @click="$emit(\'change\', consent)">Change</button>' +
+      '<button data-testid="first-use-change-before-eula" @click="$emit(\'change\', { ...consent, acceptedTos: false })">Change</button>' +
       '<button data-testid="first-use-skip" @click="$emit(\'complete-skip\')">Skip</button>' +
       '</div>',
     methods: { open: vi.fn(), resetContinue: vi.fn() }
@@ -3151,6 +3160,30 @@ describe('PanelApp', () => {
     await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
     await flushPromises()
     expect(setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
+  })
+
+  it('returns to Set up with onboarding still pending when the install options close before the EULA is accepted', async () => {
+    mockState.settings.firstUseCompleted = false
+    window.history.replaceState({}, '', '/?panel=chooser')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="first-use-change-before-eula"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
+
+    await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
+    await flushPromises()
+
+    const setSetting = (
+      window as unknown as {
+        api: { setSetting: ReturnType<typeof vi.fn> }
+      }
+    ).api.setSetting
+    expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(false)
+    expect(setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
   })
 
   it('marks firstUseCompleted=true and closes the takeover when main fires the file-menu Skip Onboarding event', async () => {
