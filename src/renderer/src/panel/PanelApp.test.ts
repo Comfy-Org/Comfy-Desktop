@@ -3098,7 +3098,7 @@ describe('PanelApp', () => {
     expect(card.text()).toContain('Installing ComfyUI')
     expect(wrapper.find('[data-testid="home-open-build"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="home-build-view-logs"]').trigger('click')
+    await card.trigger('click')
     await flushPromises()
     const dialog = () => document.body.querySelector('[data-testid="build-progress-dialog"]')
     expect(dialog()).not.toBeNull()

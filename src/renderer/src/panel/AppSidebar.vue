@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRef, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
 import {
@@ -16,6 +16,8 @@ import {
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
+import ContextMenu from '../components/ContextMenu.vue'
+import BuildMenu, { type BuildMenuAnchor } from './home/BuildMenu.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
@@ -134,6 +136,35 @@ function navigate(page: DashboardPage): void {
   emit('navigate', page)
   window.api.navigatePanel(page)
 }
+
+function pointAt(event: MouseEvent): BuildMenuAnchor {
+  const { clientX: x, clientY: y } = event
+  return { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) }
+}
+
+const buildMenuOpen = ref(false)
+const buildMenuAt = shallowRef<{ build: Installation; anchor: BuildMenuAnchor } | null>(null)
+
+function openBuildMenu(event: MouseEvent, build: Installation): void {
+  buildMenuAt.value = { build, anchor: pointAt(event) }
+  buildMenuOpen.value = true
+}
+
+const PAGES_THAT_OPEN_IN_A_NEW_WINDOW: ReadonlySet<DashboardPage> = new Set(['home'])
+const pageMenu = ref({ open: false, x: 0, y: 0 })
+const pageMenuItems = computed(() => [
+  { id: 'open-new-window', label: t('instancePicker.openInNewWindow') }
+])
+
+function openPageMenu(event: MouseEvent, page: DashboardPage): void {
+  if (!PAGES_THAT_OPEN_IN_A_NEW_WINDOW.has(page)) return
+  event.preventDefault()
+  pageMenu.value = { open: true, x: event.clientX, y: event.clientY }
+}
+
+function selectPageMenu(id: string): void {
+  if (id === 'open-new-window') window.api.openDashboardInNewWindow()
+}
 </script>
 
 <template>
@@ -203,6 +234,7 @@ function navigate(page: DashboardPage): void {
           :title="collapsed ? row.label : undefined"
           :data-testid="`app-sidebar-${row.page}`"
           @click="navigate(row.page)"
+          @contextmenu="openPageMenu($event, row.page)"
         >
           <component :is="row.icon" :size="15" aria-hidden="true" />
           <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
@@ -259,6 +291,7 @@ function navigate(page: DashboardPage): void {
             :title="failure ? `${build.name} · ${failure}` : build.name"
             :data-testid="`app-sidebar-build-${build.id}`"
             @click="emit('open-build', build)"
+            @contextmenu.prevent="openBuildMenu($event, build)"
           >
             <LoaderCircle
               v-if="install"
@@ -293,5 +326,20 @@ function navigate(page: DashboardPage): void {
     </nav>
 
     <SidebarAccount class="mt-2 w-full shrink-0" :collapsed="collapsed" />
+
+    <BuildMenu
+      v-if="buildMenuAt"
+      v-model:open="buildMenuOpen"
+      :build="buildMenuAt.build"
+      :anchor="buildMenuAt.anchor"
+    />
+    <ContextMenu
+      :open="pageMenu.open"
+      :x="pageMenu.x"
+      :y="pageMenu.y"
+      :items="pageMenuItems"
+      @close="pageMenu.open = false"
+      @select="selectPageMenu"
+    />
   </aside>
 </template>

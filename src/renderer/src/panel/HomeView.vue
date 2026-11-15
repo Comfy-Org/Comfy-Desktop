@@ -256,9 +256,10 @@ onMounted(() => {
         </div>
         <ul
           class="m-0 grid list-none gap-[15px] p-0"
-          :class="
-            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2'
-          "
+          :class="[
+            builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2',
+            '@max-[40rem]/home-builds:grid-cols-1'
+          ]"
         >
           <li
             v-for="(build, index) in builds"

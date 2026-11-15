@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, LoaderCircle, OctagonAlert } from '@lucide/vue'
+import { Check, Ellipsis, LoaderCircle, OctagonAlert } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BuildDeviceArt from './BuildDeviceArt.vue'
+import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
 import {
   HOME_BUILD_TONES,
@@ -44,7 +45,11 @@ const toneStyle = computed(() => HOME_BUILD_TONES[tone])
 const statusLabel = computed(() => {
   if (install.progress.value?.cancelling) return t('installProgress.cancelling')
   if (uninstalling.value) return t('uninstallProgress.status')
-  if (busy.value) return t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
+  if (busy.value) {
+    const phase = t(starting.value ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
+    const percent = install.progress.value?.percent
+    return percent == null ? phase : t('installProgress.detail', { phase, percent })
+  }
   if (broken.value) return broken.value
   switch (status) {
     case 'running':
@@ -65,101 +70,53 @@ const detail = computed(() =>
   isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 )
 const isLive = computed(() => !busy.value && (status === 'running' || status === 'always-on'))
-const CARD_CLASS =
-  'group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left outline-none transition-colors'
+const subtitle = computed(() => (uninstalling.value ? install.detail.value : detail.value))
+const testId = computed(() => (busy.value ? busyTestId.value : 'home-build'))
+
+function onClick(): void {
+  if (!busy.value) emit('open')
+  else if (!uninstalling.value) install.viewLogs()
+}
+
+const menuOpen = ref(false)
+const menuAt = shallowRef<{ anchor: BuildMenuAnchor; align: 'start' | 'end' } | null>(null)
+
+function showMenu(anchor: BuildMenuAnchor, align: 'start' | 'end'): void {
+  menuAt.value = { anchor, align }
+  menuOpen.value = true
+}
+
+function openMoreMenu(event: MouseEvent): void {
+  const button = event.currentTarget as HTMLElement
+  showMenu({ getBoundingClientRect: () => button.getBoundingClientRect() }, 'end')
+}
+
+function openContextMenu(event: MouseEvent): void {
+  const { clientX: x, clientY: y } = event
+  showMenu({ getBoundingClientRect: () => new DOMRect(x, y, 0, 0) }, 'start')
+}
 </script>
 
 <template>
   <div
-    v-if="busy"
-    :class="CARD_CLASS"
+    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
+    :class="!uninstalling && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
-    :data-testid="busyTestId"
+    :data-testid="testId"
     :data-build-id="build.id"
+    @click="onClick"
+    @contextmenu.prevent="openContextMenu"
   >
+    <button
+      v-if="!uninstalling"
+      type="button"
+      class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      :aria-label="`${build.name}, ${statusLabel}`"
+      data-testid="home-build-open"
+    />
     <span
-      class="pointer-events-none absolute inset-0"
-      :style="{
-        background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
-      }"
-      aria-hidden="true"
-    />
-    <BuildDeviceArt
-      class="relative shrink-0 @max-[56rem]/home-builds:hidden"
-      :kind="buildDeviceKind(build)"
-      :glow="toneStyle.glow"
-    />
-    <span class="relative flex min-w-0 flex-1 flex-col">
-      <span
-        class="flex h-4 items-center gap-1.5 text-xs/4 text-muted-foreground"
-        data-testid="home-build-status"
-      >
-        <LoaderCircle
-          :size="12"
-          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-        <span class="truncate">{{ statusLabel }}</span>
-      </span>
-      <span
-        class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground"
-        data-testid="home-build-name"
-      >
-        {{ build.name }}
-      </span>
-      <span class="mt-2 -ml-3 flex items-center gap-2">
-        <Button
-          v-if="!uninstalling"
-          type="button"
-          variant="muted-textonly"
-          size="unset"
-          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-          data-testid="home-build-view-logs"
-          @click="install.viewLogs"
-        >
-          {{ t('installProgress.viewLogs') }}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="unset"
-          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
-          :disabled="install.progress.value?.cancelling"
-          data-testid="home-build-cancel"
-          @click="install.cancel"
-        >
-          {{ t('common.cancel') }}
-        </Button>
-        <span
-          v-if="uninstalling"
-          class="min-w-0 truncate text-xs/[17px] text-subtle-foreground"
-          data-testid="home-build-install-detail"
-        >
-          {{ install.detail.value }}
-        </span>
-      </span>
-    </span>
-    <BuildProgressBar
-      v-if="install.progress.value?.percent != null"
-      :percent="install.progress.value.percent"
-      :label="statusLabel"
-      data-testid="home-build-progress"
-    />
-  </div>
-  <button
-    v-else
-    type="button"
-    :class="[
-      CARD_CLASS,
-      'cursor-pointer hover:bg-[rgb(137_137_137/0.09)] focus-visible:ring-2 focus-visible:ring-ring'
-    ]"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
-    data-testid="home-build"
-    :data-build-id="build.id"
-    @click="emit('open')"
-  >
-    <span
-      class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[2.6] group-focus-visible:scale-[2.6] motion-reduce:transition-none"
+      class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+      :class="!busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
       :style="{
         background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
       }"
@@ -167,17 +124,26 @@ const CARD_CLASS =
       aria-hidden="true"
     />
     <BuildDeviceArt
-      class="relative shrink-0"
+      class="pointer-events-none relative shrink-0"
       :kind="buildDeviceKind(build)"
       :glow="toneStyle.glow"
     />
-    <span class="relative flex min-w-0 flex-col">
+    <span
+      class="pointer-events-none relative flex min-w-0 flex-1 flex-col group-hover:pr-6 group-has-[:focus-visible]:pr-6"
+      :class="menuOpen && 'pr-6'"
+    >
       <span
         class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="broken ? 'text-destructive' : 'text-muted-foreground'"
+        :class="!busy && broken ? 'text-destructive' : 'text-muted-foreground'"
         data-testid="home-build-status"
       >
-        <OctagonAlert v-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
+        <LoaderCircle
+          v-if="busy"
+          :size="12"
+          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <OctagonAlert v-else-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
         <span
           v-else-if="isLive"
           class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
@@ -186,12 +152,45 @@ const CARD_CLASS =
         <Check v-else-if="status === 'ready'" :size="12" aria-hidden="true" />
         <span class="truncate">{{ statusLabel }}</span>
       </span>
-      <span class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground">
+      <span
+        class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground"
+        data-testid="home-build-name"
+      >
         {{ build.name }}
       </span>
-      <span class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground">
-        {{ detail }}
+      <span
+        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
+        :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
+      >
+        {{ subtitle }}
       </span>
     </span>
-  </button>
+    <Button
+      type="button"
+      variant="muted-textonly"
+      size="unset"
+      class="absolute top-1/2 right-2.5 size-8 -translate-y-1/2 rounded-lg p-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 motion-reduce:transition-none"
+      :class="menuOpen && 'opacity-100'"
+      :aria-label="t('chooser.moreActions')"
+      :title="t('chooser.moreActions')"
+      data-testid="home-build-more"
+      @click.stop="openMoreMenu"
+      @contextmenu.stop.prevent="openMoreMenu"
+    >
+      <Ellipsis :size="15" aria-hidden="true" />
+    </Button>
+    <BuildProgressBar
+      v-if="install.progress.value?.percent != null"
+      :percent="install.progress.value.percent"
+      :label="statusLabel"
+      data-testid="home-build-progress"
+    />
+    <BuildMenu
+      v-if="menuAt"
+      v-model:open="menuOpen"
+      :build="build"
+      :anchor="menuAt.anchor"
+      :align="menuAt.align"
+    />
+  </div>
 </template>

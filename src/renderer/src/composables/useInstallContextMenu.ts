@@ -260,7 +260,11 @@ export function useInstallContextMenu(
     }
   }
 
-  async function triggerAction(id: string, inst: Installation): Promise<void> {
+  async function triggerAction(
+    id: string,
+    inst: Installation,
+    actionOpts: { confirmed?: boolean } = {}
+  ): Promise<void> {
     if (id === 'manage') {
       opts.onManage?.(inst)
     } else if (id === 'update') {
@@ -315,14 +319,16 @@ export function useInstallContextMenu(
     } else if (id === 'delete') {
       if (opts.onShowProgress) {
         const deleteLabel = t('actions.delete')
-        const confirmed = await modal.confirm({
-          title: t('actions.deleteConfirmTitle'),
-          message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
-            'actions.deleteConfirmMessage'
-          )}\n\n${t('actions.deleteConfirmDetail')}`,
-          confirmLabel: deleteLabel,
-          confirmStyle: 'danger'
-        })
+        const confirmed =
+          actionOpts.confirmed === true ||
+          (await modal.confirm({
+            title: t('actions.deleteConfirmTitle'),
+            message: `${inst.installPath ? inst.installPath + '\n\n' : ''}${t(
+              'actions.deleteConfirmMessage'
+            )}\n\n${t('actions.deleteConfirmDetail')}`,
+            confirmLabel: deleteLabel,
+            confirmStyle: 'danger'
+          }))
         if (!confirmed) return
         opts.onShowProgress({
           installationId: inst.id,
@@ -385,6 +391,7 @@ export function useInstallContextMenu(
   return {
     ctxMenu,
     ctxMenuItems,
+    getMenuItems,
     openCardMenu,
     openKebabMenu,
     handleCtxMenuSelect,

@@ -64,15 +64,24 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-async function homeWithStartingBuild() {
+type BuildState = 'starting' | 'installing' | 'uninstalling' | 'ready'
+
+const OPERATIONS: Record<Exclude<BuildState, 'ready'>, Partial<Operation>> = {
+  starting: { opKind: 'launch', flatPercent: 5 },
+  installing: { opKind: 'install', flatPercent: 40 },
+  uninstalling: { opKind: 'destructive', flatPercent: 18 }
+}
+
+async function homeWithBuildIn(state: BuildState) {
   const wrapper = mount(HomeView, { attachTo: host })
   await flushPromises()
-  useProgressStore().operations.set(STARTING.id, {
-    opKind: 'launch',
-    finished: false,
-    flatPercent: 5,
-    cancelRequested: false
-  } as Operation)
+  if (state !== 'ready') {
+    useProgressStore().operations.set(STARTING.id, {
+      finished: false,
+      cancelRequested: false,
+      ...OPERATIONS[state]
+    } as Operation)
+  }
   await flushPromises()
   return wrapper
 }
@@ -88,41 +97,74 @@ function fullyShown(element: Element): boolean {
   return element.scrollWidth <= element.clientWidth && element.clientWidth > 0
 }
 
-describe('Home build cards', () => {
+function shownTiles(section: HTMLElement): HTMLElement[] {
+  return [...section.querySelectorAll('li')]
+    .filter((item) => getComputedStyle(item).display !== 'none')
+    .map((item) => item.firstElementChild as HTMLElement)
+}
+
+function columnsOf(section: HTMLElement): number {
+  return getComputedStyle(section.querySelector('ul')!).gridTemplateColumns.split(' ').length
+}
+
+describe('Home build tiles', () => {
   it.each([
-    ['at the minimum window width', MIN_WINDOW_BUILDS_WIDTH],
-    ['at a normal window width', NORMAL_WINDOW_BUILDS_WIDTH]
+    ['the minimum window width', 1, MIN_WINDOW_BUILDS_WIDTH],
+    ['a normal window width', 3, NORMAL_WINDOW_BUILDS_WIDTH]
   ])(
-    'show the whole name and status of a starting build %s, in a card shaped like the others',
-    async (_name, width) => {
-      const wrapper = await homeWithStartingBuild()
+    'at %s, sit %i per row and show the whole name and status of a starting build',
+    async (_name, columns, width) => {
+      const wrapper = await homeWithBuildIn('starting')
       const section = await layBuildsOut(width)
-      const card = section.querySelector('[data-testid="home-build-starting"]')!
+      const card = section.querySelector<HTMLElement>('[data-testid="home-build-starting"]')!
       const status = card.querySelector('[data-testid="home-build-status"] .truncate')!
       const name = card.querySelector('[data-testid="home-build-name"]')!
-      const cardBox = card.getBoundingClientRect()
 
-      expect(status.textContent?.trim()).toBe('Starting ComfyUI')
+      expect(columnsOf(section)).toBe(columns)
+      expect(status.textContent?.trim()).toBe('Starting ComfyUI · 5%')
       expect(fullyShown(status)).toBe(true)
       expect(name.textContent?.trim()).toBe(STARTING.name)
       expect(fullyShown(name)).toBe(true)
-      for (const action of ['home-build-view-logs', 'home-build-cancel']) {
-        const box = card.querySelector(`[data-testid="${action}"]`)!.getBoundingClientRect()
-        expect(box.width).toBeGreaterThan(0)
-        expect(box.left).toBeGreaterThanOrEqual(cardBox.left)
-        expect(box.right).toBeLessThanOrEqual(cardBox.right)
-        expect(box.bottom).toBeLessThanOrEqual(cardBox.bottom)
-      }
-      const shown = [...section.querySelectorAll('li')].filter(
-        (item) => getComputedStyle(item).display !== 'none'
-      )
-      expect(shown.length).toBeGreaterThan(1)
-      for (const item of shown) {
-        const box = item.firstElementChild!.getBoundingClientRect()
-        expect(box.height).toBe(cardBox.height)
-        expect(box.width).toBeCloseTo(cardBox.width, 0)
+      expect(
+        card.querySelector(
+          'button:not([data-testid="home-build-more"]):not([data-testid="home-build-open"])'
+        )
+      ).toBeNull()
+
+      const tiles = shownTiles(section)
+      expect(tiles.length).toBeGreaterThan(1)
+      const rows = new Set(tiles.map((tile) => Math.round(tile.getBoundingClientRect().top)))
+      expect(rows.size).toBe(Math.ceil(tiles.length / columns))
+      for (const tile of tiles) {
+        expect(tile.getBoundingClientRect().width).toBeCloseTo(
+          card.getBoundingClientRect().width,
+          0
+        )
       }
       wrapper.unmount()
     }
   )
+
+  it.each(
+    (['starting', 'installing', 'uninstalling', 'ready'] as const).flatMap((state) => [
+      [state, MIN_WINDOW_BUILDS_WIDTH] as const,
+      [state, NORMAL_WINDOW_BUILDS_WIDTH] as const
+    ])
+  )('keep one height when a build is %s, at %ipx', async (state, width) => {
+    const wrapper = await homeWithBuildIn(state)
+    const section = await layBuildsOut(width)
+    const tiles = shownTiles(section)
+    const more = tiles[0]!.querySelector<HTMLElement>('[data-testid="home-build-more"]')!
+
+    expect(tiles[0]!.getAttribute('data-build-id')).toBe(STARTING.id)
+    expect(tiles[0]!.getAttribute('data-testid')).toBe(
+      state === 'ready' ? 'home-build' : `home-build-${state}`
+    )
+    for (const tile of tiles) expect(tile.getBoundingClientRect().height).toBe(100)
+    const tileBox = tiles[0]!.getBoundingClientRect()
+    const moreBox = more.getBoundingClientRect()
+    expect(moreBox.right).toBeLessThanOrEqual(tileBox.right)
+    expect(moreBox.top + moreBox.height / 2).toBeCloseTo(tileBox.top + tileBox.height / 2, 0)
+    wrapper.unmount()
+  })
 })
