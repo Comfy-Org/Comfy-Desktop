@@ -145,6 +145,46 @@ describe('useAutoStartBuild', () => {
     expect(autoStart.startsOnOpen('build-b')).toBe(false)
   })
 
+  it('shows the saved choice again when saving and reading it back both fail, so a second tick saves again', async () => {
+    saved = 'build-a'
+    const autoStart = await start()
+    setSetting.mockRejectedValueOnce(new Error('settings.json is unreadable'))
+    getSetting.mockRejectedValueOnce(new Error('settings.json is unreadable'))
+
+    await autoStart.setStartsOnOpen('build-b', true)
+
+    expect(autoStart.startsOnOpen('build-a')).toBe(true)
+    expect(autoStart.startsOnOpen('build-b')).toBe(false)
+
+    await autoStart.setStartsOnOpen('build-b', true)
+
+    expect(setSetting).toHaveBeenCalledTimes(2)
+    expect(setSetting).toHaveBeenLastCalledWith('autoLaunchOnStartup', 'build-b')
+    expect(autoStart.startsOnOpen('build-b')).toBe(true)
+  })
+
+  it('keeps a newer tick when the read after a failed save also fails', async () => {
+    saved = 'build-a'
+    const autoStart = await start()
+    let failRead: (error: Error) => void = () => {}
+    setSetting.mockRejectedValueOnce(new Error('settings.json is unreadable'))
+    getSetting.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failRead = reject
+        })
+    )
+
+    const failedSave = autoStart.setStartsOnOpen('build-b', true)
+    await flushPromises()
+    await autoStart.setStartsOnOpen('build-c', true)
+    failRead(new Error('settings.json is unreadable'))
+    await failedSave
+
+    expect(autoStart.startsOnOpen('build-c')).toBe(true)
+    expect(autoStart.startsOnOpen('build-a')).toBe(false)
+  })
+
   it('stops listening for setting changes when its page goes away', async () => {
     await start()
 
