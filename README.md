@@ -142,7 +142,7 @@ To record a video of an e2e test for a reviewer, set `E2E_VIDEO` to any value ot
 E2E_VIDEO=1 pnpm exec playwright test e2e/home.test.ts --project=macos -g "Auto start"
 ```
 
-The videos land in `test-results/videos/` at 1280x800. Playwright writes one `.webm` per view; the page view is the largest file. While recording, every click and fill pauses about 1 s before and after, so each change shows on screen.
+The videos land in `test-results/videos/` at 1280x800. Playwright writes one `.webm` per view; the page view is the largest file. While recording, each `click`, `clickNth`, `clickByText` and `fill` in `e2e/support/cdpPages.ts` pauses about 1 s before and after, so each change shows on screen. Dropdown helpers (`clickUntilVisible`, `selectOption`) and clicks made in the page's own script are not slowed down.
 
 ## Releasing
 
