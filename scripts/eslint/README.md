@@ -1,3 +1,40 @@
+# Canonical Tailwind classes
+
+Renderer Vue and TypeScript files use `eslint-plugin-better-tailwindcss` through
+the existing `pnpm run lint`, `pnpm run lint:fix`, and CI Lint job. Its
+`enforce-canonical-classes` rule reads `src/renderer/src/assets/main.css`, including
+the imported design-system theme, and rejects arbitrary spellings when Tailwind
+provides an equivalent utility. For example, `p-[16px]` becomes `p-4`,
+`duration-[120ms]` becomes `duration-120`, and `rounded-[14px]` becomes
+`rounded-shell`.
+
+The rule assumes the renderer's existing 16px root font size when comparing pixel
+values with rem-based spacing. Utility collapsing and logical-property
+conversions are disabled. Arbitrary values without an equivalent utility remain
+allowed, including custom grid templates, colors, and animation values.
+
+`no-restricted-classes` also prefers the existing theme aliases for legacy color
+variables and radius variables. Typography aliases are left alone: the design
+system's current class merger treats custom names such as `text-ui/5` as text
+colors, and a standalone typography token also supplies a default line height.
+Font-family declarations and variable-based font and sizing utilities keep their
+original syntax because their normalized forms can change how the same merger
+handles component overrides. These exceptions preserve rendering until the
+design-system merger supports the newer syntax.
+
+Both rules cover template `class` attributes, `:class` strings and object keys,
+component and transition props ending in `-class` or `Class`, and static script
+constants ending in `Class`, `Classes`, `ClassName`, `ClassNames`, `_CLASS`,
+`_CLASSES`, `_CLASS_NAME`, or `_CLASS_NAMES`. Existing plugin defaults for class
+helpers remain enabled. Class ordering and token redesign are outside these
+rules.
+
+Run the configuration tests with:
+
+```sh
+pnpm exec vitest run --project node scripts/eslint/tailwind-canonical-classes.test.ts
+```
+
 # Vue component style guardrail
 
 Use Tailwind utilities for component styling. The local ESLint rule

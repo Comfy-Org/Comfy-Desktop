@@ -148,13 +148,13 @@ onMounted(() => {
 
     <div class="mx-auto w-full max-w-300 px-10 pb-16">
       <h1
-        class="m-0 pt-[152px] text-center text-[34px]/10 font-semibold tracking-[-0.055em] text-foreground"
+        class="m-0 pt-38 text-center text-[34px]/10 font-semibold tracking-[-0.055em] text-foreground"
       >
         {{ t('home.title') }}
       </h1>
 
       <section
-        class="mt-[74px]"
+        class="mt-18.5"
         :aria-label="appsState === 'off' ? t('home.exampleWorkflows') : t('sidebar.apps')"
       >
         <div
@@ -163,9 +163,9 @@ onMounted(() => {
           aria-busy="true"
           data-testid="home-carousel-loading"
         >
-          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+          <Skeleton class="h-72.5 w-51.25 rounded-[18px] opacity-60" />
           <Skeleton class="h-75 w-64 rounded-[18px]" />
-          <Skeleton class="h-[290px] w-[205px] rounded-[18px] opacity-60" />
+          <Skeleton class="h-72.5 w-51.25 rounded-[18px] opacity-60" />
         </div>
         <HomeCarousel
           v-else-if="appsState === 'ready'"
@@ -214,7 +214,7 @@ onMounted(() => {
           </Button>
         </div>
 
-        <div v-if="appsEnabled" class="mt-[30px] flex justify-center">
+        <div v-if="appsEnabled" class="mt-7.5 flex justify-center">
           <Button
             type="button"
             variant="muted-textonly"
@@ -231,7 +231,7 @@ onMounted(() => {
 
       <section
         v-if="builds.length > 0"
-        class="@container/home-builds mt-[50px]"
+        class="@container/home-builds mt-12.5"
         aria-labelledby="home-builds"
         data-testid="home-builds"
       >
@@ -255,7 +255,7 @@ onMounted(() => {
           </Button>
         </div>
         <ul
-          class="m-0 grid list-none gap-[15px] p-0"
+          class="m-0 grid list-none gap-3.75 p-0"
           :class="
             builds.length > 2 ? 'grid-cols-3 @max-[56rem]/home-builds:grid-cols-2' : 'grid-cols-2'
           "

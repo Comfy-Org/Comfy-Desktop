@@ -12,7 +12,7 @@ const { t } = useI18n()
 
 <template>
   <section
-    class="flex min-h-25 shrink-0 items-center gap-[18px] rounded-2xl border border-destructive/25 bg-[rgb(137_137_137/0.05)] px-[18px] py-4"
+    class="flex min-h-25 shrink-0 items-center gap-4.5 rounded-2xl border border-destructive/25 bg-[rgb(137_137_137/0.05)] px-4.5 py-4"
     role="alert"
     data-testid="build-uninstall-failed"
   >
@@ -22,7 +22,7 @@ const { t } = useI18n()
         {{ t('uninstallProgress.failedTitle') }}
       </h2>
       <p
-        class="m-0 mt-1 text-[13px]/5 break-words whitespace-pre-line text-muted-foreground select-text"
+        class="m-0 mt-1 text-[13px]/5 wrap-break-word whitespace-pre-line text-muted-foreground select-text"
         data-testid="build-uninstall-failed-reason"
       >
         {{ reason }}

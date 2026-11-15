@@ -234,14 +234,14 @@ onBeforeUnmount(teardown)
 <template>
   <div
     ref="paneRef"
-    class="console-pane flex min-h-[240px] w-full min-w-0 flex-auto flex-col overflow-hidden rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] [box-shadow:0_0_0_1px_color-mix(in_srgb,var(--neutral-950)_35%,transparent),0_8px_24px_color-mix(in_srgb,var(--neutral-950)_28%,transparent)]"
+    class="console-pane flex min-h-60 w-full min-w-0 flex-auto flex-col overflow-hidden rounded-[10px] border border-solid border-(--chooser-surface-border) bg-(--chooser-surface-bg) [box-shadow:0_0_0_1px_color-mix(in_srgb,var(--neutral-950)_35%,transparent),0_8px_24px_color-mix(in_srgb,var(--neutral-950)_28%,transparent)]"
   >
     <header
-      class="console-header flex h-[34px] shrink-0 items-center gap-2.5 border-0 border-b border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--neutral-800)_72%,transparent)] px-3.5"
+      class="console-header flex h-8.5 shrink-0 items-center gap-2.5 border-0 border-b border-solid border-(--chooser-surface-border) bg-[color-mix(in_srgb,var(--neutral-800)_72%,transparent)] px-3.5"
       aria-hidden="true"
     >
       <span
-        class="console-header-dots inline-flex items-center gap-[5px] [&>span]:size-[7px] [&>span]:rounded-[50%] [&>span]:bg-[color-mix(in_srgb,var(--neutral-400)_42%,transparent)] [&>span]:[box-shadow:inset_0_1px_0_color-mix(in_srgb,white_8%,transparent)]"
+        class="console-header-dots inline-flex items-center gap-1.25 [&>span]:size-1.75 [&>span]:rounded-[50%] [&>span]:bg-[color-mix(in_srgb,var(--neutral-400)_42%,transparent)] [&>span]:[box-shadow:inset_0_1px_0_color-mix(in_srgb,white_8%,transparent)]"
       >
         <span /><span /><span />
       </span>
@@ -261,19 +261,19 @@ onBeforeUnmount(teardown)
       />
       <div
         v-if="exited"
-        class="console-ended absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-0 border-t border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--modal-surface-bg)_90%,transparent)] px-3.5 py-2.5 backdrop-blur-[10px]"
+        class="console-ended absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-0 border-t border-solid border-(--chooser-surface-border) bg-[color-mix(in_srgb,var(--modal-surface-bg)_90%,transparent)] px-3.5 py-2.5 backdrop-blur-[10px]"
         role="status"
         :data-testid="TID.consoleSessionEnded"
       >
         <span
-          class="console-ended-text text-[12px] leading-[1.45] text-[var(--text-muted,var(--neutral-100))]"
+          class="console-ended-text text-[12px] leading-[1.45] text-(--text-muted,var(--neutral-100))"
           >{{ t('console.sessionEnded') }}</span
         >
         <Button
           size="unset"
           variant="textonly"
           type="button"
-          class="console-ended-restart static block h-[30px] shrink-0 appearance-auto rounded-lg border border-solid border-[var(--action)] bg-surface px-3.5 py-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-normal text-[var(--action)] touch-auto transition-none [&]:[appearance:button] hover:bg-[var(--action)] hover:text-[var(--bg)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
+          class="console-ended-restart static block h-7.5 shrink-0 appearance-auto rounded-lg border border-solid border-(--action) bg-surface px-3.5 py-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-normal text-(--action) touch-auto transition-none [&]:[appearance:button] hover:bg-(--action) hover:text-bg focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto]"
           :data-testid="TID.consoleRestart"
           @click="restart"
         >

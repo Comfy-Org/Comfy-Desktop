@@ -99,7 +99,7 @@ onBeforeUnmount(() => {
   <div class="relative flex min-h-0 w-full flex-auto flex-col">
     <div
       v-show="!openApp"
-      class="@container flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
+      class="@container flex min-h-0 w-full flex-auto flex-col overflow-y-auto scrollbar-gutter-stable"
       :class="PAGE_SPOTLIGHT_CLASS"
       data-testid="apps-view"
     >
@@ -110,7 +110,7 @@ onBeforeUnmount(() => {
       </header>
 
       <div class="mx-auto flex min-h-8 w-full max-w-300 items-center gap-2 px-10 py-3">
-        <div class="ml-auto w-[220px]">
+        <div class="ml-auto w-55">
           <BaseInput
             v-model="query"
             class="h-8 [&_input]:text-ui"
@@ -134,7 +134,7 @@ onBeforeUnmount(() => {
             :key="card"
             class="rounded-card bg-[rgb(29_29_29/0.72)] p-1"
           >
-            <Skeleton class="aspect-[505/316] w-full rounded-control" />
+            <Skeleton class="aspect-505/316 w-full rounded-control" />
             <div class="flex flex-col gap-1.5 px-1.5 pt-3 pb-2.5">
               <Skeleton class="h-3.5 w-1/2 rounded-min" />
               <Skeleton class="h-3.5 w-4/5 rounded-min opacity-60" />
@@ -194,7 +194,7 @@ onBeforeUnmount(() => {
               @click="open(app)"
             >
               <span
-                class="relative block aspect-[505/316] w-full overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
+                class="relative block aspect-505/316 w-full overflow-hidden rounded-control bg-[rgb(235_235_235/0.05)]"
               >
                 <img
                   v-if="app.coverUrl && !coversThatFailed.has(app.id)"

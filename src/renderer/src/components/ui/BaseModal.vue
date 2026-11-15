@@ -64,10 +64,10 @@ const sizeStyleClass = computed(() => {
     :prevent-scroll="preventScroll"
     :overlay-class="[
       'base-modal-overlay fixed inset-0 z-60 grid place-items-center bg-neutral-800/70 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]',
-      { 'base-modal-overlay--blur backdrop-blur-[8px] backdrop-saturate-[115%]': blurOverlay }
+      { 'base-modal-overlay--blur backdrop-blur-sm backdrop-saturate-115': blurOverlay }
     ]"
     :content-class="[
-      'base-modal-panel relative flex w-[var(--base-modal-width,var(--base-modal-width-md))] max-w-full flex-col overflow-hidden rounded-panel border border-solid border-border bg-[var(--modal-surface-bg)] text-neutral-100 shadow-[var(--modal-surface-shadow)] [--base-modal-width-sm:480px] [--base-modal-width-md:640px] [--base-modal-width-lg:800px] [--base-modal-width-xl:min(1080px,92vw)] max-h-[clamp(360px,80vh,920px)]',
+      'base-modal-panel relative flex w-[var(--base-modal-width,var(--base-modal-width-md))] max-w-full flex-col overflow-hidden rounded-panel border border-solid border-border bg-(--modal-surface-bg) text-neutral-100 shadow-(--modal-surface-shadow) [--base-modal-width-sm:480px] [--base-modal-width-md:640px] [--base-modal-width-lg:800px] [--base-modal-width-xl:min(1080px,92vw)] max-h-[clamp(360px,80vh,920px)]',
       sizeClass,
       sizeStyleClass,
       contentClass

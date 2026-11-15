@@ -189,9 +189,7 @@ const placeholderTitle = computed<string>(() => {
 </script>
 
 <template>
-  <div
-    class="lifecycle-view flex min-h-0 flex-1 items-center justify-center bg-[var(--bg)] p-6 text-text"
-  >
+  <div class="lifecycle-view flex min-h-0 flex-1 items-center justify-center bg-bg p-6 text-text">
     <BrandFinishedSurface
       v-if="state === 'crashed'"
       :title="
@@ -272,11 +270,11 @@ const placeholderTitle = computed<string>(() => {
 
     <div
       v-else-if="showPlaceholder"
-      class="lifecycle-placeholder flex max-w-[480px] flex-col items-center gap-3 px-8 py-7 text-center"
+      class="lifecycle-placeholder flex max-w-120 flex-col items-center gap-3 px-8 py-7 text-center"
       data-state="placeholder"
     >
       <div
-        class="lifecycle-placeholder__icon inline-flex size-14 items-center justify-center rounded-[999px] border border-solid border-[var(--border)] bg-surface text-[var(--action,#4d8eff)]"
+        class="lifecycle-placeholder__icon inline-flex size-14 items-center justify-center rounded-[999px] border border-solid border-border bg-surface text-(--action,#4d8eff)"
       >
         <Loader2 :size="32" class="animate-spin" />
       </div>

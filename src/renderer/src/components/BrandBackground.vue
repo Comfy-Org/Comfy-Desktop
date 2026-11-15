@@ -22,9 +22,7 @@ withDefaults(
       <div
         class="brand-inner-frame relative isolate flex flex-auto flex-col items-center overflow-hidden rounded-lg p-[clamp(2rem,5vw,48px)]"
         :class="[
-          takeover
-            ? TAKEOVER_SPOTLIGHT_CLASS
-            : [PAGE_SPOTLIGHT_CLASS, '[background-color:var(--color-content-background)]'],
+          takeover ? TAKEOVER_SPOTLIGHT_CLASS : [PAGE_SPOTLIGHT_CLASS, 'bg-content-background'],
           scrollContent
             ? 'brand-inner-frame--scroll-content justify-start overflow-y-auto'
             : 'justify-center'

@@ -118,7 +118,7 @@ onUnmounted(() => {
   <div
     v-if="variant === 'coachmark'"
     ref="bubble"
-    class="coachmark relative mx-auto mt-[7px] box-border block w-max max-w-[280px] select-none rounded-[10px] border border-solid px-3.5 py-3 font-sans text-[13px] leading-[1.45] font-normal [box-shadow:inset_0_0_0_1px_rgba(255,255,255,0.04),0_8px_24px_rgba(0,0,0,0.5)]"
+    class="coachmark relative mx-auto mt-1.75 box-border block w-max max-w-70 select-none rounded-[10px] border border-solid px-3.5 py-3 font-sans text-[13px] leading-[1.45] font-normal [box-shadow:inset_0_0_0_1px_rgba(255,255,255,0.04),0_8px_24px_rgba(0,0,0,0.5)]"
     role="dialog"
     aria-modal="false"
     :aria-label="cmTitle"
@@ -138,7 +138,7 @@ onUnmounted(() => {
     }"
   >
     <span
-      class="coachmark-beak absolute -top-1.5 left-1/2 size-3 rounded-tl-[3px] border-t border-l border-solid [transform:translateX(-50%)_rotate(45deg)]"
+      class="coachmark-beak absolute -top-1.5 left-1/2 size-3 rounded-tl-[3px] border-t border-l border-solid transform-[translateX(-50%)_rotate(45deg)]"
       :style="{
         background: themeBg,
         borderColor: coachmarkBorder,
@@ -147,13 +147,13 @@ onUnmounted(() => {
     />
     <div class="coachmark-body">
       <div
-        class="coachmark-title text-[13px] font-semibold tracking-[-0.01em] [overflow-wrap:anywhere]"
+        class="coachmark-title text-[13px] font-semibold tracking-[-0.01em] wrap-anywhere"
         :style="{ color: themeAccent }"
       >
         {{ cmTitle }}
       </div>
       <p
-        class="coachmark-text mt-1 mr-0 mb-2.5 ml-0 text-[12px] leading-[1.5] opacity-88 [overflow-wrap:anywhere]"
+        class="coachmark-text mt-1 mr-0 mb-2.5 ml-0 text-[12px] leading-normal opacity-88 wrap-anywhere"
       >
         {{ cmBody }}
       </p>
@@ -181,7 +181,7 @@ onUnmounted(() => {
   <span
     v-else-if="text"
     ref="bubble"
-    class="bubble pointer-events-none box-border inline-block w-max max-w-[256px] select-none rounded-control border border-solid px-[9px] py-[5px] font-sans text-[12px] leading-[16.2px] font-medium tracking-normal whitespace-normal [box-shadow:0_8px_12px_rgba(0,0,0,0.5)]"
+    class="bubble pointer-events-none box-border inline-block w-max max-w-[256px] select-none rounded-control border border-solid px-2.25 py-1.25 font-sans text-[12px] leading-[16.2px] font-medium tracking-normal whitespace-normal [box-shadow:0_8px_12px_rgba(0,0,0,0.5)]"
     :style="{
       background: themeBg,
       color: themeText,

@@ -155,7 +155,7 @@ describe('BuildProgressDialog', () => {
     }
     await loadAs(480, 640)
     expect(video.attributes('data-shape')).toBe('tall')
-    expect(video.classes()).toContain('h-[340px]')
+    expect(video.classes()).toContain('h-85')
 
     await loadAs(942, 530)
     expect(video.attributes('data-shape')).toBe('wide')

@@ -310,7 +310,7 @@ async function download(asset: GalleryAsset): Promise<void> {
 const assetMenu = ref<AssetMenu | null>(null)
 const ASSET_MENU_WIDTH = 200
 const ASSET_TOOL_CLASS =
-  'flex size-[26px] items-center justify-center rounded-full bg-[rgb(27_27_28/0.6)] text-foreground outline-none backdrop-blur-[12px] transition-colors hover:bg-[rgb(27_27_28/0.8)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)] disabled:opacity-50'
+  'flex size-6.5 items-center justify-center rounded-full bg-[rgb(27_27_28/0.6)] text-foreground outline-none backdrop-blur-md transition-colors hover:bg-[rgb(27_27_28/0.8)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)] disabled:opacity-50'
 
 function isLocal(asset: GalleryAsset): boolean {
   return asset.source === LOCAL_ASSETS_SOURCE
@@ -405,7 +405,7 @@ function extensionOf(name: string): string {
 <template>
   <div
     ref="scroller"
-    class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto [scrollbar-gutter:stable]"
+    class="flex min-h-0 w-full flex-auto flex-col overflow-y-auto scrollbar-gutter-stable"
     :class="PAGE_SPOTLIGHT_CLASS"
     data-testid="assets-view"
   >
@@ -434,14 +434,14 @@ function extensionOf(name: string): string {
           >
             <RefreshCw
               :size="13"
-              :class="loading && 'animate-spin [animation-duration:900ms]'"
+              :class="loading && 'animate-spin animation-duration-[900ms]'"
               aria-hidden="true"
             />
           </Button>
           <Menu
             :modal="false"
             align="end"
-            class="z-20 min-w-[180px]"
+            class="z-20 min-w-45"
             :aria-label="t('assets.kindLabel')"
           >
             <template #trigger>
@@ -472,7 +472,7 @@ function extensionOf(name: string): string {
               </MenuRadioItem>
             </DropdownMenuRadioGroup>
           </Menu>
-          <div class="w-[220px]">
+          <div class="w-55">
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-ui"
@@ -485,7 +485,7 @@ function extensionOf(name: string): string {
           <Menu
             :modal="false"
             align="end"
-            class="z-20 min-w-[240px]"
+            class="z-20 min-w-60"
             :aria-label="t('assets.viewOptions')"
           >
             <template #trigger>
@@ -673,7 +673,7 @@ function extensionOf(name: string): string {
                 </span>
                 <span
                   v-if="asset.kind === 'video' && asset.durationSeconds"
-                  class="absolute bottom-2 left-2 flex h-[22px] items-center gap-[5px] rounded-full bg-[rgb(14_14_14/0.28)] pr-2 pl-[7px] text-[11.5px]/[16.1px] font-medium text-white"
+                  class="absolute bottom-2 left-2 flex h-5.5 items-center gap-1.25 rounded-full bg-[rgb(14_14_14/0.28)] pr-2 pl-1.75 text-[11.5px]/[16.1px] font-medium text-white"
                   data-testid="asset-duration"
                 >
                   <Video :size="12" class="opacity-92" aria-hidden="true" />

@@ -28,7 +28,7 @@ const { t } = useI18n()
 const modal = useModal()
 
 const spinnerClass =
-  "flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-white/15 before:border-t-neutral-100 before:[animation-duration:0.6s] before:content-['']"
+  "flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-white/15 before:border-t-neutral-100 before:animation-duration-[0.6s] before:content-['']"
 const recessedListClass =
   'load-snapshot-recessed-list flex flex-col overflow-y-auto rounded-[10px] bg-black/15 p-1.5'
 
@@ -371,7 +371,7 @@ defineExpose({ open })
     >
       <div
         v-if="!preview"
-        class="load-snapshot-dropzone my-3 flex min-h-[220px] flex-col items-center justify-center gap-2.5 rounded-[14px] border-2 border-dashed p-8 text-neutral-200 transition-[border-color,background] duration-160 ease-[ease] motion-reduce:transition-none"
+        class="load-snapshot-dropzone my-3 flex min-h-55 flex-col items-center justify-center gap-2.5 rounded-shell border-2 border-dashed p-8 text-neutral-200 transition-[border-color,background] duration-160 ease-[ease] motion-reduce:transition-none"
         :class="[
           dragging
             ? 'load-snapshot-dropzone--active border-white/40 bg-white/6'
@@ -433,7 +433,7 @@ defineExpose({ open })
           </InputGroup>
           <p
             v-if="nameHasInvalidChars"
-            class="load-snapshot-hint load-snapshot-hint--warn m-0 mt-1 text-[12px] leading-4 text-[var(--warning)]"
+            class="load-snapshot-hint load-snapshot-hint--warn m-0 mt-1 text-[12px] leading-4 text-(--warning)"
           >
             {{ $t('list.snapshotNameHint') }}
           </p>
@@ -482,7 +482,7 @@ defineExpose({ open })
           </div>
           <p
             v-if="hardwareMismatch"
-            class="load-snapshot-hw-warning m-0 mt-2 text-[12px] leading-4 text-[var(--warning)]"
+            class="load-snapshot-hw-warning m-0 mt-2 text-[12px] leading-4 text-(--warning)"
           >
             {{
               $t('list.snapshotHardwareMismatch', {
@@ -496,7 +496,7 @@ defineExpose({ open })
         <SetupFormRow :label="$t('loadSnapshot.contents')" :icon="List" control-height="cards">
           <div class="load-snapshot-contents flex flex-col gap-2">
             <dl
-              class="load-snapshot-summary m-0 grid grid-cols-2 gap-x-6 gap-y-3 rounded-[14px] bg-white/4 p-4"
+              class="load-snapshot-summary m-0 grid grid-cols-2 gap-x-6 gap-y-3 rounded-shell bg-white/4 p-4"
             >
               <div
                 v-for="entry in summaryEntries"
@@ -522,7 +522,7 @@ defineExpose({ open })
                 <div
                   v-if="preview.newestSnapshot.customNodes.length > 0"
                   :class="recessedListClass"
-                  class="max-h-60 gap-[3px]"
+                  class="max-h-60 gap-0.75"
                 >
                   <div
                     v-for="node in preview.newestSnapshot.customNodes"
@@ -530,15 +530,15 @@ defineExpose({ open })
                     class="load-snapshot-node-row flex items-center gap-2 px-1.5 py-0.5 text-[13px]"
                   >
                     <span
-                      class="load-snapshot-node-status size-[7px] shrink-0 rounded-[50%]"
-                      :class="node.enabled ? 'bg-[var(--info)]' : 'bg-text-muted'"
+                      class="load-snapshot-node-status size-1.75 shrink-0 rounded-[50%]"
+                      :class="node.enabled ? 'bg-(--info)' : 'bg-text-muted'"
                     />
                     <span
                       class="load-snapshot-node-name min-w-0 flex-1 truncate text-text select-text"
                       >{{ node.id }}</span
                     >
                     <span
-                      class="load-snapshot-node-type shrink-0 rounded-[4px] bg-white/8 px-[5px] py-px text-[11px] font-semibold text-text-muted uppercase"
+                      class="load-snapshot-node-type shrink-0 rounded-[4px] bg-white/8 px-1.25 py-px text-[11px] font-semibold text-text-muted uppercase"
                       >{{ node.type }}</span
                     >
                     <span
@@ -557,7 +557,7 @@ defineExpose({ open })
                 <div
                   v-if="preview.newestSnapshot.pipPackageCount > 0"
                   :class="recessedListClass"
-                  class="max-h-60 gap-[3px]"
+                  class="max-h-60 gap-0.75"
                 >
                   <div
                     v-for="(version, name) in preview.newestSnapshot.pipPackages"
@@ -581,7 +581,7 @@ defineExpose({ open })
                 v-model:open="timelineExpanded"
                 :label="`${$t('list.snapshotTimeline')} (${preview.snapshotCount})`"
               >
-                <div :class="recessedListClass" class="load-snapshot-timeline max-h-[200px] gap-1">
+                <div :class="recessedListClass" class="load-snapshot-timeline max-h-50 gap-1">
                   <div
                     v-for="(snap, i) in preview.snapshots"
                     :key="snap.filename"
@@ -621,7 +621,7 @@ defineExpose({ open })
         type="button"
         size="lg"
         variant="inverted"
-        class="load-snapshot-create h-9 min-w-[104px] rounded-[10px]"
+        class="load-snapshot-create h-9 min-w-26 rounded-[10px]"
         :disabled="creating || replacingSnapshot || !selectedVariant"
         @click="handleCreate"
       >

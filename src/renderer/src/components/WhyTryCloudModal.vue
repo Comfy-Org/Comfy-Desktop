@@ -24,7 +24,7 @@ const benefits = computed<string[]>(() => {
     :open="true"
     :aria-label="$t('firstUse.whyCloud.title')"
     overlay-class="why-cloud-overlay fixed inset-0 z-60 grid place-items-center px-[clamp(32px,5vw,80px)] pt-[clamp(72px,10vh,132px)] pb-[clamp(80px,11vh,140px)] bg-neutral-800/70"
-    content-class="why-cloud-content relative flex w-[min(100%,calc((100vh_-_clamp(152px,21vh,272px))_*_(916_/_445)))] max-w-full max-h-full aspect-[916/445] overflow-hidden rounded-panel border border-solid border-neutral-100/8 bg-neutral-900"
+    content-class="why-cloud-content relative flex w-[min(100%,calc((100vh-clamp(152px,21vh,272px))*(916/445)))] max-w-full max-h-full aspect-916/445 overflow-hidden rounded-panel border border-solid border-neutral-100/8 bg-neutral-900"
     @close="emit('close')"
   >
     <Button
@@ -68,7 +68,7 @@ const benefits = computed<string[]>(() => {
             class="why-cloud-list mt-1 mr-0 mb-0 ml-0 flex list-none flex-col gap-2.5 p-0 [&>li]:grid [&>li]:grid-cols-[auto_1fr] [&>li]:items-start [&>li]:gap-3 [&>li]:text-[length:var(--takeover-fs-lead)] [&>li]:leading-[normal] [&>li]:text-neutral-100"
           >
             <li v-for="b in benefits" :key="b">
-              <Check :size="16" class="why-cloud-check mt-[3px] text-comfy-yellow" />
+              <Check :size="16" class="why-cloud-check mt-0.75 text-comfy-yellow" />
               <span>{{ b }}</span>
             </li>
           </ul>

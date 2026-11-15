@@ -159,7 +159,7 @@ function onValueChange(i: number, val: string): void {
           </p>
         </div>
         <div
-          class="env-var-cell env-var-value-cell relative min-w-0 [&:has(.env-var-reveal)_.ui-input-control]:pt-[5px] [&:has(.env-var-reveal)_.ui-input-control]:pr-9"
+          class="env-var-cell env-var-value-cell relative min-w-0 [&:has(.env-var-reveal)_.ui-input-control]:pt-1.25 [&:has(.env-var-reveal)_.ui-input-control]:pr-9"
         >
           <BaseInput
             mono
@@ -174,7 +174,7 @@ function onValueChange(i: number, val: string): void {
             type="button"
             variant="textonly"
             size="unset"
-            class="env-var-reveal absolute top-1/2 right-1 inline-flex size-7 [transform:translateY(-50%)] items-center justify-center rounded-md border-none bg-transparent p-0 text-neutral-100 appearance-auto gap-0 font-normal leading-[1.5] whitespace-normal transition-[color,background-color] duration-[120ms] ease-[ease] hover:bg-border-hover hover:text-text focus-visible:bg-border-hover focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
+            class="env-var-reveal absolute top-1/2 right-1 inline-flex size-7 transform-[translateY(-50%)] items-center justify-center rounded-md border-none bg-transparent p-0 text-neutral-100 appearance-auto gap-0 font-normal leading-normal whitespace-normal transition-[color,background-color] duration-120 ease-[ease] hover:bg-border-hover hover:text-text focus-visible:bg-border-hover focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
             :aria-label="isRevealed(i) ? t('envVars.hideValue') : t('envVars.revealValue')"
             :aria-pressed="isRevealed(i)"
             @click="toggleReveal(i)"
@@ -187,7 +187,7 @@ function onValueChange(i: number, val: string): void {
           type="button"
           variant="textonly"
           size="unset"
-          class="env-var-remove static gap-0 font-normal leading-[1.5] whitespace-normal inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-solid border-transparent bg-transparent p-0 text-text-muted appearance-auto transition-[background-color,border-color,color] duration-[120ms] ease-[ease] hover:border-[var(--chooser-surface-border)] hover:bg-[var(--brand-surface-bg-hover)] hover:text-danger focus-visible:border-[var(--chooser-surface-border)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-danger focus-visible:outline-none focus-visible:ring-0"
+          class="env-var-remove static gap-0 font-normal leading-normal whitespace-normal inline-flex size-8 shrink-0 items-center justify-center rounded-lg border border-solid border-transparent bg-transparent p-0 text-text-muted appearance-auto transition-[background-color,border-color,color] duration-120 ease-[ease] hover:border-(--chooser-surface-border) hover:bg-(--brand-surface-bg-hover) hover:text-danger focus-visible:border-(--chooser-surface-border) focus-visible:bg-(--brand-surface-bg-hover) focus-visible:text-danger focus-visible:outline-none focus-visible:ring-0"
           :aria-label="t('envVars.remove')"
           @click="removeRow(i)"
         >
@@ -200,7 +200,7 @@ function onValueChange(i: number, val: string): void {
       type="button"
       variant="textonly"
       size="unset"
-      class="env-var-add static inline-flex h-8 items-center justify-center gap-1 self-start rounded-lg border-none bg-[var(--chooser-surface-border-hover)] px-3.5 py-2 text-[12px] leading-4 font-medium text-neutral-100 appearance-auto transition-[background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-border-hover)] hover:text-text focus-visible:bg-[var(--brand-surface-border-hover)] focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
+      class="env-var-add static inline-flex h-8 items-center justify-center gap-1 self-start rounded-lg border-none bg-(--chooser-surface-border-hover) px-3.5 py-2 text-[12px] leading-4 font-medium text-neutral-100 appearance-auto transition-[background-color,color] duration-120 ease-[ease] hover:bg-(--brand-surface-border-hover) hover:text-text focus-visible:bg-(--brand-surface-border-hover) focus-visible:text-text focus-visible:outline-none focus-visible:ring-0"
       @click="addRow"
     >
       <Plus :size="16" aria-hidden="true" />

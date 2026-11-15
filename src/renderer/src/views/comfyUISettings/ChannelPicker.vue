@@ -476,7 +476,7 @@ function actionClass(
 <template>
   <div class="channel-picker flex flex-col gap-3">
     <div
-      class="channel-picker-status-stack grid grid-cols-1 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)]"
+      class="channel-picker-status-stack grid grid-cols-1 rounded-xl border border-solid border-(--chooser-surface-border) bg-(--brand-surface-bg)"
     >
       <div
         v-for="(status, index) in selectedFirstThenEveryOtherOption"
@@ -494,8 +494,8 @@ function actionClass(
           class="channel-picker-status-icon grid size-8 flex-none place-items-center rounded-full"
           :class="
             status.updateAvailable
-              ? 'bg-[color-mix(in_srgb,var(--action)_14%,transparent)] text-[var(--action)]'
-              : 'bg-[color-mix(in_srgb,var(--success,#4ade80)_14%,transparent)] text-[var(--success,#4ade80)]'
+              ? 'bg-[color-mix(in_srgb,var(--action)_14%,transparent)] text-(--action)'
+              : 'bg-[color-mix(in_srgb,var(--success,#4ade80)_14%,transparent)] text-(--success,#4ade80)'
           "
           aria-hidden="true"
         >
@@ -512,7 +512,7 @@ function actionClass(
               }}</span>
               <span
                 class="channel-picker-headline-version"
-                :class="{ 'is-update-available text-[var(--action)]': status.updateAvailable }"
+                :class="{ 'is-update-available text-(--action)': status.updateAvailable }"
                 >{{ status.version }}</span
               >
             </p>
@@ -525,7 +525,7 @@ function actionClass(
               <span class="block truncate pl-2.5 text-[12px] leading-4 text-text-muted italic">
                 <Loader2
                   :size="12"
-                  class="channel-picker-enriching-spinner mr-1.5 inline-block animate-spin align-[-0.125em] [animation-duration:0.9s] motion-reduce:animate-none"
+                  class="channel-picker-enriching-spinner mr-1.5 inline-block animate-spin align-[-0.125em] animation-duration-[0.9s] motion-reduce:animate-none"
                   aria-hidden="true"
                 />{{ t('channelCards.computingCommitsAhead') }}
               </span>
@@ -559,7 +559,7 @@ function actionClass(
           <Loader2
             v-if="isActionRunning(status.headerCheckAction.id)"
             :size="14"
-            class="channel-picker-action-spinner flex-none animate-spin [animation-duration:0.9s]"
+            class="channel-picker-action-spinner flex-none animate-spin animation-duration-[0.9s]"
           />
           {{ status.headerCheckAction.label }}
         </Button>
@@ -609,7 +609,7 @@ function actionClass(
 
       <p
         v-if="!draftIsCurrent && !preview"
-        class="channel-picker-empty m-0 rounded-md border border-dashed border-[var(--chooser-surface-border)] px-2.5 py-2 text-[12px] leading-4 text-text-muted"
+        class="channel-picker-empty m-0 rounded-md border border-dashed border-(--chooser-surface-border) px-2.5 py-2 text-[12px] leading-4 text-text-muted"
       >
         {{ t('channelCards.noInfo') }}
       </p>
@@ -641,7 +641,7 @@ function actionClass(
           <Loader2
             v-if="isActionRunning(action.id)"
             :size="14"
-            class="channel-picker-action-spinner flex-none animate-spin [animation-duration:0.9s]"
+            class="channel-picker-action-spinner flex-none animate-spin animation-duration-[0.9s]"
           />
           {{ action.label }}
         </Button>

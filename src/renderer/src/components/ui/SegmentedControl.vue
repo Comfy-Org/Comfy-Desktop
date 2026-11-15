@@ -16,14 +16,14 @@ const model = defineModel<T>({ required: true })
     type="single"
     :allow-empty="false"
     roving-focus
-    class="inline-flex shrink-0 gap-0.5 rounded-[10px] bg-secondary p-[3px]"
+    class="inline-flex shrink-0 gap-0.5 rounded-[10px] bg-secondary p-0.75"
     :aria-label="label"
   >
     <ToggleGroupItem
       v-for="option in options"
       :key="option.value"
       :value="option.value"
-      class="h-[26px] rounded-[7px] px-[11px] text-[13px] whitespace-nowrap hover:bg-transparent hover:text-foreground data-[state=on]:bg-accent data-[state=on]:hover:bg-accent"
+      class="h-6.5 rounded-[7px] px-2.75 text-[13px] whitespace-nowrap hover:bg-transparent hover:text-foreground data-[state=on]:bg-accent data-[state=on]:hover:bg-accent"
     >
       {{ option.label
       }}<span

@@ -60,7 +60,7 @@ function formatVersion(v: { formattedVersion: string }): string {
       class="diff-section-title text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
       :class="
         collapsible
-          ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-[3px] hover:text-text'
+          ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-0.75 hover:text-text'
           : 'mb-1'
       "
       @click="collapsible ? (nodesOpen = !nodesOpen) : null"
@@ -68,8 +68,8 @@ function formatVersion(v: { formattedVersion: string }): string {
       <ChevronDown
         v-if="collapsible"
         :size="12"
-        class="diff-section-chevron shrink-0 transition-transform duration-[160ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
-        :class="{ '[transform:rotate(180deg)]': nodesOpen }"
+        class="diff-section-chevron shrink-0 transition-transform duration-160 ease-in-out"
+        :class="{ 'transform-[rotate(180deg)]': nodesOpen }"
       />
       <span>{{ t('snapshots.customNodes') }} ({{ nodeChangeCount }})</span>
     </div>
@@ -112,7 +112,7 @@ function formatVersion(v: { formattedVersion: string }): string {
       class="diff-section-title text-[11px] font-medium text-text-muted uppercase tracking-[0.04em]"
       :class="
         collapsible
-          ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-[3px] hover:text-text'
+          ? 'is-toggle mb-0 flex cursor-pointer select-none items-center gap-1 py-0.75 hover:text-text'
           : 'mb-1'
       "
       @click="collapsible ? (pipsOpen = !pipsOpen) : null"
@@ -120,8 +120,8 @@ function formatVersion(v: { formattedVersion: string }): string {
       <ChevronDown
         v-if="collapsible"
         :size="12"
-        class="diff-section-chevron shrink-0 transition-transform duration-[160ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
-        :class="{ '[transform:rotate(180deg)]': pipsOpen }"
+        class="diff-section-chevron shrink-0 transition-transform duration-160 ease-in-out"
+        :class="{ 'transform-[rotate(180deg)]': pipsOpen }"
       />
       <span>{{ t('snapshots.pipPackages') }} ({{ pipChangeCount }})</span>
     </div>

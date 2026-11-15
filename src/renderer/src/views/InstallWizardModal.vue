@@ -91,7 +91,7 @@ const inlineLinkClass =
   'text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100'
 
 const spinnerClass =
-  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[""] before:[animation-duration:600ms]'
+  'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-border before:border-t-(--action) before:content-[""] before:animation-duration-[600ms]'
 
 const props = withDefaults(
   defineProps<{
@@ -1680,7 +1680,7 @@ defineExpose({ open })
       </div>
       <div
         v-if="sourceError"
-        class="config-error mt-4 text-[13px] leading-[1.4] text-[var(--danger)]"
+        class="config-error mt-4 text-[13px] leading-[1.4] text-danger"
         role="alert"
       >
         {{ sourceError }}
@@ -1688,7 +1688,7 @@ defineExpose({ open })
 
       <div v-if="view === 'summary'" class="config-summary" data-testid="config-summary">
         <div
-          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-[14px] bg-white/5 px-4 py-3"
+          class="config-name-card mt-4 grid grid-cols-[132px_minmax(0,1fr)] items-center gap-x-4 rounded-shell bg-white/5 px-4 py-3"
         >
           <label
             class="config-label flex items-center gap-2.5 text-[13px] leading-5 text-text-muted"
@@ -1704,11 +1704,11 @@ defineExpose({ open })
         </div>
 
         <div
-          class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-[14px] px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
+          class="config-machine relative mt-3 flex items-center gap-7 overflow-hidden rounded-shell px-7 py-6 [background:radial-gradient(ellipse_70%_120%_at_12%_0%,rgb(255_255_255/0.09),transparent_70%),rgb(255_255_255/0.04)]"
           :class="machineBlocked && 'config-machine--unsupported'"
         >
           <SetupMachineIllustration
-            class="h-[88px] w-[136px] flex-none max-[640px]:hidden"
+            class="h-22 w-34 flex-none max-sm:hidden"
             :os="platform"
             :bad="machineBlocked"
           />
@@ -1724,7 +1724,7 @@ defineExpose({ open })
               class="config-gpu-value text-[22px] leading-7 font-semibold tracking-[-0.01em]"
               :class="
                 machineBlocked
-                  ? 'text-[16px] leading-6 break-words text-[var(--danger)]'
+                  ? 'text-[16px] leading-6 wrap-break-word text-danger'
                   : 'truncate text-neutral-100'
               "
               data-testid="detected-gpu-field"
@@ -1745,7 +1745,7 @@ defineExpose({ open })
         </div>
         <div
           v-if="hardwareWarning && !currentSource?.skipInstall"
-          class="config-hardware-warning mt-2 px-1 text-[12px] leading-[1.4] text-[var(--warning)]"
+          class="config-hardware-warning mt-2 px-1 text-[12px] leading-[1.4] text-(--warning)"
           role="alert"
           data-testid="wizard-hardware-warning"
         >
@@ -1753,7 +1753,7 @@ defineExpose({ open })
         </div>
         <div
           v-if="blockingFieldError"
-          class="config-summary-field-error mt-2 px-1 text-[12px] leading-[1.4] text-[var(--danger)]"
+          class="config-summary-field-error mt-2 px-1 text-[12px] leading-[1.4] text-danger"
           role="alert"
           data-testid="config-summary-field-error"
         >
@@ -1808,7 +1808,7 @@ defineExpose({ open })
               }}</span>
               <span
                 v-if="diskShortLabel"
-                class="config-path-required text-[12px] leading-4 text-[var(--warning)]"
+                class="config-path-required text-[12px] leading-4 text-(--warning)"
                 >{{ diskShortLabel }}</span
               >
               <PathDiskInfo
@@ -1822,7 +1822,7 @@ defineExpose({ open })
             <Button
               variant="textonly"
               type="button"
-              class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255_/_0.16)] hover:bg-white/6"
+              class="config-path-browse flex-none px-3 text-neutral-100 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.16)] hover:bg-white/6"
               data-testid="config-summary-browse"
               @click="handleBrowse"
             >
@@ -1842,7 +1842,7 @@ defineExpose({ open })
       <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
         <div
           v-if="hardwareWarning && !currentSource?.skipInstall"
-          class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
+          class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-(--warning)"
           role="alert"
           data-testid="wizard-hardware-warning"
         >
@@ -1907,7 +1907,7 @@ defineExpose({ open })
                   <RefreshCw
                     :size="14"
                     :class="{
-                      'workspace-build-refresh__icon--spinning animate-spin [animation-duration:800ms]':
+                      'workspace-build-refresh__icon--spinning animate-spin animation-duration-[800ms]':
                         authStore.loadingBuilds
                     }"
                     aria-hidden="true"
@@ -2028,14 +2028,14 @@ defineExpose({ open })
                 </div>
                 <div
                   v-if="fieldErrors.get(field.id)"
-                  class="config-field-error mt-1.5 text-[13px] text-[var(--danger)]"
+                  class="config-field-error mt-1.5 text-[13px] text-danger"
                 >
                   {{ fieldErrors.get(field.id) }}
                 </div>
                 <div
                   v-else-if="field.id === 'url' && urlFieldError"
                   :id="`sf-${field.id}-error`"
-                  class="config-field-error mt-1.5 text-[13px] text-[var(--danger)]"
+                  class="config-field-error mt-1.5 text-[13px] text-danger"
                   role="alert"
                 >
                   {{ urlFieldError }}
@@ -2157,7 +2157,7 @@ defineExpose({ open })
           control-height="centered"
         >
           <p
-            class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
+            class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-4.5 text-text-muted"
           >
             <Button
               size="link"
@@ -2200,7 +2200,7 @@ defineExpose({ open })
         >
           <div
             v-if="templateDiskError"
-            class="template-alert template-alert--error flex items-start gap-2 rounded-[10px] bg-[color-mix(in_oklab,var(--danger)_12%,transparent)] px-3 py-2.5 text-[13px] leading-[1.4] text-[var(--danger)] [&_svg]:mt-px [&_svg]:flex-none"
+            class="template-alert template-alert--error flex items-start gap-2 rounded-[10px] bg-[color-mix(in_oklab,var(--danger)_12%,transparent)] px-3 py-2.5 text-[13px] leading-[1.4] text-danger [&_svg]:mt-px [&_svg]:flex-none"
             role="alert"
           >
             <CircleAlert :size="16" aria-hidden="true" />
@@ -2246,7 +2246,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-save-changes min-w-[104px]"
+          class="h-9 rounded-[10px] config-save-changes min-w-26"
           data-testid="config-save-changes"
           @click="saveChangeSetup"
         >
@@ -2281,7 +2281,7 @@ defineExpose({ open })
           type="button"
           size="lg"
           variant="inverted"
-          class="h-9 rounded-[10px] config-continue min-w-[104px]"
+          class="h-9 rounded-[10px] config-continue min-w-26"
           :disabled="!canContinue"
           @click="handleConfigureContinue"
         >
@@ -2314,7 +2314,7 @@ defineExpose({ open })
           size="lg"
           variant="inverted"
           type="button"
-          class="h-9 rounded-[10px] template-install min-w-[104px]"
+          class="h-9 rounded-[10px] template-install min-w-26"
           :class="{
             'template-install--blocked cursor-not-allowed opacity-55': templateInstallBlocked
           }"

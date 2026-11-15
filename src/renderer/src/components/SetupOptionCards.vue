@@ -93,7 +93,7 @@ function setOptionEl(el: unknown, index: number): void {
       :disabled="opt.disabled"
       :tabindex="opt.value === focusableValue ? 0 : -1"
       :class="[
-        'setup-option static flex w-full min-w-0 appearance-auto items-center justify-normal gap-3 rounded-[12px] py-3 pr-3.5 pl-3 text-left [font:inherit] whitespace-normal transition-[background-color] duration-120 ease-[ease] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus-ring)] focus-visible:[outline-style:solid] active:transition-none',
+        'setup-option static flex w-full min-w-0 appearance-auto items-center justify-normal gap-3 rounded-[12px] py-3 pr-3.5 pl-3 text-left [font:inherit] whitespace-normal transition-[background-color] duration-120 ease-[ease] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring focus-visible:outline-solid active:transition-none',
         selectedValue === opt.value
           ? 'setup-option--selected bg-white/10 text-neutral-100 hover:bg-white/10'
           : 'bg-white/4 text-neutral-200 hover:bg-white/7'
@@ -122,13 +122,13 @@ function setOptionEl(el: unknown, index: number): void {
           <span class="truncate">{{ opt.label }}</span>
           <span
             v-if="opt.recommended"
-            class="setup-option__recommended flex-none rounded-[4px] bg-white/16 px-1.5 py-0.5 text-[10px] leading-[14px] font-semibold tracking-[0.04em] text-text-muted uppercase"
+            class="setup-option__recommended flex-none rounded-[4px] bg-white/16 px-1.5 py-0.5 text-[10px] leading-3.5 font-semibold tracking-[0.04em] text-text-muted uppercase"
           >
             {{ $t('newInstall.recommended') }}
           </span>
           <span
             v-if="opt.credits"
-            class="setup-option__credits inline-flex flex-none items-center gap-1 text-[11px] leading-4 font-medium text-[var(--upgrade)]"
+            class="setup-option__credits inline-flex flex-none items-center gap-1 text-[11px] leading-4 font-medium text-(--upgrade)"
           >
             <Crown :size="12" :stroke-width="2.5" aria-hidden="true" />
             {{ $t('standalone.templateApiBadge') }}
@@ -142,7 +142,7 @@ function setOptionEl(el: unknown, index: number): void {
         </span>
       </span>
       <Check
-        class="setup-option__check size-[18px] flex-none self-start text-neutral-100"
+        class="setup-option__check size-4.5 flex-none self-start text-neutral-100"
         :class="selectedValue === opt.value ? 'visible' : 'invisible'"
         :size="15"
         :stroke-width="2.5"

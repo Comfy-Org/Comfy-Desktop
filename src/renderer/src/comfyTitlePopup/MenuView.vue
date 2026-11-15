@@ -108,7 +108,7 @@ onUnmounted(() => {
       />
       <li
         v-else
-        class="item box-border flex h-7 cursor-pointer items-center gap-2 rounded-md px-3 py-0 text-xs whitespace-nowrap transition-[background-color] duration-[80ms] ease-[ease] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+        class="item box-border flex h-7 cursor-pointer items-center gap-2 rounded-md px-3 py-0 text-xs whitespace-nowrap transition-[background-color] duration-80 ease-[ease] hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
         :role="item.id ? 'menuitem' : 'none'"
         :data-index="idx"
         :tabindex="item.id ? -1 : undefined"

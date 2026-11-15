@@ -16,7 +16,7 @@ const props = withDefaults(
 )
 
 const iconClass =
-  'info-tooltip-icon shrink-0 text-text-muted opacity-85 transition-[opacity,color] duration-150 ease-[ease] group-hover/info-tooltip:text-[var(--action)] group-hover/info-tooltip:opacity-100 group-focus-visible/info-tooltip:text-[var(--action)] group-focus-visible/info-tooltip:opacity-100'
+  'info-tooltip-icon shrink-0 text-text-muted opacity-85 transition-[opacity,color] duration-150 ease-[ease] group-hover/info-tooltip:text-(--action) group-hover/info-tooltip:opacity-100 group-focus-visible/info-tooltip:text-(--action) group-focus-visible/info-tooltip:opacity-100'
 
 function openLink(): void {
   if (props.linkUrl) void window.api.openExternal(props.linkUrl)

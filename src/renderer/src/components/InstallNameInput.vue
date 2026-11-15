@@ -31,7 +31,7 @@ const emit = defineEmits<{
   <div
     v-if="error"
     id="inst-name-error"
-    class="config-field-error col-start-2 mt-1.5 text-[13px] text-[var(--danger)]"
+    class="config-field-error col-start-2 mt-1.5 text-[13px] text-danger"
     role="alert"
   >
     {{ error }}

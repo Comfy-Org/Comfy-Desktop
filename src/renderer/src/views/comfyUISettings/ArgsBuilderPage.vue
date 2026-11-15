@@ -20,7 +20,7 @@ interface Props {
 }
 
 const searchClearClass =
-  '[&.args-page-search_.args-page-search-clear]:inline-flex [&.args-page-search_.args-page-search-clear]:items-center [&.args-page-search_.args-page-search-clear]:justify-center [&.args-page-search_.args-page-search-clear]:size-[22px] [&.args-page-search_.args-page-search-clear]:p-0 [&.args-page-search_.args-page-search-clear]:border-none [&.args-page-search_.args-page-search-clear]:bg-transparent [&.args-page-search_.args-page-search-clear]:text-text-muted [&.args-page-search_.args-page-search-clear]:rounded-[4px] [&.args-page-search_.args-page-search-clear]:cursor-pointer [&.args-page-search_.args-page-search-clear]:transition-[color,background-color] [&.args-page-search_.args-page-search-clear]:duration-[120ms] [&.args-page-search_.args-page-search-clear]:ease-[ease] [&.args-page-search_.args-page-search-clear:hover]:text-text [&.args-page-search_.args-page-search-clear:hover]:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-2 [&.args-page-search_.args-page-search-clear:focus-visible]:[outline-style:solid] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-[var(--action)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-offset-1'
+  '[&.args-page-search_.args-page-search-clear]:inline-flex [&.args-page-search_.args-page-search-clear]:items-center [&.args-page-search_.args-page-search-clear]:justify-center [&.args-page-search_.args-page-search-clear]:size-5.5 [&.args-page-search_.args-page-search-clear]:p-0 [&.args-page-search_.args-page-search-clear]:border-none [&.args-page-search_.args-page-search-clear]:bg-transparent [&.args-page-search_.args-page-search-clear]:text-text-muted [&.args-page-search_.args-page-search-clear]:rounded-[4px] [&.args-page-search_.args-page-search-clear]:cursor-pointer [&.args-page-search_.args-page-search-clear]:transition-[color,background-color] [&.args-page-search_.args-page-search-clear]:duration-120 [&.args-page-search_.args-page-search-clear]:ease-[ease] [&.args-page-search_.args-page-search-clear:hover]:text-text [&.args-page-search_.args-page-search-clear:hover]:bg-[color-mix(in_srgb,var(--text)_8%,transparent)] [&.args-page-search_.args-page-search-clear:focus-visible]:outline-2 [&.args-page-search_.args-page-search-clear:focus-visible]:outline-solid [&.args-page-search_.args-page-search-clear:focus-visible]:outline-(--action) [&.args-page-search_.args-page-search-clear:focus-visible]:outline-offset-1'
 
 const props = withDefaults(defineProps<Props>(), {
   pendingRestart: false
@@ -334,7 +334,7 @@ function onRawChange(value: string): void {
         variant="textonly"
         size="unset"
         type="button"
-        class="args-page-back static inline-flex items-center gap-1.5 rounded-md border-none bg-transparent py-1.5 pr-2.5 pl-2 -ml-1 text-[13px] leading-[1.5] font-medium text-text-muted [font-family:inherit] whitespace-normal appearance-auto transition-[color,background-color,transform] duration-[120ms,120ms,80ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-text active:[transform:scale(0.97)] focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--action)] focus-visible:outline-offset-2 focus-visible:ring-0"
+        class="args-page-back static inline-flex items-center gap-1.5 rounded-md border-none bg-transparent py-1.5 pr-2.5 pl-2 -ml-1 text-[13px] leading-normal font-medium text-text-muted [font-family:inherit] whitespace-normal appearance-auto transition-[color,background-color,transform] duration-[120ms,120ms,80ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_6%,transparent)] hover:text-text active:transform-[scale(0.97)] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-(--action) focus-visible:outline-offset-2 focus-visible:ring-0"
         :aria-label="t('common.back')"
         @click="emit('back')"
       >
@@ -349,7 +349,7 @@ function onRawChange(value: string): void {
         </h2>
         <span
           v-if="pendingRestart"
-          class="args-page-restart-tag flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+          class="args-page-restart-tag flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-3.5 font-medium tracking-[0.02em] whitespace-nowrap text-(--warning) uppercase"
           role="status"
         >
           {{ t('comfyUISettings.restartRequired') }}
@@ -407,10 +407,10 @@ function onRawChange(value: string): void {
     >
       <Loader2
         :size="18"
-        class="args-page-state-spinner animate-spin [animation-duration:900ms] motion-reduce:[animation-duration:2400ms]"
+        class="args-page-state-spinner animate-spin animation-duration-[900ms] motion-reduce:animation-duration-[2400ms]"
         aria-hidden="true"
       />
-      <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">
+      <p class="args-page-state-text m-0 text-[13px] leading-normal">
         {{ t('common.loading') }}
       </p>
     </div>
@@ -419,14 +419,14 @@ function onRawChange(value: string): void {
       class="args-page-state flex flex-col items-center gap-2 px-4 py-6 text-center args-page-state-error text-danger"
     >
       <AlertCircle :size="18" aria-hidden="true" />
-      <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">{{ loadError }}</p>
+      <p class="args-page-state-text m-0 text-[13px] leading-normal">{{ loadError }}</p>
     </div>
     <div
       v-else-if="!hasResults"
       class="args-page-state flex flex-col items-center gap-2 px-4 py-6 text-center text-text-muted"
     >
       <SearchX :size="18" aria-hidden="true" />
-      <p class="args-page-state-text m-0 text-[13px] leading-[1.5]">
+      <p class="args-page-state-text m-0 text-[13px] leading-normal">
         {{ t('comfyUISettings.argsNoMatches') }}
       </p>
     </div>
@@ -480,7 +480,7 @@ function onRawChange(value: string): void {
               />
               <p
                 v-if="activeDefInGroup(item.group)?.help"
-                class="args-page-cluster-help mt-1.5 mr-0 mb-0 ml-0 text-[12px] leading-[1.45] text-text-muted [overflow-wrap:anywhere]"
+                class="args-page-cluster-help mt-1.5 mr-0 mb-0 ml-0 text-[12px] leading-[1.45] text-text-muted wrap-anywhere"
               >
                 {{ activeDefInGroup(item.group)!.help }}
               </p>
@@ -489,17 +489,17 @@ function onRawChange(value: string): void {
 
           <template v-else-if="item.kind === 'arg' && item.arg">
             <div
-              class="args-page-arg-row grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2.5 -mx-2.5 rounded-lg px-2.5 py-2 transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]"
+              class="args-page-arg-row grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-2.5 -mx-2.5 rounded-lg px-2.5 py-2 transition-[background-color] duration-120 ease-[ease] hover:bg-[color-mix(in_srgb,var(--text)_4%,transparent)]"
             >
               <Button
                 variant="textonly"
                 size="unset"
                 type="button"
                 role="switch"
-                class="args-page-switch relative mt-0.5 inline-block h-5 w-9 shrink-0 rounded-[999px] border-none p-0 cursor-pointer appearance-auto transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--action)] focus-visible:outline-offset-2 focus-visible:ring-0"
+                class="args-page-switch relative mt-0.5 inline-block h-5 w-9 shrink-0 rounded-[999px] border-none p-0 cursor-pointer appearance-auto transition-[background-color] duration-200 ease-[ease] motion-reduce:duration-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-(--action) focus-visible:outline-offset-2 focus-visible:ring-0"
                 :class="
                   isActive(item.arg.name)
-                    ? 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary)]'
+                    ? 'bg-(--accent-primary) hover:bg-(--accent-primary)'
                     : 'bg-[color-mix(in_srgb,var(--text-muted)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--text-muted)_40%,transparent)]'
                 "
                 :data-state="isActive(item.arg.name) ? 'checked' : 'unchecked'"
@@ -508,18 +508,18 @@ function onRawChange(value: string): void {
                 @click="toggleFlag(item.arg)"
               >
                 <span
-                  class="args-page-switch-thumb absolute top-0.5 left-0.5 size-4 rounded-[50%] transition-transform duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] motion-reduce:duration-0"
+                  class="args-page-switch-thumb absolute top-0.5 left-0.5 size-4 rounded-[50%] transition-transform duration-200 ease-in-out motion-reduce:duration-0"
                   :class="
                     isActive(item.arg.name)
-                      ? '[transform:translateX(16px)] bg-background shadow-none'
-                      : '[transform:translateX(0)] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2),0_1px_1px_rgba(0,0,0,0.08)]'
+                      ? 'transform-[translateX(16px)] bg-background shadow-none'
+                      : 'transform-[translateX(0)] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.2),0_1px_1px_rgba(0,0,0,0.08)]'
                   "
                   aria-hidden="true"
                 ></span>
               </Button>
               <div class="args-page-arg-body flex min-w-0 flex-col gap-0.5">
                 <span
-                  class="args-page-flag [font:13px_ui-monospace,SFMono-Regular,Menlo,monospace] text-text [overflow-wrap:anywhere] [word-break:break-word]"
+                  class="args-page-flag [font:13px_ui-monospace,SFMono-Regular,Menlo,monospace] text-text wrap-anywhere [word-break:break-word]"
                   >--{{ item.arg.name }}</span
                 >
                 <p class="args-page-help m-0 text-[12px] leading-[1.45] text-text-muted">

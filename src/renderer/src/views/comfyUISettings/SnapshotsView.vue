@@ -556,9 +556,7 @@ async function handleImport(): Promise<void> {
 <template>
   <div class="snapshots-view flex flex-col gap-3">
     <header class="snapshots-view-header flex items-center justify-between gap-3">
-      <span
-        class="snapshots-view-latest text-[13px] leading-4 text-[var(--color-subtle-foreground)]"
-      >
+      <span class="snapshots-view-latest text-[13px] leading-4 text-subtle-foreground">
         <template v-if="latestRelative">
           {{ t('snapshots.latestLabel') }}
           {{ latestRelative }}
@@ -609,7 +607,7 @@ async function handleImport(): Promise<void> {
       </div>
     </header>
 
-    <div class="snapshots-panel flex flex-col rounded-[14px] bg-card p-1.5">
+    <div class="snapshots-panel flex flex-col rounded-shell bg-card p-1.5">
       <div
         v-if="showRestoreCard"
         ref="topCardRef"
@@ -636,11 +634,11 @@ async function handleImport(): Promise<void> {
               class="snapshots-rail-dot size-3 shrink-0 rounded-full"
               :class="
                 restoreInFlight
-                  ? 'is-spinning border-2 border-solid border-[color-mix(in_oklch,var(--color-foreground)_14%,transparent)] bg-[conic-gradient(var(--neutral-100)_270deg,transparent_270deg)] animate-spin [animation-duration:0.8s]'
+                  ? 'is-spinning border-2 border-solid border-[color-mix(in_oklch,var(--color-foreground)_14%,transparent)] bg-[conic-gradient(var(--neutral-100)_270deg,transparent_270deg)] animate-spin animation-duration-[0.8s]'
                   : restoreTerminal === 'ok'
-                    ? 'is-restored bg-[var(--success)]'
+                    ? 'is-restored bg-(--success)'
                     : restoreTerminal === 'error'
-                      ? 'is-error bg-[var(--danger)]'
+                      ? 'is-error bg-danger'
                       : 'bg-text-muted'
               "
               :aria-hidden="true"
@@ -692,7 +690,7 @@ async function handleImport(): Promise<void> {
                 class="snapshots-op-bar-track relative h-1 overflow-hidden rounded-full bg-[color-mix(in_oklch,var(--color-foreground)_10%,transparent)]"
               >
                 <div
-                  class="snapshots-op-bar-fill h-full rounded-full bg-neutral-100 transition-[width] duration-[120ms] ease-[ease]"
+                  class="snapshots-op-bar-fill h-full rounded-full bg-neutral-100 transition-[width] duration-120 ease-[ease]"
                   :class="{
                     'is-indeterminate w-[40%] animate-[snapshots-op-bar-indet_1.2s_ease-in-out_infinite]':
                       restorePercent === null
@@ -803,7 +801,7 @@ async function handleImport(): Promise<void> {
         >
           <Camera :size="18" />
         </span>
-        <p class="m-0 max-w-[340px] text-[13px] text-text-muted">{{ t('snapshots.empty') }}</p>
+        <p class="m-0 max-w-85 text-[13px] text-text-muted">{{ t('snapshots.empty') }}</p>
         <Button
           type="button"
           variant="secondary"
@@ -823,20 +821,20 @@ async function handleImport(): Promise<void> {
         <li
           v-for="(item, i) in timeline"
           :key="item.kind === 'snapshot' ? `s-${item.snapshot.filename}` : `c-${i}`"
-          class="snapshots-rail-node relative before:pointer-events-none before:absolute before:top-0 before:bottom-0 before:left-[106px] before:w-px before:bg-[color-mix(in_oklch,var(--color-foreground)_13%,transparent)] before:content-[''] first:before:top-[22px] last:before:bottom-[calc(100%-22px)]"
+          class="snapshots-rail-node relative before:pointer-events-none before:absolute before:top-0 before:bottom-0 before:left-26.5 before:w-px before:bg-[color-mix(in_oklch,var(--color-foreground)_13%,transparent)] before:content-[''] first:before:top-5.5 last:before:bottom-[calc(100%-22px)]"
           :class="{
             'is-snapshot': item.kind === 'snapshot',
             'is-copy': item.kind === 'copy'
           }"
         >
           <span
-            class="snapshots-rail-dot pointer-events-none absolute top-[22px] left-[106.5px] z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full"
+            class="snapshots-rail-dot pointer-events-none absolute top-5.5 left-[106.5px] z-1 -translate-x-1/2 -translate-y-1/2 rounded-full"
             :class="
               item.kind === 'copy'
-                ? 'is-muted size-[7px] bg-[color-mix(in_oklch,var(--color-foreground)_28%,var(--color-content-background))]'
+                ? 'is-muted size-1.75 bg-[color-mix(in_oklch,var(--color-foreground)_28%,var(--color-content-background))]'
                 : item.snapshotIndex === 0
                   ? [
-                      'is-latest size-[11px]',
+                      'is-latest size-2.75',
                       item.snapshot.trigger === 'post-update' ||
                       item.snapshot.trigger === 'post-restore'
                         ? 'is-state bg-neutral-100'
@@ -844,8 +842,8 @@ async function handleImport(): Promise<void> {
                     ]
                   : item.snapshot.trigger === 'post-update' ||
                       item.snapshot.trigger === 'post-restore'
-                    ? 'is-state size-[9px] border-2 border-solid border-neutral-100 bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,var(--color-content-background))]'
-                    : 'size-[9px] border-2 border-solid border-[color-mix(in_oklch,var(--color-foreground)_32%,var(--color-content-background))] bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,var(--color-content-background))]'
+                    ? 'is-state size-2.25 border-2 border-solid border-neutral-100 bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,var(--color-content-background))]'
+                    : 'size-2.25 border-2 border-solid border-[color-mix(in_oklch,var(--color-foreground)_32%,var(--color-content-background))] bg-[color-mix(in_oklch,var(--color-foreground)_3.5%,var(--color-content-background))]'
             "
             :aria-hidden="true"
           ></span>
@@ -878,7 +876,7 @@ async function handleImport(): Promise<void> {
                 :modal="false"
                 align="end"
                 :side-offset="4"
-                class="snapshot-row-menu z-[9999] min-w-[160px]"
+                class="snapshot-row-menu z-toast min-w-40"
                 @update:open="
                   (isOpen: boolean) => (openMenuFilename = isOpen ? item.snapshot.filename : null)
                 "
@@ -937,14 +935,14 @@ async function handleImport(): Promise<void> {
                   type="button"
                   variant="textonly"
                   size="unset"
-                  class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-md border-none bg-transparent py-0.5 pr-1 pl-0 text-[12px] leading-[1.5] font-semibold text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-[var(--color-foreground)] focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-primary)] focus-visible:ring-0"
+                  class="snap-diff-trigger static inline-flex items-center justify-normal gap-1.5 self-start rounded-md border-none bg-transparent py-0.5 pr-1 pl-0 text-[12px] leading-normal font-semibold text-neutral-100 whitespace-normal appearance-auto hover:bg-transparent hover:text-foreground focus-visible:bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--accent-primary) focus-visible:ring-0"
                   :class="{ 'is-open': isDiffOpen(item.snapshot.filename, mode) }"
                   :aria-expanded="isDiffOpen(item.snapshot.filename, mode)"
                   @click="toggleDiff(item.snapshot.filename, mode)"
                 >
                   <ChevronRight
                     :size="13"
-                    class="snap-diff-chevron text-[var(--color-subtle-foreground)] transition-transform duration-150 ease-[ease]"
+                    class="snap-diff-chevron text-subtle-foreground transition-transform duration-150 ease-[ease]"
                     :class="{ 'rotate-90': isDiffOpen(item.snapshot.filename, mode) }"
                   />
                   <span>{{
@@ -955,7 +953,7 @@ async function handleImport(): Promise<void> {
                 </Button>
                 <BaseAccordion :open="isDiffOpen(item.snapshot.filename, mode)">
                   <div
-                    class="snapshots-view-diff mt-1.5 max-h-[280px] overflow-y-auto rounded-[10px] bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] px-3.5 py-3"
+                    class="snapshots-view-diff mt-1.5 max-h-70 overflow-y-auto rounded-[10px] bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] px-3.5 py-3"
                   >
                     <div
                       v-if="isDiffLoading(item.snapshot.filename, mode)"
@@ -989,10 +987,10 @@ async function handleImport(): Promise<void> {
           </SnapshotRow>
           <div
             v-else
-            class="snapshots-view-copy-event flex min-h-11 items-center gap-2.5 rounded-[10px] pr-1.5 pl-2.5 text-[12px] text-[var(--color-subtle-foreground)]"
+            class="snapshots-view-copy-event flex min-h-11 items-center gap-2.5 rounded-[10px] pr-1.5 pl-2.5 text-[12px] text-subtle-foreground"
           >
             <span
-              class="snapshots-view-copy-time w-[76px] shrink-0 truncate"
+              class="snapshots-view-copy-time w-19 shrink-0 truncate"
               :title="formatDate(item.event.copiedAt)"
               >{{ _formatRelative(item.event.copiedAt, t) }}</span
             >

@@ -157,17 +157,17 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
 
     <ul
       v-else
-      class="downloads-list m-0 flex min-h-0 flex-auto list-none flex-col gap-2 overflow-y-auto p-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      class="downloads-list m-0 flex min-h-0 flex-auto list-none flex-col gap-2 overflow-y-auto p-4 scrollbar-none [&::-webkit-scrollbar]:hidden"
     >
       <li
         v-for="d in orderedEntries"
         :key="d.id ?? d.url"
-        class="downloads-item flex items-center gap-2 rounded-lg px-4 py-3 transition-[background] duration-[220ms] ease-[ease]"
+        class="downloads-item flex items-center gap-2 rounded-lg px-4 py-3 transition-[background] duration-220 ease-[ease]"
         :class="[
           statusKindClass(d),
           d.status === 'error' || d.status === 'cancelled'
             ? 'bg-[color-mix(in_srgb,var(--downloads-card)_50%,transparent)]'
-            : 'bg-[var(--downloads-card)]',
+            : 'bg-(--downloads-card)',
           {
             'is-finished': isTerminal(d),
             'is-clickable cursor-pointer hover:bg-[color-mix(in_srgb,var(--downloads-card)_85%,var(--neutral-500))]':
@@ -197,7 +197,7 @@ function progressStyle(d: DownloadEntry): Record<string, string> | undefined {
               <LoaderCircle
                 v-else
                 :size="16"
-                class="spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                class="spin animate-spin animation-duration-[900ms] motion-reduce:animate-none"
               />
             </template>
           </DownloadThumbnail>

@@ -79,7 +79,7 @@ const panelWidthClass = computed(() => {
 })
 
 const linkClass =
-  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--action)] [&_.modal-link]:underline'
+  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-(--action) [&_.modal-link]:underline'
 </script>
 
 <template>
@@ -92,9 +92,9 @@ const linkClass =
     :dismiss-on-outside="dismissOnOutside"
     :prevent-scroll="preventScroll"
     :data-testid="testIdRoot"
-    overlay-class="base-alert-overlay fixed inset-0 z-[1000] grid place-items-center bg-neutral-800/60 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
+    overlay-class="base-alert-overlay fixed inset-0 z-1000 grid place-items-center bg-neutral-800/60 px-[clamp(16px,4vw,48px)] py-[clamp(32px,6vh,72px)]"
     :content-class="[
-      'base-alert-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-[var(--modal-surface-shadow)]',
+      'base-alert-panel flex min-w-80 flex-col overflow-hidden rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4 text-neutral-100 shadow-(--modal-surface-shadow)',
       panelWidthClass,
       hasDetails ? 'max-h-[min(80vh,640px)]' : 'max-h-[min(80vh,560px)]',
       { 'base-alert-panel--rich': hasDetails, 'base-alert-panel--wide-actions': hasWideActions }
@@ -112,7 +112,7 @@ const linkClass =
         type="button"
         variant="muted-textonly"
         size="icon"
-        class="base-alert-close-icon absolute -top-1 right-[18px]"
+        class="base-alert-close-icon absolute -top-1 right-4.5"
         :aria-label="$t('common.close')"
         :data-testid="testIdCloseIcon ?? 'base-alert-close-icon'"
         @click="emit('cancel')"
@@ -122,7 +122,7 @@ const linkClass =
     </header>
     <div
       v-if="message || hint || hasDetails || $slots.default || $slots.extra"
-      class="base-alert-message mb-5 min-h-0 flex-auto overflow-y-auto text-sm leading-[1.5] whitespace-pre-line text-text-muted select-text"
+      class="base-alert-message mb-5 min-h-0 flex-auto overflow-y-auto text-sm leading-normal whitespace-pre-line text-text-muted select-text"
     >
       <slot>
         <div
@@ -139,11 +139,11 @@ const linkClass =
             class="base-alert-detail-group flex flex-col gap-1"
           >
             <span
-              class="base-alert-detail-label text-xs leading-[1.5] font-semibold tracking-[0.04em] text-text-muted uppercase"
+              class="base-alert-detail-label text-xs leading-normal font-semibold tracking-[0.04em] text-text-muted uppercase"
               >{{ group.label }}</span
             >
             <div
-              class="base-alert-detail-recessed max-h-[220px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
+              class="base-alert-detail-recessed max-h-55 overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
               @click="handleModalLinkClick"
             >
               <div

@@ -381,11 +381,11 @@ defineExpose({ open, resetContinue })
     data-testid="setup-screen"
   >
     <ComfyWordmark
-      class="absolute top-5 left-1/2 h-7 w-[100px] -translate-x-1/2 text-[#f0f0f0]"
+      class="absolute top-5 left-1/2 h-7 w-25 -translate-x-1/2 text-[#f0f0f0]"
       aria-hidden="true"
     />
 
-    <div class="m-auto flex w-[638px] max-w-[calc(100%-48px)] flex-col py-24">
+    <div class="m-auto flex w-159.5 max-w-[calc(100%-48px)] flex-col py-24">
       <template v-if="step === 'setup'">
         <h1 class="m-0 text-[22px]/[27px] font-semibold text-foreground">{{ title }}</h1>
         <p class="mt-1.5 mb-0 text-[13px]/4 text-muted-foreground" data-testid="setup-lead">
@@ -393,7 +393,7 @@ defineExpose({ open, resetContinue })
         </p>
 
         <section
-          class="relative mt-[26px] flex h-[165px] items-center overflow-hidden rounded-[18px] border border-white/7 bg-[rgb(137_137_137/0.05)] pr-8 pl-[35px]"
+          class="relative mt-6.5 flex h-41.25 items-center overflow-hidden rounded-[18px] border border-white/7 bg-[rgb(137_137_137/0.05)] pr-8 pl-8.75"
           :aria-label="t('setup.computer')"
           data-testid="setup-machine"
         >
@@ -402,22 +402,22 @@ defineExpose({ open, resetContinue })
             aria-hidden="true"
           />
           <BuildDeviceArt
-            class="relative h-[104px] w-[162px] shrink-0"
+            class="relative h-26 w-40.5 shrink-0"
             :kind="deviceKindForPlatform(platform)"
             glow="#46464A"
           />
-          <div class="relative ml-[33px] flex min-w-0 flex-1 flex-col">
-            <span class="flex h-[15px] items-center gap-1.5 text-xs/[15px] text-muted-foreground">
+          <div class="relative ml-8.25 flex min-w-0 flex-1 flex-col">
+            <span class="flex h-3.75 items-center gap-1.5 text-xs/[15px] text-muted-foreground">
               <Check :size="11" :stroke-width="2" aria-hidden="true" />
               {{ t('setup.detected') }}
             </span>
             <span
-              class="mt-[5px] truncate text-[22px]/[27px] font-semibold text-foreground"
+              class="mt-1.25 truncate text-[22px]/[27px] font-semibold text-foreground"
               data-testid="setup-machine-name"
             >
               {{ machine || t('setup.thisComputer') }}
             </span>
-            <span class="mt-[3px] h-4 text-[13px]/4 text-subtle-foreground">
+            <span class="mt-0.75 h-4 text-[13px]/4 text-subtle-foreground">
               {{ memoryGb ? t('setup.memory', { gb: memoryGb }) : '' }}
             </span>
           </div>
@@ -425,7 +425,7 @@ defineExpose({ open, resetContinue })
             type="button"
             variant="secondary"
             size="unset"
-            class="relative h-8 shrink-0 rounded-lg bg-[rgb(244_244_244/0.09)] px-[13px] text-[13px]/4 font-normal text-foreground hover:bg-[rgb(244_244_244/0.14)]"
+            class="relative h-8 shrink-0 rounded-lg bg-[rgb(244_244_244/0.09)] px-3.25 text-[13px]/4 font-normal text-foreground hover:bg-[rgb(244_244_244/0.14)]"
             data-testid="setup-change"
             @click="request('change')"
           >
@@ -434,7 +434,7 @@ defineExpose({ open, resetContinue })
         </section>
 
         <section
-          class="mt-3 flex flex-col gap-8 rounded-[14px] border border-white/7 bg-[rgb(230_230_230/0.04)] py-5 pr-[31px] pl-[33px]"
+          class="mt-3 flex flex-col gap-8 rounded-shell border border-white/7 bg-[rgb(230_230_230/0.04)] py-5 pr-7.75 pl-8.25"
           :aria-label="t('setup.summary')"
           data-testid="setup-summary"
         >
@@ -606,7 +606,7 @@ defineExpose({ open, resetContinue })
             <Loader2
               v-if="busy"
               :size="14"
-              class="animate-spin [animation-duration:750ms]"
+              class="animate-spin animation-duration-[750ms]"
               aria-hidden="true"
             />
             {{ migrating ? t('setup.migrate') : t('setup.install') }}

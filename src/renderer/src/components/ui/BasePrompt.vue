@@ -53,7 +53,7 @@ const TITLE_ID = `base-prompt-title-${useId()}`
 const inputId = `base-prompt-input-${useId()}`
 
 const linkClass =
-  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-[var(--action)] [&_.modal-link]:underline'
+  '[&_.modal-link]:cursor-pointer [&_.modal-link]:text-(--action) [&_.modal-link]:underline'
 
 const inputValue = ref('')
 const error = ref('')
@@ -107,7 +107,7 @@ watch(
       </h2>
     </template>
 
-    <div class="base-prompt-body flex flex-col gap-3.5 text-sm leading-[1.5] text-text-muted">
+    <div class="base-prompt-body flex flex-col gap-3.5 text-sm leading-normal text-text-muted">
       <div
         v-if="message"
         class="base-prompt-message whitespace-pre-line select-text [&_strong]:font-semibold [&_strong]:text-text"
@@ -123,11 +123,11 @@ watch(
           class="base-prompt-detail-group flex flex-col gap-1"
         >
           <span
-            class="base-prompt-detail-label text-xs leading-[1.5] font-semibold tracking-[0.04em] text-text-muted uppercase"
+            class="base-prompt-detail-label text-xs leading-normal font-semibold tracking-[0.04em] text-text-muted uppercase"
             >{{ group.label }}</span
           >
           <div
-            class="base-prompt-detail-recessed max-h-[200px] overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
+            class="base-prompt-detail-recessed max-h-50 overflow-y-auto rounded-lg border border-solid border-neutral-100/8 bg-neutral-100/4 px-2.5 py-2"
             @click="handleModalLinkClick"
           >
             <div

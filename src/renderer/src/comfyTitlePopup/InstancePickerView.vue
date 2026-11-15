@@ -464,7 +464,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
 </script>
 
 <template>
-  <div class="picker flex size-full box-border flex-col bg-[var(--modal-surface-bg)]">
+  <div class="picker flex size-full box-border flex-col bg-(--modal-surface-bg)">
     <div
       class="picker-search flex items-center gap-1 border-b border-solid border-border px-3 py-2"
     >
@@ -490,7 +490,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
     </div>
 
     <div
-      class="picker-chips-row flex items-center gap-2 border-b border-solid border-[var(--brand-surface-border-hover,var(--chooser-surface-border))] px-4 pt-2 pb-2.5"
+      class="picker-chips-row flex items-center gap-2 border-b border-solid border-(--brand-surface-border-hover,var(--chooser-surface-border)) px-4 pt-2 pb-2.5"
     >
       <template v-if="isInstallHost">
         <Tooltip :text="$t('instancePicker.openDashboardHint')" side="bottom">
@@ -509,7 +509,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
           </Button>
         </Tooltip>
         <span
-          class="picker-chips-divider inline-block h-4 w-px flex-none bg-[var(--brand-surface-border-hover,var(--chooser-surface-border))]"
+          class="picker-chips-divider inline-block h-4 w-px flex-none bg-(--brand-surface-border-hover,var(--chooser-surface-border))"
           aria-hidden="true"
         ></span>
       </template>
@@ -534,11 +534,11 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
 
     <div class="picker-body grid min-h-0 flex-[1_1_0] grid-cols-[280px_minmax(0,1fr)]">
       <div
-        class="picker-left flex min-h-0 min-w-0 flex-col border-r border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)]"
+        class="picker-left flex min-h-0 min-w-0 flex-col border-r border-solid border-(--chooser-surface-border) bg-(--modal-surface-bg)"
       >
         <div class="picker-list-section flex min-h-0 flex-auto flex-col overflow-hidden">
           <div
-            class="picker-list-section-title mb-3.5 flex flex-none items-center pt-3 pr-[18px] pb-0 pl-4 text-[14px] leading-5 font-medium text-neutral-100 opacity-70"
+            class="picker-list-section-title mb-3.5 flex flex-none items-center pt-3 pr-4.5 pb-0 pl-4 text-[14px] leading-5 font-medium text-neutral-100 opacity-70"
           >
             {{ $t('instancePicker.instances')
             }}<InfoTooltip :text="$t('tooltips.instances')" side="bottom" />
@@ -548,9 +548,9 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
             tag="div"
             name="picker-row"
             enter-active-class="picker-row-enter-active [transition:opacity_200ms_ease,transform_200ms_cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:duration-[1ms]"
-            enter-from-class="picker-row-enter-from opacity-0 [transform:translateY(8px)_scale(0.98)] motion-reduce:transform-none"
+            enter-from-class="picker-row-enter-from opacity-0 transform-[translateY(8px)_scale(0.98)] motion-reduce:transform-none"
             leave-active-class="picker-row-leave-active absolute [transition:opacity_140ms_ease,transform_140ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
-            leave-to-class="picker-row-leave-to opacity-0 [transform:scale(0.98)] motion-reduce:transform-none"
+            leave-to-class="picker-row-leave-to opacity-0 transform-[scale(0.98)] motion-reduce:transform-none"
             move-class="picker-row-move [transition:transform_220ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:duration-[1ms]"
             class="picker-list relative flex min-h-0 flex-auto flex-col gap-1 overflow-y-auto"
             role="listbox"
@@ -572,7 +572,7 @@ async function handleExpandedNav(decision: NavDecision): Promise<void> {
             <div
               v-if="showEmptyHint"
               key="__empty"
-              class="picker-list-empty px-[18px] py-2 text-[14px] text-neutral-100"
+              class="picker-list-empty px-4.5 py-2 text-[14px] text-neutral-100"
             >
               {{ $t('instancePicker.noMatches') }}
             </div>

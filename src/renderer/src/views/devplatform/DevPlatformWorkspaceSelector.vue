@@ -92,7 +92,7 @@ function onSelectWorkspace(workspaceId: string): void {
       v-model:open="menuOpen"
       :modal="false"
       :side="side"
-      class="workspace-selector__menu z-20 min-w-[260px] max-w-[340px]"
+      class="workspace-selector__menu z-20 min-w-65 max-w-85"
       :aria-label="$t('devPlatform.workspace.switchLabel')"
       data-testid="devplatform-workspace-menu"
     >

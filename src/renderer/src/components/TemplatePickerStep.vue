@@ -141,10 +141,10 @@ defineExpose({ shownDiskError })
         role="tab"
         :aria-selected="activeModality === tab.modality"
         :class="[
-          'tps__tab static inline-flex appearance-auto items-center justify-normal gap-1.5 rounded-md border border-solid px-3.5 py-2 font-sans text-[13px] leading-[inherit] font-normal whitespace-normal touch-auto transition-[border-color,background,color] duration-160 ease-[ease] [&]:[appearance:button] hover:border-[var(--brand-surface-border-hover)] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2',
+          'tps__tab static inline-flex appearance-auto items-center justify-normal gap-1.5 rounded-md border border-solid px-3.5 py-2 font-sans text-[13px] leading-[inherit] font-normal whitespace-normal touch-auto transition-[border-color,background,color] duration-160 ease-[ease] [&]:[appearance:button] hover:border-(--brand-surface-border-hover) hover:bg-(--brand-surface-bg-hover) focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-2',
           activeModality === tab.modality
             ? 'tps__tab--selected border-[color-mix(in_oklab,var(--neutral-100)_45%,transparent)] bg-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)] text-neutral-100 hover:border-[color-mix(in_oklab,var(--neutral-100)_45%,transparent)] hover:bg-[color-mix(in_oklab,var(--neutral-100)_12%,transparent)]'
-            : 'border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] text-neutral-200'
+            : 'border-(--brand-surface-border) bg-(--brand-surface-bg) text-neutral-200'
         ]"
         @click="selectTab(tab.modality)"
       >
@@ -174,10 +174,10 @@ defineExpose({ shownDiskError })
         :aria-checked="selectedValue === opt.value"
         :title="opt.description || undefined"
         :class="[
-          'tps__card group/template relative isolate flex appearance-auto flex-col items-stretch justify-normal gap-0 overflow-hidden rounded-xl border border-solid bg-[var(--chooser-surface-bg)] p-0 font-sans text-sm leading-[inherit] font-normal whitespace-normal text-text touch-auto transition-[border-color,box-shadow] duration-140 ease-[ease] [&]:[appearance:button] hover:bg-[var(--chooser-surface-bg)] hover:border-[var(--brand-surface-border-hover)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2',
+          'tps__card group/template relative isolate flex appearance-auto flex-col items-stretch justify-normal gap-0 overflow-hidden rounded-xl border border-solid bg-(--chooser-surface-bg) p-0 font-sans text-sm leading-[inherit] font-normal whitespace-normal text-text touch-auto transition-[border-color,box-shadow] duration-140 ease-[ease] [&]:[appearance:button] hover:bg-(--chooser-surface-bg) hover:border-(--brand-surface-border-hover) focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-2',
           selectedValue === opt.value
             ? 'tps__card--selected border-neutral-100 [box-shadow:0_0_0_1px_var(--neutral-100),0_8px_24px_color-mix(in_oklab,var(--neutral-950)_45%,transparent)] [&[aria-checked=true]:focus-visible]:[box-shadow:0_0_0_1px_var(--neutral-100),0_8px_24px_color-mix(in_oklab,var(--neutral-950)_45%,transparent)]'
-            : 'border-[var(--brand-surface-border)]'
+            : 'border-(--brand-surface-border)'
         ]"
         @click="emit('select', opt)"
         @keydown="onRowKeydown($event, index)"
@@ -200,7 +200,7 @@ defineExpose({ shownDiskError })
             :class="[
               'tps__card-img absolute inset-0 size-full object-cover [transition:opacity_200ms_ease,transform_260ms_ease] motion-reduce:transition-none',
               thumbLoaded[opt.value]
-                ? 'tps__card-img--ready opacity-100 group-hover/template:[transform:scale(1.05)] motion-reduce:group-hover/template:[transform:none]'
+                ? 'tps__card-img--ready opacity-100 group-hover/template:transform-[scale(1.05)] motion-reduce:group-hover/template:transform-none'
                 : 'opacity-0'
             ]"
             @load="thumbLoaded[opt.value] = true"
@@ -209,7 +209,7 @@ defineExpose({ shownDiskError })
 
           <span
             v-if="selectedValue === opt.value"
-            class="tps__check absolute top-2.5 right-2.5 z-1 inline-flex size-[22px] items-center justify-center rounded-[999px] bg-neutral-50 text-neutral-950 [box-shadow:0_2px_8px_color-mix(in_oklab,var(--neutral-950)_55%,transparent)]"
+            class="tps__check absolute top-2.5 right-2.5 z-1 inline-flex size-5.5 items-center justify-center rounded-[999px] bg-neutral-50 text-neutral-950 [box-shadow:0_2px_8px_color-mix(in_oklab,var(--neutral-950)_55%,transparent)]"
             aria-hidden="true"
           >
             <Check :size="13" :stroke-width="3" />
@@ -224,14 +224,14 @@ defineExpose({ shownDiskError })
 
         <span
           v-if="isApiNodeTemplate(opt)"
-          class="tps__api absolute top-2 left-2 z-1 inline-flex items-center gap-1 rounded-[999px] bg-neutral-900 px-[9px] py-1 text-[9px] font-bold tracking-[0.06em] whitespace-nowrap text-[var(--upgrade)] uppercase [box-shadow:0_2px_10px_color-mix(in_oklab,var(--neutral-950)_55%,transparent)]"
+          class="tps__api absolute top-2 left-2 z-1 inline-flex items-center gap-1 rounded-[999px] bg-neutral-900 px-2.25 py-1 text-[9px] font-bold tracking-[0.06em] whitespace-nowrap text-(--upgrade) uppercase [box-shadow:0_2px_10px_color-mix(in_oklab,var(--neutral-950)_55%,transparent)]"
         >
           <Crown :size="12" :stroke-width="2.5" aria-hidden="true" />
           {{ t('standalone.templateApiBadge') }}
         </span>
 
         <span
-          class="tps__card-footer flex items-baseline justify-between gap-2.5 border-t border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-2.5 text-left"
+          class="tps__card-footer flex items-baseline justify-between gap-2.5 border-t border-solid border-(--brand-surface-border) bg-(--brand-surface-bg) px-3 py-2.5 text-left"
         >
           <span class="tps__card-text flex min-w-0 flex-auto flex-col gap-px">
             <TruncatedText
@@ -254,7 +254,7 @@ defineExpose({ shownDiskError })
           </Tooltip>
           <Crown
             v-else-if="hasNothingToDownload(opt)"
-            class="tps__card-crown flex-none text-[var(--upgrade)]"
+            class="tps__card-crown flex-none text-(--upgrade)"
             :size="14"
             :stroke-width="2.5"
             :aria-hidden="true"

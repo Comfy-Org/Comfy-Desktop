@@ -57,7 +57,7 @@ watch(open, (isOpen) => {
       :modal="false"
       align="end"
       :side-offset="6"
-      class="z-[9999] min-w-0 max-w-80"
+      class="z-toast min-w-0 max-w-80"
       :aria-label="menuLabel"
     >
       <template #trigger>
@@ -65,7 +65,7 @@ watch(open, (isOpen) => {
           type="button"
           variant="inverted"
           size="md"
-          class="w-[30px] rounded-none border-l border-solid border-background/18 p-0 data-[state=open]:bg-foreground/80"
+          class="w-7.5 rounded-none border-l border-solid border-background/18 p-0 data-[state=open]:bg-foreground/80"
           :aria-label="menuLabel"
           :data-testid="menuTestid"
         >

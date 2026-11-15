@@ -98,14 +98,14 @@ function onKeydown(e: KeyboardEvent): void {
     </BaseInput>
     <ul
       v-if="autocomplete.visible.value"
-      class="args-raw-input-ac absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-[280px] list-none overflow-y-auto rounded-lg border border-solid border-[var(--border)] bg-popover p-1 shadow-[0_8px_24px_rgba(0,0,0,0.32)]"
+      class="args-raw-input-ac absolute top-[calc(100%+4px)] right-0 left-0 z-50 m-0 max-h-70 list-none overflow-y-auto rounded-lg border border-solid border-border bg-popover p-1 shadow-[0_8px_24px_rgba(0,0,0,0.32)]"
       role="listbox"
       :aria-label="t('comfyUISettings.argsAutocompleteLabel')"
     >
       <li
         v-for="(m, i) in autocomplete.matches.value"
         :key="m.name"
-        class="args-raw-input-ac-item flex min-h-7 cursor-pointer items-baseline gap-2 rounded-md px-3 py-1.5 text-xs text-text transition-[background-color] duration-[120ms] ease-[ease] hover:bg-accent"
+        class="args-raw-input-ac-item flex min-h-7 cursor-pointer items-baseline gap-2 rounded-md px-3 py-1.5 text-xs text-text transition-[background-color] duration-120 ease-[ease] hover:bg-accent"
         :class="{ 'selected bg-accent': i === autocomplete.acIndex.value }"
         role="option"
         :aria-selected="i === autocomplete.acIndex.value"
@@ -113,7 +113,7 @@ function onKeydown(e: KeyboardEvent): void {
         @mouseenter="autocomplete.acIndex.value = i"
       >
         <span
-          class="args-raw-input-ac-flag shrink-0 font-[family-name:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace)] font-semibold text-[var(--accent-primary)]"
+          class="args-raw-input-ac-flag shrink-0 font-[family-name:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,monospace)] font-semibold text-(--accent-primary)"
           >{{ m.flag }}</span
         >
         <span
@@ -127,7 +127,7 @@ function onKeydown(e: KeyboardEvent): void {
         }}</span>
       </li>
       <li
-        class="args-raw-input-ac-hint mt-0.5 cursor-default border-t border-solid border-[var(--border)] px-3 pt-1 pb-0.5 text-right text-[10px] text-[color:color-mix(in_srgb,var(--text-muted)_70%,transparent)]"
+        class="args-raw-input-ac-hint mt-0.5 cursor-default border-t border-solid border-border px-3 pt-1 pb-0.5 text-right text-[10px] text-[color-mix(in_srgb,var(--text-muted)_70%,transparent)]"
         aria-hidden="true"
       >
         {{ t('comfyUISettings.argsAutocompleteHint') }}
@@ -136,7 +136,7 @@ function onKeydown(e: KeyboardEvent): void {
 
     <div
       v-if="validation && showTokenDisplay && validation.tokens.length"
-      class="args-raw-tokens mt-1.5 flex flex-wrap gap-x-1.5 gap-y-1 rounded-md border border-solid border-[var(--chooser-surface-border)] bg-neutral-800 px-2.5 py-1.5 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] leading-[1.5] text-text-muted"
+      class="args-raw-tokens mt-1.5 flex flex-wrap gap-x-1.5 gap-y-1 rounded-md border border-solid border-(--chooser-surface-border) bg-neutral-800 px-2.5 py-1.5 font-[family-name:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] leading-normal text-text-muted"
       aria-hidden="true"
     >
       <span
@@ -145,9 +145,9 @@ function onKeydown(e: KeyboardEvent): void {
         :class="{
           'token-bad text-danger underline decoration-wavy underline-offset-[3px]':
             tok.status === 'unsupported' || tok.status === 'orphaned',
-          'token-missing text-[var(--warning)] underline decoration-wavy underline-offset-[3px]':
+          'token-missing text-(--warning) underline decoration-wavy underline-offset-[3px]':
             tok.status === 'missing-value',
-          'token-awaiting text-[var(--accent-primary)] underline decoration-dotted underline-offset-[3px]':
+          'token-awaiting text-(--accent-primary) underline decoration-dotted underline-offset-[3px]':
             tok.status === 'awaiting-value',
           'token-partial text-text-muted opacity-60': tok.status === 'partial'
         }"
@@ -159,7 +159,7 @@ function onKeydown(e: KeyboardEvent): void {
     <template v-if="validation">
       <p
         v-if="validation.awaiting"
-        class="args-raw-validation args-raw-validation-info mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-[var(--accent-primary)] bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)]"
+        class="args-raw-validation args-raw-validation-info mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-normal [&_svg]:mt-0.5 [&_svg]:shrink-0 text-(--accent-primary) bg-[color-mix(in_srgb,var(--accent-primary)_12%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />
@@ -170,7 +170,7 @@ function onKeydown(e: KeyboardEvent): void {
       </p>
       <p
         v-if="validation.unsupportedFlags.length > 0"
-        class="args-raw-validation args-raw-validation-error mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
+        class="args-raw-validation args-raw-validation-error mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-normal [&_svg]:mt-0.5 [&_svg]:shrink-0 text-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />
@@ -186,7 +186,7 @@ function onKeydown(e: KeyboardEvent): void {
       </p>
       <p
         v-if="validation.missingValueFlags.length > 0"
-        class="args-raw-validation args-raw-validation-warn mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-[var(--warning)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)]"
+        class="args-raw-validation args-raw-validation-warn mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-normal [&_svg]:mt-0.5 [&_svg]:shrink-0 text-(--warning) bg-[color-mix(in_srgb,var(--warning)_14%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />
@@ -202,7 +202,7 @@ function onKeydown(e: KeyboardEvent): void {
       </p>
       <p
         v-if="validation.orphanedTokens.length > 0"
-        class="args-raw-validation args-raw-validation-error mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-[1.5] [&_svg]:mt-0.5 [&_svg]:shrink-0 text-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
+        class="args-raw-validation args-raw-validation-error mt-1.5 flex flex-wrap items-start gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] leading-normal [&_svg]:mt-0.5 [&_svg]:shrink-0 text-danger bg-[color-mix(in_srgb,var(--danger)_12%,transparent)]"
         role="status"
       >
         <AlertCircle :size="12" aria-hidden="true" />

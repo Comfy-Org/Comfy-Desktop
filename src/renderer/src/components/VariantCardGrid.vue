@@ -20,10 +20,10 @@ defineEmits<{
       role="button"
       tabindex="0"
       :class="[
-        'variant-card cursor-pointer rounded-lg border-2 border-solid bg-[var(--surface)] px-3 py-3.5 text-center transition-[border-color] duration-150 ease-[ease]',
+        'variant-card cursor-pointer rounded-lg border-2 border-solid bg-surface px-3 py-3.5 text-center transition-[border-color] duration-150 ease-[ease]',
         selectedValue === opt.value
-          ? 'border-[var(--selected)] hover:border-[var(--selected)]'
-          : 'border-[var(--border)] hover:border-[var(--border-hover)]',
+          ? 'border-selected hover:border-selected'
+          : 'border-border hover:border-border-hover',
         {
           selected: selectedValue === opt.value,
           recommended: opt.recommended
@@ -34,7 +34,7 @@ defineEmits<{
       @keydown.space.prevent="$emit('select', opt)"
     >
       <div
-        class="variant-card-icon mx-auto mt-0 mb-2.5 flex size-24 items-center justify-center overflow-hidden rounded-xl bg-[var(--bg)]"
+        class="variant-card-icon mx-auto mt-0 mb-2.5 flex size-24 items-center justify-center overflow-hidden rounded-xl bg-bg"
       >
         <img
           v-if="getVariantImage(opt)"
@@ -50,7 +50,7 @@ defineEmits<{
       <div class="variant-card-label text-base font-semibold text-text">{{ opt.label }}</div>
       <div
         v-if="opt.recommended"
-        class="variant-card-badge mt-1.5 inline-block rounded-[3px] bg-[color-mix(in_srgb,var(--action)_15%,transparent)] px-1.5 py-px text-[11px] font-semibold tracking-[0.5px] text-[var(--action)] uppercase"
+        class="variant-card-badge mt-1.5 inline-block rounded-[3px] bg-[color-mix(in_srgb,var(--action)_15%,transparent)] px-1.5 py-px text-[11px] font-semibold tracking-[0.5px] text-(--action) uppercase"
       >
         {{ $t('newInstall.recommended') }}
       </div>

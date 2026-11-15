@@ -272,7 +272,7 @@ defineExpose({ open })
 </script>
 
 <template>
-  <ModalShell binding content-class="max-w-[620px]" @close="emit('close')">
+  <ModalShell binding content-class="max-w-155" @close="emit('close')">
     <template #header>
       <div class="flex min-w-0 flex-auto flex-col items-start gap-3 [&_.takeover-header]:w-full">
         <TakeoverBack :label="$t('common.backToDashboard')" @back="emit('close')" />
@@ -285,7 +285,7 @@ defineExpose({ open })
     <div class="quick-install-scroll min-h-0 flex-1 overflow-y-auto pr-2">
       <div
         v-if="loading"
-        class="quick-install-status flex items-center gap-2.5 py-3 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:[animation-duration:0.6s] before:content-['']"
+        class="quick-install-status flex items-center gap-2.5 py-3 text-[14px] text-text-muted before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-border before:border-t-(--action) before:animation-duration-[0.6s] before:content-['']"
       >
         {{ $t('newInstall.loading') }}
       </div>
@@ -300,7 +300,7 @@ defineExpose({ open })
         </p>
 
         <div
-          class="quick-install-hardware mb-4 rounded-md border border-solid border-[var(--border)] bg-surface px-3 py-2 text-[13px] text-text-muted empty:hidden"
+          class="quick-install-hardware mb-4 rounded-md border border-solid border-border bg-surface px-3 py-2 text-[13px] text-text-muted empty:hidden"
         >
           {{ detectedGpu }}
         </div>
@@ -331,14 +331,14 @@ defineExpose({ open })
     </div>
 
     <div
-      class="quick-install-footer grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 pt-4 [&>:last-child]:justify-self-end"
+      class="quick-install-footer grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 pt-4 *:last:justify-self-end"
     >
       <div></div>
       <div></div>
       <Button
         variant="inverted"
         size="unset"
-        class="quick-install-button static inline-block rounded-lg border border-solid border-[var(--accent-primary)] bg-[var(--accent-primary)] px-8 py-2.5 text-[14px] leading-[1.5] font-medium whitespace-normal text-[var(--color-background)] appearance-auto transition-none hover:border-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:border-[var(--accent-hover)] enabled:hover:bg-[var(--accent-hover)] hover:[transition:background_120ms_ease,border-color_120ms_ease] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40 focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] data-[installing=true]:pointer-events-none data-[installing=true]:opacity-70 data-[installing=true]:disabled:opacity-70 data-[installing=true]:after:ml-1.5 data-[installing=true]:after:inline-block data-[installing=true]:after:size-3 data-[installing=true]:after:animate-spin data-[installing=true]:after:rounded-[50%] data-[installing=true]:after:border-2 data-[installing=true]:after:border-solid data-[installing=true]:after:border-[var(--text-faint)] data-[installing=true]:after:border-t-[var(--action)] data-[installing=true]:after:align-middle data-[installing=true]:after:[animation-duration:0.6s] data-[installing=true]:after:content-['']"
+        class="quick-install-button static inline-block rounded-lg border border-solid border-(--accent-primary) bg-(--accent-primary) px-8 py-2.5 text-[14px] leading-normal font-medium whitespace-normal text-background appearance-auto transition-none hover:border-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] hover:bg-[color-mix(in_srgb,var(--accent-primary)_85%,#000)] enabled:hover:border-accent-hover enabled:hover:bg-accent-hover hover:[transition:background_120ms_ease,border-color_120ms_ease] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40 focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] data-[installing=true]:pointer-events-none data-[installing=true]:opacity-70 data-[installing=true]:disabled:opacity-70 data-[installing=true]:after:ml-1.5 data-[installing=true]:after:inline-block data-[installing=true]:after:size-3 data-[installing=true]:after:animate-spin data-[installing=true]:after:rounded-[50%] data-[installing=true]:after:border-2 data-[installing=true]:after:border-solid data-[installing=true]:after:border-(--text-faint) data-[installing=true]:after:border-t-(--action) data-[installing=true]:after:align-middle data-[installing=true]:after:animation-duration-[0.6s] data-[installing=true]:after:content-['']"
         :data-installing="installing"
         :disabled="!canInstall"
         @click="handleInstall"

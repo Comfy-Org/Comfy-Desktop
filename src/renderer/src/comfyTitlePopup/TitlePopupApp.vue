@@ -326,7 +326,7 @@ onUnmounted(() => {
       'is-picker': kind === 'instance-picker',
       'is-global-settings': kind === 'global-settings',
       'is-downloads-full': kind === 'downloads-full',
-      'rounded-panel border-[var(--modal-surface-border)] bg-[var(--modal-surface-bg)]':
+      'rounded-panel border-(--modal-surface-border) bg-(--modal-surface-bg)':
         kind === 'instance-picker' || kind === 'global-settings' || kind === 'downloads-full'
     }"
   >

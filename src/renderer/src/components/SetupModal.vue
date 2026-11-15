@@ -82,7 +82,7 @@ const hostProps = computed(() =>
         </Button>
 
         <div
-          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-8 pt-7 pb-6 [scrollbar-width:thin]"
+          class="setup-modal-body min-h-0 flex-auto overflow-y-auto px-8 pt-7 pb-6 scrollbar-thin"
         >
           <h2
             v-if="title"

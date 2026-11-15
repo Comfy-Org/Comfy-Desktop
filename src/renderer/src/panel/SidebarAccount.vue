@@ -115,10 +115,10 @@ async function onSignOut(): Promise<void> {
         <img
           :src="hillsSunset"
           alt=""
-          class="size-full object-cover transition-transform duration-600 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/signin:-translate-y-0.5 group-hover/signin:scale-108 motion-reduce:transition-none"
+          class="size-full object-cover transition-transform duration-600 ease-out-expo group-hover/signin:-translate-y-0.5 group-hover/signin:scale-108 motion-reduce:transition-none"
         />
         <span
-          class="absolute top-1/2 left-1/2 flex size-[30px] -translate-1/2 items-center justify-center rounded-[9px] bg-white text-[#111] shadow-lg transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/signin:-translate-y-[calc(50%+2px)] group-hover/signin:scale-105 motion-reduce:transition-none"
+          class="absolute top-1/2 left-1/2 flex size-7.5 -translate-1/2 items-center justify-center rounded-[9px] bg-white text-[#111] shadow-lg transition-transform duration-400 ease-out-expo group-hover/signin:-translate-y-[calc(50%+2px)] group-hover/signin:scale-105 motion-reduce:transition-none"
           aria-hidden="true"
         >
           <ComfyCLogo :size="14" />

@@ -178,41 +178,38 @@ async function tryCloud(): Promise<void> {
     :open="true"
     :aria-label="title"
     overlay-class="fixed inset-0 z-50 bg-black/55 backdrop-blur-[10px]"
-    content-class="fixed top-1/2 left-1/2 z-50 w-[760px] max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 outline-none"
+    content-class="fixed top-1/2 left-1/2 z-50 w-190 max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 outline-none"
     data-testid="build-progress-dialog"
     @close="emit('close')"
   >
     <div class="relative">
       <div
-        class="flex max-h-[calc(100vh-48px)] flex-col overflow-y-auto rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37/0.9)] px-[33px] pt-[29px] pb-[15px] backdrop-blur-[16px]"
+        class="flex max-h-[calc(100vh-48px)] flex-col overflow-y-auto rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37/0.9)] px-8.25 pt-7.25 pb-3.75 backdrop-blur-lg"
       >
         <div class="flex gap-10">
           <div class="flex min-w-0 flex-1 flex-col">
             <h2 class="m-0 text-lg/[22px] font-semibold text-foreground">
               {{ title }}
             </h2>
-            <ol
-              class="m-0 mt-[29px] flex list-none flex-col p-0"
-              data-testid="build-progress-steps"
-            >
+            <ol class="m-0 mt-7.25 flex list-none flex-col p-0" data-testid="build-progress-steps">
               <li
                 v-for="(step, index) in steps"
                 :key="step.phase"
-                class="relative flex gap-3 pb-[15px] last:pb-0"
+                class="relative flex gap-3 pb-3.75 last:pb-0"
                 :data-state="step.state"
                 data-testid="build-progress-step"
               >
                 <span
                   v-if="index < steps.length - 1"
-                  class="absolute top-[23px] bottom-0.5 left-[10px] w-px bg-[rgb(239_239_239/0.12)]"
+                  class="absolute top-5.75 bottom-0.5 left-2.5 w-px bg-[rgb(239_239_239/0.12)]"
                   aria-hidden="true"
                 />
-                <span class="relative flex size-[21px] shrink-0 items-center justify-center">
+                <span class="relative flex size-5.25 shrink-0 items-center justify-center">
                   <LoaderCircle
                     v-if="step.state === 'active'"
                     :size="13"
                     :stroke-width="1.6"
-                    class="animate-spin text-foreground [animation-duration:900ms] motion-reduce:animate-none"
+                    class="animate-spin text-foreground animation-duration-[900ms] motion-reduce:animate-none"
                     aria-hidden="true"
                   />
                   <OctagonAlert
@@ -223,7 +220,7 @@ async function tryCloud(): Promise<void> {
                   />
                   <span
                     v-else
-                    class="flex size-[21px] items-center justify-center rounded-full border border-[rgb(241_241_241/0.14)]"
+                    class="flex size-5.25 items-center justify-center rounded-full border border-[rgb(241_241_241/0.14)]"
                     aria-hidden="true"
                   >
                     <Check
@@ -251,7 +248,7 @@ async function tryCloud(): Promise<void> {
                   </span>
                   <span
                     v-if="step.detail"
-                    class="mt-[5px] text-xs/[15px] break-words whitespace-pre-line"
+                    class="mt-1.25 text-xs/[15px] wrap-break-word whitespace-pre-line"
                     :class="step.state === 'failed' ? 'text-destructive' : 'text-subtle-foreground'"
                     data-testid="build-progress-step-detail"
                   >
@@ -265,7 +262,7 @@ async function tryCloud(): Promise<void> {
               type="button"
               variant="muted-textonly"
               size="unset"
-              class="mt-8 h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
+              class="mt-8 h-4 w-fit gap-2 px-0.75 text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
               :aria-expanded="logsOpen"
               aria-controls="build-progress-logs"
               data-testid="build-progress-logs-toggle"
@@ -283,19 +280,19 @@ async function tryCloud(): Promise<void> {
               v-show="logsOpen"
               id="build-progress-logs"
               ref="logsRef"
-              class="m-0 mt-1 h-[82px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
+              class="m-0 mt-1 h-20.5 overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-3.25 font-mono text-xs/4 wrap-break-word whitespace-pre-wrap text-muted-foreground select-text"
               tabindex="0"
               data-testid="build-progress-logs"
               >{{ logText || t('installProgress.starting') }}</pre>
           </div>
 
-          <div class="flex h-[340px] w-[272px] shrink-0 items-center justify-center">
+          <div class="flex h-85 w-68 shrink-0 items-center justify-center">
             <video
-              class="w-[272px] transition-opacity duration-200 motion-reduce:transition-none"
+              class="w-68 transition-opacity duration-200 motion-reduce:transition-none"
               :class="[
                 videoShape === 'tall'
-                  ? 'h-[340px] rounded-[18px] border border-white/8 bg-[#161619] object-cover'
-                  : 'h-auto max-h-[340px] rounded-xl',
+                  ? 'h-85 rounded-[18px] border border-white/8 bg-[#161619] object-cover'
+                  : 'h-auto max-h-85 rounded-xl',
                 videoShape ? 'opacity-100' : 'opacity-0'
               ]"
               :src="video"
@@ -311,7 +308,7 @@ async function tryCloud(): Promise<void> {
           </div>
         </div>
 
-        <div class="mt-[60px] flex min-h-9 items-center gap-2">
+        <div class="mt-15 flex min-h-9 items-center gap-2">
           <template v-if="offersCloud">
             <Cloud
               :size="13"
@@ -326,7 +323,7 @@ async function tryCloud(): Promise<void> {
               type="button"
               variant="secondary"
               size="unset"
-              class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
+              class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-4.25 text-[13px]/4 font-normal text-foreground"
               data-testid="build-progress-try-cloud"
               @click="tryCloud"
             >
@@ -338,7 +335,7 @@ async function tryCloud(): Promise<void> {
               type="button"
               variant="muted-textonly"
               size="unset"
-              class="ml-auto h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
+              class="ml-auto h-9 shrink-0 rounded-[10px] px-4.25 text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
               data-testid="build-progress-close-failed"
               @click="emit('close')"
             >
@@ -349,7 +346,7 @@ async function tryCloud(): Promise<void> {
               type="button"
               variant="secondary"
               size="unset"
-              class="h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
+              class="h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-4.25 text-[13px]/4 font-normal text-foreground"
               data-testid="build-progress-retry"
               @click="emit('retry')"
             >
@@ -361,7 +358,7 @@ async function tryCloud(): Promise<void> {
             type="button"
             variant="muted-textonly"
             size="unset"
-            class="h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
+            class="h-9 shrink-0 rounded-[10px] px-4.25 text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
             :class="!offersCloud && 'ml-auto'"
             :disabled="cancelling"
             data-testid="build-progress-cancel"
@@ -376,7 +373,7 @@ async function tryCloud(): Promise<void> {
         type="button"
         variant="secondary"
         size="unset"
-        class="absolute top-px -right-[47px] size-9 rounded-full bg-white/10 p-0 text-white hover:bg-white/15"
+        class="absolute top-px -right-11.75 size-9 rounded-full bg-white/10 p-0 text-white hover:bg-white/15"
         :aria-label="t('common.close')"
         data-testid="build-progress-close"
         @click="emit('close')"

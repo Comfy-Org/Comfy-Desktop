@@ -156,23 +156,23 @@ watch(
   <DesktopDialogSurface
     :open="state.visible && !usesBaseAlert"
     :aria-label="state.title"
-    overlay-class="dialog-overlay fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 py-8"
+    overlay-class="dialog-overlay fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4 py-8"
     @close="dismiss"
   >
     <div
       v-if="state.type === 'confirm'"
-      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid bg-[var(--neutral-800)] px-6"
+      class="dialog-box min-w-[320px] rounded-panel border border-solid bg-neutral-800 px-6"
       :class="
         isMigrateConfirm
-          ? 'mig-modal w-[600px] max-w-full border-[var(--brand-surface-border)] pt-5 pb-[18px] shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
+          ? 'mig-modal w-150 max-w-full border-(--brand-surface-border) pt-5 pb-4.5 shadow-[0_24px_64px_0_rgba(0,0,0,0.35)]'
           : [
-              'border-[var(--border)] py-4',
+              'border-border py-4',
               state.snapshotPreview ||
               state.loading ||
               state.variantLoading ||
               state.variantCards.length > 0
-                ? 'w-[720px] max-w-full'
-                : 'max-w-[400px]'
+                ? 'w-180 max-w-full'
+                : 'max-w-100'
             ]
       "
     >
@@ -181,7 +181,7 @@ watch(
         :class="
           isMigrateConfirm
             ? 'mb-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pb-3.5 text-[length:var(--takeover-fs-h3)] font-medium text-text'
-            : 'mb-3 border-[var(--border)] pb-3 text-[16px] font-semibold'
+            : 'mb-3 border-border pb-3 text-[16px] font-semibold'
         "
       >
         {{ state.title }}
@@ -198,7 +198,7 @@ watch(
       >
         <div
           v-if="state.message"
-          class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-3 rounded-md border border-solid border-border bg-bg px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           @click="handleModalLinkClick"
           v-html="linkifiedMessage"
         ></div>
@@ -208,7 +208,7 @@ watch(
           class="dialog-loading flex items-center justify-center gap-2.5 py-6 text-[14px] text-text-muted"
         >
           <div
-            class="dialog-loading-spinner size-5 animate-spin rounded-[50%] border-2 border-solid border-[var(--border)] border-t-[var(--action)] [animation-duration:0.6s]"
+            class="dialog-loading-spinner size-5 animate-spin rounded-[50%] border-2 border-solid border-border border-t-(--action) animation-duration-[0.6s]"
           />
           <span>{{ $t('common.loading') }}</span>
         </div>
@@ -268,7 +268,7 @@ watch(
             <template v-if="spNodesExpanded">
               <div
                 v-if="state.snapshotPreview.customNodes.length > 0"
-                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                class="dialog-list flex max-h-60 flex-col gap-0.75 overflow-y-auto rounded-md border border-solid border-border bg-surface p-1.5"
               >
                 <div
                   v-for="node in state.snapshotPreview.customNodes"
@@ -276,14 +276,14 @@ watch(
                   class="dialog-node-row flex items-center gap-2 py-0.5 text-[13px]"
                 >
                   <span
-                    class="dialog-node-status size-[7px] shrink-0 rounded-[50%]"
-                    :class="node.enabled ? 'bg-[var(--info)]' : 'bg-[var(--text-muted)]'"
+                    class="dialog-node-status size-1.75 shrink-0 rounded-[50%]"
+                    :class="node.enabled ? 'bg-(--info)' : 'bg-text-muted'"
                   />
                   <span class="dialog-node-name min-w-0 flex-1 truncate text-text select-text">{{
                     node.id
                   }}</span>
                   <span
-                    class="dialog-node-type shrink-0 rounded-[3px] border border-solid border-[var(--border)] px-[5px] py-px text-[11px] font-semibold text-text-muted uppercase"
+                    class="dialog-node-type shrink-0 rounded-[3px] border border-solid border-border px-1.25 py-px text-[11px] font-semibold text-text-muted uppercase"
                     >{{ node.type }}</span
                   >
                   <span
@@ -311,7 +311,7 @@ watch(
             <template v-if="spPipExpanded">
               <div
                 v-if="state.snapshotPreview.pipPackageCount > 0"
-                class="dialog-list flex max-h-[240px] flex-col gap-[3px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] p-1.5"
+                class="dialog-list flex max-h-60 flex-col gap-0.75 overflow-y-auto rounded-md border border-solid border-border bg-surface p-1.5"
               >
                 <div
                   v-for="(version, name) in state.snapshotPreview.pipPackages"
@@ -345,13 +345,13 @@ watch(
                 >{{ group.label }}</span
               >
               <div
-                class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+                class="dialog-detail-recessed max-h-50 overflow-y-auto rounded-md border border-solid border-border bg-surface px-3 py-2"
                 @click="handleModalLinkClick"
               >
                 <div
                   v-for="(item, ii) in group.items"
                   :key="ii"
-                  class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--action)] [&_a]:underline"
+                  class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-(--action) [&_a]:underline"
                   v-html="linkify(item)"
                 ></div>
               </div>
@@ -359,7 +359,7 @@ watch(
           </div>
           <div
             v-if="state.checkboxes.length"
-            class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
+            class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-border pt-3"
           >
             <label
               v-for="cb in state.checkboxes"
@@ -381,7 +381,7 @@ watch(
         :class="
           isMigrateConfirm
             ? 'mt-4 border-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] pt-3.5'
-            : 'border-[var(--border)] pt-3'
+            : 'border-border pt-3'
         "
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(false)">
@@ -405,10 +405,10 @@ watch(
 
     <div
       v-else-if="state.type === 'confirmWithOptions'"
-      class="dialog-box min-w-[320px] max-w-[400px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box min-w-[320px] max-w-100 rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4"
     >
       <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
+        class="dialog-title -mx-6 mb-3 border-b border-solid border-border px-6 pb-3 text-[16px] font-semibold"
       >
         {{ state.title }}
       </div>
@@ -418,7 +418,7 @@ watch(
         {{ state.message }}
       </div>
       <div
-        class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-[var(--border)] pt-3"
+        class="dialog-options mt-3 mb-4 flex flex-col items-start gap-1.5 border-t border-solid border-border pt-3"
       >
         <label
           v-for="opt in localOptions"
@@ -434,7 +434,7 @@ watch(
         </label>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-border px-6 pt-3"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')
@@ -452,11 +452,11 @@ watch(
 
     <div
       v-else-if="state.type === 'prompt'"
-      class="dialog-box min-w-[320px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
-      :class="state.messageDetails.length > 0 ? 'w-[720px] max-w-full' : 'max-w-[400px]'"
+      class="dialog-box min-w-[320px] rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4"
+      :class="state.messageDetails.length > 0 ? 'w-180 max-w-full' : 'max-w-100'"
     >
       <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
+        class="dialog-title -mx-6 mb-3 border-b border-solid border-border px-6 pb-3 text-[16px] font-semibold"
       >
         {{ state.title }}
       </div>
@@ -465,7 +465,7 @@ watch(
         :class="state.messageDetails.length > 0 ? 'max-h-[70vh]' : 'max-h-[50vh]'"
       >
         <div
-          class="dialog-prompt-card mb-3 rounded-md border border-solid border-[var(--border)] bg-[var(--bg)] px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
+          class="dialog-prompt-card mb-3 rounded-md border border-solid border-border bg-bg px-3.5 py-2.5 text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_strong]:font-semibold [&_strong]:text-text"
           v-html="linkify(state.message)"
         ></div>
         <div v-if="state.messageDetails.length" class="dialog-details mt-3 mb-0">
@@ -479,13 +479,13 @@ watch(
               >{{ group.label }}</span
             >
             <div
-              class="dialog-detail-recessed max-h-[200px] overflow-y-auto rounded-md border border-solid border-[var(--border)] bg-[var(--surface)] px-3 py-2"
+              class="dialog-detail-recessed max-h-50 overflow-y-auto rounded-md border border-solid border-border bg-surface px-3 py-2"
               @click="handleModalLinkClick"
             >
               <div
                 v-for="(item, ii) in group.items"
                 :key="ii"
-                class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-[var(--action)] [&_a]:underline"
+                class="dialog-detail-item text-[14px] leading-[1.6] whitespace-pre-line text-text-muted [&_a]:cursor-pointer [&_a]:text-(--action) [&_a]:underline"
                 v-html="linkify(item)"
               ></div>
             </div>
@@ -508,12 +508,12 @@ watch(
             @keydown.enter.prevent.stop="submitPrompt"
           />
         </div>
-        <div v-if="error" class="dialog-error mb-0 min-h-3 text-[13px] text-[var(--danger)]">
+        <div v-if="error" class="dialog-error mb-0 min-h-3 text-[13px] text-danger">
           {{ error }}
         </div>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-border px-6 pt-3"
       >
         <Button variant="secondary" size="lg" :data-testid="TID.modalCancel" @click="close(null)">
           {{ $t('common.cancel') }}
@@ -526,10 +526,10 @@ watch(
 
     <div
       v-else-if="state.type === 'select'"
-      class="dialog-box dialog-select-box min-w-[340px] max-w-[440px] rounded-[var(--radius-panel)] border border-solid border-[var(--border)] bg-[var(--neutral-800)] px-6 py-4"
+      class="dialog-box dialog-select-box min-w-85 max-w-110 rounded-panel border border-solid border-border bg-neutral-800 px-6 py-4"
     >
       <div
-        class="dialog-title -mx-6 mb-3 border-b border-solid border-[var(--border)] px-6 pb-3 text-[16px] font-semibold"
+        class="dialog-title -mx-6 mb-3 border-b border-solid border-border px-6 pb-3 text-[16px] font-semibold"
       >
         {{ state.title }}
       </div>
@@ -540,7 +540,7 @@ watch(
         {{ state.message }}
       </div>
       <div
-        class="dialog-select-list mb-4 flex max-h-[40vh] flex-col gap-1 overflow-y-auto text-[var(--neutral-100)]"
+        class="dialog-select-list mb-4 flex max-h-[40vh] flex-col gap-1 overflow-y-auto text-neutral-100"
       >
         <Button
           v-for="item in state.items"
@@ -563,7 +563,7 @@ watch(
         </Button>
       </div>
       <div
-        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-[var(--border)] px-6 pt-3"
+        class="dialog-actions -mx-6 flex justify-end gap-2 border-t border-solid border-border px-6 pt-3"
       >
         <Button variant="secondary" size="lg" @click="close(null)">{{
           $t('common.cancel')

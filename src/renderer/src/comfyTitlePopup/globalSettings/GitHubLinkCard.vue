@@ -40,7 +40,7 @@ const starCountLabel = computed(() => {
   >
     <span class="github-link-main inline-flex min-w-0 items-center gap-2">
       <GithubIcon :size="16" />
-      <span class="github-link-label text-[13px] leading-[19px] font-medium">{{ label }}</span>
+      <span class="github-link-label text-[13px] leading-4.75 font-medium">{{ label }}</span>
       <ExternalLink
         :size="12"
         class="github-link-external shrink-0 opacity-50"
@@ -53,7 +53,7 @@ const starCountLabel = computed(() => {
       aria-hidden="true"
     >
       <span
-        class="github-link-skeleton-bar h-2.5 w-8 rounded-[999px] bg-[linear-gradient(90deg,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_0%,color-mix(in_oklab,var(--neutral-100)_16%,transparent)_50%,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_100%)] [background-size:200%_100%] animate-[github-stars-shimmer_1.4s_linear_infinite] motion-reduce:animate-none"
+        class="github-link-skeleton-bar h-2.5 w-8 rounded-[999px] bg-[linear-gradient(90deg,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_0%,color-mix(in_oklab,var(--neutral-100)_16%,transparent)_50%,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_100%)] bg-size-[200%_100%] animate-[github-stars-shimmer_1.4s_linear_infinite] motion-reduce:animate-none"
       />
     </span>
     <span
@@ -63,7 +63,7 @@ const starCountLabel = computed(() => {
     >
       <Star
         :size="12"
-        class="github-link-stars-icon fill-current text-[var(--warning)]"
+        class="github-link-stars-icon fill-current text-(--warning)"
         aria-hidden="true"
       />
       <span>{{ starCountLabel }}</span>

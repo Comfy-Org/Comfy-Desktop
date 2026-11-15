@@ -59,7 +59,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     :align="align"
     :side-offset="offset"
     :collision-padding="4"
-    class="ui-menu-list z-[9999]"
+    class="ui-menu-list z-toast"
     :class="listClass"
     :style="minWidth ? { minWidth: `${minWidth}px` } : undefined"
     :aria-label="triggerAriaLabel"
@@ -96,7 +96,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         <span class="ui-menu-item-label">{{ item.label }}</span>
         <span
           v-if="item.detail"
-          class="ui-menu-item-detail min-w-0 whitespace-normal text-muted-foreground [overflow-wrap:anywhere]"
+          class="ui-menu-item-detail min-w-0 whitespace-normal text-muted-foreground wrap-anywhere"
           >{{ item.detail }}</span
         >
       </MenuItem>

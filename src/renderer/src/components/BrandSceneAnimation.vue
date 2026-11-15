@@ -23,14 +23,11 @@ useBrandScene(stageRef, data, { fit: props.fit, speed: props.speed })
     class="brand-scene-wrap pointer-events-none absolute inset-0 overflow-hidden"
     aria-hidden="true"
   >
-    <div
-      ref="stageRef"
-      class="brand-scene-stage absolute top-0 left-0 h-[784px] w-[1056px] origin-top-left"
-    >
+    <div ref="stageRef" class="brand-scene-stage absolute top-0 left-0 h-196 w-264 origin-top-left">
       <div
         v-for="(scene, si) in data.scenes"
         :key="scene.id"
-        class="brand-scene absolute top-0 left-0 size-0 overflow-hidden bg-[var(--neutral-900,#19131d)] will-change-[transform,width,height]"
+        class="brand-scene absolute top-0 left-0 size-0 overflow-hidden bg-(--neutral-900,#19131d) will-change-[transform,width,height]"
         :style="{ zIndex: data.scenes.length - si, borderRadius: `${scene.maskRadius}px` }"
       >
         <video
