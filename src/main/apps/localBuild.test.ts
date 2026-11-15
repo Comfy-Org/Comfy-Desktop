@@ -203,6 +203,7 @@ describe('where a model for a build goes', () => {
     ]
     mocks.installing.add('fresh')
     mocks.installing.add('own')
+    mocks.operations.set('fresh', {})
     mocks.ownModels.add('own')
 
     expect(await modelTargetOf('fresh')).toEqual({ installing: true, modelsInsideBuild: false })
@@ -210,12 +211,15 @@ describe('where a model for a build goes', () => {
     expect(await modelTargetOf('studio')).toEqual({ installing: false, modelsInsideBuild: false })
   })
 
-  it('is nowhere for a build that is gone, failed, or left part way through an install', async () => {
+  it('is nowhere for a build that is gone, failed, being updated, or left part way through an install', async () => {
     mocks.records = [
       record({ id: 'failed', status: 'failed' }),
-      record({ id: 'left-over', status: 'installing' })
+      record({ id: 'left-over', status: 'installing' }),
+      record({ id: 'updating-now' })
     ]
+    mocks.operations.set('updating-now', {})
 
+    expect(await modelTargetOf('updating-now')).toBeNull()
     expect(await modelTargetOf('gone')).toBeNull()
     expect(await modelTargetOf('failed')).toBeNull()
     expect(await modelTargetOf('left-over')).toBeNull()

@@ -116,7 +116,7 @@ export async function modelTargetOf(installationId: string): Promise<ModelTarget
   const inst = await installations.get(installationId)
   if (!inst) return null
   const installing = isFirstInstallUnderWay(inst)
-  if (!installing && !runsOnThisComputer(inst)) return null
+  if (!installing && (!runsOnThisComputer(inst) || isBeingChanged(inst.id))) return null
   const search = await resolveDownloadContextById(installationId)
   return {
     installing,
