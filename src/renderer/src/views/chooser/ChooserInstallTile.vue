@@ -415,55 +415,89 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       />
     </div>
 
-    <div class="chooser-tile-footer relative flex shrink-0 items-center gap-1">
-      <template v-if="isBusy">
+    <div class="chooser-tile-footer relative flex shrink-0 flex-col items-end gap-1">
+      <div class="flex items-center gap-1">
+        <template v-if="isBusy">
+          <Button
+            v-if="!isUninstalling"
+            type="button"
+            variant="muted-textonly"
+            size="unset"
+            class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+            :data-testid="`chooser-tile-view-logs-${inst.id}`"
+            @click.stop="install.viewLogs"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            {{ t('installProgress.viewLogs') }}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="unset"
+            class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
+            :disabled="install.progress.value?.cancelling"
+            :data-testid="`chooser-tile-cancel-${inst.id}`"
+            @click.stop="install.cancel"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            {{ t('common.cancel') }}
+          </Button>
+        </template>
+        <Tooltip v-else-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
+          <Button
+            type="button"
+            variant="secondary"
+            size="unset"
+            class="chooser-tile-pill h-8 shrink-0 gap-1.5 rounded-lg px-3 text-[13px]/5"
+            :class="{
+              'chooser-tile-pill-update': actionPill.action === 'update',
+              'chooser-tile-pill-migrate': actionPill.action === 'migrate',
+              'chooser-tile-pill-disabled opacity-45': isStoppedActionGated
+            }"
+            :aria-disabled="isStoppedActionGated || undefined"
+            @click.stop="triggerInstallAction(actionPill.action)"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <component :is="actionPill.icon" :size="13" />
+            {{ actionPill.label }}
+          </Button>
+        </Tooltip>
         <Button
-          v-if="!isUninstalling"
-          type="button"
-          variant="muted-textonly"
-          size="unset"
-          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-          :data-testid="`chooser-tile-view-logs-${inst.id}`"
-          @click.stop="install.viewLogs"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          {{ t('installProgress.viewLogs') }}
-        </Button>
-        <Button
+          v-if="showLaunch"
           type="button"
           variant="secondary"
           size="unset"
-          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
-          :disabled="install.progress.value?.cancelling"
-          :data-testid="`chooser-tile-cancel-${inst.id}`"
-          @click.stop="install.cancel"
+          class="chooser-tile-launch h-8 gap-1.5 rounded-lg px-3 text-[13px]/5"
+          :aria-label="launchLabel"
+          @click.stop="launch"
           @keydown.enter.stop
           @keydown.space.stop
         >
-          {{ t('common.cancel') }}
+          <component :is="opensExisting ? ExternalLink : Play" :size="13" aria-hidden="true" />
+          {{ launchLabel }}
         </Button>
-      </template>
-      <Tooltip v-else-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
-        <Button
-          type="button"
-          variant="secondary"
-          size="unset"
-          class="chooser-tile-pill h-8 shrink-0 gap-1.5 rounded-lg px-3 text-[13px]/5"
-          :class="{
-            'chooser-tile-pill-update': actionPill.action === 'update',
-            'chooser-tile-pill-migrate': actionPill.action === 'migrate',
-            'chooser-tile-pill-disabled opacity-45': isStoppedActionGated
-          }"
-          :aria-disabled="isStoppedActionGated || undefined"
-          @click.stop="triggerInstallAction(actionPill.action)"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          <component :is="actionPill.icon" :size="13" />
-          {{ actionPill.label }}
-        </Button>
-      </Tooltip>
+        <div class="chooser-tile-actions flex items-center">
+          <Button
+            v-if="props.showMenu && !isUpdating && !isBusy"
+            variant="muted-textonly"
+            size="unset"
+            type="button"
+            class="chooser-tile-kebab size-8 rounded-lg hover:bg-secondary hover:text-foreground"
+            :title="t('chooser.moreActions')"
+            :aria-label="t('chooser.moreActions')"
+            :data-testid="TID.dashboardTileKebab(inst.id)"
+            @click.stop="emit('open-kebab-menu', $event, inst)"
+            @contextmenu.stop="emit('open-kebab-menu', $event, inst)"
+            @keydown.enter.stop
+            @keydown.space.stop
+          >
+            <Ellipsis :size="15" />
+          </Button>
+        </div>
+      </div>
       <BuildAutoStartCheckbox
         v-if="!isBusy && !isUpdating"
         :checked="props.autoStart"
@@ -473,38 +507,6 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         @keydown.enter.stop
         @keydown.space.stop
       />
-      <Button
-        v-if="showLaunch"
-        type="button"
-        variant="secondary"
-        size="unset"
-        class="chooser-tile-launch h-8 gap-1.5 rounded-lg px-3 text-[13px]/5"
-        :aria-label="launchLabel"
-        @click.stop="launch"
-        @keydown.enter.stop
-        @keydown.space.stop
-      >
-        <component :is="opensExisting ? ExternalLink : Play" :size="13" aria-hidden="true" />
-        {{ launchLabel }}
-      </Button>
-      <div class="chooser-tile-actions flex items-center">
-        <Button
-          v-if="props.showMenu && !isUpdating && !isBusy"
-          variant="muted-textonly"
-          size="unset"
-          type="button"
-          class="chooser-tile-kebab size-8 rounded-lg hover:bg-secondary hover:text-foreground"
-          :title="t('chooser.moreActions')"
-          :aria-label="t('chooser.moreActions')"
-          :data-testid="TID.dashboardTileKebab(inst.id)"
-          @click.stop="emit('open-kebab-menu', $event, inst)"
-          @contextmenu.stop="emit('open-kebab-menu', $event, inst)"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          <Ellipsis :size="15" />
-        </Button>
-      </div>
     </div>
     <BuildProgressBar
       v-if="install.progress.value?.percent != null"

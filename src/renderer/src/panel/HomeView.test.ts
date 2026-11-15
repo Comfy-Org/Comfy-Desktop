@@ -679,18 +679,19 @@ describe('Home builds', () => {
 
 describe('Home build auto start', () => {
   let saved: unknown
-  let settingsChanged: (change: { key: string }) => void
+  let settingsListeners: Array<(change: { key: string }) => void>
   const setSetting = vi.fn(async (_key: string, value: unknown) => {
     saved = value
   })
 
   beforeEach(() => {
     saved = 'none'
+    settingsListeners = []
     Object.assign(window.api, {
       getSetting: vi.fn(async (key: string) => (key === 'autoLaunchOnStartup' ? saved : undefined)),
       setSetting,
       onSettingsChanged: vi.fn((callback: (change: { key: string }) => void) => {
-        settingsChanged = callback
+        settingsListeners.push(callback)
         return () => {}
       })
     })
@@ -758,7 +759,7 @@ describe('Home build auto start', () => {
     const wrapper = await openHome()
 
     saved = NEWEST.id
-    settingsChanged({ key: 'autoLaunchOnStartup' })
+    for (const listener of settingsListeners) listener({ key: 'autoLaunchOnStartup' })
     await flushPromises()
 
     expect(ticked(wrapper)).toEqual([NEWEST.id])

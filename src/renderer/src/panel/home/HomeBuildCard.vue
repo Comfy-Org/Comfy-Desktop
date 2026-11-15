@@ -141,7 +141,7 @@ const CARD_CLASS =
       data-testid="home-build-progress"
     />
   </div>
-  <div v-else class="relative">
+  <div v-else class="flex flex-col gap-1">
     <button
       type="button"
       :class="[
@@ -166,7 +166,7 @@ const CARD_CLASS =
         :kind="buildDeviceKind(build)"
         :glow="toneStyle.glow"
       />
-      <span class="relative flex min-w-0 flex-col pr-24">
+      <span class="relative flex min-w-0 flex-col">
         <span
           class="flex h-4 items-center gap-1.5 text-xs/4"
           :class="broken ? 'text-destructive' : 'text-muted-foreground'"
@@ -190,7 +190,7 @@ const CARD_CLASS =
       </span>
     </button>
     <BuildAutoStartCheckbox
-      class="absolute top-1/2 right-3 -translate-y-1/2"
+      class="self-end"
       :checked="autoStart"
       data-testid="home-build-auto-start"
       :data-build-id="build.id"
