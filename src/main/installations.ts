@@ -113,8 +113,8 @@ function maybeSeedFromEnv(): void {
   }
 }
 
-async function load(): Promise<InstallationRecord[]> {
-  return (await loadOutcome()).records
+function loadAfterRequestedWrites(): Promise<InstallationRecord[]> {
+  return _queue.then(async () => (await loadOutcome()).records)
 }
 
 async function loadOutcome(): Promise<{ records: InstallationRecord[]; unreadable: boolean }> {
@@ -152,11 +152,11 @@ async function save(installations: InstallationRecord[]): Promise<void> {
 }
 
 export async function list(): Promise<InstallationRecord[]> {
-  return load()
+  return loadAfterRequestedWrites()
 }
 
 export async function hasNameConflict(id: string, name: string): Promise<boolean> {
-  const all = await load()
+  const all = await loadAfterRequestedWrites()
   return all.some((i) => i.id !== id && i.name === name)
 }
 
@@ -281,7 +281,7 @@ export async function associateUnownedBuildInstalls(
 }
 
 export async function get(id: string): Promise<InstallationRecord | null> {
-  return (await load()).find((i) => i.id === id) ?? null
+  return (await loadAfterRequestedWrites()).find((i) => i.id === id) ?? null
 }
 
 export async function reorder(orderedIds: string[]): Promise<void> {
@@ -376,7 +376,7 @@ export async function clearPendingTemplateOpen(installationId: string): Promise<
 }
 
 export async function getRecent(): Promise<InstallationRecord | null> {
-  const list = await load()
+  const list = await loadAfterRequestedWrites()
   let best: InstallationRecord | null = null
   let bestTs = -Infinity
   for (const inst of list) {
@@ -393,7 +393,7 @@ export async function getRecentByCategory(
   category: string,
   resolveCategory: (inst: InstallationRecord) => string | undefined
 ): Promise<InstallationRecord | null> {
-  const list = await load()
+  const list = await loadAfterRequestedWrites()
   let best: InstallationRecord | null = null
   let bestTs = -Infinity
   for (const inst of list) {
