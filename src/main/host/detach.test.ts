@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type * as SystemModalModule from '../popups/systemModal'
+import type * as SettingsModule from '../settings'
+
 const mocks = vi.hoisted(() => ({
   confirmBeforeClosing: false,
   appsBuildRunning: false,
@@ -28,14 +31,14 @@ vi.mock('../apps/localComfy', () => ({
   stopEveryBuildRunningForAppsOnly: () => mocks.stopAppsBuilds()
 }))
 vi.mock('../popups/systemModal', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../popups/systemModal')>()),
+  ...(await importOriginal<typeof SystemModalModule>()),
   openSystemModalAsync: async (options: { spec: { message: string } }) => {
     mocks.asked.push(options)
     return mocks.agrees
   }
 }))
 vi.mock('../settings', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../settings')>()
+  const actual = await importOriginal<typeof SettingsModule>()
   return {
     ...actual,
     get: (key: string) =>

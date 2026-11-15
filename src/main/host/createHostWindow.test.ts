@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type * as SettingsModule from '../settings'
+
 const mocks = vi.hoisted(() => ({
   appsBuildRunning: false,
   stopAppsBuilds: vi.fn(async () => {})
@@ -25,7 +27,7 @@ vi.mock('../apps/localComfy', () => ({
   stopEveryBuildRunningForAppsOnly: () => mocks.stopAppsBuilds()
 }))
 vi.mock('../settings', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../settings')>()
+  const actual = await importOriginal<typeof SettingsModule>()
   return {
     ...actual,
     get: (key: string) => (key === 'confirmBeforeClosingWindow' ? true : actual.get(key))
@@ -306,10 +308,10 @@ describe('confirmHostWindowClose', () => {
       second.entry.windowKey,
       fx
     )
-    consults[0]('defer')
+    consults[0]?.('defer')
     expect(await closingFirst).toBe(true)
     first.win.destroyed = true
-    consults[1]('defer')
+    consults[1]?.('defer')
 
     expect(await closingSecond).toBe(true)
     expect(asked).toEqual([{ isLastWindow: true, stopsLocalComfy: true }])
