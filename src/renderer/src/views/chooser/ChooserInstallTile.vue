@@ -13,7 +13,7 @@ import {
   Play,
   Server,
   Check
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { useProgressStore } from '../../stores/progressStore'

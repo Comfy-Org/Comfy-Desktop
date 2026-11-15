@@ -60,9 +60,7 @@ export function registerAppsLocalHandlers(): void {
         : { opened: false, error: i18n.t('apps.local.notRunning') }
   )
 
-  ipcMain.handle(
-    APPS_LOCAL_CHANNELS.builds,
-    async (event): Promise<ComfyDesktopLocalBuild[]> =>
-      (await isFromAppsPage(event)) ? localBuilds() : []
+  ipcMain.handle(APPS_LOCAL_CHANNELS.builds, async (event): Promise<ComfyDesktopLocalBuild[]> =>
+    (await isFromAppsPage(event)) ? localBuilds() : []
   )
 }

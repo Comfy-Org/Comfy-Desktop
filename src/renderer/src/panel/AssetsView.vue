@@ -19,7 +19,7 @@ import {
   Search,
   Trash2,
   Video
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import Menu from '@comfyorg/design-system/menu/Menu'

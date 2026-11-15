@@ -22,9 +22,7 @@ export interface LocalBuild {
 }
 
 export type LocalChoice =
-  | { kind: 'build'; build: LocalBuild }
-  | { kind: 'no-builds' }
-  | { kind: 'too-old'; wanted: string }
+  { kind: 'build'; build: LocalBuild } | { kind: 'no-builds' } | { kind: 'too-old'; wanted: string }
 
 function releaseVersion(value: unknown): string | null {
   if (typeof value !== 'string') return null

@@ -72,8 +72,7 @@ export interface SharedMigrationInput {
 }
 
 export type StandaloneTargetSelection =
-  | { mode: 'auto' }
-  | { mode: 'selected'; release: FieldOption; variant: FieldOption }
+  { mode: 'auto' } | { mode: 'selected'; release: FieldOption; variant: FieldOption }
 
 export function sendMigrationSteps(
   sendProgress: MigrationTools['sendProgress'],

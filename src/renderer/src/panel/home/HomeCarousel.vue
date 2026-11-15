@@ -1,7 +1,7 @@
 <script setup lang="ts" generic="Card extends { id: string; title: string; description: string }">
 import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from 'lucide-vue-next'
+import { ArrowUpRight, ChevronLeft, ChevronRight, ImageOff } from '@lucide/vue'
 
 interface ArcSlot {
   transform: string

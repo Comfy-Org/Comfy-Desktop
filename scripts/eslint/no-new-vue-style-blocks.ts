@@ -25,8 +25,7 @@ export default {
   create(context) {
     const source = context.sourceCode
     const getDocumentFragment = source.parserServices.getDocumentFragment as
-      | (() => AST.VDocumentFragment | null)
-      | undefined
+      (() => AST.VDocumentFragment | null) | undefined
     if (!getDocumentFragment) return {}
 
     const file = relative(root, context.physicalFilename).split('\\').join('/')

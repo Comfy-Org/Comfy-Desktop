@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandTakeoverLayout from './BrandTakeoverLayout.vue'
 import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'

@@ -35,7 +35,7 @@ import {
   Repeat2,
   Server,
   Ellipsis
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'

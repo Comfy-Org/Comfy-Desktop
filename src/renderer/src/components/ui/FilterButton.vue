@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown } from '@lucide/vue'
 
 defineProps<{
   label: string

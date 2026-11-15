@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { AlertTriangle } from 'lucide-vue-next'
+import { AlertTriangle } from '@lucide/vue'
 import { useModal } from '../../composables/useModal'
 import ModelsDirList from '../../comfyTitlePopup/globalSettings/ModelsDirList.vue'
 import StorageDirRow from './StorageDirRow.vue'

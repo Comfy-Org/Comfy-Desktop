@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, useSlots, useTemplateRef, watch, type ComponentPublicInstance } from 'vue'
-import { ChevronDown } from 'lucide-vue-next'
+import { ChevronDown } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ButtonGroup from '@comfyorg/design-system/button-group/ButtonGroup'
 import Menu from '@comfyorg/design-system/menu/Menu'

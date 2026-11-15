@@ -4,7 +4,7 @@ import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput
 import { ref, computed, watch, toRaw, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { FileArchive, List, Package, Tag, Upload, Zap } from 'lucide-vue-next'
+import { FileArchive, List, Package, Tag, Upload, Zap } from '@lucide/vue'
 import { useModal } from '../composables/useModal'
 
 import type { SnapshotFilePreview, FieldOption, GPUInfo, ShowProgressOpts } from '../types/ipc'

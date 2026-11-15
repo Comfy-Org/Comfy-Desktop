@@ -92,6 +92,15 @@ function unpackedNodeModulesDir(context) {
 }
 
 export default async function afterPack(context) {
+  if (context.electronPlatformName === 'darwin') {
+    const { packager } = context
+    packager.platformSpecificBuildOptions.releaseInfo = {
+      ...packager.config.releaseInfo,
+      ...packager.platformSpecificBuildOptions.releaseInfo,
+      minimumSystemVersion: '22.0.0'
+    }
+  }
+
   if (context.electronPlatformName === 'win32') {
     await ensureVcRedist(context)
     return

@@ -28,6 +28,7 @@ export default defineConfig({
   test: {
     sequence: { hooks: 'list' },
     globals: true,
+    clearMocks: false,
     maxWorkers: 8,
     onConsoleLog: (log) => !log.includes(VUE_TEST_UTILS_STRING_SLOT_WARNING),
     projects: [

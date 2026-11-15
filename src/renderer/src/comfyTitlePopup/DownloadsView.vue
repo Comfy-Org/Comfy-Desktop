@@ -2,7 +2,7 @@
 import Button from '@comfyorg/design-system/button/Button'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CircleAlert, CircleCheck, LoaderCircle, PauseCircle, RotateCcw, X } from 'lucide-vue-next'
+import { CircleAlert, CircleCheck, LoaderCircle, PauseCircle, RotateCcw, X } from '@lucide/vue'
 import { fileLabel, statusKindClass, statusLine } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
