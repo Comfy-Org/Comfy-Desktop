@@ -6,6 +6,8 @@ import MarSidebar from './MarSidebar.vue'
 import { onCloud } from './surface'
 import MarBloom from './MarBloom.vue'
 import MarWires from './MarWires.vue'
+import PointBuildMenu from '../build/PointBuildMenu.vue'
+import BuildLogs from '../build/BuildLogs.vue'
 import GradedImage from '../brand/GradedImage.vue'
 import MarSearch from '../search/MarSearch.vue'
 import QueuePanel from '../p20/QueuePanel.vue'
@@ -79,6 +81,9 @@ import '../motion/pageTransition'
     <InspectorPanel v-else-if="p20.panel === 'inspector'" />
     <ShortcutBar v-if="p20.density === 'dense'" />
     <TabsNav v-if="marNav.id === 'tabs'" />
+    <!-- A build's menu at the pointer (its sidebar row) and its start's logs. -->
+    <PointBuildMenu />
+    <BuildLogs />
   </template>
 </template>
 

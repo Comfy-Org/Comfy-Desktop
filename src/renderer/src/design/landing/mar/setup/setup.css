@@ -1923,6 +1923,24 @@
 .mss-body-inst .mss-inst-media {
   margin-top: -48px;
 }
+/* The logs window (BuildProgress.vue): the clip is one 272px square, the
+ * steps keep its height (less the 48px it rises by), and the log runs under
+ * both across the window, opening on its newest line. */
+.mss-inst-square .mss-inst-media {
+  aspect-ratio: 1;
+}
+.mss-inst.mss-inst-square:not(.is-err) .mss-inst-main {
+  min-height: 224px;
+}
+.mss-inst-log {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+.mss-inst-log .mss-logs {
+  min-height: 82px;
+  margin: 0;
+}
 .mss-foot .mss-pitch {
   justify-content: flex-start;
   gap: 10px;
@@ -2237,6 +2255,119 @@ body:has(.mss-first) [data-reka-popper-content-wrapper] {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Home's build tiles (build/BuildTile.vue): one height in every state and
+ * width. The whole tile opens; the ⋯ fades in at the right on hover and
+ * focus, and the text makes room for it. */
+:root .proto-ui.proto-ui.proto-ui .mbr-tile {
+  height: 104px;
+  padding-block: 0;
+}
+:root .proto-ui.proto-ui.proto-ui .mbr-open {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: transparent;
+  outline: none;
+}
+:root .proto-ui.proto-ui.proto-ui .mbr-open:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-border-focus);
+}
+.mbr-tile .mbr-device,
+.mbr-tile .mbr-text {
+  pointer-events: none;
+}
+.mbr-actions {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+.mbr-more {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 150ms ease;
+}
+.mbr-tile:hover .mbr-more,
+.mbr-tile:focus-within .mbr-more,
+.mbr-tile.is-menu .mbr-more {
+  opacity: 1;
+}
+.mbr-tile.has-menu:hover .mbr-text,
+.mbr-tile.has-menu:focus-within .mbr-text,
+.mbr-tile.is-menu .mbr-text {
+  padding-right: 24px;
+}
+/* In progress: the light stays in its corner. */
+.mbr-tile.is-busy:hover::before {
+  transform: none;
+}
+/* A line along the tile's bottom edge. */
+.mbr-bar {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--color-base-foreground) 10%, transparent);
+  pointer-events: none;
+}
+.mbr-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--color-base-foreground);
+  transform-origin: left;
+  transition: transform 180ms linear;
+}
+.mbr-spin {
+  flex-shrink: 0;
+  animation: mbr-spin 1s linear infinite;
+}
+@keyframes mbr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mbr-more,
+  .mbr-bar > span {
+    transition: none;
+  }
+  .mbr-spin {
+    animation: none;
+  }
+}
+/* Home's builds row (MarBuildsRow.vue): up to three across, two below
+ * 56rem, one per row below 40rem, where two can't hold a name and its
+ * status. Never squeezed. */
+.mbr-row {
+  container: mbr-row / inline-size;
+}
+.mbr-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+.mbr-grid.is-2,
+.mbr-grid.is-3 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.mbr-grid.is-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@container mbr-row (max-width: 56rem) {
+  .mbr-grid.is-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container mbr-row (max-width: 40rem) {
+  .mbr-grid.mbr-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 :root .proto-ui.proto-ui.proto-ui .mss-quiet-input {

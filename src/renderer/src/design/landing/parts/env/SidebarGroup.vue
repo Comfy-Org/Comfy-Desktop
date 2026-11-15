@@ -14,6 +14,9 @@ import { errorOf } from '../../mar/build/buildErrors'
 import MarGroupTitle from '../../mar/shell/MarGroupTitle.vue'
 // Local setup › Home first: the first install runs behind the Home (mar/setup).
 import { BUILD_NAME, flow, installingBehind, installPending } from '../../mar/setup/setupFlow'
+// A build's row right-clicks to its menu, the same as its Home tile's ⋯.
+import { installingMenu, instanceMenu, openMenuAt } from '../../mar/build/buildMenu'
+import { uninstalled } from '../../mar/build/homeRun'
 
 /**
  * The organising list under Create.
@@ -38,21 +41,27 @@ const rows = computed<Row[]>(() =>
         envId: p.envId,
         count: allWorkflows.value.filter((w) => w.project === p.name).length
       }))
-    : instances.value.map((i) => ({
-        page: `environment:${i.id}` as Page,
-        label: i.name,
-        envId: i.id,
-        // Nothing links a workflow to its build before the breadcrumb milestone.
-        count: can.value.breadcrumb
-          ? allWorkflows.value.filter((w) => w.envId === i.id).length
-          : undefined,
-        live: i.state === 'running',
-        failed: errorOf(i.id)
-      }))
+    : instances.value
+        .filter((i) => !uninstalled.has(i.id))
+        .map((i) => ({
+          page: `environment:${i.id}` as Page,
+          label: i.name,
+          envId: i.id,
+          // Nothing links a workflow to its build before the breadcrumb milestone.
+          count: can.value.breadcrumb
+            ? allWorkflows.value.filter((w) => w.envId === i.id).length
+            : undefined,
+          live: i.state === 'running',
+          failed: errorOf(i.id)
+        }))
 )
 const show = computed(
   () => proto.signedIn || instances.value.some((i) => i.kind === 'local') || installPending.value
 )
+function menu(e: MouseEvent, id?: string): void {
+  const inst = id ? envById(id) : undefined
+  if (inst) openMenuAt(e, () => instanceMenu(inst))
+}
 const title = computed(() => (proto.projects ? 'Projects' : 'Builds'))
 const overviewPage = computed<Page>(() => (proto.projects ? 'projects' : 'environments'))
 const overviewActive = computed(() => proto.page === overviewPage.value)
@@ -89,6 +98,7 @@ const itemClass = (page: Page): string =>
       :class="itemClass('overview')"
       class="text-subtle-foreground"
       @click="go('overview')"
+      @contextmenu="openMenuAt($event, installingMenu)"
     >
       <TriangleAlert v-if="flow.step === 'error'" :size="15" />
       <LoaderCircle v-else :size="15" class="mar-side-spin" />
@@ -111,6 +121,7 @@ const itemClass = (page: Page): string =>
       :aria-current="proto.page === r.page ? 'page' : undefined"
       :class="itemClass(r.page)"
       @click="go(r.page)"
+      @contextmenu="!proto.projects && menu($event, r.envId)"
     >
       <Folder v-if="proto.projects" :size="15" />
       <!-- Running or didn't start: a dot on the build's mark; the reason on hover. -->

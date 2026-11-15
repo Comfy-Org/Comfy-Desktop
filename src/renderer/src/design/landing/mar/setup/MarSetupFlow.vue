@@ -4,9 +4,7 @@ import {
   ArrowLeft,
   ArrowLeftRight,
   Check,
-  ChevronDown,
   Cloud,
-  Copy,
   Cpu,
   Crown,
   Download,
@@ -15,7 +13,6 @@ import {
   Globe,
   Gpu,
   HardDrive,
-  LoaderCircle,
   Package,
   Tag,
   TriangleAlert,
@@ -35,6 +32,7 @@ import ChoiceCard from '../../../../components/ChoiceCard.vue'
 import RunOnCards from './RunOnCards.vue'
 import SetupCanvas from './SetupCanvas.vue'
 import SetupCancelConfirm from './SetupCancelConfirm.vue'
+import BuildProgress from './BuildProgress.vue'
 import SetupNodes from './SetupNodes.vue'
 import SetupSteps from './SetupSteps.vue'
 import ComfyWordmark from '../../../../components/icons/ComfyWordmark.vue'
@@ -75,6 +73,7 @@ import {
   nodesInBuild,
   packsMb,
   phaseIndex,
+  INSTALL_LOG,
   phases,
   retryInstall,
   setupOn,
@@ -217,26 +216,6 @@ function installWith(s: Starter | null): void {
   else startInstall()
 }
 const imgUrl = (f: string): string => new URL(`../assets/${f}`, import.meta.url).href
-// The install wait's outputs: today's showcase clips, one at a time in a
-// single panel.
-const CLIPS = [
-  { id: 'eye', src: './install-showcase-scene/Assets/eye.webm', poster: 'mock/clip-eye.jpg' },
-  {
-    id: 'clouds',
-    src: './install-showcase-scene/Assets/clouds.webm',
-    poster: 'mock/clip-clouds.jpg'
-  },
-  {
-    id: 'mountains',
-    src: './install-showcase-scene/Assets/dusk_mountains.webm',
-    poster: 'mock/clip-dusk-mountains.jpg'
-  },
-  {
-    id: 'flower',
-    src: './install-showcase-scene/Assets/flower.webm',
-    poster: 'mock/clip-flower.jpg'
-  }
-]
 
 // Change setup: the fields start on what fits this computer.
 const name = ref('ComfyUI')
@@ -402,11 +381,24 @@ const stepDetail = computed(() => {
   return `${mb} of ${DOWNLOAD_MB} MB · about ${left}s left`
 })
 const downloadPct = computed(() => Math.min(100, (flow.percent / DOWNLOAD_UNTIL.value) * 100))
-function rowState(i: number): string {
-  if (i < nowIndex.value) return 'is-done'
-  if (i > nowIndex.value) return 'is-next'
-  return failed.value ? 'is-fail' : 'is-now'
-}
+// The download gets its percent by its name and one quiet line of detail.
+const installSteps = computed(() =>
+  phases.value.map((p, i) =>
+    i === 0 && nowIndex.value === 0 && stepDetail.value
+      ? { label: p.label, pct: downloadPct.value, detail: stepDetail.value }
+      : { label: p.label }
+  )
+)
+// The log grows as the install goes; a failure ends it in red.
+const installLog = computed(() => [
+  ...INSTALL_LOG.filter((l) => l.at <= flow.percent),
+  ...(failed.value
+    ? [
+        { text: "ERROR: ConnectionResetError(54, 'Connection reset by peer')", error: true },
+        { text: 'pip exited with code 2', error: true }
+      ]
+    : [])
+])
 </script>
 
 <template>
@@ -1042,79 +1034,22 @@ function rowState(i: number): string {
       </template>
 
       <!-- Installing: the status first, then today's scene of Comfy outputs.
-           The Cloud pitch is one line in the bar. Error: today's Operation
-           failed, in place. -->
+           The full-window install keeps the Cloud pitch as one line in the
+           bar. Error: today's Operation failed, in place. -->
       <template v-else>
         <div :key="failed ? 'error' : 'installing'" class="mar-wizard-body mss-body mss-body-inst">
           <DialogTitle as="h3" class="text-title font-semibold">{{
             failed ? 'Operation failed' : 'Installing ComfyUI'
           }}</DialogTitle>
-          <!-- Status on the left: today's five steps, all in view, the
-               running one open with its detail. On the right one calm panel:
-               today's showcase clips, one at a time, in place of the scene. -->
-          <section class="mss-inst" :class="failed && 'is-err'">
-            <div class="mss-inst-main">
-              <ol class="mss-inst-steps" aria-live="polite">
-                <li
-                  v-for="(p, i) in phases"
-                  :key="p.label"
-                  class="mss-inst-step"
-                  :class="rowState(i)"
-                  :aria-current="i === nowIndex ? 'step' : undefined"
-                >
-                  <span class="mss-inst-icon" aria-hidden="true">
-                    <Check v-if="i < nowIndex" :size="12" stroke-width="3" />
-                    <TriangleAlert v-else-if="i === nowIndex && failed" :size="13" />
-                    <LoaderCircle v-else-if="i === nowIndex" :size="14" class="mss-spin" />
-                  </span>
-                  <span class="mss-inst-text">
-                    <!-- Only the download knows its size: it gets a percent
-                         by its name and one quiet line of detail. -->
-                    <span class="mss-inst-label"
-                      >{{ p.label
-                      }}<span v-if="i === nowIndex && stepDetail" class="mss-inst-pct tabular-nums"
-                        >{{ Math.round(downloadPct) }}%</span
-                      ></span
-                    >
-                    <span
-                      v-if="i === nowIndex && stepDetail"
-                      class="mss-inst-detail tabular-nums"
-                      >{{ stepDetail }}</span
-                    >
-                  </span>
-                </li>
-              </ol>
-              <button
-                type="button"
-                class="mss-logs-toggle justify-self-start"
-                :aria-expanded="flow.logs"
-                @click="flow.logs = !flow.logs"
-              >
-                <ChevronDown :size="14" :class="flow.logs && 'rotate-180'" />View logs
-              </button>
-              <pre v-if="flow.logs || failed" class="mss-logs">
-[setup] Installing torch==2.7.1 …
-[setup] Downloading torch-2.7.1-cp313-macosx_arm64.whl (74 MB)<template v-if="failed">
-<span class="e">ERROR: ConnectionResetError(54, 'Connection reset by peer')</span>
-<span class="e">pip exited with code 2</span></template></pre>
-              <Button v-if="failed" size="sm" class="justify-self-start" @click="toast('Copied')"
-                ><Copy :size="14" />Copy</Button
-              >
-            </div>
-            <div v-if="!failed" class="mss-inst-media" aria-hidden="true">
-              <video
-                v-for="(c, i) in CLIPS"
-                :key="c.id"
-                :style="{ animationDelay: `${i * 6}s` }"
-                :src="c.src"
-                :poster="imgUrl(c.poster)"
-                autoplay
-                muted
-                loop
-                playsinline
-              ></video>
-            </div>
-          </section>
+          <!-- The steps on the left, one showcase clip on the right, the
+               log under both across the window (BuildProgress.vue). -->
+          <BuildProgress
+            v-model:logs="flow.logs"
+            :steps="installSteps"
+            :now="nowIndex"
+            :failed
+            :log="installLog"
+          />
         </div>
 
         <footer class="mar-wizard-foot mss-foot">
@@ -1123,6 +1058,26 @@ function rowState(i: number): string {
               ><ArrowLeft :size="14" />Back</Button
             >
             <Button variant="primary" size="lg" @click="retryInstall">Reboot</Button>
+          </template>
+          <!-- The window over the Home (View logs) pitches nothing: Cloud is a
+               build on the Home behind it. The full-window install keeps it. -->
+          <template v-else-if="!flow.takeover">
+            <Button
+              v-if="flow.background"
+              variant="secondary"
+              size="lg"
+              class="ml-auto"
+              @click="flow.confirmCancel = true"
+              >Cancel install</Button
+            >
+            <Button
+              v-else
+              variant="ghost"
+              size="lg"
+              class="ml-auto"
+              @click="flow.confirmCancel = true"
+              ><ArrowLeft :size="14" />Return to Dashboard</Button
+            >
           </template>
           <template v-else>
             <p

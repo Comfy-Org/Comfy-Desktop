@@ -636,14 +636,32 @@ export const lowSpace = computed(() => localSetup.machine === 'lowdisk' && !flow
 // Only a Mac can be an Intel Mac.
 export const unsupported = computed(() => localSetup.machine === 'intel' && localSetup.os === 'mac')
 
-// Today's standalone install steps, in order.
+// The standalone install's steps, in words (Desktop's four, the last named
+// for the version it gets).
 const PHASES = [
   { until: 30, label: 'Download' },
   { until: 42, label: 'Extract' },
-  { until: 82, label: 'Set up environment' },
-  { until: 92, label: 'Clean up environment' },
-  { until: 100, label: 'Update to latest stable' }
+  { until: 85, label: 'Set up environment' },
+  { until: 100, label: `Get ComfyUI ${DETECTED.version}` }
 ] as const
+/** What the install prints on the way, one line at a time (its logs). */
+export const INSTALL_LOG: { at: number; text: string }[] = [
+  { at: 0, text: '[download] comfyui-standalone-macos-arm64.tar.zst (1.2 GB)' },
+  { at: 10, text: '[download] 412 of 1200 MB' },
+  { at: 20, text: '[download] 806 of 1200 MB' },
+  { at: 29, text: '[download] done, checksum ok' },
+  { at: 31, text: '[extract] Unpacking into ~/ComfyUI' },
+  { at: 41, text: '[extract] 18,204 files' },
+  { at: 43, text: '[setup] Creating Python 3.12 environment' },
+  { at: 50, text: '[setup] Installing torch==2.7.1' },
+  { at: 54, text: '[setup] Downloading torch-2.7.1-cp312-macosx_arm64.whl (74 MB)' },
+  { at: 62, text: '[setup] Installing requirements.txt (38 packages)' },
+  { at: 70, text: '[setup] Installing comfyui_manager 4.0' },
+  { at: 78, text: '[setup] Compiling bytecode' },
+  { at: 86, text: '[comfyui] Fetching ComfyUI' },
+  { at: 92, text: `[comfyui] Checking out ${DETECTED.version}` },
+  { at: 98, text: '[comfyui] Ready' }
+]
 // Picked node packs install after the environment, then a picked starter
 // workflow adds its models as a last step, as today.
 export const phases = computed<{ until: number; label: string }[]>(() => {
