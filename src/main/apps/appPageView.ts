@@ -132,7 +132,7 @@ const pagePath = (url: string): string | null => {
 
 const routeOf = (url: string): string => {
   try {
-    return new URL(url).hash
+    return (new URL(url).hash.split('?', 1)[0] ?? '').replace(/^(#\/.+?)\/+$/, '$1')
   } catch {
     return ''
   }
@@ -143,7 +143,7 @@ function isInAppRoute(base: string, url: string): boolean {
   const route = routeOf(base)
   if (!route.startsWith('#/')) return true
   const at = routeOf(url)
-  return at === route || at.startsWith(`${route}/`) || at.startsWith(`${route}?`)
+  return at === route || at.startsWith(`${route}/`)
 }
 
 function routeBaseOf(hosted: HostedPage): string | null {

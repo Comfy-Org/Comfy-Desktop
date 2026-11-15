@@ -849,6 +849,50 @@ describe('the app a hosted page has loaded', () => {
     expect(loadedAppPage(page)).toBeNull()
   })
 
+  it.each([
+    [`${UPSCALE_URL}?mode=before`, `${UPSCALE_URL}?mode=after`],
+    [`${UPSCALE_URL}/`, `${UPSCALE_URL}/step-2`]
+  ])('keeps a hash-route app listed at %s while it moves to %s', async (listedUrl, nextUrl) => {
+    mocks.pages.set(UPSCALE, listedUrl)
+    await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+    finishLoading(listedUrl)
+    const page = hostedPage().webContents
+
+    page.url = nextUrl
+    page.emit('did-navigate-in-page', {}, nextUrl, true)
+
+    expect(loadedAppPage(page as unknown as WebContents)).toEqual({ appId: UPSCALE, document: 1 })
+    await trackFromAppsPage(eventFrom(page), RUN)
+    expect(runsSent()).toEqual([
+      ['comfy.desktop.apps.run_started', { where: 'cloud', app_id: UPSCALE }]
+    ])
+  })
+
+  it.each([`${UPSCALE_URL}?mode=before`, `${UPSCALE_URL}/`])(
+    "drops a hash-route app listed at %s on another app's route and on the list",
+    async (listedUrl) => {
+      mocks.pages.set(UPSCALE, listedUrl)
+      await showAppPage(panelContents(), UPSCALE, PLACEMENT)
+      finishLoading(listedUrl)
+      const page = hostedPage().webContents as unknown as WebContents
+      const moveTo = (url: string) =>
+        hostedPage().webContents.emit('did-navigate-in-page', {}, url, true)
+
+      moveTo(`${APPS_URL}#/upscale-pro`)
+      expect(loadedAppPage(page)).toBeNull()
+
+      moveTo(listedUrl)
+      expect(loadedAppPage(page)).toEqual({ appId: UPSCALE, document: 1 })
+
+      moveTo(`${APPS_URL}#/other-app?mode=before`)
+      expect(loadedAppPage(page)).toBeNull()
+
+      moveTo(listedUrl)
+      moveTo(`${APPS_URL}#/`)
+      expect(loadedAppPage(page)).toBeNull()
+    }
+  )
+
   it('is no app for contents Desktop does not host', async () => {
     await openCutout()
     finishLoading()
