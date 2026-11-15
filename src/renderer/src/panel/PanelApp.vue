@@ -12,6 +12,7 @@ import BuildDetailsView from './BuildDetailsView.vue'
 import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
 import AssetsView from './AssetsView.vue'
+import AppsView from './AppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -51,7 +52,7 @@ import {
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -105,9 +106,11 @@ const firstUseChain = useFirstUseChain({
 })
 const {
   chainingFirstUseToNewInstall,
+  setupConsent,
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
+  handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
   handleNewInstallBackToSetup
@@ -172,7 +175,7 @@ if (params.get('e2e') === '1') {
   })
 }
 
-type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser' | 'assets'>
+type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
 
 const dashboardHomePage = ref<DashboardHomePage>('home')
 
@@ -225,9 +228,20 @@ async function showHome(): Promise<void> {
   window.api.navigatePanel('home')
 }
 
+const appsVisits = ref(0)
+const appIsOpen = ref(false)
+const appPickedOnHome = ref<AppCard | null>(null)
+
+function openAppFromHome(app: AppCard): void {
+  appPickedOnHome.value = app
+  dashboardHomePage.value = 'apps'
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
-  if (page === 'home' || page === 'chooser' || page === 'assets') dashboardHomePage.value = page
+  if (page === 'apps') appsVisits.value += 1
+  if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
+    dashboardHomePage.value = page
 }
 
 function retryLaunch(id: string): void {
@@ -488,6 +502,7 @@ onUnmounted(() => {
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
+        :make-room="appIsOpen"
         @navigate="handleSidebarNavigate"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
@@ -514,9 +529,17 @@ onUnmounted(() => {
           >
             <HomeView
               v-if="dashboardHomePage === 'home'"
+              @open-app="openAppFromHome"
               @pick="handleChooserPick"
               @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
+              @show-apps="handleSidebarNavigate('apps')"
+            />
+            <AppsView
+              v-else-if="dashboardHomePage === 'apps'"
+              v-model:start-with="appPickedOnHome"
+              :revisit="appsVisits"
+              @app-open-change="appIsOpen = $event"
             />
             <AssetsView v-else-if="dashboardHomePage === 'assets'" />
             <BuildDetailsView
@@ -564,6 +587,7 @@ onUnmounted(() => {
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
         @back-to-setup="handleNewInstallBackToSetup"
+        @consent-change="handleNewInstallConsentChange"
       />
       <TrackModal
         v-else-if="currentOverlay.component === 'track'"
@@ -586,6 +610,7 @@ onUnmounted(() => {
       <FirstUseTakeover
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
+        :consent="setupConsent"
         @install="handleSetupInstall"
         @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"

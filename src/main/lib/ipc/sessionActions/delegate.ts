@@ -2,13 +2,18 @@ import { installations, i18n, sourceMap, _operationAborts, MSG_CANCELLED } from 
 import type { ActionContext, ActionResult } from './types'
 import { appendLog } from '../../logsBroadcast'
 import { holdAgentPrefetch } from '../../agentRequirementsLaunch'
+import { occupiesInstall } from './occupiesInstall'
 
 export async function handleDelegateToSource(
   { event, installationId, inst, actionData }: ActionContext,
   actionId: string
 ): Promise<ActionResult> {
   const abort = new AbortController()
-  _operationAborts.set(installationId, abort)
+  const occupies = occupiesInstall(actionId)
+  if (occupies) _operationAborts.set(installationId, abort)
+  const vacate = (): void => {
+    if (occupies) _operationAborts.delete(installationId)
+  }
   const sender = event.sender
   const sendProgress = (phase: string, detail: Record<string, unknown>): void => {
     try {
@@ -26,7 +31,7 @@ export async function handleDelegateToSource(
     installations.update(installationId, data).then(() => {})
   const source = sourceMap[inst.sourceId]
   if (!source) {
-    _operationAborts.delete(installationId)
+    vacate()
     return { ok: false, message: i18n.t('errors.unknownSource') }
   }
   const logFailure = (message: string): void => {
@@ -37,7 +42,9 @@ export async function handleDelegateToSource(
     }
   }
   const releasePrefetch =
-    typeof inst.installPath === 'string' ? await holdAgentPrefetch(inst.installPath) : () => {}
+    occupies && typeof inst.installPath === 'string'
+      ? await holdAgentPrefetch(inst.installPath)
+      : () => {}
   try {
     const result = await source.handleAction(actionId, inst, actionData, {
       update,
@@ -55,6 +62,6 @@ export async function handleDelegateToSource(
     return { ok: false, message: (err as Error).message }
   } finally {
     releasePrefetch()
-    _operationAborts.delete(installationId)
+    vacate()
   }
 }

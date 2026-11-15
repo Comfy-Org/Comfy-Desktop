@@ -22,6 +22,7 @@ export interface InstanceNavStateSources {
   currentView: MaybeRefOrGetter<ViewKind>
   currentCategory: MaybeRefOrGetter<Category | null>
   activeInstallationId: MaybeRefOrGetter<string | null | undefined>
+  startingWithoutWindow?: MaybeRefOrGetter<boolean>
 }
 
 export function useInstanceNavState(
@@ -55,7 +56,9 @@ export function useInstanceNavState(
 
   const targetRun = computed<TargetRun>(() => {
     if (isTargetCurrentHost.value && isTargetRunningHere.value) return 'self'
-    if (isTargetRunningElsewhere.value) return 'running-elsewhere'
+    if (isTargetRunningElsewhere.value) {
+      return toValue(sources.startingWithoutWindow) ? 'starting-unhosted' : 'running-elsewhere'
+    }
     return 'stopped'
   })
 

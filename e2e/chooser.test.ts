@@ -63,6 +63,47 @@ test('clicking New Install tile opens the new-install takeover @windows @macos @
   await expectChooserVisible(ctx.panel)
 })
 
+test('Change setup asks first for a new install or a ComfyUI already there, and shows each choice in the sheet @windows @macos @linux', async () => {
+  await clickNewInstallTile(ctx.panel)
+  await expectNewBuildModalOpen(ctx.panel)
+  await openNewBuildChangeSetup(ctx.panel)
+  await ctx.panel.waitForVisible('[data-testid="install-source-tabs"]')
+  expect(
+    await ctx.panel.exists('[data-testid="install-source-remote"]'),
+    'a server is not offered as a place to get a new install from'
+  ).toBe(false)
+
+  expect(await ctx.panel.click('[data-testid="config-start-from-existing"]')).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="existing-comfy-folder-form"]')
+  expect(await ctx.panel.exists('[data-testid="install-source-tabs"]')).toBe(false)
+  expect(await ctx.panel.exists('[data-testid="config-save-changes"]')).toBe(false)
+  expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Add build')
+
+  expect(await ctx.panel.click('[data-testid="existing-comfy-snapshot"]')).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="existing-comfy-snapshot-form"]')
+  expect(await ctx.panel.exists('[data-testid="existing-comfy-folder-form"]')).toBe(false)
+  expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Create build')
+  expect(
+    await ctx.panel.exists('[data-testid="load-snapshot-modal"]'),
+    'the snapshot is asked for in the sheet, not in a second window'
+  ).toBe(false)
+
+  expect(await ctx.panel.click('[data-testid="install-source-remote"]')).toBe(true)
+  await ctx.panel.waitForVisible('#sf-url')
+  expect(await ctx.panel.textOf('[data-testid="config-use-existing"]')).toBe('Connect')
+
+  expect(await ctx.panel.click('[data-testid="config-start-from-new"]')).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="install-source-tabs"]')
+  await ctx.panel.waitForVisible('[data-testid="config-save-changes"]')
+  expect(await ctx.panel.exists('#sf-url')).toBe(false)
+
+  expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
+  await ctx.panel.waitForVisible('.setup-modal-close')
+  expect(await ctx.panel.click('.setup-modal-close')).toBe(true)
+  await expect.poll(() => ctx.panel.exists('[data-testid="new-build-modal"]')).toBe(false)
+  await expectChooserVisible(ctx.panel)
+})
+
 test('Builds dropdown opens both import flows and restores focus on Escape @windows @macos @linux', async () => {
   const trigger = '[data-testid="build-actions-menu-trigger"]'
   expect(await ctx.panel.click(trigger)).toBe(true)

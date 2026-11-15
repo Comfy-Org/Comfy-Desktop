@@ -37,7 +37,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           package-manager-cache: false
-          node-version: '20'
+          node-version-file: .nvmrc
 
       - name: Build bootstrap Python
         run: node scripts/build-bootstrap-python.mjs --platform ${{ matrix.platform }} --output bootstrap-python

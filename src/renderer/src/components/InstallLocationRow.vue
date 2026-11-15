@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { HardDrive } from 'lucide-vue-next'
+import { HardDrive } from '@lucide/vue'
 import type { Component } from 'vue'
 import InstallLocationField from './InstallLocationField.vue'
 import SetupFormRow from './SetupFormRow.vue'

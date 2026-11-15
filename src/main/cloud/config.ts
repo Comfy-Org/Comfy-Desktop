@@ -7,6 +7,8 @@ export const WORKSPACE_MINT_SCOPE = 'comfy-cloud:workspace-token:mint'
 
 export const PARTNER_NODE_MINT_SCOPE = 'comfy-cloud:jobs:write'
 
+export const BILLING_WRITE_SCOPE = 'comfy-cloud:billing:write'
+
 export const CLOUD_ISSUER = process.env.COMFY_CLOUD_ISSUER || DEFAULT_ISSUER
 
 export function revokeUrlOf(issuer: string): string {
@@ -21,7 +23,7 @@ export const CLOUD_CONFIG = {
   jwksUrl: `${CLOUD_ISSUER}/.well-known/jwks.json`,
   apiBase: `${CLOUD_ISSUER}/api`,
   clientId: process.env.COMFY_CLOUD_CLIENT_ID || DEFAULT_CLIENT_ID,
-  scope: `comfy-cloud:user:read ${PARTNER_NODE_MINT_SCOPE} ${WORKSPACE_MINT_SCOPE}`,
+  scope: `comfy-cloud:user:read ${PARTNER_NODE_MINT_SCOPE} ${WORKSPACE_MINT_SCOPE} ${BILLING_WRITE_SCOPE}`,
   resource: `${CLOUD_ISSUER}/api`,
   audience: 'comfy-cloud'
 } as const

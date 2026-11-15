@@ -38,6 +38,8 @@ import { registerDevPlatformHandlers } from './registerDevPlatformHandlers'
 import { registerAssetsHandlers } from '../assets'
 import { registerEmbeddedSessionHandlers } from './registerEmbeddedSessionHandlers'
 import { registerCatalogHandlers } from './registerCatalogHandlers'
+import { registerAppsHandlers } from './registerAppsHandlers'
+import { registerAppsLocalHandlers } from './registerAppsLocalHandlers'
 import { reconcileAdoptedSettings } from '../desktopAdopt'
 import {
   finalizeComfyBuilderRecovery,
@@ -283,5 +285,7 @@ export function register(callbacks: RegisterCallbacks = {}): Promise<void> {
   registerAssetsHandlers()
   registerEmbeddedSessionHandlers()
   registerCatalogHandlers()
+  registerAppsHandlers()
+  registerAppsLocalHandlers()
   return startupRecovery.then(() => undefined)
 }

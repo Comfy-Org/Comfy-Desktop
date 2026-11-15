@@ -18,7 +18,7 @@ import {
   variantMatchesHost,
   writeComfyEnvironment
 } from './envPaths'
-import { install, postInstall, probeInstallation } from './install'
+import { install, installSteps, postInstall, probeInstallation } from './install'
 import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
 import { loadTemplateCatalog, toTemplateFieldOption } from './templateCatalog'
 import { resolveTemplateModels } from './templateModels'
@@ -124,15 +124,7 @@ export const standalone: SourcePlugin = {
 
   defaultLaunchArgs: DEFAULT_LAUNCH_ARGS,
 
-  get installSteps() {
-    return [
-      { phase: 'download', label: t('common.download') },
-      { phase: 'extract', label: t('common.extract') },
-      { phase: 'setup', label: t('standalone.setupEnv') },
-      { phase: 'cleanup', label: t('standalone.cleanupEnv') },
-      { phase: 'update', label: t('standalone.updateToStable') }
-    ]
-  },
+  installSteps,
 
   getDefaults() {
     return { launchArgs: DEFAULT_LAUNCH_ARGS, launchMode: 'window', portConflict: 'auto' }

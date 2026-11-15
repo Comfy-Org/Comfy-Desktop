@@ -5,15 +5,7 @@ import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
 import { computed, nextTick, ref } from 'vue'
-import {
-  ChevronRight,
-  Ellipsis,
-  Flag,
-  GripVertical,
-  ImageDown,
-  Pencil,
-  Trash2
-} from 'lucide-vue-next'
+import { ChevronRight, Ellipsis, Flag, GripVertical, ImageDown, Pencil, Trash2 } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import type { PerformanceTestBenchmark } from '../../types/ipc'
 import Tooltip from '../../components/ui/Tooltip.vue'

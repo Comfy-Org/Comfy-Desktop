@@ -1,5 +1,8 @@
 export type {
   DashboardPage,
+  AppCard,
+  AppPagePlacement,
+  AppPageStatus,
   AssetKind,
   AssetSummary,
   CatalogWorkflow,

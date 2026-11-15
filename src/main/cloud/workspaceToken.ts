@@ -62,8 +62,7 @@ function reportableErrorCode(code: string): string {
 }
 
 export type MintFailureReport =
-  | { reason: 'network' }
-  | { reason: 'http'; http_status: number; error_code?: string }
+  { reason: 'network' } | { reason: 'http'; http_status: number; error_code?: string }
 
 export function mintFailureReport(
   failure: Extract<WorkspaceTokenMint, { kind: 'failed' }>

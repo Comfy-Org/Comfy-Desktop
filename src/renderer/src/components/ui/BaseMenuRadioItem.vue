@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { DropdownMenuItemIndicator } from 'reka-ui'
-import { Check } from 'lucide-vue-next'
+import { Check } from '@lucide/vue'
 import MenuRadioItem from '@comfyorg/design-system/menu/MenuRadioItem'
 
 defineProps<{

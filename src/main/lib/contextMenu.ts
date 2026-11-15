@@ -1,6 +1,7 @@
-import { Menu, clipboard, shell } from 'electron'
+import { Menu, clipboard } from 'electron'
 import type { BrowserWindow } from 'electron'
 import * as i18n from './i18n'
+import { isOpenableExternalUrl, tryOpenExternalUrl } from './openExternal'
 
 export interface ContextMenuHooks {
   onMenuOpen?: () => void
@@ -46,6 +47,7 @@ export function buildContextMenuItems(
   } = params
   const hasSelection = selectionText.trim().length > 0
   const hasLink = linkURL.length > 0
+  const canOpenLink = isOpenableExternalUrl(linkURL)
   const hasImage = mediaType === 'image' && hasImageContents && srcURL.length > 0
   const hasMisspelling = misspelledWord.length > 0
 
@@ -67,18 +69,18 @@ export function buildContextMenuItems(
 
   if (hasLink) {
     if (menuItems.length > 0) menuItems.push({ type: 'separator' })
-    menuItems.push(
-      {
+    if (canOpenLink) {
+      menuItems.push({
         id: 'openLink',
         label: i18n.t('contextMenu.openLinkInBrowser'),
         click: () => actions.openLink(linkURL)
-      },
-      {
-        id: 'copyLink',
-        label: i18n.t('contextMenu.copyLinkAddress'),
-        click: () => actions.copyLink(linkURL)
-      }
-    )
+      })
+    }
+    menuItems.push({
+      id: 'copyLink',
+      label: i18n.t('contextMenu.copyLinkAddress'),
+      click: () => actions.copyLink(linkURL)
+    })
   }
 
   if (hasImage) {
@@ -125,8 +127,8 @@ export function attachContextMenu(
     const menuItems = buildContextMenuItems(params, {
       saveImage: (srcURL) => wc.session.downloadURL(srcURL),
       copyImage: () => wc.copyImageAt(params.x, params.y),
-      openLink: (linkURL) => shell.openExternal(linkURL),
-      copyLink: (linkURL) => clipboard.writeText(linkURL),
+      openLink: (linkURL) => void tryOpenExternalUrl(linkURL),
+      copyLink: (linkURL) => void clipboard.writeText(linkURL),
       replaceMisspelling: (suggestion) => wc.replaceMisspelling(suggestion),
       addWordToDictionary: (word) => wc.session.addWordToSpellCheckerDictionary(word)
     })

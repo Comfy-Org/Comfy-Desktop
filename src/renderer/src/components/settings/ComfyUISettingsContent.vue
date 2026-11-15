@@ -35,7 +35,7 @@ import {
   Repeat2,
   Server,
   Ellipsis
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { Component } from 'vue'
 import { useComfyUISettings } from '../../composables/useComfyUISettings'
 import { useInstanceNavState } from '../../composables/useInstanceNavState'
@@ -87,6 +87,7 @@ interface Props {
   activeInstallationId?: string | null
   currentView?: ViewKind
   currentCategory?: Category | null
+  startingWithoutWindow?: boolean
   pageActionsTarget?: string
   pageTitleTarget?: string
 }
@@ -100,6 +101,7 @@ const props = withDefaults(defineProps<Props>(), {
   activeInstallationId: null,
   currentView: 'dashboard',
   currentCategory: null,
+  startingWithoutWindow: false,
   pageActionsTarget: undefined,
   pageTitleTarget: undefined,
   globalSettingsSnapshot: () => ({
@@ -146,7 +148,8 @@ const installation = toRef(props, 'installation')
 const navState = useInstanceNavState(installation, {
   currentView: () => props.currentView,
   currentCategory: () => props.currentCategory,
-  activeInstallationId: () => props.activeInstallationId
+  activeInstallationId: () => props.activeInstallationId,
+  startingWithoutWindow: () => props.startingWithoutWindow
 })
 const installCta = navState.cta
 const {
@@ -475,11 +478,15 @@ function handleSnapshotsRefresh(): void {
 
 const isRunningInThisWindow = installCta.runningInThisWindow
 
-const hasPendingRestart = computed(
-  () => isRunningInThisWindow.value && pendingRestartFieldIds.value.size > 0
+const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
+
+const primaryRestartsTarget = computed(
+  () => isRunningInThisWindow.value || primaryDecision.value.verb === 'restart'
 )
 
-const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
+const hasPendingRestart = computed(
+  () => primaryRestartsTarget.value && pendingRestartFieldIds.value.size > 0
+)
 
 function resolveNavLabel(key: string): string {
   if (key === 'instancePicker.openCloud' && installation.value?.sourceCategory === 'remote') {

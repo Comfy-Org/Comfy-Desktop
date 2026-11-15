@@ -142,8 +142,8 @@ test('first-use lockdown never costs the user the beta notice @linux', async () 
   })
   await expect
     .poll(async () => popupVisible(ctx.app), {
-      timeout: 15_000,
-      message: 'the beta notice drew its card but the popup never came on screen'
+      timeout: 5_000,
+      message: 'the drawn beta notice was never shown on screen'
     })
     .toBe(true)
   expect(await lockdownEngaged(ctx.titleBar)).toBe(false)

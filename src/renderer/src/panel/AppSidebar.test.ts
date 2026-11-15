@@ -25,12 +25,15 @@ const NEW = build({ id: 'new', name: 'Video Lab', lastLaunchedAt: 300 })
 const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, workspaceId: 'ws-team' })
 
 const navigatePanel = vi.fn()
+const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 
 beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
+  getAppsEnabled.mockResolvedValue(false)
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
+    getAppsEnabled,
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
@@ -71,6 +74,51 @@ describe('AppSidebar', () => {
     expect(wrapper.get('[data-testid="app-sidebar-new-build"]').attributes('aria-label')).toBe(
       'New build'
     )
+  })
+
+  it('adds Apps between Home and Assets once Apps is switched on', async () => {
+    getAppsEnabled.mockResolvedValue(true)
+    const wrapper = await mountSidebar('apps')
+
+    expect(wrapper.findAll('nav button').map((row) => row.text())).toEqual([
+      'Home',
+      'Apps',
+      'Assets',
+      'Builds',
+      ''
+    ])
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Apps'])
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+
+    expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('apps')
+    expect(wrapper.emitted('navigate')).toEqual([['apps']])
+  })
+
+  it('folds to the rail while an app is open, lets the toggle reopen it, and keeps the saved choice', async () => {
+    const wrapper = await mountSidebar('apps')
+    const sidebar = wrapper.get('[data-testid="app-sidebar"]')
+    expect(sidebar.attributes('data-collapsed')).toBe('false')
+
+    await wrapper.setProps({ makeRoom: true })
+    expect(sidebar.attributes('data-collapsed')).toBe('true')
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    expect(sidebar.attributes('data-collapsed')).toBe('false')
+
+    await wrapper.setProps({ makeRoom: false })
+    expect(sidebar.attributes('data-collapsed')).toBe('false')
+    expect(window.localStorage.getItem('comfy.desktop.sidebar.collapsed')).not.toBe('true')
+
+    await wrapper.setProps({ makeRoom: true })
+    expect(sidebar.attributes('data-collapsed')).toBe('true')
+  })
+
+  it('leaves Apps out when the switch cannot be read', async () => {
+    getAppsEnabled.mockRejectedValue(new Error('main is busy'))
+    const wrapper = await mountSidebar()
+
+    expect(wrapper.find('[data-testid="app-sidebar-apps"]').exists()).toBe(false)
   })
 
   it('marks only the current page', async () => {

@@ -460,8 +460,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
       abortTemplateDownload(id)
       abortModelStaging(id)
       const relaunch = fx.relaunchStates.get(id) as
-        | { navBlocker: (...args: unknown[]) => void }
-        | undefined
+        { navBlocker: (...args: unknown[]) => void } | undefined
       if (relaunch && !comfyContents.isDestroyed()) {
         comfyContents.off('will-navigate', relaunch.navBlocker)
       }

@@ -113,12 +113,21 @@ vi.mock('../views/FirstUseTakeover.vue', () => ({
         installRoot: '/Users/ada/ComfyUI-Installs',
         downloadBytes: 1024 ** 3,
         requiredBytes: 2 * 1024 ** 3
+      },
+      consent: {
+        acceptedTos: true,
+        telemetryEnabled: true,
+        betaFeaturesEnabled: true,
+        betaTouched: false,
+        preservePersistedBetaOptIn: false,
+        locale: 'en'
       }
     }),
     template:
       '<div data-testid="first-use-takeover">' +
       '<button data-testid="first-use-install" @click="$emit(\'install\', plan)">Install</button>' +
-      '<button data-testid="first-use-change" @click="$emit(\'change\')">Change</button>' +
+      '<button data-testid="first-use-change" @click="$emit(\'change\', consent)">Change</button>' +
+      '<button data-testid="first-use-change-before-eula" @click="$emit(\'change\', { ...consent, acceptedTos: false })">Change</button>' +
       '<button data-testid="first-use-skip" @click="$emit(\'complete-skip\')">Skip</button>' +
       '</div>',
     methods: { open: vi.fn(), resetContinue: vi.fn() }
@@ -385,7 +394,14 @@ function installMockApi(initial?: {
     navigatePanel: vi.fn(),
     listHomeWorkflows: vi.fn(async () => []),
     openCatalogWorkflow: vi.fn(async () => true),
-    openCatalogWorkflowHub: vi.fn(async () => true),
+    getAppsEnabled: vi.fn(async () => false),
+    listApps: vi.fn(async () => []),
+    showAppPage: vi.fn(async () => 'loading'),
+    captureAppPage: vi.fn(async () => null),
+    hideAppPage: vi.fn(),
+    reloadAppPage: vi.fn(),
+    onAppPageStatusChanged: vi.fn(() => () => {}),
+    onAppPageClosed: vi.fn(() => () => {}),
     getListActions: vi.fn(async () => []),
     runAction: vi.fn(async () => ({ ok: true })),
     getFieldOptions: vi.fn(async () => []),
@@ -1348,6 +1364,187 @@ describe('PanelApp', () => {
     expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-testid="app-sidebar-home"]').attributes('aria-current')).toBe('page')
     expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('false')
+  })
+
+  it('opens Apps from the sidebar in place of Home, and leaves it again', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="chooser-view"]').attributes('data-visible')).toBe('false')
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(window.api.navigatePanel).toHaveBeenCalledWith('apps')
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+  })
+
+  it('opens Apps from See all apps on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-see-all-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+  })
+
+  it('goes back to all apps when Apps is picked again while an app is open', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+  })
+
+  it('gives the sidebar its width back when the person leaves Apps with an app open', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-card-upscale"]').trigger('click')
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="home-view"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+  })
+
+  it('opens the app picked on Home inside Desktop, on the Apps page beside the folded sidebar', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null },
+      { id: 'cutout', title: 'Remove Background', description: '', coverUrl: null }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(
+      wrapper
+        .findAll('[data-testid="home-carousel-name"]')
+        .map((name) => name.text().replace('Enlarge a picture.', ''))
+    ).toEqual(['Upscale 4x', 'Remove Background'])
+
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="home-view"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('aria-label')).toBe('Upscale 4x')
+    expect(wrapper.get('[data-testid="app-sidebar-apps"]').attributes('aria-current')).toBe('page')
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('true')
+    expect(window.api.openCatalogWorkflow).not.toHaveBeenCalled()
+  })
+
+  it('shows all apps, not the one picked on Home again, when Apps is opened afterwards', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+
+    await wrapper.get('[data-testid="app-sidebar-home"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+  })
+
+  it('keeps an app closed after it was opened from Home, closed, and Apps is opened again from Benchmarks', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
+    const appPageWentBackToAllApps = vi.mocked(window.api.onAppPageClosed).mock.calls.at(-1)![0]
+    appPageWentBackToAllApps()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'benchmarks' }))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="apps-view"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'chooser' }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-sidebar"]').attributes('data-collapsed')).toBe('false')
+  })
+
+  it('shows the cards when Apps is opened from Benchmarks after an app from Home was left open', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    vi.mocked(window.api.listApps).mockResolvedValue([
+      { id: 'upscale', title: 'Upscale 4x', description: 'Enlarge a picture.', coverUrl: null }
+    ])
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-carousel-card"][aria-current="true"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(true)
+
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'benchmarks' }))
+    await flushPromises()
+    await wrapper.get('[data-testid="app-sidebar-apps"]').trigger('click')
+    mockState.panelSwitchCallbacks.forEach((cb) => cb({ panel: 'chooser' }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="app-page-host"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="app-card-upscale"]').isVisible()).toBe(true)
   })
 
   it('opens Home from the sidebar and returns to the list of builds', async () => {
@@ -2963,6 +3160,30 @@ describe('PanelApp', () => {
     await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
     await flushPromises()
     expect(setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
+  })
+
+  it('returns to Set up with onboarding still pending when the install options close before the EULA is accepted', async () => {
+    mockState.settings.firstUseCompleted = false
+    window.history.replaceState({}, '', '/?panel=chooser')
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="first-use-change-before-eula"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(true)
+
+    await wrapper.findComponent({ name: 'InstallWizardModal' }).vm.$emit('close')
+    await flushPromises()
+
+    const setSetting = (
+      window as unknown as {
+        api: { setSetting: ReturnType<typeof vi.fn> }
+      }
+    ).api.setSetting
+    expect(wrapper.find('[data-testid="first-use-takeover"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="new-install-modal"]').exists()).toBe(false)
+    expect(setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
   })
 
   it('marks firstUseCompleted=true and closes the takeover when main fires the file-menu Skip Onboarding event', async () => {

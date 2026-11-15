@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight } from 'lucide-vue-next'
+import { ArrowRight } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { useShowcaseCarousel } from '../composables/useShowcaseCarousel'
 import { TID } from '../../../shared/testIds'
