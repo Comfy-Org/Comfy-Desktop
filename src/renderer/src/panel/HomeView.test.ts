@@ -768,7 +768,8 @@ describe('Home build auto start', () => {
   it('leaves the box off a card while its build installs', async () => {
     Object.assign(window.api, {
       onInstallProgress: vi.fn(() => () => {}),
-      onComfyOutput: vi.fn(() => () => {})
+      onComfyOutput: vi.fn(() => () => {}),
+      onErrorDetail: vi.fn(() => () => {})
     })
     getInstallations.mockResolvedValue([OLDEST, NEWEST])
     const wrapper = await openHome()
@@ -777,7 +778,8 @@ describe('Home build auto start', () => {
       installationId: NEWEST.id,
       title: 'Installing',
       opKind: 'install',
-      apiCall: () => new Promise(() => {})
+      apiCall: () => new Promise(() => {}),
+      events: window.api
     })
     await flushPromises()
 

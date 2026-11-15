@@ -503,7 +503,7 @@ describe('useProgressStore', () => {
       receive: (event: Omit<ProgressData, 'installationId'>) => void
       barPercent: () => number
     } {
-      store.startOperation({
+      startOperation({
         installationId: 'build-1',
         title: 'Installing',
         apiCall: () => new Promise<ActionResult>(() => {}),
