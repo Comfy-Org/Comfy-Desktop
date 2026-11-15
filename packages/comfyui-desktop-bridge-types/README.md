@@ -71,6 +71,15 @@ needs, and only for runs the page started; `onLocalEvent()` carries ComfyUI's
 updates for those runs. `localDownload()` saves a safetensors model from
 Hugging Face into that build's models folder.
 
+`openInComfy({ prompt, where, name, build })` opens a run's API-format
+workflow in a ComfyUI window in Desktop: the build the page runs on (or the
+build `build` names, an id from `localBuilds()`) for `where: 'local'`, or the
+person's Comfy Cloud for `where: 'cloud'`. Desktop starts the build or shows
+its window if needed, and resolves `{ opened: true }` once ComfyUI has loaded
+the workflow, or `{ opened: false, error }` with the reason in words. Both
+members are absent on Desktop builds that predate them, so a page checks for
+them and keeps its file download as the fallback.
+
 Both objects are absent in a browser, so a page keeps its own sign-in and its
 own way to reach a local ComfyUI as the fallback.
 

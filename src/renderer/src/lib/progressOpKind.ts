@@ -26,6 +26,10 @@ export function progressOpKindForActionId(actionId: string): ProgressOpKind {
   }
 }
 
+export function isUninstallOpKind(opKind: ProgressOpKind | undefined): boolean {
+  return opKind === 'destructive'
+}
+
 export function destroysInstanceForActionId(actionId: string): boolean {
   return actionId === 'delete'
 }
