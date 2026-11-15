@@ -67,16 +67,8 @@ export const FRONTEND_RESTORE_PHASE: LaunchPhaseDef = {
   streaming: true
 }
 
-const TEMPLATE_MODELS_PHASE: LaunchPhaseDef = {
-  phase: 'template-models',
-  match: NEVER,
-  weight: 0.05,
-  streaming: true
-}
-
 export interface BuildLaunchPhasesOpts {
   preLaunchPhases?: PreLaunchPhase[]
-  templateModels?: boolean
 }
 
 export function buildLaunchPhases(
@@ -84,9 +76,5 @@ export function buildLaunchPhases(
   opts: BuildLaunchPhasesOpts = {}
 ): LaunchPhaseDef[] {
   const pre = (opts.preLaunchPhases ?? []).map((id) => ({ ...PRE_LAUNCH_PHASES[id] }))
-  const phases = [...pre, ...DEFAULT_LAUNCH_PHASES.map((p) => ({ ...p }))]
-  if (opts.templateModels) {
-    phases.push({ ...TEMPLATE_MODELS_PHASE })
-  }
-  return phases
+  return [...pre, ...DEFAULT_LAUNCH_PHASES.map((p) => ({ ...p }))]
 }

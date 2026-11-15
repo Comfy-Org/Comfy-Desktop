@@ -45,8 +45,7 @@ import { appendLog } from '../logsBroadcast'
 import { invalidateModelDownloadStartupPass } from '../comfyDownloadManager'
 import {
   startTemplateDownload,
-  abortTemplateDownload,
-  requestSkipTemplateDownload
+  abortTemplateDownload
 } from '../../sources/standalone/templateDownloadTask'
 import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
@@ -440,12 +439,6 @@ export function registerInstallationHandlers(): void {
     const source = sourceMap[inst.sourceId]
     if (!source) return []
     return source.getListActions ? source.getListActions(inst) : []
-  })
-
-  ipcMain.handle('skip-template-download', (_event, installationId: string) => {
-    if (typeof installationId === 'string' && installationId) {
-      requestSkipTemplateDownload(installationId)
-    }
   })
 
   ipcMain.handle(
