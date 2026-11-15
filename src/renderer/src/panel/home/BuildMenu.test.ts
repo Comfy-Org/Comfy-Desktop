@@ -200,6 +200,48 @@ describe('Build menu', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
+  it('drops the uninstall question when the build starts running, and never uninstalls it', async () => {
+    const tile = await mountTile('ready')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+    document.querySelector<HTMLElement>('[data-testid="build-menu-delete"]')!.click()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="build-menu-uninstall-question"]')).not.toBeNull()
+
+    putIn('running')
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="build-menu-uninstall-question"]')).toBeNull()
+    expect(document.querySelector('[data-testid="build-menu-confirm-uninstall"]')).toBeNull()
+    expect(host.showProgress).not.toHaveBeenCalled()
+  })
+
+  it('offers no new window while the build is launching or stopping', async () => {
+    const tile = await mountTile('ready')
+    const sessions = useSessionStore()
+    const busyStates = [vi.spyOn(sessions, 'isLaunching'), vi.spyOn(sessions, 'isStopping')]
+
+    for (const busy of busyStates) {
+      busy.mockReturnValue(true)
+      await tile.get('[data-testid="home-build-more"]').trigger('click')
+      expect(await shownMenu()).not.toContain('open-new-window')
+      await closeMenu()
+      busy.mockRestore()
+    }
+  })
+
+  it('returns focus to the ⋯ button when the menu closes', async () => {
+    const tile = await mountTile('ready')
+    const more = tile.get<HTMLElement>('[data-testid="home-build-more"]')
+    more.element.focus()
+    await more.trigger('click')
+    await shownMenu()
+
+    await closeMenu()
+
+    await vi.waitFor(() => expect(document.activeElement).toBe(more.element))
+  })
+
   it('opens the logs when a starting build is clicked, and launches a ready one from the menu', async () => {
     const tile = await mountTile('starting')
 

@@ -79,6 +79,7 @@ async function homeWithBuildIn(state: BuildState) {
     useProgressStore().operations.set(STARTING.id, {
       finished: false,
       cancelRequested: false,
+      _globalFloor: 0,
       ...OPERATIONS[state]
     } as Operation)
   }

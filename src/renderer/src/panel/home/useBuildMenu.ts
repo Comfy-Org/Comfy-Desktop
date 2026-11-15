@@ -91,7 +91,8 @@ export function useBuildMenu(build: () => Installation) {
     }
     startsGroup(now, items)
 
-    if (!progress) {
+    const busy = !!progress || sessionStore.isLaunching(inst.id) || sessionStore.isStopping(inst.id)
+    if (!busy) {
       startsGroup(
         [{ id: 'open-new-window', label: t('instancePicker.openInNewWindow'), icon: AppWindow }],
         items

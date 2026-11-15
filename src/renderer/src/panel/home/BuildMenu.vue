@@ -15,11 +15,13 @@ export interface BuildMenuAnchor {
 const {
   build,
   anchor,
-  align = 'start'
+  align = 'start',
+  returnFocus = null
 } = defineProps<{
   build: Installation
   anchor: BuildMenuAnchor
   align?: 'start' | 'end'
+  returnFocus?: HTMLElement | null
 }>()
 const open = defineModel<boolean>('open', { default: false })
 
@@ -29,7 +31,14 @@ const confirmingUninstall = ref(false)
 
 const reference = computed(() => anchor)
 
-watch([open, () => build.id], () => {
+const itemsKey = computed(() =>
+  items.value.map((item) => `${item.id}${item.disabled ? '!' : ''}`).join()
+)
+const canUninstall = computed(() =>
+  items.value.some((item) => item.id === 'delete' && !item.disabled)
+)
+
+watch([open, () => build.id, itemsKey], () => {
   confirmingUninstall.value = false
 })
 
@@ -47,8 +56,19 @@ function select(event: Event, id: string): void {
   void run(id)
 }
 
-function confirmUninstall(): void {
+function confirmUninstall(event: Event): void {
+  if (!canUninstall.value) {
+    event.preventDefault()
+    confirmingUninstall.value = false
+    return
+  }
   void run('delete', { confirmed: true })
+}
+
+function onCloseAutoFocus(event: Event): void {
+  if (!returnFocus?.isConnected) return
+  event.preventDefault()
+  returnFocus.focus({ preventScroll: true })
 }
 
 function onKeydown(event: KeyboardEvent): void {
@@ -76,6 +96,7 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
     data-testid="build-menu"
     :data-build-id="build.id"
     @keydown.capture="onKeydown"
+    @close-auto-focus="onCloseAutoFocus"
   >
     <template #trigger><span hidden aria-hidden="true" /></template>
     <template v-if="confirmingUninstall">

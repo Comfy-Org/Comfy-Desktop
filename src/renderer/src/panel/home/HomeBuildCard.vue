@@ -79,21 +79,34 @@ function onClick(): void {
 }
 
 const menuOpen = ref(false)
-const menuAt = shallowRef<{ anchor: BuildMenuAnchor; align: 'start' | 'end' } | null>(null)
+const menuAt = shallowRef<{
+  anchor: BuildMenuAnchor
+  align: 'start' | 'end'
+  returnFocus: HTMLElement | null
+} | null>(null)
 
-function showMenu(anchor: BuildMenuAnchor, align: 'start' | 'end'): void {
-  menuAt.value = { anchor, align }
+function showMenu(
+  anchor: BuildMenuAnchor,
+  align: 'start' | 'end',
+  returnFocus: HTMLElement | null
+): void {
+  menuAt.value = { anchor, align, returnFocus }
   menuOpen.value = true
 }
 
 function openMoreMenu(event: MouseEvent): void {
   const button = event.currentTarget as HTMLElement
-  showMenu({ getBoundingClientRect: () => button.getBoundingClientRect() }, 'end')
+  showMenu({ getBoundingClientRect: () => button.getBoundingClientRect() }, 'end', button)
 }
 
 function openContextMenu(event: MouseEvent): void {
   const { clientX: x, clientY: y } = event
-  showMenu({ getBoundingClientRect: () => new DOMRect(x, y, 0, 0) }, 'start')
+  const tile = event.currentTarget as HTMLElement
+  showMenu(
+    { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) },
+    'start',
+    tile.querySelector<HTMLElement>('[data-testid="home-build-open"]')
+  )
 }
 </script>
 
@@ -191,6 +204,7 @@ function openContextMenu(event: MouseEvent): void {
       :build="build"
       :anchor="menuAt.anchor"
       :align="menuAt.align"
+      :return-focus="menuAt.returnFocus"
     />
   </div>
 </template>
