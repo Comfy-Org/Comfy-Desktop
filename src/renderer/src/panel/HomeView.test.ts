@@ -710,21 +710,21 @@ describe('Home build auto start', () => {
       .map((icon) => icon.element.closest('[data-build-id]')!.getAttribute('data-build-id')!)
   }
 
-  it('says Starts with Desktop on the ready card of the build that starts when Desktop opens', async () => {
+  it('says Auto start on the ready card of the build that starts when Desktop opens', async () => {
     saved = OLDEST.id
     getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
     expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
-    expect(statusOf(wrapper, OLDEST.id)).toBe('Starts with Desktop')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Auto start')
     expect(statusOf(wrapper, RUNNING.id)).toBe('Ready')
     expect(startingWithDesktop(wrapper)).toEqual([OLDEST.id])
     expect(
       cardOf(wrapper, OLDEST.id).get('[data-testid="home-build-open"]').attributes('aria-label')
-    ).toBe(`${OLDEST.name}, Starts with Desktop`)
+    ).toBe(`${OLDEST.name}, Auto start`)
   })
 
-  it('moves Starts with Desktop to the card whose menu says Start with Desktop', async () => {
+  it('moves Auto start to the card whose menu says Auto start', async () => {
     saved = OLDEST.id
     getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
@@ -736,7 +736,7 @@ describe('Home build auto start', () => {
       expect(found).not.toBeNull()
       return found!
     })
-    expect(line.textContent?.trim()).toBe('Start with Desktop')
+    expect(line.textContent?.trim()).toBe('Auto start')
     line.click()
     await flushPromises()
 
@@ -779,7 +779,7 @@ describe('Home build auto start', () => {
     expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
   })
 
-  it('shows the install status, not Starts with Desktop, while that build installs', async () => {
+  it('shows the install status, not Auto start, while that build installs', async () => {
     Object.assign(window.api, {
       onInstallProgress: vi.fn(() => () => {}),
       onComfyOutput: vi.fn(() => () => {})
@@ -799,7 +799,7 @@ describe('Home build auto start', () => {
     expect(
       wrapper.find(`[data-testid="home-build-installing"][data-build-id="${OLDEST.id}"]`).exists()
     ).toBe(true)
-    expect(statusOf(wrapper, OLDEST.id)).not.toContain('Starts with Desktop')
+    expect(statusOf(wrapper, OLDEST.id)).not.toContain('Auto start')
     expect(startingWithDesktop(wrapper)).toEqual([])
     expect(setSetting).not.toHaveBeenCalledWith('autoLaunchOnStartup', expect.anything())
   })

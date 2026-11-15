@@ -228,7 +228,7 @@ export function useInstallContextMenu(
       if (head) head.separator = true
       items.unshift({
         id: 'auto-start',
-        label: startsOnOpen ? t('home.dontStartWithDesktop') : t('home.startWithDesktop'),
+        label: startsOnOpen ? t('home.turnOffAutoStart') : t('home.turnOnAutoStart'),
         icon: startsOnOpen ? PowerOff : Power
       })
     }

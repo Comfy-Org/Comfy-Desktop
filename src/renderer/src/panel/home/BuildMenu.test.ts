@@ -288,13 +288,13 @@ describe('Build menu', () => {
     ['tile ⋯', 'more'],
     ['sidebar row', 'sidebar']
   ] as const)(
-    'from the %s, offers Start with Desktop and saves this build when picked',
+    'from the %s, offers Auto start and saves this build when picked',
     async (_name, from) => {
       saved = OTHER_BUILD_ID
       await openMenuFrom(from)
 
       const line = autoStartLine()
-      expect(line.textContent?.trim()).toBe('Start with Desktop')
+      expect(line.textContent?.trim()).toBe('Auto start')
       expect(line.querySelector('.lucide-power')).not.toBeNull()
       line.click()
       await flushPromises()
@@ -304,12 +304,12 @@ describe('Build menu', () => {
     }
   )
 
-  it("offers Don't start with Desktop on the build that starts with Desktop and sets None when picked", async () => {
+  it('offers Turn off Auto start on the build that starts with Desktop and sets None when picked', async () => {
     saved = BUILD.id
     const tile = await openMenuFrom('more')
 
     const line = autoStartLine()
-    expect(line.textContent?.trim()).toBe("Don't start with Desktop")
+    expect(line.textContent?.trim()).toBe('Turn off Auto start')
     expect(line.querySelector('.lucide-power-off')).not.toBeNull()
     line.click()
     await flushPromises()
@@ -318,10 +318,10 @@ describe('Build menu', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-testid="build-menu"]')).toBeNull())
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     await shownMenu()
-    expect(autoStartLine().textContent?.trim()).toBe('Start with Desktop')
+    expect(autoStartLine().textContent?.trim()).toBe('Auto start')
   })
 
-  it('keeps the Start with Desktop line, in its own group, while the build installs', async () => {
+  it('keeps the Auto start line, in its own group, while the build installs', async () => {
     const tile = await mountTile('installing')
     await tile.get('[data-testid="home-build-more"]').trigger('click')
     const shown = await shownMenu()

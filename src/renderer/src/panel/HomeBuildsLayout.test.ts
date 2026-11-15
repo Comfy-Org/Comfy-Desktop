@@ -171,7 +171,7 @@ describe('Home build tiles', () => {
     )
     if (state === 'starting with Desktop') {
       const status = tiles[0]!.querySelector('[data-testid="home-build-status"] .truncate')!
-      expect(status.textContent?.trim()).toBe('Starts with Desktop')
+      expect(status.textContent?.trim()).toBe('Auto start')
       expect(fullyShown(status)).toBe(true)
     }
     for (const tile of tiles) expect(tile.getBoundingClientRect().height).toBe(100)

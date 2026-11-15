@@ -73,7 +73,7 @@ function fullyShown(element: Element): boolean {
   return element.scrollWidth <= element.clientWidth && element.clientWidth > 0
 }
 
-describe('Starts with Desktop on Home build cards in the smallest window with the sidebar open', () => {
+describe('Auto start on Home build cards in the smallest window with the sidebar open', () => {
   it('shows the whole status and leaves each name the width the card has after its picture', async () => {
     page.style.cssText = `position: absolute; left: 0; top: 0; width: ${HOME_WIDTH_IN_SMALLEST_WINDOW}px`
     const wrapper = mount(HomeView, { attachTo: page })
@@ -83,7 +83,7 @@ describe('Starts with Desktop on Home build cards in the smallest window with th
       wrapper,
       `div[data-testid="home-build"][data-build-id="${STUDIO.id}"] [data-testid="home-build-status"] .truncate`
     )
-    expect(studioStatus.textContent?.trim()).toBe('Starts with Desktop')
+    expect(studioStatus.textContent?.trim()).toBe('Auto start')
     expect(fullyShown(studioStatus), 'status is not cut off').toBe(true)
     expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
 
@@ -118,12 +118,12 @@ function buildsTileStatus(wrapper: VueWrapper): Element {
   return tile.querySelector('.chooser-tile-body .truncate')!
 }
 
-describe('Starts with Desktop on Builds page tiles', () => {
+describe('Auto start on Builds page tiles', () => {
   it('in a 1024 px window with the sidebar open, keeps the status on one line, the name readable and every button inside the tile', async () => {
     const wrapper = await mountBuildsGrid(BUILDS_GRID_WIDTH_IN_LARGE_WINDOW)
 
     const status = buildsTileStatus(wrapper)
-    expect(status.textContent?.trim()).toBe('Starts with Desktop')
+    expect(status.textContent?.trim()).toBe('Auto start')
     expect(boxOf(status).height, 'status stays on one line').toBe(16)
     expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
 
@@ -147,7 +147,7 @@ describe('Starts with Desktop on Builds page tiles', () => {
     const wrapper = await mountBuildsGrid(BUILDS_GRID_WIDTH_IN_WIDE_WINDOW)
 
     const status = buildsTileStatus(wrapper)
-    expect(status.textContent?.trim()).toBe('Starts with Desktop')
+    expect(status.textContent?.trim()).toBe('Auto start')
     expect(fullyShown(status), 'status is not cut off').toBe(true)
   })
 })

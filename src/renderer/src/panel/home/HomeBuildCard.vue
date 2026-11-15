@@ -67,7 +67,7 @@ const statusLabel = computed(() => {
     case 'always-on':
       return t('home.buildAlwaysOn')
     case 'ready':
-      return autoStart ? t('home.startsWithDesktop') : t('home.buildReady')
+      return autoStart ? t('home.autoStartOn') : t('home.buildReady')
     default:
       return status satisfies never
   }

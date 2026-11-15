@@ -258,7 +258,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('open-details')).toBeUndefined()
   })
 
-  it('sets Start with Desktop from a tile menu, moving it from the other build', async () => {
+  it('sets Auto start from a tile menu, moving it from the other build', async () => {
     let saved: unknown = 'a'
     const api = installMockApi([
       makeInstall({ id: 'a', name: 'Alpha' }),
@@ -287,18 +287,18 @@ describe('ChooserView', () => {
 
     expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
     expect(startsWithDesktop('a')).toBe(true)
-    expect(tile('a').text()).toContain('Starts with Desktop')
+    expect(tile('a').text()).toContain('Auto start')
     expect(startsWithDesktop('b')).toBe(false)
     expect(tile('b').text()).toContain('Ready')
 
     const menuA = await menuFor('a')
     const itemsA = menuA.props('items') as { id: string; label: string; separator?: boolean }[]
-    expect(itemsA[0]).toMatchObject({ id: 'auto-start', label: "Don't start with Desktop" })
+    expect(itemsA[0]).toMatchObject({ id: 'auto-start', label: 'Turn off Auto start' })
     expect(itemsA[1]).toMatchObject({ id: 'manage', separator: true })
 
     const menuB = await menuFor('b')
     const itemsB = menuB.props('items') as { id: string; label: string }[]
-    expect(itemsB[0]).toMatchObject({ id: 'auto-start', label: 'Start with Desktop' })
+    expect(itemsB[0]).toMatchObject({ id: 'auto-start', label: 'Auto start' })
     menuB.vm.$emit('select', 'auto-start')
     await flushPromises()
 
@@ -309,9 +309,7 @@ describe('ChooserView', () => {
     expect(wrapper.emitted('pick')).toBeUndefined()
 
     const menuAgain = await menuFor('b')
-    expect((menuAgain.props('items') as { label: string }[])[0]!.label).toBe(
-      "Don't start with Desktop"
-    )
+    expect((menuAgain.props('items') as { label: string }[])[0]!.label).toBe('Turn off Auto start')
     menuAgain.vm.$emit('select', 'auto-start')
     await flushPromises()
 

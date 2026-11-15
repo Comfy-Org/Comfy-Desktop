@@ -176,7 +176,7 @@ const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
 const restingLabel = computed(() => {
   if (isCloudBuild(inst.value)) return t('home.buildAlwaysOn')
-  return startsWithDesktop.value ? t('home.startsWithDesktop') : t('home.buildReady')
+  return startsWithDesktop.value ? t('home.autoStartOn') : t('home.buildReady')
 })
 
 const isFromBuild = computed(() => isBuildInstall(inst.value))
