@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { Menu, shell } from 'electron'
+import type { BrowserWindow, WebContents } from 'electron'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   Menu: { buildFromTemplate: vi.fn() },
@@ -11,6 +13,7 @@ vi.mock('./i18n', () => ({
 }))
 
 import {
+  attachContextMenu,
   buildContextMenuItems,
   type ContextMenuActions,
   type ContextMenuParams
@@ -176,5 +179,43 @@ describe('buildContextMenuItems', () => {
   it('shows copy/select-all for a plain text selection', () => {
     const items = buildContextMenuItems(makeParams({ selectionText: 'hello' }), noopActions)
     expect(ids(items)).toEqual(['copy', 'selectAll'])
+  })
+})
+
+describe('right-clicking a link in a page', () => {
+  function rightClick(linkURL: string): Electron.MenuItemConstructorOptions[] {
+    const listeners = new Map<string, (event: unknown, params: ContextMenuParams) => void>()
+    const contents = {
+      on: (name: string, listener: (event: unknown, params: ContextMenuParams) => void) =>
+        listeners.set(name, listener)
+    } as unknown as WebContents
+    vi.mocked(Menu.buildFromTemplate).mockReturnValue({ popup: vi.fn() } as unknown as Menu)
+    attachContextMenu({} as BrowserWindow, contents)
+    listeners.get('context-menu')!({}, makeParams({ linkURL }))
+    return vi
+      .mocked(Menu.buildFromTemplate)
+      .mock.calls.at(-1)![0] as Electron.MenuItemConstructorOptions[]
+  }
+
+  beforeEach(() => {
+    vi.mocked(Menu.buildFromTemplate).mockReset()
+    vi.mocked(shell.openExternal).mockReset()
+  })
+
+  it('Open link hands a web link to the OS', () => {
+    const openLink = rightClick('https://comfy.org/docs').find((item) => item.id === 'openLink')
+
+    ;(openLink!.click as () => void)()
+
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith('https://comfy.org/docs')
+  })
+
+  it.each([
+    'file:///etc/passwd',
+    'file://attacker.example/share/payload.exe',
+    'smb://attacker.example/share',
+    'search-ms:query=invoice'
+  ])('offers only Copy link address for %j', (linkURL) => {
+    expect(ids(rightClick(linkURL))).toEqual(['copyLink'])
   })
 })

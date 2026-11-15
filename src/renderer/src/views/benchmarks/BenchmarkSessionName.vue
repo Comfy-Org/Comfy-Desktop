@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useTemplateRef } from 'vue'
-import { Pencil } from 'lucide-vue-next'
+import { Pencil } from '@lucide/vue'
 import { useInlineTextEdit } from '../../composables/useInlineTextEdit'
 
 const props = defineProps<{

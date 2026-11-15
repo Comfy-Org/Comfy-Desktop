@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import DesktopDialogSurface from './ui/DesktopDialogSurface.vue'
 import Button from '@comfyorg/design-system/button/Button'
-import { Volume2, VolumeX, X } from 'lucide-vue-next'
+import { Volume2, VolumeX, X } from '@lucide/vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 
 const ANNOUNCEMENT_ID = 'comfy_api'

@@ -1,4 +1,6 @@
-import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
+import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
+import type { WebContentsView } from 'electron'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
 import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
@@ -20,6 +22,7 @@ import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
 import { convertLevelToZoomPercent } from '../lib/zoom'
 import { getAppLogDir } from '../lib/appLog'
+import { tryOpenExternalUrl } from '../lib/openExternal'
 import {
   openPath as openPathHelper,
   getAppVersion,
@@ -384,7 +387,7 @@ const POPUP_BACKDROP_HTML = `<!doctype html>
 function ensurePopupBackdrop(parent: BrowserWindow): PopupBackdropEntry {
   const existing = popupBackdropsByParent.get(parent.id)
   if (existing && !existing.view.webContents.isDestroyed()) return existing
-  const view = new WebContentsView({
+  const view = createWebContentsView({
     webPreferences: {
       contextIsolation: false,
       nodeIntegration: true,
@@ -2097,9 +2100,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     (event, payload: { url?: unknown }) => {
       const popupEntry = titlePopupsByWebContents.get(event.sender.id)
       if (!popupEntry || popupEntry.kind !== 'global-settings') return
-      const url = payload?.url
-      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return
-      void shell.openExternal(url)
+      void tryOpenExternalUrl(payload?.url)
     }
   )
 

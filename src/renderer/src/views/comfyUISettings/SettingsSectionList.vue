@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { ChevronRight, ShieldAlert } from 'lucide-vue-next'
+import { ChevronRight, ShieldAlert } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import BooleanToggle from './BooleanToggle.vue'
@@ -473,13 +473,11 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 v-else-if="field.editType === 'select'"
                 :model-value="asString(field.value)"
                 :options="
-                  (field.options ?? []).map(
-                    (opt): BaseSelectOption => ({
-                      value: opt.value,
-                      label: opt.label,
-                      description: opt.description
-                    })
-                  )
+                  (field.options ?? []).map((opt): BaseSelectOption => ({
+                    value: opt.value,
+                    label: opt.label,
+                    description: opt.description
+                  }))
                 "
                 :aria-label="field.label"
                 @update:model-value="(v: string) => emit('update-field', field, v)"

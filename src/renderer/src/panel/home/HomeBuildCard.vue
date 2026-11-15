@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, LoaderCircle, OctagonAlert } from 'lucide-vue-next'
+import { Check, LoaderCircle, OctagonAlert } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildProgressBar from './BuildProgressBar.vue'

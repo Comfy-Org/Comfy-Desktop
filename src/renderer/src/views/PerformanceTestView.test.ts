@@ -28,7 +28,6 @@ function mountView() {
       stubs: {
         BrandBackground: { template: '<div><slot /></div>' },
         BrandedPageHeader: true,
-        DevPlatformAccountChip: true,
         InfoTooltip: true,
         TemplatePickerStep: true,
         BaseModal: true

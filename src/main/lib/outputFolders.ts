@@ -2,11 +2,12 @@ import fsp from 'fs/promises'
 import type { Dirent } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
-import { clipboard, ipcMain, nativeImage, net, protocol, shell } from 'electron'
+import { ipcMain, nativeImage, net, protocol, shell } from 'electron'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import * as settings from '../settings'
 import { assetKind } from './assets'
+import { copyImageToClipboard } from './clipboardImage'
 import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
@@ -110,7 +111,7 @@ export async function copyOutputImage(target: string): Promise<boolean> {
   if (!file || assetKind(file) !== 'image') return false
   const image = nativeImage.createFromPath(file)
   if (image.isEmpty()) return false
-  clipboard.writeImage(image)
+  await copyImageToClipboard(image)
   return true
 }
 

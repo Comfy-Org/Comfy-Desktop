@@ -12,7 +12,7 @@ import {
   LoaderCircle,
   Plus,
   Server
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'

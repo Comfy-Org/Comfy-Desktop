@@ -1,5 +1,6 @@
-import { WebContentsView, ipcMain } from 'electron'
-import type { BrowserWindow } from 'electron'
+import { ipcMain } from 'electron'
+import type { BrowserWindow, WebContentsView } from 'electron'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 
 interface CheckoutBackdropEntry {
   view: WebContentsView
@@ -47,7 +48,7 @@ function ensureBackdrop(parent: BrowserWindow): CheckoutBackdropEntry {
   if (existing && !existing.view.webContents.isDestroyed()) return existing
 
   ensureIpc()
-  const view = new WebContentsView({
+  const view = createWebContentsView({
     webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
   })
   view.setBackgroundColor('#00000000')

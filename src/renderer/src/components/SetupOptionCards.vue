@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, type Component } from 'vue'
-import { Check, Crown } from 'lucide-vue-next'
+import { Check, Crown } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 
 export interface SetupOptionCard {

@@ -113,8 +113,7 @@ export function useDeepLinkRouter(opts: DeepLinkRouterOpts): void {
           if (!inst) return
           const isRestart = !!payload.isRestart
           const actionData = (payload.actionData ?? undefined) as
-            | Record<string, unknown>
-            | undefined
+            Record<string, unknown> | undefined
           const wasRunning = sessionStore.isRunning(id)
           const requiresStoppedGuard = !isRestart && REQUIRES_STOPPED.has(actionId)
           const needsSelfStop = wasRunning && requiresStoppedGuard
