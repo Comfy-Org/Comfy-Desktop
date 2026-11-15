@@ -825,6 +825,8 @@ describe('an app opened while the first build is still installing', () => {
     mocks.ownModels.add(NEW_BUILD)
     await localState(WANT)
     const downloading = localDownload(BIREFNET)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(job).toEqual([])
 
     finishInstall('failed')
     await vi.advanceTimersByTimeAsync(1_000)
