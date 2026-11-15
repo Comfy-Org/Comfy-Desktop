@@ -103,7 +103,7 @@
     "@vitejs/plugin-vue": "^6.0.11",
     "@vitest/browser-playwright": "^5.1.0",
     "@vue/devtools-api": "^8.2.1",
-    "@vue/test-utils": "^2.5.1",
+    "@vue/test-utils": "^2.6.0",
     "@vueuse/core": "^14.4.0",
     "electron": "45.3.2",
     "electron-builder": "^26.18.0",
