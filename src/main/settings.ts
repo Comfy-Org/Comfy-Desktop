@@ -43,6 +43,7 @@ export interface KnownSettings {
   cloudNodesAnnouncementSeen?: boolean
   comfyRouterAnnouncementSeen?: boolean
   comfyApiAnnouncementSeen?: boolean
+  hasSeenCentralPillHint?: boolean
   betaNoticeAnnouncedArgs?: string[]
   hideCloudFromPicker?: boolean
   oemManagedModelDirs?: string[]
@@ -167,6 +168,7 @@ const SETTINGS_SCHEMA = {
   cloudNodesAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyRouterAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
   comfyApiAnnouncementSeen: { nullable: false, telemetry: { policy: 'omit' } },
+  hasSeenCentralPillHint: { nullable: false, telemetry: { policy: 'omit' } },
   betaNoticeAnnouncedArgs: { nullable: false, telemetry: { policy: 'omit' } },
   hideCloudFromPicker: {
     nullable: false,

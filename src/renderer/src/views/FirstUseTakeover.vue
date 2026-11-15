@@ -318,10 +318,10 @@ async function open(opts: OpenOpts = {}): Promise<void> {
     restoreConsent(props.consent)
     return
   }
-  const [existing, existingBeta] = (await Promise.all([
+  const [existing, existingBeta] = await Promise.all([
     window.api.getSetting('telemetryEnabled'),
     window.api.getSetting('betaFeaturesEnabled')
-  ])) as [boolean | undefined, boolean | undefined]
+  ])
   if (gen !== openGeneration) return
   telemetryEnabled.value = existing !== false
   betaTouched.value = typeof existingBeta === 'boolean'
