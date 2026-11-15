@@ -9,40 +9,26 @@ import {
   type ShallowRef
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-
-interface MenuAnchor {
-  x: number
-  y: number
-}
-
-interface DownloadsTrayEntry {
-  url: string
-  filename: string
-  directory?: string
-  progress: number
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
-  error?: string
-}
-
-interface DownloadsTrayState {
-  active: DownloadsTrayEntry[]
-  recent: DownloadsTrayEntry[]
-}
-
-type TitleMenuKind = 'menu' | 'downloads' | 'instance-picker'
-
-interface TitleBarMenusBridge {
-  openFileMenu: (anchor: MenuAnchor) => void
-  dismissFileMenu: () => void
-  clickDownloadsTray: (anchor: MenuAnchor) => void
-  clickInstallPill: (anchor: MenuAnchor) => void
-  onMenuOpened: (cb: (info: { menu: TitleMenuKind }) => void) => () => void
-  onMenuClosed: (cb: (info: { menu: TitleMenuKind }) => void) => () => void
-  onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
-}
+import type {
+  ComfyTitleBarBridge,
+  DownloadsTrayState,
+  TitleMenuAnchor,
+  TitleMenuKind
+} from '../../../preload/comfyTitleBarPreload'
 
 interface UseTitleBarMenusOpts {
-  bridge: TitleBarMenusBridge | undefined
+  bridge:
+    | Pick<
+        ComfyTitleBarBridge,
+        | 'openFileMenu'
+        | 'dismissFileMenu'
+        | 'clickDownloadsTray'
+        | 'clickInstallPill'
+        | 'onMenuOpened'
+        | 'onMenuClosed'
+        | 'onDownloadsChanged'
+      >
+    | undefined
   hideTip: () => void
   fileBtnRef: Readonly<ShallowRef<HTMLElement | null>>
   downloadsBtnRef: Readonly<ShallowRef<HTMLElement | null>>
@@ -107,13 +93,13 @@ export function useTitleBarMenus(opts: UseTitleBarMenusOpts): TitleBarMenusApi {
     return t('titleBar.downloads')
   })
 
-  function anchorBelow(el: HTMLElement | null | undefined): MenuAnchor {
+  function anchorBelow(el: HTMLElement | null | undefined): TitleMenuAnchor {
     if (!el) return { x: 0, y: 0 }
     const rect = el.getBoundingClientRect()
     return { x: Math.round(rect.left), y: Math.round(rect.bottom) }
   }
 
-  function anchorDownloadsBelow(el: HTMLElement | null | undefined): MenuAnchor {
+  function anchorDownloadsBelow(el: HTMLElement | null | undefined): TitleMenuAnchor {
     const base = anchorBelow(el)
     const DOWNLOADS_POPUP_GAP_BELOW_TRIGGER_PX = 12
     return { x: base.x, y: base.y + DOWNLOADS_POPUP_GAP_BELOW_TRIGGER_PX }

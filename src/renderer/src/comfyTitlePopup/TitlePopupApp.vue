@@ -11,146 +11,37 @@ import { useModal } from '../composables/useModal'
 import { dismissPickerModals } from './dismissPickerModals'
 import { popupLocaleSource } from './pickerSettingsApiShim'
 import { useAppLocale } from '../lib/useAppLocale'
-import type { DetailSection, SnapshotListData } from '../types/ipc'
 import type { PopupDownloadsState as DownloadsState } from '../../../preload/comfyTitlePopupPreload'
+import type {
+  GlobalSettingsSnapshot,
+  InstancePickerSnapshot,
+  TitlePopupConfig,
+  TitlePopupMenuItem
+} from '../../../types/titlePopup'
 
-interface MenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  kind?: 'separator'
-}
+const bridge = window.__comfyTitlePopup
 
-interface PickerInstall {
-  id: string
-  name: string
-  sourceLabel: string
-  sourceCategory: string
-  version?: string
-  lastLaunchedAt?: number
-  installPath?: string
-  status?: string
-  statusTag?: { style: string; label: string; detail?: string }
-}
-
-interface PickerStorageDir {
-  path: string
-  isPrimary: boolean
-}
-
-interface PickerStorageSlice {
-  sharedDirectoriesFields: Record<string, unknown>[]
-  modelsDirs: PickerStorageDir[]
-  modelsSystemDefault: string
-}
-
-interface PickerSnapshot {
-  installs: PickerInstall[]
-  activeInstallationId: string | null
-  runningInstallationIds: string[]
-  launchingInstallationIds: string[]
-  selectedInstallationId: string | null
-  pickerSelectionEpoch?: number
-  selectedSettings: DetailSection[] | null
-  selectedSnapshots: SnapshotListData | null
-  storage: PickerStorageSlice
-}
-
-interface GlobalSettingsModelsDir {
-  path: string
-  isPrimary: boolean
-}
-
-interface GlobalSettingsSnapshot {
-  initialTab: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
-  highlightFieldId: string | null
-  generalFields: Record<string, unknown>[]
-  languageFields: Record<string, unknown>[]
-  telemetryFields: Record<string, unknown>[]
-  desktopUpdateFields: Record<string, unknown>[]
-  cacheFields: Record<string, unknown>[]
-  advancedFields: Record<string, unknown>[]
-  sharedDirectoriesFields: Record<string, unknown>[]
-  installLocationFields: Record<string, unknown>[]
-  modelsDirs: GlobalSettingsModelsDir[]
-  modelsSystemDefault: string
-  telemetryGranted: boolean
-  appUpdate: {
-    state: Record<string, unknown>
-    progress: Record<string, unknown> | null
-    isDownloading: boolean
-    capabilities: { systemManaged: boolean; canSelfUpdate: boolean }
-    installedVersion: string
-    platform: string
-    lastCheckedAt: number | null
-  }
-  githubUrl: string
-  githubStars: number | null
-  githubStarsLoading: boolean
-  i18n: {
-    overview: string
-    updates: string
-    storage: string
-    models: string
-    advanced: string
-    logs: string
-    sharedDirectories: string
-  }
-}
-
-type PopupConfig =
-  | {
-      kind: 'menu'
-      items: MenuItem[]
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'downloads'
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'downloads-full'
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'instance-picker'
-      snapshot: PickerSnapshot
-      theme: { bg: string; text: string }
-    }
-  | {
-      kind: 'global-settings'
-      snapshot: GlobalSettingsSnapshot
-      theme: { bg: string; text: string }
-    }
-
-interface Bridge {
-  activate(id: string): void
-  close(): void
-  ready(): void
-  notifyRendered(): void
-  onConfig(cb: (config: PopupConfig) => void): () => void
-  onDownloadsChanged(cb: (state: DownloadsState) => void): () => void
-  onInstancePickerSnapshot(cb: (snapshot: PickerSnapshot) => void): () => void
-  onGlobalSettingsSnapshot(cb: (snapshot: GlobalSettingsSnapshot) => void): () => void
-  requestSize(height: number): void
-  onWillShow(cb: (info: { kind: PopupConfig['kind'] }) => void): () => void
-  onDismissModals(cb: () => void): () => void
-}
-
-const bridge = (window as unknown as { __comfyTitlePopup?: Bridge }).__comfyTitlePopup
-
-const kind = ref<PopupConfig['kind']>('menu')
-const items = ref<MenuItem[]>([])
-const pickerSnapshot = ref<PickerSnapshot>({
+const kind = ref<TitlePopupConfig['kind']>('menu')
+const items = ref<TitlePopupMenuItem[]>([])
+const pickerSnapshot = ref<InstancePickerSnapshot>({
   installs: [],
   activeInstallationId: null,
+  currentView: 'dashboard',
+  currentCategory: null,
   runningInstallationIds: [],
+  runningSessionStartedAt: {},
   launchingInstallationIds: [],
+  unhostedLaunchingInstallationIds: [],
   selectedInstallationId: null,
   pickerSelectionEpoch: 0,
   selectedSettings: null,
   selectedSnapshots: null,
-  storage: { sharedDirectoriesFields: [], modelsDirs: [], modelsSystemDefault: '' }
+  initialTab: null,
+  autoAction: null,
+  autoActionNonce: 0,
+  storage: { sharedDirectoriesFields: [], modelsDirs: [], modelsSystemDefault: '' },
+  operatingInstallationIds: [],
+  installOperationStatus: {}
 })
 const globalSettingsSnapshot = ref<GlobalSettingsSnapshot>({
   initialTab: null,

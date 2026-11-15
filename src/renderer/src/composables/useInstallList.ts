@@ -18,6 +18,7 @@ export const FILTER_CHIPS: readonly FilterChip[] = [
 
 export interface UseInstallListOpts {
   installations: Ref<Installation[]>
+  hideCloud?: Readonly<Ref<boolean>>
 }
 
 export interface UseInstallListApi {
@@ -31,11 +32,10 @@ export interface UseInstallListApi {
 }
 
 export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
-  const { installations } = opts
+  const { installations, hideCloud } = opts
 
   const searchQuery = ref('')
   const activeFilter = ref<FilterKey>('all')
-  const hideCloudFromPicker = ref<boolean>(false)
 
   function matchesQuery(name: string): boolean {
     const q = searchQuery.value.trim().toLowerCase()
@@ -50,7 +50,7 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
   }
 
   const effectiveInstalls = computed<Installation[]>(() =>
-    hideCloudFromPicker.value
+    hideCloud?.value
       ? installations.value.filter((i) => i.sourceCategory !== 'cloud')
       : installations.value
   )
@@ -80,31 +80,14 @@ export function useInstallList(opts: UseInstallListOpts): UseInstallListApi {
 
   const now = ref(Date.now())
   let nowTimer: ReturnType<typeof setInterval> | null = null
-  let unsubSettingsChanged: (() => void) | null = null
-
-  const refetchHideCloud = async (): Promise<void> => {
-    try {
-      const value = await window.api.getSetting('hideCloudFromPicker')
-      hideCloudFromPicker.value = value === true
-    } catch {
-      hideCloudFromPicker.value = false
-    }
-  }
 
   onMounted(() => {
     nowTimer = setInterval(() => {
       now.value = Date.now()
     }, 60_000)
-    void refetchHideCloud()
-    try {
-      unsubSettingsChanged = window.api.onSettingsChanged((data) => {
-        if (data?.key === 'hideCloudFromPicker') void refetchHideCloud()
-      })
-    } catch {}
   })
   onBeforeUnmount(() => {
     if (nowTimer) clearInterval(nowTimer)
-    if (unsubSettingsChanged) unsubSettingsChanged()
   })
 
   function timeAgo(timestamp: number): string {

@@ -251,8 +251,7 @@ function scheduleReload(): void {
   }, 250)
 }
 onMounted(() => {
-  const onChanged = (window.api as { onInstallationsChanged?: (cb: () => void) => () => void })
-    .onInstallationsChanged
+  const onChanged = window.api.onInstallationsChanged
   if (typeof onChanged === 'function') {
     unsubChanges = onChanged(() => scheduleReload())
   }

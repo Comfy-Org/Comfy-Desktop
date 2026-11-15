@@ -44,7 +44,8 @@ import { useChooserHandoff } from './useChooserHandoff'
 import { useFirstUseChain } from './useFirstUseChain'
 import { bindE2EPanelHooks } from './e2eRendererHooks'
 import { resolvePickerTab } from '../lib/pickerTabs'
-import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
+import { useAppLocale } from '../lib/useAppLocale'
+import { windowApiLocaleSource } from '../lib/windowApiLocaleSource'
 import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
@@ -453,7 +454,7 @@ onMounted(async () => {
     }
 
     await Promise.all([
-      sessionStore.init(),
+      sessionStore.init(window.api),
       installationStore.fetchInstallations(),
       launcherPrefs.loadPrefs(),
       syncLocale().catch((err) => {

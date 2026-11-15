@@ -200,7 +200,7 @@ describe('useSessionStore', () => {
           return () => {}
         })
       }
-      await store.init()
+      await store.init(window.api)
     })
 
     it('tracks launching instances via instance-launching event', () => {
@@ -318,7 +318,7 @@ describe('useSessionStore', () => {
     it('hydrates in-flight launches so a window opened mid-launch shows the launching state', async () => {
       installApi({ launching: [{ installationId: 'inst-1', installationName: 'My Install' }] })
 
-      await store.init()
+      await store.init(window.api)
 
       expect(store.isLaunching('inst-1')).toBe(true)
       expect(store.launchingInstances.get('inst-1')?.installationName).toBe('My Install')
@@ -332,7 +332,7 @@ describe('useSessionStore', () => {
         launching: [{ installationId: 'inst-1', installationName: 'My Install' }]
       })
 
-      await store.init()
+      await store.init(window.api)
 
       expect(store.isRunning('inst-1')).toBe(true)
       expect(store.isLaunching('inst-1')).toBe(false)
@@ -341,7 +341,7 @@ describe('useSessionStore', () => {
     it('hydrates in-flight stops so a window opened mid-stop shows the stopping state', async () => {
       installApi({ stopping: ['inst-1'] })
 
-      await store.init()
+      await store.init(window.api)
 
       expect(store.isStopping('inst-1')).toBe(true)
     })
@@ -349,7 +349,7 @@ describe('useSessionStore', () => {
     it('hydrates in-flight operations so a window opened mid-operation shows the busy state', async () => {
       installApi({ operations: [{ installationId: 'inst-1', actionId: 'update-comfyui' }] })
 
-      await store.init()
+      await store.init(window.api)
 
       expect(store.operationInstances.get('inst-1')?.actionId).toBe('update-comfyui')
     })
@@ -368,7 +368,7 @@ describe('useSessionStore', () => {
         ]
       })
 
-      await store.init()
+      await store.init(window.api)
 
       expect(store.errorInstances.has('inst-1')).toBe(true)
       const err = store.errorInstances.get('inst-1')
@@ -385,7 +385,7 @@ describe('useSessionStore', () => {
         ]
       })
 
-      await store.init()
+      await store.init(window.api)
 
       expect(store.isLaunching('inst-1')).toBe(true)
       expect(store.errorInstances.has('inst-1')).toBe(false)
@@ -401,7 +401,7 @@ describe('useSessionStore', () => {
         ]
       })
 
-      await store.init()
+      await store.init(window.api)
 
       expect(store.isRunning('inst-1')).toBe(true)
       expect(store.errorInstances.has('inst-1')).toBe(false)
@@ -420,7 +420,7 @@ describe('useSessionStore', () => {
         onInstanceCrashed: vi.fn(() => () => {})
       }
 
-      await expect(store.init()).resolves.toBeUndefined()
+      await expect(store.init(window.api)).resolves.toBeUndefined()
       expect(store.launchingInstances.size).toBe(0)
       expect(store.stoppingInstances.size).toBe(0)
       expect(store.errorInstances.size).toBe(0)

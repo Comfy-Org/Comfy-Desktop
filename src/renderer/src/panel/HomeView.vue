@@ -9,6 +9,7 @@ import HomeOpenBuildButton from './home/HomeOpenBuildButton.vue'
 import HomeCarousel from './home/HomeCarousel.vue'
 import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
+import { useHideCloudFromPicker } from '../composables/useHideCloudFromPicker'
 import { useInstallList } from '../composables/useInstallList'
 import {
   buildProgressOf,
@@ -43,7 +44,8 @@ const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
 
 const { visibleInstalls } = useInstallList({
-  installations: toRef(installationStore, 'installations')
+  installations: toRef(installationStore, 'installations'),
+  hideCloud: useHideCloudFromPicker()
 })
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()

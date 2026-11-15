@@ -20,6 +20,7 @@ import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
+import { useHideCloudFromPicker } from '../composables/useHideCloudFromPicker'
 import { useInstallList } from '../composables/useInstallList'
 import { buildProgressOf } from '../composables/useBuildProgress'
 import { useProgressStore } from '../stores/progressStore'
@@ -98,7 +99,8 @@ const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
 const { visibleInstalls } = useInstallList({
-  installations: toRef(installationStore, 'installations')
+  installations: toRef(installationStore, 'installations'),
+  hideCloud: useHideCloudFromPicker()
 })
 const buildsPageActive = computed(() => activePage === 'chooser' && !activeBuildId)
 

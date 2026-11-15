@@ -8,7 +8,7 @@ files:
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!eslint.config.ts'
   - '!{.eslintcache,.prettierrc.json,README.md,AGENTS.md}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,tsconfig.popup.json}'
   - '!{.env,.env.*,.npmrc}'
   - '!docs/*'
   - '!out/**/*.map'

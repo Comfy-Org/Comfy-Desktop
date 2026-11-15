@@ -1,114 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
-import type { PopupTheme, TerminalRestore } from '../types/ipc'
-
-export interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  kind?: 'separator'
-}
-
-export interface PopupInstancePickerInstall {
-  id: string
-  name: string
-  sourceLabel: string
-  sourceCategory: string
-  version?: string
-  statusTag?: { style: string; label: string; detail?: string }
-  lastLaunchedAt?: number
-  installPath?: string
-  status?: string
-  [key: string]: unknown
-}
-
-export interface PopupInstancePickerSnapshot {
-  installs: PopupInstancePickerInstall[]
-  activeInstallationId: string | null
-  currentView?: ViewKind
-  currentCategory?: Category | null
-  runningInstallationIds: string[]
-  selectedInstallationId: string | null
-  pickerSelectionEpoch?: number
-  selectedSettings: Record<string, unknown>[] | null
-  selectedSnapshots: Record<string, unknown> | null
-  initialTab: string | null
-  autoAction: string | null
-  autoActionNonce: number
-  operatingInstallationIds: string[]
-  installOperationStatus: Record<
-    string,
-    {
-      status: string
-      percent: number
-      done: boolean
-      ok: boolean | null
-      error: string | null
-      cancellable: boolean
-      title: string
-      actionId: string
-      actionData?: Record<string, unknown>
-    }
-  >
-}
-
-export interface PopupGlobalSettingsModelsDir {
-  path: string
-  isPrimary: boolean
-}
-
-export interface PopupGlobalSettingsSnapshot {
-  initialTab: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
-  languageFields: Record<string, unknown>[]
-  generalFields: Record<string, unknown>[]
-  telemetryFields: Record<string, unknown>[]
-  desktopUpdateFields: Record<string, unknown>[]
-  cacheFields: Record<string, unknown>[]
-  advancedFields: Record<string, unknown>[]
-  sharedDirectoriesFields: Record<string, unknown>[]
-  installLocationFields: Record<string, unknown>[]
-  modelsDirs: PopupGlobalSettingsModelsDir[]
-  modelsSystemDefault: string
-  telemetryGranted: boolean
-  appUpdate: {
-    state: Record<string, unknown>
-    progress: Record<string, unknown> | null
-    isDownloading: boolean
-    capabilities: { systemManaged: boolean; canSelfUpdate: boolean }
-    installedVersion: string
-    platform: NodeJS.Platform
-    lastCheckedAt: number | null
-  }
-  githubUrl: string
-  githubStars: number | null
-  githubStarsLoading: boolean
-  i18n: {
-    overview: string
-    updates: string
-    storage: string
-    models: string
-    advanced: string
-    logs: string
-    sharedDirectories: string
-  }
-}
-
-export type TitlePopupConfig =
-  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[]; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.downloads; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.downloadsFull; theme: PopupTheme }
-  | {
-      kind: typeof POPUP_KIND.instancePicker
-      snapshot: PopupInstancePickerSnapshot
-      theme: PopupTheme
-    }
-  | {
-      kind: typeof POPUP_KIND.globalSettings
-      snapshot: PopupGlobalSettingsSnapshot
-      theme: PopupTheme
-    }
+import type { ElectronApi, TerminalRestore } from '../types/ipc'
+import type {
+  GlobalSettingsSnapshot,
+  GlobalSettingsTab,
+  InstancePickerSnapshot,
+  TitlePopupConfig
+} from '../types/titlePopup'
 
 export interface PopupDownloadEntry {
   id?: string
@@ -155,7 +54,7 @@ export interface ComfyTitlePopupBridge {
   openSettingsTab(tab: PopupSettingsTab): void
   openDownloadsModal(): void
   requestSize(height: number): void
-  onInstancePickerSnapshot(cb: (snapshot: PopupInstancePickerSnapshot) => void): () => void
+  onInstancePickerSnapshot(cb: (snapshot: InstancePickerSnapshot) => void): () => void
   pickInstall(installationId: string, opts?: { confirmed?: boolean }): void
   openInstallNewWindow(installationId: string, opts?: { allowDuplicate?: boolean }): void
   openNewInstall(): void
@@ -174,7 +73,7 @@ export interface ComfyTitlePopupBridge {
   ): Promise<{ ok: boolean; message?: string }>
   openInstallAction(installationId: string, actionId: string): void
   onWillShow(cb: (info: { kind: TitlePopupConfig['kind'] }) => void): () => void
-  onGlobalSettingsSnapshot(cb: (snapshot: PopupGlobalSettingsSnapshot) => void): () => void
+  onGlobalSettingsSnapshot(cb: (snapshot: GlobalSettingsSnapshot) => void): () => void
   globalSettingsUpdateField(
     fieldId: string,
     value: unknown
@@ -190,73 +89,30 @@ export interface ComfyTitlePopupBridge {
   globalSettingsInstallUpdate(): void
   globalSettingsSetLastCheckedAt(value: number): void
 
-  pickerSettingsGetDetailSections(installationId: string): Promise<Record<string, unknown>[]>
-  pickerSettingsGetDiskSpace(path: string): Promise<{ total: number; free: number }>
-  pickerSettingsUpdateInstallation(
-    installationId: string,
-    data: Record<string, unknown>
-  ): Promise<Record<string, unknown> | void>
-  pickerSettingsRunAction(
-    installationId: string,
-    actionId: string,
-    actionData?: Record<string, unknown>
-  ): Promise<Record<string, unknown>>
-  pickerSettingsGetFieldOptions(
-    sourceId: string,
-    fieldId: string,
-    selections: Record<string, unknown>
-  ): Promise<Record<string, unknown>[]>
-  pickerSettingsGetStableTags(): Promise<string[]>
-  pickerSettingsGetUniqueName(baseName: string): Promise<string>
-  pickerSettingsGetInstallations(): Promise<Record<string, unknown>[]>
-  pickerSettingsGetInstallationSize(installationId: string): Promise<{ sizeBytes: number }>
-  pickerSettingsStopComfyUI(installationId: string): Promise<void>
-  pickerSettingsGetSnapshots(installationId: string): Promise<Record<string, unknown>>
-  pickerSettingsGetSnapshotDetail(
-    installationId: string,
-    filename: string
-  ): Promise<Record<string, unknown>>
-  pickerSettingsGetSnapshotDiff(
-    installationId: string,
-    filename: string,
-    mode: 'previous' | 'current'
-  ): Promise<Record<string, unknown>>
-  pickerSettingsExportSnapshot(
-    installationId: string,
-    filename: string
-  ): Promise<{ ok: boolean; message?: string }>
-  pickerSettingsExportAllSnapshots(
-    installationId: string
-  ): Promise<{ ok: boolean; message?: string }>
-  pickerSettingsImportSnapshotsPreview(): Promise<{
-    ok: boolean
-    preview?: Record<string, unknown>
-    message?: string
-  }>
-  pickerSettingsImportSnapshotsDiff(
-    installationId: string
-  ): Promise<{ ok: boolean; diff?: Record<string, unknown>; message?: string }>
-  pickerSettingsImportSnapshotsConfirm(installationId: string): Promise<{
-    ok: boolean
-    imported?: number
-    restoreToken?: string
-    message?: string
-  }>
-  pickerSettingsPreviewSnapshotFile(): Promise<{
-    ok: boolean
-    preview?: Record<string, unknown>
-    message?: string
-  }>
-  pickerSettingsGetComfyArgs(
-    installationId: string
-  ): Promise<{ args: Record<string, unknown>[]; error?: string } | null>
-  pickerSettingsGetCoreBetaArgs(
-    installationId: string,
-    launchArgs?: string
-  ): Promise<{ timing: 'session' | 'next-launch'; args: { arg: string; name: string | null }[] }>
+  pickerSettingsGetDetailSections: ElectronApi['getDetailSections']
+  pickerSettingsGetDiskSpace: ElectronApi['getDiskSpace']
+  pickerSettingsUpdateInstallation: ElectronApi['updateInstallation']
+  pickerSettingsRunAction: ElectronApi['runAction']
+  pickerSettingsGetFieldOptions: ElectronApi['getFieldOptions']
+  pickerSettingsGetStableTags: ElectronApi['getStableTags']
+  pickerSettingsGetUniqueName: ElectronApi['getUniqueName']
+  pickerSettingsGetInstallations: ElectronApi['getInstallations']
+  pickerSettingsGetInstallationSize: ElectronApi['getInstallationSize']
+  pickerSettingsStopComfyUI: ElectronApi['stopComfyUI']
+  pickerSettingsGetSnapshots: ElectronApi['getSnapshots']
+  pickerSettingsGetSnapshotDetail: ElectronApi['getSnapshotDetail']
+  pickerSettingsGetSnapshotDiff: ElectronApi['getSnapshotDiff']
+  pickerSettingsExportSnapshot: ElectronApi['exportSnapshot']
+  pickerSettingsExportAllSnapshots: ElectronApi['exportAllSnapshots']
+  pickerSettingsImportSnapshotsPreview: ElectronApi['importSnapshotsPreview']
+  pickerSettingsImportSnapshotsDiff: ElectronApi['importSnapshotsDiff']
+  pickerSettingsImportSnapshotsConfirm: ElectronApi['importSnapshotsConfirm']
+  pickerSettingsPreviewSnapshotFile: ElectronApi['previewSnapshotFile']
+  pickerSettingsGetComfyArgs: ElectronApi['getComfyArgs']
+  pickerSettingsGetCoreBetaArgs: ElectronApi['getCoreBetaArgs']
   pickerSettingsBrowseFolder(opts?: { defaultPath?: string }): Promise<string | null>
-  pickerSettingsCancelOperation(installationId: string): Promise<void>
-  pickerSettingsPreviewLocalMigration(installationId: string): Promise<Record<string, unknown>>
+  pickerSettingsCancelOperation: ElectronApi['cancelOperation']
+  pickerSettingsPreviewLocalMigration: ElectronApi['previewLocalMigration']
   terminalSubscribe(installationId: string): Promise<TerminalRestore>
   terminalUnsubscribe(installationId: string): Promise<void>
   terminalWrite(installationId: string, data: string): Promise<void>
@@ -266,7 +122,7 @@ export interface ComfyTitlePopupBridge {
   onTerminalExited(callback: (data: { installationId: string }) => void): () => void
   pickerSettingsRelaunchApp(): void
   pickerSettingsOpenGlobalSettings(
-    tab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs',
+    tab?: GlobalSettingsTab,
     opts?: { highlightField?: string }
   ): void
   pickerSettingsGetLocaleMessages(): Promise<Record<string, unknown>>
@@ -274,7 +130,8 @@ export interface ComfyTitlePopupBridge {
   pickerSettingsOnLocaleChanged(
     cb: (payload: { locale: string; messages: Record<string, unknown> }) => void
   ): () => void
-  pickerSettingsOnReleaseCacheEnriched(callback: (data: { repo: string }) => void): () => void
+  pickerSettingsOnReleaseCacheEnriched: ElectronApi['onReleaseCacheEnriched']
+  pickerSettingsOnSettingsChanged: ElectronApi['onSettingsChanged']
   pickerForwardShowProgress(payload: {
     installationId: string
     actionId: string
@@ -324,7 +181,7 @@ function isPopupConfig(value: unknown): value is TitlePopupConfig {
   return true
 }
 
-function isGlobalSettingsSnapshot(value: unknown): value is PopupGlobalSettingsSnapshot {
+function isGlobalSettingsSnapshot(value: unknown): value is GlobalSettingsSnapshot {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
   const tab = v['initialTab']
@@ -359,7 +216,7 @@ function isDownloadsState(value: unknown): value is PopupDownloadsState {
   return Array.isArray(v.active) && Array.isArray(v.recent)
 }
 
-function isInstancePickerSnapshot(value: unknown): value is PopupInstancePickerSnapshot {
+function isInstancePickerSnapshot(value: unknown): value is InstancePickerSnapshot {
   if (!value || typeof value !== 'object') return false
   const v = value as {
     installs?: unknown
@@ -554,8 +411,8 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.invoke(CH.updateInstallation, { installationId, data }),
   pickerSettingsRunAction: (installationId, actionId, actionData) =>
     ipcRenderer.invoke(CH.runAction, { installationId, actionId, actionData }),
-  pickerSettingsGetFieldOptions: (sourceId, fieldId, selections) =>
-    ipcRenderer.invoke(CH.getFieldOptions, { sourceId, fieldId, selections }),
+  pickerSettingsGetFieldOptions: (sourceId, fieldId, selections, context) =>
+    ipcRenderer.invoke(CH.getFieldOptions, { sourceId, fieldId, selections, context }),
   pickerSettingsGetInstallations: () => ipcRenderer.invoke(CH.getInstallations),
   pickerSettingsGetStableTags: () => ipcRenderer.invoke(CH.getStableTags),
   pickerSettingsGetUniqueName: (baseName) => ipcRenderer.invoke(CH.getUniqueName, { baseName }),
@@ -627,6 +484,11 @@ const bridge: ComfyTitlePopupBridge = {
     const handler = (_event: IpcRendererEvent, data: unknown) => callback(data as { repo: string })
     ipcRenderer.on('release-cache-enriched', handler)
     return () => ipcRenderer.removeListener('release-cache-enriched', handler)
+  },
+  pickerSettingsOnSettingsChanged: (callback) => {
+    const handler = (_event: IpcRendererEvent, data: { key: string }): void => callback(data)
+    ipcRenderer.on('settings-changed', handler)
+    return () => ipcRenderer.removeListener('settings-changed', handler)
   },
   pickerForwardShowProgress: (payload) => {
     ipcRenderer.send('comfy-titlepopup:forward-show-progress', payload)

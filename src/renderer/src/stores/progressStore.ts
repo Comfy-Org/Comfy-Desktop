@@ -6,6 +6,7 @@ import { getPhaseWeights } from '../lib/progressWeights'
 import { emitTelemetryAction, toErrorBucket } from '../lib/telemetry'
 import type {
   ActionResult,
+  ElectronApi,
   ErrorDetailData,
   ProgressData,
   ProgressStep,
@@ -13,6 +14,11 @@ import type {
   ShowProgressOpts,
   Unsubscribe
 } from '../types/ipc'
+
+export type ProgressEvents = Pick<
+  ElectronApi,
+  'onErrorDetail' | 'logsSnapshot' | 'onInstallProgress' | 'onComfyOutput'
+>
 
 export interface Operation {
   title: string
@@ -49,15 +55,21 @@ export const useProgressStore = defineStore('progress', () => {
   const sessionStore = useSessionStore()
 
   const operations = reactive(new Map<string, Operation>())
+  const operationEvents = new Map<string, ProgressEvents>()
+  let listeningForErrorDetail = false
 
-  window.api.onErrorDetail?.((data: ErrorDetailData) => {
-    const op = operations.get(data.installationId)
-    if (op?.error) {
-      op.error = data.message
-      const session = sessionStore.errorInstances.get(data.installationId)
-      if (session) session.message = data.message
-    }
-  })
+  function listenForErrorDetail(events: ProgressEvents): void {
+    if (listeningForErrorDetail) return
+    listeningForErrorDetail = true
+    events.onErrorDetail((data: ErrorDetailData) => {
+      const op = operations.get(data.installationId)
+      if (op?.error) {
+        op.error = data.message
+        const session = sessionStore.errorInstances.get(data.installationId)
+        if (session) session.message = data.message
+      }
+    })
+  }
 
   function emitOpResult(
     op: Operation,
@@ -105,6 +117,7 @@ export const useProgressStore = defineStore('progress', () => {
     installationId: string
     title: string
     apiCall: () => Promise<ActionResult>
+    events: ProgressEvents
     cancellable?: boolean
     returnTo?: string
     opKind?: ShowProgressOpts['opKind']
@@ -117,6 +130,7 @@ export const useProgressStore = defineStore('progress', () => {
       installationId,
       title,
       apiCall,
+      events,
       returnTo,
       opKind,
       destroysInstance,
@@ -132,6 +146,8 @@ export const useProgressStore = defineStore('progress', () => {
         : null
 
     cleanupOperation(installationId)
+    listenForErrorDetail(events)
+    operationEvents.set(installationId, events)
 
     sessionStore.startSession(installationId)
     const sessionLabel = title.split(' — ')[0] || t('progress.working')
@@ -169,8 +185,8 @@ export const useProgressStore = defineStore('progress', () => {
     operations.set(installationId, op)
     const rop = operations.get(installationId)!
 
-    if (chainSpan === 'launch' && typeof window.api.logsSnapshot === 'function') {
-      void window.api
+    if (chainSpan === 'launch' && typeof events.logsSnapshot === 'function') {
+      void events
         .logsSnapshot(installationId)
         .then((snapshot) => {
           if (!snapshot) return
@@ -180,7 +196,7 @@ export const useProgressStore = defineStore('progress', () => {
         .catch(() => {})
     }
 
-    rop.unsubProgress = window.api.onInstallProgress((data: ProgressData) => {
+    rop.unsubProgress = events.onInstallProgress((data: ProgressData) => {
       if (data.installationId !== installationId) return
 
       if (data.cancelRequested) {
@@ -219,7 +235,7 @@ export const useProgressStore = defineStore('progress', () => {
       }
     })
 
-    rop.unsubOutput = window.api.onComfyOutput((data: ComfyOutputData) => {
+    rop.unsubOutput = events.onComfyOutput((data: ComfyOutputData) => {
       if (data.installationId !== installationId) return
       rop.terminalOutput += data.text
     })
@@ -292,11 +308,13 @@ export const useProgressStore = defineStore('progress', () => {
 
   function retryOperation(installationId: string): void {
     const op = operations.get(installationId)
-    if (!op?.finished || !op.apiCall) return
+    const events = operationEvents.get(installationId)
+    if (!op?.finished || !op.apiCall || !events) return
     startOperation({
       installationId,
       title: op.title,
       apiCall: op.apiCall,
+      events,
       returnTo: op.returnTo,
       opKind: op.opKind,
       destroysInstance: op.destroysInstance,
@@ -307,6 +325,7 @@ export const useProgressStore = defineStore('progress', () => {
   function dismissOperation(installationId: string): void {
     if (!operations.get(installationId)?.finished) return
     operations.delete(installationId)
+    operationEvents.delete(installationId)
     sessionStore.clearErrorInstance(installationId)
   }
 

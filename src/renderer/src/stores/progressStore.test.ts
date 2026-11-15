@@ -44,6 +44,10 @@ describe('useProgressStore', () => {
     vi.clearAllMocks()
   })
 
+  function startOperation(opts: Omit<Parameters<typeof store.startOperation>[0], 'events'>): void {
+    store.startOperation({ ...opts, events: window.api })
+  }
+
   describe('getProgressInfo', () => {
     it('returns null when no operation exists', () => {
       expect(store.getProgressInfo('inst-1')).toBeNull()
@@ -51,7 +55,7 @@ describe('useProgressStore', () => {
 
     it('returns null when operation is finished', async () => {
       const apiCall = vi.fn().mockResolvedValue({ ok: true } as ActionResult)
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -66,7 +70,7 @@ describe('useProgressStore', () => {
 
     it('returns flat status and percent when no steps defined', () => {
       const apiCall = () => new Promise<ActionResult>(() => {})
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -82,7 +86,7 @@ describe('useProgressStore', () => {
 
     it('returns step-based status when steps and activePhase are set', () => {
       const apiCall = () => new Promise<ActionResult>(() => {})
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -103,7 +107,7 @@ describe('useProgressStore', () => {
 
     it('falls back to step label, not the raw phase id, when lastStatus has no entry', () => {
       const apiCall = () => new Promise<ActionResult>(() => {})
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -120,7 +124,7 @@ describe('useProgressStore', () => {
 
     it('falls back to title when flatStatus is empty', () => {
       const apiCall = () => new Promise<ActionResult>(() => {})
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -142,7 +146,7 @@ describe('useProgressStore', () => {
         message: 'previous failure'
       })
 
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Delete',
         apiCall: () => new Promise<ActionResult>(() => {})
@@ -153,7 +157,7 @@ describe('useProgressStore', () => {
 
     it('creates an operation and sets up session', () => {
       const apiCall = () => new Promise<ActionResult>(() => {})
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install ComfyUI',
         apiCall
@@ -168,7 +172,7 @@ describe('useProgressStore', () => {
 
     it('subscribes to progress and output IPC', () => {
       const apiCall = () => new Promise<ActionResult>(() => {})
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -180,7 +184,7 @@ describe('useProgressStore', () => {
 
     it('marks operation finished with error on apiCall rejection', async () => {
       const apiCall = vi.fn().mockRejectedValue(new Error('Network failure'))
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -196,7 +200,7 @@ describe('useProgressStore', () => {
 
     it('marks operation finished on successful apiCall', async () => {
       const apiCall = vi.fn().mockResolvedValue({ ok: true } as ActionResult)
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -215,7 +219,7 @@ describe('useProgressStore', () => {
       const apiCall = vi
         .fn()
         .mockResolvedValue({ ok: false, message: 'Bad config' } as ActionResult)
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall
@@ -232,7 +236,7 @@ describe('useProgressStore', () => {
 
     it('does not set error on cancelled result', async () => {
       const apiCall = vi.fn().mockResolvedValue({ ok: false, cancelled: true } as ActionResult)
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Launch',
         apiCall
@@ -250,7 +254,7 @@ describe('useProgressStore', () => {
 
     it('clears active session on cancellation', async () => {
       const apiCall = vi.fn().mockResolvedValue({ ok: false, cancelled: true } as ActionResult)
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Launch',
         apiCall
@@ -267,13 +271,13 @@ describe('useProgressStore', () => {
       const unsub1 = vi.fn()
       vi.mocked(window.api.onInstallProgress).mockReturnValueOnce(unsub1)
 
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'First',
         apiCall: () => new Promise<ActionResult>(() => {})
       })
 
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Second',
         apiCall: () => new Promise<ActionResult>(() => {})
@@ -287,7 +291,7 @@ describe('useProgressStore', () => {
       const apiCall = vi
         .fn()
         .mockResolvedValue({ ok: false, portConflict: portConflictInfo } as ActionResult)
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Launch',
         apiCall
@@ -307,7 +311,7 @@ describe('useProgressStore', () => {
       const apiCall = () => {
         throw new Error('Sync boom')
       }
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall: apiCall as unknown as () => Promise<ActionResult>
@@ -321,7 +325,7 @@ describe('useProgressStore', () => {
 
   describe('cancelOperation', () => {
     it('sets cancelRequested and calls IPC cancel/stop', () => {
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall: () => new Promise<ActionResult>(() => {})
@@ -341,7 +345,7 @@ describe('useProgressStore', () => {
 
     it('does NOT stop ComfyUI when the op has already finished', async () => {
       let resolve: ((value: ActionResult) => void) | null = null
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall: () =>
@@ -365,20 +369,6 @@ describe('useProgressStore', () => {
     })
   })
 
-  describe('onErrorDetail subscription', () => {
-    it('does not throw at construction when window.api.onErrorDetail is undefined', () => {
-      const orig = window.api.onErrorDetail
-      // @ts-expect-error
-      window.api.onErrorDetail = undefined
-      try {
-        setActivePinia(createTestingPinia({ stubActions: false }))
-        expect(() => useProgressStore()).not.toThrow()
-      } finally {
-        window.api.onErrorDetail = orig
-      }
-    })
-  })
-
   describe('cleanupOperation', () => {
     it('calls unsubscribe functions', () => {
       const unsubProgress = vi.fn()
@@ -386,7 +376,7 @@ describe('useProgressStore', () => {
       vi.mocked(window.api.onInstallProgress).mockReturnValueOnce(unsubProgress)
       vi.mocked(window.api.onComfyOutput).mockReturnValueOnce(unsubOutput)
 
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Install',
         apiCall: () => new Promise<ActionResult>(() => {})
@@ -405,7 +395,7 @@ describe('useProgressStore', () => {
 
   describe('Operation.chainSpan', () => {
     it('persists chainSpan on the Operation when set', () => {
-      store.startOperation({
+      startOperation({
         installationId: 'inst-1',
         title: 'Installing — DevFixture',
         apiCall: () => new Promise<ActionResult>(() => {}),
@@ -415,7 +405,7 @@ describe('useProgressStore', () => {
     })
 
     it('persists chainSpan=launch for the launch leg of a chain', () => {
-      store.startOperation({
+      startOperation({
         installationId: 'inst-2',
         title: 'Launching — DevFixture',
         apiCall: () => new Promise<ActionResult>(() => {}),
@@ -425,7 +415,7 @@ describe('useProgressStore', () => {
     })
 
     it('defaults chainSpan to null when omitted', () => {
-      store.startOperation({
+      startOperation({
         installationId: 'inst-3',
         title: 'Standalone op',
         apiCall: () => new Promise<ActionResult>(() => {})
@@ -435,7 +425,7 @@ describe('useProgressStore', () => {
 
     it('seeds the launch leg terminalOutput from logsSnapshot (log continuity)', async () => {
       vi.mocked(window.api.logsSnapshot).mockResolvedValueOnce('install-leg lines\n')
-      store.startOperation({
+      startOperation({
         installationId: 'inst-snap',
         title: 'Launching',
         apiCall: () => new Promise<ActionResult>(() => {}),
@@ -449,7 +439,7 @@ describe('useProgressStore', () => {
 
     it('does not seed from logsSnapshot for a non-launch op', () => {
       vi.mocked(window.api.logsSnapshot).mockClear()
-      store.startOperation({
+      startOperation({
         installationId: 'inst-nosnap',
         title: 'Install',
         apiCall: () => new Promise<ActionResult>(() => {}),
@@ -459,7 +449,7 @@ describe('useProgressStore', () => {
     })
 
     it('caps the install leg of a chain at 0–70% of the continuous bar', () => {
-      store.startOperation({
+      startOperation({
         installationId: 'inst-4',
         title: 'Installing',
         apiCall: () => new Promise<ActionResult>(() => {}),
@@ -480,7 +470,7 @@ describe('useProgressStore', () => {
     })
 
     it('a finished+ok install leg reports 70, not 100 (chain hands off to launch)', () => {
-      store.startOperation({
+      startOperation({
         installationId: 'inst-5',
         title: 'Installing',
         apiCall: () => new Promise<ActionResult>(() => {}),
@@ -495,7 +485,7 @@ describe('useProgressStore', () => {
     })
 
     it('a finished+ok standalone op reports 100', () => {
-      store.startOperation({
+      startOperation({
         installationId: 'inst-6',
         title: 'Updating',
         apiCall: () => new Promise<ActionResult>(() => {})

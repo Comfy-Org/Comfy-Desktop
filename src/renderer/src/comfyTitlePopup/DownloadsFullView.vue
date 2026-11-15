@@ -22,7 +22,6 @@ import DownloadThumbnail from '../components/DownloadThumbnail.vue'
 import { fileLabel, modalSubtitle, statusKindClass } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import type {
-  PopupDownloadAction,
   PopupDownloadEntry as DownloadEntry,
   PopupDownloadsState as DownloadsState
 } from '../../../preload/comfyTitlePopupPreload'
@@ -31,14 +30,7 @@ const { t } = useI18n()
 
 type StatusFilter = 'all' | 'active' | 'completed' | 'error'
 
-interface PopupBridge {
-  platform?: string
-  downloadsAction(action: PopupDownloadAction): void
-  getDownloadThumbnail(savePath: string): Promise<string | null>
-  close(): void
-}
-
-const bridge = (window as unknown as { __comfyTitlePopup?: PopupBridge }).__comfyTitlePopup
+const bridge = window.__comfyTitlePopup
 const revealLabel = computed(() => revealInFolderLabel(bridge?.platform))
 
 const props = defineProps<{ state: DownloadsState }>()

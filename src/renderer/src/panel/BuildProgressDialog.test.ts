@@ -64,7 +64,8 @@ async function openDialog(opKind: 'install' | 'launch' = 'install') {
     apiCall: () =>
       new Promise<ActionResult>((resolve) => {
         settle = resolve
-      })
+      }),
+    events: window.api
   })
   progress({ phase: 'steps', steps: STEPS })
   progress({ phase: 'download', percent: 63, status: '760 of 1200 MB · about 24s left' })

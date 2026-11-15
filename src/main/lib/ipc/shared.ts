@@ -119,6 +119,7 @@ import { getVariantLabel, buildPinnedVariant } from '../../sources/standalone'
 import type { FieldOption, SourcePlugin } from '../../types/sources'
 import { REQUIRES_STOPPED } from '../../../types/ipc'
 import type { Theme, ResolvedTheme, QuitActiveItem, BetaArgView } from '../../../types/ipc'
+import type { PickerOperationStatus } from '../../../types/titlePopup'
 import { findLockingProcesses } from '../file-lock-info'
 import { markStopRequested } from '../comfyProcessRecord'
 import type { LaunchCmd } from '../process'
@@ -452,18 +453,7 @@ export function _isStopping(installationId: string): boolean {
   return _stoppingInstallationIds.has(installationId)
 }
 
-export interface PickerOperationStatus {
-  status: string
-  percent: number
-  speedBytesPerSec?: number | null
-  done: boolean
-  ok: boolean | null
-  error: string | null
-  cancellable: boolean
-  title: string
-  actionId: string
-  actionData?: Record<string, unknown>
-}
+export type { PickerOperationStatus }
 
 export const _activeOperationStatus = new Map<string, PickerOperationStatus>()
 

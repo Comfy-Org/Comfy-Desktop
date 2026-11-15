@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { buildElectronApi } from './api'
 import { normaliseFirstUseMode, type FirstUseMode } from '../shared/firstUseMode'
+import type { AppUpdateState } from '../types/ipc'
 
 export type ComfyPanelKey =
   | 'comfy'
@@ -38,6 +39,13 @@ export interface DownloadsTrayState {
   recent: DownloadsTrayEntry[]
 }
 
+export type TitleMenuKind = 'menu' | 'downloads' | 'instance-picker'
+
+export interface InstallUpdateState {
+  available: boolean
+  version: string | null
+}
+
 export interface ComfyTitleBarBridge {
   getInstallationId(): string | null
   isMac(): boolean
@@ -53,21 +61,13 @@ export interface ComfyTitleBarBridge {
   onZoomChanged(cb: (level: number) => void): () => void
   onThemeChanged(cb: (theme: { bg: string; text: string }) => void): () => void
   onFullscreenChanged(cb: (fullscreen: boolean) => void): () => void
-  onMenuOpened(cb: (info: { menu: 'menu' | 'downloads' | 'instance-picker' }) => void): () => void
-  onMenuClosed(cb: (info: { menu: 'menu' | 'downloads' | 'instance-picker' }) => void): () => void
+  onMenuOpened(cb: (info: { menu: TitleMenuKind }) => void): () => void
+  onMenuClosed(cb: (info: { menu: TitleMenuKind }) => void): () => void
   onFirstUseModeChanged(cb: (mode: FirstUseMode) => void): () => void
   onPreviewModeChanged(cb: (preview: boolean) => void): () => void
   onInstallationIdChanged(cb: (installationId: string | null) => void): () => void
-  onAppUpdateStateChanged(
-    cb: (state: {
-      kind: 'available' | 'downloading' | 'ready' | null
-      version: string | null
-      autoUpdate: boolean
-    }) => void
-  ): () => void
-  onInstallUpdateAvailable(
-    cb: (state: { available: boolean; version: string | null }) => void
-  ): () => void
+  onAppUpdateStateChanged(cb: (state: AppUpdateState) => void): () => void
+  onInstallUpdateAvailable(cb: (state: InstallUpdateState) => void): () => void
   clickAppUpdatePill(): void
   clickInstallUpdatePill(): void
   onDownloadsChanged(cb: (state: DownloadsTrayState) => void): () => void

@@ -1,19 +1,8 @@
 import type { Ref } from 'vue'
-
-interface ShowTooltipPayload {
-  text: string
-  leftX: number
-  rightX: number
-  bottomY: number
-}
-
-interface TitleBarTooltipBridge {
-  showTooltip: (payload: ShowTooltipPayload) => void
-  hideTooltip: () => void
-}
+import type { ComfyTitleBarBridge } from '../../../preload/comfyTitleBarPreload'
 
 interface UseTitleBarTooltipOpts {
-  bridge: TitleBarTooltipBridge | undefined
+  bridge: Pick<ComfyTitleBarBridge, 'showTooltip' | 'hideTooltip'> | undefined
   isMac: Ref<boolean>
 }
 

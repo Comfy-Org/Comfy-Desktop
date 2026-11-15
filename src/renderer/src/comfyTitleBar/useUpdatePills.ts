@@ -1,26 +1,18 @@
 import { computed, onMounted, onUnmounted, ref, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-
-interface AppUpdateState {
-  kind: 'available' | 'downloading' | 'ready' | null
-  version: string | null
-  autoUpdate: boolean
-}
-
-interface InstallUpdateState {
-  available: boolean
-  version: string | null
-}
-
-interface UpdatePillsBridge {
-  onAppUpdateStateChanged: (cb: (state: AppUpdateState) => void) => () => void
-  onInstallUpdateAvailable: (cb: (state: InstallUpdateState) => void) => () => void
-  clickAppUpdatePill: () => void
-  clickInstallUpdatePill: () => void
-}
+import type { ComfyTitleBarBridge, InstallUpdateState } from '../../../preload/comfyTitleBarPreload'
+import type { AppUpdateState } from '../types/ipc'
 
 interface UseUpdatePillsOpts {
-  bridge: UpdatePillsBridge | undefined
+  bridge:
+    | Pick<
+        ComfyTitleBarBridge,
+        | 'onAppUpdateStateChanged'
+        | 'onInstallUpdateAvailable'
+        | 'clickAppUpdatePill'
+        | 'clickInstallUpdatePill'
+      >
+    | undefined
   isInstallLess: Ref<boolean>
 }
 

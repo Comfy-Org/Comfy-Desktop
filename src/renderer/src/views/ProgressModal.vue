@@ -340,7 +340,7 @@ function startOperation(opts: {
 }): void {
   currentId.value = opts.installationId
   resolvingConflict.value = false
-  progressStore.startOperation(opts)
+  progressStore.startOperation({ ...opts, events: window.api })
 }
 
 const successTerminalActive = computed<boolean>(() => {

@@ -41,7 +41,8 @@ function stubElectronApi(beta: unknown = { timing: 'next-launch', args: [] }): {
 } {
   const api = {
     getComfyArgs: vi.fn().mockResolvedValue({ args: SCHEMA }),
-    getCoreBetaArgs: vi.fn().mockResolvedValue(beta)
+    getCoreBetaArgs: vi.fn().mockResolvedValue(beta),
+    onSettingsChanged: vi.fn(() => () => {})
   }
   ;(window as unknown as { api: unknown }).api = api
   return api

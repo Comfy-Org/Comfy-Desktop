@@ -5,6 +5,7 @@ import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
 import { expectChooserVisible } from './support/chooserHelpers'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
+import { getShellOpenExternalCalls } from './support/devHooks'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -108,4 +109,18 @@ test('right pane clears stale sections when switching install A → B @windows @
       )) === INSTALL_B_ID,
     { timeout: 15_000, message: 'right pane never settled on Install B after switch' }
   )
+})
+
+test('the picker can hand a link to the browser @windows @macos @linux', async () => {
+  const link = 'https://docs.comfy.org/from-the-picker'
+  await ctx.panel.evaluate(
+    `window.api.openInstancePicker({ installationId: ${JSON.stringify(INSTALL_A_ID)}, initialTab: 'config' })`
+  )
+  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
+  const popup = titlePopupPage(ctx.app)
+  await popup.waitForVisible(byTestId(TID.pickerSettingsSections), { timeout: 15_000 })
+
+  await popup.evaluate(`window.api.openExternal(${JSON.stringify(link)})`)
+
+  await expect.poll(() => getShellOpenExternalCalls(ctx.app), { timeout: 10_000 }).toContain(link)
 })
