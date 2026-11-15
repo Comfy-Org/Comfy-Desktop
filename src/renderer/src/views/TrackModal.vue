@@ -2,7 +2,7 @@
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
 import { ref, computed, toRaw, type Component } from 'vue'
-import { Box, GitBranch, GitFork, Package, ScanSearch, Tag } from 'lucide-vue-next'
+import { Box, GitBranch, GitFork, Package, ScanSearch, Tag } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { TID } from '../../../shared/testIds'

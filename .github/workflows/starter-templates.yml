@@ -32,7 +32,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           package-manager-cache: false
-          node-version: 22
+          node-version-file: .nvmrc
       - run: node scripts/starter-templates.mjs validate
 
       - name: guardrails hold
@@ -68,7 +68,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           package-manager-cache: false
-          node-version: 22
+          node-version-file: .nvmrc
 
       - name: authenticate to GCS
         uses: google-github-actions/auth@v2

@@ -94,6 +94,7 @@ export async function openManageViaDashboard(
   installationId: string,
   tabKey?: string
 ): Promise<WebContentsPage> {
+  await expectChooserVisible(panel)
   await panel.waitForVisible(byTestId(TID.dashboardTile(installationId)), { timeout: 15_000 })
   await panel.evaluate<void>(
     `window.api.openInstancePicker({ installationId: ${JSON.stringify(installationId)} })`
@@ -165,13 +166,6 @@ export async function openNewBuildChangeSetup(panel: WebContentsPage): Promise<v
     true
   )
   await panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
-}
-
-export async function saveNewBuildChangeSetup(panel: WebContentsPage): Promise<void> {
-  expect(await panel.click('[data-testid="config-save-changes"]'), 'Save changes clicked').toBe(
-    true
-  )
-  await panel.waitForVisible('[data-testid="config-summary"]', { timeout: 5_000 })
 }
 
 export async function dismissOverlay(panel: WebContentsPage): Promise<void> {

@@ -1,14 +1,9 @@
-import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from 'lucide-vue-next'
-import type { LucideIcon } from 'lucide-vue-next'
+import { Cloud, Computer, LaptopMinimal, Globe, Box, Package } from '@lucide/vue'
+import type { LucideIcon } from '@lucide/vue'
 import { isBuildSource } from '../devplatform/buildState'
 
 export type InstallTypeKey =
-  | 'standalone'
-  | 'cloud'
-  | 'legacyDesktop'
-  | 'remote'
-  | 'build'
-  | 'unknown'
+  'standalone' | 'cloud' | 'legacyDesktop' | 'remote' | 'build' | 'unknown'
 
 export interface InstallTypeIconMeta {
   key: InstallTypeKey

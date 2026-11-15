@@ -12,7 +12,7 @@ import {
   RotateCcw,
   Trash2,
   Upload
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { TID } from '../../../../shared/testIds'
 import { MSG_CANCELLED } from '../../../../shared/operationStatus'
 import { useDialogs } from '../../composables/useDialogs'

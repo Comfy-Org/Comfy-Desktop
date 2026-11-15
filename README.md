@@ -89,19 +89,19 @@ Contributions are welcome. The app is an [Electron](https://www.electronjs.org/)
 
 ### Prerequisites
 
-- [**Node.js**](https://nodejs.org/) v22 LTS or later
+- [**Node.js**](https://nodejs.org/) 24 LTS (the version in `.nvmrc`)
 - [**pnpm**](https://pnpm.io/) v10 or later (via Corepack)
 
-```bash
-nvm install 22 && nvm use 22   # recommended — https://github.com/nvm-sh/nvm
-corepack enable                # enables pnpm (bundled with Node)
-```
+Development, CI and ToDesktop builds all use the Node version in `.nvmrc`, which is the same major as the Node runtime bundled with Electron.
 
 ### Setup
 
 ```bash
 git clone https://github.com/Comfy-Org/Comfy-Desktop.git
 cd Comfy-Desktop
+nvm install                # installs the Node version in .nvmrc — https://github.com/nvm-sh/nvm
+nvm use
+corepack enable            # enables pnpm (bundled with Node)
 pnpm run init
 ```
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, LoaderCircle, OctagonAlert, X } from 'lucide-vue-next'
+import { Check, ChevronDown, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import { useModal } from '../composables/useModal'
@@ -330,8 +330,7 @@ async function cancel(): Promise<void> {
           class="m-0 mt-1 h-[148px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
           tabindex="0"
           data-testid="build-progress-logs"
-          >{{ logText || t('installProgress.starting') }}</pre
-        >
+          >{{ logText || t('installProgress.starting') }}</pre>
 
         <div class="mt-6 flex min-h-9 items-center gap-2">
           <template v-if="failed">

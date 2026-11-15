@@ -2,13 +2,14 @@ import { createTestingPinia } from '@pinia/testing'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
+import { defineComponent, h, nextTick, ref, unref, type Ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import type { ActionResult, FieldOption, ShowProgressOpts, Source } from '../types/ipc'
 import { useProgressStore } from '../stores/progressStore'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { useFirstUseChain, type FirstUseChainApi } from './useFirstUseChain'
 import { __resetLauncherPrefsForTest } from '../composables/useLauncherPrefs'
+import type { SetupConsent } from '../lib/setupConsent'
 import type { SetupPlan } from '../lib/setupPlan'
 
 const modal = vi.hoisted(() => ({ confirm: vi.fn(), alert: vi.fn() }))
@@ -40,6 +41,18 @@ const recommendedVariant: FieldOption = {
   label: 'NVIDIA',
   recommended: true,
   data: { variantId: 'nvidia-cuda' }
+}
+
+function setupConsent(overrides: Partial<SetupConsent> = {}): SetupConsent {
+  return {
+    acceptedTos: false,
+    telemetryEnabled: true,
+    betaFeaturesEnabled: true,
+    betaTouched: false,
+    preservePersistedBetaOptIn: false,
+    locale: 'en',
+    ...overrides
+  }
 }
 
 function setupPlan(): SetupPlan {
@@ -236,15 +249,102 @@ describe('useFirstUseChain — Set up', () => {
 
   it('opens every install option from Change, with a way back to Set up', async () => {
     const chain = mountChain()
-    await chain.api!.handleSetupChange()
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))
 
     expect(chain.switchPanel).toHaveBeenCalledWith('new-install', 'first_use')
     expect(testApi.setFirstUseMode).toHaveBeenCalledWith('post-consent')
-    expect(chain.api!.hooks.consumeCameFromSetup()).toBe(true)
-    expect(chain.api!.hooks.consumeCameFromSetup()).toBe(false)
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({ needsConsent: false })
+    expect(chain.api!.hooks.consumeSetupHandoff()).toBeNull()
 
     await chain.api!.handleNewInstallBackToSetup()
     expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the EULA lock through Change until the EULA is accepted in New Build', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
+    expect(chain.api!.hooks.consumeSetupHandoff()).toEqual({ needsConsent: true })
+
+    chain.api!.handleNewInstallConsentChange(true)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('post-consent')
+
+    chain.api!.handleNewInstallConsentChange(false)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('consent-lockdown')
+  })
+
+  it('saves the Set up choices only once the EULA is accepted in New Build', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent({ telemetryEnabled: false }))
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('telemetryEnabled', expect.anything())
+
+    chain.api!.handleNewInstallConsentChange(true)
+    await vi.waitFor(() =>
+      expect(emitTelemetryAction).toHaveBeenCalledWith(
+        'comfy.desktop.first_use.consent_decision',
+        expect.objectContaining({ decision: 'decline', telemetry_enabled: false })
+      )
+    )
+    expect(testApi.setSetting).toHaveBeenCalledWith('telemetryEnabled', false)
+    expect(testApi.setSetting).toHaveBeenCalledWith('betaFeaturesEnabled', true)
+
+    chain.api!.handleNewInstallConsentChange(false)
+    chain.api!.handleNewInstallConsentChange(true)
+    await nextTick()
+    expect(
+      testApi.setSetting.mock.calls.filter(([key]) => key === 'telemetryEnabled')
+    ).toHaveLength(1)
+  })
+
+  it('goes back to Set up, not past it, when New Build closes before the EULA is accepted', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(chain.dismissTakeoverDirect).not.toHaveBeenCalled()
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
+    expect(testApi.setFirstUseMode).not.toHaveBeenCalledWith('none')
+    expect(unref(chain.api!.setupConsent)).toEqual(setupConsent())
+  })
+
+  it('goes back to Set up when the EULA was accepted in New Build and then unticked', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+    chain.api!.handleNewInstallConsentChange(true)
+    chain.api!.handleNewInstallConsentChange(false)
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
+  })
+
+  it('finishes first use when New Build closes after the EULA was accepted there', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+    chain.api!.handleNewInstallConsentChange(true)
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(testApi.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('none')
+    expect(chain.openFirstUseTakeover).not.toHaveBeenCalled()
+  })
+
+  it('hands Set up the same choices on Back, with the EULA as it was left', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent({ telemetryEnabled: false }))
+    chain.api!.handleNewInstallConsentChange(true)
+
+    await chain.api!.handleNewInstallBackToSetup()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(unref(chain.api!.setupConsent)).toEqual(
+      setupConsent({ acceptedTos: true, telemetryEnabled: false })
+    )
   })
 })
 
@@ -272,7 +372,7 @@ describe('useFirstUseChain — chainSpan stamping', () => {
 
   it('stamps chainSpan=install when the first-use chain captures a takeover op', async () => {
     const chain = mountChain()
-    await chain.api!.handleSetupChange()
+    await chain.api!.handleSetupChange(setupConsent({ acceptedTos: true }))
 
     const showOpts = progressOpts('inst-chain-1')
     chain.api!.hooks.onShowProgress(showOpts)

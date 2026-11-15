@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertCircle } from 'lucide-vue-next'
+import { AlertCircle } from '@lucide/vue'
 import BaseInput from '../../components/ui/BaseInput.vue'
 import { useArgsAutocomplete } from '../../composables/useArgsAutocomplete'
 import { validateArgs } from '../../lib/argsParser'

@@ -4,12 +4,12 @@ import { detectFirebaseEnv } from './config'
 import {
   beginActiveBridgeFlow,
   isActiveBridgeFlow,
-  openExternalSafely,
   releaseActiveBridgeFlow,
   runBannerCleanup,
   showCopyLinkBanner
 } from './flowState'
 import { abortable, abortableSleep } from './flowControl'
+import { tryOpenExternalUrl } from '../../lib/openExternal'
 import {
   bindSignedInUser,
   emitSignInFailure,
@@ -82,7 +82,7 @@ export async function handleFirebasePopup(
     }
     flow.handle = handle
     const loginUrl = `${handle.url}?n=${Date.now().toString(36)}`
-    openExternalSafely(loginUrl)
+    void tryOpenExternalUrl(loginUrl)
     showCopyLinkBanner(comfyContents, loginUrl)
     const { user, apiKey } = await abortable(handle.signInPromise, signal)
     if (signal.aborted || !isActiveBridgeFlow(flow)) return

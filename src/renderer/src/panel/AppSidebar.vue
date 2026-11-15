@@ -12,7 +12,7 @@ import {
   LoaderCircle,
   Plus,
   Server
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -282,7 +282,7 @@ function navigate(page: DashboardPage): void {
             </span>
             <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
             <span
-              v-if="install?.kind === 'install' && install.percent !== null"
+              v-if="install && install.kind !== 'launch' && install.percent !== null"
               class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
               data-testid="app-sidebar-build-percent"
               >{{ t('installProgress.percent', { percent: install.percent }) }}</span

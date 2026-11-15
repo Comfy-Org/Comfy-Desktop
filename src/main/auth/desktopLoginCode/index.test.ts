@@ -50,10 +50,7 @@ vi.mock('../../settings', () => ({ get: h.settingsGet }))
 vi.mock('../firebaseBridge/flowState', () => ({
   showCopyLinkBanner: h.showCopyLinkBanner,
   runBannerCleanup: h.runBannerCleanup,
-  closeActiveBridge: h.closeActiveBridge,
-  openExternalSafely: (url: string) => {
-    void h.openExternal(url).catch(() => {})
-  }
+  closeActiveBridge: h.closeActiveBridge
 }))
 
 vi.mock('../firebaseBridge/flowShared', async (importOriginal) => ({

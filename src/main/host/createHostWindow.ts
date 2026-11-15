@@ -1,9 +1,13 @@
-import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
+import type { WebContentsView } from 'electron'
 import path from 'path'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
 import { attachContextMenu } from '../lib/contextMenu'
+import { tryOpenExternalUrl } from '../lib/openExternal'
+import { guardPermissionRequests } from '../lib/sessionPermissions'
 import {
   attachSessionDownloadHandler,
   detachWindowDownloads,
@@ -254,7 +258,7 @@ const CHECKOUT_CLOSE_BUTTON_HTML = `<!doctype html>
 const CHECKOUT_CLOSE_BUTTON_SIZE = 48
 
 function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => void): void {
-  const overlay = new WebContentsView({
+  const overlay = createWebContentsView({
     webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
   })
   overlay.setBackgroundColor('#00000000')
@@ -280,7 +284,10 @@ function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => vo
     if (event.sender.id === closeId) onClose()
   }
   ipcMain.on('comfy-checkout:close', handler)
-  childWindow.once('closed', () => ipcMain.removeListener('comfy-checkout:close', handler))
+  childWindow.once('closed', () => {
+    ipcMain.removeListener('comfy-checkout:close', handler)
+    if (!overlay.webContents.isDestroyed()) overlay.webContents.close()
+  })
 }
 
 export interface CreateHostWindowOpts {
@@ -393,7 +400,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
 
   prewarmTitlePopup(comfyWindow)
 
-  const titleBarView = new WebContentsView({
+  const titleBarView = createWebContentsView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -681,7 +688,7 @@ export function buildComfyView(
           ? 'Consolas'
           : 'monospace'
   }
-  const comfyView = new WebContentsView({
+  const comfyView = createWebContentsView({
     webPreferences: { ...webPreferences, defaultFontFamily }
   })
   comfyView.setBackgroundColor(COMFY_BG)
@@ -689,6 +696,7 @@ export function buildComfyView(
   const comfyContents = comfyView.webContents
   trackFirebaseAuthReporter(comfyContents)
   attachSessionDownloadHandler(comfyContents.session)
+  guardPermissionRequests(comfyContents.session)
 
   let nextPopupIsCheckout = false
   let nextCheckoutOpenedAt = 0
@@ -718,7 +726,7 @@ export function buildComfyView(
         source: 'system_browser',
         user_tier: getUserTier()
       })
-      void shell.openExternal(childUrl)
+      void tryOpenExternalUrl(childUrl)
       return { action: 'deny' }
     }
 
@@ -732,7 +740,7 @@ export function buildComfyView(
       comfyContents.session.downloadURL(childUrl)
       return { action: 'deny' }
     }
-    shell.openExternal(childUrl)
+    void tryOpenExternalUrl(childUrl)
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {

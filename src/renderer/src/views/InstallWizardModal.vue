@@ -27,7 +27,7 @@ import {
   Tag,
   Users,
   Zap
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
@@ -60,6 +60,9 @@ import {
   templateSizeBytes
 } from '../lib/installHelpers'
 import SetupModal from '../components/SetupModal.vue'
+import TermsModal from '../components/TermsModal.vue'
+import TermsConsentRow from '../components/TermsConsentRow.vue'
+import InstallNameInput from '../components/InstallNameInput.vue'
 import TrackModal from './TrackModal.vue'
 import LoadSnapshotModal from './LoadSnapshotModal.vue'
 import SetupMachineIllustration from '../components/SetupMachineIllustration.vue'
@@ -81,6 +84,7 @@ const emit = defineEmits<{
   'show-progress': [opts: ShowProgressOpts]
   'navigate-list': []
   'back-to-setup': []
+  'consent-change': [accepted: boolean]
 }>()
 
 const inlineLinkClass =
@@ -140,14 +144,13 @@ const setupPicked = computed(
 )
 
 type InstallSourceTab =
-  | { key: 'managed'; kind: 'managed' }
-  | { key: string; kind: 'source'; source: Source }
+  { key: 'managed'; kind: 'managed' } | { key: string; kind: 'source'; source: Source }
 
 const installSourceTabs = computed<InstallSourceTab[]>(() => {
   const sourceOrder = new Map([
     ['standalone', 0],
-    ['remote', 1],
-    ['portable', 2]
+    ['portable', 1],
+    ['remote', 2]
   ])
   const tabs: InstallSourceTab[] = [...sources.value]
     .sort(
@@ -278,6 +281,46 @@ const fieldLoading = ref(new Map<string, boolean>())
 const fieldErrors = ref(new Map<string, string>())
 const textFieldValues = ref(new Map<string, string>())
 
+interface HeldField {
+  options: FieldOption[]
+  selection: FieldOption | undefined
+  hidden: boolean
+}
+
+const heldFields = ref(new Map<string, HeldField>())
+
+function holdFieldsFrom(source: Source, fromIndex: number): void {
+  for (const field of source.fields.slice(fromIndex)) {
+    const options = fieldOptions.value.get(field.id)
+    if (!options || heldFields.value.has(field.id)) continue
+    heldFields.value.set(field.id, {
+      options,
+      selection: selections.value[field.id],
+      hidden: isHiddenWhenEmpty(field)
+    })
+  }
+}
+
+function releaseFieldsFrom(source: Source, fromIndex: number): void {
+  for (const field of source.fields.slice(fromIndex)) heldFields.value.delete(field.id)
+}
+
+function isRefreshing(field: SourceField): boolean {
+  return heldFields.value.has(field.id)
+}
+
+function shownOptions(field: SourceField): FieldOption[] | undefined {
+  return fieldOptions.value.get(field.id) ?? heldFields.value.get(field.id)?.options
+}
+
+const shownSelections = computed(() => {
+  const shown: Record<string, FieldOption> = {}
+  for (const [fieldId, held] of heldFields.value) {
+    if (held.selection) shown[fieldId] = held.selection
+  }
+  return { ...shown, ...selections.value }
+})
+
 const {
   diskSpace,
   diskSpaceLoading,
@@ -287,20 +330,28 @@ const {
 } = createDiskSpaceChecker()
 let hardwareValidation: HardwareValidation | null = null
 
-const estimatedInstallSize = computed(() => {
-  if (!localInstallMode.value) {
-    const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
-    return sizeBytes > 0 ? Math.ceil(sizeBytes * INSTALL_SPACE_FACTOR) : 0
-  }
+function installSizeOf(picked: Record<string, FieldOption>): number {
   let downloadBytes = 0
-  for (const selected of Object.values(selections.value)) {
+  for (const selected of Object.values(picked)) {
     const files = selected?.data?.downloadFiles as Array<{ size: number }> | undefined
     if (files) {
       downloadBytes += files.reduce((sum, f) => sum + f.size, 0)
     }
   }
   return downloadBytes > 0 ? Math.ceil(downloadBytes * INSTALL_SPACE_FACTOR) : 0
+}
+
+const estimatedInstallSize = computed(() => {
+  if (!localInstallMode.value) {
+    const sizeBytes = selectedBuild.value?.sizeBytes ?? 0
+    return sizeBytes > 0 ? Math.ceil(sizeBytes * INSTALL_SPACE_FACTOR) : 0
+  }
+  return installSizeOf(selections.value)
 })
+
+const shownInstallSize = computed(() =>
+  localInstallMode.value ? installSizeOf(shownSelections.value) : estimatedInstallSize.value
+)
 
 const entrypoint = ref('unknown')
 const resolved = ref(false)
@@ -392,6 +443,10 @@ function selectTemplate(option: FieldOption): void {
 }
 
 async function handleConfigureContinue(): Promise<void> {
+  if (needsConsent.value && !consentAccepted.value) {
+    consentNudge.value = true
+    return
+  }
   if (shouldShowPickerStep.value) {
     if (instPath.value) fetchDiskSpace(instPath.value)
     step.value = 'template'
@@ -550,11 +605,22 @@ function handleBackToSetup(): void {
 
 interface OpenOpts {
   cameFromSetup?: boolean
+  needsConsent?: boolean
   entrypoint?: string
   workspaceId?: string
 }
 
 const cameFromSetup = ref(false)
+const needsConsent = ref(false)
+const consentAccepted = ref(false)
+const consentNudge = ref(false)
+const termsDoc = ref<'eula' | 'tos' | null>(null)
+
+function onConsentToggle(accepted: boolean): void {
+  consentAccepted.value = accepted
+  if (accepted) consentNudge.value = false
+  emit('consent-change', accepted)
+}
 
 async function open(opts: OpenOpts = {}): Promise<void> {
   loadGeneration++
@@ -565,6 +631,10 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   selectedBuildId.value = ''
   selectedBuildTargetId.value = ''
   cameFromSetup.value = opts.cameFromSetup === true
+  needsConsent.value = cameFromSetup.value && opts.needsConsent === true
+  consentAccepted.value = false
+  consentNudge.value = false
+  termsDoc.value = null
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
@@ -576,11 +646,12 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   fieldLoading.value.clear()
   fieldErrors.value.clear()
   textFieldValues.value.clear()
+  heldFields.value.clear()
 
   if (!gpuName.value && !gpuDetectionDone) detectedGpu.value = t('newInstall.detectingGpu')
   machineUnsupported.value = false
   unsupportedReason.value = ''
-  view.value = 'summary'
+  view.value = cameFromSetup.value ? 'change' : 'summary'
   changeSetupDraft = null
   hardwareValidation = null
   hardwareWarning.value = ''
@@ -822,6 +893,7 @@ function resetSourceState(source: Source | null): void {
   fieldLoading.value.clear()
   fieldErrors.value.clear()
   textFieldValues.value.clear()
+  heldFields.value.clear()
   saveDisabled.value = true
   sourceError.value = ''
 }
@@ -857,6 +929,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
 
   const gen = loadGeneration
 
+  holdFieldsFrom(source, fieldIndex)
   fieldLoading.value.set(field.id, true)
   fieldOptions.value.delete(field.id)
   saveDisabled.value = true
@@ -894,6 +967,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
 
     fieldLoading.value.set(field.id, false)
     fieldOptions.value.set(field.id, options)
+    heldFields.value.delete(field.id)
 
     if (field.id === 'bundledTemplate' && !asksForTemplate.value) {
       const none = options.find((opt) => opt.value === NO_TEMPLATE_VALUE)
@@ -918,6 +992,7 @@ async function loadFieldOptions(fieldIndex: number): Promise<void> {
   } catch (err: unknown) {
     if (gen !== loadGeneration) return
     fieldLoading.value.set(field.id, false)
+    releaseFieldsFrom(source, fieldIndex)
     const errMsg = (err as Error).message || String(err)
 
     let errorFieldId = field.errorTarget
@@ -952,10 +1027,15 @@ function handleFieldSelectChange(field: SourceField, fieldIndex: number, value: 
 
   const nextSelect = source.fields.findIndex((f, i) => i > fieldIndex && f.type !== 'text')
   if (nextSelect >= 0) {
-    loadFieldOptions(nextSelect)
+    supersedeFieldLoads(nextSelect)
   } else {
     saveDisabled.value = false
   }
+}
+
+function supersedeFieldLoads(fromIndex: number): void {
+  loadGeneration++
+  void loadFieldOptions(fromIndex)
 }
 
 function selectCardOption(field: SourceField, fieldIndex: number, option: FieldOption): void {
@@ -974,7 +1054,7 @@ function selectCardOption(field: SourceField, fieldIndex: number, option: FieldO
   if (!source) return
   const nextSelect = source.fields.findIndex((f, i) => i > fieldIndex && f.type !== 'text')
   if (nextSelect >= 0) {
-    loadFieldOptions(nextSelect)
+    supersedeFieldLoads(nextSelect)
   } else {
     saveDisabled.value = false
   }
@@ -1150,8 +1230,7 @@ async function handleSave(): Promise<void> {
   if (instPath.value) {
     try {
       const downloadFiles = selections.value.variant?.data?.downloadFiles as
-        | Array<{ size: number }>
-        | undefined
+        Array<{ size: number }> | undefined
       const downloadBytes = downloadFiles ? downloadFiles.reduce((sum, f) => sum + f.size, 0) : 0
       const estimatedRequired =
         downloadBytes > 0 ? Math.ceil(downloadBytes * INSTALL_SPACE_FACTOR) : 0
@@ -1194,14 +1273,16 @@ async function handleSave(): Promise<void> {
   await handOffInstall(result, t('errors.cannotAdd'), templateHasModels.value)
 }
 
-function getSelectOptions(field: SourceField): BaseSelectOption[] {
-  const options = fieldOptions.value.get(field.id)
-  if (!options) return []
-  return options.map((opt) => ({
+function toSelectOptions(options: FieldOption[] | undefined): BaseSelectOption[] {
+  return (options ?? []).map((opt) => ({
     value: opt.value,
     label: opt.label,
     description: opt.description
   }))
+}
+
+function getSelectOptions(field: SourceField): BaseSelectOption[] {
+  return toSelectOptions(fieldOptions.value.get(field.id))
 }
 
 function getSelectPlaceholder(field: SourceField): string {
@@ -1262,13 +1343,13 @@ const diskFreeLabel = computed(() =>
     : ''
 )
 const diskShortLabel = computed(() => {
-  const required = estimatedInstallSize.value
+  const required = shownInstallSize.value
   if (diskSpaceLoading.value || !diskSpace.value || required <= 0) return ''
   if (diskSpace.value.free >= required) return ''
   return t('newInstall.requiredSpace', { size: formatBytes(required) })
 })
 const locationMeta = computed(() => {
-  const required = estimatedInstallSize.value
+  const required = shownInstallSize.value
   if (!diskFreeLabel.value || required <= 0 || diskShortLabel.value) return diskFreeLabel.value
   return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
 })
@@ -1351,6 +1432,7 @@ async function discardChangeSetup(): Promise<void> {
     return
   }
   loadGeneration++
+  heldFields.value.clear()
   selections.value = draft.selections
   fieldOptions.value = draft.fieldOptions
   fieldLoading.value = draft.fieldLoading
@@ -1364,6 +1446,8 @@ async function discardChangeSetup(): Promise<void> {
 }
 
 function isHiddenWhenEmpty(field: SourceField): boolean {
+  const held = heldFields.value.get(field.id)
+  if (held) return held.hidden
   if (field.id === 'bundledTemplate' && (!asksForTemplate.value || shouldShowPickerStep.value))
     return true
   if (field.type === 'text' || field.renderAs === 'cards') return false
@@ -1387,41 +1471,44 @@ const blockingFieldError = computed(
   () => urlFieldError.value || fieldErrors.value.values().next().value || ''
 )
 
-const remoteSource = computed(() => sources.value.find((source) => source.id === 'remote') ?? null)
-const remoteSelected = computed(
-  () => !managedBuildMode.value && !!remoteSource.value && currentSource.value?.id === 'remote'
-)
-
 const SOURCE_ICONS: Record<string, Component> = {
   standalone: Package,
-  portable: FolderArchive
+  portable: FolderArchive,
+  remote: Globe
+}
+
+function sourceCardLabel(source: Source): string {
+  if (source.id === 'standalone') return t('newInstall.publicBuilds')
+  if (source.id === 'remote') return t('newInstall.connectToServer')
+  return source.label
+}
+
+function sourceCardDescription(source: Source): string | undefined {
+  if (source.id === 'standalone') return t('newInstall.publicBuildsMeta')
+  if (source.id === 'remote') return t('newInstall.connectToServerMeta')
+  return source.description
 }
 
 const sourceCards = computed<SetupOptionCard[]>(() =>
-  installSourceTabs.value
-    .filter((tab) => !(tab.kind === 'source' && tab.source.id === 'remote'))
-    .map((tab) =>
-      tab.kind === 'managed'
-        ? {
-            value: tab.key,
-            label: t('newInstall.managedBuilds'),
-            description: t('newInstall.managedBuildsMeta'),
-            icon: Users,
-            testId: 'workspace-install-source-managed',
-            disabled: authorizingWorkspace.value
-          }
-        : {
-            value: tab.key,
-            label: tab.source.id === 'standalone' ? t('newInstall.publicBuilds') : tab.source.label,
-            description:
-              tab.source.id === 'standalone'
-                ? t('newInstall.publicBuildsMeta')
-                : tab.source.description,
-            icon: SOURCE_ICONS[tab.source.id] ?? Package,
-            testId: `install-source-${tab.source.id}`,
-            disabled: authorizingWorkspace.value
-          }
-    )
+  installSourceTabs.value.map((tab) =>
+    tab.kind === 'managed'
+      ? {
+          value: tab.key,
+          label: t('newInstall.managedBuilds'),
+          description: t('newInstall.managedBuildsMeta'),
+          icon: Users,
+          testId: 'workspace-install-source-managed',
+          disabled: authorizingWorkspace.value
+        }
+      : {
+          value: tab.key,
+          label: sourceCardLabel(tab.source),
+          description: sourceCardDescription(tab.source),
+          icon: SOURCE_ICONS[tab.source.id] ?? Package,
+          testId: `install-source-${tab.source.id}`,
+          disabled: authorizingWorkspace.value
+        }
+  )
 )
 
 const selectedSourceCard = computed(() => {
@@ -1436,18 +1523,9 @@ async function selectSourceCardByKey(key: string): Promise<void> {
   else await selectSourceCard(tab.source)
 }
 
-async function selectRemoteSource(): Promise<void> {
-  if (remoteSource.value) await selectSourceCard(remoteSource.value)
-}
-
-async function selectStandaloneSource(): Promise<void> {
-  const standalone = sources.value.find((source) => source.id === 'standalone')
-  if (standalone) await selectSourceCard(standalone)
-}
-
 function backToConfigure(): void {
   step.value = 'configure'
-  view.value = 'summary'
+  view.value = cameFromSetup.value ? 'change' : 'summary'
 }
 
 function selectCardOptionByValue(field: SourceField, fieldIndex: number, value: string): void {
@@ -1617,27 +1695,12 @@ defineExpose({ open })
             for="inst-name-standalone"
             ><Tag :size="15" aria-hidden="true" />{{ $t('common.name') }}</label
           >
-          <InputGroup class="config-input" :class="{ 'config-input--invalid': nameError }">
-            <InputGroupInput
-              id="inst-name-standalone"
-              class="text-[13px] text-neutral-100"
-              :data-initial-focus="hideBackToDashboard || undefined"
-              :model-value="instName"
-              type="text"
-              :placeholder="suggestedName || $t('common.namePlaceholder')"
-              :aria-invalid="!!nameError"
-              :aria-describedby="nameError ? 'inst-name-error' : undefined"
-              @input="instName = ($event.target as HTMLInputElement).value"
-            />
-          </InputGroup>
-          <div
-            v-if="nameError"
-            id="inst-name-error"
-            class="config-field-error col-start-2 mt-1.5 text-[13px] text-[var(--danger)]"
-            role="alert"
-          >
-            {{ nameError }}
-          </div>
+          <InstallNameInput
+            v-model="instName"
+            :placeholder="suggestedName || $t('common.namePlaceholder')"
+            :error="nameError"
+            :initial-focus="hideBackToDashboard"
+          />
         </div>
 
         <div
@@ -1897,6 +1960,19 @@ defineExpose({ open })
           class="config-advanced config-advanced--direct is-open flex flex-col"
         >
           <template v-for="(field, fieldIndex) in currentSource.fields" :key="field.id">
+            <SetupFormRow
+              v-if="cameFromSetup && field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
+              class="config-name-row"
+              :label="$t('common.name')"
+              label-for="inst-name-standalone"
+              :icon="Tag"
+            >
+              <InstallNameInput
+                v-model="instName"
+                :placeholder="suggestedName || $t('common.namePlaceholder')"
+                :error="nameError"
+              />
+            </SetupFormRow>
             <InstallLocationRow
               v-if="field.id === HARDWARE_FIELD_ID && locationBeforeHardware"
               :path="instPath"
@@ -1967,28 +2043,27 @@ defineExpose({ open })
               </div>
 
               <div v-else-if="field.renderAs === 'cards'" class="min-w-0">
+                <SetupOptionCards
+                  v-if="shownOptions(field)?.length"
+                  :options="
+                    field.id === HARDWARE_FIELD_ID
+                      ? toHardwareCards(sortedCardOptions(shownOptions(field)!))
+                      : toOptionCards(sortedCardOptions(shownOptions(field)!))
+                  "
+                  :selected-value="shownSelections[field.id]?.value ?? null"
+                  :refreshing="isRefreshing(field)"
+                  :aria-label="field.label"
+                  @select="(value) => selectCardOptionByValue(field, fieldIndex, value)"
+                />
                 <div
-                  v-if="fieldLoading.get(field.id)"
+                  v-else-if="fieldLoading.get(field.id)"
                   class="config-loading py-3 text-[13px] text-text-muted"
                   :class="spinnerClass"
                 >
                   {{ $t('newInstall.loading') }}
                 </div>
-                <SetupOptionCards
-                  v-else-if="
-                    fieldOptions.has(field.id) && (fieldOptions.get(field.id)?.length ?? 0) > 0
-                  "
-                  :options="
-                    field.id === HARDWARE_FIELD_ID
-                      ? toHardwareCards(sortedCardOptions(fieldOptions.get(field.id)!))
-                      : toOptionCards(sortedCardOptions(fieldOptions.get(field.id)!))
-                  "
-                  :selected-value="selections[field.id]?.value ?? null"
-                  :aria-label="field.label"
-                  @select="(value) => selectCardOptionByValue(field, fieldIndex, value)"
-                />
                 <div
-                  v-else-if="fieldOptions.has(field.id)"
+                  v-else-if="shownOptions(field)"
                   class="config-loading py-3 text-[13px] text-text-muted"
                 >
                   {{
@@ -2015,8 +2090,8 @@ defineExpose({ open })
                   class="config-release-version w-auto flex-none gap-2.5"
                   compact
                   leading="ComfyUI"
-                  :model-value="selections[inlineVersionField.id]?.value ?? ''"
-                  :options="getSelectOptions(inlineVersionField)"
+                  :model-value="shownSelections[inlineVersionField.id]?.value ?? ''"
+                  :options="toSelectOptions(shownOptions(inlineVersionField))"
                   :placeholder="getSelectPlaceholder(inlineVersionField)"
                   :disabled="
                     fieldLoading.get(inlineVersionField.id) ||
@@ -2047,6 +2122,20 @@ defineExpose({ open })
           </template>
         </div>
 
+        <SetupFormRow
+          v-if="cameFromSetup && !locationBeforeHardware"
+          class="config-name-row"
+          :label="$t('common.name')"
+          label-for="inst-name-standalone"
+          :icon="Tag"
+        >
+          <InstallNameInput
+            v-model="instName"
+            :placeholder="suggestedName || $t('common.namePlaceholder')"
+            :error="nameError"
+          />
+        </SetupFormRow>
+
         <InstallLocationRow
           v-if="showLocation && !locationBeforeHardware"
           :path="instPath"
@@ -2061,68 +2150,38 @@ defineExpose({ open })
         />
 
         <SetupFormRow
-          v-if="remoteSource || offersBuildImport"
+          v-if="offersBuildImport"
           class="config-other-ways"
           data-testid="config-other-ways"
-          :label="remoteSelected ? '' : $t('newInstall.alreadyHaveComfy')"
+          :label="$t('newInstall.alreadyHaveComfy')"
           control-height="centered"
         >
           <p
             class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
           >
             <Button
-              v-if="remoteSelected"
               size="link"
               variant="link"
               type="button"
-              class="config-install-here"
+              class="config-add-existing"
               :class="inlineLinkClass"
-              data-testid="install-source-here"
-              @click="selectStandaloneSource"
+              data-testid="config-add-existing"
+              @click="openBuildImport('track')"
             >
-              {{ $t('newInstall.installHereInstead') }}
+              {{ $t('newInstall.addExistingBuild') }}
             </Button>
-            <template v-else>
-              <Button
-                v-if="remoteSource"
-                size="link"
-                variant="link"
-                type="button"
-                class="config-connect-remote"
-                :class="inlineLinkClass"
-                data-testid="install-source-remote"
-                :disabled="authorizingWorkspace"
-                @click="selectRemoteSource"
-              >
-                {{ $t('newInstall.connectToServer') }}
-              </Button>
-              <template v-if="offersBuildImport">
-                <span v-if="remoteSource" aria-hidden="true">·</span>
-                <Button
-                  size="link"
-                  variant="link"
-                  type="button"
-                  class="config-add-existing"
-                  :class="inlineLinkClass"
-                  data-testid="config-add-existing"
-                  @click="openBuildImport('track')"
-                >
-                  {{ $t('newInstall.addExistingBuild') }}
-                </Button>
-                <span aria-hidden="true">·</span>
-                <Button
-                  size="link"
-                  variant="link"
-                  type="button"
-                  class="config-load-snapshot"
-                  :class="inlineLinkClass"
-                  data-testid="config-load-snapshot"
-                  @click="openBuildImport('load-snapshot')"
-                >
-                  {{ $t('newInstall.loadSnapshot') }}
-                </Button>
-              </template>
-            </template>
+            <span aria-hidden="true">·</span>
+            <Button
+              size="link"
+              variant="link"
+              type="button"
+              class="config-load-snapshot"
+              :class="inlineLinkClass"
+              data-testid="config-load-snapshot"
+              @click="openBuildImport('load-snapshot')"
+            >
+              {{ $t('newInstall.loadSnapshot') }}
+            </Button>
           </p>
         </SetupFormRow>
       </div>
@@ -2171,7 +2230,7 @@ defineExpose({ open })
     </template>
 
     <template #footer>
-      <template v-if="step === 'configure' && view === 'change'">
+      <template v-if="step === 'configure' && view === 'change' && !cameFromSetup">
         <span class="flex-1" />
         <Button
           size="lg"
@@ -2208,6 +2267,16 @@ defineExpose({ open })
           {{ $t('common.back') }}
         </Button>
         <span class="flex-1" />
+        <TermsConsentRow
+          v-if="needsConsent"
+          class="config-consent mr-2 min-w-0"
+          id-prefix="config"
+          :accepted="consentAccepted"
+          :nudge="consentNudge"
+          :hint="$t('newInstall.agreeToContinue')"
+          @update:accepted="onConsentToggle"
+          @open-terms="termsDoc = $event"
+        />
         <Button
           type="button"
           size="lg"
@@ -2258,6 +2327,7 @@ defineExpose({ open })
       </template>
     </template>
   </SetupModal>
+  <TermsModal v-if="termsDoc" :open="true" :doc="termsDoc" @close="termsDoc = null" />
   <TrackModal
     v-if="buildImportFlow === 'track'"
     ref="trackModalRef"
