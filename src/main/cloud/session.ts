@@ -72,13 +72,7 @@ export interface SessionSwitchReply extends WorkspaceSwitchStatus {
 }
 
 type SwitchTelemetryOutcome =
-  | 'cached'
-  | 'anchor'
-  | 'minted'
-  | 'browser'
-  | 'unavailable'
-  | 'retryable'
-  | 'refused'
+  'cached' | 'anchor' | 'minted' | 'browser' | 'unavailable' | 'retryable' | 'refused'
 
 type SwitchReason = ReauthorizeReason | 'scope_not_granted'
 

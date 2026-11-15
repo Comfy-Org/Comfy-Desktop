@@ -30,6 +30,7 @@ import { migrateXdgPaths, persistWinDataRootChoice } from './lib/paths'
 import { saveWindowBounds } from './lib/windowState'
 import { flushLastSessionSync, recordDashboardSurface } from './lib/lastSession'
 import { registerProcessErrorHandlers } from './lib/processErrorHandlers'
+import { registerOutputFilesScheme, registerOutputFolderHandlers } from './lib/outputFolders'
 import { initAppLog, flushOperationOutput } from './lib/appLog'
 import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
@@ -55,6 +56,10 @@ import {
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
+import {
+  postponeQuitWhileDestroyedWindowsHaveLiveWebContents,
+  trackWindowWebContents
+} from './lib/quitAfterWindowWebContents'
 import { showUpdateInstallSplash } from './lib/updateSplash'
 import type { InstallationRecord } from './installations'
 import {
@@ -123,6 +128,7 @@ import { initExperiments } from './lib/experiments'
 import { initCloudFreeRuns } from './lib/cloudFreeRuns'
 import { initCoreBetaFlags, refreshCoreBetaFlags } from './lib/coreBetaCampaignFlags'
 import { initEmbeddedSessionFlag } from './lib/embeddedSessionFlag'
+import { initAppsFlag } from './apps/appsFlag'
 import { initWorkspaceMintSwitchFlag } from './lib/workspaceMintSwitchFlag'
 import { getCloudSession } from './devplatform/session'
 import { initStaffFlagTargeting } from './lib/staffFlagTargeting'
@@ -130,6 +136,7 @@ import { initUserTier } from './lib/userTier'
 import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
+  canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
@@ -193,6 +200,8 @@ try {
 if (settings.get('hardwareAcceleration') === false) {
   app.disableHardwareAcceleration()
 }
+
+registerOutputFilesScheme()
 
 todesktop.init({ autoUpdater: false })
 
@@ -557,7 +566,7 @@ function onLaunch({
     return
   }
 
-  entry.layoutViews()
+  prewarmAttachedPanel(entry)
 
   if (proc) {
     proc.on('exit', () => {})
@@ -620,7 +629,6 @@ ipcMain.on('comfy-window:set-first-use-mode', (event, payload: { mode: unknown }
       }
       return
     }
-    return
   }
 })
 
@@ -892,6 +900,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   }
 
   app.on('browser-window-created', (_event, window) => {
+    trackWindowWebContents(window)
     window.on('query-session-end', () => {
       updater.suppressInstallOnQuit()
     })
@@ -936,6 +945,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
     setHostFactories({ createChooser: openChooserHostWindow })
     registerPanelViewIpc()
+    registerOutputFolderHandlers()
 
     migrateXdgPaths()
     persistWinDataRootChoice()
@@ -1018,6 +1028,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     }).then(prefetchEnrolledAgents)
 
     void initEmbeddedSessionFlag({ distinctId: installationId })
+
+    void initAppsFlag({ distinctId: installationId })
 
     void initWorkspaceMintSwitchFlag({ distinctId: installationId })
 
@@ -1317,26 +1329,30 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
               actionId
             )
             const wantsRelaunch = wasRunning && IN_PLACE_RELAUNCH.has(actionId)
+            let relaunchFailure: string | null = null
             if (actionResult.ok && wantsRelaunch) {
               const freshInst = (await getInstallation(installationId)) ?? inst
-              await handleLaunch({
+              const relaunch = await handleLaunch({
                 event: stubEvent,
                 installationId,
                 inst: freshInst,
                 actionData: undefined
               })
+              if (!relaunch.ok && !relaunch.cancelled) {
+                relaunchFailure = relaunch.message ?? i18n.t('progress.unknownError')
+              }
             }
             const wasCancelled = actionResult.cancelled === true
             result = {
               status: '',
               percent: wasCancelled ? -1 : 100,
               done: true,
-              ok: !wasCancelled && actionResult.ok !== false,
+              ok: !wasCancelled && actionResult.ok !== false && relaunchFailure === null,
               error: wasCancelled
                 ? MSG_CANCELLED
                 : actionResult.ok === false
                   ? (actionResult.message ?? 'Failed.')
-                  : null,
+                  : relaunchFailure,
               cancellable,
               title,
               actionId,
@@ -1477,8 +1493,9 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       restartInstallFromPicker: async (installationId, parentEntryId, opts) => {
         const parentEntry = comfyWindows.get(parentEntryId)
         if (!parentEntry || parentEntry.window.isDestroyed()) return
-        const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
-        if (boundInstallationId !== installationId) return
+        if (!canRestartFromPicker(parentEntry, installationId, _getLaunchingInstallationIds())) {
+          return
+        }
         if (opts?.confirmed !== true && shouldConfirmKillForEntry(parentEntry)) {
           const confirmed = await openSystemModalAsync({
             parent: parentEntry.window,
@@ -1658,6 +1675,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         tray = null
       }
     }
+    if (postponeQuitWhileDestroyedWindowsHaveLiveWebContents(event)) return
     updater.recordProcessExit()
     if (_stopPeriodicReleaseChecks) {
       _stopPeriodicReleaseChecks()

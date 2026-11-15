@@ -17,6 +17,7 @@ vi.mock('electron', () => ({
 import { _runningSessions, _stoppingInstallationIds } from '../lib/ipc/shared'
 import {
   _resetAttachClaimsForTest,
+  canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
   computeBodyMode,
@@ -24,6 +25,7 @@ import {
   consumeAttachClaim,
   dropAttachClaimsForWindow,
   dropInstallationIndex,
+  findHostWindowByPanelSender,
   findPreferredHostByVisibility,
   getEntryByInstallationId,
   hostInstallEvents,
@@ -36,6 +38,7 @@ import {
   setHostFactories,
   setLastFocusedInstallationId,
   shouldConfirmKillForEntry,
+  unhostedLaunches,
   unregisterHostEntry,
   type ComfyWindowEntry
 } from './registry'
@@ -338,6 +341,65 @@ describe('attach-claim helpers', () => {
   })
 })
 
+describe('launches no window hosts', () => {
+  it('lists a launch started on a dashboard card, which no window shows', () => {
+    registerHostEntry(makeEntry({ installationId: null }))
+    expect(unhostedLaunches(['inst-A'])).toEqual(['inst-A'])
+  })
+
+  it('leaves out a launch its own window is booting', () => {
+    registerHostEntry(makeEntry({ installationId: 'inst-A' }))
+    expect(unhostedLaunches(['inst-A', 'inst-B'])).toEqual(['inst-B'])
+  })
+
+  it('leaves out a launch a window previews or has claimed', () => {
+    const previewing = makeEntry({ installationId: null })
+    previewing.previewInstallationId = 'inst-A'
+    registerHostEntry(previewing)
+    claimAttachHost('inst-B', previewing.windowKey)
+    expect(unhostedLaunches(['inst-A', 'inst-B', 'inst-C'])).toEqual(['inst-C'])
+  })
+
+  it('counts a launch as unhosted again once the window showing it is destroyed', () => {
+    registerHostEntry(makeEntry({ installationId: 'inst-A', destroyed: true }))
+    expect(unhostedLaunches(['inst-A'])).toEqual(['inst-A'])
+  })
+})
+
+describe('canRestartFromPicker', () => {
+  it('lets a window restart the build it hosts or previews', () => {
+    const host = makeEntry({ installationId: 'inst-A' })
+    const previewing = makeEntry({ installationId: null })
+    previewing.previewInstallationId = 'inst-B'
+    expect(canRestartFromPicker(host, 'inst-A', [])).toBe(true)
+    expect(canRestartFromPicker(previewing, 'inst-B', [])).toBe(true)
+  })
+
+  it('refuses to restart a different build from a window that hosts one', () => {
+    const host = makeEntry({ installationId: 'inst-A' })
+    expect(canRestartFromPicker(host, 'inst-B', ['inst-B'])).toBe(false)
+  })
+
+  it('lets the dashboard restart a build that is starting with no window', () => {
+    const dashboard = makeEntry({ installationId: null })
+    registerHostEntry(dashboard)
+    expect(canRestartFromPicker(dashboard, 'inst-A', ['inst-A'])).toBe(true)
+  })
+
+  it('refuses the dashboard when the build is not starting', () => {
+    const dashboard = makeEntry({ installationId: null })
+    registerHostEntry(dashboard)
+    expect(canRestartFromPicker(dashboard, 'inst-A', [])).toBe(false)
+  })
+
+  it('refuses the dashboard when another window is already booting the build', () => {
+    const dashboard = makeEntry({ installationId: null })
+    registerHostEntry(dashboard)
+    registerHostEntry(makeEntry({ installationId: 'inst-A' }))
+    expect(canRestartFromPicker(dashboard, 'inst-A', ['inst-A'])).toBe(false)
+  })
+})
+
 describe('register/unregister + getEntryByInstallationId', () => {
   it('round-trips an install-backed entry through the secondary index', () => {
     const entry = makeEntry({ installationId: 'inst-A' })
@@ -464,6 +526,20 @@ describe('findPreferredHostByVisibility', () => {
     registerHostEntry(chooser)
     expect(findPreferredHostByVisibility((e) => e.installationId === null)).toBe(chooser)
     expect(findPreferredHostByVisibility((e) => e.installationId !== null)).toBe(install)
+  })
+})
+
+describe('findHostWindowByPanelSender', () => {
+  it('returns the window whose panel sent the message', () => {
+    const panelSender = {}
+    const other = makeEntry({ installationId: 'inst-A' })
+    const owner = makeEntry({ installationId: null })
+    owner.panelView = { webContents: panelSender } as unknown as ComfyWindowEntry['panelView']
+    registerHostEntry(other)
+    registerHostEntry(owner)
+
+    expect(findHostWindowByPanelSender(panelSender as never)).toBe(owner.window)
+    expect(findHostWindowByPanelSender({} as never)).toBeNull()
   })
 })
 

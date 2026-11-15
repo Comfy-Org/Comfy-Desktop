@@ -126,13 +126,49 @@ export interface Installation {
   [key: string]: unknown
 }
 
-export type DashboardPage = 'home' | 'chooser' | 'benchmarks' | 'performance-test'
+export type DashboardPage =
+  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
+
+export interface AppCard {
+  id: string
+  title: string
+  description: string
+  coverUrl: string | null
+}
+
+export type AppPageStatus = 'loading' | 'ready' | 'failed'
+
+export interface AppPagePlacement {
+  x: number
+  y: number
+  width: number
+  height: number
+  cornerRadius: number
+  justOpened?: boolean
+}
 
 export interface CatalogWorkflow {
   id: string
   title: string
   description: string
   thumbnailUrl: string | null
+}
+
+export type AssetKind = 'image' | 'video' | 'audio' | '3d'
+
+export interface AssetSummary {
+  id: string
+  name: string
+  kind: AssetKind | null
+  sizeBytes: number | null
+  createdAt: string | null
+  mimeType: string | null
+  tags: string[]
+  previewUrl: string | null
+  thumbnailUrl: string | null
+  width: number | null
+  height: number | null
+  durationSeconds: number | null
 }
 
 export interface BuildStorageSnapshot {
@@ -566,12 +602,7 @@ export interface DiskSpaceInfo {
 export type PathIssue = 'insideAppBundle' | 'oneDrive' | 'insideSharedDir' | 'insideExistingInstall'
 
 export type ModelDownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled'
+  'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 export interface ModelDownloadProgress {
   id?: string
@@ -1127,9 +1158,22 @@ export interface ElectronApi {
   closeAnnouncement(): void
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
+  listAssets(installationId: string): Promise<AssetSummary[]>
+  listLocalAssets(): Promise<AssetSummary[]>
+  downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
+  revealAsset(source: string, assetId: string): Promise<boolean>
+  copyAsset(source: string, assetId: string): Promise<boolean>
+  trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
-  openCatalogWorkflowHub(): Promise<boolean>
+  getAppsEnabled(): Promise<boolean>
+  listApps(): Promise<AppCard[]>
+  showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>
+  captureAppPage(): Promise<string | null>
+  hideAppPage(): void
+  reloadAppPage(): void
+  onAppPageStatusChanged(callback: (status: AppPageStatus) => void): () => void
+  onAppPageClosed(callback: () => void): () => void
   getBuildStorageSnapshot(): Promise<BuildStorageSnapshot>
   resolveStartupRestoreReveal(result: 'takeover-ready' | 'dashboard-fallback'): void
   openGlobalSettings(
@@ -1375,6 +1419,8 @@ export interface ElectronApi {
     }) => void
   ): Unsubscribe
 }
+
+export const LOCAL_ASSETS_SOURCE = 'local'
 
 export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 

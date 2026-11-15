@@ -1,4 +1,4 @@
-const RETRY_PATTERN = /Execution context was destroyed/i
+const RETRY_PATTERN = /Execution context was destroyed|Resulting promise was garbage collected/i
 
 export async function evalWithRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let lastErr: unknown

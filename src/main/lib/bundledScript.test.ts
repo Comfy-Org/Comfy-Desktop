@@ -9,6 +9,8 @@ function devScriptPath(scriptName: string): string {
   return path.join(bundledDir, '..', '..', 'lib', scriptName)
 }
 
+vi.mock('electron', () => ({ app: { isPackaged: false } }))
+
 describe('bundled script paths', () => {
   it('dev-mode path resolves to lib/update_comfyui.py which exists', () => {
     const resolved = path.resolve(devScriptPath('update_comfyui.py'))
@@ -23,7 +25,6 @@ describe('bundled script paths', () => {
   })
 
   it('getBundledScriptPath uses the same formula in dev mode', async () => {
-    vi.mock('electron', () => ({ app: { isPackaged: false } }))
     const { getBundledScriptPath } = await import('./bundledScript')
     const result = getBundledScriptPath('update_comfyui.py')
     expect(result).toContain('update_comfyui.py')

@@ -80,8 +80,7 @@ const posthogClientMock = vi.hoisted(() => ({
   failNextFlushes: 0,
   autoFailNextIdentifies: 0,
   featureFlagResult: undefined as
-    | { enabled: boolean; variant?: string; payload?: unknown }
-    | undefined,
+    { enabled: boolean; variant?: string; payload?: unknown } | undefined,
   featureFlagBehavior: 'resolve' as 'resolve' | 'throw' | 'hang' | 'defer',
   evaluateCondition: undefined as
     | ((options?: {

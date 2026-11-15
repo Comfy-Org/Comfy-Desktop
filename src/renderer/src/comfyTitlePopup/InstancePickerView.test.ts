@@ -78,6 +78,7 @@ interface MockSnapshot {
   runningInstallationIds: string[]
   runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds?: string[]
+  unhostedLaunchingInstallationIds?: string[]
   selectedInstallationId?: string | null
   pickerSelectionEpoch?: number
   selectedSettings?: unknown[] | null
@@ -540,6 +541,47 @@ describe('comfyTitlePopup/InstancePickerView', () => {
       await flushPromises()
       expect(bridge.restarts).toEqual([{ id: 'a', opts: { confirmed: true } }])
       expect(bridge.picks).toEqual([])
+    })
+
+    it('offers Restart from the dashboard for a build that is starting with no window', async () => {
+      const { useDialogs } = await import('../composables/useDialogs')
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
+        activeInstallationId: null,
+        selectedInstallationId: 'a',
+        runningInstallationIds: [],
+        launchingInstallationIds: ['a'],
+        unhostedLaunchingInstallationIds: ['a']
+      })
+      await flushPromises()
+      const primary = wrapper.get('[data-testid="picker-primary-cta"]')
+      expect(primary.text()).toBe('Restart')
+      await primary.trigger('click')
+      await flushPromises()
+      const dialogs = useDialogs()
+      expect(dialogs.state.open).toBe(true)
+      dialogs.confirmPrimary()
+      await flushPromises()
+      expect(bridge.restarts).toEqual([{ id: 'a', opts: { confirmed: true } }])
+      expect(bridge.picks).toEqual([])
+    })
+
+    it('keeps Switch from the dashboard for a build another window is starting', async () => {
+      const wrapper = await mountPicker({
+        installs: [makeInstall({ id: 'a', name: 'Alpha', sourceCategory: 'local' })],
+        activeInstallationId: null,
+        selectedInstallationId: 'a',
+        runningInstallationIds: [],
+        launchingInstallationIds: ['a'],
+        unhostedLaunchingInstallationIds: []
+      })
+      await flushPromises()
+      const primary = wrapper.get('[data-testid="picker-primary-cta"]')
+      expect(primary.text()).toBe('Switch')
+      await primary.trigger('click')
+      await flushPromises()
+      expect(bridge.picks).toEqual(['a'])
+      expect(bridge.restarts).toEqual([])
     })
 
     it('does not dispatch restartInstall when the in-drawer confirm is cancelled', async () => {

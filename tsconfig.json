@@ -4,7 +4,6 @@
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.web.json" },
     { "path": "./tsconfig.test.json" },
-    { "path": "./tsconfig.e2e.json" },
-    { "path": "./tsconfig.vitest-integration.json" }
+    { "path": "./tsconfig.e2e.json" }
   ]
 }

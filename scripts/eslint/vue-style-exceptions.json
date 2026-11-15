@@ -35,10 +35,6 @@
     "reason": "Preserve the existing snapshots-op-bar-indet animation.",
     "sha256": "3d71124e5068eb9a77d38045dd024d08bf11746b306343105a997f12325d66ac"
   },
-  "src/renderer/src/views/FirstUseTakeover.vue": {
-    "reason": "Preserve the existing first-use-consent-shake animation.",
-    "sha256": "2bf120cc057db0bb18dbf98ebb7fa58cc3346cc871dde85ccfa153d424b7af48"
-  },
   "src/renderer/src/views/InstallWizardModal.vue": {
     "reason": "Preserve the existing install-template-alert-shake animation.",
     "sha256": "36bd614b16c149192ffb7136c76f8c60a51d173f503a64bc9bac93222bd51d9f"

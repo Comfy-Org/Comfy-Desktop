@@ -99,7 +99,7 @@ function makeEntry(
 }
 
 describe('computePopupHeight', () => {
-  it('counts items at 32px and separators at 9px plus the 10px chrome budget', () => {
+  it('counts items at 28px and separators at 9px plus the 10px chrome budget', () => {
     const h = computePopupHeight([
       { id: 'a', label: 'A' },
       { kind: 'separator' },
@@ -107,7 +107,7 @@ describe('computePopupHeight', () => {
       { kind: 'separator' },
       { id: 'c', label: 'C' }
     ])
-    expect(h).toBe(124)
+    expect(h).toBe(112)
   })
 
   it('returns chrome-only height for an empty item list', () => {
@@ -115,7 +115,7 @@ describe('computePopupHeight', () => {
   })
 
   it('handles a single item', () => {
-    expect(computePopupHeight([{ id: 'a', label: 'A' }])).toBe(42)
+    expect(computePopupHeight([{ id: 'a', label: 'A' }])).toBe(38)
   })
 
   it('handles a single separator', () => {

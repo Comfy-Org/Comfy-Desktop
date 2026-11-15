@@ -116,13 +116,14 @@ export interface FakeComfyInstall {
 export async function writeFakeComfyInstall(opts: {
   installPath: string
   port: number
+  serverScript?: string
 }): Promise<FakeComfyInstall> {
-  const { installPath, port } = opts
+  const { installPath, port, serverScript = SERVER_JS } = opts
   await mkdir(path.join(installPath, 'ComfyUI'), { recursive: true })
   await writeFile(path.join(installPath, 'ComfyUI', 'main.py'), '# e2e stub\n')
 
   const serverPath = path.join(installPath, 'stub-server.cjs')
-  await writeFile(serverPath, SERVER_JS)
+  await writeFile(serverPath, serverScript)
 
   if (process.platform !== 'linux') {
     throw new Error(

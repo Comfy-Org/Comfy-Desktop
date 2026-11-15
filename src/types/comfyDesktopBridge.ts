@@ -103,9 +103,7 @@ export interface ComfyDesktop2Error {
 }
 
 export type ComfyDesktop2FirebaseAuthState =
-  | { status: 'pending' }
-  | { status: 'signed_out' }
-  | { status: 'signed_in'; userId: string }
+  { status: 'pending' } | { status: 'signed_out' } | { status: 'signed_in'; userId: string }
 
 /**
  * Desktop's own Comfy account session, as the hosted local ComfyUI view sees it.
@@ -122,6 +120,16 @@ export type ComfyDesktop2AuthState =
       email?: string
       workspaceId?: string
     }
+
+export type ComfyDesktop2BillingHandoffReceiver = 'billing_web' | 'platform'
+
+export type ComfyDesktop2BillingHandoffIntent = 'top-up' | 'subscription'
+
+export type ComfyDesktop2BillingHandoff =
+  | { status: 'issued'; entryUrl: string }
+  | { status: 'sign_in_again' }
+  | { status: 'refused'; code?: string; message?: string }
+  | { status: 'disabled' }
 
 export interface ComfyDesktop2AuthBridge {
   getState(): Promise<ComfyDesktop2AuthState>
@@ -147,6 +155,147 @@ export interface ComfyDesktop2AuthBridge {
   switchWorkspace(workspaceId: string): Promise<ComfyDesktop2AuthState>
   /** Fires when Desktop signs in, signs out or switches workspace. */
   onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void
+  /** Issues a billing handoff with Desktop's credential and resolves with only its https entry URL; `intent` picks the landing page and `amountCents` the top-up amount. Absent on older Desktop builds. */
+  issueBillingHandoff?(
+    workspaceId: string,
+    receiver: ComfyDesktop2BillingHandoffReceiver,
+    intent?: ComfyDesktop2BillingHandoffIntent,
+    amountCents?: number
+  ): Promise<ComfyDesktop2BillingHandoff>
+}
+
+/**
+ * Desktop's own Comfy account session, as a Comfy page hosted in Desktop's
+ * Apps view sees it. Desktop exposes it to that page as
+ * `window.comfyDesktopAuth`. The page can read the session, hold the
+ * workspace and partner-node credentials, and start a sign-in; it cannot sign
+ * Desktop out or switch workspace.
+ */
+export type ComfyDesktopHostedAuthBridge = Required<
+  Pick<
+    ComfyDesktop2AuthBridge,
+    'getState' | 'getWorkspaceToken' | 'getPartnerNodeToken' | 'requestSignIn' | 'onChanged'
+  >
+>
+
+/** What a hosted page needs from the ComfyUI on this computer. */
+export interface ComfyDesktopLocalRequirements {
+  /** The oldest ComfyUI the page can run on, such as `0.41.0`. */
+  minVersion?: string
+}
+
+/**
+ * The ComfyUI on this computer that Desktop uses for a hosted page.
+ * `running`: it answers now. `stopped`: one of the person's builds fits and
+ * `startLocal` starts it. `unsupported`: no build here can run the page, and
+ * `error` says why in words for the person.
+ */
+export interface ComfyDesktopLocalComfy {
+  state: 'running' | 'stopped' | 'unsupported'
+  /** True when it is one of the person's own builds. */
+  own?: boolean
+  name?: string
+  version?: string
+  /** The `client_id` Desktop listens with; updates for runs sent through `localFetch` arrive on `onLocalEvent`. */
+  clientId?: string
+  error?: string
+}
+
+/**
+ * One call to that ComfyUI. Desktop forwards only what a run needs:
+ * `GET /queue`, `GET /history/<run>`, `GET /view`, `GET /object_info/<node>`,
+ * `POST /prompt`, `POST /upload/image`, `POST /queue` to take a run out, and
+ * `POST /interrupt` to stop one. History, files, removal and stopping work
+ * only for runs the page started through this bridge.
+ */
+export interface ComfyDesktopLocalRequest {
+  method?: 'GET' | 'POST'
+  path: string
+  /** JSON text, or a file's bytes for `/upload/image`. */
+  body?: string | Uint8Array
+  /** The name to save an upload under. */
+  fileName?: string
+}
+
+/** ComfyUI's answer, or status 403 for a call Desktop does not forward. */
+export interface ComfyDesktopLocalAnswer {
+  status: number
+  contentType: string
+  body: Uint8Array
+}
+
+/** A safetensors file on Hugging Face to save as `name` in the models folder `folder`. */
+export interface ComfyDesktopLocalModel {
+  url: string
+  folder: string
+  name: string
+}
+
+export interface ComfyDesktopLocalDownload {
+  state: 'done' | 'failed' | 'cancelled'
+  error?: string
+}
+
+/**
+ * A model download's progress (`type: 'download'`, with `name`, `done` and
+ * `total` bytes in `data`), or one ComfyUI socket message about a run the page
+ * started (`execution_start`, `executing`, `progress`, `progress_state`,
+ * `execution_success`, `execution_error`, `execution_interrupted`).
+ */
+export interface ComfyDesktopLocalEvent {
+  type: string
+  data?: Record<string, unknown>
+}
+
+/**
+ * A workflow a hosted page asks Desktop to open in a ComfyUI window.
+ * `prompt` is the API-format graph: an object of nodes that each have a
+ * `class_type` and `inputs`, at most 500 nodes and 1 MB. `where: 'local'`
+ * opens it in the build the page runs on, or in `build` (an id from
+ * `localBuilds`); `where: 'cloud'` opens it in the person's Comfy Cloud.
+ * `name` titles the workflow tab.
+ */
+export interface ComfyDesktopOpenInComfyRequest {
+  prompt: Record<string, unknown>
+  where: 'local' | 'cloud'
+  name: string
+  build?: string
+}
+
+/** Whether the workflow opened, and if not, why in words for the person. */
+export type ComfyDesktopOpenInComfy = { opened: true } | { opened: false; error: string }
+
+/** One of the person's ComfyUI builds on this computer. */
+export interface ComfyDesktopLocalBuild {
+  id: string
+  name: string
+}
+
+/**
+ * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
+ * Desktop's Apps view. Desktop exposes it to that page as
+ * `window.comfyDesktopLocal`. The page builds and follows its own runs;
+ * Desktop finds or starts the ComfyUI, forwards the page's calls to it,
+ * downloads a model the page asks for and opens a run's workflow in a ComfyUI
+ * window.
+ */
+export interface ComfyDesktopHostedLocalBridge {
+  getLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
+  /** Starts the ComfyUI if it is stopped and resolves once it answers, or with the state and `error` if it could not start. */
+  startLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
+  /** Rejects when no ComfyUI is running to forward to. */
+  localFetch(request: ComfyDesktopLocalRequest): Promise<ComfyDesktopLocalAnswer>
+  /** Downloads into the running ComfyUI's models folder and resolves when the file is there. */
+  localDownload(model: ComfyDesktopLocalModel): Promise<ComfyDesktopLocalDownload>
+  onLocalEvent(callback: (event: ComfyDesktopLocalEvent) => void): () => void
+  /**
+   * Opens the workflow in a ComfyUI window in Desktop, starting the build or
+   * showing its window first if needed, and resolves once ComfyUI has loaded
+   * it. Absent on Desktop builds that predate it.
+   */
+  openInComfy?(request: ComfyDesktopOpenInComfyRequest): Promise<ComfyDesktopOpenInComfy>
+  /** The person's ComfyUI builds on this computer. Absent on Desktop builds that predate it. */
+  localBuilds?(): Promise<ComfyDesktopLocalBuild[]>
 }
 
 export interface ComfyDesktop2TerminalBridge {

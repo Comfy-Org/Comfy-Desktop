@@ -4,14 +4,14 @@ import { playwright } from '@vitest/browser-playwright'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
-const INTEGRATION_TESTS = 'src/**/*.integration.test.ts'
 const RENDERER_TESTS_THAT_READ_FILES = [
   'src/renderer/csp.test.ts',
   'src/renderer/src/lib/localeCoverage.test.ts'
 ]
 const INJECTED_PAGE_SCRIPT_TESTS = [
   'src/main/lib/comfyContentScript.test.ts',
-  'src/main/lib/comfyTerminalContentScript.test.ts'
+  'src/main/lib/comfyTerminalContentScript.test.ts',
+  'e2e/support/clickAim.test.ts'
 ]
 const VUE_BUILD_THAT_COMPILES_TEMPLATE_STUBS = 'vue/dist/vue.esm-bundler.js'
 const VUE_TEST_UTILS_STRING_SLOT_WARNING =
@@ -28,6 +28,7 @@ export default defineConfig({
   test: {
     sequence: { hooks: 'list' },
     globals: true,
+    clearMocks: false,
     maxWorkers: 8,
     onConsoleLog: (log) => !log.includes(VUE_TEST_UTILS_STRING_SLOT_WARNING),
     projects: [
@@ -44,7 +45,7 @@ export default defineConfig({
             'scripts/eslint/**/*.test.ts',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
-          exclude: [INTEGRATION_TESTS, 'node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]
+          exclude: ['node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]
         }
       },
       {
@@ -57,7 +58,7 @@ export default defineConfig({
           name: 'browser',
           sequence: { groupOrder: 1 },
           include: ['src/renderer/**/*.test.ts', ...INJECTED_PAGE_SCRIPT_TESTS],
-          exclude: [INTEGRATION_TESTS, 'node_modules', ...RENDERER_TESTS_THAT_READ_FILES],
+          exclude: ['node_modules', ...RENDERER_TESTS_THAT_READ_FILES],
           setupFiles: ['./vitest.setup.ts'],
           browser: {
             enabled: true,

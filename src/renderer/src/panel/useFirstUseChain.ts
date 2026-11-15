@@ -1,16 +1,19 @@
 import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useInstallationStore } from '../stores/installationStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useLauncherPrefs } from '../composables/useLauncherPrefs'
 import { useMigrateAction } from '../composables/useMigrateAction'
+import { useModal } from '../composables/useModal'
 import { useOverlay } from '../composables/useOverlay'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
+import { checkDiskSpaceOrWarn } from '../lib/installHelpers'
 import { emitTelemetryAction, toVariantBucket } from '../lib/telemetry'
-import type { FieldOption, Installation, ShowProgressOpts, Source } from '../types/ipc'
+import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
+import type { SetupPlan } from '../lib/setupPlan'
+import type { Installation, ShowProgressOpts } from '../types/ipc'
 import type { ChooserLaunchOutcome } from './useChooserHandoff'
-import type { FirstUseChainHooks, PanelKey } from './usePanelOverlays'
-
-const NO_TEMPLATE_VALUE = 'none'
+import type { FirstUseChainHooks, PanelKey, SetupHandoff } from './usePanelOverlays'
 
 export interface FirstUseChainOpts {
   handleShowProgress: (opts: ShowProgressOpts) => Promise<void>
@@ -20,28 +23,29 @@ export interface FirstUseChainOpts {
     installation: Installation,
     onMissingLaunchAction?: () => void
   ) => Promise<ChooserLaunchOutcome>
-  openFirstUseTakeover: (opts?: { initialStep?: 'start' | 'localBranch' }) => Promise<void>
+  openFirstUseTakeover: () => Promise<void>
   resetFirstUseSpinner: () => void
 }
 
 export interface FirstUseChainApi {
   hooks: FirstUseChainHooks
   chainingFirstUseToNewInstall: Ref<boolean>
+  setupConsent: Ref<SetupConsent | null>
   completeFirstUseAndDismiss: () => Promise<void>
-  handleFirstUseComplete: () => Promise<void>
-  handleFirstUseChainLocal: (payload?: {
-    cameFromLocalBranch?: boolean
-    express?: boolean
-  }) => Promise<void>
+  handleSetupInstall: (plan: SetupPlan) => Promise<void>
+  handleSetupChange: (consent: SetupConsent) => Promise<void>
+  handleNewInstallConsentChange: (accepted: boolean) => void
   handleFirstUseChainMigrate: (payload?: { express?: boolean }) => Promise<void>
   handleNewInstallTakeoverClose: () => Promise<void>
-  handleNewInstallBackToLocalBranch: () => Promise<void>
+  handleNewInstallBackToSetup: () => Promise<void>
 }
 
 export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
+  const { t } = useI18n()
   const installationStore = useInstallationStore()
   const progressStore = useProgressStore()
   const launcherPrefs = useLauncherPrefs()
+  const modal = useModal()
   const { confirmMigration } = useMigrateAction({ surface: 'takeover' })
   const { current: currentOverlay } = useOverlay()
 
@@ -51,16 +55,34 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
 
   const pendingAutoLaunchId = ref<string | null>(null)
 
-  const pendingCameFromLocalBranch = ref(false)
+  const pendingSetupHandoff = ref<SetupHandoff | null>(null)
+
+  const setupConsent = ref<SetupConsent | null>(null)
+
+  let setupConsentSaved = false
 
   const pendingChainedLaunch = ref(false)
 
+  async function finishFirstUse(): Promise<void> {
+    chainingFirstUseToNewInstall.value = false
+    pendingFirstUseAutoLaunchId.value = null
+    pendingSetupHandoff.value = null
+    setupConsent.value = null
+    await launcherPrefs.markFirstUseCompleted()
+    window.api.setFirstUseMode('none')
+  }
+
   const hooks: FirstUseChainHooks = {
     shouldForceTakeover: () => chainingFirstUseToNewInstall.value,
-    consumeCameFromLocalBranch: () => {
-      const v = pendingCameFromLocalBranch.value
-      pendingCameFromLocalBranch.value = false
-      return v
+    consumeSetupHandoff: () => {
+      const handoff = pendingSetupHandoff.value
+      pendingSetupHandoff.value = null
+      return handoff
+    },
+    onBackgroundInstall: () => {
+      if (chainingFirstUseToNewInstall.value || !launcherPrefs.firstUseCompleted.value) {
+        void finishFirstUse()
+      }
     },
     onShowProgress: (showOpts) => {
       if (chainingFirstUseToNewInstall.value && pendingFirstUseAutoLaunchId.value === null) {
@@ -82,165 +104,94 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   }
 
   async function completeFirstUseAndDismiss(): Promise<void> {
-    chainingFirstUseToNewInstall.value = false
-    pendingFirstUseAutoLaunchId.value = null
-    await launcherPrefs.markFirstUseCompleted()
-    window.api.setFirstUseMode('none')
+    await finishFirstUse()
     opts.dismissTakeoverDirect()
   }
 
-  async function handleFirstUseComplete(): Promise<void> {
-    chainingFirstUseToNewInstall.value = false
-    await launcherPrefs.markFirstUseCompleted()
-    window.api.setFirstUseMode('none')
-    let cloud = installationStore.installations.find((i) => i.sourceCategory === 'cloud') ?? null
-    if (!cloud) {
-      try {
-        const all = await window.api.getInstallations()
-        cloud = all.find((i) => i.sourceCategory === 'cloud') ?? null
-      } catch {}
-    }
-    if (cloud) {
-      const outcome = await opts.performChooserLaunch(cloud, opts.dismissTakeoverDirect)
-      if (outcome === 'focused-running') {
-        opts.dismissTakeoverDirect()
-      }
-      return
-    }
-    opts.dismissTakeoverDirect()
-  }
-
-  async function handleFirstUseChainLocal(payload?: {
-    cameFromLocalBranch?: boolean
-    express?: boolean
-  }): Promise<void> {
-    chainingFirstUseToNewInstall.value = true
-    pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromLocalBranch.value = payload?.cameFromLocalBranch === true
-
-    window.api.setFirstUseMode('post-consent')
-
-    if (payload?.express === true) {
-      const expressOk = await runExpressInstall()
-      if (expressOk) return
-      chainingFirstUseToNewInstall.value = true
-      pendingFirstUseAutoLaunchId.value = null
-    }
-
-    await opts.switchPanel('new-install', 'first_use')
-  }
-
-  async function runExpressInstall(): Promise<boolean> {
-    emitTelemetryAction('comfy.desktop.install.express.started', {})
+  async function handleSetupInstall(plan: SetupPlan): Promise<void> {
     try {
-      const hardware = await window.api.validateHardware()
-      if (!hardware.supported) {
-        console.warn('[firstUseChain] express: hardware unsupported', hardware)
-        emitTelemetryAction('comfy.desktop.install.express.fallback', {
-          reason: 'unsupported_hardware'
+      if (plan.installRoot) {
+        const proceed = await checkDiskSpaceOrWarn({
+          path: plan.installRoot,
+          estimatedRequired: plan.requiredBytes,
+          flow: 'first_use',
+          confirm: modal.confirm,
+          t
         })
-        return false
-      }
-
-      const [installDir, sources] = await Promise.all([
-        window.api.getDefaultInstallDir().catch(() => ''),
-        window.api.getSources()
-      ])
-      const standalone = sources.find((s: Source) => s.id === 'standalone')
-      if (!standalone) {
-        console.warn('[firstUseChain] express: standalone source missing', { sources })
-        emitTelemetryAction('comfy.desktop.install.express.fallback', {
-          reason: 'precondition_failed'
-        })
-        return false
-      }
-
-      const selections: Record<string, FieldOption> = {}
-      for (const field of standalone.fields) {
-        if (field.type === 'text') {
-          if (field.defaultValue !== undefined) {
-            selections[field.id] = { value: field.defaultValue, label: field.defaultValue }
-          }
-          continue
+        if (!proceed) {
+          opts.resetFirstUseSpinner()
+          return
         }
-        const options = await window.api.getFieldOptions(
-          standalone.id,
-          field.id,
-          selections,
-          field.id === 'release' ? { includeLatestStable: true } : undefined
-        )
-        if (!options || options.length === 0) {
-          console.warn('[firstUseChain] express: no options for field', field.id)
-          emitTelemetryAction('comfy.desktop.install.express.fallback', {
-            reason: 'precondition_failed'
-          })
-          return false
-        }
-        const pick =
-          field.id === 'bundledTemplate'
-            ? (options.find((o) => o.value === NO_TEMPLATE_VALUE) ?? options[0])
-            : (options.find((o) => o.recommended) ?? options[0])
-        if (!pick) {
-          emitTelemetryAction('comfy.desktop.install.express.fallback', {
-            reason: 'precondition_failed'
-          })
-          return false
-        }
-        selections[field.id] = pick
       }
-
-      const instData = await window.api.buildInstallation(standalone.id, selections)
+      const selections = JSON.parse(JSON.stringify(plan.selections)) as SetupPlan['selections']
+      const instData = await window.api.buildInstallation(plan.sourceId, selections)
       const name = await window.api.getUniqueName(DEFAULT_INSTALL_NAME)
-      const installPath = installDir ?? ''
-
       const result = await window.api.addInstallation({
         name,
-        installPath,
+        installPath: plan.installRoot,
         ...instData,
         status: 'installing'
       })
       if (!result.ok || !result.entry) {
-        console.warn('[firstUseChain] express: addInstallation failed', result)
-        emitTelemetryAction('comfy.desktop.install.express.fallback', {
-          reason: 'precondition_failed'
-        })
-        return false
+        await modal.alert({ title: t('errors.cannotAdd'), message: result.message || '' })
+        opts.resetFirstUseSpinner()
+        return
       }
-
-      const variantId = selections.variant?.data?.variantId as string | undefined
+      const entry = result.entry
+      const variantId = plan.selections.variant?.data?.variantId as string | undefined
       emitTelemetryAction('comfy.desktop.install.dispatched', {
-        installation_id: result.entry.id,
-        source_id: standalone.id,
+        installation_id: entry.id,
+        source_id: plan.sourceId,
         variant: variantId ? toVariantBucket(variantId) : null,
         express: true,
         entrypoint: 'first_use',
         template_selected: false
       })
-
+      chainingFirstUseToNewInstall.value = true
       await opts.handleShowProgress({
-        installationId: result.entry.id,
-        title: `Installing — ${result.entry.name}`,
-        apiCall: () => window.api.installInstance(result.entry!.id, true),
-        autoLaunchOnFinish: true,
+        installationId: entry.id,
+        title: `${t('newInstall.installing')} — ${entry.name}`,
+        apiCall: () => window.api.installInstance(entry.id, true),
         opKind: 'install'
       })
-      window.api.setFirstUseMode('post-consent')
-      return true
     } catch (err) {
-      console.warn('[firstUseChain] express install failed; falling back to Configure', err)
-      emitTelemetryAction('comfy.desktop.install.express.fallback', { reason: 'error' })
-      chainingFirstUseToNewInstall.value = false
-      pendingFirstUseAutoLaunchId.value = null
-      return false
+      console.warn('[firstUseChain] setup install failed to start', err)
+      emitTelemetryAction('comfy.desktop.install.not_started', {
+        entrypoint: 'first_use',
+        reason: 'error'
+      })
+      await modal.alert({ title: t('errors.cannotAdd'), message: (err as Error).message || '' })
+      opts.resetFirstUseSpinner()
     }
   }
 
-  async function handleNewInstallBackToLocalBranch(): Promise<void> {
+  async function handleSetupChange(consent: SetupConsent): Promise<void> {
+    const needsConsent = !consent.acceptedTos
+    setupConsent.value = consent
+    setupConsentSaved = consent.acceptedTos
+    chainingFirstUseToNewInstall.value = true
+    pendingFirstUseAutoLaunchId.value = null
+    pendingSetupHandoff.value = { needsConsent }
+    window.api.setFirstUseMode(needsConsent ? 'consent-lockdown' : 'post-consent')
+    await opts.switchPanel('new-install', 'first_use')
+  }
+
+  function handleNewInstallConsentChange(accepted: boolean): void {
+    if (!chainingFirstUseToNewInstall.value) return
+    window.api.setFirstUseMode(accepted ? 'post-consent' : 'consent-lockdown')
+    const consent = setupConsent.value
+    if (!consent) return
+    setupConsent.value = { ...consent, acceptedTos: accepted }
+    if (!accepted || setupConsentSaved) return
+    setupConsentSaved = true
+    void saveSetupConsent(consent)
+  }
+
+  async function handleNewInstallBackToSetup(): Promise<void> {
     chainingFirstUseToNewInstall.value = false
     pendingFirstUseAutoLaunchId.value = null
-    pendingCameFromLocalBranch.value = false
-    await opts.openFirstUseTakeover({ initialStep: 'localBranch' })
-    window.api.setFirstUseMode('post-consent')
+    pendingSetupHandoff.value = null
+    await opts.openFirstUseTakeover()
   }
 
   async function handleFirstUseChainMigrate(payload?: { express?: boolean }): Promise<void> {
@@ -252,7 +203,7 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
       } catch {}
     }
     if (!legacy) {
-      void handleFirstUseChainLocal()
+      opts.resetFirstUseSpinner()
       return
     }
     const result = await confirmMigration(legacy, { express: payload?.express === true })
@@ -274,10 +225,11 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   }
 
   async function handleNewInstallTakeoverClose(): Promise<void> {
-    if (chainingFirstUseToNewInstall.value) {
-      await launcherPrefs.markFirstUseCompleted()
-      window.api.setFirstUseMode('none')
+    if (chainingFirstUseToNewInstall.value && setupConsent.value?.acceptedTos === false) {
+      await handleNewInstallBackToSetup()
+      return
     }
+    if (chainingFirstUseToNewInstall.value) await finishFirstUse()
     if (
       currentOverlay.value?.kind === 'takeover' &&
       currentOverlay.value.component === 'new-install'
@@ -347,11 +299,13 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   return {
     hooks,
     chainingFirstUseToNewInstall,
+    setupConsent,
     completeFirstUseAndDismiss,
-    handleFirstUseComplete,
-    handleFirstUseChainLocal,
+    handleSetupInstall,
+    handleSetupChange,
+    handleNewInstallConsentChange,
     handleFirstUseChainMigrate,
     handleNewInstallTakeoverClose,
-    handleNewInstallBackToLocalBranch
+    handleNewInstallBackToSetup
   }
 }

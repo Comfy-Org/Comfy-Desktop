@@ -103,6 +103,7 @@ beforeEach(() => {
   ]
 })
 afterEach(async () => {
+  vi.useRealTimers()
   for (const c of created.splice(0)) {
     if (c.listenerCount('exit') > 0) c.emit('exit', 0, null)
     if (c.listenerCount('close') > 0) c.emit('close', 0, null)
@@ -144,6 +145,7 @@ describe('trackSpawn on Windows', () => {
   })
 
   it('scans once at exit and records a ComfyUI that restarted itself', async () => {
+    vi.useFakeTimers()
     const c = child(100)
     trackSpawn(asProc(c), info)
     await vi.waitFor(() => expect(readRecord('inst-1')?.childStartTime).toBe('1000'))
@@ -157,11 +159,12 @@ describe('trackSpawn on Windows', () => {
     await vi.waitFor(() =>
       expect(readRecord('inst-1')?.lingering?.map((m) => m.pid)).toEqual([200])
     )
-    await new Promise((r) => setTimeout(r, 1_700))
+    await vi.advanceTimersByTimeAsync(30_000)
     expect(fake.tableCalls).toBe(1)
   })
 
   it('keeps the survivors when a respawn replaces the record before the deferred scan', async () => {
+    vi.useFakeTimers()
     const c = child(100)
     trackSpawn(asProc(c), info)
     await vi.waitFor(() => expect(readRecord('inst-1')?.childStartTime).toBe('1000'))
@@ -171,14 +174,12 @@ describe('trackSpawn on Windows', () => {
     restartedCopy()
     c.emit('exit', 0, null)
     trackSpawn(asProc(child(500)), info)
-    await vi.waitFor(
-      () => {
-        const record = readRecord('inst-1')
-        expect(record?.childPid).toBe(500)
-        expect(record?.lingering?.map((m) => m.pid)).toEqual([200])
-      },
-      { timeout: 4_000 }
-    )
+    await vi.advanceTimersByTimeAsync(1_000)
+    await vi.waitFor(() => {
+      const record = readRecord('inst-1')
+      expect(record?.childPid).toBe(500)
+      expect(record?.lingering?.map((m) => m.pid)).toEqual([200])
+    })
   })
 })
 
@@ -199,13 +200,14 @@ describe('trackSpawn on Windows: races and failures', () => {
   })
 
   it('a launch right after the exit waits for the scan and then stops the restarted copy', async () => {
+    vi.useFakeTimers()
     const c = await running()
     c.stderr.emit('data', Buffer.from('x'))
     await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
     restartedCopy()
     c.emit('exit', 0, null)
     const kills: number[] = []
-    const out = await resolvePriorProcess(
+    const resolving = resolvePriorProcess(
       'inst-1',
       {},
       {
@@ -226,22 +228,26 @@ describe('trackSpawn on Windows: races and failures', () => {
         sleep: async () => {}
       }
     )
+    await vi.advanceTimersByTimeAsync(1_000)
+    const out = await resolving
     expect(kills).toEqual([200])
     expect(out).toMatchObject({ action: 'terminated', lingering: 1 })
   })
 
   it('leaves the scan to the next launch when the process table cannot be read at exit', async () => {
+    vi.useFakeTimers()
     const c = await running()
     c.stderr.emit('data', Buffer.from('x'))
     await vi.waitFor(() => expect(readRecord('inst-1')?.tree).toHaveLength(1))
     fake.tableFails = 3
     c.emit('exit', 0, null)
     c.emit('close', 0, null)
-    await vi.waitFor(() => expect(readRecord('inst-1')?.pendingScan?.known).toHaveLength(2), {
-      timeout: 6_000
-    })
+    await vi.advanceTimersByTimeAsync(3_000)
+    await settleExitBookkeeping('inst-1')
+    expect(fake.tableCalls).toBe(3)
+    expect(readRecord('inst-1')?.pendingScan?.known).toHaveLength(2)
     expect(readRecord('inst-1')?.lingering ?? []).toEqual([])
-  }, 10_000)
+  })
 })
 
 describe('exit bookkeeping per session', () => {

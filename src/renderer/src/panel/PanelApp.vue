@@ -7,9 +7,12 @@ import DialogHost from '../components/DialogHost.vue'
 import FeedbackModal from '../components/FeedbackModal.vue'
 import AnnouncementModal from '../components/AnnouncementModal.vue'
 import AppSidebar from './AppSidebar.vue'
+import BuildProgressDialog from './BuildProgressDialog.vue'
 import BuildDetailsView from './BuildDetailsView.vue'
 import HomeView from './HomeView.vue'
 import ComfyLifecycleView from './ComfyLifecycleView.vue'
+import AssetsView from './AssetsView.vue'
+import AppsView from './AppsView.vue'
 import ChooserView from '../views/ChooserView.vue'
 import PerformanceTestView from '../views/PerformanceTestView.vue'
 import BenchmarksView from '../views/BenchmarksView.vue'
@@ -47,8 +50,9 @@ import {
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
 import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
+import { provideBuildLogs } from '../composables/useBuildProgress'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
-import type { DashboardPage, Installation } from '../types/ipc'
+import type { AppCard, DashboardPage, Installation } from '../types/ipc'
 
 const { t } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
@@ -97,17 +101,19 @@ const firstUseChain = useFirstUseChain({
   switchPanel: (panel, entrypoint) => overlays.switchPanel(panel, entrypoint),
   handleShowProgress: (showOpts) => overlays.handleShowProgress(showOpts),
   performChooserLaunch: (inst, onMissing) => chooserHandoff.performChooserLaunch(inst, onMissing),
-  openFirstUseTakeover: (firstUseOpts) => overlays.openFirstUseTakeover(firstUseOpts),
+  openFirstUseTakeover: () => overlays.openFirstUseTakeover(),
   resetFirstUseSpinner: () => firstUseRef.value?.resetContinue()
 })
 const {
   chainingFirstUseToNewInstall,
+  setupConsent,
   completeFirstUseAndDismiss,
-  handleFirstUseComplete,
-  handleFirstUseChainLocal,
+  handleSetupInstall,
+  handleSetupChange,
+  handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
-  handleNewInstallBackToLocalBranch
+  handleNewInstallBackToSetup
 } = firstUseChain
 
 overlays = usePanelOverlays({
@@ -119,7 +125,9 @@ overlays = usePanelOverlays({
   quickInstallRef,
   firstUseRef,
   prepareChooserHostHandoff: (id) => chooserHandoff.prepareChooserHostHandoff(id),
-  firstUseChain: firstUseChain.hooks
+  firstUseChain: firstUseChain.hooks,
+  onBackgroundInstall: () => void showHome(),
+  launchesInPlace: (id) => chooserHandoff.launchesInPlace(id)
 })
 const {
   activePanel,
@@ -133,6 +141,11 @@ const {
   dismissTakeoverDirect,
   switchPanel
 } = overlays
+
+const buildProgressId = ref<string | null>(null)
+provideBuildLogs((id) => {
+  buildProgressId.value = id
+})
 
 const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
   isBusy: () => sessionStore.runningTabCount > 0
@@ -162,7 +175,7 @@ if (params.get('e2e') === '1') {
   })
 }
 
-type DashboardHomePage = Extract<DashboardPage, 'home' | 'chooser'>
+type DashboardHomePage = Extract<DashboardPage, 'home' | 'apps' | 'chooser' | 'assets'>
 
 const dashboardHomePage = ref<DashboardHomePage>('home')
 
@@ -208,9 +221,33 @@ async function openBuildFromSidebar(inst: Installation): Promise<void> {
   openBuildDetails(inst)
 }
 
+async function showHome(): Promise<void> {
+  closeBuildDetails()
+  dashboardHomePage.value = 'home'
+  if (activePanel.value !== 'chooser') await switchPanel('chooser', 'install')
+  window.api.navigatePanel('home')
+}
+
+const appsVisits = ref(0)
+const appIsOpen = ref(false)
+const appPickedOnHome = ref<AppCard | null>(null)
+
+function openAppFromHome(app: AppCard): void {
+  appPickedOnHome.value = app
+  dashboardHomePage.value = 'apps'
+}
+
 function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
-  if (page === 'home' || page === 'chooser') dashboardHomePage.value = page
+  if (page === 'apps') appsVisits.value += 1
+  if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
+    dashboardHomePage.value = page
+}
+
+function retryLaunch(id: string): void {
+  buildProgressId.value = null
+  const inst = installationStore.getById(id)
+  if (inst) void handleChooserPick(inst)
 }
 
 async function launchFromBuildDetails(inst: Installation): Promise<void> {
@@ -241,7 +278,7 @@ const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
 async function handleStartupRestorePick(inst: Installation): Promise<void> {
   try {
-    const outcome = await chooserHandoff.performChooserLaunch(inst)
+    const outcome = await chooserHandoff.performChooserLaunch(inst, undefined, { inPlace: true })
     await nextTick()
     const takeoverReady = outcome === 'launched' && currentOverlay.value?.kind === 'takeover'
     window.api.resolveStartupRestoreReveal(takeoverReady ? 'takeover-ready' : 'dashboard-fallback')
@@ -465,6 +502,7 @@ onUnmounted(() => {
         v-if="showSidebar && sidebarPage"
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
+        :make-room="appIsOpen"
         @navigate="handleSidebarNavigate"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
@@ -491,9 +529,19 @@ onUnmounted(() => {
           >
             <HomeView
               v-if="dashboardHomePage === 'home'"
+              @open-app="openAppFromHome"
               @pick="handleChooserPick"
+              @open-build="openBuildFromSidebar"
               @show-builds="dashboardHomePage = 'chooser'"
+              @show-apps="handleSidebarNavigate('apps')"
             />
+            <AppsView
+              v-else-if="dashboardHomePage === 'apps'"
+              v-model:start-with="appPickedOnHome"
+              :revisit="appsVisits"
+              @app-open-change="appIsOpen = $event"
+            />
+            <AssetsView v-else-if="dashboardHomePage === 'assets'" />
             <BuildDetailsView
               v-else-if="buildDetailsInstall"
               :installation="buildDetailsInstall"
@@ -538,7 +586,8 @@ onUnmounted(() => {
         @close="handleNewInstallTakeoverClose"
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
-        @back-to-local-branch="handleNewInstallBackToLocalBranch"
+        @back-to-setup="handleNewInstallBackToSetup"
+        @consent-change="handleNewInstallConsentChange"
       />
       <TrackModal
         v-else-if="currentOverlay.component === 'track'"
@@ -561,13 +610,20 @@ onUnmounted(() => {
       <FirstUseTakeover
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
-        @complete-cloud="handleFirstUseComplete"
+        :consent="setupConsent"
+        @install="handleSetupInstall"
+        @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"
-        @chain-local="handleFirstUseChainLocal"
         @chain-migrate="handleFirstUseChainMigrate"
       />
     </template>
 
+    <BuildProgressDialog
+      v-if="buildProgressId"
+      :installation-id="buildProgressId"
+      @close="buildProgressId = null"
+      @retry="retryLaunch(buildProgressId)"
+    />
     <FeedbackModal :open="feedbackOpen" :url="feedbackUrl" @close="closeFeedback" />
     <AnnouncementModal v-if="announcementOpen" @close="closeAnnouncement" />
 

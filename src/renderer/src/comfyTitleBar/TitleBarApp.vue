@@ -12,7 +12,7 @@ import {
   RefreshCw,
   RotateCw,
   ZoomIn
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'
@@ -152,7 +152,6 @@ const {
   themeBg,
   themeText,
   isFullscreen,
-  firstUseMode,
   isConsentLockdown,
   isFirstUseLockdown,
   isLoadingLockdown,
@@ -171,7 +170,6 @@ const showRefreshButton = computed(
     !isInstallLess.value &&
     !isFirstUseLockdown.value
 )
-void firstUseMode
 
 const zoomLevel = ref(0)
 const zoomPercent = computed(() => Math.round(Math.pow(1.2, zoomLevel.value) * 100))

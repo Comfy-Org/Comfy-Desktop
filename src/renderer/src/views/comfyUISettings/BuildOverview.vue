@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuLabel, DropdownMenuRadioGroup } from 'reka-ui'
-import { ArrowUpCircle, ChevronDown, FolderOpen, Loader2 } from 'lucide-vue-next'
+import { ArrowUpCircle, ChevronDown, FolderOpen, Loader2 } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'

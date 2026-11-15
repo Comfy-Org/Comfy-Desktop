@@ -45,6 +45,8 @@ beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
     getBuildStorageSnapshot: vi.fn().mockResolvedValue(SNAPSHOT),
     onSettingsChanged: vi.fn(() => unsubscribeSettings),
+    onInstallationsChanged: vi.fn(() => () => {}),
+    onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     openInstallInNewWindow
   }
   setActivePinia(createPinia())

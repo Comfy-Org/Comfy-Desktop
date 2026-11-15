@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { PathIssue, DiskSpaceInfo } from '../types/ipc'
-import { formatBytes } from '../lib/formatting'
+import { formatBytes, formatFreeSpace } from '../lib/formatting'
 
 defineProps<{
   pathIssues: PathIssue[]
   diskSpaceLoading: boolean
   diskSpace: DiskSpaceInfo | null
   estimatedSize: number
+  issuesOnly?: boolean
 }>()
 </script>
 
@@ -35,12 +36,12 @@ defineProps<{
   >
     {{ $t('pathValidation.insideExistingInstallMessage') }}
   </div>
-  <div class="path-disk-info mt-1 min-h-[18px] text-[13px] text-text-muted">
+  <div v-if="!issuesOnly" class="path-disk-info mt-1 min-h-[18px] text-[13px] text-text-muted">
     <template v-if="diskSpaceLoading">
       {{ $t('diskSpace.checking') }}
     </template>
     <template v-else-if="diskSpace">
-      {{ $t('diskSpace.free', { size: formatBytes(diskSpace.free) }) }}
+      {{ $t('diskSpace.free', { size: formatFreeSpace(diskSpace.free) }) }}
       <template v-if="estimatedSize > 0">
         · {{ $t('diskSpace.estimatedRequired', { size: formatBytes(estimatedSize) }) }}
       </template>

@@ -51,7 +51,11 @@ import {
 import { abortModelStaging } from '../../sources/comfybuilder/modelStagingTask'
 import { recordIpcInvocation } from '../e2eOverrides'
 import { DEFAULT_INSTALL_NAME } from '../../../shared/defaultInstallName'
-import { isInstallationVisibleToRenderer } from './installationVisibility'
+import {
+  isInstallationVisibleToRenderer,
+  markInstallRunning,
+  markInstallSettled
+} from './installationVisibility'
 import { answerCoreBetaArgs } from '../coreBetaPreview'
 
 function _kickReleaseCachePrewarm(allInstalls: InstallationRecord[]): void {
@@ -216,7 +220,22 @@ export function registerInstallationHandlers(): void {
     return { ok: true, entry }
   })
 
-  ipcMain.handle('install-instance', async (_event, installationId: string, express?: boolean) => {
+  ipcMain.handle('install-instance', async (event, installationId: string, express?: boolean) => {
+    markInstallRunning(installationId)
+    _broadcastToRenderer('installations-changed', {})
+    try {
+      return await installInstance(event, installationId, express)
+    } finally {
+      markInstallSettled(installationId)
+      _broadcastToRenderer('installations-changed', {})
+    }
+  })
+
+  async function installInstance(
+    _event: Electron.IpcMainInvokeEvent,
+    installationId: string,
+    express?: boolean
+  ): Promise<{ ok: boolean; message?: string; navigate?: string }> {
     const inst = await installations.get(installationId)
     if (!inst) return { ok: false, message: 'Installation not found.' }
     const source = sourceMap[inst.sourceId]
@@ -413,7 +432,7 @@ export function registerInstallationHandlers(): void {
 
     await installations.update(installationId, { status: 'failed' })
     return { ok: false, message: 'This source does not support installation.' }
-  })
+  }
 
   ipcMain.handle('get-list-actions', async (_event, installationId: string) => {
     const inst = await installations.get(installationId)
@@ -440,8 +459,7 @@ export function registerInstallationHandlers(): void {
       const allowedIds = new Set(['name', 'seen'])
       for (const section of sections) {
         const fields = (section as Record<string, unknown>).fields as
-          | Record<string, unknown>[]
-          | undefined
+          Record<string, unknown>[] | undefined
         if (!fields) continue
         for (const f of fields) {
           if ((f as Record<string, unknown>).editable && (f as Record<string, unknown>).id) {

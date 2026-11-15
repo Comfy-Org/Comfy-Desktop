@@ -114,6 +114,30 @@ export function getEntryByInstallationId(installationId: string): ComfyWindowEnt
   return key === undefined ? undefined : comfyWindows.get(key)
 }
 
+function isInstallationShownInWindow(installationId: string): boolean {
+  if (pendingAttachClaims.has(installationId)) return true
+  for (const entry of comfyWindows.values()) {
+    if (entry.window.isDestroyed()) continue
+    if (entry.installationId === installationId) return true
+    if (entry.previewInstallationId === installationId) return true
+  }
+  return false
+}
+
+export function unhostedLaunches(launchingInstallationIds: readonly string[]): string[] {
+  return launchingInstallationIds.filter((id) => !isInstallationShownInWindow(id))
+}
+
+export function canRestartFromPicker(
+  parentEntry: ComfyWindowEntry,
+  installationId: string,
+  launchingInstallationIds: readonly string[]
+): boolean {
+  const boundInstallationId = parentEntry.installationId ?? parentEntry.previewInstallationId
+  if (boundInstallationId != null) return boundInstallationId === installationId
+  return unhostedLaunches(launchingInstallationIds).includes(installationId)
+}
+
 export function indexInstallationId(installationId: string, windowKey: number): void {
   installationIdToWindowKey.set(installationId, windowKey)
   hostInstallEvents.emit('changed')
@@ -194,6 +218,13 @@ export function isPanelSender(wc: WebContents): boolean {
     if (entry.panelView?.webContents === wc) return true
   }
   return false
+}
+
+export function findHostWindowByPanelSender(wc: WebContents): BrowserWindow | null {
+  for (const entry of comfyWindows.values()) {
+    if (entry.panelView?.webContents === wc) return entry.window
+  }
+  return null
 }
 
 export function findEntryByComfySender(wc: WebContents): ComfyWindowEntry | null {

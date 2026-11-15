@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ChevronsUpDown, LogIn, LogOut } from 'lucide-vue-next'
+import { ChevronsUpDown, LogIn, LogOut } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'

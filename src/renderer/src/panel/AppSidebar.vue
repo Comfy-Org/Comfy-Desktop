@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { computed, toRef } from 'vue'
+import { computed, onMounted, ref, toRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocalStorage } from '@vueuse/core'
-import { ArrowRight, Cloud, House, Laptop, Plus, Server } from 'lucide-vue-next'
+import {
+  AppWindow,
+  ArrowRight,
+  Cloud,
+  House,
+  Images,
+  Laptop,
+  LoaderCircle,
+  Plus,
+  Server
+} from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
@@ -11,15 +21,22 @@ import SidebarAccount from './SidebarAccount.vue'
 import SidebarToggleIcon from './SidebarToggleIcon.vue'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
 import { useInstallList } from '../composables/useInstallList'
+import { buildProgressOf } from '../composables/useBuildProgress'
+import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import type { DashboardPage, Installation } from '../types/ipc'
 
-const { activePage, activeBuildId = null } = defineProps<{
+const {
+  activePage,
+  activeBuildId = null,
+  makeRoom = false
+} = defineProps<{
   activePage: DashboardPage
   activeBuildId?: string | null
+  makeRoom?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -36,11 +53,35 @@ interface SidebarRow {
 
 const { t } = useI18n()
 
-const collapsed = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
+const collapsedByChoice = useLocalStorage('comfy.desktop.sidebar.collapsed', false)
+const reopenedWhileMakingRoom = ref(false)
+watch(
+  () => makeRoom,
+  () => {
+    reopenedWhileMakingRoom.value = false
+  }
+)
+const collapsed = computed(() =>
+  makeRoom ? !reopenedWhileMakingRoom.value : collapsedByChoice.value
+)
 const toggleLabel = computed(() => (collapsed.value ? t('sidebar.expand') : t('sidebar.collapse')))
+
+function toggleCollapsed(): void {
+  if (makeRoom) reopenedWhileMakingRoom.value = !reopenedWhileMakingRoom.value
+  else collapsedByChoice.value = !collapsedByChoice.value
+}
+
+const appsEnabled = ref(false)
+onMounted(async () => {
+  appsEnabled.value = await window.api.getAppsEnabled().catch(() => false)
+})
 
 const mainRows = computed<SidebarRow[]>(() => [
   { page: 'home', label: t('sidebar.home'), icon: House },
+  ...(appsEnabled.value
+    ? [{ page: 'apps' as const, label: t('sidebar.apps'), icon: AppWindow }]
+    : []),
+  { page: 'assets', label: t('sidebar.assets'), icon: Images },
   { page: 'chooser', label: t('sidebar.builds'), icon: Server }
 ])
 const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>(() => [
@@ -52,6 +93,7 @@ const groups = computed<{ key: string; title?: string; rows: SidebarRow[] }[]>((
 
 const installationStore = useInstallationStore()
 const sessionStore = useSessionStore()
+const progressStore = useProgressStore()
 const dashboardScope = useDashboardScopeStore()
 void dashboardScope.initialize()
 
@@ -77,7 +119,15 @@ function failureText(build: Installation): string | null {
 const buildRows = computed(() =>
   visibleInstalls.value
     .filter((build) => isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId))
-    .map((build) => ({ build, failure: failureText(build), live: isLive(build) }))
+    .map((build) => {
+      const install = buildProgressOf(progressStore, build.id)
+      return {
+        build,
+        install,
+        failure: install ? null : failureText(build),
+        live: !install && isLive(build)
+      }
+    })
 )
 
 function navigate(page: DashboardPage): void {
@@ -119,7 +169,7 @@ function navigate(page: DashboardPage): void {
         :aria-label="toggleLabel"
         :aria-expanded="!collapsed"
         :title="toggleLabel"
-        @click="collapsed = !collapsed"
+        @click="toggleCollapsed"
       >
         <SidebarToggleIcon />
       </Button>
@@ -199,7 +249,7 @@ function navigate(page: DashboardPage): void {
             <Server :size="15" aria-hidden="true" />{{ t('sidebar.noBuilds') }}
           </p>
           <Button
-            v-for="{ build, failure, live } in buildRows"
+            v-for="{ build, install, failure, live } in buildRows"
             :key="build.id"
             variant="muted-textonly"
             size="unset"
@@ -210,7 +260,14 @@ function navigate(page: DashboardPage): void {
             :data-testid="`app-sidebar-build-${build.id}`"
             @click="emit('open-build', build)"
           >
-            <span class="relative flex shrink-0">
+            <LoaderCircle
+              v-if="install"
+              :size="16"
+              class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+              aria-hidden="true"
+              data-testid="app-sidebar-build-installing"
+            />
+            <span v-else class="relative flex shrink-0">
               <component :is="isCloudBuild(build) ? Cloud : Laptop" :size="16" aria-hidden="true" />
               <span
                 v-if="failure || live"
@@ -224,6 +281,12 @@ function navigate(page: DashboardPage): void {
               />
             </span>
             <span class="min-w-0 flex-1 truncate text-left">{{ build.name }}</span>
+            <span
+              v-if="install && install.kind !== 'launch' && install.percent !== null"
+              class="shrink-0 text-xs/5 text-subtle-foreground tabular-nums"
+              data-testid="app-sidebar-build-percent"
+              >{{ t('installProgress.percent', { percent: install.percent }) }}</span
+            >
           </Button>
         </div>
       </template>
