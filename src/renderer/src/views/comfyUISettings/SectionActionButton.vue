@@ -57,7 +57,7 @@ const styleClass = computed(() => {
     <Button
       variant="textonly"
       size="unset"
-      class="static inline-block rounded-lg border border-solid border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-[14px] leading-[1.5] font-normal text-text whitespace-normal appearance-auto transition-none hover:bg-[var(--border)] focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40"
+      class="static inline-block rounded-lg border border-solid border-border bg-surface px-4 py-2 text-[14px] leading-normal font-normal text-text whitespace-normal appearance-auto transition-none hover:bg-border focus-visible:ring-0 focus-visible:outline-1 focus-visible:[outline-style:auto] focus-visible:outline-[-webkit-focus-ring-color] disabled:pointer-events-auto disabled:cursor-default disabled:opacity-40"
       type="button"
       :class="[
         buttonClass,

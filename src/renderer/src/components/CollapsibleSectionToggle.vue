@@ -25,7 +25,7 @@ const emit = defineEmits<{
   >
     <ChevronRight
       :size="16"
-      class="collapsible-section-toggle__chevron transition-transform duration-[120ms] ease-[ease]"
+      class="collapsible-section-toggle__chevron transition-transform duration-120 ease-[ease]"
       :class="{ 'collapsible-section-toggle__chevron--open rotate-90': expanded }"
       aria-hidden="true"
     />

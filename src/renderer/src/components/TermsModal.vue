@@ -67,7 +67,7 @@ const titleKey = computed(() => {
       <template v-for="(block, i) in policy.blocks" :key="`${doc}-${i}`">
         <h2
           v-if="block.kind === 'h2'"
-          class="terms-h2 mt-[18px] mr-0 mb-2 ml-0 text-[length:var(--takeover-fs-lead)] font-semibold text-neutral-100 first:mt-0"
+          class="terms-h2 mt-4.5 mr-0 mb-2 ml-0 text-[length:var(--takeover-fs-lead)] font-semibold text-neutral-100 first:mt-0"
         >
           {{ block.text }}
         </h2>

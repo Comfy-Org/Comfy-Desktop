@@ -23,7 +23,7 @@ const { t } = useI18n()
         class="performance-test__fact flex min-w-0 flex-col gap-0.5"
       >
         <dt class="text-[12px]">{{ fact.label }}</dt>
-        <dd class="m-0 truncate text-[var(--text-primary)]" :title="fact.value">
+        <dd class="m-0 truncate text-(--text-primary)" :title="fact.value">
           {{ fact.value }}
         </dd>
       </div>

@@ -748,15 +748,15 @@ const subpageTransitionActiveClass =
 const subpageTransitionClasses = {
   'subpage-push': {
     enter:
-      'subpage-push-enter-from opacity-0 [transform:translateX(24px)] motion-reduce:transform-none',
+      'subpage-push-enter-from opacity-0 transform-[translateX(24px)] motion-reduce:transform-none',
     leave:
-      'subpage-push-leave-to opacity-0 [transform:translateX(-12px)] motion-reduce:transform-none'
+      'subpage-push-leave-to opacity-0 transform-[translateX(-12px)] motion-reduce:transform-none'
   },
   'subpage-pop': {
     enter:
-      'subpage-pop-enter-from opacity-0 [transform:translateX(-12px)] motion-reduce:transform-none',
+      'subpage-pop-enter-from opacity-0 transform-[translateX(-12px)] motion-reduce:transform-none',
     leave:
-      'subpage-pop-leave-to opacity-0 [transform:translateX(24px)] motion-reduce:transform-none'
+      'subpage-pop-leave-to opacity-0 transform-[translateX(24px)] motion-reduce:transform-none'
   }
 }
 
@@ -777,8 +777,8 @@ defineExpose({
           class="settings-v2-tabs flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden"
           :class="[
             isPage
-              ? 'w-fit gap-0.5 rounded-[10px] bg-secondary p-[3px]'
-              : '@container/settings-tabs gap-1.5 border-b border-solid border-[var(--chooser-surface-border)] p-3',
+              ? 'w-fit gap-0.5 rounded-[10px] bg-secondary p-0.75'
+              : '@container/settings-tabs gap-1.5 border-b border-solid border-(--chooser-surface-border) p-3',
             { 'is-subpage-active opacity-60': subPage !== null }
           ]"
           :aria-label="t('comfyUISettings.title')"
@@ -801,7 +801,7 @@ defineExpose({
                   'is-locked': opInflight && activeTab !== tab.key
                 },
                 isPage &&
-                  'm-0 h-[26px] rounded-[7px] border-0 bg-transparent px-[11px] py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
+                  'm-0 h-6.5 rounded-[7px] border-0 bg-transparent px-2.75 py-0 text-[13px] font-normal text-muted-foreground hover:text-foreground data-[state=active]:bg-accent data-[state=active]:text-foreground'
               ]"
               :data-testid="TID.settingsTab(tab.key)"
               @click="selectTab(tab.key)"
@@ -820,12 +820,10 @@ defineExpose({
                 <span
                   v-if="tab.key === 'update' && showUpdateBadge"
                   :class="[
-                    activeTab === tab.key
-                      ? 'border-neutral-700'
-                      : 'border-[var(--modal-surface-bg)]',
+                    activeTab === tab.key ? 'border-neutral-700' : 'border-(--modal-surface-bg)',
                     !isPage && 'absolute -right-px -bottom-px'
                   ]"
-                  class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-[var(--status-update,#f59e0b)]"
+                  class="settings-v2-tab-badge box-content size-1.5 rounded-[50%] border-2 border-solid bg-(--status-update,#f59e0b)"
                   aria-hidden="true"
                 ></span>
               </span>
@@ -955,28 +953,28 @@ defineExpose({
                     mode="out-in"
                     enter-active-class="op-overlay-enter-active transition-[opacity,transform] duration-200 ease-[ease]"
                     leave-active-class="op-overlay-leave-active transition-[opacity,transform] duration-200 ease-[ease]"
-                    enter-from-class="op-overlay-enter-from opacity-0 [transform:translateY(5px)]"
-                    leave-to-class="op-overlay-leave-to opacity-0 [transform:translateY(5px)]"
+                    enter-from-class="op-overlay-enter-from opacity-0 transform-[translateY(5px)]"
+                    leave-to-class="op-overlay-leave-to opacity-0 transform-[translateY(5px)]"
                   >
                     <div
                       v-if="showOpOverlay"
                       key="op-overlay"
-                      class="op-overlay flex min-h-[200px] w-full flex-auto box-border flex-col items-center justify-center gap-3 p-6 text-center"
+                      class="op-overlay flex min-h-50 w-full flex-auto box-border flex-col items-center justify-center gap-3 p-6 text-center"
                     >
                       <template v-if="opInflight">
                         <p
-                          class="op-title m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                          class="op-title m-0 text-[15px] leading-tight font-semibold text-text [&.op-title--error]:text-(--brand-error,#e74c3c) [&.op-title--muted]:text-text-muted"
                         >
                           {{ opTitleLabel }}
                         </p>
                         <p
-                          class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-[var(--brand-error,#e74c3c)] [&.op-name--error]:opacity-80"
+                          class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-(--brand-error,#e74c3c) [&.op-name--error]:opacity-80"
                         >
                           {{ installation?.name }}
                         </p>
 
                         <div
-                          class="op-bar-wrap mt-1 flex w-full max-w-[260px] flex-col gap-[5px]"
+                          class="op-bar-wrap mt-1 flex w-full max-w-65 flex-col gap-1.25"
                           role="progressbar"
                           :aria-valuenow="opIsIndeterminate ? undefined : opProgressPct"
                           aria-valuemin="0"
@@ -1001,10 +999,10 @@ defineExpose({
                             </span>
                           </div>
                           <div
-                            class="op-bar-track h-[3px] overflow-hidden rounded-[2px] bg-[var(--chooser-surface-border)]"
+                            class="op-bar-track h-0.75 overflow-hidden rounded-xs bg-(--chooser-surface-border)"
                           >
                             <div
-                              class="op-bar-fill h-full rounded-[2px] bg-[var(--brand-accent,#f5c518)] transition-[width] duration-300 ease-[ease]"
+                              class="op-bar-fill h-full rounded-xs bg-(--brand-accent,#f5c518) transition-[width] duration-300 ease-[ease]"
                               :class="{
                                 'is-indeterminate w-2/5 animate-[op-bar-slide_1.5s_ease-in-out_infinite]':
                                   opIsIndeterminate
@@ -1028,17 +1026,17 @@ defineExpose({
 
                       <template v-else-if="opSuccess">
                         <div
-                          class="op-icon op-icon--success mb-0.5 flex items-center justify-center text-[var(--brand-success,#27ae60)]"
+                          class="op-icon op-icon--success mb-0.5 flex items-center justify-center text-(--brand-success,#27ae60)"
                         >
                           <CheckCircle :size="32" />
                         </div>
                         <p
-                          class="op-title m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                          class="op-title m-0 text-[15px] leading-tight font-semibold text-text [&.op-title--error]:text-(--brand-error,#e74c3c) [&.op-title--muted]:text-text-muted"
                         >
                           {{ opSuccessLabel }}
                         </p>
                         <p
-                          class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-[var(--brand-error,#e74c3c)] [&.op-name--error]:opacity-80"
+                          class="op-name m-0 max-w-60 truncate text-[12px] leading-[1.4] text-text-muted [&.op-name--error]:text-(--brand-error,#e74c3c) [&.op-name--error]:opacity-80"
                         >
                           {{ installation?.name }}
                         </p>
@@ -1054,12 +1052,12 @@ defineExpose({
 
                       <template v-else-if="opError">
                         <div
-                          class="op-icon op-icon--error mb-0.5 flex items-center justify-center text-[var(--brand-error,#e74c3c)]"
+                          class="op-icon op-icon--error mb-0.5 flex items-center justify-center text-(--brand-error,#e74c3c)"
                         >
                           <XCircle :size="32" />
                         </div>
                         <p
-                          class="op-title op-title--error m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                          class="op-title op-title--error m-0 text-[15px] leading-tight font-semibold text-text [&.op-title--error]:text-(--brand-error,#e74c3c) [&.op-title--muted]:text-text-muted"
                         >
                           {{ t('instancePicker.progressError') }}
                         </p>
@@ -1091,7 +1089,7 @@ defineExpose({
 
                       <template v-else-if="opCancelled">
                         <p
-                          class="op-title op-title--muted m-0 text-[15px] leading-[1.25] font-semibold text-text [&.op-title--error]:text-[var(--brand-error,#e74c3c)] [&.op-title--muted]:text-text-muted"
+                          class="op-title op-title--muted m-0 text-[15px] leading-tight font-semibold text-text [&.op-title--error]:text-(--brand-error,#e74c3c) [&.op-title--muted]:text-text-muted"
                         >
                           {{ t('instancePicker.progressCancelled') }}
                         </p>
@@ -1139,7 +1137,7 @@ defineExpose({
           class="settings-v2-footer flex shrink-0 items-center justify-end gap-2"
           :class="
             !isPage &&
-            'border-t border-solid border-[var(--chooser-surface-border)] bg-[var(--modal-surface-bg)] px-4 py-3'
+            'border-t border-solid border-(--chooser-surface-border) bg-(--modal-surface-bg) px-4 py-3'
           "
         >
           <Transition
@@ -1169,7 +1167,7 @@ defineExpose({
               type="button"
               class="settings-v2-relaunch flex-[0_1_auto] [&.is-split]:rounded-r-none"
               :class="[
-                isPage ? 'gap-1.5 px-3 text-[13px]/5' : 'min-w-[200px]',
+                isPage ? 'gap-1.5 px-3 text-[13px]/5' : 'min-w-50',
                 { 'is-pending-restart': hasPendingRestart },
                 { 'is-split': caretActions.length > 0 }
               ]"

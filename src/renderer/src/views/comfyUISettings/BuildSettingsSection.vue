@@ -12,11 +12,11 @@ defineProps<{
     <header class="build-settings-head flex min-w-0 flex-col gap-3 @2xl/build-settings:pt-3">
       <div class="flex min-w-0 flex-col gap-1.5">
         <h3
-          class="build-settings-title m-0 text-[11px] leading-[16px] font-semibold tracking-[0.06em] text-text-muted uppercase"
+          class="build-settings-title m-0 text-[11px] leading-4 font-semibold tracking-[0.06em] text-text-muted uppercase"
         >
           {{ title }}
         </h3>
-        <p v-if="hint" class="build-settings-hint m-0 text-[13px] leading-[1.5] text-text-muted">
+        <p v-if="hint" class="build-settings-hint m-0 text-[13px] leading-normal text-text-muted">
           {{ hint }}
         </p>
       </div>

@@ -36,7 +36,7 @@ const emit = defineEmits<{
   <div
     v-if="inline"
     data-modal-content="inline"
-    class="mx-[30px] flex h-full max-w-none w-full flex-col overflow-hidden rounded-none border-none bg-[var(--bg)]"
+    class="mx-7.5 flex h-full max-w-none w-full flex-col overflow-hidden rounded-none border-none bg-bg"
     :class="contentClass"
   >
     <slot />
@@ -51,14 +51,14 @@ const emit = defineEmits<{
     :overlay-class="[
       'view-modal active fixed inset-0 z-50 flex items-center justify-center',
       resolvedOpacity === 'heavy-dim'
-        ? 'view-modal--heavy-dim bg-[var(--overlay-bg-heavy)]'
+        ? 'view-modal--heavy-dim bg-(--overlay-bg-heavy)'
         : resolvedOpacity === 'opaque'
-          ? 'view-modal--opaque bg-[var(--overlay-bg-opaque)]'
-          : 'bg-[var(--overlay-bg)]'
+          ? 'view-modal--opaque bg-(--overlay-bg-opaque)'
+          : 'bg-(--overlay-bg)'
     ]"
     :content-class="[
-      'mx-[30px] flex h-[calc(100vh-60px)] w-full flex-col overflow-hidden rounded-xl border border-solid border-[var(--border)] bg-[var(--bg)]',
-      width === 'regular' ? 'max-w-[600px]' : 'max-w-[900px]',
+      'mx-7.5 flex h-[calc(100vh-60px)] w-full flex-col overflow-hidden rounded-xl border border-solid border-border bg-bg',
+      width === 'regular' ? 'max-w-150' : 'max-w-225',
       contentClass
     ]"
     :data-modal-content="width"

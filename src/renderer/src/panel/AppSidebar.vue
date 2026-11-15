@@ -139,7 +139,7 @@ function navigate(page: DashboardPage): void {
 <template>
   <aside
     class="app-sidebar flex shrink-0 flex-col overflow-hidden rounded-shell bg-sidebar-background transition-[width] duration-240 ease-in-out motion-reduce:transition-none"
-    :class="collapsed ? 'w-[72px] items-center px-3 py-2' : 'w-[244px] px-3 py-2'"
+    :class="collapsed ? 'w-18 items-center px-3 py-2' : 'w-61 px-3 py-2'"
     :aria-label="t('sidebar.navigation')"
     data-testid="app-sidebar"
     :data-collapsed="collapsed"
@@ -159,12 +159,12 @@ function navigate(page: DashboardPage): void {
         @click="navigate('home')"
       >
         <ComfyCLogo v-if="collapsed" :size="20" />
-        <ComfyWordmark v-else class="h-[22px] w-auto" />
+        <ComfyWordmark v-else class="h-5.5 w-auto" />
       </Button>
       <Button
         variant="muted-textonly"
         size="unset"
-        class="group size-[30px] rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
+        class="group size-7.5 rounded-[7px] p-0 hover:bg-secondary hover:text-foreground"
         data-testid="app-sidebar-toggle"
         :aria-label="toggleLabel"
         :aria-expanded="!collapsed"
@@ -216,7 +216,7 @@ function navigate(page: DashboardPage): void {
             <Button
               variant="textonly"
               size="unset"
-              class="group/title -ml-1.5 h-[22px] gap-[5px] rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
+              class="group/title -ml-1.5 h-5.5 gap-1.25 rounded-md px-1.5 text-[13px]/5 font-medium tracking-[0.65px] text-subtle-foreground uppercase hover:bg-transparent hover:text-foreground focus-visible:text-foreground aria-[current=page]:text-foreground"
               :aria-current="buildsPageActive ? 'page' : undefined"
               data-testid="app-sidebar-chooser"
               @click="navigate('chooser')"
@@ -263,7 +263,7 @@ function navigate(page: DashboardPage): void {
             <LoaderCircle
               v-if="install"
               :size="16"
-              class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+              class="shrink-0 animate-spin animation-duration-[900ms] motion-reduce:animate-none"
               aria-hidden="true"
               data-testid="app-sidebar-build-installing"
             />

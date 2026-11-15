@@ -341,7 +341,7 @@ const gridHandlers = {
             <RefreshCw
               :size="13"
               :class="{
-                'chooser-workspace-refresh__icon--busy animate-spin [animation-duration:900ms]':
+                'chooser-workspace-refresh__icon--busy animate-spin animation-duration-[900ms]':
                   refreshingWorkspace
               }"
             />
@@ -354,7 +354,7 @@ const gridHandlers = {
               compact
             />
           </div>
-          <div class="chooser-search w-[220px]">
+          <div class="chooser-search w-55">
             <BaseInput
               v-model="searchQuery"
               class="h-8 [&_input]:text-[13px]"
@@ -416,7 +416,7 @@ const gridHandlers = {
         v-else-if="showNoBuilds"
         class="chooser-no-builds flex flex-col items-center gap-3 px-6 py-16 text-center"
       >
-        <div class="flex max-w-[420px] flex-col gap-1.5">
+        <div class="flex max-w-105 flex-col gap-1.5">
           <h2 class="m-0 text-[16px]/6 font-semibold text-foreground">
             {{ t('chooser.noBuildsTitle') }}
           </h2>

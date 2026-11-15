@@ -13,7 +13,7 @@ const TONES = {
 
 <template>
   <span
-    class="inline-flex h-5 shrink-0 items-center gap-[5px] rounded-full px-2 text-[11px] leading-none font-medium whitespace-nowrap"
+    class="inline-flex h-5 shrink-0 items-center gap-1.25 rounded-full px-2 text-[11px] leading-none font-medium whitespace-nowrap"
     :class="TONES[tone]"
   >
     <slot name="icon">

@@ -47,7 +47,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const actionClass = 'models-dir-action shrink-0'
 const nameClass =
-  'models-dir-name static block min-w-0 max-w-full truncate gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-[18px] font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
+  'models-dir-name static block min-w-0 max-w-full truncate gap-0 rounded-none border-none bg-transparent p-0 text-left font-mono text-[12.5px] leading-4.5 font-normal text-neutral-100 appearance-auto hover:bg-transparent hover:underline focus-visible:bg-transparent focus-visible:underline focus-visible:outline-none focus-visible:ring-0'
 const openMenuIndex = ref<number | null>(null)
 
 function canPromote(dir: ModelsDir): boolean {
@@ -121,7 +121,7 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <div class="models-dir-list flex flex-col rounded-[14px] bg-white/5 p-1.5" @click="closeMenu()">
+  <div class="models-dir-list flex flex-col rounded-shell bg-white/5 p-1.5" @click="closeMenu()">
     <div
       v-for="row in rows"
       :key="row.path"

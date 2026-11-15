@@ -11,7 +11,7 @@ interface ArcSlot {
 }
 
 const STEP_CLASS =
-  'absolute top-[150px] z-10 grid size-9 -translate-y-1/2 place-items-center rounded-[8px] border-0 bg-transparent p-0 text-muted-foreground opacity-50 outline-none transition-[opacity,background-color,color] duration-200 group-hover/arc:opacity-90 hover:bg-foreground/7 hover:text-foreground hover:opacity-100 focus-visible:bg-foreground/7 focus-visible:text-foreground focus-visible:opacity-100 active:scale-94 disabled:pointer-events-none disabled:opacity-0 motion-reduce:transition-none'
+  'absolute top-37.5 z-10 grid size-9 -translate-y-1/2 place-items-center rounded-[8px] border-0 bg-transparent p-0 text-muted-foreground opacity-50 outline-none transition-[opacity,background-color,color] duration-200 group-hover/arc:opacity-90 hover:bg-foreground/7 hover:text-foreground hover:opacity-100 focus-visible:bg-foreground/7 focus-visible:text-foreground focus-visible:opacity-100 active:scale-94 disabled:pointer-events-none disabled:opacity-0 motion-reduce:transition-none'
 
 const ARC_REACH = 2
 const OFFSTAGE = ARC_REACH + 1
@@ -208,7 +208,7 @@ function activate(placed: { card: Card; offset: number }): void {
   <div class="group/arc relative" @keydown.left.prevent="turn(-1)" @keydown.right.prevent="turn(1)">
     <ul
       ref="arc"
-      class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none [perspective:3000px]"
+      class="relative m-0 h-75 w-full touch-pan-y list-none p-0 select-none perspective-[3000px]"
       :class="dragging ? 'cursor-grabbing' : 'cursor-grab'"
       data-testid="home-carousel"
       @pointerdown="startDrag"

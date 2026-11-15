@@ -87,7 +87,7 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
 <template>
   <div class="snapshot-row flex flex-col" :class="{ 'is-expanded': expanded }">
     <div
-      class="snapshot-row-line flex min-h-11 items-center gap-2 rounded-[10px] pr-1.5 pl-2.5 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[:focus-visible]:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[.snapshot-row-head:focus-visible]:outline-2 has-[.snapshot-row-head:focus-visible]:-outline-offset-2 has-[.snapshot-row-head:focus-visible]:outline-[var(--accent-primary)]"
+      class="snapshot-row-line flex min-h-11 items-center gap-2 rounded-[10px] pr-1.5 pl-2.5 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-focus-visible:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[.snapshot-row-head:focus-visible]:outline-2 has-[.snapshot-row-head:focus-visible]:-outline-offset-2 has-[.snapshot-row-head:focus-visible]:outline-(--accent-primary)"
     >
       <Button
         type="button"
@@ -99,19 +99,19 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
         @click="emit('toggle')"
       >
         <span
-          class="snapshot-row-time w-[76px] shrink-0 truncate text-[12px] text-text-muted"
+          class="snapshot-row-time w-19 shrink-0 truncate text-[12px] text-text-muted"
           :title="absoluteCopy"
           >{{ relativeCopy }}</span
         >
         <span class="w-5 shrink-0" aria-hidden="true"></span>
         <ChevronRight
           :size="14"
-          class="snapshot-row-chevron shrink-0 text-[var(--color-subtle-foreground)] transition-transform duration-150 ease-[ease]"
+          class="snapshot-row-chevron shrink-0 text-subtle-foreground transition-transform duration-150 ease-[ease]"
           :class="{ 'rotate-90': expanded }"
           aria-hidden="true"
         />
         <span
-          class="snapshot-row-trigger shrink-0 rounded-md bg-[color-mix(in_oklch,var(--color-foreground)_8%,transparent)] px-[7px] py-px text-[12px] text-text-muted data-[tone=state]:bg-[color-mix(in_oklch,var(--color-foreground)_13%,transparent)] data-[tone=state]:text-neutral-100"
+          class="snapshot-row-trigger shrink-0 rounded-md bg-[color-mix(in_oklch,var(--color-foreground)_8%,transparent)] px-1.75 py-px text-[12px] text-text-muted data-[tone=state]:bg-[color-mix(in_oklch,var(--color-foreground)_13%,transparent)] data-[tone=state]:text-neutral-100"
           :data-tone="triggerTone"
           >{{ triggerCopy }}</span
         >
@@ -123,7 +123,7 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
         >
           <template v-if="showVersionChange"
             ><span class="mr-1 text-text-muted">{{ previousComfyuiVersion }} →</span>
-            <span class="font-semibold text-[var(--color-foreground)]">{{
+            <span class="font-semibold text-foreground">{{
               snapshot.comfyuiVersion
             }}</span></template
           >
@@ -140,7 +140,7 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
           class="snapshot-row-delta hidden shrink-0 items-center @md:inline-flex gap-1.5 text-[12px] text-text-muted tabular-nums"
         >
           <span v-if="hasNodeChanges" class="snap-pill snap-pill--nodes inline-flex gap-1">
-            <span v-if="nodeDelta.added" class="snap-delta is-add text-[var(--success)]"
+            <span v-if="nodeDelta.added" class="snap-delta is-add text-(--success)"
               >+{{ nodeDelta.added }}</span
             >
             <span v-if="nodeDelta.removed" class="snap-delta is-remove text-danger"
@@ -153,7 +153,7 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
           </span>
           <span v-if="hasNodeChanges && hasPipChanges" aria-hidden="true">·</span>
           <span v-if="hasPipChanges" class="snap-pill snap-pill--pkgs inline-flex gap-1">
-            <span v-if="pipDelta.added" class="snap-delta is-add text-[var(--success)]"
+            <span v-if="pipDelta.added" class="snap-delta is-add text-(--success)"
               >+{{ pipDelta.added }}</span
             >
             <span v-if="pipDelta.removed" class="snap-delta is-remove text-danger"
@@ -172,9 +172,9 @@ const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged
     </div>
 
     <BaseAccordion :open="expanded">
-      <div class="snapshot-row-card flex flex-col gap-2.5 pt-1 pr-4 pb-4 pl-[126px]">
+      <div class="snapshot-row-card flex flex-col gap-2.5 pt-1 pr-4 pb-4 pl-31.5">
         <div
-          class="snapshot-row-meta flex flex-wrap items-center gap-1.5 text-[12px] text-[var(--color-subtle-foreground)] [overflow-wrap:anywhere]"
+          class="snapshot-row-meta flex flex-wrap items-center gap-1.5 text-[12px] text-subtle-foreground wrap-anywhere"
         >
           <span>{{ t('snapshots.nodesCount', { count: snapshot.nodeCount }) }}</span>
           <span class="snapshot-row-meta-dot" aria-hidden="true">·</span>

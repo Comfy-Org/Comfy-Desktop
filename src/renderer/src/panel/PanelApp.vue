@@ -492,7 +492,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="panel-shell flex h-screen w-screen flex-col overflow-hidden bg-[var(--bg)] text-text [body.panel-overlay-mode_&]:bg-transparent"
+    class="panel-shell flex h-screen w-screen flex-col overflow-hidden bg-bg text-text [body.panel-overlay-mode_&]:bg-transparent"
   >
     <div
       class="panel-frame flex min-h-0 flex-1"
@@ -509,7 +509,7 @@ onUnmounted(() => {
       />
       <main
         class="panel-content flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-7 py-6 [&:has(:is(.panel-comfy-lifecycle,.panel-chooser,.panel-performance-test,.panel-benchmarks))]:p-0"
-        :class="showSidebar && 'rounded-shell bg-[var(--bg)]'"
+        :class="showSidebar && 'rounded-shell bg-bg'"
       >
         <div v-if="showPanelBody" class="panel-body flex min-h-0 flex-1 flex-col overflow-hidden">
           <div

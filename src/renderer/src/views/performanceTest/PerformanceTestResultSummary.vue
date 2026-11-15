@@ -57,7 +57,7 @@ const counts = computed(() => ({
         </dd>
         <dd
           class="m-0 text-right text-[13px] tabular-nums"
-          :class="row.highlight ? 'font-medium text-foreground' : 'text-[var(--text-primary)]'"
+          :class="row.highlight ? 'font-medium text-foreground' : 'text-(--text-primary)'"
         >
           {{ formatDuration(row.seconds) }}
         </dd>

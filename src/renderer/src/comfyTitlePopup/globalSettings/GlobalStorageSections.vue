@@ -159,7 +159,7 @@ async function handleChangeModelsDir(index: number): Promise<void> {
   >
     <div
       v-if="sharedInputField || sharedOutputField"
-      class="gs-shared-dirs flex flex-col rounded-[14px] bg-white/5 p-1.5"
+      class="gs-shared-dirs flex flex-col rounded-shell bg-white/5 p-1.5"
     >
       <StorageDirRow
         v-if="sharedInputField"

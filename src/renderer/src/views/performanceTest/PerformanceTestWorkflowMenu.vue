@@ -53,7 +53,7 @@ function drop(event: DragEvent): void {
 
 <template>
   <section
-    class="performance-test__step performance-test__drop-zone -m-1 flex min-w-0 rounded-[12px] p-1 outline-1 outline-offset-[-1px] transition-[outline-color,background-color] duration-[140ms] @max-[36rem]/setup:basis-[calc(100%+0.5rem)]"
+    class="performance-test__step performance-test__drop-zone -m-1 flex min-w-0 rounded-[12px] p-1 outline-1 -outline-offset-1 transition-[outline-color,background-color] duration-140 @max-[36rem]/setup:basis-[calc(100%+0.5rem)]"
     :class="
       isDragging
         ? 'performance-test__drop-zone--dragging bg-white/4 outline-white/35 outline-dashed'
@@ -69,12 +69,12 @@ function drop(event: DragEvent): void {
     <Menu
       :modal="false"
       align="start"
-      class="z-20 min-w-[260px]"
+      class="z-20 min-w-65"
       :aria-label="t('performanceTest.chooseWorkflow')"
     >
       <template #trigger>
         <FilterButton
-          class="performance-test__workflow-trigger max-w-[26rem] @max-[36rem]/setup:w-full @max-[36rem]/setup:max-w-none"
+          class="performance-test__workflow-trigger max-w-104 @max-[36rem]/setup:w-full @max-[36rem]/setup:max-w-none"
           :label="t('performanceTest.chooseWorkflow')"
           :placeholder="
             importing

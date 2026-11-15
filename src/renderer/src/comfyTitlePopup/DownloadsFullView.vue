@@ -223,7 +223,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
           <li
             v-for="d in filtered"
             :key="d.id ?? d.url"
-            class="dlm-row flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-[background] duration-[120ms] ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
+            class="dlm-row flex items-center gap-3 rounded-[10px] px-3 py-2.5 transition-[background] duration-120 ease-[ease] hover:bg-[color-mix(in_oklab,var(--neutral-100)_4%,transparent)]"
             :class="[
               statusKindClass(d),
               {
@@ -256,7 +256,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   </span>
                   <span
                     v-else-if="d.status === 'cancelled'"
-                    class="dlm-icon-circle muted bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] text-[var(--text-muted,#9ca0a8)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    class="dlm-icon-circle muted bg-[color-mix(in_oklab,var(--neutral-100)_8%,transparent)] text-(--text-muted,#9ca0a8) inline-flex size-8 items-center justify-center rounded-[50%]"
                   >
                     <Ban :size="16" />
                   </span>
@@ -268,18 +268,18 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                   </span>
                   <span
                     v-else
-                    class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--action,#60a5fa)_15%,transparent)] text-[var(--action,#60a5fa)] inline-flex size-8 items-center justify-center rounded-[50%]"
+                    class="dlm-icon-circle active bg-[color-mix(in_oklab,var(--action,#60a5fa)_15%,transparent)] text-(--action,#60a5fa) inline-flex size-8 items-center justify-center rounded-[50%]"
                   >
                     <LoaderCircle
                       :size="16"
-                      class="dlm-spin animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+                      class="dlm-spin animate-spin animation-duration-[900ms] motion-reduce:animate-none"
                     />
                   </span>
                 </template>
               </DownloadThumbnail>
             </span>
 
-            <div class="dlm-content flex min-w-0 flex-auto flex-col gap-[3px]">
+            <div class="dlm-content flex min-w-0 flex-auto flex-col gap-0.75">
               <span
                 class="dlm-name truncate text-[13px] font-medium text-neutral-100"
                 :title="fileLabel(d)"
@@ -292,16 +292,16 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
               >
               <div
                 v-if="d.status === 'downloading' || d.status === 'paused' || d.status === 'pending'"
-                class="dlm-bar mt-0.5 h-[3px] overflow-hidden rounded-[2px] bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
+                class="dlm-bar mt-0.5 h-0.75 overflow-hidden rounded-xs bg-[color-mix(in_oklab,var(--neutral-100)_10%,transparent)]"
               >
                 <div
-                  class="dlm-bar-fill h-full rounded-[2px] transition-[width] duration-300 ease-[ease]"
+                  class="dlm-bar-fill h-full rounded-xs transition-[width] duration-300 ease-[ease]"
                   :class="
                     d.status === 'pending'
                       ? 'indeterminate bg-[repeating-linear-gradient(90deg,var(--action,#60a5fa),var(--action,#60a5fa)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_8px,color-mix(in_oklab,var(--action,#60a5fa)_50%,transparent)_16px)] animate-[dlm-shimmer_1.2s_linear_infinite]'
                       : d.status === 'paused'
                         ? 'paused bg-[#f59e0b]'
-                        : 'bg-[var(--action,#60a5fa)]'
+                        : 'bg-(--action,#60a5fa)'
                   "
                   :style="
                     d.status === 'pending' ? { width: '100%' } : { width: `${progressPercent(d)}%` }
@@ -313,7 +313,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
             <div class="dlm-actions flex flex-none items-center gap-1.5">
               <span
                 v-if="statusBadgeFor[d.status]"
-                class="dlm-badge flex-none rounded px-[7px] py-[3px] text-[11px] leading-none font-semibold whitespace-nowrap"
+                class="dlm-badge flex-none rounded px-1.75 py-0.75 text-[11px] leading-none font-semibold whitespace-nowrap"
                 :class="statusBadgeFor[d.status]!.cls"
               >
                 {{ statusBadgeFor[d.status]!.label }}
@@ -321,7 +321,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
 
               <span
                 v-if="d.status === 'downloading'"
-                class="dlm-pct min-w-9 text-right text-[13px] font-bold text-[var(--action,#60a5fa)] tabular-nums"
+                class="dlm-pct min-w-9 text-right text-[13px] font-bold text-(--action,#60a5fa) tabular-nums"
               >
                 {{ progressPercent(d) }}%
               </span>
@@ -380,7 +380,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 type="button"
                 variant="muted-textonly"
                 size="icon"
-                class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
+                class="dlm-x shrink-0 opacity-(--download-close-opacity,0.5) hover:opacity-100 focus-visible:opacity-100"
                 :title="t('downloadsPopup.cancel')"
                 :aria-label="t('downloadsPopup.cancel')"
                 @click="cancel(d)"
@@ -392,7 +392,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 type="button"
                 variant="muted-textonly"
                 size="icon"
-                class="dlm-x shrink-0 opacity-[var(--download-close-opacity,0.5)] hover:opacity-100 focus-visible:opacity-100"
+                class="dlm-x shrink-0 opacity-(--download-close-opacity,0.5) hover:opacity-100 focus-visible:opacity-100"
                 :title="t('downloadsPopup.remove')"
                 :aria-label="t('downloadsPopup.remove')"
                 @click="dismissOne(d)"

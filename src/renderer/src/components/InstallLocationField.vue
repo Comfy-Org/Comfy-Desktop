@@ -67,7 +67,7 @@ defineEmits<{ browse: []; open: [] }>()
     />
     <p
       v-if="shortLabel"
-      class="config-path-required m-0 mt-1 text-[12px] leading-4 text-[var(--warning)]"
+      class="config-path-required m-0 mt-1 text-[12px] leading-4 text-(--warning)"
     >
       {{ shortLabel }}
     </p>

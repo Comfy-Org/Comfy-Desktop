@@ -29,10 +29,10 @@ const gradient = computed(() => {
 
 <template>
   <span
-    class="dp-avatar inline-flex size-[var(--dp-avatar-size,32px)] flex-none items-center justify-center overflow-hidden rounded-md text-[length:calc(var(--dp-avatar-size,32px)*0.42)] leading-none font-semibold text-white select-none"
+    class="dp-avatar inline-flex size-[var(--dp-avatar-size,32px)] flex-none items-center justify-center overflow-hidden rounded-md text-[calc(var(--dp-avatar-size,32px)*0.42)] leading-none font-semibold text-white select-none"
     :class="
       neutral
-        ? 'dp-avatar--neutral bg-neutral-400 [text-shadow:none]'
+        ? 'dp-avatar--neutral bg-neutral-400 text-shadow-none'
         : '[text-shadow:0_1px_2px_rgba(0,0,0,0.2)]'
     "
     :style="neutral ? undefined : { background: gradient }"

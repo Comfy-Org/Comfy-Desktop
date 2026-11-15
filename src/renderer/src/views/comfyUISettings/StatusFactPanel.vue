@@ -221,7 +221,7 @@ const groups = computed<FactGroup[]>(() => {
 </script>
 
 <template>
-  <div class="status-fact-panel flex max-w-[720px] flex-col gap-3">
+  <div class="status-fact-panel flex max-w-180 flex-col gap-3">
     <header v-if="installation && !hideHero" class="status-fact-hero mb-1 flex flex-col gap-1.5">
       <div class="status-fact-hero-title-row flex flex-wrap items-center gap-2">
         <InlineNameEdit prefix="status-fact-hero" :name="installation.name" :on-rename="onRename" />
@@ -237,7 +237,7 @@ const groups = computed<FactGroup[]>(() => {
     <section
       v-for="group in groups"
       :key="group.id"
-      class="status-fact-group flex flex-col rounded-[14px] bg-card px-[18px] pt-1.5 pb-2"
+      class="status-fact-group flex flex-col rounded-shell bg-card px-4.5 pt-1.5 pb-2"
     >
       <h3
         class="status-fact-group-title mt-2 mb-1 text-[11px] font-semibold tracking-[0.04em] text-text-muted uppercase opacity-70"
@@ -253,12 +253,12 @@ const groups = computed<FactGroup[]>(() => {
           <dt class="m-0 text-[12px] leading-4 text-text-muted">{{ row.label }}</dt>
           <dd
             v-if="isUrlRow(row)"
-            class="m-0 flex min-w-0 items-center justify-start gap-1.5 text-left text-[13px] leading-[19px] text-neutral-100 status-fact-url-dd flex-wrap gap-y-1"
+            class="m-0 flex min-w-0 items-center justify-start gap-1.5 text-left text-[13px] leading-4.75 text-neutral-100 status-fact-url-dd flex-wrap gap-y-1"
           >
             <span class="status-fact-url-edit inline-flex min-w-0 max-w-full items-center gap-1.5">
               <span
                 ref="urlEl"
-                class="status-fact-value min-w-0 truncate status-fact-url-editable -ml-1.5 cursor-text rounded-md px-1.5 py-0.5 text-left outline-none transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] focus-visible:overflow-visible focus-visible:text-clip"
+                class="status-fact-value min-w-0 truncate status-fact-url-editable -ml-1.5 cursor-text rounded-md px-1.5 py-0.5 text-left outline-none transition-[background-color] duration-120 ease-[ease] hover:bg-(--brand-surface-bg-hover) focus-visible:bg-(--brand-surface-bg-hover) focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))] focus-visible:overflow-visible focus-visible:text-clip"
                 role="textbox"
                 :aria-label="t('statusFactPanel.editUrl')"
                 contenteditable="plaintext-only"
@@ -272,7 +272,7 @@ const groups = computed<FactGroup[]>(() => {
                 variant="textonly"
                 size="unset"
                 type="button"
-                class="status-fact-url-edit-btn static inline-flex size-[22px] shrink-0 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted opacity-60 appearance-auto transition-[opacity,background-color,color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-text hover:opacity-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-0"
+                class="status-fact-url-edit-btn static inline-flex size-5.5 shrink-0 items-center justify-center rounded-md border-none bg-transparent p-0 text-text-muted opacity-60 appearance-auto transition-[opacity,background-color,color] duration-120 ease-[ease] hover:bg-(--brand-surface-bg-hover) hover:text-text hover:opacity-100 focus-visible:bg-(--brand-surface-bg-hover) focus-visible:text-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-0"
                 :aria-label="t('statusFactPanel.editUrl')"
                 :title="t('statusFactPanel.editUrl')"
                 @click="urlEdit.focus"
@@ -282,7 +282,7 @@ const groups = computed<FactGroup[]>(() => {
             </span>
             <span
               v-if="showUrlRestart"
-              class="status-fact-restart-tag flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+              class="status-fact-restart-tag flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-3.5 font-medium tracking-[0.02em] whitespace-nowrap text-(--warning) uppercase"
               role="status"
             >
               {{ t('statusFactPanel.restartToApply') }}
@@ -290,14 +290,14 @@ const groups = computed<FactGroup[]>(() => {
           </dd>
           <dd
             v-else
-            class="m-0 flex min-w-0 items-center justify-start gap-1.5 text-left text-[13px] leading-[19px] text-neutral-100"
+            class="m-0 flex min-w-0 items-center justify-start gap-1.5 text-left text-[13px] leading-4.75 text-neutral-100"
           >
             <Button
               v-if="row.openable"
               variant="textonly"
               size="unset"
               type="button"
-              class="status-fact-value min-w-0 truncate status-fact-value-open static inline-block rounded-lg border-none bg-transparent p-0 [font:inherit] text-inherit appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+              class="status-fact-value min-w-0 truncate status-fact-value-open static inline-block rounded-lg border-none bg-transparent p-0 [font:inherit] text-inherit appearance-auto hover:bg-transparent hover:text-(--action) hover:underline focus-visible:text-(--action) focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
               :class="{ 'is-truncate-start [direction:rtl] text-left': row.truncate === 'start' }"
               :title="t('models.openDir')"
               @click="openPath(row.value)"

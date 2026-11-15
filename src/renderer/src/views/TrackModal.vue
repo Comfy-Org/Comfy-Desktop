@@ -268,7 +268,7 @@ defineExpose({ open })
         type="button"
         size="lg"
         variant="inverted"
-        class="track-save h-9 min-w-[104px] rounded-[10px]"
+        class="track-save h-9 min-w-26 rounded-[10px]"
         :disabled="saveDisabled"
         @click="handleSave"
       >

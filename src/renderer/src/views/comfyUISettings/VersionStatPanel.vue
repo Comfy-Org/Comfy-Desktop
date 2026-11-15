@@ -50,7 +50,7 @@ function isRunning(id: string): boolean {
         }}</span>
         <span
           class="channel-picker-headline-version"
-          :class="{ 'is-update-available text-[var(--action)]': headlineHighlight }"
+          :class="{ 'is-update-available text-(--action)': headlineHighlight }"
           >{{ headline }}</span
         >
       </p>
@@ -59,8 +59,8 @@ function isRunning(id: string): boolean {
         class="version-stat-badge shrink-0 rounded-[999px] px-2 py-0.5 text-[11px] leading-4 font-medium channel-picker-badge"
         :class="
           badgeTone === 'update'
-            ? 'update text-[var(--action)] bg-[color-mix(in_srgb,var(--action)_12%,transparent)]'
-            : 'current text-[var(--success,#4ade80)] bg-[color-mix(in_srgb,var(--success,#4ade80)_12%,transparent)]'
+            ? 'update text-(--action) bg-[color-mix(in_srgb,var(--action)_12%,transparent)]'
+            : 'current text-(--success,#4ade80) bg-[color-mix(in_srgb,var(--success,#4ade80)_12%,transparent)]'
         "
         >{{ badge }}</span
       >
@@ -68,7 +68,7 @@ function isRunning(id: string): boolean {
 
     <dl
       v-if="rows.length > 0 || actions.length > 0"
-      class="version-stat-rows m-0 flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-1"
+      class="version-stat-rows m-0 flex flex-col rounded-lg border border-solid border-(--chooser-surface-border) bg-(--brand-surface-bg) px-3 py-1"
     >
       <div
         v-for="row in rows"
@@ -78,8 +78,8 @@ function isRunning(id: string): boolean {
       >
         <dt class="m-0 text-[12px] leading-4 text-text-muted">{{ row.label }}</dt>
         <dd
-          class="m-0 text-right text-[13px] leading-[19px]"
-          :class="row.highlight ? 'font-medium text-[var(--action)]' : 'text-neutral-100'"
+          class="m-0 text-right text-[13px] leading-4.75"
+          :class="row.highlight ? 'font-medium text-(--action)' : 'text-neutral-100'"
           :title="row.title"
         >
           {{ row.value }}
@@ -98,11 +98,11 @@ function isRunning(id: string): boolean {
           :button-class="actionButtonClass(action)"
           :variant-class="
             action.style === 'primary'
-              ? 'border-[var(--action)] text-background font-semibold enabled:hover:bg-[var(--accent-hover)] enabled:hover:border-[var(--accent-hover)] enabled:hover:focus-visible:bg-[var(--accent-hover)]'
-              : 'border-[var(--chooser-surface-border)] text-neutral-100 font-medium'
+              ? 'border-(--action) text-background font-semibold enabled:hover:bg-accent-hover enabled:hover:border-accent-hover enabled:hover:focus-visible:bg-accent-hover'
+              : 'border-(--chooser-surface-border) text-neutral-100 font-medium'
           "
           tooltip-class="version-stat-action-tooltip flex-none"
-          spinner-class="version-stat-action-spinner flex-none animate-spin [animation-duration:0.9s]"
+          spinner-class="version-stat-action-spinner flex-none animate-spin animation-duration-[0.9s]"
           disable-with-message
           direct-style-class
           @action="emit('action', action)"

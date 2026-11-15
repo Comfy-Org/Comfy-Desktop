@@ -48,7 +48,7 @@ const titleId = `view-modal-title-${useId()}`
   >
     <div
       :id="$slots.header ? titleId : undefined"
-      class="view-modal-header flex shrink-0 items-center gap-3 border-b border-solid border-[var(--border)] px-5 py-4"
+      class="view-modal-header flex shrink-0 items-center gap-3 border-b border-solid border-border px-5 py-4"
     >
       <slot name="header">
         <div
@@ -75,7 +75,7 @@ const titleId = `view-modal-title-${useId()}`
     </div>
     <div
       v-if="$slots.footer"
-      class="view-modal-footer shrink-0 border-t border-solid border-[var(--border)] px-5 py-3 [&_.view-bottom]:pt-0"
+      class="view-modal-footer shrink-0 border-t border-solid border-border px-5 py-3 [&_.view-bottom]:pt-0"
     >
       <slot name="footer" />
     </div>

@@ -26,13 +26,13 @@ import type { ProgressStepVM } from '../lib/progressViewModel'
 import { TID } from '../../../shared/testIds'
 
 const footerButtonClass =
-  'brand-progress__footer-btn static inline-flex min-w-auto appearance-auto items-center justify-center gap-1.5 rounded-md border border-solid px-3.5 py-[7px] font-sans text-[13px] leading-[inherit] font-medium whitespace-nowrap touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 [@media(max-width:720px)]:px-2.5 [@media(max-width:720px)]:py-1.5 [@media(max-width:720px)]:text-[12px]'
+  'brand-progress__footer-btn static inline-flex min-w-auto appearance-auto items-center justify-center gap-1.5 rounded-md border border-solid px-3.5 py-1.75 font-sans text-[13px] leading-[inherit] font-medium whitespace-nowrap touch-auto transition-[background,border-color,color] duration-120 ease-[ease] [&]:[appearance:button] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-2 disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-55 [@media(max-width:720px)]:px-2.5 [@media(max-width:720px)]:py-1.5 [@media(max-width:720px)]:text-[12px]'
 const secondaryClass =
-  'border-neutral-500 bg-transparent text-neutral-100 enabled:hover:bg-[var(--brand-surface-bg)] enabled:hover:text-neutral-100'
+  'border-neutral-500 bg-transparent text-neutral-100 enabled:hover:bg-(--brand-surface-bg) enabled:hover:text-neutral-100'
 const primaryClass =
-  'rounded-[var(--radius-control)] border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
+  'rounded-control border-comfy-yellow bg-comfy-yellow text-neutral-900 enabled:hover:border-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] enabled:hover:bg-[color-mix(in_srgb,var(--comfy-yellow)_88%,#000)] disabled:hover:bg-comfy-yellow focus-visible:outline-[color-mix(in_srgb,var(--comfy-yellow)_80%,var(--neutral-100))]'
 const dangerClass =
-  'brand-progress__footer-btn--danger hover:border-[var(--semantic-danger,#ff7a7a)] focus-visible:border-[var(--semantic-danger,#ff7a7a)] focus-visible:bg-[color-mix(in_srgb,var(--semantic-danger,#ff7a7a)_14%,transparent)] hover:focus-visible:bg-[var(--brand-surface-bg)]'
+  'brand-progress__footer-btn--danger hover:border-(--semantic-danger,#ff7a7a) focus-visible:border-(--semantic-danger,#ff7a7a) focus-visible:bg-[color-mix(in_srgb,var(--semantic-danger,#ff7a7a)_14%,transparent)] hover:focus-visible:bg-(--brand-surface-bg)'
 
 interface Props {
   installationId: string | null
@@ -574,24 +574,24 @@ defineExpose({ startOperation, showOperation })
       />
     </template>
     <div
-      class="brand-progress relative flex w-full flex-auto items-center justify-center self-stretch pb-[clamp(88px,12vh,148px)] before:pointer-events-none before:absolute before:top-1/2 before:left-1/2 before:z-1 before:size-[clamp(340px,48vw,760px)] before:rounded-[50%] before:bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--neutral-950)_58%,transparent)_0%,color-mix(in_srgb,var(--neutral-950)_28%,transparent)_32%,color-mix(in_srgb,var(--neutral-950)_9%,transparent)_56%,transparent_76%)] before:content-[''] before:[filter:blur(40px)] before:[transform:translate(-50%,-50%)]"
+      class="brand-progress relative flex w-full flex-auto items-center justify-center self-stretch pb-[clamp(88px,12vh,148px)] before:pointer-events-none before:absolute before:top-1/2 before:left-1/2 before:z-1 before:size-[clamp(340px,48vw,760px)] before:rounded-[50%] before:bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--neutral-950)_58%,transparent)_0%,color-mix(in_srgb,var(--neutral-950)_28%,transparent)_32%,color-mix(in_srgb,var(--neutral-950)_9%,transparent)_56%,transparent_76%)] before:content-[''] before:filter-[blur(40px)] before:transform-[translate(-50%,-50%)]"
     >
       <BrandProgressGlyph
-        class="brand-progress__glyph pointer-events-none absolute top-1/2 left-[60%] z-0 h-screen w-auto opacity-90 [transform:translate(-50%,-50%)]"
+        class="brand-progress__glyph pointer-events-none absolute top-1/2 left-[60%] z-0 h-screen w-auto opacity-90 transform-[translate(-50%,-50%)]"
         aria-hidden="true"
       />
       <div
         class="brand-progress__stack relative z-2 flex w-[min(85%,880px)] max-w-[calc(100vw-48px)] flex-col items-center gap-[clamp(0.75rem,1.8vh,1.125rem)] overflow-visible text-center"
       >
         <div
-          class="brand-progress__plate relative isolate w-full before:pointer-events-none before:absolute before:top-[46%] before:left-1/2 before:-z-1 before:h-[min(340%,34rem)] before:w-[min(148%,38rem)] before:rounded-[50%] before:bg-[radial-gradient(ellipse_at_center,color-mix(in_srgb,var(--neutral-800)_58%,transparent)_0%,color-mix(in_srgb,var(--neutral-800)_38%,transparent)_34%,transparent_62%)] before:content-[''] before:[transform:translate(-50%,-50%)]"
+          class="brand-progress__plate relative isolate w-full before:pointer-events-none before:absolute before:top-[46%] before:left-1/2 before:-z-1 before:h-[min(340%,34rem)] before:w-[min(148%,38rem)] before:rounded-[50%] before:bg-[radial-gradient(ellipse_at_center,color-mix(in_srgb,var(--neutral-800)_58%,transparent)_0%,color-mix(in_srgb,var(--neutral-800)_38%,transparent)_34%,transparent_62%)] before:content-[''] before:transform-[translate(-50%,-50%)]"
         >
           <div
             class="brand-progress__core relative z-1 flex w-full flex-col items-center gap-[clamp(0.75rem,1.8vh,1.125rem)]"
           >
             <div
               v-if="showScene"
-              class="brand-progress__scene relative aspect-[1056/784] w-[min(52vw,620px)] overflow-hidden rounded-2xl"
+              class="brand-progress__scene relative aspect-1056/784 w-[min(52vw,620px)] overflow-hidden rounded-2xl"
             >
               <BrandSceneAnimation />
             </div>
@@ -599,7 +599,7 @@ defineExpose({ startOperation, showOperation })
             <template v-if="!currentOp.finished || isChainHandoff">
               <div class="brand-progress__bar-wrap flex w-full flex-col gap-1">
                 <div
-                  class="brand-progress__bar h-[5.079px] w-full overflow-hidden rounded-2xl bg-[var(--brand-surface-bg)]"
+                  class="brand-progress__bar h-[5.079px] w-full overflow-hidden rounded-2xl bg-(--brand-surface-bg)"
                 >
                   <div
                     class="brand-progress__bar-fill h-full rounded-[inherit] bg-comfy-yellow transition-[width] duration-420 ease-[cubic-bezier(0.33,0,0.2,1)] motion-reduce:transition-none"
@@ -621,13 +621,13 @@ defineExpose({ startOperation, showOperation })
               mode="out-in"
               enter-active-class="brand-caption-fade-enter-active transition-[opacity,transform] duration-180 ease-[ease] motion-reduce:duration-0"
               leave-active-class="brand-caption-fade-leave-active transition-[opacity,transform] duration-180 ease-[ease] motion-reduce:duration-0"
-              enter-from-class="brand-caption-fade-enter-from opacity-0 [transform:translateY(4px)] motion-reduce:[transform:none]"
-              leave-to-class="brand-caption-fade-leave-to opacity-0 [transform:translateY(-4px)] motion-reduce:[transform:none]"
+              enter-from-class="brand-caption-fade-enter-from opacity-0 transform-[translateY(4px)] motion-reduce:transform-none"
+              leave-to-class="brand-caption-fade-leave-to opacity-0 transform-[translateY(-4px)] motion-reduce:transform-none"
             >
               <div
                 v-if="isPortConflictOpen"
                 key="finished-port-conflict"
-                class="brand-progress__banner inline-flex min-h-[1.5em] items-center gap-2.5 text-[length:var(--takeover-fs-body)] tracking-[0.01em] text-neutral-200 [&_svg]:flex-none brand-progress__banner--error [&]:text-[var(--semantic-danger,#ff7a7a)]"
+                class="brand-progress__banner inline-flex min-h-[1.5em] items-center gap-2.5 text-[length:var(--takeover-fs-body)] tracking-[0.01em] text-neutral-200 [&_svg]:flex-none brand-progress__banner--error [&]:text-(--semantic-danger,#ff7a7a)"
                 :data-testid="TID.progressPortConflictBanner"
                 aria-live="polite"
               >
@@ -651,9 +651,9 @@ defineExpose({ startOperation, showOperation })
                 }`"
                 class="brand-progress__banner inline-flex min-h-[1.5em] items-center gap-2.5 text-[length:var(--takeover-fs-body)] tracking-[0.01em] text-neutral-200 [&_svg]:flex-none"
                 :class="{
-                  'brand-progress__banner--success [&]:text-[var(--semantic-success,var(--neutral-50))]':
+                  'brand-progress__banner--success [&]:text-(--semantic-success,var(--neutral-50))':
                     !currentOp.cancelRequested && currentOp.result?.ok,
-                  'brand-progress__banner--error [&]:text-[var(--semantic-danger,#ff7a7a)]':
+                  'brand-progress__banner--error [&]:text-(--semantic-danger,#ff7a7a)':
                     !currentOp.cancelRequested && !!currentOp.error,
                   'brand-progress__banner--cancelled [&]:text-neutral-300':
                     currentOp.cancelRequested
@@ -677,7 +677,7 @@ defineExpose({ startOperation, showOperation })
 
             <div
               v-if="!currentOp.finished || isChainHandoff"
-              class="brand-progress__status absolute top-[calc(100%+0.625rem)] left-1/2 z-1 w-full [transform:translateX(-50%)]"
+              class="brand-progress__status absolute top-[calc(100%+0.625rem)] left-1/2 z-1 w-full transform-[translateX(-50%)]"
             >
               <Transition
                 name="brand-status-fade"
@@ -739,10 +739,10 @@ defineExpose({ startOperation, showOperation })
 
         <div
           v-if="finishedErrorMessage"
-          class="brand-progress__error-row -mt-1 flex w-full max-w-[640px] items-start gap-2"
+          class="brand-progress__error-row -mt-1 flex w-full max-w-160 items-start gap-2"
         >
           <div
-            class="brand-progress__error-message mt-0 max-h-[clamp(120px,22vh,240px)] w-full max-w-[640px] flex-auto overflow-y-auto overscroll-contain rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-3.5 py-3 text-left text-[13px] leading-[1.55] whitespace-pre-wrap text-neutral-200 select-text [word-break:break-word]"
+            class="brand-progress__error-message mt-0 max-h-[clamp(120px,22vh,240px)] w-full max-w-160 flex-auto overflow-y-auto overscroll-contain rounded-lg border border-solid border-(--brand-surface-border) bg-(--brand-surface-bg) px-3.5 py-3 text-left text-[13px] leading-[1.55] whitespace-pre-wrap text-neutral-200 select-text [word-break:break-word]"
             :data-testid="TID.progressErrorMessage"
           >
             {{ finishedErrorMessage }}
@@ -761,7 +761,7 @@ defineExpose({ startOperation, showOperation })
             !currentOp.cancelRequested &&
             !isPortConflictOpen
           "
-          class="brand-progress__error-actions flex w-full max-w-[420px] flex-row items-stretch gap-3 [&>.brand-progress\_\_footer-btn]:flex-1 [&>.brand-progress\_\_footer-btn]:justify-center"
+          class="brand-progress__error-actions flex w-full max-w-105 flex-row items-stretch gap-3 [&>.brand-progress\_\_footer-btn]:flex-1 [&>.brand-progress\_\_footer-btn]:justify-center"
         >
           <Button
             size="unset"
@@ -794,19 +794,19 @@ defineExpose({ startOperation, showOperation })
     <template #footer>
       <div
         v-if="currentOp"
-        class="brand-progress__footer pointer-events-none absolute top-[clamp(72px,14vh,160px)] right-[clamp(16px,2.5vw,32px)] bottom-[clamp(16px,2.5vh,32px)] left-[clamp(16px,2.5vw,32px)] z-3 flex min-h-0 flex-col justify-end gap-2 [&>*]:pointer-events-auto"
+        class="brand-progress__footer pointer-events-none absolute top-[clamp(72px,14vh,160px)] right-[clamp(16px,2.5vw,32px)] bottom-[clamp(16px,2.5vh,32px)] left-[clamp(16px,2.5vw,32px)] z-3 flex min-h-0 flex-col justify-end gap-2 *:pointer-events-auto"
       >
         <BaseAccordion
           v-if="currentOp.terminalOutput"
           :open="brandLogsExpanded"
           class="brand-progress__logs-wrap min-h-0 overflow-hidden rounded-[10px]"
           :class="{
-            'is-expanded border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] backdrop-blur-[8px]':
+            'is-expanded border border-solid border-(--brand-surface-border) bg-(--brand-surface-bg) backdrop-blur-sm':
               brandLogsExpanded
           }"
         >
           <div
-            class="brand-progress__logs-panel-header flex items-center justify-between border-b border-solid border-[var(--brand-surface-border)] px-3 py-2"
+            class="brand-progress__logs-panel-header flex items-center justify-between border-b border-solid border-(--brand-surface-border) px-3 py-2"
           >
             <span
               class="brand-progress__logs-panel-title text-[length:var(--takeover-fs-caption,12px)] font-medium text-neutral-200"
@@ -922,8 +922,8 @@ defineExpose({ startOperation, showOperation })
               class="brand-progress__logs-chevron transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)]"
               :class="
                 brandLogsExpanded
-                  ? 'is-open [transform:rotate(0deg)]'
-                  : '[transform:rotate(180deg)]'
+                  ? 'is-open transform-[rotate(0deg)]'
+                  : 'transform-[rotate(180deg)]'
               "
             />
             {{ $t('launch.viewLogs') }}

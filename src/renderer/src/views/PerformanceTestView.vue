@@ -289,7 +289,7 @@ async function exportResultsImage(): Promise<void> {
             <template v-else-if="workflow.example.download">
               <span class="truncate">{{ workflow.example.download.message }}</span>
               <span
-                class="performance-test__example-download-bar block h-[3px] w-36 flex-none overflow-hidden rounded-[2px] bg-white/10"
+                class="performance-test__example-download-bar block h-0.75 w-36 flex-none overflow-hidden rounded-xs bg-white/10"
                 role="progressbar"
                 :aria-valuenow="
                   workflow.example.download.percent >= 0
@@ -302,7 +302,7 @@ async function exportResultsImage(): Promise<void> {
               >
                 <span
                   v-if="workflow.example.download.percent >= 0"
-                  class="block h-full rounded-[inherit] bg-neutral-100 transition-[width] duration-[400ms]"
+                  class="block h-full rounded-[inherit] bg-neutral-100 transition-[width] duration-400"
                   :style="{ width: `${workflow.example.download.percent}%` }"
                 />
                 <span
@@ -353,7 +353,7 @@ async function exportResultsImage(): Promise<void> {
                   {{ exportResultsError }}
                 </span>
                 <Button
-                  class="performance-test__open-results h-[30px] gap-1.5 rounded-lg px-2 text-[12.5px]/5 font-normal"
+                  class="performance-test__open-results h-7.5 gap-1.5 rounded-lg px-2 text-[12.5px]/5 font-normal"
                   variant="muted-textonly"
                   size="unset"
                   type="button"
@@ -367,7 +367,7 @@ async function exportResultsImage(): Promise<void> {
                 </Button>
                 <Button
                   v-if="canExport"
-                  class="performance-test__export-results h-[30px] gap-1.5 rounded-lg px-2 text-[12.5px]/5 font-normal"
+                  class="performance-test__export-results h-7.5 gap-1.5 rounded-lg px-2 text-[12.5px]/5 font-normal"
                   variant="muted-textonly"
                   size="unset"
                   type="button"
@@ -397,7 +397,7 @@ async function exportResultsImage(): Promise<void> {
                     {{ t('performanceTest.runFailedTitle') }}
                   </p>
                   <p
-                    class="performance-test__failure-message m-0 line-clamp-2 [overflow-wrap:anywhere]"
+                    class="performance-test__failure-message m-0 line-clamp-2 wrap-anywhere"
                     :title="run.failure"
                   >
                     {{ run.failure }}

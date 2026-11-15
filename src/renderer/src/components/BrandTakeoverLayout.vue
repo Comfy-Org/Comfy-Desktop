@@ -28,14 +28,14 @@ const emit = defineEmits<{ close: [] }>()
     @close="emit('close')"
   >
     <BrandBackground takeover :scroll-content="scrollContent">
-      <div class="brand-logo-row absolute top-0 left-0 z-2 flex items-center px-[15px] py-4">
+      <div class="brand-logo-row absolute top-0 left-0 z-2 flex items-center px-3.75 py-4">
         <ComfyCLogo
           class="brand-logo inline-flex size-[var(--takeover-logo-size)] text-comfy-yellow"
         />
       </div>
       <div
         v-if="$slots['logo-right']"
-        class="brand-logo-row brand-logo-row--right absolute top-0 right-0 z-2 flex max-w-[min(60vw,680px)] items-center justify-end py-4 pr-[clamp(16px,2.5vw,32px)] pl-[15px] [&>*]:flex [&>*]:min-h-[var(--takeover-logo-size)] [&>*]:items-center"
+        class="brand-logo-row brand-logo-row--right absolute top-0 right-0 z-2 flex max-w-[min(60vw,680px)] items-center justify-end py-4 pr-[clamp(16px,2.5vw,32px)] pl-3.75 *:flex [&>*]:min-h-[var(--takeover-logo-size)] *:items-center"
       >
         <slot name="logo-right" />
       </div>

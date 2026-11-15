@@ -94,14 +94,14 @@ onUnmounted(() => unsubscribeSettings?.())
         type="button"
         variant="muted-textonly"
         size="unset"
-        class="build-details-back mt-6 mb-3.5 -ml-2 h-[26px] w-fit gap-1.5 rounded-lg px-2 text-[13px] hover:bg-secondary hover:text-foreground"
+        class="build-details-back mt-6 mb-3.5 -ml-2 h-6.5 w-fit gap-1.5 rounded-lg px-2 text-[13px] hover:bg-secondary hover:text-foreground"
         @click="emit('back')"
       >
         <ArrowLeft :size="14" aria-hidden="true" />
         {{ t('chooser.buildsTitle') }}
       </Button>
 
-      <header class="flex shrink-0 flex-wrap items-center gap-x-[18px] gap-y-3 pb-6">
+      <header class="flex shrink-0 flex-wrap items-center gap-x-4.5 gap-y-3 pb-6">
         <div class="min-w-0 flex-1 basis-60">
           <div class="flex min-w-0 items-center gap-2">
             <h1

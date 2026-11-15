@@ -110,6 +110,7 @@
     "electron-vite": "^6.0.0",
     "eslint": "^10.15.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-better-tailwindcss": "^4.11.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "eslint-plugin-vue": "^10.12.1",
     "globals": "^17.14.0",

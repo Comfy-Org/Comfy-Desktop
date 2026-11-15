@@ -64,13 +64,13 @@ function segmentClass(run: number): string {
         <i
           v-for="run in totalRuns"
           :key="run"
-          class="block h-full flex-1 rounded-[3px] transition-colors duration-[180ms]"
+          class="block h-full flex-1 rounded-[3px] transition-colors duration-180"
           :class="segmentClass(run)"
         />
       </template>
       <span v-else class="block h-full flex-1 overflow-hidden rounded-[3px] bg-white/8">
         <i
-          class="block h-full rounded-[inherit] bg-neutral-100 transition-[width] duration-[180ms]"
+          class="block h-full rounded-[inherit] bg-neutral-100 transition-[width] duration-180"
           :style="{ width: `${progressPercent}%` }"
         />
       </span>

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { ESLint, Linter } from 'eslint'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { parser as tsParser } from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
 
@@ -120,23 +120,36 @@ describe('no new Vue style blocks', () => {
     }
   )
 
-  it('enforces the rule through the actual project ESLint configuration', async () => {
+  describe('project ESLint configuration', () => {
     const eslint = new ESLint({
       cwd: root,
       overrideConfig: {
         files: ['**/*.vue'],
-        languageOptions: { parserOptions: { projectService: false } }
+        languageOptions: { parserOptions: { projectService: false } },
+        rules: {
+          'better-tailwindcss/enforce-canonical-classes': 'off',
+          'better-tailwindcss/no-restricted-classes': 'off'
+        }
       }
     })
-    const [rejected] = await eslint.lintText('<template><div /></template>\n<style scoped/>', {
-      filePath: 'src/renderer/src/NewComponent.vue'
+
+    beforeAll(async () => {
+      await eslint.calculateConfigForFile(frozenFile)
+    }, 30_000)
+
+    it('enforces the rule through the actual project ESLint configuration', async () => {
+      const [rejected] = await eslint.lintText('<template><div /></template>\n<style scoped/>', {
+        filePath: 'src/renderer/src/NewComponent.vue'
+      })
+      expect(rejected?.messages).toEqual([
+        expect.objectContaining({ ruleId, severity: 2, line: 2 })
+      ])
+      const [accepted] = await eslint.lintText(frozenSource, { filePath: frozenFile })
+      expect(accepted?.messages.filter((message) => message.ruleId === ruleId)).toEqual([])
+      const [expanded] = await eslint.lintText(`${frozenSource}\n<style src="./new.css"/>`, {
+        filePath: frozenFile
+      })
+      expect(expanded?.messages.filter((message) => message.ruleId === ruleId)).toHaveLength(1)
     })
-    expect(rejected?.messages).toEqual([expect.objectContaining({ ruleId, severity: 2, line: 2 })])
-    const [accepted] = await eslint.lintText(frozenSource, { filePath: frozenFile })
-    expect(accepted?.messages.filter((message) => message.ruleId === ruleId)).toEqual([])
-    const [expanded] = await eslint.lintText(`${frozenSource}\n<style src="./new.css"/>`, {
-      filePath: frozenFile
-    })
-    expect(expanded?.messages.filter((message) => message.ruleId === ruleId)).toHaveLength(1)
   })
 })

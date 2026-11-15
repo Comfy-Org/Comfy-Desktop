@@ -1,5 +1,6 @@
 import pluginJs from '@eslint/js'
 import eslintConfigPrettier from 'eslint-config-prettier'
+import betterTailwindcss from 'eslint-plugin-better-tailwindcss'
 import unusedImports from 'eslint-plugin-unused-imports'
 import pluginVue from 'eslint-plugin-vue'
 import { defineConfig } from 'eslint/config'
@@ -73,6 +74,65 @@ export default defineConfig([
   tseslintConfigs.recommended,
   pluginVue.configs['flat/recommended'],
   eslintConfigPrettier,
+  {
+    files: ['./src/renderer/**/*.{ts,vue}'],
+    plugins: { 'better-tailwindcss': betterTailwindcss },
+    settings: {
+      'better-tailwindcss': {
+        cwd: import.meta.dirname,
+        entryPoint: './src/renderer/src/assets/main.css',
+        rootFontSize: 16,
+        selectors: {
+          extends: [
+            {
+              kind: 'attribute',
+              name: '^(?:v-bind:)?[\\w-]+(?:-class|Class)$',
+              match: [{ type: 'strings' }, { type: 'objectKeys' }]
+            },
+            {
+              kind: 'variable',
+              name: '^.*(?:Class(?:es|Names?)?|_CLASS(?:ES|_NAMES?)?)$',
+              match: [{ type: 'strings' }, { type: 'objectKeys' }, { type: 'objectValues' }]
+            }
+          ]
+        }
+      }
+    },
+    rules: {
+      'better-tailwindcss/enforce-canonical-classes': [
+        'error',
+        {
+          collapse: false,
+          logical: false,
+          ignore: [
+            '(?:^|:)text-\\[length:var\\(',
+            '(?:^|:)\\[font-family:',
+            '(?:^|:)font-\\[family-name:',
+            '(?:^|:)font-\\[(?:family-name:)?var\\(',
+            '(?:^|:)(?:size|(?:min-|max-)?[wh]|gap(?:-[xy])?)-\\[var\\('
+          ]
+        }
+      ],
+      'better-tailwindcss/no-restricted-classes': [
+        'error',
+        {
+          restrict: [
+            {
+              pattern:
+                '^(.*:)?(bg|text|border(?:-[trbl])?|outline)-\\(--(bg|text(?:-muted)?|surface|border(?:-hover)?|danger(?:-hover)?|accent-hover|selected|terminal-bg|comfy-yellow|focus-ring|neutral-(?:50|100|200|300|400|500|600|700|800|900|950))\\)(/[^!]+)?(!?)$',
+              fix: '$1$2-$3$4$5',
+              message: 'Use the equivalent theme utility $1$2-$3$4$5.'
+            },
+            {
+              pattern: '^(.*:)?rounded-\\(--radius-(shell|panel|card|control|min)\\)(!?)$',
+              fix: '$1rounded-$2$3',
+              message: 'Use the equivalent theme utility $1rounded-$2$3.'
+            }
+          ]
+        }
+      ]
+    }
+  },
   {
     plugins: {
       desktop,

@@ -54,7 +54,7 @@ const { t } = useI18n()
           variant="textonly"
           size="unset"
           type="button"
-          class="empm-refresh static ml-auto inline-flex size-7 items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-[1.5] text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] hover:text-neutral-100 focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
+          class="empm-refresh static ml-auto inline-flex size-7 items-center justify-center rounded-md border border-solid border-transparent bg-transparent p-0 font-normal leading-normal text-text-muted appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-(--brand-surface-bg-hover) hover:text-neutral-100 focus-visible:bg-(--brand-surface-bg-hover) focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
           :aria-label="t('comfyUISettings.refreshCustomPaths')"
           :title="t('comfyUISettings.refreshCustomPaths')"
           @click="emit('refresh')"
@@ -83,7 +83,7 @@ const { t } = useI18n()
         <span class="empm-section-title text-[13px] font-semibold">{{ section.name }}</span>
         <span
           v-if="section.isDefault"
-          class="empm-tag inline-flex flex-none items-center gap-0.5 rounded-[999px] border border-solid border-[var(--chooser-surface-border)] bg-[color-mix(in_srgb,var(--text)_6%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-text-muted uppercase"
+          class="empm-tag inline-flex flex-none items-center gap-0.5 rounded-[999px] border border-solid border-(--chooser-surface-border) bg-[color-mix(in_srgb,var(--text)_6%,transparent)] px-1.5 py-px text-[10px] leading-3.5 font-medium tracking-[0.02em] text-text-muted uppercase"
         >
           {{ t('common.default') }}
           <InfoTooltip :text="t('tooltips.extraModelPathsDefault')" />
@@ -94,10 +94,10 @@ const { t } = useI18n()
         variant="textonly"
         size="unset"
         type="button"
-        class="empm-base-path static mb-1.5 inline-block max-w-full truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal font-mono appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+        class="empm-base-path static mb-1.5 inline-block max-w-full truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-normal font-normal font-mono appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
         :class="
           section.basePathExists
-            ? 'text-text-muted hover:text-[var(--action)] focus-visible:text-[var(--action)]'
+            ? 'text-text-muted hover:text-(--action) focus-visible:text-(--action)'
             : 'is-missing text-danger hover:text-danger focus-visible:text-danger'
         "
         :title="
@@ -111,24 +111,24 @@ const { t } = useI18n()
       </Button>
 
       <ul
-        class="empm-dirs m-0 flex list-none flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-0"
+        class="empm-dirs m-0 flex list-none flex-col rounded-lg border border-solid border-(--chooser-surface-border) bg-(--brand-surface-bg) p-0"
       >
         <li
           v-for="(d, i) in section.dirs"
           :key="`${d.rawType}-${i}`"
           class="empm-dir flex min-w-0 items-center gap-2 border-t border-solid border-border-hover px-2.5 py-2 first:border-t-0"
         >
-          <span class="empm-dir-type min-w-[92px] flex-none text-[11px] font-semibold opacity-85">{{
+          <span class="empm-dir-type min-w-23 flex-none text-[11px] font-semibold opacity-85">{{
             d.rawType
           }}</span>
           <Button
             variant="textonly"
             size="unset"
             type="button"
-            class="empm-dir-path static inline-block min-w-0 max-w-full flex-[0_1_auto] truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+            class="empm-dir-path static inline-block min-w-0 max-w-full flex-[0_1_auto] truncate rounded-lg border-none bg-transparent p-0 text-left text-[12px] leading-normal font-normal appearance-auto hover:bg-transparent hover:underline focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
             :class="
               d.dirExists
-                ? 'text-neutral-100 hover:text-[var(--action)] focus-visible:text-[var(--action)]'
+                ? 'text-neutral-100 hover:text-(--action) focus-visible:text-(--action)'
                 : 'is-missing text-danger hover:text-danger focus-visible:text-danger'
             "
             :title="
@@ -149,7 +149,7 @@ const { t } = useI18n()
         variant="textonly"
         size="unset"
         type="button"
-        class="empm-action static inline-flex items-center justify-normal gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-transparent px-3 py-1.5 text-[13px] leading-[1.5] font-normal whitespace-normal text-neutral-100 appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-transparent enabled:hover:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:bg-[var(--brand-surface-bg-hover)] enabled:focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed"
+        class="empm-action static inline-flex items-center justify-normal gap-1.5 rounded-lg border border-solid border-(--chooser-surface-border) bg-transparent px-3 py-1.5 text-[13px] leading-normal font-normal whitespace-normal text-neutral-100 appearance-auto transition-[background-color,color] duration-100 ease-[ease] hover:bg-transparent enabled:hover:bg-(--brand-surface-bg-hover) enabled:focus-visible:bg-(--brand-surface-bg-hover) enabled:focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-auto disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="!yamlPath"
         @click="emit('reveal-path', yamlPath)"
       >

@@ -68,7 +68,7 @@ const detail = computed(() => {
 })
 const isLive = computed(() => !busy.value && (status === 'running' || status === 'always-on'))
 const CARD_CLASS =
-  'group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left outline-none transition-colors'
+  'group relative flex h-25 w-full items-center gap-4.5 overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-4.5 text-left outline-none transition-colors'
 </script>
 
 <template>
@@ -95,7 +95,7 @@ const CARD_CLASS =
       <span class="flex h-4 items-center gap-1.5 text-xs/4 text-muted-foreground">
         <LoaderCircle
           :size="12"
-          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+          class="shrink-0 animate-spin animation-duration-[900ms] motion-reduce:animate-none"
           aria-hidden="true"
         />
         <span class="truncate">{{ statusLabel }}</span>

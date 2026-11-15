@@ -174,7 +174,7 @@ const progressDetail = computed<string | null>(() => {
 <template>
   <div class="updates-section flex flex-col gap-3">
     <div
-      class="updates-card overflow-hidden rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)]"
+      class="updates-card overflow-hidden rounded-lg border border-solid border-(--chooser-surface-border) bg-(--brand-surface-bg)"
     >
       <div class="updates-card-body flex flex-col gap-2 px-3.5 pt-3.5 pb-3">
         <p
@@ -182,9 +182,9 @@ const progressDetail = computed<string | null>(() => {
           :class="[
             statusTone,
             statusTone === 'downloading'
-              ? 'text-[var(--accent-primary,#0b8ce9)]'
+              ? 'text-(--accent-primary,#0b8ce9)'
               : statusTone === 'update'
-                ? 'text-[var(--action)]'
+                ? 'text-(--action)'
                 : 'text-neutral-100'
           ]"
         >
@@ -197,18 +197,18 @@ const progressDetail = computed<string | null>(() => {
         >
           <span
             v-if="installedDetail"
-            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
+            class="updates-detail text-[12px] leading-4.25 text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-(--action)"
             >{{ installedDetail }}</span
           >
           <span
             v-if="lastCheckedDetail"
-            class="updates-detail text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
+            class="updates-detail text-[12px] leading-4.25 text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-(--action)"
             :title="lastCheckedDetail.title"
             >{{ lastCheckedDetail.text }}</span
           >
           <span
             v-if="latestDetail"
-            class="updates-detail is-highlight text-[12px] leading-[17px] text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-[var(--action)]"
+            class="updates-detail is-highlight text-[12px] leading-4.25 text-text-muted [&.is-highlight]:font-medium [&.is-highlight]:text-(--action)"
             >{{ latestDetail }}</span
           >
         </div>
@@ -225,13 +225,13 @@ const progressDetail = computed<string | null>(() => {
             class="updates-progress-track relative mb-4 h-1 w-full overflow-hidden rounded-[9999px]"
             :class="
               percent === null
-                ? 'indeterminate bg-[linear-gradient(90deg,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_0%,var(--accent-primary,#0b8ce9)_50%,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_100%)] [background-size:200%_100%] animate-[progress-indeterminate_1.4s_linear_infinite]'
+                ? 'indeterminate bg-[linear-gradient(90deg,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_0%,var(--accent-primary,#0b8ce9)_50%,color-mix(in_oklab,var(--neutral-100)_6%,transparent)_100%)] bg-size-[200%_100%] animate-[progress-indeterminate_1.4s_linear_infinite]'
                 : 'bg-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]'
             "
           >
             <div
               v-if="percent !== null"
-              class="updates-progress-fill absolute inset-y-0 left-0 h-full rounded bg-[var(--accent-primary,#0b8ce9)] transition-[width] duration-[120ms] ease-[ease]"
+              class="updates-progress-fill absolute inset-y-0 left-0 h-full rounded bg-(--accent-primary,#0b8ce9) transition-[width] duration-120 ease-[ease]"
               :style="{ width: percent + '%' }"
             ></div>
           </div>
@@ -243,7 +243,7 @@ const progressDetail = computed<string | null>(() => {
       </div>
 
       <div
-        class="updates-card-footer flex flex-wrap items-center justify-end gap-2 border-t border-solid border-[var(--border-hover)] px-3.5 pt-2.5 pb-3"
+        class="updates-card-footer flex flex-wrap items-center justify-end gap-2 border-t border-solid border-border-hover px-3.5 pt-2.5 pb-3"
       >
         <Button
           v-if="showSecondaryCheck"

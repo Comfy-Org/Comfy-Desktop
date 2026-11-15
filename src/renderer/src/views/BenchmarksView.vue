@@ -717,7 +717,7 @@ onActivated(() => {
                 :key="menu.key"
                 :modal="false"
                 align="start"
-                class="z-20 min-w-[180px]"
+                class="z-20 min-w-45"
               >
                 <template #trigger>
                   <Button
@@ -762,7 +762,7 @@ onActivated(() => {
               >
                 <RefreshCw
                   :size="15"
-                  :class="{ 'animate-spin [animation-duration:900ms]': loading }"
+                  :class="{ 'animate-spin animation-duration-[900ms]': loading }"
                   aria-hidden="true"
                 />
               </Button>
@@ -823,7 +823,7 @@ onActivated(() => {
 
         <div
           v-if="loading"
-          class="benchmarks__state benchmarks__state--loading flex flex-col gap-4 rounded-[14px] bg-card px-5 py-5"
+          class="benchmarks__state benchmarks__state--loading flex flex-col gap-4 rounded-shell bg-card px-5 py-5"
           :aria-label="t('common.loading')"
           aria-busy="true"
         >
@@ -917,7 +917,7 @@ onActivated(() => {
 
         <div
           v-if="selectedRuns.length > 0 || exportError"
-          class="benchmarks__selection-bar sticky bottom-6 z-30 flex w-max max-w-full items-center gap-2 self-center rounded-xl bg-neutral-100 py-1.5 pr-1.5 pl-3.5 text-[13px] text-neutral-900 shadow-[var(--shadow-popover)]"
+          class="benchmarks__selection-bar sticky bottom-6 z-30 flex w-max max-w-full items-center gap-2 self-center rounded-xl bg-neutral-100 py-1.5 pr-1.5 pl-3.5 text-[13px] text-neutral-900 shadow-(--shadow-popover)"
           role="region"
           :aria-label="t('benchmarks.selection')"
         >
@@ -934,7 +934,7 @@ onActivated(() => {
             <Button
               variant="secondary"
               size="md"
-              class="benchmarks__export-results bg-neutral-900/[0.07] text-[13px] text-neutral-900 hover:bg-neutral-900/[0.12]"
+              class="benchmarks__export-results bg-neutral-900/[0.07] text-[13px] text-neutral-900 hover:bg-neutral-900/12"
               type="button"
               :disabled="isExporting || selectedRuns.length === 0 || selectionOverLimit"
               @click="exportRuns(selectedRuns)"

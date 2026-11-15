@@ -33,7 +33,7 @@ function onCheckboxToggle(id: string, checked: boolean): void {
   <div class="mig-body flex flex-col gap-4">
     <div
       v-if="preview"
-      class="mig-summary flex flex-col gap-0.5 rounded-lg border border-solid border-[var(--brand-surface-border)] bg-[var(--brand-surface-bg)] px-4 py-3.5 [&>div+div]:border-t [&>div+div]:border-solid [&>div+div]:border-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]"
+      class="mig-summary flex flex-col gap-0.5 rounded-lg border border-solid border-(--brand-surface-border) bg-(--brand-surface-bg) px-4 py-3.5 [&>div+div]:border-t [&>div+div]:border-solid [&>div+div]:border-[color-mix(in_oklab,var(--neutral-100)_6%,transparent)]"
     >
       <div
         class="mig-summary__row flex items-baseline justify-between py-1.5 text-[length:var(--takeover-fs-body)]"
@@ -73,7 +73,7 @@ function onCheckboxToggle(id: string, checked: boolean): void {
           <li
             v-for="(item, ii) in group.items"
             :key="ii"
-            class="mig-actions-item flex items-start gap-2 text-[length:var(--takeover-fs-body)] leading-[1.5] text-neutral-200"
+            class="mig-actions-item flex items-start gap-2 text-[length:var(--takeover-fs-body)] leading-normal text-neutral-200"
           >
             <Check
               :size="14"

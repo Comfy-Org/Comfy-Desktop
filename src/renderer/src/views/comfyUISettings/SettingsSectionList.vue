@@ -218,7 +218,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       class="settings-v2-section flex flex-col"
       :class="[
         readonly
-          ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-[var(--chooser-surface-border)] bg-[var(--secondary-background)] px-3 py-1'
+          ? 'is-readonly-list gap-0 rounded-[10px] border border-solid border-(--chooser-surface-border) bg-(--secondary-background) px-3 py-1'
           : 'gap-4',
         isTwoColumn(section) &&
           '@2xl/build-settings:grid @2xl/build-settings:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] @2xl/build-settings:gap-x-12 @2xl/build-settings:gap-y-3',
@@ -234,7 +234,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
         class="settings-v2-section-head flex min-w-0 flex-col gap-1.5 @2xl/build-settings:pt-1"
       >
         <h3
-          class="settings-v2-section-title m-0 text-[13px] leading-[18px] font-semibold text-neutral-100"
+          class="settings-v2-section-title m-0 text-[13px] leading-4.5 font-semibold text-neutral-100"
         >
           {{ section.title }}
         </h3>
@@ -258,8 +258,8 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
       >
         <ChevronRight
           :size="14"
-          class="settings-v2-section-chevron text-text-muted transition-transform duration-[160ms] ease-[cubic-bezier(0.32,0.72,0,1)]"
-          :class="{ 'is-open [transform:rotate(90deg)]': !isCollapsed(section) }"
+          class="settings-v2-section-chevron text-text-muted transition-transform duration-160 ease-[cubic-bezier(0.32,0.72,0,1)]"
+          :class="{ 'is-open transform-[rotate(90deg)]': !isCollapsed(section) }"
         />
         {{ section.title }}
       </Button>
@@ -339,7 +339,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
             class="settings-v2-field"
             :class="[
               readonly
-                ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-x-4 gap-y-2 border-b border-solid border-[var(--chooser-surface-border)] px-0 py-2.5'
+                ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] items-start gap-x-4 gap-y-2 border-b border-solid border-(--chooser-surface-border) px-0 py-2.5'
                 : 'flex flex-col gap-2.5',
               {
                 'min-w-0 flex-[1_1_240px]': row.length > 1,
@@ -363,14 +363,14 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
                   <span
                     v-if="needsRestartTag(field)"
-                    class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                    class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-3.5 font-medium tracking-[0.02em] whitespace-nowrap text-(--warning) uppercase"
                     role="status"
                   >
                     {{ t('comfyUISettings.restartRequired') }}
                   </span>
                   <span
                     v-if="fieldErrorMessage(field)"
-                    class="settings-v2-field-error-tag ml-1.5 max-w-60 flex-none truncate rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] text-danger"
+                    class="settings-v2-field-error-tag ml-1.5 max-w-60 flex-none truncate rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--danger)_36%,transparent)] bg-[color-mix(in_srgb,var(--danger)_14%,transparent)] px-1.5 py-px text-[10px] leading-3.5 font-medium tracking-[0.02em] text-danger"
                     role="alert"
                     :title="fieldErrorMessage(field) ?? ''"
                   >
@@ -378,7 +378,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   </span>
                 </label>
                 <div
-                  class="settings-v2-env-notice -my-1.5 ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--chooser-surface-bg)] px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
+                  class="settings-v2-env-notice -my-1.5 ml-auto inline-flex w-fit max-w-[min(100%,320px)] flex-none items-start gap-1.5 rounded-lg border border-solid border-(--chooser-surface-border) bg-(--chooser-surface-bg) px-2 py-1.5 text-left text-[10.5px] leading-4 text-text-muted"
                   role="note"
                 >
                   <ShieldAlert
@@ -399,7 +399,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
               class="settings-v2-boolean-row flex min-h-11 items-center justify-between gap-3 py-1"
             >
               <label
-                class="settings-v2-field-label inline-flex w-fit max-w-[calc(100%_-_48px)] items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-[0_1_auto]"
+                class="settings-v2-field-label inline-flex w-fit max-w-[calc(100%-48px)] items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted flex-[0_1_auto]"
               >
                 <span class="settings-v2-field-label-text min-w-0 flex-[0_1_auto]">{{
                   field.label
@@ -407,7 +407,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
                 <span
                   v-if="needsRestartTag(field)"
-                  class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                  class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-3.5 font-medium tracking-[0.02em] whitespace-nowrap text-(--warning) uppercase"
                   role="status"
                 >
                   {{ t('comfyUISettings.restartRequired') }}
@@ -432,7 +432,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
                 <span
                   v-if="needsRestartTag(field)"
-                  class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-[14px] font-medium tracking-[0.02em] whitespace-nowrap text-[var(--warning)] uppercase"
+                  class="settings-v2-restart-tag ml-1.5 flex-none rounded-[9999px] border border-solid border-[color-mix(in_srgb,var(--warning)_36%,transparent)] bg-[color-mix(in_srgb,var(--warning)_14%,transparent)] px-1.5 py-px text-[10px] leading-3.5 font-medium tracking-[0.02em] whitespace-nowrap text-(--warning) uppercase"
                   role="status"
                 >
                   {{ t('comfyUISettings.restartRequired') }}
@@ -454,7 +454,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                   variant="textonly"
                   size="unset"
                   type="button"
-                  class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-[19px] font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-[var(--action)] hover:underline focus-visible:text-[var(--action)] focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
+                  class="settings-v2-field-readonly settings-v2-field-readonly-path settings-v2-field-readonly-open static inline-block w-full min-w-0 flex-[0_1_auto] justify-self-end truncate rounded-lg border-none bg-transparent p-0 text-right text-[13px] leading-4.75 font-normal text-neutral-100 [font-family:inherit] appearance-auto hover:bg-transparent hover:text-(--action) hover:underline focus-visible:text-(--action) focus-visible:underline focus-visible:outline-none focus-visible:ring-0"
                   :title="t('models.openDir')"
                   :aria-label="`${t('models.openDir')}: ${readonlyDisplayValue(field)}`"
                   @click="emit('open-path', readonlyDisplayValue(field))"
@@ -463,7 +463,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
                 </Button>
                 <span
                   v-else
-                  class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100 w-full text-right justify-self-end settings-v2-field-readonly-path min-w-0 flex-1 truncate"
+                  class="settings-v2-field-readonly text-[13px] leading-4.75 text-neutral-100 w-full text-right justify-self-end settings-v2-field-readonly-path min-w-0 flex-1 truncate"
                   >{{ readonlyDisplayValue(field) }}</span
                 >
                 <BaseCopyButton :value="readonlyDisplayValue(field)" />
@@ -527,7 +527,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
 
               <span
                 v-else
-                class="settings-v2-field-readonly text-[13px] leading-[19px] text-neutral-100"
+                class="settings-v2-field-readonly text-[13px] leading-4.75 text-neutral-100"
                 :class="{ 'w-full text-right justify-self-end': readonly }"
                 >{{ asString(field.value) }}</span
               >
@@ -540,7 +540,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
             >
               <ShieldAlert
                 :size="14"
-                class="settings-v2-field-description-icon mt-0.5 shrink-0 text-[var(--info,var(--neutral-100))]"
+                class="settings-v2-field-description-icon mt-0.5 shrink-0 text-(--info,var(--neutral-100))"
                 aria-hidden="true"
               />
               <span>{{ field.description }}</span>
@@ -566,7 +566,7 @@ function actionVariantClass(action: ActionDef, directStyle = true): string {
             "
             :variant-class="actionVariantClass(action, false)"
             tooltip-class="settings-v2-action-tooltip w-full"
-            spinner-class="settings-v2-action-spinner flex-none animate-spin [animation-duration:0.9s]"
+            spinner-class="settings-v2-action-spinner flex-none animate-spin animation-duration-[0.9s]"
             @action="emit('run-action', action)"
           />
         </div>

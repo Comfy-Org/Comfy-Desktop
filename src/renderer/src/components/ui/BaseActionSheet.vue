@@ -70,7 +70,7 @@ function onItemClick(value: string): void {
       </h2>
     </template>
 
-    <div class="base-action-sheet-body flex flex-col gap-3 text-sm leading-[1.5] text-text-muted">
+    <div class="base-action-sheet-body flex flex-col gap-3 text-sm leading-normal text-text-muted">
       <div v-if="message" class="base-action-sheet-message whitespace-pre-line select-text">
         {{ message }}
       </div>
@@ -92,7 +92,7 @@ function onItemClick(value: string): void {
           >
           <span
             v-if="item.description"
-            class="base-action-sheet-item-desc text-xs leading-[1.5] text-muted-foreground"
+            class="base-action-sheet-item-desc text-xs leading-normal text-muted-foreground"
           >
             {{ item.description }}
           </span>

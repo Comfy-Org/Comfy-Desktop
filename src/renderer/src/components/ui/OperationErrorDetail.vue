@@ -16,14 +16,12 @@ const { t } = useI18n()
 <template>
   <div
     class="op-error-detail relative mt-0.5 w-full"
-    :class="compact ? 'is-compact max-w-none' : 'max-w-[520px]'"
+    :class="compact ? 'is-compact max-w-none' : 'max-w-130'"
   >
     <pre
-      class="op-error-detail__text m-0 overflow-y-auto rounded-lg border border-solid border-[var(--brand-surface-border,rgba(255,255,255,0.08))] bg-[var(--brand-surface-bg,rgba(255,255,255,0.04))] text-left font-[family-name:var(--font-mono,ui-monospace,monospace)] leading-[1.45] whitespace-pre-wrap text-[var(--brand-error,#e74c3c)] [word-break:break-word] select-text"
+      class="op-error-detail__text m-0 overflow-y-auto rounded-lg border border-solid border-(--brand-surface-border,rgba(255,255,255,0.08)) bg-(--brand-surface-bg,rgba(255,255,255,0.04)) text-left font-[family-name:var(--font-mono,ui-monospace,monospace)] leading-[1.45] whitespace-pre-wrap text-(--brand-error,#e74c3c) [word-break:break-word] select-text"
       :class="
-        compact
-          ? 'max-h-40 py-2 pr-8 pl-2.5 text-[11px]'
-          : 'max-h-[200px] py-2.5 pr-[38px] pl-3 text-xs'
+        compact ? 'max-h-40 py-2 pr-8 pl-2.5 text-[11px]' : 'max-h-50 py-2.5 pr-9.5 pl-3 text-xs'
       "
       :data-testid="TID.pickerOpErrorMessage"
       >{{ props.error }}</pre>

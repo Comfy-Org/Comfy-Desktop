@@ -333,12 +333,12 @@ function handleRevealPath(path: string): void {
   <div class="storage-pane @container/build-settings flex flex-col gap-8">
     <div
       v-if="showRestartWarning"
-      class="storage-note is-warning m-0 flex items-center gap-2.5 rounded-[14px] bg-white/5 px-4 py-3 text-neutral-100"
+      class="storage-note is-warning m-0 flex items-center gap-2.5 rounded-shell bg-white/5 px-4 py-3 text-neutral-100"
       role="status"
     >
       <AlertTriangle
         :size="14"
-        class="storage-note-icon shrink-0 text-[var(--warning)]"
+        class="storage-note-icon shrink-0 text-(--warning)"
         aria-hidden="true"
       />
       <p class="storage-note-text m-0 text-[13px] leading-[1.45]">
@@ -349,7 +349,7 @@ function handleRevealPath(path: string): void {
     <BuildSettingsSection :title="t('settings.modelStorage')" :hint="t('tooltips.instanceModels')">
       <template v-if="useSharedModelsField" #actions>
         <label
-          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
+          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-4.5 text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
         >
           <span>{{ t('comfyUISettings.includeSharedDirs') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedModels')" />
@@ -375,7 +375,7 @@ function handleRevealPath(path: string): void {
             type="button"
             variant="textonly"
             size="unset"
-            class="storage-manage-link static inline-block min-w-0 gap-0 rounded-none border-none bg-transparent p-0 text-left text-[12px] leading-[1.5] font-normal whitespace-normal text-text-muted underline underline-offset-2 appearance-auto hover:bg-transparent hover:text-neutral-100 focus-visible:bg-transparent focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
+            class="storage-manage-link static inline-block min-w-0 gap-0 rounded-none border-none bg-transparent p-0 text-left text-[12px] leading-normal font-normal whitespace-normal text-text-muted underline underline-offset-2 appearance-auto hover:bg-transparent hover:text-neutral-100 focus-visible:bg-transparent focus-visible:text-neutral-100 focus-visible:outline-none focus-visible:ring-0"
             @click="handleManageSharedDirs"
           >
             {{ t('comfyUISettings.manageSharedDirs') }}
@@ -387,7 +387,7 @@ function handleRevealPath(path: string): void {
     <BuildSettingsSection :title="t('settings.inputStorage')">
       <template v-if="useSharedInputField" #actions>
         <label
-          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
+          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-4.5 text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
         >
           <span>{{ t('comfyUISettings.useSharedInput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedInput')" />
@@ -422,7 +422,7 @@ function handleRevealPath(path: string): void {
     <BuildSettingsSection :title="t('settings.outputStorage')">
       <template v-if="useSharedOutputField" #actions>
         <label
-          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-[18px] text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
+          class="storage-header-toggle flex w-full min-w-0 cursor-pointer items-center gap-1.5 text-[13px] leading-4.5 text-text-muted [&>span]:truncate [&>.bt-switch]:ml-auto"
         >
           <span>{{ t('comfyUISettings.useSharedOutput') }}</span>
           <InfoTooltip :text="t('tooltips.useSharedOutput')" />

@@ -37,15 +37,15 @@ function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
       mode="out-in"
       enter-active-class="showcase-swap-enter-active [transition:opacity_200ms_ease,transform_260ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
       leave-active-class="showcase-swap-leave-active [transition:opacity_200ms_ease,transform_260ms_cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none"
-      enter-from-class="showcase-swap-enter-from opacity-0 [transform:translateY(3px)]"
-      leave-to-class="showcase-swap-leave-to opacity-0 [transform:translateY(-3px)]"
+      enter-from-class="showcase-swap-enter-from opacity-0 transform-[translateY(3px)]"
+      leave-to-class="showcase-swap-leave-to opacity-0 transform-[translateY(-3px)]"
     >
       <p
         :key="carousel.card.value.id"
         class="showcase__line m-0 block min-w-0 overflow-hidden text-center text-[12.5px] leading-[1.35] text-ellipsis"
       >
         <span
-          class="showcase__title font-medium text-neutral-100 [text-shadow:0_1px_3px_rgba(0,0,0,0.8)] after:mx-[7px] after:font-normal after:text-neutral-600 after:content-['-']"
+          class="showcase__title font-medium text-neutral-100 [text-shadow:0_1px_3px_rgba(0,0,0,0.8)] after:mx-1.75 after:font-normal after:text-neutral-600 after:content-['-']"
           :data-testid="TID.installShowcaseTitle"
         >
           {{ $t(carousel.card.value.title) }}
@@ -61,7 +61,7 @@ function setPaused(reason: 'focus' | 'hover', paused: boolean): void {
       size="unset"
       variant="textonly"
       type="button"
-      class="showcase__cta static inline-flex appearance-auto items-center justify-normal gap-[3px] rounded-lg border-0 bg-transparent p-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-nowrap text-comfy-yellow opacity-85 touch-auto transition-opacity duration-160 ease-[ease] [&]:[appearance:button] hover:bg-transparent hover:opacity-100 hover:underline hover:underline-offset-[3px] focus-visible:rounded-[3px] focus-visible:opacity-100 focus-visible:ring-0 focus-visible:outline-2 focus-visible:[outline-style:solid] focus-visible:outline-[var(--focus-ring)] focus-visible:outline-offset-[3px] motion-reduce:transition-none"
+      class="showcase__cta static inline-flex appearance-auto items-center justify-normal gap-0.75 rounded-lg border-0 bg-transparent p-0 font-sans text-[12px] leading-[inherit] font-medium whitespace-nowrap text-comfy-yellow opacity-85 touch-auto transition-opacity duration-160 ease-[ease] [&]:[appearance:button] hover:bg-transparent hover:opacity-100 hover:underline hover:underline-offset-[3px] focus-visible:rounded-[3px] focus-visible:opacity-100 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[3px] motion-reduce:transition-none"
       :data-testid="TID.installShowcaseCloud"
       @click="emit('open-cloud')"
     >

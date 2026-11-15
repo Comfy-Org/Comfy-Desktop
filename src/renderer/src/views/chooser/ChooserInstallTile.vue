@@ -272,7 +272,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     role="button"
     :tabindex="isUpdating ? -1 : 0"
     :aria-disabled="isUpdating || undefined"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 cursor-pointer items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] pr-3 pl-[18px] outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-[rgb(137_137_137/0.09)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 cursor-pointer items-center gap-4.5 overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] pr-3 pl-4.5 outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-[rgb(137_137_137/0.09)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
     :class="statusClasses"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="TID.dashboardTile(inst.id)"
@@ -311,7 +311,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
         >
           <LoaderCircle
             :size="12"
-            class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+            class="shrink-0 animate-spin animation-duration-[900ms] motion-reduce:animate-none"
             aria-hidden="true"
           />
           <span class="truncate">{{ progressLabel }}</span>
@@ -352,7 +352,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           <LoaderCircle
             v-if="statusPill.spinning"
             :size="12"
-            class="chooser-tile-status-spinner shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+            class="chooser-tile-status-spinner shrink-0 animate-spin animation-duration-[900ms] motion-reduce:animate-none"
             aria-hidden="true"
           />
           <span

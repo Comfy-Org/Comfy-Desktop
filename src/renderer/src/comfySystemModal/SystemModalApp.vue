@@ -94,7 +94,7 @@ onUnmounted(() => {
           {{ group.label }}
         </p>
         <ul
-          class="system-modal-detail-items m-0 pl-[18px] text-[13px] text-neutral-100 [&>li]:leading-[1.5]"
+          class="system-modal-detail-items m-0 pl-4.5 text-[13px] text-neutral-100 [&>li]:leading-normal"
         >
           <li v-for="(item, ii) in group.items" :key="`item-${ii}`">{{ item }}</li>
         </ul>

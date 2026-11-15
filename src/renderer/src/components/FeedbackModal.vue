@@ -82,7 +82,7 @@ onBeforeUnmount(() => {
     <div class="feedback-modal-body relative h-[clamp(520px,76vh,820px)] w-full overflow-hidden">
       <div
         v-if="loading"
-        class="feedback-modal-loading pointer-events-none absolute inset-0 grid place-items-center text-[13px] text-[color:color-mix(in_oklab,var(--neutral-100,#fff)_65%,transparent)]"
+        class="feedback-modal-loading pointer-events-none absolute inset-0 grid place-items-center text-[13px] text-[color-mix(in_oklab,var(--neutral-100,#fff)_65%,transparent)]"
         role="status"
         aria-live="polite"
       >

@@ -46,7 +46,7 @@ defineExpose({ focus })
       :id="`${prefix}-name`"
       ref="nameEl"
       :class="[`${prefix}-name`, textClass]"
-      class="peer/name min-w-0 cursor-text truncate rounded-md px-1.5 py-0.5 outline-none transition-[background-color] duration-[120ms] ease-[ease] hover:bg-[var(--brand-surface-bg-hover)] focus-visible:bg-[var(--brand-surface-bg-hover)] focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))]"
+      class="peer/name min-w-0 cursor-text truncate rounded-md px-1.5 py-0.5 outline-none transition-[background-color] duration-120 ease-[ease] hover:bg-(--brand-surface-bg-hover) focus-visible:bg-(--brand-surface-bg-hover) focus-visible:shadow-[0_0_0_2px_var(--focus-ring,var(--neutral-50))]"
       role="textbox"
       :aria-label="t('statusFactPanel.editName')"
       contenteditable="plaintext-only"
@@ -67,7 +67,7 @@ defineExpose({ focus })
       size="unset"
       type="button"
       :class="`${prefix}-edit-btn`"
-      class="static -ml-1.5 inline-flex w-0 shrink-0 appearance-auto items-center justify-center overflow-hidden rounded-md border-none bg-transparent p-0 transition-[width,margin-left] duration-[120ms] ease-[ease] group-hover/name:ml-0 group-hover/name:w-[var(--inline-name-pencil)] peer-focus-visible/name:ml-0 peer-focus-visible/name:w-[var(--inline-name-pencil)] hover:bg-transparent focus-visible:ml-0 focus-visible:w-[var(--inline-name-pencil)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus-ring,var(--neutral-50))] focus-visible:[outline-style:solid] [&>svg]:opacity-0 group-hover/name:[&>svg]:opacity-60 peer-focus-visible/name:[&>svg]:opacity-60 focus-visible:[&>svg]:opacity-60"
+      class="static -ml-1.5 inline-flex w-0 shrink-0 appearance-auto items-center justify-center overflow-hidden rounded-md border-none bg-transparent p-0 transition-[width,margin-left] duration-120 ease-[ease] group-hover/name:ml-0 group-hover/name:w-[var(--inline-name-pencil)] peer-focus-visible/name:ml-0 peer-focus-visible/name:w-[var(--inline-name-pencil)] hover:bg-transparent focus-visible:ml-0 focus-visible:w-[var(--inline-name-pencil)] focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-(--focus-ring,var(--neutral-50)) focus-visible:outline-solid [&>svg]:opacity-0 group-hover/name:[&>svg]:opacity-60 peer-focus-visible/name:[&>svg]:opacity-60 focus-visible:[&>svg]:opacity-60"
       :aria-label="t('statusFactPanel.editName')"
       :aria-controls="`${prefix}-name`"
       @click="focus"
@@ -75,7 +75,7 @@ defineExpose({ focus })
       <Pencil
         :size="iconSize"
         :class="`${prefix}-edit-hint`"
-        class="shrink-0 text-text-muted transition-opacity duration-[120ms] ease-[ease] select-none"
+        class="shrink-0 text-text-muted transition-opacity duration-120 ease-[ease] select-none"
         aria-hidden="true"
       />
     </Button>
