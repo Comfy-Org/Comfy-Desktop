@@ -2,12 +2,7 @@ import { installations, i18n, sourceMap, _operationAborts, MSG_CANCELLED } from 
 import type { ActionContext, ActionResult } from './types'
 import { appendLog } from '../../logsBroadcast'
 import { holdAgentPrefetch } from '../../agentRequirementsLaunch'
-
-const LOOKUPS_THAT_LEAVE_THE_INSTALL_ALONE: ReadonlySet<string> = new Set(['check-update'])
-
-function occupiesInstall(actionId: string): boolean {
-  return !LOOKUPS_THAT_LEAVE_THE_INSTALL_ALONE.has(actionId)
-}
+import { occupiesInstall } from './occupiesInstall'
 
 export async function handleDelegateToSource(
   { event, installationId, inst, actionData }: ActionContext,
