@@ -20,6 +20,7 @@ export interface SeedOptions {
   onSetup?: (paths: { homeDir: string; appDataDir: string }) => Promise<void>
   opsFlags?: Record<string, unknown>
   profileDir?: string
+  userDataDir?: string
 }
 
 export interface SeedInstallation {
@@ -187,6 +188,10 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
       '--disable-features=CalculateNativeWinOcclusion',
       '--disable-backgrounding-occluded-windows'
     )
+  }
+  if (options?.userDataDir) {
+    args.push(`--user-data-dir=${options.userDataDir}`)
+    if (process.platform === 'darwin') args.push('--use-mock-keychain')
   }
   if (process.platform === 'linux') {
     args.push('--no-sandbox')

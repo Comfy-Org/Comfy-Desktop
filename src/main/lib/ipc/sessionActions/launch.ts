@@ -167,6 +167,7 @@ import {
   writeCampaignRecord
 } from '../../coreBetaCampaignFlags'
 import { getIdClass } from '../../deviceId'
+import { outputDirOverride } from '../../outputFolders'
 import type { ComfyArgsSchema } from '../../comfy-args'
 
 export function desktopFeatureFlags(
@@ -514,7 +515,6 @@ export function applyStorageLaunchArgs(
   }
   if (argsAvailable) {
     const useSharedInput = (inst.useSharedInput as boolean | undefined) !== false
-    const useSharedOutput = (inst.useSharedOutput as boolean | undefined) !== false
     inputDir = useSharedInput
       ? storage.inputDir || settings.defaults.inputDir
       : (inst.inputDir as string | undefined) || undefined
@@ -522,16 +522,10 @@ export function applyStorageLaunchArgs(
       fs.mkdirSync(inputDir, { recursive: true })
       launchCmd.args!.push('--input-directory', inputDir)
     }
-    if (useSharedOutput) {
-      const outputDir = storage.outputDir || settings.defaults.outputDir
+    const outputDir = outputDirOverride(inst, storage.outputDir || settings.defaults.outputDir)
+    if (outputDir) {
       fs.mkdirSync(outputDir, { recursive: true })
       launchCmd.args!.push('--output-directory', outputDir)
-    } else {
-      const perInstallOutput = inst.outputDir as string | undefined
-      if (perInstallOutput) {
-        fs.mkdirSync(perInstallOutput, { recursive: true })
-        launchCmd.args!.push('--output-directory', perInstallOutput)
-      }
     }
   }
 

@@ -8,6 +8,7 @@ import BrandVariantList from '../components/BrandVariantList.vue'
 import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 
 function mountModal() {
   const pinia = createPinia()
@@ -35,6 +36,7 @@ beforeEach(() => {
     getFieldOptions: vi.fn().mockResolvedValue([]),
     validateHardware: vi.fn().mockResolvedValue({ supported: true }),
     getSetting: vi.fn().mockResolvedValue(false),
+    onSettingsChanged: vi.fn(() => () => {}),
     getInstallationsSummary: vi.fn().mockResolvedValue({ localCount: 0 }),
     getUniqueName: vi.fn().mockResolvedValue('ComfyUI'),
     getDiskSpace: vi.fn().mockResolvedValue(null),
@@ -654,6 +656,28 @@ describe('InstallWizardModal workspace Builds', () => {
     ).toBe('true')
   })
 
+  it('retires a pending workspace pick once it attempts the switch itself', async () => {
+    signInToWorkspace([])
+    ;(window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true,
+      workspaceId: 'w1',
+      workspaceType: 'team',
+      workspaceSwitchFailure: 'retryable'
+    })
+    const wrapper = mountModal()
+    await flushPromises()
+    const scope = useDashboardScopeStore()
+    scope.selectWorkspace('w2')
+
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w2' })
+    await flushPromises()
+
+    expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledWith('w2', 'chosen')
+    expect(scope.takeChosenSelection()).toBe(false)
+  })
+
   it('activates the selected workspace before loading its Builds', async () => {
     signInToWorkspace([])
     ;(window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -672,7 +696,7 @@ describe('InstallWizardModal workspace Builds', () => {
     ).open({ workspaceId: 'w2' })
     await flushPromises()
 
-    expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2')
+    expect(window.api.comfybuilder.switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
     expect(
       (window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>).mock
         .invocationCallOrder[0]
@@ -682,6 +706,120 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
       { value: 'ready', label: 'Workspace Two Build' }
     ])
+  })
+
+  describe('after Desktop returned to the anchor workspace', () => {
+    const readyBuild = { id: 'ready', name: 'Workspace Two Build', state: 'installable' }
+
+    async function openOnW2ThenReturnToAnchor() {
+      signInToWorkspace([])
+      let authChanged: (status: unknown) => void = () => {}
+      ;(window.api.comfybuilder.onAuthChanged as ReturnType<typeof vi.fn>).mockImplementation(
+        (callback: (status: unknown) => void) => {
+          authChanged = callback
+          return () => {}
+        }
+      )
+      const switchWorkspace = window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>
+      const listBuilds = window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>
+      switchWorkspace.mockResolvedValue({
+        signedIn: true,
+        workspaceId: 'w2',
+        workspaceType: 'team'
+      })
+      listBuilds.mockResolvedValue([readyBuild])
+      const wrapper = mountModal()
+      await flushPromises()
+      await (
+        wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+      ).open({ workspaceId: 'w2' })
+      await flushPromises()
+      expect(wrapper.getComponent(BaseSelect).props('options')).toHaveLength(1)
+      authChanged({ signedIn: true, workspaceId: 'w1', workspaceType: 'team' })
+      await flushPromises()
+      expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([])
+      switchWorkspace.mockClear()
+      listBuilds.mockClear()
+      return { wrapper, switchWorkspace, listBuilds }
+    }
+
+    it('Refresh re-establishes the target workspace before fetching its Builds', async () => {
+      const { wrapper, switchWorkspace, listBuilds } = await openOnW2ThenReturnToAnchor()
+
+      await wrapper.get('.workspace-build-refresh').trigger('click')
+      await flushPromises()
+
+      expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('w2', 'chosen')
+      expect(listBuilds).toHaveBeenCalledOnce()
+      expect(switchWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+        listBuilds.mock.invocationCallOrder[0]!
+      )
+      expect(wrapper.getComponent(BaseSelect).props('options')).toEqual([
+        { value: 'ready', label: 'Workspace Two Build' }
+      ])
+    })
+
+    it.each(['.workspace-build-refresh', '.wizard-build-retry'])(
+      '%s is disabled while the target workspace is being re-established',
+      async (button) => {
+        const { wrapper, switchWorkspace } = await openOnW2ThenReturnToAnchor()
+        useAuthStore().buildsError = true
+        await flushPromises()
+        let finish: (status: unknown) => void = () => {}
+        switchWorkspace.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+
+        await wrapper.get(button).trigger('click')
+        await flushPromises()
+        expect(wrapper.get(button).attributes('disabled')).toBeDefined()
+        await wrapper.get(button).trigger('click')
+
+        finish({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+        await flushPromises()
+        expect(switchWorkspace).toHaveBeenCalledOnce()
+      }
+    )
+
+    it('Refresh fetches nothing for the anchor when the target cannot be re-established', async () => {
+      const { wrapper, switchWorkspace, listBuilds } = await openOnW2ThenReturnToAnchor()
+      switchWorkspace.mockResolvedValue({
+        signedIn: true,
+        workspaceId: 'w1',
+        workspaceType: 'team',
+        workspaceSwitchFailure: 'retryable'
+      })
+
+      await wrapper.get('.workspace-build-refresh').trigger('click')
+      await flushPromises()
+
+      expect(listBuilds).not.toHaveBeenCalled()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+    })
+  })
+
+  it('Refresh on the target workspace only fetches and keeps the selected Build', async () => {
+    signInToWorkspace([])
+    const switchWorkspace = window.api.comfybuilder.switchWorkspace as ReturnType<typeof vi.fn>
+    switchWorkspace.mockResolvedValue({ signedIn: true, workspaceId: 'w2', workspaceType: 'team' })
+    const listBuilds = window.api.comfybuilder.listBuilds as ReturnType<typeof vi.fn>
+    listBuilds.mockResolvedValue([
+      { id: 'first', name: 'First', state: 'installable' },
+      { id: 'second', name: 'Second', state: 'installable' }
+    ])
+    const wrapper = mountModal()
+    await flushPromises()
+    await (
+      wrapper.vm as unknown as { open: (opts: { workspaceId: string }) => Promise<void> }
+    ).open({ workspaceId: 'w2' })
+    await flushPromises()
+    wrapper.getComponent(BaseSelect).vm.$emit('update:modelValue', 'second')
+    await flushPromises()
+    switchWorkspace.mockClear()
+
+    await wrapper.get('.workspace-build-refresh').trigger('click')
+    await flushPromises()
+
+    expect(switchWorkspace).not.toHaveBeenCalled()
+    expect(wrapper.getComponent(BaseSelect).props('modelValue')).toBe('second')
   })
 
   it('explains that a workspace switch may be waiting on browser authorization', async () => {

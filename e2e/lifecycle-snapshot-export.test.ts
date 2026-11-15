@@ -135,7 +135,11 @@ test('per-row Export writes a valid envelope JSON to disk @windows @macos @linux
   const firstFilename = filenames[0]!
 
   await popup.waitForSelector('.snapshot-row.is-expanded', { timeout: 5_000 })
-  await popup.waitForSelector(byTestId(TID.snapshotRowExport(firstFilename)), { timeout: 5_000 })
+  await popup.clickUntilVisible(
+    byTestId(TID.snapshotRowMore(firstFilename)),
+    byTestId(TID.snapshotRowExport(firstFilename)),
+    { timeout: 5_000 }
+  )
 
   expect(await popup.click(byTestId(TID.snapshotRowExport(firstFilename)))).toBe(true)
 

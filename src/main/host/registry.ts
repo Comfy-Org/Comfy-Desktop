@@ -196,6 +196,13 @@ export function isPanelSender(wc: WebContents): boolean {
   return false
 }
 
+export function findHostWindowByPanelSender(wc: WebContents): BrowserWindow | null {
+  for (const entry of comfyWindows.values()) {
+    if (entry.panelView?.webContents === wc) return entry.window
+  }
+  return null
+}
+
 export function findEntryByComfySender(wc: WebContents): ComfyWindowEntry | null {
   for (const entry of comfyWindows.values()) {
     if (entry.comfyView.webContents === wc) return entry

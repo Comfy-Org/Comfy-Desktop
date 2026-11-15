@@ -29,7 +29,6 @@ function mountView() {
         BrandBackground: { template: '<div><slot /></div>' },
         BrandedPageHeader: true,
         DevPlatformAccountChip: true,
-        DevPlatformWorkspaceSelector: true,
         InfoTooltip: true,
         TemplatePickerStep: true,
         BaseModal: true

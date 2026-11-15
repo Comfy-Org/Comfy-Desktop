@@ -129,13 +129,21 @@ export interface ComfyDesktop2AuthBridge {
    *  is scoped to; null when signed out, disabled, or the scope is missing,
    *  malformed or different. The refresh token never leaves Desktop. */
   getWorkspaceToken(workspaceId: string): Promise<string | null>
+  /** The partner-node token for prompts in `workspaceId`, under the same rules
+   *  as `getWorkspaceToken`. Desktop mints and renews it; null means use the
+   *  workspace token. Absent on Desktop builds before it. */
+  getPartnerNodeToken?(workspaceId: string): Promise<string | null>
   /** Runs Desktop's browser sign-in and resolves with the resulting state. */
   requestSignIn(): Promise<ComfyDesktop2AuthState>
   /** Signs Desktop out of its account (every view follows) and resolves with
    *  the resulting state; Desktop may keep the session if an install needs it. */
   signOut(): Promise<ComfyDesktop2AuthState>
-  /** Re-scopes Desktop's session to `workspaceId` (browser consent the first
-   *  time) and resolves with the resulting state; every view follows. */
+  /** Re-scopes Desktop's session to `workspaceId` and resolves with the resulting
+   *  state; every view follows. A view that is not signed in gets its current
+   *  state back. Otherwise the switch may open browser consent: it does not for
+   *  the grant's own workspace or one Desktop holds an unexpired token for,
+   *  unless the grant has ended, and a request for a workspace Desktop is already
+   *  switching to shares that switch's result. */
   switchWorkspace(workspaceId: string): Promise<ComfyDesktop2AuthState>
   /** Fires when Desktop signs in, signs out or switches workspace. */
   onChanged(callback: (state: ComfyDesktop2AuthState) => void): () => void

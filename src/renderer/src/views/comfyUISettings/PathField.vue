@@ -41,6 +41,7 @@ function handleOpen(): void {
   <StorageDirRow
     v-if="isBrowseOnly"
     :path="stringValue"
+    variant="field"
     @open="handleOpen"
     @browse="handleBrowse"
   />

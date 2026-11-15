@@ -1,5 +1,6 @@
-import { shell } from 'electron'
+import { app, shell } from 'electron'
 
+import { recordShellOpenExternal } from '../lib/e2eOverrides'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
@@ -14,6 +15,13 @@ import type { AuthStatus, AuthTokens } from './types'
 
 const DEFAULT_SIGN_IN_TIMEOUT_MS = 600_000
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000
+
+const PERMANENT_REVOKE_ERRORS: ReadonlySet<string> = new Set([
+  'invalid_request',
+  'invalid_client',
+  'unauthorized_client',
+  'unsupported_token_type'
+])
 
 export interface OAuthOptions {
   authorizeUrl?: string
@@ -53,6 +61,17 @@ function toTokens(r: TokenResponse, fallbackRefresh?: string): AuthTokens {
   }
 }
 
+function oauthErrorOf(body: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(body)
+    const error =
+      parsed && typeof parsed === 'object' ? (parsed as { error?: unknown }).error : null
+    return typeof error === 'string' ? error : undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<TokenResponse> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
@@ -74,7 +93,7 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
       throw new SignInFailure(
         `OAuth token request failed: ${resp.status} ${detail || resp.statusText}`,
         'server_error',
-        { httpStatus: resp.status }
+        { httpStatus: resp.status, oauthError: oauthErrorOf(detail) }
       )
     }
     const data = (await resp.json().catch((cause: unknown) => {
@@ -100,6 +119,10 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
 }
 
 export function openAuthorizePage(authorizeUrl: string): Promise<void> {
+  if (process.env['E2E'] === '1' && !app.isPackaged) {
+    recordShellOpenExternal(authorizeUrl)
+    return Promise.resolve()
+  }
   return shell.openExternal(authorizeUrl)
 }
 
@@ -170,4 +193,32 @@ export async function refresh(
     })
   )
   return toTokens(r, refreshToken)
+}
+
+export type RevokeResult = 'revoked' | 'refused' | 'retry'
+
+export async function revoke(
+  refreshToken: string,
+  clientId: string,
+  revokeUrl: string = CLOUD_CONFIG.revokeUrl
+): Promise<RevokeResult> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TOKEN_REQUEST_TIMEOUT_MS)
+  try {
+    const resp = await fetch(revokeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: refreshToken, client_id: clientId }).toString(),
+      redirect: 'manual',
+      signal: controller.signal
+    })
+    if (resp.ok) return 'revoked'
+    if (resp.status !== 400 && resp.status !== 401) return 'retry'
+    const detail = await resp.text().catch(() => '')
+    return PERMANENT_REVOKE_ERRORS.has(oauthErrorOf(detail) ?? '') ? 'refused' : 'retry'
+  } catch {
+    return 'retry'
+  } finally {
+    clearTimeout(timer)
+  }
 }

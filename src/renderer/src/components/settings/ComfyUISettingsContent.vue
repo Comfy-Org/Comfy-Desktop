@@ -46,6 +46,7 @@ import MoreMenu, { type MenuAction } from '../../views/comfyUISettings/MoreMenu.
 import ArgsBuilderPage from '../../views/comfyUISettings/ArgsBuilderPage.vue'
 import SnapshotsView from '../../views/comfyUISettings/SnapshotsView.vue'
 import StatusFactPanel from '../../views/comfyUISettings/StatusFactPanel.vue'
+import InlineNameEdit from '../InlineNameEdit.vue'
 import SettingsSectionList from '../../views/comfyUISettings/SettingsSectionList.vue'
 import StoragePane, { type StorageSnapshot } from '../../views/comfyUISettings/StoragePane.vue'
 import ConsoleTerminalPane from '../../views/comfyUISettings/ConsoleTerminalPane.vue'
@@ -87,6 +88,7 @@ interface Props {
   currentView?: ViewKind
   currentCategory?: Category | null
   pageActionsTarget?: string
+  pageTitleTarget?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -99,6 +101,7 @@ const props = withDefaults(defineProps<Props>(), {
   currentView: 'dashboard',
   currentCategory: null,
   pageActionsTarget: undefined,
+  pageTitleTarget: undefined,
   globalSettingsSnapshot: () => ({
     sharedDirectoriesFields: [],
     modelsDirs: [],
@@ -292,16 +295,21 @@ const showConsoleTab = computed(
     isTabAllowedForCategory('console', installation.value.sourceCategory)
 )
 
-const tabs = computed<TabDef[]>(() => {
-  const isCloud = installation.value?.sourceCategory === 'cloud'
-  return ALL_TABS.filter((tab) =>
+const isCloud = computed(() => installation.value?.sourceCategory === 'cloud')
+
+const tabs = computed<TabDef[]>(() =>
+  ALL_TABS.filter((tab) =>
     tab.key === 'console' ? showConsoleTab.value : sectionsForTab(tab.sectionTab).value.length > 0
   ).map((tab) =>
-    isCloud && tab.key === 'config'
+    isCloud.value && tab.key === 'config'
       ? { ...tab, label: t('comfyUISettings.tabStorage'), icon: HardDrive }
       : tab
   )
-})
+)
+
+const isStartupArgsPage = computed(
+  () => isPage.value && activeTab.value === 'config' && !isCloud.value
+)
 
 const showUpdateBadge = computed(() => {
   const inst = installation.value
@@ -364,6 +372,19 @@ function toggleMoreMenu(): void {
 }
 function closeMoreMenu(): void {
   moreMenuOpen.value = false
+}
+
+const canRename = computed(() =>
+  pinBottomActions.value.some((action) => action.id === 'rename' && action.enabled !== false)
+)
+const renameHandler = computed(() => (canRename.value ? renameInstallation : undefined))
+const titleEdit = useTemplateRef<InstanceType<typeof InlineNameEdit>>('titleEdit')
+function handleMorePick(action: ActionDef): void {
+  if (action.id === 'rename' && titleEdit.value) {
+    titleEdit.value.focus()
+    return
+  }
+  void runAction(action)
 }
 
 type SubPage = 'args' | null
@@ -891,9 +912,10 @@ defineExpose({
                     :installation="installation"
                     :sections="statusSections"
                     :disk-usage="diskUsageItem"
-                    :on-rename="renameInstallation"
+                    :on-rename="renameHandler"
                     :on-update-url="handleUrlUpdate"
                     :url-restart-pending="pendingRestartFieldIds.has('remoteUrl')"
+                    :hide-hero="!!pageTitleTarget"
                   />
                 </div>
                 <div
@@ -1085,6 +1107,7 @@ defineExpose({
                     >
                       <SettingsSectionList
                         :sections="visibleSections"
+                        :columns="isStartupArgsPage"
                         :installation-id="installation?.id"
                         :running-action-ids="runningActionIds"
                         :pending-restart-field-ids="pendingRestartFieldIds"
@@ -1211,10 +1234,22 @@ defineExpose({
               :anchor="footerRef?.querySelector<HTMLElement>('.settings-v2-more')"
               :actions="pinBottomMenuActions"
               @close="closeMoreMenu"
-              @pick="runAction"
+              @pick="handleMorePick"
             />
           </div>
         </footer>
+      </Teleport>
+
+      <Teleport v-if="pageTitleTarget && installation" defer :to="pageTitleTarget">
+        <InlineNameEdit
+          ref="titleEdit"
+          prefix="build-details-title"
+          :name="installation.name"
+          :on-rename="renameHandler"
+          text-class=""
+          :icon-size="18"
+          pencil-width="24px"
+        />
       </Teleport>
     </div>
   </Tabs>

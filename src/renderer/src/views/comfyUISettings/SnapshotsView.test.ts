@@ -97,11 +97,13 @@ describe('comfyUISettings/SnapshotsView', () => {
     vi.useRealTimers()
   })
 
-  it('idle: renders the Save New Snapshot CTA and no op-card', async () => {
+  it('idle: renders the Create Snapshot button in the toolbar and no op-card', async () => {
     const w = await mountView()
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
-    expect(w.find('.snapshots-rail-cta').text()).toContain('Create Snapshot')
+    expect(w.find('.snapshots-rail-node.is-save').exists()).toBe(false)
+    const cta = w.find(`[data-testid="${TID.snapshotsSaveCta}"]`)
+    expect(cta.text()).toContain('Create Snapshot')
+    expect(cta.attributes('disabled')).toBeUndefined()
   })
 
   it('in-flight: morphs the slot into the op-card with target label + percent + spinner dot', async () => {
@@ -118,7 +120,7 @@ describe('comfyUISettings/SnapshotsView', () => {
       }
     })
 
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(false)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeDefined()
     const card = w.find(`[data-testid="${TID.snapshotsOpCard}"]`)
     expect(card.exists()).toBe(true)
 
@@ -264,7 +266,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     await w.find(`[data-testid="${TID.snapshotsOpCardRetry}"]`).trigger('click')
     expect(w.emitted('op-retry')).toHaveLength(1)
     await nextTick()
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeUndefined()
   })
 
   it('error: Dismiss button emits op-dismiss and clears the card', async () => {
@@ -322,7 +324,7 @@ describe('comfyUISettings/SnapshotsView', () => {
     await flushPromises()
 
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeUndefined()
     expect(w.emitted('op-dismiss')).toHaveLength(1)
     expect(w.emitted('op-retry')).toBeUndefined()
   })
@@ -392,7 +394,171 @@ describe('comfyUISettings/SnapshotsView', () => {
       }
     })
     expect(w.find(`[data-testid="${TID.snapshotsOpCard}"]`).exists()).toBe(false)
-    expect(w.find('.snapshots-rail-cta').exists()).toBe(true)
+    expect(w.find(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')).toBeUndefined()
+  })
+
+  it('rows: inline Restore on every row but the newest, a ⋯ trigger on each, all disabled during a restore', async () => {
+    const w = await mountView()
+    expect(w.find(`[data-testid="${TID.snapshotRowRestore('snap-newest.json')}"]`).exists()).toBe(
+      false
+    )
+    for (const f of ['snap-middle.json', 'snap-oldest.json']) {
+      const restore = w.find(`[data-testid="${TID.snapshotRowRestore(f)}"]`)
+      expect(restore.exists()).toBe(true)
+      expect(restore.attributes('disabled')).toBeUndefined()
+    }
+    for (const f of ['snap-newest.json', 'snap-middle.json', 'snap-oldest.json']) {
+      expect(w.find(`[data-testid="${TID.snapshotRowMore(f)}"]`).exists()).toBe(true)
+    }
+    expect(w.find('.snapshot-row.is-expanded').exists()).toBe(true)
+
+    await w.setProps({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: false,
+        ok: null,
+        error: null,
+        percent: 10,
+        status: 'Loading snapshot…',
+        actionData: { file: 'snap-middle.json' }
+      }
+    })
+    await flushPromises()
+    expect(
+      w.find(`[data-testid="${TID.snapshotRowRestore('snap-middle.json')}"]`).attributes('disabled')
+    ).toBeDefined()
+    expect(
+      w.find(`[data-testid="${TID.snapshotRowMore('snap-newest.json')}"]`).attributes('disabled')
+    ).toBeDefined()
+  })
+
+  it('keeps the rows on screen while Create Snapshot reloads the list', async () => {
+    const w = await mountView()
+    let finishReload: (data: SnapshotListData) => void = () => {}
+    ;(window.api.getSnapshots as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise<SnapshotListData>((resolve) => {
+        finishReload = resolve
+      })
+    )
+
+    await w.get(`[data-testid="${TID.snapshotsSaveCta}"]`).trigger('click')
+    await flushPromises()
+
+    expect(window.api.runAction).toHaveBeenCalledWith('install-A', 'snapshot-save', {
+      label: undefined
+    })
+    expect(w.find(`[data-testid="${TID.snapshotRow('snap-middle.json')}"]`).exists()).toBe(true)
+    expect(w.find('.snapshots-view-status').exists()).toBe(false)
+
+    finishReload(makeListData())
+    await flushPromises()
+    expect(w.find(`[data-testid="${TID.snapshotRow('snap-middle.json')}"]`).exists()).toBe(true)
+  })
+
+  it('keeps Create Snapshot disabled until the restore result card is gone', async () => {
+    const w = await mountView({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: false,
+        ok: null,
+        error: null,
+        percent: 50,
+        status: 'Restoring',
+        actionData: { file: 'snap-middle.json' }
+      }
+    })
+    await w.setProps({
+      activeOperation: {
+        actionId: 'snapshot-restore',
+        done: true,
+        ok: false,
+        error: 'pip failed',
+        percent: 100,
+        status: '',
+        actionData: { file: 'snap-middle.json' }
+      }
+    })
+    await flushPromises()
+    const cta = (): string | undefined =>
+      w.get(`[data-testid="${TID.snapshotsSaveCta}"]`).attributes('disabled')
+    expect(cta()).toBeDefined()
+
+    await w.get(`[data-testid="${TID.snapshotsOpCardDismiss}"]`).trigger('click')
+    await flushPromises()
+    expect(cta()).toBeUndefined()
+  })
+
+  describe('row ⋯ menu', () => {
+    let w: VueWrapper | null = null
+    afterEach(() => {
+      w?.unmount()
+      w = null
+    })
+
+    async function openRowMenu(filename: string): Promise<HTMLElement> {
+      w = mount(SnapshotsView, {
+        props: { installationId: 'install-A', activeOperation: null },
+        global: { plugins: [createPinia()] },
+        attachTo: document.body
+      }) as VueWrapper
+      await flushPromises()
+      await w.get(`[data-testid="${TID.snapshotRowMore(filename)}"]`).trigger('keydown', {
+        key: 'ArrowDown'
+      })
+      await flushPromises()
+      return document.body.querySelector<HTMLElement>('.snapshot-row-menu')!
+    }
+
+    it('Delete asks to confirm, then deletes that snapshot', async () => {
+      mockConfirm.mockResolvedValueOnce('primary')
+      await openRowMenu('snap-middle.json')
+
+      document.body
+        .querySelector<HTMLElement>(`[data-testid="${TID.snapshotRowDelete('snap-middle.json')}"]`)!
+        .click()
+      await flushPromises()
+
+      expect(mockConfirm).toHaveBeenCalledTimes(1)
+      expect(window.api.runAction).toHaveBeenCalledWith('install-A', 'snapshot-delete', {
+        file: 'snap-middle.json'
+      })
+    })
+
+    it('Export exports that snapshot', async () => {
+      await openRowMenu('snap-oldest.json')
+
+      document.body
+        .querySelector<HTMLElement>(`[data-testid="${TID.snapshotRowExport('snap-oldest.json')}"]`)!
+        .click()
+      await flushPromises()
+
+      expect(window.api.exportSnapshot).toHaveBeenCalledWith('install-A', 'snap-oldest.json')
+    })
+
+    it('Escape closes the menu without reaching a window listener, so a host popup stays open', async () => {
+      let reachedWindow = false
+      const onWindow = (): void => {
+        reachedWindow = true
+      }
+      const menu = await openRowMenu('snap-middle.json')
+      expect(menu).not.toBeNull()
+      window.addEventListener('keydown', onWindow)
+      try {
+        menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        await flushPromises()
+        expect(document.body.querySelector('.snapshot-row-menu')).toBeNull()
+        expect(reachedWindow).toBe(false)
+      } finally {
+        window.removeEventListener('keydown', onWindow)
+      }
+    })
+
+    it('closes when the window loses focus', async () => {
+      await openRowMenu('snap-middle.json')
+      window.dispatchEvent(new Event('blur'))
+      await flushPromises()
+      expect(document.body.querySelector('.snapshot-row-menu')).toBeNull()
+    })
   })
 
   it('scrolls the top card into view when restore starts', async () => {

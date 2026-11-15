@@ -10,14 +10,10 @@ import DevPlatformWorkspaceSelector from '../views/devplatform/DevPlatformWorksp
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import hillsSunset from '../assets/sidebar/hills-sunset.jpg'
-import portraitGarden from '../assets/sidebar/portrait-garden.jpg'
-import portraitSun from '../assets/sidebar/portrait-sun.jpg'
 
 const { collapsed } = defineProps<{
   collapsed: boolean
 }>()
-
-const SHOWCASE_IMAGES = [portraitSun, hillsSunset, portraitGarden]
 
 const { t } = useI18n()
 const store = useAuthStore()
@@ -115,21 +111,14 @@ async function onSignOut(): Promise<void> {
       v-else
       class="group/signin rounded-xl bg-[oklch(1_0_0/0.04)] p-1 text-[13px]/[1.35] text-pretty [box-shadow:inset_0_0_0_1px_oklch(1_0_0/0.06)]"
     >
-      <div class="relative grid h-16 grid-cols-3 gap-0.5 overflow-hidden rounded-lg">
+      <div class="relative h-18 overflow-hidden rounded-lg">
+        <img
+          :src="hillsSunset"
+          alt=""
+          class="size-full object-cover transition-transform duration-600 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/signin:-translate-y-0.5 group-hover/signin:scale-108 motion-reduce:transition-none"
+        />
         <span
-          v-for="image in SHOWCASE_IMAGES"
-          :key="image"
-          class="relative isolate overflow-hidden bg-[oklch(0.87_0.075_350)]"
-        >
-          <img
-            :src="image"
-            alt=""
-            class="size-full object-cover mix-blend-multiply transition-transform duration-600 ease-out group-hover/signin:scale-108 motion-reduce:transition-none"
-          />
-          <span class="absolute inset-0 bg-[oklch(0.26_0.1_282)] mix-blend-lighten" />
-        </span>
-        <span
-          class="absolute top-1/2 left-1/2 flex size-[30px] -translate-1/2 items-center justify-center rounded-[9px] bg-white text-[#111] shadow-lg"
+          class="absolute top-1/2 left-1/2 flex size-[30px] -translate-1/2 items-center justify-center rounded-[9px] bg-white text-[#111] shadow-lg transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover/signin:-translate-y-[calc(50%+2px)] group-hover/signin:scale-105 motion-reduce:transition-none"
           aria-hidden="true"
         >
           <ComfyCLogo :size="14" />

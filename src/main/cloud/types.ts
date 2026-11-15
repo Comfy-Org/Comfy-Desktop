@@ -13,6 +13,19 @@ export interface AuthStatus {
   role?: string
 }
 
+export type WorkspaceSwitchFailure = 'unavailable' | 'retryable'
+
+export type WorkspaceSwitchIntent = 'chosen' | 'restored' | 'requested'
+
+export interface WorkspaceSwitchStatus extends AuthStatus {
+  workspaceSwitchFailure?: WorkspaceSwitchFailure
+}
+
+export interface WorkspaceSwitchOutcome {
+  status: WorkspaceSwitchStatus
+  reached: boolean
+}
+
 export interface Workspace {
   id: string
   name: string

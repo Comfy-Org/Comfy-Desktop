@@ -2,10 +2,10 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { Loader2 } from 'lucide-vue-next'
+import { ArrowUpCircle, CircleCheck, Loader2 } from 'lucide-vue-next'
 import BaseSelect, { type BaseSelectOption } from '../../components/ui/BaseSelect.vue'
 import InfoTooltip from '../../components/InfoTooltip.vue'
-import VersionStatPanel, { type VersionStatRow } from './VersionStatPanel.vue'
+import type { VersionStatRow } from './VersionStatPanel.vue'
 import { formatRelativeFromMs } from '../../lib/datetime'
 import type { ActionDef, DetailField, DetailFieldOption } from '../../types/ipc'
 import { TID } from '../../../../shared/testIds'
@@ -418,18 +418,76 @@ function actionClass(
     running ? 'is-running cursor-progress opacity-85' : 'cursor-pointer'
   ]
 }
+
+const statusLine = computed(() =>
+  [statusBadge.value, ...statRows.value.map((row) => `${row.label} ${row.value}`)]
+    .filter(Boolean)
+    .join('  ·  ')
+)
 </script>
 
 <template>
   <div class="channel-picker flex flex-col gap-3">
-    <VersionStatPanel
-      :headline-product="headlineProduct"
-      :headline="headlineVersion"
-      :headline-highlight="preview?.updateAvailable === true"
-      :badge="preview ? statusBadge : null"
-      :badge-tone="statusBadgeTone"
-      :rows="statRows"
-    />
+    <div
+      class="channel-picker-status flex items-center gap-3 rounded-xl border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-3.5"
+      data-testid="channel-picker-status"
+    >
+      <span
+        v-if="statusBadge"
+        class="channel-picker-status-icon grid size-8 flex-none place-items-center rounded-full"
+        :class="
+          statusBadgeTone === 'update'
+            ? 'bg-[color-mix(in_srgb,var(--action)_14%,transparent)] text-[var(--action)]'
+            : 'bg-[color-mix(in_srgb,var(--success,#4ade80)_14%,transparent)] text-[var(--success,#4ade80)]'
+        "
+        aria-hidden="true"
+      >
+        <ArrowUpCircle v-if="statusBadgeTone === 'update'" :size="18" />
+        <CircleCheck v-else :size="18" />
+      </span>
+      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p
+          class="m-0 flex flex-wrap items-baseline gap-1.5 text-[14px] leading-5 font-medium text-text"
+        >
+          <span v-if="headlineProduct" class="channel-picker-headline-product">{{
+            headlineProduct
+          }}</span>
+          <span
+            class="channel-picker-headline-version"
+            :class="{
+              'is-update-available text-[var(--action)]': preview?.updateAvailable === true
+            }"
+            >{{ headlineVersion }}</span
+          >
+        </p>
+        <p
+          v-if="statusLine"
+          class="channel-picker-status-line m-0 text-[12px] leading-4 text-text-muted"
+          :title="lastCheckedDisplay?.title"
+        >
+          {{ statusLine }}
+        </p>
+      </div>
+      <Button
+        v-if="showCheckInHeader && checkUpdateAction"
+        variant="textonly"
+        size="unset"
+        type="button"
+        class="channel-picker-action compact"
+        :class="actionClass('default', isActionRunning(checkUpdateAction.id), true)"
+        :disabled="checkUpdateAction.enabled === false || isActionRunning(checkUpdateAction.id)"
+        :title="checkUpdateAction.tooltip"
+        :data-testid="TID.updateActionButton(checkUpdateAction.id)"
+        @click="emit('action', checkUpdateAction)"
+      >
+        <Loader2
+          v-if="isActionRunning(checkUpdateAction.id)"
+          :size="14"
+          class="channel-picker-action-spinner flex-none animate-spin [animation-duration:0.9s]"
+        />
+        {{ checkUpdateAction.label }}
+      </Button>
+    </div>
 
     <p
       v-if="showEnrichingHint"
@@ -445,36 +503,13 @@ function actionClass(
       {{ t('channelCards.computingCommitsAhead') }}
     </p>
 
-    <div
-      class="channel-picker-card flex flex-col gap-3 rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] p-3"
-    >
-      <div class="channel-picker-channel-header flex items-center justify-between gap-3">
-        <span
-          class="channel-picker-field-label inline-flex items-center gap-0.5 text-[12px] leading-4 font-normal text-text-muted"
-        >
-          {{ field.label }}
-          <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
-        </span>
-        <Button
-          v-if="showCheckInHeader && checkUpdateAction"
-          variant="textonly"
-          size="unset"
-          type="button"
-          class="channel-picker-action compact"
-          :class="actionClass('default', isActionRunning(checkUpdateAction.id), true)"
-          :disabled="checkUpdateAction.enabled === false || isActionRunning(checkUpdateAction.id)"
-          :title="checkUpdateAction.tooltip"
-          :data-testid="TID.updateActionButton(checkUpdateAction.id)"
-          @click="emit('action', checkUpdateAction)"
-        >
-          <Loader2
-            v-if="isActionRunning(checkUpdateAction.id)"
-            :size="14"
-            class="channel-picker-action-spinner flex-none animate-spin [animation-duration:0.9s]"
-          />
-          {{ checkUpdateAction.label }}
-        </Button>
-      </div>
+    <div class="channel-picker-card mt-4 flex flex-col gap-3">
+      <h3
+        class="channel-picker-channel-header m-0 inline-flex items-center gap-1 text-[11px]/4 font-medium tracking-[0.09em] text-subtle-foreground uppercase"
+      >
+        {{ field.label }}
+        <InfoTooltip v-if="field.tooltip" :text="field.tooltip" />
+      </h3>
 
       <div class="channel-picker-channel flex flex-col gap-2">
         <div
@@ -524,7 +559,7 @@ function actionClass(
 
       <div
         v-if="showFooterActions"
-        class="channel-picker-actions mt-1 flex flex-wrap items-center justify-end gap-2 border-t border-solid border-border-hover pt-3"
+        class="channel-picker-actions mt-1 flex flex-wrap items-center justify-end gap-2"
       >
         <Button
           v-for="{ action, variant } in footerActions"

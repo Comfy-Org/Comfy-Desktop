@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
-import { ChevronDown, Tag, Boxes, Package } from 'lucide-vue-next'
+import { ChevronRight } from 'lucide-vue-next'
 import type { SnapshotSummary } from '../../types/ipc'
 import {
   triggerLabel as _triggerLabel,
@@ -81,124 +81,107 @@ const titlePillText = computed(() => {
   return props.snapshot.comfyuiVersion
 })
 const hasTitlePill = computed(() => !!titlePillText.value)
+const showVersionChange = computed(() => !hasCustomLabel.value && comfyuiChanged.value)
 </script>
 
 <template>
-  <div class="snapshot-row flex flex-col gap-2" :class="{ 'is-expanded': expanded }">
-    <Button
-      type="button"
-      variant="textonly"
-      size="unset"
-      class="snapshot-row-head static flex w-full flex-col items-stretch justify-normal gap-1.5 rounded-lg border-none bg-transparent p-0 text-left text-inherit whitespace-normal [font:inherit] appearance-auto hover:bg-transparent focus-visible:rounded-[4px] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:[outline-style:solid] focus-visible:outline-[var(--accent-primary)] focus-visible:ring-0"
-      :aria-expanded="expanded"
-      :data-testid="toggleTestId"
-      @click="emit('toggle')"
+  <div class="snapshot-row flex flex-col" :class="{ 'is-expanded': expanded }">
+    <div
+      class="snapshot-row-line flex min-h-11 items-center gap-2 rounded-[10px] pr-1.5 pl-2.5 transition-[background-color] duration-100 ease-[ease] hover:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[:focus-visible]:bg-[color-mix(in_oklch,var(--color-foreground)_4%,transparent)] has-[.snapshot-row-head:focus-visible]:outline-2 has-[.snapshot-row-head:focus-visible]:-outline-offset-2 has-[.snapshot-row-head:focus-visible]:outline-[var(--accent-primary)]"
     >
-      <div class="snapshot-row-head-top flex items-center justify-between gap-2.5">
-        <div class="snapshot-row-head-left flex min-w-0 items-center gap-2">
-          <span
-            class="snapshot-row-trigger text-[12px] text-neutral-100 data-[tone=state]:text-[var(--warning)]"
-            :data-tone="triggerTone"
-            >{{ triggerCopy }}</span
-          >
-          <span
-            v-if="isLatest"
-            class="snapshot-row-latest shrink-0 rounded-[999px] bg-[color-mix(in_srgb,var(--text)_8%,transparent)] px-1.5 py-px text-[11px] leading-[16.5px] font-medium text-text-muted"
-          >
-            {{ t('snapshots.latestBadge') }}
-          </span>
-        </div>
-        <div class="snapshot-row-head-right flex min-w-0 items-center gap-2">
-          <span
-            class="snapshot-row-time shrink-0 text-[12px] whitespace-nowrap text-text-muted"
-            :title="absoluteCopy"
-            >{{ relativeCopy }}</span
-          >
-          <ChevronDown
-            :size="14"
-            class="snapshot-row-chevron text-text-muted transition-transform duration-[180ms] ease-[cubic-bezier(0.4,0,0.2,1)]"
-            :class="{ '[transform:rotate(180deg)]': expanded }"
-          />
-        </div>
-      </div>
-      <div
-        v-if="hasTitlePill || hasNodeChanges || hasPipChanges"
-        class="snapshot-row-pills flex flex-wrap items-center gap-1.5"
+      <Button
+        type="button"
+        variant="textonly"
+        size="unset"
+        class="snapshot-row-head @container static flex h-11 min-w-0 flex-1 items-center overflow-hidden justify-normal gap-2.5 rounded-none border-none bg-transparent p-0 text-left text-inherit whitespace-nowrap [font:inherit] appearance-auto hover:bg-transparent focus-visible:outline-none focus-visible:ring-0"
+        :aria-expanded="expanded"
+        :data-testid="toggleTestId"
+        @click="emit('toggle')"
       >
+        <span
+          class="snapshot-row-time w-[76px] shrink-0 truncate text-[12px] text-text-muted"
+          :title="absoluteCopy"
+          >{{ relativeCopy }}</span
+        >
+        <span class="w-5 shrink-0" aria-hidden="true"></span>
+        <ChevronRight
+          :size="14"
+          class="snapshot-row-chevron shrink-0 text-[var(--color-subtle-foreground)] transition-transform duration-150 ease-[ease]"
+          :class="{ 'rotate-90': expanded }"
+          aria-hidden="true"
+        />
+        <span
+          class="snapshot-row-trigger shrink-0 rounded-md bg-[color-mix(in_oklch,var(--color-foreground)_8%,transparent)] px-[7px] py-px text-[12px] text-text-muted data-[tone=state]:bg-[color-mix(in_oklch,var(--color-foreground)_13%,transparent)] data-[tone=state]:text-neutral-100"
+          :data-tone="triggerTone"
+          >{{ triggerCopy }}</span
+        >
         <span
           v-if="hasTitlePill"
-          class="snap-pill snap-pill--version inline-flex min-w-0 max-w-full items-center gap-1 rounded-[999px] border border-solid bg-[var(--brand-surface-bg)] px-[7px] py-px text-[11px] leading-4 whitespace-nowrap text-neutral-100 tabular-nums [&>svg]:shrink-0 [&>svg]:opacity-70 [&>span]:min-w-0 [&>span]:truncate"
-          :class="
-            comfyuiChanged
-              ? 'is-change border-[color-mix(in_srgb,var(--comfy-yellow,#f0ff41)_45%,var(--chooser-surface-border))]'
-              : 'border-[var(--chooser-surface-border)]'
-          "
+          class="snap-pill snap-pill--version snapshot-row-name min-w-0 truncate text-[13px] font-medium text-neutral-100 tabular-nums"
+          :class="{ 'is-change': showVersionChange }"
           :title="titlePillText"
         >
-          <Tag :size="11" aria-hidden="true" />
-          <span>{{ titlePillText }}</span>
+          <template v-if="showVersionChange"
+            ><span class="mr-1 text-text-muted">{{ previousComfyuiVersion }} →</span>
+            <span class="font-semibold text-[var(--color-foreground)]">{{
+              snapshot.comfyuiVersion
+            }}</span></template
+          >
+          <template v-else>{{ titlePillText }}</template>
         </span>
         <span
-          v-if="hasNodeChanges"
-          class="snap-pill snap-pill--nodes inline-flex items-center gap-1 rounded-[999px] bg-snapshot-chip px-[7px] py-px text-[11px] leading-4 whitespace-nowrap text-text-muted [&>svg]:shrink-0 [&>svg]:opacity-70"
+          v-if="isLatest"
+          class="snapshot-row-latest inline-flex h-5 shrink-0 items-center rounded-full bg-[color-mix(in_oklch,var(--color-foreground)_7%,transparent)] px-2 text-[11px] leading-none font-medium text-text-muted"
         >
-          <Boxes :size="11" aria-hidden="true" />
-          <span
-            v-if="nodeDelta.added"
-            class="snap-delta is-add font-semibold text-[#22c55e] tabular-nums"
-            >+{{ nodeDelta.added }}</span
-          >
-          <span
-            v-if="nodeDelta.removed"
-            class="snap-delta is-remove font-semibold text-danger tabular-nums"
-            >−{{ nodeDelta.removed }}</span
-          >
-          <span
-            v-if="nodeDelta.changed"
-            class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
-            >~{{ nodeDelta.changed }}</span
-          >
-          <span class="snap-pill-label opacity-70">{{ t('snapshots.nodesLabel') }}</span>
+          {{ t('snapshots.latestBadge') }}
         </span>
         <span
-          v-if="hasPipChanges"
-          class="snap-pill snap-pill--pkgs inline-flex items-center gap-1 rounded-[999px] bg-snapshot-chip px-[7px] py-px text-[11px] leading-4 whitespace-nowrap text-text-muted [&>svg]:shrink-0 [&>svg]:opacity-70"
+          v-if="hasNodeChanges || hasPipChanges"
+          class="snapshot-row-delta hidden shrink-0 items-center @md:inline-flex gap-1.5 text-[12px] text-text-muted tabular-nums"
         >
-          <Package :size="11" aria-hidden="true" />
-          <span
-            v-if="pipDelta.added"
-            class="snap-delta is-add font-semibold text-[#22c55e] tabular-nums"
-            >+{{ pipDelta.added }}</span
-          >
-          <span
-            v-if="pipDelta.removed"
-            class="snap-delta is-remove font-semibold text-danger tabular-nums"
-            >−{{ pipDelta.removed }}</span
-          >
-          <span
-            v-if="pipDelta.changed"
-            class="snap-delta is-change font-semibold text-[var(--warning)] tabular-nums"
-            >~{{ pipDelta.changed }}</span
-          >
-          <span class="snap-pill-label opacity-70">{{ t('snapshots.pkgsLabel') }}</span>
+          <span v-if="hasNodeChanges" class="snap-pill snap-pill--nodes inline-flex gap-1">
+            <span v-if="nodeDelta.added" class="snap-delta is-add text-[var(--success)]"
+              >+{{ nodeDelta.added }}</span
+            >
+            <span v-if="nodeDelta.removed" class="snap-delta is-remove text-danger"
+              >−{{ nodeDelta.removed }}</span
+            >
+            <span v-if="nodeDelta.changed" class="snap-delta is-change text-neutral-100"
+              >~{{ nodeDelta.changed }}</span
+            >
+            <span class="snap-pill-label">{{ t('snapshots.nodesLabel') }}</span>
+          </span>
+          <span v-if="hasNodeChanges && hasPipChanges" aria-hidden="true">·</span>
+          <span v-if="hasPipChanges" class="snap-pill snap-pill--pkgs inline-flex gap-1">
+            <span v-if="pipDelta.added" class="snap-delta is-add text-[var(--success)]"
+              >+{{ pipDelta.added }}</span
+            >
+            <span v-if="pipDelta.removed" class="snap-delta is-remove text-danger"
+              >−{{ pipDelta.removed }}</span
+            >
+            <span v-if="pipDelta.changed" class="snap-delta is-change text-neutral-100"
+              >~{{ pipDelta.changed }}</span
+            >
+            <span class="snap-pill-label">{{ t('snapshots.pkgsLabel') }}</span>
+          </span>
         </span>
+      </Button>
+      <div class="snapshot-row-actions ml-auto flex shrink-0 items-center gap-1">
+        <slot name="actions" />
       </div>
-    </Button>
+    </div>
 
     <BaseAccordion :open="expanded">
-      <div
-        class="snapshot-row-card flex flex-col rounded-lg border border-solid border-[var(--chooser-surface-border)] bg-[var(--brand-surface-bg)] px-3 py-2.5"
-      >
+      <div class="snapshot-row-card flex flex-col gap-2.5 pt-1 pr-4 pb-4 pl-[126px]">
         <div
-          class="snapshot-row-meta flex flex-wrap items-center gap-1.5 px-1.5 py-px text-[11px] text-text-muted [overflow-wrap:anywhere]"
+          class="snapshot-row-meta flex flex-wrap items-center gap-1.5 text-[12px] text-[var(--color-subtle-foreground)] [overflow-wrap:anywhere]"
         >
           <span>{{ t('snapshots.nodesCount', { count: snapshot.nodeCount }) }}</span>
-          <span class="snapshot-row-meta-dot opacity-50">·</span>
+          <span class="snapshot-row-meta-dot" aria-hidden="true">·</span>
           <span>{{ t('snapshots.packagesCount', { count: snapshot.pipPackageCount }) }}</span>
+          <slot name="meta" />
         </div>
-        <div
-          class="snapshot-row-expanded mt-1 flex flex-col gap-2.5 border-t border-solid border-border-hover pt-3"
-        >
+        <div class="snapshot-row-expanded flex flex-col gap-2.5">
           <slot name="expanded" />
         </div>
       </div>

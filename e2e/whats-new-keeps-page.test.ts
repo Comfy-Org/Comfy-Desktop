@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { expectChooserVisible } from './support/chooserHelpers'
+import { expectChooserVisible, pickFromTitleMenu } from './support/chooserHelpers'
 
 const BELL = '.title-announcement-button'
 const WHATS_NEW_CLOSE = '[data-testid="announcement-close"]'
@@ -30,7 +30,7 @@ async function settleClose(): Promise<void> {
 }
 
 test("closing What's New stays on the Performance Tests page @windows @macos @linux", async () => {
-  expect(await ctx.panel.click('[data-testid="app-sidebar-performance-test"]')).toBe(true)
+  await pickFromTitleMenu(ctx.app, ctx.titleBar, 'Performance Tests')
   await ctx.panel.waitForVisible(PERFORMANCE_TEST)
 
   await openWhatsNew()

@@ -241,9 +241,7 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
         theme: { bg: '#262729', text: '#dddddd' }
       })
     )
-    await flushPromises()
-    await new Promise((r) => setTimeout(r, 20))
-    expect(bridgeState.notifyRenderedCalls).toBeGreaterThan(before)
+    await vi.waitFor(() => expect(bridgeState.notifyRenderedCalls).toBeGreaterThan(before))
   })
 
   it('asks main to close on Escape', async () => {

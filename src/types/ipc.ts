@@ -2,8 +2,20 @@ import type { FirstUseMode } from '../shared/firstUseMode'
 import type { GpuTier } from '../shared/gpuTier'
 export type { FirstUseMode }
 
-import type { AuthStatus, Workspace } from '../main/cloud/types'
-export type { AuthStatus, Workspace }
+import type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+} from '../main/cloud/types'
+export type {
+  AuthStatus,
+  Workspace,
+  WorkspaceSwitchFailure,
+  WorkspaceSwitchIntent,
+  WorkspaceSwitchStatus
+}
 
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
@@ -140,6 +152,7 @@ export interface AssetSummary {
   mimeType: string | null
   tags: string[]
   previewUrl: string | null
+  thumbnailUrl: string | null
 }
 
 export interface BuildStorageSnapshot {
@@ -755,8 +768,15 @@ export interface PerformanceTestBenchmark {
   averageJobDurationSeconds: number | null
   medianJobDurationSeconds: number | null
   measuredJobCount: number
-  hardwareName: string | null
+  machine: PerformanceTestMachine
   result: Record<string, PerformanceTestResultValue>
+}
+
+export interface PerformanceTestMachine {
+  gpu: string | null
+  cpu: string | null
+  memoryGb: number | null
+  platform: string | null
 }
 
 export interface SnapshotDiffEntry {
@@ -1128,7 +1148,8 @@ export interface ElectronApi {
   signalOverlayReady(): void
   navigatePanel(page: DashboardPage): void
   listAssets(installationId: string): Promise<AssetSummary[]>
-  downloadAsset(installationId: string, assetId: string, fileName: string): Promise<boolean>
+  listLocalAssets(): Promise<AssetSummary[]>
+  downloadAsset(source: string, assetId: string, fileName: string): Promise<boolean>
   showApps(rect: { x: number; y: number; width: number; height: number; fresh?: boolean }): void
   hideApps(): void
   onAppsLoadFailed(callback: (info: { url: string }) => void): Unsubscribe
@@ -1257,7 +1278,10 @@ export interface ElectronApi {
     getAuthStatus(): Promise<AuthStatus>
     onAuthChanged(callback: (status: AuthStatus) => void): Unsubscribe
     listWorkspaces(): Promise<Workspace[]>
-    switchWorkspace(workspaceId: string): Promise<AuthStatus>
+    switchWorkspace(
+      workspaceId: string,
+      intent?: WorkspaceSwitchIntent
+    ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
@@ -1378,6 +1402,8 @@ export interface ElectronApi {
     }) => void
   ): Unsubscribe
 }
+
+export const LOCAL_ASSETS_SOURCE = 'local'
 
 export const IN_PLACE_RELAUNCH = new Set(['update-comfyui', 'snapshot-restore', 'change-pytorch'])
 
