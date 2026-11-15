@@ -11,14 +11,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quit-with-fix-under-gdb:
-    name: Quit with forced GC, with the fix, under gdb (${{ matrix.replica }})
+  teardown-with-fix:
+    name: Picker teardown with the fix (${{ matrix.replica }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        replica: [1, 2]
+        replica: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
     steps:
       - name: Checkout
@@ -39,10 +39,7 @@ jobs:
       - name: Build app
         run: pnpm run build
 
-      - name: Install gdb
-        run: (sudo apt-get update && sudo apt-get install -y --no-install-recommends gdb) || echo "gdb is not available"
-
-      - name: Run the quit test
-        env:
-          TEARDOWN_DIAG_GDB: '1'
-        run: xvfb-run --auto-servernum pnpm exec playwright test --project=linux e2e/quit-garbage-collection.test.ts --retries=0 --reporter=list
+      - name: Repeat the picker spec under load
+        run: |
+          for i in 1 2 3; do ( while :; do :; done ) & done
+          xvfb-run --auto-servernum pnpm exec playwright test --project=linux e2e/picker-cluster.test.ts --repeat-each=100 --retries=0 --reporter=list
