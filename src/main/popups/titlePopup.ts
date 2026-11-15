@@ -1,4 +1,6 @@
-import { ipcMain, shell, dialog, WebContentsView, BrowserWindow } from 'electron'
+import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
+import type { WebContentsView } from 'electron'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
 import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
@@ -20,6 +22,7 @@ import * as settings from '../settings'
 import { defaultInstallDir } from '../lib/paths'
 import { convertLevelToZoomPercent } from '../lib/zoom'
 import { getAppLogDir } from '../lib/appLog'
+import { tryOpenExternalUrl } from '../lib/openExternal'
 import {
   openPath as openPathHelper,
   getAppVersion,
@@ -45,7 +48,8 @@ import {
   getEntryByInstallationId,
   hostInstallEvents,
   isChooserHost,
-  isPanelSender
+  isPanelSender,
+  unhostedLaunches
 } from '../host/registry'
 import type { ComfyPanelKey, ComfyWindowEntry } from '../host/registry'
 import { normaliseCategory, viewKindFor } from '../../shared/viewKind'
@@ -103,6 +107,7 @@ export interface InstancePickerSnapshot {
   runningInstallationIds: string[]
   runningSessionStartedAt: Record<string, number>
   launchingInstallationIds: string[]
+  unhostedLaunchingInstallationIds: string[]
   selectedInstallationId: string | null
   pickerSelectionEpoch: number
   selectedSettings: Record<string, unknown>[] | null
@@ -166,6 +171,7 @@ interface BuildInstancePickerSnapshotArgs {
   runningInstallationIds: string[]
   runningSessionStartedAt?: Record<string, number>
   launchingInstallationIds: string[]
+  unhostedLaunchingInstallationIds?: string[]
   selectedInstallationId?: string | null
   pickerSelectionEpoch?: number
   selectedSettings?: Record<string, unknown>[] | null
@@ -267,6 +273,7 @@ export function buildInstancePickerSnapshot(
     runningInstallationIds: args.runningInstallationIds,
     runningSessionStartedAt: args.runningSessionStartedAt ?? {},
     launchingInstallationIds: args.launchingInstallationIds,
+    unhostedLaunchingInstallationIds: args.unhostedLaunchingInstallationIds ?? [],
     selectedInstallationId: args.selectedInstallationId ?? null,
     pickerSelectionEpoch: args.pickerSelectionEpoch ?? 0,
     selectedSettings: args.selectedSettings ?? null,
@@ -380,7 +387,7 @@ const POPUP_BACKDROP_HTML = `<!doctype html>
 function ensurePopupBackdrop(parent: BrowserWindow): PopupBackdropEntry {
   const existing = popupBackdropsByParent.get(parent.id)
   if (existing && !existing.view.webContents.isDestroyed()) return existing
-  const view = new WebContentsView({
+  const view = createWebContentsView({
     webPreferences: {
       contextIsolation: false,
       nodeIntegration: true,
@@ -562,6 +569,7 @@ async function broadcastInstancePickerSnapshotToTitlePopups(
       runningInstallationIds,
       runningSessionStartedAt,
       launchingInstallationIds,
+      unhostedLaunchingInstallationIds: unhostedLaunches(launchingInstallationIds),
       selectedInstallationId: selectedId,
       pickerSelectionEpoch: entry.pickerSelectionEpoch,
       selectedSettings: details.settings,
@@ -1163,6 +1171,7 @@ function showInstancePickerForHost(
     runningInstallationIds,
     runningSessionStartedAt,
     launchingInstallationIds,
+    unhostedLaunchingInstallationIds: unhostedLaunches(launchingInstallationIds),
     selectedInstallationId: initialSelectedId,
     pickerSelectionEpoch,
     selectedSettings: null,
@@ -2091,9 +2100,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     (event, payload: { url?: unknown }) => {
       const popupEntry = titlePopupsByWebContents.get(event.sender.id)
       if (!popupEntry || popupEntry.kind !== 'global-settings') return
-      const url = payload?.url
-      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return
-      void shell.openExternal(url)
+      void tryOpenExternalUrl(payload?.url)
     }
   )
 

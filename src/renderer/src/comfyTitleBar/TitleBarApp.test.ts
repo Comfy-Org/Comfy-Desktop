@@ -71,7 +71,7 @@ interface MockBridgeState {
 }
 
 function installMockBridge(
-  opts: { isMac?: boolean; installationId?: string | null } = {}
+  opts: { isMac?: boolean; isLinux?: boolean; installationId?: string | null } = {}
 ): MockBridgeState {
   const state: MockBridgeState = {
     panelChangedCallbacks: [],
@@ -114,6 +114,7 @@ function installMockBridge(
   const bridge = {
     getInstallationId: () => installationId,
     isMac: () => !!opts.isMac,
+    isLinux: () => !!opts.isLinux,
     setPanel: (panel: string) => state.setPanelCalls.push(panel),
     openNewWindow: () => {
       state.newWindowCalls += 1

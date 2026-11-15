@@ -27,14 +27,13 @@ vi.mock('fs', () => ({
 }))
 
 import {
-  awaitTemplateDownloadSettled,
-  requestSkipTemplateDownload,
   abortTemplateDownload,
   forgetTemplateDownload,
   startTemplateDownload,
   getTemplateDownloadState,
   subscribeTemplateDownload
 } from './templateDownloadTask'
+import { DISK_SPACE_ERROR } from './templateDownloadCore'
 
 const sendOutput = vi.fn()
 
@@ -67,7 +66,7 @@ async function flush(): Promise<void> {
   }
 }
 
-describe('awaitTemplateDownloadSettled', () => {
+describe('starter model download task', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     resolveTemplateModels.mockReset()
@@ -82,42 +81,39 @@ describe('awaitTemplateDownloadSettled', () => {
     vi.useRealTimers()
   })
 
-  it("resolves 'absent' when there is no task for the install", async () => {
-    const ctrl = new AbortController()
-    await expect(awaitTemplateDownloadSettled('nope', ctrl.signal)).resolves.toBe('absent')
-  })
-
-  it("resolves 'done' once the task finishes (no models is an instant done)", async () => {
+  it('is done at once when the starter workflow needs no models', async () => {
     resolveTemplateModels.mockResolvedValue([])
     startTemplateDownload(makeInstall('done-1'), 0, { sendOutput })
     await flush()
-    expect(getTemplateDownloadState('done-1')?.status).toBe('done')
 
-    const ctrl = new AbortController()
-    await expect(awaitTemplateDownloadSettled('done-1', ctrl.signal)).resolves.toBe('done')
+    expect(getTemplateDownloadState('done-1')?.status).toBe('done')
+    expect(startManagedModelJob).not.toHaveBeenCalled()
   })
 
-  it("resolves 'error' when the task fails (resolve throws)", async () => {
+  it('fails when the model list cannot be resolved', async () => {
     resolveTemplateModels.mockRejectedValue(new Error('network down'))
     startTemplateDownload(makeInstall('err-1'), 0, { sendOutput })
     await flush()
-    expect(getTemplateDownloadState('err-1')?.status).toBe('error')
 
-    const ctrl = new AbortController()
-    await expect(awaitTemplateDownloadSettled('err-1', ctrl.signal)).resolves.toBe('error')
+    expect(getTemplateDownloadState('err-1')).toMatchObject({
+      status: 'error',
+      error: 'network down'
+    })
   })
 
-  it("resolves 'error' on a disk-space pre-flight failure", async () => {
+  it('fails before downloading anything when the disk is too small', async () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
     getDiskSpace.mockResolvedValue({ free: 1, total: 1e15 })
     startTemplateDownload(makeInstall('err-disk'), 10 * 1024 ** 3, { sendOutput })
     await flush()
-    expect(getTemplateDownloadState('err-disk')?.status).toBe('error')
 
-    const ctrl = new AbortController()
-    await expect(awaitTemplateDownloadSettled('err-disk', ctrl.signal)).resolves.toBe('error')
+    expect(getTemplateDownloadState('err-disk')).toMatchObject({
+      status: 'error',
+      error: DISK_SPACE_ERROR
+    })
+    expect(startManagedModelJob).not.toHaveBeenCalled()
   })
 
   it('skips the disk pre-flight when every model is already on disk', async () => {
@@ -135,7 +131,7 @@ describe('awaitTemplateDownloadSettled', () => {
     abortTemplateDownload('present-1')
   })
 
-  it("resolves 'cancelled' after abortTemplateDownload, cancelling the real jobs", async () => {
+  it('is cancelled by abortTemplateDownload, which releases its model jobs', async () => {
     resolveTemplateModels.mockResolvedValue([
       { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
     ])
@@ -144,9 +140,9 @@ describe('awaitTemplateDownloadSettled', () => {
     await vi.waitFor(() => expect(startManagedModelJob).toHaveBeenCalled())
 
     abortTemplateDownload('cancel-1')
+
     await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalled())
-    const ctrl = new AbortController()
-    await expect(awaitTemplateDownloadSettled('cancel-1', ctrl.signal)).resolves.toBe('cancelled')
+    expect(getTemplateDownloadState('cancel-1')?.status).toBe('cancelled')
   })
 
   it('forgetTemplateDownload aborts an in-flight task and drops its state', async () => {
@@ -161,22 +157,6 @@ describe('awaitTemplateDownloadSettled', () => {
 
     await vi.waitFor(() => expect(jobReleases.get('id-u')).toHaveBeenCalled())
     expect(getTemplateDownloadState('forget-1')).toBeUndefined()
-  })
-
-  it("resolves 'skipped' when the user requests skip mid-download", async () => {
-    resolveTemplateModels.mockResolvedValue([
-      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
-    ])
-    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
-    startTemplateDownload(makeInstall('skip-1'), 0, { sendOutput })
-    await flush()
-    expect(getTemplateDownloadState('skip-1')?.status).not.toBe('done')
-
-    const ctrl = new AbortController()
-    const settled = awaitTemplateDownloadSettled('skip-1', ctrl.signal)
-    requestSkipTemplateDownload('skip-1')
-    await vi.advanceTimersByTimeAsync(300)
-    await expect(settled).resolves.toBe('skipped')
   })
 
   it('starts each template model as a real managed model job (issue #1322)', async () => {
@@ -196,6 +176,7 @@ describe('awaitTemplateDownloadSettled', () => {
         onProgress: expect.any(Function)
       })
     )
+    abortTemplateDownload('job-1')
   })
 
   it("uses the install's effective primary models dir for preflight, not a global dir (#1376)", async () => {
@@ -213,40 +194,7 @@ describe('awaitTemplateDownloadSettled', () => {
 
     expect(resolveDownloadContextById).toHaveBeenCalledWith('dest-1')
     expect(getDiskSpace).toHaveBeenCalledWith('/install/models')
-  })
-
-  it("resolves 'aborted' when the gate's own signal aborts (launch teardown)", async () => {
-    resolveTemplateModels.mockResolvedValue([
-      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
-    ])
-    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
-    startTemplateDownload(makeInstall('abort-1'), 0, { sendOutput })
-    await flush()
-
-    const ctrl = new AbortController()
-    const settled = awaitTemplateDownloadSettled('abort-1', ctrl.signal)
-    ctrl.abort()
-    await expect(settled).resolves.toBe('aborted')
-  })
-
-  it('clears the skip flag on settle so a later download for the same id is not pre-skipped', async () => {
-    resolveTemplateModels.mockResolvedValue([
-      { filename: 'm.safetensors', directory: 'checkpoints', url: 'u' }
-    ])
-    startManagedModelJob.mockImplementation(async () => hangingJob('u'))
-    startTemplateDownload(makeInstall('skip-clear'), 0, { sendOutput })
-    await flush()
-
-    const ctrl1 = new AbortController()
-    const first = awaitTemplateDownloadSettled('skip-clear', ctrl1.signal)
-    requestSkipTemplateDownload('skip-clear')
-    await vi.advanceTimersByTimeAsync(300)
-    await expect(first).resolves.toBe('skipped')
-
-    const ctrl2 = new AbortController()
-    const second = awaitTemplateDownloadSettled('skip-clear', ctrl2.signal)
-    ctrl2.abort()
-    await expect(second).resolves.toBe('aborted')
+    abortTemplateDownload('dest-1')
   })
 })
 

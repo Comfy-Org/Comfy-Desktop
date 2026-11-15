@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   localState: vi.fn(),
   startLocal: vi.fn(),
   localFetch: vi.fn(),
-  localDownload: vi.fn()
+  localDownload: vi.fn(),
+  openInComfy: vi.fn(),
+  localBuilds: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -25,6 +27,10 @@ vi.mock('../../apps/localComfy', () => ({
   localFetch: mocks.localFetch,
   localDownload: mocks.localDownload
 }))
+vi.mock('../../apps/openInComfy', () => ({
+  openInComfy: mocks.openInComfy,
+  localBuilds: mocks.localBuilds
+}))
 vi.mock('../i18n', () => ({ t: (key: string) => key }))
 
 import { APPS_LOCAL_CHANNELS, registerAppsLocalHandlers } from './registerAppsLocalHandlers'
@@ -32,6 +38,12 @@ import { APPS_LOCAL_CHANNELS, registerAppsLocalHandlers } from './registerAppsLo
 const EVENT = { sender: {}, senderFrame: {} }
 const WANT = { minVersion: '0.41.0' }
 const RUNNING = { state: 'running', own: true, name: 'Studio', clientId: 'desktop-client' }
+const OPEN = {
+  prompt: { '9': { class_type: 'SaveImage', inputs: {} } },
+  where: 'local',
+  name: 'Remove Background'
+}
+const BUILDS = [{ id: 'inst-1', name: 'Studio' }]
 
 function call(channel: string, ...args: unknown[]): Promise<unknown> {
   const handler = mocks.handlers.get(channel)
@@ -48,6 +60,8 @@ beforeEach(() => {
   mocks.startLocal.mockResolvedValue(RUNNING)
   mocks.localFetch.mockResolvedValue({ status: 200, contentType: 'application/json', body: null })
   mocks.localDownload.mockResolvedValue({ state: 'done' })
+  mocks.openInComfy.mockResolvedValue({ opened: true })
+  mocks.localBuilds.mockResolvedValue(BUILDS)
   registerAppsLocalHandlers()
 })
 
@@ -67,6 +81,13 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(mocks.localDownload).toHaveBeenCalledWith(EVENT.sender, model)
   })
 
+  it('opens a workflow in ComfyUI and lists this computer builds for the page', async () => {
+    expect(await call(APPS_LOCAL_CHANNELS.openInComfy, OPEN)).toEqual({ opened: true })
+    expect(await call(APPS_LOCAL_CHANNELS.builds)).toEqual(BUILDS)
+
+    expect(mocks.openInComfy).toHaveBeenCalledWith(EVENT.sender, OPEN)
+  })
+
   it.each([
     ['a sender that is not the hosted Apps page', { isAppsPage: false, appsEnabled: true }],
     ['the Apps page while Apps is switched off', { isAppsPage: true, appsEnabled: false }]
@@ -77,10 +98,17 @@ describe('the ComfyUI on this computer, for the hosted Apps page', () => {
     expect(await call(APPS_LOCAL_CHANNELS.start, WANT)).toMatchObject({ state: 'unsupported' })
     await expect(call(APPS_LOCAL_CHANNELS.fetch, { path: '/queue' })).rejects.toThrow()
     expect(await call(APPS_LOCAL_CHANNELS.download, {})).toMatchObject({ state: 'failed' })
+    expect(await call(APPS_LOCAL_CHANNELS.openInComfy, OPEN)).toEqual({
+      opened: false,
+      error: 'apps.local.notRunning'
+    })
+    expect(await call(APPS_LOCAL_CHANNELS.builds)).toEqual([])
 
     expect(mocks.localState).not.toHaveBeenCalled()
     expect(mocks.startLocal).not.toHaveBeenCalled()
     expect(mocks.localFetch).not.toHaveBeenCalled()
     expect(mocks.localDownload).not.toHaveBeenCalled()
+    expect(mocks.openInComfy).not.toHaveBeenCalled()
+    expect(mocks.localBuilds).not.toHaveBeenCalled()
   })
 })

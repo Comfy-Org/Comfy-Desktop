@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import ChooserInstallTile from './ChooserInstallTile.vue'
 import { homeBuildTones } from '../../panel/home/homeBuild'
 import { useInstallationStore } from '../../stores/installationStore'
+import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import type { Installation } from '../../types/ipc'
 
 const props = withDefaults(
@@ -33,6 +34,7 @@ const emit = defineEmits<{
 
 const installationStore = useInstallationStore()
 const tones = computed(() => homeBuildTones(props.installations, installationStore.installations))
+const autoStart = useAutoStartBuild()
 
 function lockLeavingTileSize(el: Element): void {
   const node = el as HTMLElement
@@ -77,6 +79,7 @@ function unlockTileSize(el: Element): void {
       :show-why-cloud="props.showWhyCloud && installation.sourceCategory === 'cloud'"
       :is-stopped-action-gated="props.isStoppedActionGated(installation)"
       :is-promoting-to-workspace="props.isPromotingToWorkspace(installation)"
+      :auto-start="autoStart.startsOnOpen(installation.id)"
       @why-cloud="emit('why-cloud')"
       @pick="emit('pick', $event)"
       @open-details="emit('open-details', $event)"
@@ -85,6 +88,7 @@ function unlockTileSize(el: Element): void {
       @trigger-action="(action, inst) => emit('trigger-action', action, inst)"
       @view-error="emit('view-error', $event)"
       @view-danger="emit('view-danger', $event)"
+      @auto-start="(inst, on) => autoStart.setStartsOnOpen(inst.id, on)"
     />
   </TransitionGroup>
 </template>

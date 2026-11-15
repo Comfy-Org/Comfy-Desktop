@@ -14,6 +14,10 @@ function setRunning(running: Set<string>): void {
   sessionState.running = running
   triggerRef(sessionStoreVersion)
 }
+function setLaunching(launching: Set<string>): void {
+  sessionState.launching = launching
+  triggerRef(sessionStoreVersion)
+}
 vi.mock('../stores/sessionStore', () => ({
   useSessionStore: () => ({
     isRunning: (id: string) => {
@@ -38,6 +42,7 @@ function installation(id: string, sourceCategory: string): Installation {
 
 beforeEach(() => {
   setRunning(new Set<string>())
+  setLaunching(new Set<string>())
 })
 
 describe('useInstanceNavState — run-state derivation', () => {
@@ -80,6 +85,42 @@ describe('useInstanceNavState — run-state derivation', () => {
     expect(navState.targetRun.value).toBe('running-elsewhere')
   })
 
+  it('classifies an install starting on a dashboard card, with no window, as starting-unhosted', () => {
+    setLaunching(new Set(['A']))
+    const navState = useInstanceNavState(ref(installation('A', 'local')), {
+      currentView: 'dashboard' as ViewKind,
+      currentCategory: null,
+      activeInstallationId: null,
+      startingWithoutWindow: true
+    })
+    expect(navState.targetRun.value).toBe('starting-unhosted')
+  })
+
+  it('keeps an install that another window is booting as running-elsewhere', () => {
+    setLaunching(new Set(['A']))
+    const navState = useInstanceNavState(ref(installation('A', 'local')), {
+      currentView: 'dashboard' as ViewKind,
+      currentCategory: null,
+      activeInstallationId: null,
+      startingWithoutWindow: false
+    })
+    expect(navState.targetRun.value).toBe('running-elsewhere')
+  })
+
+  it('reads the install as stopped again once its windowless launch has ended', () => {
+    const startingWithoutWindow = ref(true)
+    setLaunching(new Set(['A']))
+    const navState = useInstanceNavState(ref(installation('A', 'local')), {
+      currentView: 'dashboard' as ViewKind,
+      currentCategory: null,
+      activeInstallationId: null,
+      startingWithoutWindow
+    })
+    expect(navState.targetRun.value).toBe('starting-unhosted')
+    setLaunching(new Set<string>())
+    expect(navState.targetRun.value).toBe('stopped')
+  })
+
   it('remote target routes like a cloud target (non-local URL backend)', () => {
     const navState = useInstanceNavState(ref(installation('R', 'remote')), {
       currentView: 'cloud' as ViewKind,
@@ -103,6 +144,19 @@ describe('useInstanceNavState — run-state derivation', () => {
 })
 
 describe('useInstanceNavState → decideNavigation (end to end)', () => {
+  it('dashboard host picking a build that is starting on its card → Restart, not Switch', () => {
+    setLaunching(new Set(['A']))
+    const navState = useInstanceNavState(ref(installation('A', 'local')), {
+      currentView: 'dashboard' as ViewKind,
+      currentCategory: null,
+      activeInstallationId: null,
+      startingWithoutWindow: true
+    })
+    const decision = decideNavigation(navState.navInput('primary'))
+    expect(decision.verb).toBe('restart')
+    expect(decision.primaryLabel).toBe(NAV_LABEL.restart)
+  })
+
   it('instance host picking a stopped local instance → switch in place', () => {
     const navState = useInstanceNavState(ref(installation('B', 'local')), {
       currentView: 'instance' as ViewKind,

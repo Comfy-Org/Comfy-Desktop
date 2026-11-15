@@ -29,6 +29,8 @@ import {
   _pendingPorts,
   _reservePort,
   _releasePort,
+  _claimedPorts,
+  _runningPortOwner,
   _addSession,
   _removeSession,
   _markLaunching,
@@ -74,14 +76,6 @@ import {
   AGENT_REQUIREMENTS_PHASE,
   FRONTEND_RESTORE_PHASE
 } from '../../launchPhases'
-import {
-  getTemplateDownloadState,
-  formatTemplateSubStatus,
-  awaitTemplateDownloadSettled,
-  subscribeTemplateDownload,
-  type TemplateDownloadSummary
-} from '../../../sources/standalone/templateDownloadTask'
-import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
@@ -121,7 +115,7 @@ import {
 } from '../../agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from '../../agentRequirementsOverride'
 import { recoverInterruptedComfyOp } from '../../opMarker'
-import { waitLaunchSpawnHold } from '../../e2eOverrides'
+import { waitLaunchReadyHold, waitLaunchSpawnHold } from '../../e2eOverrides'
 import {
   holderIsInstall,
   resolvePriorProcess,
@@ -717,6 +711,67 @@ export function _resolvePortConflictPolicy(
   }
 }
 
+export function isPortInUseOutput(output: string): boolean {
+  const text = output.toLowerCase()
+  return (
+    text.includes('address already in use') ||
+    text.includes('only one usage of each socket address') ||
+    text.includes('eaddrinuse') ||
+    /\bport \d+ is already in use\b/.test(text) ||
+    /\b(?:errno|winerror) 10048\b/.test(text)
+  )
+}
+
+function mentionsBusyPort(output: string): boolean {
+  const text = output.toLowerCase()
+  return isPortInUseOutput(text) || (text.includes('port') && text.includes('in use'))
+}
+
+async function nextUnclaimedPort(port: number): Promise<number | null> {
+  try {
+    return await findAvailablePort('127.0.0.1', port + 1, port + 1000, _claimedPorts())
+  } catch {
+    return null
+  }
+}
+
+async function portConflictResult(conflict: {
+  port: number
+  desktopOwner?: string
+  pids: number[]
+  nextPort: number | null
+}): Promise<ActionResult> {
+  const { port, desktopOwner, pids, nextPort } = conflict
+  const lockOwner = desktopOwner ?? readPortLock(port)?.installationName
+  if (lockOwner) {
+    return {
+      ok: false,
+      message: i18n.t('errors.portConflictLauncher', { port, name: lockOwner }),
+      portConflict: { port, pids, isComfy: true, nextPort }
+    }
+  }
+  if (pids.length === 0) {
+    return {
+      ok: false,
+      message: i18n.t('errors.portConflictOther', {
+        port,
+        process: i18n.t('errors.unknownProcess')
+      }),
+      portConflict: { port, pids, isComfy: false, nextPort }
+    }
+  }
+  const info = await getProcessInfo(pids[0]!)
+  const isComfy = looksLikeComfyUI(info)
+  return {
+    ok: false,
+    message: i18n.t(isComfy ? 'errors.portConflictComfy' : 'errors.portConflictOther', {
+      port,
+      process: info ? info.name : `PID ${pids[0]}`
+    }),
+    portConflict: { port, pids, isComfy, nextPort }
+  }
+}
+
 export function createAssetsTapSafe(
   base: Parameters<typeof createAssetsTap>[0]
 ): ReturnType<typeof createAssetsTap> {
@@ -924,14 +979,6 @@ async function runLaunch(
     restageBuildModelsIfNeeded(inst)
   }
 
-  const showTemplatePhase =
-    inst.sourceId === 'standalone' &&
-    !!inst.bundledTemplateId &&
-    inst.downloadTemplateModels === true &&
-    (inst.bundledTemplateSizeBytes ?? 0) > 0 &&
-    !!inst.pendingTemplateOpen &&
-    getTemplateDownloadState(installationId) !== undefined
-
   let launchNodeCount = 0
   async function scanLaunchNodeCount(): Promise<void> {
     try {
@@ -947,7 +994,7 @@ async function runLaunch(
     if (launchTracker) return launchTracker
     await scanLaunchNodeCount()
     launchTracker = createLaunchProgressTracker({
-      phases: buildLaunchPhases(inst, { preLaunchPhases, templateModels: showTemplatePhase }),
+      phases: buildLaunchPhases(inst, { preLaunchPhases }),
       nodeCount: launchNodeCount,
       sendProgress,
       onPhaseEnter: (phase) => recordBootPhase(sessionId, phase)
@@ -1400,74 +1447,6 @@ async function runLaunch(
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
 
-  let serverUp = false
-  let latestTemplateSummary: TemplateDownloadSummary | null = null
-  let firstTemplatePaint = true
-  let templatePreCompleted = false
-  let templatePaintDone = false
-  const paintTemplateProgress = (summary: TemplateDownloadSummary): void => {
-    if (!serverUp || templatePaintDone) return
-    const terminal = isTemplateDownloadTerminal(summary.status)
-    if (firstTemplatePaint) {
-      firstTemplatePaint = false
-      templatePreCompleted = terminal
-    }
-    sendProgress('template-models', {
-      percent: templatePreCompleted || terminal ? -1 : Math.min(99, Math.max(0, summary.percent)),
-      status: formatTemplateSubStatus(summary),
-      error: summary.status === 'error'
-    })
-    templatePaintDone = terminal
-  }
-
-  if (showTemplatePhase) {
-    const unsubscribe = subscribeTemplateDownload(installationId, (summary) => {
-      latestTemplateSummary = summary
-      paintTemplateProgress(summary)
-    })
-    abort.signal.addEventListener('abort', unsubscribe, { once: true })
-  }
-
-  function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        abort.signal.removeEventListener('abort', onAbort)
-        resolve()
-      }, ms)
-      const onAbort = (): void => {
-        clearTimeout(timer)
-        resolve()
-      }
-      abort.signal.addEventListener('abort', onAbort, { once: true })
-    })
-  }
-
-  async function waitForTemplateDownloadGate(): Promise<void> {
-    if (!showTemplatePhase) return
-    serverUp = true
-    if (latestTemplateSummary) paintTemplateProgress(latestTemplateSummary)
-
-    const state = getTemplateDownloadState(installationId)
-    if (!state) return
-    const failedAlready = state.status === 'error'
-    if (isTemplateDownloadTerminal(state.status) && !failedAlready) return
-
-    if (!failedAlready) {
-      const reason = await awaitTemplateDownloadSettled(installationId, abort.signal)
-      if (reason !== 'error' || abort.signal.aborted) return
-    }
-
-    for (let secs = 3; secs >= 1; secs--) {
-      if (abort.signal.aborted) return
-      sendProgress('template-models', {
-        percent: -1,
-        error: true,
-        status: i18n.t('standalone.templateModelsFailedCountdown', { secs })
-      })
-      await delay(1000)
-    }
-  }
-
   if (launchCmd.remote) {
     const displayUrl = displayLaunchUrl(launchCmd.url || '')
     sendProgress('launch', {
@@ -1708,25 +1687,19 @@ async function runLaunch(
 
   const pendingPortOwner = _pendingPorts.get(launchCmd.port!)
   const portBusy = !pendingPortOwner && (await isPortListening(launchCmd.port!))
-  const existingPids = pendingPortOwner || !portBusy ? [] : await findPidsByPort(launchCmd.port!)
-  const portOccupied = !!pendingPortOwner || portBusy
+  const existingPids = portBusy ? await findPidsByPort(launchCmd.port!) : []
+  const restartingPortOwner =
+    pendingPortOwner || portBusy ? undefined : _runningPortOwner(launchCmd.port!)
+  const desktopPortOwner = pendingPortOwner ?? restartingPortOwner
+  const portOccupied = !!desktopPortOwner || portBusy
   let portBumpedFrom: number | null = null
 
   if (portOccupied) {
-    const reservedPorts = new Set(_pendingPorts.keys())
-    let nextPort: number | null = null
-    try {
-      nextPort = await findAvailablePort(
-        '127.0.0.1',
-        launchCmd.port! + 1,
-        launchCmd.port! + 1000,
-        reservedPorts
-      )
-    } catch {}
+    const nextPort = await nextUnclaimedPort(launchCmd.port!)
 
     let sameInstallPid: number | null = null
     if (actionData?.autoPortOnConflict !== true && launchCmd.args!.includes('--enable-assets')) {
-      const lockPid = pendingPortOwner ? null : (readPortLock(launchCmd.port!)?.pid ?? null)
+      const lockPid = desktopPortOwner ? null : (readPortLock(launchCmd.port!)?.pid ?? null)
       for (const pid of new Set([...existingPids, ...(lockPid ? [lockPid] : [])])) {
         if (await holderIsInstall(pid, inst.installPath).catch(() => false)) {
           sameInstallPid = pid
@@ -1773,66 +1746,29 @@ async function runLaunch(
         `[launch] port ${launchCmd.port} is held by ` +
           (pendingPortOwner
             ? `a launch of "${pendingPortOwner}" in this Desktop`
-            : existingPids.length > 0
-              ? `pids ${existingPids.join(', ')}`
-              : 'a process that could not be listed') +
+            : restartingPortOwner
+              ? `"${restartingPortOwner}", which is restarting in this Desktop`
+              : existingPids.length > 0
+                ? `pids ${existingPids.join(', ')}`
+                : 'a process that could not be listed') +
           `, not a ComfyUI of this installation; using port ${nextPort}\n`
       )
       portBumpedFrom = launchCmd.port!
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
-      let message: string
-      let isComfy: boolean
-      if (pendingPortOwner) {
-        message = i18n.t('errors.portConflictLauncher', {
-          port: launchCmd.port!,
-          name: pendingPortOwner
-        })
-        isComfy = true
-      } else {
-        const lock = readPortLock(launchCmd.port!)
-        if (lock) {
-          message = i18n.t('errors.portConflictLauncher', {
-            port: launchCmd.port!,
-            name: lock.installationName
-          })
-          isComfy = true
-        } else if (existingPids.length > 0) {
-          const info = await getProcessInfo(existingPids[0]!)
-          isComfy = looksLikeComfyUI(info)
-          const processDesc = info ? info.name : `PID ${existingPids[0]}`
-          message = isComfy
-            ? i18n.t('errors.portConflictComfy', { port: launchCmd.port!, process: processDesc })
-            : i18n.t('errors.portConflictOther', { port: launchCmd.port!, process: processDesc })
-        } else {
-          isComfy = false
-          message = i18n.t('errors.portConflictOther', {
-            port: launchCmd.port!,
-            process: i18n.t('errors.unknownProcess')
-          })
-        }
-      }
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
-      return {
-        ok: false,
-        message,
-        portConflict: { port: launchCmd.port, pids: existingPids, isComfy, nextPort }
-      }
+      return portConflictResult({
+        port: launchCmd.port!,
+        desktopOwner: desktopPortOwner,
+        pids: existingPids,
+        nextPort
+      })
     }
   }
 
   const lateConflictOwner = _pendingPorts.get(launchCmd.port!)
   if (lateConflictOwner) {
-    const reservedPorts = new Set(_pendingPorts.keys())
-    let nextPort: number | null = null
-    try {
-      nextPort = await findAvailablePort(
-        '127.0.0.1',
-        launchCmd.port! + 1,
-        launchCmd.port! + 1000,
-        reservedPorts
-      )
-    } catch {}
+    const nextPort = await nextUnclaimedPort(launchCmd.port!)
 
     if (portConflictMode === 'auto' && nextPort && !portIsExplicit) {
       sendProgress('launch', {
@@ -1843,14 +1779,12 @@ async function runLaunch(
       setPortArg(launchCmd as LaunchCmd, nextPort)
     } else {
       if (_operationAborts.get(sessionId) === abort) _operationAborts.delete(sessionId)
-      return {
-        ok: false,
-        message: i18n.t('errors.portConflictLauncher', {
-          port: launchCmd.port!,
-          name: lateConflictOwner
-        }),
-        portConflict: { port: launchCmd.port, pids: [], isComfy: true, nextPort }
-      }
+      return portConflictResult({
+        port: launchCmd.port!,
+        desktopOwner: lateConflictOwner,
+        pids: [],
+        nextPort
+      })
     }
   }
 
@@ -1923,6 +1857,7 @@ async function runLaunch(
         stderr?: string
         exitCode?: number | null
         signal?: string | null
+        lostPort?: boolean
       }
   > => {
     await waitLaunchSpawnHold(abort.signal)
@@ -1987,6 +1922,7 @@ async function runLaunch(
         }),
         earlyExitPromise
       ])
+      await waitLaunchReadyHold(abort.signal)
       if (abort.signal.aborted) throw new Error('Launch cancelled')
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {
@@ -2026,40 +1962,31 @@ async function runLaunch(
         sendOutput(`\n${record}\n`)
         return tryLaunch()
       }
-      const stderr = spawned.getStderr().toLowerCase()
-      const isPortConflict =
-        stderr.includes('address already in use') ||
-        (stderr.includes('port') && stderr.includes('in use'))
+      const failureStderr = spawned.getStderr()
       if (
         stopped.exited &&
-        isPortConflict &&
+        mentionsBusyPort(failureStderr) &&
         portConflictMode === 'auto' &&
         !portIsExplicit &&
         portRetries < PORT_RETRY_MAX
       ) {
         portRetries++
-        try {
-          const reservedPorts = new Set(_pendingPorts.keys())
-          const retryPort = await findAvailablePort(
-            '127.0.0.1',
-            launchCmd.port! + 1,
-            launchCmd.port! + 1000,
-            reservedPorts
-          )
+        const retryPort = await nextUnclaimedPort(launchCmd.port!)
+        if (retryPort !== null) {
           sendOutput(`\nPort ${launchCmd.port} in use, retrying on port ${retryPort}…\n`)
           _releasePort(launchCmd.port!)
           setPortArg(launchCmd as LaunchCmd, retryPort)
           _reservePort(launchCmd.port!, inst.name)
           return tryLaunch()
-        } catch {}
+        }
       }
-      const failureStderr = spawned.getStderr()
       return {
         ok: false,
         message: (err as Error).message,
         stderr: failureStderr,
         exitCode,
-        signal: exitSignal
+        signal: exitSignal,
+        lostPort: stopped.exited && exitedDuringStartup && isPortInUseOutput(failureStderr)
       }
     }
   }
@@ -2141,6 +2068,19 @@ async function runLaunch(
     }
     if (dbLocked) {
       return { ok: false, message: i18n.t('errors.comfyDbLocked') }
+    }
+    if (launchResult.lostPort) {
+      const lostPort = launchCmd.port!
+      appendLog(
+        sessionId,
+        `[launch] ComfyUI could not start: port ${lostPort} was taken while it was starting\n`
+      )
+      return portConflictResult({
+        port: lostPort,
+        desktopOwner: _pendingPorts.get(lostPort) ?? _runningPortOwner(lostPort),
+        pids: await findPidsByPort(lostPort).catch(() => []),
+        nextPort: await nextUnclaimedPort(lostPort)
+      })
     }
     return { ok: false, message: assetsFailure?.message || launchResult.message }
   }
@@ -2391,8 +2331,6 @@ async function runLaunch(
     })
   }
   attachExitHandler(proc)
-
-  await waitForTemplateDownloadGate()
 
   abort.abort()
 

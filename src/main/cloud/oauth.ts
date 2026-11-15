@@ -1,6 +1,4 @@
-import { app, shell } from 'electron'
-
-import { recordShellOpenExternal } from '../lib/e2eOverrides'
+import { openExternalUrl } from '../lib/openExternal'
 import { statusFromAccessToken } from './claims'
 import { CLOUD_CONFIG } from './config'
 import { startLoopbackListener } from './loopback'
@@ -119,11 +117,7 @@ async function requestToken(tokenUrl: string, body: URLSearchParams): Promise<To
 }
 
 export function openAuthorizePage(authorizeUrl: string): Promise<void> {
-  if (process.env['E2E'] === '1' && !app.isPackaged) {
-    recordShellOpenExternal(authorizeUrl)
-    return Promise.resolve()
-  }
-  return shell.openExternal(authorizeUrl)
+  return openExternalUrl(authorizeUrl)
 }
 
 export async function signIn(

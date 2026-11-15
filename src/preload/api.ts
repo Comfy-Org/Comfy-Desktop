@@ -70,8 +70,6 @@ export function buildElectronApi(): ElectronApi {
     trackInstallation: (data) => ipcRenderer.invoke('track-installation', data),
     installInstance: (installationId, express) =>
       ipcRenderer.invoke('install-instance', installationId, express),
-    skipTemplateDownload: (installationId) =>
-      ipcRenderer.invoke('skip-template-download', installationId),
     updateInstallation: (installationId, data) =>
       ipcRenderer.invoke('update-installation', installationId, data),
 
@@ -107,7 +105,6 @@ export function buildElectronApi(): ElectronApi {
     trashAsset: (source, assetId) => ipcRenderer.invoke('assets:trash', source, assetId),
     listHomeWorkflows: () => ipcRenderer.invoke('catalog:list-home-workflows'),
     openCatalogWorkflow: (id) => ipcRenderer.invoke('catalog:open-workflow', id),
-    openCatalogWorkflowHub: () => ipcRenderer.invoke('catalog:open-workflow-hub'),
     getAppsEnabled: () => ipcRenderer.invoke('apps:get-enabled'),
     listApps: () => ipcRenderer.invoke('apps:list'),
     showAppPage: (appId, placement) => ipcRenderer.invoke('apps:show-page', appId, placement),

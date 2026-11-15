@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, useId } from 'vue'
-import { X } from 'lucide-vue-next'
+import { X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from './DesktopDialogSurface.vue'
 import { linkify, handleModalLinkClick } from '../../lib/modalLinkify'

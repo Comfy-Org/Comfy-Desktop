@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, toRef, useTemplateRef, watch } from 'vue'
 import { I18nT, useI18n } from 'vue-i18n'
-import { CircleAlert, FolderOpen, ImageDown, Play, Square, X } from 'lucide-vue-next'
+import { CircleAlert, FolderOpen, ImageDown, Play, Square, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import BrandBackground from '../components/BrandBackground.vue'
 import BrandedPageHeader from '../components/BrandedPageHeader.vue'

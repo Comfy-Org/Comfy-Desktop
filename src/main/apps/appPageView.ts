@@ -1,5 +1,5 @@
-import { WebContentsView, app, session, shell } from 'electron'
-import type { Event, Session, WebContents } from 'electron'
+import { session } from 'electron'
+import type { Event, Session, WebContents, WebContentsView } from 'electron'
 import path from 'path'
 
 import { isAppsListUrl, isInAppsScope, isWebUrl } from '../../shared/appsLocation'
@@ -9,9 +9,10 @@ import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { attachContextMenu } from '../lib/contextMenu'
-import { recordShellOpenExternal } from '../lib/e2eOverrides'
+import { tryOpenExternalUrl } from '../lib/openExternal'
 import * as mainTelemetry from '../lib/telemetry'
 import { COMFY_BG } from '../lib/theme'
+import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { pageUrlForListedApp } from './appsCatalog'
 import { areAppsEnabled, currentAppsLocation } from './appsConfig'
 import { registerAppsPage } from './appsPages'
@@ -69,12 +70,7 @@ function secureSession(appsSession: Session, location: AppsLocation): void {
 }
 
 function openOutside(url: string): void {
-  if (!isWebUrl(url)) return
-  if (process.env['E2E'] === '1' && !app.isPackaged) {
-    recordShellOpenExternal(url)
-    return
-  }
-  void shell.openExternal(url).catch(() => {})
+  if (isWebUrl(url)) void tryOpenExternalUrl(url)
 }
 
 function panelOf(windowKey: number): WebContents | null {
@@ -137,7 +133,7 @@ function disposeHostedPage(windowKey: number): void {
 function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation): HostedPage {
   const appsSession = session.fromPartition(APPS_PARTITION)
   secureSession(appsSession, location)
-  const view = new WebContentsView({
+  const view = createWebContentsView({
     webPreferences: {
       session: appsSession,
       preload: path.join(__dirname, '../preload/appsPreload.js'),

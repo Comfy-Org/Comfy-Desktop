@@ -10,7 +10,7 @@ import {
   History,
   Settings2,
   Trash2
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
@@ -331,7 +331,8 @@ export function useInstallContextMenu(
           cancellable: true,
           returnTo: 'list',
           opKind: progressOpKindForActionId('delete'),
-          destroysInstance: destroysInstanceForActionId('delete')
+          destroysInstance: destroysInstanceForActionId('delete'),
+          actionId: 'delete'
         })
         return
       }

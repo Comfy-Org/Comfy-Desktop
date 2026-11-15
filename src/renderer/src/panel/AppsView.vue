@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AppWindow, Search } from 'lucide-vue-next'
+import { AppWindow, Search } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Skeleton from '@comfyorg/design-system/skeleton/Skeleton'
 import AppPageHost from './AppPageHost.vue'
@@ -14,6 +14,8 @@ type LoadState = 'loading' | 'ready' | 'failed'
 const SKELETON_CARD_COUNT = 8
 
 const { revisit = 0 } = defineProps<{ revisit?: number }>()
+
+const startWith = defineModel<AppCard | null>('startWith', { default: null })
 
 const emit = defineEmits<{ 'app-open-change': [open: boolean] }>()
 
@@ -71,6 +73,16 @@ watch(
 )
 
 watch(openApp, (app) => emit('app-open-change', app !== null))
+
+watch(
+  startWith,
+  (app) => {
+    if (!app) return
+    startWith.value = null
+    open(app)
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   stopClosedUpdates = window.api.onAppPageClosed(() => void closeApp())

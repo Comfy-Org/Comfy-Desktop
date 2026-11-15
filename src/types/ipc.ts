@@ -127,12 +127,7 @@ export interface Installation {
 }
 
 export type DashboardPage =
-  | 'home'
-  | 'apps'
-  | 'assets'
-  | 'chooser'
-  | 'benchmarks'
-  | 'performance-test'
+  'home' | 'apps' | 'assets' | 'chooser' | 'benchmarks' | 'performance-test'
 
 export interface AppCard {
   id: string
@@ -607,12 +602,7 @@ export interface DiskSpaceInfo {
 export type PathIssue = 'insideAppBundle' | 'oneDrive' | 'insideSharedDir' | 'insideExistingInstall'
 
 export type ModelDownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled'
+  'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 export interface ModelDownloadProgress {
   id?: string
@@ -1145,7 +1135,6 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string, express?: boolean): Promise<void>
-  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>
@@ -1176,7 +1165,6 @@ export interface ElectronApi {
   trashAsset(source: string, assetId: string): Promise<boolean>
   listHomeWorkflows(): Promise<CatalogWorkflow[]>
   openCatalogWorkflow(id: string): Promise<boolean>
-  openCatalogWorkflowHub(): Promise<boolean>
   getAppsEnabled(): Promise<boolean>
   listApps(): Promise<AppCard[]>
   showAppPage(appId: string, placement: AppPagePlacement): Promise<AppPageStatus>

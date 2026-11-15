@@ -91,12 +91,7 @@ export function parseArgs(raw: string, schema: ComfyArgDef[]): ParsedArgs {
 }
 
 export type ArgTokenStatus =
-  | 'ok'
-  | 'unsupported'
-  | 'missing-value'
-  | 'awaiting-value'
-  | 'orphaned'
-  | 'partial'
+  'ok' | 'unsupported' | 'missing-value' | 'awaiting-value' | 'orphaned' | 'partial'
 
 export interface ArgToken {
   text: string

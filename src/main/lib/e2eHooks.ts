@@ -26,7 +26,10 @@ import {
   resetShellOpenExternalCalls,
   armLaunchSpawnHold,
   releaseLaunchSpawnHold,
-  isLaunchSpawnHeld
+  isLaunchSpawnHeld,
+  armLaunchReadyHold,
+  releaseLaunchReadyHold,
+  isLaunchReadyHeld
 } from './e2eOverrides'
 import {
   _runningSessions,
@@ -74,6 +77,9 @@ export interface E2EHelpers {
   armLaunchSpawnHold(): void
   releaseLaunchSpawnHold(): void
   isLaunchSpawnHeld(): boolean
+  armLaunchReadyHold(): void
+  releaseLaunchReadyHold(): void
+  isLaunchReadyHeld(): boolean
   getReleaseCacheCheckedAt(repo: string, channel: string): number | null
   ageReleaseCache(maxCheckedAt: number): void
   ensureInstallPanelView(installationId: string): boolean
@@ -142,6 +148,9 @@ export function registerE2EHooks(): void {
     armLaunchSpawnHold,
     releaseLaunchSpawnHold,
     isLaunchSpawnHeld,
+    armLaunchReadyHold,
+    releaseLaunchReadyHold,
+    isLaunchReadyHeld,
     getReleaseCacheCheckedAt(repo, channel) {
       return _releaseCacheGet(repo, channel)?.checkedAt ?? null
     },

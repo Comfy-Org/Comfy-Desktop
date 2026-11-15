@@ -44,7 +44,13 @@ vi.mock('electron', () => ({
     showItemInFolder: (file: string) => shownInFolder(file),
     trashItem: (file: string) => trashed(file)
   },
-  clipboard: { writeImage: (image: unknown) => copiedImage(image) },
+  clipboard: { write: async (items: unknown[]) => copiedImage(items) },
+  ClipboardItem: class {
+    readonly types: string[]
+    constructor(readonly items: Record<string, unknown>) {
+      this.types = Object.keys(items)
+    }
+  },
   protocol: { handle: vi.fn(), registerSchemesAsPrivileged: vi.fn() },
   net: { fetch: (url: string) => fetchFile(url) },
   nativeImage: {
@@ -395,7 +401,7 @@ describe('acting on a file from its card', () => {
     const outside = path.join(outsideDir, 'secret.png')
     write(inside)
     write(outside)
-    fullImage.mockReturnValue({ isEmpty: () => false })
+    fullImage.mockReturnValue({ isEmpty: () => false, toPNG: () => Buffer.from('png bytes') })
 
     expect(await revealOutputFile(outside), 'a file outside is not shown').toBe(false)
     expect(await copyOutputImage(outside), 'a file outside is not copied').toBe(false)
@@ -408,6 +414,12 @@ describe('acting on a file from its card', () => {
     expect(shownInFolder).toHaveBeenCalledExactlyOnceWith(inside)
     expect(await copyOutputImage(inside)).toBe(true)
     expect(copiedImage).toHaveBeenCalledOnce()
+    const [copiedItem] = copiedImage.mock.calls[0]?.[0] as {
+      types: string[]
+      items: Record<string, Blob>
+    }[]
+    expect(copiedItem?.types, 'the picture is copied as a PNG').toEqual(['image/png'])
+    expect(await copiedItem?.items['image/png']?.text()).toBe('png bytes')
     expect(await trashOutputFile(inside)).toBe(true)
     expect(fs.existsSync(inside), 'the picture left the output folder').toBe(false)
   })

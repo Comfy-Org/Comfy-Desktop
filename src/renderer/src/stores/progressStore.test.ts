@@ -3,7 +3,7 @@ import { stubWindowApi } from '../lib/stubWindowApi'
 import { setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ActionResult } from '../types/ipc'
+import type { ActionResult, ProgressData } from '../types/ipc'
 import type * as TelemetryModule from '../lib/telemetry'
 import { useProgressStore } from './progressStore'
 import { useSessionStore } from './sessionStore'
@@ -505,6 +505,56 @@ describe('useProgressStore', () => {
       op.result = { ok: true } as ActionResult
 
       expect(store.globalProgressFor(op).percent).toBe(100)
+    })
+  })
+
+  describe('a standalone install, as its progress events arrive', () => {
+    function startInstall(): {
+      receive: (event: Omit<ProgressData, 'installationId'>) => void
+      barPercent: () => number
+    } {
+      store.startOperation({
+        installationId: 'build-1',
+        title: 'Installing',
+        apiCall: () => new Promise<ActionResult>(() => {}),
+        opKind: 'install'
+      })
+      const onProgress = vi.mocked(window.api.onInstallProgress).mock.calls.at(-1)![0] as (
+        data: ProgressData
+      ) => void
+      return {
+        receive: (event) => onProgress({ installationId: 'build-1', ...event }),
+        barPercent: () =>
+          Math.round(store.globalProgressFor(store.operations.get('build-1')!).percent)
+      }
+    }
+
+    const fourSteps = [
+      { phase: 'download', label: 'Download' },
+      { phase: 'extract', label: 'Extract' },
+      { phase: 'setup', label: 'Set up environment' },
+      { phase: 'update', label: 'Get ComfyUI v0.3.50' }
+    ]
+
+    it('holds the bar where the package copy left it while the rest of Set up environment runs', () => {
+      const install = startInstall()
+      install.receive({ phase: 'steps', steps: fourSteps })
+
+      const bar: number[] = []
+      const after = (event: Omit<ProgressData, 'installationId'>): void => {
+        install.receive(event)
+        bar.push(install.barPercent())
+      }
+      after({ phase: 'download', percent: 100, status: 'Downloading… 3 / 3 MB' })
+      after({ phase: 'extract', percent: 100, status: 'Extracting… 100%' })
+      after({ phase: 'setup', percent: 0, status: 'Creating Python environment…' })
+      after({ phase: 'setup', percent: 100, status: 'Copying packages… 9 / 9 files' })
+      after({ phase: 'setup', percent: -1, status: 'Removing duplicate packages…' })
+      after({ phase: 'setup', percent: -1, status: 'Fetching version tags…' })
+      after({ phase: 'update', percent: -1, status: 'Checking the version in this download…' })
+      after({ phase: 'update', percent: 100, status: 'Now on ComfyUI v0.3.50' })
+
+      expect(bar).toEqual([40, 60, 60, 90, 90, 90, 90, 99])
     })
   })
 })

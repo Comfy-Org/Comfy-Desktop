@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, Cloud, LoaderCircle, OctagonAlert, X } from 'lucide-vue-next'
+import { Check, ChevronDown, Cloud, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import { useCloudGate } from '../composables/useCloudGate'
@@ -286,8 +286,7 @@ async function tryCloud(): Promise<void> {
               class="m-0 mt-1 h-[82px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
               tabindex="0"
               data-testid="build-progress-logs"
-              >{{ logText || t('installProgress.starting') }}</pre
-            >
+              >{{ logText || t('installProgress.starting') }}</pre>
           </div>
 
           <div class="flex h-[340px] w-[272px] shrink-0 items-center justify-center">

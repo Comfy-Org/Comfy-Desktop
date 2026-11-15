@@ -62,9 +62,7 @@ export function coreGateVersion(inst: InstallationRecord): Omit<CoreVersionState
 }
 
 export type CoreCheckout =
-  | { kind: 'not-git' }
-  | { kind: 'head'; commit: string }
-  | { kind: 'unreadable' }
+  { kind: 'not-git' } | { kind: 'head'; commit: string } | { kind: 'unreadable' }
 
 export function coreRecordCurrent(inst: InstallationRecord, checkout: CoreCheckout): boolean {
   switch (checkout.kind) {
