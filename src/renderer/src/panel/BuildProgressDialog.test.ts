@@ -186,24 +186,19 @@ describe('BuildProgressDialog', () => {
     expect(logs().display).toBe('')
   })
 
-  it('plays one of the build videos and tells a tall clip from a wide or square one', async () => {
+  it('plays one of the build videos in one fixed frame, whatever its shape', async () => {
     const w = await openDialog()
     const video = w.get<HTMLVideoElement>('[data-testid="build-progress-video"]')
     expect(video.attributes('src')).toMatch(/^\.\/build-progress\/[a-z_]+\.webm$/)
+    const frame = video.element.parentElement!
+    expect(frame.className).toContain('h-[min(340px,calc(100vh-290px))]')
+    expect(frame.className).toContain('w-[272px]')
+    expect(video.classes()).toEqual(
+      expect.arrayContaining(['size-full', 'object-cover', 'opacity-0'])
+    )
 
-    const loadAs = async (width: number, height: number): Promise<void> => {
-      Object.defineProperty(video.element, 'videoWidth', { configurable: true, value: width })
-      Object.defineProperty(video.element, 'videoHeight', { configurable: true, value: height })
-      await video.trigger('loadedmetadata')
-    }
-    await loadAs(480, 640)
-    expect(video.attributes('data-shape')).toBe('tall')
-
-    await loadAs(942, 530)
-    expect(video.attributes('data-shape')).toBe('wide')
-
-    await loadAs(708, 708)
-    expect(video.attributes('data-shape')).toBe('wide')
+    await video.trigger('loadeddata')
+    expect(video.classes()).toContain('opacity-100')
   })
 
   it('never pitches Cloud while a build installs or starts', async () => {

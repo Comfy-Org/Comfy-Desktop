@@ -60,12 +60,7 @@ const logsRef = ref<HTMLElement | null>(null)
 const video = `./build-progress/${
   BUILD_PROGRESS_VIDEOS[Math.floor(Math.random() * BUILD_PROGRESS_VIDEOS.length)]
 }.webm`
-const videoShape = ref<'tall' | 'wide' | null>(null)
-
-function measureVideo(event: Event): void {
-  const el = event.target as HTMLVideoElement
-  videoShape.value = el.videoHeight > el.videoWidth ? 'tall' : 'wide'
-}
+const videoReady = ref(false)
 
 const steps = computed<StepRow[]>(() => {
   const current = op.value
@@ -246,24 +241,20 @@ async function cancel(): Promise<void> {
             </ol>
           </div>
 
-          <div class="flex h-[272px] w-[272px] shrink-0 items-center justify-center">
+          <div
+            class="h-[min(340px,calc(100vh-290px))] w-[272px] shrink-0 overflow-hidden rounded-[18px] bg-[#161619]"
+          >
             <video
-              class="transition-opacity duration-200 motion-reduce:transition-none"
-              :class="[
-                videoShape === 'tall'
-                  ? 'aspect-[4/5] h-[272px] rounded-[18px] border border-white/8 bg-[#161619] object-cover'
-                  : 'h-auto max-h-[272px] w-[272px] rounded-xl',
-                videoShape ? 'opacity-100' : 'opacity-0'
-              ]"
+              class="size-full object-cover transition-opacity duration-200 motion-reduce:transition-none"
+              :class="videoReady ? 'opacity-100' : 'opacity-0'"
               :src="video"
               autoplay
               muted
               loop
               playsinline
               aria-hidden="true"
-              :data-shape="videoShape ?? undefined"
               data-testid="build-progress-video"
-              @loadedmetadata="measureVideo"
+              @loadeddata="videoReady = true"
             />
           </div>
         </div>
@@ -323,9 +314,9 @@ async function cancel(): Promise<void> {
           <Button
             v-else
             type="button"
-            variant="muted-textonly"
+            variant="secondary"
             size="unset"
-            class="ml-auto h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
+            class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
             :disabled="cancelling"
             data-testid="build-progress-cancel"
             @click="cancel"
