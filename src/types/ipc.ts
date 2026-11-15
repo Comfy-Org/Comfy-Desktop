@@ -1135,7 +1135,6 @@ export interface ElectronApi {
   probeInstallation(dirPath: string): Promise<ProbeResult[]>
   trackInstallation(data: Record<string, unknown>): Promise<TrackResult>
   installInstance(installationId: string, express?: boolean): Promise<void>
-  skipTemplateDownload(installationId: string): Promise<void>
   updateInstallation(
     installationId: string,
     data: Record<string, unknown>

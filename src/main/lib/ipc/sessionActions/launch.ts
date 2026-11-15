@@ -76,14 +76,6 @@ import {
   AGENT_REQUIREMENTS_PHASE,
   FRONTEND_RESTORE_PHASE
 } from '../../launchPhases'
-import {
-  getTemplateDownloadState,
-  formatTemplateSubStatus,
-  awaitTemplateDownloadSettled,
-  subscribeTemplateDownload,
-  type TemplateDownloadSummary
-} from '../../../sources/standalone/templateDownloadTask'
-import { isTerminal as isTemplateDownloadTerminal } from '../../../sources/standalone/templateDownloadCore'
 import { restageBuildModelsIfNeeded } from '../../../sources/comfybuilder/modelStagingTask'
 import { initializeModelDownloads } from '../../comfyDownloadManager'
 import type { PreLaunchPhase } from '../../launchPhases'
@@ -987,14 +979,6 @@ async function runLaunch(
     restageBuildModelsIfNeeded(inst)
   }
 
-  const showTemplatePhase =
-    inst.sourceId === 'standalone' &&
-    !!inst.bundledTemplateId &&
-    inst.downloadTemplateModels === true &&
-    (inst.bundledTemplateSizeBytes ?? 0) > 0 &&
-    !!inst.pendingTemplateOpen &&
-    getTemplateDownloadState(installationId) !== undefined
-
   let launchNodeCount = 0
   async function scanLaunchNodeCount(): Promise<void> {
     try {
@@ -1010,7 +994,7 @@ async function runLaunch(
     if (launchTracker) return launchTracker
     await scanLaunchNodeCount()
     launchTracker = createLaunchProgressTracker({
-      phases: buildLaunchPhases(inst, { preLaunchPhases, templateModels: showTemplatePhase }),
+      phases: buildLaunchPhases(inst, { preLaunchPhases }),
       nodeCount: launchNodeCount,
       sendProgress,
       onPhaseEnter: (phase) => recordBootPhase(sessionId, phase)
@@ -1462,74 +1446,6 @@ async function runLaunch(
 
   const { preLaunchExtras, manageModelFolders, modelDirsForLaunch, modelSyncOptions } =
     applyStorageLaunchArgs(inst, installationId, launchCmd, storageSettings)
-
-  let serverUp = false
-  let latestTemplateSummary: TemplateDownloadSummary | null = null
-  let firstTemplatePaint = true
-  let templatePreCompleted = false
-  let templatePaintDone = false
-  const paintTemplateProgress = (summary: TemplateDownloadSummary): void => {
-    if (!serverUp || templatePaintDone) return
-    const terminal = isTemplateDownloadTerminal(summary.status)
-    if (firstTemplatePaint) {
-      firstTemplatePaint = false
-      templatePreCompleted = terminal
-    }
-    sendProgress('template-models', {
-      percent: templatePreCompleted || terminal ? -1 : Math.min(99, Math.max(0, summary.percent)),
-      status: formatTemplateSubStatus(summary),
-      error: summary.status === 'error'
-    })
-    templatePaintDone = terminal
-  }
-
-  if (showTemplatePhase) {
-    const unsubscribe = subscribeTemplateDownload(installationId, (summary) => {
-      latestTemplateSummary = summary
-      paintTemplateProgress(summary)
-    })
-    abort.signal.addEventListener('abort', unsubscribe, { once: true })
-  }
-
-  function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        abort.signal.removeEventListener('abort', onAbort)
-        resolve()
-      }, ms)
-      const onAbort = (): void => {
-        clearTimeout(timer)
-        resolve()
-      }
-      abort.signal.addEventListener('abort', onAbort, { once: true })
-    })
-  }
-
-  async function waitForTemplateDownloadGate(): Promise<void> {
-    if (!showTemplatePhase) return
-    serverUp = true
-    if (latestTemplateSummary) paintTemplateProgress(latestTemplateSummary)
-
-    const state = getTemplateDownloadState(installationId)
-    if (!state) return
-    const failedAlready = state.status === 'error'
-    if (isTemplateDownloadTerminal(state.status) && !failedAlready) return
-
-    if (!failedAlready) {
-      const reason = await awaitTemplateDownloadSettled(installationId, abort.signal)
-      if (reason !== 'error' || abort.signal.aborted) return
-    }
-
-    for (let secs = 3; secs >= 1; secs--) {
-      if (abort.signal.aborted) return
-      sendProgress('template-models', {
-        percent: -1,
-        error: true,
-        status: i18n.t('standalone.templateModelsFailedCountdown', { secs })
-      })
-      await delay(1000)
-    }
-  }
 
   if (launchCmd.remote) {
     const displayUrl = displayLaunchUrl(launchCmd.url || '')
@@ -2415,8 +2331,6 @@ async function runLaunch(
     })
   }
   attachExitHandler(proc)
-
-  await waitForTemplateDownloadGate()
 
   abort.abort()
 

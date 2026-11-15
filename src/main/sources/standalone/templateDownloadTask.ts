@@ -62,45 +62,6 @@ export function abortTemplateDownload(installationId: string): void {
   }
 }
 
-const _templateSkips = new Set<string>()
-
-export function requestSkipTemplateDownload(installationId: string): void {
-  _templateSkips.add(installationId)
-}
-
-const SETTLE_POLL_MS = 250
-
-export function awaitTemplateDownloadSettled(
-  installationId: string,
-  signal: AbortSignal
-): Promise<'done' | 'error' | 'cancelled' | 'skipped' | 'aborted' | 'absent'> {
-  return new Promise((resolve) => {
-    const settle = (
-      reason: 'done' | 'error' | 'cancelled' | 'skipped' | 'aborted' | 'absent'
-    ): void => {
-      clearInterval(timer)
-      signal.removeEventListener('abort', onAbort)
-      _templateSkips.delete(installationId)
-      resolve(reason)
-    }
-    const onAbort = (): void => settle('aborted')
-
-    const check = (): void => {
-      if (signal.aborted) return settle('aborted')
-      if (_templateSkips.has(installationId)) return settle('skipped')
-      const state = _templateDownloads.get(installationId)
-      if (!state) return settle('absent')
-      if (isTerminal(state.status)) {
-        settle(state.status === 'done' ? 'done' : state.status === 'error' ? 'error' : 'cancelled')
-      }
-    }
-
-    signal.addEventListener('abort', onAbort, { once: true })
-    const timer = setInterval(check, SETTLE_POLL_MS)
-    check()
-  })
-}
-
 interface StartOpts {
   sendOutput: (text: string) => void
 }

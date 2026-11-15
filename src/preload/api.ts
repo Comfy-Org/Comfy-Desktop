@@ -70,8 +70,6 @@ export function buildElectronApi(): ElectronApi {
     trackInstallation: (data) => ipcRenderer.invoke('track-installation', data),
     installInstance: (installationId, express) =>
       ipcRenderer.invoke('install-instance', installationId, express),
-    skipTemplateDownload: (installationId) =>
-      ipcRenderer.invoke('skip-template-download', installationId),
     updateInstallation: (installationId, data) =>
       ipcRenderer.invoke('update-installation', installationId, data),
 
