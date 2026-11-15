@@ -1,8 +1,16 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import type { ElectronApplication } from 'playwright'
+import { getShellOpenExternalCalls } from './devHooks'
 
 const SUBJECT = 'user-e2e'
-const WORKSPACES = ['A', 'B', 'C']
+
+export interface FakeWorkspace {
+  id: string
+  name: string
+  type: string
+  role: string
+}
 
 export type ExtraRoute = (
   req: IncomingMessage,
@@ -63,6 +71,12 @@ export class FakeCloud {
   readonly mints: { workspaceId: string; bearerWorkspace: string }[] = []
   readonly builds: { workspace: string; canMint: boolean }[] = []
   readonly members: string[] = []
+  readonly workspaces: FakeWorkspace[] = ['A', 'B', 'C'].map((id) => ({
+    id,
+    name: `Workspace ${id}`,
+    type: 'team',
+    role: 'member'
+  }))
   mintBehavior: MintBehavior = () => undefined
   consentOverride: string | null = null
   port = 0
@@ -85,6 +99,29 @@ export class FakeCloud {
     this.port = (server.address() as AddressInfo).port
   }
 
+  completeSignInsLikeABrowser(
+    app: ElectronApplication,
+    onOpened: (url: string) => void = () => {}
+  ): () => Promise<void> {
+    let followed = 0
+    let stopped = false
+    const loop = (async () => {
+      while (!stopped) {
+        const opened = await getShellOpenExternalCalls(app).catch(() => [] as string[])
+        for (const url of opened.slice(followed)) {
+          followed += 1
+          onOpened(url)
+          if (url.startsWith(this.url)) await fetch(url).catch(() => {})
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+    })()
+    return async () => {
+      stopped = true
+      await loop
+    }
+  }
+
   async stop(): Promise<void> {
     const server = this.server
     if (!server) return
@@ -100,14 +137,7 @@ export class FakeCloud {
     if (url.pathname === '/oauth/token') return this.token(req, res)
     if (url.pathname === '/api/auth/token') return this.mint(req, res)
     if (url.pathname === '/api/workspaces') {
-      return reply(res, 200, {
-        workspaces: WORKSPACES.map((id) => ({
-          id,
-          name: `Workspace ${id}`,
-          type: 'team',
-          role: 'member'
-        }))
-      })
+      return reply(res, 200, { workspaces: this.workspaces })
     }
     if (url.pathname === '/api/workspace/members') {
       this.members.push(claimsOf(req).workspace_id ?? '')

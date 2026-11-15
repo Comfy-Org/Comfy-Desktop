@@ -5,7 +5,6 @@ import path from 'node:path'
 import { expect, test } from '@playwright/test'
 import en from '../locales/en.json'
 import { launchApp, type AppContext } from './launchApp'
-import { getShellOpenExternalCalls } from './support/devHooks'
 import { FakeCloud, type FakeReply } from './support/fakeCloud'
 import { captureHostWindow } from './support/windowCapture'
 
@@ -30,31 +29,11 @@ function panel(): AppContext['panel'] {
   return ctx.panel
 }
 
-function playBrowser(app: AppContext['app']): () => Promise<void> {
-  let handled = 0
-  let stopped = false
-  const loop = (async () => {
-    while (!stopped) {
-      const calls = await getShellOpenExternalCalls(app).catch(() => [] as string[])
-      for (const url of calls.slice(handled)) {
-        handled += 1
-        browserOpens.push(url)
-        await fetch(url).catch(() => {})
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-  })()
-  return async () => {
-    stopped = true
-    await loop
-  }
-}
-
 async function launch(settings: Record<string, unknown> = { firstUseCompleted: true }) {
   ctx = await launchApp({ userDataDir, settings })
   const actual = await ctx.app.evaluate(({ app }) => app.getPath('userData'))
   expect(await realpath(actual), 'the run stays off the real profile').toBe(userDataDir)
-  stopBrowser = playBrowser(ctx.app)
+  stopBrowser = cloud.completeSignInsLikeABrowser(ctx.app, (url) => browserOpens.push(url))
 }
 
 async function quit(): Promise<void> {

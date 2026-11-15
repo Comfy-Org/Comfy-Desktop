@@ -297,6 +297,43 @@ describe('useFirstUseChain — Set up', () => {
     ).toHaveLength(1)
   })
 
+  it('goes back to Set up, not past it, when New Build closes before the EULA is accepted', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(chain.dismissTakeoverDirect).not.toHaveBeenCalled()
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
+    expect(testApi.setFirstUseMode).not.toHaveBeenCalledWith('none')
+    expect(unref(chain.api!.setupConsent)).toEqual(setupConsent())
+  })
+
+  it('goes back to Set up when the EULA was accepted in New Build and then unticked', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+    chain.api!.handleNewInstallConsentChange(true)
+    chain.api!.handleNewInstallConsentChange(false)
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(chain.openFirstUseTakeover).toHaveBeenCalledTimes(1)
+    expect(testApi.setSetting).not.toHaveBeenCalledWith('firstUseCompleted', true)
+  })
+
+  it('finishes first use when New Build closes after the EULA was accepted there', async () => {
+    const chain = mountChain()
+    await chain.api!.handleSetupChange(setupConsent())
+    chain.api!.handleNewInstallConsentChange(true)
+
+    await chain.api!.handleNewInstallTakeoverClose()
+
+    expect(testApi.setSetting).toHaveBeenCalledWith('firstUseCompleted', true)
+    expect(testApi.setFirstUseMode).toHaveBeenLastCalledWith('none')
+    expect(chain.openFirstUseTakeover).not.toHaveBeenCalled()
+  })
+
   it('hands Set up the same choices on Back, with the EULA as it was left', async () => {
     const chain = mountChain()
     await chain.api!.handleSetupChange(setupConsent({ telemetryEnabled: false }))
