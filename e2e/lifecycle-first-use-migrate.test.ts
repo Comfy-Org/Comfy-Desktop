@@ -155,8 +155,9 @@ test('cold start with legacy desktop offers to migrate it on Set up, ticked by d
       sourcesAfterWait: last.sources,
       listOnDisk: sourcesIn(listText),
       backupOnDisk: sourcesIn(backupText),
+      launchStartedIso: new Date(launchStartedAt).toISOString(),
       logLineCount: logLines.length,
-      firstLogLine: logLines[0]?.slice(0, 40) ?? null,
+      logHead: logLines.slice(0, 8).map((line) => line.slice(0, 110)),
       notable: notable.slice(0, 30)
     })}`
   )
