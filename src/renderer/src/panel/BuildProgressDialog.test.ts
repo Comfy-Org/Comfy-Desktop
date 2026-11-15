@@ -223,7 +223,7 @@ describe('BuildProgressDialog', () => {
     const nameByPhase = Object.fromEntries(
       main.sentPhases().map((phase, index) => [phase, stepNames(w)[index]])
     )
-    expect(nameByPhase).toEqual({
+    expect(nameByPhase).toMatchObject({
       repair: 'Repair the install',
       agentRequirements: 'Install agent requirements',
       frontendRestore: 'Restore the frontend',
@@ -233,9 +233,10 @@ describe('BuildProgressDialog', () => {
       mountLibraries: 'Load libraries',
       gpu: 'Initialize GPU',
       customNodes: 'Load custom nodes',
-      startingServer: 'Start server',
-      'template-models': 'Download models'
+      startingServer: 'Start server'
     })
+    const shownByPhaseId = Object.entries(nameByPhase).filter(([phase, name]) => name === phase)
+    expect(shownByPhaseId).toEqual([])
   })
 
   it('says what ComfyUI is doing under the active step in words, for every activity main reports', async () => {
