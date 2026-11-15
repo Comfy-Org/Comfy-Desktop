@@ -56,6 +56,10 @@ import {
   setQuitReason,
   setSessionEnding
 } from './lib/quit-state'
+import {
+  postponeQuitWhileDestroyedWindowsHaveLiveWebContents,
+  trackWindowWebContents
+} from './lib/quitAfterWindowWebContents'
 import { showUpdateInstallSplash } from './lib/updateSplash'
 import type { InstallationRecord } from './installations'
 import {
@@ -895,6 +899,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
   }
 
   app.on('browser-window-created', (_event, window) => {
+    trackWindowWebContents(window)
     window.on('query-session-end', () => {
       updater.suppressInstallOnQuit()
     })
@@ -1668,6 +1673,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         tray = null
       }
     }
+    if (postponeQuitWhileDestroyedWindowsHaveLiveWebContents(event)) return
     updater.recordProcessExit()
     if (_stopPeriodicReleaseChecks) {
       _stopPeriodicReleaseChecks()
