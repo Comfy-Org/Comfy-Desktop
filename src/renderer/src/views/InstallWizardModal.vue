@@ -1799,6 +1799,7 @@ defineExpose({ open })
     :title="modalTitle"
     :lead="modalLead"
     :wide="step === 'template'"
+    :fixed-height="step === 'configure' && view === 'change'"
     :brand-backdrop="useTakeoverHost"
     :closable="step === 'configure' && view === 'summary' && !hideBackToDashboard"
     :close-title="$t('common.backToDashboard')"
@@ -1977,14 +1978,6 @@ defineExpose({ open })
       </div>
 
       <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
-        <div
-          v-if="showsHardwareWarning"
-          class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
-          role="alert"
-          data-testid="wizard-hardware-warning"
-        >
-          {{ hardwareWarning }}
-        </div>
         <SetupFormRow
           v-if="existingCards.length > 0"
           class="config-start-from"
@@ -2002,6 +1995,15 @@ defineExpose({ open })
             @update:model-value="selectStartFrom"
           />
         </SetupFormRow>
+
+        <div
+          v-if="showsHardwareWarning"
+          class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
+          role="alert"
+          data-testid="wizard-hardware-warning"
+        >
+          {{ hardwareWarning }}
+        </div>
 
         <SetupFormRow
           v-if="startFrom === 'new' && sources.length > 0"
