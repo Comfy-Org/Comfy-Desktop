@@ -55,6 +55,16 @@ DS's Motion page (`ds/motion.ts`).
 
 ## Menus
 
+- **⋯ and right-click open the same menu.** A build's ⋯ (on hover, at the
+  right of its tile) and a right-click on the tile or its sidebar row show
+  one shared menu. A page in the sidebar right-clicks to Open in new tab /
+  Open in new window only.
+- **Build menu order:** what you can do now first (Ready: Launch; Starting:
+  View logs, Cancel; Running: View logs, Restart, Stop), then Open in new
+  tab / window, then the rest, Uninstall last.
+- **Unavailable rows stay, greyed.** A menu row that can't run in this state
+  (Update while running) shows disabled, never hidden, so the menu keeps one
+  shape in every state.
 - **Confirm inside the menu.** A destructive line that asks first turns the
   same menu into the question (`confirm` on a `MenuLine`, see
   `pages/MarItemMenu.vue`); never a box in the page. Nothing to lose
@@ -106,6 +116,14 @@ DS's Motion page (`ds/motion.ts`).
 - **Counts go in the tabs**, not beside the title ("Images 4", not "17
   assets" after the heading). They follow the open folder, filter and
   search (the type aside). Assets' type tabs only; other tab rows keep counts off.
+
+## Tiles
+
+- **Tiles stack when they don't fit.** Below the width where a tile can't
+  hold its name and status, Home's build tiles go one per row; never
+  squeeze two side by side. A tile in progress looks like every other
+  tile: no buttons inside, status line plus the bar along the bottom, a
+  click opens its logs, actions live in ⋯.
 
 ## Feedback
 
