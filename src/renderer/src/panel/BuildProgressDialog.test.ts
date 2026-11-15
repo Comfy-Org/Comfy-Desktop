@@ -191,8 +191,7 @@ describe('BuildProgressDialog', () => {
     const video = w.get<HTMLVideoElement>('[data-testid="build-progress-video"]')
     expect(video.attributes('src')).toMatch(/^\.\/build-progress\/[a-z_]+\.webm$/)
     const frame = video.element.parentElement!
-    expect(frame.className).toContain('h-[min(340px,calc(100vh-290px))]')
-    expect(frame.className).toContain('w-[272px]')
+    expect(frame.className).toContain('size-[272px]')
     expect(video.classes()).toEqual(
       expect.arrayContaining(['size-full', 'object-cover', 'opacity-0'])
     )

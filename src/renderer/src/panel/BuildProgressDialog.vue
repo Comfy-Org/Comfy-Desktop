@@ -241,9 +241,7 @@ async function cancel(): Promise<void> {
             </ol>
           </div>
 
-          <div
-            class="h-[min(340px,calc(100vh-290px))] w-[272px] shrink-0 overflow-hidden rounded-[18px] bg-[#161619]"
-          >
+          <div class="size-[272px] shrink-0 overflow-hidden rounded-[18px] bg-[#161619]">
             <video
               class="size-full object-cover transition-opacity duration-200 motion-reduce:transition-none"
               :class="videoReady ? 'opacity-100' : 'opacity-0'"
