@@ -72,8 +72,6 @@ import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
 
-export type { InstancePickerInstall } from '../../types/titlePopup'
-
 function kindUsesBackdrop(kind: TitlePopupKind): boolean {
   return (
     kind === POPUP_KIND.instancePicker ||
@@ -1447,7 +1445,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     }
   )
 
-  // global settings, depending on `tab`. The popup dismisses first; the
   ipcMain.on('comfy-titlepopup:open-settings-tab', (event, payload: { tab?: unknown }) => {
     const popupEntry = titlePopupsByWebContents.get(event.sender.id)
     if (!popupEntry) return

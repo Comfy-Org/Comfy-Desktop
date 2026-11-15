@@ -5,7 +5,6 @@ type CommentLike = { type: string; value: string; range: [number, number] }
 
 const toolDirectives = [
   /^\s*(eslint-disable(-next-line|-line)?|eslint-enable)\b/,
-  /^\s*(eslint|eslint-env|globals?|exported)\s/,
   /^\s*@ts-(expect-error|ignore|nocheck|check)\b/,
   /^\/\s*<(reference|amd-module)\b/,
   /^\s*prettier-ignore\b/,
@@ -15,13 +14,19 @@ const toolDirectives = [
   /^\s*[#@]__(PURE|NO_SIDE_EFFECTS)__\s*$/
 ]
 
+const blockOnlyDirective = /^\s*(eslint|eslint-env|globals?|exported)\s/
+
 const directiveReasons = [
   /^\s*(?:eslint-disable(?:-next-line|-line)?|eslint-enable)\b.*?(\s+--\s.*?)\s*$/s,
   /^\s*@ts-(?:expect-error|ignore)\b(\s*\S.*?)\s*$/s
 ]
 
 function isToolDirective(comment: CommentLike) {
-  return comment.type === 'Shebang' || toolDirectives.some((pattern) => pattern.test(comment.value))
+  return (
+    comment.type === 'Shebang' ||
+    toolDirectives.some((pattern) => pattern.test(comment.value)) ||
+    (comment.type === 'Block' && blockOnlyDirective.test(comment.value))
+  )
 }
 
 function isDocComment(comment: CommentLike) {

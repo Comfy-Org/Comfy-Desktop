@@ -88,7 +88,8 @@ describe('comfyUISettings/SnapshotsView', () => {
       getSnapshotDiff: vi.fn().mockResolvedValue(null),
       runAction: vi.fn(),
       exportSnapshot: vi.fn(),
-      exportAllSnapshots: vi.fn()
+      exportAllSnapshots: vi.fn(),
+      onInstallationsChanged: vi.fn(() => () => {})
     }
   })
 
@@ -595,6 +596,7 @@ describe('comfyUISettings/SnapshotsView', () => {
         runAction: vi.fn(),
         exportSnapshot: vi.fn(),
         exportAllSnapshots: vi.fn(),
+        onInstallationsChanged: vi.fn(() => () => {}),
         importSnapshotsPreview: vi.fn().mockResolvedValue({
           ok: true,
           preview: {
@@ -683,7 +685,8 @@ describe('comfyUISettings/SnapshotsView', () => {
         getSnapshotDiff: vi.fn().mockResolvedValue(null),
         runAction: vi.fn(),
         exportSnapshot: vi.fn(),
-        exportAllSnapshots: vi.fn()
+        exportAllSnapshots: vi.fn(),
+        onInstallationsChanged: vi.fn(() => () => {})
       }
       return mountView()
     }

@@ -41,10 +41,10 @@ import {
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
   syncTitlePopupConfig,
-  type InstancePickerInstall,
   type TitlePopupEntry,
   type TitlePopupHostBindings
 } from './titlePopup'
+import type { InstancePickerInstall } from '../../types/titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
 import { tryOpenExternalUrl } from '../lib/openExternal'

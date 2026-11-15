@@ -73,6 +73,7 @@ function snapOp(installationId: string, patch: Partial<Operation> = {}): Operati
     unsubProgress: null,
     unsubOutput: null,
     apiCall: null,
+    events: null,
     _globalFloor: 0,
     ...patch
   }

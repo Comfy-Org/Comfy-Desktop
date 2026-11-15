@@ -406,24 +406,5 @@ describe('useSessionStore', () => {
       expect(store.isRunning('inst-1')).toBe(true)
       expect(store.errorInstances.has('inst-1')).toBe(false)
     })
-
-    it('tolerates a preload without the snapshot hydration methods', async () => {
-      ;(window as Record<string, unknown>).api = {
-        getRunningInstances: vi.fn().mockResolvedValue([]),
-        onInstanceLaunching: vi.fn(() => () => {}),
-        onInstanceLaunchFailed: vi.fn(() => () => {}),
-        onInstanceStarted: vi.fn(() => () => {}),
-        onInstanceStopped: vi.fn(() => () => {}),
-        onInstanceStopping: vi.fn(() => () => {}),
-        onComfyOutput: vi.fn(() => () => {}),
-        onComfyExited: vi.fn(() => () => {}),
-        onInstanceCrashed: vi.fn(() => () => {})
-      }
-
-      await expect(store.init(window.api)).resolves.toBeUndefined()
-      expect(store.launchingInstances.size).toBe(0)
-      expect(store.stoppingInstances.size).toBe(0)
-      expect(store.errorInstances.size).toBe(0)
-    })
   })
 })

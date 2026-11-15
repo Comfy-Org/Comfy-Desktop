@@ -46,7 +46,6 @@ export async function loadTemplateJson(
       } catch {}
     }
   }
-  // global fetch — which can hang in the Electron main process), so it shares
   try {
     return await fetchJSON(`${RAW_TEMPLATES_REMOTE_BASE}/${templateId}.json`, { refresh: true })
   } catch {

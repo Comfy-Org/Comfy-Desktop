@@ -155,22 +155,22 @@ export const useSessionStore = defineStore('session', () => {
       runningInstances.set(inst.installationId, inst)
     }
 
-    const launching = (await api.getLaunchingInstances?.()) ?? []
+    const launching = await api.getLaunchingInstances()
     for (const inst of launching) {
       if (!runningInstances.has(inst.installationId)) {
         launchingInstances.set(inst.installationId, { installationName: inst.installationName })
       }
     }
 
-    const stopping = (await api.getStoppingInstances?.()) ?? []
+    const stopping = await api.getStoppingInstances()
     for (const id of stopping) markStopping(id)
 
-    const activeOps = (await api.getActiveOperations?.()) ?? []
+    const activeOps = await api.getActiveOperations()
     for (const op of activeOps) {
       operationInstances.set(op.installationId, { actionId: op.actionId })
     }
 
-    const crashes = (await api.getCrashInstances?.()) ?? []
+    const crashes = await api.getCrashInstances()
     for (const c of crashes) {
       if (!runningInstances.has(c.installationId) && !launchingInstances.has(c.installationId)) {
         errorInstances.set(c.installationId, {
@@ -206,7 +206,7 @@ export const useSessionStore = defineStore('session', () => {
       api.onInstanceStopping((data: { installationId: string }) => {
         markStopping(data.installationId)
       }),
-      api.onOperationChanged?.(
+      api.onOperationChanged(
         (data: { installationId: string; actionId: string; active: boolean }) => {
           if (data.active) {
             operationInstances.set(data.installationId, { actionId: data.actionId })
@@ -214,7 +214,7 @@ export const useSessionStore = defineStore('session', () => {
             operationInstances.delete(data.installationId)
           }
         }
-      ) ?? ((): void => {}),
+      ),
       api.onComfyOutput((data: ComfyOutputData) => {
         appendOutput(data.installationId, data.text)
       }),

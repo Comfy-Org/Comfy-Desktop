@@ -45,8 +45,7 @@ import {
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
-  openDownloadsTrayForInstall,
-  type InstancePickerInstall
+  openDownloadsTrayForInstall
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
 import { waitForPort, COMFY_BOOT_TIMEOUT_MS } from './lib/process'
@@ -102,8 +101,7 @@ import {
   _getLaunchingInstallationIds,
   stopRunning,
   resolveTheme,
-  MSG_CANCELLED,
-  type PickerOperationStatus
+  MSG_CANCELLED
 } from './lib/ipc/shared'
 import { enrichInstallationsForRenderer } from './lib/ipc/registerInstallationHandlers'
 import { getSnapshotListData } from './lib/snapshots'
@@ -166,6 +164,7 @@ import {
 import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
 import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
+import type { InstancePickerInstall, PickerOperationStatus } from '../types/titlePopup'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
 import { applyAttachHostPreview, clearAttachHostPreview } from './host/attachHostPreview'
 import { takePriorSessionUnclean } from './lib/comfyProcessRecord'

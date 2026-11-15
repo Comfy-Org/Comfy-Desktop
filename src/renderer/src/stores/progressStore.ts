@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { reactive } from 'vue'
+import { markRaw, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useSessionStore } from './sessionStore'
 import { getPhaseWeights } from '../lib/progressWeights'
@@ -47,6 +47,7 @@ export interface Operation {
   unsubProgress: Unsubscribe | null
   unsubOutput: Unsubscribe | null
   apiCall: (() => Promise<ActionResult>) | null
+  events: ProgressEvents | null
   _globalFloor: number
 }
 
@@ -55,7 +56,6 @@ export const useProgressStore = defineStore('progress', () => {
   const sessionStore = useSessionStore()
 
   const operations = reactive(new Map<string, Operation>())
-  const operationEvents = new Map<string, ProgressEvents>()
   let listeningForErrorDetail = false
 
   function listenForErrorDetail(events: ProgressEvents): void {
@@ -147,7 +147,6 @@ export const useProgressStore = defineStore('progress', () => {
 
     cleanupOperation(installationId)
     listenForErrorDetail(events)
-    operationEvents.set(installationId, events)
 
     sessionStore.startSession(installationId)
     const sessionLabel = title.split(' — ')[0] || t('progress.working')
@@ -180,12 +179,13 @@ export const useProgressStore = defineStore('progress', () => {
       unsubProgress: null,
       unsubOutput: null,
       apiCall,
+      events: markRaw(events),
       _globalFloor: 0
     }
     operations.set(installationId, op)
     const rop = operations.get(installationId)!
 
-    if (chainSpan === 'launch' && typeof events.logsSnapshot === 'function') {
+    if (chainSpan === 'launch') {
       void events
         .logsSnapshot(installationId)
         .then((snapshot) => {
@@ -308,13 +308,12 @@ export const useProgressStore = defineStore('progress', () => {
 
   function retryOperation(installationId: string): void {
     const op = operations.get(installationId)
-    const events = operationEvents.get(installationId)
-    if (!op?.finished || !op.apiCall || !events) return
+    if (!op?.finished || !op.apiCall || !op.events) return
     startOperation({
       installationId,
       title: op.title,
       apiCall: op.apiCall,
-      events,
+      events: op.events,
       returnTo: op.returnTo,
       opKind: op.opKind,
       destroysInstance: op.destroysInstance,
@@ -325,7 +324,6 @@ export const useProgressStore = defineStore('progress', () => {
   function dismissOperation(installationId: string): void {
     if (!operations.get(installationId)?.finished) return
     operations.delete(installationId)
-    operationEvents.delete(installationId)
     sessionStore.clearErrorInstance(installationId)
   }
 

@@ -453,8 +453,6 @@ export function _isStopping(installationId: string): boolean {
   return _stoppingInstallationIds.has(installationId)
 }
 
-export type { PickerOperationStatus }
-
 export const _activeOperationStatus = new Map<string, PickerOperationStatus>()
 
 export function setCallbacks(callbacks: RegisterCallbacks): void {
