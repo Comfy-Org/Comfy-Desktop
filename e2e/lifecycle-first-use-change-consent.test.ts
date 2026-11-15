@@ -37,7 +37,7 @@ test('Change works before the EULA and opens the name with every option @lifecyc
 
   await ctx.panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 10_000 })
   await ctx.panel.waitForVisible('#inst-name-standalone')
-  await ctx.panel.waitForVisible('[data-testid="install-source-remote"]')
+  await ctx.panel.waitForVisible('[data-testid="config-start-from-existing"]')
   expect(await ctx.panel.exists('[data-testid="config-summary"]')).toBe(false)
   expect(await ctx.panel.exists('[data-testid="config-change-setup"]')).toBe(false)
   expect(await ctx.titleBar.exists('.title-menu-button[aria-haspopup="menu"]')).toBe(false)

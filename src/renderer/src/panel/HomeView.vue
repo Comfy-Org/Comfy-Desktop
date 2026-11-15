@@ -11,6 +11,7 @@ import { homeBuildStatus, homeBuildTones, isCloudBuild } from './home/homeBuild'
 import { useHomeApps } from './home/useHomeApps'
 import { useHideCloudFromPicker } from '../composables/useHideCloudFromPicker'
 import { useInstallList } from '../composables/useInstallList'
+import { useAutoStartBuild } from '../composables/useAutoStartBuild'
 import {
   buildProgressOf,
   launchFailed,
@@ -57,6 +58,7 @@ const workspaceBuilds = computed(() =>
 const isInstalling = useInstallingBuilds()
 const progressStore = useProgressStore()
 const viewBuildLogs = useViewBuildLogs()
+const autoStart = useAutoStartBuild()
 const builds = computed(() =>
   [
     ...workspaceBuilds.value.filter((build) => isInstalling(build.id)),
@@ -273,7 +275,9 @@ onMounted(() => {
               :build="build"
               :status="buildStatus(build)"
               :tone="buildTones[index]!"
+              :auto-start="autoStart.startsOnOpen(build.id)"
               @open="openBuild(build)"
+              @auto-start="autoStart.setStartsOnOpen(build.id, $event)"
             />
           </li>
         </ul>

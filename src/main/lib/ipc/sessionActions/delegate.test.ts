@@ -28,6 +28,7 @@ vi.mock('../../pip', () => ({
 }))
 
 import { handleDelegateToSource } from './delegate'
+import { _operationAborts } from '../shared'
 import {
   _resetAgentPrefetchesForTest,
   prefetchAgentRequirements,
@@ -104,6 +105,71 @@ describe('handleDelegateToSource', () => {
       prefetchAgentRequirements(background, () => {}),
       'released once it ends'
     ).toBe(true)
+  })
+
+  it("lets an update check run alongside the install's background download and leaves the install free for other actions", async () => {
+    const downloadStopped = vi.fn()
+    vi.mocked(installFilteredRequirementsDetailed).mockImplementation(async (...args) => {
+      const signal = args[6] as AbortSignal
+      return new Promise((resolve) =>
+        signal.addEventListener(
+          'abort',
+          () => {
+            downloadStopped()
+            resolve({ code: 1, output: '' })
+          },
+          { once: true }
+        )
+      )
+    })
+    const background: PrefetchRequest = {
+      plan: {
+        reqPath: path.join(dir, 'agent_requirements.txt'),
+        uvPath: '/uv',
+        pythonPath: '/py',
+        installPath: dir
+      },
+      steps: [{ text: 'comfy-agent==0.2.0\n' }],
+      signature: 'core',
+      eager: true
+    }
+    expect(prefetchAgentRequirements(background, () => {})).toBe(true)
+    await vi.waitFor(() => expect(installFilteredRequirementsDetailed).toHaveBeenCalled())
+    let occupiedDuringCheck: boolean | undefined
+    harness.handleAction = async () => {
+      occupiedDuringCheck = _operationAborts.has('i')
+      return { ok: true }
+    }
+    const ctx = {
+      event: { sender: { isDestroyed: () => false, send: () => {} } },
+      installationId: 'i',
+      inst: { id: 'i', sourceId: 'stub', installPath: dir },
+      actionData: { silent: true }
+    }
+
+    expect(await handleDelegateToSource(ctx as never, 'check-update')).toEqual({ ok: true })
+
+    expect(occupiedDuringCheck, 'a check only reads what the remote offers').toBe(false)
+    expect(downloadStopped, 'the check touches nothing uv holds open').not.toHaveBeenCalled()
+  })
+
+  it('occupies the install for exactly as long as an action that changes it runs', async () => {
+    let occupiedDuringUpdate: boolean | undefined
+    harness.handleAction = async () => {
+      occupiedDuringUpdate = _operationAborts.has('i')
+      return { ok: true }
+    }
+    const ctx = {
+      event: { sender: { isDestroyed: () => false, send: () => {} } },
+      installationId: 'i',
+      inst: { id: 'i', sourceId: 'stub', installPath: dir },
+      actionData: {}
+    }
+
+    expect(await handleDelegateToSource(ctx as never, 'update-comfyui')).toEqual({ ok: true })
+
+    expect(occupiedDuringUpdate).toBe(true)
+    expect(_operationAborts.has('i'), 'freed once the update ends').toBe(false)
   })
 
   it.skipIf(process.platform === 'win32')(

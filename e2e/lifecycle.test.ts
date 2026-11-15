@@ -2445,22 +2445,27 @@ test('creates a Remote Connection record pointed at the running local server thr
 
   await openNewBuildChangeSetup(ctx.panel)
   expect(
-    await ctx.panel.click('[data-testid="install-source-remote"]'),
-    'Remote Connection link clicked'
+    await ctx.panel.click('[data-testid="config-start-from-existing"]'),
+    'Start from switched to ComfyUI I already have'
   ).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="install-source-remote"]', { timeout: 5_000 })
+  expect(await ctx.panel.click('[data-testid="install-source-remote"]'), 'On a server picked').toBe(
+    true
+  )
 
   await ctx.panel.waitForVisible('#sf-url', { timeout: 10_000 })
   await ctx.panel.fill('#sf-url', origin!)
-  expect(
-    await ctx.panel.click('[data-testid="config-save-changes"]'),
-    'Saved the Remote Connection to the New Build summary'
-  ).toBe(true)
   await ctx.panel.waitForVisible('#inst-name-standalone', { timeout: 5_000 })
   _remoteName = `Remote Loopback E2E ${randomUUID().slice(0, 8)}`
   await ctx.panel.fill('#inst-name-standalone', _remoteName)
 
-  await waitForConfigContinueEnabled('Continue never enabled for the Remote Connection source')
-  expect(await ctx.panel.click('.config-continue')).toBe(true)
+  await ctx.panel.waitForSelector('[data-testid="config-use-existing"]:not([disabled])', {
+    timeout: 60_000
+  })
+  expect(
+    await ctx.panel.click('[data-testid="config-use-existing"]'),
+    'Connect pressed in Change setup'
+  ).toBe(true)
 
   await expect
     .poll(
