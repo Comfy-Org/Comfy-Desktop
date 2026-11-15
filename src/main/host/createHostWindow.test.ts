@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  appsBuildRunning: false,
+  stopAppsBuilds: vi.fn(async () => {})
+}))
 
 vi.mock('electron', () => ({
   app: {
@@ -15,10 +20,26 @@ vi.mock('electron', () => ({
   nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
 }))
 
+vi.mock('../apps/localComfy', () => ({
+  hasBuildsRunningForAppsOnly: () => mocks.appsBuildRunning,
+  stopEveryBuildRunningForAppsOnly: () => mocks.stopAppsBuilds()
+}))
+vi.mock('../settings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../settings')>()
+  return {
+    ...actual,
+    get: (key: string) => (key === 'confirmBeforeClosingWindow' ? true : actual.get(key))
+  }
+})
+
 import type { InstallationRecord } from '../installations'
+import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from './registry'
 import {
   buildFirebaseAuthForwardedError,
   cascadeOffsetForCollisions,
+  confirmHostWindowClose,
+  type CloseConsultResult,
+  type CloseWindowChoice,
   expectedPartitionFor,
   installCloseNeedsConfirm,
   isWindowLayoutable,
@@ -226,5 +247,72 @@ describe('shouldBailAfterCloseChoice', () => {
 
   it('does not bail when a force-close lands mid-modal even on user cancel', () => {
     expect(shouldBailAfterCloseChoice('cancel', true)).toBe(false)
+  })
+})
+
+describe('confirmHostWindowClose', () => {
+  interface FakeWindow {
+    destroyed: boolean
+    isDestroyed: () => boolean
+  }
+
+  function openDashboard(): { win: FakeWindow; entry: ComfyWindowEntry } {
+    const win: FakeWindow = { destroyed: false, isDestroyed: () => win.destroyed }
+    const entry = {
+      windowKey: nextWindowKey(),
+      window: win,
+      panelView: null,
+      lastTheme: { bg: '#000', text: '#fff' },
+      installationId: null,
+      sourceCategory: null
+    } as unknown as ComfyWindowEntry
+    comfyWindows.set(entry.windowKey, entry)
+    return { win, entry }
+  }
+
+  afterEach(() => {
+    comfyWindows.clear()
+    mocks.appsBuildRunning = false
+    mocks.stopAppsBuilds.mockClear()
+  })
+
+  it('asks before the last window closes when another window closed while this one was being checked', async () => {
+    mocks.appsBuildRunning = true
+    const first = openDashboard()
+    const second = openDashboard()
+    const consults: ((result: CloseConsultResult) => void)[] = []
+    const asked: { isLastWindow: boolean; stopsLocalComfy: boolean }[] = []
+    const fx = {
+      preClearedClose: new WeakSet<Electron.BrowserWindow>(),
+      consultPanelRendererClose: () =>
+        new Promise<CloseConsultResult>((resolve) => consults.push(resolve)),
+      confirmCloseInstanceWindow: async (
+        _window: Electron.BrowserWindow,
+        isLastWindow: boolean,
+        stopsLocalComfy: boolean
+      ): Promise<CloseWindowChoice> => {
+        asked.push({ isLastWindow, stopsLocalComfy })
+        return 'close'
+      }
+    }
+
+    const closingFirst = confirmHostWindowClose(
+      first.win as unknown as Electron.BrowserWindow,
+      first.entry.windowKey,
+      fx
+    )
+    const closingSecond = confirmHostWindowClose(
+      second.win as unknown as Electron.BrowserWindow,
+      second.entry.windowKey,
+      fx
+    )
+    consults[0]('defer')
+    expect(await closingFirst).toBe(true)
+    first.win.destroyed = true
+    consults[1]('defer')
+
+    expect(await closingSecond).toBe(true)
+    expect(asked).toEqual([{ isLastWindow: true, stopsLocalComfy: true }])
+    expect(mocks.stopAppsBuilds).toHaveBeenCalledTimes(1)
   })
 })
