@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 import { ESLint } from 'eslint'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '../..')
 const ruleId = 'better-tailwindcss/enforce-canonical-classes'
@@ -21,6 +21,12 @@ const fixer = new ESLint({
 })
 
 describe('canonical Tailwind classes in the project ESLint configuration', () => {
+  beforeAll(async () => {
+    await eslint.lintText('<template><div class="p-4" /></template>', {
+      filePath: 'src/renderer/src/CanonicalClasses.vue'
+    })
+  }, 30_000)
+
   it('rejects equivalent arbitrary classes using the application theme', async () => {
     const source =
       '<template><div class="rounded-[14px] p-[16px] duration-[120ms] z-[1]" /></template>'
