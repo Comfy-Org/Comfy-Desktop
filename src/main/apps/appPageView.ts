@@ -27,7 +27,7 @@ const NAVIGATION_ABORTED = -3
 const FIRST_HTTP_ERROR_STATUS = 400
 const PAGE_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-write', 'fullscreen'])
 
-type PageFailure = 'http_status' | 'network' | 'crashed'
+type PageFailure = 'http_status' | 'network' | 'crashed' | 'redirected'
 
 interface HostedPage {
   view: WebContentsView
@@ -101,7 +101,7 @@ function setStatus(windowKey: number, hosted: HostedPage, status: AppPageStatus)
   if (hosted.status === status) return
   hosted.status = status
   applyVisibility(hosted)
-  panelOf(windowKey)?.send(APP_PAGE_STATUS_CHANNEL, status)
+  panelOf(windowKey)?.send(APP_PAGE_STATUS_CHANNEL, hosted.appId, status)
 }
 
 function fail(windowKey: number, hosted: HostedPage, reason: PageFailure): void {
@@ -167,7 +167,13 @@ function createHostedPage({ windowKey, entry }: PageHost, location: AppsLocation
   }
   contents.on('will-navigate', (event, url) => steer(event, url, true))
   contents.on('will-redirect', (event, url, _isInPlace, isMainFrame) => {
-    if (isMainFrame) steer(event, url, false)
+    if (!isMainFrame) return
+    if (hosted.status === 'loading' && !isInAppsScope(location, url)) {
+      event.preventDefault()
+      fail(windowKey, hosted, 'redirected')
+      return
+    }
+    steer(event, url, false)
   })
   contents.setWindowOpenHandler(({ url }) => {
     openOutside(url)
@@ -218,10 +224,18 @@ function isMeasure(value: unknown): value is number {
 
 function parsePlacement(raw: unknown): AppPagePlacement | null {
   if (!raw || typeof raw !== 'object') return null
-  const { x, y, width, height, cornerRadius, justOpened } = raw as Record<string, unknown>
+  const { x, y, width, height, cornerRadius, justOpened, retry } = raw as Record<string, unknown>
   if (!isMeasure(x) || !isMeasure(y) || !isMeasure(width) || !isMeasure(height)) return null
   if (!isMeasure(cornerRadius)) return null
-  return { x, y, width, height, cornerRadius, justOpened: justOpened === true }
+  return {
+    x,
+    y,
+    width,
+    height,
+    cornerRadius,
+    justOpened: justOpened === true,
+    retry: retry === true
+  }
 }
 
 function place(entry: ComfyWindowEntry, view: WebContentsView, placement: AppPagePlacement): void {
@@ -275,14 +289,15 @@ export async function showAppPage(
   if (!pageUrl || !host) return 'failed'
   const hosted = hostedFor(host) ?? createHostedPage(host, currentAppsLocation())
   concealWhenPanelGoes(host.windowKey, panel)
-  const retriesFailedPage = placement.justOpened === true && hosted.status === 'failed'
+  const askedFresh = placement.justOpened === true || placement.retry === true
+  const retriesFailedPage = askedFresh && hosted.status === 'failed'
   if (hosted.appId !== appId || retriesFailedPage) {
     hosted.appId = appId
     load(host.windowKey, hosted, pageUrl)
   }
   if (placement.justOpened) mainTelemetry.capture(APP_OPENED_EVENT, { app_id: appId })
   hosted.wanted = true
-  hosted.focusWhenReady = hosted.focusWhenReady || placement.justOpened === true
+  hosted.focusWhenReady = hosted.focusWhenReady || askedFresh
   place(host.entry, hosted.view, placement)
   raiseAbovePanel(host.entry, hosted.view)
   applyVisibility(hosted)
@@ -305,14 +320,6 @@ export async function captureAppPage(panel: WebContents): Promise<string | null>
   } catch {
     return null
   }
-}
-
-export function reloadAppPage(panel: WebContents): void {
-  const host = hostOf(panel)
-  const hosted = host && hostedFor(host)
-  const pageUrl = hosted?.appId ? pageUrlForListedApp(hosted.appId) : null
-  if (!host || !hosted || !pageUrl) return
-  load(host.windowKey, hosted, pageUrl)
 }
 
 export function _resetForTest(): void {
