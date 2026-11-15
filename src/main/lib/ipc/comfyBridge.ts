@@ -74,6 +74,11 @@ export function answerBridge<Result>(
 ): void {
   const mayCall = COMFY_BRIDGE_CALLERS[channel]
   ipcMain.on(channel, (event) => {
-    event.returnValue = mayCall(event) ? handler(event) : refusal
+    let answer = refusal
+    try {
+      if (mayCall(event)) answer = handler(event)
+    } finally {
+      event.returnValue = answer
+    }
   })
 }

@@ -135,4 +135,15 @@ describe('a bridge channel', () => {
     answer(accepted)
     expect(accepted).toHaveProperty('returnValue', true)
   })
+
+  it('still answers a waiting page when the handler throws', () => {
+    answerBridge<boolean>('desktop2-is-remote', false, () => {
+      throw new Error('registry is gone')
+    })
+    mocks.allowed = true
+    const asked: Record<string, unknown> = { sender: {} }
+
+    expect(() => registeredWith(mocks.on, 'desktop2-is-remote')(asked)).toThrow('registry is gone')
+    expect(asked).toHaveProperty('returnValue', false)
+  })
 })
