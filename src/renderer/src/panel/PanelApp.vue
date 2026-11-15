@@ -239,11 +239,15 @@ function openAppFromHome(app: AppCard): void {
 
 const SIDEBAR_PAGE_OPENED_EVENT = 'comfy.desktop.sidebar.page_opened'
 
-function handleSidebarNavigate(page: DashboardPage): void {
+function handleSidebarClick(page: DashboardPage): void {
   const fromPage = sidebarPage.value
   if (page !== fromPage) {
     emitTelemetryAction(SIDEBAR_PAGE_OPENED_EVENT, { page, from_page: fromPage })
   }
+  handleSidebarNavigate(page)
+}
+
+function handleSidebarNavigate(page: DashboardPage): void {
   closeBuildDetails()
   if (page === 'apps') appsVisits.value += 1
   if (page === 'home' || page === 'apps' || page === 'chooser' || page === 'assets')
@@ -509,7 +513,7 @@ onUnmounted(() => {
         :active-page="sidebarPage"
         :active-build-id="sidebarBuildId"
         :make-room="appIsOpen"
-        @navigate="handleSidebarNavigate"
+        @navigate="handleSidebarClick"
         @open-build="openBuildFromSidebar"
         @new-build="handleChooserShowNewInstall"
       />

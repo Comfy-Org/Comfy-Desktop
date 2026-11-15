@@ -1595,6 +1595,22 @@ describe('PanelApp', () => {
     ])
   })
 
+  it('does not record a sidebar page open for See all apps on Home', async () => {
+    window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
+    vi.mocked(window.api.getAppsEnabled).mockResolvedValue(true)
+    const wrapper = mountPanel()
+    await flushPromises()
+    const events = captureTelemetry()
+
+    await wrapper.get('[data-testid="home-see-all-apps"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="apps-view"]').isVisible()).toBe(true)
+    expect(
+      events.filter(({ actionName }) => actionName === 'comfy.desktop.sidebar.page_opened')
+    ).toEqual([])
+  })
+
   it('returns to the list of builds from All builds on Home', async () => {
     window.history.replaceState({}, '', '/?panel=chooser&firstUseCompleted=true')
     const wrapper = mountPanel()
