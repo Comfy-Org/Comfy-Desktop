@@ -303,6 +303,7 @@ export async function reorder(orderedIds: string[]): Promise<void> {
 
 export async function ensureExists(sourceId: string, data: Record<string, unknown>): Promise<void> {
   const added = await enqueue(async () => {
+    if (sourceId === 'desktop') await new Promise((resolve) => setTimeout(resolve, 3_000))
     const existing = await loadForWrite()
     if (existing.some((i) => i.sourceId === sourceId)) return false
     existing.push({
