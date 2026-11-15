@@ -129,8 +129,8 @@ function openContextMenu(event: MouseEvent): void {
       :glow="toneStyle.glow"
     />
     <span
-      class="pointer-events-none relative flex min-w-0 flex-1 flex-col group-hover:pr-6 group-has-[:focus-visible]:pr-6"
-      :class="menuOpen && 'pr-6'"
+      class="pointer-events-none relative flex min-w-0 flex-1 flex-col group-hover:pr-10 group-has-[:focus-visible]:pr-10"
+      :class="menuOpen && 'pr-10'"
     >
       <span
         class="flex h-4 items-center gap-1.5 text-xs/4"
