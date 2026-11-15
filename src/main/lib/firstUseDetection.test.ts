@@ -60,9 +60,14 @@ beforeEach(() => {
       getPath: () => userDataPath
     }
   }))
+  vi.stubGlobal('process', {
+    ...process,
+    platform: 'win32'
+  })
 })
 
 afterEach(() => {
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
   fs.rmSync(tmpRoot, { recursive: true, force: true })
 })
