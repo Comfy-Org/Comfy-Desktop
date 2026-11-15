@@ -140,8 +140,7 @@ const setupPicked = computed(
 )
 
 type InstallSourceTab =
-  | { key: 'managed'; kind: 'managed' }
-  | { key: string; kind: 'source'; source: Source }
+  { key: 'managed'; kind: 'managed' } | { key: string; kind: 'source'; source: Source }
 
 const installSourceTabs = computed<InstallSourceTab[]>(() => {
   const sourceOrder = new Map([
@@ -1208,8 +1207,7 @@ async function handleSave(): Promise<void> {
   if (instPath.value) {
     try {
       const downloadFiles = selections.value.variant?.data?.downloadFiles as
-        | Array<{ size: number }>
-        | undefined
+        Array<{ size: number }> | undefined
       const downloadBytes = downloadFiles ? downloadFiles.reduce((sum, f) => sum + f.size, 0) : 0
       const estimatedRequired =
         downloadBytes > 0 ? Math.ceil(downloadBytes * INSTALL_SPACE_FACTOR) : 0

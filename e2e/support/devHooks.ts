@@ -2,12 +2,7 @@ import type { ElectronApplication } from 'playwright'
 import { evalWithRetry } from './evalRetry'
 
 export type DownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'paused'
-  | 'completed'
-  | 'error'
-  | 'cancelled'
+  'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
 
 export interface DownloadProgressLike {
   url: string

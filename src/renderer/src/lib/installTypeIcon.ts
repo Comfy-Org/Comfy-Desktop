@@ -3,12 +3,7 @@ import type { LucideIcon } from 'lucide-vue-next'
 import { isBuildSource } from '../devplatform/buildState'
 
 export type InstallTypeKey =
-  | 'standalone'
-  | 'cloud'
-  | 'legacyDesktop'
-  | 'remote'
-  | 'build'
-  | 'unknown'
+  'standalone' | 'cloud' | 'legacyDesktop' | 'remote' | 'build' | 'unknown'
 
 export interface InstallTypeIconMeta {
   key: InstallTypeKey

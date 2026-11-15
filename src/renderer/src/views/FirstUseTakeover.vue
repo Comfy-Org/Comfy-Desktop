@@ -537,8 +537,7 @@ defineExpose({ open, resetContinue })
                 :class="LINK_CLASS"
                 data-testid="setup-tos-link"
                 @click.prevent="termsDoc = 'tos'"
-                >{{ t('firstUse.tosLinkLabel') }}</Button
-              >{{ t('firstUse.consentTosHintSuffix') }}
+                >{{ t('firstUse.tosLinkLabel') }}</Button>{{ t('firstUse.consentTosHintSuffix') }}
               <span
                 v-if="tosNudge"
                 id="setup-agree-hint"

@@ -129,7 +129,7 @@ function recordedUvIdentity(
 }
 
 async function goneWithin(pid: number, ms: number): Promise<boolean> {
-  for (const until = Date.now() + ms; Date.now() < until; ) {
+  for (const until = Date.now() + ms; Date.now() < until;) {
     try {
       process.kill(pid, 0)
     } catch (err) {

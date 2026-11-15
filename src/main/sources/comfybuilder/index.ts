@@ -81,8 +81,7 @@ interface EnvironmentRollback {
 }
 
 export type ComfyBuilderRecovery =
-  | { action: 'none' }
-  | { action: 'update'; data: Record<string, unknown> }
+  { action: 'none' } | { action: 'update'; data: Record<string, unknown> }
 
 function recoveryResult(
   installation: InstallationRecord,

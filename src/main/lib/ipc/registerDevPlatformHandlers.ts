@@ -198,12 +198,10 @@ export function registerDevPlatformHandlers(): void {
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.signIn, (): Promise<AuthStatus> => signInToCloud())
 
-  ipcMain.handle(
-    DEVPLATFORM_CHANNELS.signOut,
-    (event): Promise<AuthStatus> =>
-      signOutOfCloud(
-        [...comfyWindows.values()].find((entry) => entry.panelView?.webContents === event.sender)
-      )
+  ipcMain.handle(DEVPLATFORM_CHANNELS.signOut, (event): Promise<AuthStatus> =>
+    signOutOfCloud(
+      [...comfyWindows.values()].find((entry) => entry.panelView?.webContents === event.sender)
+    )
   )
 
   ipcMain.handle(DEVPLATFORM_CHANNELS.getAuthStatus, (): AuthStatus => session.status())
