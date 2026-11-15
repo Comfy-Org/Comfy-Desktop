@@ -225,6 +225,10 @@ export function useFirstUseChain(opts: FirstUseChainOpts): FirstUseChainApi {
   }
 
   async function handleNewInstallTakeoverClose(): Promise<void> {
+    if (chainingFirstUseToNewInstall.value && setupConsent.value?.acceptedTos === false) {
+      await handleNewInstallBackToSetup()
+      return
+    }
     if (chainingFirstUseToNewInstall.value) await finishFirstUse()
     if (
       currentOverlay.value?.kind === 'takeover' &&
