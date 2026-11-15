@@ -178,7 +178,7 @@ async function exportResultsImage(): Promise<void> {
     })
     const png = await createResultsPng(svg)
     const exported = await window.api.exportResultsImage(png, 'performance-test', folder)
-    if (!exported.ok && !exported.canceled) {
+    if (!exported.ok && !exported.cancelled) {
       exportResultsError.value = exported.message || t('performanceTest.exportImageFailed')
     }
   } catch (error) {

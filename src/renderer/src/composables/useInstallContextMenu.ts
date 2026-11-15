@@ -282,7 +282,7 @@ export function useInstallContextMenu(
       const label = t('chooser.menuExportSnapshot')
       try {
         const result = await shareLatestSnapshot(inst.id)
-        if (!result.ok) {
+        if (!result.ok && result.reason !== 'cancelled') {
           await modal.alert({
             title: label,
             message:

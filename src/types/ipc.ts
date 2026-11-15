@@ -1062,7 +1062,7 @@ export interface ElectronApi {
     ok: boolean
     filePath?: string
     message?: string
-    canceled?: boolean
+    cancelled?: boolean
   }>
   getPerformanceTestExampleWorkflows(
     installationId: string
@@ -1108,7 +1108,7 @@ export interface ElectronApi {
     png: ArrayBuffer,
     imageType: 'performance-test' | 'benchmark-comparison',
     defaultPath?: string
-  ): Promise<{ ok: boolean; canceled?: boolean; filePath?: string; message?: string }>
+  ): Promise<{ ok: boolean; cancelled?: boolean; filePath?: string; message?: string }>
   openPath(targetPath: string): Promise<void>
   revealPath(targetPath: string): void
   openExternal(url: string): Promise<void>
@@ -1230,10 +1230,13 @@ export interface ElectronApi {
   exportSnapshot(
     installationId: string,
     filename: string
-  ): Promise<{ ok: boolean; message?: string }>
-  exportAllSnapshots(installationId: string): Promise<{ ok: boolean; message?: string }>
+  ): Promise<{ ok: boolean; cancelled?: boolean; message?: string }>
+  exportAllSnapshots(
+    installationId: string
+  ): Promise<{ ok: boolean; cancelled?: boolean; message?: string }>
   importSnapshotsPreview(): Promise<{
     ok: boolean
+    cancelled?: boolean
     preview?: SnapshotFilePreview
     message?: string
   }>
@@ -1247,7 +1250,12 @@ export interface ElectronApi {
     torchStackNotice?: string | null
     message?: string
   }>
-  previewSnapshotFile(): Promise<{ ok: boolean; preview?: SnapshotFilePreview; message?: string }>
+  previewSnapshotFile(): Promise<{
+    ok: boolean
+    cancelled?: boolean
+    preview?: SnapshotFilePreview
+    message?: string
+  }>
   previewLocalMigration(installationId: string): Promise<{
     ok: boolean
     message?: string

@@ -1374,6 +1374,8 @@
     "delete": "删除",
     "saveErrorTitle": "无法保存快照",
     "deleteErrorTitle": "无法删除快照",
+    "exportErrorTitle": "无法导出快照",
+    "exportAllErrorTitle": "无法导出全部快照",
     "restoreConfirmTitle": "恢复此快照？",
     "restoreConfirmMessage": "用此快照替换当前构建状态？将先创建备份。",
     "importConfirmTitle": "导入快照？",

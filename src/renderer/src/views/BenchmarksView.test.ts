@@ -14,7 +14,7 @@ const exportResultsImageMock = vi.hoisted(() =>
   vi.fn(
     async (): Promise<{
       ok: boolean
-      canceled?: boolean
+      cancelled?: boolean
       message?: string
       filePath?: string
     }> => ({ ok: true, filePath: 'C:\\Exports\\benchmark-comparison.png' })

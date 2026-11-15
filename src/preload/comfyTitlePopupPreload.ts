@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from 'electron'
 import type { Category, ViewKind } from '../shared/viewKind'
 import { PICKER_SETTINGS_CHANNELS as CH, POPUP_KIND } from '../types/ipc'
 import type { PopupTheme, TerminalRestore } from '../types/ipc'
+import { rejectingWithHandlerMessages } from './invokeRejections'
 
 export interface TitlePopupMenuItem {
   id?: string
@@ -403,7 +404,7 @@ function isInstancePickerSnapshot(value: unknown): value is PopupInstancePickerS
   return true
 }
 
-const bridge: ComfyTitlePopupBridge = {
+const bridge = rejectingWithHandlerMessages<ComfyTitlePopupBridge>({
   platform: process.platform,
   activate: (id) => {
     ipcRenderer.send('comfy-titlepopup:item-activated', { id })
@@ -645,7 +646,7 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.on('comfy-titlepopup:dismiss-modals', handler)
     return () => ipcRenderer.removeListener('comfy-titlepopup:dismiss-modals', handler)
   }
-}
+})
 
 if (process.contextIsolated) {
   contextBridge.exposeInMainWorld('__comfyTitlePopup', bridge)

@@ -529,7 +529,7 @@ async function exportRuns(runs: PerformanceTestBenchmark[]): Promise<void> {
       'benchmark-comparison',
       benchmarksFolderPath.value || undefined
     )
-    if (!exported.ok && !exported.canceled) {
+    if (!exported.ok && !exported.cancelled) {
       exportError.value = exported.message || t('benchmarks.exportImageFailed')
     }
   } catch (error) {

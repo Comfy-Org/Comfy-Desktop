@@ -65,7 +65,7 @@ export function usePerformanceTestWorkflow(context: PerformanceTestWorkflowConte
       if (result.ok && result.filePath) {
         example.release()
         filePath.value = result.filePath
-      } else if (!result.canceled) {
+      } else if (!result.cancelled) {
         error.value = result.message || t('performanceTest.importFailed')
       }
     } catch (cause) {

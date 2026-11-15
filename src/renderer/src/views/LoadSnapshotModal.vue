@@ -241,10 +241,12 @@ async function handleBrowse(): Promise<void> {
 
 async function browseSnapshotFile(): Promise<void> {
   const result = await window.api.previewSnapshotFile()
+  if (result.cancelled) return
   if (!result.ok) {
-    if (result.message) {
-      await modal.alert({ title: t('list.loadSnapshot'), message: result.message })
-    }
+    await modal.alert({
+      title: t('list.loadSnapshot'),
+      message: result.message || t('progress.unknownError')
+    })
     return
   }
   if (result.preview) {
