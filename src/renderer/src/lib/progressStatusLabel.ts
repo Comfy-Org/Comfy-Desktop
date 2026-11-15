@@ -13,6 +13,32 @@ const OP_STATUS_MAP: Record<string, string> = {
 
 type TLike = ComposerTranslation | ((key: string, fallback?: string) => string)
 
+interface Translator {
+  t: (key: string) => string
+  te: (key: string) => boolean
+}
+
+const STEP_NAME_KEY_PREFIX = 'installProgress.stepName.'
+const MAIN_STATUS_KEY_PREFIX = 'launch.activity.'
+const TRANSLATION_KEY = /^[a-z][\w-]*(?:\.[\w-]+)+$/i
+
+export function progressStepName(
+  step: { phase: string; label?: string },
+  { t, te }: Translator
+): string {
+  const label = step.label?.trim() ?? ''
+  if (label && label !== step.phase) return label
+  const key = `${STEP_NAME_KEY_PREFIX}${step.phase}`
+  return te(key) ? t(key) : label || step.phase
+}
+
+export function progressStatusText(raw: string | null | undefined, { t, te }: Translator): string {
+  const status = raw?.trim() ?? ''
+  if (!TRANSLATION_KEY.test(status)) return status
+  if (te(status)) return t(status)
+  return status.startsWith(MAIN_STATUS_KEY_PREFIX) ? '' : status
+}
+
 export function humanizeOpStatus(raw: string | null | undefined, t: TLike): string {
   const key = raw || ''
   if (key in OP_STATUS_MAP) return OP_STATUS_MAP[key]!

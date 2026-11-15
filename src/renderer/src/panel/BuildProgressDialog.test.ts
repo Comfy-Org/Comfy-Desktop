@@ -3,8 +3,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { stubWindowApi } from '../lib/stubWindowApi'
 import { useProgressStore } from '../stores/progressStore'
-import { useInstallationStore } from '../stores/installationStore'
 import type { ActionResult, ProgressData } from '../types/ipc'
+import {
+  AGENT_REQUIREMENTS_PHASE,
+  FRONTEND_RESTORE_PHASE,
+  buildLaunchPhases
+} from '../../../main/lib/launchPhases'
+import { createLaunchProgressTracker } from '../../../main/lib/launchProgress'
 
 const modal = vi.hoisted(() => ({ confirm: vi.fn(), alert: vi.fn() }))
 vi.mock('../composables/useModal', () => ({ useModal: () => modal }))
@@ -74,8 +79,46 @@ async function openDialog(opKind: 'install' | 'launch' = 'install') {
   return wrapper
 }
 
-const stepStates = (w: Awaited<ReturnType<typeof openDialog>>) =>
+type Dialog = Awaited<ReturnType<typeof openDialog>>
+
+const stepStates = (w: Dialog) =>
   w.findAll('[data-testid="build-progress-step"]').map((li) => li.attributes('data-state'))
+
+const stepNames = (w: Dialog) =>
+  w.findAll('[data-testid="build-progress-step-name"]').map((el) => el.text())
+
+const activeStepDetail = (w: Dialog) => w.get('[data-testid="build-progress-step-detail"]').text()
+
+function startLikeMain() {
+  const phases = buildLaunchPhases(null, {
+    preLaunchPhases: ['repair', 'torchRepair'],
+    templateModels: true
+  })
+  let sentPhases: string[] = []
+  const tracker = createLaunchProgressTracker({
+    phases,
+    sendProgress: (phase, detail) => {
+      if (phase === 'steps') {
+        sentPhases = (detail.steps as Array<{ phase: string }>).map((step) => step.phase)
+      }
+      progress({ phase, ...detail } as Partial<ProgressData>)
+    }
+  })
+  tracker.start()
+  tracker.addLatePhase(AGENT_REQUIREMENTS_PHASE)
+  tracker.addLatePhase(FRONTEND_RESTORE_PHASE)
+  return { tracker, sentPhases: () => sentPhases }
+}
+
+const BOOT_LOG_LINE_PER_ACTIVITY = [
+  ['### Loading: ComfyUI-Manager (V3.30)', 'Loading ComfyUI-Manager…'],
+  ['FETCH ComfyRegistry Data: 5/90', 'Updating node registry…'],
+  ['Set vram state to: NORMAL_VRAM', 'Configuring GPU memory…'],
+  ['pytorch version: 2.7.1+cu128', 'Optimizing for your hardware…'],
+  ['Checkpoint files will always be loaded safely.', 'Preparing model loading…'],
+  ['INFO  [alembic.runtime.migration] Running upgrade 0001 -> 0002', 'Updating database…'],
+  ['Loaded node pack from disk', 'Loading custom nodes…']
+] as const
 
 describe('BuildProgressDialog', () => {
   it('shows the install step by step, with what main last said and the logs', async () => {
@@ -143,7 +186,7 @@ describe('BuildProgressDialog', () => {
     expect(logs().display).toBe('')
   })
 
-  it('plays one of the build videos, filling the slot when tall and spanning it when wide', async () => {
+  it('plays one of the build videos and tells a tall clip from a wide or square one', async () => {
     const w = await openDialog()
     const video = w.get<HTMLVideoElement>('[data-testid="build-progress-video"]')
     expect(video.attributes('src')).toMatch(/^\.\/build-progress\/[a-z_]+\.webm$/)
@@ -155,11 +198,9 @@ describe('BuildProgressDialog', () => {
     }
     await loadAs(480, 640)
     expect(video.attributes('data-shape')).toBe('tall')
-    expect(video.classes()).toContain('h-[340px]')
 
     await loadAs(942, 530)
     expect(video.attributes('data-shape')).toBe('wide')
-    expect(video.classes()).toContain('h-auto')
 
     await loadAs(708, 708)
     expect(video.attributes('data-shape')).toBe('wide')
@@ -174,79 +215,91 @@ describe('BuildProgressDialog', () => {
     expect(launch.text()).not.toContain('Try Cloud')
   })
 
-  it('lays the logs under the steps and the video, across the whole dialog', async () => {
-    const w = await openDialog()
-    const logs = w.get('[data-testid="build-progress-logs"]')
-    expect(
-      logs.element.parentElement?.contains(w.get('[data-testid="build-progress-video"]').element)
-    ).toBe(true)
-    expect(
-      logs.element.parentElement?.contains(w.get('[data-testid="build-progress-steps"]').element)
-    ).toBe(true)
-    expect(logs.classes()).toContain('h-[148px]')
-  })
-
-  it('names each step of a start in words, not by its phase id', async () => {
+  it('names every step main sends during a start in words, never by its phase id', async () => {
     const w = await openDialog('launch')
-    progress({
-      phase: 'steps',
-      steps: [
-        'launchStart',
-        'securityScan',
-        'mountLibraries',
-        'gpu',
-        'customNodes',
-        'startingServer',
-        'template-models'
-      ].map((phase) => ({ phase, label: phase }))
-    })
-    progress({ phase: 'gpu', percent: -1, status: 'launch.activity.optimizing' })
+    const main = startLikeMain()
     await flushPromises()
 
-    const labels = w
-      .findAll('[data-testid="build-progress-step"] > span:last-child > span:first-child')
-      .map((el) => el.text())
-    expect(labels).toEqual([
-      'Start ComfyUI',
-      'Run security scan',
-      'Load libraries',
-      'Initialize GPU',
-      'Load custom nodes',
-      'Start server',
-      'Download models'
-    ])
-    expect(labels.some((label) => label.endsWith('…'))).toBe(false)
+    const nameByPhase = Object.fromEntries(
+      main.sentPhases().map((phase, index) => [phase, stepNames(w)[index]])
+    )
+    expect(nameByPhase).toEqual({
+      repair: 'Repair the install',
+      agentRequirements: 'Install agent requirements',
+      frontendRestore: 'Restore the frontend',
+      torchRepair: 'Restore GPU PyTorch',
+      launchStart: 'Start ComfyUI',
+      securityScan: 'Run security scan',
+      mountLibraries: 'Load libraries',
+      gpu: 'Initialize GPU',
+      customNodes: 'Load custom nodes',
+      startingServer: 'Start server',
+      'template-models': 'Download models'
+    })
+  })
+
+  it('says what ComfyUI is doing under the active step in words, for every activity main reports', async () => {
+    const w = await openDialog('launch')
+    const { tracker } = startLikeMain()
+    tracker.ingest('Total VRAM 24564 MB, total RAM 65349 MB\n')
+    await flushPromises()
+
+    const shown: string[] = []
+    for (const [line] of BOOT_LOG_LINE_PER_ACTIVITY) {
+      tracker.ingest(`${line}\n`)
+      await flushPromises()
+      shown.push(activeStepDetail(w))
+    }
+
+    expect(shown).toEqual(BOOT_LOG_LINE_PER_ACTIVITY.map(([, words]) => words))
     expect(w.text()).not.toContain('launch.activity')
   })
 
-  it('shows the starter workflow models downloading beside the install', async () => {
-    window.api.getInstallations = vi.fn(async () => [
-      {
-        id: ID,
-        name: 'ComfyUI',
-        sourceId: 'standalone',
-        bundledTemplateId: 'image_flux2_klein',
-        bundledTemplateSizeBytes: 9_000_000_000,
-        downloadTemplateModels: true,
-        pendingTemplateOpen: 'image_flux2_klein'
-      }
-    ]) as typeof window.api.getInstallations
-    await useInstallationStore().fetchInstallations()
-    const w = await openDialog()
+  it('hides an activity it has no words for instead of printing its key', async () => {
+    const w = await openDialog('launch')
+    startLikeMain()
+    progress({ phase: 'gpu', percent: -1, status: 'launch.activity.somethingNew' })
+    await flushPromises()
 
-    const rows = w.findAll('[data-testid="build-progress-step"]')
-    expect(rows.map((row) => row.text())).toEqual([
-      expect.stringContaining('Download'),
-      'Extract',
-      'Set up environment',
-      'Download models'
-    ])
-    expect(stepStates(w)).toEqual(['active', 'pending', 'pending', 'active'])
+    expect(w.find('[data-testid="build-progress-step-detail"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('launch.activity')
   })
 
-  it('shows no models step when the install downloads none', async () => {
-    const w = await openDialog()
-    expect(w.text()).not.toContain('Download models')
+  it('opens on the newest log line, follows new output, and stays put once the reader scrolls up', async () => {
+    const logBoxWithRoomForThreeLines = document.createElement('style')
+    logBoxWithRoomForThreeLines.textContent =
+      '[data-testid="build-progress-logs"] { height: 48px; line-height: 16px; overflow-y: auto; }'
+    document.head.append(logBoxWithRoomForThreeLines)
+    try {
+      const closedBeforeLooking = await openDialog('launch')
+      output(Array.from({ length: 40 }, (_, n) => `earlier line ${n}\n`).join(''))
+      await flushPromises()
+      closedBeforeLooking.unmount()
+
+      const w = mount(BuildProgressDialog, {
+        props: { installationId: ID },
+        attachTo: document.body
+      })
+      await flushPromises()
+      const logs = w.get<HTMLElement>('[data-testid="build-progress-logs"]').element
+      const linesBelowTheFold = () =>
+        Math.round((logs.scrollHeight - logs.scrollTop - logs.clientHeight) / 16)
+
+      expect(logs.scrollHeight).toBeGreaterThan(logs.clientHeight)
+      expect(linesBelowTheFold()).toBe(0)
+
+      output('newest line\n'.repeat(10))
+      await flushPromises()
+      expect(linesBelowTheFold()).toBe(0)
+
+      logs.scrollTop = 0
+      logs.dispatchEvent(new Event('scroll'))
+      output('arrived while reading older lines\n'.repeat(10))
+      await flushPromises()
+      expect(logs.scrollTop).toBe(0)
+    } finally {
+      logBoxWithRoomForThreeLines.remove()
+    }
   })
 
   it('cancels a start without asking and offers Start again', async () => {

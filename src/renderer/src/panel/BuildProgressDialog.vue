@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Check, ChevronDown, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import { useModal } from '../composables/useModal'
+import { useTerminalScroll } from '../composables/useTerminalScroll'
+import { progressStatusText, progressStepName } from '../lib/progressStatusLabel'
 import { useProgressStore } from '../stores/progressStore'
 import { useInstallationStore } from '../stores/installationStore'
 
@@ -42,20 +44,18 @@ const BUILD_PROGRESS_VIDEOS = [
   'woman_smoking'
 ] as const
 const LOG_TAIL_CHARS = 20_000
-const MODELS_PHASE = 'template-models'
-const TRANSLATION_KEY = /^[a-z][\w-]*(?:\.[\w-]+)+$/i
 
 const { installationId } = defineProps<{ installationId: string }>()
 const emit = defineEmits<{ close: []; retry: [] }>()
 
-const { t, te } = useI18n()
+const i18n = useI18n()
+const { t } = i18n
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
 const modal = useModal()
 
 const op = computed(() => progressStore.operations.get(installationId) ?? null)
 const build = computed(() => installationStore.getById(installationId) ?? null)
-const logsOpen = ref(true)
 const logsRef = ref<HTMLElement | null>(null)
 const video = `./build-progress/${
   BUILD_PROGRESS_VIDEOS[Math.floor(Math.random() * BUILD_PROGRESS_VIDEOS.length)]
@@ -66,29 +66,6 @@ function measureVideo(event: Event): void {
   const el = event.target as HTMLVideoElement
   videoShape.value = el.videoHeight > el.videoWidth ? 'tall' : 'wide'
 }
-
-function stepName(phase: string, label: string): string {
-  if (label && label !== phase) return label
-  const key = `installProgress.stepName.${phase}`
-  return te(key) ? t(key) : label || phase
-}
-
-function readableStatus(raw: string | undefined): string {
-  const status = raw?.trim() ?? ''
-  if (!TRANSLATION_KEY.test(status)) return status
-  return te(status) ? t(status) : ''
-}
-
-const downloadsStarterModels = computed(() => {
-  const inst = build.value
-  return (
-    op.value?.opKind === 'install' &&
-    !!inst?.bundledTemplateId &&
-    inst.downloadTemplateModels === true &&
-    !!inst.pendingTemplateOpen &&
-    Number(inst.bundledTemplateSizeBytes ?? 0) > 0
-  )
-})
 
 const steps = computed<StepRow[]>(() => {
   const current = op.value
@@ -106,7 +83,7 @@ const steps = computed<StepRow[]>(() => {
     ]
   }
   const activeIndex = current.steps.findIndex((step) => step.phase === current.activePhase)
-  const rows = current.steps.map((step, index): StepRow => {
+  return current.steps.map((step, index): StepRow => {
     const state: StepState =
       activeIndex < 0
         ? 'pending'
@@ -117,8 +94,8 @@ const steps = computed<StepRow[]>(() => {
             : failed || current.phaseErrors[step.phase]
               ? 'failed'
               : 'active'
-    const label = stepName(step.phase, step.label)
-    const status = readableStatus(current.lastStatus[step.phase])
+    const label = progressStepName(step, i18n)
+    const status = progressStatusText(current.lastStatus[step.phase], i18n)
     const detail =
       state === 'failed'
         ? current.error || status
@@ -134,16 +111,6 @@ const steps = computed<StepRow[]>(() => {
       detail
     }
   })
-  if (downloadsStarterModels.value && !rows.some((row) => row.phase === MODELS_PHASE)) {
-    rows.push({
-      phase: MODELS_PHASE,
-      label: stepName(MODELS_PHASE, MODELS_PHASE),
-      state: current.finished ? 'pending' : 'active',
-      percent: null,
-      detail: ''
-    })
-  }
-  return rows
 })
 
 const failed = computed(() => !!op.value?.finished && !!op.value.error)
@@ -168,13 +135,8 @@ watch(
   { immediate: true }
 )
 
-watch(logText, async () => {
-  const el = logsRef.value
-  if (!el) return
-  const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24
-  await nextTick()
-  if (pinned) el.scrollTop = el.scrollHeight
-})
+const { terminalExpanded: logsOpen, handleTerminalScroll: followLogsWhileAtNewestLine } =
+  useTerminalScroll(logsRef, () => logText.value)
 
 async function cancel(): Promise<void> {
   if (launching.value) {
@@ -265,10 +227,11 @@ async function cancel(): Promise<void> {
                       'text-subtle-foreground': step.state === 'pending'
                     }"
                   >
-                    {{ step.label
-                    }}<span v-if="step.percent !== null" class="ml-[0.3em] text-muted-foreground">{{
-                      t('installProgress.percent', { percent: step.percent })
-                    }}</span>
+                    <span data-testid="build-progress-step-name">{{ step.label }}</span><span
+                      v-if="step.percent !== null"
+                      class="ml-[0.3em] text-muted-foreground"
+                      >{{ t('installProgress.percent', { percent: step.percent }) }}</span
+                    >
                   </span>
                   <span
                     v-if="step.detail"
@@ -283,13 +246,13 @@ async function cancel(): Promise<void> {
             </ol>
           </div>
 
-          <div class="flex h-[340px] w-[272px] shrink-0 items-center justify-center">
+          <div class="flex h-[272px] w-[272px] shrink-0 items-center justify-center">
             <video
-              class="w-[272px] transition-opacity duration-200 motion-reduce:transition-none"
+              class="transition-opacity duration-200 motion-reduce:transition-none"
               :class="[
                 videoShape === 'tall'
-                  ? 'h-[340px] rounded-[18px] border border-white/8 bg-[#161619] object-cover'
-                  : 'h-auto max-h-[340px] rounded-xl',
+                  ? 'aspect-[4/5] h-[272px] rounded-[18px] border border-white/8 bg-[#161619] object-cover'
+                  : 'h-auto max-h-[272px] w-[272px] rounded-xl',
                 videoShape ? 'opacity-100' : 'opacity-0'
               ]"
               :src="video"
@@ -327,9 +290,10 @@ async function cancel(): Promise<void> {
           v-show="logsOpen"
           id="build-progress-logs"
           ref="logsRef"
-          class="m-0 mt-1 h-[148px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
+          class="m-0 mt-1 h-[148px] min-h-[82px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
           tabindex="0"
           data-testid="build-progress-logs"
+          @scroll="followLogsWhileAtNewestLine"
           >{{ logText || t('installProgress.starting') }}</pre>
 
         <div class="mt-6 flex min-h-9 items-center gap-2">
