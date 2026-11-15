@@ -105,6 +105,20 @@ export default defineConfig([
     rules: { 'desktop/no-comments': ['error', { allowDocComments: true }] }
   },
   {
+    files: ['./src/main/**/*.ts'],
+    ignores: ['./src/main/lib/webContentsViewLifetime.ts', './src/main/**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "NewExpression[callee.name='WebContentsView']",
+          message:
+            'Create the view with createWebContentsView. Electron crashes the app at quit when a WebContentsView is garbage-collected while its webContents is alive.'
+        }
+      ]
+    }
+  },
+  {
     files: ['./src/**/*.{ts,vue}'],
     ignores: ['./src/main/lib/openExternal.ts', './src/**/*.test.ts'],
     rules: {
