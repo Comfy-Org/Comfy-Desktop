@@ -27,6 +27,7 @@ import {
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
+import BuildAutoStartCheckbox from '../../panel/home/BuildAutoStartCheckbox.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
 import { isBuildInstall } from '../../devplatform/buildState'
@@ -41,6 +42,7 @@ interface Props {
   showMenu?: boolean
   showFreeRunsPill?: boolean
   tone?: HomeBuildTone
+  autoStart?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -58,6 +60,7 @@ const emit = defineEmits<{
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
   'why-cloud': []
+  'auto-start': [installation: Installation, on: boolean]
 }>()
 
 const { t } = useI18n()
@@ -461,6 +464,15 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           {{ actionPill.label }}
         </Button>
       </Tooltip>
+      <BuildAutoStartCheckbox
+        v-if="!isBusy && !isUpdating"
+        :checked="props.autoStart"
+        :data-testid="`chooser-tile-auto-start-${inst.id}`"
+        @update:checked="emit('auto-start', inst, $event)"
+        @click.stop
+        @keydown.enter.stop
+        @keydown.space.stop
+      />
       <Button
         v-if="showLaunch"
         type="button"
