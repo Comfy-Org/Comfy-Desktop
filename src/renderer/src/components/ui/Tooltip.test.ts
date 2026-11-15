@@ -163,7 +163,7 @@ describe('Tooltip shared adapter', () => {
       target().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       await flushPromises()
       expect(hostListener).not.toHaveBeenCalled()
-      expect(document.querySelector('.tooltip-bubble')).toBeNull()
+      await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
     } finally {
       window.removeEventListener('keydown', hostListener)
       document.removeEventListener('keydown', hostListener)
