@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
-import { downloadAndExtract, downloadAndExtractMulti } from '../../lib/installer'
+import { downloadAndExtract, downloadAndExtractMulti, stepLog } from '../../lib/installer'
 import type { InstallPhaseName, InstallPhaseStatus } from '../../lib/installer'
 import * as mainTelemetry from '../../lib/telemetry'
 import { buildErrorFields } from '../../../shared/errorEvent'
@@ -30,9 +30,9 @@ import {
   writeComfyEnvironment
 } from './envPaths'
 import type { InstallationRecord } from '../../installations'
-import { tagsEqual, type ComfyVersion } from '../../lib/version'
+import { formatComfyVersion, tagsEqual, type ComfyVersion } from '../../lib/version'
 import { resolveNestedComfyUIParent } from '../common/nestedRoot'
-import type { InstallTools, PostInstallTools } from '../../types/sources'
+import type { InstallStep, InstallTools, PostInstallTools } from '../../types/sources'
 
 const BULKY_PREFIXES = ['torch', 'nvidia', 'triton', 'cuda']
 
@@ -96,9 +96,16 @@ async function stripMasterPackages(installPath: string): Promise<void> {
   }
 }
 
+interface EnvCreationReport {
+  copyStarted: () => void
+  copyProgress: (copied: number, total: number, elapsedSecs: number, etaSecs: number) => void
+  signingStarted: () => void
+  output: (text: string) => void
+}
+
 async function createEnv(
   installation: InstallationRecord,
-  onProgress: (copied: number, total: number, elapsedSecs: number, etaSecs: number) => void,
+  report: EnvCreationReport,
   signal?: AbortSignal
 ): Promise<void> {
   const installPath = installation.installPath
@@ -140,8 +147,12 @@ async function createEnv(
       throw new Error('Could not locate site-packages for .venv.')
     }
     await withPostInstallPhase(installation, 'package_copy', async () => {
-      await copyDirWithProgress(masterSitePackages, envSitePackages, onProgress, { signal })
-      await codesignBinaries(envSitePackages)
+      report.copyStarted()
+      await copyDirWithProgress(masterSitePackages, envSitePackages, report.copyProgress, {
+        signal
+      })
+      if (process.platform === 'darwin') report.signingStarted()
+      await codesignBinaries(envSitePackages, report.output)
     })
   } catch (err) {
     await fs.promises.rm(venvPath, { recursive: true, force: true }).catch(() => {})
@@ -174,10 +185,30 @@ export async function install(
   }
 }
 
+function versionStepLabel(installation: InstallationRecord): string {
+  const pickedTag = installation.comfyVersionTag as string | undefined
+  return pickedTag
+    ? t('standalone.getComfyVersion', { version: pickedTag })
+    : t('standalone.getLatestComfy')
+}
+
+export function installSteps(installation: InstallationRecord): InstallStep[] {
+  return [
+    { phase: 'download', label: t('common.download') },
+    { phase: 'extract', label: t('common.extract') },
+    { phase: 'setup', label: t('standalone.setupEnv') },
+    ...(installation.autoUpdateComfyUI
+      ? [{ phase: 'update', label: versionStepLabel(installation) }]
+      : [])
+  ]
+}
+
 export async function postInstall(
   installation: InstallationRecord,
-  { sendProgress, update, signal }: PostInstallTools
+  { sendProgress, sendOutput, update, signal }: PostInstallTools
 ): Promise<void> {
+  const logSetup = stepLog(sendOutput, 'setup')
+  const reportSetup: PostInstallTools['sendProgress'] = (_step, data) => sendProgress('setup', data)
   const standaloneEnvDir = path.join(installation.installPath, 'standalone-env')
   if (process.platform !== 'win32') {
     const binDir = path.join(standaloneEnvDir, 'bin')
@@ -191,102 +222,161 @@ export async function postInstall(
       }
     } catch {}
   }
-  await repairMacBinaries(installation.installPath, sendProgress)
+  if (process.platform === 'darwin') {
+    logSetup('Clearing quarantine flags and signing the bundled Python')
+  }
+  await repairMacBinaries(installation.installPath, reportSetup, sendOutput)
   if (signal?.aborted) throw new Error('Cancelled')
+  logSetup('Creating the Python environment')
   sendProgress('setup', { percent: 0, status: 'Creating Python environment…' })
   await createEnv(
     installation,
-    (copied, total, elapsedSecs, etaSecs) => {
-      const percent = Math.round((copied / total) * 100)
-      const elapsed = formatTime(elapsedSecs)
-      const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
-      sendProgress('setup', {
-        percent,
-        status: `Copying packages… ${copied} / ${total} files  ·  ${elapsed} elapsed  ·  ${eta} remaining`
-      })
+    {
+      copyStarted: () => logSetup('Copying the bundled packages into it'),
+      copyProgress: (copied, total, elapsedSecs, etaSecs) => {
+        const percent = Math.round((copied / total) * 100)
+        const elapsed = formatTime(elapsedSecs)
+        const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
+        sendProgress('setup', {
+          percent,
+          status: `Copying packages… ${copied} / ${total} files  ·  ${elapsed} elapsed  ·  ${eta} remaining`
+        })
+      },
+      signingStarted: () => {
+        logSetup('Signing the copied binaries')
+        sendProgress('setup', { percent: -1, status: t('standalone.setupSigning') })
+      },
+      output: sendOutput
     },
     signal
   )
   if (signal?.aborted) throw new Error('Cancelled')
-  sendProgress('cleanup', { percent: -1, status: t('standalone.cleanupEnvStatus') })
+  logSetup('Removing duplicate copies of the large packages')
+  sendProgress('setup', { percent: -1, status: t('standalone.setupRemovingDuplicates') })
   await stripMasterPackages(installation.installPath)
 
   if (!isPygit2Configured() && !(await isGitAvailable())) {
+    logSetup('Git is not installed, so setting up the bundled pygit2 instead')
     await tryConfigurePygit2Fallback(installation.installPath)
   }
   const comfyuiDir = path.join(installation.installPath, 'ComfyUI')
   await writeComfyEnvironment(comfyuiDir)
-  sendProgress('cleanup', { percent: -1, status: 'Fetching version tags…' })
-  await fetchTags(comfyuiDir)
+  logSetup('Fetching the ComfyUI version tags')
+  sendProgress('setup', { percent: -1, status: 'Fetching version tags…' })
+  if (!(await fetchTags(comfyuiDir))) logSetup('Could not fetch the ComfyUI version tags')
   const headCommit = readGitHead(comfyuiDir)
   if (headCommit) {
     const ref = installation.version as string | undefined
     const comfyVersion = await resolveLocalVersion(comfyuiDir, headCommit, ref)
     await update({ comfyVersion })
     installation = { ...installation, comfyVersion } as InstallationRecord
+    logSetup(`This download contains ComfyUI ${formatComfyVersion(comfyVersion, 'short')}`)
   }
 
+  sendProgress('setup', { percent: -1, status: t('standalone.setupSavingSnapshot') })
   try {
     const filename = await snapshots.saveSnapshot(installation.installPath, installation, 'boot')
     const snapshotCount = await snapshots.getSnapshotCount(installation.installPath)
     await update({ lastSnapshot: filename, snapshotCount })
+    logSetup('Saved a snapshot of the fresh install')
   } catch (err) {
     console.warn('Initial snapshot failed:', err)
+    logSetup(`Could not save a snapshot of the fresh install: ${(err as Error).message}`)
   }
 
-  if (installation.autoUpdateComfyUI && fs.existsSync(path.join(comfyuiDir, '.git'))) {
-    if (signal?.aborted) throw new Error('Cancelled')
-    const channel: 'stable' | 'latest' =
-      (installation.updateChannel as 'stable' | 'latest' | undefined) ?? 'stable'
-    const pickedTag = installation.comfyVersionTag as string | undefined
-    const channelLabel = pickedTag
-      ? `ComfyUI ${pickedTag}`
-      : channel === 'latest'
-        ? 'latest version'
-        : 'latest stable version'
-    sendProgress('update', { percent: -1, status: `Fetching ${channelLabel}` })
+  if (!installation.autoUpdateComfyUI) return
 
-    try {
-      const latestRelease = await fetchLatestRelease(channel, { refresh: true })
-      const latestTag = latestRelease?.tag_name as string | undefined
-      const current = installation.comfyVersion as ComfyVersion | undefined
-      const onLatestTag =
-        !!latestTag && tagsEqual(current?.baseTag, latestTag) && current?.commitsAhead === 0
-      const onPickedTag =
-        !!pickedTag && tagsEqual(current?.baseTag, pickedTag) && current?.commitsAhead === 0
+  const logUpdate = stepLog(sendOutput, 'update')
+  const keepDownloadedVersion = (): void => {
+    const downloaded = installation.comfyVersion as ComfyVersion | undefined
+    if (downloaded) {
+      const version = formatComfyVersion(downloaded, 'short')
+      logUpdate(`Staying on ComfyUI ${version} from the download`)
+      sendProgress('update', {
+        percent: 100,
+        status: t('standalone.getComfyKeptVersion', { version })
+      })
+      return
+    }
+    logUpdate('Staying on the ComfyUI from the download')
+    sendProgress('update', { percent: 100, status: t('standalone.getComfyKept') })
+  }
 
-      if (!latestTag && !pickedTag) {
+  if (!fs.existsSync(path.join(comfyuiDir, '.git'))) {
+    logUpdate(
+      'The ComfyUI in this download is not a git checkout, so its version cannot be changed'
+    )
+    keepDownloadedVersion()
+    return
+  }
+
+  if (signal?.aborted) throw new Error('Cancelled')
+  const channel: 'stable' | 'latest' =
+    (installation.updateChannel as 'stable' | 'latest' | undefined) ?? 'stable'
+  const pickedTag = installation.comfyVersionTag as string | undefined
+  const target = pickedTag
+    ? `ComfyUI ${pickedTag}`
+    : channel === 'latest'
+      ? 'the latest ComfyUI commit'
+      : 'the latest stable ComfyUI release'
+  logUpdate(`Checking for ${target}`)
+  sendProgress('update', { percent: -1, status: t('standalone.getComfyChecking') })
+
+  try {
+    const latestRelease = await fetchLatestRelease(channel, { refresh: true })
+    const latestTag = latestRelease?.tag_name as string | undefined
+    const current = installation.comfyVersion as ComfyVersion | undefined
+    const onLatestTag =
+      !!latestTag && tagsEqual(current?.baseTag, latestTag) && current?.commitsAhead === 0
+    const onPickedTag =
+      !!pickedTag && tagsEqual(current?.baseTag, pickedTag) && current?.commitsAhead === 0
+    const found = !pickedTag && latestTag ? `${target} (${latestTag})` : target
+
+    if (!latestTag && !pickedTag) {
+      logUpdate(`Could not look up ${target}`)
+      keepDownloadedVersion()
+    } else if (pickedTag ? onPickedTag : onLatestTag) {
+      logUpdate(`The download already has ${found}`)
+      sendProgress('update', { percent: 100, status: t('standalone.getComfyIncluded') })
+    } else {
+      logUpdate(`Getting ${found}`)
+      sendProgress('update', { percent: -1, status: t('standalone.getComfyFetching') })
+      const result = await withPostInstallPhase(installation, 'torch_deps_sync', () =>
+        runComfyUIUpdate({
+          installPath: installation.installPath,
+          installation,
+          channel,
+          ...(pickedTag ? { targetTag: pickedTag } : {}),
+          update,
+          sendProgress: (_step, data) =>
+            sendProgress('update', data as { percent: number; status: string }),
+          sendOutput,
+          signal,
+          forceDepsSync: true
+        })
+      )
+      installation = result.installation
+      if (result.ok) {
+        const version = result.comfyVersion
+          ? formatComfyVersion(result.comfyVersion, 'short')
+          : undefined
+        logUpdate(version ? `Now on ComfyUI ${version}` : `Got ${found}`)
         sendProgress('update', {
           percent: 100,
-          status: `Skipped — could not verify ${channelLabel}`
+          status: version ? t('standalone.getComfyDone', { version }) : t('common.done')
         })
-      } else if (pickedTag ? onPickedTag : onLatestTag) {
-        sendProgress('update', { percent: 100, status: 'Already up to date' })
       } else {
-        const result = await withPostInstallPhase(installation, 'torch_deps_sync', () =>
-          runComfyUIUpdate({
-            installPath: installation.installPath,
-            installation,
-            channel,
-            ...(pickedTag ? { targetTag: pickedTag } : {}),
-            update,
-            sendProgress: sendProgress as (step: string, data: Record<string, unknown>) => void,
-            signal,
-            forceDepsSync: true
-          })
-        )
-        installation = result.installation
-        if (result.ok) {
-          sendProgress('update', { percent: 100, status: 'Up to date' })
-        } else {
-          sendProgress('update', { percent: 100, status: 'Skipped (update failed)' })
-        }
+        const reason = result.message?.split('\n')[0]
+        console.warn(`Auto-update to ${channel} failed: ${reason ?? 'no reason given'}`)
+        logUpdate(`Could not get ${found}${reason ? `: ${reason}` : ''}`)
+        keepDownloadedVersion()
       }
-    } catch (err) {
-      if ((err as Error).message === 'Cancelled') throw err
-      console.warn(`Auto-update to ${channel} failed:`, err)
-      sendProgress('update', { percent: 100, status: 'Skipped' })
     }
+  } catch (err) {
+    if ((err as Error).message === 'Cancelled') throw err
+    console.warn(`Auto-update to ${channel} failed:`, err)
+    logUpdate(`Could not get ${target}: ${(err as Error).message}`)
+    keepDownloadedVersion()
   }
 }
 
