@@ -59,6 +59,7 @@ interface DownloadsTrayState {
 interface Bridge {
   getInstallationId: () => string | null
   isMac: () => boolean
+  isLinux: () => boolean
   setPanel: (panel: ComfyPanelKey) => void
   openNewWindow: () => void
   openFileMenu: (anchor: MenuAnchor) => void
@@ -142,6 +143,7 @@ const titleDownloadsBadgeClass =
   'pointer-events-none absolute -top-1 -right-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-[999px] bg-[var(--action,#60a5fa)] px-1 py-0 text-[9px] leading-none font-bold text-white tabular-nums [box-shadow:0_0_0_2px_var(--titlebar-bg-active,var(--titlebar-bg,var(--neutral-900)))] [.title-bar:not(.is-light)_&:not(.is-unseen,.is-error)]:text-background [&.is-unseen]:bg-[#22c55e] [&.is-error]:bg-[var(--danger)] [.title-downloads-tray.has-active_&]:animate-[title-downloads-pulse_1.6s_ease-in-out_infinite] [.title-downloads-tray.is-flashing_&]:[animation:title-downloads-flash_0.55s_cubic-bezier(0.2,0.9,0.3,1.4)_1,title-downloads-pulse_1.6s_ease-in-out_infinite_0.6s]'
 
 const isMac = ref(bridge?.isMac() ?? false)
+const isLinux = ref(bridge?.isLinux() ?? false)
 const activePanel = ref<ComfyPanelKey>('comfy')
 const installationId = ref(bridge?.getInstallationId() ?? '')
 const isInstallLess = ref((bridge?.getInstallationId() ?? '') === '')
@@ -556,9 +558,10 @@ onUnmounted(() => {
 <template>
   <header
     ref="titleBar"
-    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac)]:pr-[140px] [&:not(.is-light)]:border-b-border [&.is-collapsed-update]:grid-cols-[minmax(0,max-content)_minmax(200px,1fr)_auto] [&.is-collapsed-update]:gap-x-4"
+    class="title-bar relative box-border grid h-screen w-screen grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-solid border-current border-b-[var(--border)] bg-[var(--titlebar-bg-active,var(--titlebar-bg))] px-3 py-0 font-sans text-[12px] leading-none font-normal text-text-muted select-none [-webkit-app-region:drag] [container:title-bar_/_inline-size] [&.is-mac]:pl-[78px] [&.is-mac.is-fullscreen]:pl-3 [&:not(.is-mac,.is-linux)]:pr-[140px] [&.is-linux]:[--title-controls-left:env(titlebar-area-x,0px)] [&.is-linux]:[--title-controls-right:calc(100vw_-_env(titlebar-area-x,0px)_-_env(titlebar-area-width,100vw))] [&.is-linux]:pl-[calc(var(--title-controls-left)_+_12px)] [&.is-linux]:pr-[calc(var(--title-controls-right)_+_12px)] [&:not(.is-light)]:border-b-border [&.is-collapsed-update]:grid-cols-[minmax(0,max-content)_minmax(200px,1fr)_auto] [&.is-collapsed-update]:gap-x-4"
     :class="{
       'is-mac': isMac,
+      'is-linux': isLinux,
       'is-light': isLight,
       'is-fullscreen': isFullscreen,
       'is-hover-active': isHoverActive,
@@ -578,8 +581,8 @@ onUnmounted(() => {
       class="title-cluster flex items-center gap-1"
       :class="
         collapsedUpdate
-          ? 'w-[var(--title-trailing-width,0px)] min-w-0 max-w-full [.title-bar:not(.is-mac)_&]:w-[calc(var(--title-trailing-width,0px)_+_128px)]'
-          : 'min-w-[var(--title-trailing-width,0px)] [.title-bar:not(.is-mac)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)]'
+          ? 'w-[var(--title-trailing-width,0px)] min-w-0 max-w-full [.title-bar:not(.is-mac,.is-linux)_&]:w-[calc(var(--title-trailing-width,0px)_+_128px)] [.title-bar.is-linux_&]:w-[calc(var(--title-trailing-width,0px)_+_max(0px,var(--title-controls-right)_-_var(--title-controls-left)))]'
+          : 'min-w-[var(--title-trailing-width,0px)] [.title-bar:not(.is-mac,.is-linux)_&]:min-w-[calc(var(--title-trailing-width,0px)_+_128px)] [.title-bar.is-linux_&]:min-w-[calc(var(--title-trailing-width,0px)_+_max(0px,var(--title-controls-right)_-_var(--title-controls-left)))]'
       "
     >
       <button
@@ -699,7 +702,10 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div ref="titleTrailing" class="title-trailing flex items-center gap-2 [justify-self:end]">
+    <div
+      ref="titleTrailing"
+      class="title-trailing flex items-center gap-2 [justify-self:end] [.title-bar.is-linux_&]:pl-[max(0px,var(--title-controls-left)_-_var(--title-controls-right))]"
+    >
       <button
         v-if="!isFirstUseLockdown && showAppUpdatePill"
         type="button"

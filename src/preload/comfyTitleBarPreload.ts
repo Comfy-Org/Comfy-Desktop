@@ -41,6 +41,7 @@ export interface DownloadsTrayState {
 export interface ComfyTitleBarBridge {
   getInstallationId(): string | null
   isMac(): boolean
+  isLinux(): boolean
   setPanel(panel: ComfyPanelKey): void
   openNewWindow(): void
   openFileMenu(anchor: TitleMenuAnchor): void
@@ -116,6 +117,7 @@ function readInstallationId(): string | null {
 const bridge: ComfyTitleBarBridge = {
   getInstallationId: () => readInstallationId(),
   isMac: () => (g.navigator?.userAgent ?? '').toLowerCase().includes('mac'),
+  isLinux: () => (g.navigator?.userAgent ?? '').toLowerCase().includes('linux'),
   setPanel: (panel) => {
     ipcRenderer.send('comfy-window:set-panel', { panel })
   },
