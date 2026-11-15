@@ -162,7 +162,7 @@ async function cancel(): Promise<void> {
   >
     <div class="relative">
       <div
-        class="flex max-h-[calc(100vh-48px)] flex-col overflow-y-auto rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37/0.9)] px-[33px] pt-[29px] pb-[15px] backdrop-blur-[16px]"
+        class="flex max-h-[calc(100vh-48px)] flex-col overflow-y-auto rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37/0.9)] p-[clamp(24px,calc(100vh-539px),32px)] backdrop-blur-[16px]"
       >
         <div class="flex gap-10">
           <div class="flex min-w-0 flex-1 flex-col">
@@ -241,7 +241,7 @@ async function cancel(): Promise<void> {
             </ol>
           </div>
 
-          <div class="size-[272px] shrink-0 overflow-hidden rounded-[18px] bg-[#161619]">
+          <div class="size-[272px] shrink-0 overflow-hidden rounded-xl bg-[#161619]">
             <video
               class="size-full object-cover transition-opacity duration-200 motion-reduce:transition-none"
               :class="videoReady ? 'opacity-100' : 'opacity-0'"
@@ -261,7 +261,7 @@ async function cancel(): Promise<void> {
           type="button"
           variant="muted-textonly"
           size="unset"
-          class="mt-8 h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
+          class="mt-[clamp(24px,calc(100vh-539px),32px)] h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
           :aria-expanded="logsOpen"
           aria-controls="build-progress-logs"
           data-testid="build-progress-logs-toggle"
@@ -279,13 +279,13 @@ async function cancel(): Promise<void> {
           v-show="logsOpen"
           id="build-progress-logs"
           ref="logsRef"
-          class="m-0 mt-1 h-[148px] min-h-[82px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
+          class="m-0 mt-3 h-[148px] min-h-[82px] overflow-y-auto overscroll-contain rounded-xl bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
           tabindex="0"
           data-testid="build-progress-logs"
           @scroll="followLogsWhileAtNewestLine"
           >{{ logText || t('installProgress.starting') }}</pre>
 
-        <div class="mt-6 flex min-h-9 items-center gap-2">
+        <div class="mt-[clamp(16px,calc(100vh-547px),24px)] flex min-h-9 items-center gap-2">
           <template v-if="failed">
             <Button
               type="button"
