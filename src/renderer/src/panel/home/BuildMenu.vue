@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Trash2, X } from '@lucide/vue'
 import Menu from '@comfyorg/design-system/menu/Menu'
 import MenuItem from '@comfyorg/design-system/menu/MenuItem'
 import MenuSeparator from '@comfyorg/design-system/menu/MenuSeparator'
@@ -92,9 +93,11 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
         data-testid="build-menu-confirm-uninstall"
         @select="confirmUninstall"
       >
+        <Trash2 :size="15" class="shrink-0" aria-hidden="true" />
         {{ t('actions.delete') }}
       </MenuItem>
       <MenuItem :text-value="t('common.cancel')" data-testid="build-menu-keep">
+        <X :size="15" class="shrink-0" aria-hidden="true" />
         {{ t('common.cancel') }}
       </MenuItem>
     </template>
@@ -109,6 +112,13 @@ onBeforeUnmount(() => window.removeEventListener('blur', onWindowBlur))
           :data-testid="`build-menu-${item.id}`"
           @select="select($event, item.id)"
         >
+          <component
+            :is="item.icon"
+            v-if="item.icon"
+            :size="15"
+            class="shrink-0"
+            aria-hidden="true"
+          />
           {{ item.label }}
         </MenuItem>
       </template>

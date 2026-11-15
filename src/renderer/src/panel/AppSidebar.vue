@@ -16,7 +16,6 @@ import {
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
-import ContextMenu from '../components/ContextMenu.vue'
 import BuildMenu, { type BuildMenuAnchor } from './home/BuildMenu.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import SidebarAccount from './SidebarAccount.vue'
@@ -149,22 +148,6 @@ function openBuildMenu(event: MouseEvent, build: Installation): void {
   buildMenuAt.value = { build, anchor: pointAt(event) }
   buildMenuOpen.value = true
 }
-
-const PAGES_THAT_OPEN_IN_A_NEW_WINDOW: ReadonlySet<DashboardPage> = new Set(['home'])
-const pageMenu = ref({ open: false, x: 0, y: 0 })
-const pageMenuItems = computed(() => [
-  { id: 'open-new-window', label: t('instancePicker.openInNewWindow') }
-])
-
-function openPageMenu(event: MouseEvent, page: DashboardPage): void {
-  if (!PAGES_THAT_OPEN_IN_A_NEW_WINDOW.has(page)) return
-  event.preventDefault()
-  pageMenu.value = { open: true, x: event.clientX, y: event.clientY }
-}
-
-function selectPageMenu(id: string): void {
-  if (id === 'open-new-window') window.api.openDashboardInNewWindow()
-}
 </script>
 
 <template>
@@ -234,7 +217,6 @@ function selectPageMenu(id: string): void {
           :title="collapsed ? row.label : undefined"
           :data-testid="`app-sidebar-${row.page}`"
           @click="navigate(row.page)"
-          @contextmenu="openPageMenu($event, row.page)"
         >
           <component :is="row.icon" :size="15" aria-hidden="true" />
           <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{ row.label }}</span>
@@ -332,14 +314,6 @@ function selectPageMenu(id: string): void {
       v-model:open="buildMenuOpen"
       :build="buildMenuAt.build"
       :anchor="buildMenuAt.anchor"
-    />
-    <ContextMenu
-      :open="pageMenu.open"
-      :x="pageMenu.x"
-      :y="pageMenu.y"
-      :items="pageMenuItems"
-      @close="pageMenu.open = false"
-      @select="selectPageMenu"
     />
   </aside>
 </template>

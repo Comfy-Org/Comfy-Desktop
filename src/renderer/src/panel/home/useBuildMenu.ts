@@ -1,4 +1,5 @@
-import { computed, inject, provide, type InjectionKey } from 'vue'
+import { computed, inject, provide, type Component, type InjectionKey } from 'vue'
+import { AppWindow, CircleStop, Play, RotateCw, ScrollText, X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
 import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
@@ -19,6 +20,7 @@ export interface BuildMenuHost {
 export interface BuildMenuEntry {
   id: string
   label: string
+  icon?: Component
   separator?: boolean
   danger?: boolean
   disabled?: boolean
@@ -75,29 +77,33 @@ export function useBuildMenu(build: () => Installation) {
     const now: BuildMenuEntry[] = []
     if (progress) {
       if (progress.kind !== 'uninstall') {
-        now.push({ id: 'view-logs', label: t('installProgress.viewLogs') })
+        now.push({ id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText })
       }
-      now.push({ id: 'cancel', label: t('common.cancel'), disabled: progress.cancelling })
+      now.push({ id: 'cancel', label: t('common.cancel'), icon: X, disabled: progress.cancelling })
     } else if (running) {
       now.push(
-        { id: 'view-logs', label: t('installProgress.viewLogs') },
-        { id: 'restart', label: t('actions.restart') },
-        { id: 'stop', label: t('actions.stop') }
+        { id: 'view-logs', label: t('installProgress.viewLogs'), icon: ScrollText },
+        { id: 'restart', label: t('actions.restart'), icon: RotateCw },
+        { id: 'stop', label: t('actions.stop'), icon: CircleStop }
       )
     } else if (!sessionStore.isStopping(inst.id) && !sessionStore.isLaunching(inst.id)) {
-      now.push({ id: 'launch', label: t('actions.launch') })
+      now.push({ id: 'launch', label: t('actions.launch'), icon: Play })
     }
     startsGroup(now, items)
 
     if (!progress) {
-      startsGroup([{ id: 'open-new-window', label: t('instancePicker.openInNewWindow') }], items)
+      startsGroup(
+        [{ id: 'open-new-window', label: t('instancePicker.openInNewWindow'), icon: AppWindow }],
+        items
+      )
     }
 
     const existing = installMenu
       .getMenuItems(inst)
-      .map(({ id, label, disabled, title, style, separator }): BuildMenuEntry => ({
+      .map(({ id, label, icon, disabled, title, style, separator }): BuildMenuEntry => ({
         id,
         label,
+        icon,
         disabled,
         title,
         separator,

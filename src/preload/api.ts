@@ -88,7 +88,6 @@ export function buildElectronApi(): ElectronApi {
     terminalRestart: (installationId) => ipcRenderer.invoke('terminal-restart', installationId),
     openInstallInNewWindow: (installationId) =>
       ipcRenderer.send('comfy-window:open-install-new-window', installationId),
-    openDashboardInNewWindow: () => ipcRenderer.send('comfy-window:new-chooser-window'),
     openInstallWindow: (installationId) =>
       ipcRenderer.invoke('open-install-window', installationId),
     closeComfyWindow: (installationId, opts) =>

@@ -57,7 +57,6 @@ beforeEach(() => {
     setSetting: vi.fn().mockResolvedValue(undefined),
     onSettingsChanged: vi.fn(() => () => {}),
     openInstallInNewWindow: vi.fn(),
-    openDashboardInNewWindow: vi.fn(),
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       onAuthChanged: vi.fn(() => () => {})
@@ -218,24 +217,13 @@ describe('Build menu', () => {
     expect(host.launch).toHaveBeenCalledExactlyOnceWith(BUILD)
   })
 
-  it('offers Open in new window on a right-click on Home in the sidebar, and nothing on the other pages', async () => {
+  it('opens no menu on a right-click on a page in the sidebar', async () => {
     const sidebar = await mountSidebar('ready')
 
-    await rightClick(sidebar.get('[data-testid="app-sidebar-assets"]').element)
+    for (const page of ['home', 'assets']) {
+      await rightClick(sidebar.get(`[data-testid="app-sidebar-${page}"]`).element)
+    }
+
     expect(document.querySelector('[data-reka-menu-content]')).toBeNull()
-
-    await rightClick(sidebar.get('[data-testid="app-sidebar-home"]').element)
-    await vi.waitFor(() => {
-      expect(document.querySelector('[data-reka-menu-content]')).not.toBeNull()
-    })
-    const rows = [...document.querySelectorAll('[data-reka-menu-content] [role="menuitem"]')]
-    expect(rows.map((row) => row.textContent?.trim())).toEqual(['Open in new window'])
-
-    ;(rows[0] as HTMLElement).click()
-    await flushPromises()
-    expect(
-      (window as unknown as { api: { openDashboardInNewWindow: () => void } }).api
-        .openDashboardInNewWindow
-    ).toHaveBeenCalledOnce()
   })
 })
