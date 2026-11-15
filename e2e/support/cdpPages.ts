@@ -130,9 +130,7 @@ export class WebContentsPage {
         win?.focus()
         wc.focus()
         const point = (await wc.executeJavaScript(payload.aimAndWatchPress)) as
-          | { x: number; y: number }
-          | 'missing'
-          | 'blocked'
+          { x: number; y: number } | 'missing' | 'blocked'
         if (typeof point === 'string') return point
         wc.sendInputEvent({ type: 'mouseMove', ...point })
         wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point })

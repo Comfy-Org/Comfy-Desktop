@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DropdownMenuRadioGroup } from 'reka-ui'
-import { Cloud, Laptop } from 'lucide-vue-next'
+import { Cloud, Laptop } from '@lucide/vue'
 import BaseMenuRadioItem from '../../components/ui/BaseMenuRadioItem.vue'
 import SplitButton from '../../components/ui/SplitButton.vue'
 import Tooltip from '../../components/ui/Tooltip.vue'

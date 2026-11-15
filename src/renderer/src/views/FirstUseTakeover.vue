@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, HardDrive, Loader2, Package, Zap } from 'lucide-vue-next'
+import { Check, HardDrive, Loader2, Package, Zap } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'

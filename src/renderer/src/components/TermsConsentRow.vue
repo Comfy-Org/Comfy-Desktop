@@ -50,8 +50,7 @@ const LINK_CLASS =
         :class="LINK_CLASS"
         :data-testid="`${idPrefix}-tos-link`"
         @click.prevent="emit('open-terms', 'tos')"
-        >{{ $t('firstUse.tosLinkLabel') }}</Button
-      >{{ $t('firstUse.consentTosHintSuffix') }}
+        >{{ $t('firstUse.tosLinkLabel') }}</Button>{{ $t('firstUse.consentTosHintSuffix') }}
       <span
         v-if="nudge"
         :id="`${idPrefix}-agree-hint`"

@@ -19,7 +19,7 @@
     "extends": "package.json",
     "productName": "Comfy Desktop",
     "devDependencies": {
-      "electron": "40.4.1",
+      "electron": "45.3.2",
       "electron-builder": null
     }
   },

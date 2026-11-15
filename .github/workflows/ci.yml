@@ -172,6 +172,10 @@ jobs:
       - name: Build app
         run: pnpm run build
 
+      - name: Verify the Windows hardware UUID lookup
+        if: matrix.platform == 'windows' && matrix.shard == 1
+        run: pnpm exec vitest run --project node src/main/lib/deviceId.dependency.test.ts
+
       - name: Run E2E (${{ matrix.platform }} ${{ matrix.shard }}/3)
         run: ${{ format('{0}pnpm run test:e2e:{1} --shard={2}/3', matrix.platform == 'linux' && 'xvfb-run --auto-servernum ' || '', matrix.platform, matrix.shard) }}
 

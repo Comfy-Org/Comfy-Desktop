@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { OctagonAlert } from 'lucide-vue-next'
+import { OctagonAlert } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 
 const { reason } = defineProps<{ reason: string }>()

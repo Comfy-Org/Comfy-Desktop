@@ -4,7 +4,7 @@ import path from 'path'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import type { ReadableStream as WebReadableStream } from 'stream/web'
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeImage } from 'electron'
 import { CLOUD_CONFIG } from '../cloud/config'
 import { getCloudSession } from '../devplatform/session'
 import { findHostWindowByPanelSender, isPanelSender } from '../host/registry'
@@ -12,6 +12,7 @@ import * as installations from '../installations'
 import * as settings from '../settings'
 import { buildSaveDialogFilters } from './comfyDownloadManager'
 import { sourceMap } from './ipc/shared'
+import { copyImageToClipboard } from './clipboardImage'
 import { copyOutputImage, outputFilePath, revealOutputFile, trashOutputFile } from './outputFolders'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { mediaFactsFromBytes } from './mediaFacts'
@@ -321,7 +322,7 @@ async function copyCloudImage(installationId: string, assetId: string): Promise<
   if (!res.ok) return false
   const image = nativeImage.createFromBuffer(Buffer.from(await res.arrayBuffer()))
   if (image.isEmpty()) return false
-  clipboard.writeImage(image)
+  await copyImageToClipboard(image)
   return true
 }
 

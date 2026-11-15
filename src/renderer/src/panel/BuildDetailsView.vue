@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, LoaderCircle, OctagonAlert } from 'lucide-vue-next'
+import { ArrowLeft, LoaderCircle, OctagonAlert } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import StatusChip from '../components/ui/StatusChip.vue'
