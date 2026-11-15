@@ -7,11 +7,13 @@ import Checkbox from '@comfyorg/design-system/checkbox/Checkbox'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import ComfyWordmark from '../components/icons/ComfyWordmark.vue'
 import TermsModal from '../components/TermsModal.vue'
+import TermsConsentRow from '../components/TermsConsentRow.vue'
 import InlineRichText from '../components/InlineRichText.vue'
 import BuildDeviceArt from '../panel/home/BuildDeviceArt.vue'
 import { deviceKindForPlatform } from '../panel/home/homeBuild'
 import { emitTelemetryAction } from '../lib/telemetry'
 import { formatSize } from '../lib/formatting'
+import { saveSetupConsent, type SetupConsent } from '../lib/setupConsent'
 import {
   displayPath,
   installLocation,
@@ -28,9 +30,11 @@ type Step = 'setup' | 'mirrors'
 type SetupAction = 'install' | 'change' | 'skip'
 type ExitPath = 'local-new' | 'local-configure' | 'local-migrate' | 'skipped'
 
+const props = defineProps<{ consent?: SetupConsent | null }>()
+
 const emit = defineEmits<{
   install: [plan: SetupPlan]
-  change: []
+  change: [consent: SetupConsent]
   'complete-skip': []
   'chain-migrate': [{ express: boolean }]
 }>()
@@ -163,25 +167,34 @@ function emitCompleted(exitPath: ExitPath): void {
   })
 }
 
-async function saveConsent(): Promise<void> {
-  await window.api.setSetting('telemetryEnabled', telemetryEnabled.value)
-  await window.api.setSetting('betaFeaturesEnabled', betaFeaturesEnabled.value)
-  emitTelemetryAction('comfy.desktop.first_use.consent_decision', {
-    decision: telemetryEnabled.value ? 'accept' : 'decline',
-    telemetry_enabled: telemetryEnabled.value,
+function currentConsent(): SetupConsent {
+  return {
+    acceptedTos: acceptedTos.value,
+    telemetryEnabled: telemetryEnabled.value,
+    betaFeaturesEnabled: betaFeaturesEnabled.value,
+    betaTouched: betaTouched.value,
+    preservePersistedBetaOptIn: preservePersistedBetaOptIn.value,
     locale: locale.value
-  })
+  }
+}
+
+function restoreConsent(consent: SetupConsent): void {
+  acceptedTos.value = consent.acceptedTos
+  telemetryEnabled.value = consent.telemetryEnabled
+  betaFeaturesEnabled.value = consent.betaFeaturesEnabled
+  betaTouched.value = consent.betaTouched
+  preservePersistedBetaOptIn.value = consent.preservePersistedBetaOptIn
 }
 
 async function request(action: SetupAction): Promise<void> {
   if (busy.value) return
-  if (!acceptedTos.value) {
+  if (action !== 'change' && !acceptedTos.value) {
     tosNudge.value = true
     return
   }
   if (action === 'install' && installBlocked.value) return
   busy.value = true
-  await saveConsent()
+  if (acceptedTos.value) await saveSetupConsent(currentConsent())
   emitTelemetryAction('comfy.desktop.first_use.setup_action', {
     action: action === 'install' && migrating.value ? 'migrate' : action,
     plan_ready: planState.value === 'ready'
@@ -203,7 +216,7 @@ function route(action: SetupAction): void {
   }
   if (action === 'change') {
     emitCompleted('local-configure')
-    emit('change')
+    emit('change', currentConsent())
     return
   }
   if (migrating.value) {
@@ -270,7 +283,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   hasLegacyDesktop.value = opts.hasLegacyDesktop === true
   migrateExisting.value = true
   termsDoc.value = null
-  acceptedTos.value = false
+  acceptedTos.value = props.consent?.acceptedTos === true
   tosNudge.value = false
   busy.value = false
   pendingAction.value = null
@@ -301,10 +314,15 @@ async function open(opts: OpenOpts = {}): Promise<void> {
       locale.value = next
     })
     .catch(() => {})
+  if (props.consent) {
+    restoreConsent(props.consent)
+    return
+  }
   const [existing, existingBeta] = (await Promise.all([
     window.api.getSetting('telemetryEnabled'),
     window.api.getSetting('betaFeaturesEnabled')
   ])) as [boolean | undefined, boolean | undefined]
+  if (gen !== openGeneration) return
   telemetryEnabled.value = existing !== false
   betaTouched.value = typeof existingBeta === 'boolean'
   preservePersistedBetaOptIn.value = existingBeta === true
@@ -325,7 +343,9 @@ onMounted(() => {
 watch(
   step,
   (current) => {
-    window.api.setFirstUseMode(current === 'setup' ? 'consent-lockdown' : 'post-consent')
+    window.api.setFirstUseMode(
+      current === 'setup' || !acceptedTos.value ? 'consent-lockdown' : 'post-consent'
+    )
     emitTelemetryAction('comfy.desktop.first_use.step_viewed', {
       step: current,
       skip_pick: skipPick.value,
@@ -507,47 +527,13 @@ defineExpose({ open, resetContinue })
               <InlineRichText :text="t('setup.migrateExisting')" />
             </span>
           </label>
-          <label
-            :class="CONSENT_ROW_CLASS"
-            data-testid="setup-consent-tos"
-            :data-nudge="tosNudge || undefined"
-          >
-            <Checkbox
-              :model-value="acceptedTos"
-              :class="[CHECKBOX_CLASS, tosNudge && 'ring-[3px] ring-[rgb(241_178_52/0.35)]']"
-              :aria-describedby="tosNudge ? 'setup-agree-hint' : undefined"
-              @update:model-value="acceptedTos = $event === true"
-            />
-            <span class="text-subtle-foreground">
-              {{ t('firstUse.consentTosHintPrefix') }}
-              <Button
-                type="button"
-                variant="textonly"
-                size="unset"
-                :class="LINK_CLASS"
-                data-testid="setup-eula-link"
-                @click.prevent="termsDoc = 'eula'"
-                >{{ t('firstUse.eulaLinkLabel') }}</Button
-              >
-              {{ t('firstUse.consentTosHintSep') }}
-              <Button
-                type="button"
-                variant="textonly"
-                size="unset"
-                :class="LINK_CLASS"
-                data-testid="setup-tos-link"
-                @click.prevent="termsDoc = 'tos'"
-                >{{ t('firstUse.tosLinkLabel') }}</Button>{{ t('firstUse.consentTosHintSuffix') }}
-              <span
-                v-if="tosNudge"
-                id="setup-agree-hint"
-                class="text-[#f0b135]"
-                role="status"
-                data-testid="setup-agree-hint"
-                >{{ t('setup.agreeToInstall') }}</span
-              >
-            </span>
-          </label>
+          <TermsConsentRow
+            v-model:accepted="acceptedTos"
+            id-prefix="setup"
+            :nudge="tosNudge"
+            :hint="t('setup.agreeToInstall')"
+            @open-terms="termsDoc = $event"
+          />
           <label :class="CONSENT_ROW_CLASS" data-testid="setup-consent-telemetry">
             <Checkbox
               :model-value="telemetryEnabled"

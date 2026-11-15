@@ -1,9 +1,10 @@
-import { BrowserWindow, ipcMain, shell } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 
 import { comfyWindows } from '../../host/registry'
 import type { ComfyWindowEntry } from '../../host/registry'
 import { broadcastEmbeddedSessionChanged } from '../embeddedSession'
 import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
+import { openExternalUrl } from '../openExternal'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
 import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
@@ -223,7 +224,7 @@ export function registerDevPlatformHandlers(): void {
       }
       const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
       url.searchParams.set('workspace', workspaceId)
-      await shell.openExternal(url.toString())
+      await openExternalUrl(url.toString())
     }
   )
 
@@ -314,7 +315,7 @@ export function registerDevPlatformHandlers(): void {
           PLATFORM_WEB_BASE_URL
         )
         url.searchParams.set('workspace', workspaceId)
-        await shell.openExternal(url.toString())
+        await openExternalUrl(url.toString())
         return { ok: true }
       } catch (err) {
         console.warn('[dev-platform] Failed to promote local instance:', err)

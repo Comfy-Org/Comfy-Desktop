@@ -1,4 +1,4 @@
-import { WebContentsView, app, session, shell } from 'electron'
+import { WebContentsView, session } from 'electron'
 import type { Event, Session, WebContents } from 'electron'
 import path from 'path'
 
@@ -9,7 +9,7 @@ import { comfyWindows } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
 import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { attachContextMenu } from '../lib/contextMenu'
-import { recordShellOpenExternal } from '../lib/e2eOverrides'
+import { tryOpenExternalUrl } from '../lib/openExternal'
 import * as mainTelemetry from '../lib/telemetry'
 import { COMFY_BG } from '../lib/theme'
 import { pageUrlForListedApp } from './appsCatalog'
@@ -69,12 +69,7 @@ function secureSession(appsSession: Session, location: AppsLocation): void {
 }
 
 function openOutside(url: string): void {
-  if (!isWebUrl(url)) return
-  if (process.env['E2E'] === '1' && !app.isPackaged) {
-    recordShellOpenExternal(url)
-    return
-  }
-  void shell.openExternal(url).catch(() => {})
+  if (isWebUrl(url)) void tryOpenExternalUrl(url)
 }
 
 function panelOf(windowKey: number): WebContents | null {

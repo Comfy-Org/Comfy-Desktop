@@ -147,11 +147,34 @@ function formLayout(): Box[] {
   ]
 }
 
-async function finishEntranceAnimations(): Promise<void> {
-  const finite = document
+const QUIET_FRAMES_BEFORE_MEASURING = 3
+
+function runningEntranceAnimations(): Animation[] {
+  return document
     .getAnimations()
-    .filter((animation) => Number.isFinite(Number(animation.effect?.getComputedTiming().endTime)))
-  await Promise.all(finite.map((animation) => animation.finished.catch(() => undefined)))
+    .filter(
+      (animation) =>
+        animation.playState === 'running' &&
+        Number.isFinite(Number(animation.effect?.getComputedTiming().endTime))
+    )
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+}
+
+async function finishEntranceAnimations(): Promise<void> {
+  let quietFrames = 0
+  while (quietFrames < QUIET_FRAMES_BEFORE_MEASURING) {
+    await nextFrame()
+    const running = runningEntranceAnimations()
+    if (running.length === 0) {
+      quietFrames += 1
+      continue
+    }
+    quietFrames = 0
+    await Promise.all(running.map((animation) => animation.finished.catch(() => undefined)))
+  }
 }
 
 async function layoutsWhileLoading(gate: LoadGate): Promise<Box[][]> {
@@ -192,8 +215,10 @@ async function openChangeSetup(props: { hideBackToDashboard?: boolean } = {}) {
   })
   await wrapper.vm.open(props.hideBackToDashboard ? { cameFromSetup: true } : {})
   await flushPromises()
-  only('[data-testid="config-change-setup"]').click()
-  await flushPromises()
+  if (!props.hideBackToDashboard) {
+    only('[data-testid="config-change-setup"]').click()
+    await flushPromises()
+  }
   await finishEntranceAnimations()
   return wrapper
 }
