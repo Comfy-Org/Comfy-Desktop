@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   records: [] as Record<string, unknown>[],
   sessions: new Map<string, Record<string, unknown>>(),
   launching: new Set<string>(),
+  installing: new Set<string>(),
   windows: new Map<string, unknown>(),
   pages: [] as { send: (channel: string, event: unknown) => void }[],
   handleLaunch: (_ctx: unknown): Promise<Record<string, unknown>> => Promise.resolve({ ok: false }),
@@ -34,6 +35,9 @@ vi.mock('../lib/comfyProcessRecord', () => ({
 vi.mock('../lib/i18n', () => ({
   t: (key: string, params?: Record<string, unknown>) =>
     params ? `${key} ${Object.values(params).join(' ')}` : key
+}))
+vi.mock('../lib/ipc/installationVisibility', () => ({
+  isInstallRunning: (id: string) => mocks.installing.has(id)
 }))
 vi.mock('../lib/ipc/sessionActions/launch', () => ({
   handleLaunch: (ctx: unknown) => mocks.handleLaunch(ctx)
@@ -218,6 +222,7 @@ beforeEach(() => {
   mocks.records = [build()]
   mocks.sessions.clear()
   mocks.launching.clear()
+  mocks.installing.clear()
   mocks.windows.clear()
   mocks.handleLaunch = async () => ({ ok: false })
   mocks.stopRunning = async (id) => {
@@ -668,15 +673,130 @@ describe('downloading a model for an app', () => {
     expect(job.started).toEqual([])
   })
 
-  it('downloads nothing while no ComfyUI is running for apps', async () => {
-    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
+  it('saves it into a build that is stopped, without starting that build', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/models/x' }))
     mocks.sessions.clear()
 
-    expect(await localDownload(BIREFNET)).toEqual({
+    expect(await localDownload(BIREFNET)).toEqual({ state: 'done' })
+    expect(job.started).toEqual([expect.objectContaining({ installationId: STUDIO })])
+    expect(launches).toEqual([])
+  })
+
+  it('downloads nothing for a page that has not asked which build it runs on', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
+    const otherPage: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+
+    expect(await localDownload(BIREFNET, otherPage)).toEqual({
       state: 'failed',
-      error: 'apps.local.notRunning'
+      error: 'apps.local.noBuilds'
     })
     expect(job.started).toEqual([])
+  })
+})
+
+describe('an app opened while the first build is still installing', () => {
+  const NEW_BUILD = 'first-build'
+
+  function installingBuild(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return build({
+      id: NEW_BUILD,
+      name: 'ComfyUI',
+      installPath: '/builds/first',
+      status: 'installing',
+      version: undefined,
+      ...over
+    })
+  }
+
+  function finishInstall(status = 'installed'): void {
+    const record = mocks.records.find((one) => one['id'] === NEW_BUILD)
+    if (record) Object.assign(record, { status, version: 'v0.42.1' })
+    mocks.installing.delete(NEW_BUILD)
+  }
+
+  beforeEach(() => {
+    mocks.records = [installingBuild()]
+    mocks.installing.add(NEW_BUILD)
+  })
+
+  it('hears that the build is installing, by its name', async () => {
+    expect(await localState(WANT)).toEqual({ state: 'installing', own: true, name: 'ComfyUI' })
+  })
+
+  it('runs on an installed build instead, when the person has one', async () => {
+    mocks.records = [build(), installingBuild()]
+
+    expect(await localState(WANT)).toMatchObject({ state: 'stopped', name: 'Studio' })
+  })
+
+  it('never counts an install that stopped part way, or one too old for the app', async () => {
+    mocks.installing.clear()
+    expect(await localState(WANT)).toEqual({ state: 'unsupported', error: 'apps.local.noBuilds' })
+
+    mocks.installing.add(NEW_BUILD)
+    mocks.records = [installingBuild({ version: 'v0.37.0' })]
+    expect(await localState(WANT)).toEqual({
+      state: 'unsupported',
+      error: 'apps.local.noBuilds'
+    })
+  })
+
+  it('downloads its models into that build while it installs', async () => {
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return {
+        id: 'job',
+        release: vi.fn(),
+        completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+      }
+    }
+    await localState(WANT)
+
+    expect(await localDownload(BIREFNET)).toEqual({ state: 'done' })
+    expect(started).toEqual([expect.objectContaining({ installationId: NEW_BUILD })])
+  })
+
+  it('starts the build once its install finishes, and not before', async () => {
+    startsWhenLaunched()
+    let settled = false
+    const starting = startLocal(WANT)
+    void starting.then(() => (settled = true))
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(settled).toBe(false)
+    expect(launches).toEqual([])
+
+    finishInstall()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await starting).toMatchObject({ state: 'running', name: 'ComfyUI' })
+    expect(launches).toEqual([expect.objectContaining({ installationId: NEW_BUILD })])
+  })
+
+  it('says there is no build when the install fails', async () => {
+    const starting = startLocal(WANT)
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    finishInstall('failed')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await starting).toEqual({ state: 'unsupported', error: 'apps.local.noBuilds' })
+    expect(launches).toEqual([])
+  })
+
+  it('stops waiting after an hour and says the build is still installing', async () => {
+    const starting = startLocal(WANT)
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000 + 1_000)
+
+    expect(await starting).toEqual({
+      state: 'installing',
+      own: true,
+      name: 'ComfyUI',
+      error: 'apps.local.stillInstalling ComfyUI'
+    })
+    expect(launches).toEqual([])
   })
 })
 
