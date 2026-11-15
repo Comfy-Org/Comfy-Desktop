@@ -22,6 +22,7 @@ import {
   chooseLocalBuild,
   installingLocalBuilds,
   isStillInstalling,
+  modelTargetOf,
   runningPortOf,
   usableLocalBuilds,
   wantedVersion
@@ -265,7 +266,11 @@ async function chooseInstalledTarget(
   const build = await chooseTarget(page, want)
   if (typeof build === 'string' || !build.installing) return build
   await installSettled(build.id)
-  return chooseTarget(page, want)
+  const installed = await chooseTarget(page, want)
+  if (typeof installed !== 'string' && !installed.installing) {
+    page.send(LOCAL_EVENT_CHANNEL, { type: 'setup', data: { state: 'done' } })
+  }
+  return installed
 }
 
 export async function startLocal(
@@ -471,6 +476,14 @@ async function downloadInto(
   }
 }
 
+async function readyForModels(installationId: string): Promise<boolean> {
+  const target = await modelTargetOf(installationId)
+  if (!target?.installing || !target.modelsInsideBuild) return target !== null
+  await installSettled(installationId)
+  const after = await modelTargetOf(installationId)
+  return after !== null && !after.installing
+}
+
 export async function localDownload(
   page: WebContents,
   raw: unknown
@@ -478,7 +491,9 @@ export async function localDownload(
   const model = readModelRequest(raw)
   if (!model) return { state: 'failed', error: i18n.t('apps.local.modelRefused') }
   const target = targetByPage.get(page)
-  if (!target) return { state: 'failed', error: i18n.t('apps.local.noBuilds') }
+  if (!target || !(await readyForModels(target.id))) {
+    return { state: 'failed', error: i18n.t('apps.local.noBuilds') }
+  }
   downloadsUnderWay += 1
   try {
     return await downloadInto(target.id, model)

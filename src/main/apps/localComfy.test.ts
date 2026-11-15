@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   sessions: new Map<string, Record<string, unknown>>(),
   launching: new Set<string>(),
   installing: new Set<string>(),
+  ownModels: new Set<string>(),
   windows: new Map<string, unknown>(),
   pages: [] as { send: (channel: string, event: unknown) => void }[],
   handleLaunch: (_ctx: unknown): Promise<Record<string, unknown>> => Promise.resolve({ ok: false }),
@@ -35,6 +36,13 @@ vi.mock('../lib/comfyProcessRecord', () => ({
 vi.mock('../lib/i18n', () => ({
   t: (key: string, params?: Record<string, unknown>) =>
     params ? `${key} ${Object.values(params).join(' ')}` : key
+}))
+vi.mock('../lib/modelDownloadPaths', () => ({
+  resolveDownloadContextById: async (id: string) => ({
+    downloadBaseDir: mocks.ownModels.has(id) ? `/builds/${id}/ComfyUI/models` : '/shared/models',
+    modelRoots: [],
+    extraPaths: []
+  })
 }))
 vi.mock('../lib/ipc/installationVisibility', () => ({
   isInstallRunning: (id: string) => mocks.installing.has(id)
@@ -223,6 +231,7 @@ beforeEach(() => {
   mocks.sessions.clear()
   mocks.launching.clear()
   mocks.installing.clear()
+  mocks.ownModels.clear()
   mocks.windows.clear()
   mocks.handleLaunch = async () => ({ ok: false })
   mocks.stopRunning = async (id) => {
@@ -682,6 +691,17 @@ describe('downloading a model for an app', () => {
     expect(launches).toEqual([])
   })
 
+  it('downloads nothing into a build the person removed after the page picked it', async () => {
+    const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
+    mocks.records = []
+
+    expect(await localDownload(BIREFNET)).toEqual({
+      state: 'failed',
+      error: 'apps.local.noBuilds'
+    })
+    expect(job.started).toEqual([])
+  })
+
   it('downloads nothing for a page that has not asked which build it runs on', async () => {
     const job = modelJob(Promise.resolve({ status: 'completed', savePath: '/x' }))
     const otherPage: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
@@ -701,7 +721,7 @@ describe('an app opened while the first build is still installing', () => {
     return build({
       id: NEW_BUILD,
       name: 'ComfyUI',
-      installPath: '/builds/first',
+      installPath: '/builds/first-build',
       status: 'installing',
       version: undefined,
       ...over
@@ -755,6 +775,60 @@ describe('an app opened while the first build is still installing', () => {
 
     expect(await localDownload(BIREFNET)).toEqual({ state: 'done' })
     expect(started).toEqual([expect.objectContaining({ installationId: NEW_BUILD })])
+  })
+
+  it('waits for the install before downloading into a build that keeps its models inside it', async () => {
+    const started: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      started.push(options)
+      return {
+        id: 'job',
+        release: vi.fn(),
+        completion: Promise.resolve({ status: 'completed', savePath: '/models/x' })
+      }
+    }
+    mocks.ownModels.add(NEW_BUILD)
+    await localState(WANT)
+    const downloading = localDownload(BIREFNET)
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(started).toEqual([])
+
+    finishInstall()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await downloading).toEqual({ state: 'done' })
+    expect(started).toEqual([expect.objectContaining({ installationId: NEW_BUILD })])
+  })
+
+  it('downloads nothing into a build that keeps its models inside it when its install fails', async () => {
+    const job: Record<string, unknown>[] = []
+    mocks.startModelJob = async (options) => {
+      job.push(options)
+      return { id: 'job', release: vi.fn(), completion: new Promise(() => {}) }
+    }
+    mocks.ownModels.add(NEW_BUILD)
+    await localState(WANT)
+    const downloading = localDownload(BIREFNET)
+
+    finishInstall('failed')
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(await downloading).toEqual({ state: 'failed', error: 'apps.local.noBuilds' })
+    expect(job).toEqual([])
+  })
+
+  it('tells the page the install is done, so it can say ComfyUI is starting', async () => {
+    startsWhenLaunched()
+    const starting = startLocal(WANT)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(sentToPage()).toEqual([])
+
+    finishInstall()
+    await vi.advanceTimersByTimeAsync(1_000)
+    await starting
+
+    expect(sentToPage()).toEqual([{ type: 'setup', data: { state: 'done' } }])
   })
 
   it('starts the build once its install finishes, and not before', async () => {

@@ -287,7 +287,7 @@ export interface ComfyDesktopHostedLocalBridge {
   startLocal(want?: ComfyDesktopLocalRequirements): Promise<ComfyDesktopLocalComfy>
   /** Rejects when no ComfyUI is running to forward to. */
   localFetch(request: ComfyDesktopLocalRequest): Promise<ComfyDesktopLocalAnswer>
-  /** Downloads into the models folder of the build `getLocal` named, running, stopped or still installing, and resolves when the file is there. */
+  /** Downloads into the models folder of the build `getLocal` named, running, stopped or still installing, and resolves when the file is there. A build that keeps its models inside its own folder gets them once its install finishes. */
   localDownload(model: ComfyDesktopLocalModel): Promise<ComfyDesktopLocalDownload>
   onLocalEvent(callback: (event: ComfyDesktopLocalEvent) => void): () => void
   /**

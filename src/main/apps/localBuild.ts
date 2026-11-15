@@ -5,6 +5,7 @@ import semver from 'semver'
 import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import { isInstallRunning } from '../lib/ipc/installationVisibility'
+import { resolveDownloadContextById } from '../lib/modelDownloadPaths'
 import { _hasActiveLaunch, _operationAborts, _runningSessions, sourceMap } from '../lib/ipc/shared'
 import { resolveComfyDir } from '../lib/models'
 import { coreSemver, coreVerifiedSemver } from '../lib/version'
@@ -99,6 +100,28 @@ export async function installingLocalBuilds(): Promise<LocalBuild[]> {
 export async function isStillInstalling(installationId: string): Promise<boolean> {
   const inst = await installations.get(installationId)
   return inst !== null && isFirstInstallUnderWay(inst)
+}
+
+export interface ModelTarget {
+  installing: boolean
+  modelsInsideBuild: boolean
+}
+
+function isInside(child: string, parent: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child))
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+export async function modelTargetOf(installationId: string): Promise<ModelTarget | null> {
+  const inst = await installations.get(installationId)
+  if (!inst) return null
+  const installing = isFirstInstallUnderWay(inst)
+  if (!installing && !runsOnThisComputer(inst)) return null
+  const search = await resolveDownloadContextById(installationId)
+  return {
+    installing,
+    modelsInsideBuild: search === null || isInside(search.downloadBaseDir, inst.installPath)
+  }
 }
 
 function fits(build: LocalBuild, wanted: string | null): boolean {

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   sessions: new Map<string, Record<string, unknown>>(),
   launching: new Set<string>(),
   installing: new Set<string>(),
+  ownModels: new Set<string>(),
   operations: new Map<string, unknown>(),
   versionFiles: new Map<string, string>()
 }))
@@ -21,6 +22,12 @@ vi.mock('fs', () => ({
 vi.mock('../installations', () => ({
   list: async () => mocks.records,
   get: async (id: string) => mocks.records.find((record) => record['id'] === id) ?? null
+}))
+vi.mock('../lib/modelDownloadPaths', () => ({
+  resolveDownloadContextById: async (id: string) =>
+    mocks.ownModels.has(id)
+      ? { downloadBaseDir: `/builds/${id}/ComfyUI/models`, modelRoots: [], extraPaths: [] }
+      : { downloadBaseDir: '/shared/models', modelRoots: [], extraPaths: [] }
 }))
 vi.mock('../lib/ipc/installationVisibility', () => ({
   isInstallRunning: (id: string) => mocks.installing.has(id)
@@ -46,6 +53,7 @@ import {
   chooseLocalBuild,
   installingLocalBuilds,
   isStillInstalling,
+  modelTargetOf,
   runningPortOf,
   usableLocalBuilds,
   wantedVersion
@@ -82,6 +90,7 @@ beforeEach(() => {
   mocks.sessions.clear()
   mocks.launching.clear()
   mocks.installing.clear()
+  mocks.ownModels.clear()
   mocks.operations.clear()
   mocks.versionFiles.clear()
 })
@@ -182,6 +191,34 @@ describe('a build whose first install is under way', () => {
     expect(chooseInstallingBuild([old, fits], '0.41.0')?.id).toBe('fits')
     expect(chooseInstallingBuild([old], '0.41.0')).toBeNull()
     expect(chooseInstallingBuild([], null)).toBeNull()
+  })
+})
+
+describe('where a model for a build goes', () => {
+  it('says whether the build is installing and whether its models folder is inside it', async () => {
+    mocks.records = [
+      record({ id: 'fresh', installPath: '/builds/fresh', status: 'installing' }),
+      record({ id: 'own', installPath: '/builds/own', status: 'installing' }),
+      record({ id: 'studio' })
+    ]
+    mocks.installing.add('fresh')
+    mocks.installing.add('own')
+    mocks.ownModels.add('own')
+
+    expect(await modelTargetOf('fresh')).toEqual({ installing: true, modelsInsideBuild: false })
+    expect(await modelTargetOf('own')).toEqual({ installing: true, modelsInsideBuild: true })
+    expect(await modelTargetOf('studio')).toEqual({ installing: false, modelsInsideBuild: false })
+  })
+
+  it('is nowhere for a build that is gone, failed, or left part way through an install', async () => {
+    mocks.records = [
+      record({ id: 'failed', status: 'failed' }),
+      record({ id: 'left-over', status: 'installing' })
+    ]
+
+    expect(await modelTargetOf('gone')).toBeNull()
+    expect(await modelTargetOf('failed')).toBeNull()
+    expect(await modelTargetOf('left-over')).toBeNull()
   })
 })
 
