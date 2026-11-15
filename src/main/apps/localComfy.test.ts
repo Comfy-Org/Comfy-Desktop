@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   records: [] as Record<string, unknown>[],
+  onList: (): void => {},
   sessions: new Map<string, Record<string, unknown>>(),
   launching: new Set<string>(),
   installing: new Set<string>(),
@@ -24,7 +25,10 @@ vi.mock('../host/registry', () => ({
   getEntryByInstallationId: (id: string) => mocks.windows.get(id)
 }))
 vi.mock('../installations', () => ({
-  list: async () => mocks.records,
+  list: async () => {
+    mocks.onList()
+    return mocks.records
+  },
   get: async (id: string) => mocks.records.find((record) => record['id'] === id) ?? null
 }))
 vi.mock('../lib/comfyDownloadManager', () => ({
@@ -228,6 +232,7 @@ beforeEach(() => {
   mocks.makeRelay = () => relay
   mocks.pages = [page]
   mocks.records = [build()]
+  mocks.onList = () => {}
   mocks.sessions.clear()
   mocks.launching.clear()
   mocks.installing.clear()
@@ -741,6 +746,16 @@ describe('an app opened while the first build is still installing', () => {
 
   it('hears that the build is installing, by its name', async () => {
     expect(await localState(WANT)).toEqual({ state: 'installing', own: true, name: 'ComfyUI' })
+  })
+
+  it('finds the build when its install finishes between looking for installed and installing builds', async () => {
+    let lists = 0
+    mocks.onList = () => {
+      lists += 1
+      if (lists === 2) finishInstall()
+    }
+
+    expect(await localState(WANT)).toMatchObject({ state: 'stopped', name: 'ComfyUI' })
   })
 
   it('runs on an installed build instead, when the person has one', async () => {

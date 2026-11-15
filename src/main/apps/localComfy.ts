@@ -187,7 +187,9 @@ async function chooseTarget(page: WebContents, want: unknown): Promise<ChosenBui
   const choice = chooseLocalBuild(await usableLocalBuilds(), wanted)
   if (choice.kind === 'build') return rememberTarget(page, choice.build, false)
   const installing = chooseInstallingBuild(await installingLocalBuilds(), wanted)
-  return installing ? rememberTarget(page, installing, true) : whyNoBuild(choice)
+  if (installing) return rememberTarget(page, installing, true)
+  const recheck = chooseLocalBuild(await usableLocalBuilds(), wanted)
+  return recheck.kind === 'build' ? rememberTarget(page, recheck.build, false) : whyNoBuild(recheck)
 }
 
 export function pageBuildId(page: WebContents): string | null {
