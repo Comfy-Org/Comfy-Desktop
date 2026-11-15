@@ -10,6 +10,7 @@ import { normalizeExceptionContext } from '../../../shared/piiScrub'
 import { reportFirebaseAuthState } from '../firebaseAuthIdentity'
 import type { ComfyDesktop2FirebaseAuthState } from '../../../types/comfyDesktopBridge'
 import { normalizePostHogUserId } from '../opaqueIdentifier'
+import { onBridge } from './comfyBridge'
 
 interface CapturePayload {
   event?: unknown
@@ -157,13 +158,13 @@ function withPlatformAxes(
 }
 
 export function registerTelemetryHandlers(): void {
-  ipcMain.on('telemetry:capture', (event, payload: CapturePayload) => {
+  onBridge('telemetry:capture', (event, payload: CapturePayload) => {
     const eventName = asString(payload?.event)
     if (!eventName) return
     mainTelemetry.emit(eventName, withPlatformAxes(asProps(payload.properties), event?.sender))
   })
 
-  ipcMain.on('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
+  onBridge('telemetry:captureException', (event, payload: CaptureExceptionPayload) => {
     const message = asString(payload?.message) ?? 'Unknown renderer error'
     const stackStr = asString(payload?.stack)
     const err = new Error(message)
@@ -178,7 +179,7 @@ export function registerTelemetryHandlers(): void {
     mainTelemetry.registerPersonProperties(props)
   })
 
-  ipcMain.on('telemetry:firebaseAuthState', (event, payload: unknown) => {
+  onBridge('telemetry:firebaseAuthState', (event, payload: unknown) => {
     const frame = firebaseAuthReporterFrame(event)
     if (!frame) return
     const state = asFirebaseAuthState(payload)

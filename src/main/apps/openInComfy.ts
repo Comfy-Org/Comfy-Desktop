@@ -4,6 +4,7 @@ import type {
   ComfyDesktopLocalBuild,
   ComfyDesktopOpenInComfy
 } from '../../types/comfyDesktopBridge'
+import { isInstallSiteUrl } from '../host/installSite'
 import { setActivePanel } from '../host/panelView'
 import { getEntryByInstallationId } from '../host/registry'
 import type { ComfyWindowEntry } from '../host/registry'
@@ -18,7 +19,6 @@ import type { LocalBuild } from './localBuild'
 import { launchOnce, launchQuietly, otherLaunchSettled, pageBuildId } from './localComfy'
 import {
   COMFY_STATE_SCRIPT,
-  isComfyPage,
   MARK_PAGE_STALE_SCRIPT,
   openWorkflowScript,
   readOpenRequest
@@ -188,7 +188,8 @@ function bringForward(entry: ComfyWindowEntry): void {
 
 async function pageState(entry: ComfyWindowEntry): Promise<ComfyPageState> {
   const contents = entry.comfyView.webContents
-  if (contents.isLoading() || !isComfyPage(contents.getURL(), entry.comfyUrl)) return 'starting'
+  if (contents.isLoading() || !isInstallSiteUrl(entry.comfyUrl, contents.getURL()))
+    return 'starting'
   const state: unknown = await settledWithin<unknown>(
     contents.executeJavaScript(COMFY_STATE_SCRIPT),
     PAGE_ANSWER_TIMEOUT_MS,

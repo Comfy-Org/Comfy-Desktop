@@ -4,6 +4,8 @@ import { attachSessionDownloadHandler } from '../lib/comfyDownloadManager'
 import { getModelDownloadContentScript } from '../lib/comfyContentScript'
 import { getComfyTerminalContentScript } from '../lib/comfyTerminalContentScript'
 import { closeInstallPopouts } from '../lib/popoutWindows'
+import { installShownTo } from '../lib/ipc/bridgeCallers'
+import { onBridge } from '../lib/ipc/comfyBridge'
 import { _operationAborts, sourceMap } from '../lib/ipc/shared'
 import { readableSymbolColor } from '../lib/theme'
 import * as mainTelemetry from '../lib/telemetry'
@@ -26,6 +28,7 @@ import {
 import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
 import { abortTemplateDownload } from '../sources/standalone/templateDownloadTask'
 import { abortModelStaging } from '../sources/comfybuilder/modelStagingTask'
+import { showsInstallSite } from './installSite'
 import {
   dropInstallationIndex,
   indexInstallationId,
@@ -67,6 +70,28 @@ export interface AttachInstallOpts {
   installation: InstallationRecord
   comfyUrl: string
   isLocal: boolean
+}
+
+function applyComfyTheme(entry: ComfyWindowEntry, bg: string): void {
+  if (entry.window.isDestroyed()) return
+  const theme = { bg, text: readableSymbolColor(bg) }
+  entry.lastTheme = theme
+  if (!entry.titleBarView.webContents.isDestroyed()) {
+    entry.titleBarView.webContents.send('comfy-titlebar:theme-changed', theme)
+  }
+  if (process.platform !== 'darwin') {
+    try {
+      entry.window.setTitleBarOverlay({ color: theme.bg, symbolColor: theme.text })
+    } catch {}
+  }
+}
+
+export function registerComfyThemeHandler(): void {
+  onBridge('desktop2-theme-report', (event, report?: { bg?: unknown }) => {
+    const entry = installShownTo(event)
+    const bg = report?.bg
+    if (entry && typeof bg === 'string' && bg) applyComfyTheme(entry, bg)
+  })
 }
 
 export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts): boolean {
@@ -155,31 +180,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     })
   }
   installationEvents.on('updated', onInstallationUpdated)
-
-  const applyComfyTheme = (bg: string): void => {
-    if (comfyWindow.isDestroyed()) return
-    const theme = { bg, text: readableSymbolColor(bg) }
-    entry.lastTheme = theme
-    if (!titleBarView.webContents.isDestroyed()) {
-      titleBarView.webContents.send('comfy-titlebar:theme-changed', theme)
-    }
-    if (process.platform !== 'darwin') {
-      try {
-        comfyWindow.setTitleBarOverlay({ color: theme.bg, symbolColor: theme.text })
-      } catch {}
-    }
-  }
-  const onIpcMessage = (
-    _event: Electron.IpcMainEvent,
-    channel: string,
-    ...args: unknown[]
-  ): void => {
-    if (channel === 'desktop2-theme-report') {
-      const { bg } = (args[0] || {}) as { bg?: string; text?: string }
-      if (bg) applyComfyTheme(bg)
-    }
-  }
-  comfyContents.on('ipc-message', onIpcMessage)
 
   const onPageTitleUpdated = (e: Electron.Event, title: string): void => {
     e.preventDefault()
@@ -280,21 +280,23 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     `}catch(_){}` +
     `})()`
 
-  const onDomReady = (): void => {
+  const runDesktopScriptsInInstallPage = (): void => {
     comfyContents.executeJavaScript(COMFY_THEME_OBSERVER_JS).catch(() => {})
     comfyContents.executeJavaScript(getModelDownloadContentScript()).catch(() => {})
     if (isLocal && TERMINAL_INJECTION_SOURCE_IDS.has(installation.sourceId)) {
       comfyContents.executeJavaScript(getComfyTerminalContentScript()).catch(() => {})
     }
     void refreshStaffFlagTargeting(comfyContents)
-
     if (!isLocal) {
       comfyContents.executeJavaScript(COMFY_CLOUD_PATCHES_JS).catch(() => {})
       void refreshCloudUserTier(comfyContents)
-      noteCloudEntered()
-    } else {
-      noteCanvasRendered(installationId)
     }
+  }
+
+  const onDomReady = (): void => {
+    if (showsInstallSite(entry, comfyContents.getURL())) runDesktopScriptsInInstallPage()
+    if (isLocal) noteCanvasRendered(installationId)
+    else noteCloudEntered()
   }
   comfyContents.on('dom-ready', onDomReady)
 
@@ -442,7 +444,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
     installationEvents.off('updated', onInstallationUpdated)
     cancelFailRetry()
     if (!comfyContents.isDestroyed()) {
-      comfyContents.off('ipc-message', onIpcMessage)
       comfyContents.off('page-title-updated', onPageTitleUpdated)
       comfyContents.off('dom-ready', onDomReady)
       comfyContents.off('did-fail-load', onDidFailLoad)

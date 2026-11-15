@@ -18,12 +18,7 @@ import {
   isFirebaseAuthHandlerUrl,
   type SignInFailureContext
 } from '../auth/firebaseBridge'
-import {
-  isCheckoutReturnUrl,
-  isCheckoutUrl,
-  isLikelyDownloadUrl,
-  shouldOpenInPopup
-} from '../lib/allowedPopups'
+import { isCheckoutReturnUrl, isCheckoutUrl, shouldOpenInPopup } from '../lib/allowedPopups'
 import { COMFY_BG, TITLEBAR_BG } from '../lib/theme'
 import { standaloneWindowStyles } from '../lib/standaloneStyles'
 import {
@@ -47,6 +42,11 @@ import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windo
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideCheckoutBackdrop, showCheckoutBackdrop } from '../popups/checkoutBackdrop'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
+import {
+  comfyViewShowsItsInstall,
+  keepComfyViewOnInstallSite,
+  openOutsideComfyView
+} from './comfyViewNavigation'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { expectedPartitionFor } from './partition'
 import {
@@ -698,6 +698,9 @@ export function buildComfyView(
   attachSessionDownloadHandler(comfyContents.session)
   guardPermissionRequests(comfyContents.session)
 
+  const hostEntry = (): ComfyWindowEntry | undefined => comfyWindows.get(windowKey)
+  keepComfyViewOnInstallSite(comfyContents, hostEntry)
+
   let nextPopupIsCheckout = false
   let nextCheckoutOpenedAt = 0
 
@@ -713,12 +716,14 @@ export function buildComfyView(
   })
   comfyContents.setWindowOpenHandler(({ url: childUrl }) => {
     if (isFirebaseAuthHandlerUrl(childUrl)) {
-      void handleFirebasePopup(childUrl, comfyContents, {
-        parentWindow: comfyWindow,
-        onError: (failure) => {
-          forwardDatadogError(buildFirebaseAuthForwardedError(failure))
-        }
-      })
+      if (comfyViewShowsItsInstall(comfyContents, hostEntry)) {
+        void handleFirebasePopup(childUrl, comfyContents, {
+          parentWindow: comfyWindow,
+          onError: (failure) => {
+            forwardDatadogError(buildFirebaseAuthForwardedError(failure))
+          }
+        })
+      }
       return { action: 'deny' }
     }
     if (isCheckoutUrl(childUrl)) {
@@ -736,11 +741,7 @@ export function buildComfyView(
         overrideBrowserWindowOptions: { webPreferences: { preload: undefined } }
       }
     }
-    if (isLikelyDownloadUrl(childUrl)) {
-      comfyContents.session.downloadURL(childUrl)
-      return { action: 'deny' }
-    }
-    void tryOpenExternalUrl(childUrl)
+    openOutsideComfyView(comfyContents, childUrl)
     return { action: 'deny' }
   })
   comfyContents.on('will-prevent-unload', (e) => {

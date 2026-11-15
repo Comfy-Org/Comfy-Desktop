@@ -163,7 +163,12 @@ import {
   rebuildComfyViewIfNeeded,
   setHostWindowFactories
 } from './host/createHostWindow'
-import { attachInstall, setAttachFactories, type ZoomResetSource } from './host/attach'
+import {
+  attachInstall,
+  registerComfyThemeHandler,
+  setAttachFactories,
+  type ZoomResetSource
+} from './host/attach'
 import { resetCanvasRendered } from './lib/canvasEntry'
 import { IN_PLACE_RELAUNCH, REQUIRES_STOPPED } from '../types/ipc'
 import { dispatchSessionAction, handleLaunch } from './lib/ipc/sessionActions'
@@ -1541,6 +1546,7 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
     })
     registerPickerSettingsIpc({ quitForRelaunch: quitApp })
     registerDownloadHandlers()
+    registerComfyThemeHandler()
     registerAssetDownloadHandlers({ findInstallationIdForWindow })
     registerTemplateInputAssetHandlers({
       findInstallationIdForWindow,

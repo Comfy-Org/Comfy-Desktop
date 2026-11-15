@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   signInToCloud: vi.fn(),
   signOutOfCloud: vi.fn(),
   isTrustedSender: vi.fn(),
+  isAppsPageSender: vi.fn(),
   stateForSender: vi.fn(),
   switchWorkspaceForSender: vi.fn(),
   switchCloudWorkspace: vi.fn()
@@ -21,7 +22,13 @@ vi.mock('electron', () => ({
 
 vi.mock('../telemetry', () => ({ emit: mocks.emit }))
 
-vi.mock('../../host/registry', () => ({ findEntryByComfySender: vi.fn() }))
+vi.mock('../../host/registry', () => ({
+  findEntryByComfySender: vi.fn(),
+  findEntryByTitleBarSender: () => null,
+  isPanelSender: () => false
+}))
+vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: mocks.isAppsPageSender }))
+vi.mock('../logsPopoutWindow', () => ({ findLogsPopoutInstallationIdBySender: () => null }))
 
 vi.mock('../embeddedSession', () => ({
   EMBEDDED_SESSION_CHANNELS: {
@@ -78,7 +85,37 @@ function reported(): unknown[] {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.handle.mockReset()
+  mocks.isTrustedSender.mockReturnValue(true)
+  mocks.isAppsPageSender.mockReturnValue(false)
   registerEmbeddedSessionHandlers()
+})
+
+describe('a page Desktop does not share its sign-in with', () => {
+  it.each([
+    ['desktop2-auth:get-state', { status: 'disabled' }],
+    ['desktop2-auth:get-workspace-token', null],
+    ['desktop2-auth:get-partner-node-token', null],
+    ['desktop2-auth:request-sign-in', { status: 'disabled' }],
+    ['desktop2-auth:sign-out', { status: 'disabled' }],
+    ['desktop2-auth:switch-workspace', { status: 'disabled' }],
+    ['desktop2-auth:issue-billing-handoff', { status: 'disabled' }]
+  ])('gets nothing from %s', async (channel, refusal) => {
+    mocks.isTrustedSender.mockReturnValue(false)
+    const call = mocks.handle.mock.calls.find(([name]) => name === channel)
+
+    const answer = await (call![1] as (event: unknown, ...args: unknown[]) => unknown)(
+      { sender: {}, senderFrame: null },
+      'ws-1',
+      'platform'
+    )
+
+    expect(answer).toEqual(refusal)
+    expect(mocks.stateForSender).not.toHaveBeenCalled()
+    expect(mocks.switchWorkspaceForSender).not.toHaveBeenCalled()
+    expect(billingHandoffForSender).not.toHaveBeenCalled()
+    expect(mocks.signInToCloud).not.toHaveBeenCalled()
+    expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
+  })
 })
 
 describe('desktop2-auth:request-sign-in telemetry', () => {
@@ -242,6 +279,7 @@ describe('desktop2-auth:sign-out', () => {
 
   it('leaves Desktop signed in when the hosted Apps page asks', async () => {
     mocks.isTrustedSender.mockReturnValue(false)
+    mocks.isAppsPageSender.mockReturnValue(true)
     mocks.stateForSender.mockResolvedValue(SIGNED_IN)
 
     await expect(signOut()({ sender: {} })).resolves.toEqual(SIGNED_IN)
@@ -252,7 +290,7 @@ describe('desktop2-auth:sign-out', () => {
     mocks.isTrustedSender.mockReturnValue(false)
     mocks.stateForSender.mockResolvedValue({ status: 'disabled' })
 
-    await expect(signOut()({ sender: {} })).resolves.toEqual({ status: 'disabled' })
+    expect(await signOut()({ sender: {} })).toEqual({ status: 'disabled' })
     expect(mocks.signOutOfCloud).not.toHaveBeenCalled()
   })
 })

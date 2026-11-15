@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron'
+import { sendBridgeEvent } from '../host/bridgeEvents'
 import { writeOperationOutput } from './appLog'
 
 const MAX_BUFFER_CHARS = 256 * 1024
@@ -40,7 +41,7 @@ export function appendLog(installationId: string, text: string): void {
       continue
     }
     try {
-      wc.send('logs-output', { installationId, text })
+      sendBridgeEvent(wc, 'logs-output', { installationId, text })
     } catch {}
   }
 }

@@ -20,8 +20,14 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('../../host/registry', () => ({
-  findEntryByComfySender: mocks.findEntryByComfySender
+  findEntryByComfySender: mocks.findEntryByComfySender,
+  findEntryByTitleBarSender: () => null,
+  isPanelSender: (sender: unknown) => sender === PANEL
 }))
+
+vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => false }))
+vi.mock('../embeddedSession', () => ({ isTrustedSender: () => false }))
+vi.mock('../logsPopoutWindow', () => ({ findLogsPopoutInstallationIdBySender: () => null }))
 
 vi.mock('../telemetry', () => ({
   asDeployment: (v: unknown) => (v === 'local' || v === 'cloud' || v === 'remote' ? v : null),
@@ -42,6 +48,23 @@ vi.mock('../experiments', () => ({
 import { registerTelemetryHandlers } from './registerTelemetryHandlers'
 
 type IpcListener = (_event: unknown, payload: unknown) => void
+type PageEvent = { sender: unknown; senderFrame: unknown }
+
+const PANEL = { id: 'panel' }
+const FROM_PANEL: PageEvent = { sender: PANEL, senderFrame: null }
+const INSTALL_URL = 'http://127.0.0.1:8188'
+
+function installOf(sender: unknown): unknown {
+  return (sender as { install?: unknown } | null)?.install ?? null
+}
+
+function installPageEvent(install: Record<string, unknown> = {}): PageEvent {
+  return identityEvent(`${INSTALL_URL}/`, true, false, {
+    installationId: 'inst-1',
+    comfyUrl: INSTALL_URL,
+    ...install
+  })
+}
 
 function listener(channel: string): IpcListener {
   const call = mocks.on.mock.calls.find(([name]) => name === channel)
@@ -52,10 +75,11 @@ function listener(channel: string): IpcListener {
 function identityEvent(
   url: string,
   mainFrame: boolean = true,
-  equivalentWrapper: boolean = false
-): unknown {
+  equivalentWrapper: boolean = false,
+  install: Record<string, unknown> = { installationId: 'inst-1', comfyUrl: url }
+): PageEvent {
   const senderMainFrame = { url, processId: 100, routingId: 200 }
-  const sender = { mainFrame: senderMainFrame }
+  const sender = { mainFrame: senderMainFrame, install }
   return {
     sender,
     senderFrame: mainFrame
@@ -69,6 +93,8 @@ function identityEvent(
 describe('registerTelemetryHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.findEntryByComfySender.mockReset()
+    mocks.findEntryByComfySender.mockImplementation(installOf)
     registerTelemetryHandlers()
   })
 
@@ -79,7 +105,7 @@ describe('registerTelemetryHandlers', () => {
     }
     for (let i = 0; i < 200; i++) properties[`key_${i}`] = i
 
-    listener('telemetry:capture')(null, { event: 'comfy.desktop.test', properties })
+    listener('telemetry:capture')(FROM_PANEL, { event: 'comfy.desktop.test', properties })
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(Object.keys(sent)).toHaveLength(128)
@@ -98,7 +124,7 @@ describe('registerTelemetryHandlers', () => {
       { vendor: 'NVIDIA', model: 'RTX 4090', vram_mb: 24576 },
       { vendor: '', model: 'Microsoft Basic Render Driver', vram_mb: null }
     ]
-    listener('telemetry:capture')(null, {
+    listener('telemetry:capture')(FROM_PANEL, {
       event: 'comfy.desktop.session.system_info',
       properties: {
         gpu_count: gpus.length,
@@ -116,7 +142,7 @@ describe('registerTelemetryHandlers', () => {
   it('gives allow-listed JSON keys a larger ceiling, clamps everything else', () => {
     const big = JSON.stringify(Array.from({ length: 500 }, (_, i) => ({ id: i, name: `n${i}` })))
     expect(big.length).toBeGreaterThan(2048)
-    listener('telemetry:capture')(null, {
+    listener('telemetry:capture')(FROM_PANEL, {
       event: 'comfy.desktop.session.installs_inventory',
       properties: {
         installs_json: big,
@@ -161,13 +187,13 @@ describe('registerTelemetryHandlers', () => {
 
     expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
       1,
-      (signedInEvent as { sender: unknown }).sender,
+      signedInEvent.sender,
       { processId: 100, routingId: 200 },
       { status: 'signed_in', userId: 'firebase-uid-123' }
     )
     expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
       2,
-      (signedOutEvent as { sender: unknown }).sender,
+      signedOutEvent.sender,
       { processId: 100, routingId: 200 },
       { status: 'signed_out' }
     )
@@ -183,7 +209,7 @@ describe('registerTelemetryHandlers', () => {
 
     expect(mocks.reportFirebaseAuthState).toHaveBeenCalledTimes(1)
     expect(mocks.reportFirebaseAuthState).toHaveBeenCalledWith(
-      (equivalentMainFrame as { sender: unknown }).sender,
+      equivalentMainFrame.sender,
       { processId: 100, routingId: 200 },
       { status: 'signed_out' }
     )
@@ -198,14 +224,24 @@ describe('registerTelemetryHandlers', () => {
     expect(mocks.reportFirebaseAuthState).not.toHaveBeenCalled()
   })
 
-  it('forwards main frames for auth-scope validation and rejects subframes or malformed payloads', () => {
-    const fileEvent = identityEvent('file:///launcher/index.html')
-    const remoteEvent = identityEvent('https://attacker.example/')
-    listener('telemetry:firebaseAuthState')(fileEvent, {
+  it("forwards the install's own page for auth-scope validation and drops other sites, subframes and malformed payloads", () => {
+    const localEvent = installPageEvent()
+    const remoteEvent = identityEvent('https://remote.example.test/')
+    listener('telemetry:firebaseAuthState')(localEvent, {
       status: 'signed_in',
       userId: 'local-user'
     })
     listener('telemetry:firebaseAuthState')(remoteEvent, {
+      status: 'signed_out'
+    })
+    listener('telemetry:firebaseAuthState')(
+      identityEvent('https://attacker.example/', true, false, {
+        installationId: 'inst-1',
+        comfyUrl: 'https://cloud.comfy.org/'
+      }),
+      { status: 'signed_out' }
+    )
+    listener('telemetry:firebaseAuthState')(identityEvent('file:///launcher/index.html'), {
       status: 'signed_out'
     })
     listener('telemetry:firebaseAuthState')(identityEvent('https://cloud.comfy.org/', false), {
@@ -222,13 +258,13 @@ describe('registerTelemetryHandlers', () => {
     expect(mocks.reportFirebaseAuthState).toHaveBeenCalledTimes(2)
     expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
       1,
-      (fileEvent as { sender: unknown }).sender,
+      localEvent.sender,
       { processId: 100, routingId: 200 },
       { status: 'signed_in', userId: 'local-user' }
     )
     expect(mocks.reportFirebaseAuthState).toHaveBeenNthCalledWith(
       2,
-      (remoteEvent as { sender: unknown }).sender,
+      remoteEvent.sender,
       { processId: 100, routingId: 200 },
       { status: 'signed_out' }
     )
@@ -272,22 +308,33 @@ describe('registerTelemetryHandlers', () => {
       {}
     ]
   ])('%s', (_case, entry, properties, expectedSent) => {
-    const sender = { id: 1 }
-    mocks.findEntryByComfySender.mockReturnValue(entry)
+    const event = entry ? installPageEvent(entry) : FROM_PANEL
 
-    listener('telemetry:capture')({ sender }, { event: 'execution_start', properties })
+    listener('telemetry:capture')(event, { event: 'execution_start', properties })
 
-    expect(mocks.findEntryByComfySender).toHaveBeenCalledWith(sender)
+    expect(mocks.findEntryByComfySender).toHaveBeenCalledWith(event.sender)
     expect(mocks.capture.mock.calls[0]![1]).toEqual(expectedSent)
   })
 
-  it('strips a payload client so the SDK default (desktop) applies', () => {
-    mocks.findEntryByComfySender.mockReturnValue(null)
+  it('takes nothing from a ComfyUI view that shows another site', () => {
+    const elsewhere = identityEvent('https://elsewhere.example.test/', true, false, {
+      installationId: 'inst-1',
+      comfyUrl: INSTALL_URL,
+      sourceCategory: 'local'
+    })
 
-    listener('telemetry:capture')(
-      { sender: { id: 6 } },
-      { event: 'execution_start', properties: { client: 'web', a: 1 } }
-    )
+    listener('telemetry:capture')(elsewhere, { event: 'execution_start', properties: { a: 1 } })
+    listener('telemetry:captureException')(elsewhere, { message: 'boom' })
+
+    expect(mocks.capture).not.toHaveBeenCalled()
+    expect(mocks.captureExceptionAndForward).not.toHaveBeenCalled()
+  })
+
+  it('strips a payload client so the SDK default (desktop) applies', () => {
+    listener('telemetry:capture')(FROM_PANEL, {
+      event: 'execution_start',
+      properties: { client: 'web', a: 1 }
+    })
 
     const sent = mocks.capture.mock.calls[0]![1] as Record<string, unknown>
     expect(sent.client).toBeUndefined()
@@ -295,20 +342,15 @@ describe('registerTelemetryHandlers', () => {
   })
 
   it('applies the same platform-axes handling to relayed exceptions', () => {
-    mocks.findEntryByComfySender.mockReturnValue({ sourceCategory: 'local' })
-
-    listener('telemetry:captureException')(
-      { sender: { id: 8 } },
-      {
-        message: 'boom',
-        stack: 'Error: boom\n at app.ts:1:1',
-        properties: {
-          client: 'web',
-          deployment: 'cloud',
-          error_type: 'workspace_auth_gate_initialization_failure'
-        }
+    listener('telemetry:captureException')(installPageEvent({ sourceCategory: 'local' }), {
+      message: 'boom',
+      stack: 'Error: boom\n at app.ts:1:1',
+      properties: {
+        client: 'web',
+        deployment: 'cloud',
+        error_type: 'workspace_auth_gate_initialization_failure'
       }
-    )
+    })
 
     const [err, sent] = mocks.captureExceptionAndForward.mock.calls[0]! as [
       Error,
@@ -323,10 +365,10 @@ describe('registerTelemetryHandlers', () => {
 
   it('scrubs exception properties before applying string limits', () => {
     const secret = `password="${'private words '.repeat(200)}"`
-    listener('telemetry:captureException')(
-      { sender: { id: 8 } },
-      { message: 'boom', properties: { detail: secret, nested: { secret } } }
-    )
+    listener('telemetry:captureException')(FROM_PANEL, {
+      message: 'boom',
+      properties: { detail: secret, nested: { secret } }
+    })
 
     const [, sent] = mocks.captureExceptionAndForward.mock.calls[0]! as [
       Error,

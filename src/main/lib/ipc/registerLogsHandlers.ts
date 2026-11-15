@@ -1,43 +1,40 @@
-import { ipcMain } from 'electron'
-import type { IpcMainInvokeEvent } from 'electron'
-import { findInstallationIdByComfySender } from '../../host/registry'
 import { subscribeLogs, unsubscribeLogs, getLogsBuffer, type LogsRestore } from '../logsBroadcast'
 import { openLogsPopout } from '../logsPopoutWindow'
+import { installOfLogsWindow, installShownTo } from './bridgeCallers'
+import type { BridgeCaller } from './bridgeCallers'
+import { handleBridge } from './comfyBridge'
 
 const EMPTY_RESTORE: LogsRestore = { installationId: '', buffer: [] }
 
-function resolveInstallationId(
-  event: IpcMainInvokeEvent,
-  explicit: string | null | undefined
-): string | null {
-  if (explicit) return explicit
-  return findInstallationIdByComfySender(event.sender)
+function installReadBy(caller: BridgeCaller): string | null {
+  return installShownTo(caller)?.installationId ?? installOfLogsWindow(caller)
+}
+
+function ownInstallationId(caller: BridgeCaller, requested: unknown): string | null {
+  const own = installReadBy(caller)
+  const asksForAnotherInstall = requested !== null && requested !== undefined && requested !== own
+  return asksForAnotherInstall ? null : own
 }
 
 export function registerLogsHandlers(): void {
-  ipcMain.handle('logs-subscribe', (event, installationId?: string | null): LogsRestore => {
-    const id = resolveInstallationId(event, installationId)
-    if (!id) return EMPTY_RESTORE
-    return subscribeLogs(id, event.sender)
+  handleBridge('logs-subscribe', EMPTY_RESTORE, (event, installationId?: unknown): LogsRestore => {
+    const id = ownInstallationId(event, installationId)
+    return id ? subscribeLogs(id, event.sender) : EMPTY_RESTORE
   })
 
-  ipcMain.handle('logs-unsubscribe', (event, installationId?: string | null) => {
-    const id = resolveInstallationId(event, installationId)
+  handleBridge('logs-unsubscribe', undefined, (event, installationId?: unknown): void => {
+    const id = ownInstallationId(event, installationId)
     if (id) unsubscribeLogs(id, event.sender)
   })
 
-  ipcMain.handle('logs-snapshot', (event, installationId?: string | null): string => {
-    const id = resolveInstallationId(event, installationId)
-    if (!id) return ''
-    return getLogsBuffer(id).join('')
-  })
-
-  ipcMain.handle(
-    'logs-popout-open',
-    async (event, installationId?: string | null): Promise<void> => {
-      const id = resolveInstallationId(event, installationId)
-      if (!id) return
-      await openLogsPopout(id)
-    }
+  handleBridge('logs-snapshot', '', (_event, installationId?: unknown): string =>
+    typeof installationId === 'string' && installationId
+      ? getLogsBuffer(installationId).join('')
+      : ''
   )
+
+  handleBridge('logs-popout-open', undefined, async (event): Promise<void> => {
+    const installation = installShownTo(event)
+    if (installation) await openLogsPopout(installation.installationId)
+  })
 }

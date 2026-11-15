@@ -100,12 +100,3 @@ export function openWorkflowScript(request: OpenRequest): string {
     `})(${JSON.stringify(JSON.stringify(request.prompt))},${JSON.stringify(request.name)})`
   )
 }
-
-export function isComfyPage(pageUrl: string, comfyUrl: string): boolean {
-  try {
-    const page = new URL(pageUrl)
-    return /^https?:$/.test(page.protocol) && page.origin === new URL(comfyUrl).origin
-  } catch {
-    return false
-  }
-}

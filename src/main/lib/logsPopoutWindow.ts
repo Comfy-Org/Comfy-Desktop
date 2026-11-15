@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron'
+import type { WebContents } from 'electron'
 import path from 'path'
 import { COMFY_BG } from './theme'
 import { standaloneWindowStyles } from './standaloneStyles'
@@ -86,6 +87,13 @@ function buildPopoutScript(installationId: string): string {
 }
 
 const popoutsByInstallation = new Map<string, BrowserWindow>()
+
+export function findLogsPopoutInstallationIdBySender(sender: WebContents): string | null {
+  for (const [installationId, window] of popoutsByInstallation) {
+    if (!window.isDestroyed() && window.webContents === sender) return installationId
+  }
+  return null
+}
 
 export async function openLogsPopout(installationId: string): Promise<void> {
   const existing = popoutsByInstallation.get(installationId)

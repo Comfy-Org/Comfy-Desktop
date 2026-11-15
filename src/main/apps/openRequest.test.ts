@@ -7,7 +7,6 @@ import {
   DEFAULT_WORKFLOW_NAME,
   isApiWorkflow,
   isBuildId,
-  isComfyPage,
   MARK_PAGE_STALE_SCRIPT,
   openWorkflowScript,
   readOpenRequest,
@@ -246,18 +245,5 @@ describe('the script that loads the workflow into the ComfyUI page', () => {
 
     expect(await runInNewContext(openWorkflowScript(request), refusing)).toBe(false)
     expect(await runInNewContext(openWorkflowScript(request), failing)).toBe(false)
-  })
-})
-
-describe('the ComfyUI page a workflow loads into', () => {
-  it.each([
-    ['http://127.0.0.1:8188/?x=1', 'http://127.0.0.1:8188', true],
-    ['https://cloud.comfy.org/', 'https://cloud.comfy.org/?utm_source=a', true],
-    ['data:text/html,splash', 'http://127.0.0.1:8188', false],
-    ['http://127.0.0.1:8189/', 'http://127.0.0.1:8188', false],
-    ['https://cloud.comfy.org.example.com/', 'https://cloud.comfy.org/', false],
-    ['not a url', 'http://127.0.0.1:8188', false]
-  ])('%s for a ComfyUI at %s is %s', (pageUrl, comfyUrl, expected) => {
-    expect(isComfyPage(pageUrl, comfyUrl)).toBe(expected)
   })
 })

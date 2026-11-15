@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow } from 'electron'
 import { get as getInstallation, type InstallationRecord } from '../../installations'
 import {
   resolveInputDir,
@@ -16,6 +16,7 @@ import type {
   ComfyTemplateInputAssetDownload,
   ComfyTemplateInputAssetDownloadResult
 } from '../../../types/comfyDesktopBridge'
+import { handleBridge } from './comfyBridge'
 
 interface TemplateInputAssetHandlerOptions {
   findInstallationIdForWindow: (win: BrowserWindow) => string | undefined
@@ -55,8 +56,9 @@ export function registerTemplateInputAssetHandlers({
     return installation && isLocalInstallation(installation) ? { installation, win } : null
   }
 
-  ipcMain.handle(
+  handleBridge(
     'desktop2-get-template-input-assets',
+    null,
     async (
       event,
       { templateId }: { templateId: unknown }
@@ -90,8 +92,9 @@ export function registerTemplateInputAssetHandlers({
     }
   )
 
-  ipcMain.handle(
+  handleBridge(
     'desktop2-download-template-input-asset',
+    { status: 'not-started', reason: 'unavailable' },
     async (
       event,
       { templateId, assetId }: { templateId: unknown; assetId: unknown }
