@@ -501,9 +501,9 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
     const lines = log().split('\n')
     expect(lines).toContain(`[download] Downloading ${ARCHIVE} (3 MB)`)
     expect(lines).toContain(`[extract] Extracting ${ARCHIVE}`)
-    expect(lines).toContain(
-      '[setup] Creating the Python environment and copying the bundled packages into it'
-    )
+    expect(lines).toContain('[setup] Creating the Python environment')
+    expect(lines).toContain('[setup] Copying the bundled packages into it')
+    expect(lines).toContain('[setup] Removing duplicate copies of the large packages')
     expect(lines).toContain('[setup] This download contains ComfyUI v0.3.48')
     expect(lines).toContain('[update] Getting ComfyUI v0.3.50')
     expect(lines, 'the update script’s own output').toContain('Checking out tag: v0.3.50')
@@ -634,9 +634,7 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
         'Creating Python environment…'
       ])
       expect(setup).toContain('Signing the copied binaries…')
-      expect(log()).toContain(
-        '[setup] Clearing macOS quarantine flags and signing the bundled Python'
-      )
+      expect(log()).toContain('[setup] Clearing quarantine flags and signing the bundled Python')
     }
   )
 })

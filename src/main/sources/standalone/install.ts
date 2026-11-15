@@ -97,8 +97,9 @@ async function stripMasterPackages(installPath: string): Promise<void> {
 }
 
 interface EnvCreationReport {
-  copying: (copied: number, total: number, elapsedSecs: number, etaSecs: number) => void
-  signing: () => void
+  copyStarted: () => void
+  copyProgress: (copied: number, total: number, elapsedSecs: number, etaSecs: number) => void
+  signingStarted: () => void
   output: (text: string) => void
 }
 
@@ -146,8 +147,11 @@ async function createEnv(
       throw new Error('Could not locate site-packages for .venv.')
     }
     await withPostInstallPhase(installation, 'package_copy', async () => {
-      await copyDirWithProgress(masterSitePackages, envSitePackages, report.copying, { signal })
-      if (process.platform === 'darwin') report.signing()
+      report.copyStarted()
+      await copyDirWithProgress(masterSitePackages, envSitePackages, report.copyProgress, {
+        signal
+      })
+      if (process.platform === 'darwin') report.signingStarted()
       await codesignBinaries(envSitePackages, report.output)
     })
   } catch (err) {
@@ -219,16 +223,17 @@ export async function postInstall(
     } catch {}
   }
   if (process.platform === 'darwin') {
-    logSetup('Clearing macOS quarantine flags and signing the bundled Python')
+    logSetup('Clearing quarantine flags and signing the bundled Python')
   }
   await repairMacBinaries(installation.installPath, reportSetup, sendOutput)
   if (signal?.aborted) throw new Error('Cancelled')
-  logSetup('Creating the Python environment and copying the bundled packages into it')
+  logSetup('Creating the Python environment')
   sendProgress('setup', { percent: 0, status: 'Creating Python environment…' })
   await createEnv(
     installation,
     {
-      copying: (copied, total, elapsedSecs, etaSecs) => {
+      copyStarted: () => logSetup('Copying the bundled packages into it'),
+      copyProgress: (copied, total, elapsedSecs, etaSecs) => {
         const percent = Math.round((copied / total) * 100)
         const elapsed = formatTime(elapsedSecs)
         const eta = etaSecs >= 0 ? formatTime(etaSecs) : '—'
@@ -237,8 +242,8 @@ export async function postInstall(
           status: `Copying packages… ${copied} / ${total} files  ·  ${elapsed} elapsed  ·  ${eta} remaining`
         })
       },
-      signing: () => {
-        logSetup('Signing the copied binaries for macOS')
+      signingStarted: () => {
+        logSetup('Signing the copied binaries')
         sendProgress('setup', { percent: -1, status: t('standalone.setupSigning') })
       },
       output: sendOutput
@@ -246,7 +251,7 @@ export async function postInstall(
     signal
   )
   if (signal?.aborted) throw new Error('Cancelled')
-  logSetup('Removing the duplicate copies of the large packages from the bundled Python')
+  logSetup('Removing duplicate copies of the large packages')
   sendProgress('setup', { percent: -1, status: t('standalone.setupRemovingDuplicates') })
   await stripMasterPackages(installation.installPath)
 
@@ -314,7 +319,7 @@ export async function postInstall(
     : channel === 'latest'
       ? 'the latest ComfyUI commit'
       : 'the latest stable ComfyUI release'
-  logUpdate(`Checking whether the download already has ${target}`)
+  logUpdate(`Checking for ${target}`)
   sendProgress('update', { percent: -1, status: t('standalone.getComfyChecking') })
 
   try {
