@@ -136,6 +136,10 @@ vi.mock('electron', () => {
       },
       send(): void {},
       focus(): void {},
+      getURL(): string {
+        return ''
+      },
+      setWindowOpenHandler(): void {},
       close(): void {
         this.emit('destroyed')
       },

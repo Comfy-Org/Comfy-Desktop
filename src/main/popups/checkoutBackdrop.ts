@@ -1,6 +1,5 @@
-import { ipcMain } from 'electron'
 import type { BrowserWindow, WebContentsView } from 'electron'
-import { createWebContentsView } from '../lib/webContentsViewLifetime'
+import { createOverlayView, OVERLAY_PRESSED_SCRIPT } from './overlayView'
 
 interface CheckoutBackdropEntry {
   view: WebContentsView
@@ -9,7 +8,6 @@ interface CheckoutBackdropEntry {
 }
 
 const backdropsByParent = new Map<number, CheckoutBackdropEntry>()
-const parentByWebContents = new Map<number, number>()
 
 const CHECKOUT_BACKDROP_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -18,25 +16,11 @@ const CHECKOUT_BACKDROP_HTML = `<!doctype html>
 </style></head><body>
 <div class="scrim" id="s"></div>
 <script>
-  const { ipcRenderer } = require('electron');
   document.getElementById('s').addEventListener('mousedown', () => {
-    ipcRenderer.send('comfy-checkout-backdrop:dismiss');
+    ${OVERLAY_PRESSED_SCRIPT};
   });
 </script>
 </body></html>`
-
-let ipcWired = false
-function ensureIpc(): void {
-  if (ipcWired) return
-  ipcWired = true
-  ipcMain.on('comfy-checkout-backdrop:dismiss', (event) => {
-    const parentId = parentByWebContents.get(event.sender.id)
-    if (parentId == null) return
-    const entry = backdropsByParent.get(parentId)
-    if (!entry || !entry.visible) return
-    entry.onDismiss?.()
-  })
-}
 
 function fullBounds(parent: BrowserWindow): Electron.Rectangle {
   const cb = parent.getContentBounds()
@@ -47,21 +31,15 @@ function ensureBackdrop(parent: BrowserWindow): CheckoutBackdropEntry {
   const existing = backdropsByParent.get(parent.id)
   if (existing && !existing.view.webContents.isDestroyed()) return existing
 
-  ensureIpc()
-  const view = createWebContentsView({
-    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
+  const view = createOverlayView(CHECKOUT_BACKDROP_HTML, () => {
+    if (entry.visible) entry.onDismiss?.()
   })
-  view.setBackgroundColor('#00000000')
   view.setVisible(false)
   view.setBounds({ x: 0, y: 0, width: 1, height: 1 })
   parent.contentView.addChildView(view)
-  void view.webContents
-    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(CHECKOUT_BACKDROP_HTML)}`)
-    .catch(() => {})
 
   const entry: CheckoutBackdropEntry = { view, visible: false, onDismiss: null }
   backdropsByParent.set(parent.id, entry)
-  parentByWebContents.set(view.webContents.id, parent.id)
 
   parent.on('resize', () => {
     if (!entry.visible || parent.isDestroyed() || view.webContents.isDestroyed()) return
@@ -69,7 +47,6 @@ function ensureBackdrop(parent: BrowserWindow): CheckoutBackdropEntry {
   })
   parent.once('closed', () => {
     if (!view.webContents.isDestroyed()) view.webContents.close()
-    parentByWebContents.delete(view.webContents.id)
     backdropsByParent.delete(parent.id)
   })
 

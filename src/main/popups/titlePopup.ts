@@ -1,6 +1,5 @@
 import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import type { WebContentsView } from 'electron'
-import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
 import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
@@ -62,6 +61,7 @@ import {
 import type { Category, ViewKind } from '../../shared/viewKind'
 import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
+import { createOverlayView, OVERLAY_PRESSED_SCRIPT } from './overlayView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
 
 interface TitlePopupMenuItem {
@@ -368,7 +368,6 @@ interface PopupBackdropEntry {
   visible: boolean
 }
 const popupBackdropsByParent = new Map<number, PopupBackdropEntry>()
-const popupBackdropsByWebContents = new Map<number, number>()
 
 const POPUP_BACKDROP_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><style>
@@ -377,9 +376,8 @@ const POPUP_BACKDROP_HTML = `<!doctype html>
 </style></head><body>
 <div class="scrim" id="s"></div>
 <script>
-  const { ipcRenderer } = require('electron');
   document.getElementById('s').addEventListener('mousedown', () => {
-    ipcRenderer.send('comfy-popup-backdrop:dismiss');
+    ${OVERLAY_PRESSED_SCRIPT};
   });
 </script>
 </body></html>`
@@ -387,23 +385,12 @@ const POPUP_BACKDROP_HTML = `<!doctype html>
 function ensurePopupBackdrop(parent: BrowserWindow): PopupBackdropEntry {
   const existing = popupBackdropsByParent.get(parent.id)
   if (existing && !existing.view.webContents.isDestroyed()) return existing
-  const view = createWebContentsView({
-    webPreferences: {
-      contextIsolation: false,
-      nodeIntegration: true,
-      sandbox: false
-    }
-  })
-  view.setBackgroundColor('#00000000')
+  const view = createOverlayView(POPUP_BACKDROP_HTML, () => dismissPopupBehindBackdrop(parent))
   view.setVisible(false)
   view.setBounds({ x: 0, y: 0, width: 1, height: 1 })
   parent.contentView.addChildView(view)
-  void view.webContents
-    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(POPUP_BACKDROP_HTML)}`)
-    .catch(() => {})
   const entry: PopupBackdropEntry = { view, visible: false }
   popupBackdropsByParent.set(parent.id, entry)
-  popupBackdropsByWebContents.set(view.webContents.id, parent.id)
   parent.on('resize', () => {
     if (!entry.visible || parent.isDestroyed() || view.webContents.isDestroyed()) return
     const cb = parent.getContentBounds()
@@ -420,7 +407,6 @@ function ensurePopupBackdrop(parent: BrowserWindow): PopupBackdropEntry {
     } catch {}
     if (!view.webContents.isDestroyed()) view.webContents.close()
     popupBackdropsByParent.delete(parent.id)
-    popupBackdropsByWebContents.delete(view.webContents.id)
   }
   parent.once('closed', onParentClosed)
   return entry
@@ -665,6 +651,17 @@ function ensureTitlePopup(parent: BrowserWindow): TitlePopupEntry {
 }
 
 const BACKDROP_DISMISS_GUARD_MS = 180
+
+function dismissPopupBehindBackdrop(parent: BrowserWindow): void {
+  const popup = titlePopupsByParent.get(parent.id)
+  if (!popup) return
+  if (!kindUsesBackdrop(popup.kind) || !popup.view.isOpen) {
+    if (!parent.isDestroyed()) hidePopupBackdrop(parent)
+    return
+  }
+  if (Date.now() - popup.openedAt < BACKDROP_DISMISS_GUARD_MS) return
+  hideTitlePopup(popup, { releaseFocusToParent: true })
+}
 
 function hideTitlePopup(
   entry: TitlePopupEntry,
@@ -1458,20 +1455,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     const entry = titlePopupsByWebContents.get(event.sender.id)
     if (!entry) return
     hideTitlePopup(entry, { releaseFocusToParent: true })
-  })
-
-  ipcMain.on('comfy-popup-backdrop:dismiss', (event) => {
-    const parentId = popupBackdropsByWebContents.get(event.sender.id)
-    if (parentId === undefined) return
-    const popup = titlePopupsByParent.get(parentId)
-    if (!popup) return
-    const parent = popup.view.parentWindow
-    if (!kindUsesBackdrop(popup.kind) || !popup.view.isOpen) {
-      if (!parent.isDestroyed()) hidePopupBackdrop(parent)
-      return
-    }
-    if (Date.now() - popup.openedAt < BACKDROP_DISMISS_GUARD_MS) return
-    hideTitlePopup(popup, { releaseFocusToParent: true })
   })
 
   ipcMain.on('comfy-titlepopup:request-size', (event, payload: { height?: unknown }) => {

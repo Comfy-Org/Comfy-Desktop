@@ -5,12 +5,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({
   WebContentsView: class {
-    readonly webContents = new EventEmitter()
+    readonly webContents = Object.assign(new EventEmitter(), {
+      getURL: () => 'file:///app/out/renderer/panel.html',
+      setWindowOpenHandler: vi.fn()
+    })
     constructor(readonly options?: unknown) {}
   }
 }))
 
-import { createWebContentsView } from './webContentsViewLifetime'
+import { createDesktopPageView, createWebContentsView } from './webContentsViewLifetime'
 
 setFlagsFromString('--expose-gc')
 const collectGarbage = runInNewContext('gc') as () => void
@@ -41,6 +44,24 @@ async function survivesGarbageCollection(ref: WeakRef<object>): Promise<boolean>
   return true
 }
 
+function navigationIsStopped(view: Electron.WebContentsView, url: string): boolean {
+  const event = { preventDefault: vi.fn() }
+  ;(view.webContents as unknown as EventEmitter).emit('will-navigate', event, url)
+  return event.preventDefault.mock.calls.length > 0
+}
+
+describe('createDesktopPageView', () => {
+  it("makes a view that stays on Desktop's page", () => {
+    const options = { webPreferences: { sandbox: true } }
+
+    const view = createDesktopPageView(options)
+
+    expect((view as unknown as { options: unknown }).options).toBe(options)
+    expect(navigationIsStopped(view, 'https://elsewhere.example.test/')).toBe(true)
+    expect(view.webContents.setWindowOpenHandler).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('createWebContentsView', () => {
   it('passes the options to the view it creates', () => {
     const options = { webPreferences: { sandbox: true } }
@@ -48,6 +69,13 @@ describe('createWebContentsView', () => {
     const view = createWebContentsView(options)
 
     expect((view as unknown as { options: unknown }).options).toBe(options)
+  })
+
+  it('leaves navigation to the caller, for views that show websites', () => {
+    const view = createWebContentsView()
+
+    expect(navigationIsStopped(view, 'https://elsewhere.example.test/')).toBe(false)
+    expect(view.webContents.setWindowOpenHandler).not.toHaveBeenCalled()
   })
 
   it('keeps a view nobody else references alive while its webContents is alive', async () => {

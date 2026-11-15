@@ -1,7 +1,8 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import type { WebContentsView } from 'electron'
 import path from 'path'
-import { createWebContentsView } from '../lib/webContentsViewLifetime'
+import { keepOnDesktopPage } from '../lib/desktopPageLock'
+import { createDesktopPageView, createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
@@ -46,6 +47,7 @@ import * as updater from '../lib/updater'
 import { getSavedBounds, getWindowOptions, saveWindowBounds } from '../lib/windowState'
 import { ensureSystemModal } from '../popups/systemModal'
 import { hideCheckoutBackdrop, showCheckoutBackdrop } from '../popups/checkoutBackdrop'
+import { createOverlayView, OVERLAY_PRESSED_SCRIPT } from '../popups/overlayView'
 import { hideTitlePopupForParent, prewarmTitlePopup } from '../popups/titlePopup'
 import { destroyPanelView, ensurePanelView } from './panelView'
 import { expectedPartitionFor } from './partition'
@@ -250,18 +252,14 @@ const CHECKOUT_CLOSE_BUTTON_HTML = `<!doctype html>
 <body class="pointer-events-none m-0 h-full w-full overflow-hidden bg-transparent">
 <button id="x" class="pointer-events-auto fixed top-2.5 right-2.5 grid size-7 cursor-pointer place-items-center rounded-lg border-0 border-none border-current bg-[rgba(0,0,0,0.06)] text-[rgba(0,0,0,0.55)] [font:16px/1_system-ui] hover:bg-[rgba(0,0,0,0.12)] hover:text-[rgba(0,0,0,0.85)]" aria-label="Close">✕</button>
 <script>
-  const { ipcRenderer } = require('electron');
-  document.getElementById('x').addEventListener('click', () => ipcRenderer.send('comfy-checkout:close'));
+  document.getElementById('x').addEventListener('click', () => ${OVERLAY_PRESSED_SCRIPT});
 </script>
 </body></html>`
 
 const CHECKOUT_CLOSE_BUTTON_SIZE = 48
 
 function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => void): void {
-  const overlay = createWebContentsView({
-    webPreferences: { contextIsolation: false, nodeIntegration: true, sandbox: false }
-  })
-  overlay.setBackgroundColor('#00000000')
+  const overlay = createOverlayView(CHECKOUT_CLOSE_BUTTON_HTML, onClose)
   childWindow.contentView.addChildView(overlay)
   const place = (): void => {
     if (childWindow.isDestroyed()) return
@@ -275,17 +273,7 @@ function attachCheckoutCloseButton(childWindow: BrowserWindow, onClose: () => vo
   }
   place()
   childWindow.on('resize', place)
-  void overlay.webContents
-    .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(CHECKOUT_CLOSE_BUTTON_HTML)}`)
-    .catch(() => {})
-
-  const closeId = overlay.webContents.id
-  const handler = (event: Electron.IpcMainEvent): void => {
-    if (event.sender.id === closeId) onClose()
-  }
-  ipcMain.on('comfy-checkout:close', handler)
   childWindow.once('closed', () => {
-    ipcMain.removeListener('comfy-checkout:close', handler)
     if (!overlay.webContents.isDestroyed()) overlay.webContents.close()
   })
 }
@@ -397,10 +385,11 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     }
   })
   comfyWindow.setMenuBarVisibility(false)
+  keepOnDesktopPage(comfyWindow.webContents)
 
   prewarmTitlePopup(comfyWindow)
 
-  const titleBarView = createWebContentsView({
+  const titleBarView = createDesktopPageView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

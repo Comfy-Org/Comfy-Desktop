@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import type { WebContentsView } from 'electron'
 import path from 'path'
-import { createWebContentsView } from '../lib/webContentsViewLifetime'
+import { createDesktopPageView } from '../lib/webContentsViewLifetime'
 import { attachContextMenu } from '../lib/contextMenu'
 import { resolveTheme } from '../lib/ipc/shared'
 import { get as getSetting } from '../settings'
@@ -53,7 +53,7 @@ export function ensurePanelView(
 ): WebContentsView {
   if (entry.panelView) return entry.panelView
 
-  const panelView = createWebContentsView({
+  const panelView = createDesktopPageView({
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

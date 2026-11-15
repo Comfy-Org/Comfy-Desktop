@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import path from 'path'
+import { keepOnDesktopPage } from './desktopPageLock'
 import { COMFY_BG } from './theme'
 import { standaloneWindowStyles } from './standaloneStyles'
 import * as installations from '../installations'
@@ -113,6 +114,7 @@ export async function openLogsPopout(installationId: string): Promise<void> {
     }
   })
 
+  keepOnDesktopPage(win.webContents)
   popoutsByInstallation.set(installationId, win)
   win.on('closed', () => {
     const cur = popoutsByInstallation.get(installationId)
