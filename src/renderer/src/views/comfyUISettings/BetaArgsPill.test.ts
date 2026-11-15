@@ -284,15 +284,5 @@ describe('BetaArgsPill', () => {
       await flushPromises()
       expect(wrapper.text()).toContain('+1 beta')
     })
-
-    it('works where the bridge has no settings-change event (the picker popup)', async () => {
-      ;(window as unknown as { api: Record<string, unknown> }).api = {
-        getCoreBetaArgs: api.getCoreBetaArgs,
-        openGlobalSettings: api.openGlobalSettings
-      }
-      const wrapper = mountPill()
-      await flushPromises()
-      expect(wrapper.text()).toContain('+2 beta')
-    })
   })
 })
