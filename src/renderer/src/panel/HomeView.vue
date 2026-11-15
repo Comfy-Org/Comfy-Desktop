@@ -276,7 +276,6 @@ onMounted(() => {
               :tone="buildTones[index]!"
               :auto-start="autoStart.startsOnOpen(build.id)"
               @open="openBuild(build)"
-              @auto-start="autoStart.setStartsOnOpen(build.id, $event)"
             />
           </li>
         </ul>

@@ -6,7 +6,6 @@ import HomeView from './HomeView.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { setChecked } from '../views/testHelpers'
 import type { CatalogWorkflow, Installation } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
@@ -697,84 +696,100 @@ describe('Home build auto start', () => {
     })
   })
 
-  function autoStartBox(wrapper: VueWrapper, id: string) {
-    return wrapper.get(
-      `[data-testid="home-build-auto-start"][data-build-id="${id}"] [role="checkbox"]`
-    )
+  function cardOf(wrapper: VueWrapper, id: string) {
+    return wrapper.get(`[data-build-id="${id}"][data-testid^="home-build"]`)
   }
 
-  function ticked(wrapper: VueWrapper): string[] {
+  function statusOf(wrapper: VueWrapper, id: string): string {
+    return cardOf(wrapper, id).get('[data-testid="home-build-status"]').text()
+  }
+
+  function startingWithDesktop(wrapper: VueWrapper): string[] {
     return wrapper
-      .findAll('[data-testid="home-build-auto-start"]')
-      .filter((box) => box.get('[role="checkbox"]').attributes('aria-checked') === 'true')
-      .map((box) => box.attributes('data-build-id')!)
+      .findAll('[data-testid="home-build-starts-with-desktop"]')
+      .map((icon) => icon.element.closest('[data-build-id]')!.getAttribute('data-build-id')!)
   }
 
-  it('ticks the card of the build that starts when Desktop opens', async () => {
+  it('says Starts with Desktop on the ready card of the build that starts when Desktop opens', async () => {
     saved = OLDEST.id
-    getInstallations.mockResolvedValue([OLDEST, CLOUD, NEWEST])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    expect(wrapper.findAll('[data-testid="home-build-auto-start"]')).toHaveLength(3)
-    expect(ticked(wrapper)).toEqual([OLDEST.id])
+    expect(wrapper.find('[role="checkbox"]').exists()).toBe(false)
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Starts with Desktop')
+    expect(statusOf(wrapper, RUNNING.id)).toBe('Ready')
+    expect(startingWithDesktop(wrapper)).toEqual([OLDEST.id])
+    expect(
+      cardOf(wrapper, OLDEST.id).get('[data-testid="home-build-open"]').attributes('aria-label')
+    ).toBe(`${OLDEST.name}, Starts with Desktop`)
   })
 
-  it('moves the tick to Comfy Cloud when its box is ticked, without opening it', async () => {
+  it('moves Starts with Desktop to the card whose menu says Start with Desktop', async () => {
     saved = OLDEST.id
-    getInstallations.mockResolvedValue([OLDEST, CLOUD])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    await setChecked(autoStartBox(wrapper, CLOUD.id), true)
+    await cardOf(wrapper, RUNNING.id).get('[data-testid="home-build-more"]').trigger('click')
+    await flushPromises()
+    const line = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-testid="build-menu-auto-start"]')
+      expect(found).not.toBeNull()
+      return found!
+    })
+    expect(line.textContent?.trim()).toBe('Start with Desktop')
+    line.click()
     await flushPromises()
 
-    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', CLOUD.id)
-    expect(ticked(wrapper)).toEqual([CLOUD.id])
-    expect(wrapper.emitted('pick')).toBeUndefined()
+    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', RUNNING.id)
+    expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
     expect(wrapper.emitted('open-build')).toBeUndefined()
   })
 
-  it('sets None when the ticked card is unticked', async () => {
-    saved = NEWEST.id
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+  it('keeps Always on for Comfy Cloud when it is the one that starts with Desktop', async () => {
+    saved = CLOUD.id
+    getInstallations.mockResolvedValue([OLDEST, CLOUD])
     const wrapper = await openHome()
 
-    await setChecked(autoStartBox(wrapper, NEWEST.id), false)
-    await flushPromises()
-
-    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', 'none')
-    expect(ticked(wrapper)).toEqual([])
+    expect(statusOf(wrapper, CLOUD.id)).toBe('Always on')
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
+    expect(startingWithDesktop(wrapper)).toEqual([])
   })
 
-  it('ticks no card when Settings says Last used build', async () => {
+  it('says Ready on every card when Settings says Last used build', async () => {
     saved = 'last'
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    expect(ticked(wrapper)).toEqual([])
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
+    expect(statusOf(wrapper, RUNNING.id)).toBe('Ready')
+    expect(startingWithDesktop(wrapper)).toEqual([])
   })
 
   it('follows a build picked in Settings without a restart', async () => {
     saved = OLDEST.id
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
-    saved = NEWEST.id
+    saved = RUNNING.id
     for (const listener of settingsListeners) listener({ key: 'autoLaunchOnStartup' })
     await flushPromises()
 
-    expect(ticked(wrapper)).toEqual([NEWEST.id])
+    expect(startingWithDesktop(wrapper)).toEqual([RUNNING.id])
+    expect(statusOf(wrapper, OLDEST.id)).toBe('Ready')
   })
 
-  it('leaves the box off a card while its build installs', async () => {
+  it('shows the install status, not Starts with Desktop, while that build installs', async () => {
     Object.assign(window.api, {
       onInstallProgress: vi.fn(() => () => {}),
       onComfyOutput: vi.fn(() => () => {})
     })
-    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, RUNNING])
     const wrapper = await openHome()
 
     useProgressStore().startOperation({
-      installationId: NEWEST.id,
+      installationId: OLDEST.id,
       title: 'Installing',
       opKind: 'install',
       apiCall: () => new Promise(() => {})
@@ -782,12 +797,10 @@ describe('Home build auto start', () => {
     await flushPromises()
 
     expect(
-      wrapper.find(`[data-testid="home-build-installing"][data-build-id="${NEWEST.id}"]`).exists()
+      wrapper.find(`[data-testid="home-build-installing"][data-build-id="${OLDEST.id}"]`).exists()
     ).toBe(true)
-    expect(
-      wrapper
-        .findAll('[data-testid="home-build-auto-start"]')
-        .map((box) => box.attributes('data-build-id'))
-    ).toEqual([OLDEST.id])
+    expect(statusOf(wrapper, OLDEST.id)).not.toContain('Starts with Desktop')
+    expect(startingWithDesktop(wrapper)).toEqual([])
+    expect(setSetting).not.toHaveBeenCalledWith('autoLaunchOnStartup', expect.anything())
   })
 })

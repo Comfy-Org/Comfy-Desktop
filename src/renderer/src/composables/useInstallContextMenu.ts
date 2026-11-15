@@ -8,6 +8,8 @@ import {
   Download,
   FolderOpen,
   History,
+  Power,
+  PowerOff,
   Settings2,
   Trash2
 } from '@lucide/vue'
@@ -16,6 +18,7 @@ import { useSessionStore } from '../stores/sessionStore'
 import { useProgressStore } from '../stores/progressStore'
 import { useModal } from './useModal'
 import { useStopAction } from './useStopAction'
+import type { AutoStartBuild } from './useAutoStartBuild'
 import { revealInFolderLabel } from './usePlatform'
 import { progressOpKindForActionId, destroysInstanceForActionId } from '../lib/progressOpKind'
 import { shareLatestSnapshot } from '../lib/snapshots'
@@ -33,6 +36,7 @@ export type InstallMenuActionId =
   | 'share'
   | 'promote-to-workspace'
   | 'copy-install'
+  | 'auto-start'
   | 'delete'
 
 export interface ManageOpenOptions {
@@ -46,6 +50,7 @@ export function useInstallContextMenu(
     onShowProgress?: (showOpts: ShowProgressOpts) => void
     onUpdate?: (inst: Installation) => Promise<void>
     canPromoteToWorkspace?: (inst: Installation) => boolean
+    autoStart?: AutoStartBuild
   } = {}
 ) {
   const { t } = useI18n()
@@ -217,6 +222,17 @@ export function useInstallContextMenu(
       items.push(...cluster)
     }
 
+    if (opts.autoStart) {
+      const startsOnOpen = opts.autoStart.startsOnOpen(inst.id)
+      const [head] = items
+      if (head) head.separator = true
+      items.unshift({
+        id: 'auto-start',
+        label: startsOnOpen ? t('home.dontStartWithDesktop') : t('home.startWithDesktop'),
+        icon: startsOnOpen ? PowerOff : Power
+      })
+    }
+
     return items
   }
 
@@ -314,6 +330,8 @@ export function useInstallContextMenu(
         setPromotingToWorkspace(inst.id, false)
       }
       if (failureMessage) await modal.alert({ title, message: failureMessage })
+    } else if (id === 'auto-start') {
+      await opts.autoStart?.setStartsOnOpen(inst.id, !opts.autoStart.startsOnOpen(inst.id))
     } else if (id === 'copy-install') {
       opts.onManage?.(inst, { autoAction: 'copy' })
     } else if (id === 'delete') {

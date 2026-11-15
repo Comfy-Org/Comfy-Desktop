@@ -88,7 +88,6 @@ function unlockTileSize(el: Element): void {
       @trigger-action="(action, inst) => emit('trigger-action', action, inst)"
       @view-error="emit('view-error', $event)"
       @view-danger="emit('view-danger', $event)"
-      @auto-start="(inst, on) => autoStart.setStartsOnOpen(inst.id, on)"
     />
   </TransitionGroup>
 </template>

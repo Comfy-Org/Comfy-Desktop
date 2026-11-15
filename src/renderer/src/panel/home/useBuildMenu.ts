@@ -2,6 +2,7 @@ import { computed, inject, provide, type Component, type InjectionKey } from 'vu
 import { AppWindow, CircleStop, Play, RotateCw, ScrollText, X } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { until } from '@vueuse/core'
+import { useAutoStartBuild } from '../../composables/useAutoStartBuild'
 import { buildProgressOf, useBuildProgress } from '../../composables/useBuildProgress'
 import { useInstallContextMenu } from '../../composables/useInstallContextMenu'
 import { useModal } from '../../composables/useModal'
@@ -61,7 +62,8 @@ export function useBuildMenu(build: () => Installation) {
     onManage: (inst, options) =>
       options ? openInstallManager(inst, options) : void host.openDetails(inst),
     onShowProgress: (opts) => void host.showProgress(opts),
-    onUpdate: runQuickUpdate
+    onUpdate: runQuickUpdate,
+    autoStart: useAutoStartBuild()
   })
 
   function isLocal(inst: Installation): boolean {
@@ -91,14 +93,6 @@ export function useBuildMenu(build: () => Installation) {
     }
     startsGroup(now, items)
 
-    const busy = !!progress || sessionStore.isLaunching(inst.id) || sessionStore.isStopping(inst.id)
-    if (!busy) {
-      startsGroup(
-        [{ id: 'open-new-window', label: t('instancePicker.openInNewWindow'), icon: AppWindow }],
-        items
-      )
-    }
-
     const existing = installMenu
       .getMenuItems(inst)
       .map(({ id, label, icon, disabled, title, style, separator }): BuildMenuEntry => ({
@@ -110,8 +104,18 @@ export function useBuildMenu(build: () => Installation) {
         separator,
         danger: style === 'danger'
       }))
+
+    const busy = !!progress || sessionStore.isLaunching(inst.id) || sessionStore.isStopping(inst.id)
+    const windowGroup: BuildMenuEntry[] = busy
+      ? []
+      : [{ id: 'open-new-window', label: t('instancePicker.openInNewWindow'), icon: AppWindow }]
+    windowGroup.push(...existing.filter((item) => item.id === 'auto-start'))
+    startsGroup(windowGroup, items)
+
     startsGroup(
-      existing.filter((item) => item.id !== 'stop' && item.id !== 'delete'),
+      existing.filter(
+        (item) => item.id !== 'stop' && item.id !== 'delete' && item.id !== 'auto-start'
+      ),
       items
     )
     startsGroup(

@@ -64,23 +64,29 @@ beforeEach(() => {
   setActivePinia(createPinia())
 })
 
-type BuildState = 'starting' | 'installing' | 'uninstalling' | 'ready'
+type BuildState = 'starting' | 'installing' | 'uninstalling' | 'ready' | 'starting with Desktop'
 
-const OPERATIONS: Record<Exclude<BuildState, 'ready'>, Partial<Operation>> = {
+const OPERATIONS: Partial<Record<BuildState, Partial<Operation>>> = {
   starting: { opKind: 'launch', flatPercent: 5 },
   installing: { opKind: 'install', flatPercent: 40 },
   uninstalling: { opKind: 'destructive', flatPercent: 18 }
 }
 
 async function homeWithBuildIn(state: BuildState) {
+  if (state === 'starting with Desktop') {
+    vi.mocked(window.api.getSetting).mockImplementation(async (key: string) =>
+      key === 'autoLaunchOnStartup' ? STARTING.id : undefined
+    )
+  }
   const wrapper = mount(HomeView, { attachTo: host })
   await flushPromises()
-  if (state !== 'ready') {
+  const operation = OPERATIONS[state]
+  if (operation) {
     useProgressStore().operations.set(STARTING.id, {
       finished: false,
       cancelRequested: false,
       _globalFloor: 0,
-      ...OPERATIONS[state]
+      ...operation
     } as Operation)
   }
   await flushPromises()
@@ -147,10 +153,12 @@ describe('Home build tiles', () => {
   )
 
   it.each(
-    (['starting', 'installing', 'uninstalling', 'ready'] as const).flatMap((state) => [
-      [state, MIN_WINDOW_BUILDS_WIDTH] as const,
-      [state, NORMAL_WINDOW_BUILDS_WIDTH] as const
-    ])
+    (['starting', 'installing', 'uninstalling', 'ready', 'starting with Desktop'] as const).flatMap(
+      (state) => [
+        [state, MIN_WINDOW_BUILDS_WIDTH] as const,
+        [state, NORMAL_WINDOW_BUILDS_WIDTH] as const
+      ]
+    )
   )('keep one height when a build is %s, at %ipx', async (state, width) => {
     const wrapper = await homeWithBuildIn(state)
     const section = await layBuildsOut(width)
@@ -159,8 +167,13 @@ describe('Home build tiles', () => {
 
     expect(tiles[0]!.getAttribute('data-build-id')).toBe(STARTING.id)
     expect(tiles[0]!.getAttribute('data-testid')).toBe(
-      state === 'ready' ? 'home-build' : `home-build-${state}`
+      OPERATIONS[state] ? `home-build-${state}` : 'home-build'
     )
+    if (state === 'starting with Desktop') {
+      const status = tiles[0]!.querySelector('[data-testid="home-build-status"] .truncate')!
+      expect(status.textContent?.trim()).toBe('Starts with Desktop')
+      expect(fullyShown(status)).toBe(true)
+    }
     for (const tile of tiles) expect(tile.getBoundingClientRect().height).toBe(100)
     const tileBox = tiles[0]!.getBoundingClientRect()
     const moreBox = more.getBoundingClientRect()

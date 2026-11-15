@@ -27,11 +27,21 @@ type State = 'ready' | 'starting' | 'installing' | 'running' | 'uninstalling'
 
 const REST = ['|', 'manage', 'copy-install', 'reveal-in-folder', '|', 'share', 'restore-snapshot']
 const EXPECTED: Record<State, string[]> = {
-  ready: ['launch', '|', 'open-new-window', ...REST, '|', 'delete'],
-  starting: ['view-logs', 'cancel', ...REST, '|', 'delete'],
-  installing: ['view-logs', 'cancel', ...REST, '|', 'delete'],
-  running: ['view-logs', 'restart', 'stop', '|', 'open-new-window', ...REST, '|', 'delete'],
-  uninstalling: ['cancel', ...REST, '|', 'delete']
+  ready: ['launch', '|', 'open-new-window', 'auto-start', ...REST, '|', 'delete'],
+  starting: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
+  installing: ['view-logs', 'cancel', '|', 'auto-start', ...REST, '|', 'delete'],
+  running: [
+    'view-logs',
+    'restart',
+    'stop',
+    '|',
+    'open-new-window',
+    'auto-start',
+    ...REST,
+    '|',
+    'delete'
+  ],
+  uninstalling: ['cancel', '|', 'auto-start', ...REST, '|', 'delete']
 }
 const OPERATIONS: Partial<Record<State, Partial<Operation>>> = {
   starting: { opKind: 'launch', flatPercent: 5 },
@@ -42,8 +52,11 @@ const OPERATIONS: Partial<Record<State, Partial<Operation>>> = {
 let host: BuildMenuHost & { [K in keyof BuildMenuHost]: ReturnType<typeof vi.fn> }
 const mounted: VueWrapper[] = []
 const viewLogs = vi.fn()
+const OTHER_BUILD_ID = 'other'
+let saved: unknown
 
 beforeEach(() => {
+  saved = 'none'
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.innerHTML = ''
   ;(window as unknown as { api: unknown }).api = {
@@ -53,8 +66,10 @@ beforeEach(() => {
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
-    getSetting: vi.fn().mockResolvedValue(undefined),
-    setSetting: vi.fn().mockResolvedValue(undefined),
+    getSetting: vi.fn(async (key: string) => (key === 'autoLaunchOnStartup' ? saved : undefined)),
+    setSetting: vi.fn(async (key: string, value: unknown) => {
+      if (key === 'autoLaunchOnStartup') saved = value
+    }),
     onSettingsChanged: vi.fn(() => () => {}),
     openInstallInNewWindow: vi.fn(),
     comfybuilder: {
@@ -268,4 +283,81 @@ describe('Build menu', () => {
 
     expect(document.querySelector('[data-reka-menu-content]')).toBeNull()
   })
+
+  it.each([
+    ['tile ⋯', 'more'],
+    ['sidebar row', 'sidebar']
+  ] as const)(
+    'from the %s, offers Start with Desktop and saves this build when picked',
+    async (_name, from) => {
+      saved = OTHER_BUILD_ID
+      await openMenuFrom(from)
+
+      const line = autoStartLine()
+      expect(line.textContent?.trim()).toBe('Start with Desktop')
+      expect(line.querySelector('.lucide-power')).not.toBeNull()
+      line.click()
+      await flushPromises()
+
+      expect(autoStartWrites()).toEqual([BUILD.id])
+      expect(saved).toBe(BUILD.id)
+    }
+  )
+
+  it("offers Don't start with Desktop on the build that starts with Desktop and sets None when picked", async () => {
+    saved = BUILD.id
+    const tile = await openMenuFrom('more')
+
+    const line = autoStartLine()
+    expect(line.textContent?.trim()).toBe("Don't start with Desktop")
+    expect(line.querySelector('.lucide-power-off')).not.toBeNull()
+    line.click()
+    await flushPromises()
+
+    expect(autoStartWrites()).toEqual(['none'])
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="build-menu"]')).toBeNull())
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+    expect(autoStartLine().textContent?.trim()).toBe('Start with Desktop')
+  })
+
+  it('keeps the Start with Desktop line, in its own group, while the build installs', async () => {
+    const tile = await mountTile('installing')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    const shown = await shownMenu()
+
+    expect(shown.slice(shown.indexOf('auto-start') - 1, shown.indexOf('auto-start') + 2)).toEqual([
+      '|',
+      'auto-start',
+      '|'
+    ])
+    autoStartLine().click()
+    await flushPromises()
+
+    expect(autoStartWrites()).toEqual([BUILD.id])
+  })
 })
+
+async function openMenuFrom(from: 'more' | 'sidebar'): Promise<VueWrapper> {
+  if (from === 'more') {
+    const tile = await mountTile('ready')
+    await tile.get('[data-testid="home-build-more"]').trigger('click')
+    await shownMenu()
+    return tile
+  }
+  const sidebar = await mountSidebar('ready')
+  await rightClick(sidebar.get(`[data-testid="app-sidebar-build-${BUILD.id}"]`).element)
+  await shownMenu()
+  return sidebar
+}
+
+function autoStartWrites(): unknown[] {
+  return vi
+    .mocked(window.api.setSetting)
+    .mock.calls.filter(([key]) => key === 'autoLaunchOnStartup')
+    .map(([, value]) => value)
+}
+
+function autoStartLine(): HTMLElement {
+  return document.querySelector<HTMLElement>('[data-testid="build-menu-auto-start"]')!
+}
