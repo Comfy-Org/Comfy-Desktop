@@ -63,7 +63,6 @@ import {
   _resetForTest,
   captureAppPage,
   hideAppPage,
-  reloadAppPage,
   showAppPage
 } from './appPageView'
 
@@ -187,7 +186,7 @@ function sentToPanel(channel: string): unknown[][] {
 }
 
 function lastStatusSentToPanel(): unknown {
-  return sentToPanel(APP_PAGE_STATUS_CHANNEL).at(-1)?.[1]
+  return sentToPanel(APP_PAGE_STATUS_CHANNEL).at(-1)?.[2]
 }
 
 function openCutout(placement: Record<string, unknown> = PLACEMENT): Promise<string> {
@@ -484,13 +483,26 @@ describe('an app page that cannot load', () => {
       reason: 'network'
     })
 
-    reloadAppPage(panelContents(), CUTOUT)
+    expect(await openCutout({ ...PLACEMENT, retry: true })).toBe('loading')
     expect(lastStatusSentToPanel()).toBe('loading')
     expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(2)
     expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(CUTOUT_URL)
 
     finishLoading()
     expect(hostedPage().visible).toBe(true)
+    expect(lastStatusSentToPanel()).toBe('ready')
+    expect(mocks.capture).not.toHaveBeenCalledWith(APP_OPENED_EVENT, expect.anything())
+  })
+
+  it('follows a redirect that stays on the apps site while the page loads', async () => {
+    await openCutout()
+    const event = navigationEvent()
+    hostedPage().webContents.emit('will-redirect', event, `${CUTOUT_URL}?v=2`, false, true)
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(mocks.capture).not.toHaveBeenCalledWith(APP_PAGE_FAILED_EVENT, expect.anything())
+
+    finishLoading(`${CUTOUT_URL}?v=2`)
     expect(lastStatusSentToPanel()).toBe('ready')
   })
 
@@ -515,17 +527,51 @@ describe('an app page that cannot load', () => {
     })
   })
 
-  it('says the page still did not load when the person retries an app this window never loaded', async () => {
+  it('asks again whether a refused app may open when the person retries it, and loads it once it may', async () => {
     await openCutout()
     finishLoading()
     hideAppPage(panelContents())
     mocks.pages.delete(UPSCALE)
     expect(await showAppPage(panelContents(), UPSCALE, PLACEMENT)).toBe('failed')
 
-    reloadAppPage(panelContents(), UPSCALE)
-
-    expect(lastStatusSentToPanel()).toBe('failed')
+    expect(await showAppPage(panelContents(), UPSCALE, { ...PLACEMENT, retry: true })).toBe(
+      'failed'
+    )
     expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hostedPage().visible).toBe(false)
+
+    mocks.pages.set(UPSCALE, UPSCALE_URL)
+    expect(await showAppPage(panelContents(), UPSCALE, { ...PLACEMENT, retry: true })).toBe(
+      'loading'
+    )
+    expect(hostedPage().webContents.loadURL).toHaveBeenLastCalledWith(UPSCALE_URL)
+    finishLoading(UPSCALE_URL)
+    expect(hostedPage().visible).toBe(true)
+  })
+
+  it('does not load a failed app again on Try again once Apps is switched off', async () => {
+    await openCutout()
+    finishLoading(CUTOUT_URL, 503)
+    mocks.appsEnabled = false
+
+    expect(await openCutout({ ...PLACEMENT, retry: true })).toBe('failed')
+    expect(hostedPage().webContents.loadURL).toHaveBeenCalledTimes(1)
+    expect(hostedPage().visible).toBe(false)
+  })
+
+  it("names the app with every status, so the panel can tell a hidden app's page from the one it shows", async () => {
+    await openCutout()
+    hideAppPage(panelContents())
+    mocks.pages.delete(UPSCALE)
+    expect(await showAppPage(panelContents(), UPSCALE, PLACEMENT)).toBe('failed')
+
+    finishLoading()
+
+    expect(sentToPanel(APP_PAGE_STATUS_CHANNEL).at(-1)).toEqual([
+      APP_PAGE_STATUS_CHANNEL,
+      CUTOUT,
+      'ready'
+    ])
     expect(hostedPage().visible).toBe(false)
   })
 

@@ -16,15 +16,18 @@ const FRAME =
 const showAppPage = vi.fn<(appId: string, placement: AppPagePlacement) => Promise<AppPageStatus>>()
 const captureAppPage = vi.fn<() => Promise<string | null>>()
 const hideAppPage = vi.fn()
-const reloadAppPage = vi.fn()
 
 const mountPointFillsThePage = document.createElement('style')
 mountPointFillsThePage.textContent = '[data-apps-page] > div { display: flex; flex: 1 1 auto; }'
 document.head.append(mountPointFillsThePage)
 
 let page: HTMLElement
-let tellStatus: (status: AppPageStatus) => void = () => {}
+let tellStatusOf: (appId: string | null, status: AppPageStatus) => void = () => {}
 let stoppedListening = false
+
+function tellStatus(status: AppPageStatus): void {
+  tellStatusOf('remove-background', status)
+}
 
 async function nextFrame(): Promise<void> {
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
@@ -63,9 +66,8 @@ beforeEach(() => {
     showAppPage,
     captureAppPage,
     hideAppPage,
-    reloadAppPage,
-    onAppPageStatusChanged: (listener: (status: AppPageStatus) => void) => {
-      tellStatus = listener
+    onAppPageStatusChanged: (listener: (appId: string | null, status: AppPageStatus) => void) => {
+      tellStatusOf = listener
       return () => {
         stoppedListening = true
       }
@@ -88,7 +90,8 @@ describe('AppPageHost', () => {
       width: PAGE_WIDTH,
       height: PAGE_HEIGHT,
       cornerRadius: 14,
-      justOpened: true
+      justOpened: true,
+      retry: false
     })
   })
 
@@ -129,9 +132,15 @@ describe('AppPageHost', () => {
       "Remove Background didn't load"
     )
 
+    showAppPage.mockClear()
+    showAppPage.mockResolvedValue('loading')
     await wrapper.get('[data-testid="app-page-retry"]').trigger('click')
+    await flushPromises()
 
-    expect(reloadAppPage).toHaveBeenCalledExactlyOnceWith('remove-background')
+    expect(showAppPage).toHaveBeenCalledExactlyOnceWith(
+      'remove-background',
+      expect.objectContaining({ justOpened: false, retry: true })
+    )
     expect(wrapper.get('[data-testid="app-page-loading"]').isVisible()).toBe(true)
 
     tellStatus('failed')
@@ -139,6 +148,34 @@ describe('AppPageHost', () => {
     await wrapper.get('[data-testid="app-page-back"]').trigger('click')
 
     expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('asks for a fresh load only on the Try again that was pressed, not on the next resize', async () => {
+    const wrapper = await mountHost('failed')
+    showAppPage.mockResolvedValue('loading')
+    await wrapper.get('[data-testid="app-page-retry"]').trigger('click')
+    await flushPromises()
+    showAppPage.mockClear()
+
+    page.style.width = `${PAGE_WIDTH - 180}px`
+    await nextFrame()
+    await nextFrame()
+
+    expect(showAppPage).toHaveBeenLastCalledWith(
+      'remove-background',
+      expect.objectContaining({ justOpened: false, retry: false })
+    )
+  })
+
+  it("keeps saying the app did not load when another app's hidden page finishes", async () => {
+    const wrapper = await mountHost('failed')
+
+    tellStatusOf('upscale', 'ready')
+    tellStatusOf(null, 'loading')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="app-page-failed"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="app-page-host"]').attributes('data-status')).toBe('failed')
   })
 
   it('follows the host when it is resized, without counting another opening', async () => {

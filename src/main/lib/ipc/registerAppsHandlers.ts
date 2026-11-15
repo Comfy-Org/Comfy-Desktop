@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 
-import { captureAppPage, hideAppPage, reloadAppPage, showAppPage } from '../../apps/appPageView'
+import { captureAppPage, hideAppPage, showAppPage } from '../../apps/appPageView'
 import { listApps } from '../../apps/appsCatalog'
 import { areAppsEnabled } from '../../apps/appsConfig'
 import { isPanelSender } from '../../host/registry'
@@ -20,6 +20,4 @@ export function registerAppsHandlers(): void {
   ipcMain.handle('apps:capture-page', (event) => captureAppPage(event.sender))
 
   ipcMain.on('apps:hide-page', (event) => hideAppPage(event.sender))
-
-  ipcMain.on('apps:reload-page', (event, appId: unknown) => reloadAppPage(event.sender, appId))
 }
