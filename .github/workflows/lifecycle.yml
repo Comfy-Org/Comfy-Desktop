@@ -48,7 +48,7 @@ jobs:
       - name: Run lifecycle tests
         env:
           LIFECYCLE_VARIANT: cpu
-        run: pnpm exec playwright test --project=lifecycle e2e/lifecycle-add-existing.test.ts e2e/lifecycle-cloud.test.ts e2e/lifecycle-copy-update-fail.test.ts e2e/lifecycle-copy.test.ts e2e/lifecycle-delete-untrack.test.ts
+        run: pnpm exec playwright test --project=lifecycle e2e/lifecycle-delete-untrack.test.ts --repeat-each=20 --retries=0
 
       - name: Upload Playwright failure artifacts
         if: failure()

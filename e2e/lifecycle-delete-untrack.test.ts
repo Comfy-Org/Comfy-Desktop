@@ -120,11 +120,18 @@ test('Manage drawer Untrack drops the record but preserves the install directory
 
 test('kebab Delete drops the record AND removes the install directory @lifecycle', async () => {
   test.setTimeout(180_000)
+  const activeOps = (): Promise<unknown> => ctx.panel.evaluate('window.api.getActiveOperations()')
+  const startedAt = Date.now()
+  const opsBeforeKebab = await activeOps()
   await openKebabAndClick(DELETE_ID, 'delete')
 
   await ctx.panel.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 5_000 })
+  const opsBeforeConfirm = await activeOps()
   const confirmed = await ctx.panel.click(byTestId(TID.baseAlertAction))
   expect(confirmed, 'delete confirm click dispatched').toBe(true)
+  console.log(
+    `[delete-diag] confirm ${Date.now() - startedAt}ms after test start; ops before kebab ${JSON.stringify(opsBeforeKebab)}; ops before confirm ${JSON.stringify(opsBeforeConfirm)}; run-action calls ${JSON.stringify(await getIpcInvocations(ctx.app, 'run-action'))}`
+  )
 
   const errored = (): Promise<boolean> =>
     ctx.panel.evaluate<boolean>(
