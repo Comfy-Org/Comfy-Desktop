@@ -5,6 +5,7 @@ import ToggleGroupItem from '@comfyorg/design-system/toggle-group/ToggleGroupIte
 defineProps<{
   options: { value: T; label: string; count?: number; testId?: string }[]
   label: string
+  disabled?: boolean
 }>()
 
 const model = defineModel<T>({ required: true })
@@ -15,6 +16,7 @@ const model = defineModel<T>({ required: true })
     v-model="model"
     type="single"
     :allow-empty="false"
+    :disabled="disabled"
     roving-focus
     class="inline-flex shrink-0 gap-0.5 rounded-[10px] bg-secondary p-[3px]"
     :aria-label="label"

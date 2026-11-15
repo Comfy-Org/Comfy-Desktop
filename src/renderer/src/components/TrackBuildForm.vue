@@ -27,8 +27,9 @@ const probeResults = ref<ProbeResult[]>([])
 const selectedProbe = ref<ProbeResult | null>(null)
 const venvOverride = ref<string | null>(null)
 const probing = ref(false)
+const saving = ref(false)
 
-const canSave = computed(() => !!trackPath.value && !!selectedProbe.value)
+const canSave = computed(() => !!trackPath.value && !!selectedProbe.value && !saving.value)
 
 let probeGeneration = 0
 
@@ -58,6 +59,7 @@ async function probe(dirPath: string): Promise<void> {
   probing.value = true
   selectedProbe.value = null
   probeResults.value = []
+  venvOverride.value = null
 
   let results: ProbeResult[]
   try {
@@ -140,11 +142,21 @@ async function handleBrowseVenv(): Promise<void> {
 }
 
 async function save(): Promise<void> {
-  if (!selectedProbe.value) return
+  const probed = selectedProbe.value
+  if (!probed || saving.value) return
+  saving.value = true
+  try {
+    await trackProbedInstall(probed)
+  } finally {
+    saving.value = false
+  }
+}
 
+async function trackProbedInstall(probed: ProbeResult): Promise<void> {
   const typedName = name.value.trim()
+  const probeCount = probeResults.value.length
 
-  const rawProbe = JSON.parse(JSON.stringify(toRaw(selectedProbe.value))) as Record<string, unknown>
+  const rawProbe = JSON.parse(JSON.stringify(toRaw(probed))) as Record<string, unknown>
   if (venvOverride.value !== null) {
     rawProbe.venvPath = venvOverride.value
   }
@@ -164,8 +176,8 @@ async function save(): Promise<void> {
     return
   }
   emitTelemetryAction('comfy.desktop.track_existing.saved', {
-    detected_source_label: selectedProbe.value.sourceLabel || 'unknown',
-    probe_count_bucket: toCountBucket(probeResults.value.length),
+    detected_source_label: probed.sourceLabel || 'unknown',
+    probe_count_bucket: toCountBucket(probeCount),
     custom_name_used: typedName.length > 0
   })
   emit('saved')

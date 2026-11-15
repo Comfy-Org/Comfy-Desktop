@@ -650,7 +650,8 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   consentNudge.value = false
   termsDoc.value = null
   buildImportChoice.value = null
-  installChoiceBeforeExisting = null
+  setupBeforeServer = null
+  submittingExisting.value = false
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
@@ -1370,7 +1371,7 @@ const locationMeta = computed(() => {
   return `${diskFreeLabel.value} · ${t('diskSpace.estimatedRequired', { size: formatBytes(required) })}`
 })
 
-interface ChangeSetupDraft {
+interface NewInstallSetup {
   sourceKey: string | null
   selections: Record<string, FieldOption>
   fieldOptions: Map<string, FieldOption[]>
@@ -1384,10 +1385,14 @@ interface ChangeSetupDraft {
   selectedBuildTargetId: string
 }
 
+interface ChangeSetupDraft extends NewInstallSetup {
+  instName: string
+}
+
 let changeSetupDraft: ChangeSetupDraft | null = null
 
-function openChangeSetup(): void {
-  changeSetupDraft = {
+function captureNewInstallSetup(): NewInstallSetup {
+  return {
     sourceKey: selectedSourceCard.value,
     selections: { ...selections.value },
     fieldOptions: new Map(fieldOptions.value),
@@ -1400,6 +1405,10 @@ function openChangeSetup(): void {
     selectedBuildId: selectedBuildId.value,
     selectedBuildTargetId: selectedBuildTargetId.value
   }
+}
+
+function openChangeSetup(): void {
+  changeSetupDraft = { ...captureNewInstallSetup(), instName: instName.value }
   view.value = 'change'
 }
 
@@ -1413,7 +1422,7 @@ async function restoreSourceCard(key: string): Promise<void> {
   if (!tab) return
   if (tab.kind === 'managed') await selectManagedInstallMode()
   else if (managedBuildMode.value) await selectSourceCard(tab.source)
-  else await selectSource(tab.source)
+  else resetSourceState(tab.source)
 }
 
 async function restoreManagedBuild(buildId: string, targetId: string): Promise<void> {
@@ -1436,34 +1445,41 @@ async function restoreInstallChoice(key: string | null): Promise<void> {
   resetSourceState(null)
 }
 
+async function restoreNewInstallSetup(setup: NewInstallSetup): Promise<void> {
+  const session = changeSetupSession
+  if (setup.sourceKey !== selectedSourceCard.value) await restoreInstallChoice(setup.sourceKey)
+  if (session !== changeSetupSession || setup.sourceKey !== selectedSourceCard.value) return
+  instPath.value = setup.instPath
+  if (managedBuildMode.value) {
+    await restoreManagedBuild(setup.selectedBuildId, setup.selectedBuildTargetId)
+    return
+  }
+  loadGeneration++
+  heldFields.value.clear()
+  selections.value = setup.selections
+  fieldOptions.value = setup.fieldOptions
+  fieldLoading.value = setup.fieldLoading
+  fieldErrors.value = setup.fieldErrors
+  textFieldValues.value = setup.textFieldValues
+  saveDisabled.value = setup.saveDisabled
+  sourceError.value = setup.sourceError
+  const interruptedLoad =
+    currentSource.value?.fields.findIndex((field) => setup.fieldLoading.get(field.id)) ?? -1
+  if (interruptedLoad >= 0) await loadFieldOptions(interruptedLoad)
+}
+
 async function discardChangeSetup(): Promise<void> {
+  if (submittingExisting.value) return
   changeSetupSession++
   const draft = changeSetupDraft
   changeSetupDraft = null
   view.value = 'summary'
   buildImportChoice.value = null
-  installChoiceBeforeExisting = null
+  setupBeforeServer = null
   authorizingWorkspace.value = false
   if (!draft) return
-  if (draft.sourceKey !== selectedSourceCard.value) await restoreInstallChoice(draft.sourceKey)
-  if (draft.sourceKey !== selectedSourceCard.value) return
-  instPath.value = draft.instPath
-  if (managedBuildMode.value) {
-    await restoreManagedBuild(draft.selectedBuildId, draft.selectedBuildTargetId)
-    return
-  }
-  loadGeneration++
-  heldFields.value.clear()
-  selections.value = draft.selections
-  fieldOptions.value = draft.fieldOptions
-  fieldLoading.value = draft.fieldLoading
-  fieldErrors.value = draft.fieldErrors
-  textFieldValues.value = draft.textFieldValues
-  saveDisabled.value = draft.saveDisabled
-  sourceError.value = draft.sourceError
-  const interruptedLoad =
-    currentSource.value?.fields.findIndex((field) => draft.fieldLoading.get(field.id)) ?? -1
-  if (interruptedLoad >= 0) await loadFieldOptions(interruptedLoad)
+  instName.value = draft.instName
+  await restoreNewInstallSetup(draft)
 }
 
 function isHiddenWhenEmpty(field: SourceField): boolean {
@@ -1518,7 +1534,7 @@ function toSourceCard(tab: InstallSourceTab): SetupOptionCard {
       description: t('newInstall.managedBuildsMeta'),
       icon: Users,
       testId: 'workspace-install-source-managed',
-      disabled: authorizingWorkspace.value
+      disabled: choiceLocked.value
     }
   }
   return {
@@ -1527,7 +1543,7 @@ function toSourceCard(tab: InstallSourceTab): SetupOptionCard {
     description: sourceCardDescription(tab.source),
     icon: SOURCE_ICONS[tab.source.id] ?? Package,
     testId: `install-source-${tab.source.id}`,
-    disabled: authorizingWorkspace.value
+    disabled: choiceLocked.value
   }
 }
 
@@ -1548,18 +1564,14 @@ async function selectSourceCardByKey(key: string): Promise<void> {
 type BuildImportFlow = 'track' | 'load-snapshot'
 type StartFrom = 'new' | 'existing'
 
-const BUILD_IMPORT_KEYS: Record<BuildImportFlow, string> = {
-  track: 'import-track',
-  'load-snapshot': 'import-load-snapshot'
-}
-
 const BUILD_IMPORT_TELEMETRY: Record<BuildImportFlow, string> = {
   track: 'track_existing',
   'load-snapshot': 'load_snapshot'
 }
 
 const buildImportChoice = ref<BuildImportFlow | null>(null)
-let installChoiceBeforeExisting: string | null = null
+const submittingExisting = ref(false)
+let setupBeforeServer: NewInstallSetup | null = null
 
 const usesExistingServer = computed(
   () => localInstallMode.value && currentSource.value?.skipInstall === true
@@ -1568,6 +1580,10 @@ const usesExistingServer = computed(
 const startFrom = computed<StartFrom>(() =>
   buildImportChoice.value || usesExistingServer.value ? 'existing' : 'new'
 )
+
+const choiceLocked = computed(() => authorizingWorkspace.value || submittingExisting.value)
+const startFromLocked = computed(() => choiceLocked.value || !setupPicked.value)
+const showsHardwareWarning = computed(() => !!hardwareWarning.value && startFrom.value === 'new')
 
 const startFromOptions = computed<{ value: StartFrom; label: string; testId: string }[]>(() => [
   { value: 'new', label: t('newInstall.startFromNew'), testId: 'config-start-from-new' },
@@ -1583,29 +1599,26 @@ const existingCards = computed<SetupOptionCard[]>(() => {
   if (!offersBuildImport.value) return serverCards
   return [
     {
-      value: BUILD_IMPORT_KEYS.track,
+      value: 'track' satisfies BuildImportFlow,
       label: t('newInstall.onThisComputer'),
       description: t('newInstall.onThisComputerMeta'),
       icon: Monitor,
       testId: 'existing-comfy-folder',
-      disabled: authorizingWorkspace.value
+      disabled: choiceLocked.value
     },
     ...serverCards,
     {
-      value: BUILD_IMPORT_KEYS['load-snapshot'],
+      value: 'load-snapshot' satisfies BuildImportFlow,
       label: t('newInstall.inSnapshotFile'),
       description: t('newInstall.inSnapshotFileMeta'),
       icon: FileArchive,
       testId: 'existing-comfy-snapshot',
-      disabled: authorizingWorkspace.value
+      disabled: choiceLocked.value
     }
   ]
 })
 
-const selectedExistingCard = computed(() => {
-  if (buildImportChoice.value) return BUILD_IMPORT_KEYS[buildImportChoice.value]
-  return usesExistingServer.value ? selectedSourceCard.value : null
-})
+const selectedExistingCard = computed(() => buildImportChoice.value ?? selectedSourceCard.value)
 
 function chooseBuildImport(flow: BuildImportFlow): void {
   if (buildImportChoice.value === flow) return
@@ -1616,25 +1629,18 @@ function chooseBuildImport(flow: BuildImportFlow): void {
   })
 }
 
-function buildImportFlowOf(key: string): BuildImportFlow | null {
-  if (key === BUILD_IMPORT_KEYS.track) return 'track'
-  if (key === BUILD_IMPORT_KEYS['load-snapshot']) return 'load-snapshot'
-  return null
-}
-
 async function selectExistingCard(key: string): Promise<void> {
-  const importFlow = buildImportFlowOf(key)
-  if (importFlow) {
-    chooseBuildImport(importFlow)
+  if (key === 'track' || key === 'load-snapshot') {
+    chooseBuildImport(key)
     return
   }
-  if (!usesExistingServer.value) installChoiceBeforeExisting = selectedSourceCard.value
+  if (!usesExistingServer.value) setupBeforeServer = captureNewInstallSetup()
   await selectSourceCardByKey(key)
   if (usesExistingServer.value) buildImportChoice.value = null
 }
 
 async function selectStartFrom(next: StartFrom): Promise<void> {
-  if (next === startFrom.value) return
+  if (startFromLocked.value || next === startFrom.value) return
   if (next === 'existing') {
     const first = existingCards.value[0]
     if (first) await selectExistingCard(first.value)
@@ -1642,9 +1648,12 @@ async function selectStartFrom(next: StartFrom): Promise<void> {
   }
   buildImportChoice.value = null
   if (!usesExistingServer.value) return
-  const key = installChoiceBeforeExisting
-  installChoiceBeforeExisting = null
-  await restoreInstallChoice(key)
+  if (!setupBeforeServer) {
+    await restoreInstallChoice(null)
+    return
+  }
+  await restoreNewInstallSetup(setupBeforeServer)
+  if (!usesExistingServer.value) setupBeforeServer = null
 }
 
 function backToConfigure(): void {
@@ -1737,15 +1746,22 @@ const primaryLabel = computed(() => {
 })
 
 const canProceed = computed(() => {
+  if (submittingExisting.value) return false
   if (buildImportChoice.value === 'track') return trackFormRef.value?.canSave ?? false
   if (buildImportChoice.value === 'load-snapshot') return snapshotFormRef.value?.canCreate ?? false
   return canContinue.value
 })
 
 async function useExistingComfy(): Promise<void> {
-  if (buildImportChoice.value === 'track') await trackFormRef.value?.save()
-  else if (buildImportChoice.value === 'load-snapshot') await snapshotFormRef.value?.create()
-  else await handleSave()
+  if (submittingExisting.value) return
+  submittingExisting.value = true
+  try {
+    if (buildImportChoice.value === 'track') await trackFormRef.value?.save()
+    else if (buildImportChoice.value === 'load-snapshot') await snapshotFormRef.value?.create()
+    else await handleSave()
+  } finally {
+    submittingExisting.value = false
+  }
 }
 
 const useTakeoverHost = computed(() => props.hideBackToDashboard)
@@ -1800,7 +1816,7 @@ defineExpose({ open })
         {{ $t('newInstall.waitingForWorkspaceAuthorization') }}
       </div>
       <div
-        v-if="sourceError"
+        v-if="sourceError && !buildImportChoice"
         class="config-error mt-4 text-[13px] leading-[1.4] text-[var(--danger)]"
         role="alert"
       >
@@ -1865,7 +1881,7 @@ defineExpose({ open })
           </Button>
         </div>
         <div
-          v-if="hardwareWarning && !currentSource?.skipInstall"
+          v-if="showsHardwareWarning"
           class="config-hardware-warning mt-2 px-1 text-[12px] leading-[1.4] text-[var(--warning)]"
           role="alert"
           data-testid="wizard-hardware-warning"
@@ -1962,7 +1978,7 @@ defineExpose({ open })
 
       <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
         <div
-          v-if="hardwareWarning && startFrom === 'new'"
+          v-if="showsHardwareWarning"
           class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
           role="alert"
           data-testid="wizard-hardware-warning"
@@ -1982,6 +1998,7 @@ defineExpose({ open })
             :model-value="startFrom"
             :options="startFromOptions"
             :label="$t('newInstall.startFrom')"
+            :disabled="startFromLocked"
             @update:model-value="selectStartFrom"
           />
         </SetupFormRow>
@@ -2022,20 +2039,22 @@ defineExpose({ open })
           />
         </SetupFormRow>
 
-        <TrackBuildForm
-          v-if="buildImportChoice === 'track'"
-          ref="trackFormRef"
-          v-model:name="instName"
-          data-testid="existing-comfy-folder-form"
-          @saved="handOffImportedBuild"
-        />
-        <LoadSnapshotForm
-          v-else-if="buildImportChoice === 'load-snapshot'"
-          ref="snapshotFormRef"
-          data-testid="existing-comfy-snapshot-form"
-          @created="handOffSnapshotInstall"
-        />
-        <template v-else>
+        <KeepAlive>
+          <TrackBuildForm
+            v-if="buildImportChoice === 'track'"
+            ref="trackFormRef"
+            v-model:name="instName"
+            data-testid="existing-comfy-folder-form"
+            @saved="handOffImportedBuild"
+          />
+          <LoadSnapshotForm
+            v-else-if="buildImportChoice === 'load-snapshot'"
+            ref="snapshotFormRef"
+            data-testid="existing-comfy-snapshot-form"
+            @created="handOffSnapshotInstall"
+          />
+        </KeepAlive>
+        <template v-if="!buildImportChoice">
           <template v-if="managedBuildMode">
             <SetupFormRow
               :label="$t('newInstall.workspaceBuildLabel')"
@@ -2373,6 +2392,7 @@ defineExpose({ open })
           type="button"
           class="h-9 rounded-[10px] config-discard-changes"
           data-testid="config-discard-changes"
+          :disabled="submittingExisting"
           @click="discardChangeSetup"
         >
           {{ $t('newInstall.discardChanges') }}
@@ -2385,7 +2405,7 @@ defineExpose({ open })
           class="h-9 rounded-[10px] config-use-existing min-w-[104px]"
           data-testid="config-use-existing"
           :disabled="!canProceed"
-          @click="useExistingComfy"
+          @click="handleConfigureContinue"
         >
           {{ primaryLabel }}
         </Button>

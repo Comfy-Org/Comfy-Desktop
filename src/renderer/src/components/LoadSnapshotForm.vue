@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import InputGroup from '@comfyorg/design-system/input-group/InputGroup'
 import InputGroupInput from '@comfyorg/design-system/input-group/InputGroupInput'
-import { ref, computed, watch, toRaw, onMounted, onUnmounted } from 'vue'
+import {
+  ref,
+  computed,
+  watch,
+  toRaw,
+  onMounted,
+  onUnmounted,
+  onActivated,
+  onDeactivated
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@comfyorg/design-system/button/Button'
 import { FileArchive, List, Package, Tag, Upload, Zap } from '@lucide/vue'
@@ -314,14 +323,20 @@ function preventNav(event: Event): void {
   event.preventDefault()
 }
 
-onMounted(() => {
+function blockFileNavigation(): void {
   document.addEventListener('dragover', preventNav)
   document.addEventListener('drop', preventNav)
-})
-onUnmounted(() => {
+}
+
+function allowFileNavigation(): void {
   document.removeEventListener('dragover', preventNav)
   document.removeEventListener('drop', preventNav)
-})
+}
+
+onMounted(blockFileNavigation)
+onActivated(blockFileNavigation)
+onDeactivated(allowFileNavigation)
+onUnmounted(allowFileNavigation)
 const hasPreview = computed(() => preview.value !== null)
 const canCreate = computed(
   () => hasPreview.value && !creating.value && !replacingSnapshot.value && !!selectedVariant.value
