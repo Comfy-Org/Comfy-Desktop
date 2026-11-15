@@ -63,6 +63,59 @@ test('clicking New Install tile opens the new-install takeover @windows @macos @
   await expectChooserVisible(ctx.panel)
 })
 
+test('New Build offers Add existing build and Load snapshot as first-row cards that skip the install rows @windows @macos @linux', async () => {
+  await clickNewInstallTile(ctx.panel)
+  await expectNewBuildModalOpen(ctx.panel)
+  await openNewBuildChangeSetup(ctx.panel)
+  await ctx.panel.waitForVisible('[data-testid="install-location-field"]')
+  const firstRowCards = (): Promise<string[]> =>
+    ctx.panel.evaluate<string[]>(
+      `[...(document.querySelector('.config-change-form > .setup-form-row')?.querySelectorAll('[role="radio"]') ?? [])].map((card) => card.getAttribute('data-testid'))`
+    )
+  const formRows = (): Promise<number> =>
+    ctx.panel.evaluate<number>(
+      `document.querySelectorAll('.config-change-form .setup-form-row').length`
+    )
+  expect(await firstRowCards()).toEqual(
+    expect.arrayContaining([
+      'install-source-standalone',
+      'workspace-install-source-managed',
+      'install-source-remote',
+      'install-source-add-existing',
+      'install-source-load-snapshot'
+    ])
+  )
+
+  for (const [card, modal, primary] of [
+    ['add-existing', 'track-modal', 'Add build'],
+    ['load-snapshot', 'load-snapshot-modal', 'Load snapshot']
+  ]) {
+    expect(await ctx.panel.click(`[data-testid="install-source-${card}"]`)).toBe(true)
+    await expect.poll(formRows).toBe(1)
+    expect(await ctx.panel.exists('[data-testid="install-location-field"]')).toBe(false)
+    expect(await ctx.panel.exists('#source-fields')).toBe(false)
+    const continueButton = '[data-testid="config-build-import-continue"]'
+    await ctx.panel.waitForVisible(continueButton)
+    expect((await ctx.panel.textOf(continueButton))?.trim()).toBe(primary)
+    expect(await ctx.panel.click(continueButton)).toBe(true)
+    await ctx.panel.waitForVisible(`[data-testid="${modal}"]`)
+    expect(await ctx.panel.click(`[data-testid="${modal}"] .setup-modal-close`)).toBe(true)
+    await expect.poll(() => ctx.panel.exists(`[data-testid="${modal}"]`)).toBe(false)
+    await ctx.panel.waitForVisible('[data-testid="config-change-form"]')
+  }
+
+  expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
+  await ctx.panel.waitForVisible('.setup-modal-close')
+  await openNewBuildChangeSetup(ctx.panel)
+  await ctx.panel.waitForVisible('[data-testid="install-location-field"]')
+  expect(await ctx.panel.exists('[data-testid="config-build-import-continue"]')).toBe(false)
+  expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
+  await ctx.panel.waitForVisible('.setup-modal-close')
+  expect(await ctx.panel.click('.setup-modal-close')).toBe(true)
+  await expect.poll(() => ctx.panel.exists('[data-testid="new-build-modal"]')).toBe(false)
+  await expectChooserVisible(ctx.panel)
+})
+
 test('Builds dropdown opens both import flows and restores focus on Escape @windows @macos @linux', async () => {
   const trigger = '[data-testid="build-actions-menu-trigger"]'
   expect(await ctx.panel.click(trigger)).toBe(true)

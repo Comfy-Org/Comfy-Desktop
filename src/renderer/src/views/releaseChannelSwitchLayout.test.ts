@@ -218,7 +218,6 @@ describe('switching the release channel in Change setup', () => {
       'Release',
       'Location',
       'Hardware',
-      'Already have ComfyUI?',
       'footer'
     ])
     gate.hold()

@@ -550,7 +550,6 @@
     "detected": "Detected",
     "getComfyFrom": "Get ComfyUI from",
     "installSummary": "Install summary",
-    "alreadyHaveComfy": "Already have ComfyUI?",
     "connectToServer": "Connect to a server",
     "connectToServerMeta": "ComfyUI running elsewhere",
     "agreeToContinue": "Agree to continue.",
@@ -561,7 +560,9 @@
     "saveChanges": "Save changes",
     "discardChanges": "Discard",
     "addExistingBuild": "Add existing build",
+    "addExistingBuildMeta": "A folder on this computer",
     "loadSnapshot": "Load snapshot",
+    "loadSnapshotMeta": "Rebuild from a snapshot file",
     "requiredSpace": "Needs about {size}"
   },
   "templateQuit": {

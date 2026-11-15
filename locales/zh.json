@@ -550,7 +550,6 @@
     "detected": "已检测",
     "getComfyFrom": "ComfyUI 来源",
     "installSummary": "安装摘要",
-    "alreadyHaveComfy": "已经有 ComfyUI？",
     "connectToServer": "连接到服务器",
     "connectToServerMeta": "在其他地方运行的 ComfyUI",
     "agreeToContinue": "同意后才能继续。",
@@ -561,7 +560,9 @@
     "saveChanges": "保存更改",
     "discardChanges": "放弃",
     "addExistingBuild": "添加现有构建",
+    "addExistingBuildMeta": "此电脑上的文件夹",
     "loadSnapshot": "加载快照",
+    "loadSnapshotMeta": "从快照文件重建",
     "requiredSpace": "约需 {size}"
   },
   "templateQuit": {

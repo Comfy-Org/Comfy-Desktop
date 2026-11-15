@@ -18,7 +18,9 @@ import {
   Check,
   CircleAlert,
   Download,
+  FileArchive,
   FolderArchive,
+  FolderOpen,
   Globe,
   HardDrive,
   Package,
@@ -86,9 +88,6 @@ const emit = defineEmits<{
   'back-to-setup': []
   'consent-change': [accepted: boolean]
 }>()
-
-const inlineLinkClass =
-  'text-[12.5px] text-neutral-100 underline decoration-neutral-100/40 underline-offset-[3px] transition-[text-decoration-color] duration-160 hover:decoration-neutral-100'
 
 const spinnerClass =
   'flex items-center gap-2.5 before:inline-block before:size-4 before:shrink-0 before:animate-spin before:rounded-[50%] before:border-2 before:border-solid before:border-[var(--border)] before:border-t-[var(--action)] before:content-[""] before:[animation-duration:600ms]'
@@ -636,6 +635,7 @@ async function open(opts: OpenOpts = {}): Promise<void> {
   consentAccepted.value = false
   consentNudge.value = false
   termsDoc.value = null
+  buildImportChoice.value = null
   entrypoint.value = opts.entrypoint ?? 'unknown'
   resolved.value = false
   suggestedName.value = ''
@@ -1374,7 +1374,7 @@ let changeSetupDraft: ChangeSetupDraft | null = null
 
 function openChangeSetup(): void {
   changeSetupDraft = {
-    sourceKey: selectedSourceCard.value,
+    sourceKey: selectedInstallSourceCard.value,
     selections: { ...selections.value },
     fieldOptions: new Map(fieldOptions.value),
     fieldLoading: new Map(fieldLoading.value),
@@ -1416,9 +1416,10 @@ async function discardChangeSetup(): Promise<void> {
   const draft = changeSetupDraft
   changeSetupDraft = null
   view.value = 'summary'
+  buildImportChoice.value = null
   authorizingWorkspace.value = false
   if (!draft) return
-  if (draft.sourceKey !== selectedSourceCard.value) {
+  if (draft.sourceKey !== selectedInstallSourceCard.value) {
     if (draft.sourceKey) await restoreSourceCard(draft.sourceKey)
     else {
       modeGeneration++
@@ -1427,7 +1428,7 @@ async function discardChangeSetup(): Promise<void> {
       resetSourceState(null)
     }
   }
-  if (draft.sourceKey !== selectedSourceCard.value) return
+  if (draft.sourceKey !== selectedInstallSourceCard.value) return
   instPath.value = draft.instPath
   if (managedBuildMode.value) {
     await restoreManagedBuild(draft.selectedBuildId, draft.selectedBuildTargetId)
@@ -1491,7 +1492,35 @@ function sourceCardDescription(source: Source): string | undefined {
   return source.description
 }
 
-const sourceCards = computed<SetupOptionCard[]>(() =>
+type BuildImportFlow = 'track' | 'load-snapshot'
+
+const BUILD_IMPORT_KEY_PREFIX = 'import-'
+const buildImportChoice = ref<BuildImportFlow | null>(null)
+
+const buildImportCards = computed<SetupOptionCard[]>(() =>
+  offersBuildImport.value
+    ? [
+        {
+          value: `${BUILD_IMPORT_KEY_PREFIX}track`,
+          label: t('newInstall.addExistingBuild'),
+          description: t('newInstall.addExistingBuildMeta'),
+          icon: FolderOpen,
+          testId: 'install-source-add-existing',
+          disabled: authorizingWorkspace.value
+        },
+        {
+          value: `${BUILD_IMPORT_KEY_PREFIX}load-snapshot`,
+          label: t('newInstall.loadSnapshot'),
+          description: t('newInstall.loadSnapshotMeta'),
+          icon: FileArchive,
+          testId: 'install-source-load-snapshot',
+          disabled: authorizingWorkspace.value
+        }
+      ]
+    : []
+)
+
+const installSourceCards = computed<SetupOptionCard[]>(() =>
   installSourceTabs.value.map((tab) =>
     tab.kind === 'managed'
       ? {
@@ -1513,12 +1542,35 @@ const sourceCards = computed<SetupOptionCard[]>(() =>
   )
 )
 
-const selectedSourceCard = computed(() => {
+const sourceCards = computed<SetupOptionCard[]>(() => [
+  ...installSourceCards.value,
+  ...buildImportCards.value
+])
+
+const selectedInstallSourceCard = computed(() => {
   if (managedBuildMode.value) return 'managed'
   return currentSource.value ? `source-${currentSource.value.id}` : null
 })
 
+const selectedSourceCard = computed(() =>
+  buildImportChoice.value
+    ? `${BUILD_IMPORT_KEY_PREFIX}${buildImportChoice.value}`
+    : selectedInstallSourceCard.value
+)
+
+function buildImportFlowOf(key: string): BuildImportFlow | null {
+  if (!key.startsWith(BUILD_IMPORT_KEY_PREFIX)) return null
+  const flow = key.slice(BUILD_IMPORT_KEY_PREFIX.length)
+  return flow === 'track' || flow === 'load-snapshot' ? flow : null
+}
+
 async function selectSourceCardByKey(key: string): Promise<void> {
+  const importFlow = buildImportFlowOf(key)
+  if (importFlow) {
+    buildImportChoice.value = importFlow
+    return
+  }
+  buildImportChoice.value = null
   const tab = installSourceTabs.value.find((candidate) => candidate.key === key)
   if (!tab) return
   if (tab.kind === 'managed') await selectManagedInstallMode()
@@ -1600,6 +1652,8 @@ const summaryRows = computed<SummaryRow[]>(() => {
 const showLocation = computed(() => !currentSource.value?.skipInstall)
 
 const primaryLabel = computed(() => {
+  if (buildImportChoice.value === 'track') return t('track.trackInstallation')
+  if (buildImportChoice.value === 'load-snapshot') return t('newInstall.loadSnapshot')
   if (shouldShowPickerStep.value) return t('common.continue')
   if (!managedBuildMode.value && currentSource.value?.skipInstall) return t('newInstall.connect')
   return t('newInstall.install')
@@ -1617,8 +1671,6 @@ const modalLead = computed(() => {
 const ariaLabel = computed(() =>
   t(step.value === 'template' ? 'standalone.templatePickerTitle' : 'newInstall.newBuildTitle')
 )
-
-type BuildImportFlow = 'track' | 'load-snapshot'
 
 const BUILD_IMPORT_TELEMETRY: Record<BuildImportFlow, string> = {
   track: 'track_existing',
@@ -1638,6 +1690,10 @@ async function openBuildImport(flow: BuildImportFlow): Promise<void> {
     flow: BUILD_IMPORT_TELEMETRY[flow],
     entrypoint: 'new-install'
   })
+}
+
+function openChosenBuildImport(): void {
+  if (buildImportChoice.value) void openBuildImport(buildImportChoice.value)
 }
 
 function closeBuildImport(): void {
@@ -1843,7 +1899,7 @@ defineExpose({ open })
 
       <div v-else class="config-change-form mt-4 flex flex-col" data-testid="config-change-form">
         <div
-          v-if="hardwareWarning && !currentSource?.skipInstall"
+          v-if="hardwareWarning && !currentSource?.skipInstall && !buildImportChoice"
           class="config-hardware-warning px-1 pb-2 text-[12px] leading-[1.4] text-[var(--warning)]"
           role="alert"
           data-testid="wizard-hardware-warning"
@@ -1868,7 +1924,7 @@ defineExpose({ open })
           />
         </SetupFormRow>
 
-        <template v-if="managedBuildMode">
+        <template v-if="managedBuildMode && !buildImportChoice">
           <SetupFormRow
             :label="$t('newInstall.workspaceBuildLabel')"
             :icon="Users"
@@ -1957,7 +2013,7 @@ defineExpose({ open })
         </template>
 
         <div
-          v-else-if="currentSource"
+          v-else-if="currentSource && !buildImportChoice"
           id="source-fields"
           class="config-advanced config-advanced--direct is-open flex flex-col"
         >
@@ -2125,7 +2181,7 @@ defineExpose({ open })
         </div>
 
         <SetupFormRow
-          v-if="cameFromSetup && !locationBeforeHardware"
+          v-if="cameFromSetup && !locationBeforeHardware && !buildImportChoice"
           class="config-name-row"
           :label="$t('common.name')"
           label-for="inst-name-standalone"
@@ -2139,7 +2195,7 @@ defineExpose({ open })
         </SetupFormRow>
 
         <InstallLocationRow
-          v-if="showLocation && !locationBeforeHardware"
+          v-if="showLocation && !locationBeforeHardware && !buildImportChoice"
           :path="instPath"
           :free-label="diskFreeLabel"
           :short-label="diskShortLabel"
@@ -2150,42 +2206,6 @@ defineExpose({ open })
           @browse="handleBrowse"
           @open="handleOpenInstPath"
         />
-
-        <SetupFormRow
-          v-if="offersBuildImport"
-          class="config-other-ways"
-          data-testid="config-other-ways"
-          :label="$t('newInstall.alreadyHaveComfy')"
-          control-height="centered"
-        >
-          <p
-            class="m-0 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[12.5px] leading-[18px] text-text-muted"
-          >
-            <Button
-              size="link"
-              variant="link"
-              type="button"
-              class="config-add-existing"
-              :class="inlineLinkClass"
-              data-testid="config-add-existing"
-              @click="openBuildImport('track')"
-            >
-              {{ $t('newInstall.addExistingBuild') }}
-            </Button>
-            <span aria-hidden="true">·</span>
-            <Button
-              size="link"
-              variant="link"
-              type="button"
-              class="config-load-snapshot"
-              :class="inlineLinkClass"
-              data-testid="config-load-snapshot"
-              @click="openBuildImport('load-snapshot')"
-            >
-              {{ $t('newInstall.loadSnapshot') }}
-            </Button>
-          </p>
-        </SetupFormRow>
       </div>
     </template>
 
@@ -2245,6 +2265,18 @@ defineExpose({ open })
           {{ $t('newInstall.discardChanges') }}
         </Button>
         <Button
+          v-if="buildImportChoice"
+          type="button"
+          size="lg"
+          variant="inverted"
+          class="h-9 rounded-[10px] config-continue min-w-[104px]"
+          data-testid="config-build-import-continue"
+          @click="openChosenBuildImport"
+        >
+          {{ primaryLabel }}
+        </Button>
+        <Button
+          v-else
           type="button"
           size="lg"
           variant="inverted"

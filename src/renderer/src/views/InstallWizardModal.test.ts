@@ -40,6 +40,32 @@ async function showChangeSetup(wrapper: ReturnType<typeof mountModal>): Promise<
   await flushPromises()
 }
 
+const STANDALONE_SOURCE = { id: 'standalone', label: 'Standalone', fields: [] }
+
+async function openBuildImportFromCard(
+  wrapper: ReturnType<typeof mountModal>,
+  card: 'add-existing' | 'load-snapshot'
+): Promise<void> {
+  await wrapper.get(`[data-testid="install-source-${card}"]`).trigger('click')
+  await flushPromises()
+  await wrapper.get('[data-testid="config-build-import-continue"]').trigger('click')
+  await flushPromises()
+}
+
+interface TelemetryEvent {
+  actionName: string
+  context?: Record<string, unknown>
+}
+
+function captureTelemetry(): { events: TelemetryEvent[]; stop: () => void } {
+  const events: TelemetryEvent[] = []
+  const listener = (e: Event): void => {
+    events.push((e as CustomEvent<TelemetryEvent>).detail)
+  }
+  window.addEventListener('launcher-telemetry-action', listener)
+  return { events, stop: () => window.removeEventListener('launcher-telemetry-action', listener) }
+}
+
 beforeEach(() => {
   useModal().dismiss()
   window.api = {
@@ -257,7 +283,7 @@ describe('InstallWizardModal heading', () => {
         .get('[data-testid="install-source-tabs"]')
         .findAll('.setup-option__label')
         .map((label) => label.text())
-    ).toEqual(['Official release', "Your team's builds"])
+    ).toEqual(['Official release', "Your team's builds", 'Add existing build', 'Load snapshot'])
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
@@ -510,10 +536,15 @@ describe('InstallWizardModal workspace Builds', () => {
         .get('[data-testid="install-source-tabs"]')
         .findAll('.setup-option__label')
         .map((label) => label.text())
-    ).toEqual(['Official release', "Your team's builds", 'Portable', 'Connect to a server'])
-    expect(wrapper.find('[data-testid="config-other-ways"]').text()).not.toContain(
-      'Connect to a server'
-    )
+    ).toEqual([
+      'Official release',
+      "Your team's builds",
+      'Portable',
+      'Connect to a server',
+      'Add existing build',
+      'Load snapshot'
+    ])
+    expect(wrapper.find('[data-testid="config-other-ways"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="install-source-tabs"]').text()).not.toContain('RECOMMENDED')
     expect(wrapper.find('[data-testid="workspace-install-source-public"]').exists()).toBe(false)
     expect(wrapper.find('.config-advanced').exists()).toBe(false)
@@ -1254,20 +1285,6 @@ describe('InstallWizardModal workspace Builds', () => {
 })
 
 describe('InstallWizardModal onboarding->install handoff telemetry (#1224)', () => {
-  interface HandoffEvent {
-    actionName: string
-    context?: Record<string, unknown>
-  }
-
-  function captureTelemetry(): { events: HandoffEvent[]; stop: () => void } {
-    const events: HandoffEvent[] = []
-    const listener = (e: Event): void => {
-      events.push((e as CustomEvent<HandoffEvent>).detail)
-    }
-    window.addEventListener('launcher-telemetry-action', listener)
-    return { events, stop: () => window.removeEventListener('launcher-telemetry-action', listener) }
-  }
-
   it('emits install.not_started(wizard_cancelled) when the wizard unmounts without dispatching', async () => {
     const { events, stop } = captureTelemetry()
     const wrapper = mountModal()
@@ -1289,6 +1306,7 @@ describe('InstallWizardModal onboarding->install handoff telemetry (#1224)', () 
   })
 
   it('does not report a cancelled wizard once a build added from Change setup is saved', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([STANDALONE_SOURCE])
     const api = window.api as unknown as Record<string, ReturnType<typeof vi.fn>>
     api.probeInstallation = vi
       .fn()
@@ -1302,8 +1320,7 @@ describe('InstallWizardModal onboarding->install handoff telemetry (#1224)', () 
     await flushPromises()
     await showChangeSetup(wrapper)
 
-    await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
-    await flushPromises()
+    await openBuildImportFromCard(wrapper, 'add-existing')
     await wrapper.get('.track-location .config-path-browse').trigger('click')
     await flushPromises()
     await wrapper.get('.track-save').trigger('click')
@@ -1318,14 +1335,14 @@ describe('InstallWizardModal onboarding->install handoff telemetry (#1224)', () 
   })
 
   it('does not report a cancelled wizard once a snapshot loaded from Change setup starts installing', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([STANDALONE_SOURCE])
     const { events, stop } = captureTelemetry()
     const wrapper = mountModal()
     ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
     await flushPromises()
     await showChangeSetup(wrapper)
 
-    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
-    await flushPromises()
+    await openBuildImportFromCard(wrapper, 'load-snapshot')
     wrapper
       .getComponent(LoadSnapshotModal)
       .vm.$emit('show-progress', { installationId: 'inst-1', title: 'Installing' })
@@ -1774,12 +1791,10 @@ describe('InstallWizardModal Change setup', () => {
   })
 
   it('stacks Add existing build and Load snapshot over Change setup, keeping it underneath', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([STANDALONE_SOURCE])
     const wrapper = await openChangeSetup()
-    expect(wrapper.get('[data-testid="config-add-existing"]').text()).toBe('Add existing build')
-    expect(wrapper.get('[data-testid="config-load-snapshot"]').text()).toBe('Load snapshot')
 
-    await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
-    await flushPromises()
+    await openBuildImportFromCard(wrapper, 'add-existing')
     expect(wrapper.find('[data-testid="track-modal"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-change-form"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="new-build-modal"]').classes()).toContain(
@@ -1794,31 +1809,163 @@ describe('InstallWizardModal Change setup', () => {
       'setup-modal-panel--covered'
     )
 
-    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
-    await flushPromises()
+    await openBuildImportFromCard(wrapper, 'load-snapshot')
     expect(wrapper.find('[data-testid="load-snapshot-modal"]').exists()).toBe(true)
   })
 
   it('passes a finished build import on to the panel', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([STANDALONE_SOURCE])
     const wrapper = await openChangeSetup()
 
-    await wrapper.get('[data-testid="config-add-existing"]').trigger('click')
-    await flushPromises()
+    await openBuildImportFromCard(wrapper, 'add-existing')
     wrapper.getComponent(TrackModal).vm.$emit('navigate-list')
     expect(wrapper.emitted('navigate-list')).toHaveLength(1)
 
     wrapper.getComponent(TrackModal).vm.$emit('close')
-    await wrapper.get('[data-testid="config-load-snapshot"]').trigger('click')
     await flushPromises()
+    await openBuildImportFromCard(wrapper, 'load-snapshot')
     const progress = { installationId: 'inst-1', title: 'Installing' }
     wrapper.getComponent(LoadSnapshotModal).vm.$emit('show-progress', progress)
     expect(wrapper.emitted('show-progress')).toEqual([[progress]])
   })
 
-  it('leaves the build import links out of the first-use chain', async () => {
+  it('leaves the build import cards out of the first-use chain', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      releaseSource,
+      remoteSource
+    ])
+    mockReleaseOptions()
     const wrapper = await openChangeSetup({ hideBackToDashboard: true })
 
+    expect(
+      wrapper
+        .get('[data-testid="install-source-tabs"]')
+        .findAll('.setup-option__label')
+        .map((label) => label.text())
+    ).toEqual(['Official release', "Your team's builds", 'Connect to a server'])
+    expect(wrapper.find('[data-testid="install-source-add-existing"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="install-source-load-snapshot"]').exists()).toBe(false)
+  })
+
+  it('offers Add existing build and Load snapshot as cards in the first row, beside the install sources', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      releaseSource,
+      remoteSource
+    ])
+    mockReleaseOptions()
+    const wrapper = await openChangeSetup()
+
+    const firstRow = wrapper.get('.config-change-form > .setup-form-row')
+    expect(firstRow.get('.config-label').text()).toBe('Get ComfyUI from')
+    const cards = firstRow.getComponent(SetupOptionCards)
+    expect(cards.props('options').map((card) => [card.testId, card.label])).toEqual([
+      ['install-source-standalone', 'Official release'],
+      ['workspace-install-source-managed', "Your team's builds"],
+      ['install-source-remote', 'Connect to a server'],
+      ['install-source-add-existing', 'Add existing build'],
+      ['install-source-load-snapshot', 'Load snapshot']
+    ])
+    expect(wrapper.text()).not.toContain('Already have ComfyUI?')
     expect(wrapper.find('[data-testid="config-add-existing"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="config-load-snapshot"]').exists()).toBe(false)
+  })
+
+  it.each([
+    ['add-existing', 'Add build', 'track-modal', 'track_existing'],
+    ['load-snapshot', 'Load snapshot', 'load-snapshot-modal', 'load_snapshot']
+  ] as const)(
+    'asks nothing about installing once %s is picked, and its primary opens that flow',
+    async (card, primary, modalId, flow) => {
+      ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...releaseSource,
+          fields: [
+            ...releaseSource.fields,
+            { id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }
+          ]
+        },
+        remoteSource
+      ])
+      ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockImplementation(
+        async (_source: string, fieldId: string) => {
+          if (fieldId === 'release') return [{ value: 'stable', label: 'Stable' }]
+          if (fieldId === 'variant') {
+            return [{ value: 'mps', label: 'Apple Silicon (MPS)', data: { variantId: 'mps' } }]
+          }
+          return [{ value: 'v0.4.2', label: 'v0.4.2' }]
+        }
+      )
+      const { events, stop } = captureTelemetry()
+      const wrapper = await openChangeSetup()
+      expect(wrapper.find('#source-fields').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="install-location-field"]').exists()).toBe(true)
+
+      await wrapper.get(`[data-testid="install-source-${card}"]`).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get(`[data-testid="install-source-${card}"]`).attributes('aria-checked')).toBe(
+        'true'
+      )
+      expect(
+        wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+      ).toBe('false')
+      expect(wrapper.findAll('.config-change-form .setup-form-row')).toHaveLength(1)
+      expect(wrapper.find('#source-fields').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="install-location-field"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="track-modal"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="load-snapshot-modal"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="config-save-changes"]').exists()).toBe(false)
+      const continueButton = wrapper.get('[data-testid="config-build-import-continue"]')
+      expect(continueButton.text()).toBe(primary)
+
+      await continueButton.trigger('click')
+      await flushPromises()
+      stop()
+      expect(wrapper.find(`[data-testid="${modalId}"]`).exists()).toBe(true)
+      expect(events.filter((e) => e.actionName === 'comfy.desktop.install.flow.opened')).toEqual([
+        expect.objectContaining({ context: { flow, entrypoint: 'new-install' } })
+      ])
+    }
+  )
+
+  it('brings the install rows back when an install source is picked after a build import card', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      releaseSource,
+      remoteSource
+    ])
+    mockReleaseOptions()
+    const wrapper = await openChangeSetup()
+
+    await wrapper.get('[data-testid="install-source-load-snapshot"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('#source-fields').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="install-source-standalone"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('#source-fields').text()).toContain('Release')
+    expect(wrapper.find('[data-testid="install-location-field"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="config-save-changes"]').text()).toBe('Save changes')
+    expect(wrapper.find('[data-testid="config-build-import-continue"]').exists()).toBe(false)
+  })
+
+  it('returns to the install it had when Discard is pressed after picking a build import card', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      releaseSource,
+      remoteSource
+    ])
+    mockReleaseOptions()
+    const wrapper = await openChangeSetup()
+
+    await wrapper.get('[data-testid="install-source-add-existing"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(true)
+    expect(wrapper.get('.config-continue').text()).toBe('Install')
+    await showChangeSetup(wrapper)
+    expect(
+      wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
+    ).toBe('true')
   })
 })
