@@ -115,6 +115,8 @@
     "openComfyUIIn": "在 {name} 中打开 ComfyUI",
     "opensIn": "在 {name} 中打开",
     "allBuilds": "全部构建",
+    "autoStart": "自动启动",
+    "autoStartHint": "Comfy Desktop 打开时启动此构建",
     "buildRunning": "运行中",
     "buildStarting": "启动中",
     "buildReady": "就绪",

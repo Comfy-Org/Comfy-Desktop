@@ -53,3 +53,23 @@ test('Home in the sidebar returns to Home @windows @macos @linux', async () => {
   await ctx.panel.waitForVisible(HOME_VIEW)
   expect(await ctx.panel.isVisible('.chooser-view')).toBe(false)
 })
+
+test('Auto start on a Home card saves that build for the next start, and unticking sets None @windows @macos @linux', async () => {
+  const box = '[data-testid="home-build-auto-start"] [role="checkbox"]'
+  const saved = () => ctx.panel.evaluate("window.api.getSetting('autoLaunchOnStartup')")
+  const boxState = () =>
+    ctx.panel.evaluate(`document.querySelector('${box}')?.getAttribute('aria-checked')`)
+  await ctx.panel.waitForVisible(box)
+  const buildId = await ctx.panel.evaluate<string>(
+    `document.querySelector('[data-testid="home-build-auto-start"]').dataset.buildId`
+  )
+
+  expect(await ctx.panel.click(box)).toBe(true)
+  await expect.poll(saved).toBe(buildId)
+  await expect.poll(boxState).toBe('true')
+  expect(await ctx.panel.isVisible(HOME_VIEW)).toBe(true)
+
+  expect(await ctx.panel.click(box)).toBe(true)
+  await expect.poll(saved).toBe('none')
+  await expect.poll(boxState).toBe('false')
+})

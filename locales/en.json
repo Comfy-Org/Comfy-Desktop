@@ -115,6 +115,8 @@
     "openComfyUIIn": "Open ComfyUI in {name}",
     "opensIn": "Opens in {name}",
     "allBuilds": "All builds",
+    "autoStart": "Auto start",
+    "autoStartHint": "Start this build when Comfy Desktop opens",
     "buildRunning": "Running",
     "buildStarting": "Starting",
     "buildReady": "Ready",

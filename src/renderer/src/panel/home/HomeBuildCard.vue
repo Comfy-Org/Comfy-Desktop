@@ -6,6 +6,7 @@ import Button from '@comfyorg/design-system/button/Button'
 import BuildDeviceArt from './BuildDeviceArt.vue'
 import BuildMenu, { type BuildMenuAnchor } from './BuildMenu.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
+import BuildAutoStartCheckbox from './BuildAutoStartCheckbox.vue'
 import {
   HOME_BUILD_TONES,
   homeBuildDetail,
@@ -22,9 +23,10 @@ const { build, status, tone } = defineProps<{
   build: Installation
   status: HomeBuildStatus
   tone: HomeBuildTone
+  autoStart?: boolean
 }>()
 
-const emit = defineEmits<{ open: [] }>()
+const emit = defineEmits<{ open: []; 'auto-start': [on: boolean] }>()
 
 const { t } = useI18n()
 const install = useBuildProgress(() => build)
@@ -111,100 +113,110 @@ function openContextMenu(event: MouseEvent): void {
 </script>
 
 <template>
-  <div
-    class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
-    :class="!uninstalling && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
-    :data-testid="testId"
-    :data-build-id="build.id"
-    @click="onClick"
-    @contextmenu.prevent="openContextMenu"
-  >
-    <button
-      v-if="!uninstalling"
-      type="button"
-      class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-      :aria-label="`${build.name}, ${statusLabel}`"
-      data-testid="home-build-open"
-    />
-    <span
-      class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
-      :class="!busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
-      :style="{
-        background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
-      }"
-      data-testid="home-build-glow"
-      aria-hidden="true"
-    />
-    <BuildDeviceArt
-      class="pointer-events-none relative shrink-0"
-      :kind="buildDeviceKind(build)"
-      :glow="toneStyle.glow"
-    />
-    <span
-      class="pointer-events-none relative flex min-w-0 flex-1 flex-col group-hover:pr-10 group-has-[:focus-visible]:pr-10"
-      :class="menuOpen && 'pr-10'"
+  <div class="flex flex-col gap-1">
+    <div
+      class="group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left transition-colors"
+      :class="!uninstalling && 'cursor-pointer hover:bg-[rgb(137_137_137/0.09)]'"
+      :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
+      :data-testid="testId"
+      :data-build-id="build.id"
+      @click="onClick"
+      @contextmenu.prevent="openContextMenu"
     >
+      <button
+        v-if="!uninstalling"
+        type="button"
+        class="absolute inset-0 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        :aria-label="`${build.name}, ${statusLabel}`"
+        data-testid="home-build-open"
+      />
       <span
-        class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="!busy && broken ? 'text-destructive' : 'text-muted-foreground'"
-        data-testid="home-build-status"
+        class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+        :class="!busy && 'group-hover:scale-[2.6] group-has-[:focus-visible]:scale-[2.6]'"
+        :style="{
+          background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
+        }"
+        data-testid="home-build-glow"
+        aria-hidden="true"
+      />
+      <BuildDeviceArt
+        class="pointer-events-none relative shrink-0"
+        :kind="buildDeviceKind(build)"
+        :glow="toneStyle.glow"
+      />
+      <span
+        class="pointer-events-none relative flex min-w-0 flex-1 flex-col group-hover:pr-10 group-has-[:focus-visible]:pr-10"
+        :class="menuOpen && 'pr-10'"
       >
-        <LoaderCircle
-          v-if="busy"
-          :size="12"
-          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-        <OctagonAlert v-else-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
         <span
-          v-else-if="isLive"
-          class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
-          aria-hidden="true"
-        />
-        <Check v-else-if="status === 'ready'" :size="12" aria-hidden="true" />
-        <span class="truncate">{{ statusLabel }}</span>
+          class="flex h-4 items-center gap-1.5 text-xs/4"
+          :class="!busy && broken ? 'text-destructive' : 'text-muted-foreground'"
+          data-testid="home-build-status"
+        >
+          <LoaderCircle
+            v-if="busy"
+            :size="12"
+            class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+          <OctagonAlert v-else-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
+          <span
+            v-else-if="isLive"
+            class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
+            aria-hidden="true"
+          />
+          <Check v-else-if="status === 'ready'" :size="12" aria-hidden="true" />
+          <span class="truncate">{{ statusLabel }}</span>
+        </span>
+        <span
+          class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground"
+          data-testid="home-build-name"
+        >
+          {{ build.name }}
+        </span>
+        <span
+          class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
+          :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
+        >
+          {{ subtitle }}
+        </span>
       </span>
-      <span
-        class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground"
-        data-testid="home-build-name"
+      <Button
+        type="button"
+        variant="muted-textonly"
+        size="unset"
+        class="absolute top-1/2 right-2.5 size-8 -translate-y-1/2 rounded-lg p-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 motion-reduce:transition-none"
+        :class="menuOpen && 'opacity-100'"
+        :aria-label="t('chooser.moreActions')"
+        :title="t('chooser.moreActions')"
+        data-testid="home-build-more"
+        @click.stop="openMoreMenu"
+        @contextmenu.stop.prevent="openMoreMenu"
       >
-        {{ build.name }}
-      </span>
-      <span
-        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
-        :data-testid="uninstalling ? 'home-build-install-detail' : 'home-build-detail'"
-      >
-        {{ subtitle }}
-      </span>
-    </span>
-    <Button
-      type="button"
-      variant="muted-textonly"
-      size="unset"
-      class="absolute top-1/2 right-2.5 size-8 -translate-y-1/2 rounded-lg p-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 motion-reduce:transition-none"
-      :class="menuOpen && 'opacity-100'"
-      :aria-label="t('chooser.moreActions')"
-      :title="t('chooser.moreActions')"
-      data-testid="home-build-more"
-      @click.stop="openMoreMenu"
-      @contextmenu.stop.prevent="openMoreMenu"
-    >
-      <Ellipsis :size="15" aria-hidden="true" />
-    </Button>
-    <BuildProgressBar
-      v-if="install.progress.value?.percent != null"
-      :percent="install.progress.value.percent"
-      :label="statusLabel"
-      data-testid="home-build-progress"
-    />
-    <BuildMenu
-      v-if="menuAt"
-      v-model:open="menuOpen"
-      :build="build"
-      :anchor="menuAt.anchor"
-      :align="menuAt.align"
-      :return-focus="menuAt.returnFocus"
+        <Ellipsis :size="15" aria-hidden="true" />
+      </Button>
+      <BuildProgressBar
+        v-if="install.progress.value?.percent != null"
+        :percent="install.progress.value.percent"
+        :label="statusLabel"
+        data-testid="home-build-progress"
+      />
+      <BuildMenu
+        v-if="menuAt"
+        v-model:open="menuOpen"
+        :build="build"
+        :anchor="menuAt.anchor"
+        :align="menuAt.align"
+        :return-focus="menuAt.returnFocus"
+      />
+    </div>
+    <BuildAutoStartCheckbox
+      v-if="!busy"
+      class="self-end"
+      :checked="autoStart"
+      data-testid="home-build-auto-start"
+      :data-build-id="build.id"
+      @update:checked="emit('auto-start', $event)"
     />
   </div>
 </template>

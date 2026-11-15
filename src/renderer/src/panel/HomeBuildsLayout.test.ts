@@ -101,7 +101,7 @@ function fullyShown(element: Element): boolean {
 function shownTiles(section: HTMLElement): HTMLElement[] {
   return [...section.querySelectorAll('li')]
     .filter((item) => getComputedStyle(item).display !== 'none')
-    .map((item) => item.firstElementChild as HTMLElement)
+    .map((item) => item.querySelector<HTMLElement>('[data-build-id]')!)
 }
 
 function columnsOf(section: HTMLElement): number {
