@@ -9,6 +9,6 @@ jobs:
   agents-md:
     permissions:
       contents: read
-    uses: Comfy-Org/github-workflows/.github/workflows/agents-md-integrity.yml@90f991417e0438c8ccba7c1a07d0e479a0653dce # github-workflows main (90f9914)
+    uses: Comfy-Org/github-workflows/.github/workflows/agents-md-integrity.yml@6697609c6635d1ca25dc20dc6e9a2b3a3b12baf9 # github-workflows main (90f9914)
     with:
       workflows_ref: 90f991417e0438c8ccba7c1a07d0e479a0653dce
