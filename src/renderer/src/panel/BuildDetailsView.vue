@@ -5,8 +5,14 @@ import { ArrowLeft, LoaderCircle, OctagonAlert } from 'lucide-vue-next'
 import Button from '@comfyorg/design-system/button/Button'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import StatusChip from '../components/ui/StatusChip.vue'
+import BuildUninstallFailed from './BuildUninstallFailed.vue'
+import HomeBuildCard from './home/HomeBuildCard.vue'
+import { homeBuildStatus, homeBuildTones } from './home/homeBuild'
 import type { StorageSnapshot } from '../views/comfyUISettings/StoragePane.vue'
+import { uninstallFailureOf, useBuildProgress } from '../composables/useBuildProgress'
 import { installTypeMetaForInstall } from '../lib/installTypeIcon'
+import { useInstallationStore } from '../stores/installationStore'
+import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { Installation, ShowProgressOpts } from '../types/ipc'
 
@@ -25,6 +31,16 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
+const progressStore = useProgressStore()
+const installationStore = useInstallationStore()
+
+const { progress } = useBuildProgress(() => installation)
+const uninstalling = computed(() => progress.value?.kind === 'uninstall')
+const uninstallFailure = computed(() => uninstallFailureOf(progressStore, installation.id))
+const uninstallReplacesSettings = computed(
+  () => uninstalling.value || uninstallFailure.value !== null
+)
+const tone = computed(() => homeBuildTones([installation], installationStore.installations)[0]!)
 
 const typeMeta = computed(() => installTypeMetaForInstall(installation))
 
@@ -39,6 +55,9 @@ const metaLine = computed(() =>
 
 const status = computed(() => {
   const id = installation.id
+  if (uninstalling.value) {
+    return { tone: 'quiet', label: 'uninstallProgress.status', spinning: true } as const
+  }
   if (sessionStore.errorInstances.has(id))
     return { tone: 'bad', label: 'chooser.statusError' } as const
   if (sessionStore.isStopping(id))
@@ -88,7 +107,9 @@ onUnmounted(() => unsubscribeSettings?.())
             <h1
               :id="TITLE_ID"
               class="m-0 flex min-w-0 font-display text-display font-semibold text-foreground"
-            />
+            >
+              <span v-if="uninstallReplacesSettings" class="truncate">{{ installation.name }}</span>
+            </h1>
             <StatusChip v-if="status" class="build-details-status" :tone="status.tone">
               <template v-if="status.tone === 'bad'" #icon>
                 <OctagonAlert :size="11" aria-hidden="true" />
@@ -113,7 +134,21 @@ onUnmounted(() => unsubscribeSettings?.())
         <div :id="ACTIONS_ID" class="flex shrink-0 items-center gap-2" />
       </header>
 
+      <HomeBuildCard
+        v-if="uninstalling"
+        class="shrink-0"
+        :build="installation"
+        :status="homeBuildStatus(installation, sessionStore)"
+        :tone="tone"
+      />
+      <BuildUninstallFailed
+        v-else-if="uninstallFailure !== null"
+        :reason="uninstallFailure"
+        @retry="progressStore.retryOperation(installation.id)"
+        @dismiss="progressStore.dismissOperation(installation.id)"
+      />
       <ComfyUISettingsContent
+        v-else
         :installation="installation"
         :global-settings-snapshot="storage"
         :page-actions-target="`#${ACTIONS_ID}`"

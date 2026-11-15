@@ -14,10 +14,10 @@ import {
   expectNewBuildModalOpen,
   openManageViaDashboard,
   openNewBuildChangeSetup,
-  saveNewBuildChangeSetup,
   openPickerViaTitlePill
 } from './support/chooserHelpers'
 import {
+  armLaunchReadyHold,
   armLaunchSpawnHold,
   ensureInstallPanelView,
   getIpcInvocations,
@@ -26,7 +26,9 @@ import {
   hasActiveLaunch,
   hasActiveOperation,
   isInstallLaunching,
+  isLaunchReadyHeld,
   isLaunchSpawnHeld,
+  releaseLaunchReadyHold,
   releaseLaunchSpawnHold,
   resetIpcInvocations
 } from './support/devHooks'
@@ -280,7 +282,7 @@ test('cold start lands on Set up with the detected computer and one Install @sec
   await ctx.panel.waitForVisible('[data-testid="setup-install"]')
 })
 
-test('accept ToS + Change opens New Build with setup pre-filled @sec-setup @lifecycle', async () => {
+test('accept ToS + Change opens the name and every option in one step @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
 
   expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
@@ -295,7 +297,8 @@ test('accept ToS + Change opens New Build with setup pre-filled @sec-setup @life
   await expectNewBuildModalOpen(ctx.panel)
 
   await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
-  await openNewBuildChangeSetup(ctx.panel)
+  await ctx.panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
+  await ctx.panel.waitForVisible('#inst-name-standalone', { timeout: 5_000 })
 
   await ctx.panel.waitForSelector('#source-fields button[role="combobox"]', {
     timeout: 5_000
@@ -335,7 +338,6 @@ test('accept ToS + Change opens New Build with setup pre-filled @sec-setup @life
       { timeout: 5_000, message: `${rowLabel} variant did not become the selected variant row` }
     )
   }
-  await saveNewBuildChangeSetup(ctx.panel)
 })
 
 test('installs on the Home build card, then Open ComfyUI launches it @sec-setup @lifecycle', async () => {
@@ -1848,6 +1850,14 @@ async function openBootWindowViaPickerRestart(): Promise<void> {
     .toBe(true)
 }
 
+async function restartAndHoldTheBootBeforeItCountsAsRunning(): Promise<void> {
+  await armLaunchReadyHold(ctx.app)
+  await openBootWindowViaPickerRestart()
+  await expect
+    .poll(() => isLaunchReadyHeld(ctx.app), { timeout: 300_000, intervals: [500, 1_000] })
+    .toBe(true)
+}
+
 test('boot-window --port edit surfaces Restart-to-apply and the restart applies it @sec-bootwindow @lifecycle', async () => {
   test.setTimeout(600_000)
   await waitForOperationDrain(_updateInstallId)
@@ -1865,14 +1875,18 @@ test('boot-window --port edit surfaces Restart-to-apply and the restart applies 
   const targetPort = await findFreeLoopbackPort(19100)
   expect(targetPort, 'target port must differ from the current one').not.toBe(before!.port)
 
-  await openBootWindowViaPickerRestart()
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
-  await setPortArgViaPicker(popup, targetPort)
-
-  expect(
-    await getRunningSessionSnapshot(ctx.app, _updateInstallId),
-    'boot completed before the boot-window edit landed - cannot exercise issue #1300'
-  ).toBeNull()
+  let popup: WebContentsPage
+  try {
+    await restartAndHoldTheBootBeforeItCountsAsRunning()
+    popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    await setPortArgViaPicker(popup, targetPort)
+    expect(
+      await getRunningSessionSnapshot(ctx.app, _updateInstallId),
+      'the held boot counted as running before the boot-window edit landed'
+    ).toBeNull()
+  } finally {
+    await releaseLaunchReadyHold(ctx.app)
+  }
 
   let booted: Awaited<ReturnType<typeof getRunningSessionSnapshot>> = null
   await expect
@@ -1939,43 +1953,46 @@ test('restart clicked during boot cancels the in-flight boot and applies the edi
     .not.toBeNull()
   const targetPort = await findFreeLoopbackPort(19400)
 
-  await openBootWindowViaPickerRestart()
-  const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
-  await setPortArgViaPicker(popup, targetPort)
-  expect(
-    await getRunningSessionSnapshot(ctx.app, _updateInstallId),
-    'boot completed before the boot-window edit landed - cannot exercise restart-during-boot'
-  ).toBeNull()
+  try {
+    await restartAndHoldTheBootBeforeItCountsAsRunning()
+    const popup = await openPickerViaTitlePill(ctx.app, ctx.titleBar, 'config')
+    await setPortArgViaPicker(popup, targetPort)
 
-  await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
-  expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
-  await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
-  expect(
-    await isInstallLaunching(ctx.app, _updateInstallId),
-    'boot finished before the restart click - this run did not exercise restart-during-boot'
-  ).toBe(true)
-  expect(await getRunningSessionSnapshot(ctx.app, _updateInstallId)).toBeNull()
-  await resetIpcInvocations(ctx.app, 'picker-restart:cancel-launching')
-  expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
-  await expect
-    .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
-      timeout: 10_000,
-      intervals: [100, 200]
-    })
-    .toBe(false)
-
-  await expect
-    .poll(
-      async () => {
-        const calls = (await getIpcInvocations(
-          ctx.app,
-          'picker-restart:cancel-launching'
-        )) as Array<{ installationId?: string; cancelled?: boolean }>
-        return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
-      },
-      { timeout: 90_000, intervals: [250, 500] }
+    await popup.waitForVisible(byTestId(TID.pickerPrimaryCta), { timeout: 15_000 })
+    expect(await popup.click(byTestId(TID.pickerPrimaryCta))).toBe(true)
+    await popup.waitForVisible(byTestId(TID.baseAlertAction), { timeout: 10_000 })
+    expect(await isLaunchReadyHeld(ctx.app), 'the boot is still held at the restart click').toBe(
+      true
     )
-    .toBe(true)
+    expect(await isInstallLaunching(ctx.app, _updateInstallId)).toBe(true)
+    expect(await getRunningSessionSnapshot(ctx.app, _updateInstallId)).toBeNull()
+    await resetIpcInvocations(ctx.app, 'picker-restart:cancel-launching')
+    expect(await popup.click(byTestId(TID.baseAlertAction))).toBe(true)
+    await expect
+      .poll(() => isPopupVisible(ctx.app, 'comfyTitlePopup.html'), {
+        timeout: 10_000,
+        intervals: [100, 200]
+      })
+      .toBe(false)
+
+    await expect
+      .poll(
+        async () => {
+          const calls = (await getIpcInvocations(
+            ctx.app,
+            'picker-restart:cancel-launching'
+          )) as Array<{ installationId?: string; cancelled?: boolean }>
+          return calls.find((c) => c.installationId === _updateInstallId)?.cancelled ?? null
+        },
+        { timeout: 90_000, intervals: [250, 500] }
+      )
+      .toBe(true)
+    await expect
+      .poll(() => isLaunchReadyHeld(ctx.app), { timeout: 10_000, intervals: [100, 250] })
+      .toBe(false)
+  } finally {
+    await releaseLaunchReadyHold(ctx.app)
+  }
 
   await expect
     .poll(
@@ -2324,7 +2341,7 @@ test('cleans up the untracked kebab-copy on disk before the final Delete test ru
 
 let _remoteInstallId = ''
 let _remoteName = ''
-let _remoteWindowId = 0
+let _remoteDashboardWindowId = 0
 let _remoteWcId = 0
 let _remoteOutputRoot = ''
 let _remoteExpectedFile = ''
@@ -2419,7 +2436,7 @@ test('creates a Remote Connection record pointed at the running local server thr
   _remoteExpectedFile = path.join(_remoteOutputRoot, 'nested', 'output_00001_.png')
   expect(existsSync(_remoteOutputRoot), 'unique output root unexpectedly pre-exists').toBe(false)
 
-  _remoteWindowId = await openDashboardWindowViaPickerHome()
+  _remoteDashboardWindowId = await openDashboardWindowViaPickerHome()
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
   await waitForConfigContinueEnabled(
@@ -2638,13 +2655,36 @@ test('cleans up the remote connection: window closed, record untracked, local in
       `(() => { try { window.__e2eRemoteWs && window.__e2eRemoteWs.close() } catch {} return true })()`
     ).catch(() => false)
   }
-  expect(_remoteWindowId, 'no remote window id captured').toBeGreaterThan(0)
+  expect(
+    _remoteDashboardWindowId,
+    'no id captured for the dashboard window the wizard ran in'
+  ).toBeGreaterThan(0)
+  expect(_remoteWcId, 'no webContents id captured for the remote connection').toBeGreaterThan(0)
+  const closing = { dashboardId: _remoteDashboardWindowId, remoteWcId: _remoteWcId }
   await evalWithRetry(() =>
-    ctx.app.evaluate(({ BrowserWindow }, id) => {
-      const win = BrowserWindow.fromId(id)
-      if (win && !win.isDestroyed()) win.close()
-    }, _remoteWindowId)
+    ctx.app.evaluate(({ BrowserWindow, WebContentsView }, { dashboardId, remoteWcId }) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (win.isDestroyed()) continue
+        const showsRemoteConnection = win.contentView.children.some(
+          (view) => view instanceof WebContentsView && view.webContents.id === remoteWcId
+        )
+        if (showsRemoteConnection || win.id === dashboardId) win.close()
+      }
+    }, closing)
   )
+  await expect
+    .poll(
+      () =>
+        evalWithRetry(() =>
+          ctx.app.evaluate(({ BrowserWindow, webContents }, { dashboardId, remoteWcId }) => {
+            const dashboard = BrowserWindow.fromId(dashboardId)
+            const remote = webContents.fromId(remoteWcId)
+            return (!dashboard || dashboard.isDestroyed()) && (!remote || remote.isDestroyed())
+          }, closing)
+        ),
+      { timeout: 15_000, intervals: [200, 500] }
+    )
+    .toBe(true)
   await expect
     .poll(async () => (await getRunningSessionSnapshot(ctx.app, _remoteInstallId)) === null, {
       timeout: 30_000,

@@ -49,7 +49,15 @@
       "couldNotStart": "Comfy Desktop could not start {name}.",
       "notRunning": "ComfyUI is not running on this computer.",
       "notForwarded": "Comfy Desktop does not pass this request to ComfyUI.",
-      "modelRefused": "Comfy Desktop only downloads safetensors models from Hugging Face."
+      "modelRefused": "Comfy Desktop only downloads safetensors models from Hugging Face.",
+      "openNotWorkflow": "This is not a workflow Comfy Desktop can open.",
+      "openUnknownPlace": "Open it on Comfy Cloud or on this computer.",
+      "openUnknownBuild": "That ComfyUI build is not on this computer.",
+      "openCarriesKeys": "Comfy Desktop does not open a workflow that carries a Comfy key.",
+      "openNoCloud": "Add Comfy Cloud in Comfy Desktop first.",
+      "openCloudFailed": "Comfy Desktop could not open Comfy Cloud.",
+      "openNoWindow": "Comfy Desktop could not show the ComfyUI window.",
+      "openNotTaken": "ComfyUI did not open the workflow."
     }
   },
   "assets": {
@@ -544,7 +552,8 @@
     "installSummary": "Install summary",
     "alreadyHaveComfy": "Already have ComfyUI?",
     "connectToServer": "Connect to a server",
-    "installHereInstead": "Install on this computer instead",
+    "connectToServerMeta": "ComfyUI running elsewhere",
+    "agreeToContinue": "Agree to continue.",
     "install": "Install",
     "connect": "Connect",
     "managedBuildsMeta": "Managed builds",
@@ -906,6 +915,17 @@
     "failedTitle": "ComfyUI didn't install",
     "launchFailedTitle": "ComfyUI didn't start",
     "startAgain": "Start again"
+  },
+  "uninstallProgress": {
+    "status": "Uninstalling",
+    "tileStatus": "Uninstalling · {percent}%",
+    "removingFiles": "Removing files",
+    "cancelTitle": "Stop uninstalling?",
+    "cancelMessage": "{name} stays in your builds. Files already removed can't be restored, so uninstall it again to finish.",
+    "cancelConfirm": "Stop uninstalling",
+    "failedTitle": "Uninstall didn't finish",
+    "tryAgain": "Try again",
+    "dismiss": "Dismiss"
   },
   "announcement": {
     "comfyApi": {

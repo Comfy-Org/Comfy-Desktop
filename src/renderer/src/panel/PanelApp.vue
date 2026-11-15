@@ -106,9 +106,11 @@ const firstUseChain = useFirstUseChain({
 })
 const {
   chainingFirstUseToNewInstall,
+  setupConsent,
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
+  handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
   handleNewInstallBackToSetup
@@ -585,6 +587,7 @@ onUnmounted(() => {
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
         @back-to-setup="handleNewInstallBackToSetup"
+        @consent-change="handleNewInstallConsentChange"
       />
       <TrackModal
         v-else-if="currentOverlay.component === 'track'"
@@ -607,6 +610,7 @@ onUnmounted(() => {
       <FirstUseTakeover
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
+        :consent="setupConsent"
         @install="handleSetupInstall"
         @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"

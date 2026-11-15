@@ -123,7 +123,7 @@ import {
 } from '../../agentRequirementsOverride'
 import type { AgentStartOutcome, OverridePins } from '../../agentRequirementsOverride'
 import { recoverInterruptedComfyOp } from '../../opMarker'
-import { waitLaunchSpawnHold } from '../../e2eOverrides'
+import { waitLaunchReadyHold, waitLaunchSpawnHold } from '../../e2eOverrides'
 import {
   holderIsInstall,
   resolvePriorProcess,
@@ -2006,6 +2006,7 @@ async function runLaunch(
         }),
         earlyExitPromise
       ])
+      await waitLaunchReadyHold(abort.signal)
       if (abort.signal.aborted) throw new Error('Launch cancelled')
       return { ok: true, proc: spawned.proc, getStderr: spawned.getStderr }
     } catch (err) {

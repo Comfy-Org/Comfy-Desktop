@@ -1,4 +1,4 @@
-import { shell, type WebContents } from 'electron'
+import type { WebContents } from 'electron'
 
 import {
   buildCopyLinkBannerScript,
@@ -8,6 +8,7 @@ import {
 } from './copyLinkBanner'
 import type { BridgeHandle } from './server'
 import * as i18n from '../../lib/i18n'
+import { tryOpenExternalUrl } from '../../lib/openExternal'
 
 export interface ActiveBridgeFlow {
   controller: AbortController
@@ -16,10 +17,6 @@ export interface ActiveBridgeFlow {
 
 let activeBridgeFlow: ActiveBridgeFlow | null = null
 let activeBannerCleanup: (() => void) | null = null
-
-export function openExternalSafely(url: string): void {
-  void shell.openExternal(url).catch(() => {})
-}
 
 export function beginActiveBridgeFlow(): ActiveBridgeFlow {
   closeActiveBridge()
@@ -74,7 +71,7 @@ export function showCopyLinkBanner(comfyContents: WebContents, loginUrl: string)
     details: Electron.Event<Electron.WebContentsConsoleMessageEventParams>
   ): void => {
     if (details.frame?.parent != null || details.message !== OPEN_LINK_SENTINEL) return
-    openExternalSafely(loginUrl)
+    void tryOpenExternalUrl(loginUrl)
   }
   comfyContents.on('console-message', onConsoleMessage)
 

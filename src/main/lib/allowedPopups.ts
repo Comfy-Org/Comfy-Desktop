@@ -53,11 +53,13 @@ const DOWNLOAD_FILE_EXTENSIONS = [
 ]
 
 export function isLikelyDownloadUrl(url: string): boolean {
-  let pathname: string
+  let parsed: URL
   try {
-    pathname = new URL(url).pathname.toLowerCase()
+    parsed = new URL(url)
   } catch {
     return false
   }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+  const pathname = parsed.pathname.toLowerCase()
   return DOWNLOAD_FILE_EXTENSIONS.some((ext) => pathname.endsWith(ext))
 }

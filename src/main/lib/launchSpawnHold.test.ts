@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  armLaunchReadyHold,
   armLaunchSpawnHold,
+  isLaunchReadyHeld,
   isLaunchSpawnHeld,
+  releaseLaunchReadyHold,
   releaseLaunchSpawnHold,
+  waitLaunchReadyHold,
   waitLaunchSpawnHold
 } from './e2eOverrides'
 
@@ -22,9 +26,11 @@ beforeEach(() => {
 
 afterEach(() => {
   releaseLaunchSpawnHold()
+  releaseLaunchReadyHold()
   if (savedE2E === undefined) delete process.env['E2E']
   else process.env['E2E'] = savedE2E
   expect(isLaunchSpawnHeld()).toBe(false)
+  expect(isLaunchReadyHeld()).toBe(false)
 })
 
 describe('waitLaunchSpawnHold', () => {
@@ -104,5 +110,61 @@ describe('waitLaunchSpawnHold', () => {
     releaseLaunchSpawnHold()
     const abort = new AbortController()
     await expect(settlesWithin(waitLaunchSpawnHold(abort.signal), 50)).resolves.toBe(true)
+  })
+})
+
+describe('waitLaunchReadyHold', () => {
+  it('parks a launch that has answered on its port until released', async () => {
+    armLaunchReadyHold()
+    const abort = new AbortController()
+    const held = waitLaunchReadyHold(abort.signal)
+    await expect(settlesWithin(held, 50)).resolves.toBe(false)
+    expect(isLaunchReadyHeld()).toBe(true)
+
+    releaseLaunchReadyHold()
+    await held
+    expect(isLaunchReadyHeld()).toBe(false)
+  })
+
+  it('lets a restart cancel the parked launch through its abort signal', async () => {
+    armLaunchReadyHold()
+    const abort = new AbortController()
+    const held = waitLaunchReadyHold(abort.signal)
+    await expect(settlesWithin(held, 50)).resolves.toBe(false)
+
+    abort.abort()
+    await held
+    expect(isLaunchReadyHeld()).toBe(false)
+  })
+
+  it('holds only the launch it was armed for, so the relaunch after a restart runs free', async () => {
+    armLaunchReadyHold()
+    const first = new AbortController()
+    const held = waitLaunchReadyHold(first.signal)
+    await expect(settlesWithin(held, 50)).resolves.toBe(false)
+    first.abort()
+    await held
+
+    const relaunch = new AbortController()
+    await expect(settlesWithin(waitLaunchReadyHold(relaunch.signal), 50)).resolves.toBe(true)
+  })
+
+  it('is independent of the spawn hold', async () => {
+    armLaunchReadyHold()
+    const abort = new AbortController()
+    await expect(settlesWithin(waitLaunchSpawnHold(abort.signal), 50)).resolves.toBe(true)
+    expect(isLaunchSpawnHeld()).toBe(false)
+    const held = waitLaunchReadyHold(abort.signal)
+    await expect(settlesWithin(held, 50)).resolves.toBe(false)
+    releaseLaunchReadyHold()
+    await held
+  })
+
+  it('never parks outside E2E', async () => {
+    delete process.env['E2E']
+    armLaunchReadyHold()
+    const abort = new AbortController()
+    await expect(settlesWithin(waitLaunchReadyHold(abort.signal), 50)).resolves.toBe(true)
+    expect(isLaunchReadyHeld()).toBe(false)
   })
 })

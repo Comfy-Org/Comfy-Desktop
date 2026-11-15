@@ -197,25 +197,6 @@ function allowPageToCallCloud(res: ServerResponse): void {
   res.setHeader('access-control-allow-headers', 'authorization, content-type')
 }
 
-function completeSignInsLikeABrowser(app: ElectronApplication): () => Promise<void> {
-  let followed = 0
-  let stopped = false
-  const loop = (async () => {
-    while (!stopped) {
-      const opened = await getShellOpenExternalCalls(app).catch(() => [] as string[])
-      for (const url of opened.slice(followed)) {
-        followed += 1
-        if (url.startsWith(cloud.url)) await fetch(url).catch(() => {})
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-  })()
-  return async () => {
-    stopped = true
-    await loop
-  }
-}
-
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(120_000)
 
@@ -249,7 +230,7 @@ test.beforeAll(async () => {
     { userDataDir, settings: { firstUseCompleted: true, telemetryEnabled: false } },
     { stayOnHome: true }
   )
-  stopBrowser = completeSignInsLikeABrowser(ctx.app)
+  stopBrowser = cloud.completeSignInsLikeABrowser(ctx.app)
 })
 
 test.afterAll(async () => {
