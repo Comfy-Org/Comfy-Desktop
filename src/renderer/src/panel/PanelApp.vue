@@ -280,10 +280,7 @@ const { handleChooserPick, handleChooserShowNewInstall } = chooserHandoff
 
 provideAutoStartBuild()
 provideBuildMenuHost({
-  launch: async (inst, launchOpts) => {
-    if (await focusRunningBuild(inst)) return
-    await handleChooserPick(inst, launchOpts)
-  },
+  launch: (inst, launchOpts) => handleChooserPick(inst, launchOpts),
   openDetails: openBuildFromSidebar,
   showProgress: handleShowProgress
 })

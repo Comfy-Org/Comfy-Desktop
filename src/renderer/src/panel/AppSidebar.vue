@@ -142,10 +142,18 @@ function pointAt(event: MouseEvent): BuildMenuAnchor {
 }
 
 const buildMenuOpen = ref(false)
-const buildMenuAt = shallowRef<{ build: Installation; anchor: BuildMenuAnchor } | null>(null)
+const buildMenuAt = shallowRef<{
+  build: Installation
+  anchor: BuildMenuAnchor
+  returnFocus: HTMLElement | null
+} | null>(null)
 
 function openBuildMenu(event: MouseEvent, build: Installation): void {
-  buildMenuAt.value = { build, anchor: pointAt(event) }
+  buildMenuAt.value = {
+    build,
+    anchor: pointAt(event),
+    returnFocus: event.currentTarget as HTMLElement | null
+  }
   buildMenuOpen.value = true
 }
 </script>
@@ -314,6 +322,7 @@ function openBuildMenu(event: MouseEvent, build: Installation): void {
       v-model:open="buildMenuOpen"
       :build="buildMenuAt.build"
       :anchor="buildMenuAt.anchor"
+      :return-focus="buildMenuAt.returnFocus"
     />
   </aside>
 </template>

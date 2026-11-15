@@ -257,6 +257,18 @@ describe('Build menu', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(more.element))
   })
 
+  it('returns focus to the sidebar build when its menu closes', async () => {
+    const sidebar = await mountSidebar('ready')
+    const row = sidebar.get<HTMLElement>(`[data-testid="app-sidebar-build-${BUILD.id}"]`)
+    row.element.focus()
+    await rightClick(row.element)
+    await shownMenu()
+
+    await closeMenu()
+
+    await vi.waitFor(() => expect(document.activeElement).toBe(row.element))
+  })
+
   it('opens the logs when a starting build is clicked, and launches a ready one from the menu', async () => {
     const tile = await mountTile('starting')
 
