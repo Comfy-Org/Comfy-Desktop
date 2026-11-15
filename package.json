@@ -103,7 +103,7 @@
     "@vitest/browser-playwright": "^4.1.12",
     "@vue/test-utils": "^2.5.1",
     "@vueuse/core": "^14.4.0",
-    "electron": "40.4.1",
+    "electron": "45.3.2",
     "electron-builder": "^26.18.0",
     "electron-vite": "^5.0.0",
     "eslint": "^10.15.0",

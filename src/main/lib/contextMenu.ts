@@ -126,7 +126,7 @@ export function attachContextMenu(
       saveImage: (srcURL) => wc.session.downloadURL(srcURL),
       copyImage: () => wc.copyImageAt(params.x, params.y),
       openLink: (linkURL) => shell.openExternal(linkURL),
-      copyLink: (linkURL) => clipboard.writeText(linkURL),
+      copyLink: (linkURL) => void clipboard.writeText(linkURL),
       replaceMisspelling: (suggestion) => wc.replaceMisspelling(suggestion),
       addWordToDictionary: (word) => wc.session.addWordToSpellCheckerDictionary(word)
     })
