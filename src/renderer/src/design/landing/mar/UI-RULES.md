@@ -89,6 +89,16 @@ DS's Motion page (`ds/motion.ts`).
 
 ## Menus
 
+- **⋯ and right-click open the same menu.** A build's ⋯ (on hover, at the
+  right of its tile) and a right-click on the tile or its sidebar row show
+  one shared menu. A page in the sidebar right-clicks to Open in new tab /
+  Open in new window only.
+- **Build menu order:** what you can do now first (Ready: Launch; Starting:
+  View logs, Cancel; Running: View logs, Restart, Stop), then Open in new
+  tab / window, then the rest, Uninstall last.
+- **Unavailable rows stay, greyed.** A menu row that can't run in this state
+  (Update while running) shows disabled, never hidden, so the menu keeps one
+  shape in every state.
 - **Confirm inside the menu.** A destructive line that asks first turns the
   same menu into the question (`confirm` on a `MenuLine`, see
   `pages/MarItemMenu.vue`); never a box in the page. Nothing to lose
@@ -107,6 +117,16 @@ DS's Motion page (`ds/motion.ts`).
   spacing drifts from the filters. A single choice fills the picked row
   with the DS selected color (`bg-muted`, `selectedMenuButtonClass`), no check.
   Rows sit 2px apart (`gap-0.5`) so two highlighted rows never touch.
+- **Every dropdown looks the same in Desktop.** Menus and select lists
+  (`BaseSelect`) share one look: the popover background (a step lighter
+  than the page), 4px padding, 28px rows with 12px text, the picked row
+  filled, no check. For launch that is this solid look everywhere; the
+  proto's smoked glass comes later, to all menus at once, never to one
+  menu alone.
+- **Menu dividers run edge to edge.** A divider inside a menu cancels the
+  menu's padding (negative margin equal to it, like
+  `ui/DropdownMenuSeparator.vue`), so it touches both sides; 1px, the
+  border colour.
 
 ## Split button
 
@@ -158,6 +178,14 @@ DS's Motion page (`ds/motion.ts`).
   person's own (Recent workflows, the Workflows library).
 - **No counts in tabs.** Tabs carry only their label, Assets' type tabs
   included ("Images", not "Images 11").
+
+## Tiles
+
+- **Tiles stack when they don't fit.** Below the width where a tile can't
+  hold its name and status, Home's build tiles go one per row; never
+  squeeze two side by side. A tile in progress looks like every other
+  tile: no buttons inside, status line plus the bar along the bottom, a
+  click opens its logs, actions live in ⋯.
 
 ## Feedback
 

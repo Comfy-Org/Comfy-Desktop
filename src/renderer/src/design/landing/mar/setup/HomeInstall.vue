@@ -7,6 +7,10 @@ import SectionHeader from '../../ui/SectionHeader.vue'
 import SetupCancelConfirm from './SetupCancelConfirm.vue'
 import SetupLaptop from './SetupLaptop.vue'
 import ExampleShowcase from '../userStates/ExampleShowcase.vue'
+import BuildTile from '../build/BuildTile.vue'
+import { buildMenuLines, installingMenu, instanceTarget } from '../build/buildMenu'
+import { instances } from '../../useProto'
+import type { MenuLine } from '../pages/menu'
 import {
   BUILD_NAME,
   DETECTED,
@@ -39,9 +43,7 @@ import {
  */
 /** Bare: the card alone, one of the Builds row's cards (MarBuildsRow.vue),
  *  the size of the others; no header, no apps under it. */
-/** Narrow: one of three in the row; the kicker and the actions shorten. */
-const props = defineProps<{ bare?: boolean; narrow?: boolean }>()
-const size = computed(() => (props.bare ? 'sm' : 'lg'))
+const props = defineProps<{ bare?: boolean }>()
 const failed = computed(() => flow.step === 'error')
 const installing = computed(() => flow.background && (flow.running || failed.value))
 // After install › Ready: the same card says ComfyUI is there, with the one
@@ -53,12 +55,7 @@ const blocked = computed(() => lowSpace.value || unsupported.value)
 const state = computed(() => {
   if (ready.value) return { label: 'Ready', icon: Check, bad: false }
   if (failed.value) return { label: 'Operation failed', icon: TriangleAlert, bad: true }
-  if (installing.value)
-    return {
-      label: props.narrow ? 'Installing' : 'Installing ComfyUI',
-      icon: LoaderCircle,
-      bad: false
-    }
+  if (installing.value) return { label: 'Installing ComfyUI', icon: LoaderCircle, bad: false }
   if (unsupported.value) return { label: 'Unsupported Hardware', icon: TriangleAlert, bad: true }
   if (lowSpace.value) return { label: 'Low Disk Space', icon: TriangleAlert, bad: true }
   return { label: 'Detected', icon: Check, bad: false }
@@ -75,6 +72,34 @@ const line = computed(() => {
     return `${DETECTED.chip} · ${DETECTED.lowFreeGb} GB free · ~${REQUIRED_GB} GB required`
   return `${DETECTED.chip} · ${DETECTED.memGb} GB memory · ComfyUI ${DETECTED.version} · ${DETECTED.downloadGb} GB download`
 })
+// In the Builds row the card is a build tile like the others: installing,
+// its status line and percent, the version under the name, the bar along
+// the bottom, a click opens the logs and the actions sit in ⋯.
+const name = computed(() => (flow.another ? flow.buildName : BUILD_NAME))
+const tileStatus = computed(() =>
+  installing.value && !failed.value
+    ? { label: `Installing ComfyUI · ${flow.percent}%`, busy: true }
+    : { label: state.value.label, icon: state.value.icon, bad: state.value.bad }
+)
+const tileMeta = computed(() =>
+  installing.value && !failed.value ? `ComfyUI ${DETECTED.version}` : line.value
+)
+const tileLines = computed<MenuLine[]>(() => {
+  if (installing.value) return installingMenu()
+  // Ready: the build is there, with its menu; Launch opens ComfyUI.
+  const inst = ready.value ? instances.value.find((i) => i.kind === 'local') : undefined
+  if (!inst) return []
+  const t = instanceTarget(inst)
+  return buildMenuLines({
+    ...t,
+    launch: () => openComfyUI(),
+    uninstall: () => (dismissReady(), t.uninstall())
+  })
+})
+function openTile(): void {
+  if (ready.value) openComfyUI()
+  else if (installing.value) showInstall()
+}
 // Custom nodes (DESK-243): the Recommended build, ComfyUI with the most used
 // node packs, or plain ComfyUI. Picked before Install; Edit packs opens the
 // list.
@@ -98,21 +123,30 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
       class="mar-sec"
       :title="ready ? 'ComfyUI is ready' : 'Builds'"
     />
-    <div
-      :class="props.bare ? 'mbr-card mbr-install' : 'mss-machine is-hero mss-home-inst'"
-      :style="props.bare ? { '--h': 48 } : undefined"
-      :role="props.bare && (ready || (installing && props.narrow)) ? 'button' : undefined"
-      :tabindex="props.bare && (ready || (installing && props.narrow)) ? 0 : undefined"
-      @click="props.bare && (ready ? openComfyUI() : installing && props.narrow && showInstall())"
-      @keydown.enter="
-        props.bare && (ready ? openComfyUI() : installing && props.narrow && showInstall())
-      "
+    <BuildTile
+      v-if="props.bare"
+      :hue="48"
+      :name
+      :meta="tileMeta"
+      :status="tileStatus"
+      :percent="installing && !failed ? flow.percent : null"
+      :openable="ready || installing"
+      :lines="tileLines"
+      @open="openTile"
     >
-      <span v-if="props.bare" class="mbr-device">
+      <template #device>
         <SetupLaptop :os="localSetup.os" :bad="unsupported" />
         <span class="mbr-screen" aria-hidden="true"></span>
-      </span>
-      <SetupLaptop v-else :os="localSetup.os" :bad="unsupported" />
+      </template>
+      <!-- Before the install, the two things to decide; failed, where to
+           change it. In progress, nothing: the actions are in ⋯. -->
+      <template v-if="failed || (!ready && !installing && !unsupported)" #actions>
+        <Button variant="secondary" size="sm" @click="changeFromHome">Change</Button>
+        <Button v-if="!failed" variant="primary" size="sm" @click="install">Install</Button>
+      </template>
+    </BuildTile>
+    <div v-else class="mss-machine is-hero mss-home-inst">
+      <SetupLaptop :os="localSetup.os" :bad="unsupported" />
       <span class="grid min-w-0 flex-1">
         <span class="mss-machine-kicker" :class="state.bad && 'is-bad'"
           ><component
@@ -124,13 +158,11 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         >
         <!-- Named as Builds will list it: the Home already shows the thing
              to launch; the computer is its detail. -->
-        <span :class="props.bare ? 'mbr-name' : 'mss-machine-title'">{{
-          flow.another ? flow.buildName : BUILD_NAME
-        }}</span>
-        <span :class="props.bare ? 'mbr-meta' : 'mss-row-meta tabular-nums'">{{ line }}</span>
+        <span class="mss-machine-title">{{ name }}</span>
+        <span class="mss-row-meta tabular-nums">{{ line }}</span>
         <!-- Custom nodes (DESK-243): one quiet line in the card, ticked for a
              new user. Unticked installs plain ComfyUI. -->
-        <span v-if="packsOn && !props.bare" class="mss-home-packs">
+        <span v-if="packsOn" class="mss-home-packs">
           <label class="mss-home-packs-pick">
             <Checkbox :model-value="recommended" @update:model-value="choose" />
             <span class="text-base-foreground">Add recommended node packs</span>
@@ -145,36 +177,24 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
         ></span>
       </span>
       <span class="flex shrink-0 items-center gap-2">
-        <!-- In Builds, ready is a build like any other: Open ComfyUI is
-             the Home's, top right, and the card opens it too. -->
-        <template v-if="ready && props.bare"></template>
-        <template v-else-if="ready">
-          <Button variant="ghost" :size="size" @click="dismissReady">Not now</Button>
-          <Button variant="primary" :size="size" @click="openComfyUI()">Open ComfyUI</Button>
+        <template v-if="ready">
+          <Button variant="ghost" size="lg" @click="dismissReady">Not now</Button>
+          <Button variant="primary" size="lg" @click="openComfyUI()">Open ComfyUI</Button>
         </template>
-        <!-- Narrow (one of three): no room for buttons; the card itself
-             opens the install, where View logs and Cancel are. -->
-        <template v-else-if="installing && props.narrow"></template>
         <template v-else-if="installing">
-          <Button variant="ghost" :size="size" @click="showInstall">View logs</Button>
-          <Button v-if="failed" variant="secondary" :size="size" @click="changeFromHome"
+          <Button variant="ghost" size="lg" @click="showInstall">View logs</Button>
+          <Button v-if="failed" variant="secondary" size="lg" @click="changeFromHome"
             >Change</Button
           >
-          <Button
-            v-if="!failed"
-            variant="secondary"
-            :size="size"
-            @click="flow.confirmCancel = true"
-            >{{ props.bare ? 'Cancel' : 'Cancel install' }}</Button
+          <Button v-if="!failed" variant="secondary" size="lg" @click="flow.confirmCancel = true"
+            >Cancel install</Button
           >
         </template>
         <template v-else>
-          <Button v-if="!unsupported" variant="secondary" :size="size" @click="changeFromHome"
+          <Button v-if="!unsupported" variant="secondary" size="lg" @click="changeFromHome"
             >Change</Button
           >
-          <Button v-if="!unsupported" variant="primary" :size="size" @click="install"
-            >Install</Button
-          >
+          <Button v-if="!unsupported" variant="primary" size="lg" @click="install">Install</Button>
         </template>
       </span>
     </div>
@@ -190,17 +210,6 @@ const install = (): void => (blocked.value ? changeFromHome() : installInBackgro
 </template>
 
 <style scoped>
-/* One of the Builds row's cards, the height of the others whatever its
- * state: the actions stay on the right, small, and the bar is a line along
- * the card's bottom edge instead of a row of its own. */
-.mbr-install .mss-home-bar {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 3px;
-  max-width: none;
-  margin-top: 0;
-  border-radius: 0;
-}
 .mss-home-builds {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
