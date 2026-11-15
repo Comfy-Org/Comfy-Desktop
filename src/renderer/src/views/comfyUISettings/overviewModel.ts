@@ -49,13 +49,7 @@ export interface OverviewFact {
 }
 
 export type OverviewFactKey =
-  | 'comfyui-version'
-  | 'variant'
-  | 'python'
-  | 'pytorch'
-  | 'location'
-  | 'lineage'
-  | 'active-port'
+  'comfyui-version' | 'variant' | 'python' | 'pytorch' | 'location' | 'lineage' | 'active-port'
 
 const FACT_KEYS: OverviewFactKey[] = [
   'comfyui-version',
