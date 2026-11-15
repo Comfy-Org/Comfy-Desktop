@@ -1,5 +1,5 @@
 import type { Component } from 'vue'
-import { Cpu, Gpu } from 'lucide-vue-next'
+import { Cpu, Gpu } from '@lucide/vue'
 import type { FieldOption } from '../types/ipc'
 import type { SetupOptionCard } from '../components/SetupOptionCards.vue'
 import { getVariantImage, stripVariantPrefix } from './variants'

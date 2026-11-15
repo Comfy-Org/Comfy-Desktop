@@ -27,7 +27,7 @@ import {
   Tag,
   Users,
   Zap
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, Cloud, LoaderCircle, OctagonAlert, X } from 'lucide-vue-next'
+import { Check, ChevronDown, Cloud, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
 import { useCloudGate } from '../composables/useCloudGate'

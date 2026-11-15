@@ -12,7 +12,7 @@ import {
   RefreshCw,
   RotateCw,
   ZoomIn
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import { useTitleBarTooltip } from './useTitleBarTooltip'
 import { useTitleBarMenus } from './useTitleBarMenus'
 import { useTitleBarIdentity } from './useTitleBarIdentity'

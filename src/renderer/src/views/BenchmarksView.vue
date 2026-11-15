@@ -12,7 +12,7 @@ import {
   Search,
   SlidersHorizontal,
   X
-} from 'lucide-vue-next'
+} from '@lucide/vue'
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuItemIndicator,
