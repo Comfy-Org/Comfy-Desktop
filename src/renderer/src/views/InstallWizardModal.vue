@@ -1569,9 +1569,13 @@ const startFrom = computed<StartFrom>(() =>
   buildImportChoice.value || usesExistingServer.value ? 'existing' : 'new'
 )
 
-const startFromOptions = computed<{ value: StartFrom; label: string }[]>(() => [
-  { value: 'new', label: t('newInstall.startFromNew') },
-  { value: 'existing', label: t('newInstall.startFromExisting') }
+const startFromOptions = computed<{ value: StartFrom; label: string; testId: string }[]>(() => [
+  { value: 'new', label: t('newInstall.startFromNew'), testId: 'config-start-from-new' },
+  {
+    value: 'existing',
+    label: t('newInstall.startFromExisting'),
+    testId: 'config-start-from-existing'
+  }
 ])
 
 const existingCards = computed<SetupOptionCard[]>(() => {
