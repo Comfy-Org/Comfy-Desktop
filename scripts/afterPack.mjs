@@ -91,14 +91,55 @@ function unpackedNodeModulesDir(context) {
   return path.join(resourcesDir, 'app.asar.unpacked', 'node_modules')
 }
 
+const DARWIN_MAJOR_BY_MACOS_MAJOR = new Map([
+  [11, 20],
+  [12, 21],
+  [13, 22],
+  [14, 23],
+  [15, 24],
+  [26, 25],
+  [27, 27]
+])
+
+export function darwinVersionForMacOS(macOSVersion) {
+  const darwinMajor = DARWIN_MAJOR_BY_MACOS_MAJOR.get(Number.parseInt(macOSVersion, 10))
+  if (darwinMajor === undefined) {
+    throw new Error(
+      `afterPack: no Darwin version known for macOS ${macOSVersion}; add it to DARWIN_MAJOR_BY_MACOS_MAJOR`
+    )
+  }
+  return `${darwinMajor}.0.0`
+}
+
+export function minimumMacOSVersionOfApp(appContentsDir) {
+  const infoPlistPath = path.join(appContentsDir, 'Info.plist')
+  const match = /<key>LSMinimumSystemVersion<\/key>\s*<string>([^<]+)<\/string>/.exec(
+    fs.readFileSync(infoPlistPath, 'utf8')
+  )
+  if (!match) {
+    throw new Error(`afterPack: LSMinimumSystemVersion not found in ${infoPlistPath}`)
+  }
+  return match[1]
+}
+
+function requireTheAppsMinimumMacOSToUpdate(context) {
+  const { packager } = context
+  const appContentsDir = path.dirname(packager.getResourcesDir(context.appOutDir))
+  const minimumMacOSVersion = minimumMacOSVersionOfApp(appContentsDir)
+  const minimumSystemVersion = darwinVersionForMacOS(minimumMacOSVersion)
+  packager.platformSpecificBuildOptions.releaseInfo = {
+    ...packager.config.releaseInfo,
+    ...packager.platformSpecificBuildOptions.releaseInfo,
+    minimumSystemVersion
+  }
+  console.log(
+    `afterPack: updates require macOS ${minimumMacOSVersion} (Darwin ${minimumSystemVersion})`
+  )
+}
+
 export default async function afterPack(context) {
   if (context.electronPlatformName === 'darwin') {
-    const { packager } = context
-    packager.platformSpecificBuildOptions.releaseInfo = {
-      ...packager.config.releaseInfo,
-      ...packager.platformSpecificBuildOptions.releaseInfo,
-      minimumSystemVersion: '22.0.0'
-    }
+    requireTheAppsMinimumMacOSToUpdate(context)
   }
 
   if (context.electronPlatformName === 'win32') {
