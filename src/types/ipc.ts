@@ -20,6 +20,8 @@ export type {
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
 
+import type { KnownSettingKey, KnownSettings } from '../main/settings'
+
 export interface CoachmarkBeakPayload {
   beakFraction: number
   cardCentreInView: number | null
@@ -1270,8 +1272,8 @@ export interface ElectronApi {
   getModelsSections(): Promise<ModelsResult>
   getMediaSections(): Promise<SettingsSection[]>
   getUniqueName(baseName: string): Promise<string>
-  setSetting(key: string, value: unknown): Promise<void>
-  getSetting(key: string): Promise<unknown>
+  setSetting<K extends KnownSettingKey>(key: K, value: KnownSettings[K]): Promise<void>
+  getSetting<K extends KnownSettingKey>(key: K): Promise<KnownSettings[K]>
 
   getPendingBetaNotice(installationId: string): Promise<BetaActivationNotice | null>
   acknowledgeBetaNotice(installationId: string, shownArgs?: string[]): Promise<void>
