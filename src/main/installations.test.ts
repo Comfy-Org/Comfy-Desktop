@@ -916,3 +916,83 @@ describe('mutations fail closed when installations.json cannot be recovered (iss
     expect(fs.readFileSync(dataPath, 'utf-8')).toBe(corrupt)
   })
 })
+
+function holdNextWriteAtItsRename(): { reached: Promise<void>; land: () => void } {
+  const realRename = fs.promises.rename.bind(fs.promises)
+  let markReached: () => void = () => {}
+  const reached = new Promise<void>((resolve) => {
+    markReached = resolve
+  })
+  let land: () => void = () => {}
+  const allowed = new Promise<void>((resolve) => {
+    land = resolve
+  })
+  vi.spyOn(fs.promises, 'rename').mockImplementationOnce(async (from, to) => {
+    markReached()
+    await allowed
+    return realRename(from, to)
+  })
+  return { reached, land }
+}
+
+describe('reading the list while a write requested earlier is still reaching the disk', () => {
+  it('lists a build that is still being added', async () => {
+    const installations = await loadInstallations()
+    const disk = holdNextWriteAtItsRename()
+    const adding = installations.ensureExists('desktop', {
+      name: 'ComfyUI Legacy Desktop',
+      sourceId: 'desktop',
+      installPath: path.join(tmpRoot, 'legacy'),
+      status: 'installed'
+    })
+    const listed = installations.list()
+
+    await disk.reached
+    disk.land()
+
+    expect((await listed).map((inst) => inst.sourceId)).toEqual(['desktop'])
+    await adding
+  })
+
+  it('returns a build with a change that is still being saved', async () => {
+    const installations = await loadInstallations()
+    const entry = await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const disk = holdNextWriteAtItsRename()
+    const renaming = installations.update(entry.id, { name: 'Renamed' })
+    const fetched = installations.get(entry.id)
+
+    await disk.reached
+    disk.land()
+
+    expect((await fetched)!.name).toBe('Renamed')
+    await renaming
+  })
+
+  it('still answers after a write that failed', async () => {
+    const installations = await loadInstallations()
+    await installations.add({
+      name: 'Local A',
+      installPath: path.join(tmpRoot, 'a'),
+      sourceId: 'standalone',
+      status: 'installed'
+    })
+    const full = new Error('fake ENOSPC') as NodeJS.ErrnoException
+    full.code = 'ENOSPC'
+    vi.spyOn(fs.promises, 'rename').mockRejectedValueOnce(full)
+    const adding = installations.ensureExists('desktop', {
+      name: 'ComfyUI Legacy Desktop',
+      sourceId: 'desktop',
+      installPath: path.join(tmpRoot, 'legacy'),
+      status: 'installed'
+    })
+    const listed = installations.list()
+
+    await expect(adding).rejects.toThrow('fake ENOSPC')
+    expect((await listed).map((inst) => inst.name)).toEqual(['Local A'])
+  })
+})
