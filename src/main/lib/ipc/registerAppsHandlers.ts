@@ -1,14 +1,8 @@
 import { ipcMain } from 'electron'
 
-import {
-  captureAppPage,
-  hideAppPage,
-  sendAppOutputAction,
-  showAppPage
-} from '../../apps/appPageView'
+import { captureAppPage, hideAppPage, showAppPage } from '../../apps/appPageView'
 import { listApps } from '../../apps/appsCatalog'
 import { areAppsEnabled } from '../../apps/appsConfig'
-import { readOutputAction } from '../../apps/outputRequest'
 import { isPanelSender } from '../../host/registry'
 
 export function registerAppsHandlers(): void {
@@ -26,9 +20,4 @@ export function registerAppsHandlers(): void {
   ipcMain.handle('apps:capture-page', (event) => captureAppPage(event.sender))
 
   ipcMain.on('apps:hide-page', (event) => hideAppPage(event.sender))
-
-  ipcMain.on('apps:output-action', (event, raw: unknown) => {
-    const action = readOutputAction(raw)
-    if (action) sendAppOutputAction(event.sender, action)
-  })
 }

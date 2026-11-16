@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 type Handler = (event: unknown, request: unknown) => Promise<boolean>
+type Listener = (event: unknown, raw: unknown) => void
 interface LoadedPage {
   appId: string
   document: number
@@ -8,6 +9,8 @@ interface LoadedPage {
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, Handler>(),
+  listeners: new Map<string, Listener>(),
+  sendAppOutputAction: vi.fn(),
   isAppsPage: true,
   appsEnabled: true,
   page: { appId: 'remove-background', document: 1 } as LoadedPage | null,
@@ -16,17 +19,20 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({
   ipcMain: {
-    handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler)
+    handle: (channel: string, handler: Handler) => mocks.handlers.set(channel, handler),
+    on: (channel: string, listener: Listener) => mocks.listeners.set(channel, listener)
   }
 }))
 vi.mock('../../apps/appsConfig', () => ({ areAppsEnabled: async () => mocks.appsEnabled }))
 vi.mock('../../apps/appsPages', () => ({ isAppsPageSender: () => mocks.isAppsPage }))
 vi.mock('../../apps/appPageView', () => ({
   loadedAppPage: () => mocks.page,
-  showAppOutputs: mocks.showAppOutputs
+  showAppOutputs: mocks.showAppOutputs,
+  sendAppOutputAction: mocks.sendAppOutputAction
 }))
 
 import {
+  APPS_OUTPUT_ACTION_CHANNEL,
   APPS_OUTPUTS_SHOW_CHANNEL,
   registerAppsOutputsHandlers
 } from './registerAppsOutputsHandlers'
@@ -49,6 +55,7 @@ function showOutput(request: unknown = REQUEST): Promise<boolean> {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.handlers.clear()
+  mocks.listeners.clear()
   mocks.isAppsPage = true
   mocks.appsEnabled = true
   mocks.page = { appId: 'remove-background', document: 1 }
@@ -108,5 +115,34 @@ describe('showOutput from the hosted Apps page', () => {
     expect(await showOutput()).toBe(false)
 
     expect(mocks.showAppOutputs).not.toHaveBeenCalled()
+  })
+})
+
+describe('an output action from the panel', () => {
+  const PANEL_EVENT = { sender: {} }
+
+  function takeAction(raw: unknown): void {
+    const listener = mocks.listeners.get(APPS_OUTPUT_ACTION_CHANNEL)
+    if (!listener) throw new Error('No listener for output actions')
+    listener(PANEL_EVENT, raw)
+  }
+
+  it('listens on the channel the panel sends on', () => {
+    expect(APPS_OUTPUT_ACTION_CHANNEL).toBe('apps:output-action')
+  })
+
+  it('sends Download to the page', () => {
+    takeAction({ action: 'download', index: 0 })
+
+    expect(mocks.sendAppOutputAction).toHaveBeenCalledExactlyOnceWith(PANEL_EVENT.sender, {
+      action: 'download',
+      index: 0
+    })
+  })
+
+  it('drops an action it cannot read', () => {
+    takeAction({ action: 'delete', index: 0 })
+
+    expect(mocks.sendAppOutputAction).not.toHaveBeenCalled()
   })
 })
