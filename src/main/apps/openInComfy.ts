@@ -70,7 +70,12 @@ function refusalText(refusal: OpenRefusal): string {
 export async function localBuilds(): Promise<ComfyDesktopLocalBuild[]> {
   return (await usableLocalBuilds())
     .sort((a, b) => b.lastLaunchedAt - a.lastLaunchedAt)
-    .map((build) => ({ id: build.id, name: build.name }))
+    .map((build) => ({
+      id: build.id,
+      name: build.name,
+      ...(build.version === null ? {} : { version: build.version }),
+      running: build.port !== null
+    }))
 }
 
 function pickLocal(builds: LocalBuild[], wanted: string | null): LocalBuild | null {

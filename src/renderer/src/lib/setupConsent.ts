@@ -7,6 +7,7 @@ export interface SetupConsent {
   betaTouched: boolean
   preservePersistedBetaOptIn: boolean
   locale: string
+  migrateExisting?: boolean
 }
 
 export async function saveSetupConsent(

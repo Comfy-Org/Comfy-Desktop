@@ -6,6 +6,7 @@ interface FakeBuild {
   id: string
   name: string
   port: number | null
+  version?: string | null
   lastLaunchedAt?: number
 }
 
@@ -508,10 +509,22 @@ describe('when the workflow does not open', () => {
 })
 
 describe('the builds a page can pick from', () => {
-  it('are this computer builds by id and name', async () => {
+  it('are this computer builds by id and name, with whether each is running', async () => {
     expect(await localBuilds()).toEqual([
-      { id: STUDIO.id, name: STUDIO.name },
-      { id: LAB.id, name: LAB.name }
+      { id: STUDIO.id, name: STUDIO.name, running: false },
+      { id: LAB.id, name: LAB.name, running: false }
+    ])
+  })
+
+  it('give the ComfyUI version of each build Desktop knows it for', async () => {
+    mocks.builds = [
+      { ...STUDIO, version: '0.42.1', port: 8188 },
+      { ...LAB, version: null }
+    ]
+
+    expect(await localBuilds()).toEqual([
+      { id: STUDIO.id, name: STUDIO.name, version: '0.42.1', running: true },
+      { id: LAB.id, name: LAB.name, running: false }
     ])
   })
 

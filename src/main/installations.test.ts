@@ -782,40 +782,35 @@ describe('installations.enforceCloudName', () => {
   })
 })
 
-describe('installations.clearPendingTemplateOpen', () => {
-  it('clears the one-shot flag once, then is a no-op on the cleared record', async () => {
+describe('installations.load (a build made when first run offered a starter workflow)', () => {
+  it('lists, finds and updates a record that still carries the starter-template fields', async () => {
+    fs.writeFileSync(
+      path.join(userDataPath, 'installations.json'),
+      JSON.stringify([
+        {
+          id: 'starter-build',
+          name: 'Starter Build',
+          installPath: path.join(tmpRoot, 'starter'),
+          sourceId: 'standalone',
+          status: 'installed',
+          createdAt: new Date().toISOString(),
+          bundledTemplateId: 'image_z_image_turbo',
+          bundledTemplateSizeBytes: 5_000_000_000,
+          pendingTemplateOpen: 'image_z_image_turbo',
+          downloadTemplateModels: true
+        }
+      ])
+    )
     const installations = await loadInstallations()
-    const entry = await installations.add({
-      name: 'With Template',
-      installPath: path.join(tmpRoot, 't'),
-      sourceId: 'standalone',
-      status: 'installed',
-      bundledTemplateId: 'flux_schnell',
-      pendingTemplateOpen: 'flux_schnell',
-      downloadTemplateModels: true
-    })
 
-    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(true)
-    expect((await installations.get(entry.id))!.pendingTemplateOpen).toBeNull()
-    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
-  })
-
-  it('is a no-op for a legacy record with no template fields (migration-safe)', async () => {
-    const installations = await loadInstallations()
-    const entry = await installations.add({
-      name: 'Legacy',
-      installPath: path.join(tmpRoot, 'legacy'),
-      sourceId: 'standalone',
+    expect((await installations.list()).map((record) => record.id)).toEqual(['starter-build'])
+    expect(await installations.get('starter-build')).toMatchObject({
+      name: 'Starter Build',
       status: 'installed'
     })
-    expect(entry.pendingTemplateOpen).toBeUndefined()
-    expect(entry.bundledTemplateId).toBeUndefined()
-    expect(await installations.clearPendingTemplateOpen(entry.id)).toBe(false)
-  })
 
-  it('returns false when the install is gone', async () => {
-    const installations = await loadInstallations()
-    expect(await installations.clearPendingTemplateOpen('does-not-exist')).toBe(false)
+    await installations.update('starter-build', { name: 'Renamed' })
+    expect((await installations.get('starter-build'))!.name).toBe('Renamed')
   })
 })
 

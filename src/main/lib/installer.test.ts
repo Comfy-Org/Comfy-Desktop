@@ -348,3 +348,60 @@ describe('downloadAndExtractMulti', () => {
     expect(mockExtract).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('what the installer writes to the install log', () => {
+  const archive = { filename: 'comfyui-mac.tar.gz', size: 2 * 1048576 }
+  const files = [{ url: `https://example.com/${archive.filename}`, ...archive }]
+
+  function writesTheArchive(): DownloadFn {
+    return vi.fn<DownloadFn>(async (_url, dest) => {
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.writeFileSync(dest, Buffer.alloc(archive.size))
+      return dest
+    })
+  }
+
+  it('names the file and its size when it downloads, and says so when a later install reuses it', async () => {
+    const cache = makeCache(tmpDir())
+    const download = writesTheArchive()
+    const extract = vi.fn(async () => {})
+
+    const firstInstall: string[] = []
+    await downloadAndExtractMulti(files, tmpDir(), 'v1_mac', {
+      ...makeCtx({ download, cache, extract }),
+      sendOutput: (text) => firstInstall.push(text)
+    })
+    const secondInstall: string[] = []
+    await downloadAndExtractMulti(files, tmpDir(), 'v1_mac', {
+      ...makeCtx({ download, cache, extract }),
+      sendOutput: (text) => secondInstall.push(text)
+    })
+
+    expect(firstInstall).toEqual([
+      '[download] Downloading comfyui-mac.tar.gz (2 MB)\n',
+      '[extract] Extracting comfyui-mac.tar.gz\n'
+    ])
+    expect(secondInstall).toEqual([
+      '[download] Using the cached copy of comfyui-mac.tar.gz (2 MB)\n',
+      '[extract] Extracting comfyui-mac.tar.gz\n'
+    ])
+    expect(download).toHaveBeenCalledTimes(1)
+  })
+
+  it('names the file of a single-archive install, whose size is not known up front', async () => {
+    const lines: string[] = []
+    await downloadAndExtract('https://example.com/portable.7z', tmpDir(), 'v1_portable', {
+      ...makeCtx({
+        download: writesTheArchive(),
+        cache: makeCache(tmpDir()),
+        extract: vi.fn(async () => {})
+      }),
+      sendOutput: (text) => lines.push(text)
+    })
+
+    expect(lines).toEqual([
+      '[download] Downloading portable.7z\n',
+      '[extract] Extracting portable.7z\n'
+    ])
+  })
+})

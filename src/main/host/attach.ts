@@ -18,13 +18,7 @@ import {
   deactivateFirebaseAuthReporter
 } from '../lib/firebaseAuthIdentity'
 import { convertLevelToZoomPercent } from '../lib/zoom'
-import {
-  clearPendingTemplateOpen,
-  installationEvents,
-  type InstallationRecord
-} from '../installations'
-import { buildTemplateDeeplink } from '../sources/standalone/curatedTemplates'
-import { abortTemplateDownload } from '../sources/standalone/templateDownloadTask'
+import { installationEvents, type InstallationRecord } from '../installations'
 import { abortModelStaging } from '../sources/comfybuilder/modelStagingTask'
 import {
   dropInstallationIndex,
@@ -423,17 +417,7 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
 
   attachSessionDownloadHandler(comfyContents.session)
 
-  let urlToLoad = comfyUrl
-  const pendingTemplate =
-    typeof installation.pendingTemplateOpen === 'string' ? installation.pendingTemplateOpen : null
-  if (isLocal && pendingTemplate) {
-    urlToLoad = buildTemplateDeeplink(comfyUrl, pendingTemplate)
-    void clearPendingTemplateOpen(installationId).catch((err) => {
-      console.warn(`[templates] Failed to clear pendingTemplateOpen for ${installationId}:`, err)
-    })
-  }
-
-  comfyContents.loadURL(urlToLoad)
+  comfyContents.loadURL(comfyUrl)
 
   entry._installCleanup = (): void => {
     if (entry._installCleanup === null) return
@@ -457,7 +441,6 @@ export function attachInstall(entry: ComfyWindowEntry, opts: AttachInstallOpts):
         inFlight.abort()
         _operationAborts.delete(id)
       }
-      abortTemplateDownload(id)
       abortModelStaging(id)
       const relaunch = fx.relaunchStates.get(id) as
         { navBlocker: (...args: unknown[]) => void } | undefined

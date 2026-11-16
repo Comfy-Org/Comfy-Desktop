@@ -50,6 +50,7 @@ export interface InstallTools {
     onProgress?: ((p: ExtractProgress) => void) | null,
     options?: { signal?: AbortSignal }
   ) => Promise<void>
+  sendOutput?: (text: string) => void
   signal?: AbortSignal
 }
 
@@ -62,6 +63,7 @@ export interface ActionTools {
 
 export interface PostInstallTools {
   sendProgress: (step: string, data: { percent: number; status: string }) => void
+  sendOutput: (text: string) => void
   update: (data: Record<string, unknown>) => Promise<void>
   signal?: AbortSignal
 }
@@ -109,8 +111,8 @@ export interface SourcePlugin {
   hidden?: boolean
   fields: readonly SourceField[]
   defaultLaunchArgs?: string
-  installSteps?: readonly InstallStep[]
 
+  installSteps?(installation: InstallationRecord): InstallStep[]
   getDefaults?(): Record<string, unknown>
   getStatusTag?(installation: InstallationRecord): StatusTag | undefined
   buildInstallation(selections: Record<string, FieldOption | undefined>): Record<string, unknown>

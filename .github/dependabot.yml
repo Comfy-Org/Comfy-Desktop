@@ -88,3 +88,5 @@ updates:
       actions:
         patterns:
           - '*'
+    ignore:
+      - dependency-name: 'Comfy-Org/github-workflows*'

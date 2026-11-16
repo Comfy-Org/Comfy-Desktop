@@ -967,23 +967,6 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   showTitlePopupNow(entry)
 }
 
-export function openDownloadsTrayForInstall(installationId: string): void {
-  const entry = getEntryByInstallationId(installationId)
-  if (!entry || entry.window.isDestroyed()) return
-  const existing = titlePopupsByParent.get(entry.window.id)
-  if (existing && (existing.view.isOpen || existing.view.pendingShowTimer !== null)) {
-    return
-  }
-  openTitlePopup({
-    parent: entry.window,
-    parentEntryId: entry.windowKey,
-    kind: 'downloads',
-    anchor: { x: entry.window.getContentBounds().width, y: TITLEBAR_HEIGHT },
-    theme: entry.lastTheme,
-    titleBarSender: entry.titleBarView.webContents
-  })
-}
-
 export interface TitlePopupHostBindings {
   openChooserHostWindow: (initialPanel?: ComfyPanelKey) => void
   returnToDashboard: (parentEntryId: number) => Promise<void> | void
