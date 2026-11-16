@@ -9,6 +9,7 @@ import PathDiskInfo from '../components/PathDiskInfo.vue'
 import { useModal } from '../composables/useModal'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import type { SavedSetup } from '../lib/setupPlan'
 
 function mountModal(
   props: { hideBackToDashboard?: boolean } = {},
@@ -31,6 +32,10 @@ function mountModal(
       }
     }
   })
+}
+
+function savedSetups(wrapper: ReturnType<typeof mountModal>): SavedSetup[] {
+  return (wrapper.emitted('save-setup') ?? []).map(([saved]) => saved as SavedSetup)
 }
 
 async function showChangeSetup(wrapper: ReturnType<typeof mountModal>): Promise<void> {
@@ -150,7 +155,7 @@ beforeEach(() => {
 })
 
 describe('InstallWizardModal heading', () => {
-  it('opens Change from Set up as one step with the name and every option together', async () => {
+  it('opens Change from Set up as one sheet with the name, every option, and Save or Discard', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'standalone',
@@ -173,48 +178,98 @@ describe('InstallWizardModal heading', () => {
     expect(wrapper.find('[data-testid="install-source-tabs"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="config-summary"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="config-change-setup"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="config-save-changes"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="config-discard-changes"]').exists()).toBe(false)
-    expect(wrapper.find('.config-continue').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="config-discard-changes"]').text()).toBe('Discard')
+    expect(wrapper.get('[data-testid="config-save-changes"]').text()).toBe('Save changes')
+    expect(wrapper.find('.config-continue').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('asks for the EULA before installing when Change was opened without it', async () => {
+  it('saves the picked setup back to Set up without asking for the EULA or installing', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'standalone',
         label: 'Standalone',
-        fields: [{ id: 'variant', label: 'Hardware', type: 'select' }]
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
       }
     ])
     ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { value: 'cpu', label: 'CPU' }
+      {
+        value: 'nvidia',
+        label: 'NVIDIA',
+        recommended: true,
+        data: { variantId: 'win-nvidia', downloadFiles: [{ size: 1000 }] }
+      },
+      { value: 'cpu', label: 'CPU', data: { variantId: 'win-cpu', downloadFiles: [{ size: 400 }] } }
     ])
     const wrapper = mountModal({ hideBackToDashboard: true })
     await wrapper.vm.open({ cameFromSetup: true, needsConsent: true, entrypoint: 'first_use' })
     await flushPromises()
 
-    const consent = wrapper.get('.setup-modal-foot [data-testid="config-consent-tos"]')
-    expect(consent.text()).toContain('EULA')
-    expect(wrapper.find('.setup-modal-body [data-testid="config-consent-tos"]').exists()).toBe(
-      false
-    )
-    await wrapper.get('.config-continue').trigger('click')
+    expect(wrapper.find('[data-testid="config-consent-tos"]').exists()).toBe(false)
+    const cpu = wrapper.findAll('.setup-option').find((option) => option.text().includes('CPU'))
+    if (!cpu) throw new Error('the CPU hardware card is missing')
+    await cpu.trigger('click')
+    await wrapper.get('#inst-name-standalone').setValue('Studio')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await flushPromises()
 
     expect(window.api.addInstallation).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="config-consent-tos"]').attributes('data-nudge')).toBe('true')
-    expect(wrapper.get('[data-testid="config-agree-hint"]').text()).toBe('Agree to continue.')
-
-    await wrapper.get('[data-testid="config-consent-tos"] [role="checkbox"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.emitted('consent-change')).toEqual([[true]])
-    expect(wrapper.find('[data-testid="config-agree-hint"]').exists()).toBe(false)
-
-    await wrapper.get('.config-continue').trigger('click')
-    await flushPromises()
-    expect(window.api.addInstallation).toHaveBeenCalledOnce()
+    expect(window.api.installInstance).not.toHaveBeenCalled()
+    expect(wrapper.emitted('show-progress')).toBeUndefined()
+    const [saved] = savedSetups(wrapper)
+    expect(saved?.plan).toMatchObject({
+      sourceId: 'standalone',
+      installRoot: '/home/user/ComfyUI',
+      name: 'Studio',
+      downloadBytes: 400,
+      requiredBytes: 900,
+      selections: { variant: expect.objectContaining({ value: 'cpu' }) }
+    })
+    expect(saved?.draft.instName).toBe('Studio')
     wrapper.unmount()
+  })
+
+  it('reopens Change on the setup saved before, ready to save again', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        id: 'standalone',
+        label: 'Standalone',
+        fields: [{ id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }]
+      }
+    ])
+    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { value: 'nvidia', label: 'NVIDIA', recommended: true, data: { variantId: 'win-nvidia' } },
+      { value: 'cpu', label: 'CPU', data: { variantId: 'win-cpu' } }
+    ])
+    const first = mountModal({ hideBackToDashboard: true })
+    await first.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
+    await flushPromises()
+    await first
+      .findAll('.setup-option')
+      .find((option) => option.text().includes('CPU'))
+      ?.trigger('click')
+    await first.get('#inst-name-standalone').setValue('Studio')
+    await first.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    const [saved] = savedSetups(first)
+    first.unmount()
+    if (!saved) throw new Error('Save changes emitted nothing')
+
+    const again = mountModal({ hideBackToDashboard: true })
+    await again.vm.open({ cameFromSetup: true, entrypoint: 'first_use', restore: saved.draft })
+    await flushPromises()
+
+    const checked = again
+      .findAll('.setup-option')
+      .filter((option) => option.attributes('aria-checked') === 'true')
+      .map((option) => option.text())
+    expect(checked.some((text) => text.includes('CPU'))).toBe(true)
+    expect(checked.some((text) => text.includes('NVIDIA'))).toBe(false)
+    expect((again.get('#inst-name-standalone').element as HTMLInputElement).value).toBe('Studio')
+    await again.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    expect(savedSetups(again)[0]?.plan.selections.variant?.value).toBe('cpu')
+    again.unmount()
   })
 
   it('does not ask for the EULA again when it was accepted on Set up', async () => {
@@ -226,15 +281,15 @@ describe('InstallWizardModal heading', () => {
     wrapper.unmount()
   })
 
-  it('returns to Set up from the footer of the first-use Change step', async () => {
+  it('returns to Set up as it was from Discard changes in the first-use Change sheet', async () => {
     const wrapper = mountModal({ hideBackToDashboard: true })
     await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="config-back-to-setup"]').text()).toBe('Back')
-    await wrapper.get('[data-testid="config-back-to-setup"]').trigger('click')
+    await wrapper.get('[data-testid="config-discard-changes"]').trigger('click')
 
     expect(wrapper.emitted('back-to-setup')).toEqual([[]])
+    expect(wrapper.emitted('save-setup')).toBeUndefined()
     expect(wrapper.emitted('close')).toBeUndefined()
     expect(window.api.addInstallation).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -400,8 +455,8 @@ describe('InstallWizardModal heading', () => {
   })
 })
 
-describe('InstallWizardModal starter template disk gate in the first-use chain', () => {
-  async function openTemplateStep(modelsPresent: boolean) {
+describe('InstallWizardModal starter workflow', () => {
+  it('saves a first-use setup with no starter workflow, even when the catalog offers one', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'standalone',
@@ -415,36 +470,19 @@ describe('InstallWizardModal starter template disk gate in the first-use chain',
         value: 'starter',
         label: 'Starter Workflow',
         recommended: true,
-        data: { modality: 'image', sizeBytes: 20_000_000_000, modelsPresent }
+        data: { modality: 'image', sizeBytes: 20_000_000_000 }
       }
     ])
-    ;(window.api.getDiskSpace as ReturnType<typeof vi.fn>).mockResolvedValue({
-      free: 1_000_000_000,
-      total: 1_000_000_000_000
-    })
     const wrapper = mountModal({ hideBackToDashboard: true })
-    ;(wrapper.vm as unknown as { open: () => Promise<void> }).open()
+    await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
     await flushPromises()
-    await wrapper.get('.config-continue').trigger('click')
-    await vi.waitFor(() => expect(window.api.getDiskSpace).toHaveBeenCalled(), { timeout: 5000 })
+
+    expect(wrapper.text()).not.toContain('Starter Workflow')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await flushPromises()
-    await wrapper.get('.tps__card').trigger('click')
-    await flushPromises()
-    return wrapper
-  }
 
-  it('blocks a template whose models do not fit on disk', async () => {
-    const wrapper = await openTemplateStep(false)
-
-    expect(wrapper.get('.template-install').attributes('aria-disabled')).toBe('true')
-    expect(wrapper.find('.template-alert--error').exists()).toBe(true)
-  })
-
-  it('lets a template whose models are already downloaded install on a full disk', async () => {
-    const wrapper = await openTemplateStep(true)
-
-    expect(wrapper.get('.template-install').attributes('aria-disabled')).toBe('false')
-    expect(wrapper.find('.template-alert--error').exists()).toBe(false)
+    expect(wrapper.get('.setup-modal-title').text()).toBe('Change setup')
+    expect(savedSetups(wrapper)[0]?.plan.selections.bundledTemplate?.value).toBe('none')
   })
 })
 
@@ -967,6 +1005,50 @@ describe('InstallWizardModal workspace Builds', () => {
 
     expect(wrapper.find('.template-shell').exists()).toBe(false)
     expect(window.api.comfybuilder.installBuild).toHaveBeenCalledOnce()
+  })
+
+  it('saves a team build picked in first-use Change back to Set up without installing it', async () => {
+    signInToWorkspace([
+      {
+        id: 'ready',
+        name: 'Ready Build',
+        state: 'installable',
+        sizeBytes: 2_000,
+        releaseTargets: [
+          {
+            artifactId: 'cuda',
+            releaseVersion: 3,
+            os: 'windows',
+            gpu: 'nvidia',
+            accelVariant: 'cu128',
+            recommended: true
+          }
+        ]
+      }
+    ])
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'standalone', label: 'Standalone', fields: [] }
+    ])
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await flushPromises()
+    await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use', workspaceId: 'w1' })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+
+    expect(window.api.comfybuilder.installBuild).not.toHaveBeenCalled()
+    expect(savedSetups(wrapper)[0]?.plan).toMatchObject({
+      installRoot: '/home/user/ComfyUI',
+      requiredBytes: 4_500,
+      workspaceBuild: {
+        buildId: 'ready',
+        buildName: 'Ready Build',
+        artifactId: 'cuda',
+        releaseVersion: 3,
+        targetLabel: 'Windows - NVIDIA (CUDA 12.8)'
+      }
+    })
   })
 
   it('opens the selected workspace Builds page online', async () => {
@@ -1815,7 +1897,7 @@ describe('InstallWizardModal Change setup', () => {
     expect(wrapper.get('[data-testid="config-summary"]').text()).toContain('Latest on GitHub')
   })
 
-  it('installs what was picked in first use after ComfyUI I already have was only looked at', async () => {
+  it('saves what was picked in first use after ComfyUI I already have was only looked at', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,
       remoteSource
@@ -1833,12 +1915,12 @@ describe('InstallWizardModal Change setup', () => {
     await startFrom(wrapper, NEW_INSTALL)
 
     expect(pickedRelease(wrapper)).toBe('Latest on GitHub')
-    await wrapper.get('.config-continue').trigger('click')
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await flushPromises()
-    expect(window.api.buildInstallation).toHaveBeenCalledWith(
-      'standalone',
-      expect.objectContaining({ release: expect.objectContaining({ value: 'latest' }) })
-    )
+    expect(savedSetups(wrapper)[0]?.plan).toMatchObject({
+      sourceId: 'standalone',
+      selections: { release: expect.objectContaining({ value: 'latest' }) }
+    })
   })
 
   it('holds Start from in first use until Desktop has picked a setup', async () => {
@@ -1868,7 +1950,9 @@ describe('InstallWizardModal Change setup', () => {
     expect(
       wrapper.get('[data-testid="install-source-standalone"]').attributes('aria-checked')
     ).toBe('true')
-    expect(wrapper.get('.config-continue').attributes('disabled')).toBeUndefined()
+    expect(
+      wrapper.get('[data-testid="config-save-changes"]').attributes('disabled')
+    ).toBeUndefined()
   })
 
   it('gives the name back as it was when Discard follows a name typed for a ComfyUI already there', async () => {
@@ -2337,8 +2421,8 @@ describe('InstallWizardModal Change setup', () => {
       'true'
     )
     expect(wrapper.find('.track-form').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="config-use-existing"]').exists()).toBe(false)
-    const connect = wrapper.get('.config-continue')
+    expect(wrapper.find('[data-testid="config-save-changes"]').exists()).toBe(false)
+    const connect = wrapper.get('[data-testid="config-use-existing"]')
     expect(connect.text()).toBe('Connect')
 
     await connect.trigger('click')

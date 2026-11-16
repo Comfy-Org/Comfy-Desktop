@@ -193,6 +193,67 @@ describe('Set up, the first screen', () => {
     )
   })
 
+  it('shows and installs the setup saved in Change instead of working out a new one', async () => {
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        release: {
+          value: 'latest',
+          label: 'Latest on GitHub',
+          data: { latestStableTag: 'v0.43.0' }
+        },
+        variant: {
+          value: 'mac-cpu',
+          label: 'CPU',
+          data: { variantId: 'mac-cpu', downloadFiles: [] }
+        },
+        bundledTemplate: { value: 'none', label: 'None' }
+      },
+      installRoot: '/Volumes/Studio SSD',
+      downloadBytes: 0,
+      requiredBytes: 0,
+      name: 'Studio'
+    }
+    const w = mount(FirstUseTakeover, { props: { savedPlan } })
+    await flushPromises()
+
+    expect(window.api.getFieldOptions).not.toHaveBeenCalled()
+    expect(text(w, 'setup-hardware')).toBe('CPU')
+    expect(text(w, 'setup-row-location')).toContain('/Volumes/Studio SSD/ComfyUI')
+    expect(text(w, 'setup-version')).toContain('v0.43.0')
+    expect(text(w, 'setup-version')).toContain('Latest on GitHub')
+
+    await agree(w)
+    await install(w)
+    expect(w.emitted('install')).toEqual([[savedPlan]])
+  })
+
+  it('names a team build saved in Change by its build and hardware, not as detected', async () => {
+    const w = mount(FirstUseTakeover, {
+      props: {
+        savedPlan: {
+          sourceId: '',
+          selections: {},
+          installRoot: '/Users/ada/ComfyUI-Installs',
+          downloadBytes: 2 * GB,
+          requiredBytes: 4.5 * GB,
+          workspaceBuild: {
+            buildId: 'ready',
+            buildName: 'Ready Build',
+            artifactId: 'cuda',
+            releaseVersion: 3,
+            targetLabel: 'Windows - NVIDIA (CUDA 12.8)'
+          }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(text(w, 'setup-hardware')).toBe('Windows - NVIDIA (CUDA 12.8)')
+    expect(text(w, 'setup-row-hardware')).not.toContain('Detected')
+    expect(text(w, 'setup-version')).toBe('Ready Build')
+  })
+
   it('opens every option with Change before the EULA is ticked, and saves nothing yet', async () => {
     const w = await mountSetup()
     await setChecked(w.find('[data-testid="setup-consent-telemetry"] [role="checkbox"]'), false)
@@ -331,6 +392,16 @@ describe('Set up, the first screen', () => {
     await flushPromises()
     expect(window.api.setSetting).toHaveBeenCalledWith('useChineseMirrors', true)
     expect(window.api.setSetting).toHaveBeenCalledWith('chineseMirrorsPrompted', true)
+    expect(w.emitted('install')).toHaveLength(1)
+  })
+
+  it('does not ask about mirrors again once they were answered before Change', async () => {
+    installApi({ locale: 'zh-CN', settings: { chineseMirrorsPrompted: true } })
+    const w = await mountSetup()
+    await agree(w)
+    await install(w)
+
+    expect(w.find('[data-testid="setup-mirrors-accept"]').exists()).toBe(false)
     expect(w.emitted('install')).toHaveLength(1)
   })
 
