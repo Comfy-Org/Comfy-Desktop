@@ -21,7 +21,7 @@ export interface OutputFile {
 export type LocalCall =
   | { kind: 'queue' }
   | { kind: 'history'; promptId: string }
-  | { kind: 'view'; file: OutputFile }
+  | { kind: 'view'; file: OutputFile; promptId?: string }
   | { kind: 'object-info'; node: string }
   | { kind: 'prompt'; prompt: Record<string, unknown>; extraData: Record<string, unknown> }
   | { kind: 'upload'; bytes: Uint8Array; fileName: string }
@@ -62,9 +62,14 @@ function viewCall(query: URLSearchParams): LocalCall | null {
   return FILE_TYPES.has(type) ? { kind: 'view', file: { filename, subfolder, type } } : null
 }
 
+function withRunOf(call: LocalCall | null, promptId: string | null): LocalCall | null {
+  if (call?.kind !== 'view' || promptId === null) return call
+  return PROMPT_ID.test(promptId) ? { ...call, promptId } : null
+}
+
 function readGet(pathname: string, query: URLSearchParams): LocalCall | null {
   if (pathname === '/queue') return { kind: 'queue' }
-  if (pathname === '/view') return viewCall(query)
+  if (pathname === '/view') return withRunOf(viewCall(query), query.get('prompt_id'))
   const [, area, name = ''] = pathname.split('/')
   if (area === 'history' && PROMPT_ID.test(name)) return { kind: 'history', promptId: name }
   if (area === 'object_info' && NODE_CLASS.test(name)) return { kind: 'object-info', node: name }

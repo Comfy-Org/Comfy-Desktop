@@ -90,6 +90,8 @@ const RUN = '0b1c2d3e-aaaa-bbbb-cccc-0123456789ab'
 const OTHER_RUN = 'ffffffff-aaaa-bbbb-cccc-0123456789ab'
 const WANT = { minVersion: '0.41.0' }
 const CUTOUT = { filename: 'cutout_00001_.png', subfolder: 'apps', type: 'output' }
+const STUDIO_CUTOUT_BYTES = [137, 80, 78, 71]
+const LAB_CUTOUT_BYTES = [137, 80, 78, 72]
 const BIREFNET = {
   url: 'https://huggingface.co/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors',
   folder: 'background_removal',
@@ -128,15 +130,15 @@ class FakeComfy {
     if (![PORT, LAB_PORT].includes(Number(url.port))) throw new TypeError('fetch failed')
     if (url.pathname === '/queue' && init.method !== 'POST') return json(this.queue)
     if (url.pathname === '/prompt') return json(this.promptAnswer.body, this.promptAnswer.status)
-    if (url.pathname === `/history/${RUN}`) {
+    if (url.pathname.startsWith('/history/')) {
+      const promptId = url.pathname.slice('/history/'.length)
       return json({
-        [RUN]: { status: { completed: true }, outputs: { save: { images: [CUTOUT] } } }
+        [promptId]: { status: { completed: true }, outputs: { save: { images: [CUTOUT] } } }
       })
     }
     if (url.pathname === '/view') {
-      return new Response(new Uint8Array([137, 80, 78, 71]), {
-        headers: { 'content-type': 'image/png' }
-      })
+      const bytes = Number(url.port) === LAB_PORT ? LAB_CUTOUT_BYTES : STUDIO_CUTOUT_BYTES
+      return new Response(new Uint8Array(bytes), { headers: { 'content-type': 'image/png' } })
     }
     if (url.pathname === '/upload/image') {
       return json({ name: 'photo.png', subfolder: 'comfy-apps', type: 'input' })
@@ -591,6 +593,69 @@ describe('two runs from one page on two builds', () => {
     expect(portsOf(cutout)).toEqual([PORT])
     expect(portsOf('/interrupt')).toEqual([PORT])
     expect(portsOf(`/history/${OTHER_RUN}`)).toEqual([LAB_PORT])
+  })
+
+  it('fetches a file both builds made from the build of the run the page names', async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+    const cutout = `/view?${new URLSearchParams(CUTOUT)}`
+
+    await localState({ ...WANT, build: STUDIO })
+    await startARun()
+    await localState({ ...WANT, build: LAB })
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    await localFetch({ path: `/history/${OTHER_RUN}` })
+    const firstRun = await localFetch({
+      path: `/view?${new URLSearchParams({ ...CUTOUT, prompt_id: RUN })}`
+    })
+    const unnamed = await localFetch({ path: cutout })
+
+    expect([...firstRun.body]).toEqual(STUDIO_CUTOUT_BYTES)
+    expect([...unnamed.body]).toEqual(LAB_CUTOUT_BYTES)
+    expect(comfy.calls(cutout).map(({ port }) => port)).toEqual([PORT, LAB_PORT])
+  })
+
+  it("refuses a file from another build's run when the page names its own run", async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+
+    await localState({ ...WANT, build: STUDIO })
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    await localState({ ...WANT, build: LAB })
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await startARun()
+    const named = { ...CUTOUT, prompt_id: OTHER_RUN }
+
+    expect((await localFetch({ path: `/view?${new URLSearchParams(named)}` })).status).toBe(403)
+    expect(comfy.calls(`/view?${new URLSearchParams(CUTOUT)}`)).toEqual([])
+  })
+})
+
+describe('two app pages on two builds that each made a file of the same name', () => {
+  it('each get the file from their own build', async () => {
+    const studioPage: FakePage = { send: vi.fn<(channel: string, event: unknown) => void>() }
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+    const cutout = `/view?${new URLSearchParams(CUTOUT)}`
+
+    await localState({ ...WANT, build: LAB })
+    await localState({ ...WANT, build: STUDIO }, studioPage)
+    await startARun()
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await localFetch({ method: 'POST', path: '/prompt', body: '{"prompt":{"1":{}}}' }, studioPage)
+    await localFetch({ path: `/history/${RUN}` })
+    await localFetch({ path: `/history/${OTHER_RUN}` }, studioPage)
+    const labFile = await localFetch({ path: cutout })
+    const studioFile = await localFetch({ path: cutout }, studioPage)
+
+    expect([...labFile.body]).toEqual(LAB_CUTOUT_BYTES)
+    expect([...studioFile.body]).toEqual(STUDIO_CUTOUT_BYTES)
   })
 })
 
