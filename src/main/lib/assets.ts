@@ -223,11 +223,13 @@ type SaveTo = (filePath: string, job: FileSaveTransfer) => Promise<void>
 
 async function writeThroughPartFile(
   filePath: string,
+  signal: AbortSignal,
   write: (partPath: string) => Promise<void>
 ): Promise<void> {
   const partPath = `${filePath}.${randomUUID()}.part`
   try {
     await write(partPath)
+    signal.throwIfAborted()
     await fs.promises.rename(partPath, filePath)
   } catch (error) {
     await fs.promises.rm(partPath, { force: true }).catch(() => {})
@@ -261,10 +263,10 @@ async function saveDownload(url: string, filePath: string, job: FileSaveTransfer
       job.progress(received, total)
     })
     body.on('pause', () => clearTimeout(timer))
-    await writeThroughPartFile(filePath, (partPath) => {
+    await writeThroughPartFile(filePath, job.signal, (partPath) => {
       const file = fs.createWriteStream(partPath, { flags: 'wx' })
       file.on('drain', keepAlive)
-      return pipeline(body, file)
+      return pipeline(body, file, { signal: job.signal })
     })
   } finally {
     clearTimeout(timer)
@@ -292,8 +294,8 @@ async function cloudSaveTo(installationId: string, assetId: string): Promise<Sav
 async function localSaveTo(assetId: string): Promise<SaveTo | null> {
   const file = await outputFilePath(assetId)
   if (!file) return null
-  return (filePath) =>
-    writeThroughPartFile(filePath, (partPath) =>
+  return (filePath, job) =>
+    writeThroughPartFile(filePath, job.signal, (partPath) =>
       fs.promises.copyFile(file, partPath, fs.constants.COPYFILE_EXCL)
     )
 }

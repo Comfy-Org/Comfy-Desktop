@@ -494,6 +494,34 @@ describe('downloadAsset', () => {
     expect((await finishedRow('/picked/clip.mp4')).status).toBe('cancelled')
     await vi.waitFor(() => expect(removeFile).toHaveBeenCalledWith(partFilePath(), { force: true }))
     expect(renameFile, 'the file the user picked is never written').not.toHaveBeenCalled()
+    expect(win.setProgressBar, 'the Dock icon stops showing progress').toHaveBeenLastCalledWith(-1)
+  })
+
+  it('leaves the picked file untouched when a copy on this computer is cancelled mid-copy', async () => {
+    fileOnThisComputer('/out/still.png')
+    showSaveDialog.mockResolvedValue({ canceled: false, filePath: '/picked/still.png' })
+    let finishCopy = (): void => {}
+    copyFile.mockImplementationOnce(async (from: string, to: string) => {
+      await new Promise<void>((resolve) => {
+        finishCopy = resolve
+      })
+      written.set(to, `copy of ${from}`)
+    })
+
+    await downloadAsset(win, 'local', '/out/still.png', 'still.png')
+    await vi.waitFor(() => expect(copyFile).toHaveBeenCalledOnce())
+    const copying = downloadsRow('/picked/still.png')!
+
+    expect(cancelModelDownload(copying.id!)).toBe(true)
+    finishCopy()
+
+    expect((await finishedRow('/picked/still.png')).status).toBe('cancelled')
+    await vi.waitFor(() =>
+      expect(removeFile).toHaveBeenCalledWith(copyFile.mock.calls[0]![1], { force: true })
+    )
+    expect(renameFile, 'the file the user picked is never replaced').not.toHaveBeenCalled()
+    expect(written.has('/picked/still.png')).toBe(false)
+    expect(savedSettings.has('lastSaveDialogDir')).toBe(false)
   })
 
   it('does not follow a redirect away from the signed storage link', async () => {

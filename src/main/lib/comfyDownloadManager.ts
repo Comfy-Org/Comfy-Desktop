@@ -1785,7 +1785,6 @@ export function cancelModelDownload(ref: string): boolean {
     pending.item.cancel()
   } else {
     pending.abort?.abort()
-    unregisterPending(pending)
     reportProgress({
       id: pending.id,
       url: pending.url,
@@ -1794,6 +1793,7 @@ export function cancelModelDownload(ref: string): boolean {
       progress: 0,
       status: 'cancelled'
     })
+    unregisterPending(pending)
   }
   return true
 }
