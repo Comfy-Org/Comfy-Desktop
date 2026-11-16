@@ -5,6 +5,7 @@ import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import type { DatadogForwardedError } from '../../types/ipc'
 import type { InstallationRecord } from '../installations'
 import { getAppVersion } from '../lib/ipc'
+import { hasBuildsRunningForAppsOnly, stopEveryBuildRunningForAppsOnly } from '../apps/localComfy'
 import { attachContextMenu } from '../lib/contextMenu'
 import { tryOpenExternalUrl } from '../lib/openExternal'
 import { guardPermissionRequests } from '../lib/sessionPermissions'
@@ -111,6 +112,13 @@ export function shouldShowInstallCloseConfirm(
     consult === 'defer' &&
     !forceClose
   )
+}
+
+export function closeStopsLocalComfy(
+  entry: ComfyWindowEntry | null | undefined,
+  isLastWindow: boolean
+): boolean {
+  return shouldConfirmKillForEntry(entry) || (isLastWindow && hasBuildsRunningForAppsOnly())
 }
 
 export function shouldBailAfterCloseChoice(
@@ -367,6 +375,55 @@ export function isWindowLayoutable(
   return !win.isDestroyed() && !win.isMinimized()
 }
 
+export async function confirmHostWindowClose(
+  comfyWindow: BrowserWindow,
+  windowKey: number,
+  fx: Pick<
+    HostWindowFactories,
+    'consultPanelRendererClose' | 'confirmCloseInstanceWindow' | 'preClearedClose'
+  >
+): Promise<boolean> {
+  const entry = comfyWindows.get(windowKey)
+  const skipConsult = fx.preClearedClose.has(comfyWindow)
+  if (!skipConsult) hideTitlePopupForParent(comfyWindow)
+  const consult: CloseConsultResult = skipConsult
+    ? 'cleared'
+    : await fx.consultPanelRendererClose(entry?.panelView)
+  if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return false
+  const entryForClose = comfyWindows.get(windowKey)
+  const isLastWindow =
+    Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
+  const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
+  const isLastInstallWindow = isLastWindow && isInstallHostWindow
+  const stopsLocalComfy = closeStopsLocalComfy(entryForClose, isLastWindow)
+  let agreedToStopAppsBuilds = false
+  if (
+    shouldShowInstallCloseConfirm(
+      settings.get('confirmBeforeClosingWindow') === true,
+      consult,
+      stopsLocalComfy,
+      fx.preClearedClose.has(comfyWindow),
+      isLastInstallWindow
+    ) &&
+    entryForClose
+  ) {
+    const closeChoice = await fx.confirmCloseInstanceWindow(
+      comfyWindow,
+      isLastWindow,
+      stopsLocalComfy,
+      entryForClose.lastTheme
+    )
+    if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) {
+      return false
+    }
+    agreedToStopAppsBuilds = isLastWindow && closeChoice === 'close'
+  }
+  fx.preClearedClose.delete(comfyWindow)
+  if (comfyWindow.isDestroyed()) return false
+  if (agreedToStopAppsBuilds) void stopEveryBuildRunningForAppsOnly()
+  return true
+}
+
 export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowResult {
   const fx = getFactories()
   const windowKey = nextWindowKey()
@@ -548,37 +605,7 @@ export function createHostWindow(opts: CreateHostWindowOpts): CreateHostWindowRe
     void (async () => {
       try {
         const entry = comfyWindows.get(windowKey)
-        const skipConsult = fx.preClearedClose.has(comfyWindow)
-        const isLastWindow =
-          Array.from(comfyWindows.values()).filter((e) => !e.window.isDestroyed()).length <= 1
-        if (!skipConsult) hideTitlePopupForParent(comfyWindow)
-        const consult: CloseConsultResult = skipConsult
-          ? 'cleared'
-          : await fx.consultPanelRendererClose(entry?.panelView)
-        if (shouldBailAfterConsult(consult, fx.preClearedClose.has(comfyWindow))) return
-        const entryForClose = comfyWindows.get(windowKey)
-        const isInstallHostWindow = !!entryForClose && isInstallHost(entryForClose)
-        const isLastInstallWindow = isLastWindow && isInstallHostWindow
-        if (
-          shouldShowInstallCloseConfirm(
-            settings.get('confirmBeforeClosingWindow') === true,
-            consult,
-            shouldConfirmKillForEntry(entryForClose),
-            fx.preClearedClose.has(comfyWindow),
-            isLastInstallWindow
-          ) &&
-          entryForClose
-        ) {
-          const closeChoice = await fx.confirmCloseInstanceWindow(
-            comfyWindow,
-            isLastWindow,
-            shouldConfirmKillForEntry(entryForClose),
-            entryForClose.lastTheme
-          )
-          if (shouldBailAfterCloseChoice(closeChoice, fx.preClearedClose.has(comfyWindow))) return
-        }
-        fx.preClearedClose.delete(comfyWindow)
-        if (comfyWindow.isDestroyed()) return
+        if (!(await confirmHostWindowClose(comfyWindow, windowKey, fx))) return
         const safeTeardown = (source: string, fn: () => void): void => {
           try {
             fn()

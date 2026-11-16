@@ -11,10 +11,16 @@ import * as installations from '../installations'
 import type { InstallationRecord } from '../installations'
 import { startManagedModelJob } from '../lib/comfyDownloadManager'
 import { probeQueue } from '../lib/comfyProcessRecord'
+import type { QueueAnswer } from '../lib/comfyProcessRecord'
 import * as i18n from '../lib/i18n'
 import { handleLaunch } from '../lib/ipc/sessionActions/launch'
 import type { ActionResult } from '../lib/ipc/sessionActions/types'
-import { _hasActiveLaunch, sessionLifecycleEvents, stopRunning } from '../lib/ipc/shared'
+import {
+  _hasActiveLaunch,
+  _runningSessions,
+  sessionLifecycleEvents,
+  stopRunning
+} from '../lib/ipc/shared'
 import { COMFY_BOOT_TIMEOUT_MS } from '../lib/process'
 import { liveAppsPages } from './appsPages'
 import {
@@ -132,20 +138,28 @@ function watchSessions(): void {
   sessionLifecycleEvents.on('changed', stopFollowingStoppedBuilds)
 }
 
+function isEmpty(queue: QueueAnswer): boolean {
+  return queue !== null && queue !== 'not_queue' && queue.running + queue.pending === 0
+}
+
+async function idleState(installationId: string): Promise<'gone' | 'busy' | 'replaced' | 'idle'> {
+  const port = runningPortOf(installationId)
+  if (port === null || !isRunningForAppsOnly(installationId)) return 'gone'
+  const session = _runningSessions.get(installationId)
+  const queue = await probeQueue(port)
+  if (!isRunningForAppsOnly(installationId)) return 'gone'
+  if (_runningSessions.get(installationId) !== session) return 'replaced'
+  return isEmpty(queue) ? 'idle' : 'busy'
+}
+
 async function stopIdleBuilds(): Promise<void> {
   idleTimer = null
   if (downloadsUnderWay > 0) return noteUse()
   for (const id of [...startedHere]) {
-    const port = runningPortOf(id)
-    if (port === null || getEntryByInstallationId(id)) {
-      startedHere.delete(id)
-      continue
-    }
-    const queue = await probeQueue(port)
-    const isIdle = queue !== null && queue !== 'not_queue' && queue.running + queue.pending === 0
-    if (!isIdle) continue
+    const state = await idleState(id)
+    if (state === 'busy' || state === 'replaced') continue
     startedHere.delete(id)
-    await stopRunning(id)
+    if (state === 'idle') await stopRunning(id)
   }
   if (startedHere.size > 0) noteUse()
 }
@@ -249,6 +263,36 @@ async function launchWithoutWindow(installationId: string): Promise<ActionResult
   })
   if (result.ok) startedHere.add(installationId)
   return result
+}
+
+export function isRunningForAppsOnly(installationId: string): boolean {
+  return (
+    startedHere.has(installationId) &&
+    runningPortOf(installationId) !== null &&
+    !getEntryByInstallationId(installationId)
+  )
+}
+
+export function hasBuildsRunningForAppsOnly(): boolean {
+  return [...startedHere].some(isRunningForAppsOnly)
+}
+
+async function stopIfIdle(installationId: string): Promise<void> {
+  if ((await idleState(installationId)) !== 'idle') return
+  startedHere.delete(installationId)
+  await stopRunning(installationId)
+}
+
+export async function stopBuildsRunningForAppsOnly(): Promise<void> {
+  await Promise.all([...startedHere].filter(isRunningForAppsOnly).map(stopIfIdle))
+  noteUse()
+}
+
+export async function stopEveryBuildRunningForAppsOnly(): Promise<void> {
+  const ids = [...startedHere].filter(isRunningForAppsOnly)
+  for (const id of ids) startedHere.delete(id)
+  noteUse()
+  await Promise.all(ids.map((id) => stopRunning(id)))
 }
 
 export function launchOnce(installationId: string): Promise<ActionResult> {

@@ -956,6 +956,91 @@ describe('a ComfyUI that Desktop started for apps', () => {
 
     expect(stopped).toEqual([])
   })
+
+  it('keeps running when its window opens while the idle stop is still reading its queue', async () => {
+    let answer: (queue: unknown) => void = () => {}
+    mocks.probeQueue = () => new Promise((resolve) => (answer = resolve))
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    mocks.windows.set(STUDIO, { window: {} })
+    answer({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([])
+  })
+
+  it.each([
+    ['an empty queue', { running: 0, pending: 0 }],
+    ['a busy queue', { running: 1, pending: 0 }],
+    ['no queue', null]
+  ])(
+    'keeps running for apps only when it was started again while the idle stop read %s, and is stopped once idle after that',
+    async (_case, queue) => {
+      let answer: (value: unknown) => void = () => {}
+      mocks.probeQueue = () => new Promise((resolve) => (answer = resolve))
+      await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+      running()
+      mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+      answer(queue)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(stopped).toEqual([])
+      expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+      expect(stopped).toEqual([STUDIO])
+    }
+  )
+
+  it('is known as running for apps only, so opening it shows a new ComfyUI window', () => {
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(true)
+  })
+
+  it('is no longer running for apps only once it stops', () => {
+    mocks.sessions.delete(STUDIO)
+
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('is no longer running for apps only once a window is open for it', () => {
+    mocks.windows.set(STUDIO, { window: {} })
+
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('is stopped when every Desktop window closes', async () => {
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([STUDIO])
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('keeps running when every Desktop window closes while it has work queued, and is stopped after that', async () => {
+    mocks.probeQueue = async () => ({ running: 1, pending: 2 })
+    await local.stopBuildsRunningForAppsOnly()
+    expect(stopped).toEqual([])
+
+    mocks.probeQueue = async () => ({ running: 0, pending: 0 })
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('is not stopped twice once the idle stop comes round after that', async () => {
+    await local.stopBuildsRunningForAppsOnly()
+    await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([STUDIO])
+  })
+
+  it('keeps running when every Desktop window closes once the person opened its window', async () => {
+    mocks.windows.set(STUDIO, { window: {} })
+
+    await local.stopBuildsRunningForAppsOnly()
+
+    expect(stopped).toEqual([])
+  })
 })
 
 describe('a ComfyUI the person started themselves', () => {
@@ -965,6 +1050,22 @@ describe('a ComfyUI the person started themselves', () => {
     await localFetch({ path: '/queue' })
 
     await vi.advanceTimersByTimeAsync(LOCAL_IDLE_STOP_MS * 3)
+
+    expect(stopped).toEqual([])
+  })
+
+  it('is not running for apps only, so opening it keeps its own window', async () => {
+    running()
+    await startLocal(WANT)
+
+    expect(local.isRunningForAppsOnly(STUDIO)).toBe(false)
+  })
+
+  it('is not stopped by apps when every Desktop window closes', async () => {
+    running()
+    await startLocal(WANT)
+
+    await local.stopBuildsRunningForAppsOnly()
 
     expect(stopped).toEqual([])
   })
