@@ -18,6 +18,8 @@ const DELETE_NAME = 'Delete Me'
 
 const MARKER_FILENAME = '.comfyui-desktop-2'
 
+const DELETE_ERROR_BADGE = `${byTestId(TID.dashboardTile(DELETE_ID))} .chooser-tile-error-badge`
+
 async function pathExists(p: string): Promise<boolean> {
   try {
     await access(p)
@@ -29,6 +31,13 @@ async function pathExists(p: string): Promise<boolean> {
 
 async function tileExists(installationId: string): Promise<boolean> {
   return ctx.panel.exists(byTestId(TID.dashboardTile(installationId)))
+}
+
+async function errorShownOnDeletedBuild(): Promise<string | null> {
+  if (!(await ctx.panel.isVisible(DELETE_ERROR_BADGE))) return null
+  expect(await ctx.panel.click(DELETE_ERROR_BADGE), 'error badge click dispatched').toBe(true)
+  await ctx.panel.waitForVisible('.base-alert-message-text', { timeout: 5_000 })
+  return ctx.panel.textOf('.base-alert-message-text')
 }
 
 async function openKebabAndClick(installationId: string, menuItemId: string): Promise<void> {
@@ -123,10 +132,11 @@ test('kebab Delete drops the record AND removes the install directory @lifecycle
   const confirmed = await ctx.panel.click(byTestId(TID.baseAlertAction))
   expect(confirmed, 'delete confirm click dispatched').toBe(true)
 
-  await ctx.panel.waitFor(async () => !(await tileExists(DELETE_ID)), {
-    timeout: 30_000,
-    message: 'deleted tile never disappeared from chooser'
-  })
+  await ctx.panel.waitFor(
+    async () => !(await tileExists(DELETE_ID)) || (await ctx.panel.isVisible(DELETE_ERROR_BADGE)),
+    { timeout: 30_000, message: 'the delete neither removed the build nor reported an error' }
+  )
+  expect(await errorShownOnDeletedBuild(), 'the app reported an error for the delete').toBeNull()
   await expect
     .poll(() => pathExists(deletePath), { timeout: 30_000, intervals: [250, 500, 1000] })
     .toBe(false)

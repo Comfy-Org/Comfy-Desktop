@@ -169,8 +169,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build app
-        run: pnpm run build
+      - name: Bundle app
+        run: pnpm exec electron-vite build
 
       - name: Verify the Windows hardware UUID lookup
         if: matrix.platform == 'windows' && matrix.shard == 1
