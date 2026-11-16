@@ -89,7 +89,6 @@ const targetByPage = new WeakMap<WebContents, Target>()
 const relayByBuild = new Map<string, LocalRelay>()
 const startedHere = new Set<string>()
 const launches = new Map<string, Promise<ActionResult>>()
-// Each run, and each file a run made, maps to the build it ran on.
 const ownRuns = new Map<string, string>()
 const ownFiles = new Map<string, string>()
 
