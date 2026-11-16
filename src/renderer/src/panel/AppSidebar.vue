@@ -27,6 +27,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import type { DashboardPage, Installation } from '../types/ipc'
 
@@ -137,6 +138,7 @@ function navigate(page: DashboardPage): void {
 }
 
 function openSettings(): void {
+  emitTelemetryAction('comfy.desktop.sidebar.settings_opened', { from_page: activePage })
   window.api.openGlobalSettings()
 }
 </script>

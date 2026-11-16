@@ -6,6 +6,7 @@ import AppSidebar from './AppSidebar.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 import type { DashboardPage, Installation } from '../types/ipc'
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
@@ -164,9 +165,21 @@ describe('AppSidebar', () => {
     expect(settings.element.closest('nav')).toBeNull()
     expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
 
+    const events: TelemetryActionEventDetail[] = []
+    const record: EventListener = (event) => {
+      events.push((event as CustomEvent<TelemetryActionEventDetail>).detail)
+    }
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, record)
     await settings.trigger('click')
+    window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, record)
 
     expect(openGlobalSettings).toHaveBeenCalledExactlyOnceWith()
+    expect(events).toEqual([
+      expect.objectContaining({
+        actionName: 'comfy.desktop.sidebar.settings_opened',
+        context: { from_page: 'assets' }
+      })
+    ])
     expect(navigatePanel).not.toHaveBeenCalled()
     expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Assets'])
   })
