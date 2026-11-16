@@ -191,6 +191,13 @@ export type ComfyDesktopHostedAuthBridge = Required<
 export interface ComfyDesktopLocalRequirements {
   /** The oldest ComfyUI the page can run on, such as `0.41.0`. */
   minVersion?: string
+  /**
+   * The build the person picked to run on, an id from `localBuilds`. Desktop
+   * uses it when it is installed and new enough, and otherwise chooses as if
+   * none was named: a running build first, then the one used last. The answer
+   * names the build Desktop chose.
+   */
+  build?: string
 }
 /**
  * The ComfyUI on this computer that Desktop uses for a hosted page.
@@ -278,6 +285,10 @@ export type ComfyDesktopOpenInComfy =
 export interface ComfyDesktopLocalBuild {
   id: string
   name: string
+  /** Its ComfyUI version, such as `0.42.1`, when Desktop knows it. Absent on Desktop builds that predate it. */
+  version?: string
+  /** True when it is running now. Absent on Desktop builds that predate it. */
+  running?: boolean
 }
 /**
  * A ComfyUI on this computer, run by Desktop, for a Comfy page hosted in
