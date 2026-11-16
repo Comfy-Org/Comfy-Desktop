@@ -69,7 +69,11 @@ const detail = computed(() => {
 })
 const INLINE_ACTIONS_MIN_WIDTH = 448
 const busyCard = useTemplateRef<HTMLElement>('busyCard')
-const { width: busyCardWidth } = useElementSize(busyCard)
+const { width: busyCardWidth } = useElementSize(
+  busyCard,
+  { width: 0, height: 0 },
+  { box: 'border-box' }
+)
 const actionsBelowCard = computed(
   () => busyCardWidth.value > 0 && busyCardWidth.value < INLINE_ACTIONS_MIN_WIDTH
 )

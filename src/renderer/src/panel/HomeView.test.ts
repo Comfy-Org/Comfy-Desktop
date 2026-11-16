@@ -678,6 +678,7 @@ describe('Home builds', () => {
 })
 
 describe('Home build card while a build starts', () => {
+  const CARD_PADDING_AND_BORDER = 38
   let observers: { target?: Element; report: (width: number) => void }[]
   const originalResizeObserver = globalThis.ResizeObserver
 
@@ -692,9 +693,12 @@ describe('Home build card while a build starts', () => {
               [
                 {
                   target: this.entry.target!,
-                  contentRect: { width, height: 136 } as DOMRectReadOnly,
-                  contentBoxSize: [{ inlineSize: width, blockSize: 136 }],
-                  borderBoxSize: [{ inlineSize: width, blockSize: 136 }],
+                  contentRect: {
+                    width: width - CARD_PADDING_AND_BORDER,
+                    height: 98
+                  } as DOMRectReadOnly,
+                  contentBoxSize: [{ inlineSize: width - CARD_PADDING_AND_BORDER, blockSize: 98 }],
+                  borderBoxSize: [{ inlineSize: width, blockSize: 100 }],
                   devicePixelContentBoxSize: []
                 } as unknown as ResizeObserverEntry
               ],
@@ -751,6 +755,13 @@ describe('Home build card while a build starts', () => {
 
     await starting.get('[data-testid="home-build-cancel"]').trigger('click')
     expect(window.api.cancelOperation).toHaveBeenCalledWith(NEWEST.id)
+  })
+
+  it('keeps View logs and Cancel inside a 460px card, counting its padding and border', async () => {
+    const { starting } = await startBuildBesideTwoOthers(460)
+
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(true)
   })
 
   it('keeps View logs and Cancel inside a card that has room for them', async () => {
