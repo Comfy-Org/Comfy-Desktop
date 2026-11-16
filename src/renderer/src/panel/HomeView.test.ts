@@ -716,6 +716,7 @@ describe('Home build card while a build starts', () => {
     Object.assign(window.api, {
       onInstallProgress: vi.fn(() => () => {}),
       onComfyOutput: vi.fn(() => () => {}),
+      onErrorDetail: vi.fn(() => () => {}),
       cancelOperation: vi.fn(),
       stopComfyUI: vi.fn()
     })
@@ -732,7 +733,8 @@ describe('Home build card while a build starts', () => {
       installationId: NEWEST.id,
       title: 'Starting',
       opKind: 'launch',
-      apiCall: () => new Promise(() => {})
+      apiCall: () => new Promise(() => {}),
+      events: window.api
     })
     await flushPromises()
     const starting = wrapper.get('[data-testid="home-build-starting"]')
