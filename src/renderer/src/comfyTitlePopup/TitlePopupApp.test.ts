@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 
 interface MockMenuItem {
   id?: string
@@ -43,6 +43,7 @@ interface MockBridgeState {
   closeCalls: number
   readyCalls: number
   notifyRenderedCalls: number
+  renderAckWaiters: (() => void)[]
   openSettingsTabCalls: string[]
   downloadsActionCalls: unknown[]
   pickInstallCalls: string[]
@@ -67,6 +68,7 @@ function installMockBridge(): MockBridgeState {
     closeCalls: 0,
     readyCalls: 0,
     notifyRenderedCalls: 0,
+    renderAckWaiters: [],
     openSettingsTabCalls: [],
     downloadsActionCalls: [],
     pickInstallCalls: [],
@@ -85,6 +87,7 @@ function installMockBridge(): MockBridgeState {
     },
     notifyRendered: () => {
       state.notifyRenderedCalls += 1
+      state.renderAckWaiters.splice(0).forEach((seeAck) => seeAck())
     },
     onConfig: (cb: (cfg: MockPopupConfig) => void) => {
       state.configCallbacks.push(cb)
@@ -140,6 +143,18 @@ function installMockBridge(): MockBridgeState {
   }
   ;(window as unknown as { __comfyTitlePopup: typeof bridge }).__comfyTitlePopup = bridge
   return state
+}
+
+function nextRenderAck<Seen>(state: MockBridgeState, seenAtAck: () => Seen): Promise<Seen> {
+  return new Promise((resolve) => state.renderAckWaiters.push(() => resolve(seenAtAck())))
+}
+
+function menuLabels(wrapper: VueWrapper): string[] {
+  return wrapper.findAll('.menu .item').map((item) => item.text())
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()))
 }
 
 describe('TitlePopupApp', { timeout: 20_000 }, () => {
@@ -226,9 +241,9 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
 
   it('acks via notifyRendered after a config flush so main can show the view', async () => {
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
-    mount(TitlePopupApp)
+    const wrapper = mount(TitlePopupApp)
     await flushPromises()
-    const before = bridgeState.notifyRenderedCalls
+    const menuAtAck = nextRenderAck(bridgeState, () => menuLabels(wrapper))
     bridgeState.configCallbacks.forEach((cb) =>
       cb({
         kind: 'menu',
@@ -236,7 +251,7 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
         theme: { bg: '#262729', text: '#dddddd' }
       })
     )
-    await vi.waitFor(() => expect(bridgeState.notifyRenderedCalls).toBeGreaterThan(before))
+    expect(await menuAtAck).toEqual(['Alpha'])
   })
 
   it('asks main to close on Escape', async () => {
@@ -316,9 +331,10 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
 
   it('suppresses stale render-acks on rapid back-to-back configs', async () => {
     const { default: TitlePopupApp } = await import('./TitlePopupApp.vue')
-    mount(TitlePopupApp)
+    const wrapper = mount(TitlePopupApp)
     await flushPromises()
     const before = bridgeState.notifyRenderedCalls
+    const menuAtFirstAck = nextRenderAck(bridgeState, () => menuLabels(wrapper))
     bridgeState.configCallbacks.forEach((cb) =>
       cb({
         kind: 'menu',
@@ -333,8 +349,8 @@ describe('TitlePopupApp', { timeout: 20_000 }, () => {
         theme: { bg: '#262729', text: '#dddddd' }
       })
     )
-    await flushPromises()
-    await new Promise((r) => setTimeout(r, 30))
+    expect(await menuAtFirstAck).toEqual(['Beta'])
+    await nextFrame()
     expect(bridgeState.notifyRenderedCalls - before).toBe(1)
   })
 

@@ -37,7 +37,7 @@ test('Change works before the EULA and opens the name with every option @lifecyc
 
   await ctx.panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 10_000 })
   await ctx.panel.waitForVisible('#inst-name-standalone')
-  await ctx.panel.waitForVisible('[data-testid="install-source-remote"]')
+  await ctx.panel.waitForVisible('[data-testid="config-start-from-existing"]')
   expect(await ctx.panel.exists('[data-testid="config-summary"]')).toBe(false)
   expect(await ctx.panel.exists('[data-testid="config-change-setup"]')).toBe(false)
   expect(await ctx.titleBar.exists('.title-menu-button[aria-haspopup="menu"]')).toBe(false)
@@ -48,18 +48,34 @@ test('Change works before the EULA and opens the name with every option @lifecyc
   ).toEqual([])
 })
 
-test('installing from Change still needs the EULA @lifecycle', async () => {
-  await ctx.panel.waitForSelector('.config-continue:not([disabled])', { timeout: 60_000 })
-  expect(await ctx.panel.click('.config-continue')).toBe(true)
+test('Save changes returns to Set up, where Install still needs the EULA @lifecycle', async () => {
+  await ctx.panel.waitForSelector('[data-testid="config-save-changes"]:not([disabled])', {
+    timeout: 60_000
+  })
+  expect(
+    await ctx.panel.exists('[data-testid="config-consent-tos"]'),
+    'the Change sheet does not ask for the EULA'
+  ).toBe(false)
+  expect(await ctx.panel.click('[data-testid="config-save-changes"]')).toBe(true)
 
-  await ctx.panel.waitForVisible('[data-testid="config-agree-hint"]', { timeout: 5_000 })
+  await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 10_000 })
+  expect(await ctx.panel.exists('[data-testid="config-change-form"]')).toBe(false)
+  await expect.poll(lastFirstUseMode, { timeout: 5_000 }).toBe('consent-lockdown')
+
+  expect(await ctx.panel.click('[data-testid="setup-install"]')).toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="setup-agree-hint"]', { timeout: 5_000 })
   expect(await ctx.panel.exists('[data-testid="home-view"]')).toBe(false)
-  expect(await ctx.panel.exists('.template-skip')).toBe(false)
+  expect(
+    await telemetrySettingSaves(),
+    'usage data is not switched on before the EULA is accepted'
+  ).toEqual([])
+})
 
-  expect(await ctx.panel.click('[data-testid="config-consent-tos"] [role="checkbox"]')).toBe(true)
-  await expect
-    .poll(() => ctx.panel.exists('[data-testid="config-agree-hint"]'), { timeout: 5_000 })
-    .toBe(false)
+test('with the EULA agreed on Set up, Change saves the consent and Discard returns to Set up as it was @lifecycle', async () => {
+  expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
+
+  await ctx.panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 10_000 })
   await expect.poll(lastFirstUseMode, { timeout: 5_000 }).toBe('post-consent')
   await expect
     .poll(telemetrySettingSaves, {
@@ -68,10 +84,8 @@ test('installing from Change still needs the EULA @lifecycle', async () => {
     })
     .toEqual([false])
   await ctx.titleBar.waitForVisible('.title-menu-button[aria-haspopup="menu"]', { timeout: 15_000 })
-})
 
-test('Back returns to Set up with the EULA still agreed @lifecycle', async () => {
-  expect(await ctx.panel.click('[data-testid="config-back-to-setup"]')).toBe(true)
+  expect(await ctx.panel.click('[data-testid="config-discard-changes"]')).toBe(true)
   await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 10_000 })
   await ctx.panel.waitForVisible(
     '[data-testid="setup-consent-tos"] [role="checkbox"][aria-checked="true"]',

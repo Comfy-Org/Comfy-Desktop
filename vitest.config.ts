@@ -43,6 +43,7 @@ export default defineConfig({
             'src/preload/**/*.test.ts',
             'src/shared/**/*.test.ts',
             'scripts/eslint/**/*.test.ts',
+            'e2e/support/videoRecording.test.ts',
             ...RENDERER_TESTS_THAT_READ_FILES
           ],
           exclude: ['node_modules', ...INJECTED_PAGE_SCRIPT_TESTS]

@@ -65,6 +65,18 @@ export async function openTitleMenu(titleBar: WebContentsPage): Promise<void> {
   expect(ok, 'Title menu button click dispatched').toBe(true)
 }
 
+export async function openDesktopSettings(
+  app: ElectronApplication,
+  panel: WebContentsPage
+): Promise<WebContentsPage> {
+  const selector = '[data-testid="app-sidebar-settings"]'
+  await panel.waitForVisible(selector)
+  expect(await panel.click(selector), 'Desktop Settings clicked in the sidebar').toBe(true)
+  const popup = titlePopupPage(app)
+  await popup.waitForVisible('.global-settings', { timeout: 10_000 })
+  return popup
+}
+
 export async function pickFromTitleMenu(
   app: ElectronApplication,
   titleBar: WebContentsPage,

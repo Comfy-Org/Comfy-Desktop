@@ -11,7 +11,8 @@ import {
   Laptop,
   LoaderCircle,
   Plus,
-  Server
+  Server,
+  Settings
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import Button from '@comfyorg/design-system/button/Button'
@@ -27,6 +28,7 @@ import { useProgressStore } from '../stores/progressStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { emitTelemetryAction } from '../lib/telemetry'
 import { isInstallationInWorkspace } from '../../../shared/workspaces'
 import type { DashboardPage, Installation } from '../types/ipc'
 
@@ -147,6 +149,11 @@ const buildMenuAt = shallowRef<{ build: Installation; anchor: BuildMenuAnchor } 
 function openBuildMenu(event: MouseEvent, build: Installation): void {
   buildMenuAt.value = { build, anchor: pointAt(event) }
   buildMenuOpen.value = true
+}
+
+function openSettings(): void {
+  emitTelemetryAction('comfy.desktop.sidebar.settings_opened', { from_page: activePage })
+  window.api.openGlobalSettings()
 }
 </script>
 
@@ -307,7 +314,25 @@ function openBuildMenu(event: MouseEvent, build: Installation): void {
       </template>
     </nav>
 
-    <SidebarAccount class="mt-2 w-full shrink-0" :collapsed="collapsed" />
+    <div class="mt-2 flex w-full shrink-0 flex-col gap-1">
+      <Button
+        variant="muted-textonly"
+        size="unset"
+        class="h-8 w-full shrink-0 rounded-lg text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
+        :class="collapsed ? 'justify-center px-0' : 'justify-start gap-2.5 px-3'"
+        :aria-label="t('fileMenu.globalSettings')"
+        aria-haspopup="dialog"
+        :title="collapsed ? t('fileMenu.globalSettings') : undefined"
+        data-testid="app-sidebar-settings"
+        @click="openSettings"
+      >
+        <Settings :size="15" aria-hidden="true" />
+        <span v-if="!collapsed" class="min-w-0 flex-1 truncate text-left">{{
+          t('fileMenu.globalSettings')
+        }}</span>
+      </Button>
+      <SidebarAccount :collapsed="collapsed" />
+    </div>
 
     <BuildMenu
       v-if="buildMenuAt"

@@ -486,14 +486,14 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       label: 'Performance Tests',
       labelKey: 'fileMenu.performanceTest'
     },
-    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
-    { kind: 'separator' },
-    {
-      id: 'settings',
-      label: 'Desktop Settings',
-      labelKey: 'fileMenu.globalSettings'
-    }
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' }
   ]
+  if (entry.installationId !== null) {
+    items.push(
+      { kind: 'separator' },
+      { id: 'settings', label: 'Desktop Settings', labelKey: 'fileMenu.globalSettings' }
+    )
+  }
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
@@ -965,23 +965,6 @@ function openTitlePopup(opts: OpenTitlePopupOpts): void {
   }
   syncTitlePopupConfig(entry, config, requiresPerOpenConfigSync(opts))
   showTitlePopupNow(entry)
-}
-
-export function openDownloadsTrayForInstall(installationId: string): void {
-  const entry = getEntryByInstallationId(installationId)
-  if (!entry || entry.window.isDestroyed()) return
-  const existing = titlePopupsByParent.get(entry.window.id)
-  if (existing && (existing.view.isOpen || existing.view.pendingShowTimer !== null)) {
-    return
-  }
-  openTitlePopup({
-    parent: entry.window,
-    parentEntryId: entry.windowKey,
-    kind: 'downloads',
-    anchor: { x: entry.window.getContentBounds().width, y: TITLEBAR_HEIGHT },
-    theme: entry.lastTheme,
-    titleBarSender: entry.titleBarView.webContents
-  })
 }
 
 export interface TitlePopupHostBindings {

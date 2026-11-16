@@ -111,6 +111,20 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
     .map((tip) => tip.props('text') as string)
 }
 
+function viewer(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-testid="output-detail"]')
+}
+
+function viewerTitle(): string {
+  return viewer()?.querySelector('h2')?.textContent?.trim() ?? ''
+}
+
+async function press(key: string): Promise<void> {
+  const target = document.activeElement ?? document.body
+  target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+  await flushPromises()
+}
+
 beforeEach(() => {
   page = document.createElement('div')
   page.dataset.panelPage = ''
@@ -534,5 +548,81 @@ describe('AssetsView', () => {
       title: "Couldn't copy asset",
       message: 'b.svg'
     })
+  })
+
+  it('opens a picture full size when its card is clicked, and puts focus back on the card when Escape closes it', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', {
+        previewUrl: 'comfy-output://file/full',
+        thumbnailUrl: 'comfy-output://file/full?thumbnail=1'
+      })
+    ])
+    const card = wrapper.get('[data-testid="asset-open-/out/forest.png"]')
+
+    await card.trigger('click')
+    await flushPromises()
+
+    expect(viewerTitle()).toBe('forest.png')
+    expect(
+      viewer()!.querySelector('[data-testid="output-detail-image"]')!.getAttribute('src')
+    ).toBe('comfy-output://file/full')
+
+    await press('Escape')
+
+    expect(viewer()).toBeNull()
+    expect(document.activeElement).toBe(card.element)
+  })
+
+  it('steps through the files in page order with the arrow keys and the filmstrip', async () => {
+    const wrapper = await mountAssets([
+      asset('new', 'new.png', 'image', { createdAt: '2026-11-03T00:00:00Z' }),
+      asset('mid', 'mid.png', 'image', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('old', 'old.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-mid"]').trigger('click')
+    await flushPromises()
+    expect(viewerTitle()).toBe('mid.png')
+
+    await press('ArrowRight')
+    expect(viewerTitle()).toBe('old.png')
+
+    await press('ArrowRight')
+    expect(viewerTitle(), 'the last file wraps round to the first').toBe('new.png')
+
+    await press('ArrowLeft')
+    expect(viewerTitle()).toBe('old.png')
+
+    document.querySelector<HTMLElement>('[data-testid="output-detail-thumb-1"]')!.click()
+    await flushPromises()
+    expect(viewerTitle()).toBe('mid.png')
+  })
+
+  it('plays a video in the viewer with its controls', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://file/surfer' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-clip"]').trigger('click')
+    await flushPromises()
+
+    const video = viewer()!.querySelector<HTMLVideoElement>('[data-testid="output-detail-video"]')!
+    expect(video.getAttribute('src')).toBe('comfy-output://file/surfer')
+    expect(video.controls).toBe(true)
+  })
+
+  it('downloads the file the viewer is showing', async () => {
+    const wrapper = await mountAssets([
+      asset('a', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('b', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await flushPromises()
+    await press('ArrowRight')
+    document.querySelector<HTMLElement>('[data-testid="output-detail-download"]')!.click()
+    await flushPromises()
+
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
   })
 })

@@ -1,17 +1,14 @@
 import { expect, test } from '@playwright/test'
 import { launchApp } from './launchApp'
-import { openTitleMenu } from './support/chooserHelpers'
-import { isPopupVisible, titlePopupPage } from './support/cdpPages'
+import { openDesktopSettings } from './support/chooserHelpers'
+import { isPopupVisible } from './support/cdpPages'
 
 test('the WebContents facade drives shared selects and tabs with native input @windows @macos @linux', async () => {
   const ctx = await launchApp({
     settings: { firstUseCompleted: true, language: 'en', autoLaunchOnStartup: 'none' }
   })
   try {
-    const popup = titlePopupPage(ctx.app)
-    await openTitleMenu(ctx.titleBar)
-    await popup.waitForVisible('[role="menuitem"]')
-    expect(await popup.clickByText('[role="menuitem"]', 'Desktop Settings')).toBe(true)
+    const popup = await openDesktopSettings(ctx.app, ctx.panel)
 
     const trigger = '[data-field-id="autoLaunchOnStartup"] [role="combobox"]'
     await popup.waitForVisible(trigger)

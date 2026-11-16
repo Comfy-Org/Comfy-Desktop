@@ -7,6 +7,7 @@ import { _electron as electron, type ElectronApplication } from 'playwright'
 
 import { evalWithRetry } from './evalRetry'
 import { FOREGROUND_PROJECTS, isBackgroundRun } from './focusMode'
+import { recordVideoOptions } from './videoRecording'
 
 export interface LauncherAppHandle {
   application: ElectronApplication
@@ -220,9 +221,11 @@ export async function launchLauncherApp(options?: SeedOptions): Promise<Launcher
     env['E2E_INSTALLATIONS_SEED'] = JSON.stringify(seedRecords)
   }
 
+  const recordVideo = recordVideoOptions()
   const application = await electron.launch({
     args,
-    env
+    env,
+    ...(recordVideo ? { recordVideo } : {})
   })
 
   const page = await application.firstWindow()

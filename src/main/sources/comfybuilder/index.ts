@@ -442,7 +442,7 @@ export const comfybuilder: SourcePlugin = {
   fields: [],
   defaultLaunchArgs: DEFAULT_LAUNCH_ARGS,
 
-  get installSteps() {
+  installSteps() {
     return [
       { phase: 'download', label: t('common.download') },
       { phase: 'extract', label: t('common.extract') }

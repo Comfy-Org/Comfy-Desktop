@@ -202,6 +202,41 @@ describe('TrackModal — virtual environment', () => {
     expect(venv.find('button.config-path-open').exists()).toBe(false)
     expect(venv.get('.config-path-placeholder').text()).toBe('No virtual environment found.')
   })
+
+  it('uses the environment found in the next folder, not one browsed for the folder before', async () => {
+    const api = installMockApi({
+      browseFolder: vi
+        .fn()
+        .mockResolvedValueOnce('/Users/jo/A')
+        .mockResolvedValueOnce('/Users/jo/envs/a')
+        .mockResolvedValueOnce('/Users/jo/B'),
+      probeInstallation: vi
+        .fn()
+        .mockResolvedValueOnce([{ ...gitProbe, venvPath: '/Users/jo/A/.venv' }])
+        .mockResolvedValueOnce([{ ...gitProbe, venvPath: '/Users/jo/B/.venv' }])
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    const venvPath = () =>
+      wrapper.get('[data-testid="track-venv-field"] button.config-path-open').text()
+
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="track-venv-field"] .config-path-browse').trigger('click')
+    await flushPromises()
+    expect(venvPath()).toBe('/Users/jo/envs/a')
+
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(venvPath()).toBe('/Users/jo/B/.venv')
+    await trackButton(wrapper).trigger('click')
+    await flushPromises()
+    const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
+    expect(data.installPath).toBe('/Users/jo/B')
+    expect(data.venvPath).toBe('/Users/jo/B/.venv')
+  })
 })
 
 describe('TrackModal — install path resolution on save', () => {
@@ -252,5 +287,35 @@ describe('TrackModal — install path resolution on save', () => {
     expect(api.trackInstallation).toHaveBeenCalledTimes(1)
     const data = api.trackInstallation.mock.calls[0]![0] as Record<string, unknown>
     expect(data.installPath).toBe('/Users/jo/ComfyUI')
+  })
+
+  it('adds the folder once when Add build is pressed again before the first press has finished', async () => {
+    let finishTracking: (result: { ok: boolean }) => void = () => {}
+    const api = installMockApi({
+      browseFolder: vi.fn().mockResolvedValue('/Users/jo/ComfyUI'),
+      trackInstallation: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishTracking = resolve
+          })
+      )
+    })
+    const wrapper = mountTrack()
+    ;(wrapper.vm as unknown as { open: () => void }).open()
+    await flushPromises()
+    await browseButton(wrapper).trigger('click')
+    await flushPromises()
+
+    const addBuild = trackButton(wrapper)
+    ;(addBuild.element as HTMLButtonElement).click()
+    ;(addBuild.element as HTMLButtonElement).click()
+    await flushPromises()
+    expect(addBuild.attributes('disabled')).toBeDefined()
+
+    finishTracking({ ok: true })
+    await flushPromises()
+
+    expect(api.trackInstallation).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('navigate-list')).toHaveLength(1)
   })
 })

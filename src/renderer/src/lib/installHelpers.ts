@@ -163,11 +163,6 @@ export function isTemplateDiskBlocked(
   return diskSpace.free < required
 }
 
-export function minTemplateModelBytes(modelByteSizes: number[]): number {
-  const withModels = modelByteSizes.filter((b) => b > 0)
-  return withModels.length ? Math.min(...withModels) : 0
-}
-
 export function templateSizeBytes(option: FieldOption | null | undefined): number {
   const size = option?.data?.sizeBytes
   return typeof size === 'number' && size > 0 ? size : 0
@@ -179,34 +174,6 @@ export function templateDownloadBytes(option: FieldOption | null | undefined): n
 
 export function isApiNodeTemplate(option: FieldOption | null | undefined): boolean {
   return option?.data?.apiNode === true
-}
-
-export async function checkTemplateDiskOrBlock(opts: {
-  path: string
-  estimatedModelBytes: number
-  flow: string
-  alert: (opts: { title: string; message: string }) => Promise<void>
-  t: (key: string, params?: Record<string, string>) => string
-}): Promise<boolean> {
-  if (templateDiskRequiredBytes(opts.estimatedModelBytes) === 0) return true
-
-  let diskSpace: DiskSpaceInfo
-  try {
-    diskSpace = await window.api.getDiskSpace(opts.path)
-  } catch {
-    return true
-  }
-  if (!isTemplateDiskBlocked(diskSpace, opts.estimatedModelBytes)) return true
-
-  trackGuardrailBlocked('template_models_disk', opts.flow, 'save')
-  await opts.alert({
-    title: opts.t('diskSpace.templateBlockTitle'),
-    message: opts.t('diskSpace.templateBlockMessage', {
-      required: formatBytes(templateDiskRequiredBytes(opts.estimatedModelBytes)),
-      free: formatBytes(diskSpace.free)
-    })
-  })
-  return false
 }
 
 export function createDiskSpaceChecker() {

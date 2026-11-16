@@ -677,6 +677,43 @@ describe('Home builds', () => {
   })
 })
 
+describe('Home build card while a build starts', () => {
+  beforeEach(() => {
+    Object.assign(window.api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      onComfyOutput: vi.fn(() => () => {}),
+      cancelOperation: vi.fn(),
+      stopComfyUI: vi.fn()
+    })
+  })
+
+  it('beside two other builds, keeps its status and name with no buttons inside, and Cancel lives in its ⋯ menu', async () => {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, NEWEST])
+    const wrapper = await openHome()
+    useProgressStore().startOperation({
+      installationId: NEWEST.id,
+      title: 'Starting',
+      opKind: 'launch',
+      apiCall: () => new Promise(() => {})
+    })
+    await flushPromises()
+
+    const starting = wrapper.get(
+      `[data-testid="home-build-starting"][data-build-id="${NEWEST.id}"]`
+    )
+    expect(starting.text()).toContain('Starting ComfyUI')
+    expect(starting.text()).toContain(NEWEST.name)
+    expect(starting.find('[data-testid="home-build-cancel"]').exists()).toBe(false)
+    expect(starting.find('[data-testid="home-build-view-logs"]').exists()).toBe(false)
+
+    await starting.get('[data-testid="home-build-more"]').trigger('click')
+    await flushPromises()
+    document.querySelector<HTMLElement>('[data-testid="build-menu-cancel"]')!.click()
+    await flushPromises()
+    expect(window.api.cancelOperation).toHaveBeenCalledWith(NEWEST.id)
+  })
+})
+
 describe('Home build auto start', () => {
   let saved: unknown
   let settingsListeners: Array<(change: { key: string }) => void>

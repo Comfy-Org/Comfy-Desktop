@@ -56,13 +56,7 @@ describe('a downloaded template input asset', () => {
       status: 'missing'
     })
 
-    const placed = await downloadTemplateInputAssets(
-      installation(),
-      'template-a',
-      log,
-      undefined,
-      workflow
-    )
+    const placed = await downloadTemplateInputAssets(installation(), workflow, log)
 
     expect(placed).toEqual([{ filename: ASSET, downloaded: true }])
     expect(await availability(ASSET)).toEqual({
@@ -72,16 +66,10 @@ describe('a downloaded template input asset', () => {
   })
 
   it('is not fetched again when it is already there', async () => {
-    await downloadTemplateInputAssets(installation(), 'template-a', log, undefined, workflow)
+    await downloadTemplateInputAssets(installation(), workflow, log)
     download.mockClear()
 
-    const placed = await downloadTemplateInputAssets(
-      installation(),
-      'template-a',
-      log,
-      undefined,
-      workflow
-    )
+    const placed = await downloadTemplateInputAssets(installation(), workflow, log)
 
     expect(placed).toEqual([{ filename: ASSET, downloaded: false }])
     expect(download).not.toHaveBeenCalled()

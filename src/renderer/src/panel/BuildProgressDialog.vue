@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Check, ChevronDown, Cloud, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
+import { Check, ChevronDown, LoaderCircle, OctagonAlert, X } from '@lucide/vue'
 import Button from '@comfyorg/design-system/button/Button'
 import DesktopDialogSurface from '../components/ui/DesktopDialogSurface.vue'
-import { useCloudGate } from '../composables/useCloudGate'
 import { useModal } from '../composables/useModal'
+import { useTerminalScroll } from '../composables/useTerminalScroll'
+import { progressStatusText, progressStepName } from '../lib/progressStatusLabel'
 import { useProgressStore } from '../stores/progressStore'
 import { useInstallationStore } from '../stores/installationStore'
-import { emitTelemetryAction } from '../lib/telemetry'
 
 type StepState = 'done' | 'active' | 'failed' | 'pending'
 
@@ -48,25 +48,19 @@ const LOG_TAIL_CHARS = 20_000
 const { installationId } = defineProps<{ installationId: string }>()
 const emit = defineEmits<{ close: []; retry: [] }>()
 
-const { t } = useI18n()
+const i18n = useI18n()
+const { t } = i18n
 const progressStore = useProgressStore()
 const installationStore = useInstallationStore()
 const modal = useModal()
-const cloudGate = useCloudGate()
 
 const op = computed(() => progressStore.operations.get(installationId) ?? null)
 const build = computed(() => installationStore.getById(installationId) ?? null)
-const logsOpen = ref(true)
 const logsRef = ref<HTMLElement | null>(null)
 const video = `./build-progress/${
   BUILD_PROGRESS_VIDEOS[Math.floor(Math.random() * BUILD_PROGRESS_VIDEOS.length)]
 }.webm`
-const videoShape = ref<'tall' | 'wide' | null>(null)
-
-function measureVideo(event: Event): void {
-  const el = event.target as HTMLVideoElement
-  videoShape.value = el.videoHeight > el.videoWidth ? 'tall' : 'wide'
-}
+const videoReady = ref(false)
 
 const steps = computed<StepRow[]>(() => {
   const current = op.value
@@ -95,16 +89,17 @@ const steps = computed<StepRow[]>(() => {
             : failed || current.phaseErrors[step.phase]
               ? 'failed'
               : 'active'
-    const status = current.lastStatus[step.phase]
+    const label = progressStepName(step, i18n)
+    const status = progressStatusText(current.lastStatus[step.phase], i18n)
     const detail =
       state === 'failed'
-        ? (current.error ?? status ?? '')
-        : state === 'active' && status && status !== step.phase && status !== step.label
+        ? current.error || status
+        : state === 'active' && status && ![step.phase, step.label, label].includes(status)
           ? status
           : ''
     return {
       phase: step.phase,
-      label: step.label,
+      label,
       state,
       percent:
         state === 'active' && current.activePercent >= 0 ? Math.round(current.activePercent) : null,
@@ -115,7 +110,6 @@ const steps = computed<StepRow[]>(() => {
 
 const failed = computed(() => !!op.value?.finished && !!op.value.error)
 const launching = computed(() => op.value?.opKind === 'launch')
-const offersCloud = computed(() => !launching.value && !failed.value && cloudGate.canOffer.value)
 const title = computed(() => {
   if (launching.value) {
     return failed.value ? t('installProgress.launchFailedTitle') : t('home.buildStartingComfyUI')
@@ -136,13 +130,8 @@ watch(
   { immediate: true }
 )
 
-watch(logText, async () => {
-  const el = logsRef.value
-  if (!el) return
-  const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24
-  await nextTick()
-  if (pinned) el.scrollTop = el.scrollHeight
-})
+const { terminalExpanded: logsOpen, handleTerminalScroll: followLogsWhileAtNewestLine } =
+  useTerminalScroll(logsRef, () => logText.value)
 
 async function cancel(): Promise<void> {
   if (launching.value) {
@@ -160,17 +149,6 @@ async function cancel(): Promise<void> {
   progressStore.cancelOperation(installationId)
   emit('close')
 }
-
-async function tryCloud(): Promise<void> {
-  emitTelemetryAction('comfy.desktop.install.showcase.cloud_open', {
-    phase: op.value?.activePhase ?? null
-  })
-  if (await cloudGate.openCloud()) return
-  await modal.alert({
-    title: t('installShowcase.cloudFailedTitle'),
-    message: t('installShowcase.cloudFailedMessage')
-  })
-}
 </script>
 
 <template>
@@ -184,7 +162,7 @@ async function tryCloud(): Promise<void> {
   >
     <div class="relative">
       <div
-        class="flex max-h-[calc(100vh-48px)] flex-col overflow-y-auto rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37/0.9)] px-[33px] pt-[29px] pb-[15px] backdrop-blur-[16px]"
+        class="flex max-h-[calc(100vh-48px)] flex-col overflow-y-auto rounded-[20px] border border-[rgb(242_242_242/0.08)] bg-[rgb(37_37_37/0.9)] p-[clamp(24px,calc(100vh-539px),32px)] backdrop-blur-[16px]"
       >
         <div class="flex gap-10">
           <div class="flex min-w-0 flex-1 flex-col">
@@ -244,10 +222,11 @@ async function tryCloud(): Promise<void> {
                       'text-subtle-foreground': step.state === 'pending'
                     }"
                   >
-                    {{ step.label
-                    }}<span v-if="step.percent !== null" class="ml-[0.3em] text-muted-foreground">{{
-                      t('installProgress.percent', { percent: step.percent })
-                    }}</span>
+                    <span data-testid="build-progress-step-name">{{ step.label }}</span><span
+                      v-if="step.percent !== null"
+                      class="ml-[0.3em] text-muted-foreground"
+                      >{{ t('installProgress.percent', { percent: step.percent }) }}</span
+                    >
                   </span>
                   <span
                     v-if="step.detail"
@@ -260,79 +239,53 @@ async function tryCloud(): Promise<void> {
                 </span>
               </li>
             </ol>
-
-            <Button
-              type="button"
-              variant="muted-textonly"
-              size="unset"
-              class="mt-8 h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
-              :aria-expanded="logsOpen"
-              aria-controls="build-progress-logs"
-              data-testid="build-progress-logs-toggle"
-              @click="logsOpen = !logsOpen"
-            >
-              <ChevronDown
-                :size="12"
-                class="transition-transform duration-150 motion-reduce:transition-none"
-                :class="!logsOpen && '-rotate-90'"
-                aria-hidden="true"
-              />
-              {{ t('installProgress.viewLogs') }}
-            </Button>
-            <pre
-              v-show="logsOpen"
-              id="build-progress-logs"
-              ref="logsRef"
-              class="m-0 mt-1 h-[82px] overflow-y-auto overscroll-contain rounded-[10px] bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
-              tabindex="0"
-              data-testid="build-progress-logs"
-              >{{ logText || t('installProgress.starting') }}</pre>
           </div>
 
-          <div class="flex h-[340px] w-[272px] shrink-0 items-center justify-center">
+          <div class="size-[272px] shrink-0 overflow-hidden rounded-xl bg-[#161619]">
             <video
-              class="w-[272px] transition-opacity duration-200 motion-reduce:transition-none"
-              :class="[
-                videoShape === 'tall'
-                  ? 'h-[340px] rounded-[18px] border border-white/8 bg-[#161619] object-cover'
-                  : 'h-auto max-h-[340px] rounded-xl',
-                videoShape ? 'opacity-100' : 'opacity-0'
-              ]"
+              class="size-full object-cover transition-opacity duration-200 motion-reduce:transition-none"
+              :class="videoReady ? 'opacity-100' : 'opacity-0'"
               :src="video"
               autoplay
               muted
               loop
               playsinline
               aria-hidden="true"
-              :data-shape="videoShape ?? undefined"
               data-testid="build-progress-video"
-              @loadedmetadata="measureVideo"
+              @loadeddata="videoReady = true"
             />
           </div>
         </div>
 
-        <div class="mt-[60px] flex min-h-9 items-center gap-2">
-          <template v-if="offersCloud">
-            <Cloud
-              :size="13"
-              class="mt-px shrink-0 self-start text-muted-foreground"
-              aria-hidden="true"
-            />
-            <span class="ml-2 flex min-w-0 flex-col text-[13px]/[18px]">
-              <span class="text-foreground">{{ t('installShowcase.cloud.title') }}</span>
-              <span class="text-muted-foreground">{{ t('installShowcase.cloud.body') }}</span>
-            </span>
-            <Button
-              type="button"
-              variant="secondary"
-              size="unset"
-              class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
-              data-testid="build-progress-try-cloud"
-              @click="tryCloud"
-            >
-              {{ t('installShowcase.cloudCta') }}
-            </Button>
-          </template>
+        <Button
+          type="button"
+          variant="muted-textonly"
+          size="unset"
+          class="mt-[clamp(24px,calc(100vh-539px),32px)] h-4 w-fit gap-2 px-[3px] text-[13px]/4 font-normal text-subtle-foreground hover:bg-transparent hover:text-foreground"
+          :aria-expanded="logsOpen"
+          aria-controls="build-progress-logs"
+          data-testid="build-progress-logs-toggle"
+          @click="logsOpen = !logsOpen"
+        >
+          <ChevronDown
+            :size="12"
+            class="transition-transform duration-150 motion-reduce:transition-none"
+            :class="!logsOpen && '-rotate-90'"
+            aria-hidden="true"
+          />
+          {{ t('installProgress.viewLogs') }}
+        </Button>
+        <pre
+          v-show="logsOpen"
+          id="build-progress-logs"
+          ref="logsRef"
+          class="m-0 mt-3 h-[148px] min-h-[82px] overflow-y-auto overscroll-contain rounded-xl bg-[rgb(235_235_235/0.05)] px-3 py-[13px] font-mono text-xs/4 break-words whitespace-pre-wrap text-muted-foreground select-text"
+          tabindex="0"
+          data-testid="build-progress-logs"
+          @scroll="followLogsWhileAtNewestLine"
+          >{{ logText || t('installProgress.starting') }}</pre>
+
+        <div class="mt-[clamp(16px,calc(100vh-547px),24px)] flex min-h-9 items-center gap-2">
           <template v-if="failed">
             <Button
               type="button"
@@ -359,10 +312,9 @@ async function tryCloud(): Promise<void> {
           <Button
             v-else
             type="button"
-            variant="muted-textonly"
+            variant="secondary"
             size="unset"
-            class="h-9 shrink-0 rounded-[10px] px-[17px] text-[13px]/4 font-normal text-muted-foreground hover:text-foreground"
-            :class="!offersCloud && 'ml-auto'"
+            class="ml-auto h-9 shrink-0 rounded-[10px] bg-[rgb(244_244_244/0.09)] px-[17px] text-[13px]/4 font-normal text-foreground"
             :disabled="cancelling"
             data-testid="build-progress-cancel"
             @click="cancel"
