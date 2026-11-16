@@ -25,11 +25,13 @@ async function isOnlyBuildWithoutAutoStart(installationId: string): Promise<bool
 }
 
 export async function startFirstBuildWithDesktop(installationId: string): Promise<void> {
-  if (!(await isOnlyBuildWithoutAutoStart(installationId))) return
-  saveOrWarn(() => {
+  try {
+    if (!(await isOnlyBuildWithoutAutoStart(installationId))) return
     settings.set('autoStartAwaitingFirstStart', installationId)
     applySettingSet('autoLaunchOnStartup', installationId)
-  })
+  } catch (err) {
+    console.warn('[auto-start] could not give the first build Auto start:', err)
+  }
 }
 
 export function settleAutoStartOnFirstStart(installationId: string, started: boolean): void {
@@ -42,8 +44,21 @@ export function settleAutoStartOnFirstStart(installationId: string, started: boo
   })
 }
 
-export async function pinLastUsedAutoStart(): Promise<void> {
-  if (settings.get('autoLaunchOnStartup') !== AUTO_LAUNCH_LAST) return
-  const recent = await installations.getRecent()
-  saveOrWarn(() => settings.set('autoLaunchOnStartup', recent?.id ?? AUTO_LAUNCH_NONE))
+function isCloud(inst: installations.InstallationRecord): boolean {
+  return inst.sourceId === installations.CLOUD_SOURCE_ID
+}
+
+async function savedAutoStartBuild(
+  saved: string
+): Promise<installations.InstallationRecord | null> {
+  return saved === AUTO_LAUNCH_LAST ? installations.getRecent() : installations.get(saved)
+}
+
+export async function pinAutoStartToALocalBuild(): Promise<void> {
+  const saved = settings.get('autoLaunchOnStartup')
+  if (typeof saved !== 'string' || saved === AUTO_LAUNCH_NONE) return
+  const build = await savedAutoStartBuild(saved)
+  if (saved !== AUTO_LAUNCH_LAST && !(build && isCloud(build))) return
+  const pinned = build && !isCloud(build) ? build.id : AUTO_LAUNCH_NONE
+  saveOrWarn(() => settings.set('autoLaunchOnStartup', pinned))
 }

@@ -24,7 +24,7 @@ vi.mock('electron', () => ({
 
 import * as installations from '../installations'
 import * as settings from '../settings'
-import { pinLastUsedAutoStart, startFirstBuildWithDesktop } from './firstBuildAutoStart'
+import { pinAutoStartToALocalBuild, startFirstBuildWithDesktop } from './firstBuildAutoStart'
 
 async function installedBuild(name: string, lastLaunchedAt?: number): Promise<string> {
   const entry = await installations.add({
@@ -76,7 +76,7 @@ describe('a saved Last used build, now that only a build can be picked', () => {
     const recent = await installedBuild('Used yesterday', 2_000)
     settings.set('autoLaunchOnStartup', 'last')
 
-    await pinLastUsedAutoStart()
+    await pinAutoStartToALocalBuild()
 
     expect(settings.get('autoLaunchOnStartup')).toBe(recent)
   })
@@ -85,7 +85,7 @@ describe('a saved Last used build, now that only a build can be picked', () => {
     await installedBuild('Never started')
     settings.set('autoLaunchOnStartup', 'last')
 
-    await pinLastUsedAutoStart()
+    await pinAutoStartToALocalBuild()
 
     expect(settings.get('autoLaunchOnStartup')).toBe('none')
   })
@@ -95,8 +95,38 @@ describe('a saved Last used build, now that only a build can be picked', () => {
     await installedBuild('Used more recently', 2_000)
     settings.set('autoLaunchOnStartup', picked)
 
-    await pinLastUsedAutoStart()
+    await pinAutoStartToALocalBuild()
 
     expect(settings.get('autoLaunchOnStartup')).toBe(picked)
+  })
+
+  it('becomes None when the build used last was Comfy Cloud', async () => {
+    await installedBuild('Local', 1_000)
+    await installations.add({
+      name: 'Comfy Cloud',
+      sourceId: 'cloud',
+      status: 'installed',
+      lastLaunchedAt: 2_000
+    })
+    settings.set('autoLaunchOnStartup', 'last')
+
+    await pinAutoStartToALocalBuild()
+
+    expect(settings.get('autoLaunchOnStartup')).toBe('none')
+  })
+})
+
+describe('Comfy Cloud picked in the old Settings dropdown', () => {
+  it('becomes None, since no tile can show or turn off Auto start on Cloud', async () => {
+    const cloud = await installations.add({
+      name: 'Comfy Cloud',
+      sourceId: 'cloud',
+      status: 'installed'
+    })
+    settings.set('autoLaunchOnStartup', cloud.id)
+
+    await pinAutoStartToALocalBuild()
+
+    expect(settings.get('autoLaunchOnStartup')).toBe('none')
   })
 })

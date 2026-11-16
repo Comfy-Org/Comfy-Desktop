@@ -222,7 +222,7 @@ export function useInstallContextMenu(
       items.push(...cluster)
     }
 
-    if (opts.autoStart) {
+    if (opts.autoStart && isLocalLikeInstall(inst) && isInstalled(inst)) {
       const startsOnOpen = opts.autoStart.startsOnOpen(inst.id)
       const [head] = items
       if (head) head.separator = true

@@ -99,7 +99,7 @@ import { enrichInstallationsForRenderer } from './lib/ipc/registerInstallationHa
 import { getSnapshotListData } from './lib/snapshots'
 import { update as updateInstallation, resolveAutoLaunchInstall } from './installations'
 import { AUTO_LAUNCH_NONE } from './settings'
-import { pinLastUsedAutoStart } from './lib/firstBuildAutoStart'
+import { pinAutoStartToALocalBuild } from './lib/firstBuildAutoStart'
 import { lookupInstallUpdateOverride, recordIpcInvocation } from './lib/e2eOverrides'
 import * as mainTelemetry from './lib/telemetry'
 import {
@@ -272,8 +272,8 @@ function revealStartupRestoreDashboard(windowKey: number): void {
 }
 
 async function openStartupSurface(): Promise<void> {
-  await pinLastUsedAutoStart().catch((err) =>
-    console.warn('[auto-start] could not pin Last used build:', err)
+  await pinAutoStartToALocalBuild().catch((err) =>
+    console.warn('[auto-start] could not pin the Auto start build:', err)
   )
   const firstUseDone = settings.get('firstUseCompleted') === true
   const autoLaunchValue = firstUseDone
