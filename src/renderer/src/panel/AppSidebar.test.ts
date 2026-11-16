@@ -6,6 +6,7 @@ import AppSidebar from './AppSidebar.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { TELEMETRY_ACTION_EVENT_NAME, type TelemetryActionEventDetail } from '../lib/telemetry'
 import type { DashboardPage, Installation } from '../types/ipc'
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
@@ -25,6 +26,7 @@ const NEW = build({ id: 'new', name: 'Video Lab', lastLaunchedAt: 300 })
 const TEAM = build({ id: 'team', name: 'Team Build', lastLaunchedAt: 400, workspaceId: 'ws-team' })
 
 const navigatePanel = vi.fn()
+const openGlobalSettings = vi.fn()
 const getAppsEnabled = vi.fn<() => Promise<boolean>>()
 
 beforeEach(() => {
@@ -33,6 +35,7 @@ beforeEach(() => {
   getAppsEnabled.mockResolvedValue(false)
   ;(window as unknown as { api: unknown }).api = {
     navigatePanel,
+    openGlobalSettings,
     getAppsEnabled,
     getInstallations: vi.fn().mockResolvedValue([]),
     onInstallationsChanged: vi.fn(() => () => {}),
@@ -151,6 +154,48 @@ describe('AppSidebar', () => {
     await wrapper.get('button[title="Home"]').trigger('click')
 
     expect(navigatePanel).toHaveBeenCalledExactlyOnceWith('home')
+  })
+
+  it('opens Desktop Settings above the account section without changing pages', async () => {
+    const wrapper = await mountSidebar('assets')
+    const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
+
+    expect(settings.text()).toBe('Desktop Settings')
+    expect(settings.attributes('aria-haspopup')).toBe('dialog')
+    expect(settings.element.closest('nav')).toBeNull()
+    expect(settings.element.nextElementSibling?.classList.contains('sidebar-account')).toBe(true)
+
+    const events: TelemetryActionEventDetail[] = []
+    const record: EventListener = (event) => {
+      events.push((event as CustomEvent<TelemetryActionEventDetail>).detail)
+    }
+    window.addEventListener(TELEMETRY_ACTION_EVENT_NAME, record)
+    await settings.trigger('click')
+    window.removeEventListener(TELEMETRY_ACTION_EVENT_NAME, record)
+
+    expect(openGlobalSettings).toHaveBeenCalledExactlyOnceWith()
+    expect(events).toEqual([
+      expect.objectContaining({
+        actionName: 'comfy.desktop.sidebar.settings_opened',
+        context: { from_page: 'assets' }
+      })
+    ])
+    expect(navigatePanel).not.toHaveBeenCalled()
+    expect(wrapper.findAll('[aria-current="page"]').map((row) => row.text())).toEqual(['Assets'])
+  })
+
+  it('keeps Desktop Settings accessible as an icon when the sidebar is collapsed', async () => {
+    const wrapper = await mountSidebar()
+
+    await wrapper.get('[data-testid="app-sidebar-toggle"]').trigger('click')
+    const settings = wrapper.get('[data-testid="app-sidebar-settings"]')
+    expect(settings.text()).toBe('')
+    expect(settings.attributes('aria-label')).toBe('Desktop Settings')
+    expect(settings.attributes('title')).toBe('Desktop Settings')
+
+    await settings.trigger('click')
+
+    expect(openGlobalSettings).toHaveBeenCalledExactlyOnceWith()
   })
 
   it('collapses to icons with tooltips and stays collapsed when reopened', async () => {

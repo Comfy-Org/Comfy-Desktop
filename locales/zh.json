@@ -107,7 +107,23 @@
     "filter": "筛选",
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
-    "signIn": "登录 Comfy Cloud"
+    "signIn": "登录 Comfy Cloud",
+    "inspect": "查看 {name}",
+    "detail": {
+      "tags": "标签",
+      "tagsHint": "标签在 ComfyUI 中编辑。",
+      "createdAt": "创建于 {date}",
+      "fit": "适应",
+      "zoom": "缩放",
+      "zoomLevel": "缩放：{level}"
+    },
+    "kindSingular": {
+      "image": "图片",
+      "video": "视频",
+      "audio": "音频",
+      "3d": "3D",
+      "file": "文件"
+    }
   },
   "home": {
     "title": "欢迎。开始创作吧！",

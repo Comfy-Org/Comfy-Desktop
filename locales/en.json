@@ -107,7 +107,23 @@
     "filter": "Filter",
     "signedOutTitle": "Log in to see your assets",
     "signedOutBody": "Assets that you make in Comfy Cloud show here.",
-    "signIn": "Log in to Comfy Cloud"
+    "signIn": "Log in to Comfy Cloud",
+    "inspect": "Inspect {name}",
+    "detail": {
+      "tags": "Tags",
+      "tagsHint": "Tags are edited in ComfyUI.",
+      "createdAt": "Created {date}",
+      "fit": "Fit",
+      "zoom": "Zoom",
+      "zoomLevel": "Zoom: {level}"
+    },
+    "kindSingular": {
+      "image": "Image",
+      "video": "Video",
+      "audio": "Audio",
+      "3d": "3D",
+      "file": "File"
+    }
   },
   "home": {
     "title": "Welcome. Let's create!",

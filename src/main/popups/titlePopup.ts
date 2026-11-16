@@ -486,14 +486,14 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
       label: 'Performance Tests',
       labelKey: 'fileMenu.performanceTest'
     },
-    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' },
-    { kind: 'separator' },
-    {
-      id: 'settings',
-      label: 'Desktop Settings',
-      labelKey: 'fileMenu.globalSettings'
-    }
+    { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' }
   ]
+  if (entry.installationId !== null) {
+    items.push(
+      { kind: 'separator' },
+      { id: 'settings', label: 'Desktop Settings', labelKey: 'fileMenu.globalSettings' }
+    )
+  }
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
