@@ -5,8 +5,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { expect, test, type ElectronApplication } from '@playwright/test'
 import { launchApp, type AppContext } from './launchApp'
-import { openTitleMenu } from './support/chooserHelpers'
-import { titlePopupPage } from './support/cdpPages'
+import { openDesktopSettings } from './support/chooserHelpers'
 
 const MIB = 1024 * 1024
 const GPU_MEMORY_COUNTER = '\\GPU Process Memory(*)\\Dedicated Usage'
@@ -115,11 +114,7 @@ async function measureApp(application: ElectronApplication): Promise<{
 }
 
 async function disableHardwareAccelerationFromDesktopSettings(ctx: AppContext): Promise<void> {
-  const popup = titlePopupPage(ctx.app)
-  await openTitleMenu(ctx.titleBar)
-  await popup.waitForVisible('[role="menuitem"]', { timeout: 5_000 })
-  expect(await popup.clickByText('[role="menuitem"]', 'Desktop Settings')).toBe(true)
-  await popup.waitForVisible('.global-settings', { timeout: 5_000 })
+  const popup = await openDesktopSettings(ctx.app, ctx.panel)
   expect(await popup.clickByText('.gs-tab', 'Advanced')).toBe(true)
 
   const selector = '[role="switch"][aria-label="Use hardware acceleration"]'
