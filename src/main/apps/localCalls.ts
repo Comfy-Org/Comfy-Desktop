@@ -6,7 +6,7 @@ const PATHNAME = /^(\/[A-Za-z0-9_.+-]+){1,2}$/
 const PROMPT_ID = /^[A-Za-z0-9-]{1,64}$/
 const NODE_CLASS = /^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$/
 const FILE_NAME = /^[^\\/\0]{1,255}$/
-const SUBFOLDER = /^[^\\\0]{0,255}$/
+const SUBFOLDER = /^[^\0]{0,255}$/
 const UPLOAD_NAME =
   /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(png|jpe?g|webp|gif|mp4|mov|m4v|webm|mp3|wav|flac|ogg|m4a)$/i
 const FILE_TYPES: ReadonlySet<string> = new Set(['output', 'temp'])
@@ -49,7 +49,7 @@ function bytesOf(body: unknown): Uint8Array | null {
 }
 
 function hasParentStep(subfolder: string): boolean {
-  return subfolder.split('/').includes('..')
+  return subfolder.split(/[\\/]/).includes('..')
 }
 
 function viewCall(query: URLSearchParams): LocalCall | null {
