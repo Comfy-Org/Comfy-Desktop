@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import TermsModal from './TermsModal.vue'
 import { LEGAL_DOCS, type LegalDocId } from '../lib/legalDocs'
+import en from '@locales/en.json'
 
 async function mountModal(doc?: LegalDocId) {
   const wrapper = mount(TermsModal, {
@@ -45,6 +46,19 @@ describe('TermsModal', async () => {
     expect(body.text()).not.toContain('`')
     const codeSpans = body.findAll('code').map((c) => c.text())
     expect(codeSpans).toEqual(expect.arrayContaining(['sk-*', 'hf_*', 'KEY=', 'SECRET=']))
+  })
+
+  it('sends readers to the Settings tab and group that hold the telemetry switch', () => {
+    const settingsPaths = Object.values(LEGAL_DOCS)
+      .flatMap((doc) => doc.blocks.flatMap((block) => [block.text ?? '', ...(block.items ?? [])]))
+      .flatMap((text) => [...text.matchAll(/Settings → ([^→*,.]+?) → ([^→*,.]+?)(?=[*,.])/g)])
+      .map(([, tab, group]) => `${tab} → ${group}`)
+
+    expect(settingsPaths.length).toBeGreaterThan(0)
+    expect(new Set(settingsPaths)).toEqual(
+      new Set([`${en.settings.general} → ${en.settings.privacy}`])
+    )
+    expect(JSON.stringify(LEGAL_DOCS)).not.toContain('Settings → Telemetry')
   })
 
   it('renders block content from the routed doc (not from a stale fallback)', async () => {
