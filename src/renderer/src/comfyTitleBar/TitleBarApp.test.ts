@@ -1003,29 +1003,6 @@ describe('TitleBarApp', () => {
     }
   })
 
-  describe('without ResizeObserver', () => {
-    let originalResizeObserver: typeof globalThis.ResizeObserver | undefined
-
-    beforeEach(() => {
-      originalResizeObserver = (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver })
-        .ResizeObserver
-      delete (globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver
-    })
-
-    afterEach(() => {
-      ;(globalThis as { ResizeObserver?: typeof globalThis.ResizeObserver }).ResizeObserver =
-        originalResizeObserver
-    })
-
-    it('still mounts and renders the title bar', async () => {
-      const mod = await import('./TitleBarApp.vue')
-      const wrapper = mount(mod.default, { attachTo: document.body })
-      await flushPromises()
-      expect(wrapper.find('.title-trailing').exists()).toBe(true)
-      wrapper.unmount()
-    })
-  })
-
   describe('core beta activation notice', () => {
     let getPendingBetaNotice: ReturnType<typeof vi.fn>
     let acknowledgeBetaNotice: ReturnType<typeof vi.fn>
