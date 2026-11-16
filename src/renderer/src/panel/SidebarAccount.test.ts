@@ -220,6 +220,25 @@ describe('SidebarAccount', () => {
     expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
   })
 
+  it('moves between workspaces with the arrow, Home and End keys', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN)
+
+    const body = await openWorkspaces(wrapper)
+    const options = body.findAll('[role="option"]').map((option) => option.element)
+    expect(document.activeElement).toBe(options[1])
+
+    await userEvent.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(options[2])
+    await userEvent.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}')
+    expect(document.activeElement).toBe(options[0])
+    await userEvent.keyboard('{End}')
+    expect(document.activeElement).toBe(options[3])
+    await userEvent.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(options[3])
+    await userEvent.keyboard('{Home}')
+    expect(document.activeElement).toBe(options[0])
+  })
+
   it('closes only the workspace list on Escape and returns focus to its header', async () => {
     const { wrapper } = await mountAccount(SIGNED_IN)
 

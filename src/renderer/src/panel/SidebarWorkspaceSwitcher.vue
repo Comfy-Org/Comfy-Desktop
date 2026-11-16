@@ -134,6 +134,24 @@ watch(workspacesOpen, (open) => {
   if (!open) query.value = ''
 })
 
+const OPTION_STEPS: Readonly<Record<string, (index: number, last: number) => number>> = {
+  ArrowDown: (index, last) => Math.min(index + 1, last),
+  ArrowUp: (index) => Math.max(index - 1, 0),
+  Home: () => 0,
+  End: (_index, last) => last
+}
+
+function moveBetweenOptions(event: KeyboardEvent): void {
+  const step = Object.hasOwn(OPTION_STEPS, event.key) ? OPTION_STEPS[event.key] : undefined
+  if (!step) return
+  const listbox = event.currentTarget as HTMLElement
+  const options = [...listbox.querySelectorAll<HTMLElement>('[role="option"]')]
+  if (!options.length) return
+  event.preventDefault()
+  const index = options.indexOf(document.activeElement as HTMLElement)
+  options[step(index, options.length - 1)]?.focus()
+}
+
 function focusCurrentWorkspace(event: Event): void {
   event.preventDefault()
   void nextTick(() => {
@@ -336,6 +354,7 @@ async function signOut(): Promise<void> {
               class="flex min-h-0 flex-col gap-2 overflow-y-auto px-1"
               role="listbox"
               :aria-label="t('devPlatform.workspace.switchLabel')"
+              @keydown="moveBetweenOptions"
             >
               <Button
                 v-for="workspace in filteredWorkspaces"
