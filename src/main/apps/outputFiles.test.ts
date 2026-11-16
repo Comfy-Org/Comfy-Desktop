@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../installations', () => ({ get: vi.fn() }))
 vi.mock('../lib/outputFolders', () => ({ comfyOutputPath: vi.fn() }))
-vi.mock('./localComfy', () => ({ pageBuildId: vi.fn() }))
+vi.mock('./localComfy', () => ({ pageBuildId: vi.fn(() => 'apps-build') }))
 
-import { locateOutputFiles } from './outputFiles'
+import type { WebContents } from 'electron'
+import * as installations from '../installations'
+import { findInPageBuild, locateOutputFiles } from './outputFiles'
 import type { FindOutputFile } from './outputFiles'
 import type { RequestedOutput } from './outputRequest'
 
@@ -81,5 +83,35 @@ describe('locateOutputFiles', () => {
       output()
     ])
     expect(located.files).toEqual([null, null, null])
+  })
+
+  it('looks for at most four files at once', async () => {
+    let looking = 0
+    let most = 0
+    const find = vi.fn<FindOutputFile>(async () => {
+      looking += 1
+      most = Math.max(most, looking)
+      await new Promise((resolve) => setTimeout(resolve, 1))
+      looking -= 1
+      return null
+    })
+    const items = Array.from({ length: 10 }, () =>
+      output({ savedOn: 'computer', comfyFile: cutoutFile })
+    )
+
+    await locateOutputFiles({ items, index: 0 }, find)
+
+    expect(find).toHaveBeenCalledTimes(10)
+    expect(most).toBe(4)
+  })
+})
+
+describe('findInPageBuild', () => {
+  it('finds nothing when the build cannot be read', async () => {
+    vi.mocked(installations.get).mockRejectedValueOnce(new Error('unreadable'))
+
+    const find = await findInPageBuild({} as WebContents)
+
+    expect(await find(cutoutFile, new Uint8Array([1]))).toBeNull()
   })
 })
