@@ -660,6 +660,28 @@ describe('AssetsView', () => {
     expect(shown('assets-search-toggle')).toBe(false)
   })
 
+  it('keeps the compact search open while a query changes the counts', async () => {
+    page.style.width = '700px'
+    const wrapper = await mountAssets([
+      asset('a', 'surfer.mp4', 'video'),
+      asset('b', 'forest.png', 'image')
+    ])
+    const toggle = () => wrapper.find('[data-testid="assets-search-toggle"]')
+    await vi.waitFor(() => expect(toggle().exists()).toBe(true))
+    await toggle().trigger('click')
+    const input = () =>
+      document.querySelector<HTMLInputElement>('[data-testid="assets-search-compact"] input')
+    await vi.waitFor(() => expect(input()).not.toBeNull())
+    const typedInto = input()!
+
+    typedInto.value = 'forest'
+    typedInto.dispatchEvent(new Event('input'))
+    await flushPromises()
+
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    expect(input(), 'the same input stays on the page').toBe(typedInto)
+  })
+
   it('filters by asset type and by name', async () => {
     const wrapper = await mountAssets([
       asset('a', 'surfer.mp4', 'video'),
