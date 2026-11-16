@@ -1,79 +1,63 @@
 import type { ComfyTitlePopupBridge } from '../../../preload/comfyTitlePopupPreload'
+import type { ElectronApi } from '../types/ipc'
 import type { LocaleSource } from '../lib/useAppLocale'
 
-const API_MAP = {
-  getDetailSections: 'pickerSettingsGetDetailSections',
-  getDiskSpace: 'pickerSettingsGetDiskSpace',
-  openPath: 'globalSettingsOpenPath',
-  revealPath: 'globalSettingsRevealPath',
-  updateInstallation: 'pickerSettingsUpdateInstallation',
-  runAction: 'pickerSettingsRunAction',
-  getFieldOptions: 'pickerSettingsGetFieldOptions',
-  getInstallations: 'pickerSettingsGetInstallations',
-  getStableTags: 'pickerSettingsGetStableTags',
-  getUniqueName: 'pickerSettingsGetUniqueName',
-  getInstallationSize: 'pickerSettingsGetInstallationSize',
-  stopComfyUI: 'pickerSettingsStopComfyUI',
-  cancelOperation: 'pickerSettingsCancelOperation',
-  getSnapshots: 'pickerSettingsGetSnapshots',
-  getSnapshotDetail: 'pickerSettingsGetSnapshotDetail',
-  getSnapshotDiff: 'pickerSettingsGetSnapshotDiff',
-  exportSnapshot: 'pickerSettingsExportSnapshot',
-  exportAllSnapshots: 'pickerSettingsExportAllSnapshots',
-  importSnapshotsPreview: 'pickerSettingsImportSnapshotsPreview',
-  importSnapshotsDiff: 'pickerSettingsImportSnapshotsDiff',
-  importSnapshotsConfirm: 'pickerSettingsImportSnapshotsConfirm',
-  previewSnapshotFile: 'pickerSettingsPreviewSnapshotFile',
-  getComfyArgs: 'pickerSettingsGetComfyArgs',
-  getCoreBetaArgs: 'pickerSettingsGetCoreBetaArgs',
-  openGlobalSettings: 'pickerSettingsOpenGlobalSettings',
-  previewLocalMigration: 'pickerSettingsPreviewLocalMigration',
-  onReleaseCacheEnriched: 'pickerSettingsOnReleaseCacheEnriched',
-  terminalSubscribe: 'terminalSubscribe',
-  terminalUnsubscribe: 'terminalUnsubscribe',
-  terminalWrite: 'terminalWrite',
-  terminalResize: 'terminalResize',
-  terminalRestart: 'terminalRestart',
-  onTerminalOutput: 'onTerminalOutput',
-  onTerminalExited: 'onTerminalExited'
-} as const satisfies Record<string, keyof ComfyTitlePopupBridge>
-
-type ShimApi = {
-  [K in keyof typeof API_MAP]: ComfyTitlePopupBridge[(typeof API_MAP)[K]]
-} & {
-  platform: NodeJS.Platform
-  browseFolder: (
-    defaultPath?: string
-  ) => ReturnType<ComfyTitlePopupBridge['pickerSettingsBrowseFolder']>
-  relaunchApp: () => void
-  onInstallationsChanged: (cb: () => void) => () => void
+function buildPickerSettingsApi(bridge: ComfyTitlePopupBridge) {
+  return {
+    platform: bridge.platform,
+    getDetailSections: (...args) => bridge.pickerSettingsGetDetailSections(...args),
+    getDiskSpace: (...args) => bridge.pickerSettingsGetDiskSpace(...args),
+    openPath: async (targetPath) => bridge.globalSettingsOpenPath(targetPath),
+    revealPath: (targetPath) => bridge.globalSettingsRevealPath(targetPath),
+    openExternal: async (url) => bridge.globalSettingsOpenExternal(url),
+    updateInstallation: (...args) => bridge.pickerSettingsUpdateInstallation(...args),
+    runAction: (...args) => bridge.pickerSettingsRunAction(...args),
+    getFieldOptions: (...args) => bridge.pickerSettingsGetFieldOptions(...args),
+    getInstallations: () => bridge.pickerSettingsGetInstallations(),
+    getStableTags: () => bridge.pickerSettingsGetStableTags(),
+    getUniqueName: (...args) => bridge.pickerSettingsGetUniqueName(...args),
+    getInstallationSize: (...args) => bridge.pickerSettingsGetInstallationSize(...args),
+    stopComfyUI: (...args) => bridge.pickerSettingsStopComfyUI(...args),
+    cancelOperation: (...args) => bridge.pickerSettingsCancelOperation(...args),
+    getSnapshots: (...args) => bridge.pickerSettingsGetSnapshots(...args),
+    getSnapshotDetail: (...args) => bridge.pickerSettingsGetSnapshotDetail(...args),
+    getSnapshotDiff: (...args) => bridge.pickerSettingsGetSnapshotDiff(...args),
+    exportSnapshot: (...args) => bridge.pickerSettingsExportSnapshot(...args),
+    exportAllSnapshots: (...args) => bridge.pickerSettingsExportAllSnapshots(...args),
+    importSnapshotsPreview: () => bridge.pickerSettingsImportSnapshotsPreview(),
+    importSnapshotsDiff: (...args) => bridge.pickerSettingsImportSnapshotsDiff(...args),
+    importSnapshotsConfirm: (...args) => bridge.pickerSettingsImportSnapshotsConfirm(...args),
+    previewSnapshotFile: () => bridge.pickerSettingsPreviewSnapshotFile(),
+    getComfyArgs: (...args) => bridge.pickerSettingsGetComfyArgs(...args),
+    getCoreBetaArgs: (...args) => bridge.pickerSettingsGetCoreBetaArgs(...args),
+    openGlobalSettings: (...args) => bridge.pickerSettingsOpenGlobalSettings(...args),
+    previewLocalMigration: (...args) => bridge.pickerSettingsPreviewLocalMigration(...args),
+    browseFolder: (defaultPath) =>
+      bridge.pickerSettingsBrowseFolder(defaultPath ? { defaultPath } : undefined),
+    relaunchApp: async () => bridge.pickerSettingsRelaunchApp(),
+    terminalSubscribe: (...args) => bridge.terminalSubscribe(...args),
+    terminalUnsubscribe: (...args) => bridge.terminalUnsubscribe(...args),
+    terminalWrite: (...args) => bridge.terminalWrite(...args),
+    terminalResize: (...args) => bridge.terminalResize(...args),
+    terminalRestart: (...args) => bridge.terminalRestart(...args),
+    onTerminalOutput: (...args) => bridge.onTerminalOutput(...args),
+    onTerminalExited: (...args) => bridge.onTerminalExited(...args),
+    onReleaseCacheEnriched: (...args) => bridge.pickerSettingsOnReleaseCacheEnriched(...args),
+    onSettingsChanged: (...args) => bridge.pickerSettingsOnSettingsChanged(...args),
+    onInstallationsChanged: (callback) => bridge.onInstancePickerSnapshot(() => callback())
+  } satisfies Partial<ElectronApi>
 }
 
-export function installPickerSettingsApiShim(): void {
-  const bridge = (window as unknown as { __comfyTitlePopup?: ComfyTitlePopupBridge })
-    .__comfyTitlePopup
-  if (!bridge) {
-    return
-  }
+export type PickerSettingsApi = Pick<ElectronApi, keyof ReturnType<typeof buildPickerSettingsApi>>
 
-  const api = {} as ShimApi
-  for (const [apiKey, bridgeKey] of Object.entries(API_MAP)) {
-    const method = bridge[bridgeKey as keyof ComfyTitlePopupBridge] as (
-      ...args: unknown[]
-    ) => unknown
-    ;(api as Record<string, unknown>)[apiKey] = method.bind(bridge)
-  }
-  api.platform = bridge.platform
-  api.browseFolder = (defaultPath?: string) =>
-    bridge.pickerSettingsBrowseFolder(defaultPath ? { defaultPath } : undefined)
-  api.relaunchApp = () => bridge.pickerSettingsRelaunchApp()
-  api.onInstallationsChanged = (cb: () => void) => bridge.onInstancePickerSnapshot(() => cb())
-  ;(window as unknown as { api: ShimApi }).api = api
+export function installPickerSettingsApiShim(): void {
+  const bridge = window.__comfyTitlePopup
+  if (!bridge) return
+  window.api = buildPickerSettingsApi(bridge)
 }
 
 export function popupLocaleSource(): LocaleSource {
-  const bridge = (window as unknown as { __comfyTitlePopup?: ComfyTitlePopupBridge })
-    .__comfyTitlePopup
+  const bridge = window.__comfyTitlePopup
   return {
     getLocale: () => bridge?.pickerSettingsGetLocale?.() ?? Promise.resolve('en'),
     getMessages: () => bridge?.pickerSettingsGetLocaleMessages?.() ?? Promise.resolve({}),

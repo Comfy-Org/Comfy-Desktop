@@ -539,7 +539,8 @@ describe('useFirstUseChain — chainSpan stamping', () => {
     progressStore.startOperation({
       installationId: 'inst-chained-1',
       title: 'Installing',
-      apiCall: () => Promise.resolve({ ok: true } as ActionResult)
+      apiCall: () => Promise.resolve({ ok: true } as ActionResult),
+      events: window.api
     })
     const op = progressStore.operations.get('inst-chained-1')!
     op.finished = true
@@ -578,7 +579,8 @@ describe('useFirstUseChain — chainSpan stamping', () => {
     progressStore.startOperation({
       installationId: 'inst-noop-1',
       title: 'Installing',
-      apiCall: () => Promise.resolve({ ok: true } as ActionResult)
+      apiCall: () => Promise.resolve({ ok: true } as ActionResult),
+      events: window.api
     })
     const op = progressStore.operations.get('inst-noop-1')!
     op.finished = true

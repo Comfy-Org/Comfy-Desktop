@@ -6,51 +6,14 @@ import { CircleAlert, CircleCheck, LoaderCircle, PauseCircle, RotateCcw, X } fro
 import { fileLabel, statusKindClass, statusLine } from '../lib/downloadFormatters'
 import { revealInFolderLabel } from '../composables/usePlatform'
 import DownloadThumbnail from '../components/DownloadThumbnail.vue'
+import type {
+  PopupDownloadEntry as DownloadEntry,
+  PopupDownloadsState as DownloadsState
+} from '../../../preload/comfyTitlePopupPreload'
 
 const { t } = useI18n()
 
-interface DownloadEntry {
-  id?: string
-  url: string
-  filename: string
-  directory?: string
-  savePath?: string
-  progress: number
-  receivedBytes?: number
-  totalBytes?: number
-  speedBytesPerSec?: number
-  etaSeconds?: number
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
-  error?: string
-  createdAt?: number
-  isImage?: boolean
-}
-
-interface DownloadsState {
-  active: DownloadEntry[]
-  recent: DownloadEntry[]
-}
-
-type DownloadAction =
-  | { action: 'pause'; ref?: string; url: string }
-  | { action: 'resume'; ref?: string; url: string }
-  | { action: 'cancel'; ref?: string; url: string }
-  | { action: 'show-in-folder'; ref?: string; url: string; savePath: string }
-  | { action: 'dismiss'; ref?: string; url: string }
-  | { action: 'retry'; ref?: string; url: string }
-  | { action: 'clear-finished' }
-
-type PopupSettingsTab = 'comfy' | 'directories' | 'downloads' | 'global'
-
-interface PopupBridge {
-  platform?: string
-  downloadsAction(action: DownloadAction): void
-  openSettingsTab(tab: PopupSettingsTab): void
-  openDownloadsModal(): void
-  getDownloadThumbnail(savePath: string): Promise<string | null>
-}
-
-const bridge = (window as unknown as { __comfyTitlePopup?: PopupBridge }).__comfyTitlePopup
+const bridge = window.__comfyTitlePopup
 const revealLabel = computed(() => revealInFolderLabel(bridge?.platform))
 
 const props = defineProps<{ state: DownloadsState }>()

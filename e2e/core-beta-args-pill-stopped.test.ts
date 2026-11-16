@@ -170,6 +170,20 @@ test('an opt-in change made while the picker is hidden shows on reopen @linux', 
   await popup.waitForVisible(PILL, { timeout: 10_000 })
 })
 
+test('an opt-in change made while the picker is open updates the pill in place @linux', async () => {
+  const popup = await openStartupArgs()
+  await popup.waitForVisible(PILL, { timeout: 10_000 })
+
+  await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', false)`)
+  await popup.waitFor(async () => (await pillAriaLabel(popup)) === null, {
+    timeout: 10_000,
+    message: 'the pill survived an opt-out made while the picker stayed open'
+  })
+
+  await ctx.panel.evaluate(`window.api.setSetting('betaFeaturesEnabled', true)`)
+  await popup.waitForVisible(PILL, { timeout: 10_000 })
+})
+
 const betaArgsRequests = async (): Promise<number> =>
   (await getIpcInvocations(ctx.app, 'get-core-beta-args')).length
 

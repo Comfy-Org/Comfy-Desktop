@@ -7,31 +7,10 @@ import ModelsDirList from './ModelsDirList.vue'
 import StorageDirRow from '../../views/comfyUISettings/StorageDirRow.vue'
 import { samePath } from '../../lib/pathCompare'
 import type { DetailField } from '../../types/ipc'
-
-interface ModelsDir {
-  path: string
-  isPrimary: boolean
-}
-
-export interface GlobalStorageSnapshot {
-  sharedDirectoriesFields: Record<string, unknown>[]
-  modelsDirs: ModelsDir[]
-  modelsSystemDefault: string
-}
-
-interface GlobalSettingsBridge {
-  platform?: string
-  globalSettingsUpdateField(
-    fieldId: string,
-    value: unknown
-  ): Promise<{ ok: boolean; message?: string }>
-  globalSettingsBrowseFolder(defaultPath?: string): Promise<string | null>
-  globalSettingsOpenPath(path: string): void
-  globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
-}
+import type { PickerStorageSlice } from '../../../../types/titlePopup'
 
 interface Props {
-  snapshot: GlobalStorageSnapshot
+  snapshot: PickerStorageSlice
 }
 
 const props = defineProps<Props>()
@@ -43,7 +22,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const modal = useModal()
 
-const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge }).__comfyTitlePopup
+const bridge = window.__comfyTitlePopup
 
 const sharedDirFields = computed<Record<string, DetailField>>(() => {
   const map: Record<string, DetailField> = {}

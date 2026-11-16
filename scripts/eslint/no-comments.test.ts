@@ -56,7 +56,12 @@ describe('no comments', () => {
       'const a = 1\r\n// note\r\nconst b = 2\r\n',
       'const a = 1\r\nconst b = 2\r\n'
     ],
-    ['comment at end of file', 'const a = 1\n// note', 'const a = 1\n']
+    ['comment at end of file', 'const a = 1\n// note', 'const a = 1\n'],
+    [
+      'line comment that starts like a block-only directive',
+      'const a = 1\n// global settings open here\nconst b = 2\n',
+      'const a = 1\nconst b = 2\n'
+    ]
   ])('removes a %s', (_, source, expected) => {
     expect(lint(source)).toEqual([expect.objectContaining({ ruleId, severity: 2 })])
     expect(fix(source).output).toBe(expected)
@@ -65,6 +70,8 @@ describe('no comments', () => {
   it.each([
     '// eslint-disable-next-line no-console\nconsole.log(1)\n',
     '/* eslint-disable no-console */\nconsole.log(1)\n',
+    '/* global window */\nwindow.close()\n',
+    '/* exported main */\nfunction main() {}\n',
     'console.log(1) // eslint-disable-line no-console\n',
     '// @ts-expect-error\nconst a: string = 1\n',
     '// @ts-nocheck\nconst a = 1\n',

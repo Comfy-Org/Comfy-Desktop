@@ -22,6 +22,11 @@ vi.mock('../lib/ipc/registerSettingsHandlers', async () => ({
   applySettingSet: vi.fn()
 }))
 
+vi.mock('../lib/openExternal', async () => ({
+  ...(await vi.importActual('../lib/openExternal')),
+  tryOpenExternalUrl: vi.fn().mockResolvedValue(true)
+}))
+
 import {
   _test_buildGlobalSettingsSnapshot,
   _test_deleteTitlePopupEntry,
@@ -36,12 +41,13 @@ import {
   registerTitlePopupIpc,
   requiresPerOpenConfigSync,
   syncTitlePopupConfig,
-  type InstancePickerInstall,
   type TitlePopupEntry,
   type TitlePopupHostBindings
 } from './titlePopup'
+import type { InstancePickerInstall } from '../../types/titlePopup'
 import { comfyWindows, nextWindowKey, type ComfyWindowEntry } from '../host/registry'
 import { applySettingSet } from '../lib/ipc/registerSettingsHandlers'
+import { tryOpenExternalUrl } from '../lib/openExternal'
 import * as settings from '../settings'
 
 beforeEach(() => {
@@ -783,11 +789,16 @@ describe('global settings IPC handlers', () => {
     payload?: Record<string, unknown>
   ) => unknown
 
+  type IpcListener = (event: Electron.IpcMainEvent, payload?: Record<string, unknown>) => void
+
   let updateField: IpcHandler
   let setModelsDirs: IpcHandler
+  let openLink: IpcListener
 
   const eventFor = (id: number): Electron.IpcMainInvokeEvent =>
     ({ sender: { id } }) as unknown as Electron.IpcMainInvokeEvent
+  const sentBy = (id: number): Electron.IpcMainEvent =>
+    ({ sender: { id } }) as unknown as Electron.IpcMainEvent
 
   beforeAll(async () => {
     const { ipcMain } = await import('electron')
@@ -799,6 +810,11 @@ describe('global settings IPC handlers', () => {
     }
     updateField = handlerFor('comfy-titlepopup:global-settings-update-field')
     setModelsDirs = handlerFor('comfy-titlepopup:global-settings-set-models-dirs')
+    const openLinkCall = vi
+      .mocked(ipcMain.on)
+      .mock.calls.find(([name]) => name === 'comfy-titlepopup:global-settings-open-external')
+    if (!openLinkCall) throw new Error('IPC listener not registered: open-external')
+    openLink = openLinkCall[1]
     _test_setTitlePopupEntry(101, { kind: 'global-settings' } as TitlePopupEntry)
     _test_setTitlePopupEntry(102, { kind: 'instance-picker' } as TitlePopupEntry)
     _test_setTitlePopupEntry(103, { kind: 'downloads' } as TitlePopupEntry)
@@ -879,6 +895,22 @@ describe('global settings IPC handlers', () => {
   it('rejects an unknown sender setting models directories', () => {
     expect(setModelsDirs(eventFor(999), { dirs: ['/a'] })).toEqual({ ok: false })
     expect(applySettingSet).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['global-settings', 101],
+    ['instance-picker', 102]
+  ])('opens a link the %s popup asks for', (_kind, senderId) => {
+    openLink(sentBy(senderId), { url: 'https://docs.comfy.org/' })
+    expect(tryOpenExternalUrl).toHaveBeenCalledExactlyOnceWith('https://docs.comfy.org/')
+  })
+
+  it.each([
+    ['a popup that is not showing settings', 103],
+    ['an unknown sender', 999]
+  ])('opens no link for %s', (_sender, senderId) => {
+    openLink(sentBy(senderId), { url: 'https://docs.comfy.org/' })
+    expect(tryOpenExternalUrl).not.toHaveBeenCalled()
   })
 })
 

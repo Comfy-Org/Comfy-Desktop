@@ -1,28 +1,7 @@
 <script setup lang="ts">
-import type { CoachmarkBeakPayload } from '../../../types/ipc'
 import { nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
-interface TooltipConfig {
-  variant?: 'tooltip' | 'coachmark'
-  text?: string
-  title?: string
-  body?: string
-  dismissLabel?: string
-  actionLabel?: string
-  theme: { bg: string; text: string; border: string; accent?: string }
-  configToken: string
-}
-
-interface Bridge {
-  ready(): void
-  notifyRendered(payload: { width: number; height: number; configToken: string }): void
-  onConfig(cb: (config: TooltipConfig) => void): () => void
-  dismissCoachmark?(configToken: string): void
-  onBeak?(cb: (payload: CoachmarkBeakPayload) => void): () => void
-  actionCoachmark?(configToken: string): void
-}
-
-const bridge = (window as unknown as { __comfyTitleTooltip?: Bridge }).__comfyTitleTooltip
+const bridge = window.__comfyTitleTooltip
 
 const variant = ref<'tooltip' | 'coachmark'>('tooltip')
 const text = ref<string>('')
@@ -81,7 +60,7 @@ onMounted(() => {
     if (cfg.theme.accent) themeAccent.value = cfg.theme.accent
     void measureAndAck()
   })
-  unsubBeak = bridge?.onBeak?.(({ beakFraction, cardCentreInView }) => {
+  unsubBeak = bridge?.onBeak(({ beakFraction, cardCentreInView }) => {
     cmBeakFraction.value = Math.min(1, Math.max(0, beakFraction))
     cmCardCentre.value =
       typeof cardCentreInView === 'number' && Number.isFinite(cardCentreInView)
@@ -101,11 +80,11 @@ watch([text, cmTitle, cmBody, cmActionLabel], () => {
 })
 
 function onDismiss(): void {
-  bridge?.dismissCoachmark?.(currentConfigToken)
+  bridge?.dismissCoachmark(currentConfigToken)
 }
 
 function onAction(): void {
-  bridge?.actionCoachmark?.(currentConfigToken)
+  bridge?.actionCoachmark(currentConfigToken)
 }
 
 onUnmounted(() => {

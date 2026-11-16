@@ -8,6 +8,7 @@ import { useInstallationStore } from '../stores/installationStore'
 import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallContextMenu } from '../composables/useInstallContextMenu'
+import { useHideCloudFromPicker } from '../composables/useHideCloudFromPicker'
 import { useInstallList } from '../composables/useInstallList'
 import { useInstallingBuilds } from '../composables/useBuildProgress'
 import { useQuickUpdate } from '../composables/useQuickUpdate'
@@ -71,7 +72,8 @@ onMounted(() => {
 
 const installationsRef = toRef(installationStore, 'installations')
 const { searchQuery, activeFilter, effectiveInstalls, visibleInstalls } = useInstallList({
-  installations: installationsRef
+  installations: installationsRef,
+  hideCloud: useHideCloudFromPicker()
 })
 
 defineExpose({ activeFilter })

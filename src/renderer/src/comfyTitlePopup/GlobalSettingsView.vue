@@ -14,80 +14,22 @@ import GitHubLinkCard from './globalSettings/GitHubLinkCard.vue'
 import SettingsSectionList from '../views/comfyUISettings/SettingsSectionList.vue'
 import StorageDirRow from '../views/comfyUISettings/StorageDirRow.vue'
 import { withMinDuration } from '../lib/uiTiming'
+import { BETA_FEATURES_FIELD_ID } from '../lib/betaFeaturesField'
 import type {
   AppUpdateDownloadProgress,
   AppUpdateState,
   DetailField,
   DetailSection
 } from '../types/ipc'
+import type { GlobalSettingsSnapshot, GlobalSettingsTab } from '../../../types/titlePopup'
 
-interface ModelsDir {
-  path: string
-  isPrimary: boolean
-}
-
-interface Snapshot {
-  initialTab?: 'general' | 'updates' | 'storage' | 'advanced' | 'logs' | null
-  highlightFieldId?: string | null
-  languageFields: Record<string, unknown>[]
-  generalFields: Record<string, unknown>[]
-  telemetryFields: Record<string, unknown>[]
-  desktopUpdateFields: Record<string, unknown>[]
-  cacheFields: Record<string, unknown>[]
-  advancedFields: Record<string, unknown>[]
-  sharedDirectoriesFields: Record<string, unknown>[]
-  installLocationFields: Record<string, unknown>[]
-  modelsDirs: ModelsDir[]
-  modelsSystemDefault: string
-  telemetryGranted: boolean
-  appUpdate: {
-    state: Record<string, unknown>
-    progress: Record<string, unknown> | null
-    isDownloading: boolean
-    capabilities: { systemManaged: boolean; canSelfUpdate: boolean }
-    installedVersion: string
-    platform: string
-    lastCheckedAt: number | null
-  }
-  githubUrl: string
-  githubStars: number | null
-  githubStarsLoading: boolean
-  i18n: {
-    overview: string
-    updates: string
-    storage: string
-    models: string
-    advanced: string
-    logs: string
-    sharedDirectories: string
-  }
-}
-
-interface GlobalSettingsBridge {
-  close(): void
-  globalSettingsUpdateField(
-    fieldId: string,
-    value: unknown
-  ): Promise<{ ok: boolean; message?: string }>
-  globalSettingsBrowseFolder(defaultPath?: string): Promise<string | null>
-  globalSettingsOpenPath(path: string): void
-  globalSettingsOpenLogsFolder(): void
-  globalSettingsOpenExternal(url: string): void
-  globalSettingsSetModelsDirs(dirs: string[]): Promise<{ ok: boolean }>
-  globalSettingsCheckForUpdate(): Promise<{ available: boolean; version?: string; error?: string }>
-  globalSettingsDownloadUpdate(): Promise<void>
-  globalSettingsInstallUpdate(): void
-  globalSettingsSetLastCheckedAt(value: number): void
-}
-
-const props = defineProps<{ snapshot: Snapshot }>()
+const props = defineProps<{ snapshot: GlobalSettingsSnapshot }>()
 const { t } = useI18n()
-const bridge = (window as unknown as { __comfyTitlePopup?: GlobalSettingsBridge }).__comfyTitlePopup
+const bridge = window.__comfyTitlePopup
 
 const LAST_CHECKED_KEY = 'globalSettings.lastCheckedAt'
 
-type TabId = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
-const activeTab = ref<TabId>('general')
+const activeTab = ref<GlobalSettingsTab>('general')
 const requestedTabCount = ref(0)
 
 watch(
@@ -155,7 +97,6 @@ const languageSections = computed<DetailSection[]>(() => [
 const generalSections = computed<DetailSection[]>(() => [
   { fields: props.snapshot.generalFields as unknown as DetailField[] }
 ])
-const BETA_FEATURES_FIELD_ID = 'betaFeaturesEnabled'
 const telemetrySections = computed<DetailSection[]>(() => [
   {
     fields: (props.snapshot.telemetryFields as unknown as DetailField[]).map((field) =>

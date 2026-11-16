@@ -19,7 +19,8 @@ vi.mock('electron', () => ({
 }))
 
 import './comfyTitlePopupPreload'
-import type { ComfyTitlePopupBridge, PopupGlobalSettingsSnapshot } from './comfyTitlePopupPreload'
+import type { ComfyTitlePopupBridge } from './comfyTitlePopupPreload'
+import type { GlobalSettingsSnapshot } from '../types/titlePopup'
 
 const GLOBAL_SETTINGS_CHANNEL = 'comfy-titlepopup:global-settings-changed'
 
@@ -29,9 +30,10 @@ function popupBridge(): ComfyTitlePopupBridge {
     (globalThis as Record<string, unknown>)['__comfyTitlePopup']) as ComfyTitlePopupBridge
 }
 
-function validSnapshot(): PopupGlobalSettingsSnapshot {
+function validSnapshot(): GlobalSettingsSnapshot {
   return {
     initialTab: null,
+    highlightFieldId: null,
     languageFields: [],
     generalFields: [],
     telemetryFields: [],
@@ -104,5 +106,49 @@ describe('global-settings snapshot guard', () => {
 
   it('still rejects snapshots that fail the pre-existing field checks', () => {
     expect(deliver({ ...validSnapshot(), modelsSystemDefault: 7 })).toEqual([])
+  })
+})
+
+describe('picker settings requests', () => {
+  beforeEach(() => {
+    mocks.invoke.mockClear()
+    mocks.on.mockClear()
+    mocks.removeListener.mockClear()
+  })
+
+  it('sends main the context a field-options request was made with', () => {
+    void popupBridge().pickerSettingsGetFieldOptions(
+      'standalone',
+      'release',
+      {},
+      { includeLatestStable: true }
+    )
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      'comfy-titlepopup:picker-settings-get-field-options',
+      {
+        sourceId: 'standalone',
+        fieldId: 'release',
+        selections: {},
+        context: { includeLatestStable: true }
+      }
+    )
+  })
+
+  it('tells a subscriber which setting changed, until it unsubscribes', () => {
+    const changedKeys: string[] = []
+    const unsubscribe = popupBridge().pickerSettingsOnSettingsChanged(({ key }) =>
+      changedKeys.push(key)
+    )
+    const handler = mocks.on.mock.calls.find(([channel]) => channel === 'settings-changed')?.[1]
+    expect(handler).toBeTypeOf('function')
+
+    ;(handler as (event: unknown, data: unknown) => void)(undefined, {
+      key: 'betaFeaturesEnabled'
+    })
+    unsubscribe()
+
+    expect(changedKeys).toEqual(['betaFeaturesEnabled'])
+    expect(mocks.removeListener).toHaveBeenCalledExactlyOnceWith('settings-changed', handler)
   })
 })

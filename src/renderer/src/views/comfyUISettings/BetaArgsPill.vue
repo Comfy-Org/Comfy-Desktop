@@ -3,7 +3,7 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FlaskConical, LoaderCircle } from '@lucide/vue'
 import BaseMenu, { type BaseMenuItem } from '../../components/ui/BaseMenu.vue'
-import { BETA_FEATURES_FIELD_ID } from '../../comfyTitleBar/useBetaActivationNotice'
+import { BETA_FEATURES_FIELD_ID } from '../../lib/betaFeaturesField'
 import { useSessionStore } from '../../stores/sessionStore'
 import type { CoreBetaArgs } from '../../types/ipc'
 import { SETTINGS_REOPEN_EPOCH } from './settingsReopenEpoch'
@@ -62,10 +62,10 @@ watch(
   () => void refresh(),
   { immediate: true }
 )
-const offSettings = window.api.onSettingsChanged?.(({ key }) => {
+const offSettings = window.api.onSettingsChanged(({ key }) => {
   if (OPT_IN_KEYS.has(key)) void refresh()
 })
-onBeforeUnmount(() => offSettings?.())
+onBeforeUnmount(offSettings)
 
 const args = computed(() => data.value?.args ?? [])
 const next = computed(() => data.value?.timing === 'next-launch')

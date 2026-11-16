@@ -1,21 +1,10 @@
 import { ref, type Ref, type ShallowRef } from 'vue'
+import type { ComfyTitleBarBridge } from '../../../preload/comfyTitleBarPreload'
 
 export const CENTRAL_PILL_HINT_SEEN_KEY = 'hasSeenCentralPillHint'
 
-interface CoachmarkBridge {
-  showCoachmark: (payload: {
-    title: string
-    body: string
-    dismissLabel: string
-    leftX: number
-    rightX: number
-    bottomY: number
-  }) => void
-  hideCoachmark: () => void
-}
-
 interface UseCentralPillCoachmarkOpts {
-  bridge: CoachmarkBridge | undefined
+  bridge: Pick<ComfyTitleBarBridge, 'showCoachmark' | 'hideCoachmark'> | undefined
   isInstallLess: Ref<boolean>
   isFirstUseLockdown: Ref<boolean>
   isLoadingLockdown?: Ref<boolean>

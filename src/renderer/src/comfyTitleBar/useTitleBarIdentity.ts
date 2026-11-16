@@ -8,23 +8,25 @@ import {
   type FirstUseMode
 } from '../../../shared/firstUseMode'
 import { isColorLight } from '../lib/colorScheme'
+import type { ComfyTitleBarBridge } from '../../../preload/comfyTitleBarPreload'
 
 interface InstallTypeMeta {
   icon: ReturnType<typeof installTypeMetaFor>['icon']
   labelKey: ReturnType<typeof installTypeMetaFor>['labelKey']
 }
 
-interface TitleBarIdentityBridge {
-  onTitleChanged: (cb: (title: string) => void) => () => void
-  onSourceCategoryChanged: (cb: (category: string | null) => void) => () => void
-  onThemeChanged: (cb: (theme: { bg: string; text: string }) => void) => () => void
-  onFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void
-  onFirstUseModeChanged: (cb: (mode: FirstUseMode) => void) => () => void
-  onPreviewModeChanged: (cb: (preview: boolean) => void) => () => void
-}
-
 interface UseTitleBarIdentityOpts {
-  bridge: TitleBarIdentityBridge | undefined
+  bridge:
+    | Pick<
+        ComfyTitleBarBridge,
+        | 'onTitleChanged'
+        | 'onSourceCategoryChanged'
+        | 'onThemeChanged'
+        | 'onFullscreenChanged'
+        | 'onFirstUseModeChanged'
+        | 'onPreviewModeChanged'
+      >
+    | undefined
   isInstallLess: Ref<boolean>
 }
 

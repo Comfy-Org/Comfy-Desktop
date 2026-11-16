@@ -1,6 +1,30 @@
 import { defineStore } from 'pinia'
 import { reactive, computed, ref } from 'vue'
-import type { RunningInstance, ComfyOutputData, ComfyExitedData, CrashKind } from '../types/ipc'
+import type {
+  RunningInstance,
+  ComfyOutputData,
+  ComfyExitedData,
+  CrashKind,
+  ElectronApi
+} from '../types/ipc'
+
+export type SessionEvents = Pick<
+  ElectronApi,
+  | 'getRunningInstances'
+  | 'getLaunchingInstances'
+  | 'getStoppingInstances'
+  | 'getActiveOperations'
+  | 'getCrashInstances'
+  | 'onInstanceLaunching'
+  | 'onInstanceLaunchFailed'
+  | 'onInstanceStarted'
+  | 'onInstanceStopped'
+  | 'onInstanceStopping'
+  | 'onOperationChanged'
+  | 'onComfyOutput'
+  | 'onComfyExited'
+  | 'onInstanceCrashed'
+>
 
 interface SessionBuffer {
   output: string
@@ -124,29 +148,29 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  async function init(): Promise<void> {
+  async function init(api: SessionEvents): Promise<void> {
     dispose()
-    const instances = await window.api.getRunningInstances()
+    const instances = await api.getRunningInstances()
     for (const inst of instances) {
       runningInstances.set(inst.installationId, inst)
     }
 
-    const launching = (await window.api.getLaunchingInstances?.()) ?? []
+    const launching = await api.getLaunchingInstances()
     for (const inst of launching) {
       if (!runningInstances.has(inst.installationId)) {
         launchingInstances.set(inst.installationId, { installationName: inst.installationName })
       }
     }
 
-    const stopping = (await window.api.getStoppingInstances?.()) ?? []
+    const stopping = await api.getStoppingInstances()
     for (const id of stopping) markStopping(id)
 
-    const activeOps = (await window.api.getActiveOperations?.()) ?? []
+    const activeOps = await api.getActiveOperations()
     for (const op of activeOps) {
       operationInstances.set(op.installationId, { actionId: op.actionId })
     }
 
-    const crashes = (await window.api.getCrashInstances?.()) ?? []
+    const crashes = await api.getCrashInstances()
     for (const c of crashes) {
       if (!runningInstances.has(c.installationId) && !launchingInstances.has(c.installationId)) {
         errorInstances.set(c.installationId, {
@@ -163,28 +187,26 @@ export const useSessionStore = defineStore('session', () => {
     }
 
     cleanups.push(
-      window.api.onInstanceLaunching(
-        (data: { installationId: string; installationName: string }) => {
-          launchingInstances.set(data.installationId, { installationName: data.installationName })
-          errorInstances.delete(data.installationId)
-        }
-      ),
-      window.api.onInstanceLaunchFailed((data: { installationId: string }) => {
+      api.onInstanceLaunching((data: { installationId: string; installationName: string }) => {
+        launchingInstances.set(data.installationId, { installationName: data.installationName })
+        errorInstances.delete(data.installationId)
+      }),
+      api.onInstanceLaunchFailed((data: { installationId: string }) => {
         launchingInstances.delete(data.installationId)
       }),
-      window.api.onInstanceStarted((data: RunningInstance) => {
+      api.onInstanceStarted((data: RunningInstance) => {
         launchingInstances.delete(data.installationId)
         runningInstances.set(data.installationId, data)
         errorInstances.delete(data.installationId)
       }),
-      window.api.onInstanceStopped((data: { installationId: string }) => {
+      api.onInstanceStopped((data: { installationId: string }) => {
         runningInstances.delete(data.installationId)
         clearStoppingState(data.installationId)
       }),
-      window.api.onInstanceStopping((data: { installationId: string }) => {
+      api.onInstanceStopping((data: { installationId: string }) => {
         markStopping(data.installationId)
       }),
-      window.api.onOperationChanged?.(
+      api.onOperationChanged(
         (data: { installationId: string; actionId: string; active: boolean }) => {
           if (data.active) {
             operationInstances.set(data.installationId, { actionId: data.actionId })
@@ -192,11 +214,11 @@ export const useSessionStore = defineStore('session', () => {
             operationInstances.delete(data.installationId)
           }
         }
-      ) ?? ((): void => {}),
-      window.api.onComfyOutput((data: ComfyOutputData) => {
+      ),
+      api.onComfyOutput((data: ComfyOutputData) => {
         appendOutput(data.installationId, data.text)
       }),
-      window.api.onComfyExited((data: ComfyExitedData) => {
+      api.onComfyExited((data: ComfyExitedData) => {
         const session = sessions.get(data.installationId)
         if (session) {
           session.exited = true
@@ -208,7 +230,7 @@ export const useSessionStore = defineStore('session', () => {
           session.output += `\n\n--- ${msg} ---\n`
         }
       }),
-      window.api.onInstanceCrashed((data: ComfyExitedData) => {
+      api.onInstanceCrashed((data: ComfyExitedData) => {
         errorInstances.set(data.installationId, {
           installationName: data.installationName,
           exitCode: data.exitCode,

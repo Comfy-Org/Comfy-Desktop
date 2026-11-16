@@ -176,6 +176,7 @@ export function usePanelOverlays(opts: UsePanelOverlaysOpts): UsePanelOverlaysAp
       installationId: showOpts.installationId,
       title: showOpts.title,
       apiCall: showOpts.apiCall as () => Promise<ActionResult>,
+      events: window.api,
       cancellable: showOpts.cancellable,
       returnTo: showOpts.returnTo,
       opKind: showOpts.opKind,

@@ -1,14 +1,13 @@
 import type { NavDecision } from '../../../shared/navigation/navDecision'
+import type { ComfyTitlePopupBridge } from '../../../preload/comfyTitlePopupPreload'
 import type { Installation } from '../types/ipc'
 
 export type SwitchChoice = 'switch' | 'new-window' | 'cancel'
 
-export interface InstanceActionsBridge {
-  pickInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
-  restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
-  openInstallNewWindow?: (installationId: string, opts?: { allowDuplicate?: boolean }) => void
-  openNewInstall?: () => void
-}
+export type InstanceActionsBridge = Pick<
+  ComfyTitlePopupBridge,
+  'pickInstall' | 'restartInstall' | 'openInstallNewWindow' | 'openNewInstall'
+>
 
 export interface InstanceActionsDeps {
   bridge: InstanceActionsBridge | undefined

@@ -1,16 +1,10 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-
-interface MenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  kind?: 'separator'
-}
+import type { TitlePopupMenuItem } from '../../../types/titlePopup'
 
 const props = defineProps<{
-  items: MenuItem[]
+  items: TitlePopupMenuItem[]
 }>()
 
 const emit = defineEmits<{
@@ -19,12 +13,12 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-function labelFor(item: MenuItem): string {
+function labelFor(item: TitlePopupMenuItem): string {
   if (item.labelKey) return t(item.labelKey, item.label ?? '')
   return item.label ?? ''
 }
 
-function handleClick(item: MenuItem): void {
+function handleClick(item: TitlePopupMenuItem): void {
   if (item.kind === 'separator') return
   if (!item.id) return
   emit('activate', item.id)

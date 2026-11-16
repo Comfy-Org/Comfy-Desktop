@@ -408,6 +408,35 @@ describe('ChooserView', () => {
     expect(installTiles[1]!.text()).toContain('OldCloud')
   })
 
+  it('leaves cloud builds out while the hide-cloud setting is on, and brings them back when it is turned off', async () => {
+    const api = installMockApi([
+      makeInstall({ id: 'local', name: 'OnThisComputer', sourceCategory: 'local' }),
+      makeInstall({
+        id: 'cloud',
+        name: 'InTheCloud',
+        sourceCategory: 'cloud',
+        sourceLabel: 'Cloud'
+      })
+    ])
+    let hideCloud = true
+    api.getSetting.mockImplementation(async (key: string) =>
+      key === 'hideCloudFromPicker' ? hideCloud : undefined
+    )
+    const wrapper = mountChooser()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('OnThisComputer')
+    expect(wrapper.text()).not.toContain('InTheCloud')
+
+    hideCloud = false
+    for (const [notifySettingChanged] of api.onSettingsChanged.mock.calls) {
+      notifySettingChanged({ key: 'hideCloudFromPicker' })
+    }
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('InTheCloud')
+  })
+
   it("emits pick from a tile's launch button", async () => {
     installMockApi([makeInstall({ id: 'a', name: 'Alpha', status: 'installed' })])
     const wrapper = mountChooser()

@@ -21,105 +21,15 @@ import { useUpdatePills } from './useUpdatePills'
 import { useTitleBarHoverGate } from './useTitleBarHoverGate'
 import { useCentralPillCoachmark } from './useCentralPillCoachmark'
 import { useBetaActivationNotice } from './useBetaActivationNotice'
-import { useAppLocale, windowApiLocaleSource } from '../lib/useAppLocale'
+import { useAppLocale } from '../lib/useAppLocale'
+import { windowApiLocaleSource } from '../lib/windowApiLocaleSource'
 import ComfyCLogo from '../components/icons/ComfyCLogo.vue'
+import type { ComfyPanelKey } from '../../../preload/comfyTitleBarPreload'
 
 const { t, locale } = useI18n()
 const { syncLocale } = useAppLocale(windowApiLocaleSource())
 
-type ComfyPanelKey =
-  | 'comfy'
-  | 'performance-test'
-  | 'benchmarks'
-  | 'new-install'
-  | 'track'
-  | 'load-snapshot'
-  | 'quick-install'
-
-type CoachmarkKind = 'pill-hint' | 'beta-notice'
-
-interface MenuAnchor {
-  x: number
-  y: number
-}
-
-interface DownloadsTrayEntry {
-  url: string
-  filename: string
-  directory?: string
-  progress: number
-  status: 'pending' | 'downloading' | 'paused' | 'completed' | 'error' | 'cancelled'
-  error?: string
-}
-
-interface DownloadsTrayState {
-  active: DownloadsTrayEntry[]
-  recent: DownloadsTrayEntry[]
-}
-
-interface Bridge {
-  getInstallationId: () => string | null
-  isMac: () => boolean
-  isLinux: () => boolean
-  setPanel: (panel: ComfyPanelKey) => void
-  openNewWindow: () => void
-  openFileMenu: (anchor: MenuAnchor) => void
-  dismissFileMenu: () => void
-  showTooltip: (payload: { text: string; leftX: number; rightX: number; bottomY: number }) => void
-  hideTooltip: () => void
-  showCoachmark: (payload: {
-    kind?: CoachmarkKind
-    title: string
-    body: string
-    dismissLabel: string
-    actionLabel?: string
-    leftX: number
-    rightX: number
-    bottomY: number
-  }) => void
-  hideCoachmark: () => void
-  onCoachmarkDismissed: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  onCoachmarkAction: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  onCoachmarkAutoHidden: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  onCoachmarkSettled: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  onCoachmarkDisplaced: (cb: (payload: { kind: CoachmarkKind }) => void) => () => void
-  onPanelChanged: (cb: (panel: ComfyPanelKey) => void) => () => void
-  onTitleChanged: (cb: (title: string) => void) => () => void
-  onSourceCategoryChanged: (cb: (category: string | null) => void) => () => void
-  onZoomChanged: (cb: (level: number) => void) => () => void
-  onThemeChanged: (cb: (theme: { bg: string; text: string }) => void) => () => void
-  onFullscreenChanged: (cb: (fullscreen: boolean) => void) => () => void
-  onMenuOpened: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
-  onMenuClosed: (cb: (info: { menu: 'menu' | 'downloads' }) => void) => () => void
-  onFirstUseModeChanged: (
-    cb: (mode: 'none' | 'consent-lockdown' | 'post-consent') => void
-  ) => () => void
-  onPreviewModeChanged: (cb: (preview: boolean) => void) => () => void
-  onInstallationIdChanged: (cb: (installationId: string | null) => void) => () => void
-  onAppUpdateStateChanged: (
-    cb: (state: {
-      kind: 'available' | 'downloading' | 'ready' | null
-      version: string | null
-      autoUpdate: boolean
-    }) => void
-  ) => () => void
-  onInstallUpdateAvailable: (
-    cb: (state: { available: boolean; version: string | null }) => void
-  ) => () => void
-  clickAppUpdatePill: () => void
-  clickInstallUpdatePill: () => void
-  onDownloadsChanged: (cb: (state: DownloadsTrayState) => void) => () => void
-  clickDownloadsTray: (anchor: MenuAnchor) => void
-  clickInstallPill: (anchor: MenuAnchor) => void
-  clickFeedback: () => void
-  clickAnnouncement: () => void
-  clickRefreshInstance: () => void
-  clickHome: () => void
-  resetZoom: () => void
-  ready: () => void
-}
-
-const bridge = (window as unknown as { __comfyTitleBar?: Bridge }).__comfyTitleBar
+const bridge = window.__comfyTitleBar
 
 const titleMenuButtonClass =
   '[-webkit-app-region:no-drag] inline-flex items-center gap-0 rounded-[4px] border border-solid border-transparent bg-transparent px-1.5 py-1 [font:inherit] text-[var(--titlebar-icon)] opacity-85 cursor-pointer transition-[background-color,opacity,border-color] duration-[120ms] ease-[ease] [.title-bar:not(.is-light)_&]:rounded-control [.title-bar.is-hover-active_&]:hover:opacity-100 [.title-bar.is-hover-active_&]:hover:bg-[rgba(255,255,255,0.08)] [.title-bar.is-hover-active_&]:hover:border-[rgba(255,255,255,0.18)] [.title-bar.is-light.is-hover-active_&]:hover:bg-[rgba(0,0,0,0.06)] [.title-bar.is-light.is-hover-active_&]:hover:border-[rgba(0,0,0,0.18)] [.title-bar.is-hover-active:not(.is-light)_&]:hover:bg-secondary [.title-bar.is-hover-active:not(.is-light)_&]:hover:border-transparent'

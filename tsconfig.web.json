@@ -29,5 +29,5 @@
     "src/shared/**/*",
     "locales/*.json"
   ],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "src/renderer/src/comfyTitlePopup/**/*"]
 }

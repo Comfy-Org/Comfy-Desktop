@@ -208,7 +208,6 @@ export const standalone: SourcePlugin = {
     const adopted = inst.adopted === true
     const adoptedBaseDir = adopted ? (inst.adoptedBaseDir as string | undefined) : undefined
 
-    // global `modelsDirs` setting (inherited from the source record),
     if (adopted && adoptedBaseDir && fs.existsSync(adoptedBaseDir)) {
       const carryOver = ['.venv', 'user', 'custom_nodes', 'input', 'output']
       const destComfyUI = path.join(destPath, 'ComfyUI')

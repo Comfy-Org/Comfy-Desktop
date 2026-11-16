@@ -2,7 +2,16 @@ import { ipcMain, shell, dialog, BrowserWindow } from 'electron'
 import type { WebContentsView } from 'electron'
 import { createWebContentsView } from '../lib/webContentsViewLifetime'
 import { PICKER_SETTINGS_CHANNELS, POPUP_KIND } from '../../types/ipc'
-import type { PopupTheme, TitlePopupKind } from '../../types/ipc'
+import type { TitlePopupKind } from '../../types/ipc'
+import type {
+  GlobalSettingsSnapshot,
+  GlobalSettingsTab,
+  InstancePickerInstall,
+  InstancePickerSnapshot,
+  PickerStorageSlice,
+  TitlePopupConfig,
+  TitlePopupMenuItem
+} from '../../types/titlePopup'
 import { TITLEBAR_HEIGHT } from '../lib/titleBarOverlay'
 import {
   cancelModelDownload,
@@ -28,8 +37,7 @@ import {
   getAppVersion,
   _activeOperationStatus,
   _operationAborts,
-  sessionLifecycleEvents,
-  type PickerOperationStatus
+  sessionLifecycleEvents
 } from '../lib/ipc/shared'
 import {
   applySettingSet,
@@ -64,104 +72,12 @@ import { getTitleTooltipForParent, hideTitleTooltipPopup } from './titleTooltip'
 import { EmbeddedPopupView } from './embeddedPopupView'
 import { recordIpcInvocation } from '../lib/e2eOverrides'
 
-interface TitlePopupMenuItem {
-  id?: string
-  label?: string
-  labelKey?: string
-  kind?: 'separator'
-}
-
 function kindUsesBackdrop(kind: TitlePopupKind): boolean {
   return (
     kind === POPUP_KIND.instancePicker ||
     kind === POPUP_KIND.globalSettings ||
     kind === POPUP_KIND.downloadsFull
   )
-}
-
-export interface InstancePickerInstall {
-  id: string
-  name: string
-  sourceLabel: string
-  sourceCategory: string
-  workspaceId?: string
-  version?: string
-  statusTag?: { style: string; label: string; detail?: string }
-  lastLaunchedAt?: number
-  installPath?: string
-  status?: string
-  [key: string]: unknown
-}
-
-export interface PickerStorageSlice {
-  sharedDirectoriesFields: Record<string, unknown>[]
-  modelsDirs: GlobalSettingsModelsDir[]
-  modelsSystemDefault: string
-}
-
-export interface InstancePickerSnapshot {
-  installs: InstancePickerInstall[]
-  activeInstallationId: string | null
-  currentView: ViewKind
-  currentCategory: Category | null
-  runningInstallationIds: string[]
-  runningSessionStartedAt: Record<string, number>
-  launchingInstallationIds: string[]
-  unhostedLaunchingInstallationIds: string[]
-  selectedInstallationId: string | null
-  pickerSelectionEpoch: number
-  selectedSettings: Record<string, unknown>[] | null
-  selectedSnapshots: Record<string, unknown> | null
-  initialTab: string | null
-  autoAction: string | null
-  autoActionNonce: number
-  storage: PickerStorageSlice
-  operatingInstallationIds: string[]
-  installOperationStatus: Record<string, PickerOperationStatus>
-}
-
-export interface GlobalSettingsModelsDir {
-  path: string
-  isPrimary: boolean
-}
-
-export type GlobalSettingsTab = 'general' | 'updates' | 'storage' | 'advanced' | 'logs'
-
-export interface GlobalSettingsSnapshot {
-  initialTab: GlobalSettingsTab | null
-  highlightFieldId: string | null
-  languageFields: Record<string, unknown>[]
-  generalFields: Record<string, unknown>[]
-  telemetryFields: Record<string, unknown>[]
-  desktopUpdateFields: Record<string, unknown>[]
-  cacheFields: Record<string, unknown>[]
-  advancedFields: Record<string, unknown>[]
-  sharedDirectoriesFields: Record<string, unknown>[]
-  installLocationFields: Record<string, unknown>[]
-  modelsDirs: GlobalSettingsModelsDir[]
-  modelsSystemDefault: string
-  telemetryGranted: boolean
-  appUpdate: {
-    state: Record<string, unknown>
-    progress: Record<string, unknown> | null
-    isDownloading: boolean
-    capabilities: { systemManaged: boolean; canSelfUpdate: boolean }
-    installedVersion: string
-    platform: NodeJS.Platform
-    lastCheckedAt: number | null
-  }
-  githubUrl: string
-  githubStars: number | null
-  githubStarsLoading: boolean
-  i18n: {
-    overview: string
-    updates: string
-    storage: string
-    models: string
-    advanced: string
-    logs: string
-    sharedDirectories: string
-  }
 }
 
 interface BuildInstancePickerSnapshotArgs {
@@ -304,13 +220,6 @@ function buildPickerStorageSlice(): PickerStorageSlice {
     modelsSystemDefault: modelsDefault
   }
 }
-
-type TitlePopupConfig =
-  | { kind: typeof POPUP_KIND.menu; items: TitlePopupMenuItem[]; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.downloads; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.downloadsFull; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.instancePicker; snapshot: InstancePickerSnapshot; theme: PopupTheme }
-  | { kind: typeof POPUP_KIND.globalSettings; snapshot: GlobalSettingsSnapshot; theme: PopupTheme }
 
 export interface TitlePopupEntry {
   view: EmbeddedPopupView
@@ -1519,7 +1428,6 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
     }
   )
 
-  // global settings, depending on `tab`. The popup dismisses first; the
   ipcMain.on('comfy-titlepopup:open-settings-tab', (event, payload: { tab?: unknown }) => {
     const popupEntry = titlePopupsByWebContents.get(event.sender.id)
     if (!popupEntry) return
@@ -2081,8 +1989,7 @@ export function registerTitlePopupIpc(bindings: TitlePopupHostBindings): void {
   ipcMain.on(
     'comfy-titlepopup:global-settings-open-external',
     (event, payload: { url?: unknown }) => {
-      const popupEntry = titlePopupsByWebContents.get(event.sender.id)
-      if (!popupEntry || popupEntry.kind !== 'global-settings') return
+      if (!settingsEntryFor(event.sender.id)) return
       void tryOpenExternalUrl(payload?.url)
     }
   )

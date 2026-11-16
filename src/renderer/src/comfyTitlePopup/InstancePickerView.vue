@@ -10,7 +10,6 @@ import { FILTER_CHIPS, useInstallList } from '../composables/useInstallList'
 import { useDialogs } from '../composables/useDialogs'
 import { useInstanceActions } from '../composables/useInstanceActions'
 import type { NavDecision } from '../../../shared/navigation/navDecision'
-import type { Category, ViewKind } from '../../../shared/viewKind'
 import { useSessionStore } from '../stores/sessionStore'
 import ComfyUISettingsContent from '../components/settings/ComfyUISettingsContent.vue'
 import { SETTINGS_REOPEN_EPOCH } from '../views/comfyUISettings/settingsReopenEpoch'
@@ -19,73 +18,15 @@ import Tooltip from '../components/ui/Tooltip.vue'
 import InstanceRow from './instancePicker/InstanceRow.vue'
 import { resolvePickerTab, type PickerTab } from '../lib/pickerTabs'
 import { resolveProgressRouting } from '../lib/pickerProgressRouting'
+import type { Installation, RunningInstance, ShowProgressOpts } from '../types/ipc'
 import type {
-  DetailSection,
-  Installation,
-  RunningInstance,
-  ShowProgressOpts,
-  SnapshotListData
-} from '../types/ipc'
-
-interface PickerInstall {
-  id: string
-  name: string
-  sourceLabel: string
-  sourceCategory: string
-  version?: string
-  lastLaunchedAt?: number
-  installPath?: string
-  status?: string
-  statusTag?: { style: string; label: string; detail?: string }
-}
-
-interface PickerStorageDir {
-  path: string
-  isPrimary: boolean
-}
-
-interface PickerStorageSlice {
-  sharedDirectoriesFields: Record<string, unknown>[]
-  modelsDirs: PickerStorageDir[]
-  modelsSystemDefault: string
-}
-
-interface PickerOperationStatus {
-  percent: number
-  status: string
-  speedBytesPerSec?: number | null
-  done: boolean
-  ok: boolean | null
-  error: string | null
-  cancellable: boolean
-  title: string
-  actionId: string
-  actionData?: Record<string, unknown>
-}
-
-interface PickerSnapshot {
-  installs: PickerInstall[]
-  activeInstallationId: string | null
-  currentView?: ViewKind
-  currentCategory?: Category | null
-  runningInstallationIds: string[]
-  runningSessionStartedAt?: Record<string, number>
-  launchingInstallationIds: string[]
-  unhostedLaunchingInstallationIds?: string[]
-  selectedInstallationId: string | null
-  pickerSelectionEpoch?: number
-  selectedSettings: DetailSection[] | null
-  selectedSnapshots: SnapshotListData | null
-  initialTab?: string | null
-  autoAction?: string | null
-  autoActionNonce?: number
-  storage: PickerStorageSlice
-  operatingInstallationIds?: string[]
-  installOperationStatus?: Record<string, PickerOperationStatus>
-}
+  InstancePickerInstall,
+  InstancePickerSnapshot,
+  PickerOperationStatus
+} from '../../../types/titlePopup'
 
 const props = defineProps<{
-  snapshot: PickerSnapshot
+  snapshot: InstancePickerSnapshot
 }>()
 
 provide(
@@ -125,53 +66,9 @@ function hydrateSessionStoreFromSnapshot(): void {
   }
 }
 
-interface PickerBridge {
-  platform?: string
-  activate?: (id: string) => void
-  close?: () => void
-  pickInstall: (installationId: string) => void
-  openInstallNewWindow: (installationId: string, opts?: { allowDuplicate?: boolean }) => void
-  restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
-  setPickerSelectedInstall: (installationId: string | null) => void
-  pickerUpdateField: (
-    installationId: string,
-    fieldId: string,
-    value: unknown
-  ) => Promise<{ ok: boolean; message?: string }>
-  pickerRunAction: (
-    installationId: string,
-    actionId: 'snapshot-save' | 'snapshot-restore' | 'snapshot-delete',
-    actionData?: Record<string, unknown>
-  ) => Promise<{ ok: boolean; message?: string }>
-  openInstallAction: (installationId: string, actionId: string) => void
-  pickerForwardShowProgress: (payload: {
-    installationId: string
-    actionId: string
-    actionData?: Record<string, unknown>
-    title: string
-    cancellable?: boolean
-    triggersInstanceStart?: boolean
-    opKind?: 'launch' | 'install' | 'update' | 'destructive' | 'snapshot' | 'generic'
-    isRestart?: boolean
-    routing?: 'same-host' | 'target-host' | 'inline-picker'
-    successChoice?: boolean
-  }) => void
-  pickerStartBackgroundOp: (payload: {
-    installationId: string
-    actionId: string
-    actionData?: Record<string, unknown>
-    title: string
-    cancellable?: boolean
-    opKind?: string
-  }) => void
-  pickerCancelBackgroundOp: (installationId: string) => void
-  pickerDismissBackgroundOp: (installationId: string) => void
-}
-const bridge = (window as unknown as { __comfyTitlePopup?: PickerBridge }).__comfyTitlePopup
+const bridge = window.__comfyTitlePopup
 
-const installations = computed<Installation[]>(
-  () => props.snapshot.installs as unknown as Installation[]
-)
+const installations = computed<Installation[]>(() => props.snapshot.installs)
 const installationsRef = toRef(() => installations.value)
 const { searchQuery, activeFilter, visibleInstalls, showEmptyHint, lastLaunchedShortLabel } =
   useInstallList({ installations: installationsRef })
@@ -189,8 +86,8 @@ const visibleChips = computed(() => {
   })
 })
 
-function mostRecentInstallId(installs: PickerInstall[]): string | null {
-  let best: PickerInstall | undefined
+function mostRecentInstallId(installs: InstancePickerInstall[]): string | null {
+  let best: InstancePickerInstall | undefined
   for (const inst of installs) {
     if (!best || (inst.lastLaunchedAt ?? 0) > (best.lastLaunchedAt ?? 0)) {
       best = inst
@@ -199,7 +96,7 @@ function mostRecentInstallId(installs: PickerInstall[]): string | null {
   return best?.id ?? null
 }
 
-function resolveInitialSelection(snapshot: PickerSnapshot): string | null {
+function resolveInitialSelection(snapshot: InstancePickerSnapshot): string | null {
   const explicit = snapshot.selectedInstallationId ?? snapshot.activeInstallationId
   if (explicit && snapshot.installs.some((install) => install.id === explicit)) return explicit
   return mostRecentInstallId(snapshot.installs)
@@ -365,8 +262,7 @@ function handleSettingsShowProgress(opts: ShowProgressOpts): void {
       actionId: opts.actionId,
       actionData: rawActionData,
       title: opts.title,
-      cancellable: opts.cancellable,
-      opKind: opts.opKind
+      cancellable: opts.cancellable ?? false
     })
     return
   }

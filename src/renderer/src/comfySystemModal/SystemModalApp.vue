@@ -1,37 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, nextTick } from 'vue'
 import BaseAlert from '../components/ui/BaseAlert.vue'
+import type { SystemModalAction, SystemModalSpec } from '../../../preload/comfySystemModalPreload'
 
-type SystemModalConfirmStyle = 'primary' | 'danger'
-type SystemModalSecondaryStyle = 'primary' | 'danger' | 'default'
-type SystemModalAction = 'confirm' | 'cancel' | 'secondary'
-
-interface SystemModalDetailGroup {
-  label: string
-  items: string[]
-}
-
-interface SystemModalSpec {
-  id: string
-  title: string
-  message: string
-  details?: SystemModalDetailGroup[]
-  confirmLabel: string
-  cancelLabel: string
-  confirmStyle?: SystemModalConfirmStyle
-  secondaryLabel?: string
-  secondaryStyle?: SystemModalSecondaryStyle
-  theme: { bg: string; text: string }
-}
-
-interface Bridge {
-  action(payload: { modalId: string; action: SystemModalAction }): void
-  ready(): void
-  notifyRendered(): void
-  onModal(cb: (spec: SystemModalSpec) => void): () => void
-}
-
-const bridge = (window as unknown as { __comfySystemModal?: Bridge }).__comfySystemModal
+const bridge = window.__comfySystemModal
 
 const spec = ref<SystemModalSpec | null>(null)
 

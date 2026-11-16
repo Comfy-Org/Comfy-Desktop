@@ -1,24 +1,10 @@
 import { ref, type Ref, type ShallowRef } from 'vue'
 import type { BetaActivationNotice } from '../types/ipc'
-
-export const BETA_FEATURES_FIELD_ID = 'betaFeaturesEnabled'
-
-interface BetaNoticeBridge {
-  showCoachmark: (payload: {
-    kind?: 'pill-hint' | 'beta-notice'
-    title: string
-    body: string
-    dismissLabel: string
-    actionLabel?: string
-    leftX: number
-    rightX: number
-    bottomY: number
-  }) => void
-  hideCoachmark: () => void
-}
+import type { ComfyTitleBarBridge } from '../../../preload/comfyTitleBarPreload'
+import { BETA_FEATURES_FIELD_ID } from '../lib/betaFeaturesField'
 
 interface UseBetaActivationNoticeOpts {
-  bridge: BetaNoticeBridge | undefined
+  bridge: Pick<ComfyTitleBarBridge, 'showCoachmark' | 'hideCoachmark'> | undefined
   installationId: () => string
   isInstallLess: Ref<boolean>
   isFirstUseLockdown: Ref<boolean>

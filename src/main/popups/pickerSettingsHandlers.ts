@@ -55,13 +55,17 @@ export function registerPickerSettingsIpc(options: PickerSettingsIpcOptions): vo
 
   ipcMain.handle(
     CH.getFieldOptions,
-    (event, payload: { sourceId?: unknown; fieldId?: unknown; selections?: unknown }) =>
+    (
+      event,
+      payload: { sourceId?: unknown; fieldId?: unknown; selections?: unknown; context?: unknown }
+    ) =>
       dispatchInvoke(
         'get-field-options',
         event,
         payload?.sourceId,
         payload?.fieldId,
-        payload?.selections
+        payload?.selections,
+        payload?.context
       )
   )
 
