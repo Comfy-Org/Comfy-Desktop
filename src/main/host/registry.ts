@@ -327,6 +327,28 @@ export function openOrFocusChooserHostWindow(): BrowserWindow {
   return requireChooserFactory()()
 }
 
+function isHandingOffToBuild(entry: ComfyWindowEntry): boolean {
+  if (entry.previewInstallationId !== null) return true
+  for (const claimedKey of pendingAttachClaims.values()) {
+    if (claimedKey === entry.windowKey) return true
+  }
+  return false
+}
+
+function findHomeHostWindow(): BrowserWindow | null {
+  const entry = findPreferredHostByVisibility((e) => isChooserHost(e) && !isHandingOffToBuild(e))
+  return entry?.window ?? null
+}
+
+export function openOrFocusHomeHostWindow(): BrowserWindow {
+  const existing = findHomeHostWindow()
+  if (existing) {
+    bringToFront(existing)
+    return existing
+  }
+  return requireChooserFactory()()
+}
+
 export function openOrFocusAnyHostWindow(): BrowserWindow {
   const installWin = findPreferredInstallHostWindow()
   if (installWin) {

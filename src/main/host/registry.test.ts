@@ -32,6 +32,7 @@ import {
   indexInstallationId,
   nextWindowKey,
   forceRevealHostWindow,
+  openOrFocusHomeHostWindow,
   hasRunningSessionForEntry,
   raiseAllHostWindows,
   registerHostEntry,
@@ -599,5 +600,72 @@ describe('raiseAllHostWindows', () => {
     raiseAllHostWindows()
     expect(fakeWin(min).raised).toContain('restore')
     expect(fakeWin(min).raised).toContain('focus')
+  })
+})
+
+describe('openOrFocusHomeHostWindow', () => {
+  function fakeWin(entry: ComfyWindowEntry): FakeWindow {
+    return entry.window as unknown as FakeWindow
+  }
+
+  function trackChooserFactory(): ReturnType<typeof vi.fn> {
+    const createChooser = vi.fn(() => makeWindow() as unknown as ComfyWindowEntry['window'])
+    setHostFactories({ createChooser })
+    return createChooser
+  }
+
+  it('brings the open Desktop window to the front instead of opening another', () => {
+    const createChooser = trackChooserFactory()
+    const home = makeEntry({ installationId: null })
+    const build = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(home)
+    registerHostEntry(build)
+
+    expect(openOrFocusHomeHostWindow()).toBe(home.window)
+    expect(fakeWin(home).raised).toContain('focus')
+    expect(fakeWin(build).raised).toEqual([])
+    expect(createChooser).not.toHaveBeenCalled()
+  })
+
+  it('restores a minimised Desktop window', () => {
+    const createChooser = trackChooserFactory()
+    const home = makeEntry({ installationId: null, minimized: true })
+    registerHostEntry(home)
+
+    expect(openOrFocusHomeHostWindow()).toBe(home.window)
+    expect(fakeWin(home).raised).toEqual(expect.arrayContaining(['restore', 'focus']))
+    expect(createChooser).not.toHaveBeenCalled()
+  })
+
+  it('opens a Desktop window when only build windows are open', () => {
+    const createChooser = trackChooserFactory()
+    registerHostEntry(makeEntry({ installationId: 'inst-A' }))
+    registerHostEntry(makeEntry({ installationId: 'inst-B' }))
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a Desktop window when the only one is turning into a build window', () => {
+    const createChooser = trackChooserFactory()
+    const claimed = makeEntry({ installationId: null })
+    const previewing = makeEntry({ installationId: null })
+    previewing.previewInstallationId = 'inst-B'
+    registerHostEntry(claimed)
+    registerHostEntry(previewing)
+    claimAttachHost('inst-A', claimed.windowKey)
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+    expect(fakeWin(claimed).raised).toEqual([])
+    expect(fakeWin(previewing).raised).toEqual([])
+  })
+
+  it('skips a closed Desktop window', () => {
+    const createChooser = trackChooserFactory()
+    registerHostEntry(makeEntry({ installationId: null, destroyed: true }))
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
   })
 })
