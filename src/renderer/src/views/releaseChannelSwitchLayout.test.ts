@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { page as browserPage } from 'vitest/browser'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -227,6 +227,128 @@ beforeAll(() => browserPage.viewport(1100, 860))
 
 beforeEach(() => {
   useModal().dismiss()
+})
+
+afterEach(() => browserPage.viewport(1100, 860))
+
+describe('switching where Change setup gets ComfyUI', () => {
+  function installSetupChoices() {
+    installStandaloneApi(createLoadGate())
+    window.api.getSources = vi.fn().mockResolvedValue([
+      STANDALONE,
+      {
+        id: 'remote',
+        label: 'Connect to server',
+        skipInstall: true,
+        fields: [
+          { id: 'url', label: 'Server URL', type: 'text', defaultValue: 'http://localhost:8188' }
+        ]
+      }
+    ])
+    window.api.validateHardware = vi.fn().mockResolvedValue({
+      supported: true,
+      warning: 'This hardware may need an extra driver before it can run ComfyUI.'
+    })
+    window.api.previewSnapshotFile = vi.fn().mockResolvedValue({
+      ok: true,
+      preview: {
+        filePath: 'C:\\Users\\alex\\studio.json',
+        installationName: 'Studio',
+        snapshotCount: 1,
+        snapshots: [],
+        newestSnapshot: {
+          comfyuiVersion: 'v0.4.2',
+          pythonVersion: '3.12',
+          createdAt: '2026-01-01T00:00:00Z',
+          updateChannel: 'stable',
+          comfyui: { variant: 'win-nvidia-cu128', releaseTag: '' },
+          customNodes: [],
+          pipPackages: {},
+          pipPackageCount: 0
+        }
+      }
+    })
+  }
+
+  function navigationLayout(): Box[] {
+    return [
+      boxOf('dialog', only('.setup-modal-panel')),
+      boxOf('title', only('.setup-modal-title')),
+      boxOf('Start from', only('[data-testid="config-start-from"]')),
+      boxOf('footer', only('.setup-modal-foot'))
+    ]
+  }
+
+  async function pick(testId: string): Promise<void> {
+    only(`[data-testid="${testId}"]`).click()
+    await flushPromises()
+    await nextFrame()
+  }
+
+  it.each([
+    [1100, 860],
+    [800, 563]
+  ])(
+    'keeps the title, Start from and footer still across all choices at %i × %i',
+    async (width, height) => {
+      await browserPage.viewport(width, height)
+      installSetupChoices()
+      await openChangeSetup()
+      const settled = navigationLayout()
+      const dialog = only('.setup-modal-panel').getBoundingClientRect()
+      expect(dialog.top).toBeGreaterThanOrEqual(0)
+      expect(dialog.bottom).toBeLessThanOrEqual(height)
+
+      await pick('config-start-from-existing')
+      expect(navigationLayout()).toEqual(settled)
+      expect(onScreen('[data-testid="existing-comfy-folder-form"]')).toHaveLength(1)
+
+      await pick('existing-comfy-snapshot')
+      expect(navigationLayout()).toEqual(settled)
+      only('.load-snapshot-tertiary').click()
+      await flushPromises()
+      await nextFrame()
+      expect(navigationLayout()).toEqual(settled)
+
+      const body = only('.setup-modal-body')
+      expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
+      const footer = boxOf('footer', only('.setup-modal-foot'))
+      body.scrollTop = body.scrollHeight
+      await nextFrame()
+      expect(body.scrollTop).toBeGreaterThan(0)
+      expect(boxOf('footer', only('.setup-modal-foot'))).toEqual(footer)
+      body.scrollTop = 0
+
+      await pick('install-source-remote')
+      expect(navigationLayout()).toEqual(settled)
+      expect(onScreen('#sf-url')).toHaveLength(1)
+
+      await pick('config-start-from-new')
+      expect(navigationLayout()).toEqual(settled)
+      expect(onScreen('[data-testid="wizard-hardware-warning"]')).toHaveLength(1)
+
+      await pick('config-discard-changes')
+      expect(only('.setup-modal-panel').getBoundingClientRect().height).toBeLessThanOrEqual(
+        dialog.height
+      )
+    }
+  )
+
+  it('keeps the first-use sheet still when switching between a new install and a server', async () => {
+    await browserPage.viewport(800, 563)
+    installSetupChoices()
+    await openChangeSetup({ hideBackToDashboard: true })
+    const settled = navigationLayout()
+    const footer = only('.setup-modal-foot').getBoundingClientRect()
+    expect(footer.bottom).toBeLessThanOrEqual(window.innerHeight)
+
+    await pick('config-start-from-existing')
+    expect(navigationLayout()).toEqual(settled)
+    expect(onScreen('#sf-url')).toHaveLength(1)
+
+    await pick('config-start-from-new')
+    expect(navigationLayout()).toEqual(settled)
+  })
 })
 
 describe('switching the release channel in Change setup', () => {
