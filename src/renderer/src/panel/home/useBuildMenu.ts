@@ -16,6 +16,7 @@ export interface BuildMenuHost {
   launch: (build: Installation, opts?: { isRestart?: boolean }) => void | Promise<void>
   openDetails: (build: Installation) => void | Promise<void>
   showProgress: (opts: ShowProgressOpts) => void | Promise<void>
+  canPromoteToWorkspace?: (build: Installation) => boolean
 }
 
 export interface BuildMenuEntry {
@@ -40,6 +41,10 @@ export function provideBuildMenuHost(host: BuildMenuHost): void {
   provide(BUILD_MENU_HOST, host)
 }
 
+export function useBuildMenuHost(): BuildMenuHost {
+  return inject(BUILD_MENU_HOST, NO_HOST)
+}
+
 function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
   const [head] = entries
   if (!head) return
@@ -49,7 +54,7 @@ function startsGroup(entries: BuildMenuEntry[], items: BuildMenuEntry[]): void {
 
 export function useBuildMenu(build: () => Installation) {
   const { t } = useI18n()
-  const host = inject(BUILD_MENU_HOST, NO_HOST)
+  const host = useBuildMenuHost()
   const modal = useModal()
   const sessionStore = useSessionStore()
   const progressStore = useProgressStore()
@@ -63,6 +68,7 @@ export function useBuildMenu(build: () => Installation) {
       options ? openInstallManager(inst, options) : void host.openDetails(inst),
     onShowProgress: (opts) => void host.showProgress(opts),
     onUpdate: runQuickUpdate,
+    canPromoteToWorkspace: (inst) => host.canPromoteToWorkspace?.(inst) ?? false,
     autoStart: useAutoStartBuild()
   })
 

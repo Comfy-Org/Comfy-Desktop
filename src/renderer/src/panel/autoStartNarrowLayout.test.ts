@@ -7,6 +7,8 @@ import '../assets/main.css'
 import HomeView from './HomeView.vue'
 import ChooserFamilyGrid from '../views/chooser/ChooserFamilyGrid.vue'
 import { TID } from '../../../shared/testIds'
+import { useProgressStore, type Operation } from '../stores/progressStore'
+import { useSessionStore } from '../stores/sessionStore'
 import type { Installation } from '../types/ipc'
 
 const SMALLEST_WINDOW_WIDTH = 800
@@ -20,7 +22,9 @@ const WIDE_WINDOW_WIDTH = 1280
 const BUILDS_GRID_WIDTH_IN_WIDE_WINDOW =
   WIDE_WINDOW_WIDTH - FRAME_AND_EXPANDED_SIDEBAR_WIDTH - PAGE_SIDE_PADDING
 const HOME_CARD_SIDE_PADDING_AND_BORDER = 18 + 1
-const BUILDS_TILE_RIGHT_PADDING = 12
+const BUILDS_TILE_MENU_INSET = 10
+const BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW =
+  SMALLEST_WINDOW_WIDTH - FRAME_AND_EXPANDED_SIDEBAR_WIDTH - PAGE_SIDE_PADDING
 const READABLE_NAME_WIDTH = 40
 
 function build(id: string, name: string, lastLaunchedAt: number): Installation {
@@ -107,7 +111,7 @@ async function mountBuildsGrid(width: number): Promise<VueWrapper> {
   page.style.cssText = `position: absolute; left: 0; top: 0; width: ${width}px`
   const wrapper = mount(ChooserFamilyGrid, {
     attachTo: page,
-    props: { installations: [STUDIO, PORTRAITS], isStoppedActionGated: () => false }
+    props: { installations: [STUDIO, PORTRAITS] }
   })
   await flushPromises()
   return wrapper
@@ -119,7 +123,7 @@ function buildsTileStatus(wrapper: VueWrapper): Element {
 }
 
 describe('Auto start on Builds page tiles', () => {
-  it('in a 1024 px window with the sidebar open, keeps the status on one line, the name readable and every button inside the tile', async () => {
+  it('in a 1024 px window with the sidebar open, keeps the status on one line, the name readable and the ⋯ button inside the tile', async () => {
     const wrapper = await mountBuildsGrid(BUILDS_GRID_WIDTH_IN_LARGE_WINDOW)
 
     const status = buildsTileStatus(wrapper)
@@ -136,11 +140,18 @@ describe('Auto start on Builds page tiles', () => {
       heights.add(tileBox.height)
 
       expect(boxOf(name).width, `${id} name width`).toBeGreaterThanOrEqual(READABLE_NAME_WIDTH)
-      expect(boxOf(kebab).right, `${id} menu button is not cut off`).toBeLessThanOrEqual(
-        tileBox.right - BUILDS_TILE_RIGHT_PADDING + 0.5
+      const kebabBox = boxOf(kebab)
+      expect(kebabBox.right, `${id} menu button is not cut off`).toBeLessThanOrEqual(
+        tileBox.right - BUILDS_TILE_MENU_INSET + 0.5
       )
+      expect(kebabBox.top + kebabBox.height / 2).toBeCloseTo(tileBox.top + tileBox.height / 2, 0)
+      expect(tile.scrollWidth, `${id} tile does not overflow`).toBeLessThanOrEqual(tile.clientWidth)
     }
     expect([...heights]).toEqual([100])
+    const [studio, portraits] = [STUDIO, PORTRAITS].map(({ id }) =>
+      boxOf(onlyIn(wrapper, `[data-testid="${TID.dashboardTile(id)}"]`))
+    )
+    expect(portraits!.top, 'two tiles share a row').toBe(studio!.top)
   })
 
   it('in a 1280 px window with the sidebar open, shows the whole status', async () => {
@@ -149,5 +160,139 @@ describe('Auto start on Builds page tiles', () => {
     const status = buildsTileStatus(wrapper)
     expect(status.textContent?.trim()).toBe('Auto start')
     expect(fullyShown(status), 'status is not cut off').toBe(true)
+  })
+})
+
+type TileState =
+  | 'ready'
+  | 'update'
+  | 'running'
+  | 'running with an update'
+  | 'starting'
+  | 'installing'
+  | 'uninstalling'
+
+const TILE_OPERATIONS: Partial<Record<TileState, Partial<Operation>>> = {
+  starting: { opKind: 'launch', flatPercent: 5 },
+  installing: { opKind: 'install', flatPercent: 40 },
+  uninstalling: { opKind: 'destructive', flatPercent: 18 }
+}
+
+async function buildsGridWithStudioIn(state: TileState, width: number): Promise<VueWrapper> {
+  const withUpdate = state === 'update' || state === 'running with an update'
+  const studio: Installation = withUpdate
+    ? { ...STUDIO, version: 'v0.3.68', statusTag: { style: 'update', label: 'Update to v0.3.70' } }
+    : STUDIO
+  page.style.cssText = `position: absolute; left: 0; top: 0; width: ${width}px`
+  const wrapper = mount(ChooserFamilyGrid, {
+    attachTo: page,
+    props: { installations: [studio, PORTRAITS] }
+  })
+  await flushPromises()
+  const operation = TILE_OPERATIONS[state]
+  if (operation) {
+    useProgressStore().operations.set(STUDIO.id, {
+      finished: false,
+      cancelRequested: false,
+      _globalFloor: 0,
+      ...operation
+    } as Operation)
+  }
+  if (state.startsWith('running')) {
+    useSessionStore().runningInstances.set(STUDIO.id, { installationId: STUDIO.id } as never)
+  }
+  await flushPromises()
+  return wrapper
+}
+
+describe('Builds page grid', () => {
+  it('stacks the tiles one per row in the smallest window, each the full grid width', async () => {
+    const wrapper = await buildsGridWithStudioIn('ready', BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW)
+    const grid = onlyIn(wrapper, '.chooser-family-grid')
+    const [studio, portraits] = [STUDIO, PORTRAITS].map(({ id }) =>
+      boxOf(onlyIn(wrapper, `[data-testid="${TID.dashboardTile(id)}"]`))
+    )
+
+    expect(getComputedStyle(grid).gridTemplateColumns.split(' ')).toHaveLength(1)
+    expect(studio!.width).toBe(BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW)
+    expect(portraits!.left).toBe(studio!.left)
+    expect(portraits!.top).toBeGreaterThan(studio!.bottom)
+  })
+
+  it.each(
+    (
+      [
+        'ready',
+        'update',
+        'running',
+        'running with an update',
+        'starting',
+        'installing',
+        'uninstalling'
+      ] as const
+    ).flatMap((state) => [
+      [state, BUILDS_GRID_WIDTH_IN_SMALLEST_WINDOW] as const,
+      [state, BUILDS_GRID_WIDTH_IN_LARGE_WINDOW] as const
+    ])
+  )('keeps every tile 100 px high when a build is %s, at %ipx', async (state, width) => {
+    const wrapper = await buildsGridWithStudioIn(state, width)
+    for (const { id } of [STUDIO, PORTRAITS]) {
+      const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(id)}"]`)
+      expect(boxOf(tile).height, `${id} tile height`).toBe(100)
+      expect(tile.scrollWidth, `${id} tile does not overflow`).toBeLessThanOrEqual(tile.clientWidth)
+    }
+    const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
+    expect(tile.querySelector('.chooser-tile-launch')).toBeNull()
+    expect(tile.querySelectorAll('button:not(.chooser-tile-kebab)')).toHaveLength(0)
+    if (state === 'running with an update') {
+      expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
+        'Running'
+      )
+      expect(tile.querySelector('.chooser-tile-meta-line')!.textContent?.trim()).toBe(
+        'Standalone · v0.3.68 · Update available'
+      )
+    }
+    if (state === 'starting') {
+      expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
+        'Starting ComfyUI · 5%'
+      )
+    }
+    if (state === 'installing') {
+      expect(tile.querySelector('.chooser-tile-body .truncate')!.textContent?.trim()).toBe(
+        'Installing ComfyUI · 40%'
+      )
+    }
+  })
+
+  it('lets the pointer through the whole tile to its click hint, and keeps the hint shut while the menu is open', async () => {
+    const wrapper = await buildsGridWithStudioIn('ready', BUILDS_GRID_WIDTH_IN_LARGE_WINDOW)
+    const tile = onlyIn(wrapper, `[data-testid="${TID.dashboardTile(STUDIO.id)}"]`)
+    const area = tile.querySelector('[data-testid="chooser-tile-hint-area"]')!
+    const tileBox = boxOf(tile)
+    expect(boxOf(area).width).toBeCloseTo(tileBox.width - 2, 0)
+    expect(boxOf(area).height).toBeCloseTo(tileBox.height - 2, 0)
+    for (const element of [
+      tile.querySelector('.chooser-tile-name')!,
+      tile.querySelector('.chooser-tile-icon')!
+    ]) {
+      const box = boxOf(element)
+      expect(document.elementFromPoint(box.left + 2, box.top + box.height / 2)).toBe(area)
+    }
+
+    area.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await vi.waitFor(() =>
+      expect(document.querySelector('.tooltip-bubble')?.textContent).toContain('Click to start')
+    )
+    area.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    await vi.waitFor(() => expect(document.querySelector('.tooltip-bubble')).toBeNull())
+
+    tile.querySelector<HTMLElement>('.chooser-tile-kebab')!.click()
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-testid="build-menu"]')).not.toBeNull()
+    )
+    area.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('.tooltip-bubble')).toBeNull()
+    wrapper.unmount()
   })
 })

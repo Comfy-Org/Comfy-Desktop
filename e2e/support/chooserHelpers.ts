@@ -51,12 +51,51 @@ export async function clickInstallTile(
     const tile = [...document.querySelectorAll('.chooser-tile')].find((candidate) =>
       candidate.querySelector('.chooser-tile-name')?.textContent?.toLowerCase().includes(needle),
     )
-    const launch = tile?.querySelector('.chooser-tile-launch')
-    if (!launch) return false
-    launch.click()
+    if (!tile) return false
+    tile.click()
     return true
   })()`)
   expect(launched, `Install tile matching "${nameSubstring}" launched`).toBe(true)
+}
+
+export function buildMenuItem(item: string): string {
+  return byTestId(`build-menu-${item}`)
+}
+
+export async function openBuildsTileMenu(
+  panel: WebContentsPage,
+  installationId: string
+): Promise<void> {
+  await panel.waitForVisible(byTestId(TID.dashboardTile(installationId)), { timeout: 15_000 })
+  expect(
+    await panel.click(byTestId(TID.dashboardTileKebab(installationId))),
+    `build menu ⋯ clicked on ${installationId}`
+  ).toBe(true)
+  await panel.waitForVisible(`[data-testid="build-menu"][data-build-id="${installationId}"]`, {
+    timeout: 5_000
+  })
+}
+
+export async function pickFromBuildsTileMenu(
+  panel: WebContentsPage,
+  installationId: string,
+  item: string
+): Promise<void> {
+  await openBuildsTileMenu(panel, installationId)
+  await panel.waitForVisible(buildMenuItem(item), { timeout: 5_000 })
+  expect(await panel.click(buildMenuItem(item)), `build menu ${item} picked`).toBe(true)
+}
+
+export async function uninstallFromBuildsTileMenu(
+  panel: WebContentsPage,
+  installationId: string
+): Promise<void> {
+  await pickFromBuildsTileMenu(panel, installationId, 'delete')
+  await panel.waitForVisible(buildMenuItem('confirm-uninstall'), { timeout: 5_000 })
+  expect(
+    await panel.click(buildMenuItem('confirm-uninstall')),
+    'uninstall confirmed in the build menu'
+  ).toBe(true)
 }
 
 export async function openTitleMenu(titleBar: WebContentsPage): Promise<void> {

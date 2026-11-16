@@ -44,6 +44,8 @@ export interface ManageOpenOptions {
   autoAction?: string | null
 }
 
+const promotingInstallationIds = ref<ReadonlySet<string>>(new Set())
+
 export function useInstallContextMenu(
   opts: {
     onManage?: (inst: Installation, options?: ManageOpenOptions) => void
@@ -68,8 +70,6 @@ export function useInstallContextMenu(
     y: 0,
     inst: null as Installation | null
   })
-  const promotingInstallationIds = ref<ReadonlySet<string>>(new Set())
-
   function setPromotingToWorkspace(installationId: string, promoting: boolean): void {
     const next = new Set(promotingInstallationIds.value)
     if (promoting) next.add(installationId)

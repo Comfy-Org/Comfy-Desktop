@@ -433,10 +433,56 @@ describe('Home builds', () => {
     await flushPromises()
 
     expect(wrapper.findAll('[data-testid="home-build"]').map((card) => card.text())).toEqual([
-      'Update availableMy Local 1Standalone',
+      'ReadyMy Local 1Standalone · Update available',
       'RunningVideo LabStandalone',
       'Always onComfy CloudRTX 6000 Pro · 96 GB'
     ])
+  })
+
+  it('keeps Running on top of a running build with an update, and names the update at the bottom', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    const wrapper = await openHome()
+    useSessionStore().runningInstances.set(NEWEST.id, {
+      installationId: NEWEST.id,
+      installationName: NEWEST.name,
+      mode: 'window'
+    })
+    await flushPromises()
+
+    const card = wrapper.get('[data-testid="home-build"]')
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Running')
+    expect(card.get('[data-testid="home-build-detail"]').text()).toBe(
+      'Standalone · Update available'
+    )
+    expect(card.get('[data-testid="home-build-open"]').attributes('aria-label')).toBe(
+      'My Local 1, Running'
+    )
+  })
+
+  it('keeps the update note short so the bottom line fits a narrow card', async () => {
+    getInstallations.mockResolvedValue([
+      {
+        ...NEWEST,
+        version: 'v0.3.68',
+        statusTag: { style: 'update', label: 'Update available: v0.45.4' }
+      }
+    ])
+    const wrapper = await openHome()
+
+    expect(wrapper.get('[data-testid="home-build-detail"]').text()).toBe(
+      'v0.3.68 · Update available'
+    )
+  })
+
+  it('starts a build with an update from its card, saying Ready on top', async () => {
+    getInstallations.mockResolvedValue([NEWEST])
+    const wrapper = await openHome()
+
+    const card = wrapper.get('[data-testid="home-build"]')
+    expect(card.get('[data-testid="home-build-status"]').text()).toBe('Ready')
+    await card.get('[data-testid="home-build-open"]').trigger('click')
+
+    expect(wrapper.emitted('pick')?.[0]?.[0]).toMatchObject({ id: NEWEST.id })
   })
 
   it('keeps only the latest build and Cloud when the window is narrow', async () => {

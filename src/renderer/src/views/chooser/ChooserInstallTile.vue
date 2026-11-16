@@ -1,20 +1,8 @@
 <script setup lang="ts">
 import Button from '@comfyorg/design-system/button/Button'
-import { computed } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  ArrowRightLeft,
-  ArrowUpCircle,
-  Ellipsis,
-  ExternalLink,
-  Info,
-  LoaderCircle,
-  OctagonAlert,
-  Play,
-  Power,
-  Server,
-  Check
-} from '@lucide/vue'
+import { Check, Ellipsis, Info, LoaderCircle, OctagonAlert, Power, Server } from '@lucide/vue'
 import { useSessionStore } from '../../stores/sessionStore'
 import { launchFailed, useBuildProgress } from '../../composables/useBuildProgress'
 import { useProgressStore } from '../../stores/progressStore'
@@ -27,6 +15,7 @@ import {
 } from '../../panel/home/homeBuild'
 import Tooltip from '../../components/ui/Tooltip.vue'
 import BuildDeviceArt from '../../panel/home/BuildDeviceArt.vue'
+import BuildMenu, { type BuildMenuAnchor } from '../../panel/home/BuildMenu.vue'
 import BuildProgressBar from '../../panel/home/BuildProgressBar.vue'
 import TruncatedText from '../../components/TruncatedText.vue'
 import { TID } from '../../../../shared/testIds'
@@ -37,7 +26,6 @@ interface Props {
   installation: Installation
   showWhyCloud?: boolean
   lifecycleStatus?: 'idle' | 'launching' | 'running' | 'stopping' | 'error'
-  isStoppedActionGated: boolean
   isPromotingToWorkspace?: boolean
   showMenu?: boolean
   showFreeRunsPill?: boolean
@@ -54,9 +42,6 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   pick: [installation: Installation]
   'open-details': [installation: Installation]
-  'open-card-menu': [event: MouseEvent, installation: Installation]
-  'open-kebab-menu': [event: MouseEvent, installation: Installation]
-  'trigger-action': [action: 'update' | 'migrate', installation: Installation]
   'view-error': [installation: Installation]
   'view-danger': [installation: Installation]
   'why-cloud': []
@@ -78,12 +63,16 @@ const isUninstalling = computed(() => install.progress.value?.kind === 'uninstal
 const progressLabel = computed(() => {
   const current = install.progress.value
   if (!current) return ''
-  if (current.kind === 'launch') return t('chooser.statusLaunching')
-  if (current.kind === 'install')
-    return t('installProgress.tileStatus', { percent: current.percent ?? 0 })
-  return current.percent === null
-    ? t('uninstallProgress.status')
-    : t('uninstallProgress.tileStatus', { percent: current.percent })
+  if (current.cancelling) return t('installProgress.cancelling')
+  if (current.kind === 'uninstall') {
+    return current.percent === null
+      ? t('uninstallProgress.status')
+      : t('uninstallProgress.tileStatus', { percent: current.percent })
+  }
+  const phase = t(current.kind === 'launch' ? 'home.buildStartingComfyUI' : 'home.buildInstalling')
+  return current.percent == null
+    ? phase
+    : t('installProgress.detail', { phase, percent: current.percent })
 })
 const toneStyle = computed(() => HOME_BUILD_TONES[props.tone])
 
@@ -171,7 +160,6 @@ const showWhyCloudTrigger = computed(
 )
 
 const hasUpdate = computed(() => inst.value.statusTag?.style === 'update')
-const hasMigratePrompt = computed(() => inst.value.statusTag?.style === 'migrate')
 
 const startsWithDesktop = computed(() => props.autoStart && !isCloudBuild(inst.value))
 const restingLabel = computed(() => {
@@ -206,65 +194,66 @@ const leadingFact = computed(() =>
   isFromBuild.value ? inst.value.version || '' : sourceLabel.value
 )
 
-const metaLine = computed(() => [leadingFact.value, trailingFact.value].filter(Boolean).join(' · '))
+const updateNote = computed(() => (hasUpdate.value ? t('chooser.updateAvailable') : ''))
 
-const actionPill = computed(() => {
-  if (isUpdating.value) return null
-  if (hasUpdate.value)
-    return {
-      action: 'update' as const,
-      icon: ArrowUpCircle,
-      label: t('chooser.updatePill'),
-      tooltip: inst.value.statusTag?.label || t('chooser.updatePill')
-    }
-  if (hasMigratePrompt.value)
-    return {
-      action: 'migrate' as const,
-      icon: ArrowRightLeft,
-      label: t('chooser.migratePill'),
-      tooltip: t('dashboard.migrateBannerTitle')
-    }
-  return null
-})
-
-const showLaunch = computed(
-  () => !isBusy.value && !isUpdating.value && !isStopping.value && !props.isPromotingToWorkspace
+const metaLine = computed(() =>
+  [leadingFact.value, trailingFact.value, updateNote.value].filter(Boolean).join(' · ')
 )
-const opensExisting = computed(
-  () =>
+
+const openHint = computed(() => {
+  if (isUninstalling.value || isUpdating.value || isStopping.value) return ''
+  if (isBusy.value) return t('home.buildClickToViewLogs')
+  if (
     isRunning.value ||
     isLaunching.value ||
     hasError.value ||
+    dangerTag.value ||
     inst.value.sourceCategory === 'cloud' ||
     inst.value.sourceCategory === 'remote'
-)
+  )
+    return t('home.buildClickToOpen')
+  return t('home.buildClickToStart')
+})
 
-const launchLabel = computed(() =>
-  opensExisting.value ? t('chooser.openInstall') : t('chooser.startInstall')
-)
+const canOpenMenu = computed(() => props.showMenu && !isUpdating.value)
 
-function openDetails(): void {
+function open(): void {
   if (isBusy.value && !isUninstalling.value) {
     install.viewLogs()
     return
   }
-  if (isStopping.value || isUpdating.value) return
-  emit('open-details', inst.value)
+  if (isStopping.value || isUpdating.value || isUninstalling.value) return
+  if (dangerTag.value) emit('open-details', inst.value)
+  else if (launchFailed(progressStore, inst.value.id)) install.viewLogs()
+  else emit('pick', inst.value)
 }
 
-function launch(): void {
-  if (isStopping.value || isUpdating.value) return
-  emit('pick', inst.value)
+const menuOpen = ref(false)
+const menuAt = shallowRef<{
+  anchor: BuildMenuAnchor
+  align: 'start' | 'end'
+  returnFocus: HTMLElement | null
+} | null>(null)
+
+function presentMenu(
+  anchor: BuildMenuAnchor,
+  align: 'start' | 'end',
+  returnFocus: HTMLElement | null
+): void {
+  if (!canOpenMenu.value) return
+  menuAt.value = { anchor, align, returnFocus }
+  menuOpen.value = true
 }
 
-function handleContextMenu(event: MouseEvent): void {
-  if (!props.showMenu || isUpdating.value || isBusy.value) return
-  emit('open-card-menu', event, inst.value)
+function openMoreMenu(event: MouseEvent): void {
+  const button = event.currentTarget as HTMLElement
+  presentMenu({ getBoundingClientRect: () => button.getBoundingClientRect() }, 'end', button)
 }
 
-function triggerInstallAction(action: 'update' | 'migrate'): void {
-  if (props.isStoppedActionGated) return
-  emit('trigger-action', action, inst.value)
+function openContextMenu(event: MouseEvent): void {
+  const { clientX: x, clientY: y } = event
+  const tile = event.currentTarget as HTMLElement
+  presentMenu({ getBoundingClientRect: () => new DOMRect(x, y, 0, 0) }, 'start', tile)
 }
 </script>
 
@@ -273,18 +262,28 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     role="button"
     :tabindex="isUpdating ? -1 : 0"
     :aria-disabled="isUpdating || undefined"
-    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 cursor-pointer items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] pr-3 pl-[18px] outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-[rgb(137_137_137/0.09)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
+    class="chooser-tile chooser-tile--install group/tile relative flex h-25 min-w-0 cursor-pointer items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] outline-none transition-[background-color,box-shadow] duration-160 select-none hover:bg-[rgb(137_137_137/0.09)] focus-visible:shadow-[0_0_0_2px_var(--color-ring)]"
     :class="statusClasses"
     :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
     :data-testid="TID.dashboardTile(inst.id)"
     :data-source-category="inst.sourceCategory"
-    @click="openDetails"
-    @keydown.enter="openDetails"
-    @keydown.space.prevent="openDetails"
-    @contextmenu.prevent="handleContextMenu"
+    @click="open"
+    @keydown.enter="open"
+    @keydown.space.prevent="open"
+    @contextmenu.prevent="openContextMenu"
   >
+    <Tooltip
+      class="absolute inset-0 flex"
+      :text="openHint"
+      side="top"
+      :delay-ms="500"
+      :should-open="() => !menuOpen"
+    >
+      <span class="absolute inset-0" aria-hidden="true" data-testid="chooser-tile-hint-area" />
+    </Tooltip>
     <span
-      class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/tile:scale-[2.6] group-focus-visible/tile:scale-[2.6] motion-reduce:transition-none"
+      class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+      :class="!isBusy && 'group-hover/tile:scale-[2.6] group-focus-visible/tile:scale-[2.6]'"
       :style="{
         background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
       }"
@@ -292,18 +291,27 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
     />
     <span
       v-if="inst.sourceCategory === 'remote'"
-      class="chooser-tile-icon relative flex size-16 shrink-0 items-center justify-center"
+      class="chooser-tile-icon pointer-events-none relative flex size-16 shrink-0 items-center justify-center"
     >
       <Server :size="22" class="text-muted-foreground" aria-hidden="true" />
     </span>
     <BuildDeviceArt
       v-else
-      class="chooser-tile-icon relative shrink-0"
+      class="chooser-tile-icon pointer-events-none relative shrink-0"
       :kind="buildDeviceKind(inst)"
       :glow="toneStyle.glow"
     />
 
-    <div class="chooser-tile-body relative flex min-w-0 flex-1 flex-col">
+    <div
+      class="chooser-tile-body pointer-events-none relative flex min-w-0 flex-1 flex-col"
+      :class="
+        canOpenMenu && [
+          'group-hover/tile:pr-10',
+          'group-focus-within/tile:pr-10',
+          menuOpen && 'pr-10'
+        ]
+      "
+    >
       <div class="flex h-4 min-w-0 items-center gap-1.5 text-xs/4 text-muted-foreground">
         <span
           v-if="isBusy"
@@ -322,7 +330,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           variant="destructive-textonly"
           size="unset"
           type="button"
-          class="chooser-tile-error-badge h-4 gap-1 text-xs/4 font-medium"
+          class="chooser-tile-error-badge pointer-events-auto h-4 gap-1 text-xs/4 font-medium"
           :title="t('chooser.viewErrorTooltip')"
           @click.stop="viewError"
           @keydown.enter.stop
@@ -336,7 +344,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
           variant="destructive-textonly"
           size="unset"
           type="button"
-          class="chooser-tile-danger-tag h-4 min-w-0 gap-1 text-xs/4 font-medium"
+          class="chooser-tile-danger-tag pointer-events-auto h-4 min-w-0 gap-1 text-xs/4 font-medium"
           :title="t('chooser.viewErrorTooltip')"
           @click.stop="emit('view-danger', inst)"
           @keydown.enter.stop
@@ -362,10 +370,6 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             aria-hidden="true"
           />
           <span class="truncate">{{ t(statusPill.label) }}</span>
-        </span>
-        <span v-else-if="hasUpdate" class="flex min-w-0 items-center gap-1.5">
-          <ArrowUpCircle :size="12" class="shrink-0" aria-hidden="true" />
-          <span class="truncate">{{ inst.statusTag?.label || t('chooser.updateAvailable') }}</span>
         </span>
         <span v-else class="flex min-w-0 items-center gap-1.5">
           <span
@@ -405,7 +409,7 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
             variant="muted-textonly"
             size="icon-sm"
             type="button"
-            class="chooser-tile-why-cloud flex-none"
+            class="chooser-tile-why-cloud pointer-events-auto flex-none"
             :aria-label="t('firstUse.whyTryCloud')"
             :data-testid="TID.dashboardTileWhyCloud(inst.id)"
             @click.stop="emit('why-cloud')"
@@ -423,93 +427,36 @@ function triggerInstallAction(action: 'update' | 'migrate'): void {
       />
     </div>
 
-    <div class="chooser-tile-footer relative flex shrink-0 items-center gap-1">
-      <template v-if="isBusy">
-        <Button
-          v-if="!isUninstalling"
-          type="button"
-          variant="muted-textonly"
-          size="unset"
-          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-          :data-testid="`chooser-tile-view-logs-${inst.id}`"
-          @click.stop="install.viewLogs"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          {{ t('installProgress.viewLogs') }}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="unset"
-          class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
-          :disabled="install.progress.value?.cancelling"
-          :data-testid="`chooser-tile-cancel-${inst.id}`"
-          @click.stop="install.cancel"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          {{ t('common.cancel') }}
-        </Button>
-      </template>
-      <Tooltip v-else-if="actionPill" :text="actionPill.tooltip" class="chooser-tile-pill-action">
-        <Button
-          type="button"
-          variant="secondary"
-          size="unset"
-          class="chooser-tile-pill h-8 shrink-0 gap-1.5 rounded-lg px-3 text-[13px]/5"
-          :class="{
-            'chooser-tile-pill-update': actionPill.action === 'update',
-            'chooser-tile-pill-migrate': actionPill.action === 'migrate',
-            'chooser-tile-pill-disabled opacity-45': isStoppedActionGated
-          }"
-          :aria-disabled="isStoppedActionGated || undefined"
-          @click.stop="triggerInstallAction(actionPill.action)"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          <component :is="actionPill.icon" :size="13" />
-          {{ actionPill.label }}
-        </Button>
-      </Tooltip>
-      <Button
-        v-if="showLaunch"
-        type="button"
-        variant="secondary"
-        size="unset"
-        class="chooser-tile-launch h-8 gap-1.5 rounded-lg px-3 text-[13px]/5"
-        :aria-label="launchLabel"
-        @click.stop="launch"
-        @keydown.enter.stop
-        @keydown.space.stop
-      >
-        <component :is="opensExisting ? ExternalLink : Play" :size="13" aria-hidden="true" />
-        {{ launchLabel }}
-      </Button>
-      <div class="chooser-tile-actions flex items-center">
-        <Button
-          v-if="props.showMenu && !isUpdating && !isBusy"
-          variant="muted-textonly"
-          size="unset"
-          type="button"
-          class="chooser-tile-kebab size-8 rounded-lg hover:bg-secondary hover:text-foreground"
-          :title="t('chooser.moreActions')"
-          :aria-label="t('chooser.moreActions')"
-          :data-testid="TID.dashboardTileKebab(inst.id)"
-          @click.stop="emit('open-kebab-menu', $event, inst)"
-          @contextmenu.stop="emit('open-kebab-menu', $event, inst)"
-          @keydown.enter.stop
-          @keydown.space.stop
-        >
-          <Ellipsis :size="15" />
-        </Button>
-      </div>
-    </div>
+    <Button
+      v-if="canOpenMenu"
+      type="button"
+      variant="muted-textonly"
+      size="unset"
+      class="chooser-tile-kebab absolute top-1/2 right-2.5 size-8 -translate-y-1/2 rounded-lg p-0 opacity-0 transition-opacity duration-150 group-hover/tile:opacity-100 group-focus-within/tile:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 motion-reduce:transition-none"
+      :class="menuOpen && 'opacity-100'"
+      :title="t('chooser.moreActions')"
+      :aria-label="t('chooser.moreActions')"
+      :data-testid="TID.dashboardTileKebab(inst.id)"
+      @click.stop="openMoreMenu"
+      @contextmenu.stop.prevent="openMoreMenu"
+      @keydown.enter.stop
+      @keydown.space.stop
+    >
+      <Ellipsis :size="15" aria-hidden="true" />
+    </Button>
     <BuildProgressBar
       v-if="install.progress.value?.percent != null"
       :percent="install.progress.value.percent"
       :label="progressLabel"
       :data-testid="`chooser-tile-progress-bar-${inst.id}`"
+    />
+    <BuildMenu
+      v-if="menuAt"
+      v-model:open="menuOpen"
+      :build="inst"
+      :anchor="menuAt.anchor"
+      :align="menuAt.align"
+      :return-focus="menuAt.returnFocus"
     />
   </div>
 </template>

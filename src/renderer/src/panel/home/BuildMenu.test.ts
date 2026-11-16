@@ -5,7 +5,10 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import AppSidebar from '../AppSidebar.vue'
 import HomeBuildCard from './HomeBuildCard.vue'
+import ChooserInstallTile from '../../views/chooser/ChooserInstallTile.vue'
+import Tooltip from '../../components/ui/Tooltip.vue'
 import { provideBuildMenuHost, type BuildMenuHost } from './useBuildMenu'
+import { homeBuildStatus } from './homeBuild'
 import { provideBuildLogs } from '../../composables/useBuildProgress'
 import { useInstallationStore } from '../../stores/installationStore'
 import { useProgressStore, type Operation } from '../../stores/progressStore'
@@ -100,7 +103,13 @@ function putIn(state: State): void {
 
 async function mountTile(state: State): Promise<VueWrapper> {
   const wrapper = mount(
-    withHost(() => h(HomeBuildCard, { build: BUILD, status: 'ready', tone: 'ember' })),
+    withHost(() =>
+      h(HomeBuildCard, {
+        build: BUILD,
+        status: homeBuildStatus(BUILD, useSessionStore()),
+        tone: 'ember'
+      })
+    ),
     { attachTo: document.body }
   )
   mounted.push(wrapper)
@@ -108,6 +117,19 @@ async function mountTile(state: State): Promise<VueWrapper> {
   await flushPromises()
   return wrapper
 }
+
+async function mountBuildsTile(state: State): Promise<VueWrapper> {
+  const wrapper = mount(
+    withHost(() => h(ChooserInstallTile, { installation: BUILD })),
+    { attachTo: document.body }
+  )
+  mounted.push(wrapper)
+  putIn(state)
+  await flushPromises()
+  return wrapper
+}
+
+const BUILDS_TILE = `[data-testid="dashboard-tile-${BUILD.id}"]`
 
 async function mountSidebar(state: State): Promise<VueWrapper> {
   const wrapper = mount(
@@ -177,9 +199,20 @@ describe('Build menu', () => {
       const sidebar = await mountSidebar(state)
       await rightClick(sidebar.get(`[data-testid="app-sidebar-build-${BUILD.id}"]`).element)
       const fromSidebar = await shownMenu()
+      await closeMenu()
+
+      const buildsTile = await mountBuildsTile(state)
+      await buildsTile.get('.chooser-tile-kebab').trigger('click')
+      const fromBuildsMore = await shownMenu()
+      await closeMenu()
+
+      await rightClick(buildsTile.get(BUILDS_TILE).element)
+      const fromBuildsTile = await shownMenu()
 
       expect(fromTile).toEqual(fromMore)
       expect(fromSidebar).toEqual(fromMore)
+      expect(fromBuildsMore).toEqual(fromMore)
+      expect(fromBuildsTile).toEqual(fromMore)
     }
   )
 
@@ -260,6 +293,52 @@ describe('Build menu', () => {
 
     expect(host.launch).toHaveBeenCalledExactlyOnceWith(BUILD)
   })
+
+  it.each([
+    ['ready', 'pick'],
+    ['running', 'pick'],
+    ['starting', 'logs'],
+    ['installing', 'logs'],
+    ['uninstalling', 'nothing']
+  ] as const)(
+    'clicking a %s build card does the same on Home and on the Builds page: %s',
+    async (state, outcome) => {
+      const home = await mountTile(state)
+      await home.get(`[data-build-id="${BUILD.id}"]`).trigger('click')
+      const homeCard = home.findComponent(HomeBuildCard)
+      expect(homeCard.emitted('open')?.length ?? 0).toBe(outcome === 'pick' ? 1 : 0)
+      expect(viewLogs).toHaveBeenCalledTimes(outcome === 'logs' ? 1 : 0)
+
+      const builds = await mountBuildsTile(state)
+      await builds.get(BUILDS_TILE).trigger('click')
+      const buildsTile = builds.findComponent(ChooserInstallTile)
+      expect(buildsTile.emitted('pick')?.length ?? 0).toBe(outcome === 'pick' ? 1 : 0)
+      expect(viewLogs).toHaveBeenCalledTimes(outcome === 'logs' ? 2 : 0)
+      expect(buildsTile.emitted('open-details')).toBeUndefined()
+      expect(host.launch).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    ['ready', 'Click to start'],
+    ['running', 'Click to open'],
+    ['starting', 'Click to view logs'],
+    ['installing', 'Click to view logs'],
+    ['uninstalling', '']
+  ] as const)(
+    'hints what a click does on a %s build card, on Home and on the Builds page',
+    async (state, hint) => {
+      const home = await mountTile(state)
+      const homeHint = home.findAllComponents(Tooltip)[0]
+      if (hint) expect(homeHint?.props('text')).toBe(hint)
+      else expect(home.find('[data-testid="home-build-open"]').exists()).toBe(false)
+
+      const builds = await mountBuildsTile(state)
+      const overlay = builds.findAllComponents(Tooltip)[0]!
+      expect(overlay.find('[data-testid="chooser-tile-hint-area"]').exists()).toBe(true)
+      expect(overlay.props('text')).toBe(hint)
+    }
+  )
 
   it('opens no menu on a right-click on a page in the sidebar', async () => {
     const sidebar = await mountSidebar('ready')
