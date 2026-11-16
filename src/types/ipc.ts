@@ -16,6 +16,8 @@ export type {
   WorkspaceSwitchIntent,
   WorkspaceSwitchStatus
 }
+import type { PlatformSettingsPage } from '../main/devplatform/config'
+export type { PlatformSettingsPage }
 
 import type { BetaActivationNotice } from '../main/lib/betaActivationNotice'
 export type { BetaActivationNotice }
@@ -1304,6 +1306,7 @@ export interface ElectronApi {
     ): Promise<WorkspaceSwitchStatus>
     listBuilds(): Promise<DevPlatformBuild[]>
     openBuildsPage(workspaceId: string): Promise<void>
+    openSettingsPage(page: PlatformSettingsPage, workspaceId: string): Promise<void>
     installBuild(request: InstallBuildRequest): Promise<InstallBuildResult>
     promoteLocalInstance(installationId: string): Promise<PromoteLocalInstanceResult>
   }

@@ -7,7 +7,7 @@ import { getViewWorkspaceGrants } from '../viewWorkspaceGrants'
 import { openExternalUrl } from '../openExternal'
 import { openSystemModalAsync } from '../../popups/systemModal'
 import { normalizeSha256 } from '../../comfybuilder/integrity'
-import { PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
+import { PLATFORM_SETTINGS_PATHS, PLATFORM_WEB_BASE_URL } from '../../devplatform/config'
 import {
   getBuilderClient,
   getCloudSession,
@@ -59,6 +59,7 @@ export const DEVPLATFORM_CHANNELS = {
   switchWorkspace: 'comfybuilder:switchWorkspace',
   listBuilds: 'comfybuilder:listBuilds',
   openBuildsPage: 'comfybuilder:openBuildsPage',
+  openSettingsPage: 'comfybuilder:openSettingsPage',
   installBuild: 'comfybuilder:installBuild',
   promoteLocalInstance: 'comfybuilder:promoteLocalInstance'
 } as const
@@ -223,6 +224,24 @@ export function registerDevPlatformHandlers(): void {
         throw new Error('A workspace is required to open Builds.')
       }
       const url = new URL('/profile/builds', PLATFORM_WEB_BASE_URL)
+      url.searchParams.set('workspace', workspaceId)
+      await openExternalUrl(url.toString())
+    }
+  )
+
+  ipcMain.handle(
+    DEVPLATFORM_CHANNELS.openSettingsPage,
+    async (_event, page: unknown, workspaceId: unknown): Promise<void> => {
+      if (typeof page !== 'string' || !Object.hasOwn(PLATFORM_SETTINGS_PATHS, page)) {
+        throw new Error('Unknown Developer Platform settings page.')
+      }
+      const url = new URL(
+        PLATFORM_SETTINGS_PATHS[page as keyof typeof PLATFORM_SETTINGS_PATHS],
+        PLATFORM_WEB_BASE_URL
+      )
+      if (typeof workspaceId !== 'string' || workspaceId.trim().length === 0) {
+        throw new Error('A workspace is required to open Developer Platform settings.')
+      }
       url.searchParams.set('workspace', workspaceId)
       await openExternalUrl(url.toString())
     }
