@@ -160,13 +160,12 @@ describe('SidebarAccount', () => {
       'HHarborEnterprise',
       'LLegacy'
     ])
-    expect(options.map((option) => option.attributes('aria-current'))).toEqual([
-      undefined,
+    expect(options.map((option) => option.attributes('aria-checked'))).toEqual([
+      'false',
       'true',
-      undefined,
-      undefined
+      'false',
+      'false'
     ])
-    expect(document.activeElement).toBe(options[1]?.element)
   })
 
   it('colors each avatar with the shared workspace avatar helper', async () => {
@@ -220,15 +219,25 @@ describe('SidebarAccount', () => {
     expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
   })
 
-  it('closes only the workspace list on Escape and returns focus to its header', async () => {
+  it('opens and closes the workspace list from the keyboard', async () => {
     const { wrapper } = await mountAccount(SIGNED_IN)
+    const body = new DOMWrapper(document.body)
 
-    const body = await openWorkspaces(wrapper)
-    await userEvent.keyboard('{Escape}')
+    ;(wrapper.get('[data-testid="workspace-switcher-trigger"]').element as HTMLElement).focus()
+    await userEvent.keyboard('{Enter}')
     await flushPromises()
-
-    expect(body.find('[data-testid="workspace-switcher-panel"]').exists()).toBe(false)
     const header = body.get('[data-testid="workspace-switch-action"]')
+    expect(document.activeElement).toBe(header.element)
+
+    await userEvent.keyboard('{ArrowRight}')
+    await vi.waitFor(() =>
+      expect(body.find('[data-testid="workspace-switcher-panel"]').exists()).toBe(true)
+    )
+
+    await userEvent.keyboard('{ArrowLeft}')
+    await vi.waitFor(() =>
+      expect(body.find('[data-testid="workspace-switcher-panel"]').exists()).toBe(false)
+    )
     expect(document.activeElement).toBe(header.element)
 
     await userEvent.keyboard('{Escape}')
@@ -319,8 +328,8 @@ describe('SidebarAccount', () => {
     expect(wrapper.get('[data-testid="workspace-switcher-trigger"]').text()).toBe('WWorkspace')
     const settings = body.get('[data-testid="workspace-settings"]')
     const credits = body.get('[data-testid="workspace-manage-credits"]')
-    expect(settings.attributes('disabled')).toBeDefined()
-    expect(credits.attributes('disabled')).toBeDefined()
+    expect(settings.attributes('aria-disabled')).toBe('true')
+    expect(credits.attributes('aria-disabled')).toBe('true')
   })
 
   it('takes the open menu away when the person signs out', async () => {
@@ -335,16 +344,15 @@ describe('SidebarAccount', () => {
     expect(document.body.querySelector('[data-testid="workspace-menu"]')).toBeNull()
   })
 
-  it('shows two loading rows while the workspaces load', async () => {
+  it('says it is loading while the workspaces load', async () => {
     const { wrapper } = await mountAccount(SIGNED_IN, false, {
       listWorkspaces: () => new Promise(() => {})
     })
 
     const body = await openWorkspaces(wrapper)
 
-    expect(body.findAll('[data-testid="workspace-skeleton"]')).toHaveLength(2)
-    expect(body.get('[data-testid="workspace-switcher-panel"]').attributes('aria-busy')).toBe(
-      'true'
+    expect(body.get('[data-testid="workspace-switcher-panel"] [role="status"]').text()).toBe(
+      'Loading…'
     )
   })
 
@@ -358,55 +366,12 @@ describe('SidebarAccount', () => {
 
     expect(comfybuilder.listWorkspaces).toHaveBeenCalledTimes(2)
     expect(body.get('[data-testid="workspace-load-error"]').text()).toBe(
-      "Couldn't load your workspaces. Please try again later."
-    )
-  })
-
-  it('says so when there are no workspaces', async () => {
-    const { wrapper } = await mountAccount(SIGNED_IN, false, {
-      listWorkspaces: () => Promise.resolve([])
-    })
-
-    const body = await openWorkspaces(wrapper)
-
-    expect(body.get('[data-testid="workspace-switcher-empty"]').text()).toBe(
-      "You don't have access to any workspaces yet."
-    )
-  })
-
-  it('offers search above six workspaces and forgets the query when the list closes', async () => {
-    const many: Workspace[] = Array.from({ length: 7 }, (_, index) => ({
-      id: `t${index}`,
-      name: index === 0 ? 'Silverside' : `Team ${index}`,
-      type: 'team',
-      role: 'member'
-    }))
-    const { wrapper } = await mountAccount(SIGNED_IN, false, {
-      listWorkspaces: () => Promise.resolve(many)
-    })
-
-    let body = await openWorkspaces(wrapper)
-    const search = body.get<HTMLInputElement>('[data-testid="workspace-switcher-panel"] input')
-    await userEvent.fill(search.element, 'team 3')
-    await vi.waitFor(() =>
-      expect(body.findAll('[data-testid^="workspace-option-"]')).toHaveLength(1)
-    )
-    await userEvent.fill(search.element, 'nothing')
-    await vi.waitFor(() =>
-      expect(body.get('[data-testid="workspace-switcher-empty"]').text()).toBe(
-        'No workspaces match your search.'
-      )
+      "Couldn't load workspaces. Retry"
     )
 
-    await userEvent.keyboard('{Escape}')
+    await body.get('[data-testid="workspace-load-error"]').trigger('click')
     await flushPromises()
-    await body.get('[data-testid="workspace-switch-action"]').trigger('click')
-    await flushPromises()
-    body = new DOMWrapper(document.body)
 
-    expect(
-      body.get<HTMLInputElement>('[data-testid="workspace-switcher-panel"] input').element.value
-    ).toBe('')
-    expect(body.findAll('[data-testid^="workspace-option-"]')).toHaveLength(7)
+    expect(comfybuilder.listWorkspaces).toHaveBeenCalledTimes(3)
   })
 })

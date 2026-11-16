@@ -1570,12 +1570,6 @@
       "workspaceSettings": "Workspace settings",
       "managePlanAndCredits": "Manage plan & credits",
       "logOut": "Log Out",
-      "account": "Account",
-      "search": "Search workspaces",
-      "clearSearch": "Clear search",
-      "loadFailed": "Couldn't load your workspaces. Please try again later.",
-      "empty": "You don't have access to any workspaces yet.",
-      "noMatch": "No workspaces match your search.",
       "role": {
         "owner": "Owner",
         "member": "Member"
