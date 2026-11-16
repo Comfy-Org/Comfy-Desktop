@@ -51,6 +51,15 @@ function roleLabel(role: string): string {
   return translatedOr(`devPlatform.workspaceMenu.role.${role}`, role)
 }
 
+const workspaceRows = computed<Workspace[]>(() => [
+  store.workspaces.find(isPersonalWorkspace) ?? {
+    id: PERSONAL_WORKSPACE_ID,
+    name: t('devPlatform.workspace.personalLabel'),
+    type: 'personal',
+    role: 'owner'
+  },
+  ...store.workspaces.filter((workspace) => !isPersonalWorkspace(workspace))
+])
 const currentWorkspace = computed(() =>
   store.workspaces.find((workspace) => scopeId(workspace) === dashboardScope.selectedWorkspaceId)
 )
@@ -73,9 +82,7 @@ const currentCloudWorkspaceId = computed(
   () => currentWorkspace.value?.id ?? currentStatus.value?.workspaceId
 )
 const settingsPage = computed<PlatformSettingsPage>(() =>
-  (currentWorkspace.value?.type ?? currentStatus.value?.workspaceType) === 'team'
-    ? 'general'
-    : 'people'
+  dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID ? 'people' : 'general'
 )
 
 function fetchWorkspacesIfMissing(): void {
@@ -192,7 +199,7 @@ function signOut(): void {
           @update:model-value="selectWorkspace"
         >
           <BaseMenuRadioItem
-            v-for="workspace in store.workspaces"
+            v-for="workspace in workspaceRows"
             :key="workspace.id"
             :value="scopeId(workspace)"
             :data-testid="`workspace-option-${workspace.id}`"

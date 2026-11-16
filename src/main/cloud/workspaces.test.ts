@@ -57,16 +57,22 @@ describe('listWorkspaces', () => {
     ])
   })
 
-  it('drops a plan that is not text, so it reads as unknown', async () => {
+  it('drops an empty or non-text plan, so it reads as unknown', async () => {
     stub(200, {
       workspaces: [
         { id: 'w-1', name: 'One', type: 'team', role: 'owner', subscription_tier: 7 },
         { id: 'w-2', name: 'Two', type: 'team', role: 'owner', subscription_tier: { tier: 'PRO' } },
-        { id: 'w-3', name: 'Three', type: 'team', role: 'owner', subscription_tier: ['PRO'] }
+        { id: 'w-3', name: 'Three', type: 'team', role: 'owner', subscription_tier: ['PRO'] },
+        { id: 'w-4', name: 'Four', type: 'team', role: 'owner', subscription_tier: '' }
       ]
     })
     const ws = await listWorkspaces('tok', { apiBase: 'https://cloud/api' })
-    expect(ws.map((workspace) => 'subscriptionTier' in workspace)).toEqual([false, false, false])
+    expect(ws.map((workspace) => 'subscriptionTier' in workspace)).toEqual([
+      false,
+      false,
+      false,
+      false
+    ])
   })
 
   it.each([

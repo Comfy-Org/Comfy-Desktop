@@ -1552,6 +1552,7 @@
       "cancelInstallationAndSignOut": "Cancel Installation & Sign Out"
     },
     "workspace": {
+      "personalLabel": "Personal",
       "switchLabel": "Workspace",
       "switchUnavailable": "This workspace is unavailable.",
       "switchRetryable": "Couldn't switch workspace. Check your connection and try again.",
@@ -1581,6 +1582,7 @@
       },
       "role": {
         "owner": "Owner",
+        "admin": "Admin",
         "member": "Member"
       }
     },

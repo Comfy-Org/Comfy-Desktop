@@ -33,7 +33,7 @@ interface WorkspaceMembersResponse {
 }
 
 function isPlanTier(value: unknown): value is string | null {
-  return typeof value === 'string' || value === null
+  return value === null || (typeof value === 'string' && value !== '')
 }
 
 function isWorkspaceRow(value: unknown): value is WorkspaceRow {

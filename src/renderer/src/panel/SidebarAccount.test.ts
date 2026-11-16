@@ -279,6 +279,42 @@ describe('SidebarAccount', () => {
     expect(comfybuilder.openSettingsPage).toHaveBeenCalledExactlyOnceWith('people', 'p1')
   })
 
+  it('opens People for a legacy personal workspace the server reports as a team', async () => {
+    const { wrapper, comfybuilder } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () =>
+        Promise.resolve([
+          { id: 'p1', name: 'Personal Workspace', type: 'team', role: 'owner' },
+          { id: 'w1', name: 'Silverside', type: 'team', role: 'owner' }
+        ])
+    })
+    useDashboardScopeStore().selectWorkspace('personal')
+    await flushPromises()
+
+    const body = await openMenu(wrapper)
+    await body.get('[data-testid="workspace-settings"]').trigger('click')
+
+    expect(comfybuilder.openSettingsPage).toHaveBeenCalledExactlyOnceWith('people', 'p1')
+  })
+
+  it('shows one Personal row when a team is also named Personal Workspace', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () =>
+        Promise.resolve([
+          { id: 'p1', name: 'Personal Workspace', type: 'personal', role: 'owner' },
+          { id: 'w9', name: 'Personal Workspace', type: 'team', role: 'owner' },
+          { id: 'w1', name: 'Silverside', type: 'team', role: 'owner' }
+        ])
+    })
+
+    const body = await openWorkspaces(wrapper)
+
+    expect(
+      body
+        .findAll('[data-testid^="workspace-option-"]')
+        .map((option) => option.attributes('data-testid'))
+    ).toEqual(['workspace-option-p1', 'workspace-option-w1'])
+  })
+
   it('opens Billing from Manage plan & credits', async () => {
     const { wrapper, comfybuilder } = await mountAccount(SIGNED_IN)
 
@@ -386,5 +422,19 @@ describe('SidebarAccount', () => {
     await flushPromises()
 
     expect(comfybuilder.listWorkspaces).toHaveBeenCalledTimes(3)
+  })
+
+  it('still offers Personal when the workspaces cannot load', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () => Promise.reject(new Error('offline'))
+    })
+
+    const body = await openWorkspaces(wrapper)
+    const personal = body.get('[data-testid="workspace-option-personal"]')
+    expect(personal.text()).toBe('PPersonal')
+    await personal.trigger('click')
+    await flushPromises()
+
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
   })
 })

@@ -1552,6 +1552,7 @@
       "cancelInstallationAndSignOut": "取消安装并退出登录"
     },
     "workspace": {
+      "personalLabel": "个人",
       "switchLabel": "工作区",
       "switchUnavailable": "此工作区不可用。",
       "switchRetryable": "无法切换工作区。请检查网络连接后重试。",
@@ -1581,6 +1582,7 @@
       },
       "role": {
         "owner": "所有者",
+        "admin": "管理员",
         "member": "成员"
       }
     },
