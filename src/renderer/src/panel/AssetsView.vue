@@ -116,6 +116,7 @@ const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 const savedBuildId = useLocalStorage('comfy.desktop.assets.build', '')
 const pickedBuildId = ref('')
+const shownBuild = ref({ id: '', context: '' })
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -169,6 +170,10 @@ function lastLaunched({ build }: AssetBuild): number {
   return typeof build.lastLaunchedAt === 'number' ? build.lastLaunchedAt : -Infinity
 }
 
+const selectionContext = computed(
+  () => `${authStore.isSignedIn}\n${dashboardScope.selectedWorkspaceId}`
+)
+
 const selectedBuild = computed<AssetBuild | null>(() => {
   if (!buildsKnown.value) return null
   const builds = assetBuilds.value
@@ -179,10 +184,18 @@ const selectedBuild = computed<AssetBuild | null>(() => {
     withId(builds, pickedBuildId.value) ??
     withId(builds, installationId) ??
     withId(openable, savedBuildId.value) ??
+    withId(
+      openable,
+      shownBuild.value.context === selectionContext.value ? shownBuild.value.id : ''
+    ) ??
     openable.find((option) => !option.cloud && option.state === 'running') ??
     openable.toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
     null
   )
+})
+
+watch([selectedBuild, selectionContext], ([selected, context]) => {
+  shownBuild.value = { id: selected?.build.id ?? '', context }
 })
 
 function pickBuild(id: string): void {

@@ -654,6 +654,26 @@ describe('AssetsView', () => {
     }
   })
 
+  it('stays on the build it opened on when another build starts', async () => {
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')], {
+      builds: [
+        localBuild('mine', 'My Local 1', { lastLaunchedAt: 1 }),
+        localBuild('lab', 'Video Lab', { lastLaunchedAt: 2 })
+      ]
+    })
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
+
+    useSessionStore().runningInstances.set('mine', { installationId: 'mine' } as RunningInstance)
+    useInstallationStore().installations = [
+      localBuild('mine', 'My Local 1', { lastLaunchedAt: 3 }),
+      localBuild('lab', 'Video Lab', { lastLaunchedAt: 2 })
+    ]
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('lab')
+  })
+
   it('switches to the builds of the workspace the user moves to', async () => {
     listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
     const wrapper = await mountAssets([asset('a', 'forest.png', 'image')], {
