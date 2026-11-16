@@ -139,7 +139,11 @@ export async function openPickerInWindow(
       'openPickerInWindow: picker popup is already open - close it before opening it again'
     )
   }
-  await titleBar.evaluate<void>('window.api.openInstancePicker()')
+  await titleBar.waitForVisible('.title-trailing', { timeout: 15_000 })
+  expect(
+    await titleBar.evaluate<boolean>('(() => { window.api.openInstancePicker(); return true })()'),
+    'picker requested from the title bar'
+  ).toBe(true)
   await waitForWebContents(app, 'comfyTitlePopup.html')
   await expect
     .poll(() => isPopupVisible(app, 'comfyTitlePopup.html'), {

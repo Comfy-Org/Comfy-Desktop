@@ -509,9 +509,7 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
     })
   )
 
-  await ctx.titleBar.evaluate<void>('window.api.openInstancePicker()')
-  await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
-  const popup = titlePopupPage(ctx.app)
+  const popup = await openPickerInWindow(ctx.app, ctx.titleBar)
   await popup.waitForVisible('.picker-home', { timeout: 10_000 })
   expect(await popup.click('.picker-home')).toBe(true)
 
