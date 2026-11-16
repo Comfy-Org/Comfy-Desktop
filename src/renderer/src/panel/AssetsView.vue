@@ -174,6 +174,12 @@ const cloudBuild = computed(
 const cloudListable = computed(
   () => buildsKnown.value && authStore.isSignedIn && cloudBuild.value !== null
 )
+const cloudSettled = computed(
+  () =>
+    buildsKnown.value &&
+    authStore.statusLoaded &&
+    (!authStore.isSignedIn || authStore.workspacesLoaded)
+)
 
 const currentFolder = computed(() =>
   place.value === 'computer' ? (trail.value.at(-1) ?? null) : null
@@ -418,6 +424,7 @@ async function loadPlace(userAsked: boolean): Promise<Loaded> {
 
 async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
+  const settled = cloudSettled.value
   failed.value = false
   loading.value = true
   try {
@@ -426,13 +433,13 @@ async function loadAssets(userAsked = false): Promise<void> {
     assets.value = loaded.assets
     outputFolders.value = loaded.folders
     subfolders.value = loaded.subfolders
-    openPendingFocus()
+    openPendingFocus(settled)
   } catch {
     if (current !== requestId) return
     assets.value = []
     subfolders.value = []
     failed.value = true
-    openPendingFocus()
+    openPendingFocus(settled)
   } finally {
     if (current === requestId) loading.value = false
   }
@@ -480,15 +487,23 @@ function newestNamed(name: string): GalleryAsset | null {
     )
 }
 
-function openPendingFocus(): void {
+function openPendingFocus(settled: boolean): void {
   const name = pendingFocus.value
-  if (!name || (place.value === 'cloud' && !cloudListable.value)) return
+  if (!name || (place.value === 'cloud' && !cloudListable.value && !settled)) return
   pendingFocus.value = null
-  if (place.value !== 'cloud' || failed.value) return
+  if (place.value !== 'cloud' || failed.value || !cloudListable.value) return
   const asset = newestNamed(name)
   if (asset) openDetail(asset)
   else notFoundName.value = name
 }
+
+watch(
+  cloudSettled,
+  (settled) => {
+    if (settled && !loading.value) openPendingFocus(true)
+  },
+  { flush: 'post' }
+)
 
 watch(
   () => focusName,
@@ -498,7 +513,7 @@ watch(
     const cloudShown = place.value === 'cloud' && !loading.value
     pendingFocus.value = name
     pickedPlace.value = 'cloud'
-    if (cloudShown) openPendingFocus()
+    if (cloudShown) openPendingFocus(cloudSettled.value)
   },
   { immediate: true }
 )

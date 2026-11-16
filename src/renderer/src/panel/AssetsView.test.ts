@@ -896,6 +896,35 @@ describe('AssetsView', () => {
       expect(wrapper.find('[data-testid="assets-not-found"]').exists()).toBe(false)
     })
 
+    it('lets go of the file when Comfy Cloud cannot list it, and says why', async () => {
+      getAuthStatus.mockResolvedValue({ signedIn: false })
+      listAssets.mockResolvedValue([asset('new', 'cutout.png', 'image')])
+      const installationStore = useInstallationStore()
+      installationStore.installations = [cloudBuild('cloud')]
+      installationStore.loading = false
+      const signedOut = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+
+      expect(signedOut.get('[data-testid="assets-empty"] h2').text()).toBe(
+        'Log in to see your assets'
+      )
+      await signInWith([asset('new', 'cutout.png', 'image')])
+      expect(assetNames(signedOut)).toEqual(['cutout.png'])
+      expect(viewer(), 'the file is not opened later').toBeNull()
+      signedOut.unmount()
+
+      installationStore.installations = [localBuild('lab')]
+      const noCloudBuild = mount(AssetsView, { attachTo: page, props: { focusName: 'cutout.png' } })
+      await flushPromises()
+      expect(noCloudBuild.get('[data-testid="assets-empty"] h2').text()).toBe(
+        'This workspace has no Comfy Cloud build yet'
+      )
+      installationStore.installations = [cloudBuild('cloud')]
+      await flushPromises()
+      expect(assetNames(noCloudBuild)).toEqual(['cutout.png'])
+      expect(viewer(), 'the file is not opened later').toBeNull()
+    })
+
     it('remembers a place the user picks after that', async () => {
       const wrapper = await mountWithFocus([])
 
