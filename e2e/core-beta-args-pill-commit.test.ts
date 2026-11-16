@@ -150,6 +150,9 @@ async function expectAnsweredWithNoPill(popup: WebContentsPage, message: string)
       intervals: [100, 200]
     })
     .toBeGreaterThanOrEqual(2)
+  await expect
+    .poll(() => pillLabel(popup), { message, timeout: 15_000, intervals: [100, 200] })
+    .toBeNull()
   const deadline = Date.now() + 2_000
   while (Date.now() < deadline) {
     expect(await pillLabel(popup), message).toBeNull()
