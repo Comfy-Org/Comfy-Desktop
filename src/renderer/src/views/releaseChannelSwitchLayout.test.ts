@@ -37,8 +37,7 @@ const STANDALONE = {
   fields: [
     { id: 'release', label: 'Release', type: 'select' },
     { id: 'comfyVersion', label: 'ComfyUI version', type: 'select' },
-    { id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' },
-    { id: 'bundledTemplate', label: 'Starter workflow', type: 'select', renderAs: 'cards' }
+    { id: 'variant', label: 'Hardware', type: 'select', renderAs: 'cards' }
   ]
 }
 
@@ -83,10 +82,7 @@ function installStandaloneApi(gate: LoadGate) {
         ]
       }
       if (fieldId === 'variant') return hardwareOptions(selections)
-      return [
-        { value: 'none', label: 'No starter workflow' },
-        { value: 'flux', label: 'Flux Schnell', data: { sizeBytes: 12_000_000_000 } }
-      ]
+      return []
     }
   )
   window.api = {
@@ -388,12 +384,11 @@ describe('switching the release channel in Change setup', () => {
     expect(hardwareDescriptions().some((text) => text.includes('nightly'))).toBe(false)
   })
 
-  it('never shows the starter workflow row in first-run setup while the other channel loads', async () => {
+  it('keeps the first-run Change setup still while the other channel loads', async () => {
     const gate = createLoadGate()
     installStandaloneApi(gate)
     await openChangeSetup({ hideBackToDashboard: true })
     const settled = formLayout()
-    expect(settled.map((box) => box.what)).not.toContain('Starter workflow')
     gate.hold()
 
     releaseButton('Latest on GitHub').click()

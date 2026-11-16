@@ -7,15 +7,18 @@ import {
   expectNewBuildModalOpen,
   openNewBuildChangeSetup,
   pickFromTitleMenu,
+  openDesktopSettings,
   showBuildsPage
 } from './support/chooserHelpers'
 import {
+  closeTitlePopupIfOpen,
   findWebContentsId,
   isPopupVisible,
   TITLE_REOPEN_SUPPRESSION_MS,
   waitForWebContents
 } from './support/cdpPages'
 import { evalWithRetry } from './support/evalRetry'
+import { captureHostWindow } from './support/windowCapture'
 
 let ctx: AppContext
 
@@ -39,6 +42,38 @@ test('chooser body renders on cold start @windows @macos @linux', async () => {
 test('title bar shows install-less pill on chooser host @windows @macos @linux', async () => {
   expect(await ctx.titleBar.exists('.title-install-pill.is-install-less')).toBe(true)
   expect(await ctx.titleBar.textOf('.title-install-name')).toMatch(/Comfy Desktop/i)
+})
+
+test('Desktop Settings opens from the sidebar footer when expanded and collapsed @windows @macos @linux', async () => {
+  const settings = '[data-testid="app-sidebar-settings"]'
+  const sidebar = '[data-testid="app-sidebar"]'
+
+  for (const collapsed of [false, true]) {
+    expect(await ctx.panel.textOf(settings)).toBe(collapsed ? '' : 'Desktop Settings')
+    expect(
+      await ctx.panel.evaluate<boolean>(`(() => {
+        const sidebar = document.querySelector('${sidebar}').getBoundingClientRect()
+        const settings = document.querySelector('${settings}').getBoundingClientRect()
+        const account = document.querySelector('.sidebar-account').getBoundingClientRect()
+        return settings.top >= sidebar.top && settings.bottom <= account.top && account.bottom <= sidebar.bottom
+      })()`)
+    ).toBe(true)
+    const name = collapsed ? 'sidebar-collapsed.png' : 'sidebar-expanded.png'
+    const shot = await captureHostWindow(ctx.app, ctx.panel, test.info().outputPath(name))
+    await test.info().attach(name, { path: shot, contentType: 'image/png' })
+
+    await openDesktopSettings(ctx.app, ctx.panel)
+    expect(await ctx.panel.isVisible('.chooser-view')).toBe(true)
+    await closeTitlePopupIfOpen(ctx.app)
+    expect(await ctx.panel.click('[data-testid="app-sidebar-toggle"]')).toBe(true)
+    await ctx.panel.waitFor(
+      () =>
+        ctx.panel.evaluate<boolean>(
+          `document.querySelector('${sidebar}').dataset.collapsed === '${!collapsed}'`
+        ),
+      { message: 'the sidebar did not toggle' }
+    )
+  }
 })
 
 test('clicking New Install tile opens the new-install takeover @windows @macos @linux', async () => {
@@ -159,13 +194,7 @@ test('title popup opens, renders menu items, and closes via bridge @windows @mac
     .toBe(true)
 
   const popupItems = await readPopupMenuItems(ctx.app, 'comfyTitlePopup.html')
-  expect(popupItems).toEqual([
-    'Performance Tests',
-    'Benchmarks',
-    'Desktop Settings',
-    'Close Window',
-    'Quit Desktop'
-  ])
+  expect(popupItems).toEqual(['Performance Tests', 'Benchmarks', 'Close Window', 'Quit Desktop'])
 
   await evalWithRetry(() =>
     ctx.app.evaluate(({ webContents }) => {

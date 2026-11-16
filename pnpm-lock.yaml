@@ -20,6 +20,9 @@ importers:
       '@todesktop/runtime':
         specifier: ^2.1.4
         version: 2.1.4
+      '@typeform/embed':
+        specifier: ^6.1.2
+        version: 6.1.2
       '@xterm/addon-fit':
         specifier: ^0.10.0
         version: 0.10.0(@xterm/xterm@5.5.0)
@@ -975,6 +978,10 @@ packages:
 
   '@tybys/wasm-util@0.10.4':
     resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
+
+  '@typeform/embed@6.1.2':
+    resolution: {integrity: sha512-ORCaKszNWEg16vFKFH3hL8Rjd49W9yqadYnNkvZSBJIw4bNNt6QRsaR0Yo7TPqAO+flo8de9SlUpjZf625ooew==}
+    engines: {node: '>=18'}
 
   '@types/cacheable-request@6.0.3':
     resolution: {integrity: sha512-IQ3EbTzGxIigb1I3qPZc1rWJnH0BmSKv5QYTalEwweFvyBDLSAe24zP0le/hyi7ecGfZVlIVAg4BZqb8WBwKqw==}
@@ -4030,6 +4037,8 @@ snapshots:
     dependencies:
       tslib: 2.9.1
     optional: true
+
+  '@typeform/embed@6.1.2': {}
 
   '@types/cacheable-request@6.0.3':
     dependencies:

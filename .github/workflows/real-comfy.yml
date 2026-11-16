@@ -1,9 +1,8 @@
-name: Lifecycle Tests
+name: Real ComfyUI
 
 on:
+  workflow_call:
   workflow_dispatch:
-  schedule:
-    - cron: '0 9 * * *'
   pull_request:
     types: [labeled]
 
@@ -11,13 +10,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: lifecycle-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: real-comfy-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.label.name != 'run-real-comfy' && github.run_id || 'suite' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lifecycle:
-    name: Lifecycle (windows)
-    if: github.event_name != 'pull_request' || github.event.label.name == 'run-lifecycle'
+  real-comfy:
+    name: Real ComfyUI (windows)
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-real-comfy'
     runs-on: windows-latest
     timeout-minutes: 120
 
@@ -26,7 +25,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -42,19 +41,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm run bootstrap:fetch
 
-      - name: Build app
-        run: pnpm run build
+      - name: Bundle app
+        run: pnpm exec electron-vite build
 
-      - name: Run lifecycle tests
+      - name: Run real ComfyUI tests
         env:
-          LIFECYCLE_VARIANT: cpu
-        run: pnpm run test:e2e:lifecycle
+          REAL_COMFY_VARIANT: cpu
+        run: pnpm run test:e2e:real-comfy
 
       - name: Upload Playwright failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: playwright-lifecycle-failure
+          name: playwright-real-comfy-failure
           path: |
             test-results/
             playwright-report/

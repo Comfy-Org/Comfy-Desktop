@@ -326,7 +326,7 @@ const statusBadgeFor = computed<Partial<Record<DownloadEntry['status'], StatusBa
                 {{ progressPercent(d) }}%
               </span>
               <Button
-                v-if="d.status === 'downloading'"
+                v-if="d.status === 'downloading' && d.canPause !== false"
                 type="button"
                 variant="secondary"
                 size="md"

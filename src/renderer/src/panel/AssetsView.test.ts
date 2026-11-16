@@ -6,8 +6,10 @@ import '../assets/main.css'
 import AssetsView from './AssetsView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
-import type { AssetSummary, Installation } from '../types/ipc'
+import { useSessionStore } from '../stores/sessionStore'
+import type { AssetSummary, Installation, RunningInstance } from '../types/ipc'
 
 const listAssets = vi.fn()
 const listLocalAssets = vi.fn()
@@ -18,6 +20,10 @@ const trashAsset = vi.fn()
 const alert = vi.fn()
 const confirm = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
+const switchWorkspace = vi.fn()
+const listWorkspaces = vi.fn()
+const getAuthStatus = vi.fn()
+const getSetting = vi.fn()
 const MASONRY_GAP = 14
 const FOUR_COLUMN_PAGE_WIDTH = 1100
 const TALL_PAGE_HEIGHT = 3000
@@ -63,15 +69,68 @@ function asset(
   }
 }
 
-function cloudBuild(id: string): Installation {
-  return { id, name: id, sourceLabel: 'Comfy Cloud', sourceCategory: 'cloud' }
+function cloudBuild(id: string, name = id): Installation {
+  return { id, name, sourceLabel: 'Comfy Cloud', sourceCategory: 'cloud' }
 }
 
-async function mountAssets(local: AssetSummary[] | Promise<AssetSummary[]> = []) {
+function localBuild(id: string, name = id, extra: Partial<Installation> = {}): Installation {
+  return {
+    id,
+    name,
+    sourceLabel: 'Standalone',
+    sourceCategory: 'local',
+    hasOutputFolder: true,
+    ...extra
+  }
+}
+
+function oldDesktopBuild(id: string, name = id): Installation {
+  return localBuild(id, name, { sourceLabel: 'Desktop', hasOutputFolder: false })
+}
+
+function teamBuild(build: Installation): Installation {
+  return { ...build, workspaceId: 'team-b' }
+}
+
+function signedInToPersonalWithTeamDashboard(): void {
+  getAuthStatus.mockResolvedValue({ signedIn: true, workspaceId: 'me', workspaceType: 'personal' })
+  getSetting.mockImplementation(async (key: string) =>
+    key === 'dashboardWorkspaceId' ? 'team-b' : undefined
+  )
+}
+
+async function mountAssets(
+  local: AssetSummary[] | Promise<AssetSummary[]> = [],
+  {
+    builds = [localBuild('lab')],
+    installationId
+  }: { builds?: Installation[]; installationId?: string } = {}
+) {
+  const installationStore = useInstallationStore()
+  installationStore.installations = builds
+  installationStore.loading = false
   listLocalAssets.mockReturnValue(Promise.resolve(local))
-  const wrapper = mount(AssetsView, { attachTo: page })
+  const wrapper = mount(AssetsView, { attachTo: page, props: { installationId } })
   await flushPromises()
   return wrapper
+}
+
+async function openBuildPicker(wrapper: Awaited<ReturnType<typeof mountAssets>>): Promise<void> {
+  await wrapper.get('[data-testid="assets-build-picker"]').trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+}
+
+function buildRows(): string[] {
+  return [
+    ...document.querySelectorAll(
+      '[data-testid^="assets-build-"]:not([data-testid="assets-build-picker"])'
+    )
+  ].map((row) => row.textContent?.replace(/\s+/g, ' ').trim() ?? '')
+}
+
+async function pickBuild(id: string): Promise<void> {
+  document.querySelector<HTMLElement>(`[data-testid="assets-build-${id}"]`)!.click()
+  await flushPromises()
 }
 
 async function signInWith(cloud: AssetSummary[]): Promise<void> {
@@ -111,6 +170,20 @@ function assetNames(wrapper: Awaited<ReturnType<typeof mountAssets>>): string[] 
     .map((tip) => tip.props('text') as string)
 }
 
+function viewer(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-testid="output-detail"]')
+}
+
+function viewerTitle(): string {
+  return viewer()?.querySelector('h2')?.textContent?.trim() ?? ''
+}
+
+async function press(key: string): Promise<void> {
+  const target = document.activeElement ?? document.body
+  target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+  await flushPromises()
+}
+
 beforeEach(() => {
   page = document.createElement('div')
   page.dataset.panelPage = ''
@@ -119,6 +192,16 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.localStorage.clear()
   listLocalAssets.mockResolvedValue([])
+  listWorkspaces.mockResolvedValue([
+    { id: 'me', name: 'Personal Workspace', type: 'personal' },
+    { id: 'team-b', name: 'Team B', type: 'team' }
+  ])
+  switchWorkspace.mockImplementation(async (workspaceId: string) => ({
+    signedIn: true,
+    workspaceId
+  }))
+  getAuthStatus.mockResolvedValue({ signedIn: false })
+  getSetting.mockResolvedValue(undefined)
   ;(window as unknown as { api: unknown }).api = {
     listAssets,
     listLocalAssets,
@@ -127,11 +210,16 @@ beforeEach(() => {
     copyAsset,
     trashAsset,
     platform: 'darwin',
+    getSetting,
+    setSetting: vi.fn().mockResolvedValue(undefined),
+    onSettingsChanged: vi.fn(() => () => {}),
     onInstallationsChanged: vi.fn(() => () => {}),
     onInstallationsVersionsUpdated: vi.fn(() => () => {}),
     comfybuilder: {
-      getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
+      getAuthStatus,
       signIn,
+      switchWorkspace,
+      listWorkspaces,
       onAuthChanged: vi.fn(() => () => {})
     }
   }
@@ -250,13 +338,13 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="asset-a"]').text()).not.toContain('a.svg')
   })
 
-  it('shows the files on this computer without any build running or a Cloud login', async () => {
+  it('shows the files of a local build without it running or a Cloud login', async () => {
     const wrapper = await mountAssets([
       asset('/out/surfer.mp4', 'surfer.mp4', 'video'),
       asset('/out/forest.png', 'forest.png', 'image')
     ])
 
-    expect(listLocalAssets).toHaveBeenCalledOnce()
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('lab')
     expect(listAssets).not.toHaveBeenCalled()
     expect(assetNames(wrapper)).toEqual(['surfer.mp4', 'forest.png'])
   })
@@ -272,25 +360,112 @@ describe('AssetsView', () => {
     expect(wrapper.get('img').attributes('src')).toBe('comfy-output://file/full?thumbnail=1')
   })
 
-  it('mixes this computer and the signed-in Cloud workspace, newest first', async () => {
-    const wrapper = await mountAssets([
-      asset('/out/old.png', 'old.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
-    ])
-    await signInWith([asset('c1', 'cloud.png', 'image', { createdAt: '2026-11-05T00:00:00Z' })])
+  it("opens on the window's build, lists every build with where it runs, and switches to the one picked", async () => {
+    useSessionStore().runningInstances.set('lab', { installationId: 'lab' } as RunningInstance)
+    listAssets.mockResolvedValue([asset('c1', 'cloud.png', 'image')])
+    const wrapper = await mountAssets([asset('/out/mine.png', 'mine.png', 'image')], {
+      builds: [
+        localBuild('mine', 'My Local 1'),
+        localBuild('lab', 'Video Lab'),
+        {
+          ...cloudBuild('cloud', 'Comfy Cloud'),
+          statusTag: { style: 'update', label: 'Update available' }
+        }
+      ],
+      installationId: 'mine'
+    })
 
-    expect(listAssets.mock.calls.map(([id]) => id)).toEqual(['cloud'])
-    expect(assetNames(wrapper)).toEqual(['cloud.png', 'old.png'])
-  })
-
-  it('loads the Cloud assets once when the account has several Cloud builds', async () => {
-    useInstallationStore().installations = [cloudBuild('cloud-a'), cloudBuild('cloud-b')]
-    listAssets.mockResolvedValue([asset('a', 'forest.png', 'image')])
-    const wrapper = await mountAssets()
     useAuthStore().status = { signedIn: true }
     await flushPromises()
 
-    expect(listAssets.mock.calls.map(([id]) => id)).toEqual(['cloud-a'])
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('My Local 1')
+    expect(
+      listLocalAssets.mock.calls.flat(),
+      'only the window build is read, and logging in does not read it again'
+    ).toEqual(['mine'])
+    expect(listAssets).not.toHaveBeenCalled()
+    expect(assetNames(wrapper)).toEqual(['mine.png'])
+
+    await openBuildPicker(wrapper)
+    expect(document.body.textContent).toContain('Browse the assets of')
+    expect(buildRows()).toEqual([
+      'My Local 1 Local · Stopped',
+      'Video Lab Local · Running',
+      'Comfy Cloud Cloud · Running'
+    ])
+
+    await pickBuild('cloud')
+
+    expect(listAssets).toHaveBeenCalledExactlyOnceWith('cloud')
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(assetNames(wrapper), "only the picked build's files show").toEqual(['cloud.png'])
+  })
+
+  it('reopens on the last picked build in a window with no build of its own', async () => {
+    const builds = [localBuild('mine', 'My Local 1'), localBuild('lab', 'Video Lab')]
+    const first = await mountAssets([], { builds })
+    await openBuildPicker(first)
+    await pickBuild('lab')
+    first.unmount()
+    listLocalAssets.mockClear()
+
+    const again = await mountAssets([], { builds })
+
+    expect(again.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('lab')
+  })
+
+  it('leaves out builds from other workspaces, and servers and builds whose files Desktop cannot list', async () => {
+    const wrapper = await mountAssets([], {
+      builds: [
+        localBuild('mine', 'My Local 1'),
+        teamBuild(localBuild('team', 'Team build')),
+        { id: 'remote', name: 'Office server', sourceLabel: 'Remote', sourceCategory: 'remote' },
+        oldDesktopBuild('old', 'Old Desktop')
+      ]
+    })
+
+    await openBuildPicker(wrapper)
+
+    expect(buildRows()).toEqual(['My Local 1 Local · Stopped'])
+  })
+
+  it('opens on a build it can list, not on a running build that keeps its files to itself', async () => {
+    useSessionStore().runningInstances.set('old', { installationId: 'old' } as RunningInstance)
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [oldDesktopBuild('old', 'Old Desktop'), localBuild('lab', 'Video Lab')]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('lab')
     expect(assetNames(wrapper)).toEqual(['forest.png'])
+  })
+
+  it('waits for the builds before it reads any folder', async () => {
+    const installationStore = useInstallationStore()
+    const wrapper = mount(AssetsView, { attachTo: page, props: { installationId: 'mine' } })
+    await flushPromises()
+
+    expect(listLocalAssets, 'no folder is read before the builds are known').not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="assets-build-picker"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="assets-skeleton"] > li')).toHaveLength(8)
+
+    installationStore.installations = [localBuild('lab'), localBuild('mine', 'My Local 1')]
+    installationStore.loading = false
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('My Local 1')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('mine')
+  })
+
+  it('keeps an empty page in place while the builds refresh', async () => {
+    const wrapper = await mountAssets()
+
+    useInstallationStore().loading = true
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('No assets yet')
+    expect(wrapper.find('[data-testid="assets-skeleton"]').exists()).toBe(false)
   })
 
   it('filters by asset type and by name', async () => {
@@ -300,19 +475,64 @@ describe('AssetsView', () => {
       asset('c', 'terraces.png', 'image')
     ])
 
-    await wrapper.get('[data-testid="assets-filter"]').trigger('keydown', { key: 'Enter' })
-    await flushPromises()
-    document.querySelector<HTMLElement>('[data-testid="assets-filter-image"]')!.click()
-    await flushPromises()
+    const tabs = () => wrapper.findAll('[data-testid^="assets-kind-"]').map((tab) => tab.text())
+    expect(tabs(), 'each type tab counts its files').toEqual([
+      'All3',
+      'Images2',
+      'Videos1',
+      '3D0',
+      'Audio0'
+    ])
+
+    await wrapper.get('[data-testid="assets-kind-image"]').trigger('click')
     expect(assetNames(wrapper)).toEqual(['forest.png', 'terraces.png'])
 
     await wrapper.get('input').setValue('terr')
     expect(assetNames(wrapper)).toEqual(['terraces.png'])
+    expect(tabs(), 'the counts follow the search').toEqual([
+      'All1',
+      'Images1',
+      'Videos0',
+      '3D0',
+      'Audio0'
+    ])
   })
 
-  it('asks a signed-out user with no files to log in to Comfy Cloud', async () => {
-    useInstallationStore().installations = [cloudBuild('cloud')]
-    const wrapper = await mountAssets()
+  it('shows the output folder as This computer when there is no local build', async () => {
+    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], {
+      builds: [cloudBuild('cloud', 'Comfy Cloud')]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
+    expect(
+      listLocalAssets,
+      'the shared output folder, not a build'
+    ).toHaveBeenCalledExactlyOnceWith()
+    expect(assetNames(wrapper)).toEqual(['forest.png'])
+    await openBuildPicker(wrapper)
+    expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'This computer Output folder'])
+  })
+
+  it('reopens on This computer, not the saved Comfy Cloud pick, after signing out', async () => {
+    const builds = [cloudBuild('cloud', 'Comfy Cloud')]
+    const first = await mountAssets([], { builds })
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+    await openBuildPicker(first)
+    await pickBuild('cloud')
+    first.unmount()
+
+    useAuthStore().status = { signedIn: false }
+    const again = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], { builds })
+
+    expect(again.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
+    expect(assetNames(again)).toEqual(['forest.png'])
+  })
+
+  it('asks a signed-out user who picked Comfy Cloud to log in', async () => {
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await openBuildPicker(wrapper)
+    await pickBuild('cloud')
 
     expect(listAssets).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="assets-empty"] h2').text()).toBe('Log in to see your assets')
@@ -327,7 +547,9 @@ describe('AssetsView', () => {
 
   it('ignores a cancelled log-in', async () => {
     signIn.mockRejectedValueOnce(new Error('cancelled'))
-    const wrapper = await mountAssets()
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
+    await openBuildPicker(wrapper)
+    await pickBuild('cloud')
 
     await wrapper.get('[data-testid="assets-empty-action"]').trigger('click')
     await flushPromises()
@@ -401,12 +623,11 @@ describe('AssetsView', () => {
     })
   })
 
-  it('does not reload when a build changes but the account stays the same', async () => {
+  it('does not reload when another build changes but the picked build stays the same', async () => {
     await mountAssets([asset('a', 'forest.png', 'image')])
 
-    useInstallationStore().installations = [
-      { id: 'lab', name: 'Video Lab', sourceLabel: 'Standalone', sourceCategory: 'local' }
-    ]
+    useInstallationStore().installations = [localBuild('lab'), localBuild('other', 'Video Lab')]
+    useSessionStore().runningInstances.set('lab', { installationId: 'lab' } as RunningInstance)
     await flushPromises()
 
     expect(listLocalAssets).toHaveBeenCalledOnce()
@@ -433,29 +654,148 @@ describe('AssetsView', () => {
     }
   })
 
-  it('keeps the files on this computer when Cloud fails', async () => {
-    const wrapper = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')])
-    useInstallationStore().installations = [cloudBuild('cloud')]
-    listAssets.mockRejectedValue(new Error('offline'))
-    useAuthStore().status = { signedIn: true }
+  it('stays on the build it opened on when another build starts', async () => {
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')], {
+      builds: [
+        localBuild('mine', 'My Local 1', { lastLaunchedAt: 1 }),
+        localBuild('lab', 'Video Lab', { lastLaunchedAt: 2 })
+      ]
+    })
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
+
+    useSessionStore().runningInstances.set('mine', { installationId: 'mine' } as RunningInstance)
+    useInstallationStore().installations = [
+      localBuild('mine', 'My Local 1', { lastLaunchedAt: 3 }),
+      localBuild('lab', 'Video Lab', { lastLaunchedAt: 2 })
+    ]
     await flushPromises()
 
-    expect(assetNames(wrapper)).toEqual(['forest.png'])
-    expect(wrapper.find('[data-testid="assets-empty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Video Lab')
+    expect(listLocalAssets).toHaveBeenCalledExactlyOnceWith('lab')
   })
 
-  it('reloads when the signed-in workspace changes', async () => {
-    await mountAssets([asset('a', 'forest.png', 'image')])
+  it('switches to the builds of the workspace the user moves to', async () => {
+    listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')], {
+      builds: [localBuild('lab', 'Video Lab'), teamBuild(cloudBuild('team-cloud', 'Team Cloud'))]
+    })
 
     useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
     await flushPromises()
 
-    expect(listLocalAssets).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
+    expect(listAssets).toHaveBeenCalledExactlyOnceWith('team-cloud')
+    expect(assetNames(wrapper)).toEqual(['team.png'])
+  })
+
+  it("moves the Cloud session to the picked Cloud build's workspace before listing its assets", async () => {
+    const wrapper = await mountAssets([], {
+      builds: [teamBuild(cloudBuild('team-cloud', 'Team Cloud'))]
+    })
+    useAuthStore().status = { signedIn: true, workspaceId: 'me', workspaceType: 'personal' }
+    await flushPromises()
+    listAssets.mockImplementation(async () =>
+      useAuthStore().status.workspaceId === 'team-b' ? [asset('t1', 'team.png', 'image')] : []
+    )
+
+    useDashboardScopeStore().selectWorkspace('team-b')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'chosen')
+    expect(assetNames(wrapper), "the team's files, not the personal workspace's").toEqual([
+      'team.png'
+    ])
+  })
+
+  it("says the load failed instead of showing another workspace's files when the personal workspace is unknown", async () => {
+    listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
+    listWorkspaces.mockResolvedValue([{ id: 'team-b', name: 'Team B', type: 'team' }])
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud', 'Comfy Cloud')] })
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-b', workspaceType: 'team' }
+    await flushPromises()
+    useDashboardScopeStore().selectWorkspace('personal')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(listAssets).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+  })
+
+  it('does not list Cloud files with a session tied to no known workspace', async () => {
+    listAssets.mockResolvedValue([asset('x1', 'unknown.png', 'image')])
+    listWorkspaces.mockResolvedValue([{ id: 'team-b', name: 'Team B', type: 'team' }])
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud', 'Comfy Cloud')] })
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+
+    expect(listAssets).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+  })
+
+  it("reopens on a saved workspace's Cloud build without treating the move there as the user's choice", async () => {
+    signedInToPersonalWithTeamDashboard()
+    listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
+
+    const wrapper = await mountAssets([], {
+      builds: [teamBuild(cloudBuild('team-cloud', 'Team Cloud'))]
+    })
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'restored')
+    expect(assetNames(wrapper)).toEqual(['team.png'])
+  })
+
+  it("says the load failed when the session could not move to the build's workspace, and Refresh moves it as the user's choice", async () => {
+    signedInToPersonalWithTeamDashboard()
+    listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
+    switchWorkspace.mockResolvedValueOnce({
+      signedIn: true,
+      workspaceId: 'me',
+      workspaceType: 'personal',
+      workspaceSwitchFailure: 'retryable'
+    })
+    const wrapper = await mountAssets([], {
+      builds: [teamBuild(cloudBuild('team-cloud', 'Team Cloud'))]
+    })
+
+    expect(listAssets, "the personal workspace's files are not listed").not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+
+    await wrapper.get('[data-testid="assets-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(switchWorkspace.mock.calls).toEqual([
+      ['team-b', 'restored'],
+      ['team-b', 'chosen']
+    ])
+    expect(assetNames(wrapper)).toEqual(['team.png'])
+  })
+
+  it("moves the session to a Cloud build's workspace as the user's choice when they pick the build", async () => {
+    signedInToPersonalWithTeamDashboard()
+    listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
+    const wrapper = await mountAssets([], {
+      builds: [
+        teamBuild(localBuild('team-lab', 'Team Lab', { lastLaunchedAt: 5 })),
+        teamBuild(cloudBuild('team-cloud', 'Team Cloud'))
+      ]
+    })
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Lab')
+    expect(switchWorkspace, 'a local build needs no workspace').not.toHaveBeenCalled()
+
+    await openBuildPicker(wrapper)
+    await pickBuild('team-cloud')
+
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'chosen')
+    expect(assetNames(wrapper)).toEqual(['team.png'])
   })
 
   it('clears the previous workspace assets while the new workspace loads', async () => {
-    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')])
-    listLocalAssets.mockReturnValueOnce(new Promise(() => {}))
+    listAssets.mockReturnValue(new Promise(() => {}))
+    const wrapper = await mountAssets([asset('a', 'forest.png', 'image')], {
+      builds: [localBuild('lab'), teamBuild(cloudBuild('team-cloud'))]
+    })
 
     useAuthStore().status = { signedIn: true, workspaceId: 'team-b' }
     await flushPromises()
@@ -534,5 +874,81 @@ describe('AssetsView', () => {
       title: "Couldn't copy asset",
       message: 'b.svg'
     })
+  })
+
+  it('opens a picture full size when its card is clicked, and puts focus back on the card when Escape closes it', async () => {
+    const wrapper = await mountAssets([
+      asset('/out/forest.png', 'forest.png', 'image', {
+        previewUrl: 'comfy-output://file/full',
+        thumbnailUrl: 'comfy-output://file/full?thumbnail=1'
+      })
+    ])
+    const card = wrapper.get('[data-testid="asset-open-/out/forest.png"]')
+
+    await card.trigger('click')
+    await flushPromises()
+
+    expect(viewerTitle()).toBe('forest.png')
+    expect(
+      viewer()!.querySelector('[data-testid="output-detail-image"]')!.getAttribute('src')
+    ).toBe('comfy-output://file/full')
+
+    await press('Escape')
+
+    expect(viewer()).toBeNull()
+    expect(document.activeElement).toBe(card.element)
+  })
+
+  it('steps through the files in page order with the arrow keys and the filmstrip', async () => {
+    const wrapper = await mountAssets([
+      asset('new', 'new.png', 'image', { createdAt: '2026-11-03T00:00:00Z' }),
+      asset('mid', 'mid.png', 'image', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('old', 'old.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-mid"]').trigger('click')
+    await flushPromises()
+    expect(viewerTitle()).toBe('mid.png')
+
+    await press('ArrowRight')
+    expect(viewerTitle()).toBe('old.png')
+
+    await press('ArrowRight')
+    expect(viewerTitle(), 'the last file wraps round to the first').toBe('new.png')
+
+    await press('ArrowLeft')
+    expect(viewerTitle()).toBe('old.png')
+
+    document.querySelector<HTMLElement>('[data-testid="output-detail-thumb-1"]')!.click()
+    await flushPromises()
+    expect(viewerTitle()).toBe('mid.png')
+  })
+
+  it('plays a video in the viewer with its controls', async () => {
+    const wrapper = await mountAssets([
+      asset('clip', 'surfer.mp4', 'video', { previewUrl: 'comfy-output://file/surfer' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-clip"]').trigger('click')
+    await flushPromises()
+
+    const video = viewer()!.querySelector<HTMLVideoElement>('[data-testid="output-detail-video"]')!
+    expect(video.getAttribute('src')).toBe('comfy-output://file/surfer')
+    expect(video.controls).toBe(true)
+  })
+
+  it('downloads the file the viewer is showing', async () => {
+    const wrapper = await mountAssets([
+      asset('a', 'surfer.mp4', 'video', { createdAt: '2026-11-02T00:00:00Z' }),
+      asset('b', 'forest.png', 'image', { createdAt: '2026-11-01T00:00:00Z' })
+    ])
+
+    await wrapper.get('[data-testid="asset-open-a"]').trigger('click')
+    await flushPromises()
+    await press('ArrowRight')
+    document.querySelector<HTMLElement>('[data-testid="output-detail-download"]')!.click()
+    await flushPromises()
+
+    expect(downloadAsset).toHaveBeenCalledExactlyOnceWith('local', 'b', 'forest.png')
   })
 })

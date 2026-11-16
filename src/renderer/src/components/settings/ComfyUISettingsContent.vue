@@ -21,7 +21,6 @@ import {
   Play,
   RotateCcw,
   LayoutDashboard,
-  SquareArrowOutUpRight,
   Copy,
   CopyPlus,
   FolderOpen,
@@ -117,7 +116,6 @@ const emit = defineEmits<{
   'request-close': []
   'request-dismiss': []
   'primary-action': [decision: NavDecision]
-  'open-new-window': [decision: NavDecision]
   'op-cancel': []
   'op-retry': []
   'op-dismiss': []
@@ -478,7 +476,7 @@ function handleSnapshotsRefresh(): void {
 
 const isRunningInThisWindow = installCta.runningInThisWindow
 
-const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput('primary')))
+const primaryDecision = computed<NavDecision>(() => decideNavigation(navState.navInput()))
 
 const primaryRestartsTarget = computed(
   () => isRunningInThisWindow.value || primaryDecision.value.verb === 'restart'
@@ -513,8 +511,6 @@ function navIcon(labelKey: string): Component {
       return RotateCcw
     case 'instancePicker.switch':
       return Repeat2
-    case 'instancePicker.openInNewWindow':
-      return SquareArrowOutUpRight
     case 'instancePicker.open':
       return Play
     default:
@@ -536,20 +532,10 @@ const primaryActionIcon = computed<Component>(() =>
 const stopAction = computed<ActionDef | undefined>(() =>
   pinBottomActions.value.find((a) => a.id === 'stop')
 )
-const NAV_ITEM_PREFIX = 'nav:'
 const caretActions = computed<MenuAction[]>(() => {
-  if (primaryDecision.value.verb === 'focus') {
-    return stopAction.value ? [{ ...stopAction.value, icon: actionIcon('stop') }] : []
-  }
-  const navItems: MenuAction[] = primaryDecision.value.secondary.map((alt, i) => ({
-    id: `${NAV_ITEM_PREFIX}${i}`,
-    label: resolveNavLabel(alt.primaryLabel),
-    icon: navIconFor(alt.primaryLabel)
-  }))
-  if (primaryDecision.value.verb === 'restart' && stopAction.value) {
-    navItems.push({ ...stopAction.value, icon: actionIcon('stop') })
-  }
-  return navItems
+  const verb = primaryDecision.value.verb
+  if (!stopAction.value || (verb !== 'focus' && verb !== 'restart')) return []
+  return [{ ...stopAction.value, icon: actionIcon('stop') }]
 })
 
 function actionIcon(id: string): Component {
@@ -614,12 +600,6 @@ function closeCaretMenu(): void {
 }
 function handleCaretPick(action: ActionDef): void {
   if (!installation.value) return
-  if (action.id.startsWith(NAV_ITEM_PREFIX)) {
-    const index = Number(action.id.slice(NAV_ITEM_PREFIX.length))
-    const picked = primaryDecision.value.secondary[index]
-    if (picked) emit('open-new-window', picked)
-    return
-  }
   void runAction(action)
 }
 

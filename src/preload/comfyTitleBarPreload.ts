@@ -76,6 +76,7 @@ export interface ComfyTitleBarBridge {
   clickFeedback(): void
   clickAnnouncement(): void
   clickRefreshInstance(): void
+  clickHome(): void
   resetZoom(): void
   showTooltip(payload: { text: string; leftX: number; rightX: number; bottomY: number }): void
   hideTooltip(): void
@@ -265,6 +266,9 @@ const bridge: ComfyTitleBarBridge = {
   },
   clickRefreshInstance: () => {
     ipcRenderer.send('comfy-window:click-refresh-instance')
+  },
+  clickHome: () => {
+    ipcRenderer.send('comfy-window:show-home')
   },
   resetZoom: () => {
     ipcRenderer.send('comfy-window:reset-zoom')
