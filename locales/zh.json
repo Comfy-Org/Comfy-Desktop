@@ -1570,6 +1570,15 @@
       "workspaceSettings": "工作区设置",
       "managePlanAndCredits": "管理套餐和积分",
       "logOut": "退出登录",
+      "plan": {
+        "FREE": "免费版",
+        "STANDARD": "标准版",
+        "CREATOR": "创作者版",
+        "PRO": "专业版",
+        "FOUNDERS_EDITION": "创始版",
+        "TEAM": "团队版",
+        "ENTERPRISE": "企业版"
+      },
       "role": {
         "owner": "所有者",
         "member": "成员"

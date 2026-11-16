@@ -1570,6 +1570,15 @@
       "workspaceSettings": "Workspace settings",
       "managePlanAndCredits": "Manage plan & credits",
       "logOut": "Log Out",
+      "plan": {
+        "FREE": "Free",
+        "STANDARD": "Standard",
+        "CREATOR": "Creator",
+        "PRO": "Pro",
+        "FOUNDERS_EDITION": "Founders",
+        "TEAM": "Team",
+        "ENTERPRISE": "Enterprise"
+      },
       "role": {
         "owner": "Owner",
         "member": "Member"

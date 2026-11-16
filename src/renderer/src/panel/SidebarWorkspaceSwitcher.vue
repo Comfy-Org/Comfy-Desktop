@@ -26,16 +26,6 @@ const { collapsed } = defineProps<{
   collapsed: boolean
 }>()
 
-const PLAN_LABELS = new Map([
-  ['FREE', 'Free'],
-  ['STANDARD', 'Standard'],
-  ['CREATOR', 'Creator'],
-  ['PRO', 'Pro'],
-  ['FOUNDERS_EDITION', 'Founders'],
-  ['TEAM', 'Team'],
-  ['ENTERPRISE', 'Enterprise']
-])
-
 const { t, te } = useI18n()
 const store = useAuthStore()
 const dashboardScope = useDashboardScopeStore()
@@ -49,13 +39,16 @@ function scopeId(workspace: Workspace): string {
   return isPersonalWorkspace(workspace) ? PERSONAL_WORKSPACE_ID : workspace.id
 }
 
+function translatedOr(key: string, fallback: string): string {
+  return te(key) ? t(key) : fallback
+}
+
 function planLabel(tier: string | null | undefined): string {
-  return tier ? (PLAN_LABELS.get(tier) ?? tier) : ''
+  return tier ? translatedOr(`devPlatform.workspaceMenu.plan.${tier}`, tier) : ''
 }
 
 function roleLabel(role: string): string {
-  const key = `devPlatform.workspaceMenu.role.${role}`
-  return te(key) ? t(key) : role
+  return translatedOr(`devPlatform.workspaceMenu.role.${role}`, role)
 }
 
 const currentWorkspace = computed(() =>

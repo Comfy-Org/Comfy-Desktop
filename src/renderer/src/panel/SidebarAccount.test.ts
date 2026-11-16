@@ -168,6 +168,19 @@ describe('SidebarAccount', () => {
     ])
   })
 
+  it('shows a plan it has no name for as the plan code', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () =>
+        Promise.resolve([
+          { id: 'w1', name: 'Silverside', type: 'team', role: 'owner', subscriptionTier: 'GALAXY' }
+        ])
+    })
+
+    const body = await openWorkspaces(wrapper)
+
+    expect(body.get('[data-testid="workspace-option-w1"]').text()).toBe('SSilversideGALAXY')
+  })
+
   it('colors each avatar with the shared workspace avatar helper', async () => {
     const { wrapper } = await mountAccount(SIGNED_IN)
 
