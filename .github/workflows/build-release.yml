@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: ''
+      skip_real_comfy:
+        description: Publish without running the real-ComfyUI suite on this commit (emergencies only)
+        required: false
+        type: boolean
+        default: false
   push:
     tags:
       - 'v*'
@@ -444,11 +449,25 @@ jobs:
             Comfy-Desktop-linux-x64.AppImage \
             "${expected_version}"
 
-  release:
-    needs: [build, smoke-linux-appimage]
+  real-comfy:
     if: >
       startsWith(github.ref, 'refs/tags/v') &&
-      (github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]')
+      (github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]') &&
+      !inputs.skip_real_comfy
+    name: Real ComfyUI gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/real-comfy.yml
+
+  release:
+    needs: [build, smoke-linux-appimage, real-comfy]
+    if: >
+      startsWith(github.ref, 'refs/tags/v') &&
+      (github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]') &&
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      needs.smoke-linux-appimage.result == 'success' &&
+      (needs.real-comfy.result == 'success' || (inputs.skip_real_comfy && needs.real-comfy.result == 'skipped'))
     runs-on: ubuntu-latest
     name: Publish Release
 
