@@ -800,18 +800,6 @@ ipcMain.handle('focus-comfy-window', async (_event, installationId: string) => {
   return false
 })
 
-ipcMain.handle('open-install-window', (_event, installationId: string) => {
-  recordIpcInvocation('open-install-window', { installationId })
-  const existing = getEntryByInstallationId(installationId)
-  if (existing && !existing.window.isDestroyed()) {
-    existing.window.show()
-    existing.window.focus()
-    return true
-  }
-  openChooserHostWindow()
-  return true
-})
-
 ipcMain.handle(
   'close-comfy-window',
   (_event, installationId: string, opts?: { skipConfirm?: boolean }) => {
@@ -1117,6 +1105,20 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
         }
       }
     }
+
+    ipcMain.handle('open-install-window', async (event, installationId: unknown) => {
+      if (typeof installationId !== 'string') return false
+      recordIpcInvocation('open-install-window', { installationId })
+      const requester = [...comfyWindows.values()].find(
+        (entry) => entry.panelView?.webContents === event.sender
+      )
+      if (!requester) {
+        openOrFocusHomeHostWindow()
+        return true
+      }
+      await openBuild(installationId, requester.windowKey)
+      return true
+    })
 
     registerTitlePopupIpc({
       openChooserHostWindow,
