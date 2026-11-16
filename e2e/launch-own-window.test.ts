@@ -79,7 +79,7 @@ function windowState(): Promise<WindowState> {
   )
 }
 
-test('Start on a Home card opens ComfyUI in its own window and the dashboard stays on Home @linux', async () => {
+test('Start on a Home card opens ComfyUI in its own window and the dashboard stays on Home @linux @macos', async () => {
   await ctx.panel.waitForVisible(CARD, { timeout: 15_000 })
   expect(await ctx.panel.click(CARD)).toBe(true)
 

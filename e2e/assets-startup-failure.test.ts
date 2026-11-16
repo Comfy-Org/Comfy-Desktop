@@ -83,7 +83,7 @@ test.afterAll(async () => {
   if (rootDir) await rm(rootDir, { recursive: true, force: true })
 })
 
-test("shows the core's message for an asset database it cannot open @linux", async () => {
+test("shows the core's message for an asset database it cannot open @linux @macos", async () => {
   const what = "The asset database '/x/user/comfyui.db' is corrupt (file is not a database)."
   const fix = 'Move that file aside, or delete it, and start again.'
 
@@ -92,7 +92,7 @@ test("shows the core's message for an asset database it cannot open @linux", asy
   expect(text).toBe(`${what}\n${fix}\n${DISABLE_HINT}`)
 })
 
-test('shows the lock message when another ComfyUI holds the database, without --enable-assets @linux', async () => {
+test('shows the lock message when another ComfyUI holds the database, without --enable-assets @linux @macos', async () => {
   const text = await launchAndReadError(
     coreRefusal(
       'in_use',
