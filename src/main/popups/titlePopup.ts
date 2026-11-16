@@ -488,6 +488,12 @@ export function buildTitlePopupMenuItems(entry: ComfyWindowEntry): TitlePopupMen
     },
     { id: 'benchmarks', label: 'Benchmarks', labelKey: 'fileMenu.benchmarks' }
   ]
+  if (entry.installationId !== null) {
+    items.push(
+      { kind: 'separator' },
+      { id: 'settings', label: 'Desktop Settings', labelKey: 'fileMenu.globalSettings' }
+    )
+  }
   if (entry.installationId !== null && !entry.comfyView.webContents.isDestroyed()) {
     const level = entry.comfyView.webContents.getZoomLevel()
     if (level !== 0) {
@@ -1213,6 +1219,16 @@ export function activateTitlePopupMenuItem(
     const parentWindow =
       parentEntry && !parentEntry.window.isDestroyed() ? parentEntry.window : null
     void bindings.confirmAndCloseAllHostWindows(parentWindow)
+  } else if (id === 'settings') {
+    if (parentEntry && !parentEntry.window.isDestroyed()) {
+      openGlobalSettingsForHost(
+        parentEntry,
+        entry.parentEntryId,
+        bindings,
+        parentEntry.titleBarView.webContents
+      )
+    }
+    return
   } else if (id === 'skip-onboarding') {
     if (parentEntry?.panelView && !parentEntry.panelView.webContents.isDestroyed()) {
       parentEntry.panelView.webContents.send('comfy-panel:first-use-skip')
