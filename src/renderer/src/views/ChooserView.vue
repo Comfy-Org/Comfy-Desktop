@@ -27,7 +27,7 @@ import { openInstallManager } from '../lib/openInstallManager'
 import { PAGE_SPOTLIGHT_CLASS } from '../lib/pageSpotlight'
 import type { FilterKey } from '../composables/useInstallList'
 import type { CloudUserTier, Installation, ShowProgressOpts } from '../types/ipc'
-import { PERSONAL_WORKSPACE_ID, isInstallationInWorkspace } from '../../../shared/workspaces'
+import { isInstallationInWorkspace } from '../../../shared/workspaces'
 
 const props = withDefaults(
   defineProps<{
@@ -76,14 +76,9 @@ const { searchQuery, activeFilter, effectiveInstalls, visibleInstalls } = useIns
 
 defineExpose({ activeFilter })
 
-const selectedManagedWorkspaceId = computed(() => {
-  if (!authStore.isSignedIn) return null
-  if (dashboardScope.selectedWorkspaceId !== PERSONAL_WORKSPACE_ID) {
-    return dashboardScope.selectedWorkspaceId
-  }
-  if (authStore.status.workspaceType === 'personal') return authStore.status.workspaceId ?? null
-  return authStore.personalWorkspace?.id ?? null
-})
+const selectedManagedWorkspaceId = computed(() =>
+  authStore.sessionWorkspaceFor(dashboardScope.selectedWorkspaceId)
+)
 
 let buildPrefetchGeneration = 0
 watch(

@@ -8,6 +8,7 @@ import {
 } from './clickAim'
 import type { ClickAttempt, ClickOutcome } from './clickAim'
 import { evalWithRetry } from './evalRetry'
+import { pacedForVideo } from './videoRecording'
 
 const PAGE_GONE_PATTERN = /webContents (not found|destroyed)/
 
@@ -155,7 +156,7 @@ export class WebContentsPage {
   }
 
   private async clickElement(elementExpression: string): Promise<boolean> {
-    const outcome = await this.sendClick(elementExpression)
+    const outcome = await pacedForVideo(() => this.sendClick(elementExpression))
     if (outcome === 'blocked') {
       throw new Error(
         `click: element is covered or has no interactive area (${elementExpression}, marker=${this.marker})`
@@ -177,7 +178,11 @@ export class WebContentsPage {
     return this.clickElement(`document.querySelectorAll(${JSON.stringify(selector)})[${index}]`)
   }
 
-  async fill(selector: string, text: string): Promise<void> {
+  fill(selector: string, text: string): Promise<void> {
+    return pacedForVideo(() => this.fillNow(selector, text))
+  }
+
+  private async fillNow(selector: string, text: string): Promise<void> {
     await evalWithRetry(async () => {
       const focused = await this.wcEval<boolean>(`(() => {
         const el = document.querySelector(${JSON.stringify(selector)})

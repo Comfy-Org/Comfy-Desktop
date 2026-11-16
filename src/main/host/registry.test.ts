@@ -32,6 +32,8 @@ import {
   indexInstallationId,
   nextWindowKey,
   forceRevealHostWindow,
+  openOrFocusHomeHostWindow,
+  routeBuildOpen,
   hasRunningSessionForEntry,
   raiseAllHostWindows,
   registerHostEntry,
@@ -599,5 +601,159 @@ describe('raiseAllHostWindows', () => {
     raiseAllHostWindows()
     expect(fakeWin(min).raised).toContain('restore')
     expect(fakeWin(min).raised).toContain('focus')
+  })
+})
+
+describe('openOrFocusHomeHostWindow', () => {
+  function fakeWin(entry: ComfyWindowEntry): FakeWindow {
+    return entry.window as unknown as FakeWindow
+  }
+
+  function trackChooserFactory(): ReturnType<typeof vi.fn> {
+    const createChooser = vi.fn(() => makeWindow() as unknown as ComfyWindowEntry['window'])
+    setHostFactories({ createChooser })
+    return createChooser
+  }
+
+  it('brings the open Desktop window to the front instead of opening another', () => {
+    const createChooser = trackChooserFactory()
+    const home = makeEntry({ installationId: null })
+    const build = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(home)
+    registerHostEntry(build)
+
+    expect(openOrFocusHomeHostWindow()).toBe(home.window)
+    expect(fakeWin(home).raised).toContain('focus')
+    expect(fakeWin(build).raised).toEqual([])
+    expect(createChooser).not.toHaveBeenCalled()
+  })
+
+  it('restores a minimised Desktop window', () => {
+    const createChooser = trackChooserFactory()
+    const home = makeEntry({ installationId: null, minimized: true })
+    registerHostEntry(home)
+
+    expect(openOrFocusHomeHostWindow()).toBe(home.window)
+    expect(fakeWin(home).raised).toEqual(expect.arrayContaining(['restore', 'focus']))
+    expect(createChooser).not.toHaveBeenCalled()
+  })
+
+  it('opens a Desktop window when only build windows are open', () => {
+    const createChooser = trackChooserFactory()
+    registerHostEntry(makeEntry({ installationId: 'inst-A' }))
+    registerHostEntry(makeEntry({ installationId: 'inst-B' }))
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a Desktop window when the only one is turning into a build window', () => {
+    const createChooser = trackChooserFactory()
+    const claimed = makeEntry({ installationId: null })
+    const previewing = makeEntry({ installationId: null })
+    previewing.previewInstallationId = 'inst-B'
+    registerHostEntry(claimed)
+    registerHostEntry(previewing)
+    claimAttachHost('inst-A', claimed.windowKey)
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+    expect(fakeWin(claimed).raised).toEqual([])
+    expect(fakeWin(previewing).raised).toEqual([])
+  })
+
+  it('skips a closed Desktop window', () => {
+    const createChooser = trackChooserFactory()
+    registerHostEntry(makeEntry({ installationId: null, destroyed: true }))
+
+    openOrFocusHomeHostWindow()
+    expect(createChooser).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('routeBuildOpen', () => {
+  it('focuses the window a build already has, whoever asks', () => {
+    const buildWindow = makeEntry({ installationId: 'inst-B' })
+    const desktop = makeEntry({ installationId: null })
+    registerHostEntry(buildWindow)
+    registerHostEntry(desktop)
+
+    expect(routeBuildOpen('inst-B', desktop, [])).toEqual({ kind: 'focus', entry: buildWindow })
+    expect(routeBuildOpen('inst-B', undefined, [])).toEqual({ kind: 'focus', entry: buildWindow })
+  })
+
+  it('focuses the Desktop window that is becoming the build window, instead of opening another Desktop window', () => {
+    const becomingB = makeEntry({ installationId: null })
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(becomingB)
+    registerHostEntry(buildA)
+    claimAttachHost('inst-B', becomingB.windowKey)
+
+    expect(routeBuildOpen('inst-B', buildA, ['inst-B'])).toEqual({
+      kind: 'focus',
+      entry: becomingB
+    })
+  })
+
+  it('shows a build that is already starting from the Desktop window instead of starting it again', () => {
+    const desktop = makeEntry({ installationId: null })
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(desktop)
+    registerHostEntry(buildA)
+
+    expect(routeBuildOpen('inst-B', buildA, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: null
+    })
+    expect(routeBuildOpen('inst-B', desktop, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: desktop
+    })
+  })
+
+  it('shows a starting build in the Desktop window that asked, not the first one registered', () => {
+    const firstDesktop = makeEntry({ installationId: null })
+    const secondDesktop = makeEntry({ installationId: null })
+    registerHostEntry(firstDesktop)
+    registerHostEntry(secondDesktop)
+
+    expect(routeBuildOpen('inst-B', secondDesktop, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: secondDesktop
+    })
+  })
+
+  it('starts a build from the Desktop window that asked for it', () => {
+    const desktop = makeEntry({ installationId: null })
+    registerHostEntry(desktop)
+
+    expect(routeBuildOpen('inst-B', desktop, [])).toEqual({ kind: 'start-from', entry: desktop })
+  })
+
+  it('never hands another build to a build window: it starts from the Desktop window instead', () => {
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(buildA)
+
+    expect(routeBuildOpen('inst-B', buildA, [])).toEqual({ kind: 'start-from-home' })
+  })
+
+  it('treats a Desktop window that is becoming a build window like a build window', () => {
+    const claimed = makeEntry({ installationId: null })
+    registerHostEntry(claimed)
+    claimAttachHost('inst-A', claimed.windowKey)
+
+    expect(routeBuildOpen('inst-B', claimed, [])).toEqual({ kind: 'start-from-home' })
+  })
+
+  it('does nothing when a build window asks for itself', () => {
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    buildA.window.isDestroyed = () => false
+    comfyWindows.set(buildA.windowKey, buildA)
+
+    expect(routeBuildOpen('inst-A', buildA, [])).toEqual({ kind: 'ignore' })
+  })
+
+  it('starts from the Desktop window when the request names no window', () => {
+    expect(routeBuildOpen('inst-B', undefined, [])).toEqual({ kind: 'start-from-home' })
   })
 })

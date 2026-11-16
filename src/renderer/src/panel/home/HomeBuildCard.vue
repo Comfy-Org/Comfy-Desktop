@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useElementSize } from '@vueuse/core'
 import { Check, LoaderCircle, OctagonAlert } from '@lucide/vue'
-import Button from '@comfyorg/design-system/button/Button'
 import BuildDeviceArt from './BuildDeviceArt.vue'
+import HomeBuildBusyActions from './HomeBuildBusyActions.vue'
 import BuildProgressBar from './BuildProgressBar.vue'
+import BuildAutoStartCheckbox from './BuildAutoStartCheckbox.vue'
 import {
   HOME_BUILD_TONES,
   homeBuildDetail,
@@ -21,9 +23,10 @@ const { build, status, tone } = defineProps<{
   build: Installation
   status: HomeBuildStatus
   tone: HomeBuildTone
+  autoStart?: boolean
 }>()
 
-const emit = defineEmits<{ open: [] }>()
+const emit = defineEmits<{ open: []; 'auto-start': [on: boolean] }>()
 
 const { t } = useI18n()
 const install = useBuildProgress(() => build)
@@ -64,127 +67,138 @@ const detail = computed(() => {
   if (busy.value) return install.detail.value
   return isComfyCloud(build) ? t('home.cloudHardware') : homeBuildDetail(build)
 })
+const INLINE_ACTIONS_MIN_WIDTH = 448
+const busyCard = useTemplateRef<HTMLElement>('busyCard')
+const { width: busyCardWidth } = useElementSize(
+  busyCard,
+  { width: 0, height: 0 },
+  { box: 'border-box' }
+)
+const actionsBelowCard = computed(
+  () => busyCardWidth.value > 0 && busyCardWidth.value < INLINE_ACTIONS_MIN_WIDTH
+)
 const isLive = computed(() => !busy.value && (status === 'running' || status === 'always-on'))
 const CARD_CLASS =
   'group relative flex h-25 w-full items-center gap-[18px] overflow-hidden rounded-2xl border bg-[rgb(137_137_137/0.05)] px-[18px] text-left outline-none transition-colors'
 </script>
 
 <template>
-  <div
-    v-if="busy"
-    :class="CARD_CLASS"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
-    :data-testid="busyTestId"
-    :data-build-id="build.id"
-  >
-    <span
-      class="pointer-events-none absolute inset-0"
-      :style="{
-        background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
-      }"
-      aria-hidden="true"
-    />
-    <BuildDeviceArt
-      class="relative shrink-0"
-      :kind="buildDeviceKind(build)"
-      :glow="toneStyle.glow"
-    />
-    <span class="relative flex min-w-0 flex-1 flex-col">
-      <span class="flex h-4 items-center gap-1.5 text-xs/4 text-muted-foreground">
-        <LoaderCircle
-          :size="12"
-          class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-        <span class="truncate">{{ statusLabel }}</span>
-      </span>
-      <span class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground">
-        {{ build.name }}
-      </span>
+  <div v-if="busy" class="flex flex-col gap-1" :data-testid="busyTestId" :data-build-id="build.id">
+    <div
+      ref="busyCard"
+      :class="CARD_CLASS"
+      :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
+      data-testid="home-build-busy-card"
+    >
       <span
-        class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
-        data-testid="home-build-install-detail"
-      >
-        {{ detail }}
+        class="pointer-events-none absolute inset-0"
+        :style="{
+          background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
+        }"
+        aria-hidden="true"
+      />
+      <BuildDeviceArt
+        class="relative shrink-0"
+        :kind="buildDeviceKind(build)"
+        :glow="toneStyle.glow"
+      />
+      <span class="relative flex min-w-0 flex-1 flex-col">
+        <span class="flex h-4 items-center gap-1.5 text-xs/4 text-muted-foreground">
+          <LoaderCircle
+            :size="12"
+            class="shrink-0 animate-spin [animation-duration:900ms] motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+          <span class="truncate">{{ statusLabel }}</span>
+        </span>
+        <span class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground">
+          {{ build.name }}
+        </span>
+        <span
+          class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground"
+          data-testid="home-build-install-detail"
+        >
+          {{ detail }}
+        </span>
       </span>
-    </span>
-    <span class="relative flex shrink-0 items-center gap-2">
-      <Button
-        v-if="!uninstalling"
-        type="button"
-        variant="muted-textonly"
-        size="unset"
-        class="h-8 rounded-lg px-3 text-[13px]/5 font-normal hover:bg-secondary hover:text-foreground"
-        data-testid="home-build-view-logs"
-        @click="install.viewLogs"
-      >
-        {{ t('installProgress.viewLogs') }}
-      </Button>
-      <Button
-        type="button"
-        variant="secondary"
-        size="unset"
-        class="h-8 rounded-lg px-3 text-[13px]/5 font-normal"
-        :disabled="install.progress.value?.cancelling"
-        data-testid="home-build-cancel"
-        @click="install.cancel"
-      >
-        {{ t('common.cancel') }}
-      </Button>
-    </span>
-    <BuildProgressBar
-      v-if="install.progress.value?.percent != null"
-      :percent="install.progress.value.percent"
-      :label="statusLabel"
-      data-testid="home-build-progress"
+      <HomeBuildBusyActions
+        v-if="!actionsBelowCard"
+        class="relative"
+        :can-view-logs="!uninstalling"
+        :cancelling="install.progress.value?.cancelling"
+        @view-logs="install.viewLogs"
+        @cancel="install.cancel"
+      />
+      <BuildProgressBar
+        v-if="install.progress.value?.percent != null"
+        :percent="install.progress.value.percent"
+        :label="statusLabel"
+        data-testid="home-build-progress"
+      />
+    </div>
+    <HomeBuildBusyActions
+      v-if="actionsBelowCard"
+      class="self-end"
+      :can-view-logs="!uninstalling"
+      :cancelling="install.progress.value?.cancelling"
+      @view-logs="install.viewLogs"
+      @cancel="install.cancel"
     />
   </div>
-  <button
-    v-else
-    type="button"
-    :class="[
-      CARD_CLASS,
-      'cursor-pointer hover:bg-[rgb(137_137_137/0.09)] focus-visible:ring-2 focus-visible:ring-ring'
-    ]"
-    :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
-    data-testid="home-build"
-    :data-build-id="build.id"
-    @click="emit('open')"
-  >
-    <span
-      class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[2.6] group-focus-visible:scale-[2.6] motion-reduce:transition-none"
-      :style="{
-        background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
-      }"
-      data-testid="home-build-glow"
-      aria-hidden="true"
-    />
-    <BuildDeviceArt
-      class="relative shrink-0"
-      :kind="buildDeviceKind(build)"
-      :glow="toneStyle.glow"
-    />
-    <span class="relative flex min-w-0 flex-col">
+  <div v-else class="flex flex-col gap-1">
+    <button
+      type="button"
+      :class="[
+        CARD_CLASS,
+        'cursor-pointer hover:bg-[rgb(137_137_137/0.09)] focus-visible:ring-2 focus-visible:ring-ring'
+      ]"
+      :style="{ borderColor: `rgb(${toneStyle.border} / 0.1)` }"
+      data-testid="home-build"
+      :data-build-id="build.id"
+      @click="emit('open')"
+    >
       <span
-        class="flex h-4 items-center gap-1.5 text-xs/4"
-        :class="broken ? 'text-destructive' : 'text-muted-foreground'"
-        data-testid="home-build-status"
-      >
-        <OctagonAlert v-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
+        class="pointer-events-none absolute inset-0 origin-[8%_0%] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-[2.6] group-focus-visible:scale-[2.6] motion-reduce:transition-none"
+        :style="{
+          background: `radial-gradient(60% 130% at 8% 0%, rgb(${toneStyle.tint} / 0.3), rgb(${toneStyle.tint} / 0) 70%)`
+        }"
+        data-testid="home-build-glow"
+        aria-hidden="true"
+      />
+      <BuildDeviceArt
+        class="relative shrink-0"
+        :kind="buildDeviceKind(build)"
+        :glow="toneStyle.glow"
+      />
+      <span class="relative flex min-w-0 flex-col">
         <span
-          v-else-if="isLive"
-          class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
-          aria-hidden="true"
-        />
-        <Check v-else-if="status === 'ready'" :size="12" aria-hidden="true" />
-        <span class="truncate">{{ statusLabel }}</span>
+          class="flex h-4 items-center gap-1.5 text-xs/4"
+          :class="broken ? 'text-destructive' : 'text-muted-foreground'"
+          data-testid="home-build-status"
+        >
+          <OctagonAlert v-if="broken" :size="12" class="shrink-0" aria-hidden="true" />
+          <span
+            v-else-if="isLive"
+            class="size-1.5 shrink-0 rounded-full bg-[#59d38c] shadow-[0_0_0_3px_rgb(89_211_140/0.36)]"
+            aria-hidden="true"
+          />
+          <Check v-else-if="status === 'ready'" :size="12" aria-hidden="true" />
+          <span class="truncate">{{ statusLabel }}</span>
+        </span>
+        <span class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground">
+          {{ build.name }}
+        </span>
+        <span class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground">
+          {{ detail }}
+        </span>
       </span>
-      <span class="mt-1 truncate text-[15px]/[21px] font-semibold text-foreground">
-        {{ build.name }}
-      </span>
-      <span class="mt-0.5 truncate text-xs/[17px] text-subtle-foreground">
-        {{ detail }}
-      </span>
-    </span>
-  </button>
+    </button>
+    <BuildAutoStartCheckbox
+      class="self-end"
+      :checked="autoStart"
+      data-testid="home-build-auto-start"
+      :data-build-id="build.id"
+      @update:checked="emit('auto-start', $event)"
+    />
+  </div>
 </template>

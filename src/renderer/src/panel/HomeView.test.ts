@@ -4,7 +4,9 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import HomeView from './HomeView.vue'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
+import { useProgressStore } from '../stores/progressStore'
 import { useSessionStore } from '../stores/sessionStore'
+import { setChecked } from '../views/testHelpers'
 import type { CatalogWorkflow, Installation } from '../types/ipc'
 
 const listHomeWorkflows = vi.fn<() => Promise<CatalogWorkflow[]>>()
@@ -458,12 +460,12 @@ describe('Home builds', () => {
     expect(kept).toEqual(['My Local 1', 'Video Lab'])
   })
 
-  it('shows a stopped local build as ready, with its ComfyUI version and folder', async () => {
+  it('shows a stopped local build as ready, with its ComfyUI version and no folder path', async () => {
     getInstallations.mockResolvedValue([OLDEST])
     const wrapper = await openHome()
 
     expect(wrapper.get('[data-testid="home-build"]').text()).toBe(
-      'ReadyFlux SandboxComfyUI v0.42.4 · /Users/pablo/ComfyUI-Installs/Flux'
+      'ReadyFlux SandboxComfyUI v0.42.4'
     )
   })
 
@@ -672,5 +674,216 @@ describe('Home builds', () => {
 
     expect(wrapper.find('[data-testid="home-builds"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-open-comfyui"]').exists()).toBe(false)
+  })
+})
+
+describe('Home build card while a build starts', () => {
+  const CARD_PADDING_AND_BORDER = 38
+  let observers: { target?: Element; report: (width: number) => void }[]
+  const originalResizeObserver = globalThis.ResizeObserver
+
+  beforeEach(() => {
+    observers = []
+    globalThis.ResizeObserver = class {
+      private readonly entry: { target?: Element; report: (width: number) => void }
+      constructor(callback: ResizeObserverCallback) {
+        this.entry = {
+          report: (width) =>
+            callback(
+              [
+                {
+                  target: this.entry.target!,
+                  contentRect: {
+                    width: width - CARD_PADDING_AND_BORDER,
+                    height: 98
+                  } as DOMRectReadOnly,
+                  contentBoxSize: [{ inlineSize: width - CARD_PADDING_AND_BORDER, blockSize: 98 }],
+                  borderBoxSize: [{ inlineSize: width, blockSize: 100 }],
+                  devicePixelContentBoxSize: []
+                } as unknown as ResizeObserverEntry
+              ],
+              this as unknown as ResizeObserver
+            )
+        }
+        observers.push(this.entry)
+      }
+      observe(target: Element) {
+        this.entry.target = target
+      }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    Object.assign(window.api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      onComfyOutput: vi.fn(() => () => {}),
+      cancelOperation: vi.fn(),
+      stopComfyUI: vi.fn()
+    })
+  })
+
+  afterEach(() => {
+    globalThis.ResizeObserver = originalResizeObserver
+  })
+
+  async function startBuildBesideTwoOthers(cardWidth: number) {
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, NEWEST])
+    const wrapper = await openHome()
+    useProgressStore().startOperation({
+      installationId: NEWEST.id,
+      title: 'Starting',
+      opKind: 'launch',
+      apiCall: () => new Promise(() => {})
+    })
+    await flushPromises()
+    const starting = wrapper.get('[data-testid="home-build-starting"]')
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    for (const observer of observers) {
+      if (observer.target === card.element) observer.report(cardWidth)
+    }
+    await flushPromises()
+    return { wrapper, starting }
+  }
+
+  it('moves View logs and Cancel under a card in a row of three, so its name and status keep the room', async () => {
+    const { starting } = await startBuildBesideTwoOthers(300)
+
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(false)
+    expect(card.find('[data-testid="home-build-view-logs"]').exists()).toBe(false)
+    expect(card.text()).toContain('Starting ComfyUI')
+    expect(card.text()).toContain(NEWEST.name)
+
+    await starting.get('[data-testid="home-build-cancel"]').trigger('click')
+    expect(window.api.cancelOperation).toHaveBeenCalledWith(NEWEST.id)
+  })
+
+  it('keeps View logs and Cancel inside a 460px card, counting its padding and border', async () => {
+    const { starting } = await startBuildBesideTwoOthers(460)
+
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(true)
+  })
+
+  it('keeps View logs and Cancel inside a card that has room for them', async () => {
+    const { starting } = await startBuildBesideTwoOthers(560)
+
+    const card = starting.get('[data-testid="home-build-busy-card"]')
+    expect(card.find('[data-testid="home-build-view-logs"]').exists()).toBe(true)
+    expect(card.find('[data-testid="home-build-cancel"]').exists()).toBe(true)
+  })
+})
+
+describe('Home build auto start', () => {
+  let saved: unknown
+  let settingsListeners: Array<(change: { key: string }) => void>
+  const setSetting = vi.fn(async (_key: string, value: unknown) => {
+    saved = value
+  })
+
+  beforeEach(() => {
+    saved = 'none'
+    settingsListeners = []
+    Object.assign(window.api, {
+      getSetting: vi.fn(async (key: string) => (key === 'autoLaunchOnStartup' ? saved : undefined)),
+      setSetting,
+      onSettingsChanged: vi.fn((callback: (change: { key: string }) => void) => {
+        settingsListeners.push(callback)
+        return () => {}
+      })
+    })
+  })
+
+  function autoStartBox(wrapper: VueWrapper, id: string) {
+    return wrapper.get(
+      `[data-testid="home-build-auto-start"][data-build-id="${id}"] [role="checkbox"]`
+    )
+  }
+
+  function ticked(wrapper: VueWrapper): string[] {
+    return wrapper
+      .findAll('[data-testid="home-build-auto-start"]')
+      .filter((box) => box.get('[role="checkbox"]').attributes('aria-checked') === 'true')
+      .map((box) => box.attributes('data-build-id')!)
+  }
+
+  it('ticks the card of the build that starts when Desktop opens', async () => {
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, CLOUD, NEWEST])
+    const wrapper = await openHome()
+
+    expect(wrapper.findAll('[data-testid="home-build-auto-start"]')).toHaveLength(3)
+    expect(ticked(wrapper)).toEqual([OLDEST.id])
+  })
+
+  it('moves the tick to Comfy Cloud when its box is ticked, without opening it', async () => {
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, CLOUD])
+    const wrapper = await openHome()
+
+    await setChecked(autoStartBox(wrapper, CLOUD.id), true)
+    await flushPromises()
+
+    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', CLOUD.id)
+    expect(ticked(wrapper)).toEqual([CLOUD.id])
+    expect(wrapper.emitted('pick')).toBeUndefined()
+    expect(wrapper.emitted('open-build')).toBeUndefined()
+  })
+
+  it('sets None when the ticked card is unticked', async () => {
+    saved = NEWEST.id
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    await setChecked(autoStartBox(wrapper, NEWEST.id), false)
+    await flushPromises()
+
+    expect(setSetting).toHaveBeenCalledWith('autoLaunchOnStartup', 'none')
+    expect(ticked(wrapper)).toEqual([])
+  })
+
+  it('ticks no card when Settings says Last used build', async () => {
+    saved = 'last'
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    expect(ticked(wrapper)).toEqual([])
+  })
+
+  it('follows a build picked in Settings without a restart', async () => {
+    saved = OLDEST.id
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    saved = NEWEST.id
+    for (const listener of settingsListeners) listener({ key: 'autoLaunchOnStartup' })
+    await flushPromises()
+
+    expect(ticked(wrapper)).toEqual([NEWEST.id])
+  })
+
+  it('leaves the box off a card while its build installs', async () => {
+    Object.assign(window.api, {
+      onInstallProgress: vi.fn(() => () => {}),
+      onComfyOutput: vi.fn(() => () => {})
+    })
+    getInstallations.mockResolvedValue([OLDEST, NEWEST])
+    const wrapper = await openHome()
+
+    useProgressStore().startOperation({
+      installationId: NEWEST.id,
+      title: 'Installing',
+      opKind: 'install',
+      apiCall: () => new Promise(() => {})
+    })
+    await flushPromises()
+
+    expect(
+      wrapper.find(`[data-testid="home-build-installing"][data-build-id="${NEWEST.id}"]`).exists()
+    ).toBe(true)
+    expect(
+      wrapper
+        .findAll('[data-testid="home-build-auto-start"]')
+        .map((box) => box.attributes('data-build-id'))
+    ).toEqual([OLDEST.id])
   })
 })

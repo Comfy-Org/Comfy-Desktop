@@ -1,19 +1,15 @@
 import type { NavDecision } from '../../../shared/navigation/navDecision'
 import type { Installation } from '../types/ipc'
 
-export type SwitchChoice = 'switch' | 'new-window' | 'cancel'
-
 export interface InstanceActionsBridge {
-  pickInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
+  pickInstall: (installationId: string) => void
   restartInstall: (installationId: string, opts?: { confirmed?: boolean }) => void
-  openInstallNewWindow?: (installationId: string, opts?: { allowDuplicate?: boolean }) => void
   openNewInstall?: () => void
 }
 
 export interface InstanceActionsDeps {
   bridge: InstanceActionsBridge | undefined
   confirmLocalKill: (inst: Installation) => Promise<boolean>
-  confirmSwitch: (inst: Installation) => Promise<SwitchChoice>
 }
 
 export interface InstanceActions {
@@ -32,21 +28,9 @@ export function useInstanceActions(deps: InstanceActionsDeps): InstanceActions {
           bridge.restartInstall(target.id, { confirmed: true })
           return
         }
-        case 'switch': {
-          const choice = await deps.confirmSwitch(target)
-          if (choice === 'cancel') return
-          if (choice === 'new-window') {
-            bridge.openInstallNewWindow?.(target.id)
-            return
-          }
-          bridge.pickInstall(target.id, { confirmed: true })
-          return
-        }
+        case 'start':
+        case 'focus':
         case 'open-new': {
-          bridge.openInstallNewWindow?.(target.id, { allowDuplicate: decision.allowDuplicate })
-          return
-        }
-        case 'focus': {
           bridge.pickInstall(target.id)
           return
         }

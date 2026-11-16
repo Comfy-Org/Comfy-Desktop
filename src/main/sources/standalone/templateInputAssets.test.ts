@@ -13,24 +13,31 @@ vi.mock('./templateModels', () => ({
 import {
   resolveInputDir,
   resolveTemplateInputAssetAvailability,
-  resolveTemplateInputAssets,
-  resolveTemplateInputAssetSnapshot
+  resolveTemplateInputAssetSnapshot,
+  type TemplateInputAsset
 } from './templateInputAssets'
 import { TEMPLATE_INPUT_BASE } from './curatedTemplates'
 import type { InstallationRecord } from '../../installations'
 
-const inst = { id: 'i1', bundledTemplateId: 't' } as unknown as InstallationRecord
+const inst = { id: 'i1' } as unknown as InstallationRecord
+
+let snapshotSeq = 0
+async function freshSnapshot(): Promise<TemplateInputAsset[]> {
+  const assets = await resolveTemplateInputAssetSnapshot(inst, `fresh-${++snapshotSeq}`)
+  if (assets === null) throw new Error('the template workflow did not resolve')
+  return assets
+}
 
 const loadNode = (type: string, filename: unknown) => ({ type, widgets_values: [filename] })
 
 beforeEach(() => loadTemplateJson.mockReset())
 
-describe('resolveTemplateInputAssets', () => {
+describe('resolveTemplateInputAssetSnapshot', () => {
   it('derives trusted preview metadata from a declared LoadImage input', async () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('LoadImage', 'white-hotel-on-rocky-island.png')]
     })
-    const assets = await resolveTemplateInputAssets(inst, 't')
+    const assets = await freshSnapshot()
     expect(assets).toEqual([
       {
         assetId: 'white-hotel-on-rocky-island.png',
@@ -47,7 +54,7 @@ describe('resolveTemplateInputAssets', () => {
       nodes: [],
       definitions: { subgraphs: [{ nodes: [loadNode('LoadImage', 'subject.png')] }] }
     })
-    const assets = await resolveTemplateInputAssets(inst, 't')
+    const assets = await freshSnapshot()
     expect(assets.map((a) => a.filename)).toEqual(['subject.png'])
   })
 
@@ -55,7 +62,7 @@ describe('resolveTemplateInputAssets', () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('LoadVideo', 'clip.mp4'), loadNode('LoadAudio', 'voice.mp3')]
     })
-    expect(await resolveTemplateInputAssets(inst, 't')).toMatchObject([
+    expect(await freshSnapshot()).toMatchObject([
       { filename: 'clip.mp4', mediaType: 'video' },
       { filename: 'voice.mp3', mediaType: 'audio' }
     ])
@@ -70,7 +77,7 @@ describe('resolveTemplateInputAssets', () => {
       ]
     })
 
-    expect(await resolveTemplateInputAssets(inst, 't')).toMatchObject([
+    expect(await freshSnapshot()).toMatchObject([
       { filename: 'clip.mp4', mediaType: 'video' },
       { filename: 'still.webp', mediaType: 'image' },
       { filename: 'voice.wav', mediaType: 'audio' }
@@ -81,7 +88,7 @@ describe('resolveTemplateInputAssets', () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('LoadImage', 'dup.png'), loadNode('LoadImage', 'dup.png')]
     })
-    expect(await resolveTemplateInputAssets(inst, 't')).toHaveLength(1)
+    expect(await freshSnapshot()).toHaveLength(1)
   })
 
   it('rejects path-traversal and absolute names', async () => {
@@ -92,31 +99,26 @@ describe('resolveTemplateInputAssets', () => {
         loadNode('LoadImage', 'C:\\evil.png')
       ]
     })
-    expect(await resolveTemplateInputAssets(inst, 't')).toEqual([])
+    expect(await freshSnapshot()).toEqual([])
   })
 
   it('rejects non-media extensions (no arbitrary payloads through input/)', async () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('LoadImage', 'weights.safetensors'), loadNode('LoadImage', 'script.py')]
     })
-    expect(await resolveTemplateInputAssets(inst, 't')).toEqual([])
+    expect(await freshSnapshot()).toEqual([])
   })
 
   it('ignores non-loader nodes and non-string widget values', async () => {
     loadTemplateJson.mockResolvedValue({
       nodes: [loadNode('KSampler', 'not-an-input.png'), loadNode('LoadImage', 42)]
     })
-    expect(await resolveTemplateInputAssets(inst, 't')).toEqual([])
+    expect(await freshSnapshot()).toEqual([])
   })
 
   it('strips query params before validating + naming', async () => {
     loadTemplateJson.mockResolvedValue({ nodes: [loadNode('LoadImage', 'a.png?v=2')] })
-    expect((await resolveTemplateInputAssets(inst, 't'))[0]!.filename).toBe('a.png')
-  })
-
-  it('returns [] when the workflow JSON cannot be resolved', async () => {
-    loadTemplateJson.mockResolvedValue(null)
-    expect(await resolveTemplateInputAssets(inst, 't')).toEqual([])
+    expect((await freshSnapshot())[0]!.filename).toBe('a.png')
   })
 
   it('resolves the workflow once across a burst for the same template', async () => {
@@ -164,10 +166,10 @@ describe('resolveTemplateInputAssets', () => {
   })
 
   it('keeps unresolved metadata distinct from a resolved template with no inputs', async () => {
-    loadTemplateJson.mockResolvedValue(null)
+    loadTemplateJson.mockResolvedValueOnce(null).mockResolvedValueOnce({ nodes: [] })
 
-    await expect(resolveTemplateInputAssetSnapshot(inst, 't')).resolves.toBeNull()
-    await expect(resolveTemplateInputAssets(inst, 't')).resolves.toEqual([])
+    await expect(resolveTemplateInputAssetSnapshot(inst, 'unresolved')).resolves.toBeNull()
+    await expect(resolveTemplateInputAssetSnapshot(inst, 'no-inputs')).resolves.toEqual([])
   })
 })
 
