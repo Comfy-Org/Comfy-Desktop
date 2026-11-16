@@ -271,7 +271,6 @@ describe('the files a finished run made', () => {
       outputFileKey({ filename: '/b', subfolder: 'a', type: 'output' })
     )
   })
-
 })
 
 describe('the queue as an app page sees it', () => {
