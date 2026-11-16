@@ -45,7 +45,6 @@ import {
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
-  openDownloadsTrayForInstall,
   type InstancePickerInstall
 } from './popups/titlePopup'
 import { registerPickerSettingsIpc } from './popups/pickerSettingsHandlers'
@@ -74,11 +73,7 @@ import {
 } from './lib/comfyDownloadManager'
 import { stopAgentPrefetches } from './lib/agentRequirementsLaunch'
 import { prefetchEnrolledAgents } from './lib/agentPrefetch'
-import {
-  hasActiveTemplateDownloads,
-  getTemplateDownloadState
-} from './sources/standalone/templateDownloadTask'
-import { isTerminal as isTemplateDownloadTerminal } from './sources/standalone/templateDownloadCore'
+import { hasActiveTemplateDownloads } from './sources/standalone/templateDownloadTask'
 import { registerAssetDownloadHandlers } from './lib/ipc/registerAssetDownloadHandlers'
 import { registerDownloadHandlers } from './lib/ipc/registerDownloadHandlers'
 import { registerTemplateInputAssetHandlers } from './lib/ipc/registerTemplateInputAssetHandlers'
@@ -518,7 +513,6 @@ function onLaunch({
     if (proc) {
       proc.on('exit', () => {})
     }
-    scheduleTemplateTrayAutoOpen(installationId)
     return
   }
 
@@ -534,7 +528,6 @@ function onLaunch({
         if (proc) {
           proc.on('exit', () => {})
         }
-        scheduleTemplateTrayAutoOpen(installationId)
         return
       }
     }
@@ -573,21 +566,6 @@ function onLaunch({
   if (proc) {
     proc.on('exit', () => {})
   }
-
-  scheduleTemplateTrayAutoOpen(installationId)
-}
-
-const TEMPLATE_TRAY_AUTO_OPEN_MS = 2500
-
-function scheduleTemplateTrayAutoOpen(installationId: string): void {
-  const state = getTemplateDownloadState(installationId)
-  if (!state || isTemplateDownloadTerminal(state.status)) return
-  setTimeout(() => {
-    const cur = getTemplateDownloadState(installationId)
-    if (cur && !isTemplateDownloadTerminal(cur.status)) {
-      openDownloadsTrayForInstall(installationId)
-    }
-  }, TEMPLATE_TRAY_AUTO_OPEN_MS)
 }
 
 ipcMain.handle('quit-app', () => quitApp())

@@ -6,7 +6,6 @@ import { t } from '../../lib/i18n'
 import { launchAction } from '../../lib/actions'
 import { getLatestStableTag, getStableTags } from '../../lib/comfyui-releases'
 import { copyDirWithProgress } from '../../lib/copy'
-import { resolveModelsPresence } from '../../lib/modelDownloadPaths'
 import {
   PLATFORM_PREFIX,
   DEFAULT_LAUNCH_ARGS,
@@ -19,10 +18,6 @@ import {
   writeComfyEnvironment
 } from './envPaths'
 import { install, installSteps, postInstall, probeInstallation } from './install'
-import { NO_TEMPLATE_VALUE, isPersistableTemplateId } from './curatedTemplates'
-import { loadTemplateCatalog, toTemplateFieldOption } from './templateCatalog'
-import { resolveTemplateModels } from './templateModels'
-import * as installations from '../../installations'
 
 import { getListPreview, getStatusTag, getDetailSections, R2_BASE_URL } from './updateSections'
 import { handleAction } from './actions'
@@ -39,8 +34,6 @@ interface VariantData {
   downloadUrl: string
   downloadFiles: { url: string; filename: string; size: number }[]
 }
-
-const MODELS_PRESENT_BUDGET_MS = 2500
 
 function buildVariantOption(
   vendorId: string,
@@ -112,12 +105,6 @@ export const standalone: SourcePlugin = {
         label: t('standalone.variant'),
         type: 'select' as const,
         renderAs: 'cards' as const
-      },
-      {
-        id: 'bundledTemplate',
-        label: t('standalone.starterTemplate'),
-        type: 'select' as const,
-        renderAs: 'cards' as const
       }
     ]
   },
@@ -149,12 +136,6 @@ export const standalone: SourcePlugin = {
         ? selections.comfyVersion.value
         : undefined
       : undefined
-    const tplValue = selections.bundledTemplate?.value
-    const bundledTemplateId = isPersistableTemplateId(tplValue) ? tplValue : undefined
-    const bundledTemplateSizeBytes =
-      typeof selections.bundledTemplate?.data?.sizeBytes === 'number'
-        ? (selections.bundledTemplate.data.sizeBytes as number)
-        : 0
     return {
       version: r2Release?.comfyui_version || manifest?.comfyui_ref || releaseTag,
       releaseTag,
@@ -170,15 +151,7 @@ export const standalone: SourcePlugin = {
       ...(isStable || isLatest ? { autoUpdateComfyUI: true } : {}),
       ...(isStable ? { updateChannel: 'stable' } : {}),
       ...(isLatest ? { updateChannel: 'latest' } : {}),
-      ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {}),
-      ...(bundledTemplateId
-        ? {
-            bundledTemplateId,
-            bundledTemplateSizeBytes,
-            pendingTemplateOpen: bundledTemplateId,
-            downloadTemplateModels: true
-          }
-        : {})
+      ...(pickedComfyTag ? { comfyVersionTag: pickedComfyTag } : {})
     }
   },
 
@@ -411,33 +384,6 @@ export const standalone: SourcePlugin = {
           return buildVariantOption(vendorId, release, displayTag, gpu, isLatest)
         })
         .filter((item): item is FieldOption => item != null)
-    }
-
-    if (fieldId === 'bundledTemplate') {
-      const catalog = await loadTemplateCatalog()
-
-      const installId = typeof context.installationId === 'string' ? context.installationId : null
-      const installation = installId ? await installations.get(installId) : null
-      const { presence: presenceById, timedOut } = await resolveModelsPresence(
-        catalog.map(({ id }) => id),
-        installId,
-        (id) => resolveTemplateModels(installation, id),
-        MODELS_PRESENT_BUDGET_MS
-      )
-      if (timedOut) {
-        console.warn(
-          `Template models-present check hit ${MODELS_PRESENT_BUDGET_MS}ms budget for install ${installId ?? '(none)'}; some cards unbadged`
-        )
-      }
-
-      return [
-        {
-          value: NO_TEMPLATE_VALUE,
-          label: t('standalone.starterTemplateNone'),
-          description: t('standalone.starterTemplateNoneDesc')
-        },
-        ...catalog.map((tpl) => toTemplateFieldOption(tpl, presenceById.get(tpl.id) ?? false))
-      ]
     }
 
     return []

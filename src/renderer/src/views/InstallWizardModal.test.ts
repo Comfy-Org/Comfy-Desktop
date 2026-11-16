@@ -544,37 +544,6 @@ describe('InstallWizardModal heading', () => {
   })
 })
 
-describe('InstallWizardModal starter workflow', () => {
-  it('saves a first-use setup with no starter workflow, even when the catalog offers one', async () => {
-    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
-      {
-        id: 'standalone',
-        label: 'Standalone',
-        fields: [{ id: 'bundledTemplate', label: 'Starter Template', type: 'select' }]
-      }
-    ])
-    ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { value: 'none', label: 'None' },
-      {
-        value: 'starter',
-        label: 'Starter Workflow',
-        recommended: true,
-        data: { modality: 'image', sizeBytes: 20_000_000_000 }
-      }
-    ])
-    const wrapper = mountModal({ hideBackToDashboard: true })
-    await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
-    await flushPromises()
-
-    expect(wrapper.text()).not.toContain('Starter Workflow')
-    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('.setup-modal-title').text()).toBe('Change setup')
-    expect(savedSetups(wrapper)[0]?.plan.selections.bundledTemplate?.value).toBe('none')
-  })
-})
-
 describe('InstallWizardModal install-location field', () => {
   it('renders the default install location as a clickable path that opens the folder', async () => {
     const wrapper = mountModal()
@@ -892,18 +861,18 @@ describe('InstallWizardModal workspace Builds', () => {
     ])
   })
 
-  it('installs Standalone directly without asking for a starter template', async () => {
+  it('installs Standalone directly with the recommended choice for each field', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'standalone',
         label: 'Standalone',
-        fields: [{ id: 'bundledTemplate', label: 'Starter Template', type: 'select' }]
+        fields: [{ id: 'variant', label: 'Variant', type: 'select' }]
       }
     ])
     ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { value: 'none', label: 'None' },
-      { value: 'starter', label: 'Starter Workflow' }
+      { value: 'cpu', label: 'CPU' },
+      { value: 'nvidia', label: 'NVIDIA', recommended: true }
     ])
     const wrapper = await openWorkspaceModal()
 
@@ -924,24 +893,15 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(wrapper.find('.config-advanced__summary').exists()).toBe(false)
     expect(wrapper.get('#source-fields').exists()).toBe(true)
     expect(wrapper.get('#source-fields label').classes()).toContain('config-label')
-    expect(window.api.getFieldOptions).toHaveBeenCalledWith(
-      'standalone',
-      'bundledTemplate',
-      {},
-      undefined
-    )
-
-    expect((wrapper.get('.config-source-field').element as HTMLElement).style.display).toBe('none')
+    expect(window.api.getFieldOptions).toHaveBeenCalledWith('standalone', 'variant', {}, undefined)
 
     await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.template-shell').exists()).toBe(false)
-    expect(window.api.buildInstallation).toHaveBeenCalledWith(
-      'standalone',
-      expect.objectContaining({ bundledTemplate: expect.objectContaining({ value: 'none' }) })
-    )
+    expect(window.api.buildInstallation).toHaveBeenCalledWith('standalone', {
+      variant: expect.objectContaining({ value: 'nvidia' })
+    })
     expect(window.api.comfybuilder.installBuild).not.toHaveBeenCalled()
   })
 
@@ -1064,18 +1024,17 @@ describe('InstallWizardModal workspace Builds', () => {
     expect(window.api.comfybuilder.listBuilds).toHaveBeenCalledOnce()
   })
 
-  it('never shows the template picker for a Managed install after visiting the Public tab', async () => {
+  it('installs the team build after a visit to the Standalone tab', async () => {
     signInToWorkspace([{ id: 'ready', name: 'Ready Build', state: 'installable' }])
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       {
         id: 'standalone',
         label: 'Standalone',
-        fields: [{ id: 'bundledTemplate', label: 'Starter Template', type: 'select' }]
+        fields: [{ id: 'variant', label: 'Variant', type: 'select' }]
       }
     ])
     ;(window.api.getFieldOptions as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { value: 'none', label: 'None' },
-      { value: 'starter', label: 'Starter Workflow' }
+      { value: 'nvidia', label: 'NVIDIA', recommended: true }
     ])
     ;(window.api.comfybuilder.installBuild as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -1092,8 +1051,8 @@ describe('InstallWizardModal workspace Builds', () => {
     await wrapper.get('.config-continue').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('.template-shell').exists()).toBe(false)
     expect(window.api.comfybuilder.installBuild).toHaveBeenCalledOnce()
+    expect(window.api.buildInstallation).not.toHaveBeenCalled()
   })
 
   it('saves a team build picked in first-use Change back to Set up without installing it', async () => {
