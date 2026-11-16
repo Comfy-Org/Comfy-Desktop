@@ -49,7 +49,6 @@ import {
   SUCCESS_ACTION_GO_DASHBOARD,
   SUCCESS_ACTION_OPEN_INSTANCE
 } from '../lib/progressTerminalPresets'
-import { useThumbnailPrefetch } from '../composables/useThumbnailPrefetch'
 import { provideBuildLogs } from '../composables/useBuildProgress'
 import { focusRunningBuild } from '../lib/focusRunningBuild'
 import type { AppCard, DashboardPage, Installation } from '../types/ipc'
@@ -107,13 +106,15 @@ const firstUseChain = useFirstUseChain({
 const {
   chainingFirstUseToNewInstall,
   setupConsent,
+  savedSetup,
   completeFirstUseAndDismiss,
   handleSetupInstall,
   handleSetupChange,
   handleNewInstallConsentChange,
   handleFirstUseChainMigrate,
   handleNewInstallTakeoverClose,
-  handleNewInstallBackToSetup
+  handleNewInstallBackToSetup,
+  handleNewInstallSaveSetup
 } = firstUseChain
 
 overlays = usePanelOverlays({
@@ -146,27 +147,6 @@ const buildProgressId = ref<string | null>(null)
 provideBuildLogs((id) => {
   buildProgressId.value = id
 })
-
-const { prefetch: prefetchThumbnails } = useThumbnailPrefetch({
-  isBusy: () => sessionStore.runningTabCount > 0
-})
-
-let warmTemplateThumbnailsOnce: Promise<void> | null = null
-function warmTemplateThumbnails(): Promise<void> {
-  if (firstUseCompleted.value) return Promise.resolve()
-  warmTemplateThumbnailsOnce ??= (async () => {
-    try {
-      const options = await window.api.getFieldOptions('standalone', 'bundledTemplate', {}, {})
-      prefetchThumbnails(
-        options.map((o) => {
-          const url = o.data?.thumbnailUrl
-          return typeof url === 'string' ? url : null
-        })
-      )
-    } catch {}
-  })()
-  return warmTemplateThumbnailsOnce
-}
 
 if (params.get('e2e') === '1') {
   bindE2EPanelHooks({
@@ -458,7 +438,6 @@ onMounted(async () => {
       (!urlFirstUseCompleted && (!launcherPrefsLoaded.value || !firstUseCompleted.value))
 
     if (shouldOpenFirstUse && !isFlowPanel(initialPanel)) {
-      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
 
@@ -476,7 +455,6 @@ onMounted(async () => {
     }
 
     if (!firstUseCompleted.value && !isFlowPanel(initialPanel)) {
-      void warmTemplateThumbnails()
       void openFirstUseTakeover()
     }
   } catch (err) {
@@ -597,6 +575,7 @@ onUnmounted(() => {
         @navigate-list="handleNewInstallTakeoverClose"
         @show-progress="handleShowProgress"
         @back-to-setup="handleNewInstallBackToSetup"
+        @save-setup="handleNewInstallSaveSetup"
         @consent-change="handleNewInstallConsentChange"
       />
       <TrackModal
@@ -621,6 +600,7 @@ onUnmounted(() => {
         v-else-if="currentOverlay.component === 'first-use'"
         ref="firstUseRef"
         :consent="setupConsent"
+        :saved-plan="savedSetup?.plan ?? null"
         @install="handleSetupInstall"
         @change="handleSetupChange"
         @complete-skip="completeFirstUseAndDismiss"

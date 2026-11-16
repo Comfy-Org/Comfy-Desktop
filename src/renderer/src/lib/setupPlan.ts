@@ -5,12 +5,46 @@ import type { SystemInfo } from '../../../types/ipc'
 export const NO_TEMPLATE_VALUE = 'none'
 export const INSTALL_SPACE_FACTOR = 2.25
 
+export interface WorkspaceBuildChoice {
+  buildId: string
+  buildName: string
+  artifactId?: string
+  releaseVersion?: number
+  targetLabel?: string
+}
+
 export interface SetupPlan {
   sourceId: string
   selections: Record<string, FieldOption>
   installRoot: string
   downloadBytes: number
   requiredBytes: number
+  name?: string
+  workspaceId?: string
+  workspaceBuild?: WorkspaceBuildChoice
+}
+
+export interface NewInstallSetup {
+  sourceKey: string | null
+  selections: Record<string, FieldOption>
+  fieldOptions: Map<string, FieldOption[]>
+  fieldLoading: Map<string, boolean>
+  fieldErrors: Map<string, string>
+  textFieldValues: Map<string, string>
+  saveDisabled: boolean
+  sourceError: string
+  instPath: string
+  selectedBuildId: string
+  selectedBuildTargetId: string
+}
+
+export interface ChangeSetupDraft extends NewInstallSetup {
+  instName: string
+}
+
+export interface SavedSetup {
+  plan: SetupPlan
+  draft: ChangeSetupDraft
 }
 
 export class SetupPlanUnavailable extends Error {}

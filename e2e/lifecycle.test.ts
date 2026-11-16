@@ -44,22 +44,26 @@ import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
 
-async function waitForConfigContinueEnabled(message: string): Promise<void> {
+const SAVE_CHANGES = '[data-testid="config-save-changes"]'
+
+async function waitForButtonEnabled(selector: string, message: string): Promise<void> {
   await ctx.panel.waitFor(
     async () =>
       evalWithRetry(() =>
-        ctx.app.evaluate(({ webContents }) => {
+        ctx.app.evaluate(({ webContents }, selector) => {
           const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('panel.html'))
           if (!wc) return false
           return wc.executeJavaScript(`(() => {
-        const btn = document.querySelector('.config-continue')
+        const btn = document.querySelector(${JSON.stringify(selector)})
         return !!btn && !btn.disabled
       })()`) as Promise<boolean>
-        })
+        }, selector)
       ),
     { timeout: 60_000, message }
   )
 }
+
+let pickedVersion = ''
 
 let HYDRATED = false
 
@@ -282,7 +286,7 @@ test('cold start lands on Set up with the detected computer and one Install @sec
   await ctx.panel.waitForVisible('[data-testid="setup-install"]')
 })
 
-test('accept ToS + Change opens the name and every option in one step @sec-setup @lifecycle', async () => {
+test('accept ToS + Change opens the name and every option in one sheet @sec-setup @lifecycle', async () => {
   test.skip(HYDRATED, 'reuse mode: first-use already completed on the persisted profile')
 
   expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
@@ -296,7 +300,10 @@ test('accept ToS + Change opens the name and every option in one step @sec-setup
   expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
   await expectNewBuildModalOpen(ctx.panel)
 
-  await waitForConfigContinueEnabled('Continue button never became enabled (form did not pre-fill)')
+  await waitForButtonEnabled(
+    SAVE_CHANGES,
+    'Save changes never became enabled (form did not pre-fill)'
+  )
   await ctx.panel.waitForVisible('[data-testid="config-change-form"]', { timeout: 5_000 })
   await ctx.panel.waitForVisible('#inst-name-standalone', { timeout: 5_000 })
 
@@ -312,6 +319,13 @@ test('accept ToS + Change opens the name and every option in one step @sec-setup
     await ctx.panel.click('#source-fields button[role="combobox"][aria-label="Version"]')
   ).toBe(true)
   await ctx.panel.waitForVisible('[role="listbox"] [role="option"]', { timeout: 10_000 })
+  pickedVersion =
+    (
+      await ctx.panel.evaluate<string>(
+        `document.querySelectorAll('[role="listbox"] [role="option"]')[1]?.textContent ?? ''`
+      )
+    ).match(/v\d+\.\d+\.\d+/)?.[0] ?? ''
+  expect(pickedVersion, 'the second-newest Version option names a release tag').not.toBe('')
   expect(
     await ctx.panel.clickNth('[role="listbox"] [role="option"]', 1),
     'failed to click the second-newest ComfyUI Version option in BaseSelect listbox'
@@ -344,10 +358,22 @@ test('installs on the Home build card, then Open ComfyUI launches it @sec-setup 
   test.skip(HYDRATED, 'reuse mode: install already on disk on the persisted profile')
   const LINUX_AMD = LIFECYCLE_VARIANT === 'amd' && process.platform === 'linux'
   test.setTimeout(LINUX_AMD ? 1_020_000 : 600_000)
-  await waitForConfigContinueEnabled('Continue button never re-enabled after the variant pick')
-  expect(await ctx.panel.click('.config-continue')).toBe(true)
-  await ctx.panel.waitForVisible('.template-skip', { timeout: 10_000 })
-  expect(await ctx.panel.clickByText('.template-skip', 'Skip & Install')).toBe(true)
+  await waitForButtonEnabled(SAVE_CHANGES, 'Save changes never re-enabled after the variant pick')
+  expect(await ctx.panel.click(SAVE_CHANGES), 'Save changes pressed in Change setup').toBe(true)
+  await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 10_000 })
+  expect(
+    await ctx.panel.exists('[data-testid="config-change-form"]'),
+    'Save changes leaves the Change sheet'
+  ).toBe(false)
+  await expect
+    .poll(() => ctx.panel.textOf('[data-testid="setup-version"]'), {
+      timeout: 10_000,
+      message: 'Set up shows the version picked in Change'
+    })
+    .toContain(pickedVersion)
+  expect(await ctx.panel.click('[data-testid="setup-install"]'), 'Install pressed on Set up').toBe(
+    true
+  )
 
   await ctx.panel.waitForVisible('[data-testid="home-build-installing"]', { timeout: 15_000 })
   expect(
@@ -2439,7 +2465,8 @@ test('creates a Remote Connection record pointed at the running local server thr
   _remoteDashboardWindowId = await openDashboardWindowViaPickerHome()
   await clickNewInstallTile(ctx.panel)
   await expectNewBuildModalOpen(ctx.panel)
-  await waitForConfigContinueEnabled(
+  await waitForButtonEnabled(
+    '.config-continue',
     'Continue never enabled after the wizard opened (standalone pre-fill)'
   )
 
