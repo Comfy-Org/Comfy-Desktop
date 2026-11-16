@@ -164,15 +164,15 @@ function lastLaunched({ build }: AssetBuild): number {
 
 const selectedBuild = computed<AssetBuild | null>(() => {
   const builds = assetBuilds.value
-  const withId = (id: string) => (id ? builds.find(({ build }) => build.id === id) : undefined)
+  const openable = builds.filter((option) => authStore.isSignedIn || !option.cloud)
+  const withId = (options: AssetBuild[], id: string) =>
+    id ? options.find(({ build }) => build.id === id) : undefined
   return (
-    withId(pickedBuildId.value) ??
-    withId(installationId) ??
-    withId(savedBuildId.value) ??
-    builds.find((option) => !option.cloud && option.state === 'running') ??
-    builds
-      .filter((option) => authStore.isSignedIn || !option.cloud)
-      .toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
+    withId(builds, pickedBuildId.value) ??
+    withId(builds, installationId) ??
+    withId(openable, savedBuildId.value) ??
+    openable.find((option) => !option.cloud && option.state === 'running') ??
+    openable.toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
     builds[0] ??
     null
   )

@@ -422,6 +422,22 @@ describe('AssetsView', () => {
     expect(buildRows()).toEqual(['Comfy Cloud Cloud · Running', 'This computer Output folder'])
   })
 
+  it('reopens on This computer, not the saved Comfy Cloud pick, after signing out', async () => {
+    const builds = [cloudBuild('cloud', 'Comfy Cloud')]
+    const first = await mountAssets([], { builds })
+    useAuthStore().status = { signedIn: true }
+    await flushPromises()
+    await openBuildPicker(first)
+    await pickBuild('cloud')
+    first.unmount()
+
+    useAuthStore().status = { signedIn: false }
+    const again = await mountAssets([asset('/out/forest.png', 'forest.png', 'image')], { builds })
+
+    expect(again.get('[data-testid="assets-build-picker"]').text()).toBe('This computer')
+    expect(assetNames(again)).toEqual(['forest.png'])
+  })
+
   it('asks a signed-out user who picked Comfy Cloud to log in', async () => {
     const wrapper = await mountAssets([], { builds: [cloudBuild('cloud')] })
     await openBuildPicker(wrapper)
