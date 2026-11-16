@@ -121,6 +121,7 @@ export interface Installation {
   launchMode?: string
   launchArgs?: string
   hasConsole?: boolean
+  hasOutputFolder?: boolean
   installPath?: string
   status?: string
   lastLaunchedAt?: number

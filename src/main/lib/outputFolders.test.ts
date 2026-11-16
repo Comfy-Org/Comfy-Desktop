@@ -65,11 +65,8 @@ vi.mock('../settings', () => ({
 }))
 vi.mock('./ipc/shared', () => ({
   sourceMap: {
-    standalone: { category: 'local', getLaunchCommand: () => ({ cmd: 'python' }) },
-    desktop: {
-      category: 'local',
-      getLaunchCommand: () => ({ cmd: 'open', skipSharedPaths: true })
-    },
+    standalone: { category: 'local' },
+    desktop: { category: 'local', managesOwnPaths: true },
     cloud: { category: 'cloud' }
   }
 }))
@@ -89,6 +86,7 @@ import {
   MAX_LOCAL_ASSETS,
   THUMBNAIL_WAIT_MS,
   copyOutputImage,
+  hasOutputFolder,
   revealOutputFile,
   trashOutputFile,
   listLocalAssets,
@@ -161,6 +159,22 @@ describe('outputDirOverride', () => {
       outputDirOverride(install('a', { useSharedOutput: false, outputDir: ownDir }), sharedDir)
     ).toBe(ownDir)
     expect(outputDirOverride(install('a', { useSharedOutput: false }), sharedDir)).toBeNull()
+  })
+})
+
+describe('hasOutputFolder', () => {
+  it('is true only for a local build that leaves its paths to Desktop', () => {
+    expect(hasOutputFolder(install('a')), 'a build on the shared folder').toBe(true)
+    expect(
+      hasOutputFolder(install('a', { useSharedOutput: false })),
+      'a build that saves inside its install'
+    ).toBe(true)
+    expect(hasOutputFolder(install('a', { sourceId: 'cloud' })), 'Cloud').toBe(false)
+    expect(
+      hasOutputFolder(install('a', { sourceId: 'desktop' })),
+      'a build that manages its own paths'
+    ).toBe(false)
+    expect(hasOutputFolder(install('a', { sourceId: 'gone' })), 'an unknown source').toBe(false)
   })
 })
 
@@ -254,6 +268,22 @@ describe('listLocalAssets', () => {
       (await listLocalAssets()).map((a) => a.name),
       'no build: the shared output folder'
     ).toEqual(['shared.png'])
+  })
+
+  it('opens a file it listed for a build added a moment ago', async () => {
+    await listOutputFolders()
+    const newDir = path.join(root, 'new-output')
+    const file = path.join(newDir, 'first.png')
+    write(file)
+    installs.mockResolvedValue([install('New', { useSharedOutput: false, outputDir: newDir })])
+    try {
+      const [listed] = await listLocalAssets('New')
+
+      expect(listed!.id).toBe(file)
+      expect(await outputFilePath(listed!.id)).toBe(file)
+    } finally {
+      fs.rmSync(newDir, { recursive: true, force: true })
+    }
   })
 
   it('keeps only the newest files when the folders are very large', async () => {

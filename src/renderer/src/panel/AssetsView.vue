@@ -37,7 +37,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
-import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
+import { isCloudBuild } from './home/homeBuild'
 import { installationWorkspaceId, isInstallationInWorkspace } from '../../../shared/workspaces'
 import { useVirtualMasonry } from '../composables/useVirtualMasonry'
 import { formatBytes } from '../lib/downloadFormatters'
@@ -123,15 +123,20 @@ let warmTimer: ReturnType<typeof setTimeout> | undefined
 const loading = ref(false)
 const failed = ref(false)
 
+const buildsKnown = computed(
+  () =>
+    dashboardScope.initialized &&
+    !(installationStore.loading && installationStore.installations.length === 0)
+)
+
 function buildState(build: Installation): BuildState {
-  const status = homeBuildStatus(build, sessionStore)
-  if (status === 'running' || status === 'always-on') return 'running'
-  return status === 'starting' ? 'starting' : 'stopped'
+  if (sessionStore.isLaunching(build.id)) return 'starting'
+  return sessionStore.isRunning(build.id) || isCloudBuild(build) ? 'running' : 'stopped'
 }
 
 function hasAssets(build: Installation): boolean {
   return (
-    (build.sourceCategory === 'local' || isCloudBuild(build)) &&
+    (build.hasOutputFolder === true || isCloudBuild(build)) &&
     isInstallationInWorkspace(build, dashboardScope.selectedWorkspaceId)
   )
 }
@@ -163,6 +168,7 @@ function lastLaunched({ build }: AssetBuild): number {
 }
 
 const selectedBuild = computed<AssetBuild | null>(() => {
+  if (!buildsKnown.value) return null
   const builds = assetBuilds.value
   const openable = builds.filter((option) => authStore.isSignedIn || !option.cloud)
   const withId = (options: AssetBuild[], id: string) =>
@@ -173,7 +179,6 @@ const selectedBuild = computed<AssetBuild | null>(() => {
     withId(openable, savedBuildId.value) ??
     openable.find((option) => !option.cloud && option.state === 'running') ??
     openable.toSorted((a, b) => lastLaunched(b) - lastLaunched(a))[0] ??
-    builds[0] ??
     null
   )
 })
@@ -237,7 +242,7 @@ const visibleAssets = computed(() => {
 })
 
 const showSkeleton = computed(
-  () => (loading.value || installationStore.loading) && assets.value.length === 0
+  () => !selectedBuild.value || (loading.value && assets.value.length === 0)
 )
 
 function assetShape(asset: AssetSummary): Shape {
@@ -310,7 +315,7 @@ const emptyState = computed<EmptyState>(() => {
   if (assets.value.length > 0) {
     return { title: t('assets.noMatches'), body: t('assets.noMatchesHint') }
   }
-  if (!authStore.isSignedIn && (selectedBuild.value?.cloud ?? true)) {
+  if (!authStore.isSignedIn && selectedBuild.value?.cloud) {
     return {
       title: t('assets.signedOutTitle'),
       body: t('assets.signedOutBody'),
@@ -329,17 +334,18 @@ function listBuildAssets({ build, cloud, computer }: AssetBuild): Promise<AssetS
   return cloud ? window.api.listAssets(build.id) : window.api.listLocalAssets(build.id)
 }
 
-async function moveSessionToWorkspaceOf(build: Installation): Promise<void> {
+async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean): Promise<void> {
   const dashboardWorkspaceId = installationWorkspaceId(build)
   if (!authStore.sessionWorkspaceFor(dashboardWorkspaceId)) await authStore.fetchWorkspaces()
   const workspaceId = authStore.sessionWorkspaceFor(dashboardWorkspaceId)
   if (!workspaceId) throw new Error("the build's workspace is unknown")
   if (authStore.status.workspaceId === workspaceId) return
-  await authStore.switchWorkspace(workspaceId)
+  const intent = userAsked || dashboardScope.takeChosenSelection() ? 'chosen' : 'restored'
+  await authStore.switchWorkspace(workspaceId, intent)
   if (authStore.status.workspaceId !== workspaceId) throw new Error('workspace switch failed')
 }
 
-async function loadAssets(): Promise<void> {
+async function loadAssets(userAsked = false): Promise<void> {
   const current = ++requestId
   const selected = selectedBuild.value
   failed.value = false
@@ -351,8 +357,11 @@ async function loadAssets(): Promise<void> {
   loading.value = true
   const source = selected.cloud ? selected.build.id : LOCAL_ASSETS_SOURCE
   try {
-    if (selected.cloud) await moveSessionToWorkspaceOf(selected.build)
-    if (current !== requestId) return
+    if (selected.cloud) {
+      const pickedHere = selected.build.id === pickedBuildId.value
+      await moveSessionToWorkspaceOf(selected.build, userAsked || pickedHere)
+      if (current !== requestId) return
+    }
     const listed = await listBuildAssets(selected)
     if (current !== requestId) return
     assets.value = listed.map((asset) => ({ ...asset, source }))
@@ -369,14 +378,24 @@ const accountContext = computed(
   () => `${authStore.isSignedIn}:${authStore.status.workspaceId ?? ''}`
 )
 
+const loadKey = computed(() => {
+  const selected = selectedBuild.value
+  if (!selected) return ''
+  return selected.cloud ? `${selected.build.id}\n${accountContext.value}` : selected.build.id
+})
+
 watch(
-  () => `${selectedBuild.value?.build.id ?? ''}\n${accountContext.value}`,
+  loadKey,
   () => {
     assets.value = []
     void loadAssets()
   },
   { immediate: true }
 )
+
+function refresh(): void {
+  void loadAssets(true)
+}
 
 function warmNameTooltips(): void {
   clearTimeout(warmTimer)
@@ -600,6 +619,11 @@ function extensionOf(name: string): string {
             </MenuRadioItem>
           </DropdownMenuRadioGroup>
         </Menu>
+        <Skeleton
+          v-else
+          class="h-[34px] w-40 shrink-0 rounded-[10px]"
+          data-testid="assets-build-picker-loading"
+        />
         <SegmentedControl
           v-model="kindFilter"
           :options="kindOptions"
@@ -614,7 +638,7 @@ function extensionOf(name: string): string {
             :aria-label="t('assets.refresh')"
             :title="t('assets.refresh')"
             data-testid="assets-refresh"
-            @click="loadAssets"
+            @click="refresh"
           >
             <RefreshCw
               :size="13"
