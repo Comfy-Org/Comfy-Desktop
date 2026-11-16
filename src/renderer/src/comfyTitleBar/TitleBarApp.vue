@@ -264,7 +264,11 @@ function measureFit(): FitMeasurement {
     cluster.getBoundingClientRect().left,
     ...Array.from(cluster.children).map((child) => child.getBoundingClientRect().right)
   )
-  return { gap: trailingRect.left - leadingRight, trailingWidth: trailingRect.width }
+  const guttersAroundMiddle = 2 * (Number.parseFloat(getComputedStyle(bar).columnGap) || 0)
+  return {
+    gap: trailingRect.left - leadingRight - guttersAroundMiddle,
+    trailingWidth: trailingRect.width
+  }
 }
 
 function scheduleFit(): void {

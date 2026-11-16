@@ -1077,6 +1077,73 @@ describe('TitleBarApp', () => {
     }
   })
 
+  describe('fitting the right side next to Home', () => {
+    const rect = (left: number, width: number): DOMRect =>
+      ({
+        left,
+        right: left + width,
+        width,
+        top: 0,
+        bottom: 32,
+        height: 32,
+        x: left,
+        y: 0
+      }) as DOMRect
+
+    let resizeCallbacks: ResizeObserverCallback[] = []
+
+    beforeEach(() => {
+      resizeCallbacks = []
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(cb: ResizeObserverCallback) {
+            resizeCallbacks.push(cb)
+          }
+          observe(): void {}
+          unobserve(): void {}
+          disconnect(): void {}
+        }
+      )
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    })
+
+    async function mountWithTrailingAt(trailingLeft: number) {
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: Element
+      ) {
+        if (this.matches('header')) return rect(0, 800)
+        if (this.closest('.title-trailing')) return rect(trailingLeft, 788 - trailingLeft)
+        return rect(12, 88)
+      })
+      const { default: TitleBarApp } = await import('./TitleBarApp.vue')
+      const wrapper = mount(TitleBarApp, { attachTo: document.body })
+      const header = wrapper.find('header').element as HTMLElement
+      header.style.columnGap = '12px'
+      await flushPromises()
+      resizeCallbacks.forEach((cb) => cb([], {} as ResizeObserver))
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      await flushPromises()
+      return wrapper
+    }
+
+    it('collapses once only the two grid gutters are left between Home and the right side', async () => {
+      const wrapper = await mountWithTrailingAt(124)
+      expect(wrapper.find('header').classes()).toContain('is-collapsed-feedback')
+      wrapper.unmount()
+    })
+
+    it('stays expanded while the empty middle still has room', async () => {
+      const wrapper = await mountWithTrailingAt(200)
+      expect(wrapper.find('header').classes()).not.toContain('is-collapsed-feedback')
+      wrapper.unmount()
+    })
+  })
+
   describe('without ResizeObserver', () => {
     let originalResizeObserver: typeof globalThis.ResizeObserver | undefined
 
