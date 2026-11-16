@@ -8,6 +8,11 @@ on:
         required: false
         type: string
         default: ''
+      skip_real_comfy:
+        description: Publish without running the real-ComfyUI suite on this commit (emergencies only; the release notes will say so)
+        required: false
+        type: boolean
+        default: false
   push:
     tags:
       - 'v*'
@@ -444,11 +449,25 @@ jobs:
             Comfy-Desktop-linux-x64.AppImage \
             "${expected_version}"
 
-  release:
-    needs: [build, smoke-linux-appimage]
+  real-comfy:
     if: >
       startsWith(github.ref, 'refs/tags/v') &&
-      (github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]')
+      (github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]') &&
+      !inputs.skip_real_comfy
+    name: Real ComfyUI gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/real-comfy.yml
+
+  release:
+    needs: [build, smoke-linux-appimage, real-comfy]
+    if: >
+      startsWith(github.ref, 'refs/tags/v') &&
+      (github.event_name == 'workflow_dispatch' || github.actor != 'github-actions[bot]') &&
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      needs.smoke-linux-appimage.result == 'success' &&
+      (needs.real-comfy.result == 'success' || (inputs.skip_real_comfy && needs.real-comfy.result == 'skipped'))
     runs-on: ubuntu-latest
     name: Publish Release
 
@@ -458,6 +477,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ inputs.pr_number }}
+          SKIPPED_REAL_COMFY: ${{ inputs.skip_real_comfy && 'true' || 'false' }}
         run: |
           set -euo pipefail
 
@@ -490,11 +510,31 @@ jobs:
             fi
           fi
 
+          skip_notice=""
+          if [[ "${SKIPPED_REAL_COMFY}" == "true" ]]; then
+            run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            skip_notice="$(printf '%s\n%s' \
+              '> [!WARNING]' \
+              "> Published without the real-ComfyUI gate: the real-comfy suite did not run on this commit before release (skip_real_comfy, ${run_url}).")"
+            echo "::warning::${tag} is being published without the real-ComfyUI gate (skip_real_comfy)."
+          fi
+
+          if [[ -n "${notes_file}" && -n "${skip_notice}" ]]; then
+            { printf '%s\n\n' "${skip_notice}"; cat "${notes_file}"; } > "${notes_file}.gated"
+            mv "${notes_file}.gated" "${notes_file}"
+          fi
+
           if [[ -n "${notes_file}" ]]; then
             gh release create "${tag}" \
               --repo "${GITHUB_REPOSITORY}" \
               ${channel_flag} \
               --notes-file "${notes_file}"
+          elif [[ -n "${skip_notice}" ]]; then
+            gh release create "${tag}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              ${channel_flag} \
+              --generate-notes \
+              --notes "${skip_notice}"
           else
             gh release create "${tag}" \
               --repo "${GITHUB_REPOSITORY}" \

@@ -228,7 +228,7 @@ jobs:
 
           ## How merging this PR ships the build
           1. Merge — \`Release From Version PR\` workflow tags \`v${NEW_VERSION}\` on the merge commit
-          2. Tag triggers \`Publish All / build-release\`, which creates the GitHub Release using **this PR body as the release notes**
+          2. Tag triggers \`Publish All / build-release\`, which builds with ToDesktop and runs the Linux smoke test and the real-ComfyUI suite on the tagged commit, then creates the GitHub Release using **this PR body as the release notes** only if all three pass. In an emergency, the \`skip-real-comfy\` label (added before merge) publishes without the real-ComfyUI suite, and the release notes say so.
           3. ToDesktop picks up the new build and rolls it out
 
           > **Polish the sections below before merge.** The auto-fill is a starting point — rewrite for users, not for the changelog.
