@@ -1,4 +1,4 @@
-name: Lifecycle Tests
+name: Real ComfyUI
 
 on:
   workflow_dispatch:
@@ -11,13 +11,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: lifecycle-${{ github.workflow }}-${{ github.ref }}
+  group: real-comfy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  lifecycle:
-    name: Lifecycle (windows)
-    if: github.event_name != 'pull_request' || github.event.label.name == 'run-lifecycle'
+  real-comfy:
+    name: Real ComfyUI (windows)
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-real-comfy'
     runs-on: windows-latest
     timeout-minutes: 120
 
@@ -45,16 +45,16 @@ jobs:
       - name: Bundle app
         run: pnpm exec electron-vite build
 
-      - name: Run lifecycle tests
+      - name: Run real ComfyUI tests
         env:
-          LIFECYCLE_VARIANT: cpu
-        run: pnpm run test:e2e:lifecycle
+          REAL_COMFY_VARIANT: cpu
+        run: pnpm run test:e2e:real-comfy
 
       - name: Upload Playwright failure artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-lifecycle-failure
+          name: playwright-real-comfy-failure
           path: |
             test-results/
             playwright-report/

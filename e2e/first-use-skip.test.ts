@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
-import { evalWithRetry } from './support/evalRetry'
 import { launchApp, type AppContext } from './launchApp'
+import { getIpcInvocations, resetIpcInvocations } from './support/devHooks'
 import { titlePopupPage, waitForWebContents } from './support/cdpPages'
 
 let ctx: AppContext
@@ -12,19 +12,26 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  await ctx.cleanup()
+  await ctx?.cleanup()
 })
 
-test('cold start lands on Set up @lifecycle', async () => {
+test('cold start lands on Set up with the waffle menu hidden @real-comfy', async () => {
   await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
   await ctx.panel.waitForVisible('[data-testid="setup-install"]')
+
+  expect(await ctx.titleBar.exists('.title-menu-button[aria-haspopup="menu"]')).toBe(false)
 })
 
-test('skipping Set up and opening the Comfy Cloud card launches the seeded Cloud install @lifecycle', async () => {
+test('ToS + Change surfaces the waffle menu; Skip Onboarding reveals Home @real-comfy', async () => {
   expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
+
+  await resetIpcInvocations(ctx.app, 'set-setting')
+
   expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
 
   await ctx.titleBar.waitForVisible('.title-menu-button[aria-haspopup="menu"]', { timeout: 15_000 })
+  await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
+
   expect(await ctx.titleBar.click('.title-menu-button[aria-haspopup="menu"]')).toBe(true)
   await waitForWebContents(ctx.app, 'comfyTitlePopup.html')
   const popup = titlePopupPage(ctx.app)
@@ -32,19 +39,23 @@ test('skipping Set up and opening the Comfy Cloud card launches the seeded Cloud
   expect(await popup.clickByText('li.item', 'Skip Onboarding')).toBe(true)
 
   await ctx.panel.waitForVisible('[data-testid="home-view"]', { timeout: 10_000 })
-  expect(await ctx.panel.clickByText('[data-testid="home-build"]', 'Comfy Cloud')).toBe(true)
 
   await expect
     .poll(
-      () =>
-        evalWithRetry(() =>
-          ctx.app.evaluate(({ webContents }) =>
-            webContents
-              .getAllWebContents()
-              .some((wc) => /^https:\/\/(cloud\.)?comfy\.org\//.test(wc.getURL()))
-          )
-        ),
-      { timeout: 45_000, intervals: [200, 500, 1000] }
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'set-setting')) as Array<{
+          key: string
+          value: unknown
+        }>
+        return calls.filter((c) => c.key === 'firstUseCompleted' && c.value === true).length
+      },
+      { timeout: 5_000, intervals: [100, 250] }
     )
-    .toBe(true)
+    .toBe(1)
+
+  const modeCalls = (await getIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')) as Array<{
+    mode: string
+  }>
+  expect(modeCalls.length).toBeGreaterThan(0)
+  expect(modeCalls[modeCalls.length - 1]!.mode).toBe('none')
 })

@@ -29,7 +29,7 @@ async function telemetrySettingSaves(): Promise<unknown[]> {
   return calls.filter((call) => call.key === 'telemetryEnabled').map((call) => call.value)
 }
 
-test('Change works before the EULA and opens the name with every option @lifecycle', async () => {
+test('Change works before the EULA and opens the name with every option @real-comfy', async () => {
   await ctx.panel.waitForVisible('[data-testid="setup-screen"]', { timeout: 15_000 })
   await resetIpcInvocations(ctx.app, 'comfy-window:set-first-use-mode')
 
@@ -48,7 +48,7 @@ test('Change works before the EULA and opens the name with every option @lifecyc
   ).toEqual([])
 })
 
-test('Save changes returns to Set up, where Install still needs the EULA @lifecycle', async () => {
+test('Save changes returns to Set up, where Install still needs the EULA @real-comfy', async () => {
   await ctx.panel.waitForSelector('[data-testid="config-save-changes"]:not([disabled])', {
     timeout: 60_000
   })
@@ -71,7 +71,7 @@ test('Save changes returns to Set up, where Install still needs the EULA @lifecy
   ).toEqual([])
 })
 
-test('with the EULA agreed on Set up, Change saves the consent and Discard returns to Set up as it was @lifecycle', async () => {
+test('with the EULA agreed on Set up, Change saves the consent and Discard returns to Set up as it was @real-comfy', async () => {
   expect(await ctx.panel.click('[data-testid="setup-consent-tos"] [role="checkbox"]')).toBe(true)
   expect(await ctx.panel.click('[data-testid="setup-change"]')).toBe(true)
 
