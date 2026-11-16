@@ -600,6 +600,19 @@ describe('AssetsView', () => {
     ])
   })
 
+  it("says the load failed instead of showing another workspace's files when the personal workspace is unknown", async () => {
+    listAssets.mockResolvedValue([asset('t1', 'team.png', 'image')])
+    const wrapper = await mountAssets([], { builds: [cloudBuild('cloud', 'Comfy Cloud')] })
+    useAuthStore().status = { signedIn: true, workspaceId: 'team-b', workspaceType: 'team' }
+    await flushPromises()
+    useDashboardScopeStore().selectWorkspace('personal')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Comfy Cloud')
+    expect(listAssets).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="assets-empty"]').text()).toContain("Couldn't load assets")
+  })
+
   it('clears the previous workspace assets while the new workspace loads', async () => {
     listAssets.mockReturnValue(new Promise(() => {}))
     const wrapper = await mountAssets([asset('a', 'forest.png', 'image')], {
