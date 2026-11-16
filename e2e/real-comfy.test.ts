@@ -557,7 +557,6 @@ async function comfyJson<T>(origin: string, route: string): Promise<T> {
 }
 
 test('a model downloaded through the app shows up in the ComfyUI it launched @sec-models @real-comfy', async () => {
-  test.skip(HYDRATED, 'reuse mode: the model may already be on the persisted profile')
   test.setTimeout(180_000)
 
   const comfy = await evalWithRetry(() =>
@@ -573,6 +572,7 @@ test('a model downloaded through the app shows up in the ComfyUI it launched @se
   expect(modelsDirs[0], 'shared modelsDirs setting is empty').toBeTruthy()
 
   const filename = `real-comfy-${randomUUID().slice(0, 8)}.safetensors`
+  const expectedPath = path.resolve(modelsDirs[0]!, 'checkpoints', filename)
   const bytes = emptySafetensors()
   const server = new ModelDownloadServer()
   await server.start()
@@ -603,26 +603,28 @@ test('a model downloaded through the app shows up in the ComfyUI it launched @se
         )
         .toMatch(/^(completed|error|cancelled)$/)
       expect(job!.status, `download ended ${job!.status}: ${job!.error ?? ''}`).toBe('completed')
-      expect(path.resolve(job!.savePath!)).toBe(
-        path.resolve(modelsDirs[0]!, 'checkpoints', filename)
-      )
       expect(
-        readFileSync(job!.savePath!).equals(bytes),
+        job!.savePath ? path.resolve(job!.savePath) : null,
+        'download saved outside the shared checkpoints folder'
+      ).toBe(expectedPath)
+      expect(
+        readFileSync(expectedPath).equals(bytes),
         'saved model differs from the served bytes'
       ).toBe(true)
     })
+
+    await test.step('ComfyUI lists the model under checkpoints', async () => {
+      await expect
+        .poll(() => comfyJson<string[]>(comfy!.origin, '/models/checkpoints'), {
+          timeout: 60_000,
+          intervals: [1_000, 2_000]
+        })
+        .toContain(filename)
+    })
   } finally {
     await server.stop()
+    rmSync(expectedPath, { force: true })
   }
-
-  await test.step('ComfyUI lists the model under checkpoints', async () => {
-    await expect
-      .poll(() => comfyJson<string[]>(comfy!.origin, '/models/checkpoints'), {
-        timeout: 60_000,
-        intervals: [1_000, 2_000]
-      })
-      .toContain(filename)
-  })
 })
 
 interface InstallationLite {
