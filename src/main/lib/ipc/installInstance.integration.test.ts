@@ -259,6 +259,8 @@ vi.mock('child_process', async (importOriginal) => {
 
 import { registerInstallationHandlers } from './registerInstallationHandlers'
 import { download } from '../download'
+import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
+import * as installations from '../../installations'
 import { getLogsBuffer } from '../logsBroadcast'
 import { clearVersionCache } from '../version-resolve'
 import { standalone } from '../../sources/standalone'
@@ -538,6 +540,36 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
 
       expect(result.ok).toBe(false)
       expect(autoStart()).toBe('none')
+    })
+
+    it('leaves Auto start off when the snapshot it was asked to restore fails', async () => {
+      const staged = path.join(root, 'staged-snapshot.json')
+      fs.writeFileSync(staged, '{}')
+      vi.mocked(restoreSnapshotIntoInstallation).mockRejectedValueOnce(
+        new Error('The snapshot could not be restored')
+      )
+
+      const result = await install({
+        ...picked({ release: 'v0.3.48-env1' }),
+        pendingSnapshotRestore: staged
+      })
+
+      expect(result.ok).toBe(false)
+      expect(autoStart()).toBe('none')
+    })
+
+    it('keeps a build the user picks for Auto start while the build list is being read', async () => {
+      const list = vi.mocked(installations.list)
+      const readList = list.getMockImplementation()!
+      list.mockImplementationOnce(async () => {
+        const builds = await readList()
+        h.settings.set('autoLaunchOnStartup', 'cloud')
+        return builds
+      })
+
+      await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
+
+      expect(autoStart()).toBe('cloud')
     })
   })
 
