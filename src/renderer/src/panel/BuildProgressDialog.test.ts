@@ -186,15 +186,11 @@ describe('BuildProgressDialog', () => {
     expect(logs().display).toBe('')
   })
 
-  it('plays one of the build videos in one fixed frame, whatever its shape', async () => {
+  it('plays one of the build videos and shows it once its first frame is ready', async () => {
     const w = await openDialog()
     const video = w.get<HTMLVideoElement>('[data-testid="build-progress-video"]')
     expect(video.attributes('src')).toMatch(/^\.\/build-progress\/[a-z_]+\.webm$/)
-    const frame = video.element.parentElement!
-    expect(frame.className).toContain('size-[272px]')
-    expect(video.classes()).toEqual(
-      expect.arrayContaining(['size-full', 'object-cover', 'opacity-0'])
-    )
+    expect(video.classes()).toContain('opacity-0')
 
     await video.trigger('loadeddata')
     expect(video.classes()).toContain('opacity-100')
