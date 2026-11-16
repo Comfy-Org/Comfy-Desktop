@@ -134,15 +134,13 @@
       "folderActions": "文件夹操作",
       "noBuilds": "还没有构建保存到这里",
       "savedBy": "保存到这里的构建",
-      "moreBuilds": "还有 {count} 个",
       "openFolder": "打开文件夹",
       "path": "文件夹路径",
       "noFoldersTitle": "还没有输出文件夹",
       "noFoldersBody": "在这台电脑上用 ComfyUI 运行工作流后，文件会显示在这里。",
       "emptyFolder": "这里没有图片、视频、音频或 3D 文件。",
       "folderFailed": "无法打开此文件夹。它可能已被移动或删除。",
-      "backToComputer": "返回这台电脑",
-      "truncated": "仅显示最新的 {count} 个文件。打开文件夹可查看全部。"
+      "backToComputer": "返回这台电脑"
     }
   },
   "home": {

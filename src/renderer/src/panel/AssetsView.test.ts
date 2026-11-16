@@ -80,12 +80,8 @@ function asset(
   }
 }
 
-function listing(
-  files: AssetSummary[],
-  folders: OutputSubfolder[] = [],
-  truncated = false
-): OutputFolderListing {
-  return { folders, files, truncated }
+function listing(files: AssetSummary[], folders: OutputSubfolder[] = []): OutputFolderListing {
+  return { folders, files }
 }
 
 function cloudBuild(id: string, name = id): Installation {
@@ -414,25 +410,23 @@ describe('AssetsView', () => {
   })
 
   it('names every build that saves to a folder when its +N button is focused', async () => {
-    const builds = Array.from({ length: 13 }, (_, i) => `Build ${i + 1}`)
+    const builds = ['Build 1', 'Build 2', 'Build 3']
     const wrapper = await mountPage({ folders: [outputFolder(OUTPUT, builds)] })
 
     const more = wrapper.get(`[data-testid="local-folder-more-${OUTPUT}"]`)
-    expect(more.text()).toBe('+11')
+    expect(more.text()).toBe('+1')
     await more.trigger('focusin')
     await flushPromises()
 
     const bubble = document.querySelector('.tooltip-bubble')?.textContent ?? ''
     expect(bubble).toContain('Saved here by')
-    expect(bubble, 'up to ten names').toContain('Build 10')
-    expect(bubble).not.toContain('Build 11')
-    expect(bubble, 'then how many more').toContain('and 3 more')
+    expect(bubble).toContain('Build 3')
   })
 
   it('says when there is no output folder yet', async () => {
     const wrapper = await mountPage({ folders: [] })
 
-    expect(text(wrapper, 'local-no-folders')).toContain('No output folders yet')
+    expect(text(wrapper, 'local-folders-empty')).toContain('No output folders yet')
   })
 
   it('walks into a folder and its subfolders, and back with the path', async () => {
@@ -511,19 +505,6 @@ describe('AssetsView', () => {
     expect(openPath).toHaveBeenCalledExactlyOnceWith(OUTPUT)
   })
 
-  it('says when a folder is cut to its newest files', async () => {
-    listOutputFolder.mockResolvedValue(
-      listing([asset(`${OUTPUT}/a.png`, 'a.png', 'image')], [], true)
-    )
-    const wrapper = await mountPage()
-
-    await openFolder(wrapper, OUTPUT)
-
-    expect(text(wrapper, 'assets-truncated')).toBe(
-      'Showing the newest file. Open the folder to see all of them.'
-    )
-  })
-
   it('says a folder could not be opened, with a way back to This computer', async () => {
     listOutputFolder.mockResolvedValue(null)
     const wrapper = await mountPage()
@@ -543,7 +524,7 @@ describe('AssetsView', () => {
     const wrapper = mount(AssetsView, { attachTo: page })
     await flushPromises()
 
-    expect(text(wrapper, 'local-failed')).toBe("Couldn't load assets")
+    expect(text(wrapper, 'local-folders-empty')).toBe("Couldn't load assets")
   })
 
   it('remembers the place the user chose', async () => {

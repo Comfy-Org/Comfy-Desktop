@@ -32,7 +32,6 @@ import ContextMenu from '../components/ContextMenu.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import LocalFolders from './LocalFolders.vue'
-import type { FolderCrumb } from './LocalFolders.vue'
 import OutputDetailDialog from './OutputDetailDialog.vue'
 import type { OutputDetailItem } from './OutputDetailDialog.vue'
 import { useModal } from '../composables/useModal'
@@ -75,7 +74,6 @@ interface Loaded {
   assets: GalleryAsset[]
   folders: OutputFolder[] | null
   subfolders: OutputSubfolder[]
-  truncated: boolean
 }
 
 interface Shape {
@@ -127,12 +125,10 @@ const showName = useLocalStorage('comfy.desktop.assets.showName', true)
 const showDetails = useLocalStorage('comfy.desktop.assets.showDetails', true)
 const savedPlace = useLocalStorage<Place>('comfy.desktop.assets.place', 'computer')
 const pickedPlace = ref<Place | null>(null)
-const cloudChosenHere = ref(false)
 let windowFolderOpened = false
-const trail = ref<FolderCrumb[]>([])
+const trail = ref<string[]>([])
 const outputFolders = ref<OutputFolder[] | null>(null)
 const subfolders = ref<OutputSubfolder[]>([])
-const truncated = ref(false)
 
 const assets = ref<GalleryAsset[]>([])
 const scroller = useTemplateRef<HTMLElement>('scroller')
@@ -181,7 +177,6 @@ const placeOptions = computed(() => [
 function choosePlace(next: Place): void {
   pickedPlace.value = next
   savedPlace.value = next
-  cloudChosenHere.value = next === 'cloud'
 }
 
 function openWindowBuildFolder(folders: OutputFolder[] | null): void {
@@ -190,13 +185,11 @@ function openWindowBuildFolder(folders: OutputFolder[] | null): void {
     return
   windowFolderOpened = true
   const folder = folders.find((candidate) => candidate.buildIds.includes(build.id))
-  if (!folder) return
-  const name = folder.path.split(/[\\/]/).filter(Boolean).at(-1) ?? folder.path
-  trail.value = [{ name, path: folder.path }]
+  if (folder) trail.value = [folder.path]
 }
 
-function enterFolder(crumb: FolderCrumb): void {
-  trail.value = [...trail.value, crumb]
+function enterFolder(folderPath: string): void {
+  trail.value = [...trail.value, folderPath]
 }
 
 function goToFolder(depth: number): void {
@@ -240,9 +233,8 @@ const kindOptions = computed(() =>
   }))
 )
 
-const currentKind = computed(
-  () =>
-    kindOptions.value.find((option) => option.value === kindFilter.value) ?? kindOptions.value[0]
+const currentKind = computed(() =>
+  kindOptions.value.find((option) => option.value === kindFilter.value)!
 )
 
 async function fitToolbar(): Promise<void> {
@@ -389,29 +381,23 @@ async function moveSessionToWorkspaceOf(build: Installation, userAsked: boolean)
 }
 
 async function loadPlace(userAsked: boolean): Promise<Loaded> {
-  const none: Loaded = {
-    assets: [],
-    folders: outputFolders.value,
-    subfolders: [],
-    truncated: false
-  }
+  const none: Loaded = { assets: [], folders: outputFolders.value, subfolders: [] }
   const folder = currentFolder.value
   if (place.value === 'computer' && !folder) {
     return { ...none, folders: await window.api.listOutputFolders() }
   }
   if (folder) {
-    const listing = await window.api.listOutputFolder(folder.path)
+    const listing = await window.api.listOutputFolder(folder)
     if (!listing) throw new Error('the folder could not be read')
     return {
       ...none,
       assets: listing.files.map((asset) => ({ ...asset, source: LOCAL_ASSETS_SOURCE })),
-      subfolders: listing.folders,
-      truncated: listing.truncated
+      subfolders: listing.folders
     }
   }
   const build = cloudBuild.value
   if (!build || !authStore.isSignedIn) return none
-  await moveSessionToWorkspaceOf(build, userAsked || cloudChosenHere.value)
+  await moveSessionToWorkspaceOf(build, userAsked || pickedPlace.value === 'cloud')
   const listed = await window.api.listAssets(build.id)
   return { ...none, assets: listed.map((asset) => ({ ...asset, source: build.id })) }
 }
@@ -426,7 +412,6 @@ async function loadAssets(userAsked = false): Promise<void> {
     assets.value = loaded.assets
     outputFolders.value = loaded.folders
     subfolders.value = loaded.subfolders
-    truncated.value = loaded.truncated
   } catch {
     if (current !== requestId) return
     assets.value = []
@@ -443,7 +428,7 @@ const accountContext = computed(
 
 const loadKey = computed(() => {
   if (windowHintPending.value) return ''
-  if (place.value === 'computer') return `computer\n${currentFolder.value?.path ?? ''}`
+  if (place.value === 'computer') return `computer\n${currentFolder.value ?? ''}`
   if (!buildsKnown.value) return ''
   return `cloud\n${cloudBuild.value?.id ?? ''}\n${accountContext.value}`
 })
@@ -453,7 +438,6 @@ watch(
   (key) => {
     assets.value = []
     subfolders.value = []
-    truncated.value = false
     if (key) void loadAssets()
     else {
       requestId++
@@ -493,7 +477,7 @@ const detailItems = computed<OutputDetailItem[]>(() =>
     tags: asset.tags,
     previewUrl: asset.previewUrl,
     thumbnailUrl: asset.thumbnailUrl,
-    savedIn: isLocal(asset) ? (currentFolder.value?.path ?? null) : null
+    savedIn: isLocal(asset) ? currentFolder.value : null
   }))
 )
 
@@ -673,17 +657,13 @@ function extensionOf(name: string): string {
           :label="t('assets.placeLabel')"
           @update:model-value="choosePlace"
         />
-        <div v-if="inGallery && toolbarCompactness < KINDS_AS_MENU" class="shrink-0">
-          <SegmentedControl
-            v-model="kindFilter"
-            :options="kindOptions"
-            :label="t('assets.kindLabel')"
-          />
-        </div>
-        <div
-          v-if="inGallery && currentKind && toolbarCompactness >= KINDS_AS_MENU"
-          class="shrink-0"
-        >
+        <SegmentedControl
+          v-if="inGallery && toolbarCompactness < KINDS_AS_MENU"
+          v-model="kindFilter"
+          :options="kindOptions"
+          :label="t('assets.kindLabel')"
+        />
+        <div v-if="inGallery && toolbarCompactness >= KINDS_AS_MENU" class="shrink-0">
           <Menu
             :modal="false"
             align="start"
@@ -1043,13 +1023,6 @@ function extensionOf(name: string): string {
           </div>
         </li>
       </ul>
-      <p
-        v-if="truncated && !showSkeleton"
-        class="m-0 mt-6 text-center text-ui text-subtle-foreground"
-        data-testid="assets-truncated"
-      >
-        {{ t('assets.local.truncated', assets.length) }}
-      </p>
     </div>
 
     <OutputDetailDialog
