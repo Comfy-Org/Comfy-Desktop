@@ -38,7 +38,7 @@ import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { homeBuildStatus, isCloudBuild } from './home/homeBuild'
-import { isInstallationInWorkspace } from '../../../shared/workspaces'
+import { installationWorkspaceId, isInstallationInWorkspace } from '../../../shared/workspaces'
 import { useVirtualMasonry } from '../composables/useVirtualMasonry'
 import { formatBytes } from '../lib/downloadFormatters'
 import { formatPlaybackTime, formatRelativeFromMs } from '../lib/datetime'
@@ -329,6 +329,15 @@ function listBuildAssets({ build, cloud, computer }: AssetBuild): Promise<AssetS
   return cloud ? window.api.listAssets(build.id) : window.api.listLocalAssets(build.id)
 }
 
+async function moveSessionToWorkspaceOf(build: Installation): Promise<void> {
+  const dashboardWorkspaceId = installationWorkspaceId(build)
+  if (!authStore.sessionWorkspaceFor(dashboardWorkspaceId)) await authStore.fetchWorkspaces()
+  const workspaceId = authStore.sessionWorkspaceFor(dashboardWorkspaceId)
+  if (!workspaceId || authStore.status.workspaceId === workspaceId) return
+  await authStore.switchWorkspace(workspaceId)
+  if (authStore.status.workspaceId !== workspaceId) throw new Error('workspace switch failed')
+}
+
 async function loadAssets(): Promise<void> {
   const current = ++requestId
   const selected = selectedBuild.value
@@ -341,6 +350,8 @@ async function loadAssets(): Promise<void> {
   loading.value = true
   const source = selected.cloud ? selected.build.id : LOCAL_ASSETS_SOURCE
   try {
+    if (selected.cloud) await moveSessionToWorkspaceOf(selected.build)
+    if (current !== requestId) return
     const listed = await listBuildAssets(selected)
     if (current !== requestId) return
     assets.value = listed.map((asset) => ({ ...asset, source }))

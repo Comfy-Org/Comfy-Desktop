@@ -6,6 +6,7 @@ import '../assets/main.css'
 import AssetsView from './AssetsView.vue'
 import Tooltip from '../components/ui/Tooltip.vue'
 import { useAuthStore } from '../stores/authStore'
+import { useDashboardScopeStore } from '../stores/dashboardScopeStore'
 import { useInstallationStore } from '../stores/installationStore'
 import { useSessionStore } from '../stores/sessionStore'
 import type { AssetSummary, Installation, RunningInstance } from '../types/ipc'
@@ -19,6 +20,7 @@ const trashAsset = vi.fn()
 const alert = vi.fn()
 const confirm = vi.fn()
 const signIn = vi.fn().mockResolvedValue({ signedIn: false })
+const switchWorkspace = vi.fn(async (workspaceId: string) => ({ signedIn: true, workspaceId }))
 const MASONRY_GAP = 14
 const FOUR_COLUMN_PAGE_WIDTH = 1100
 const TALL_PAGE_HEIGHT = 3000
@@ -167,6 +169,8 @@ beforeEach(() => {
     comfybuilder: {
       getAuthStatus: vi.fn().mockResolvedValue({ signedIn: false }),
       signIn,
+      switchWorkspace,
+      listWorkspaces: vi.fn().mockResolvedValue([{ id: 'team-b', name: 'Team B', type: 'team' }]),
       onAuthChanged: vi.fn(() => () => {})
     }
   }
@@ -558,6 +562,26 @@ describe('AssetsView', () => {
     expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
     expect(listAssets).toHaveBeenCalledExactlyOnceWith('team-cloud')
     expect(assetNames(wrapper)).toEqual(['team.png'])
+  })
+
+  it("moves the Cloud session to the picked Cloud build's workspace before listing its assets", async () => {
+    const wrapper = await mountAssets([], {
+      builds: [{ ...cloudBuild('team-cloud', 'Team Cloud'), workspaceId: 'team-b' }]
+    })
+    useAuthStore().status = { signedIn: true, workspaceId: 'me', workspaceType: 'personal' }
+    await flushPromises()
+    listAssets.mockImplementation(async () =>
+      useAuthStore().status.workspaceId === 'team-b' ? [asset('t1', 'team.png', 'image')] : []
+    )
+
+    useDashboardScopeStore().selectWorkspace('team-b')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="assets-build-picker"]').text()).toBe('Team Cloud')
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith('team-b', 'chosen')
+    expect(assetNames(wrapper), "the team's files, not the personal workspace's").toEqual([
+      'team.png'
+    ])
   })
 
   it('clears the previous workspace assets while the new workspace loads', async () => {
