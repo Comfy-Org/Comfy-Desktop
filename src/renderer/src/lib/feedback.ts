@@ -1,11 +1,12 @@
-function detectPlatform(): string {
-  const ua = navigator.userAgent.toLowerCase()
-  if (ua.includes('win')) return 'windows'
-  if (ua.includes('mac')) return 'mac'
-  if (ua.includes('linux')) return 'linux'
-  return 'unknown'
+const FEEDBACK_PLATFORMS: Partial<Record<NodeJS.Platform, string>> = {
+  darwin: 'mac',
+  win32: 'windows',
+  linux: 'linux'
 }
 
 export function buildFeedbackHiddenFields(version?: string): Record<string, string> {
-  return { platform: detectPlatform(), ...(version ? { ver: version } : {}) }
+  return {
+    platform: FEEDBACK_PLATFORMS[window.api.platform] ?? 'unknown',
+    ...(version ? { ver: version } : {})
+  }
 }

@@ -55,6 +55,7 @@ watch(
       container: element,
       hidden: props.hiddenFields,
       inlineOnMobile: true,
+      redirectTarget: '_self',
       iframeProps: {
         title: t('feedback.modalLabel'),
         allow: 'camera; microphone; autoplay; encrypted-media; fullscreen'

@@ -56,6 +56,7 @@ describe('FeedbackModal', () => {
         container: document.querySelector('[data-testid="feedback-widget"]'),
         hidden: hiddenFields,
         inlineOnMobile: true,
+        redirectTarget: '_self',
         iframeProps: expect.objectContaining({ title: 'Send Feedback' })
       })
     )
