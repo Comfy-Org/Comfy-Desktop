@@ -90,6 +90,7 @@ const RUN = '0b1c2d3e-aaaa-bbbb-cccc-0123456789ab'
 const OTHER_RUN = 'ffffffff-aaaa-bbbb-cccc-0123456789ab'
 const WANT = { minVersion: '0.41.0' }
 const CUTOUT = { filename: 'cutout_00001_.png', subfolder: 'apps', type: 'output' }
+const WINDOWS_CUTOUT = { ...CUTOUT, subfolder: 'apps\\remove-background' }
 const BIREFNET = {
   url: 'https://huggingface.co/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors',
   folder: 'background_removal',
@@ -109,6 +110,7 @@ class FakeComfy {
     queue_running: [[4, OTHER_RUN, { 3: { class_type: 'KSampler' } }, { client_id: 'theirs' }]],
     queue_pending: [[5, RUN, { 1: {} }, { comfy_app: { name: 'Remove Background' } }]]
   }
+  savedFiles: unknown[] = [CUTOUT]
   promptAnswer: { status: number; body: unknown } = {
     status: 200,
     body: { prompt_id: RUN, number: 5, node_errors: {} }
@@ -130,7 +132,7 @@ class FakeComfy {
     if (url.pathname === '/prompt') return json(this.promptAnswer.body, this.promptAnswer.status)
     if (url.pathname === `/history/${RUN}`) {
       return json({
-        [RUN]: { status: { completed: true }, outputs: { save: { images: [CUTOUT] } } }
+        [RUN]: { status: { completed: true }, outputs: { save: { images: this.savedFiles } } }
       })
     }
     if (url.pathname === '/view') {
@@ -457,6 +459,17 @@ describe('a run from an app page', () => {
     expect(file).toMatchObject({ status: 200, contentType: 'image/png' })
     expect([...file.body]).toEqual([137, 80, 78, 71])
     expect(comfy.calls(`/view?${new URLSearchParams(CUTOUT)}`)).toHaveLength(1)
+  })
+
+  it('can fetch a result ComfyUI on Windows reports in a backslash folder', async () => {
+    comfy.savedFiles = [WINDOWS_CUTOUT]
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+
+    const file = await localFetch({ path: `/view?${new URLSearchParams(WINDOWS_CUTOUT)}` })
+
+    expect(file).toMatchObject({ status: 200, contentType: 'image/png' })
+    expect(comfy.calls(`/view?${new URLSearchParams(WINDOWS_CUTOUT)}`)).toHaveLength(1)
   })
 
   it('can be taken out of the queue and stopped', async () => {

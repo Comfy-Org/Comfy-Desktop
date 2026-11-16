@@ -39,6 +39,19 @@ describe('what an app page may ask the ComfyUI on this computer', () => {
     })
   })
 
+  it('reads a result file in a folder ComfyUI on Windows names with backslashes', () => {
+    const query = new URLSearchParams({
+      filename: 'cutout_00001_.png',
+      subfolder: 'apps\\remove-background',
+      type: 'output'
+    })
+
+    expect(readLocalCall({ path: `/view?${query}` })).toEqual({
+      kind: 'view',
+      file: { filename: 'cutout_00001_.png', subfolder: 'apps\\remove-background', type: 'output' }
+    })
+  })
+
   it('reads what one node offers, such as its model files', () => {
     expect(readLocalCall({ path: '/object_info/LoadBackgroundRemovalModel' })).toEqual({
       kind: 'object-info',
@@ -157,6 +170,26 @@ describe('what an app page may not ask', () => {
     expect(readLocalCall({ path })).toBeNull()
   })
 
+  it.each([
+    '..\\x',
+    'apps\\..\\..\\secret',
+    '../x',
+    'apps/../../secret',
+    'apps\\..',
+    'apps\\.. \\secret',
+    'apps/../secret',
+    '/etc',
+    '\\Windows',
+    'C:\\x',
+    'c:x',
+    '\\\\server\\share',
+    'apps\0'
+  ])('refuses a file in the folder %j, outside the output folder', (subfolder) => {
+    const query = new URLSearchParams({ filename: 'a.png', subfolder, type: 'output' })
+
+    expect(readLocalCall({ path: `/view?${query}` })).toBeNull()
+  })
+
   it('refuses a run that is not a graph', () => {
     const post = (body: unknown) => readLocalCall({ method: 'POST', path: '/prompt', body })
 
@@ -238,6 +271,7 @@ describe('the files a finished run made', () => {
       outputFileKey({ filename: '/b', subfolder: 'a', type: 'output' })
     )
   })
+
 })
 
 describe('the queue as an app page sees it', () => {

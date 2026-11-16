@@ -6,7 +6,13 @@ const PATHNAME = /^(\/[A-Za-z0-9_.+-]+){1,2}$/
 const PROMPT_ID = /^[A-Za-z0-9-]{1,64}$/
 const NODE_CLASS = /^[A-Za-z0-9_][A-Za-z0-9_.+-]{0,127}$/
 const FILE_NAME = /^[^\\/\0]{1,255}$/
-const SUBFOLDER = /^[^\\\0]{0,255}$/
+// ComfyUI on Windows reports a nested output folder with backslashes, so both
+// separators are folder steps; a folder may not start at a root or drive.
+const SUBFOLDER = /^[^\0]{0,255}$/
+const FOLDER_STEP = /[\\/]/
+const ROOTED = /^([\\/]|[A-Za-z]:)/
+// Windows drops trailing dots and spaces from a name, so '.. ' is also '..'.
+const PARENT_STEP = /^\.\.[. ]*$/
 const UPLOAD_NAME =
   /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.(png|jpe?g|webp|gif|mp4|mov|m4v|webm|mp3|wav|flac|ogg|m4a)$/i
 const FILE_TYPES: ReadonlySet<string> = new Set(['output', 'temp'])
@@ -48,17 +54,16 @@ function bytesOf(body: unknown): Uint8Array | null {
   return null
 }
 
-function hasParentStep(subfolder: string): boolean {
-  return subfolder.split('/').includes('..')
+function staysInOutputFolder(subfolder: string): boolean {
+  if (!SUBFOLDER.test(subfolder) || ROOTED.test(subfolder)) return false
+  return !subfolder.split(FOLDER_STEP).some((step) => PARENT_STEP.test(step))
 }
 
 function viewCall(query: URLSearchParams): LocalCall | null {
   const filename = query.get('filename') ?? ''
   const subfolder = query.get('subfolder') ?? ''
   const type = query.get('type') ?? 'output'
-  if (!FILE_NAME.test(filename) || !SUBFOLDER.test(subfolder) || hasParentStep(subfolder)) {
-    return null
-  }
+  if (!FILE_NAME.test(filename) || !staysInOutputFolder(subfolder)) return null
   return FILE_TYPES.has(type) ? { kind: 'view', file: { filename, subfolder, type } } : null
 }
 
