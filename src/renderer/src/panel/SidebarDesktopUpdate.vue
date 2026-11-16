@@ -50,10 +50,14 @@ const icon = computed(() => {
   return CloudDownload
 })
 
+function reportActionFailure(err: unknown): void {
+  console.error('SidebarDesktopUpdate: update action failed', err)
+}
+
 function onClick(): void {
   const { kind, version } = state.value
-  if (kind === 'available') void showAppUpdateDownloadPrompt(version)
-  else if (kind === 'ready') void showAppUpdateRestartPrompt(version)
+  if (kind === 'available') showAppUpdateDownloadPrompt(version).catch(reportActionFailure)
+  else if (kind === 'ready') showAppUpdateRestartPrompt(version).catch(reportActionFailure)
   else if (kind === 'downloading') window.api.openGlobalSettings('updates')
 }
 </script>

@@ -106,6 +106,19 @@ describe('SidebarDesktopUpdate', () => {
     expect(prompts.showAppUpdateRestartPrompt).not.toHaveBeenCalled()
   })
 
+  it('logs a failed update action instead of leaving the rejection unhandled', async () => {
+    const failure = new Error('download-update handler missing')
+    prompts.showAppUpdateDownloadPrompt.mockRejectedValueOnce(failure)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = await mountIndicator({ kind: 'available', version: '2.3.4', autoUpdate: false })
+
+    await wrapper.get(indicator).trigger('click')
+    await flushPromises()
+
+    expect(consoleError).toHaveBeenCalledWith('SidebarDesktopUpdate: update action failed', failure)
+    consoleError.mockRestore()
+  })
+
   it('asks to restart when the update is ready', async () => {
     const wrapper = await mountIndicator({ kind: 'ready', version: '2.3.4', autoUpdate: true })
 
