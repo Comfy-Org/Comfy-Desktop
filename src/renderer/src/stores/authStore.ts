@@ -161,6 +161,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isSignedIn = computed(() => status.value.signedIn)
   const personalWorkspace = computed(() => workspaces.value.find(isPersonalWorkspace) ?? null)
 
+  function sessionWorkspaceFor(dashboardWorkspaceId: string): string | null {
+    if (!isSignedIn.value) return null
+    if (dashboardWorkspaceId !== PERSONAL_WORKSPACE_ID) return dashboardWorkspaceId
+    if (status.value.workspaceType === 'personal') return status.value.workspaceId ?? null
+    return personalWorkspace.value?.id ?? null
+  }
+
   async function fetchBuilds(): Promise<Build[]> {
     if (!isSignedIn.value) {
       builds.value = []
@@ -200,6 +207,7 @@ export const useAuthStore = defineStore('auth', () => {
     workspaceSwitchFailure,
     isSignedIn,
     personalWorkspace,
+    sessionWorkspaceFor,
     initializeWorkspaceContext,
     resetWorkspaceContext,
     fetchStatus,

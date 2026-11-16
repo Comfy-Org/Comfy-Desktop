@@ -38,6 +38,7 @@ import * as releaseCache from '../release-cache'
 import { runStartupReleaseChecks } from '../release-cache-startup'
 import { _broadcastToRenderer } from './shared'
 import { hasGitDir } from '../git'
+import { hasOutputFolder } from '../outputFolders'
 import { parseUrl } from '../util'
 import { restoreSnapshotIntoInstallation } from '../standaloneMigration'
 import * as mainTelemetry from '../telemetry'
@@ -129,6 +130,7 @@ export function enrichInstallationsForRenderer(allInstalls: InstallationRecord[]
       sourceLabel: source.label,
       sourceCategory: source.category,
       hasConsole: source.hasConsole !== false,
+      hasOutputFolder: hasOutputFolder(inst),
       ...(buildVersion ? { distributionVersion: buildVersion } : {}),
       ...(listPreview != null ? { listPreview } : {}),
       ...(statusTag ? { statusTag } : {})

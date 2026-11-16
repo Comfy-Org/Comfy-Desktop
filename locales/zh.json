@@ -63,6 +63,20 @@
   },
   "assets": {
     "kindLabel": "资产类型",
+    "buildPickerLabel": "构建",
+    "browseAssetsOf": "浏览以下构建的资产",
+    "thisComputer": "这台电脑",
+    "outputFolder": "输出文件夹",
+    "buildStatus": "{where} · {state}",
+    "buildWhere": {
+      "local": "本地",
+      "cloud": "云端"
+    },
+    "buildState": {
+      "running": "运行中",
+      "starting": "启动中",
+      "stopped": "已停止"
+    },
     "kind": {
       "all": "全部",
       "image": "图片",
@@ -104,7 +118,6 @@
     "deleteFailed": "无法删除资产",
     "noMatches": "没有匹配的资产",
     "noMatchesHint": "试试其他类型或搜索词。",
-    "filter": "筛选",
     "signedOutTitle": "登录以查看你的资产",
     "signedOutBody": "你在 Comfy Cloud 中生成的资产会显示在这里。",
     "signIn": "登录 Comfy Cloud",
