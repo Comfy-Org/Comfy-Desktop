@@ -114,8 +114,10 @@ async function hasSameBytes(file: string, bytes: Uint8Array): Promise<boolean> {
   const handle = await fsp.open(file, READ_WITHOUT_FOLLOWING).catch(() => null)
   if (!handle) return false
   try {
-    const content = await handle.readFile()
-    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).equals(content)
+    const content = Buffer.alloc(bytes.byteLength + 1)
+    const { bytesRead } = await handle.read(content, 0, content.length, 0)
+    const expected = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    return bytesRead === bytes.byteLength && expected.equals(content.subarray(0, bytesRead))
   } catch {
     return false
   } finally {
