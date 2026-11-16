@@ -13,7 +13,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: Comfy-Org/github-workflows/.github/workflows/cursor-review.yml@6697609c6635d1ca25dc20dc6e9a2b3a3b12baf9 # github-workflows main (ece4c3e)
+    uses: Comfy-Org/github-workflows/.github/workflows/cursor-review.yml@ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e # github-workflows main (ece4c3e)
     with:
       workflows_ref: ece4c3eaa71812a5a665f48d5d1f4bb0ff5f655e
       diff_excludes: >-
