@@ -22,6 +22,7 @@ vi.mock('../components/TermsModal.vue', () => ({
 import FirstUseTakeover from './FirstUseTakeover.vue'
 import { emitTelemetryAction } from '../lib/telemetry'
 import type { SetupPlan } from '../lib/setupPlan'
+import type { SetupConsent } from '../lib/setupConsent'
 
 const GB = 1024 ** 3
 
@@ -370,6 +371,43 @@ describe('Set up, the first screen', () => {
     await install(fresh)
     expect(fresh.emitted('install')).toHaveLength(1)
     expect(fresh.emitted('chain-migrate')).toBeUndefined()
+  })
+
+  it('keeps migration unticked through Change and installs the saved setup instead of migrating', async () => {
+    const before = await mountSetup({ hasLegacyDesktop: true })
+    await setChecked(before.find('[data-testid="setup-migrate-existing"] [role="checkbox"]'), false)
+    await before.find('[data-testid="setup-change"]').trigger('click')
+    await flushPromises()
+    const [consent] = before.emitted('change')![0] as [SetupConsent]
+    before.unmount()
+
+    const savedPlan: SetupPlan = {
+      sourceId: 'standalone',
+      selections: {
+        release: { value: 'stable', label: 'Stable' },
+        variant: { value: 'mac-cpu', label: 'CPU', data: { variantId: 'mac-cpu' } }
+      },
+      installRoot: '/Users/ada/ComfyUI-Installs',
+      downloadBytes: 0,
+      requiredBytes: 0
+    }
+    const after = mount(FirstUseTakeover, {
+      props: { consent: { ...consent, acceptedTos: true }, savedPlan }
+    })
+    await (
+      after.vm as unknown as { open: (o: { hasLegacyDesktop: boolean }) => Promise<void> }
+    ).open({ hasLegacyDesktop: true })
+    await flushPromises()
+
+    expect(
+      after
+        .find('[data-testid="setup-migrate-existing"] [role="checkbox"]')
+        .attributes('aria-checked')
+    ).toBe('false')
+    expect(text(after, 'setup-install')).toBe('Install')
+    await install(after)
+    expect(after.emitted('install')).toEqual([[savedPlan]])
+    expect(after.emitted('chain-migrate')).toBeUndefined()
   })
 
   it('lets someone who already has builds keep them instead of installing', async () => {

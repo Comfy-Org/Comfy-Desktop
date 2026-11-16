@@ -189,7 +189,8 @@ function currentConsent(): SetupConsent {
     betaFeaturesEnabled: betaFeaturesEnabled.value,
     betaTouched: betaTouched.value,
     preservePersistedBetaOptIn: preservePersistedBetaOptIn.value,
-    locale: locale.value
+    locale: locale.value,
+    migrateExisting: migrateExisting.value
   }
 }
 
@@ -199,6 +200,7 @@ function restoreConsent(consent: SetupConsent): void {
   betaFeaturesEnabled.value = consent.betaFeaturesEnabled
   betaTouched.value = consent.betaTouched
   preservePersistedBetaOptIn.value = consent.preservePersistedBetaOptIn
+  migrateExisting.value = consent.migrateExisting !== false
 }
 
 async function request(action: SetupAction): Promise<void> {
