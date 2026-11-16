@@ -5,6 +5,7 @@ import type {
   FieldOption,
   GPUInfo,
   Installation,
+  OutputFolder,
   ProgressStep,
   Source,
   SystemInfo
@@ -310,6 +311,16 @@ export const HOME_WORKFLOWS: CatalogWorkflow[] = [
     thumbnailUrl: null
   }
 ]
+
+export function outputFolders(machine: PreviewMachine): OutputFolder[] {
+  return [
+    {
+      path: joinPath(machine, 'output'),
+      builds: ['ComfyUI', 'Video experiments'],
+      buildIds: ['inst-comfyui', 'inst-video-experiments']
+    }
+  ]
+}
 
 export function localAssets(): AssetSummary[] {
   return ['harbor-at-dusk.png', 'paper-crane.png', 'studio-portrait.png'].map((name, index) => ({

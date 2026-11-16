@@ -1,5 +1,4 @@
 import fsp from 'fs/promises'
-import type { Dirent } from 'fs'
 import path from 'path'
 import { pathToFileURL } from 'url'
 import { ipcMain, nativeImage, net, protocol, shell } from 'electron'
@@ -12,13 +11,18 @@ import { mediaFactsFromFile } from './mediaFacts'
 import { runPool } from '../sources/standalone/templateDownloadCore'
 import { installOutputDir } from './models'
 import { sourceMap } from './ipc/shared'
-import type { AssetSummary } from '../../types/ipc'
+import type {
+  AssetSummary,
+  OutputFolder,
+  OutputFolderListing,
+  OutputSubfolder
+} from '../../types/ipc'
 
 export const OUTPUT_FILES_SCHEME = 'comfy-output'
 
-const LIST_LOCAL_CHANNEL = 'assets:list-local'
+const LIST_FOLDERS_CHANNEL = 'assets:output-folders'
+const LIST_FOLDER_CHANNEL = 'assets:output-folder'
 export const MAX_LOCAL_ASSETS = 500
-export const MAX_FOLDER_DEPTH = 6
 const THUMBNAIL_SIZE = 480
 const MAX_CACHED_THUMBNAILS = 400
 const THUMBNAILS_AT_ONCE = 2
@@ -61,29 +65,23 @@ async function realDir(dir: string): Promise<string | null> {
   return stat?.isDirectory() ? real : null
 }
 
-interface OutputFolders {
-  all: string[]
-  shared: string | null
-  ofBuild: Map<string, string>
-}
-
-async function findOutputFolders(): Promise<OutputFolders> {
+export async function listOutputFolders(): Promise<OutputFolder[]> {
   const sharedDir = sharedOutputDir()
   const shared = await realDir(sharedDir)
-  const ofBuild = new Map<string, string>()
+  const byPath = new Map<string, OutputFolder>()
+  if (shared) byPath.set(shared, { path: shared, builds: [], buildIds: [] })
   for (const inst of await installations.list()) {
     const dir = outputDirFor(inst, sharedDir)
     const real = dir ? await realDir(dir) : null
-    if (real) ofBuild.set(inst.id, real)
+    if (!real) continue
+    const folder = byPath.get(real) ?? { path: real, builds: [], buildIds: [] }
+    folder.builds.push(inst.name)
+    folder.buildIds.push(inst.id)
+    byPath.set(real, folder)
   }
-  const all = [...new Set([...(shared ? [shared] : []), ...ofBuild.values()])]
-  allowedRoots = all
+  allowedRoots = [...byPath.keys()]
   allowedRootsAt = Date.now()
-  return { all, shared, ofBuild }
-}
-
-export async function listOutputFolders(): Promise<string[]> {
-  return (await findOutputFolders()).all
+  return [...byPath.values()]
 }
 
 function isInsideRoot(target: string, root: string): boolean {
@@ -93,7 +91,7 @@ function isInsideRoot(target: string, root: string): boolean {
 
 async function allowedPath(target: string): Promise<string | null> {
   if (!path.isAbsolute(target)) return null
-  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS) await findOutputFolders()
+  if (Date.now() - allowedRootsAt > ROOTS_FRESH_MS) await listOutputFolders()
   const real = await fsp.realpath(target).catch(() => null)
   if (!real) return null
   return allowedRoots.some((root) => isInsideRoot(real, root)) ? real : null
@@ -134,25 +132,6 @@ export function outputFileUrl(file: string, thumbnailOf?: number): string {
   return thumbnailOf === undefined ? url : `${url}?thumbnail=${Math.round(thumbnailOf)}`
 }
 
-async function collectMediaFiles(root: string): Promise<string[]> {
-  const files: string[] = []
-  const walk = async (dir: string, depth: number): Promise<void> => {
-    const dirents: Dirent[] = await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])
-    const subfolders: string[] = []
-    for (const dirent of dirents) {
-      if (dirent.name.startsWith('.')) continue
-      const full = path.join(dir, dirent.name)
-      if (dirent.isDirectory()) subfolders.push(full)
-      else if (dirent.isFile() && assetKind(dirent.name) !== null) files.push(full)
-    }
-    if (depth < MAX_FOLDER_DEPTH) {
-      for (const sub of subfolders) await walk(sub, depth + 1)
-    }
-  }
-  await walk(root, 0)
-  return files
-}
-
 function localSummary(file: string, sizeBytes: number, modifiedMs: number): AssetSummary {
   const kind = assetKind(file)
   return {
@@ -175,10 +154,19 @@ async function addMediaFacts(asset: AssetSummary): Promise<void> {
   Object.assign(asset, await mediaFactsFromFile(asset.id, asset.kind))
 }
 
-export async function listLocalAssets(installationId?: string): Promise<AssetSummary[]> {
-  const folders = await findOutputFolders()
-  const folder = installationId === undefined ? folders.shared : folders.ofBuild.get(installationId)
-  const files = folder ? await collectMediaFiles(folder) : []
+export async function listOutputFolder(target: unknown): Promise<OutputFolderListing | null> {
+  if (typeof target !== 'string') return null
+  const dir = await allowedPath(target)
+  const dirents = dir ? await fsp.readdir(dir, { withFileTypes: true }).catch(() => null) : null
+  if (!dir || !dirents) return null
+  const folders: OutputSubfolder[] = []
+  const files: string[] = []
+  for (const dirent of dirents) {
+    if (dirent.name.startsWith('.')) continue
+    const full = path.join(dir, dirent.name)
+    if (dirent.isDirectory()) folders.push({ name: dirent.name, path: full })
+    else if (dirent.isFile() && assetKind(dirent.name) !== null) files.push(full)
+  }
   const found: AssetSummary[] = []
   await runPool(files, STATS_AT_ONCE, async (file) => {
     const stat = await fsp.stat(file).catch(() => null)
@@ -190,7 +178,11 @@ export async function listLocalAssets(installationId?: string): Promise<AssetSum
     .sort((a, b) => b.createdAt!.localeCompare(a.createdAt!))
     .slice(0, MAX_LOCAL_ASSETS)
   await runPool(newest, STATS_AT_ONCE, addMediaFacts)
-  return newest
+  return {
+    folders: folders.sort((a, b) => a.name.localeCompare(b.name)),
+    files: newest,
+    truncated: found.length > MAX_LOCAL_ASSETS
+  }
 }
 
 function linuxThumbnailSource(file: string, sizeBytes: number): Electron.NativeImage | null {
@@ -319,7 +311,6 @@ export function registerOutputFilesScheme(): void {
 
 export function registerOutputFolderHandlers(): void {
   protocol.handle(OUTPUT_FILES_SCHEME, serveOutputFile)
-  ipcMain.handle(LIST_LOCAL_CHANNEL, (_event, installationId: unknown) =>
-    listLocalAssets(typeof installationId === 'string' ? installationId : undefined)
-  )
+  ipcMain.handle(LIST_FOLDERS_CHANNEL, () => listOutputFolders())
+  ipcMain.handle(LIST_FOLDER_CHANNEL, (_event, target: unknown) => listOutputFolder(target))
 }
