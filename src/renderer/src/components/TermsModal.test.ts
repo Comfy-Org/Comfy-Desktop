@@ -40,6 +40,13 @@ describe('TermsModal', async () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
+  it('shows the redacted credential patterns as code instead of literal backticks', async () => {
+    const body = (await mountModal('privacy')).find('.terms-body')
+    expect(body.text()).not.toContain('`')
+    const codeSpans = body.findAll('code').map((c) => c.text())
+    expect(codeSpans).toEqual(expect.arrayContaining(['sk-*', 'hf_*', 'KEY=', 'SECRET=']))
+  })
+
   it('renders block content from the routed doc (not from a stale fallback)', async () => {
     const eulaText = (await mountModal('eula')).find('.terms-body').text()
     const tosText = (await mountModal('tos')).find('.terms-body').text()
