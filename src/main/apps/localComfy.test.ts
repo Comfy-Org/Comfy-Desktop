@@ -567,6 +567,33 @@ describe('two app pages open in two windows', () => {
   })
 })
 
+describe('two runs from one page on two builds', () => {
+  it('each read their result from the build they ran on', async () => {
+    mocks.records = [build(), build({ id: LAB, name: 'Lab', installPath: '/builds/lab' })]
+    running(STUDIO, PORT)
+    running(LAB, LAB_PORT)
+    const portsOf = (path: string) => comfy.calls(path).map(({ port }) => port)
+    const cutout = `/view?${new URLSearchParams(CUTOUT)}`
+
+    await localState({ ...WANT, build: STUDIO })
+    await startARun()
+    await localState({ ...WANT, build: LAB })
+    comfy.promptAnswer = { status: 200, body: { prompt_id: OTHER_RUN, number: 6, node_errors: {} } }
+    await startARun()
+    await localFetch({ path: `/history/${RUN}` })
+    const file = await localFetch({ path: cutout })
+    await post('/interrupt', { prompt_id: RUN })
+    await localFetch({ path: `/history/${OTHER_RUN}` })
+
+    expect(file.status).toBe(200)
+    expect(portsOf('/prompt')).toEqual([PORT, LAB_PORT])
+    expect(portsOf(`/history/${RUN}`)).toEqual([PORT])
+    expect(portsOf(cutout)).toEqual([PORT])
+    expect(portsOf('/interrupt')).toEqual([PORT])
+    expect(portsOf(`/history/${OTHER_RUN}`)).toEqual([LAB_PORT])
+  })
+})
+
 describe('sending a picture', () => {
   it("puts it in the apps folder of ComfyUI's input, without replacing a file of that name", async () => {
     running()
