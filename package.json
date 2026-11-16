@@ -1,6 +1,6 @@
 {
   "name": "comfyui-desktop-2",
-  "version": "1.1.10-rc.1",
+  "version": "1.1.10-rc.2",
   "description": "Comfy Desktop",
   "author": {
     "name": "Comfy Org",
@@ -42,6 +42,8 @@
     "bridge-types:gen": "pnpm exec tsc -p tsconfig.comfy-desktop-bridge-types.json && pnpm exec prettier --write \"packages/comfyui-desktop-bridge-types/*.d.ts\"",
     "bridge-types:check": "pnpm run bridge-types:gen && git add --intent-to-add -- 'packages/comfyui-desktop-bridge-types/*.d.ts' && git diff --exit-code -- 'packages/comfyui-desktop-bridge-types/*.d.ts'",
     "font:fetch": "node scripts/fetch-font.mjs",
+    "preview": "node scripts/preview/serve.mjs --open",
+    "preview:shots": "node scripts/preview/shots.mjs",
     "sandbox:gen": "node scripts/generate-sandbox.mjs",
     "datadog:sourcemaps:upload": "node ./scripts/upload-datadog-sourcemaps.mjs",
     "lint": "eslint .",
