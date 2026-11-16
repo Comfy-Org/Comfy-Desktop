@@ -701,8 +701,26 @@ describe('routeBuildOpen', () => {
     registerHostEntry(desktop)
     registerHostEntry(buildA)
 
-    expect(routeBuildOpen('inst-B', buildA, ['inst-B'])).toEqual({ kind: 'show-starting' })
-    expect(routeBuildOpen('inst-B', desktop, ['inst-B'])).toEqual({ kind: 'show-starting' })
+    expect(routeBuildOpen('inst-B', buildA, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: null
+    })
+    expect(routeBuildOpen('inst-B', desktop, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: desktop
+    })
+  })
+
+  it('shows a starting build in the Desktop window that asked, not the first one registered', () => {
+    const firstDesktop = makeEntry({ installationId: null })
+    const secondDesktop = makeEntry({ installationId: null })
+    registerHostEntry(firstDesktop)
+    registerHostEntry(secondDesktop)
+
+    expect(routeBuildOpen('inst-B', secondDesktop, ['inst-B'])).toEqual({
+      kind: 'show-starting',
+      entry: secondDesktop
+    })
   })
 
   it('starts a build from the Desktop window that asked for it', () => {

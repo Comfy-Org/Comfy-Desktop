@@ -356,7 +356,7 @@ export type BuildOpenRoute =
   | { kind: 'focus'; entry: ComfyWindowEntry }
   | { kind: 'start-from'; entry: ComfyWindowEntry }
   | { kind: 'start-from-home' }
-  | { kind: 'show-starting' }
+  | { kind: 'show-starting'; entry: ComfyWindowEntry | null }
   | { kind: 'ignore' }
 
 function findWindowForBuild(installationId: string): ComfyWindowEntry | undefined {
@@ -375,8 +375,11 @@ export function routeBuildOpen(
   const own = findWindowForBuild(installationId)
   if (own) return { kind: 'focus', entry: own }
   if (requester?.installationId === installationId) return { kind: 'ignore' }
-  if (launchingInstallationIds.includes(installationId)) return { kind: 'show-starting' }
-  if (requester && isHomeHostEntry(requester)) return { kind: 'start-from', entry: requester }
+  const homeRequester = requester && isHomeHostEntry(requester) ? requester : null
+  if (launchingInstallationIds.includes(installationId)) {
+    return { kind: 'show-starting', entry: homeRequester }
+  }
+  if (homeRequester) return { kind: 'start-from', entry: homeRequester }
   return { kind: 'start-from-home' }
 }
 

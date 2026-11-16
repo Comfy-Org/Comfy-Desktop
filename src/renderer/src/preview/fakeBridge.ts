@@ -242,7 +242,6 @@ export function createFakeBridge(seed: BridgeSeed = {}): FakeBridge {
     terminalResize: async () => {},
     terminalRestart: async () => ({ buffer: [], size: { cols: 80, rows: 24 }, exited: false }),
     openInstallWindow: async () => true,
-    openInstallInNewWindow: () => {},
     closeComfyWindow: async () => true,
     closeHostWindow: async () => true,
     returnToDashboard: async () => true,

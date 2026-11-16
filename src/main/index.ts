@@ -1090,7 +1090,8 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
           bringToFront(route.entry.window)
           return
         case 'show-starting':
-          openOrFocusHomeHostWindow()
+          if (route.entry) bringToFront(route.entry.window)
+          else openOrFocusHomeHostWindow()
           return
         case 'start-from':
           deliverPickToEntry(route.entry, installationId)
