@@ -194,8 +194,8 @@ export interface ComfyDesktopLocalRequirements {
   /**
    * The build the person picked to run on, an id from `localBuilds`. Desktop
    * uses it when it is installed and new enough, and otherwise chooses as if
-   * none was named: a running build first, then the one used last. The answer
-   * names the build Desktop chose.
+   * none was named: a running build first, then one that is starting, then
+   * the one used last. The answer names the build Desktop chose.
    */
   build?: string
 }
