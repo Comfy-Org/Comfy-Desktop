@@ -95,7 +95,7 @@ test.afterAll(async () => {
   for (const dir of Object.values(installPaths)) await rm(dir, { recursive: true, force: true })
 })
 
-test('a Performance Test is refused while another installation runs, and named @linux', async () => {
+test('a Performance Test is refused while another installation runs, and named @linux @macos', async () => {
   const other = await launch(OTHER_ID, OTHER_ID)
   expect(other, other.message).toMatchObject({ ok: true })
 
@@ -115,7 +115,7 @@ test('a Performance Test is refused while another installation runs, and named @
   expect(await getRunningSessionSnapshot(ctx!.app, OTHER_ID)).not.toBeNull()
 })
 
-test('once that is stopped, the Performance Test boots on its installation, on its own port @linux', async () => {
+test('once that is stopped, the Performance Test boots on its installation, on its own port @linux @macos', async () => {
   await stop(OTHER_ID)
 
   const perf = await launch(BENCH_ID, PERF_SESSION)
@@ -130,7 +130,7 @@ test('once that is stopped, the Performance Test boots on its installation, on i
   })
 })
 
-test('another installation still launches while a Performance Test runs @linux', async () => {
+test('another installation still launches while a Performance Test runs @linux @macos', async () => {
   const other = await launch(OTHER_ID, OTHER_ID)
 
   expect(other, other.message).toMatchObject({ ok: true })

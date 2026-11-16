@@ -105,7 +105,7 @@ async function expectNoPill(popup: WebContentsPage): Promise<void> {
   expect(await pillAriaLabel(popup)).toBeNull()
 }
 
-test('shows the grants the next launch is eligible for @linux', async () => {
+test('shows the grants the next launch is eligible for @linux @macos', async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 15_000 })
   expect(await pillAriaLabel(popup)).toBe(
@@ -120,7 +120,7 @@ test('shows the grants the next launch is eligible for @linux', async () => {
   expect(text).toContain('Asset hashing')
 })
 
-test('turning the beta opt-in off removes the pill on the next open, and on restores it @linux', async () => {
+test('turning the beta opt-in off removes the pill on the next open, and on restores it @linux @macos', async () => {
   let popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await popup.clickUntilVisible(PILL, MANAGE, { timeout: 10_000 })
@@ -152,7 +152,7 @@ test('turning the beta opt-in off removes the pill on the next open, and on rest
   await popup.waitForVisible(PILL, { timeout: 10_000 })
 })
 
-test('an opt-in change made while the picker is hidden shows on reopen @linux', async () => {
+test('an opt-in change made while the picker is hidden shows on reopen @linux @macos', async () => {
   let popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await closeTitlePopupIfOpen(ctx.app)
@@ -184,7 +184,7 @@ async function commitArgs(popup: WebContentsPage, value: string): Promise<void> 
   )
 }
 
-test("only the pill asks: another field's save asks nothing, an args commit asks once @linux", async () => {
+test("only the pill asks: another field's save asks nothing, an args commit asks once @linux @macos", async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await resetIpcInvocations(ctx.app, 'get-core-beta-args')
@@ -207,7 +207,7 @@ test("only the pill asks: another field's save asks nothing, an args commit asks
   expect(await betaArgsRequests()).toBe(1)
 })
 
-test("adding the grant's opposite to the startup args removes it @linux", async () => {
+test("adding the grant's opposite to the startup args removes it @linux @macos", async () => {
   const popup = await openStartupArgs()
   await popup.waitForVisible(PILL, { timeout: 10_000 })
   await popup.evaluate(

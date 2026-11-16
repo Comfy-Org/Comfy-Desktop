@@ -125,9 +125,9 @@ export async function writeFakeComfyInstall(opts: {
   const serverPath = path.join(installPath, 'stub-server.cjs')
   await writeFile(serverPath, serverScript)
 
-  if (process.platform !== 'linux') {
+  if (process.platform === 'win32') {
     throw new Error(
-      'writeFakeComfyInstall is Linux-only (see the file header); tag the spec @linux.'
+      'writeFakeComfyInstall needs a shell script for python3, which Windows cannot run as python.exe; tag the spec @linux or @macos.'
     )
   }
 
