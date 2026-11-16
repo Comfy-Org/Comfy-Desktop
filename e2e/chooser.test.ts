@@ -39,9 +39,10 @@ test('chooser body renders on cold start @windows @macos @linux', async () => {
   expect(await ctx.panel.exists('[data-testid="devplatform-account-signin"]')).toBe(true)
 })
 
-test('title bar shows install-less pill on chooser host @windows @macos @linux', async () => {
-  expect(await ctx.titleBar.exists('.title-install-pill.is-install-less')).toBe(true)
-  expect(await ctx.titleBar.textOf('.title-install-name')).toMatch(/Comfy Desktop/i)
+test('title bar leaves the middle empty on the chooser host @windows @macos @linux', async () => {
+  expect(await ctx.titleBar.exists('.title-center')).toBe(true)
+  expect(await ctx.titleBar.exists('.title-center > *')).toBe(false)
+  expect(await ctx.titleBar.exists('.title-install-pill')).toBe(false)
 })
 
 test('Desktop Settings opens from the sidebar footer when expanded and collapsed @windows @macos @linux', async () => {
