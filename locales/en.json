@@ -1552,6 +1552,7 @@
       "cancelInstallationAndSignOut": "Cancel Installation & Sign Out"
     },
     "workspace": {
+      "personalLabel": "Personal",
       "switchLabel": "Workspace",
       "switchUnavailable": "This workspace is unavailable.",
       "switchRetryable": "Couldn't switch workspace. Check your connection and try again.",
@@ -1574,7 +1575,6 @@
       "search": "Search workspaces",
       "clearSearch": "Clear search",
       "loadFailed": "Couldn't load your workspaces. Please try again later.",
-      "empty": "You don't have access to any workspaces yet.",
       "noMatch": "No workspaces match your search.",
       "role": {
         "owner": "Owner",

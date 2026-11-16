@@ -359,16 +359,35 @@ describe('SidebarAccount', () => {
     )
   })
 
-  it('says so when there are no workspaces', async () => {
+  it('still offers Personal offline, so a saved team workspace does not hide local builds', async () => {
+    const { wrapper } = await mountAccount(SIGNED_IN, false, {
+      listWorkspaces: () => Promise.reject(new Error('offline')),
+      savedWorkspaceId: 'w2'
+    })
+
+    const body = await openWorkspaces(wrapper)
+    expect(body.findAll('[role="option"]').map((option) => option.text())).toEqual(['PPersonal'])
+    expect(body.find('[data-testid="workspace-load-error"]').exists()).toBe(true)
+
+    await body.get('[data-testid="workspace-option-personal"]').trigger('click')
+    await flushPromises()
+
+    expect(useDashboardScopeStore().selectedWorkspaceId).toBe('personal')
+    expect(wrapper.get('[data-testid="workspace-switcher-name"]').text()).toBe('Personal')
+    expect(
+      (await openMenu(wrapper)).get('[data-testid="workspace-settings"]').attributes('disabled')
+    ).toBeDefined()
+  })
+
+  it('offers Personal when the account lists no workspaces', async () => {
     const { wrapper } = await mountAccount(SIGNED_IN, false, {
       listWorkspaces: () => Promise.resolve([])
     })
 
     const body = await openWorkspaces(wrapper)
 
-    expect(body.get('[data-testid="workspace-switcher-empty"]').text()).toBe(
-      "You don't have access to any workspaces yet."
-    )
+    expect(body.findAll('[role="option"]').map((option) => option.text())).toEqual(['PPersonal'])
+    expect(body.find('[data-testid="workspace-switcher-empty"]').exists()).toBe(false)
   })
 
   it('offers search above six workspaces and forgets the query when the list closes', async () => {
@@ -402,6 +421,6 @@ describe('SidebarAccount', () => {
     expect(
       body.get<HTMLInputElement>('[data-testid="workspace-switcher-panel"] input').element.value
     ).toBe('')
-    expect(body.findAll('[role="option"]')).toHaveLength(7)
+    expect(body.findAll('[role="option"]')).toHaveLength(8)
   })
 })

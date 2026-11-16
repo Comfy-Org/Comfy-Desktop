@@ -71,11 +71,14 @@ const currentWorkspace = computed(() =>
 const statusIsCurrent = computed(
   () => workspaceContextId(store.status) === dashboardScope.selectedWorkspaceId
 )
+const personalLabel = computed(() => t('devPlatform.workspace.personalLabel'))
 const currentWorkspaceName = computed(
   () =>
     currentWorkspace.value?.name ??
     (statusIsCurrent.value ? store.status.workspaceName : undefined) ??
-    t('devPlatform.workspace.switchLabel')
+    (dashboardScope.selectedWorkspaceId === PERSONAL_WORKSPACE_ID
+      ? personalLabel.value
+      : t('devPlatform.workspace.switchLabel'))
 )
 const currentWorkspaceTier = computed(() => currentWorkspace.value?.subscriptionTier)
 const currentWorkspaceMeta = computed(() => {
@@ -92,21 +95,29 @@ const settingsPage = computed<PlatformSettingsPage>(() => {
   return type === 'team' ? 'general' : 'people'
 })
 
+const localPersonalWorkspace = computed<Workspace>(() => ({
+  id: PERSONAL_WORKSPACE_ID,
+  name: personalLabel.value,
+  type: 'personal',
+  role: 'owner'
+}))
+const listedWorkspaces = computed(() => [
+  store.workspaces.find(isPersonalWorkspace) ?? localPersonalWorkspace.value,
+  ...store.workspaces.filter((workspace) => !isPersonalWorkspace(workspace))
+])
+
 const loadingWorkspaces = computed(() => store.loadingWorkspaces && store.workspaces.length === 0)
-const searchable = computed(() => store.workspaces.length > SEARCH_THRESHOLD)
+const searchable = computed(() => listedWorkspaces.value.length > SEARCH_THRESHOLD)
 const filteredWorkspaces = computed(() => {
   const needle = query.value.trim().toLowerCase()
-  if (!needle) return store.workspaces
-  return store.workspaces.filter((workspace) => workspace.name.toLowerCase().includes(needle))
+  if (!needle) return listedWorkspaces.value
+  return listedWorkspaces.value.filter((workspace) => workspace.name.toLowerCase().includes(needle))
 })
-const emptyMessage = computed(() => {
-  if (loadingWorkspaces.value || filteredWorkspaces.value.length) return null
-  return t(
-    store.workspaces.length
-      ? 'devPlatform.workspaceMenu.noMatch'
-      : 'devPlatform.workspaceMenu.empty'
-  )
-})
+const emptyMessage = computed(() =>
+  loadingWorkspaces.value || filteredWorkspaces.value.length
+    ? null
+    : t('devPlatform.workspaceMenu.noMatch')
+)
 
 function isCurrent(workspace: Workspace): boolean {
   return scopeId(workspace) === dashboardScope.selectedWorkspaceId
