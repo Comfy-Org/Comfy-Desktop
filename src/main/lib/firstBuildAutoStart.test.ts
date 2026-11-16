@@ -1,0 +1,102 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+
+const electronHome = vi.hoisted(() => ({ dir: '' }))
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: () =>
+      (electronHome.dir ||= fs.mkdtempSync(path.join(os.tmpdir(), 'first-build-auto-start-'))),
+    getVersion: () => '0.0.0-test',
+    getLocale: () => 'en',
+    on: () => {}
+  },
+  ipcMain: { handle: vi.fn(), on: vi.fn(), off: vi.fn() },
+  dialog: {},
+  shell: {},
+  WebContentsView: class {},
+  BrowserWindow: { getAllWindows: () => [] },
+  nativeTheme: { on: vi.fn(), shouldUseDarkColors: false }
+}))
+
+import * as installations from '../installations'
+import * as settings from '../settings'
+import { pinLastUsedAutoStart, startFirstBuildWithDesktop } from './firstBuildAutoStart'
+
+async function installedBuild(name: string, lastLaunchedAt?: number): Promise<string> {
+  const entry = await installations.add({
+    name,
+    sourceId: 'standalone',
+    status: 'installed',
+    installPath: path.join(electronHome.dir, name),
+    ...(lastLaunchedAt === undefined ? {} : { lastLaunchedAt })
+  })
+  return entry.id
+}
+
+afterEach(async () => {
+  for (const inst of await installations.list()) await installations.remove(inst.id)
+  settings.set('autoLaunchOnStartup', undefined)
+  settings.set('autoStartAwaitingFirstStart', undefined)
+})
+
+afterAll(() => {
+  if (electronHome.dir) fs.rmSync(electronHome.dir, { recursive: true, force: true })
+})
+
+describe('Auto start for a first build', () => {
+  it('gives the next first build Auto start after the old Auto start build was uninstalled', async () => {
+    const removed = await installedBuild('Old GPU build')
+    settings.set('autoLaunchOnStartup', removed)
+    await installations.remove(removed)
+    const fresh = await installedBuild('New GPU build')
+
+    await startFirstBuildWithDesktop(fresh)
+
+    expect(settings.get('autoLaunchOnStartup')).toBe(fresh)
+    expect(settings.get('autoStartAwaitingFirstStart')).toBe(fresh)
+  })
+
+  it('leaves a saved Last used build alone', async () => {
+    settings.set('autoLaunchOnStartup', 'last')
+    const fresh = await installedBuild('Only build')
+
+    await startFirstBuildWithDesktop(fresh)
+
+    expect(settings.get('autoLaunchOnStartup')).toBe('last')
+  })
+})
+
+describe('a saved Last used build, now that only a build can be picked', () => {
+  it('becomes the build that would have started, so its tile shows Auto start', async () => {
+    await installedBuild('Older', 1_000)
+    const recent = await installedBuild('Used yesterday', 2_000)
+    settings.set('autoLaunchOnStartup', 'last')
+
+    await pinLastUsedAutoStart()
+
+    expect(settings.get('autoLaunchOnStartup')).toBe(recent)
+  })
+
+  it('becomes None when no build has ever started', async () => {
+    await installedBuild('Never started')
+    settings.set('autoLaunchOnStartup', 'last')
+
+    await pinLastUsedAutoStart()
+
+    expect(settings.get('autoLaunchOnStartup')).toBe('none')
+  })
+
+  it('leaves a picked build as it is', async () => {
+    const picked = await installedBuild('Picked', 1_000)
+    await installedBuild('Used more recently', 2_000)
+    settings.set('autoLaunchOnStartup', picked)
+
+    await pinLastUsedAutoStart()
+
+    expect(settings.get('autoLaunchOnStartup')).toBe(picked)
+  })
+})

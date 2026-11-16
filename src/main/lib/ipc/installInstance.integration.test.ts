@@ -72,6 +72,7 @@ vi.mock('../../settings', () => ({
   }),
   getTrackedSettingsTelemetryProperties: vi.fn(() => ({})),
   AUTO_LAUNCH_NONE: 'none',
+  AUTO_LAUNCH_LAST: 'last',
   getAll: vi.fn(() => ({})),
   getMirrorConfig: vi.fn(() => ({ pypiMirror: undefined, useChineseMirrors: false })),
   defaults: { modelsDirs: ['/unused'], inputDir: '/unused', outputDir: '/unused' }
@@ -529,6 +530,24 @@ describe.skipIf(!gitAvailable())('installing a standalone build', () => {
       await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
 
       expect(autoStart()).toBe('cloud')
+    })
+
+    it('still reports a finished install when the Auto start setting cannot be saved', async () => {
+      const settings = vi.mocked(await import('../../settings'))
+      const saveSetting = settings.set.getMockImplementation()!
+      settings.set.mockImplementation((key, value) => {
+        if (key === 'autoStartAwaitingFirstStart')
+          throw new Error('ENOSPC: no space left on device')
+        saveSetting(key, value)
+      })
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      const result = await install(picked({ release: 'stable', comfyVersion: NEWEST_STABLE_TAG }))
+      warned.mockRestore()
+      settings.set.mockImplementation(saveSetting)
+
+      expect(result).toEqual({ ok: true })
+      expect(record().status).toBe('installed')
     })
 
     it('leaves Auto start off when the install fails', async () => {

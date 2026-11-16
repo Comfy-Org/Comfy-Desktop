@@ -25,7 +25,8 @@ vi.mock('electron', () => ({
 }))
 
 const builds = vi.hoisted(() => ({
-  commands: new Map<string, Record<string, unknown>>()
+  commands: new Map<string, Record<string, unknown>>(),
+  unreadable: new Set<string>()
 }))
 
 vi.mock('../shared', async (importOriginal) => {
@@ -38,6 +39,7 @@ vi.mock('../shared', async (importOriginal) => {
         skipInstall: true,
         getDefaults: () => ({}),
         getLaunchCommand: (inst: { id: string }) => {
+          if (builds.unreadable.has(inst.id)) throw new Error('pyvenv.cfg is unreadable')
           const command = builds.commands.get(inst.id)
           return command ? { ...command, args: [...(command.args as string[])] } : null
         }
@@ -193,6 +195,7 @@ afterEach(async () => {
   await Promise.all(outsiders.splice(0).map(stopOutsider))
   _pendingPorts.clear()
   builds.commands.clear()
+  builds.unreadable.clear()
   settings.set('autoLaunchOnStartup', undefined)
   settings.set('autoStartAwaitingFirstStart', undefined)
   vi.restoreAllMocks()
@@ -289,6 +292,16 @@ describe('Auto start on the first build, decided by its first start', { timeout:
     const result = await start(fresh)
 
     expect(result.ok).toBe(false)
+    expect(settings.get('autoLaunchOnStartup')).toBe('none')
+  })
+
+  it('turns Auto start off when the new build cannot even be set up to start', async () => {
+    const fresh = build('fresh-install')
+    builds.unreadable.add(fresh.id)
+    justInstalled(fresh)
+
+    await expect(start(fresh)).rejects.toThrow('pyvenv.cfg is unreadable')
+
     expect(settings.get('autoLaunchOnStartup')).toBe('none')
   })
 

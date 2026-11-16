@@ -905,12 +905,16 @@ export async function handleLaunch(ctx: ActionContext): Promise<ActionResult> {
   }
   const launch = _beginLaunch(sessionId)
   const prefetchHold = { release: (): void => {} }
+  const settleFirstStart = (started: boolean): void => {
+    if (sessionId === installationId) settleAutoStartOnFirstStart(installationId, started)
+  }
   try {
     const result = await runLaunch(ctx, launch.abort, prefetchHold)
-    if (sessionId === installationId && !result.cancelled) {
-      settleAutoStartOnFirstStart(installationId, result.ok)
-    }
+    if (!result.cancelled) settleFirstStart(result.ok)
     return result
+  } catch (err) {
+    settleFirstStart(false)
+    throw err
   } finally {
     prefetchHold.release()
     if (_operationAborts.get(sessionId) === launch.abort) _operationAborts.delete(sessionId)
