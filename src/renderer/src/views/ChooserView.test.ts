@@ -324,8 +324,8 @@ describe('ChooserView', () => {
   it('sets Auto start from a tile menu, moving it from the other build', async () => {
     let saved: unknown = 'a'
     const api = installMockApi([
-      makeInstall({ id: 'a', name: 'Alpha' }),
-      makeInstall({ id: 'b', name: 'Beta' })
+      makeInstall({ id: 'a', name: 'Alpha', status: 'installed' }),
+      makeInstall({ id: 'b', name: 'Beta', status: 'installed' })
     ])
     api.getSetting.mockImplementation(async (key: string) =>
       key === 'autoLaunchOnStartup' ? saved : undefined

@@ -18,7 +18,7 @@ function workflow(id: string, title: string, thumbnailUrl: string | null = null)
 }
 
 function build(over: Partial<Installation> & { id: string; name: string }): Installation {
-  return { sourceLabel: 'Standalone', sourceCategory: 'local', ...over }
+  return { sourceLabel: 'Standalone', sourceCategory: 'local', status: 'installed', ...over }
 }
 
 const UPSCALE: CatalogWorkflow = {

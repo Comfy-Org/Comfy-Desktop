@@ -216,6 +216,25 @@ describe('Build menu', () => {
     }
   )
 
+  it.each([
+    ['a build whose install failed', { ...BUILD, id: 'broken', status: 'failed' }],
+    [
+      'Comfy Cloud',
+      { ...BUILD, id: 'cloud', sourceId: 'cloud', sourceCategory: 'cloud', installPath: undefined }
+    ]
+  ] satisfies [string, Installation][])('offers no Auto start for %s', async (_name, build) => {
+    const wrapper = mount(
+      withHost(() => h(HomeBuildCard, { build, status: 'ready', tone: 'ember' })),
+      { attachTo: document.body }
+    )
+    mounted.push(wrapper)
+    await flushPromises()
+
+    await wrapper.get('[data-testid="home-build-more"]').trigger('click')
+
+    expect(await shownMenu()).not.toContain('auto-start')
+  })
+
   it('asks inside the menu before it uninstalls, then uninstalls without another dialog', async () => {
     const tile = await mountTile('ready')
     await tile.get('[data-testid="home-build-more"]').trigger('click')
