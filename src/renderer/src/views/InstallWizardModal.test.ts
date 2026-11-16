@@ -2012,6 +2012,33 @@ describe('InstallWizardModal Change setup', () => {
     })
   })
 
+  it('drops a first-use Save when the release changes while the folder is being checked', async () => {
+    ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([releaseSource])
+    mockReleaseOptions()
+    const wrapper = mountModal({ hideBackToDashboard: true })
+    await wrapper.vm.open({ cameFromSetup: true, entrypoint: 'first_use' })
+    await flushPromises()
+    let finishFolderCheck: (issues: string[]) => void = () => {}
+    ;(window.api.validateInstallPath as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishFolderCheck = resolve
+      })
+    )
+
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    await pickRelease(wrapper, 'Latest on GitHub')
+    finishFolderCheck([])
+    await flushPromises()
+    expect(savedSetups(wrapper)).toEqual([])
+
+    await wrapper.get('[data-testid="config-save-changes"]').trigger('click')
+    await flushPromises()
+    const [saved] = savedSetups(wrapper)
+    expect(saved?.plan.selections.release?.value).toBe('latest')
+    expect(saved?.plan.selections.comfyVersion).toBeUndefined()
+  })
+
   it('holds Start from in first use until Desktop has picked a setup', async () => {
     ;(window.api.getSources as ReturnType<typeof vi.fn>).mockResolvedValue([
       releaseSource,

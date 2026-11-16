@@ -1279,13 +1279,27 @@ function sourcePlan(source: Source): SetupPlan {
 
 const savingSetup = ref(false)
 
+function setupFingerprint(): string {
+  return JSON.stringify([
+    selectedSourceCard.value,
+    instPath.value,
+    selectedBuildId.value,
+    selectedBuildTargetId.value,
+    Object.entries(selections.value).map(([id, option]) => [id, option?.value]),
+    [...textFieldValues.value]
+  ])
+}
+
 async function checkedSetupPlan(): Promise<SetupPlan | null> {
-  if (!canProceed.value || !(await validateSelectedInstallRoot())) return null
+  if (!canProceed.value) return null
+  const checked = setupFingerprint()
+  const unchanged = () => canProceed.value && setupFingerprint() === checked
+  if (!(await validateSelectedInstallRoot()) || !unchanged()) return null
   if (managedBuildMode.value) {
     return selectedBuild.value ? workspaceBuildPlan(selectedBuild.value) : null
   }
   const source = currentSource.value
-  if (!source || !(await confirmNvidiaDriver(source))) return null
+  if (!source || !(await confirmNvidiaDriver(source)) || !unchanged()) return null
   commitTextFields(source)
   return sourcePlan(source)
 }
