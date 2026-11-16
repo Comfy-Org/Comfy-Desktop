@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import net from 'node:net'
+import { inflateSync } from 'node:zlib'
 import path from 'node:path'
 import { resolve } from 'node:path'
 import { test, expect } from '@playwright/test'
@@ -537,6 +538,204 @@ test('picker Dashboard opens a chooser without stopping the running install @sec
   await closeExtraWindowsKeepComfyHost()
   expect(await ensureInstallPanelView(ctx.app, installs[0]!.id)).toBe(true)
   await waitForWebContents(ctx.app, 'panel.html')
+})
+
+const GENERATION_CHECKPOINT = {
+  url: 'https://huggingface.co/Comfy-Org/stable-diffusion-1.5/resolve/main/v1-5-pruned-emaonly-fp16.safetensors',
+  filename: 'v1-5-pruned-emaonly-fp16.safetensors',
+  bytes: 2_132_696_762
+}
+const GENERATION_SIZE = 256
+
+interface PngFacts {
+  width: number
+  height: number
+  distinctPixelBytes: number
+}
+
+function readPngFacts(file: string): PngFacts {
+  const bytes = readFileSync(file)
+  expect(bytes.subarray(0, 8).toString('hex'), `${file} is not a PNG`).toBe('89504e470d0a1a0a')
+  const idat: Buffer[] = []
+  let width = 0
+  let height = 0
+  for (let at = 8; at + 8 <= bytes.length;) {
+    const length = bytes.readUInt32BE(at)
+    const type = bytes.toString('ascii', at + 4, at + 8)
+    const data = bytes.subarray(at + 8, at + 8 + length)
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0)
+      height = data.readUInt32BE(4)
+    } else if (type === 'IDAT') {
+      idat.push(data)
+    }
+    at += 12 + length
+  }
+  const pixels = inflateSync(Buffer.concat(idat))
+  return { width, height, distinctPixelBytes: new Set(pixels).size }
+}
+
+async function comfyJson<T>(origin: string, route: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${origin}${route}`, { ...init, signal: AbortSignal.timeout(30_000) })
+  expect(res.ok, `${init?.method ?? 'GET'} ${route} answered ${res.status}`).toBe(true)
+  return (await res.json()) as T
+}
+
+test('downloads SD 1.5 through the app and generates a real image into the output folder @sec-generate @real-comfy', async () => {
+  test.skip(HYDRATED, 'reuse mode: the checkpoint may already be on the persisted profile')
+  test.setTimeout(1_800_000)
+
+  const comfy = await evalWithRetry(() =>
+    ctx.app.evaluate(({ webContents }) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => /^http:\/\/(127\.0\.0\.1|localhost):/.test(w.getURL()) && !w.isLoading())
+      return wc ? { id: wc.id, origin: new URL(wc.getURL()).origin } : null
+    })
+  )
+  expect(comfy, 'no running local ComfyUI frontend').not.toBeNull()
+
+  const modelsDirs = await ctx.panel.evaluate<string[]>(`window.api.getSetting('modelsDirs')`)
+  const outputDir = await ctx.panel.evaluate<string | null>(`window.api.getSetting('outputDir')`)
+  expect(modelsDirs[0], 'shared modelsDirs setting is empty').toBeTruthy()
+  expect(outputDir, 'shared outputDir setting is unset').toBeTruthy()
+
+  await test.step('the ComfyUI page downloads the checkpoint into the shared models folder', async () => {
+    const started = await evalInWebContents<boolean>(
+      comfy!.id,
+      `window.__comfyDesktop2.downloadModel(${JSON.stringify(GENERATION_CHECKPOINT.url)}, ${JSON.stringify(GENERATION_CHECKPOINT.filename)}, 'checkpoints')`
+    )
+    expect(started, 'downloadModel refused the checkpoint').toBe(true)
+
+    let savePath: string | undefined
+    await expect
+      .poll(
+        async () => {
+          const tray = await getLiveDownloadsTrayState(ctx.app)
+          const job = [...tray.active, ...tray.recent].find(
+            (d) => d.url === GENERATION_CHECKPOINT.url
+          )
+          if (!job) return 'missing'
+          if (job.status === 'error' || job.status === 'cancelled') {
+            return `${job.status}: ${job.error ?? ''}`
+          }
+          savePath = job.savePath
+          return job.status
+        },
+        { timeout: 1_200_000, intervals: [2_000, 5_000] }
+      )
+      .toBe('completed')
+
+    expect(savePath, 'completed download has no savePath').toBeTruthy()
+    expect(path.resolve(savePath!)).toBe(
+      path.resolve(modelsDirs[0]!, 'checkpoints', GENERATION_CHECKPOINT.filename)
+    )
+    expect(statSync(savePath!).size).toBe(GENERATION_CHECKPOINT.bytes)
+  })
+
+  await test.step('ComfyUI lists the downloaded checkpoint', async () => {
+    await expect
+      .poll(() => comfyJson<string[]>(comfy!.origin, '/models/checkpoints'), {
+        timeout: 60_000,
+        intervals: [1_000, 2_000]
+      })
+      .toContain(GENERATION_CHECKPOINT.filename)
+  })
+
+  const runId = `real-comfy-generation-${randomUUID().slice(0, 8)}`
+  const graph = {
+    '1': {
+      class_type: 'CheckpointLoaderSimple',
+      inputs: { ckpt_name: GENERATION_CHECKPOINT.filename }
+    },
+    '2': {
+      class_type: 'CLIPTextEncode',
+      inputs: { clip: ['1', 1], text: 'a red apple on a wooden table, photograph' }
+    },
+    '3': { class_type: 'CLIPTextEncode', inputs: { clip: ['1', 1], text: 'blurry' } },
+    '4': {
+      class_type: 'EmptyLatentImage',
+      inputs: { width: GENERATION_SIZE, height: GENERATION_SIZE, batch_size: 1 }
+    },
+    '5': {
+      class_type: 'KSampler',
+      inputs: {
+        model: ['1', 0],
+        positive: ['2', 0],
+        negative: ['3', 0],
+        latent_image: ['4', 0],
+        seed: 42,
+        steps: 6,
+        cfg: 7,
+        sampler_name: 'euler',
+        scheduler: 'normal',
+        denoise: 1
+      }
+    },
+    '6': { class_type: 'VAEDecode', inputs: { samples: ['5', 0], vae: ['1', 2] } },
+    '7': {
+      class_type: 'SaveImage',
+      inputs: { images: ['6', 0], filename_prefix: `${runId}/image` }
+    }
+  }
+
+  const queued = await comfyJson<{ prompt_id?: string; error?: unknown; node_errors?: unknown }>(
+    comfy!.origin,
+    '/prompt',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: graph, client_id: runId })
+    }
+  )
+  expect(queued.error, `POST /prompt rejected the graph: ${JSON.stringify(queued)}`).toBeFalsy()
+  expect(queued.prompt_id, 'no prompt_id returned').toBeTruthy()
+  const promptId = queued.prompt_id!
+
+  type HistoryEntry = {
+    status?: { status_str?: string; messages?: unknown[] }
+    outputs?: Record<
+      string,
+      { images?: Array<{ filename: string; subfolder: string; type: string }> }
+    >
+  }
+  let entry: HistoryEntry | undefined
+  await test.step('the prompt runs to completion', async () => {
+    await expect
+      .poll(
+        async () => {
+          const history = await comfyJson<Record<string, HistoryEntry>>(
+            comfy!.origin,
+            `/history/${promptId}`
+          )
+          entry = history[promptId]
+          if (!entry?.status) return 'queued'
+          if (entry.status.status_str === 'error') {
+            return `error: ${JSON.stringify(entry.status.messages)}`
+          }
+          return entry.status.status_str ?? 'running'
+        },
+        { timeout: 900_000, intervals: [2_000, 5_000] }
+      )
+      .toBe('success')
+  })
+
+  const image = entry?.outputs?.['7']?.images?.[0]
+  expect(image, `SaveImage reported no image: ${JSON.stringify(entry?.outputs)}`).toBeTruthy()
+  expect(image!.type).toBe('output')
+  expect(image!.subfolder.replace(/\\/g, '/')).toBe(runId)
+
+  const file = path.join(outputDir!, image!.subfolder, image!.filename)
+  expect(existsSync(file), `generated image is not in the output folder: ${file}`).toBe(true)
+  const png = readPngFacts(file)
+  expect({ width: png.width, height: png.height }).toEqual({
+    width: GENERATION_SIZE,
+    height: GENERATION_SIZE
+  })
+  expect(
+    png.distinctPixelBytes,
+    'the generated image is near-uniform, so sampling produced no picture'
+  ).toBeGreaterThan(128)
 })
 
 interface InstallationLite {
