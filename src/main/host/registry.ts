@@ -335,9 +335,12 @@ function isHandingOffToBuild(entry: ComfyWindowEntry): boolean {
   return false
 }
 
+export function isHomeHostEntry(entry: ComfyWindowEntry): boolean {
+  return !entry.window.isDestroyed() && isChooserHost(entry) && !isHandingOffToBuild(entry)
+}
+
 function findHomeHostWindow(): BrowserWindow | null {
-  const entry = findPreferredHostByVisibility((e) => isChooserHost(e) && !isHandingOffToBuild(e))
-  return entry?.window ?? null
+  return findPreferredHostByVisibility(isHomeHostEntry)?.window ?? null
 }
 
 export function openOrFocusHomeHostWindow(): BrowserWindow {
@@ -347,6 +350,23 @@ export function openOrFocusHomeHostWindow(): BrowserWindow {
     return existing
   }
   return requireChooserFactory()()
+}
+
+export type BuildOpenRoute =
+  | { kind: 'focus'; entry: ComfyWindowEntry }
+  | { kind: 'start-from'; entry: ComfyWindowEntry }
+  | { kind: 'start-from-home' }
+  | { kind: 'ignore' }
+
+export function routeBuildOpen(
+  installationId: string,
+  requester: ComfyWindowEntry | undefined
+): BuildOpenRoute {
+  const existing = getEntryByInstallationId(installationId)
+  if (existing && !existing.window.isDestroyed()) return { kind: 'focus', entry: existing }
+  if (requester?.installationId === installationId) return { kind: 'ignore' }
+  if (requester && isHomeHostEntry(requester)) return { kind: 'start-from', entry: requester }
+  return { kind: 'start-from-home' }
 }
 
 export function openOrFocusAnyHostWindow(): BrowserWindow {

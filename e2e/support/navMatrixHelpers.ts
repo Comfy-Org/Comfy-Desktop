@@ -13,6 +13,20 @@ export async function liveWindowCount(app: ElectronApplication): Promise<number>
   )
 }
 
+export async function desktopWindowCount(app: ElectronApplication): Promise<number> {
+  return evalWithRetry(() =>
+    app.evaluate(
+      ({ webContents }) =>
+        webContents.getAllWebContents().filter((wc) => {
+          if (wc.isDestroyed()) return false
+          const url = wc.getURL()
+          if (!url.includes('panel.html')) return false
+          return new URL(url).searchParams.get('installationId') === ''
+        }).length
+    )
+  )
+}
+
 export async function openPicker(
   app: ElectronApplication,
   panel: WebContentsPage,

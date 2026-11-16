@@ -11,7 +11,12 @@ import {
   resetIpcInvocations,
   seedRunningSession
 } from './support/devHooks'
-import { expectNoIpcInvocation, liveWindowCount, openPicker } from './support/navMatrixHelpers'
+import {
+  desktopWindowCount,
+  expectNoIpcInvocation,
+  liveWindowCount,
+  openPicker
+} from './support/navMatrixHelpers'
 import { byTestId, TID } from './support/testIds'
 
 let ctx: AppContext
@@ -160,8 +165,8 @@ test('Dashboard → running instance: focus existing window @windows @macos @lin
   expect(await liveWindowCount(ctx.app)).toBe(before)
 })
 
-test('Dashboard → cloud via "Open in new window": spawns a new window @windows @macos @linux', async () => {
-  const before = await liveWindowCount(ctx.app)
+test('Dashboard → cloud via "Open in new window": starts it from this Desktop window, no second Desktop window @windows @macos @linux', async () => {
+  const desktopWindowsBefore = await desktopWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'pickInstall')
 
   const popup = titlePopupPage(ctx.app)
@@ -183,6 +188,15 @@ test('Dashboard → cloud via "Open in new window": spawns a new window @windows
     .toBe(true)
 
   await expect
-    .poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] })
-    .toBe(before + 1)
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+          installationId?: string
+        }[]
+        return calls.some((c) => c.installationId === CLOUD_ID)
+      },
+      { timeout: 10_000, intervals: [200, 500] }
+    )
+    .toBe(true)
+  expect(await desktopWindowCount(ctx.app), 'no second Desktop window').toBe(desktopWindowsBefore)
 })

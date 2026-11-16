@@ -36,12 +36,7 @@ import { pruneCrashDumps } from './lib/crashDumps'
 import { createStartupReentryGate } from './lib/startupReentryGate'
 import { registerTitleTooltipIpc } from './popups/titleTooltip'
 import { registerTitleCoachmarkIpc } from './popups/titleCoachmark'
-import {
-  openSystemModal,
-  openSystemModalAsync,
-  openSystemModalChoiceAsync,
-  registerSystemModalIpc
-} from './popups/systemModal'
+import { openSystemModal, openSystemModalAsync, registerSystemModalIpc } from './popups/systemModal'
 import {
   registerTitlePopupIpc,
   triggerPickerSnapshotBroadcast,
@@ -133,6 +128,7 @@ import { initUserTier } from './lib/userTier'
 import { readSmartAppControlState } from './lib/smartAppControl'
 
 import {
+  bringToFront,
   canRestartFromPicker,
   claimAttachHost,
   comfyWindows,
@@ -149,10 +145,11 @@ import {
   openOrFocusChooserHostWindow,
   openOrFocusHomeHostWindow,
   raiseAllHostWindows,
+  routeBuildOpen,
   setHostFactories,
   shouldConfirmKillForEntry
 } from './host/registry'
-import type { ComfyWindowEntry } from './host/registry'
+import type { BuildOpenRoute, ComfyWindowEntry } from './host/registry'
 import {
   applyChooserHostThemeToAll,
   createHostWindow,
@@ -1077,108 +1074,60 @@ if (app.isPackaged && !app.requestSingleInstanceLock()) {
       })
     }
 
-    const openInstallInNewWindow = async (
+    const openBuild = async (
       installationId: string,
-      opts?: { allowDuplicate?: boolean }
+      requesterEntryId: number | undefined,
+      onRoute?: (route: BuildOpenRoute) => void
     ): Promise<void> => {
-      const existing = getEntryByInstallationId(installationId)
-      const willFocusExisting =
-        !!existing && !existing.window.isDestroyed() && !opts?.allowDuplicate
-      recordIpcInvocation('open-install-new-window', {
-        installationId,
-        allowDuplicate: opts?.allowDuplicate === true,
-        focusedExisting: willFocusExisting
-      })
-      if (willFocusExisting) {
-        existing.window.show()
-        existing.window.focus()
-        return
-      }
-      try {
-        const inst = await getInstallation(installationId)
-        if (!inst) {
-          console.error('openInstallInNewWindow: unknown installation, not spawning', {
-            installationId
-          })
+      const requester =
+        requesterEntryId === undefined ? undefined : comfyWindows.get(requesterEntryId)
+      const route = routeBuildOpen(installationId, requester)
+      onRoute?.(route)
+      switch (route.kind) {
+        case 'ignore':
           return
-        }
-        const target = findEntryByHostWindow(openChooserHostWindow())
-        if (!target) {
-          console.error('openInstallInNewWindow: spawned chooser host not in registry', {
-            installationId
-          })
+        case 'focus':
+          bringToFront(route.entry.window)
           return
-        }
-        mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
-          to_installation_id: installationId,
-          method: 'picker'
-        })
-        deliverPickToEntry(target, installationId)
-      } catch (err) {
-        console.error('openInstallInNewWindow failed:', err)
-      }
-    }
-
-    const pickInstallFromPicker = async (
-      installationId: string,
-      parentEntryId: number,
-      opts?: { confirmed?: boolean }
-    ): Promise<void> => {
-      const existing = getEntryByInstallationId(installationId)
-      if (existing && !existing.window.isDestroyed()) {
-        existing.window.show()
-        existing.window.focus()
-        return
-      }
-      const parentEntry = comfyWindows.get(parentEntryId)
-      if (!parentEntry || parentEntry.window.isDestroyed()) return
-
-      if (parentEntry.installationId === installationId) return
-
-      if (parentEntry.installationId != null) {
-        if (!opts?.confirmed && shouldConfirmKillForEntry(parentEntry)) {
-          let targetName = installationId
-          try {
-            const target = await getInstallation(installationId)
-            if (target?.name) targetName = target.name
-          } catch {}
-          const choice = await openSystemModalChoiceAsync({
-            parent: parentEntry.window,
-            spec: {
-              title: 'Switch instance?',
-              message: `Switch to ${targetName}?`,
-              details: [
-                {
-                  label: 'Heads up',
-                  items: [
-                    'Switch stops the current instance and replaces it in this window.',
-                    'Open in new window keeps the current instance running.'
-                  ]
-                }
-              ],
-              confirmLabel: 'Switch',
-              secondaryLabel: 'Open in new window',
-              cancelLabel: 'Cancel',
-              confirmStyle: 'primary',
-              theme: parentEntry.lastTheme
-            }
-          })
-          if (choice === 'cancel') return
-          if (choice === 'secondary') {
-            openInstallInNewWindow(installationId)
+        case 'start-from':
+          deliverPickToEntry(route.entry, installationId)
+          return
+        case 'start-from-home': {
+          const inst = await getInstallation(installationId)
+          if (!inst) {
+            console.error('openBuild: unknown installation, not starting it', { installationId })
             return
           }
+          const homeEntry = findEntryByHostWindow(openOrFocusHomeHostWindow())
+          if (!homeEntry) {
+            console.error('openBuild: Desktop window not in registry', { installationId })
+            return
+          }
+          deliverPickToEntry(homeEntry, installationId)
+          return
         }
-        mainTelemetry.emit('comfy.desktop.instance.switched', {
-          from_installation_id: parentEntry.installationId,
-          to_installation_id: installationId,
-          method: 'picker'
-        })
-        parentEntry.detachInstall()
       }
-
-      deliverPickToEntry(parentEntry, installationId)
     }
+
+    const openInstallInNewWindow = (
+      installationId: string,
+      requesterEntryId?: number
+    ): Promise<void> =>
+      openBuild(installationId, requesterEntryId, (route) => {
+        recordIpcInvocation('open-install-new-window', {
+          installationId,
+          focusedExisting: route.kind === 'focus'
+        })
+        if (route.kind === 'start-from' || route.kind === 'start-from-home') {
+          mainTelemetry.emit('comfy.desktop.instance.opened_new_window', {
+            to_installation_id: installationId,
+            method: 'picker'
+          })
+        }
+      }).catch((err) => console.error('openInstallInNewWindow failed:', err))
+
+    const pickInstallFromPicker = (installationId: string, parentEntryId: number): Promise<void> =>
+      openBuild(installationId, parentEntryId)
 
     registerTitlePopupIpc({
       openChooserHostWindow,

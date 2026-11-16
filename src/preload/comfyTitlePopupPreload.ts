@@ -157,8 +157,8 @@ export interface ComfyTitlePopupBridge {
   openDownloadsModal(): void
   requestSize(height: number): void
   onInstancePickerSnapshot(cb: (snapshot: PopupInstancePickerSnapshot) => void): () => void
-  pickInstall(installationId: string, opts?: { confirmed?: boolean }): void
-  openInstallNewWindow(installationId: string, opts?: { allowDuplicate?: boolean }): void
+  pickInstall(installationId: string): void
+  openInstallNewWindow(installationId: string): void
   openNewInstall(): void
   restartInstall(installationId: string, opts?: { confirmed?: boolean }): void
   getDownloadThumbnail(savePath: string): Promise<string | null>
@@ -452,17 +452,11 @@ const bridge: ComfyTitlePopupBridge = {
     ipcRenderer.on('comfy-titlepopup:installs-changed', handler)
     return () => ipcRenderer.removeListener('comfy-titlepopup:installs-changed', handler)
   },
-  pickInstall: (installationId, opts) => {
-    ipcRenderer.send('comfy-titlepopup:pick-install', {
-      installationId,
-      confirmed: opts?.confirmed === true
-    })
+  pickInstall: (installationId) => {
+    ipcRenderer.send('comfy-titlepopup:pick-install', { installationId })
   },
-  openInstallNewWindow: (installationId, opts) => {
-    ipcRenderer.send('comfy-titlepopup:open-install-new-window', {
-      installationId,
-      allowDuplicate: opts?.allowDuplicate === true
-    })
+  openInstallNewWindow: (installationId) => {
+    ipcRenderer.send('comfy-titlepopup:open-install-new-window', { installationId })
   },
   openNewInstall: () => {
     ipcRenderer.send('comfy-titlepopup:open-new-install')

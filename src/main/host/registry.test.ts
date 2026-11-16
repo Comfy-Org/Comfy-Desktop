@@ -33,6 +33,7 @@ import {
   nextWindowKey,
   forceRevealHostWindow,
   openOrFocusHomeHostWindow,
+  routeBuildOpen,
   hasRunningSessionForEntry,
   raiseAllHostWindows,
   registerHostEntry,
@@ -667,5 +668,51 @@ describe('openOrFocusHomeHostWindow', () => {
 
     openOrFocusHomeHostWindow()
     expect(createChooser).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('routeBuildOpen', () => {
+  it('focuses the window a build already has, whoever asks', () => {
+    const buildWindow = makeEntry({ installationId: 'inst-B' })
+    const desktop = makeEntry({ installationId: null })
+    registerHostEntry(buildWindow)
+    registerHostEntry(desktop)
+
+    expect(routeBuildOpen('inst-B', desktop)).toEqual({ kind: 'focus', entry: buildWindow })
+    expect(routeBuildOpen('inst-B', undefined)).toEqual({ kind: 'focus', entry: buildWindow })
+  })
+
+  it('starts a build from the Desktop window that asked for it', () => {
+    const desktop = makeEntry({ installationId: null })
+    registerHostEntry(desktop)
+
+    expect(routeBuildOpen('inst-B', desktop)).toEqual({ kind: 'start-from', entry: desktop })
+  })
+
+  it('never hands another build to a build window: it starts from the Desktop window instead', () => {
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    registerHostEntry(buildA)
+
+    expect(routeBuildOpen('inst-B', buildA)).toEqual({ kind: 'start-from-home' })
+  })
+
+  it('treats a Desktop window that is becoming a build window like a build window', () => {
+    const claimed = makeEntry({ installationId: null })
+    registerHostEntry(claimed)
+    claimAttachHost('inst-A', claimed.windowKey)
+
+    expect(routeBuildOpen('inst-B', claimed)).toEqual({ kind: 'start-from-home' })
+  })
+
+  it('does nothing when a build window asks for itself', () => {
+    const buildA = makeEntry({ installationId: 'inst-A' })
+    buildA.window.isDestroyed = () => false
+    comfyWindows.set(buildA.windowKey, buildA)
+
+    expect(routeBuildOpen('inst-A', buildA)).toEqual({ kind: 'ignore' })
+  })
+
+  it('starts from the Desktop window when the request names no window', () => {
+    expect(routeBuildOpen('inst-B', undefined)).toEqual({ kind: 'start-from-home' })
   })
 })

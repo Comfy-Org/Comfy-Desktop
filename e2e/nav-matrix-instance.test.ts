@@ -11,7 +11,12 @@ import {
   resetIpcInvocations,
   seedRunningSession
 } from './support/devHooks'
-import { expectNoIpcInvocation, liveWindowCount, openPicker } from './support/navMatrixHelpers'
+import {
+  desktopWindowCount,
+  expectNoIpcInvocation,
+  liveWindowCount,
+  openPicker
+} from './support/navMatrixHelpers'
 
 let ctx: AppContext
 let installPathA: string
@@ -72,8 +77,8 @@ test.beforeEach(async () => {
   await clearRunningSessions(ctx.app)
 })
 
-test('Instance B via "Open in new window": spawns a new window (no swap of the host) @windows @macos @linux', async () => {
-  const before = await liveWindowCount(ctx.app)
+test('Instance B via "Open in new window": starts B from this Desktop window and opens no second Desktop window @windows @macos @linux', async () => {
+  const desktopWindowsBefore = await desktopWindowCount(ctx.app)
   await openPicker(ctx.app, ctx.panel, 'openInstallNewWindow')
 
   const popup = titlePopupPage(ctx.app)
@@ -95,10 +100,20 @@ test('Instance B via "Open in new window": spawns a new window (no swap of the h
     .toBe(true)
 
   await expect
-    .poll(() => liveWindowCount(ctx.app), { timeout: 5_000, intervals: [200, 400] })
-    .toBe(before + 1)
+    .poll(
+      async () => {
+        const calls = (await getIpcInvocations(ctx.app, 'run-action')) as {
+          installationId?: string
+          actionId?: string
+        }[]
+        return calls.some((c) => c.installationId === INSTALL_B_ID && c.actionId === 'launch')
+      },
+      { timeout: 10_000, intervals: [200, 500] }
+    )
+    .toBe(true)
+  expect(await desktopWindowCount(ctx.app), 'no second Desktop window').toBe(desktopWindowsBefore)
   await expectNoIpcInvocation(ctx.app, 'focus-comfy-window', () => true, {
-    message: 'unexpected focus-comfy-window when opening B in a new window'
+    message: 'unexpected focus-comfy-window when starting B'
   })
 })
 

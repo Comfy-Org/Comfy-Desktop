@@ -152,34 +152,30 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
       activeInstallationId: null,
       startingWithoutWindow: true
     })
-    const decision = decideNavigation(navState.navInput('primary'))
+    const decision = decideNavigation(navState.navInput())
     expect(decision.verb).toBe('restart')
     expect(decision.primaryLabel).toBe(NAV_LABEL.restart)
   })
 
-  it('instance host picking a stopped local instance → switch in place', () => {
+  it('instance host picking a stopped local instance → Start in its own window', () => {
     const navState = useInstanceNavState(ref(installation('B', 'local')), {
       currentView: 'instance' as ViewKind,
       currentCategory: 'local' as Category,
       activeInstallationId: 'A'
     })
-    const decision = decideNavigation(navState.navInput('primary'))
-    expect(decision).toMatchObject({ window: 'same', verb: 'switch' })
+    const decision = decideNavigation(navState.navInput())
+    expect(decision).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.start })
   })
 
-  it('dashboard host picking a stopped cloud install → Open Cloud + new-window caret', () => {
+  it('dashboard host picking a stopped cloud install → Open Cloud', () => {
     const navState = useInstanceNavState(ref(installation('cloud', 'cloud')), {
       currentView: 'dashboard' as ViewKind,
       currentCategory: null,
       activeInstallationId: null
     })
-    const primaryDecision = decideNavigation(navState.navInput('primary'))
-    expect(primaryDecision).toMatchObject({ verb: 'switch', primaryLabel: NAV_LABEL.openCloud })
-    const caretDecision = decideNavigation(navState.navInput('new-window'))
-    expect(caretDecision).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
+    expect(decideNavigation(navState.navInput())).toEqual({
+      verb: 'start',
+      primaryLabel: NAV_LABEL.openCloud
     })
   })
 
@@ -189,8 +185,8 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
       currentCategory: 'cloud' as Category,
       activeInstallationId: 'cloud'
     })
-    const decision = decideNavigation(navState.navInput('primary'))
-    expect(decision).toMatchObject({ window: 'new', verb: 'open-new' })
+    const decision = decideNavigation(navState.navInput())
+    expect(decision).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.start })
   })
 
   it('cloud host picking a stopped REMOTE connection → opens in a new window (not a dead no-op)', () => {
@@ -199,12 +195,8 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
       currentCategory: 'cloud' as Category,
       activeInstallationId: 'cloud'
     })
-    const decision = decideNavigation(navState.navInput('primary'))
-    expect(decision).toMatchObject({
-      window: 'new',
-      verb: 'open-new',
-      primaryLabel: NAV_LABEL.openInNewWindow
-    })
+    const decision = decideNavigation(navState.navInput())
+    expect(decision).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.openCloud })
   })
 
   it('instance host → stopped REMOTE routes identically to stopped Cloud (no in-place 3-way)', () => {
@@ -214,12 +206,12 @@ describe('useInstanceNavState → decideNavigation (end to end)', () => {
       activeInstallationId: 'A'
     }
     const remote = decideNavigation(
-      useInstanceNavState(ref(installation('R', 'remote')), sources).navInput('primary')
+      useInstanceNavState(ref(installation('R', 'remote')), sources).navInput()
     )
     const cloud = decideNavigation(
-      useInstanceNavState(ref(installation('C', 'cloud')), sources).navInput('primary')
+      useInstanceNavState(ref(installation('C', 'cloud')), sources).navInput()
     )
-    expect(remote).toMatchObject({ window: 'new', verb: 'open-new' })
+    expect(remote).toEqual({ verb: 'open-new', primaryLabel: NAV_LABEL.openCloud })
     expect(remote).toEqual(cloud)
   })
 })
