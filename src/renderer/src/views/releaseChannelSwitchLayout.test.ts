@@ -293,7 +293,7 @@ describe('switching where Change setup gets ComfyUI', () => {
     async (width, height) => {
       await browserPage.viewport(width, height)
       installSetupChoices()
-      const wrapper = await openChangeSetup()
+      await openChangeSetup()
       const settled = navigationLayout()
       const dialog = only('.setup-modal-panel').getBoundingClientRect()
       expect(dialog.top).toBeGreaterThanOrEqual(0)
@@ -331,7 +331,6 @@ describe('switching where Change setup gets ComfyUI', () => {
       expect(only('.setup-modal-panel').getBoundingClientRect().height).toBeLessThanOrEqual(
         dialog.height
       )
-      wrapper.unmount()
     }
   )
 

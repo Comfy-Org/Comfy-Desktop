@@ -63,7 +63,7 @@ const hostProps = computed(() =>
         class="setup-modal-panel relative flex max-h-[calc(100vh-48px)] max-w-full flex-col rounded-[16px] bg-neutral-900 text-left [box-shadow:0_24px_64px_rgb(0_0_0/0.5),inset_0_0_0_1px_rgb(255_255_255/0.06)] animate-pop-in motion-reduce:animate-none"
         :class="[
           wide ? 'w-[min(960px,calc(100vw-48px))]' : 'w-[min(760px,calc(100vw-48px))]',
-          fixedHeight && 'h-[min(720px,calc(100vh-48px))]'
+          fixedHeight && 'h-[720px]'
         ]"
       >
         <Button
